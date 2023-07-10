@@ -37,3 +37,37 @@ $ ./kajiya -cache=false
 # Remote caching without execution (clients must upload action results)
 $ ./kajiya -execution=false
 ```
+
+## Network emulation
+
+As part of evaluating the performance of remote execution, it's important
+to check how the system behaves in different network conditions. For example,
+if your remote execution backend were hosted in a US cloud region, then you
+could use these parameters to simulate real user conditions:
+
+- User is in same region: ~15ms latency
+- User is in Tokyo: ~200ms latency
+
+On Linux, we can use `tc-netem` to emulate such conditions when testing on
+`localhost`. Please note that it will affect all traffic on localhost, not
+just the remote execution one, so remember to remove it again after your
+benchmark.
+
+```shell
+# Parameters
+bandwidth="1000mbit"
+latency="200ms"
+jitter="50ms"
+correlation="25%"
+
+# Enable network emulation on localhost
+sudo tc qdisc add dev lo root netem \
+  delay ${latency} ${jitter} ${correlation} \
+  rate ${bandwidth}
+
+# Remove network emulation
+sudo tc qdisc del dev lo root
+
+# Check current status
+tc -s qdisc ls dev lo
+```
