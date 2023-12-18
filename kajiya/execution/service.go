@@ -28,13 +28,18 @@ import (
 type Service struct {
 	remote.UnimplementedExecutionServer
 
-	executor    *Executor
+	executor    ExecutorInterface
 	actionCache *actioncache.ActionCache
 	cas         *blobstore.ContentAddressableStorage
 }
 
+// ExecutorInterface is an interface of Executor.
+type ExecutorInterface interface {
+	Execute(*remote.Action) (*remote.ActionResult, error)
+}
+
 // Register creates and registers a new Service with the given gRPC server.
-func Register(s *grpc.Server, executor *Executor, ac *actioncache.ActionCache, cas *blobstore.ContentAddressableStorage) error {
+func Register(s *grpc.Server, executor ExecutorInterface, ac *actioncache.ActionCache, cas *blobstore.ContentAddressableStorage) error {
 	service, err := NewService(executor, ac, cas)
 	if err != nil {
 		return err
@@ -44,7 +49,7 @@ func Register(s *grpc.Server, executor *Executor, ac *actioncache.ActionCache, c
 }
 
 // NewService creates a new Service.
-func NewService(executor *Executor, ac *actioncache.ActionCache, cas *blobstore.ContentAddressableStorage) (Service, error) {
+func NewService(executor ExecutorInterface, ac *actioncache.ActionCache, cas *blobstore.ContentAddressableStorage) (Service, error) {
 	if executor == nil {
 		return Service{}, fmt.Errorf("executor must be set")
 	}
