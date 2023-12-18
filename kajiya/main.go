@@ -12,14 +12,19 @@ import (
 	"flag"
 	"log"
 	"net"
+	"net/http"
+	_ "net/http/pprof" // import to let pprof register its HTTP handlers
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime/pprof"
 	"strings"
 	"syscall"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
+
+	"go.chromium.org/luci/common/system/signals"
 
 	"infra/build/kajiya/actioncache"
 	"infra/build/kajiya/blobstore"
@@ -32,6 +37,8 @@ var (
 	listen          = flag.String("listen", "localhost:50051", "the address to listen on (e.g. localhost:50051 or unix:///tmp/kajiya.sock)")
 	enableCache     = flag.Bool("cache", true, "whether to enable the action cache service")
 	enableExecution = flag.Bool("execution", true, "whether to enable the execution service")
+	pprofAddr       = flag.String("pprof_addr", "", `listen address for "go tool pprof". e.g. "localhost:6060"`)
+	cpuprofile      = flag.String("cpuprofile", "", "write cpu profile to file")
 )
 
 func getDefaultDataDir() string {
@@ -44,6 +51,36 @@ func getDefaultDataDir() string {
 
 func main() {
 	flag.Parse()
+
+	// Enable CPU profiling if requested.
+	if *cpuprofile != "" {
+		log.Printf("📈 CPU profiling enabled, writing to %v", *cpuprofile)
+		f, err := os.Create(*cpuprofile)
+		if err != nil {
+			log.Fatalf("failed to create file for CPU profile: %v", err)
+		}
+		err = pprof.StartCPUProfile(f)
+		if err != nil {
+			log.Fatalf("failed to start CPU profiler: %v", err)
+		}
+		defer pprof.StopCPUProfile()
+	}
+
+	// Start an HTTP server that can be used to profile Kajiya during runtime if requested.
+	if *pprofAddr != "" {
+		// https://pkg.go.dev/net/http/pprof
+		log.Printf("⏱️ pprof is enabled, listening at http://%s/debug/pprof/\n", *pprofAddr)
+		go func() {
+			log.Printf("pprof http listener: %v", http.ListenAndServe(*pprofAddr, nil))
+		}()
+		defer func() {
+			log.Printf("pprof is still listening at http://%s/debug/pprof/\n", *pprofAddr)
+			log.Printf("Press Ctrl-C to terminate the process")
+			sigch := make(chan os.Signal, 1)
+			signal.Notify(sigch, signals.Interrupts()...)
+			<-sigch
+		}()
+	}
 
 	// Ensure our data directory exists.
 	if *dataDir == "" {
