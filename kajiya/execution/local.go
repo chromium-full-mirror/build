@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"io/fs"
 	"log"
 	"os"
 	"os/exec"
@@ -26,14 +27,22 @@ import (
 // TODO: Make this configurable via a flag.
 const fastCopy = true
 
+// Executor is a local executor that executes actions on the local machine.
+// It uses a ContentAddressableStorage to fetch all required inputs for the action
+// into a sandbox directory, executes the action in that sandbox directory, and
+// then uploads the output files and directories to the CAS after the action has finished.
 type Executor struct {
 	cas         *blobstore.ContentAddressableStorage
 	sandboxBase string
 }
 
-func New(sandboxBase string, cas *blobstore.ContentAddressableStorage) (*Executor, error) {
-	if sandboxBase == "" {
-		return nil, fmt.Errorf("sandboxBase must be set")
+// New creates a new Executor.
+// baseDir is a directory used to store temporary files required during execution, such as
+// sandbox directories.
+// cas is the ContentAddressableStorage to use for fetching and uploading blobs.
+func New(baseDir string, cas *blobstore.ContentAddressableStorage) (*Executor, error) {
+	if baseDir == "" {
+		return nil, fmt.Errorf("baseDir must be set")
 	}
 
 	if cas == nil {
@@ -41,13 +50,18 @@ func New(sandboxBase string, cas *blobstore.ContentAddressableStorage) (*Executo
 	}
 
 	// Create the data directory if it doesn't exist.
+	if err := os.MkdirAll(baseDir, 0755); err != nil {
+		return nil, fmt.Errorf("failed to create directory %q: %w", baseDir, err)
+	}
+
+	sandboxBase := filepath.Join(baseDir, "tmp")
 	if err := os.MkdirAll(sandboxBase, 0755); err != nil {
 		return nil, fmt.Errorf("failed to create directory %q: %w", sandboxBase, err)
 	}
 
 	return &Executor{
-		sandboxBase: sandboxBase,
 		cas:         cas,
+		sandboxBase: sandboxBase,
 	}, nil
 }
 
@@ -491,6 +505,21 @@ func (e *Executor) buildMerkleTree(path string) (dirs []*repb.Directory, err err
 }
 
 func (e *Executor) deleteSandbox(dir string) {
+	// Walk through all directories inside the sandbox and give ourselves permission to delete
+	// everything. This is necessary, because actions can create directories or files with wrong
+	// permissions, causing os.RemoveAll to fail to delete them.
+	_ = filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+		if d.IsDir() {
+			_ = os.Chmod(path, 0700)
+		} else {
+			// While we're here, attempt to remove the file. If it works, we save some
+			// work later. If not, just ignore the error and continue, because
+			// os.RemoveAll will take care of it.
+			_ = os.Remove(path)
+		}
+		return nil
+	})
+
 	if err := os.RemoveAll(dir); err != nil {
 		log.Printf("🚨 failed to remove sandbox: %v", err)
 	}
