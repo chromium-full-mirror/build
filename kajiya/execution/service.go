@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"sync"
 	"time"
 
 	"cloud.google.com/go/longrunning/autogen/longrunningpb"
@@ -31,6 +32,11 @@ type Service struct {
 	executor    ExecutorInterface
 	actionCache *actioncache.ActionCache
 	cas         *blobstore.ContentAddressableStorage
+
+	// actionDigestMutexes is a map of action digests to mutexes.
+	// It's used to prevent multiple clients from executing the same action at the same time.
+	// TODO: Implement garbage collection of old entries?
+	actionDigestMutexes sync.Map
 }
 
 // ExecutorInterface is an interface of Executor.
@@ -49,16 +55,16 @@ func Register(s *grpc.Server, executor ExecutorInterface, ac *actioncache.Action
 }
 
 // NewService creates a new Service.
-func NewService(executor ExecutorInterface, ac *actioncache.ActionCache, cas *blobstore.ContentAddressableStorage) (Service, error) {
+func NewService(executor ExecutorInterface, ac *actioncache.ActionCache, cas *blobstore.ContentAddressableStorage) (*Service, error) {
 	if executor == nil {
-		return Service{}, fmt.Errorf("executor must be set")
+		return nil, fmt.Errorf("executor must be set")
 	}
 
 	if cas == nil {
-		return Service{}, fmt.Errorf("cas must be set")
+		return nil, fmt.Errorf("cas must be set")
 	}
 
-	return Service{
+	return &Service{
 		executor:    executor,
 		actionCache: ac,
 		cas:         cas,
@@ -66,7 +72,7 @@ func NewService(executor ExecutorInterface, ac *actioncache.ActionCache, cas *bl
 }
 
 // Execute executes the given action and returns the result.
-func (s Service) Execute(request *remote.ExecuteRequest, executeServer remote.Execution_ExecuteServer) error {
+func (s *Service) Execute(request *remote.ExecuteRequest, executeServer remote.Execution_ExecuteServer) error {
 	// Just for fun, measure how long the execution takes and log it.
 	start := time.Now()
 	err := s.execute(request, executeServer)
@@ -79,7 +85,7 @@ func (s Service) Execute(request *remote.ExecuteRequest, executeServer remote.Ex
 	return err
 }
 
-func (s Service) execute(request *remote.ExecuteRequest, executeServer remote.Execution_ExecuteServer) error {
+func (s *Service) execute(request *remote.ExecuteRequest, executeServer remote.Execution_ExecuteServer) error {
 	// If the client explicitly specifies a DigestFunction, ensure that it's SHA256.
 	if request.DigestFunction != remote.DigestFunction_UNKNOWN && request.DigestFunction != remote.DigestFunction_SHA256 {
 		return status.Errorf(codes.InvalidArgument, "hash function %q is not supported", request.DigestFunction.String())
@@ -92,6 +98,7 @@ func (s Service) execute(request *remote.ExecuteRequest, executeServer remote.Ex
 	}
 
 	// If we have an action cache, check if the action is already cached.
+	// If so, return the cached result.
 	if s.actionCache != nil && !request.SkipCacheLookup {
 		resp, err := s.checkActionCache(actionDigest)
 		if err != nil {
@@ -108,6 +115,18 @@ func (s Service) execute(request *remote.ExecuteRequest, executeServer remote.Ex
 	action, err := s.getAction(actionDigest)
 	if err != nil {
 		return err
+	}
+
+	// According to the REAPI specification, in-flight requests for the same `Action` may not be
+	// merged if the `DoNotCache` bit is set.
+	if !action.DoNotCache {
+		// By locking on the action digest, we ensure that only one client can execute the action at
+		// a time. Other clients will block until the action is done executing, and then they will
+		// get the result from the cache. This improves efficiency and performance by avoiding
+		// duplicate work.
+		actionDigestMutex, _ := s.actionDigestMutexes.LoadOrStore(actionDigest, &sync.Mutex{})
+		actionDigestMutex.(*sync.Mutex).Lock()
+		defer actionDigestMutex.(*sync.Mutex).Unlock()
 	}
 
 	// Execute the action.
@@ -135,7 +154,7 @@ func (s Service) execute(request *remote.ExecuteRequest, executeServer remote.Ex
 	return nil
 }
 
-func (s Service) checkActionCache(d digest.Digest) (*longrunningpb.Operation, error) {
+func (s *Service) checkActionCache(d digest.Digest) (*longrunningpb.Operation, error) {
 	// Try to get the result from the cache.
 	actionResult, err := s.actionCache.Get(d)
 	if err != nil {
@@ -150,7 +169,7 @@ func (s Service) checkActionCache(d digest.Digest) (*longrunningpb.Operation, er
 	return op, nil
 }
 
-func (s Service) wrapActionResult(d digest.Digest, r *remote.ActionResult, cached bool) (*longrunningpb.Operation, error) {
+func (s *Service) wrapActionResult(d digest.Digest, r *remote.ActionResult, cached bool) (*longrunningpb.Operation, error) {
 	// Construct some metadata for the execution operation and wrap it in an Any.
 	md, err := anypb.New(&remote.ExecuteOperationMetadata{
 		Stage:        remote.ExecutionStage_COMPLETED,
@@ -182,7 +201,7 @@ func (s Service) wrapActionResult(d digest.Digest, r *remote.ActionResult, cache
 }
 
 // getAction fetches the remote.Action with the given digest.Digest from our CAS.
-func (s Service) getAction(d digest.Digest) (*remote.Action, error) {
+func (s *Service) getAction(d digest.Digest) (*remote.Action, error) {
 	// Fetch the Action from the CAS.
 	actionBytes, err := s.cas.Get(d)
 	if err != nil {
@@ -200,6 +219,6 @@ func (s Service) getAction(d digest.Digest) (*remote.Action, error) {
 }
 
 // WaitExecution waits for the specified execution to complete.
-func (s Service) WaitExecution(request *remote.WaitExecutionRequest, executionServer remote.Execution_WaitExecutionServer) error {
+func (s *Service) WaitExecution(request *remote.WaitExecutionRequest, executionServer remote.Execution_WaitExecutionServer) error {
 	return status.Error(codes.Unimplemented, "WaitExecution is not implemented")
 }
