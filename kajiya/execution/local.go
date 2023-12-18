@@ -14,7 +14,7 @@ import (
 	"path/filepath"
 
 	"github.com/bazelbuild/remote-apis-sdks/go/pkg/digest"
-	remote "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
+	repb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -27,13 +27,13 @@ import (
 const fastCopy = true
 
 type Executor struct {
-	execDir string
-	cas     *blobstore.ContentAddressableStorage
+	cas         *blobstore.ContentAddressableStorage
+	sandboxBase string
 }
 
-func New(execDir string, cas *blobstore.ContentAddressableStorage) (*Executor, error) {
-	if execDir == "" {
-		return nil, fmt.Errorf("execDir must be set")
+func New(sandboxBase string, cas *blobstore.ContentAddressableStorage) (*Executor, error) {
+	if sandboxBase == "" {
+		return nil, fmt.Errorf("sandboxBase must be set")
 	}
 
 	if cas == nil {
@@ -41,18 +41,18 @@ func New(execDir string, cas *blobstore.ContentAddressableStorage) (*Executor, e
 	}
 
 	// Create the data directory if it doesn't exist.
-	if err := os.MkdirAll(execDir, 0755); err != nil {
-		return nil, fmt.Errorf("failed to create directory %q: %v", execDir, err)
+	if err := os.MkdirAll(sandboxBase, 0755); err != nil {
+		return nil, fmt.Errorf("failed to create directory %q: %w", sandboxBase, err)
 	}
 
 	return &Executor{
-		execDir: execDir,
-		cas:     cas,
+		sandboxBase: sandboxBase,
+		cas:         cas,
 	}, nil
 }
 
 // Execute executes the given action and returns the result.
-func (e *Executor) Execute(action *remote.Action) (*remote.ActionResult, error) {
+func (e *Executor) Execute(action *repb.Action) (*repb.ActionResult, error) {
 	var missingBlobs []digest.Digest
 
 	// Get the command from the CAS.
@@ -70,26 +70,25 @@ func (e *Executor) Execute(action *remote.Action) (*remote.ActionResult, error) 
 	if err != nil {
 		if os.IsNotExist(err) {
 			missingBlobs = append(missingBlobs, digest.NewFromProtoUnvalidated(action.InputRootDigest))
+			return nil, e.formatMissingBlobsError(missingBlobs)
 		} else {
 			return nil, err
 		}
 	}
 
-	// Build an execution directory for the action. If the input root is nil, it means that its
-	// digest was not found in the CAS, so we skip this part and just return an error next.
-	var execDir string
-	if inputRoot != nil {
-		execDir, err = os.MkdirTemp(e.execDir, "*")
-		defer e.deleteExecutionDirectory(execDir)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create execution directory: %v", err)
-		}
-		mb, err := e.materializeDirectory(execDir, inputRoot)
-		if err != nil {
-			return nil, fmt.Errorf("failed to materialize input root: %v", err)
-		}
-		missingBlobs = append(missingBlobs, mb...)
+	// Build a sandbox directory for the action.
+	sandboxDir, err := os.MkdirTemp(e.sandboxBase, "*")
+	if err != nil {
+		return nil, fmt.Errorf("failed to create sandbox directory: %w", err)
 	}
+	defer e.deleteSandbox(sandboxDir)
+
+	// Materialize the input root in the sandbox directory.
+	mb, err := e.materializeDirectory(sandboxDir, inputRoot)
+	if err != nil {
+		return nil, fmt.Errorf("failed to materialize input root: %w", err)
+	}
+	missingBlobs = append(missingBlobs, mb...)
 
 	// If there were any missing blobs, we fail early and return the list to the client.
 	if len(missingBlobs) > 0 {
@@ -97,12 +96,12 @@ func (e *Executor) Execute(action *remote.Action) (*remote.ActionResult, error) 
 	}
 
 	// If a working directory was specified, verify that it exists.
-	workDir := execDir
+	workDir := sandboxDir
 	if cmd.WorkingDirectory != "" {
 		if !filepath.IsLocal(cmd.WorkingDirectory) {
 			return nil, fmt.Errorf("working directory %q points outside of input root", cmd.WorkingDirectory)
 		}
-		workDir = filepath.Join(execDir, cmd.WorkingDirectory)
+		workDir = filepath.Join(sandboxDir, cmd.WorkingDirectory)
 		if err := os.MkdirAll(workDir, 0755); err != nil {
 			return nil, fmt.Errorf("could not create working directory: %v", err)
 		}
@@ -115,7 +114,7 @@ func (e *Executor) Execute(action *remote.Action) (*remote.ActionResult, error) 
 	}
 
 	// Execute the command.
-	actionResult, err := e.executeCommand(execDir, cmd)
+	actionResult, err := e.executeCommand(sandboxDir, cmd)
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute command: %v", err)
 	}
@@ -143,7 +142,7 @@ func (e *Executor) Execute(action *remote.Action) (*remote.ActionResult, error) 
 				return nil, fmt.Errorf("failed to build merkle tree for %q: %v", outputPath, err)
 			}
 
-			tree := remote.Tree{
+			tree := repb.Tree{
 				Root: dirs[0],
 			}
 			if len(dirs) > 1 {
@@ -158,7 +157,7 @@ func (e *Executor) Execute(action *remote.Action) (*remote.ActionResult, error) 
 				return nil, fmt.Errorf("failed to upload tree to CAS: %v", err)
 			}
 
-			actionResult.OutputDirectories = append(actionResult.OutputDirectories, &remote.OutputDirectory{
+			actionResult.OutputDirectories = append(actionResult.OutputDirectories, &repb.OutputDirectory{
 				Path:                  outputPath,
 				TreeDigest:            d.ToProto(),
 				IsTopologicallySorted: false,
@@ -173,7 +172,7 @@ func (e *Executor) Execute(action *remote.Action) (*remote.ActionResult, error) 
 				return nil, fmt.Errorf("failed to upload file %q to CAS: %v", outputPath, err)
 			}
 
-			actionResult.OutputFiles = append(actionResult.OutputFiles, &remote.OutputFile{
+			actionResult.OutputFiles = append(actionResult.OutputFiles, &repb.OutputFile{
 				Path:         outputPath,
 				Digest:       d.ToProto(),
 				IsExecutable: fi.Mode()&0111 != 0,
@@ -186,7 +185,7 @@ func (e *Executor) Execute(action *remote.Action) (*remote.ActionResult, error) 
 
 // createOutputPaths creates the directories required by all output files and directories.
 // It transforms and returns the list of output paths so that they're relative to our current working directory.
-func (e *Executor) createOutputPaths(cmd *remote.Command, workDir string) (outputPaths []string, err error) {
+func (e *Executor) createOutputPaths(cmd *repb.Command, workDir string) (outputPaths []string, err error) {
 	if cmd.OutputPaths != nil {
 		// REAPI v2.1+
 		outputPaths = cmd.OutputPaths
@@ -207,7 +206,7 @@ func (e *Executor) createOutputPaths(cmd *remote.Command, workDir string) (outpu
 }
 
 // saveStdOutErr saves stdout and stderr to the CAS and returns the updated action result.
-func (e *Executor) saveStdOutErr(actionResult *remote.ActionResult) error {
+func (e *Executor) saveStdOutErr(actionResult *repb.ActionResult) error {
 	d, err := e.cas.Put(actionResult.StdoutRaw)
 	if err != nil {
 		return status.Errorf(codes.Internal, "failed to put stdout into CAS: %v", err)
@@ -228,7 +227,7 @@ func (e *Executor) saveStdOutErr(actionResult *remote.ActionResult) error {
 	return nil
 }
 
-func (e *Executor) getDirectory(d *remote.Digest) (*remote.Directory, error) {
+func (e *Executor) getDirectory(d *repb.Digest) (*repb.Directory, error) {
 	dirDigest, err := digest.NewFromProto(d)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse directory digest: %v", err)
@@ -237,14 +236,14 @@ func (e *Executor) getDirectory(d *remote.Digest) (*remote.Directory, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to get directory from CAS: %v", err)
 	}
-	dir := &remote.Directory{}
+	dir := &repb.Directory{}
 	if err := proto.Unmarshal(dirBytes, dir); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal directory: %v", err)
 	}
 	return dir, nil
 }
 
-func (e *Executor) getCommand(d *remote.Digest) (*remote.Command, error) {
+func (e *Executor) getCommand(d *repb.Digest) (*repb.Command, error) {
 	cmdDigest, err := digest.NewFromProto(d)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse command digest: %v", err)
@@ -253,7 +252,7 @@ func (e *Executor) getCommand(d *remote.Digest) (*remote.Command, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to get command from CAS: %v", err)
 	}
-	cmd := &remote.Command{}
+	cmd := &repb.Command{}
 	if err := proto.Unmarshal(cmdBytes, cmd); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal command: %v", err)
 	}
@@ -263,7 +262,7 @@ func (e *Executor) getCommand(d *remote.Digest) (*remote.Command, error) {
 // materializeDirectory recursively materializes the given directory in the
 // local filesystem. The directory itself is created at the given path, and
 // all files and subdirectories are created under that path.
-func (e *Executor) materializeDirectory(path string, d *remote.Directory) (missingBlobs []digest.Digest, err error) {
+func (e *Executor) materializeDirectory(path string, d *repb.Directory) (missingBlobs []digest.Digest, err error) {
 	// First, materialize all the input files in the directory.
 	for _, fileNode := range d.Files {
 		filePath := filepath.Join(path, fileNode.Name)
@@ -323,7 +322,7 @@ func (e *Executor) materializeDirectory(path string, d *remote.Directory) (missi
 }
 
 // materializeFile downloads the given file from the CAS and writes it to the given path.
-func (e *Executor) materializeFile(filePath string, fileNode *remote.FileNode) error {
+func (e *Executor) materializeFile(filePath string, fileNode *repb.FileNode) error {
 	fileDigest, err := digest.NewFromProto(fileNode.Digest)
 	if err != nil {
 		return fmt.Errorf("failed to parse file digest: %v", err)
@@ -392,12 +391,12 @@ func (e *Executor) formatMissingBlobsError(blobs []digest.Digest) error {
 	return s.Err()
 }
 
-// executeCommand runs cmd in the input root execDir, which must already have been prepared by the caller.
+// executeCommand runs cmd in the sandboxDir, which must already have been prepared by the caller.
 // If we were able to execute the command, a valid ActionResult will be returned and error is nil.
 // This includes the case where we ran the command, and it exited with an exit code != 0.
 // However, if something went wrong during preparation or while spawning the process, an error is returned.
-func (e *Executor) executeCommand(execDir string, cmd *remote.Command) (*remote.ActionResult, error) {
-	if cmd.Platform != nil {
+func (e *Executor) executeCommand(sandboxDir string, cmd *repb.Command) (*repb.ActionResult, error) {
+	if cmd.Platform != nil { //nolint:staticcheck // Required for support of REAPI clients using v2.1 or earlier.
 		for _, prop := range cmd.Platform.Properties {
 			if prop.Name == "container-image" {
 				// TODO: Implement containerized execution for actions that ask to run inside a given container image.
@@ -406,7 +405,7 @@ func (e *Executor) executeCommand(execDir string, cmd *remote.Command) (*remote.
 	}
 
 	c := exec.Command(cmd.Arguments[0], cmd.Arguments[1:]...)
-	c.Dir = filepath.Join(execDir, cmd.WorkingDirectory)
+	c.Dir = filepath.Join(sandboxDir, cmd.WorkingDirectory)
 
 	for _, env := range cmd.EnvironmentVariables {
 		c.Env = append(c.Env, fmt.Sprintf("%s=%s", env.Name, env.Value))
@@ -426,7 +425,7 @@ func (e *Executor) executeCommand(execDir string, cmd *remote.Command) (*remote.
 		}
 	}
 
-	return &remote.ActionResult{
+	return &repb.ActionResult{
 		ExitCode:  int32(c.ProcessState.ExitCode()),
 		StdoutRaw: stdout.Bytes(),
 		StderrRaw: stderr.Bytes(),
@@ -435,8 +434,8 @@ func (e *Executor) executeCommand(execDir string, cmd *remote.Command) (*remote.
 
 // addDirectoryToTree recursively walks through the given directory and adds itself, all files and
 // subdirectories to the given Tree.
-func (e *Executor) buildMerkleTree(path string) (dirs []*remote.Directory, err error) {
-	dir := &remote.Directory{}
+func (e *Executor) buildMerkleTree(path string) (dirs []*repb.Directory, err error) {
+	dir := &repb.Directory{}
 
 	dirEntries, err := os.ReadDir(path)
 	if err != nil {
@@ -453,7 +452,7 @@ func (e *Executor) buildMerkleTree(path string) (dirs []*remote.Directory, err e
 			if err != nil {
 				return nil, fmt.Errorf("failed to get digest: %v", err)
 			}
-			dir.Directories = append(dir.Directories, &remote.DirectoryNode{
+			dir.Directories = append(dir.Directories, &repb.DirectoryNode{
 				Name:   dirEntry.Name(),
 				Digest: d.ToProto(),
 			})
@@ -467,7 +466,7 @@ func (e *Executor) buildMerkleTree(path string) (dirs []*remote.Directory, err e
 			if err != nil {
 				return nil, fmt.Errorf("failed to get file info: %v", err)
 			}
-			fileNode := &remote.FileNode{
+			fileNode := &repb.FileNode{
 				Name:         dirEntry.Name(),
 				Digest:       d.ToProto(),
 				IsExecutable: fi.Mode()&0111 != 0,
@@ -488,11 +487,11 @@ func (e *Executor) buildMerkleTree(path string) (dirs []*remote.Directory, err e
 		return nil, err
 	}
 
-	return append([]*remote.Directory{dir}, dirs...), nil
+	return append([]*repb.Directory{dir}, dirs...), nil
 }
 
-func (e *Executor) deleteExecutionDirectory(dir string) {
+func (e *Executor) deleteSandbox(dir string) {
 	if err := os.RemoveAll(dir); err != nil {
-		log.Printf("🚨 failed to remove execution directory: %v", err)
+		log.Printf("🚨 failed to remove sandbox: %v", err)
 	}
 }
