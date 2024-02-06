@@ -13,6 +13,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
+	"strings"
 
 	"github.com/bazelbuild/remote-apis-sdks/go/pkg/digest"
 	repb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
@@ -33,6 +35,8 @@ const fastCopy = true
 // then uploads the output files and directories to the CAS after the action has finished.
 type Executor struct {
 	cas         *blobstore.ContentAddressableStorage
+	images      *ImageRepository
+	nsjailPath  string
 	sandboxBase string
 }
 
@@ -54,13 +58,29 @@ func New(baseDir string, cas *blobstore.ContentAddressableStorage) (*Executor, e
 		return nil, fmt.Errorf("failed to create directory %q: %w", baseDir, err)
 	}
 
+	images, err := NewImageRepository(filepath.Join(baseDir, "images"))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create image repository: %w", err)
+	}
+
 	sandboxBase := filepath.Join(baseDir, "tmp")
 	if err := os.MkdirAll(sandboxBase, 0755); err != nil {
 		return nil, fmt.Errorf("failed to create directory %q: %w", sandboxBase, err)
 	}
 
+	// Try to find nsjail in the PATH.
+	nsjailPath := ""
+	if runtime.GOOS == "linux" {
+		nsjailPath, err = exec.LookPath("nsjail")
+		if err != nil {
+			return nil, fmt.Errorf("🚨 required tool 'nsjail' not found in PATH")
+		}
+	}
+
 	return &Executor{
 		cas:         cas,
+		images:      images,
+		nsjailPath:  nsjailPath,
 		sandboxBase: sandboxBase,
 	}, nil
 }
@@ -128,7 +148,7 @@ func (e *Executor) Execute(action *repb.Action) (*repb.ActionResult, error) {
 	}
 
 	// Execute the command.
-	actionResult, err := e.executeCommand(sandboxDir, cmd)
+	actionResult, err := e.executeCommand(sandboxDir, action, cmd)
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute command: %v", err)
 	}
@@ -405,20 +425,98 @@ func (e *Executor) formatMissingBlobsError(blobs []digest.Digest) error {
 	return s.Err()
 }
 
-// executeCommand runs cmd in the sandboxDir, which must already have been prepared by the caller.
-// If we were able to execute the command, a valid ActionResult will be returned and error is nil.
-// This includes the case where we ran the command, and it exited with an exit code != 0.
-// However, if something went wrong during preparation or while spawning the process, an error is returned.
-func (e *Executor) executeCommand(sandboxDir string, cmd *repb.Command) (*repb.ActionResult, error) {
-	if cmd.Platform != nil { //nolint:staticcheck // Required for support of REAPI clients using v2.1 or earlier.
-		for _, prop := range cmd.Platform.Properties {
-			if prop.Name == "container-image" {
-				// TODO: Implement containerized execution for actions that ask to run inside a given container image.
+// buildNsjailArgs builds the arguments for nsjail.
+func (e *Executor) buildNsjailArgs(sandboxDir string, imageDir string, cmd *repb.Command) []string {
+	// We use /mnt as the input root inside the sandbox. The exact path doesn't matter,
+	// because all paths in REAPI are relative to the input root anyway, so the action
+	// is relocatable and not tied to a specific input root.
+	// TODO: Add support for overriding this via RBE's InputRootAbsolutePath feature?
+	inputRoot := "/mnt"
+
+	workDir := filepath.Join(inputRoot, cmd.WorkingDirectory)
+	searchPath := []string{"/usr/local/sbin", "/usr/local/bin", "/usr/sbin", "/usr/bin", "/sbin", "/bin"}
+
+	// If we're not using a container image, it means the action should be executed
+	// on the host, so we need to set the image path to "/". Otherwise, nsjail will
+	// run the command in a completely empty root filesystem, which will fail.
+	if imageDir == "" {
+		imageDir = "/"
+	}
+
+	args := []string{
+		e.nsjailPath,
+		"--quiet",
+		"--chroot", imageDir,
+		"--cwd", workDir,
+		"--bindmount", fmt.Sprintf("%s:%s", sandboxDir, inputRoot),
+		"--env", "HOME=" + workDir,
+		"--env", "PATH=" + strings.Join(searchPath, ":"),
+	}
+
+	// We don't need to set the values of the environment variables here because we
+	// already set them in the environment of the nsjail process.
+	for _, env := range cmd.EnvironmentVariables {
+		args = append(args, "--env", env.Name)
+	}
+
+	// Python and other tools use /dev/shm for shared memory, so we need to mount it.
+	// Otherwise we get errors like this:
+	// _multiprocessing.SemLock(kind, value, maxvalue)
+	//   OSError: [Errno 38] Function not implemented
+	args = append(args, "--tmpfsmount", "/dev/shm")
+
+	// Some tools use /tmp for temporary files, so we need to mount it.
+	// Otherwise we get errors like this:
+	//   clang: error: unable to make temporary file: Read-only file system
+	args = append(args, "--tmpfsmount", "/tmp")
+
+	// nsjail applies rather strict resource limits by default, which can cause
+	// some tools to fail. We disable them here for now, until we figure out
+	// a set of limits that works for most tools.
+	args = append(args, "--disable_rlimits")
+
+	// nsjail doesn't look up argv[0] in PATH, so we need to resolve it ourselves
+	// and pass it to nsjail via --exec_file.
+	if !strings.ContainsAny(cmd.Arguments[0], "/") {
+		for _, p := range searchPath {
+			if _, err := os.Stat(filepath.Join(imageDir, p, cmd.Arguments[0])); err == nil {
+				args = append(args, "--exec_file", filepath.Join(p, cmd.Arguments[0]))
+				break
 			}
 		}
 	}
 
-	c := exec.Command(cmd.Arguments[0], cmd.Arguments[1:]...)
+	return append(args, "--")
+}
+
+// executeCommand runs cmd in the sandboxDir, which must already have been prepared by the caller.
+// If we were able to execute the command, a valid ActionResult will be returned and error is nil.
+// This includes the case where we ran the command, and it exited with an exit code != 0.
+// However, if something went wrong during preparation or while spawning the process, an error is returned.
+func (e *Executor) executeCommand(sandboxDir string, action *repb.Action, cmd *repb.Command) (*repb.ActionResult, error) {
+	var args []string
+
+	imageURL := e.images.ImageURL(action, cmd)
+
+	if e.nsjailPath != "" {
+		// Prepare the container image for the action.
+		imageDir, err := e.images.FetchImage(imageURL)
+		if err != nil {
+			return nil, fmt.Errorf("failed to fetch container image: %w", err)
+		}
+
+		// If nsjail is available, we use it to sandbox the command.
+		args = e.buildNsjailArgs(sandboxDir, imageDir, cmd)
+	} else {
+		// Otherwise, we just run the command directly on the host.
+		// However, we can only do this if the action doesn't require a container image.
+		if imageURL != "" {
+			return nil, fmt.Errorf("action requires container image, but nsjail is not available")
+		}
+	}
+	args = append(args, cmd.Arguments...)
+
+	c := exec.Command(args[0], args[1:]...)
 	c.Dir = filepath.Join(sandboxDir, cmd.WorkingDirectory)
 
 	for _, env := range cmd.EnvironmentVariables {
