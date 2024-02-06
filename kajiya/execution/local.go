@@ -87,8 +87,8 @@ func (e *Executor) Execute(action *repb.Action) (*repb.ActionResult, error) {
 	var missingBlobs []digest.Digest
 
 	// Get the command from the CAS.
-	cmd, err := e.getCommand(action.CommandDigest)
-	if err != nil {
+	cmd := &repb.Command{}
+	if err := e.cas.Proto(action.CommandDigest, cmd); err != nil {
 		if os.IsNotExist(err) {
 			missingBlobs = append(missingBlobs, digest.NewFromProtoUnvalidated(action.CommandDigest))
 		} else {
@@ -97,8 +97,8 @@ func (e *Executor) Execute(action *repb.Action) (*repb.ActionResult, error) {
 	}
 
 	// Get the input root from the CAS.
-	inputRoot, err := e.getDirectory(action.InputRootDigest)
-	if err != nil {
+	inputRoot := &repb.Directory{}
+	if err := e.cas.Proto(action.InputRootDigest, inputRoot); err != nil {
 		if os.IsNotExist(err) {
 			missingBlobs = append(missingBlobs, digest.NewFromProtoUnvalidated(action.InputRootDigest))
 			return nil, e.formatMissingBlobsError(missingBlobs)
@@ -258,38 +258,6 @@ func (e *Executor) saveStdOutErr(actionResult *repb.ActionResult) error {
 	return nil
 }
 
-func (e *Executor) getDirectory(d *repb.Digest) (*repb.Directory, error) {
-	dirDigest, err := digest.NewFromProto(d)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse directory digest: %v", err)
-	}
-	dirBytes, err := e.cas.Get(dirDigest)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get directory from CAS: %v", err)
-	}
-	dir := &repb.Directory{}
-	if err := proto.Unmarshal(dirBytes, dir); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal directory: %v", err)
-	}
-	return dir, nil
-}
-
-func (e *Executor) getCommand(d *repb.Digest) (*repb.Command, error) {
-	cmdDigest, err := digest.NewFromProto(d)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse command digest: %v", err)
-	}
-	cmdBytes, err := e.cas.Get(cmdDigest)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get command from CAS: %v", err)
-	}
-	cmd := &repb.Command{}
-	if err := proto.Unmarshal(cmdBytes, cmd); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal command: %v", err)
-	}
-	return cmd, nil
-}
-
 // materializeDirectory recursively materializes the given directory in the
 // local filesystem. The directory itself is created at the given path, and
 // all files and subdirectories are created under that path.
@@ -315,8 +283,8 @@ func (e *Executor) materializeDirectory(path string, d *repb.Directory) (missing
 			return nil, fmt.Errorf("failed to create subdirectory: %v", err)
 		}
 
-		sd, err := e.getDirectory(sdNode.Digest)
-		if err != nil {
+		sd := &repb.Directory{}
+		if err = e.cas.Proto(sdNode.Digest, sd); err != nil {
 			if os.IsNotExist(err) {
 				missingBlobs = append(missingBlobs, digest.NewFromProtoUnvalidated(sdNode.Digest))
 				continue
