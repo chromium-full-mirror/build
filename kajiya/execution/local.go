@@ -35,6 +35,7 @@ type Executor struct {
 	images      *ImageRepository
 	nsjailPath  string
 	sandboxBase string
+	trees       *TreeRepository
 }
 
 // New creates a new Executor.
@@ -74,11 +75,17 @@ func New(baseDir string, cas *blobstore.ContentAddressableStorage) (*Executor, e
 		}
 	}
 
+	trees, err := NewTreeRepository(filepath.Join(baseDir, "trees"), cas)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create tree repository: %w", err)
+	}
+
 	return &Executor{
 		cas:         cas,
 		images:      images,
 		nsjailPath:  nsjailPath,
 		sandboxBase: sandboxBase,
+		trees:       trees,
 	}, nil
 }
 
@@ -115,7 +122,7 @@ func (e *Executor) Execute(action *repb.Action) (*repb.ActionResult, error) {
 	defer e.deleteSandbox(sandboxDir)
 
 	// Materialize the input root in the sandbox directory.
-	mb, err := e.materializeDirectory(sandboxDir, inputRoot)
+	mb, err := e.trees.MaterializeDirectory(sandboxDir, inputRoot)
 	if err != nil {
 		return nil, fmt.Errorf("failed to materialize input root: %w", err)
 	}
@@ -254,102 +261,6 @@ func (e *Executor) saveStdOutErr(actionResult *repb.ActionResult) error {
 	// The client can just fetch them from the CAS if it needs them.
 	actionResult.StdoutRaw = nil
 	actionResult.StderrRaw = nil
-
-	return nil
-}
-
-// materializeDirectory recursively materializes the given directory in the
-// local filesystem. The directory itself is created at the given path, and
-// all files and subdirectories are created under that path.
-func (e *Executor) materializeDirectory(path string, d *repb.Directory) (missingBlobs []digest.Digest, err error) {
-	// First, materialize all the input files in the directory.
-	for _, fileNode := range d.Files {
-		filePath := filepath.Join(path, fileNode.Name)
-		err = e.materializeFile(filePath, fileNode)
-		if err != nil {
-			if os.IsNotExist(err) {
-				missingBlobs = append(missingBlobs, digest.NewFromProtoUnvalidated(fileNode.Digest))
-				continue
-			}
-			return nil, fmt.Errorf("failed to materialize file: %v", err)
-		}
-	}
-
-	// Next, materialize all the subdirectories.
-	for _, sdNode := range d.Directories {
-		sdPath := filepath.Join(path, sdNode.Name)
-		err = os.Mkdir(sdPath, 0755)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create subdirectory: %v", err)
-		}
-
-		sd := &repb.Directory{}
-		if err = e.cas.Proto(sdNode.Digest, sd); err != nil {
-			if os.IsNotExist(err) {
-				missingBlobs = append(missingBlobs, digest.NewFromProtoUnvalidated(sdNode.Digest))
-				continue
-			}
-			return nil, fmt.Errorf("failed to get subdirectory: %v", err)
-		}
-
-		sdMissingBlobs, err := e.materializeDirectory(sdPath, sd)
-		missingBlobs = append(missingBlobs, sdMissingBlobs...)
-		if err != nil {
-			return nil, fmt.Errorf("failed to materialize subdirectory: %v", err)
-		}
-	}
-
-	// Finally, set the directory properties. We have to do this after the files
-	// have been materialized, because otherwise the mtime of the directory would
-	// be updated to the current time.
-	if d.NodeProperties != nil {
-		if d.NodeProperties.Mtime != nil {
-			time := d.NodeProperties.Mtime.AsTime()
-			if err := os.Chtimes(path, time, time); err != nil {
-				return nil, fmt.Errorf("failed to set mtime: %v", err)
-			}
-		}
-
-		if d.NodeProperties.UnixMode != nil {
-			if err := os.Chmod(path, os.FileMode(d.NodeProperties.UnixMode.Value)); err != nil {
-				return nil, fmt.Errorf("failed to set mode: %v", err)
-			}
-		}
-	}
-
-	return missingBlobs, nil
-}
-
-// materializeFile downloads the given file from the CAS and writes it to the given path.
-func (e *Executor) materializeFile(filePath string, fileNode *repb.FileNode) error {
-	fileDigest, err := digest.NewFromProto(fileNode.Digest)
-	if err != nil {
-		return fmt.Errorf("failed to parse file digest: %v", err)
-	}
-
-	// Calculate the file permissions from all relevant fields.
-	perm := os.FileMode(0644)
-	if fileNode.NodeProperties != nil && fileNode.NodeProperties.UnixMode != nil {
-		perm = os.FileMode(fileNode.NodeProperties.UnixMode.Value)
-	}
-	if fileNode.IsExecutable {
-		perm |= 0111
-	}
-
-	if err := e.cas.LinkTo(fileDigest, filePath); err != nil {
-		return fmt.Errorf("failed to link to file in CAS: %w", err)
-	}
-
-	if err := os.Chmod(filePath, perm); err != nil {
-		return fmt.Errorf("failed to set mode: %w", err)
-	}
-
-	if fileNode.NodeProperties != nil && fileNode.NodeProperties.Mtime != nil {
-		time := fileNode.NodeProperties.Mtime.AsTime()
-		if err := os.Chtimes(filePath, time, time); err != nil {
-			return fmt.Errorf("failed to set mtime: %v", err)
-		}
-	}
 
 	return nil
 }
