@@ -26,9 +26,6 @@ import (
 	"infra/build/kajiya/blobstore"
 )
 
-// TODO: Make this configurable via a flag.
-const fastCopy = true
-
 // Executor is a local executor that executes actions on the local machine.
 // It uses a ContentAddressableStorage to fetch all required inputs for the action
 // into a sandbox directory, executes the action in that sandbox directory, and
@@ -371,27 +368,12 @@ func (e *Executor) materializeFile(filePath string, fileNode *repb.FileNode) err
 		perm |= 0111
 	}
 
-	if fastCopy {
-		// Fast copy is enabled, so we just create a hard link to the file in the CAS.
-		err := e.cas.LinkTo(fileDigest, filePath)
-		if err != nil {
-			return fmt.Errorf("failed to link to file in CAS: %v", err)
-		}
+	if err := e.cas.LinkTo(fileDigest, filePath); err != nil {
+		return fmt.Errorf("failed to link to file in CAS: %w", err)
+	}
 
-		err = os.Chmod(filePath, perm)
-		if err != nil {
-			return fmt.Errorf("failed to set mode: %v", err)
-		}
-	} else {
-		fileBytes, err := e.cas.Get(fileDigest)
-		if err != nil {
-			return fmt.Errorf("failed to get file from CAS: %v", err)
-		}
-
-		err = os.WriteFile(filePath, fileBytes, perm)
-		if err != nil {
-			return fmt.Errorf("failed to write file: %v", err)
-		}
+	if err := os.Chmod(filePath, perm); err != nil {
+		return fmt.Errorf("failed to set mode: %w", err)
 	}
 
 	if fileNode.NodeProperties != nil && fileNode.NodeProperties.Mtime != nil {
