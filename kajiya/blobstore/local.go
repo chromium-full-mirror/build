@@ -97,25 +97,26 @@ func (c *ContentAddressableStorage) Open(d digest.Digest, offset int64, limit in
 	// Ensure that the file has the expected size.
 	size, err := f.Seek(0, io.SeekEnd)
 	if err != nil {
-		f.Close()
+		// Error is safe to ignore, because we're just reading.
+		_ = f.Close()
 		return nil, err
 	}
 
 	if size != d.Size {
 		log.Printf("actual file size %d does not match requested size of digest %s", offset, d.String())
-		f.Close()
+		_ = f.Close()
 		return nil, fs.ErrNotExist
 	}
 
 	// Ensure that the offset is not negative and not larger than the file size.
 	if offset < 0 || offset > size {
-		f.Close()
+		_ = f.Close()
 		return nil, fs.ErrInvalid
 	}
 
 	// Seek to the requested offset.
 	if _, err := f.Seek(offset, io.SeekStart); err != nil {
-		f.Close()
+		_ = f.Close()
 		return nil, err
 	}
 
@@ -134,7 +135,10 @@ func (c *ContentAddressableStorage) Get(d digest.Digest) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close() // error is safe to ignore, because we're just reading
+	defer func() {
+		// Error is safe to ignore, because we're just reading.
+		_ = f.Close()
+	}()
 	return io.ReadAll(f)
 }
 
@@ -157,7 +161,8 @@ func (c *ContentAddressableStorage) Put(data []byte) (digest.Digest, error) {
 		return d, err
 	}
 	if _, err := f.Write(data); err != nil {
-		f.Close()
+		// Safe to ignore, because we're returning an error anyway.
+		_ = f.Close()
 		return d, err
 	}
 	if err := f.Close(); err != nil {

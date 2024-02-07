@@ -83,7 +83,8 @@ func (c *ActionCache) Put(actionDigest digest.Digest, ar *remote.ActionResult) e
 		return err
 	}
 	if _, err := f.Write(actionResultRaw); err != nil {
-		f.Close()
+		// Safe to ignore, because we're returning an error anyway.
+		_ = f.Close()
 		return err
 	}
 	if err := f.Close(); err != nil {

@@ -75,7 +75,7 @@ func New(baseDir string, cas *blobstore.ContentAddressableStorage) (*Executor, e
 		}
 	}
 
-	trees, err := NewTreeRepository(filepath.Join(baseDir, "trees"), cas)
+	trees, err := newTreeRepository(filepath.Join(baseDir, "trees"), cas)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create tree repository: %w", err)
 	}
@@ -141,7 +141,7 @@ func (e *Executor) Execute(action *repb.Action) (*repb.ActionResult, error) {
 		}
 		workDir = filepath.Join(sandboxDir, cmd.WorkingDirectory)
 		if err := os.MkdirAll(workDir, 0755); err != nil {
-			return nil, fmt.Errorf("could not create working directory: %v", err)
+			return nil, fmt.Errorf("could not create working directory: %w", err)
 		}
 	}
 
@@ -154,7 +154,7 @@ func (e *Executor) Execute(action *repb.Action) (*repb.ActionResult, error) {
 	// Execute the command.
 	actionResult, err := e.executeCommand(sandboxDir, action, cmd)
 	if err != nil {
-		return nil, fmt.Errorf("failed to execute command: %v", err)
+		return nil, fmt.Errorf("failed to execute command: %w", err)
 	}
 
 	// Save stdout and stderr to the CAS and update their digests in the action result.
@@ -171,13 +171,13 @@ func (e *Executor) Execute(action *repb.Action) (*repb.ActionResult, error) {
 				// Ignore non-existing output files.
 				continue
 			}
-			return nil, fmt.Errorf("failed to stat output path %q: %v", outputPath, err)
+			return nil, fmt.Errorf("failed to stat output path %q: %w", outputPath, err)
 		}
 		if fi.IsDir() {
 			// Upload the directory to the CAS.
 			dirs, err := e.buildMerkleTree(joinedPath)
 			if err != nil {
-				return nil, fmt.Errorf("failed to build merkle tree for %q: %v", outputPath, err)
+				return nil, fmt.Errorf("failed to build merkle tree for %q: %w", outputPath, err)
 			}
 
 			tree := repb.Tree{
@@ -188,11 +188,11 @@ func (e *Executor) Execute(action *repb.Action) (*repb.ActionResult, error) {
 			}
 			treeBytes, err := proto.Marshal(&tree)
 			if err != nil {
-				return nil, fmt.Errorf("failed to marshal tree: %v", err)
+				return nil, fmt.Errorf("failed to marshal tree: %w", err)
 			}
 			d, err := e.cas.Put(treeBytes)
 			if err != nil {
-				return nil, fmt.Errorf("failed to upload tree to CAS: %v", err)
+				return nil, fmt.Errorf("failed to upload tree to CAS: %w", err)
 			}
 
 			actionResult.OutputDirectories = append(actionResult.OutputDirectories, &repb.OutputDirectory{
@@ -204,10 +204,10 @@ func (e *Executor) Execute(action *repb.Action) (*repb.ActionResult, error) {
 			// Upload the file to the CAS.
 			d, err := digest.NewFromFile(joinedPath)
 			if err != nil {
-				return nil, fmt.Errorf("failed to compute digest of file %q: %v", outputPath, err)
+				return nil, fmt.Errorf("failed to compute digest of file %q: %w", outputPath, err)
 			}
 			if err := e.cas.Adopt(d, joinedPath); err != nil {
-				return nil, fmt.Errorf("failed to upload file %q to CAS: %v", outputPath, err)
+				return nil, fmt.Errorf("failed to upload file %q to CAS: %w", outputPath, err)
 			}
 
 			actionResult.OutputFiles = append(actionResult.OutputFiles, &repb.OutputFile{
@@ -228,16 +228,16 @@ func (e *Executor) createOutputPaths(cmd *repb.Command, workDir string) (outputP
 		// REAPI v2.1+
 		outputPaths = cmd.OutputPaths
 	} else {
-		// REAPI v2.0
-		outputPaths = make([]string, 0, len(cmd.OutputFiles)+len(cmd.OutputDirectories))
-		outputPaths = append(outputPaths, cmd.OutputFiles...)
-		outputPaths = append(outputPaths, cmd.OutputDirectories...)
+		// REAPI v2.0 (deprecated, but required for backwards compatibility)
+		outputPaths = make([]string, 0, len(cmd.OutputFiles)+len(cmd.OutputDirectories)) //nolint:staticcheck
+		outputPaths = append(outputPaths, cmd.OutputFiles...)                            //nolint:staticcheck
+		outputPaths = append(outputPaths, cmd.OutputDirectories...)                      //nolint:staticcheck
 	}
 	for _, outputPath := range outputPaths {
 		// We need to create the parent directories of the output path, because the command
 		// may not create them itself.
 		if err := os.MkdirAll(filepath.Join(workDir, filepath.Dir(outputPath)), 0755); err != nil {
-			return nil, fmt.Errorf("failed to create parent directories for %q: %v", outputPath, err)
+			return nil, fmt.Errorf("failed to create parent directories for %q: %w", outputPath, err)
 		}
 	}
 	return outputPaths, nil
@@ -280,7 +280,7 @@ func (e *Executor) formatMissingBlobsError(blobs []digest.Digest) error {
 		Violations: violations,
 	})
 	if err != nil {
-		return fmt.Errorf("failed to create status: %v", err)
+		return fmt.Errorf("failed to create status: %w", err)
 	}
 
 	return s.Err()
@@ -412,18 +412,18 @@ func (e *Executor) buildMerkleTree(path string) (dirs []*repb.Directory, err err
 
 	dirEntries, err := os.ReadDir(path)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read directory: %v", err)
+		return nil, fmt.Errorf("failed to read directory: %w", err)
 	}
 
 	for _, dirEntry := range dirEntries {
 		if dirEntry.IsDir() {
 			subDirs, err := e.buildMerkleTree(filepath.Join(path, dirEntry.Name()))
 			if err != nil {
-				return nil, fmt.Errorf("failed to build merkle tree: %v", err)
+				return nil, fmt.Errorf("failed to build merkle tree: %w", err)
 			}
 			d, err := digest.NewFromMessage(subDirs[0])
 			if err != nil {
-				return nil, fmt.Errorf("failed to get digest: %v", err)
+				return nil, fmt.Errorf("failed to get digest: %w", err)
 			}
 			dir.Directories = append(dir.Directories, &repb.DirectoryNode{
 				Name:   dirEntry.Name(),
@@ -433,11 +433,11 @@ func (e *Executor) buildMerkleTree(path string) (dirs []*repb.Directory, err err
 		} else {
 			d, err := digest.NewFromFile(filepath.Join(path, dirEntry.Name()))
 			if err != nil {
-				return nil, fmt.Errorf("failed to get digest: %v", err)
+				return nil, fmt.Errorf("failed to get digest: %w", err)
 			}
 			fi, err := dirEntry.Info()
 			if err != nil {
-				return nil, fmt.Errorf("failed to get file info: %v", err)
+				return nil, fmt.Errorf("failed to get file info: %w", err)
 			}
 			fileNode := &repb.FileNode{
 				Name:         dirEntry.Name(),
@@ -446,7 +446,7 @@ func (e *Executor) buildMerkleTree(path string) (dirs []*repb.Directory, err err
 			}
 			err = e.cas.Adopt(d, filepath.Join(path, dirEntry.Name()))
 			if err != nil {
-				return nil, fmt.Errorf("failed to move file into CAS: %v", err)
+				return nil, fmt.Errorf("failed to move file into CAS: %w", err)
 			}
 			dir.Files = append(dir.Files, fileNode)
 		}
@@ -454,7 +454,7 @@ func (e *Executor) buildMerkleTree(path string) (dirs []*repb.Directory, err err
 
 	dirBytes, err := proto.Marshal(dir)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal directory: %v", err)
+		return nil, fmt.Errorf("failed to marshal directory: %w", err)
 	}
 	if _, err = e.cas.Put(dirBytes); err != nil {
 		return nil, err

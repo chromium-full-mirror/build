@@ -15,6 +15,8 @@ import (
 	"infra/build/kajiya/blobstore"
 )
 
+// TreeRepository is a repository for trees. It provides methods for materializing trees in the
+// local filesystem, which can then be mounted into an action's input root later.
 type TreeRepository struct {
 	// Base directory for all trees
 	baseDir string
@@ -23,7 +25,7 @@ type TreeRepository struct {
 	cas *blobstore.ContentAddressableStorage
 }
 
-func NewTreeRepository(baseDir string, cas *blobstore.ContentAddressableStorage) (*TreeRepository, error) {
+func newTreeRepository(baseDir string, cas *blobstore.ContentAddressableStorage) (*TreeRepository, error) {
 	if baseDir == "" {
 		return nil, fmt.Errorf("baseDir must not be empty")
 	}

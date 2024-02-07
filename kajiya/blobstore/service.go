@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Package cas implements the REAPI ContentAddressableStorage and ByteStream services.
+// Package blobstore implements the REAPI ContentAddressableStorage and ByteStream services.
 package blobstore
 
 import (
@@ -18,7 +18,7 @@ import (
 	"strings"
 
 	"github.com/bazelbuild/remote-apis-sdks/go/pkg/digest"
-	remote "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
+	repb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
 	"github.com/google/uuid"
 	"google.golang.org/genproto/googleapis/bytestream"
 	"google.golang.org/grpc"
@@ -34,7 +34,7 @@ const (
 
 // Service implements the REAPI ContentAddressableStorage and ByteStream services.
 type Service struct {
-	remote.UnimplementedContentAddressableStorageServer
+	repb.UnimplementedContentAddressableStorageServer
 	bytestream.UnimplementedByteStreamServer
 
 	cas       *ContentAddressableStorage
@@ -49,7 +49,7 @@ func Register(s *grpc.Server, cas *ContentAddressableStorage, dataDir string) er
 		return err
 	}
 	bytestream.RegisterByteStreamServer(s, service)
-	remote.RegisterContentAddressableStorageServer(s, service)
+	repb.RegisterContentAddressableStorageServer(s, service)
 	return nil
 }
 
@@ -105,7 +105,7 @@ func parseReadResource(name string) (d digest.Digest, err error) {
 
 // parseWriteResource parses a WriteRequest.ResourceName and returns the validated Digest and upload ID.
 // The resource name must be of the form: {instance_name}/uploads/{uuid}/blobs/{hash}/{size}[/{optionalmetadata}]
-func parseWriteResource(name string) (d digest.Digest, u string, err error) {
+func parseWriteResource(name string) (d digest.Digest, u uuid.UUID, err error) {
 	fields := strings.Split(name, "/")
 
 	// Strip any parts before "uploads", as they'll belong to an instance name.
@@ -120,11 +120,10 @@ func parseWriteResource(name string) (d digest.Digest, u string, err error) {
 		return d, u, status.Errorf(codes.InvalidArgument, "invalid resource name, must follow format {instance_name}/uploads/{uuid}/blobs/{hash}/{size}[/{optionalmetadata}]: %s", name)
 	}
 
-	uuid, err := uuid.Parse(fields[1])
+	u, err = uuid.Parse(fields[1])
 	if err != nil {
 		return d, u, status.Errorf(codes.InvalidArgument, "invalid resource name, second component is not a UUID: %s", fields[1])
 	}
-	u = uuid.String()
 
 	hash := fields[3]
 
@@ -181,7 +180,10 @@ func (s *Service) read(request *bytestream.ReadRequest, server bytestream.ByteSt
 	if err != nil {
 		return status.Errorf(codes.Internal, "failed to open file: %v", err)
 	}
-	defer f.Close() // OK to ignore error here, since we're only reading.
+	defer func() {
+		// Safe to ignore, because we're only reading.
+		_ = f.Close()
+	}()
 
 	// Send the requested data to the client in chunks.
 	for {
@@ -193,7 +195,7 @@ func (s *Service) read(request *bytestream.ReadRequest, server bytestream.ByteSt
 				return status.Errorf(codes.Internal, "failed to send data to client: %v", err)
 			}
 		}
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			break
 		}
 		if err != nil {
@@ -236,7 +238,7 @@ func (s *Service) write(server bytestream.ByteStream_WriteServer) (resource stri
 	for {
 		// Receive a request from the client.
 		request, err := server.Recv()
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			// If the client closed the connection without ever sending a request, return an error.
 			if resource == "" {
 				return resource, status.Error(codes.InvalidArgument, "no resource name provided")
@@ -277,12 +279,12 @@ func (s *Service) write(server bytestream.ByteStream_WriteServer) (resource stri
 				return resource, status.Errorf(codes.InvalidArgument, "must set resource name on first request")
 			}
 			resource = request.ResourceName
-			var uuid string
-			expectedDigest, uuid, err = parseWriteResource(request.ResourceName)
+			var u uuid.UUID
+			expectedDigest, u, err = parseWriteResource(request.ResourceName)
 			if err != nil {
 				return resource, err
 			}
-			tempPath = filepath.Join(s.uploadDir, uuid)
+			tempPath = filepath.Join(s.uploadDir, u.String())
 		} else {
 			// Ensure that the resource name is either not set, or the same as the first request.
 			if request.ResourceName != "" && request.ResourceName != resource {
@@ -370,7 +372,7 @@ func (s *Service) queryWriteStatus(request *bytestream.QueryWriteStatusRequest) 
 }
 
 // FindMissingBlobs implements the ContentAddressableStorage.FindMissingBlobs RPC.
-func (s *Service) FindMissingBlobs(ctx context.Context, request *remote.FindMissingBlobsRequest) (*remote.FindMissingBlobsResponse, error) {
+func (s *Service) FindMissingBlobs(ctx context.Context, request *repb.FindMissingBlobsRequest) (*repb.FindMissingBlobsResponse, error) {
 	response, err := s.findMissingBlobs(request)
 	if err != nil {
 		log.Printf("🚨 FindMissingBlobs(%d blobs) => Error: %v", len(request.BlobDigests), err)
@@ -380,14 +382,14 @@ func (s *Service) FindMissingBlobs(ctx context.Context, request *remote.FindMiss
 	return response, err
 }
 
-func (s *Service) findMissingBlobs(request *remote.FindMissingBlobsRequest) (*remote.FindMissingBlobsResponse, error) {
+func (s *Service) findMissingBlobs(request *repb.FindMissingBlobsRequest) (*repb.FindMissingBlobsResponse, error) {
 	// If the client explicitly specifies a DigestFunction, ensure that it's SHA256.
-	if request.DigestFunction != remote.DigestFunction_UNKNOWN && request.DigestFunction != remote.DigestFunction_SHA256 {
+	if request.DigestFunction != repb.DigestFunction_UNKNOWN && request.DigestFunction != repb.DigestFunction_SHA256 {
 		return nil, status.Errorf(codes.InvalidArgument, "hash function %q is not supported", request.DigestFunction.String())
 	}
 
 	// Make a list that stores the missing blobs. We set the capacity so that we never have to reallocate.
-	missing := make([]*remote.Digest, 0, len(request.BlobDigests))
+	missing := make([]*repb.Digest, 0, len(request.BlobDigests))
 
 	// For each blob in the list, check if it exists in the CAS. If not, add it to the list of missing blobs.
 	for _, d := range request.BlobDigests {
@@ -401,13 +403,13 @@ func (s *Service) findMissingBlobs(request *remote.FindMissingBlobsRequest) (*re
 	}
 
 	// Return the list of missing blobs to the client.
-	return &remote.FindMissingBlobsResponse{
+	return &repb.FindMissingBlobsResponse{
 		MissingBlobDigests: missing,
 	}, nil
 }
 
 // BatchUpdateBlobs implements the ContentAddressableStorage.BatchUpdateBlobs RPC.
-func (s *Service) BatchUpdateBlobs(ctx context.Context, request *remote.BatchUpdateBlobsRequest) (*remote.BatchUpdateBlobsResponse, error) {
+func (s *Service) BatchUpdateBlobs(ctx context.Context, request *repb.BatchUpdateBlobsRequest) (*repb.BatchUpdateBlobsResponse, error) {
 	response, err := s.batchUploadBlobs(request)
 	if err != nil {
 		log.Printf("🚨 BatchUpdateBlobs(%v blobs) => Error: %v", len(request.Requests), err)
@@ -417,21 +419,21 @@ func (s *Service) BatchUpdateBlobs(ctx context.Context, request *remote.BatchUpd
 	return response, err
 }
 
-func (s *Service) batchUploadBlobs(request *remote.BatchUpdateBlobsRequest) (*remote.BatchUpdateBlobsResponse, error) {
+func (s *Service) batchUploadBlobs(request *repb.BatchUpdateBlobsRequest) (*repb.BatchUpdateBlobsResponse, error) {
 	// If the client explicitly specifies a DigestFunction, ensure that it's SHA256.
-	if request.DigestFunction != remote.DigestFunction_UNKNOWN && request.DigestFunction != remote.DigestFunction_SHA256 {
+	if request.DigestFunction != repb.DigestFunction_UNKNOWN && request.DigestFunction != repb.DigestFunction_SHA256 {
 		return nil, status.Errorf(codes.InvalidArgument, "hash function %q is not supported", request.DigestFunction.String())
 	}
 
 	// Prepare a response that we can fill in.
-	response := &remote.BatchUpdateBlobsResponse{
-		Responses: make([]*remote.BatchUpdateBlobsResponse_Response, 0, len(request.Requests)),
+	response := &repb.BatchUpdateBlobsResponse{
+		Responses: make([]*repb.BatchUpdateBlobsResponse_Response, 0, len(request.Requests)),
 	}
 
 	// For each blob in the list, check if it exists in the CAS. If not, write it to the CAS.
 	for _, blob := range request.Requests {
 		// Ensure that the client didn't send compressed data.
-		if blob.Compressor != remote.Compressor_IDENTITY {
+		if blob.Compressor != repb.Compressor_IDENTITY {
 			return nil, status.Errorf(codes.InvalidArgument, "compressed data is not supported")
 		}
 
@@ -453,7 +455,7 @@ func (s *Service) batchUploadBlobs(request *remote.BatchUpdateBlobsRequest) (*re
 		}
 
 		// Add the response to the list.
-		response.Responses = append(response.Responses, &remote.BatchUpdateBlobsResponse_Response{
+		response.Responses = append(response.Responses, &repb.BatchUpdateBlobsResponse_Response{
 			Digest: blob.Digest,
 			Status: status.New(codes.OK, "").Proto(),
 		})
@@ -463,7 +465,7 @@ func (s *Service) batchUploadBlobs(request *remote.BatchUpdateBlobsRequest) (*re
 	return response, nil
 }
 
-func (s *Service) BatchReadBlobs(ctx context.Context, request *remote.BatchReadBlobsRequest) (*remote.BatchReadBlobsResponse, error) {
+func (s *Service) BatchReadBlobs(ctx context.Context, request *repb.BatchReadBlobsRequest) (*repb.BatchReadBlobsResponse, error) {
 	response, err := s.batchReadBlobs(request)
 	if err != nil {
 		log.Printf("🚨 BatchReadBlobs(%v blobs) => Error: %v", len(request.Digests), err)
@@ -473,15 +475,15 @@ func (s *Service) BatchReadBlobs(ctx context.Context, request *remote.BatchReadB
 	return response, err
 }
 
-func (s *Service) batchReadBlobs(request *remote.BatchReadBlobsRequest) (*remote.BatchReadBlobsResponse, error) {
+func (s *Service) batchReadBlobs(request *repb.BatchReadBlobsRequest) (*repb.BatchReadBlobsResponse, error) {
 	// If the client explicitly specifies a DigestFunction, ensure that it's SHA256.
-	if request.DigestFunction != remote.DigestFunction_UNKNOWN && request.DigestFunction != remote.DigestFunction_SHA256 {
+	if request.DigestFunction != repb.DigestFunction_UNKNOWN && request.DigestFunction != repb.DigestFunction_SHA256 {
 		return nil, status.Errorf(codes.InvalidArgument, "hash function %q is not supported", request.DigestFunction.String())
 	}
 
 	// Prepare a response that we can fill in.
-	response := &remote.BatchReadBlobsResponse{
-		Responses: make([]*remote.BatchReadBlobsResponse_Response, 0, len(request.Digests)),
+	response := &repb.BatchReadBlobsResponse{
+		Responses: make([]*repb.BatchReadBlobsResponse_Response, 0, len(request.Digests)),
 	}
 
 	// For each blob in the list, check if it exists in the CAS. If yes, read it from the CAS.
@@ -497,7 +499,7 @@ func (s *Service) batchReadBlobs(request *remote.BatchReadBlobsRequest) (*remote
 		if err != nil {
 			if os.IsNotExist(err) {
 				// The blob doesn't exist. Add a response with an appropriate status code.
-				response.Responses = append(response.Responses, &remote.BatchReadBlobsResponse_Response{
+				response.Responses = append(response.Responses, &repb.BatchReadBlobsResponse_Response{
 					Digest: d,
 					Status: status.New(codes.NotFound, "").Proto(),
 				})
@@ -507,7 +509,7 @@ func (s *Service) batchReadBlobs(request *remote.BatchReadBlobsRequest) (*remote
 			}
 		} else {
 			// The blob exists. Add a response with the data.
-			response.Responses = append(response.Responses, &remote.BatchReadBlobsResponse_Response{
+			response.Responses = append(response.Responses, &repb.BatchReadBlobsResponse_Response{
 				Digest: d,
 				Data:   data,
 				Status: status.New(codes.OK, "").Proto(),
@@ -519,7 +521,7 @@ func (s *Service) batchReadBlobs(request *remote.BatchReadBlobsRequest) (*remote
 	return response, nil
 }
 
-func (s *Service) GetTree(request *remote.GetTreeRequest, treeServer remote.ContentAddressableStorage_GetTreeServer) error {
+func (s *Service) GetTree(request *repb.GetTreeRequest, treeServer repb.ContentAddressableStorage_GetTreeServer) error {
 	if err := s.getTree(request, treeServer); err != nil {
 		log.Printf("🚨 GetTree(%v) => Error: %v", request.RootDigest, err)
 		return err
@@ -529,19 +531,19 @@ func (s *Service) GetTree(request *remote.GetTreeRequest, treeServer remote.Cont
 	return nil
 }
 
-func (s *Service) getTree(request *remote.GetTreeRequest, treeServer remote.ContentAddressableStorage_GetTreeServer) error {
+func (s *Service) getTree(request *repb.GetTreeRequest, treeServer repb.ContentAddressableStorage_GetTreeServer) error {
 	// If the client explicitly specifies a DigestFunction, ensure that it's SHA256.
-	if request.DigestFunction != remote.DigestFunction_UNKNOWN && request.DigestFunction != remote.DigestFunction_SHA256 {
+	if request.DigestFunction != repb.DigestFunction_UNKNOWN && request.DigestFunction != repb.DigestFunction_SHA256 {
 		return status.Errorf(codes.InvalidArgument, "hash function %q is not supported", request.DigestFunction.String())
 	}
 
 	// Prepare a response that we can fill in.
-	response := &remote.GetTreeResponse{
-		Directories: make([]*remote.Directory, 0),
+	response := &repb.GetTreeResponse{
+		Directories: make([]*repb.Directory, 0),
 	}
 
 	// Create a queue of directories to process and add the root directory.
-	dirQueue := []*remote.DirectoryNode{
+	dirQueue := []*repb.DirectoryNode{
 		{
 			Digest: request.RootDigest,
 		},
@@ -566,7 +568,7 @@ func (s *Service) getTree(request *remote.GetTreeRequest, treeServer remote.Cont
 		}
 
 		// Unmarshal the directory message.
-		var directory *remote.Directory
+		var directory *repb.Directory
 		if err := proto.Unmarshal(directoryBlob, directory); err != nil {
 			return status.Errorf(codes.Internal, "failed to unmarshal directory: %v", err)
 		}
