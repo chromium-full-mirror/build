@@ -100,7 +100,7 @@ func (r *ImageRepository) FetchImage(containerImage string) (string, error) {
 
 		// Create a container for the image required by the action.
 		c := exec.Command(r.dockerPath, "create", containerImage)
-		containerName, err := c.Output()
+		out, err := c.Output()
 		if err != nil {
 			// Get the error output from the error by casting it to *exec.ExitError.
 			var ee *exec.ExitError
@@ -109,10 +109,11 @@ func (r *ImageRepository) FetchImage(containerImage string) (string, error) {
 			}
 			return "", fmt.Errorf("failed to create container: %w", err)
 		}
+		containerName := strings.TrimSpace(string(out))
 
 		// Delete the container when we're done.
 		defer func() {
-			c := exec.Command(r.dockerPath, "rm", string(containerName))
+			c := exec.Command(r.dockerPath, "rm", containerName)
 			if _, err := c.Output(); err != nil {
 				var ee *exec.ExitError
 				if errors.As(err, &ee) {
@@ -135,7 +136,7 @@ func (r *ImageRepository) FetchImage(containerImage string) (string, error) {
 			}
 		}()
 
-		c = exec.Command(r.dockerPath, "export", string(containerName))
+		c = exec.Command(r.dockerPath, "export", containerName)
 		stdout, err := c.StdoutPipe()
 		if err != nil {
 			return "", fmt.Errorf("failed to get stdout pipe: %w", err)
