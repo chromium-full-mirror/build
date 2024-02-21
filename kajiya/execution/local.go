@@ -103,17 +103,6 @@ func (e *Executor) Execute(action *repb.Action) (*repb.ActionResult, error) {
 		}
 	}
 
-	// Get the input root from the CAS.
-	inputRoot := &repb.Directory{}
-	if err := e.cas.Proto(action.InputRootDigest, inputRoot); err != nil {
-		if os.IsNotExist(err) {
-			missingBlobs = append(missingBlobs, digest.NewFromProtoUnvalidated(action.InputRootDigest))
-			return nil, e.formatMissingBlobsError(missingBlobs)
-		} else {
-			return nil, err
-		}
-	}
-
 	// Build a sandbox directory for the action.
 	sandboxDir, err := os.MkdirTemp(e.sandboxBase, "*")
 	if err != nil {
@@ -121,8 +110,8 @@ func (e *Executor) Execute(action *repb.Action) (*repb.ActionResult, error) {
 	}
 	defer e.deleteSandbox(sandboxDir)
 
-	// Materialize the input root in the sandbox directory.
-	mb, err := e.trees.MaterializeDirectory(sandboxDir, inputRoot)
+	// Stage the input files and directories into the sandbox.
+	mb, err := e.trees.StageDirectory(action.InputRootDigest, sandboxDir)
 	if err != nil {
 		return nil, fmt.Errorf("failed to materialize input root: %w", err)
 	}
@@ -169,6 +158,7 @@ func (e *Executor) Execute(action *repb.Action) (*repb.ActionResult, error) {
 		if err != nil {
 			if os.IsNotExist(err) {
 				// Ignore non-existing output files.
+				log.Printf("🚨 output file %q does not exist, ignoring", joinedPath)
 				continue
 			}
 			return nil, fmt.Errorf("failed to stat output path %q: %w", outputPath, err)

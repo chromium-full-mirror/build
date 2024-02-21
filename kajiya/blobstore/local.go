@@ -201,5 +201,5 @@ func (c *ContentAddressableStorage) Adopt(d digest.Digest, path string) error {
 // If the operating system supports cloning files via copy-on-write semantics,
 // the file is cloned instead of hard linked.
 func (c *ContentAddressableStorage) LinkTo(d digest.Digest, path string) error {
-	return fastCopy(c.path(d), path)
+	return FastCopy(c.path(d), path)
 }

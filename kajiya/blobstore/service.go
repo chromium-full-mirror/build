@@ -568,7 +568,7 @@ func (s *Service) getTree(request *repb.GetTreeRequest, treeServer repb.ContentA
 		}
 
 		// Unmarshal the directory message.
-		var directory *repb.Directory
+		directory := &repb.Directory{}
 		if err := proto.Unmarshal(directoryBlob, directory); err != nil {
 			return status.Errorf(codes.Internal, "failed to unmarshal directory: %v", err)
 		}

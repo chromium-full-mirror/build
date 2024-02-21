@@ -10,9 +10,9 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// fastCopy copies a file from source to destination using a clonefile syscall.
+// FastCopy copies a file from source to destination using a clonefile syscall.
 // This is nicer than using a hard link, because it means that even if the file
 // is accidentally modified, the copy will still have the original contents.
-func fastCopy(source, destination string) error {
+func FastCopy(source, destination string) error {
 	return unix.Clonefile(source, destination, unix.CLONE_NOFOLLOW)
 }
