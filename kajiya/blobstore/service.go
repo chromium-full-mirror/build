@@ -452,7 +452,7 @@ func (s *Service) batchUploadBlobs(request *repb.BatchUpdateBlobsRequest) (*repb
 
 		// Check that the calculated digest matches the data.
 		if actualDigest != expectedDigest {
-			return nil, status.Errorf(codes.InvalidArgument, "digest does not match data")
+			return nil, status.Errorf(codes.InvalidArgument, "digest does not match data (expected %s, actual %s)", expectedDigest, actualDigest)
 		}
 
 		// Add the response to the list.

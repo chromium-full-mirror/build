@@ -14,11 +14,15 @@ import (
 	"path/filepath"
 
 	"github.com/bazelbuild/remote-apis-sdks/go/pkg/digest"
+	"golang.org/x/sync/singleflight"
 )
 
 // ContentAddressableStorage is a simple CAS implementation that stores files on the local disk.
 type ContentAddressableStorage struct {
 	dataDir string
+
+	// Synchronization mechanism to prevent concurrent puts of the same blob.
+	putSyncer singleflight.Group
 }
 
 // New creates a new local CAS. The data directory is created if it does not exist.
@@ -81,6 +85,19 @@ func (c *ContentAddressableStorage) Stat(d digest.Digest) (os.FileInfo, error) {
 	}
 
 	return fi, nil
+}
+
+// Has returns true if the requested digest exists in the CAS.
+func (c *ContentAddressableStorage) Has(d digest.Digest) bool {
+	if _, err := c.Stat(d); err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return false
+		}
+		// That's unexpected, let's log it.
+		log.Printf("error checking for digest %s: %s", d.String(), err)
+		return false
+	}
+	return true
 }
 
 // Open returns an io.ReadCloser for the requested digest if it exists.
@@ -146,51 +163,46 @@ func (c *ContentAddressableStorage) Get(d digest.Digest) ([]byte, error) {
 // Put stores the given data in the CAS and returns its digest.
 func (c *ContentAddressableStorage) Put(data []byte) (digest.Digest, error) {
 	d := digest.NewFromBlob(data)
-	p := c.path(d)
-
-	// Check if the file already exists.
-	// This is a fast path that avoids writing the file if it already exists.
-	if _, err := os.Stat(p); err == nil {
-		return d, nil
-	}
-
-	// Write the file to a temporary location and then rename it.
-	// This ensures that we don't accidentally serve a partial file if the process is killed while writing.
-	// It also ensures that we don't serve a file that's still being written.
-	f, err := os.CreateTemp(c.dataDir, "tmp_")
-	if err != nil {
-		return d, err
-	}
-	if _, err := f.Write(data); err != nil {
-		// Safe to ignore, because we're returning an error anyway.
-		_ = f.Close()
-		return d, err
-	}
-	if err := f.Close(); err != nil {
-		return d, err
-	}
-	if err := os.Rename(f.Name(), p); err != nil {
-		// This might happen on Windows if the file already exists and we can't replace it.
-		// Because this is a CAS, we can assume that the file contains the same data that we wanted to write.
-		// So we can ignore this error.
-		if errors.Is(err, fs.ErrExist) {
-			return d, nil
+	_, err, _ := c.putSyncer.Do(d.Hash, func() (any, error) {
+		// If the file is already in the CAS, we're done.
+		if c.Has(d) {
+			return nil, nil
 		}
-		return d, err
-	}
 
-	return d, nil
+		// Write the file to a temporary location and then rename it. This ensures that we
+		// don't accidentally serve a partial file if the process is killed while writing.
+		// It also ensures that we don't serve a file that's still being written.
+		f, err := os.CreateTemp(c.dataDir, "tmp_")
+		if err != nil {
+			return nil, err
+		}
+		if _, err := f.Write(data); err != nil {
+			// Safe to ignore, because we're returning an error anyway.
+			_ = f.Close()
+			return nil, err
+		}
+		if err := f.Close(); err != nil {
+			return nil, err
+		}
+		if err := c.Adopt(d, f.Name()); err != nil {
+			return nil, err
+		}
+		return nil, nil
+	})
+	return d, err
 }
 
 // Adopt moves a file from the given path into the CAS.
 // The digest is assumed to have been validated by the caller.
 func (c *ContentAddressableStorage) Adopt(d digest.Digest, path string) error {
-	err := os.Rename(path, c.path(d))
-	if err != nil {
-		if errors.Is(err, fs.ErrExist) {
-			// The file already exists, so we can ignore this error.
-			// This might happen on Windows if the file already exists,
-			// and we can't replace it.
+	if err := os.Rename(path, c.path(d)); err != nil {
+		// The most likely (and luckily benign) case why this might fail is that we're on
+		// Windows and we couldn't rename the file atomically to its final name, because
+		// we lost the race with a concurrent invocation that stored the same file.
+		// Unfortunately, on Windows this might also fail with an "Access Denied" error
+		// instead of EEXIST, if the file is already in use by a running action, so we
+		// check via `Has` in that case, too.
+		if errors.Is(err, fs.ErrExist) || c.Has(d) {
 			return nil
 		}
 		return err
