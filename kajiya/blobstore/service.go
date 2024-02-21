@@ -11,6 +11,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"io"
+	"io/fs"
 	"log"
 	"os"
 	"path/filepath"
@@ -307,7 +308,7 @@ func (s *Service) write(server bytestream.ByteStream_WriteServer) (resource stri
 		if tempFile == nil && !finishedWriting {
 			tempFile, err = os.OpenFile(tempPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0644)
 			if err != nil {
-				if os.IsExist(err) {
+				if errors.Is(err, fs.ErrExist) {
 					return resource, status.Errorf(codes.InvalidArgument, "upload with same uuid already in progress")
 				}
 				return resource, status.Errorf(codes.Internal, "could not create temporary file for upload: %v", err)
@@ -497,7 +498,7 @@ func (s *Service) batchReadBlobs(request *repb.BatchReadBlobsRequest) (*repb.Bat
 		// Read the blob from the CAS.
 		data, err := s.cas.Get(dg)
 		if err != nil {
-			if os.IsNotExist(err) {
+			if errors.Is(err, fs.ErrNotExist) {
 				// The blob doesn't exist. Add a response with an appropriate status code.
 				response.Responses = append(response.Responses, &repb.BatchReadBlobsResponse_Response{
 					Digest: d,

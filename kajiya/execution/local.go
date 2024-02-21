@@ -96,7 +96,7 @@ func (e *Executor) Execute(action *repb.Action) (*repb.ActionResult, error) {
 	// Get the command from the CAS.
 	cmd := &repb.Command{}
 	if err := e.cas.Proto(action.CommandDigest, cmd); err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, fs.ErrNotExist) {
 			missingBlobs = append(missingBlobs, digest.NewFromProtoUnvalidated(action.CommandDigest))
 		} else {
 			return nil, err
@@ -156,7 +156,7 @@ func (e *Executor) Execute(action *repb.Action) (*repb.ActionResult, error) {
 		joinedPath := filepath.Join(workDir, outputPath)
 		fi, err := os.Stat(joinedPath)
 		if err != nil {
-			if os.IsNotExist(err) {
+			if errors.Is(err, fs.ErrNotExist) {
 				// Ignore non-existing output files.
 				log.Printf("🚨 output file %q does not exist, ignoring", joinedPath)
 				continue

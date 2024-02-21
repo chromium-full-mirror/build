@@ -7,9 +7,10 @@ package actioncache
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io/fs"
 	"log"
-	"os"
 
 	"github.com/bazelbuild/remote-apis-sdks/go/pkg/digest"
 	remote "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
@@ -85,7 +86,7 @@ func (s Service) getActionResult(request *remote.GetActionResultRequest) (*remot
 
 	actionResult, err := s.ac.Get(actionDigest)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, fs.ErrNotExist) {
 			return nil, status.Errorf(codes.NotFound, "action digest %s not found in cache", actionDigest)
 		}
 		return nil, status.Error(codes.Internal, err.Error())

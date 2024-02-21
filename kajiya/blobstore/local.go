@@ -5,6 +5,7 @@
 package blobstore
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -34,7 +35,7 @@ func New(dataDir string) (*ContentAddressableStorage, error) {
 	for i := 0; i <= 255; i++ {
 		err := os.Mkdir(filepath.Join(dataDir, fmt.Sprintf("%02x", i)), 0755)
 		if err != nil {
-			if os.IsExist(err) {
+			if errors.Is(err, fs.ErrExist) {
 				continue
 			}
 			return nil, err
@@ -172,7 +173,7 @@ func (c *ContentAddressableStorage) Put(data []byte) (digest.Digest, error) {
 		// This might happen on Windows if the file already exists and we can't replace it.
 		// Because this is a CAS, we can assume that the file contains the same data that we wanted to write.
 		// So we can ignore this error.
-		if os.IsExist(err) {
+		if errors.Is(err, fs.ErrExist) {
 			return d, nil
 		}
 		return d, err
@@ -186,7 +187,7 @@ func (c *ContentAddressableStorage) Put(data []byte) (digest.Digest, error) {
 func (c *ContentAddressableStorage) Adopt(d digest.Digest, path string) error {
 	err := os.Rename(path, c.path(d))
 	if err != nil {
-		if os.IsExist(err) {
+		if errors.Is(err, fs.ErrExist) {
 			// The file already exists, so we can ignore this error.
 			// This might happen on Windows if the file already exists,
 			// and we can't replace it.

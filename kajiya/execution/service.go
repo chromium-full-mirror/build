@@ -6,9 +6,10 @@
 package execution
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"log"
-	"os"
 	"sync"
 	"time"
 
@@ -102,7 +103,7 @@ func (s *Service) execute(request *remote.ExecuteRequest, executeServer remote.E
 	if s.actionCache != nil && !request.SkipCacheLookup {
 		resp, err := s.checkActionCache(actionDigest)
 		if err != nil {
-			if !os.IsNotExist(err) {
+			if !errors.Is(err, fs.ErrNotExist) {
 				return status.Errorf(codes.Internal, "failed to check action cache: %v", err)
 			}
 		}
