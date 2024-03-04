@@ -15,7 +15,7 @@ import (
 
 	"cloud.google.com/go/longrunning/autogen/longrunningpb"
 	"github.com/bazelbuild/remote-apis-sdks/go/pkg/digest"
-	remote "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
+	repb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -28,7 +28,7 @@ import (
 
 // Service implements the REAPI Execution service.
 type Service struct {
-	remote.UnimplementedExecutionServer
+	repb.UnimplementedExecutionServer
 
 	executor    ExecutorInterface
 	actionCache *actioncache.ActionCache
@@ -42,7 +42,7 @@ type Service struct {
 
 // ExecutorInterface is an interface of Executor.
 type ExecutorInterface interface {
-	Execute(*remote.Action) (*remote.ActionResult, error)
+	Execute(*repb.Action) (*repb.ActionResult, error)
 }
 
 // Register creates and registers a new Service with the given gRPC server.
@@ -51,7 +51,7 @@ func Register(s *grpc.Server, executor ExecutorInterface, ac *actioncache.Action
 	if err != nil {
 		return err
 	}
-	remote.RegisterExecutionServer(s, service)
+	repb.RegisterExecutionServer(s, service)
 	return nil
 }
 
@@ -73,7 +73,7 @@ func NewService(executor ExecutorInterface, ac *actioncache.ActionCache, cas *bl
 }
 
 // Execute executes the given action and returns the result.
-func (s *Service) Execute(request *remote.ExecuteRequest, executeServer remote.Execution_ExecuteServer) error {
+func (s *Service) Execute(request *repb.ExecuteRequest, executeServer repb.Execution_ExecuteServer) error {
 	// Just for fun, measure how long the execution takes and log it.
 	start := time.Now()
 	err := s.execute(request, executeServer)
@@ -86,9 +86,9 @@ func (s *Service) Execute(request *remote.ExecuteRequest, executeServer remote.E
 	return err
 }
 
-func (s *Service) execute(request *remote.ExecuteRequest, executeServer remote.Execution_ExecuteServer) error {
+func (s *Service) execute(request *repb.ExecuteRequest, executeServer repb.Execution_ExecuteServer) error {
 	// If the client explicitly specifies a DigestFunction, ensure that it's SHA256.
-	if request.DigestFunction != remote.DigestFunction_UNKNOWN && request.DigestFunction != remote.DigestFunction_SHA256 {
+	if request.DigestFunction != repb.DigestFunction_UNKNOWN && request.DigestFunction != repb.DigestFunction_SHA256 {
 		return status.Errorf(codes.InvalidArgument, "hash function %q is not supported", request.DigestFunction.String())
 	}
 
@@ -170,10 +170,10 @@ func (s *Service) checkActionCache(d digest.Digest) (*longrunningpb.Operation, e
 	return op, nil
 }
 
-func (s *Service) wrapActionResult(d digest.Digest, r *remote.ActionResult, cached bool) (*longrunningpb.Operation, error) {
+func (s *Service) wrapActionResult(d digest.Digest, r *repb.ActionResult, cached bool) (*longrunningpb.Operation, error) {
 	// Construct some metadata for the execution operation and wrap it in an Any.
-	md, err := anypb.New(&remote.ExecuteOperationMetadata{
-		Stage:        remote.ExecutionStage_COMPLETED,
+	md, err := anypb.New(&repb.ExecuteOperationMetadata{
+		Stage:        repb.ExecutionStage_COMPLETED,
 		ActionDigest: d.ToProto(),
 	})
 	if err != nil {
@@ -181,7 +181,7 @@ func (s *Service) wrapActionResult(d digest.Digest, r *remote.ActionResult, cach
 	}
 
 	// Put the action result into an Any-wrapped ExecuteResponse.
-	resp, err := anypb.New(&remote.ExecuteResponse{
+	resp, err := anypb.New(&repb.ExecuteResponse{
 		Result:       r,
 		CachedResult: cached,
 	})
@@ -201,8 +201,8 @@ func (s *Service) wrapActionResult(d digest.Digest, r *remote.ActionResult, cach
 	return op, nil
 }
 
-// getAction fetches the remote.Action with the given digest.Digest from our CAS.
-func (s *Service) getAction(d digest.Digest) (*remote.Action, error) {
+// getAction fetches the repb.Action with the given digest.Digest from our CAS.
+func (s *Service) getAction(d digest.Digest) (*repb.Action, error) {
 	// Fetch the Action from the CAS.
 	actionBytes, err := s.cas.Get(d)
 	if err != nil {
@@ -210,7 +210,7 @@ func (s *Service) getAction(d digest.Digest) (*remote.Action, error) {
 	}
 
 	// Unmarshal the Action.
-	action := &remote.Action{}
+	action := &repb.Action{}
 	err = proto.Unmarshal(actionBytes, action)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to unmarshal action: %v", err)
@@ -220,6 +220,6 @@ func (s *Service) getAction(d digest.Digest) (*remote.Action, error) {
 }
 
 // WaitExecution waits for the specified execution to complete.
-func (s *Service) WaitExecution(request *remote.WaitExecutionRequest, executionServer remote.Execution_WaitExecutionServer) error {
+func (s *Service) WaitExecution(request *repb.WaitExecutionRequest, executionServer repb.Execution_WaitExecutionServer) error {
 	return status.Error(codes.Unimplemented, "WaitExecution is not implemented")
 }

@@ -12,7 +12,7 @@ import (
 	"path/filepath"
 
 	"github.com/bazelbuild/remote-apis-sdks/go/pkg/digest"
-	remote "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
+	repb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -53,7 +53,7 @@ func (c *ActionCache) path(d digest.Digest) string {
 }
 
 // Get returns the cached ActionResult for the given digest.
-func (c *ActionCache) Get(actionDigest digest.Digest) (*remote.ActionResult, error) {
+func (c *ActionCache) Get(actionDigest digest.Digest) (*repb.ActionResult, error) {
 	p := c.path(actionDigest)
 
 	// Read the action result for the requested action into a byte slice.
@@ -63,7 +63,7 @@ func (c *ActionCache) Get(actionDigest digest.Digest) (*remote.ActionResult, err
 	}
 
 	// Unmarshal it into an ActionResult message and return it to the client.
-	actionResult := &remote.ActionResult{}
+	actionResult := &repb.ActionResult{}
 	if err := proto.Unmarshal(buf, actionResult); err != nil {
 		return nil, err
 	}
@@ -72,7 +72,7 @@ func (c *ActionCache) Get(actionDigest digest.Digest) (*remote.ActionResult, err
 }
 
 // Put stores the given ActionResult for the given digest.
-func (c *ActionCache) Put(actionDigest digest.Digest, ar *remote.ActionResult) error {
+func (c *ActionCache) Put(actionDigest digest.Digest, ar *repb.ActionResult) error {
 	// Marshal the action result.
 	actionResultRaw, err := proto.Marshal(ar)
 	if err != nil {

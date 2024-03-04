@@ -18,7 +18,7 @@ import (
 
 	"github.com/bazelbuild/remote-apis-sdks/go/pkg/digest"
 	repb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
-	"google.golang.org/genproto/googleapis/rpc/errdetails"
+	errpb "google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
@@ -258,15 +258,15 @@ func (e *Executor) saveStdOutErr(actionResult *repb.ActionResult) error {
 // formatMissingBlobsError formats a list of missing blobs as a gRPC "FailedPrecondition" error
 // as described in the Remote Execution API.
 func (e *Executor) formatMissingBlobsError(blobs []digest.Digest) error {
-	violations := make([]*errdetails.PreconditionFailure_Violation, 0, len(blobs))
+	violations := make([]*errpb.PreconditionFailure_Violation, 0, len(blobs))
 	for _, b := range blobs {
-		violations = append(violations, &errdetails.PreconditionFailure_Violation{
+		violations = append(violations, &errpb.PreconditionFailure_Violation{
 			Type:    "MISSING",
 			Subject: fmt.Sprintf("blobs/%s/%d", b.Hash, b.Size),
 		})
 	}
 
-	s, err := status.New(codes.FailedPrecondition, "missing blobs").WithDetails(&errdetails.PreconditionFailure{
+	s, err := status.New(codes.FailedPrecondition, "missing blobs").WithDetails(&errpb.PreconditionFailure{
 		Violations: violations,
 	})
 	if err != nil {

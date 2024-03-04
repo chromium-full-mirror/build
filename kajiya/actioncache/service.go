@@ -13,7 +13,7 @@ import (
 	"log"
 
 	"github.com/bazelbuild/remote-apis-sdks/go/pkg/digest"
-	remote "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
+	repb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -23,7 +23,7 @@ import (
 
 // Service implements the REAPI ActionCache service.
 type Service struct {
-	remote.UnimplementedActionCacheServer
+	repb.UnimplementedActionCacheServer
 
 	// The ActionCache to use for storing ActionResults.
 	ac *ActionCache
@@ -38,7 +38,7 @@ func Register(s *grpc.Server, ac *ActionCache, cas *blobstore.ContentAddressable
 	if err != nil {
 		return err
 	}
-	remote.RegisterActionCacheServer(s, service)
+	repb.RegisterActionCacheServer(s, service)
 	return nil
 }
 
@@ -59,7 +59,7 @@ func NewService(ac *ActionCache, cas *blobstore.ContentAddressableStorage) (Serv
 }
 
 // GetActionResult returns the ActionResult for a given action digest.
-func (s Service) GetActionResult(ctx context.Context, request *remote.GetActionResultRequest) (*remote.ActionResult, error) {
+func (s Service) GetActionResult(ctx context.Context, request *repb.GetActionResultRequest) (*repb.ActionResult, error) {
 	response, err := s.getActionResult(request)
 	if err != nil {
 		if status.Code(err) == codes.NotFound {
@@ -73,9 +73,9 @@ func (s Service) GetActionResult(ctx context.Context, request *remote.GetActionR
 	return response, err
 }
 
-func (s Service) getActionResult(request *remote.GetActionResultRequest) (*remote.ActionResult, error) {
+func (s Service) getActionResult(request *repb.GetActionResultRequest) (*repb.ActionResult, error) {
 	// If the client explicitly specifies a DigestFunction, ensure that it's SHA256.
-	if request.DigestFunction != remote.DigestFunction_UNKNOWN && request.DigestFunction != remote.DigestFunction_SHA256 {
+	if request.DigestFunction != repb.DigestFunction_UNKNOWN && request.DigestFunction != repb.DigestFunction_SHA256 {
 		return nil, status.Errorf(codes.InvalidArgument, "hash function %q is not supported", request.DigestFunction.String())
 	}
 
@@ -96,7 +96,7 @@ func (s Service) getActionResult(request *remote.GetActionResultRequest) (*remot
 }
 
 // UpdateActionResult stores an ActionResult for a given action digest on disk.
-func (s Service) UpdateActionResult(ctx context.Context, request *remote.UpdateActionResultRequest) (*remote.ActionResult, error) {
+func (s Service) UpdateActionResult(ctx context.Context, request *repb.UpdateActionResultRequest) (*repb.ActionResult, error) {
 	response, err := s.updateActionResult(request)
 	if err != nil {
 		log.Printf("🚨 UpdateActionResult(%v) => Error: %v", request.ActionDigest, err)
@@ -106,9 +106,9 @@ func (s Service) UpdateActionResult(ctx context.Context, request *remote.UpdateA
 	return response, err
 }
 
-func (s Service) updateActionResult(request *remote.UpdateActionResultRequest) (*remote.ActionResult, error) {
+func (s Service) updateActionResult(request *repb.UpdateActionResultRequest) (*repb.ActionResult, error) {
 	// If the client explicitly specifies a DigestFunction, ensure that it's SHA256.
-	if request.DigestFunction != remote.DigestFunction_UNKNOWN && request.DigestFunction != remote.DigestFunction_SHA256 {
+	if request.DigestFunction != repb.DigestFunction_UNKNOWN && request.DigestFunction != repb.DigestFunction_SHA256 {
 		return nil, status.Errorf(codes.InvalidArgument, "hash function %q is not supported", request.DigestFunction.String())
 	}
 

@@ -21,7 +21,7 @@ import (
 	"github.com/bazelbuild/remote-apis-sdks/go/pkg/digest"
 	repb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
 	"github.com/google/uuid"
-	"google.golang.org/genproto/googleapis/bytestream"
+	bspb "google.golang.org/genproto/googleapis/bytestream"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -36,7 +36,7 @@ const (
 // Service implements the REAPI ContentAddressableStorage and ByteStream services.
 type Service struct {
 	repb.UnimplementedContentAddressableStorageServer
-	bytestream.UnimplementedByteStreamServer
+	bspb.UnimplementedByteStreamServer
 
 	cas       *ContentAddressableStorage
 	uploadDir string
@@ -49,7 +49,7 @@ func Register(s *grpc.Server, cas *ContentAddressableStorage, dataDir string) er
 	if err != nil {
 		return err
 	}
-	bytestream.RegisterByteStreamServer(s, service)
+	bspb.RegisterByteStreamServer(s, service)
 	repb.RegisterContentAddressableStorageServer(s, service)
 	return nil
 }
@@ -144,7 +144,7 @@ func parseWriteResource(name string) (d digest.Digest, u uuid.UUID, err error) {
 }
 
 // Read implements the ByteStream.Read RPC.
-func (s *Service) Read(request *bytestream.ReadRequest, server bytestream.ByteStream_ReadServer) error {
+func (s *Service) Read(request *bspb.ReadRequest, server bspb.ByteStream_ReadServer) error {
 	err := s.read(request, server)
 	if err != nil {
 		log.Printf("🚨 Read(%v) => Error: %v", request.ResourceName, err)
@@ -154,7 +154,7 @@ func (s *Service) Read(request *bytestream.ReadRequest, server bytestream.ByteSt
 	return err
 }
 
-func (s *Service) read(request *bytestream.ReadRequest, server bytestream.ByteStream_ReadServer) error {
+func (s *Service) read(request *bspb.ReadRequest, server bspb.ByteStream_ReadServer) error {
 	d, err := parseReadResource(request.ResourceName)
 	if err != nil {
 		return err
@@ -190,7 +190,7 @@ func (s *Service) read(request *bytestream.ReadRequest, server bytestream.ByteSt
 	for {
 		n, err := f.Read(buf)
 		if n > 0 {
-			if err := server.Send(&bytestream.ReadResponse{
+			if err := server.Send(&bspb.ReadResponse{
 				Data: buf[:n],
 			}); err != nil {
 				return status.Errorf(codes.Internal, "failed to send data to client: %v", err)
@@ -208,7 +208,7 @@ func (s *Service) read(request *bytestream.ReadRequest, server bytestream.ByteSt
 }
 
 // Write implements the ByteStream.Write RPC.
-func (s *Service) Write(server bytestream.ByteStream_WriteServer) error {
+func (s *Service) Write(server bspb.ByteStream_WriteServer) error {
 	resourceName, err := s.write(server)
 	if err != nil {
 		log.Printf("🚨 Write(%v) => Error: %v", resourceName, err)
@@ -218,7 +218,7 @@ func (s *Service) Write(server bytestream.ByteStream_WriteServer) error {
 	return err
 }
 
-func (s *Service) write(server bytestream.ByteStream_WriteServer) (resource string, err error) {
+func (s *Service) write(server bspb.ByteStream_WriteServer) (resource string, err error) {
 	expectedDigest := digest.Empty
 	ourHash := sha256.New()
 	var committedSize int64
@@ -262,7 +262,7 @@ func (s *Service) write(server bytestream.ByteStream_WriteServer) (resource stri
 			}
 
 			// Send the response to the client.
-			if err := server.SendAndClose(&bytestream.WriteResponse{
+			if err := server.SendAndClose(&bspb.WriteResponse{
 				CommittedSize: committedSize,
 			}); err != nil {
 				return resource, status.Errorf(codes.Internal, "failed to send response to client: %v", err)
@@ -299,7 +299,7 @@ func (s *Service) write(server bytestream.ByteStream_WriteServer) (resource stri
 
 		// If the resource was uploaded concurrently and already exists in our CAS, immediately return success.
 		if _, err := s.cas.Stat(expectedDigest); err == nil {
-			return resource, server.SendAndClose(&bytestream.WriteResponse{
+			return resource, server.SendAndClose(&bspb.WriteResponse{
 				CommittedSize: expectedDigest.Size,
 			})
 		}
@@ -341,7 +341,7 @@ func (s *Service) write(server bytestream.ByteStream_WriteServer) (resource stri
 }
 
 // QueryWriteStatus implements the ByteStream.QueryWriteStatus RPC.
-func (s *Service) QueryWriteStatus(ctx context.Context, request *bytestream.QueryWriteStatusRequest) (*bytestream.QueryWriteStatusResponse, error) {
+func (s *Service) QueryWriteStatus(ctx context.Context, request *bspb.QueryWriteStatusRequest) (*bspb.QueryWriteStatusResponse, error) {
 	response, err := s.queryWriteStatus(request)
 	if err != nil {
 		log.Printf("🚨 QueryWriteStatus(%v) failed: %s", request.ResourceName, err)
@@ -351,7 +351,7 @@ func (s *Service) QueryWriteStatus(ctx context.Context, request *bytestream.Quer
 	return response, err
 }
 
-func (s *Service) queryWriteStatus(request *bytestream.QueryWriteStatusRequest) (*bytestream.QueryWriteStatusResponse, error) {
+func (s *Service) queryWriteStatus(request *bspb.QueryWriteStatusRequest) (*bspb.QueryWriteStatusResponse, error) {
 	d, _, err := parseWriteResource(request.ResourceName)
 	if err != nil {
 		return nil, err
@@ -359,14 +359,14 @@ func (s *Service) queryWriteStatus(request *bytestream.QueryWriteStatusRequest) 
 
 	// Check if the file exists in the CAS, if yes, the upload is complete.
 	if _, err := s.cas.Stat(d); err == nil {
-		return &bytestream.QueryWriteStatusResponse{
+		return &bspb.QueryWriteStatusResponse{
 			CommittedSize: d.Size,
 			Complete:      true,
 		}, nil
 	}
 
 	// We don't support resuming uploads yet, so just always return that we don't have any data.
-	return &bytestream.QueryWriteStatusResponse{
+	return &bspb.QueryWriteStatusResponse{
 		CommittedSize: 0,
 		Complete:      false,
 	}, nil
