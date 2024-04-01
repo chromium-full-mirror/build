@@ -298,7 +298,7 @@ func (s *Service) write(server bspb.ByteStream_WriteServer) (resource string, er
 		}
 
 		// If the resource was uploaded concurrently and already exists in our CAS, immediately return success.
-		if _, err := s.cas.Stat(expectedDigest); err == nil {
+		if s.cas.Has(expectedDigest) {
 			return resource, server.SendAndClose(&bspb.WriteResponse{
 				CommittedSize: expectedDigest.Size,
 			})
@@ -358,7 +358,7 @@ func (s *Service) queryWriteStatus(request *bspb.QueryWriteStatusRequest) (*bspb
 	}
 
 	// Check if the file exists in the CAS, if yes, the upload is complete.
-	if _, err := s.cas.Stat(d); err == nil {
+	if s.cas.Has(d) {
 		return &bspb.QueryWriteStatusResponse{
 			CommittedSize: d.Size,
 			Complete:      true,
@@ -398,7 +398,7 @@ func (s *Service) findMissingBlobs(request *repb.FindMissingBlobsRequest) (*repb
 		if err != nil {
 			return nil, status.Errorf(codes.InvalidArgument, "invalid digest: %v", err)
 		}
-		if _, err := s.cas.Stat(dg); err != nil {
+		if !s.cas.Has(dg) {
 			missing = append(missing, d)
 		}
 	}

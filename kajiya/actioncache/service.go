@@ -127,7 +127,7 @@ func (s Service) updateActionResult(request *repb.UpdateActionResultRequest) (*r
 	}
 
 	// Check that the action is present in our CAS.
-	if _, err := s.cas.Stat(actionDigest); err != nil {
+	if !s.cas.Has(actionDigest) {
 		return nil, status.Errorf(codes.NotFound, "action digest %s not found in CAS", actionDigest)
 	}
 
@@ -137,7 +137,7 @@ func (s Service) updateActionResult(request *repb.UpdateActionResultRequest) (*r
 		if err != nil {
 			return nil, status.Error(codes.InvalidArgument, err.Error())
 		}
-		if _, err := s.cas.Stat(stdoutDigest); err != nil {
+		if !s.cas.Has(stdoutDigest) {
 			return nil, status.Errorf(codes.NotFound, "stdout digest %s not found in CAS", stdoutDigest)
 		}
 	}
@@ -148,7 +148,7 @@ func (s Service) updateActionResult(request *repb.UpdateActionResultRequest) (*r
 		if err != nil {
 			return nil, status.Error(codes.InvalidArgument, err.Error())
 		}
-		if _, err := s.cas.Stat(stderrDigest); err != nil {
+		if !s.cas.Has(stderrDigest) {
 			return nil, status.Errorf(codes.NotFound, "stderr digest %s not found in CAS", stderrDigest)
 		}
 	}
