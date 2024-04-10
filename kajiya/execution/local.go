@@ -288,7 +288,7 @@ func (e *Executor) buildNsjailArgs(sandboxDir string, imageDir string, cmd *repb
 	// Some tools use /tmp for temporary files, so we need to mount it.
 	// Otherwise we get errors like this:
 	//   clang: error: unable to make temporary file: Read-only file system
-	args = append(args, "--tmpfsmount", "/tmp")
+	args = append(args, "--mount", "none:/tmp:tmpfs:size=2G")
 
 	// nsjail applies rather strict resource limits by default, which can cause
 	// some tools to fail. We disable them here for now, until we figure out
