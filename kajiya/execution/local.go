@@ -91,8 +91,12 @@ func New(baseDir string, cas *blobstore.ContentAddressableStorage) (*Executor, e
 // Execute executes the given action and returns the result.
 func (e *Executor) Execute(action *repb.Action) (*repb.ActionResult, error) {
 	// Get the command from the CAS.
+	cmdDigest, err := digest.NewFromProto(action.CommandDigest)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse command digest: %w", err)
+	}
 	cmd := &repb.Command{}
-	if err := e.cas.Proto(action.CommandDigest, cmd); err != nil {
+	if err := e.cas.Proto(cmdDigest, cmd); err != nil {
 		return nil, err
 	}
 

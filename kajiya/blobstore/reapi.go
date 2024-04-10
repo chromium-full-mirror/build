@@ -8,17 +8,12 @@ import (
 	"fmt"
 
 	"github.com/bazelbuild/remote-apis-sdks/go/pkg/digest"
-	repb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
 	"google.golang.org/protobuf/proto"
 )
 
 // Proto reads a proto message with the given digest from the CAS and unmarshals it into m.
-func (c *ContentAddressableStorage) Proto(d *repb.Digest, m proto.Message) error {
-	msgDigest, err := digest.NewFromProto(d)
-	if err != nil {
-		return fmt.Errorf("failed to parse digest: %w", err)
-	}
-	msgBytes, err := c.Get(msgDigest)
+func (c *ContentAddressableStorage) Proto(d digest.Digest, m proto.Message) error {
+	msgBytes, err := c.Get(d)
 	if err != nil {
 		return fmt.Errorf("failed to get protobuf from CAS: %w", err)
 	}

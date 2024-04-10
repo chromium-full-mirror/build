@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"maps"
 	"os"
 	"path/filepath"
 
@@ -34,13 +35,10 @@ type TreeRepository struct {
 // treeNode represents a node in a directory merkle tree.
 type treeNode struct {
 	// The digest of the directory that contains the files and directories of this tree node.
-	Digest string
+	Digest digest.Digest
 
 	// The relative path in the sandbox of this node.
 	Path string
-
-	// Subdirectories inside this directory.
-	Children []*treeNode
 }
 
 func newTreeRepository(baseDir string, cas *blobstore.ContentAddressableStorage) (*TreeRepository, error) {
@@ -61,20 +59,30 @@ func newTreeRepository(baseDir string, cas *blobstore.ContentAddressableStorage)
 // StageDirectory downloads the given directory from the CAS and writes it to
 // the given path. If the directory already exists, it is overwritten.
 func (t *TreeRepository) StageDirectory(dirDigest *repb.Digest, path string) error {
+	// Parse the directory digest.
+	d, err := digest.NewFromProto(dirDigest)
+	if err != nil {
+		return fmt.Errorf("failed to parse digest: %w", err)
+	}
+
 	// First, ensure that the directory tree has been materialized.
-	root, err := t.materializeDirectory(dirDigest, "")
+	dirs, err := t.materializeDirectory(d)
 	if err != nil {
 		return fmt.Errorf("failed to materialize directory: %w", err)
 	}
 
 	// Traverse the tree and copy files and directories.
-	stack := []*treeNode{root}
+	stack := []*treeNode{{
+		Digest: d,
+		Path:   "",
+	}}
+
 	for len(stack) > 0 {
 		node := stack[len(stack)-1]
 		stack = stack[:len(stack)-1]
 
 		// Copy the directory from our tree repository to the destination.
-		sourceDir := filepath.Join(t.baseDir, node.Digest)
+		sourceDir := filepath.Join(t.baseDir, node.Digest.Hash)
 		destDir := filepath.Join(path, node.Path)
 
 		// Copy all files from the source directory to the destination directory.
@@ -97,58 +105,61 @@ func (t *TreeRepository) StageDirectory(dirDigest *repb.Digest, path string) err
 		}
 
 		// Add all children to the stack.
-		stack = append(stack, node.Children...)
+		dir := dirs[node.Digest.Hash]
+		for _, child := range dir.Directories {
+			stack = append(stack, &treeNode{
+				Digest: digest.NewFromProtoUnvalidated(child.Digest),
+				Path:   filepath.Join(node.Path, child.Name),
+			})
+		}
 	}
 
 	return nil
 }
 
 // materializeDirectory recursively materializes the given directory in the tree repository.
-func (t *TreeRepository) materializeDirectory(dirDigest *repb.Digest, nodePath string) (*treeNode, error) {
-	// Get the directory message from the CAS.
-	d := &repb.Directory{}
-	if err := t.cas.Proto(dirDigest, d); err != nil {
-		return nil, fmt.Errorf("failed to fetch directory proto: %w", err)
-	}
-
-	// Check if we already have the directory materialized on disk.
-	path := filepath.Join(t.baseDir, dirDigest.Hash)
-	if _, err := os.Stat(path); err == nil {
-		node := &treeNode{
-			Digest: dirDigest.Hash,
-			Path:   nodePath,
+func (t *TreeRepository) materializeDirectory(dirDigest digest.Digest) (map[string]*repb.Directory, error) {
+	dirs, err, _ := t.materializeSyncer.Do(dirDigest.Hash, func() (any, error) {
+		// Get the directory message from the CAS.
+		d := &repb.Directory{}
+		if err := t.cas.Proto(dirDigest, d); err != nil {
+			return nil, fmt.Errorf("failed to fetch directory proto: %w", err)
 		}
 
+		dirs := make(map[string]*repb.Directory)
+		dirs[dirDigest.Hash] = d
+
+		// Check if we already have the directory materialized on disk.
 		// If yes, we trust its contents and reuse it, instead of materializing it again.
 		// We still need to check whether all subdirectories are there, too, though.
-		var missingBlobs []digest.Digest
-		for _, sd := range d.Directories {
-			sdNode, err := t.materializeDirectory(sd.Digest, filepath.Join(nodePath, sd.Name))
-			if err != nil {
-				var mberr *blobstore.MissingBlobsError
-				if errors.As(err, &mberr) {
-					missingBlobs = append(missingBlobs, mberr.Blobs...)
-					continue
+		path := filepath.Join(t.baseDir, dirDigest.Hash)
+		if _, err := os.Stat(path); err == nil {
+			var missingBlobs []digest.Digest
+			for _, sdNode := range d.Directories {
+				sdDigest, err := digest.NewFromProto(sdNode.Digest)
+				if err != nil {
+					return nil, fmt.Errorf("failed to parse subdirectory digest: %w", err)
 				}
-				return nil, fmt.Errorf("failed to materialize subdirectory: %w", err)
+				subDirs, err := t.materializeDirectory(sdDigest)
+				if err != nil {
+					var mberr *blobstore.MissingBlobsError
+					if errors.As(err, &mberr) {
+						missingBlobs = append(missingBlobs, mberr.Blobs...)
+						continue
+					}
+					return nil, fmt.Errorf("failed to materialize subdirectory: %w", err)
+				}
+				maps.Copy(dirs, subDirs)
 			}
-			node.Children = append(node.Children, sdNode)
-		}
-		if len(missingBlobs) > 0 {
-			return nil, &blobstore.MissingBlobsError{Blobs: missingBlobs}
-		}
-		return node, nil
-	}
-
-	// If we get to this point, it means that we actually have to materialize
-	// the directory on disk. We do this in a temporary directory first, and
-	// then move it to its final location once we're done.
-	node, err, _ := t.materializeSyncer.Do(dirDigest.Hash, func() (any, error) {
-		node := &treeNode{
-			Digest: dirDigest.Hash,
-			Path:   nodePath,
+			if len(missingBlobs) > 0 {
+				return nil, &blobstore.MissingBlobsError{Blobs: missingBlobs}
+			}
+			return dirs, nil
 		}
 
+		// If we get to this point, it means that we actually have to materialize
+		// the directory on disk. We do this in a temporary directory first, and
+		// then move it to its final location once we're done.
 		tmpPath, err := os.MkdirTemp(t.baseDir, "*")
 		if err != nil {
 			return nil, fmt.Errorf("failed to create temporary directory: %w", err)
@@ -184,7 +195,11 @@ func (t *TreeRepository) materializeDirectory(dirDigest *repb.Digest, nodePath s
 
 		// Materialize all the subdirectories.
 		for _, sd := range d.Directories {
-			sdNode, err := t.materializeDirectory(sd.Digest, filepath.Join(nodePath, sd.Name))
+			sdDigest, err := digest.NewFromProto(sd.Digest)
+			if err != nil {
+				return nil, fmt.Errorf("failed to parse subdirectory digest: %w", err)
+			}
+			subDirs, err := t.materializeDirectory(sdDigest)
 			if err != nil {
 				var mberr *blobstore.MissingBlobsError
 				if errors.As(err, &mberr) {
@@ -193,16 +208,10 @@ func (t *TreeRepository) materializeDirectory(dirDigest *repb.Digest, nodePath s
 				}
 				return nil, fmt.Errorf("failed to materialize subdirectory: %w", err)
 			}
-			node.Children = append(node.Children, sdNode)
 			if err = os.Mkdir(filepath.Join(tmpPath, sd.Name), 0755); err != nil {
 				return nil, fmt.Errorf("failed to create directory: %w", err)
 			}
-		}
-
-		// If any blobs are missing, we report them and discard the (incomplete) directory
-		// we just materialized. The caller will have to retry the materialization later.
-		if len(missingBlobs) > 0 {
-			return nil, &blobstore.MissingBlobsError{Blobs: missingBlobs}
+			maps.Copy(dirs, subDirs)
 		}
 
 		// Finally, set the directory properties. We have to do this after the files have been
@@ -223,18 +232,24 @@ func (t *TreeRepository) materializeDirectory(dirDigest *repb.Digest, nodePath s
 			}
 		}
 
+		// If any blobs are missing, we report them and discard the (incomplete) directory
+		// we just materialized. The caller will have to retry the materialization later.
+		if len(missingBlobs) > 0 {
+			return nil, &blobstore.MissingBlobsError{Blobs: missingBlobs}
+		}
+
 		if err = os.Rename(tmpPath, path); err != nil {
 			return nil, fmt.Errorf("failed to rename directory: %w", err)
 		}
 
 		// If we moved the directory successfully, we don't need to delete it anymore.
 		tmpPath = ""
-		return node, nil
+		return dirs, nil
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to materialize subdirectory: %w", err)
 	}
-	return node.(*treeNode), nil
+	return dirs.(map[string]*repb.Directory), nil
 }
 
 // materializeFile downloads the given file from the CAS and writes it to the given path.
