@@ -76,12 +76,15 @@ func (c *ContentAddressableStorage) Stat(d digest.Digest) (os.FileInfo, error) {
 
 	fi, err := os.Lstat(p)
 	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil, &MissingBlobsError{Blobs: []digest.Digest{d}}
+		}
 		return nil, err
 	}
 
 	if fi.Size() != d.Size {
 		log.Printf("actual file size %d does not match requested size of digest %s", fi.Size(), d.String())
-		return nil, fs.ErrNotExist
+		return nil, &MissingBlobsError{Blobs: []digest.Digest{d}}
 	}
 
 	return fi, nil
@@ -90,11 +93,11 @@ func (c *ContentAddressableStorage) Stat(d digest.Digest) (os.FileInfo, error) {
 // Has returns true if the requested digest exists in the CAS.
 func (c *ContentAddressableStorage) Has(d digest.Digest) bool {
 	if _, err := c.Stat(d); err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			return false
+		var mbe *MissingBlobsError
+		if !errors.As(err, &mbe) {
+			// That's unexpected, let's log it.
+			log.Printf("error checking for digest %s: %s", d.String(), err)
 		}
-		// That's unexpected, let's log it.
-		log.Printf("error checking for digest %s: %s", d.String(), err)
 		return false
 	}
 	return true
@@ -109,6 +112,9 @@ func (c *ContentAddressableStorage) Open(d digest.Digest, offset int64, limit in
 
 	f, err := os.Open(p)
 	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil, &MissingBlobsError{Blobs: []digest.Digest{d}}
+		}
 		return nil, err
 	}
 
@@ -123,7 +129,7 @@ func (c *ContentAddressableStorage) Open(d digest.Digest, offset int64, limit in
 	if size != d.Size {
 		log.Printf("actual file size %d does not match requested size of digest %s", offset, d.String())
 		_ = f.Close()
-		return nil, fs.ErrNotExist
+		return nil, &MissingBlobsError{Blobs: []digest.Digest{d}}
 	}
 
 	// Ensure that the offset is not negative and not larger than the file size.
@@ -214,5 +220,11 @@ func (c *ContentAddressableStorage) Adopt(d digest.Digest, path string) error {
 // If the operating system supports cloning files via copy-on-write semantics,
 // the file is cloned instead of hard linked.
 func (c *ContentAddressableStorage) LinkTo(d digest.Digest, path string) error {
-	return FastCopy(c.path(d), path)
+	if err := FastCopy(c.path(d), path); err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return &MissingBlobsError{Blobs: []digest.Digest{d}}
+		}
+		return err
+	}
+	return nil
 }

@@ -16,6 +16,7 @@ import (
 	"cloud.google.com/go/longrunning/autogen/longrunningpb"
 	"github.com/bazelbuild/remote-apis-sdks/go/pkg/digest"
 	repb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
+	errpb "google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -133,6 +134,11 @@ func (s *Service) execute(request *repb.ExecuteRequest, executeServer repb.Execu
 	// Execute the action.
 	actionResult, err := s.executor.Execute(action)
 	if err != nil {
+		var mbe *blobstore.MissingBlobsError
+		if errors.As(err, &mbe) {
+			return s.formatMissingBlobsError(*mbe)
+		}
+		// Otherwise, return a generic internal error.
 		return status.Errorf(codes.Internal, "failed to execute action: %v", err)
 	}
 
@@ -168,6 +174,26 @@ func (s *Service) checkActionCache(d digest.Digest) (*longrunningpb.Operation, e
 		return nil, err
 	}
 	return op, nil
+}
+
+// Return the list of missing blobs as a "FailedPrecondition" error as
+// described in the Remote Execution API.
+func (s *Service) formatMissingBlobsError(e blobstore.MissingBlobsError) error {
+	violations := make([]*errpb.PreconditionFailure_Violation, 0, len(e.Blobs))
+	for _, b := range e.Blobs {
+		violations = append(violations, &errpb.PreconditionFailure_Violation{
+			Type:    "MISSING",
+			Subject: fmt.Sprintf("blobs/%s/%d", b.Hash, b.Size),
+		})
+	}
+
+	st, err := status.New(codes.FailedPrecondition, "missing blobs").WithDetails(&errpb.PreconditionFailure{
+		Violations: violations,
+	})
+	if err != nil {
+		return status.Errorf(codes.Internal, "failed to create status: %v", err)
+	}
+	return st.Err()
 }
 
 func (s *Service) wrapActionResult(d digest.Digest, r *repb.ActionResult, cached bool) (*longrunningpb.Operation, error) {

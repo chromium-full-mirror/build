@@ -179,6 +179,10 @@ func (s *Service) read(request *bspb.ReadRequest, server bspb.ByteStream_ReadSer
 	// Open the file and seek to the offset.
 	f, err := s.cas.Open(d, request.ReadOffset, request.ReadLimit)
 	if err != nil {
+		var mbe *MissingBlobsError
+		if !errors.As(err, &mbe) {
+			return status.Errorf(codes.NotFound, "blob not found: %v", err)
+		}
 		return status.Errorf(codes.Internal, "failed to open file: %v", err)
 	}
 	defer func() {
@@ -498,24 +502,24 @@ func (s *Service) batchReadBlobs(request *repb.BatchReadBlobsRequest) (*repb.Bat
 		// Read the blob from the CAS.
 		data, err := s.cas.Get(dg)
 		if err != nil {
-			if errors.Is(err, fs.ErrNotExist) {
+			var mbe *MissingBlobsError
+			if !errors.As(err, &mbe) {
 				// The blob doesn't exist. Add a response with an appropriate status code.
 				response.Responses = append(response.Responses, &repb.BatchReadBlobsResponse_Response{
 					Digest: d,
 					Status: status.New(codes.NotFound, "").Proto(),
 				})
 				continue
-			} else {
-				return nil, status.Errorf(codes.Internal, "failed to read blob: %v", err)
 			}
-		} else {
-			// The blob exists. Add a response with the data.
-			response.Responses = append(response.Responses, &repb.BatchReadBlobsResponse_Response{
-				Digest: d,
-				Data:   data,
-				Status: status.New(codes.OK, "").Proto(),
-			})
+			return nil, status.Errorf(codes.Internal, "failed to read blob: %v", err)
 		}
+
+		// The blob exists. Add a response with the data.
+		response.Responses = append(response.Responses, &repb.BatchReadBlobsResponse_Response{
+			Digest: d,
+			Data:   data,
+			Status: status.New(codes.OK, "").Proto(),
+		})
 	}
 
 	// Return the response to the client.

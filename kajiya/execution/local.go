@@ -18,7 +18,6 @@ import (
 
 	"github.com/bazelbuild/remote-apis-sdks/go/pkg/digest"
 	repb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
-	errpb "google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
@@ -91,16 +90,10 @@ func New(baseDir string, cas *blobstore.ContentAddressableStorage) (*Executor, e
 
 // Execute executes the given action and returns the result.
 func (e *Executor) Execute(action *repb.Action) (*repb.ActionResult, error) {
-	var missingBlobs []digest.Digest
-
 	// Get the command from the CAS.
 	cmd := &repb.Command{}
 	if err := e.cas.Proto(action.CommandDigest, cmd); err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			missingBlobs = append(missingBlobs, digest.NewFromProtoUnvalidated(action.CommandDigest))
-		} else {
-			return nil, err
-		}
+		return nil, err
 	}
 
 	// Build a sandbox directory for the action.
@@ -111,15 +104,8 @@ func (e *Executor) Execute(action *repb.Action) (*repb.ActionResult, error) {
 	defer e.deleteSandbox(sandboxDir)
 
 	// Stage the input files and directories into the sandbox.
-	mb, err := e.trees.StageDirectory(action.InputRootDigest, sandboxDir)
-	if err != nil {
+	if err := e.trees.StageDirectory(action.InputRootDigest, sandboxDir); err != nil {
 		return nil, fmt.Errorf("failed to materialize input root: %w", err)
-	}
-	missingBlobs = append(missingBlobs, mb...)
-
-	// If there were any missing blobs, we fail early and return the list to the client.
-	if len(missingBlobs) > 0 {
-		return nil, e.formatMissingBlobsError(missingBlobs)
 	}
 
 	// If a working directory was specified, verify that it exists.
@@ -253,27 +239,6 @@ func (e *Executor) saveStdOutErr(actionResult *repb.ActionResult) error {
 	actionResult.StderrRaw = nil
 
 	return nil
-}
-
-// formatMissingBlobsError formats a list of missing blobs as a gRPC "FailedPrecondition" error
-// as described in the Remote Execution API.
-func (e *Executor) formatMissingBlobsError(blobs []digest.Digest) error {
-	violations := make([]*errpb.PreconditionFailure_Violation, 0, len(blobs))
-	for _, b := range blobs {
-		violations = append(violations, &errpb.PreconditionFailure_Violation{
-			Type:    "MISSING",
-			Subject: fmt.Sprintf("blobs/%s/%d", b.Hash, b.Size),
-		})
-	}
-
-	s, err := status.New(codes.FailedPrecondition, "missing blobs").WithDetails(&errpb.PreconditionFailure{
-		Violations: violations,
-	})
-	if err != nil {
-		return fmt.Errorf("failed to create status: %w", err)
-	}
-
-	return s.Err()
 }
 
 // buildNsjailArgs builds the arguments for nsjail.
