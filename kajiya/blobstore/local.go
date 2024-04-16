@@ -15,6 +15,8 @@ import (
 
 	"github.com/bazelbuild/remote-apis-sdks/go/pkg/digest"
 	"golang.org/x/sync/singleflight"
+
+	"infra/build/kajiya/atomicio"
 )
 
 // ContentAddressableStorage is a simple CAS implementation that stores files on the local disk.
@@ -175,22 +177,8 @@ func (c *ContentAddressableStorage) Put(data []byte) (digest.Digest, error) {
 			return nil, nil
 		}
 
-		// Write the file to a temporary location and then rename it. This ensures that we
-		// don't accidentally serve a partial file if the process is killed while writing.
-		// It also ensures that we don't serve a file that's still being written.
-		f, err := os.CreateTemp(c.dataDir, "tmp_")
-		if err != nil {
-			return nil, err
-		}
-		if _, err := f.Write(data); err != nil {
-			// Safe to ignore, because we're returning an error anyway.
-			_ = f.Close()
-			return nil, err
-		}
-		if err := f.Close(); err != nil {
-			return nil, err
-		}
-		if err := c.Adopt(d, f.Name()); err != nil {
+		// Add the file to the CAS.
+		if err := atomicio.WriteFile(c.path(d), data); err != nil {
 			return nil, err
 		}
 		return nil, nil
@@ -200,20 +188,23 @@ func (c *ContentAddressableStorage) Put(data []byte) (digest.Digest, error) {
 
 // Adopt moves a file from the given path into the CAS.
 // The digest is assumed to have been validated by the caller.
-func (c *ContentAddressableStorage) Adopt(d digest.Digest, path string) error {
-	if err := os.Rename(path, c.path(d)); err != nil {
-		// The most likely (and luckily benign) case why this might fail is that we're on
-		// Windows and we couldn't rename the file atomically to its final name, because
-		// we lost the race with a concurrent invocation that stored the same file.
-		// Unfortunately, on Windows this might also fail with an "Access Denied" error
-		// instead of EEXIST, if the file is already in use by a running action, so we
-		// check via `Has` in that case, too.
-		if errors.Is(err, fs.ErrExist) || c.Has(d) {
-			return nil
+func (c *ContentAddressableStorage) Adopt(d digest.Digest, srcPath string) error {
+	_, err, _ := c.putSyncer.Do(d.Hash, func() (any, error) {
+		// If the file is already in the CAS, we're done.
+		if c.Has(d) {
+			if err := os.Remove(srcPath); err != nil {
+				return nil, err
+			}
+			return nil, nil
 		}
-		return err
-	}
-	return nil
+
+		// Move the file into the CAS.
+		if err := os.Rename(srcPath, c.path(d)); err != nil {
+			return nil, err
+		}
+		return nil, nil
+	})
+	return err
 }
 
 // LinkTo creates a link `path` pointing to the file with digest `d` in the CAS.

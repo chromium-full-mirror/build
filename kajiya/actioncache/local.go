@@ -5,6 +5,7 @@
 package actioncache
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -13,12 +14,16 @@ import (
 
 	"github.com/bazelbuild/remote-apis-sdks/go/pkg/digest"
 	repb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
+	"golang.org/x/sync/singleflight"
 	"google.golang.org/protobuf/proto"
+
+	"infra/build/kajiya/atomicio"
 )
 
 // ActionCache is a simple action cache implementation that stores ActionResults on the local disk.
 type ActionCache struct {
-	dataDir string
+	dataDir string             // directory where the action results are stored
+	syncer  singleflight.Group // synchronization mechanism to prevent concurrent puts of the same action
 }
 
 // New creates a new local ActionCache. The data directory is created if it does not exist.
@@ -73,32 +78,31 @@ func (c *ActionCache) Get(actionDigest digest.Digest) (*repb.ActionResult, error
 
 // Put stores the given ActionResult for the given digest.
 func (c *ActionCache) Put(actionDigest digest.Digest, ar *repb.ActionResult) error {
-	// Marshal the action result.
-	actionResultRaw, err := proto.Marshal(ar)
-	if err != nil {
-		return err
-	}
+	_, err, _ := c.syncer.Do(actionDigest.Hash, func() (interface{}, error) {
+		// Marshal the action result. We use deterministic marshalling to ensure
+		// that the below comparison works correctly.
+		actionResultRaw, err := proto.MarshalOptions{Deterministic: true}.Marshal(ar)
+		if err != nil {
+			return nil, err
+		}
 
-	// Store the action result in our action cache.
-	f, err := os.CreateTemp(c.dataDir, "tmp_")
-	if err != nil {
-		return err
-	}
-	if _, err := f.Write(actionResultRaw); err != nil {
-		// Safe to ignore, because we're returning an error anyway.
-		_ = f.Close()
-		return err
-	}
-	if err := f.Close(); err != nil {
-		return err
-	}
-	if err := os.Rename(f.Name(), c.path(actionDigest)); err != nil {
-		// TODO: It's possible that on Windows we cannot rename the file to the destination because it already exists.
-		// In that case, we should check if the file is identical to the one we're trying to write, and if so, ignore the error.
-		return err
-	}
+		// Check if the action result is already in the cache. If yes
+		// and it is the same as the one we want to store, we can skip
+		// writing it to disk.
+		buf, err := os.ReadFile(c.path(actionDigest))
+		if err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return nil, err
+		}
+		if err == nil && bytes.Equal(buf, actionResultRaw) {
+			// Already cached and the same result, nothing to do.
+			return nil, nil
+		}
 
-	return nil
+		// Store the action result in our action cache.
+		err = atomicio.WriteFile(c.path(actionDigest), actionResultRaw)
+		return nil, err
+	})
+	return err
 }
 
 // Remove deletes the cached ActionResult for the given digest.
