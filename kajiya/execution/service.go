@@ -16,6 +16,7 @@ import (
 	"cloud.google.com/go/longrunning/autogen/longrunningpb"
 	"github.com/bazelbuild/remote-apis-sdks/go/pkg/digest"
 	repb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
+	"github.com/google/uuid"
 	errpb "google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -215,9 +216,16 @@ func (s *Service) wrapActionResult(d digest.Digest, r *repb.ActionResult, cached
 		return nil, status.Errorf(codes.Internal, "failed to marshal response: %v", err)
 	}
 
+	// Generate a unique operation name.
+	// TODO: Use a real operation ID that's consistent across the lifetime of the operation.
+	opName, err := uuid.NewV7()
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate operation ID: %w", err)
+	}
+
 	// Wrap all the protos in another proto and return it.
 	op := &longrunningpb.Operation{
-		Name:     d.String(),
+		Name:     fmt.Sprintf("operations/%s", opName),
 		Metadata: md,
 		Done:     true,
 		Result: &longrunningpb.Operation_Response{

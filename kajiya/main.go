@@ -21,6 +21,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
 
@@ -51,6 +52,10 @@ func getDefaultDataDir() string {
 
 func main() {
 	flag.Parse()
+
+	// Enable the internal randomness pool for UUID generation, which can improve
+	// performance when generating many UUIDs.
+	uuid.EnableRandPool()
 
 	// Enable CPU profiling if requested.
 	if *cpuprofile != "" {
