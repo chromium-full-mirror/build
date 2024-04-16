@@ -10,18 +10,17 @@ import (
 	"fmt"
 	"io/fs"
 	"log"
-	"sync"
 	"time"
 
 	"cloud.google.com/go/longrunning/autogen/longrunningpb"
 	"github.com/bazelbuild/remote-apis-sdks/go/pkg/digest"
 	repb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
 	"github.com/google/uuid"
+	"golang.org/x/sync/singleflight"
 	errpb "google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/anypb"
 
 	"infra/build/kajiya/actioncache"
@@ -36,10 +35,8 @@ type Service struct {
 	actionCache *actioncache.ActionCache
 	cas         *blobstore.ContentAddressableStorage
 
-	// actionDigestMutexes is a map of action digests to mutexes.
-	// It's used to prevent multiple clients from executing the same action at the same time.
-	// TODO: Implement garbage collection of old entries?
-	actionDigestMutexes sync.Map
+	// actionDigestDeduper merges multiple parallel requests for the same action.
+	actionDigestDeduper singleflight.Group
 }
 
 // ExecutorInterface is an interface of Executor.
@@ -80,12 +77,25 @@ func (s *Service) Execute(request *repb.ExecuteRequest, executeServer repb.Execu
 	start := time.Now()
 	err := s.execute(request, executeServer)
 	duration := time.Since(start)
+
 	if err != nil {
 		log.Printf("🚨 Execute(%v) => Error: %v", request.ActionDigest, err)
-	} else {
-		log.Printf("🎉 Execute(%v) => OK (%v)", request.ActionDigest, duration)
+
+		var mberr *blobstore.MissingBlobsError
+		if errors.As(err, &mberr) {
+			return formatMissingBlobsError(mberr)
+		} else if _, ok := status.FromError(err); !ok {
+			// Any error that reaches this point and is not already a gRPC status is an
+			// unexpected internal error and not due to client input. We wrap it in a
+			// status error with the Internal code to ensure we signal this condition
+			// correctly to the client.
+			return status.Errorf(codes.Internal, "failed to execute action: %v", err)
+		}
+		return err
 	}
-	return err
+
+	log.Printf("🎉 Execute(%v) => OK (%v)", request.ActionDigest, duration)
+	return nil
 }
 
 func (s *Service) execute(request *repb.ExecuteRequest, executeServer repb.Execution_ExecuteServer) error {
@@ -100,86 +110,70 @@ func (s *Service) execute(request *repb.ExecuteRequest, executeServer repb.Execu
 		return status.Errorf(codes.InvalidArgument, "invalid action digest: %v", err)
 	}
 
-	// If we have an action cache, check if the action is already cached.
-	// If so, return the cached result.
-	if s.actionCache != nil && !request.SkipCacheLookup {
-		resp, err := s.checkActionCache(actionDigest)
+	// Fetch the Action from the CAS.
+	action := &repb.Action{}
+	if err := s.cas.Proto(actionDigest, action); err != nil {
+		return err
+	}
+
+	// If we're not supposed to cache the result, just execute the action and return the result.
+	if action.DoNotCache {
+		ar, err := s.executor.Execute(action)
 		if err != nil {
-			if !errors.Is(err, fs.ErrNotExist) {
-				return status.Errorf(codes.Internal, "failed to check action cache: %v", err)
+			return err
+		}
+		reply, err := wrapActionResult(actionDigest, ar, false)
+		if err != nil {
+			return err
+		}
+		return executeServer.Send(reply)
+	}
+
+	// According to the REAPI specification, in-flight requests for the same `Action` may be
+	// merged unless the `DoNotCache` bit is set. This improves efficiency and performance by
+	// avoiding duplicate work.
+	ar, err, _ := s.actionDigestDeduper.Do(actionDigest.String(), func() (interface{}, error) {
+		// If we have an action cache, check if the action is already cached.
+		if s.actionCache != nil && !request.SkipCacheLookup {
+			ar, err := s.actionCache.Get(actionDigest)
+			if err != nil && !errors.Is(err, fs.ErrNotExist) {
+				return nil, fmt.Errorf("failed to get action from cache: %w", err)
+			}
+			if ar != nil {
+				return wrapActionResult(actionDigest, ar, true)
 			}
 		}
-		if resp != nil {
-			return executeServer.Send(resp)
-		}
-	}
 
-	// Fetch the Action from the CAS.
-	action, err := s.getAction(actionDigest)
+		// Cache miss, so we have to execute the action.
+		ar, err := s.executor.Execute(action)
+		if err != nil {
+			return nil, err
+		}
+
+		// Store the result in the action cache if possible. We only cache successful
+		// result, as it's always possible that a failed action is due to a transient
+		// issue that will be resolved on the next execution.
+		if s.actionCache != nil && ar.ExitCode == 0 {
+			if err = s.actionCache.Put(actionDigest, ar); err != nil {
+				return nil, fmt.Errorf("failed to put action into cache: %w", err)
+			}
+		}
+
+		return wrapActionResult(actionDigest, ar, false)
+	})
 	if err != nil {
 		return err
 	}
-
-	// According to the REAPI specification, in-flight requests for the same `Action` may not be
-	// merged if the `DoNotCache` bit is set.
-	if !action.DoNotCache {
-		// By locking on the action digest, we ensure that only one client can execute the action at
-		// a time. Other clients will block until the action is done executing, and then they will
-		// get the result from the cache. This improves efficiency and performance by avoiding
-		// duplicate work.
-		actionDigestMutex, _ := s.actionDigestMutexes.LoadOrStore(actionDigest, &sync.Mutex{})
-		actionDigestMutex.(*sync.Mutex).Lock()
-		defer actionDigestMutex.(*sync.Mutex).Unlock()
-	}
-
-	// Execute the action.
-	actionResult, err := s.executor.Execute(action)
-	if err != nil {
-		var mbe *blobstore.MissingBlobsError
-		if errors.As(err, &mbe) {
-			return s.formatMissingBlobsError(*mbe)
-		}
-		// Otherwise, return a generic internal error.
-		return status.Errorf(codes.Internal, "failed to execute action: %v", err)
-	}
-
-	// Store the result in the action cache.
-	if s.actionCache != nil && !action.DoNotCache && actionResult.ExitCode == 0 {
-		if err = s.actionCache.Put(actionDigest, actionResult); err != nil {
-			return status.Errorf(codes.Internal, "failed to put action into cache: %v", err)
-		}
-	}
-
-	// Send the result to the client.
-	op, err := s.wrapActionResult(actionDigest, actionResult, false)
-	if err != nil {
-		return err
-	}
-	if err = executeServer.Send(op); err != nil {
-		return status.Errorf(codes.Internal, "failed to send result to client: %v", err)
+	if err = executeServer.Send(ar.(*longrunningpb.Operation)); err != nil {
+		return fmt.Errorf("failed to send result to client: %w", err)
 	}
 
 	return nil
 }
 
-func (s *Service) checkActionCache(d digest.Digest) (*longrunningpb.Operation, error) {
-	// Try to get the result from the cache.
-	actionResult, err := s.actionCache.Get(d)
-	if err != nil {
-		return nil, err
-	}
-
-	// Nice, cache hit! Let's wrap it up and send it to the client.
-	op, err := s.wrapActionResult(d, actionResult, true)
-	if err != nil {
-		return nil, err
-	}
-	return op, nil
-}
-
 // Return the list of missing blobs as a "FailedPrecondition" error as
 // described in the Remote Execution API.
-func (s *Service) formatMissingBlobsError(e blobstore.MissingBlobsError) error {
+func formatMissingBlobsError(e *blobstore.MissingBlobsError) error {
 	violations := make([]*errpb.PreconditionFailure_Violation, 0, len(e.Blobs))
 	for _, b := range e.Blobs {
 		violations = append(violations, &errpb.PreconditionFailure_Violation{
@@ -197,14 +191,14 @@ func (s *Service) formatMissingBlobsError(e blobstore.MissingBlobsError) error {
 	return st.Err()
 }
 
-func (s *Service) wrapActionResult(d digest.Digest, r *repb.ActionResult, cached bool) (*longrunningpb.Operation, error) {
+func wrapActionResult(d digest.Digest, r *repb.ActionResult, cached bool) (*longrunningpb.Operation, error) {
 	// Construct some metadata for the execution operation and wrap it in an Any.
 	md, err := anypb.New(&repb.ExecuteOperationMetadata{
 		Stage:        repb.ExecutionStage_COMPLETED,
 		ActionDigest: d.ToProto(),
 	})
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to marshal metadata: %v", err)
+		return nil, fmt.Errorf("failed to marshal metadata: %w", err)
 	}
 
 	// Put the action result into an Any-wrapped ExecuteResponse.
@@ -213,7 +207,7 @@ func (s *Service) wrapActionResult(d digest.Digest, r *repb.ActionResult, cached
 		CachedResult: cached,
 	})
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to marshal response: %v", err)
+		return nil, fmt.Errorf("failed to marshal response: %w", err)
 	}
 
 	// Generate a unique operation name.
@@ -233,24 +227,6 @@ func (s *Service) wrapActionResult(d digest.Digest, r *repb.ActionResult, cached
 		},
 	}
 	return op, nil
-}
-
-// getAction fetches the repb.Action with the given digest.Digest from our CAS.
-func (s *Service) getAction(d digest.Digest) (*repb.Action, error) {
-	// Fetch the Action from the CAS.
-	actionBytes, err := s.cas.Get(d)
-	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to get action from CAS: %v", err)
-	}
-
-	// Unmarshal the Action.
-	action := &repb.Action{}
-	err = proto.Unmarshal(actionBytes, action)
-	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to unmarshal action: %v", err)
-	}
-
-	return action, nil
 }
 
 // WaitExecution waits for the specified execution to complete.
