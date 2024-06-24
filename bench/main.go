@@ -110,6 +110,12 @@ func run() error {
 			}
 		}()
 		results = csv.NewWriter(f)
+		defer func() {
+			results.Flush()
+			if err := results.Error(); err != nil {
+				fmt.Fprintf(os.Stderr, "failed to flush results to disk, data might be incomplete: %v\n", err)
+			}
+		}()
 	}
 
 	// If we need to checkout a different commit, ensure that the workspace is clean and abort
