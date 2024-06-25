@@ -2,13 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-package main
+// Package webui provides webui subcommand.
+package webui
 
 import (
 	"bytes"
 	"encoding/json"
 	"errors"
-	"flag"
 	"fmt"
 	"html/template"
 	"net/http"
@@ -16,20 +16,43 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+
+	"github.com/maruel/subcommands"
 )
 
 const DefaultItemsPerPage = 100
 
-var metricsPathFlag = flag.String("metrics", "", "path to siso_metrics.json")
+func Cmd() *subcommands.Command {
+	return &subcommands.Command{
+		UsageLine: "webui <args>",
+		Advanced:  true,
+		ShortDesc: "starts the experimental webui",
+		LongDesc:  "Starts the experimental webui. Not ready for wide use yet, requires static files to work. This is subject to breaking changes at any moment.",
+		CommandRun: func() subcommands.CommandRun {
+			r := &webuiRun{}
+			r.init()
+			return r
+		},
+	}
+}
 
-func main() {
-	flag.Parse()
+type webuiRun struct {
+	subcommands.CommandRunBase
+	port        int
+	metricsJson string
+}
 
+func (c *webuiRun) init() {
+	c.Flags.IntVar(&c.port, "port", 8080, "port to use (defaults to 8080)")
+	c.Flags.StringVar(&c.metricsJson, "metrics", "", "path to siso_metrics.json")
+}
+
+func (c *webuiRun) Run(a subcommands.Application, args []string, env subcommands.Env) int {
 	// Read metrics.
-	b, err := os.ReadFile(*metricsPathFlag)
+	b, err := os.ReadFile(c.metricsJson)
 	if err != nil {
 		fmt.Printf("failed to read metrics: %s\n", err)
-		os.Exit(1)
+		return 1
 	}
 	b = bytes.Replace(b, []byte("\n"), []byte(","), -1)
 	b = append([]byte{'['}, b...)
@@ -41,7 +64,7 @@ func main() {
 	err = json.Unmarshal(b, &metrics)
 	if err != nil {
 		fmt.Printf("failed to unmarshal metrics: %s\n", err)
-		os.Exit(1)
+		return 1
 	}
 
 	actionCounts := make(map[string]int)
@@ -68,8 +91,8 @@ func main() {
 
 	http.HandleFunc("/steps/{id}/", func(w http.ResponseWriter, r *http.Request) {
 		tmpl, err := template.ParseFiles(
-			"base.html",
-			"_step.html",
+			"webui/base.html",
+			"webui/_step.html",
 		)
 		if err != nil {
 			fmt.Fprintf(w, "failed to parse templates: %s\n", err)
@@ -102,8 +125,8 @@ func main() {
 				return false
 			},
 		}).ParseFiles(
-			"base.html",
-			"_steps.html",
+			"webui/base.html",
+			"webui/_steps.html",
 		)
 		if err != nil {
 			fmt.Fprintf(w, "failed to parse templates: %s\n", err)
@@ -193,15 +216,16 @@ func main() {
 	})
 
 	http.HandleFunc("/style.css", func(w http.ResponseWriter, r *http.Request) {
-		http.ServeFile(w, r, "style.css")
+		http.ServeFile(w, r, "webui/style.css")
 	})
 
-	fmt.Println("listening on http://localhost:8080/...")
-	err = http.ListenAndServe(":8080", nil)
+	fmt.Printf("listening on http://localhost:%d/...\n", c.port)
+	err = http.ListenAndServe(fmt.Sprintf(":%d", c.port), nil)
 	if errors.Is(err, http.ErrServerClosed) {
 		fmt.Printf("server closed\n")
 	} else if err != nil {
 		fmt.Printf("error starting server: %s\n", err)
-		os.Exit(1)
+		return 1
 	}
+	return 0
 }
