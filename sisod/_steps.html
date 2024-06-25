@@ -2,32 +2,62 @@
 Use of this source code is governed by a BSD-style license that can be
 found in the LICENSE file. */}}
 
-{{define "content"}}
-<div class="data-table-toolbar">
-  <div id="paginator" hx-push-url="true" hx-swap-oob="true">
-    <div>
-      {{ .items_first }}-{{ .items_last }} of {{ .items_len }}
+{{define "sidebar"}}
+<form class="data-table-filter"
+    action="/steps/" method="GET"
+    hx-select="#data-table-body" hx-target="#data-table-body" hx-swap="outerHTML show:window:top"
+    hx-trigger="change,submit">
+  <div>
+    <div id="paginator" hx-swap-oob="true">
+      Showing {{ .items_first }}-{{ .items_last }} of {{ .items_len }}
     </div>
-    <div hx-select="#data-table-body" hx-target="#data-table-body" hx-swap="outerHTML">
-      <md-icon-button hx-trigger="click"
-                      hx-get="?page={{ .page_first }}">
+    <div class="page-controls">
+      <md-outlined-text-field class="page-number" type="number" name="page" aria-label="Page"
+          value="{{ .page }}" min="0" max="{{ .page_last }}"></md-outlined-text-field>
+      <md-icon-button onclick="this.parentElement.querySelector('.page-number').value = {{ .page_first }}">
         <md-icon>first_page</md-icon>
       </md-icon-button>
-      <md-icon-button hx-trigger="click"
-                      hx-get="?page={{ .page_prev }}">
+      <md-icon-button onclick="this.parentElement.querySelector('.page-number').stepDown()">
         <md-icon>chevron_left</md-icon>
       </md-icon-button>
-      <md-icon-button hx-trigger="click"
-                      hx-get="?page={{ .page_next }}">
+      <md-icon-button onclick="this.parentElement.querySelector('.page-number').stepUp()">
         <md-icon>chevron_right</md-icon>
       </md-icon-button>
-      <md-icon-button hx-trigger="click"
-                      hx-get="?page={{ .page_last }}">
+      <md-icon-button onclick="this.parentElement.querySelector('.page-number').value = {{ .page_last }}">
         <md-icon>last_page</md-icon>
       </md-icon-button>
     </div>
   </div>
-</div>
+  <div class="filter-controls">
+    <md-filled-text-field placeholder="Search outputs">
+      <md-icon slot="leading-icon">search</md-icon>
+    </md-filled-text-field>
+    <h3 id="action-label">action</h3>
+    <md-chip-set aria-labelledby="action-label">
+      {{ range $key, $count := .action_counts }}
+        {{ if gt $count 20 }}
+        <input type="checkbox" id="action-{{$key}}"
+            name="action" value="{{$key}}"{{if currentURLHasParam "action" $key}}checked{{end}}>
+        <label for="action-{{$key}}">
+          <md-filter-chip label="{{printf "%.25s" $key}} ({{$count}})"{{if currentURLHasParam "action" $key}}selected{{end}}></md-filter-chip>
+        </label>
+        {{ end }}
+      {{ end }}
+    </md-chip-set>
+    <h3 id="rule-label">rule</h3>
+    <md-chip-set aria-labelledby="rule-label">
+      {{ range $key, $count := .rule_counts }}
+        <input type="checkbox" id="rule-{{$key}}"
+            name="rule" value="{{$key}}"{{if currentURLHasParam "rule" $key}}checked{{end}}>
+        <label for="rule-{{$key}}">
+          <md-filter-chip label="{{$key}} ({{$count}})"{{if currentURLHasParam "rule" $key}}selected{{end}}></md-filter-chip></label>
+      {{ end }}
+    </md-chip-set>
+  </div>
+</form>
+{{end}}
+
+{{define "content"}}
 <div class="data-table-container">
   <cds-table>
     <cds-table-head>

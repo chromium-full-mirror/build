@@ -39,13 +39,16 @@ found in the LICENSE file. */}}
   {{/* Tell HTMX by default to use this element as a progress indicator. (It will attach the class "htmx-request" when active.) */}}
   hx-indicator="#progress-indicator">
   <md-linear-progress id="progress-indicator" indeterminate></md-linear-progress>
-  <header class="top-bar">
-    <div class="top-bar-title">
-      <h1>sisod</h1>
-      <p class="subtitle">version 0.0.0</p>
-    </div>
-  </header>
-  {{template "content" .}}
+  <div id="page">
+    <header class="header">
+      <div class="header-title">
+        <h1>sisod</h1>
+        <p class="subtitle">version 0.0.0</p>
+      </div>
+    </header>
+    <div class="content">{{template "content" .}}</div>
+    <aside class="sidebar">{{template "sidebar" .}}</aside>
+  </div>
 </body>
 </html>
 {{end}}

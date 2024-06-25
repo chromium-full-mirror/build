@@ -2,31 +2,93 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file. */
 
-.top-bar-title h1, .top-bar-title p.subtitle {
+/* Page layout. */
+
+html, body {
+    margin: 0;
+    padding: 0;
+}
+
+#page {
+    display: grid;
+    grid-gap: 20px;
+    grid-template-columns: 300px 3fr;
+    grid-template-rows: 40px 1fr;
+    grid-template-areas:
+        "header  content"
+        "sidebar content";
+}
+
+#page .header {
+    position: sticky;
+    top: 0;
+    grid-area: header;
+    padding: 8px;
+}
+
+#page .header-title h1, #page .header-title p.subtitle {
     margin: 0;
     padding: 0;
     display: inline;
     font: inherit;
 }
 
-.top-bar-title p.subtitle {
+#page .header-title p.subtitle {
     font-size: smaller;
 }
 
+#page .content {
+    grid-area: content;
+}
+
+#page .sidebar {
+    grid-area: sidebar;
+    top: 40px;
+    padding: 8px;
+    /* Even though this is part of the grid, it needs to be explicitly set for
+     * some reason, otherwise child elements won't wrap. TODO: why? */
+    width: 300px;
+}
+
+/* Steps page. */
+
 .data-table-container {
     width: 100%;
-    overflow-x: scroll;
 }
 
-.data-table-toolbar,
-#paginator {
-    position: relative;
+.page-controls {
     display: flex;
-    justify-content: flex-end;
-    align-items: center;
-    padding-bottom: 8px;
+    margin: 8px 0;
 }
 
+.page-controls md-outlined-text-field {
+    width: 80px;
+    height: var(--md-icon-button-state-layer-height);
+    --md-outlined-field-bottom-space: 12px;
+    --md-outlined-field-top-space: 12px;
+    --md-outlined-field-trailing-space: 12px;
+    --md-outlined-field-leading-space: 12px;
+}
+
+.filter-controls {
+    margin: 8px 0;
+}
+
+.filter-controls md-filter-chip {
+    --md-filter-chip-label-text-size: 13px;
+    --md-filter-chip-leading-space: 10px;
+    --md-filter-chip-trailing-space: 10px;
+    --md-filter-chip-container-height: 26px;
+}
+
+.filter-controls md-chip-set input[type=checkbox] {
+    display: none;
+}
+
+cds-table-head {
+    position: sticky;
+    top: 0;
+}
 cds-table-header-cell {
     background: var(--md-sys-color-surface-container);
 }
@@ -34,12 +96,15 @@ cds-table-body {
     background: var(--md-sys-color-surface);
 }
 
+/* Global styles. */
+
 #progress-indicator {
     display: none;
     position: fixed;
     top: 0;
     left: 0;
     right: 0;
+    z-index: 999;
 }
 
 #progress-indicator.htmx-request {
@@ -109,4 +174,5 @@ a:focus-visible, a:hover {
     --md-sys-color-surface-container: rgb(238 239 227);
     --md-sys-color-surface-container-high: rgb(233 233 221);
     --md-sys-color-surface-container-highest: rgb(227 227 216);
+    --md-icon-button-state-layer-height: 40px;
 }

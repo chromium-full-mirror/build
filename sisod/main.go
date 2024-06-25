@@ -24,6 +24,7 @@ var metricsPathFlag = flag.String("metrics", "", "path to siso_metrics.json")
 func main() {
 	flag.Parse()
 
+	// Read metrics.
 	b, err := os.ReadFile(*metricsPathFlag)
 	if err != nil {
 		fmt.Printf("failed to read metrics: %s\n", err)
@@ -40,6 +41,24 @@ func main() {
 	if err != nil {
 		fmt.Printf("failed to unmarshal metrics: %s\n", err)
 		os.Exit(1)
+	}
+
+	actionCounts := make(map[string]int)
+	for _, metric := range metrics {
+		if actionVal, ok := metric.(map[string]any)["action"]; ok {
+			if action, ok := actionVal.(string); ok && len(action) > 0 {
+				actionCounts[action]++
+			}
+		}
+	}
+
+	ruleCounts := make(map[string]int)
+	for _, metric := range metrics {
+		if ruleVal, ok := metric.(map[string]any)["rule"]; ok {
+			if rule, ok := ruleVal.(string); ok && len(rule) > 0 {
+				ruleCounts[rule]++
+			}
+		}
 	}
 
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
@@ -73,7 +92,15 @@ func main() {
 	})
 
 	http.HandleFunc("/steps/", func(w http.ResponseWriter, r *http.Request) {
-		tmpl, err := template.ParseFiles(
+		tmpl, err := template.New("_steps.html").Funcs(template.FuncMap{
+			"currentURLHasParam": func(key string, value string) bool {
+				q := r.URL.Query()
+				if values, ok := q[key]; ok {
+					return slices.Contains(values, value)
+				}
+				return false
+			},
+		}).ParseFiles(
 			"base.html",
 			"_steps.html",
 		)
@@ -82,7 +109,37 @@ func main() {
 			return
 		}
 
-		itemsLen := len(metrics)
+		actionsWanted := r.URL.Query()["action"]
+		rulesWanted := r.URL.Query()["rule"]
+
+		filteredMetrics := metrics
+		if len(actionsWanted) > 0 || len(rulesWanted) > 0 {
+			// Need to clone metrics otherwise deletes will propagate to the cached metrics.
+			filteredMetrics = make([]any, len(metrics))
+			copy(filteredMetrics, metrics)
+			filteredMetrics = slices.DeleteFunc(filteredMetrics, func(m any) bool {
+				shouldDelete := false
+				if metric, ok := m.(map[string]any); ok {
+					// Perform filtering only if filters are set for that field.
+					// Ignore failed type assertions because null fields should be filtered out.
+					if len(actionsWanted) > 0 {
+						action, _ := metric["action"].(string)
+						if !slices.Contains(actionsWanted, action) {
+							shouldDelete = true
+						}
+					}
+					if len(rulesWanted) > 0 {
+						rule, _ := metric["rule"].(string)
+						if !slices.Contains(rulesWanted, rule) {
+							shouldDelete = true
+						}
+					}
+				}
+				return shouldDelete
+			})
+		}
+
+		itemsLen := len(filteredMetrics)
 		itemsPerPage, err := strconv.Atoi(r.URL.Query().Get("items_per_page"))
 		if err != nil {
 			itemsPerPage = DefaultItemsPerPage
@@ -91,8 +148,8 @@ func main() {
 		if err != nil {
 			requestedPage = 0
 		}
-		pageCount := len(metrics) / itemsPerPage
-		if len(metrics)%itemsPerPage > 0 {
+		pageCount := len(filteredMetrics) / itemsPerPage
+		if len(filteredMetrics)%itemsPerPage > 0 {
 			pageCount++
 		}
 
@@ -102,20 +159,23 @@ func main() {
 		pageNext := min(pageIndex+1, pageLast)
 		pagePrev := max(0, pageIndex-1)
 		itemsFirst := pageIndex * itemsPerPage
-		itemsLast := min(itemsFirst+itemsPerPage, itemsLen) - 1
-		subset := metrics[itemsFirst:itemsLast]
+		itemsLast := max(0, min(itemsFirst+itemsPerPage, itemsLen)-1)
+		subset := filteredMetrics[itemsFirst:itemsLast]
 
 		data := map[string]any{
-			"subset":      subset,
-			"page_index":  pageIndex,
-			"page_first":  pageFirst,
-			"page_next":   pageNext,
-			"page_prev":   pagePrev,
-			"page_last":   pageLast,
-			"page_count":  pageCount,
-			"items_first": itemsFirst + 1,
-			"items_last":  itemsLast + 1,
-			"items_len":   len(metrics),
+			"subset":        subset,
+			"page":          requestedPage,
+			"page_index":    pageIndex,
+			"page_first":    pageFirst,
+			"page_next":     pageNext,
+			"page_prev":     pagePrev,
+			"page_last":     pageLast,
+			"page_count":    pageCount,
+			"items_first":   itemsFirst + 1,
+			"items_last":    itemsLast + 1,
+			"items_len":     len(filteredMetrics),
+			"action_counts": actionCounts,
+			"rule_counts":   ruleCounts,
 		}
 		err = tmpl.ExecuteTemplate(w, "base", data)
 		if err != nil {
