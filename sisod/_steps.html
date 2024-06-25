@@ -1,0 +1,71 @@
+{{/* Copyright 2024 The Chromium Authors
+Use of this source code is governed by a BSD-style license that can be
+found in the LICENSE file. */}}
+
+{{define "content"}}
+<div class="data-table-toolbar">
+  <div id="paginator" hx-push-url="true" hx-swap-oob="true">
+    <div>
+      {{ .items_first }}-{{ .items_last }} of {{ .items_len }}
+    </div>
+    <div hx-select="#data-table-body" hx-target="#data-table-body" hx-swap="outerHTML">
+      <md-icon-button hx-trigger="click"
+                      hx-get="?page={{ .page_first }}">
+        <md-icon>first_page</md-icon>
+      </md-icon-button>
+      <md-icon-button hx-trigger="click"
+                      hx-get="?page={{ .page_prev }}">
+        <md-icon>chevron_left</md-icon>
+      </md-icon-button>
+      <md-icon-button hx-trigger="click"
+                      hx-get="?page={{ .page_next }}">
+        <md-icon>chevron_right</md-icon>
+      </md-icon-button>
+      <md-icon-button hx-trigger="click"
+                      hx-get="?page={{ .page_last }}">
+        <md-icon>last_page</md-icon>
+      </md-icon-button>
+    </div>
+  </div>
+</div>
+<div class="data-table-container">
+  <cds-table>
+    <cds-table-head>
+      <cds-table-header-row>
+        <cds-table-header-cell>step_id</cds-table-header-cell>
+        <cds-table-header-cell>
+          output
+          <cds-table-cell-content>action</cds-table-cell-content>
+        </cds-table-header-cell>
+        <cds-table-header-cell>rule</cds-table-header-cell>
+        <cds-table-header-cell>ready</cds-table-header-cell>
+        <cds-table-header-cell>start</cds-table-header-cell>
+        <cds-table-header-cell>duration</cds-table-header-cell>
+        <cds-table-header-cell>weighted_duration</cds-table-header-cell>
+        <cds-table-header-cell>run</cds-table-header-cell>
+        <cds-table-header-cell>queue</cds-table-header-cell>
+        <cds-table-header-cell>exec</cds-table-header-cell>
+      </cds-table-header-row>
+    </cds-table-head>
+    <cds-table-body id="data-table-body">
+      {{ range .subset }}
+      <cds-table-row>
+        <cds-table-cell><a href="/steps/{{ .step_id }}">{{ .step_id }}</a></cds-table-cell>
+        <cds-table-cell>
+          {{ .output }}
+          <cds-table-cell-content>{{ .action }}</cds-table-cell-content>
+        </cds-table-cell>
+        <cds-table-cell>{{ .rule }}</cds-table-cell>
+        <cds-table-cell>{{ printf "%.4f" .ready }}</cds-table-cell>
+        <cds-table-cell>{{ printf "%.4f" .start }}</cds-table-cell>
+        <cds-table-cell>{{ printf "%.4f" .duration }}</cds-table-cell>
+        <cds-table-cell>{{ printf "%.4f" .weighted_duration }}</cds-table-cell>
+        <cds-table-cell>{{ printf "%.4f" .run }}</cds-table-cell>
+        <cds-table-cell>{{ printf "%.4f" .queue }}</cds-table-cell>
+        <cds-table-cell>{{ printf "%.4f" .exec }}</cds-table-cell>
+      </cds-table-row>
+      {{ end }}
+    </cds-table-body>
+  </cds-table>
+</div>
+{{end}}
