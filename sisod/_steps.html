@@ -29,8 +29,13 @@ found in the LICENSE file. */}}
     </div>
   </div>
   <div class="filter-controls">
-    <md-filled-text-field placeholder="Search outputs">
+    <md-filled-text-field name="q" type="search" value="{{.output_search}}" placeholder="Search outputs"
+        oninput="this.querySelector('md-icon-button').style.display = this.value ? 'flex' : 'none'">
       <md-icon slot="leading-icon">search</md-icon>
+      <md-icon-button class="clear-text-field" slot="trailing-icon"
+          {{if not .output_search}} style="display: none"{{end}} onclick="this.closest('md-filled-text-field').value = ''; this.style.display = 'none'">
+        <md-icon>close</md-icon>
+      </md-icon-button>
     </md-filled-text-field>
     <h3 id="action-label">action</h3>
     <md-chip-set aria-labelledby="action-label">

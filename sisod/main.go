@@ -15,6 +15,7 @@ import (
 	"os"
 	"slices"
 	"strconv"
+	"strings"
 )
 
 const DefaultItemsPerPage = 100
@@ -111,9 +112,10 @@ func main() {
 
 		actionsWanted := r.URL.Query()["action"]
 		rulesWanted := r.URL.Query()["rule"]
+		outputSearch := r.URL.Query().Get("q")
 
 		filteredMetrics := metrics
-		if len(actionsWanted) > 0 || len(rulesWanted) > 0 {
+		if len(actionsWanted) > 0 || len(rulesWanted) > 0 || len(outputSearch) > 0 {
 			// Need to clone metrics otherwise deletes will propagate to the cached metrics.
 			filteredMetrics = make([]any, len(metrics))
 			copy(filteredMetrics, metrics)
@@ -131,6 +133,12 @@ func main() {
 					if len(rulesWanted) > 0 {
 						rule, _ := metric["rule"].(string)
 						if !slices.Contains(rulesWanted, rule) {
+							shouldDelete = true
+						}
+					}
+					if len(outputSearch) > 0 {
+						output, _ := metric["output"].(string)
+						if !strings.Contains(output, outputSearch) {
 							shouldDelete = true
 						}
 					}
@@ -164,6 +172,7 @@ func main() {
 
 		data := map[string]any{
 			"subset":        subset,
+			"output_search": outputSearch,
 			"page":          requestedPage,
 			"page_index":    pageIndex,
 			"page_first":    pageFirst,
