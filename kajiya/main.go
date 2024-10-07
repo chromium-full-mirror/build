@@ -23,6 +23,7 @@ import (
 
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/reflection"
 
 	"go.chromium.org/luci/common/system/signals"
@@ -40,6 +41,8 @@ var (
 	enableExecution = flag.Bool("execution", true, "whether to enable the execution service")
 	pprofAddr       = flag.String("pprof_addr", "", `listen address for "go tool pprof". e.g. "localhost:6060"`)
 	cpuprofile      = flag.String("cpuprofile", "", "write cpu profile to file")
+	tlsCertFile     = flag.String("tls_cert_file", "", "TLS certificate file")
+	tlsKeyFile      = flag.String("tls_key_file", "", "TLS key file")
 )
 
 func getDefaultDataDir() string {
@@ -132,7 +135,23 @@ func parseAddress(addr string) (string, string) {
 
 // createServer creates a new gRPC server and registers the services.
 func createServer(dataDir string) (*grpc.Server, error) {
-	s := grpc.NewServer()
+	// If either the cert or key file is specified, both must be.
+	if (*tlsCertFile == "") != (*tlsKeyFile == "") {
+		log.Fatalf("both --tls_cert_file and --tls_key_file must be specified")
+	}
+
+	// Create tls based credential.
+	var opts []grpc.ServerOption
+	if *tlsCertFile != "" {
+		log.Printf("🔒 using TLS certificate %v and key %v", filepath.Base(*tlsCertFile), filepath.Base(*tlsKeyFile))
+		creds, err := credentials.NewServerTLSFromFile(*tlsCertFile, *tlsKeyFile)
+		if err != nil {
+			log.Fatalf("failed to load TLS certificate and key: %v", err)
+		}
+		opts = append(opts, grpc.Creds(creds))
+	}
+
+	s := grpc.NewServer(opts...)
 
 	capabilities.Register(s)
 	log.Printf("✅ capabilities service")
