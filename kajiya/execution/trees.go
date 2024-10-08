@@ -97,6 +97,14 @@ func (t *TreeRepository) StageDirectory(dirDigest *repb.Digest, path string) err
 				if err := os.Mkdir(destPath, 0755); err != nil {
 					return fmt.Errorf("failed to create directory: %w", err)
 				}
+			} else if d.Type()&os.ModeSymlink != 0 {
+				target, err := os.Readlink(srcPath)
+				if err != nil {
+					return fmt.Errorf("failed to read symlink target: %w", err)
+				}
+				if err := os.Symlink(target, destPath); err != nil {
+					return fmt.Errorf("failed to create symlink: %w", err)
+				}
 			} else {
 				if err := blobstore.FastCopy(srcPath, destPath); err != nil {
 					return fmt.Errorf("failed to create hardlink: %w", err)
