@@ -6,12 +6,15 @@
 package clean
 
 import (
+	"errors"
 	"fmt"
 	"os"
 
 	"github.com/maruel/subcommands"
 
 	"infra/build/gong/gn"
+	"infra/build/gong/gn/syntax"
+	"infra/build/gong/ui"
 )
 
 // Cmd returns the Command for the `clean` subcommand provided by this package.
@@ -43,7 +46,12 @@ func (h *cleanCmdRun) cleanOneDir(dir string) error {
 func (h *cleanCmdRun) Run(a subcommands.Application, args []string, env subcommands.Env) int {
 	for _, dir := range args {
 		if err := h.cleanOneDir(dir); err != nil {
-			fmt.Fprintf(os.Stderr, "clean failed: %v\n", err)
+			var syntaxErr syntax.Error
+			if errors.As(err, &syntaxErr) {
+				fmt.Fprint(os.Stderr, ui.FormatError(syntaxErr))
+				return 1
+			}
+			fmt.Fprintf(os.Stderr, "clean failed with error: %v\n", err)
 			return 1
 		}
 	}

@@ -5,8 +5,6 @@
 package syntax
 
 import (
-	"fmt"
-
 	"infra/build/gong/gn/fs"
 )
 
@@ -150,9 +148,11 @@ func (s *tokenizer) getErrorForInvalidToken(location Location) error {
 			help = "Comments should start with # instead"
 		}
 	}
-
-	// TODO: GN error struct?
-	return fmt.Errorf("invalid token at %s:%d:%d: %s", location.file.Name.Filename(), location.lineNumber, location.columnNumber, help)
+	return Error{
+		location: location,
+		message:  "Invalid token.",
+		helpText: help,
+	}
 }
 
 func (s *tokenizer) done() bool {

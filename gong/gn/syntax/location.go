@@ -5,6 +5,8 @@
 package syntax
 
 import (
+	"fmt"
+
 	"infra/build/gong/gn/fs"
 )
 
@@ -13,6 +15,15 @@ type Location struct {
 	file         *fs.InputFile
 	lineNumber   int // 0 when unset. 1-based.
 	columnNumber int // 0 when unset. 1-based.
+}
+
+// Describe returns a string representation of the location.
+func (l Location) Describe(includeColumnNumber bool) string {
+	name := l.file.Name.Filename()
+	if !includeColumnNumber {
+		return fmt.Sprintf("%s:%d", name, l.lineNumber)
+	}
+	return fmt.Sprintf("%s:%d:%d", name, l.lineNumber, l.columnNumber)
 }
 
 // LocationRange represents a range in a source file. Used for error reporting.
