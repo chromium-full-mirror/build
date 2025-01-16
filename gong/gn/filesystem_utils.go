@@ -1,0 +1,104 @@
+// Copyright 2025 The Chromium Authors
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
+package gn
+
+import (
+	"path/filepath"
+	"runtime"
+	"strings"
+)
+
+func endsWithSlash(path string) bool {
+	return path != "" && path[len(path)-1] == '/'
+}
+
+// NormalizePath collapses "." and sequential "/"s and evaluates "..". |path| may be
+// system-absolute, source-absolute, or relative. |path| will retain its relativity,
+// use NormalizePathWithSourceRoot if a different source root is desired.
+func NormalizePath(path string) string {
+	return NormalizePathWithSourceRoot(path, "")
+}
+
+// NormalizePathWithSourceRoot is same as NormalizePath, but if |path| is source-absolute
+// and |sourceRoot| is non-empty, |path| may be system absolute after this
+// function returns, if |path| references the filesystem outside of
+// |sourceRoot| (ex. path = "//.."). In this case on Windows, |path| will have
+// a leading slash. Otherwise, |path| will retain its relativity. |sourceRoot|
+// must not end with a slash.
+func NormalizePathWithSourceRoot(path, sourceRoot string) string {
+	return normalizePathWithSourceRoot(path, sourceRoot, runtime.GOOS == "windows")
+}
+
+func normalizePathWithSourceRoot(path, sourceRoot string, isWindows bool) string {
+	// We can rely on Go's filepath.Clean for a rough approximation of GN's
+	// path normalization, rather than porting over the fully bespoke
+	// character-by-character logic. However this results in some notable
+	// differences to account for.
+
+	// Firstly, filepath.Clean can't handle "//" source-absolute paths.
+	// Keep track of whether this path is source-absolute to trim later.
+	restoreLeadingSlash := false
+	if strings.HasPrefix(path, "//") {
+		restoreLeadingSlash = true
+	}
+
+	// Secondly, GN normalizes all backwards to forward slashes.
+	// Do this after checking for "//" prefix, because any other variation
+	// does not have special meaning i.e. "\\foo" is treated as filesystem
+	// absolute and therefore should be normalized to "/foo".
+	path = strings.ReplaceAll(path, "\\", "/")
+	sourceRoot = strings.ReplaceAll(sourceRoot, "\\", "/")
+
+	// Thirdly, GN normalization requires trailing slashes to be preserved.
+	restoreTrailingSlash := false
+	if endsWithSlash(path) {
+		restoreTrailingSlash = true
+	}
+
+	// Next, behavior depends on whether sourceRoot is set.
+	if sourceRoot == "" {
+		// If no sourceRoot, we can perform a clean now.
+		// Temporarily trimming "//" to "/" preserves source-absolute paths
+		// e.g. "//../foo" -> "/../foo" -> "/foo" -> "//foo"
+		//       ^ remove here                        ^ restore here
+		if restoreLeadingSlash {
+			path = strings.TrimPrefix(path, "/")
+		}
+		path = filepath.Clean(path)
+	} else {
+		// Only on Windows, GN ensures sourceRoot has slash prefix.
+		if isWindows && !strings.HasPrefix(sourceRoot, "/") {
+			sourceRoot = "/" + sourceRoot
+		}
+
+		// If sourceRoot set, first figure out if we stay as source-absolute.
+		// Only if we will exit source-absolute, then consider the sourceRoot.
+		if strings.HasPrefix(filepath.Clean(strings.TrimPrefix(path, "//")), "..") {
+			path = filepath.Join(sourceRoot, path)
+			restoreLeadingSlash = false
+		} else if restoreLeadingSlash {
+			path = strings.TrimPrefix(path, "/")
+		}
+		path = filepath.Clean(path)
+	}
+
+	// filepath.Clean uses os.PathSeparator which is undesirable on Windows.
+	// Always call filepath.ToSlash (it's a no-op on non-Windows).
+	path = filepath.ToSlash(path)
+
+	// filepath.Clean will return "." if the result is empty.
+	// However, GN normalization should result in an empty path.
+	if path == "." {
+		return ""
+	}
+
+	if restoreLeadingSlash {
+		path = "/" + path
+	}
+	if restoreTrailingSlash && !strings.HasSuffix(path, "/") {
+		path = path + "/"
+	}
+	return path
+}

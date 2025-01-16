@@ -53,6 +53,9 @@ func (s *Setup) DoSetup(buildDir string, forceCreate bool, flags *CommonFlags) e
 	if err := s.FillSourceDir(flags); err != nil {
 		return err
 	}
+	if err := s.RunConfigFile(); err != nil {
+		return err
+	}
 
 	return fmt.Errorf("not implemented. setup: %v", s)
 }
@@ -108,5 +111,9 @@ func (s *Setup) FillSourceDir(flags *CommonFlags) error {
 
 // RunConfigFile runs the config file.
 func (s *Setup) RunConfigFile() error {
+	_, err := newInputFile("//.gn", s.dotfileName)
+	if err != nil {
+		return fmt.Errorf("could not load dotfile: %w", err)
+	}
 	return fmt.Errorf("RunConfigFile not implemented")
 }
