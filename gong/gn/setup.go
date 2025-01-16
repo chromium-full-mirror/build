@@ -8,6 +8,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"infra/build/gong/gn/fs"
+	"infra/build/gong/gn/syntax"
 )
 
 const gnFile = ".gn"
@@ -111,9 +114,15 @@ func (s *Setup) FillSourceDir(flags *CommonFlags) error {
 
 // RunConfigFile runs the config file.
 func (s *Setup) RunConfigFile() error {
-	_, err := newInputFile("//.gn", s.dotfileName)
+	dotfileInputFile, err := fs.NewInputFile("//.gn", s.dotfileName)
 	if err != nil {
 		return fmt.Errorf("could not load dotfile: %w", err)
 	}
-	return fmt.Errorf("RunConfigFile not implemented")
+
+	dotfileTokens, err := syntax.Tokenize(dotfileInputFile)
+	if err != nil {
+		return fmt.Errorf("tokenize failed: %w", err)
+	}
+
+	return fmt.Errorf("RunConfigFile not implemented, tokens: %v", dotfileTokens)
 }

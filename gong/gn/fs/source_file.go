@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-package gn
+package fs
 
 import (
 	"fmt"
@@ -26,4 +26,9 @@ func makeSourceFile(value string) (SourceFile, error) {
 	return SourceFile{
 		value: unique.Make(NormalizePath(value)),
 	}, nil
+}
+
+// Filename returns the source file name.
+func (s SourceFile) Filename() string {
+	return s.value.Value()
 }
