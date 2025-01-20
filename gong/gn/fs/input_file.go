@@ -15,12 +15,8 @@ type InputFile struct {
 	// Name is the virtual name for representing this file. This does not take into
 	// account whether the file was loaded from the secondary source tree (see
 	// BuildSettings secondarySourcePath).
-	Name SourceFile
-
-	// ContentsLoaded represents whether Contents is available.
-	ContentsLoaded bool
-	// Contents represents contents of the file.
-	Contents string
+	Name     SourceFile
+	contents string
 }
 
 // NewInputFile creates an input file from provided path.
@@ -30,7 +26,7 @@ func NewInputFile(name, path string) (*InputFile, error) {
 		return nil, err
 	}
 	inputFile := &InputFile{Name: source}
-	err = inputFile.Load(path)
+	err = inputFile.load(path)
 	if err != nil {
 		return nil, err
 	}
@@ -38,12 +34,16 @@ func NewInputFile(name, path string) (*InputFile, error) {
 }
 
 // Load loads the given file synchronously.
-func (f *InputFile) Load(systemPath string) error {
+func (f *InputFile) load(systemPath string) error {
 	b, err := os.ReadFile(systemPath)
 	if err != nil {
 		return fmt.Errorf("failed to load path: %w", err)
 	}
-	f.Contents = string(b)
-	f.ContentsLoaded = true
+	f.contents = string(b)
 	return nil
+}
+
+// Contents represents contents of the file.
+func (f InputFile) Contents() string {
+	return f.contents
 }
