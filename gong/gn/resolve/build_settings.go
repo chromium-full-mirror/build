@@ -2,14 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-package gn
+package resolve
 
 import "path/filepath"
 
 // BuildSettings represents settings for one build, which is one toplevel output directory.
 // There may be multiple Settings objects that refer to this, one for each toolchain.
 type BuildSettings struct {
-	dotfileName string
+	// DotfileName refers to the dotfile for this build.
+	DotfileName string
 	// rootPath is absolute path of the source root on the local system. Everything is
 	// relative to this. Does not end in a [back]slash.
 	//
@@ -22,6 +23,7 @@ type BuildSettings struct {
 	rootPath string
 }
 
-func (bs *BuildSettings) setRootPath(path string) {
+// SetRootPath sets the absolute path of the source root on the local system.
+func (bs *BuildSettings) SetRootPath(path string) {
 	bs.rootPath = filepath.ToSlash(path)
 }

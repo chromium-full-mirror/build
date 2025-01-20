@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 
 	"infra/build/gong/gn/fs"
+	"infra/build/gong/gn/parse"
+	"infra/build/gong/gn/resolve"
 	"infra/build/gong/gn/syntax"
 )
 
@@ -31,10 +33,10 @@ func findDotFile(currentDir string) (string, error) {
 // Setup is helper to set up the build settings and environment for the various
 // commands to run.
 type Setup struct {
-	buildSettings BuildSettings
+	buildSettings resolve.BuildSettings
 
 	// These settings are used to interpret the command line and dot file.
-	dotfileSettings *Settings
+	dotfileSettings *resolve.Settings
 
 	// State for invoking the dotfile.
 	dotfileName string
@@ -43,7 +45,7 @@ type Setup struct {
 // NewSetup creates a new Setup helper.
 func NewSetup() *Setup {
 	setup := &Setup{}
-	setup.dotfileSettings = NewSettings(&setup.buildSettings)
+	setup.dotfileSettings = resolve.NewSettings(&setup.buildSettings)
 	return setup
 }
 
@@ -86,8 +88,8 @@ func (s *Setup) FillSourceDir(flags *CommonFlags) error {
 			if err != nil {
 				return fmt.Errorf("could not find dotfile: %w", err)
 			}
-			// Only set dotfileName if it was passed explicitly.
-			s.buildSettings.dotfileName = s.dotfileName
+			// Only set DotfileName if it was passed explicitly.
+			s.buildSettings.DotfileName = s.dotfileName
 		}
 	} else {
 		// In the default case, look for a dotfile and that also tells us where the
@@ -107,7 +109,7 @@ func (s *Setup) FillSourceDir(flags *CommonFlags) error {
 	if err != nil {
 		return fmt.Errorf("can't get the real root path of %s: %w", rootPath, err)
 	}
-	s.buildSettings.setRootPath(rootRealpath)
+	s.buildSettings.SetRootPath(rootRealpath)
 
 	return nil
 }
@@ -124,5 +126,15 @@ func (s *Setup) RunConfigFile() error {
 		return fmt.Errorf("tokenize failed: %w", err)
 	}
 
-	return fmt.Errorf("RunConfigFile not implemented, tokens: %v", dotfileTokens)
+	dotfileRoot, err := parse.Parse(dotfileTokens)
+	if err != nil {
+		return fmt.Errorf("parse failed: %w", err)
+	}
+
+	_, err = resolve.ExecuteNode(dotfileRoot)
+	if err != nil {
+		return fmt.Errorf("execute failed: %w", err)
+	}
+
+	return nil
 }

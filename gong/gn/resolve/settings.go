@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-package gn
+package resolve
 
 // Settings holds the settings for one toolchain invocation. There will be one
 // Settings object for each toolchain type, each referring to the same
