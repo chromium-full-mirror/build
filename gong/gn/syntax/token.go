@@ -104,3 +104,24 @@ func (t Token) Range() LocationRange {
 		},
 	}
 }
+
+// TokenType returns type of this token.
+func (t Token) TokenType() TokenType {
+	return t.tokenType
+}
+
+// Value returns value of this token.
+func (t Token) Value() string {
+	// TODO: consider just {file, start_offset, end_offset}
+	// (and compute line/col when needed) so this is lazy calculated?
+	return t.value
+}
+
+// MakeError makes an error from this token and message.
+func (t Token) MakeError(message string) Error {
+	return Error{
+		location: t.location,
+		ranges:   []LocationRange{t.Range()},
+		message:  message,
+	}
+}

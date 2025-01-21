@@ -17,6 +17,26 @@ type Location struct {
 	columnNumber int // 0 when unset. 1-based.
 }
 
+func (l Location) min(other Location) Location {
+	if l.file != other.file {
+		return Location{}
+	}
+	if l.lineNumber < other.lineNumber || (l.lineNumber == other.lineNumber && l.columnNumber < other.columnNumber) {
+		return l
+	}
+	return other
+}
+
+func (l Location) max(other Location) Location {
+	if l.file != other.file {
+		return Location{}
+	}
+	if l.lineNumber > other.lineNumber || (l.lineNumber == other.lineNumber && l.columnNumber > other.columnNumber) {
+		return l
+	}
+	return other
+}
+
 // Describe returns a string representation of the location.
 func (l Location) Describe(includeColumnNumber bool) string {
 	name := l.file.Name.Filename()
@@ -31,4 +51,13 @@ func (l Location) Describe(includeColumnNumber bool) string {
 type LocationRange struct {
 	begin Location
 	end   Location
+}
+
+// Union returns a location range combined with the current location range.
+// Returns blank if the files are not the same.
+func (l LocationRange) Union(other LocationRange) LocationRange {
+	if l.begin.file != other.begin.file {
+		return LocationRange{}
+	}
+	return LocationRange{l.begin.min(other.begin), l.end.max(other.end)}
 }
