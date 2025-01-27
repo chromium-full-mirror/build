@@ -31,6 +31,8 @@ type BlockNode struct {
 	ResultMode BlockNodeResultMode
 	// BeginToken corresponds to "{" token of this block.
 	BeginToken syntax.Token
+	// End is the end token of this block.
+	End EndNode
 	// Statements is the list of statements in this block.
 	Statements []ParseNode
 }
@@ -86,6 +88,10 @@ type ListNode struct {
 // LocationRange returns the location range for this node.
 func (n *ListNode) LocationRange() syntax.LocationRange {
 	return n.BeginToken.Range().Union(n.End.Value.Range())
+}
+
+func (n *ListNode) appendItem(s ParseNode) {
+	n.Contents = append(n.Contents, s)
 }
 
 // LiteralNode represents a literal in the AST.

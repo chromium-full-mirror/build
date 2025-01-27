@@ -37,6 +37,16 @@ func (l Location) max(other Location) Location {
 	return other
 }
 
+// LineNumber returns the line number of the location.
+func (l Location) LineNumber() int {
+	return l.lineNumber
+}
+
+// ColumnNumber returns the column number of the location.
+func (l Location) ColumnNumber() int {
+	return l.columnNumber
+}
+
 // Describe returns a string representation of the location.
 func (l Location) Describe(includeColumnNumber bool) string {
 	name := l.file.Name.Filename()

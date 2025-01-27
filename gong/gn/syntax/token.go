@@ -93,6 +93,15 @@ type Token struct {
 	location Location
 }
 
+// MakeToken returns a token for testing purposes.
+// TODO: this should not be necessary for testing if it's possible to serialize an AST.
+func MakeToken(tokenType TokenType, value string) Token {
+	return Token{
+		tokenType: tokenType,
+		value:     value,
+	}
+}
+
 // Range returns location range for this token.
 func (t Token) Range() LocationRange {
 	return LocationRange{

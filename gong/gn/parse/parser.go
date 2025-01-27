@@ -116,9 +116,6 @@ func (p *parser) parseFile() (ParseNode, error) {
 		if err != nil {
 			return nil, err
 		}
-		if statement == nil {
-			break
-		}
 		file.appendStatement(statement)
 	}
 	// Newline expected to determine the end of expressions inside blocks, so
@@ -221,18 +218,48 @@ func (p *parser) infixPrecedence(token syntax.Token) precedence {
 }
 
 func (p *parser) parseIdentifierOrCall(left ParseNode, token syntax.Token) (ParseNode, error) {
+	var err error
+	var args *ListNode
+	var block *BlockNode
 	hasArg := false
-	if _, ok := p.consumeOnly(syntax.TokenLeftParen); ok {
+	if leftParen, ok := p.consumeOnly(syntax.TokenLeftParen); ok {
 		// Parsing a function call.
 		hasArg = true
-		if _, ok = p.consumeOnly(syntax.TokenRightParen); ok {
-			// Nothing, just an empty call.
+		if _, ok = p.consumeOnly(syntax.TokenRightParen); !ok {
+			// Didn't see ) straight away.
+			// This means function call with arguments.
+			// Parse the argument list in order to create the AST node.
+			parsedList, err := p.parseList(leftParen, syntax.TokenRightParen, false)
+			if err != nil {
+				return nil, err
+			}
+			if _, ok := p.consumeOnly(syntax.TokenRightParen); !ok {
+				return nil, token.MakeError("Expected ')' after call")
+			}
+			args = &parsedList
 		} else {
-			return nil, token.MakeError("don't know how to handle calls with args yet")
+			// Got a ) straight away.
+			// This means an empty function call.
+			// GN still creates a list in the AST, but unintuitively with the identifier as the
+			// start and end of the node in this case. Here, this behavior is replicated.
+			// (This would mean the EndNode which the comment processing phase attaches comments
+			// to would be the identifier itself, rather than the blank "()".
+			// Note this also means the same identifier is referenced three times in total:
+			// - FunctionCallNode's function refers to the identifier
+			// - FunctionCallNode's args i.e. this ListNode refers to the identifier for begin
+			// - FunctionCallNode's args i.e. this ListNode refers to the identifier for end
+			// TODO: Do we really need to replicate this behavior?)
+			args = &ListNode{
+				BeginToken: token,
+				End:        EndNode{token},
+			}
 		}
 		// Optionally with a scope.
-		if p.lookAhead(syntax.TokenLeftBrace) {
-			return nil, token.MakeError("don't know how to handle calls with scopes yet")
+		if token, ok := p.consumeOnly(syntax.TokenLeftBrace); ok {
+			block, err = p.parseBlock(token, DiscardsResult)
+			if err != nil {
+				return nil, err
+			}
 		}
 	}
 
@@ -242,5 +269,64 @@ func (p *parser) parseIdentifierOrCall(left ParseNode, token syntax.Token) (Pars
 	}
 	funcCall := &FunctionCallNode{}
 	funcCall.Function = token
+	funcCall.Args = args
+	if block != nil {
+		funcCall.Block = block
+	}
 	return funcCall, nil
+}
+
+func (p *parser) parseList(startToken syntax.Token, stopBefore syntax.TokenType, allowTrailingComma bool) (ListNode, error) {
+	list := ListNode{}
+	list.BeginToken = startToken
+	lastWasComma := false
+	firstTime := true
+	for !p.lookAhead(stopBefore) {
+		if !firstTime && !lastWasComma {
+			// Require commas separate things in lists.
+			return ListNode{}, startToken.MakeError("Expected comma between items.")
+		}
+		firstTime = false
+
+		// Why OR? We're parsing things that are higher precedence than the ,
+		// that separates the items of the list. , should appear lower than
+		// boolean expressions (the lowest of which is OR), but above assignments.
+		expr, err := p.parseExpression(precedenceOr)
+		if err != nil {
+			return ListNode{}, err
+		}
+		list.appendItem(expr)
+		if p.atEnd() {
+			return ListNode{}, startToken.MakeError("Unexpected end of file in list.")
+		}
+		// TODO: If GN sees BlockCommentNode as last node it will pretend a
+		// comma was received, do we need to replicate this behavior?
+		_, lastWasComma = p.consumeOnly(syntax.TokenComma)
+	}
+	if lastWasComma && !allowTrailingComma {
+		return ListNode{}, startToken.MakeError("Trailing comma")
+	}
+	// Do not consume end node, this should be responsibility of the caller.
+	list.End = EndNode{p.curToken()}
+	return list, nil
+}
+
+func (p *parser) parseBlock(beginBrace syntax.Token, resultMode BlockNodeResultMode) (*BlockNode, error) {
+	block := &BlockNode{
+		BeginToken: beginBrace,
+		ResultMode: resultMode,
+	}
+	for {
+		if token, ok := p.consumeOnly(syntax.TokenRightBrace); ok {
+			block.End = EndNode{token}
+			break
+		}
+
+		statement, err := p.parseStatement()
+		if err != nil {
+			return nil, err
+		}
+		block.appendStatement(statement)
+	}
+	return block, nil
 }
