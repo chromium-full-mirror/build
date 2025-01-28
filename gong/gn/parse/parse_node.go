@@ -42,7 +42,7 @@ func (n *BlockNode) appendStatement(s ParseNode) {
 }
 
 // LocationRange returns the location range for this node.
-func (n BlockNode) LocationRange() syntax.LocationRange {
+func (n *BlockNode) LocationRange() syntax.LocationRange {
 	// TODO: implement by checking statements
 	return syntax.LocationRange{}
 }
@@ -103,6 +103,19 @@ type LiteralNode struct {
 // LocationRange returns the location range for this node.
 func (n *LiteralNode) LocationRange() syntax.LocationRange {
 	return n.Token.Range()
+}
+
+// UnaryOpNode represents a unary operation in the AST.
+type UnaryOpNode struct {
+	// Op is the operator token.
+	Op syntax.Token
+	// Operand represents the operand of the operation.
+	Operand ParseNode
+}
+
+// LocationRange returns the location range for this node.
+func (n *UnaryOpNode) LocationRange() syntax.LocationRange {
+	return n.Op.Range().Union(n.Operand.LocationRange())
 }
 
 // BlockCommentNode represents standalone comments (that is, those not

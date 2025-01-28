@@ -35,14 +35,14 @@ func TestParse_Valid(t *testing.T) {
 		{
 			name:  "empty",
 			input: "",
-			expected: BlockNode{
+			expected: &BlockNode{
 				ResultMode: DiscardsResult,
 			},
 		},
 		{
 			name:  "identifier",
 			input: "foo",
-			expected: BlockNode{
+			expected: &BlockNode{
 				ResultMode: DiscardsResult,
 				Statements: []ParseNode{
 					&IdentifierNode{Value: syntax.MakeToken(syntax.TokenIdentifier, "foo")},
@@ -52,7 +52,7 @@ func TestParse_Valid(t *testing.T) {
 		{
 			name:  "literal",
 			input: "123",
-			expected: BlockNode{
+			expected: &BlockNode{
 				ResultMode: DiscardsResult,
 				Statements: []ParseNode{
 					&LiteralNode{Token: syntax.MakeToken(syntax.TokenInteger, "123")},
@@ -62,7 +62,7 @@ func TestParse_Valid(t *testing.T) {
 		{
 			name:  "call_empty",
 			input: "foo()",
-			expected: BlockNode{
+			expected: &BlockNode{
 				ResultMode: DiscardsResult,
 				Statements: []ParseNode{
 					&FunctionCallNode{
@@ -79,7 +79,7 @@ func TestParse_Valid(t *testing.T) {
 		{
 			name:  "call_args",
 			input: `foo(1, "a")`,
-			expected: BlockNode{
+			expected: &BlockNode{
 				ResultMode: DiscardsResult,
 				Statements: []ParseNode{
 					&FunctionCallNode{
@@ -101,7 +101,7 @@ func TestParse_Valid(t *testing.T) {
 			input: `foo() {
     bar()
 }`,
-			expected: BlockNode{
+			expected: &BlockNode{
 				ResultMode: DiscardsResult,
 				Statements: []ParseNode{
 					&FunctionCallNode{
@@ -125,6 +125,37 @@ func TestParse_Valid(t *testing.T) {
 									},
 								},
 							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name:  "bracket_expr",
+			input: "[foo]",
+			expected: &BlockNode{
+				ResultMode: DiscardsResult,
+				Statements: []ParseNode{
+					&ListNode{
+						BeginToken: syntax.MakeToken(syntax.TokenLeftBracket, "["),
+						End:        EndNode{syntax.MakeToken(syntax.TokenRightBracket, "]")},
+						Contents: []ParseNode{
+							&IdentifierNode{Value: syntax.MakeToken(syntax.TokenIdentifier, "foo")},
+						},
+					},
+				},
+			},
+		},
+		{
+			name:  "unary_expr",
+			input: "!false",
+			expected: &BlockNode{
+				ResultMode: DiscardsResult,
+				Statements: []ParseNode{
+					&UnaryOpNode{
+						Op: syntax.MakeToken(syntax.TokenBang, "!"),
+						Operand: &LiteralNode{
+							Token: syntax.MakeToken(syntax.TokenFalse, "false"),
 						},
 					},
 				},
@@ -173,6 +204,12 @@ func TestParse_Invalid(t *testing.T) {
 		{
 			name:   "hanging_if",
 			input:  "if",
+			line:   1,
+			column: 1,
+		},
+		{
+			name:   "hanging_bracket",
+			input:  "[test",
 			line:   1,
 			column: 1,
 		},

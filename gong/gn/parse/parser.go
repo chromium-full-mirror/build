@@ -124,7 +124,7 @@ func (p *parser) parseFile() (ParseNode, error) {
 	if !p.atEnd() {
 		return nil, p.curToken().MakeError("Unexpected here, should be newline.")
 	}
-	return file, nil
+	return &file, nil
 }
 
 func (p *parser) parseStatement() (ParseNode, error) {
@@ -169,11 +169,27 @@ func (p *parser) parsePrefix(token syntax.Token) (ParseNode, error) {
 		syntax.TokenFalse:
 		return &LiteralNode{token}, nil
 	case syntax.TokenBang:
-		return nil, fmt.Errorf("NOT currently unimplemented")
+		// !foo
+		expr, err := p.parseExpression(precedenceCall)
+		if err != nil {
+			return nil, err
+		}
+		return &UnaryOpNode{
+			Op:      token,
+			Operand: expr,
+		}, nil
 	case syntax.TokenLeftParen:
 		return nil, fmt.Errorf("GROUP currently unimplemented")
 	case syntax.TokenLeftBracket:
-		return nil, fmt.Errorf("LIST currently unimplemented")
+		// [foo]
+		list, err := p.parseList(token, syntax.TokenRightBracket, true)
+		if err != nil {
+			return nil, err
+		}
+		if trailingToken, ok := p.consumeOnly(syntax.TokenRightBracket); !ok {
+			return nil, trailingToken.MakeError("Expected ']'")
+		}
+		return &list, nil
 	case syntax.TokenLeftBrace:
 		return nil, fmt.Errorf("BLOCK currently unimplemented")
 	case syntax.TokenIdentifier:
