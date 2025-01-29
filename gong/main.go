@@ -17,6 +17,7 @@ import (
 	"go.chromium.org/luci/common/cli"
 
 	"infra/build/gong/subcmd/clean"
+	"infra/build/gong/subcmd/format"
 	"infra/build/gong/subcmd/help"
 )
 
@@ -26,6 +27,7 @@ func getApplication() *cli.Application {
 		Title: "Experimental Go reimplementation of the GN meta-build system",
 		Commands: []*subcommands.Command{
 			clean.Cmd(),
+			format.Cmd(),
 			help.Cmd(),
 		},
 	}

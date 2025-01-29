@@ -10,6 +10,8 @@ import "infra/build/gong/gn/syntax"
 type ParseNode interface {
 	// LocationRange is the file range this node represents.
 	LocationRange() syntax.LocationRange
+	// Dump returns a JSON-serializable representation of this node.
+	Dump() NodeDump
 }
 
 // BlockNodeResultMode sets execution option for the scopes and results.
