@@ -145,6 +145,23 @@ func TestParse_Large(t *testing.T) {
 `,
 		},
 		{
+			name:  "paren_expr",
+			input: "(foo)",
+			expected: `BLOCK
+ IDENTIFIER(foo)
+`,
+		},
+		{
+			name:  "brace_expr",
+			input: "{assert(false)}",
+			expected: `BLOCK
+ BLOCK
+  FUNCTION(assert)
+   LIST
+    LITERAL(false)
+`,
+		},
+		{
 			name:  "unary_expr",
 			input: "!false",
 			expected: `BLOCK
