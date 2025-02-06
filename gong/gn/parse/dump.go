@@ -146,6 +146,18 @@ func (n *LiteralNode) Dump() NodeDump {
 }
 
 // Dump returns a JSON-serializable of this node.
+func (n *BinaryOpNode) Dump() NodeDump {
+	return NodeDump{
+		Type:  "BINARY_OP",
+		Value: n.Op.Value(),
+		Children: []NodeDump{
+			n.Left.Dump(),
+			n.Right.Dump(),
+		},
+	}
+}
+
+// Dump returns a JSON-serializable of this node.
 func (n *UnaryOpNode) Dump() NodeDump {
 	return NodeDump{
 		Type:  "UNARY_OP",

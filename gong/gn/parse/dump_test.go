@@ -130,6 +130,32 @@ func TestDump(t *testing.T) {
 				Value: "123",
 			},
 		},
+		{
+			name: "binary_op",
+			input: &BinaryOpNode{
+				Op: syntax.MakeToken(syntax.TokenEqual, "="),
+				Left: &LiteralNode{
+					Token: syntax.MakeToken(syntax.TokenIdentifier, "a"),
+				},
+				Right: &LiteralNode{
+					Token: syntax.MakeToken(syntax.TokenInteger, "123"),
+				},
+			},
+			want: NodeDump{
+				Type:  "BINARY_OP",
+				Value: "=",
+				Children: []NodeDump{
+					{
+						Type:  "LITERAL",
+						Value: "a",
+					},
+					{
+						Type:  "LITERAL",
+						Value: "123",
+					},
+				},
+			},
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			got := tc.input.Dump()
@@ -200,6 +226,19 @@ func TestRenderDumpAsText(t *testing.T) {
 				Comment: syntax.MakeToken(syntax.TokenBlockComment, "# Comment"),
 			},
 			wantText: "BLOCK_COMMENT(# Comment)\n",
+		},
+		{
+			name: "binary_op",
+			input: &BinaryOpNode{
+				Op: syntax.MakeToken(syntax.TokenEqual, "="),
+				Left: &LiteralNode{
+					Token: syntax.MakeToken(syntax.TokenIdentifier, "a"),
+				},
+				Right: &LiteralNode{
+					Token: syntax.MakeToken(syntax.TokenInteger, "123"),
+				},
+			},
+			wantText: "BINARY_OP(=)\n LITERAL(a)\n LITERAL(123)\n",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

@@ -213,6 +213,26 @@ func (p *parser) parsePrefix(token syntax.Token) (ParseNode, error) {
 
 func (p *parser) parseInfix(left ParseNode, token syntax.Token) (ParseNode, error) {
 	switch token.TokenType() {
+	case syntax.TokenEqual,
+		syntax.TokenPlusEquals,
+		syntax.TokenMinusEquals:
+		_, isIdentifier := left.(*IdentifierNode)
+		_, isAccessor := left.(*AccessorNode)
+		if !isIdentifier && !isAccessor {
+			return nil, makeErrFromParseNode(left, "The left-hand side of an assignment must be an identifier, scope access, or array access.", "")
+		}
+		value, err := p.parseExpression(precedenceAssignment)
+		if err != nil {
+			return nil, err
+		}
+		if value == nil {
+			return nil, token.MakeError("Expected right-hand side of assignment.")
+		}
+		return &BinaryOpNode{
+			Op:    token,
+			Left:  left,
+			Right: value,
+		}, nil
 	case syntax.TokenDot:
 		leftIdentifier, isIdentifier := left.(*IdentifierNode)
 		if !isIdentifier {

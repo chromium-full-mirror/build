@@ -144,6 +144,16 @@ func (n *UnaryOpNode) LocationRange() syntax.LocationRange {
 	return n.Op.Range().Union(n.Operand.LocationRange())
 }
 
+type BinaryOpNode struct {
+	Op    syntax.Token
+	Left  ParseNode
+	Right ParseNode
+}
+
+func (n *BinaryOpNode) LocationRange() syntax.LocationRange {
+	return n.Left.LocationRange().Union(n.Right.LocationRange())
+}
+
 // BlockCommentNode represents standalone comments (that is, those not
 // specifically attached to another syntax element. The most common of these
 // is a standard header block. This node contains only the last line of such

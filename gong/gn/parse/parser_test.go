@@ -189,6 +189,56 @@ func TestParse_Large(t *testing.T) {
     IDENTIFIER(c)
 `,
 		},
+		{
+			name:  "assign_identifier",
+			input: "a = 123",
+			expected: `BLOCK
+ BINARY_OP(=)
+  IDENTIFIER(a)
+  LITERAL(123)
+`,
+		},
+		{
+			name:  "assign_member",
+			input: "a.b = 123",
+			expected: `BLOCK
+ BINARY_OP(=)
+  ACCESSOR
+   a
+   IDENTIFIER(b)
+  LITERAL(123)
+`,
+		},
+		{
+			name:  "assign_subscript",
+			input: `a[b] = 123`,
+			expected: `BLOCK
+ BINARY_OP(=)
+  ACCESSOR
+   a
+   IDENTIFIER(b)
+  LITERAL(123)
+`,
+		},
+		{
+			name:  "add_equals",
+			input: `foo += "bar.cc"`,
+			expected: `BLOCK
+ BINARY_OP(+=)
+  IDENTIFIER(foo)
+  LITERAL("bar.cc")
+`,
+		},
+		{
+			name:  "minus_equals",
+			input: `baz -= ["qux.cc"]`,
+			expected: `BLOCK
+ BINARY_OP(-=)
+  IDENTIFIER(baz)
+  LIST
+   LITERAL("qux.cc")
+`,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			inputPath := filepath.Join(t.TempDir(), "test.gni")
@@ -269,6 +319,18 @@ func TestParse_Invalid(t *testing.T) {
 			input:  "a.cookies()",
 			line:   1,
 			column: 2,
+		},
+		{
+			name:   "assign_literal",
+			input:  "123 = a",
+			line:   1,
+			column: 1,
+		},
+		{
+			name:   "assign_func",
+			input:  "a() = b",
+			line:   1,
+			column: 1,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
