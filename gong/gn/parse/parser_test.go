@@ -169,6 +169,26 @@ func TestParse_Large(t *testing.T) {
   LITERAL(false)
 `,
 		},
+		{
+			name:  "member_accessor",
+			input: "a.b",
+			expected: `BLOCK
+ ACCESSOR
+  a
+  IDENTIFIER(b)
+`,
+		},
+		{
+			name:  "subscript_accessor",
+			input: "a[b(c)]",
+			expected: `BLOCK
+ ACCESSOR
+  a
+  FUNCTION(b)
+   LIST
+    IDENTIFIER(c)
+`,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			inputPath := filepath.Join(t.TempDir(), "test.gni")
@@ -225,6 +245,30 @@ func TestParse_Invalid(t *testing.T) {
 			input:  "[test",
 			line:   1,
 			column: 1,
+		},
+		{
+			name:   "member_accessor_invalid_lhs",
+			input:  "foo().1",
+			line:   1,
+			column: 1,
+		},
+		{
+			name:   "nested_member_accessor",
+			input:  "a.b.c",
+			line:   1,
+			column: 2,
+		},
+		{
+			name:   "numeric_member_accessor",
+			input:  "a.42",
+			line:   1,
+			column: 2,
+		},
+		{
+			name:   "func_member_accessor",
+			input:  "a.cookies()",
+			line:   1,
+			column: 2,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

@@ -213,6 +213,42 @@ func (p *parser) parsePrefix(token syntax.Token) (ParseNode, error) {
 
 func (p *parser) parseInfix(left ParseNode, token syntax.Token) (ParseNode, error) {
 	switch token.TokenType() {
+	case syntax.TokenDot:
+		leftIdentifier, isIdentifier := left.(*IdentifierNode)
+		if !isIdentifier {
+			return nil, makeErrFromParseNode(left, `May only use "." for identifiers.`,
+				"The thing on the left hand side of the dot must be an identifier\nand not an expression. If you need this, you'll have to assign the\nvalue to a temporary first. Sorry.")
+		}
+		right, err := p.parseExpression(precedenceDot)
+		if err != nil {
+			return nil, err
+		}
+		rightIdentifier, isIdentifier := right.(*IdentifierNode)
+		if !isIdentifier {
+			return nil, token.MakeErrorWithHelp(`Expected identifier for right-hand-side of "."`,
+				"Good: a.cookies\nBad: a.42\nLooks good but still bad: a.cookies()")
+		}
+		return &AccessorNode{
+			Base:   leftIdentifier.Value,
+			Member: rightIdentifier,
+		}, nil
+	case syntax.TokenLeftBracket:
+		leftIdentifier, isIdentifier := left.(*IdentifierNode)
+		if !isIdentifier {
+			return nil, makeErrFromParseNode(left, "May only subscript identifiers.",
+				"The thing on the left hand side of the [] must be an identifier\nand not an expression. If you need this, you'll have to assign the\nvalue to a temporary before subscripting. Sorry.")
+		}
+		value, err := p.parseExpression(precedenceNone)
+		if err != nil {
+			return nil, err
+		}
+		if _, ok := p.consumeOnly(syntax.TokenRightBracket); !ok {
+			return nil, p.curToken().MakeError("Expecting ']' after subscript.")
+		}
+		return &AccessorNode{
+			Base:      leftIdentifier.Value,
+			Subscript: value,
+		}, nil
 	case syntax.TokenIdentifier:
 		return p.parseIdentifierOrCall(left, token)
 	}

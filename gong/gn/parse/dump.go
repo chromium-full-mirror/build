@@ -12,11 +12,12 @@ import (
 
 // NodeDump is a JSON-serializable representation of a ParseNode.
 type NodeDump struct {
-	Type       string     `json:"type"`
-	Value      string     `json:"value,omitempty"`
-	Children   []NodeDump `json:"child,omitempty"`
-	BeginToken string     `json:"begin_token,omitempty"`
-	End        *NodeDump  `json:"end,omitempty"`
+	Type         string     `json:"type"`
+	Value        string     `json:"value,omitempty"`
+	Children     []NodeDump `json:"child,omitempty"`
+	BeginToken   string     `json:"begin_token,omitempty"`
+	End          *NodeDump  `json:"end,omitempty"`
+	AccessorKind string     `json:"accessor_kind,omitempty"`
 }
 
 // RenderDump renders a NodeDump as text, matching GN's output when running
@@ -29,17 +30,34 @@ func renderDumpAsText(w io.Writer, dump NodeDump, indentLevel int) error {
 	if dump.Type == "" {
 		return fmt.Errorf("node does not have a type")
 	}
-	_, err := fmt.Fprintf(w, "%s%s", strings.Repeat(" ", indentLevel), dump.Type)
-	if err != nil {
-		return err
-	}
-	if dump.Value != "" {
-		_, err = fmt.Fprintf(w, "(%s)", dump.Value)
+	if dump.Type == "ACCESSOR" {
+		// GN dumps accessors differently, instead of
+		// NODE_TYPE(value)
+		// it outputs
+		// ACCESSOR
+		//  value
+		_, err := fmt.Fprintf(w, "%s%s\n", strings.Repeat(" ", indentLevel), dump.Type)
 		if err != nil {
 			return err
 		}
+		_, err = fmt.Fprintf(w, "%s%s", strings.Repeat(" ", indentLevel+1), dump.Value)
+		if err != nil {
+			return err
+		}
+	} else {
+		// Everything else is dumped as NODE_TYPE(value)
+		_, err := fmt.Fprintf(w, "%s%s", strings.Repeat(" ", indentLevel), dump.Type)
+		if err != nil {
+			return err
+		}
+		if dump.Value != "" {
+			_, err = fmt.Fprintf(w, "(%s)", dump.Value)
+			if err != nil {
+				return err
+			}
+		}
 	}
-	_, err = io.WriteString(w, "\n")
+	_, err := io.WriteString(w, "\n")
 	if err != nil {
 		return err
 	}
@@ -50,6 +68,22 @@ func renderDumpAsText(w io.Writer, dump NodeDump, indentLevel int) error {
 		}
 	}
 	return nil
+}
+
+// Dump returns a JSON-serializable of this node.
+func (n *AccessorNode) Dump() NodeDump {
+	dump := NodeDump{
+		Type:  "ACCESSOR",
+		Value: n.Base.Value(),
+	}
+	if n.Subscript != nil {
+		dump.Children = []NodeDump{n.Subscript.Dump()}
+		dump.AccessorKind = "subscript"
+	} else if n.Member != nil {
+		dump.Children = []NodeDump{n.Member.Dump()}
+		dump.AccessorKind = "member"
+	}
+	return dump
 }
 
 // Dump returns a JSON-serializable of this node.

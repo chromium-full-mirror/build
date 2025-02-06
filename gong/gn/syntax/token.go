@@ -134,3 +134,13 @@ func (t Token) MakeError(message string) Error {
 		message:  message,
 	}
 }
+
+// MakeErrorWithHelp makes an error from this token and message and help.
+func (t Token) MakeErrorWithHelp(message, helpText string) Error {
+	return Error{
+		location: t.location,
+		ranges:   []LocationRange{t.Range()},
+		message:  message,
+		helpText: helpText,
+	}
+}

@@ -14,6 +14,30 @@ type ParseNode interface {
 	Dump() NodeDump
 }
 
+func makeErrFromParseNode(parseNode ParseNode, message, helpText string) syntax.Error {
+	if parseNode == nil {
+		return syntax.MakeErrorAt(syntax.Location{}, nil, message, helpText)
+	}
+	return syntax.MakeErrorAt(parseNode.LocationRange().Begin(), []syntax.LocationRange{parseNode.LocationRange()}, message, helpText)
+}
+
+// AccessorNode represents accessing an array or scope element.
+type AccessorNode struct {
+	Base      syntax.Token
+	Subscript ParseNode
+	Member    *IdentifierNode
+}
+
+// LocationRange returns the location range for this node.
+func (n *AccessorNode) LocationRange() syntax.LocationRange {
+	if n.Subscript != nil {
+		return n.Base.Range().Union(n.Subscript.LocationRange())
+	} else if n.Member != nil {
+		return n.Base.Range().Union(n.Member.LocationRange())
+	}
+	return n.Base.Range()
+}
+
 // BlockNodeResultMode sets execution option for the scopes and results.
 type BlockNodeResultMode int
 

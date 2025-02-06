@@ -71,3 +71,8 @@ func (l LocationRange) Union(other LocationRange) LocationRange {
 	}
 	return LocationRange{l.begin.min(other.begin), l.end.max(other.end)}
 }
+
+// Begin returns the beginning of this location range.
+func (l LocationRange) Begin() Location {
+	return l.begin
+}

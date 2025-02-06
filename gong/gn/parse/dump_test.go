@@ -20,6 +20,55 @@ func TestDump(t *testing.T) {
 		want  NodeDump
 	}{
 		{
+			name: "accessor_member",
+			input: &AccessorNode{
+				Base: syntax.MakeToken(syntax.TokenIdentifier, "foo"),
+				Member: &IdentifierNode{
+					Value: syntax.MakeToken(syntax.TokenIdentifier, "bar"),
+				},
+			},
+			want: NodeDump{
+				Type:  "ACCESSOR",
+				Value: "foo",
+				Children: []NodeDump{
+					{
+						Type:  "IDENTIFIER",
+						Value: "bar",
+					},
+				},
+				AccessorKind: "member",
+			},
+		},
+		{
+			name: "accessor_subscript",
+			input: &AccessorNode{
+				Base: syntax.MakeToken(syntax.TokenIdentifier, "foo"),
+				Subscript: &UnaryOpNode{
+					Op: syntax.MakeToken(syntax.TokenBang, "!"),
+					Operand: &IdentifierNode{
+						Value: syntax.MakeToken(syntax.TokenIdentifier, "bar"),
+					},
+				},
+			},
+			want: NodeDump{
+				Type:  "ACCESSOR",
+				Value: "foo",
+				Children: []NodeDump{
+					{
+						Type:  "UNARY_OP",
+						Value: "!",
+						Children: []NodeDump{
+							{
+								Type:  "IDENTIFIER",
+								Value: "bar",
+							},
+						},
+					},
+				},
+				AccessorKind: "subscript",
+			},
+		},
+		{
 			name: "braces_int",
 			input: &BlockNode{
 				BeginToken: syntax.MakeToken(syntax.TokenLeftBrace, "{"),
@@ -121,6 +170,29 @@ func TestRenderDumpAsText(t *testing.T) {
 				Value: syntax.MakeToken(syntax.TokenIdentifier, "foo"),
 			},
 			wantText: "IDENTIFIER(foo)\n",
+		},
+		{
+			name: "accessor_member",
+			input: &AccessorNode{
+				Base: syntax.MakeToken(syntax.TokenIdentifier, "foo"),
+				Member: &IdentifierNode{
+					Value: syntax.MakeToken(syntax.TokenIdentifier, "bar"),
+				},
+			},
+			wantText: "ACCESSOR\n foo\n IDENTIFIER(bar)\n",
+		},
+		{
+			name: "accessor_subscript",
+			input: &AccessorNode{
+				Base: syntax.MakeToken(syntax.TokenIdentifier, "foo"),
+				Subscript: &UnaryOpNode{
+					Op: syntax.MakeToken(syntax.TokenBang, "!"),
+					Operand: &IdentifierNode{
+						Value: syntax.MakeToken(syntax.TokenIdentifier, "bar"),
+					},
+				},
+			},
+			wantText: "ACCESSOR\n foo\n UNARY_OP(!)\n  IDENTIFIER(bar)\n",
 		},
 		{
 			name: "block_comment",

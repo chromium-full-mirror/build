@@ -17,6 +17,17 @@ type Error struct {
 	subErrors []error
 }
 
+// MakeErrorAt makes an error at the provided location and ranges.
+// TODO(b/388723392): just make the struct fields exported?
+func MakeErrorAt(location Location, ranges []LocationRange, message, helpText string) Error {
+	return Error{
+		location: location,
+		ranges:   ranges,
+		message:  message,
+		helpText: helpText,
+	}
+}
+
 // Error returns formatted message for this error.
 func (e Error) Error() string {
 	return fmt.Sprintf("syntax error at %s: %q", e.location.Describe(true), e.message)
