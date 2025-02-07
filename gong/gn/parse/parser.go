@@ -269,6 +269,29 @@ func (p *parser) parseInfix(left ParseNode, token syntax.Token) (ParseNode, erro
 			Base:      leftIdentifier.Value,
 			Subscript: value,
 		}, nil
+	case syntax.TokenPlus,
+		syntax.TokenMinus,
+		syntax.TokenEqualEqual,
+		syntax.TokenNotEqual,
+		syntax.TokenLessEqual,
+		syntax.TokenGreaterEqual,
+		syntax.TokenLessThan,
+		syntax.TokenGreaterThan,
+		syntax.TokenBooleanAnd,
+		syntax.TokenBooleanOr:
+		right, err := p.parseExpression(p.infixPrecedence(token) + 1)
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				// Print error with single quotes to match GN, rather than using %q.
+				return nil, token.MakeError(fmt.Sprintf("Expected right-hand side for '%s'.", token.Value()))
+			}
+			return nil, err
+		}
+		return &BinaryOpNode{
+			Op:    token,
+			Left:  left,
+			Right: right,
+		}, nil
 	case syntax.TokenIdentifier:
 		return p.parseIdentifierOrCall(left, token)
 	}

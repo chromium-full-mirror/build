@@ -142,7 +142,7 @@ func TestDump(t *testing.T) {
 				},
 			},
 			want: NodeDump{
-				Type:  "BINARY_OP",
+				Type:  "BINARY",
 				Value: "=",
 				Children: []NodeDump{
 					{
@@ -238,7 +238,7 @@ func TestRenderDumpAsText(t *testing.T) {
 					Token: syntax.MakeToken(syntax.TokenInteger, "123"),
 				},
 			},
-			wantText: "BINARY_OP(=)\n LITERAL(a)\n LITERAL(123)\n",
+			wantText: "BINARY(=)\n LITERAL(a)\n LITERAL(123)\n",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

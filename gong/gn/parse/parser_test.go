@@ -193,7 +193,7 @@ func TestParse_Large(t *testing.T) {
 			name:  "assign_identifier",
 			input: "a = 123",
 			expected: `BLOCK
- BINARY_OP(=)
+ BINARY(=)
   IDENTIFIER(a)
   LITERAL(123)
 `,
@@ -202,7 +202,7 @@ func TestParse_Large(t *testing.T) {
 			name:  "assign_member",
 			input: "a.b = 123",
 			expected: `BLOCK
- BINARY_OP(=)
+ BINARY(=)
   ACCESSOR
    a
    IDENTIFIER(b)
@@ -213,7 +213,7 @@ func TestParse_Large(t *testing.T) {
 			name:  "assign_subscript",
 			input: `a[b] = 123`,
 			expected: `BLOCK
- BINARY_OP(=)
+ BINARY(=)
   ACCESSOR
    a
    IDENTIFIER(b)
@@ -224,7 +224,7 @@ func TestParse_Large(t *testing.T) {
 			name:  "add_equals",
 			input: `foo += "bar.cc"`,
 			expected: `BLOCK
- BINARY_OP(+=)
+ BINARY(+=)
   IDENTIFIER(foo)
   LITERAL("bar.cc")
 `,
@@ -233,10 +233,54 @@ func TestParse_Large(t *testing.T) {
 			name:  "minus_equals",
 			input: `baz -= ["qux.cc"]`,
 			expected: `BLOCK
- BINARY_OP(-=)
+ BINARY(-=)
   IDENTIFIER(baz)
   LIST
    LITERAL("qux.cc")
+`,
+		},
+		{
+			name:  "binary_op",
+			input: "5 - 1",
+			expected: `BLOCK
+ BINARY(-)
+  LITERAL(5)
+  LITERAL(1)
+`,
+		},
+		{
+			name:  "binary_op_spaceless",
+			input: "5+1",
+			expected: `BLOCK
+ BINARY(+)
+  LITERAL(5)
+  LITERAL(1)
+`,
+		},
+		{
+			name:  "binary_op_multiple",
+			input: "5 - 1 - 2",
+			expected: `BLOCK
+ BINARY(-)
+  BINARY(-)
+   LITERAL(5)
+   LITERAL(1)
+  LITERAL(2)
+`,
+		},
+		{
+			name:  "long_expression",
+			input: "a = b + c && d || e",
+			expected: `BLOCK
+ BINARY(=)
+  IDENTIFIER(a)
+  BINARY(||)
+   BINARY(&&)
+    BINARY(+)
+     IDENTIFIER(b)
+     IDENTIFIER(c)
+    IDENTIFIER(d)
+   IDENTIFIER(e)
 `,
 		},
 	} {
@@ -281,6 +325,42 @@ func TestParse_Invalid(t *testing.T) {
 		{
 			name:   "plus_after_num",
 			input:  "123+",
+			line:   1,
+			column: 4,
+		},
+		{
+			name:   "minus_after_num",
+			input:  "123-",
+			line:   1,
+			column: 4,
+		},
+		{
+			name:   "hanging_eq",
+			input:  "123==",
+			line:   1,
+			column: 4,
+		},
+		{
+			name:   "hanging_le",
+			input:  "123<=",
+			line:   1,
+			column: 4,
+		},
+		{
+			name:   "hanging_ge",
+			input:  "123>=",
+			line:   1,
+			column: 4,
+		},
+		{
+			name:   "hanging_and",
+			input:  "123&&",
+			line:   1,
+			column: 4,
+		},
+		{
+			name:   "hanging_or",
+			input:  "123||",
 			line:   1,
 			column: 4,
 		},

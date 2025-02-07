@@ -148,7 +148,7 @@ func (n *LiteralNode) Dump() NodeDump {
 // Dump returns a JSON-serializable of this node.
 func (n *BinaryOpNode) Dump() NodeDump {
 	return NodeDump{
-		Type:  "BINARY_OP",
+		Type:  "BINARY",
 		Value: n.Op.Value(),
 		Children: []NodeDump{
 			n.Left.Dump(),
