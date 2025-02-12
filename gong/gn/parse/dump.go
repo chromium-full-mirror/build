@@ -101,6 +101,21 @@ func (n *BlockNode) Dump() NodeDump {
 }
 
 // Dump returns a JSON-serializable of this node.
+func (n *ConditionNode) Dump() NodeDump {
+	dump := NodeDump{
+		Type: "CONDITION",
+		Children: []NodeDump{
+			n.Condition.Dump(),
+			n.IfTrue.Dump(),
+		},
+	}
+	if n.IfFalse != nil {
+		dump.Children = append(dump.Children, n.IfFalse.Dump())
+	}
+	return dump
+}
+
+// Dump returns a JSON-serializable of this node.
 func (n *FunctionCallNode) Dump() NodeDump {
 	dump := NodeDump{
 		Type:  "FUNCTION",

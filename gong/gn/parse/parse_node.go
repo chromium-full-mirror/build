@@ -73,6 +73,25 @@ func (n *BlockNode) LocationRange() syntax.LocationRange {
 	return syntax.LocationRange{}
 }
 
+// ConditionNode represents a conditional in the AST.
+type ConditionNode struct {
+	// IfToken represents the if token this node starts at.
+	IfToken syntax.Token
+	// Condition represents the conditional for this node.
+	Condition ParseNode
+	// IfTrue is the block to be executed if the conditional evaluates to true.
+	IfTrue *BlockNode
+	// IfFalse should be a *BlockNode or *ConditionNode to represent either the "else" block or "else if" condition, respectively.
+	IfFalse ParseNode
+}
+
+func (n *ConditionNode) LocationRange() syntax.LocationRange {
+	if n.IfFalse != nil {
+		return n.IfToken.Range().Union(n.IfFalse.LocationRange())
+	}
+	return n.IfToken.Range().Union(n.IfTrue.LocationRange())
+}
+
 // FunctionCallNode represents a function call in the AST.
 type FunctionCallNode struct {
 	Function syntax.Token

@@ -283,6 +283,40 @@ func TestParse_Large(t *testing.T) {
    IDENTIFIER(e)
 `,
 		},
+		{
+			name:  "condition_simple",
+			input: "if(1) { a = 2 }",
+			expected: `BLOCK
+ CONDITION
+  LITERAL(1)
+  BLOCK
+   BINARY(=)
+    IDENTIFIER(a)
+    LITERAL(2)
+`,
+		},
+		{
+			name:  "condition_else_if",
+			input: "if(1) { a = 2 } else if (0) { a = 3 } else { a = 4 }",
+			expected: `BLOCK
+ CONDITION
+  LITERAL(1)
+  BLOCK
+   BINARY(=)
+    IDENTIFIER(a)
+    LITERAL(2)
+  CONDITION
+   LITERAL(0)
+   BLOCK
+    BINARY(=)
+     IDENTIFIER(a)
+     LITERAL(3)
+   BLOCK
+    BINARY(=)
+     IDENTIFIER(a)
+     LITERAL(4)
+`,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			inputPath := filepath.Join(t.TempDir(), "test.gni")
@@ -411,6 +445,42 @@ func TestParse_Invalid(t *testing.T) {
 			input:  "a() = b",
 			line:   1,
 			column: 1,
+		},
+		{
+			name:   "condition_illegal_assign",
+			input:  "if (a=2) {}",
+			line:   1,
+			column: 5,
+		},
+		{
+			name: "condition_missing_braces_if",
+			input: `if (true)
+  foreach(foo, []) {}
+else {
+  foreach(bar, []) {}
+}`,
+			line:   2,
+			column: 3,
+		},
+		{
+			name: "condition_missing_braces_else",
+			input: `if (true) {
+  foreach(foo, []) {}
+} else
+  foreach(bar, []) {}
+`,
+			line:   4,
+			column: 3,
+		},
+		{
+			name: "condition_missing_braces_else_if",
+			input: `if (true) {
+  foreach(foo, []) {}
+} else if (true)
+  foreach(bar, []) {}
+`,
+			line:   4,
+			column: 3,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

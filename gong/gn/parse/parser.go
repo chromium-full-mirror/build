@@ -66,8 +66,24 @@ func (p *parser) curToken() syntax.Token {
 	return p.tokens[p.cur]
 }
 
+func (p *parser) curOrLastToken() syntax.Token {
+	if p.atEnd() {
+		return p.tokens[len(p.tokens)-1]
+	}
+	return p.curToken()
+}
+
 func (p *parser) atEnd() bool {
 	return p.cur >= len(p.tokens)
+}
+
+func (p *parser) isAssignment(node ParseNode) bool {
+	if binaryOp, ok := node.(*BinaryOpNode); ok {
+		return binaryOp.Op.TokenType() == syntax.TokenEqual ||
+			binaryOp.Op.TokenType() == syntax.TokenPlusEquals ||
+			binaryOp.Op.TokenType() == syntax.TokenMinusEquals
+	}
+	return false
 }
 
 func (p *parser) isStatementBreak(tokenType syntax.TokenType) bool {
@@ -132,12 +148,75 @@ func (p *parser) parseStatement() (ParseNode, error) {
 	// GN handles ifs with recursive descent, block comments directly.
 	// https://source.chromium.org/gn/gn/+/main:src/gn/parser.cc;l=711-714;drc=4a64809c3631bd4365738ff8764cf357d9e80dbf
 	if p.lookAhead(syntax.TokenIf) {
-		return nil, p.curToken().MakeError("don't know how to handle IF yet")
+		return p.parseCondition()
 	} else if token, ok := p.consumeOnly(syntax.TokenBlockComment); ok {
 		return &BlockCommentNode{token}, nil
 	}
 	// GN handles everything else as a Pratt parser.
 	return p.parseExpression(precedenceNone)
+}
+
+func (p *parser) parseCondition() (ParseNode, error) {
+	conditionNode := &ConditionNode{}
+
+	// Consume "if ("
+	if ifToken, ok := p.consumeOnly(syntax.TokenIf); !ok {
+		return nil, p.curOrLastToken().MakeError("Expected 'if'")
+	} else {
+		conditionNode.IfToken = ifToken
+	}
+	if _, ok := p.consumeOnly(syntax.TokenLeftParen); !ok {
+		return nil, p.curOrLastToken().MakeError("Expected '(' after 'if'")
+	}
+
+	// Consume conditional.
+	if condition, err := p.parseExpression(precedenceNone); err != nil {
+		return nil, err
+	} else {
+		conditionNode.Condition = condition
+	}
+	// TODO: Don't allow assignments in parseExpression instead?
+	// https://gn.googlesource.com/gn/+/main/docs/reference.md#Grammar
+	if p.isAssignment(conditionNode.Condition) {
+		return nil, makeErrFromParseNode(conditionNode.Condition, "Assignment not allowed in 'if'", "")
+	}
+
+	// Consume ")".
+	if _, ok := p.consumeOnly(syntax.TokenRightParen); !ok {
+		return nil, p.curOrLastToken().MakeError("Expected ')' after condition of 'if'")
+	}
+
+	// Consume the true block.
+	if leftBrace, ok := p.consumeOnly(syntax.TokenLeftBrace); !ok {
+		return nil, p.curOrLastToken().MakeError("Expected '{' to start 'if' block")
+	} else {
+		if block, err := p.parseBlock(leftBrace, DiscardsResult); err == nil {
+			conditionNode.IfTrue = block
+		} else {
+			return nil, err
+		}
+	}
+
+	// Consume "else" if it exists.
+	if _, ok := p.consumeOnly(syntax.TokenElse); ok {
+		if leftBrace, ok := p.consumeOnly(syntax.TokenLeftBrace); ok {
+			// There was "{", this is just an else block.
+			if block, err := p.parseBlock(leftBrace, DiscardsResult); err == nil {
+				conditionNode.IfFalse = block
+			}
+		} else if p.lookAhead(syntax.TokenIf) {
+			// There was "if", it's an else if. Parse that condition.
+			if subCondition, err := p.parseCondition(); err != nil {
+				return nil, err
+			} else {
+				conditionNode.IfFalse = subCondition
+			}
+		} else {
+			return nil, p.curOrLastToken().MakeError("Expected '{' or 'if' after 'else'")
+		}
+	}
+
+	return conditionNode, nil
 }
 
 func (p *parser) parseExpression(precedence precedence) (ParseNode, error) {
