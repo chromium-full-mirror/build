@@ -2,12 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-package resolve
+// Package build builds a graph of GN targets based on an invocation.
+package build
 
 import "path/filepath"
 
 // BuildSettings represents settings for one build, which is one toplevel output directory.
 // There may be multiple Settings objects that refer to this, one for each toolchain.
+// TODO: rename this to just Settings (build.BuildSettings not great name), rename Settings to something else?
 type BuildSettings struct {
 	// DotfileName refers to the dotfile for this build.
 	DotfileName string

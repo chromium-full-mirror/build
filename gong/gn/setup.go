@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"infra/build/gong/gn/build"
 	"infra/build/gong/gn/fs"
 	"infra/build/gong/gn/parse"
 	"infra/build/gong/gn/resolve"
@@ -33,10 +34,10 @@ func findDotFile(currentDir string) (string, error) {
 // Setup is helper to set up the build settings and environment for the various
 // commands to run.
 type Setup struct {
-	buildSettings resolve.BuildSettings
+	buildSettings build.BuildSettings
 
 	// These settings are used to interpret the command line and dot file.
-	dotfileSettings *resolve.Settings
+	dotfileSettings *build.Settings
 
 	// State for invoking the dotfile.
 	dotfileName string
@@ -45,7 +46,7 @@ type Setup struct {
 // NewSetup creates a new Setup helper.
 func NewSetup() *Setup {
 	setup := &Setup{}
-	setup.dotfileSettings = resolve.NewSettings(&setup.buildSettings)
+	setup.dotfileSettings = build.NewSettings(&setup.buildSettings)
 	return setup
 }
 
