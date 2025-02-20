@@ -26,13 +26,13 @@ import (
 	"go.chromium.org/luci/common/system/signals"
 	"go.chromium.org/luci/hardcoded/chromeinfra"
 
-	"infra/build/siso/auth/cred"
-	"infra/build/siso/hashfs"
-	"infra/build/siso/o11y/clog"
-	"infra/build/siso/reapi"
-	"infra/build/siso/reapi/digest"
-	"infra/build/siso/reapi/merkletree"
-	"infra/build/siso/ui"
+	"go.chromium.org/build/siso/auth/cred"
+	"go.chromium.org/build/siso/hashfs"
+	"go.chromium.org/build/siso/o11y/clog"
+	"go.chromium.org/build/siso/reapi"
+	"go.chromium.org/build/siso/reapi/digest"
+	"go.chromium.org/build/siso/reapi/merkletree"
+	"go.chromium.org/build/siso/ui"
 )
 
 const usage = `isolate uploads and computes tree digest for each targets.

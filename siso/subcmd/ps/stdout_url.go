@@ -16,9 +16,9 @@ import (
 	"sync"
 	"time"
 
-	"infra/build/siso/build"
-	"infra/build/siso/o11y/clog"
-	"infra/build/siso/ui"
+	"go.chromium.org/build/siso/build"
+	"go.chromium.org/build/siso/o11y/clog"
+	"go.chromium.org/build/siso/ui"
 )
 
 type stdoutURLSource struct {

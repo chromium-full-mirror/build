@@ -23,8 +23,8 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/anypb"
 
-	"infra/build/kajiya/actioncache"
-	"infra/build/kajiya/blobstore"
+	"go.chromium.org/build/kajiya/actioncache"
+	"go.chromium.org/build/kajiya/blobstore"
 )
 
 // Service implements the REAPI Execution service.

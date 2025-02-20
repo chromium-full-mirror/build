@@ -4,7 +4,7 @@
 
 package parse
 
-import "infra/build/gong/gn/syntax"
+import "go.chromium.org/build/gong/gn/syntax"
 
 // ParseNode is a node in the AST.
 type ParseNode interface {

@@ -5,7 +5,7 @@
 package resultstore
 
 import (
-	"infra/build/siso/reapi/digest"
+	"go.chromium.org/build/siso/reapi/digest"
 )
 
 func (u *Uploader) AddBuildLog(msg string) {

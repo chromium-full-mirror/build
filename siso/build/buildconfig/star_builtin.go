@@ -18,8 +18,8 @@ import (
 	"go.starlark.net/starlark"
 	"go.starlark.net/starlarkstruct"
 
-	"infra/build/siso/o11y/clog"
-	"infra/build/siso/runtimex"
+	"go.chromium.org/build/siso/o11y/clog"
+	"go.chromium.org/build/siso/runtimex"
 )
 
 // embeds these Starlark files for @builtin.

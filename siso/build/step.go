@@ -17,10 +17,10 @@ import (
 
 	rpb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
 
-	"infra/build/siso/execute"
-	"infra/build/siso/execute/reproxyexec"
-	"infra/build/siso/o11y/clog"
-	"infra/build/siso/o11y/trace"
+	"go.chromium.org/build/siso/execute"
+	"go.chromium.org/build/siso/execute/reproxyexec"
+	"go.chromium.org/build/siso/o11y/clog"
+	"go.chromium.org/build/siso/o11y/trace"
 )
 
 // StepDef is a build step definition.

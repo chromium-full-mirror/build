@@ -13,10 +13,10 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 
-	"infra/build/siso/build"
-	"infra/build/siso/build/buildconfig"
-	"infra/build/siso/hashfs"
-	"infra/build/siso/toolsupport/ninjautil"
+	"go.chromium.org/build/siso/build"
+	"go.chromium.org/build/siso/build/buildconfig"
+	"go.chromium.org/build/siso/hashfs"
+	"go.chromium.org/build/siso/toolsupport/ninjautil"
 )
 
 func TestTargets(t *testing.T) {

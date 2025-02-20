@@ -16,7 +16,7 @@ import (
 	"go.chromium.org/luci/common/clock"
 	"go.chromium.org/luci/common/clock/testclock"
 
-	"infra/build/siso/reapi/retry"
+	"go.chromium.org/build/siso/reapi/retry"
 )
 
 func TestDo(t *testing.T) {

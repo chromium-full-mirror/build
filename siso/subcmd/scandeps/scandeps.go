@@ -18,11 +18,11 @@ import (
 
 	"go.chromium.org/luci/common/cli"
 
-	"infra/build/siso/build/buildconfig"
-	"infra/build/siso/build/ninjabuild"
-	"infra/build/siso/hashfs"
-	"infra/build/siso/o11y/clog"
-	"infra/build/siso/scandeps"
+	"go.chromium.org/build/siso/build/buildconfig"
+	"go.chromium.org/build/siso/build/ninjabuild"
+	"go.chromium.org/build/siso/hashfs"
+	"go.chromium.org/build/siso/o11y/clog"
+	"go.chromium.org/build/siso/scandeps"
 )
 
 const usage = `run scandeps

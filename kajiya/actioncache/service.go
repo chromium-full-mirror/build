@@ -18,7 +18,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	"infra/build/kajiya/blobstore"
+	"go.chromium.org/build/kajiya/blobstore"
 )
 
 // Service implements the REAPI ActionCache service.

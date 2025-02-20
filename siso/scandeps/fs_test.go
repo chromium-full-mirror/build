@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"infra/build/siso/hashfs"
+	"go.chromium.org/build/siso/hashfs"
 )
 
 func TestFilesystemUpdate(t *testing.T) {

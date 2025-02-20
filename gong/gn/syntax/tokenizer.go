@@ -5,7 +5,7 @@
 package syntax
 
 import (
-	"infra/build/gong/gn/fs"
+	"go.chromium.org/build/gong/gn/fs"
 )
 
 // whitespaceTransform is option for tokenization whitespace handling.

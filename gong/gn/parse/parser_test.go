@@ -14,8 +14,8 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 
-	"infra/build/gong/gn/fs"
-	"infra/build/gong/gn/syntax"
+	"go.chromium.org/build/gong/gn/fs"
+	"go.chromium.org/build/gong/gn/syntax"
 )
 
 func TestParse_Simple(t *testing.T) {

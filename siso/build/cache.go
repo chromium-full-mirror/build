@@ -14,14 +14,14 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	"infra/build/siso/build/cachestore"
-	"infra/build/siso/execute"
-	"infra/build/siso/o11y/clog"
-	"infra/build/siso/o11y/iometrics"
-	"infra/build/siso/o11y/trace"
-	"infra/build/siso/reapi/digest"
-	"infra/build/siso/runtimex"
-	"infra/build/siso/sync/semaphore"
+	"go.chromium.org/build/siso/build/cachestore"
+	"go.chromium.org/build/siso/execute"
+	"go.chromium.org/build/siso/o11y/clog"
+	"go.chromium.org/build/siso/o11y/iometrics"
+	"go.chromium.org/build/siso/o11y/trace"
+	"go.chromium.org/build/siso/reapi/digest"
+	"go.chromium.org/build/siso/runtimex"
+	"go.chromium.org/build/siso/sync/semaphore"
 )
 
 // CacheOptions is cache options.

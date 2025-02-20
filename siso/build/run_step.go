@@ -16,11 +16,11 @@ import (
 	"cloud.google.com/go/logging"
 	"google.golang.org/grpc/status"
 
-	"infra/build/siso/o11y/clog"
-	"infra/build/siso/o11y/trace"
-	"infra/build/siso/reapi"
-	"infra/build/siso/toolsupport/msvcutil"
-	"infra/build/siso/ui"
+	"go.chromium.org/build/siso/o11y/clog"
+	"go.chromium.org/build/siso/o11y/trace"
+	"go.chromium.org/build/siso/reapi"
+	"go.chromium.org/build/siso/toolsupport/msvcutil"
+	"go.chromium.org/build/siso/ui"
 )
 
 // StepError is step execution error.

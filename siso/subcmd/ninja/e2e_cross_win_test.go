@@ -17,11 +17,11 @@ import (
 	cpb "github.com/bazelbuild/remote-apis-sdks/go/api/command"
 	rpb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
 
-	"infra/build/siso/build"
-	"infra/build/siso/execute/reproxyexec/reproxytest"
-	"infra/build/siso/hashfs"
-	"infra/build/siso/reapi/digest"
-	"infra/build/siso/reapi/reapitest"
+	"go.chromium.org/build/siso/build"
+	"go.chromium.org/build/siso/execute/reproxyexec/reproxytest"
+	"go.chromium.org/build/siso/hashfs"
+	"go.chromium.org/build/siso/reapi/digest"
+	"go.chromium.org/build/siso/reapi/reapitest"
 )
 
 // tools/cp has is_executable even from windows to make it executable.

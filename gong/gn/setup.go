@@ -9,11 +9,11 @@ import (
 	"os"
 	"path/filepath"
 
-	"infra/build/gong/gn/build"
-	"infra/build/gong/gn/fs"
-	"infra/build/gong/gn/parse"
-	"infra/build/gong/gn/resolve"
-	"infra/build/gong/gn/syntax"
+	"go.chromium.org/build/gong/gn/build"
+	"go.chromium.org/build/gong/gn/fs"
+	"go.chromium.org/build/gong/gn/parse"
+	"go.chromium.org/build/gong/gn/resolve"
+	"go.chromium.org/build/gong/gn/syntax"
 )
 
 const gnFile = ".gn"

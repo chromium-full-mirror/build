@@ -14,9 +14,9 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	"infra/build/siso/build/cachestore"
-	"infra/build/siso/o11y/clog"
-	"infra/build/siso/reapi/digest"
+	"go.chromium.org/build/siso/build/cachestore"
+	"go.chromium.org/build/siso/o11y/clog"
+	"go.chromium.org/build/siso/reapi/digest"
 )
 
 // LayeredCache is a multi-layer cache. It will attempt to read from caches in

@@ -8,9 +8,9 @@ import (
 	"context"
 	"fmt"
 
-	"infra/build/siso/execute"
-	"infra/build/siso/o11y/clog"
-	"infra/build/siso/toolsupport/makeutil"
+	"go.chromium.org/build/siso/execute"
+	"go.chromium.org/build/siso/o11y/clog"
+	"go.chromium.org/build/siso/toolsupport/makeutil"
 )
 
 type depsDepfile struct{}

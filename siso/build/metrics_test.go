@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"infra/build/siso/execute"
+	"go.chromium.org/build/siso/execute"
 )
 
 func TestStepMetricsDone_NoExecutionMetadata(t *testing.T) {

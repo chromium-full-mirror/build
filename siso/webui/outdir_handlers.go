@@ -20,8 +20,8 @@ import (
 	"sync"
 	"time"
 
-	"infra/build/siso/build"
-	"infra/build/siso/toolsupport/ninjautil"
+	"go.chromium.org/build/siso/build"
+	"go.chromium.org/build/siso/toolsupport/ninjautil"
 )
 
 const (

@@ -14,7 +14,7 @@ import (
 
 	"go.chromium.org/luci/common/cli"
 
-	"infra/build/siso/hashfs"
+	"go.chromium.org/build/siso/hashfs"
 )
 
 func cmdFSExport() *subcommands.Command {

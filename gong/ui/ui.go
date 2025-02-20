@@ -9,7 +9,7 @@ import (
 	"errors"
 	"strings"
 
-	"infra/build/gong/gn/syntax"
+	"go.chromium.org/build/gong/gn/syntax"
 )
 
 // FormatError formats provided GN syntax error for printing.

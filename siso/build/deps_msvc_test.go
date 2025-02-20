@@ -11,8 +11,8 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 
-	"infra/build/siso/execute"
-	"infra/build/siso/hashfs"
+	"go.chromium.org/build/siso/execute"
+	"go.chromium.org/build/siso/hashfs"
 )
 
 func TestDescMSVCDepsAfterRun(t *testing.T) {

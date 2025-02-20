@@ -8,8 +8,8 @@ import (
 	"context"
 	"testing"
 
-	"infra/build/siso/build"
-	"infra/build/siso/hashfs"
+	"go.chromium.org/build/siso/build"
+	"go.chromium.org/build/siso/hashfs"
 )
 
 func TestBuild_PhonyOutput(t *testing.T) {

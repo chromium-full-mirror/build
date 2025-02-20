@@ -12,9 +12,9 @@ import (
 
 	"github.com/maruel/subcommands"
 
-	"infra/build/gong/gn"
-	"infra/build/gong/gn/syntax"
-	"infra/build/gong/ui"
+	"go.chromium.org/build/gong/gn"
+	"go.chromium.org/build/gong/gn/syntax"
+	"go.chromium.org/build/gong/ui"
 )
 
 // Cmd returns the Command for the `clean` subcommand provided by this package.

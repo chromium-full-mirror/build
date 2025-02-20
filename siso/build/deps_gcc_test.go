@@ -14,9 +14,9 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 
-	"infra/build/siso/execute"
-	"infra/build/siso/hashfs"
-	"infra/build/siso/reapi/merkletree"
+	"go.chromium.org/build/siso/execute"
+	"go.chromium.org/build/siso/hashfs"
+	"go.chromium.org/build/siso/reapi/merkletree"
 )
 
 type fakeGraph struct {

@@ -16,8 +16,8 @@ import (
 
 	"go.chromium.org/luci/common/cli"
 
-	"infra/build/siso/hashfs"
-	pb "infra/build/siso/hashfs/proto"
+	"go.chromium.org/build/siso/hashfs"
+	pb "go.chromium.org/build/siso/hashfs/proto"
 )
 
 func cmdFSDiff() *subcommands.Command {

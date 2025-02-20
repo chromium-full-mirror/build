@@ -12,7 +12,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 
-	"infra/build/gong/gn/fs"
+	"go.chromium.org/build/gong/gn/fs"
 )
 
 func TestTokenizer(t *testing.T) {

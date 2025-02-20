@@ -13,9 +13,9 @@ import (
 	"strings"
 	"sync"
 
-	"infra/build/siso/o11y/clog"
-	"infra/build/siso/runtimex"
-	"infra/build/siso/ui"
+	"go.chromium.org/build/siso/o11y/clog"
+	"go.chromium.org/build/siso/runtimex"
+	"go.chromium.org/build/siso/ui"
 )
 
 const (

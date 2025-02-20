@@ -24,10 +24,10 @@ import (
 	"go.chromium.org/luci/common/cli"
 	"go.chromium.org/luci/common/system/signals"
 
-	"infra/build/siso/auth/cred"
-	"infra/build/siso/reapi"
-	"infra/build/siso/reapi/digest"
-	"infra/build/siso/reapi/merkletree/exporter"
+	"go.chromium.org/build/siso/auth/cred"
+	"go.chromium.org/build/siso/reapi"
+	"go.chromium.org/build/siso/reapi/digest"
+	"go.chromium.org/build/siso/reapi/merkletree/exporter"
 )
 
 const usage = `fetch contents from CAS.

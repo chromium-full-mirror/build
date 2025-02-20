@@ -13,8 +13,8 @@ import (
 
 	"go.chromium.org/luci/common/cli"
 
-	"infra/build/siso/auth/cred"
-	"infra/build/siso/reapi"
+	"go.chromium.org/build/siso/auth/cred"
+	"go.chromium.org/build/siso/reapi"
 )
 
 func Cmd(authOpts cred.Options) *subcommands.Command {

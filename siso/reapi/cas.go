@@ -26,13 +26,13 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 
-	"infra/build/siso/o11y/clog"
-	"infra/build/siso/o11y/trace"
-	"infra/build/siso/reapi/bytestreamio"
-	"infra/build/siso/reapi/digest"
-	"infra/build/siso/reapi/retry"
-	"infra/build/siso/runtimex"
-	"infra/build/siso/sync/semaphore"
+	"go.chromium.org/build/siso/o11y/clog"
+	"go.chromium.org/build/siso/o11y/trace"
+	"go.chromium.org/build/siso/reapi/bytestreamio"
+	"go.chromium.org/build/siso/reapi/digest"
+	"go.chromium.org/build/siso/reapi/retry"
+	"go.chromium.org/build/siso/runtimex"
+	"go.chromium.org/build/siso/sync/semaphore"
 )
 
 var (

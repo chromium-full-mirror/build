@@ -17,7 +17,7 @@ import (
 	"golang.org/x/sync/singleflight"
 	"google.golang.org/protobuf/proto"
 
-	"infra/build/kajiya/atomicio"
+	"go.chromium.org/build/kajiya/atomicio"
 )
 
 // ActionCache is a simple action cache implementation that stores ActionResults on the local disk.

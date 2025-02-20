@@ -9,8 +9,8 @@ import (
 	"os"
 	"testing"
 
-	"infra/build/siso/build"
-	"infra/build/siso/ui"
+	"go.chromium.org/build/siso/build"
+	"go.chromium.org/build/siso/ui"
 )
 
 func TestBuild_offline(t *testing.T) {

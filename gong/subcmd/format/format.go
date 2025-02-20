@@ -13,10 +13,10 @@ import (
 
 	"github.com/maruel/subcommands"
 
-	"infra/build/gong/gn"
-	"infra/build/gong/gn/fs"
-	"infra/build/gong/gn/parse"
-	"infra/build/gong/gn/syntax"
+	"go.chromium.org/build/gong/gn"
+	"go.chromium.org/build/gong/gn/fs"
+	"go.chromium.org/build/gong/gn/parse"
+	"go.chromium.org/build/gong/gn/syntax"
 )
 
 const formatUsage = `subset of the gn format command that only supports --dump-tree for one file.

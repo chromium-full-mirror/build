@@ -10,7 +10,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 
-	"infra/build/gong/gn/syntax"
+	"go.chromium.org/build/gong/gn/syntax"
 )
 
 func TestDump(t *testing.T) {

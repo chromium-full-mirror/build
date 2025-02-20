@@ -7,7 +7,7 @@ package syntax
 import (
 	"fmt"
 
-	"infra/build/gong/gn/fs"
+	"go.chromium.org/build/gong/gn/fs"
 )
 
 // Location represents a place in a source file. Used for error reporting.

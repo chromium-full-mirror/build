@@ -24,11 +24,11 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 
-	"infra/build/kajiya/actioncache"
-	"infra/build/kajiya/blobstore"
-	"infra/build/kajiya/capabilities"
-	"infra/build/kajiya/execution"
-	"infra/build/siso/reapi"
+	"go.chromium.org/build/kajiya/actioncache"
+	"go.chromium.org/build/kajiya/blobstore"
+	"go.chromium.org/build/kajiya/capabilities"
+	"go.chromium.org/build/kajiya/execution"
+	"go.chromium.org/build/siso/reapi"
 )
 
 // Fake is fake reapi server.

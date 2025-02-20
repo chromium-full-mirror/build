@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"infra/build/siso/ui"
+	"go.chromium.org/build/siso/ui"
 )
 
 func TestFormatDuration(t *testing.T) {

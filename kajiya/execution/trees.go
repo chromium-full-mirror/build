@@ -16,7 +16,7 @@ import (
 	repb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
 	"golang.org/x/sync/singleflight"
 
-	"infra/build/kajiya/blobstore"
+	"go.chromium.org/build/kajiya/blobstore"
 )
 
 // TreeRepository is a repository for trees. It provides methods for materializing trees in the

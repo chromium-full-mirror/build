@@ -16,11 +16,11 @@ import (
 
 	log "github.com/golang/glog"
 
-	"infra/build/siso/build"
-	"infra/build/siso/execute"
-	"infra/build/siso/hashfs"
-	"infra/build/siso/o11y/clog"
-	"infra/build/siso/toolsupport/ninjautil"
+	"go.chromium.org/build/siso/build"
+	"go.chromium.org/build/siso/execute"
+	"go.chromium.org/build/siso/hashfs"
+	"go.chromium.org/build/siso/o11y/clog"
+	"go.chromium.org/build/siso/toolsupport/ninjautil"
 )
 
 // StepDeps is a dependency of a step.

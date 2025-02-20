@@ -14,10 +14,10 @@ import (
 
 	log "github.com/golang/glog"
 
-	"infra/build/siso/hashfs/osfs"
-	"infra/build/siso/o11y/clog"
-	"infra/build/siso/reapi/digest"
-	"infra/build/siso/reapi/merkletree"
+	"go.chromium.org/build/siso/hashfs/osfs"
+	"go.chromium.org/build/siso/o11y/clog"
+	"go.chromium.org/build/siso/reapi/digest"
+	"go.chromium.org/build/siso/reapi/merkletree"
 )
 
 // Importer is an importer.

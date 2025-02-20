@@ -16,9 +16,9 @@ import (
 
 	"go.chromium.org/luci/common/cli"
 
-	"infra/build/gong/subcmd/clean"
-	"infra/build/gong/subcmd/format"
-	"infra/build/gong/subcmd/help"
+	"go.chromium.org/build/gong/subcmd/clean"
+	"go.chromium.org/build/gong/subcmd/format"
+	"go.chromium.org/build/gong/subcmd/help"
 )
 
 func getApplication() *cli.Application {

@@ -16,7 +16,7 @@ import (
 	"github.com/bazelbuild/remote-apis-sdks/go/pkg/digest"
 	"golang.org/x/sync/singleflight"
 
-	"infra/build/kajiya/atomicio"
+	"go.chromium.org/build/kajiya/atomicio"
 )
 
 // ContentAddressableStorage is a simple CAS implementation that stores files on the local disk.

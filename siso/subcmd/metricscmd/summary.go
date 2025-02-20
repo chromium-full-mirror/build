@@ -19,7 +19,7 @@ import (
 
 	"go.chromium.org/luci/common/cli"
 
-	"infra/build/siso/build"
+	"go.chromium.org/build/siso/build"
 )
 
 const summaryUsage = `summarize siso_metrics.json

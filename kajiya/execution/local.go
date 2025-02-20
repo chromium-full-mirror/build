@@ -22,7 +22,7 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 
-	"infra/build/kajiya/blobstore"
+	"go.chromium.org/build/kajiya/blobstore"
 )
 
 // Executor is a local executor that executes actions on the local machine.

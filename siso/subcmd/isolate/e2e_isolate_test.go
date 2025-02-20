@@ -12,8 +12,8 @@ import (
 	"runtime"
 	"testing"
 
-	"infra/build/siso/hashfs"
-	"infra/build/siso/reapi/reapitest"
+	"go.chromium.org/build/siso/hashfs"
+	"go.chromium.org/build/siso/reapi/reapitest"
 )
 
 func setupFiles(t *testing.T, dir, name string) {

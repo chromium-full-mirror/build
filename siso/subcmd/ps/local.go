@@ -15,8 +15,8 @@ import (
 	"os"
 	"strings"
 
-	"infra/build/siso/build"
-	"infra/build/siso/o11y/clog"
+	"go.chromium.org/build/siso/build"
+	"go.chromium.org/build/siso/o11y/clog"
 )
 
 type localSource struct {

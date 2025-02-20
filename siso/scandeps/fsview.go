@@ -17,10 +17,10 @@ import (
 
 	log "github.com/golang/glog"
 
-	"infra/build/siso/o11y/clog"
-	"infra/build/siso/o11y/trace"
-	"infra/build/siso/runtimex"
-	"infra/build/siso/sync/semaphore"
+	"go.chromium.org/build/siso/o11y/clog"
+	"go.chromium.org/build/siso/o11y/trace"
+	"go.chromium.org/build/siso/runtimex"
+	"go.chromium.org/build/siso/sync/semaphore"
 )
 
 var cppScanSema = semaphore.New("cppscan", runtimex.NumCPU())

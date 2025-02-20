@@ -15,7 +15,7 @@ import (
 	"strconv"
 	"time"
 
-	"infra/build/siso/o11y/clog"
+	"go.chromium.org/build/siso/o11y/clog"
 )
 
 type sysRecord struct {

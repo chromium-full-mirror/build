@@ -22,8 +22,8 @@ import (
 	"text/template"
 	"time"
 
-	"infra/build/siso/build"
-	mwc "infra/third_party/material_web_components"
+	"go.chromium.org/build/siso/build"
+	mwc "go.chromium.org/infra/third_party/material_web_components"
 )
 
 //go:embed *.html css/*.css

@@ -8,7 +8,7 @@ import (
 	"go.starlark.net/starlark"
 	"go.starlark.net/starlarkstruct"
 
-	"infra/build/siso/build/metadata"
+	"go.chromium.org/build/siso/build/metadata"
 )
 
 // starInitActions returns actions, which contains:

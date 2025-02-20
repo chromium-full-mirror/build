@@ -14,9 +14,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"infra/build/siso/execute"
-	"infra/build/siso/o11y/resultstore"
-	"infra/build/siso/ui"
+	"go.chromium.org/build/siso/execute"
+	"go.chromium.org/build/siso/o11y/resultstore"
+	"go.chromium.org/build/siso/ui"
 )
 
 type progress struct {

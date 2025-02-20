@@ -7,7 +7,7 @@ package ui_test
 import (
 	"testing"
 
-	"infra/build/siso/ui"
+	"go.chromium.org/build/siso/ui"
 )
 
 func TestStripANSIEscapeCodes(t *testing.T) {
