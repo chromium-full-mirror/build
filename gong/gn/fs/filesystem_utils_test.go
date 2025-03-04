@@ -82,7 +82,6 @@ func TestNormalizePath(t *testing.T) {
 			want: "//foo/bar/",
 		},
 	} {
-		tc := tc
 		t.Run(tc.path, func(t *testing.T) {
 			t.Parallel()
 			s := NormalizePath(tc.path)
@@ -168,7 +167,6 @@ func TestNormalizePathWithSourceRoot_NonWindows(t *testing.T) {
 			want:       "/foo.txt",
 		},
 	} {
-		tc := tc
 		t.Run(tc.path, func(t *testing.T) {
 			t.Parallel()
 			s := normalizePathWithSourceRoot(tc.path, tc.sourceRoot, false)
@@ -270,7 +268,6 @@ func TestNormalizePathWithSourceRoot_Windows(t *testing.T) {
 			want:       "/foo.txt",
 		},
 	} {
-		tc := tc
 		t.Run(tc.path, func(t *testing.T) {
 			t.Parallel()
 			s := normalizePathWithSourceRoot(tc.path, tc.sourceRoot, true)

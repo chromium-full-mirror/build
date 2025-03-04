@@ -166,8 +166,6 @@ fun("foo") {  # A
 			},
 		},
 	} {
-		tc := tc
-
 		inputPath := filepath.Join(t.TempDir(), "test.gni")
 		if err := os.WriteFile(inputPath, []byte(tc.input), 0644); err != nil {
 			t.Fatal(err)

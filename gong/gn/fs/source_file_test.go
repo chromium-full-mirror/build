@@ -32,7 +32,6 @@ func TestMakeSourceFile(t *testing.T) {
 			wantErr: true,
 		},
 	} {
-		tc := tc
 		t.Run(tc.path, func(t *testing.T) {
 			t.Parallel()
 			s, err := makeSourceFile(tc.path)
