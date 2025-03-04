@@ -35,7 +35,7 @@ func createFakeGitRepoForTesting(t *testing.T, dir string) []string {
 
 	// Generate 10 commits.
 	var commits []string
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		// Random file name and content
 		fileName := fmt.Sprintf("file%d.txt", i)
 		fileContent := []byte(fmt.Sprintf("This is commit number %d.", i))

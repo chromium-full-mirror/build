@@ -38,7 +38,7 @@ func New(dataDir string) (*ContentAddressableStorage, error) {
 	}
 
 	// Create subdirectories {00, 01, ..., ff} for sharding by hash prefix.
-	for i := 0; i <= 255; i++ {
+	for i := range 256 {
 		err := os.Mkdir(filepath.Join(dataDir, fmt.Sprintf("%02x", i)), 0755)
 		if err != nil {
 			if errors.Is(err, fs.ErrExist) {

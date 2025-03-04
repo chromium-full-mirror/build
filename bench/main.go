@@ -138,7 +138,7 @@ func run() error {
 	}
 
 	// Run the benchmark.
-	for i := 0; i < *runs; i++ {
+	for i := range *runs {
 		fmt.Fprintf(os.Stderr, "\nBenchmark run %d/%d:\n", i+1, *runs)
 		for _, commit := range commits {
 			// Sync to the commit using "gclient sync", if necessary.
