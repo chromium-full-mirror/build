@@ -71,6 +71,11 @@ Usage: %s [flags] <command line>
 }
 
 func run(ctx context.Context) error {
+	err := checkCgroupSettings(ctx)
+	if err != nil {
+		return err
+	}
+
 	args := []string{
 		"systemd-run",
 		"--same-dir",
@@ -133,7 +138,7 @@ func run(ctx context.Context) error {
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	err := cmd.Run()
+	err = cmd.Run()
 	netEnd, nerr := netStatistics()
 	if nerr != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", nerr)
@@ -235,4 +240,25 @@ func netStatsData(fname string) (int64, error) {
 		return 0, err
 	}
 	return strconv.ParseInt(strings.TrimSpace(string(buf)), 10, 64)
+}
+
+// Check that all required cgroups were delegated to us.
+func checkCgroupSettings(ctx context.Context) error {
+	fname := fmt.Sprintf("/sys/fs/cgroup/user.slice/user-%d.slice/cgroup.controllers", os.Getuid())
+	buf, err := os.ReadFile(fname)
+	if err != nil {
+		return err
+	}
+	delegatedCgroups := strings.TrimSpace(string(buf))
+	wantDelegatedCgroups := "cpuset cpu io memory pids"
+	if delegatedCgroups != wantDelegatedCgroups {
+		return fmt.Errorf(`not all required cgroup were delegated: %q; want %q
+Please setup cgroup delegation and reboot your machine:
+ $ sudo tee /etc/systemd/system/user@.service.d/delegate.conf <<EOF
+ [Service]
+ Delegate=yes
+ EOF
+`, delegatedCgroups, wantDelegatedCgroups)
+	}
+	return nil
 }
