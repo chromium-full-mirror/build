@@ -132,7 +132,7 @@ func (s *Service) execute(request *repb.ExecuteRequest, executeServer repb.Execu
 	// According to the REAPI specification, in-flight requests for the same `Action` may be
 	// merged unless the `DoNotCache` bit is set. This improves efficiency and performance by
 	// avoiding duplicate work.
-	ar, err, _ := s.actionDigestDeduper.Do(actionDigest.String(), func() (interface{}, error) {
+	ar, err, _ := s.actionDigestDeduper.Do(actionDigest.String(), func() (any, error) {
 		// If we have an action cache, check if the action is already cached.
 		if s.actionCache != nil && !request.SkipCacheLookup {
 			ar, err := s.actionCache.Get(actionDigest)

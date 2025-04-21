@@ -5,5 +5,4 @@
 package resolve
 
 // Value represents a variable value in the interpreter.
-type Value interface {
-}
+type Value any

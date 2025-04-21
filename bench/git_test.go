@@ -38,7 +38,7 @@ func createFakeGitRepoForTesting(t *testing.T, dir string) []string {
 	for i := range 10 {
 		// Random file name and content
 		fileName := fmt.Sprintf("file%d.txt", i)
-		fileContent := []byte(fmt.Sprintf("This is commit number %d.", i))
+		fileContent := fmt.Appendf(nil, "This is commit number %d.", i)
 		if err := os.WriteFile(filepath.Join(dir, fileName), fileContent, 0644); err != nil {
 			t.Fatalf("Failed to write file %s: %v", fileName, err)
 		}

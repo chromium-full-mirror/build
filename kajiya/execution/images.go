@@ -91,7 +91,7 @@ func (r *ImageRepository) FetchImage(containerImage string) (string, error) {
 	}
 
 	// Fetch the image if we don't have it yet.
-	imagePath, err, _ := r.imageGroup.Do(containerHash, func() (interface{}, error) {
+	imagePath, err, _ := r.imageGroup.Do(containerHash, func() (any, error) {
 		// Check if we already have the image.
 		imagePath := filepath.Join(r.baseDir, containerHash)
 		if _, err := os.Stat(imagePath); err == nil {
