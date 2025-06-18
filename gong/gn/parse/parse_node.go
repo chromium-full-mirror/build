@@ -14,7 +14,8 @@ type ParseNode interface {
 	Dump() NodeDump
 }
 
-func makeErrFromParseNode(parseNode ParseNode, message, helpText string) syntax.Error {
+// MakeErrFromParseNode makes an error at the provided parse node.
+func MakeErrFromParseNode(parseNode ParseNode, message, helpText string) syntax.Error {
 	if parseNode == nil {
 		return syntax.MakeErrorAt(syntax.Location{}, nil, message, helpText)
 	}

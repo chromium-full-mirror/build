@@ -178,7 +178,7 @@ func (p *parser) parseCondition() (ParseNode, error) {
 	// TODO: Don't allow assignments in parseExpression instead?
 	// https://gn.googlesource.com/gn/+/main/docs/reference.md#Grammar
 	if p.isAssignment(conditionNode.Condition) {
-		return nil, makeErrFromParseNode(conditionNode.Condition, "Assignment not allowed in 'if'", "")
+		return nil, MakeErrFromParseNode(conditionNode.Condition, "Assignment not allowed in 'if'", "")
 	}
 
 	// Consume ")".
@@ -298,7 +298,7 @@ func (p *parser) parseInfix(left ParseNode, token syntax.Token) (ParseNode, erro
 		_, isIdentifier := left.(*IdentifierNode)
 		_, isAccessor := left.(*AccessorNode)
 		if !isIdentifier && !isAccessor {
-			return nil, makeErrFromParseNode(left, "The left-hand side of an assignment must be an identifier, scope access, or array access.", "")
+			return nil, MakeErrFromParseNode(left, "The left-hand side of an assignment must be an identifier, scope access, or array access.", "")
 		}
 		value, err := p.parseExpression(precedenceAssignment)
 		if err != nil {
@@ -315,7 +315,7 @@ func (p *parser) parseInfix(left ParseNode, token syntax.Token) (ParseNode, erro
 	case syntax.TokenDot:
 		leftIdentifier, isIdentifier := left.(*IdentifierNode)
 		if !isIdentifier {
-			return nil, makeErrFromParseNode(left, `May only use "." for identifiers.`,
+			return nil, MakeErrFromParseNode(left, `May only use "." for identifiers.`,
 				"The thing on the left hand side of the dot must be an identifier\nand not an expression. If you need this, you'll have to assign the\nvalue to a temporary first. Sorry.")
 		}
 		right, err := p.parseExpression(precedenceDot)
@@ -334,7 +334,7 @@ func (p *parser) parseInfix(left ParseNode, token syntax.Token) (ParseNode, erro
 	case syntax.TokenLeftBracket:
 		leftIdentifier, isIdentifier := left.(*IdentifierNode)
 		if !isIdentifier {
-			return nil, makeErrFromParseNode(left, "May only subscript identifiers.",
+			return nil, MakeErrFromParseNode(left, "May only subscript identifiers.",
 				"The thing on the left hand side of the [] must be an identifier\nand not an expression. If you need this, you'll have to assign the\nvalue to a temporary before subscripting. Sorry.")
 		}
 		value, err := p.parseExpression(precedenceNone)
