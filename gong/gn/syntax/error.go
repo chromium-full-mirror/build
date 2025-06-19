@@ -19,7 +19,7 @@ type Error struct {
 
 // MakeErrorAt makes an error at the provided location and ranges.
 // TODO(b/388723392): just make the struct fields exported?
-func MakeErrorAt(location Location, ranges []LocationRange, message, helpText string) Error {
+func MakeErrorAt(location Location, ranges []LocationRange, message, helpText string) error {
 	return Error{
 		location: location,
 		ranges:   ranges,
