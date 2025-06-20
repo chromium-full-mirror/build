@@ -39,10 +39,7 @@ func normalizePathWithSourceRoot(path, sourceRoot string, isWindows bool) string
 
 	// Firstly, filepath.Clean can't handle "//" source-absolute paths.
 	// Keep track of whether this path is source-absolute to trim later.
-	restoreLeadingSlash := false
-	if strings.HasPrefix(path, "//") {
-		restoreLeadingSlash = true
-	}
+	restoreLeadingSlash := strings.HasPrefix(path, "//")
 
 	// Secondly, GN normalizes all backwards to forward slashes.
 	// Do this after checking for "//" prefix, because any other variation
@@ -52,10 +49,7 @@ func normalizePathWithSourceRoot(path, sourceRoot string, isWindows bool) string
 	sourceRoot = strings.ReplaceAll(sourceRoot, "\\", "/")
 
 	// Thirdly, GN normalization requires trailing slashes to be preserved.
-	restoreTrailingSlash := false
-	if endsWithSlash(path) {
-		restoreTrailingSlash = true
-	}
+	restoreTrailingSlash := endsWithSlash(path)
 
 	// Next, behavior depends on whether sourceRoot is set.
 	if sourceRoot == "" {
