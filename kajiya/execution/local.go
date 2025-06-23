@@ -119,8 +119,8 @@ func (e *Executor) Execute(action *repb.Action) (*repb.ActionResult, error) {
 			return nil, fmt.Errorf("working directory %q points outside of input root", cmd.WorkingDirectory)
 		}
 		workDir = filepath.Join(sandboxDir, cmd.WorkingDirectory)
-		if err := os.MkdirAll(workDir, 0755); err != nil {
-			return nil, fmt.Errorf("could not create working directory: %w", err)
+		if _, err := os.Stat(workDir); err != nil {
+			return nil, status.Errorf(codes.FailedPrecondition, "working direcotry is not an input directory %s: %v", cmd.WorkingDirectory, err)
 		}
 	}
 
