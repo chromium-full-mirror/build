@@ -5,18 +5,27 @@
 package parse
 
 import (
+	"bytes"
 	"errors"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 
-	"go.chromium.org/build/gong/gn/fs"
 	"go.chromium.org/build/gong/gn/syntax"
 )
+
+type mockInput struct {
+	displayName string
+	contents    string
+}
+
+func (m mockInput) DisplayName() string { return m.displayName }
+func (m mockInput) Contents() []byte    { return []byte(m.contents) }
+func (m mockInput) Equal(other syntax.InputSource) bool {
+	return bytes.Equal(m.Contents(), other.Contents())
+}
 
 func TestParse_Simple(t *testing.T) {
 	// Directly compare with expected ParseNode output for smaller test cases.
@@ -54,15 +63,10 @@ func TestParse_Simple(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			inputPath := filepath.Join(t.TempDir(), "test.gni")
-			if err := os.WriteFile(inputPath, []byte(tc.input), 0644); err != nil {
-				t.Fatal(err)
-			}
-			input, err := fs.NewInputFile("/test", inputPath)
-			if err != nil {
-				t.Fatal(err)
-			}
-			tokens, err := syntax.Tokenize(input)
+			tokens, err := syntax.Tokenize(mockInput{
+				displayName: "test.gni",
+				contents:    tc.input,
+			})
 			if err != nil {
 				t.Errorf("Tokenize(_) = nil, %v; want nil error", err)
 			}
@@ -319,15 +323,10 @@ func TestParse_Large(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			inputPath := filepath.Join(t.TempDir(), "test.gni")
-			if err := os.WriteFile(inputPath, []byte(tc.input), 0644); err != nil {
-				t.Fatal(err)
-			}
-			input, err := fs.NewInputFile("/test", inputPath)
-			if err != nil {
-				t.Fatal(err)
-			}
-			tokens, err := syntax.Tokenize(input)
+			tokens, err := syntax.Tokenize(mockInput{
+				displayName: "test.gni",
+				contents:    tc.input,
+			})
 			if err != nil {
 				t.Errorf("Tokenize(_) = nil, %v; want nil error", err)
 			}
@@ -484,15 +483,10 @@ else {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			inputPath := filepath.Join(t.TempDir(), "test.gni")
-			if err := os.WriteFile(inputPath, []byte(tc.input), 0644); err != nil {
-				t.Fatal(err)
-			}
-			input, err := fs.NewInputFile("/test", inputPath)
-			if err != nil {
-				t.Fatal(err)
-			}
-			tokens, err := syntax.Tokenize(input)
+			tokens, err := syntax.Tokenize(mockInput{
+				displayName: "test.gni",
+				contents:    tc.input,
+			})
 			if err != nil {
 				t.Errorf("Tokenize(_) = nil, %v; want nil error", err)
 			}

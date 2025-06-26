@@ -14,7 +14,7 @@ import (
 	"github.com/maruel/subcommands"
 
 	"go.chromium.org/build/gong/gn"
-	"go.chromium.org/build/gong/gn/fs"
+	"go.chromium.org/build/gong/gn/build/fs"
 	"go.chromium.org/build/gong/gn/parse"
 	"go.chromium.org/build/gong/gn/syntax"
 )

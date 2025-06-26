@@ -4,10 +4,6 @@
 
 package syntax
 
-import (
-	"go.chromium.org/build/gong/gn/fs"
-)
-
 // whitespaceTransform is option for tokenization whitespace handling.
 type whitespaceTransform int
 
@@ -24,24 +20,24 @@ const (
 
 type tokenizer struct {
 	tokens              []Token
-	inputFile           *fs.InputFile
-	input               string
+	inputSource         InputSource
+	input               []byte
 	whitespaceTransform whitespaceTransform
 	cur                 int // Byte offset into input buffer.
 	lineNumber          int
 	columnNumber        int
 }
 
-// Tokenize reads a GN input file and returns a list of tokens.
-func Tokenize(inputFile *fs.InputFile) ([]Token, error) {
-	return TokenizeWithTransform(inputFile, whitespaceTransformMaintainOriginalInput)
+// Tokenize reads an input source and returns a list of tokens.
+func Tokenize(inputSource InputSource) ([]Token, error) {
+	return TokenizeWithTransform(inputSource, whitespaceTransformMaintainOriginalInput)
 }
 
-// TokenizeWithTransform reads a GN input file with provided whitespace transformation option and returns a list of tokens.
-func TokenizeWithTransform(inputFile *fs.InputFile, whitespaceTransform whitespaceTransform) ([]Token, error) {
+// TokenizeWithTransform reads an input source with provided whitespace transformation option and returns a list of tokens.
+func TokenizeWithTransform(inputSource InputSource, whitespaceTransform whitespaceTransform) ([]Token, error) {
 	tokenizer := tokenizer{
-		inputFile:           inputFile,
-		input:               inputFile.Contents(),
+		inputSource:         inputSource,
+		input:               inputSource.Contents(),
 		whitespaceTransform: whitespaceTransform,
 		tokens:              []Token{},
 		lineNumber:          1,
@@ -71,7 +67,7 @@ func (s *tokenizer) run() ([]Token, error) {
 			return s.tokens, err
 		}
 		tokenEnd := s.cur
-		tokenValue := s.input[tokenBegin:tokenEnd]
+		tokenValue := string(s.input[tokenBegin:tokenEnd])
 
 		switch tokenType {
 		case TokenUnclassifiedOperator:
@@ -126,7 +122,7 @@ func (s *tokenizer) run() ([]Token, error) {
 	return s.tokens, nil
 }
 
-func isNewline(input string, offset int) bool {
+func isNewline(input []byte, offset int) bool {
 	// We may need more logic here to handle different line ending styles.
 	return input[offset] == '\n'
 }
@@ -427,7 +423,7 @@ func (s *tokenizer) advance() {
 
 func (s *tokenizer) getCurrentLocation() Location {
 	return Location{
-		s.inputFile,
+		s.inputSource,
 		s.lineNumber,
 		s.columnNumber,
 	}

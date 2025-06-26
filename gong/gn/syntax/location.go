@@ -6,13 +6,11 @@ package syntax
 
 import (
 	"fmt"
-
-	"go.chromium.org/build/gong/gn/fs"
 )
 
 // Location represents a place in a source file. Used for error reporting.
 type Location struct {
-	file         *fs.InputFile
+	file         InputSource
 	lineNumber   int // 0 when unset. 1-based.
 	columnNumber int // 0 when unset. 1-based.
 }
@@ -49,11 +47,10 @@ func (l Location) ColumnNumber() int {
 
 // Describe returns a string representation of the location.
 func (l Location) Describe(includeColumnNumber bool) string {
-	name := l.file.Name.Filename()
 	if !includeColumnNumber {
-		return fmt.Sprintf("%s:%d", name, l.lineNumber)
+		return fmt.Sprintf("%s:%d", l.file.DisplayName(), l.lineNumber)
 	}
-	return fmt.Sprintf("%s:%d:%d", name, l.lineNumber, l.columnNumber)
+	return fmt.Sprintf("%s:%d:%d", l.file.DisplayName(), l.lineNumber, l.columnNumber)
 }
 
 // LocationRange represents a range in a source file. Used for error reporting.
@@ -66,7 +63,7 @@ type LocationRange struct {
 // Union returns a location range combined with the current location range.
 // Returns blank if the files are not the same.
 func (l LocationRange) Union(other LocationRange) LocationRange {
-	if l.begin.file != other.begin.file {
+	if !l.begin.file.Equal(other.begin.file) {
 		return LocationRange{}
 	}
 	return LocationRange{l.begin.min(other.begin), l.end.max(other.end)}

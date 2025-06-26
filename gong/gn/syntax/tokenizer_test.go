@@ -5,15 +5,20 @@
 package syntax
 
 import (
-	"os"
-	"path/filepath"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
-
-	"go.chromium.org/build/gong/gn/fs"
 )
+
+type mockInput struct {
+	displayName string
+	contents    string
+}
+
+func (m mockInput) DisplayName() string          { return m.displayName }
+func (m mockInput) Contents() []byte             { return []byte(m.contents) }
+func (m mockInput) Equal(other InputSource) bool { return false }
 
 func TestTokenizer(t *testing.T) {
 	cmpOpts := []cmp.Option{
@@ -166,17 +171,10 @@ fun("foo") {  # A
 			},
 		},
 	} {
-		inputPath := filepath.Join(t.TempDir(), "test.gni")
-		if err := os.WriteFile(inputPath, []byte(tc.input), 0644); err != nil {
-			t.Fatal(err)
-		}
-
-		input, err := fs.NewInputFile("/test", inputPath)
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		got, err := Tokenize(input)
+		got, err := Tokenize(mockInput{
+			displayName: "test.gni",
+			contents:    tc.input,
+		})
 		if err != nil {
 			t.Errorf("Tokenize(%q) = _, %v; want nil error", tc.input, err)
 			continue
@@ -188,17 +186,12 @@ fun("foo") {  # A
 	}
 }
 func TestTokenizerWhitespace(t *testing.T) {
-	inputPath := filepath.Join(t.TempDir(), "test.gni")
-	if err := os.WriteFile(inputPath, []byte("a\t2\v\"st\tuff\"\f{"), 0644); err != nil {
-		t.Fatal(err)
+	input := mockInput{
+		displayName: "test.gni",
+		contents:    "a\t2\v\"st\tuff\"\f{",
 	}
 
-	input, err := fs.NewInputFile("/test", inputPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	_, err = TokenizeWithTransform(input, whitespaceTransformMaintainOriginalInput)
+	_, err := TokenizeWithTransform(input, whitespaceTransformMaintainOriginalInput)
 	if err == nil {
 		t.Errorf("TokenizeWithTransform(_, whitespaceTransformMaintainOriginalInput) = _, nil; want error")
 	}
