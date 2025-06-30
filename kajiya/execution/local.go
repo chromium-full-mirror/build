@@ -120,7 +120,7 @@ func (e *Executor) Execute(action *repb.Action) (*repb.ActionResult, error) {
 		}
 		workDir = filepath.Join(sandboxDir, cmd.WorkingDirectory)
 		if _, err := os.Stat(workDir); err != nil {
-			return nil, status.Errorf(codes.FailedPrecondition, "working direcotry is not an input directory %s: %v", cmd.WorkingDirectory, err)
+			return nil, status.Errorf(codes.FailedPrecondition, "working directory %q is not an input directory: %v", cmd.WorkingDirectory, err)
 		}
 	}
 
