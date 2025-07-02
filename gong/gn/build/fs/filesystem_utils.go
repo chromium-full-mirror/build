@@ -14,6 +14,13 @@ func endsWithSlash(path string) bool {
 	return path != "" && path[len(path)-1] == '/'
 }
 
+// IsPathSourceAbsolute returns true if the input string is source-absolute. Source-absolute
+// paths begin with two forward slashes and resolve as if they are
+// relative to the source root.
+func IsPathSourceAbsolute(path string) bool {
+	return strings.HasPrefix(path, "//")
+}
+
 // NormalizePath collapses "." and sequential "/"s and evaluates "..". |path| may be
 // system-absolute, source-absolute, or relative. |path| will retain its relativity,
 // use NormalizePathWithSourceRoot if a different source root is desired.
