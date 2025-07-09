@@ -40,6 +40,13 @@ func (v *StringValue) RawGNString() string {
 	return v.value
 }
 
+func (v *StringValue) Equal(other Value) bool {
+	if other, ok := other.(*StringValue); ok {
+		return v.value == other.value
+	}
+	return false
+}
+
 // starlark.Value interface.
 
 func (v StringValue) String() string        { return starsyntax.Quote(v.value, false) }

@@ -42,6 +42,13 @@ func (v *BooleanValue) RawGNString() string {
 	return "false"
 }
 
+func (v *BooleanValue) Equal(other Value) bool {
+	if other, ok := other.(*BooleanValue); ok {
+		return v.value == other.value
+	}
+	return false
+}
+
 // starlark.Value interface.
 
 func (v BooleanValue) String() string {

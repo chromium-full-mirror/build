@@ -133,3 +133,223 @@ bar"`,
 		})
 	}
 }
+
+type fakeExecContext struct{}
+
+func (fakeExecContext) BaseConfig() *Scope { return &Scope{} }
+
+func TestEqual(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		left  Value
+		right Value
+		want  bool
+	}{
+		{
+			name:  "bool_equal",
+			left:  &BooleanValue{value: true},
+			right: &BooleanValue{value: true},
+			want:  true,
+		},
+		{
+			name:  "bool_different",
+			left:  &BooleanValue{value: true},
+			right: &BooleanValue{value: false},
+			want:  false,
+		},
+		{
+			name:  "int_equal",
+			left:  &IntegerValue{value: 1},
+			right: &IntegerValue{value: 1},
+			want:  true,
+		},
+		{
+			name:  "int_different",
+			left:  &IntegerValue{value: 1},
+			right: &IntegerValue{value: 2},
+			want:  false,
+		},
+		{
+			name:  "string_equal",
+			left:  &StringValue{value: "a"},
+			right: &StringValue{value: "a"},
+			want:  true,
+		},
+		{
+			name:  "string_different",
+			left:  &StringValue{value: "a"},
+			right: &StringValue{value: "b"},
+			want:  false,
+		},
+		{
+			name: "list_equal",
+			left: &ListValue{
+				list: []Value{
+					&StringValue{value: "a"},
+					&IntegerValue{value: 1},
+				},
+			},
+			right: &ListValue{
+				list: []Value{
+					&StringValue{value: "a"},
+					&IntegerValue{value: 1},
+				},
+			},
+			want: true,
+		},
+		{
+			name: "list_different_values",
+			left: &ListValue{
+				list: []Value{
+					&StringValue{value: "a"},
+					&IntegerValue{value: 1},
+				},
+			},
+			right: &ListValue{
+				list: []Value{
+					&StringValue{value: "a"},
+					&IntegerValue{value: 2},
+				},
+			},
+			want: false,
+		},
+		{
+			name: "list_different_length",
+			left: &ListValue{
+				list: []Value{
+					&StringValue{value: "a"},
+					&IntegerValue{value: 1},
+				},
+			},
+			right: &ListValue{
+				list: []Value{
+					&StringValue{value: "a"},
+				},
+			},
+			want: false,
+		},
+		{
+			name: "scope_equal",
+			left: &ScopeValue{
+				scope: &Scope{
+					values: map[string]record{
+						"a": {value: &IntegerValue{value: 1}},
+						"b": {value: &StringValue{value: "a"}},
+					},
+				},
+			},
+			right: &ScopeValue{
+				scope: &Scope{
+					values: map[string]record{
+						"a": {value: &IntegerValue{value: 1}},
+						"b": {value: &StringValue{value: "a"}},
+					},
+				},
+			},
+			want: true,
+		},
+		{
+			name: "scope_left_has_parent",
+			left: &ScopeValue{
+				scope: &Scope{
+					parent: &Scope{},
+					values: map[string]record{"a": {value: &IntegerValue{value: 1}}},
+				},
+			},
+			right: &ScopeValue{
+				scope: &Scope{
+					values: map[string]record{"a": {value: &IntegerValue{value: 1}}},
+				},
+			},
+			want: false,
+		},
+		{
+			name: "scope_left_has_exec_context",
+			left: &ScopeValue{
+				scope: &Scope{
+					execContext: &fakeExecContext{},
+					values:      map[string]record{"a": {value: &IntegerValue{value: 1}}},
+				},
+			},
+			right: &ScopeValue{
+				scope: &Scope{
+					values: map[string]record{"a": {value: &IntegerValue{value: 1}}},
+				},
+			},
+			want: false,
+		},
+		{
+			name: "scope_isolated_equal",
+			left: &ScopeValue{
+				scope: &Scope{
+					execContext:    &fakeExecContext{},
+					skipBaseConfig: true,
+					values: map[string]record{
+						"a": {value: &IntegerValue{value: 1}},
+						"b": {value: &StringValue{value: "a"}},
+					},
+				},
+			},
+			right: &ScopeValue{
+				scope: &Scope{
+					values: map[string]record{
+						"a": {value: &IntegerValue{value: 1}},
+						"b": {value: &StringValue{value: "a"}},
+					},
+				},
+			},
+			want: true,
+		},
+		{
+			name: "scope_different_values",
+			left: &ScopeValue{
+				scope: &Scope{
+					values: map[string]record{
+						"a": {value: &IntegerValue{value: 1}},
+						"b": {value: &StringValue{value: "a"}},
+					},
+				},
+			},
+			right: &ScopeValue{
+				scope: &Scope{
+					values: map[string]record{
+						"a": {value: &IntegerValue{value: 1}},
+						"b": {value: &StringValue{value: "b"}},
+					},
+				},
+			},
+			want: false,
+		},
+		{
+			name: "scope_missing_values",
+			left: &ScopeValue{
+				scope: &Scope{
+					values: map[string]record{
+						"a": {value: &IntegerValue{value: 1}},
+						"b": {value: &StringValue{value: "a"}},
+					},
+				},
+			},
+			right: &ScopeValue{
+				scope: &Scope{
+					values: map[string]record{
+						"a": {value: &IntegerValue{value: 1}},
+					},
+				},
+			},
+			want: false,
+		},
+		{
+			name:  "different_types",
+			left:  &StringValue{value: "a"},
+			right: &IntegerValue{value: 1},
+			want:  false,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := tc.left.Equal(tc.right); got != tc.want {
+				t.Errorf("left.Equal(right) = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}

@@ -68,6 +68,10 @@ type Value interface {
 	//
 	// For a Python/Starlark-like representation, call String() instead.
 	RawGNString() string
+	// Equal compares values. Only the "value" is compared, not the origin. Scope
+	// values check only the contents of the current scope, and do not go to
+	// parent scopes.
+	Equal(other Value) bool
 }
 
 // GNLiteralRvalue renders the value contents as a GN literal rvalue.

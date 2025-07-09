@@ -40,6 +40,14 @@ func (v *ScopeValue) valueType() ValueType {
 	return ValueTypeScope
 }
 
+func (v *ScopeValue) Equal(other Value) bool {
+	otherScope, ok := other.(*ScopeValue)
+	if !ok {
+		return false
+	}
+	return v.scope.checkCurrentScopeValuesEqual(otherScope.scope)
+}
+
 // RawGNString returns a GN-like stringification of the value.
 func (v *ScopeValue) RawGNString() string {
 	if !v.scope.HasValues() {

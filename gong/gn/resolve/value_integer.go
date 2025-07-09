@@ -41,6 +41,13 @@ func (v *IntegerValue) RawGNString() string {
 	return strconv.FormatInt(v.value, 10)
 }
 
+func (v *IntegerValue) Equal(other Value) bool {
+	if other, ok := other.(*IntegerValue); ok {
+		return v.value == other.value
+	}
+	return false
+}
+
 // starlark.Value interface.
 
 func (v IntegerValue) String() string        { return strconv.FormatInt(v.value, 10) }

@@ -149,3 +149,31 @@ func (s *Scope) CheckForUnusedVars() error {
 	}
 	return nil
 }
+
+// checkCurrentScopeValuesEqual returns true if the values in the current scope are the same as all
+// values in the given scope, without going to the parent scopes. Returns false if not.
+func (s *Scope) checkCurrentScopeValuesEqual(other *Scope) bool {
+	// C++ GN fails equality if there's "containing" scopes.
+	if s.parent != nil {
+		return false
+	}
+
+	// But we also fallback to the "base config" if it exists, which in C++ GN
+	// is instead just treated as a containing scope.
+	// So we have to check for that too.
+	if !s.skipBaseConfig && s.execContext != nil {
+		return false
+	}
+
+	// Now continue to follow the original C++ GN.
+	if len(s.values) != len(other.values) {
+		return false
+	}
+	for ident, record := range s.values {
+		v := other.Value(ident, false)
+		if v == nil || !v.Equal(record.value) {
+			return false
+		}
+	}
+	return true
+}

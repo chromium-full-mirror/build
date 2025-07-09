@@ -103,6 +103,22 @@ func (it *listIterator) Next(v *starlark.Value) bool {
 
 func (it *listIterator) Done() {}
 
+func (v *ListValue) Equal(other Value) bool {
+	otherList, ok := other.(*ListValue)
+	if !ok {
+		return false
+	}
+	if len(v.list) != len(otherList.list) {
+		return false
+	}
+	for i, item := range v.list {
+		if !item.Equal(otherList.list[i]) {
+			return false
+		}
+	}
+	return true
+}
+
 // starlark.Sequences interface.
 
 func (v *ListValue) Len() int { return len(v.list) }
