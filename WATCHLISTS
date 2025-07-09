@@ -1,0 +1,10 @@
+{
+  'WATCHLIST_DEFINITIONS': {
+    'siso': {
+      'filepath': 'siso'
+    },
+  },
+  'WATCHLISTS': {
+    'siso': ['chrome-build-team@google.com', 'chromium-toolchains@engflow.com'],
+  },
+}
