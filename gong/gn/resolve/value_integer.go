@@ -30,6 +30,13 @@ func (v *IntegerValue) OriginNode() parse.ParseNode {
 	return v.origin
 }
 
+func (v *IntegerValue) CopyWithOrigin(origin parse.ParseNode) Value {
+	return &IntegerValue{
+		origin: origin,
+		value:  v.value,
+	}
+}
+
 func (v *IntegerValue) RawGNString() string {
 	return strconv.FormatInt(v.value, 10)
 }

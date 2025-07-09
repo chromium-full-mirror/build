@@ -4,6 +4,10 @@
 
 package build
 
+import (
+	"go.chromium.org/build/gong/gn/resolve"
+)
+
 // Settings holds the settings for one toolchain invocation. There will be one
 // Settings object for each toolchain type, each referring to the same
 // BuildSettings object for shared stuff.
@@ -14,6 +18,7 @@ package build
 // TODO: rename this to something else, since build.BuildSettings would be better named build.Settings?
 type Settings struct {
 	buildSettings *BuildSettings
+	baseConfig    *resolve.Scope
 }
 
 // NewSettings creates a new Settings.
@@ -21,4 +26,9 @@ func NewSettings(buildSettings *BuildSettings) *Settings {
 	return &Settings{
 		buildSettings: buildSettings,
 	}
+}
+
+// BaseConfig returns the base config scope for this toolchain invocation.
+func (s *Settings) BaseConfig() *resolve.Scope {
+	return s.baseConfig
 }

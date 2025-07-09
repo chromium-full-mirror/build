@@ -28,6 +28,13 @@ func (v *BooleanValue) OriginNode() parse.ParseNode {
 	return v.origin
 }
 
+func (v *BooleanValue) CopyWithOrigin(origin parse.ParseNode) Value {
+	return &BooleanValue{
+		origin: origin,
+		value:  v.value,
+	}
+}
+
 func (v *BooleanValue) RawGNString() string {
 	if v.value {
 		return "true"

@@ -83,6 +83,37 @@ bar"`,
 			expectedLiteral:  `["hi\"me", true, false, 42]`,
 			expectedStarlark: `["hi\"me", True, False, 42]`,
 		},
+		{
+			name: "scope_empty",
+			input: &ScopeValue{
+				scope: &Scope{
+					values: map[string]record{},
+				},
+			},
+			expectedRaw:      `{ }`,
+			expectedLiteral:  `{ }`,
+			expectedStarlark: `<gnscope>`,
+		},
+		{
+			name: "scope_values",
+			input: &ScopeValue{
+				scope: &Scope{
+					values: map[string]record{
+						"a": {value: &IntegerValue{value: 42}},
+						"b": {value: &StringValue{value: "hello, world"}},
+					},
+				},
+			},
+			expectedRaw: `{
+  a = 42
+  b = "hello, world"
+}`,
+			expectedLiteral: `{
+  a = 42
+  b = "hello, world"
+}`,
+			expectedStarlark: `<gnscope>`,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			got := tc.input.RawGNString()

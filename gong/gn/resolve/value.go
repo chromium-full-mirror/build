@@ -21,6 +21,7 @@ const (
 	ValueTypeInteger
 	ValueTypeString
 	ValueTypeList
+	ValueTypeScope
 )
 
 func (t ValueType) String() string {
@@ -35,6 +36,8 @@ func (t ValueType) String() string {
 		return "string"
 	case ValueTypeList:
 		return "list"
+	case ValueTypeScope:
+		return "scope"
 	default:
 		return "UNKNOWN"
 	}
@@ -51,6 +54,8 @@ type Value interface {
 	setOrigin(parse.ParseNode)
 	// OriginNode returns the origin parse node of the value.
 	OriginNode() parse.ParseNode
+	// CopyWithOrigin performs a shallow copy of the value with a new origin.
+	CopyWithOrigin(parse.ParseNode) Value
 	// RawGNString returns a GN-like stringification of the value.
 	//
 	// Behaves similarly to `Value::ToString(false)` in C++ GN, however because

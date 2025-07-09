@@ -7,6 +7,7 @@ package gn
 import (
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 
 	"go.chromium.org/build/gong/gn/build"
@@ -16,7 +17,10 @@ import (
 	"go.chromium.org/build/gong/gn/syntax"
 )
 
-const gnFile = ".gn"
+const (
+	gnFile           = ".gn"
+	buildArgFileName = "args.gn"
+)
 
 func findDotFile(currentDir string) (string, error) {
 	tryThisFile := filepath.Join(currentDir, gnFile)
@@ -36,17 +40,30 @@ func findDotFile(currentDir string) (string, error) {
 type Setup struct {
 	buildSettings build.BuildSettings
 
-	// These settings are used to interpret the command line and dot file.
-	dotfileSettings *build.Settings
+	// FillArguments sets whether the build arguments should be filled during setup from the
+	// command line/build argument file. This will be true by default. The use
+	// case for setting it to false is when editing build arguments, we don't
+	// want to rely on them being valid.
+	FillArguments bool
 
+	// Settings object for interpreting the .gn config file, and build arguments
+	// from either the command line or build argument file.
+	dotfileSettings *build.Settings
+	// Scope object used to interpret the .gn config file.
+	// (This is separate from dotfileSettings because build arguments should not be
+	// able to reference variables defined in the root config file.)
+	dotfileScope *resolve.Scope
 	// State for invoking the dotfile.
 	dotfileName string
 }
 
 // NewSetup creates a new Setup helper.
 func NewSetup() *Setup {
-	setup := &Setup{}
+	setup := &Setup{
+		FillArguments: true,
+	}
 	setup.dotfileSettings = build.NewSettings(&setup.buildSettings)
+	setup.dotfileScope = resolve.NewScopeFromExecContext(setup.dotfileSettings)
 	return setup
 }
 
@@ -60,10 +77,61 @@ func (s *Setup) DoSetup(buildDir string, forceCreate bool, flags *CommonFlags) e
 		return err
 	}
 	if err := s.RunConfigFile(); err != nil {
+		fmt.Fprintf(os.Stderr, "don't know how to run config file yet, skipping for now: %v\n", err)
+	}
+
+	// Must be after FillSourceDir to resolve.
+	if err := s.fillBuildDir(buildDir); err != nil {
+		return err
+	}
+
+	if s.FillArguments {
+		if err := s.fillArguments(flags); err != nil {
+			fmt.Fprintf(os.Stderr, "don't know how to fill args yet, skipping for now: %v\n", err)
+		}
+	}
+
+	// Check for unused variables in the .gn file.
+	if err := s.dotfileScope.CheckForUnusedVars(); err != nil {
 		return err
 	}
 
 	return fmt.Errorf("not implemented. setup: %v", s)
+}
+
+func (s *Setup) fillArguments(flags *CommonFlags) error {
+	// TODO: implement properly
+	if flags.Args != "" {
+		return fmt.Errorf("don't know how to parse args from command line yet")
+	}
+
+	argsInputPath := path.Join(s.buildSettings.BuildDir, buildArgFileName)
+	argsInputFile, err := fs.NewInputFile(argsInputPath, argsInputPath)
+	if err != nil {
+		return fmt.Errorf("could not load args file: %w", err)
+	}
+	// TODO: retrieve the binary name?
+	argsInputFile.FriendlyName = `build arg file (use "gn args <out_dir>" to edit)`
+
+	argsTokens, err := syntax.Tokenize(argsInputFile)
+	if err != nil {
+		return fmt.Errorf("args tokenize failed: %w", err)
+	}
+
+	argsRoot, err := parse.Parse(argsTokens)
+	if err != nil {
+		return fmt.Errorf("args parse failed: %w", err)
+	}
+
+	argScope := resolve.NewScopeFromExecContext(s.dotfileSettings)
+	_, err = resolve.ExecuteNode(argsRoot, argScope)
+	if err != nil {
+		return fmt.Errorf("args execute failed: %w", err)
+	}
+
+	// TODO: do something with the resulting scope
+
+	return nil
 }
 
 // FillSourceDir fills the root directory into the settings.
@@ -115,6 +183,16 @@ func (s *Setup) FillSourceDir(flags *CommonFlags) error {
 	return nil
 }
 
+func (s *Setup) fillBuildDir(buildDir string) error {
+	// TODO: implement properly
+	absBuildDir, err := filepath.Abs(buildDir)
+	if err != nil {
+		return err
+	}
+	s.buildSettings.BuildDir = filepath.ToSlash(absBuildDir)
+	return nil
+}
+
 // RunConfigFile runs the config file.
 func (s *Setup) RunConfigFile() error {
 	dotfileInputFile, err := fs.NewInputFile("//.gn", s.dotfileName)
@@ -132,7 +210,7 @@ func (s *Setup) RunConfigFile() error {
 		return fmt.Errorf("parse failed: %w", err)
 	}
 
-	_, err = resolve.ExecuteNode(dotfileRoot)
+	_, err = resolve.ExecuteNode(dotfileRoot, s.dotfileScope)
 	if err != nil {
 		return fmt.Errorf("execute failed: %w", err)
 	}

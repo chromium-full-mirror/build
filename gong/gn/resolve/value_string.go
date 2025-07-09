@@ -29,6 +29,13 @@ func (v *StringValue) OriginNode() parse.ParseNode {
 	return v.origin
 }
 
+func (v *StringValue) CopyWithOrigin(origin parse.ParseNode) Value {
+	return &StringValue{
+		origin: origin,
+		value:  v.value,
+	}
+}
+
 func (v *StringValue) RawGNString() string {
 	return v.value
 }

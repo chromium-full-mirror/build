@@ -16,6 +16,10 @@ import (
 type InputFile struct {
 	name     SourceFile
 	contents []byte
+	// FriendlyName can be set to override the name() in cases where there
+	// is no name (like SetContents is used instead) or if the name doesn't
+	// make sense. This will be displayed in error messages.
+	FriendlyName string
 }
 
 // NewInputFile creates an input file from provided path.
@@ -42,10 +46,13 @@ func (f *InputFile) load(systemPath string) error {
 	return nil
 }
 
-// DisplayName is the virtual name for representing this file. This does not take into
-// account whether the file was loaded from the secondary source tree (see
-// BuildSettings secondarySourcePath).
+// DisplayName is the virtual name for representing this file in error messages.
+// This does not take into account whether the file was loaded from the secondary
+// source tree (see BuildSettings secondarySourcePath).
 func (f InputFile) DisplayName() string {
+	if f.FriendlyName != "" {
+		return f.FriendlyName
+	}
 	return f.name.Filename()
 }
 

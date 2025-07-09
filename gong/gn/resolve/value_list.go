@@ -31,6 +31,13 @@ func (v *ListValue) OriginNode() parse.ParseNode {
 	return v.origin
 }
 
+func (v *ListValue) CopyWithOrigin(origin parse.ParseNode) Value {
+	return &ListValue{
+		origin: origin,
+		list:   v.list,
+	}
+}
+
 func (v *ListValue) RawGNString() string {
 	result := "["
 	for i, value := range v.list {
