@@ -79,7 +79,7 @@ func ExecuteNode(n parse.ParseNode, s *Scope) (Value, error) {
 		return nil, fmt.Errorf("don't know how to execute LiteralNode yet. got: %T(%v)", n, n)
 
 	case *parse.BlockCommentNode:
-		return nil, fmt.Errorf("don't know how to execute BlockCommentNode yet. got: %T(%v)", n, n)
+		return nil, nil
 
 	case *parse.ConditionNode:
 		return nil, fmt.Errorf("don't know how to execute ConditionNode yet. got: %T(%v)", n, n)
