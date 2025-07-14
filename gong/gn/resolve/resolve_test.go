@@ -10,6 +10,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 
 	"go.chromium.org/build/gong/gn/parse"
+	"go.chromium.org/build/gong/gn/syntax"
 )
 
 func TestExecuteNode(t *testing.T) {
@@ -25,6 +26,78 @@ func TestExecuteNode(t *testing.T) {
 			node:    &parse.BlockCommentNode{},
 			scope:   &Scope{},
 			wantErr: false,
+		},
+		{
+			name:    "literal_true",
+			node:    &parse.LiteralNode{Token: syntax.MakeToken(syntax.TokenTrue, "true")},
+			scope:   &Scope{},
+			want:    &BooleanValue{value: true},
+			wantErr: false,
+		},
+		{
+			name:    "literal_false",
+			node:    &parse.LiteralNode{Token: syntax.MakeToken(syntax.TokenFalse, "false")},
+			scope:   &Scope{},
+			want:    &BooleanValue{value: false},
+			wantErr: false,
+		},
+		{
+			name:    "literal_integer",
+			node:    &parse.LiteralNode{Token: syntax.MakeToken(syntax.TokenInteger, "123")},
+			scope:   &Scope{},
+			want:    &IntegerValue{value: 123},
+			wantErr: false,
+		},
+		{
+			name:    "literal_integer_negative",
+			node:    &parse.LiteralNode{Token: syntax.MakeToken(syntax.TokenInteger, "-1")},
+			scope:   &Scope{},
+			want:    &IntegerValue{value: -1},
+			wantErr: false,
+		},
+		{
+			name:    "literal_integer_negative_zero",
+			node:    &parse.LiteralNode{Token: syntax.MakeToken(syntax.TokenInteger, "-0")},
+			scope:   &Scope{},
+			wantErr: true,
+		},
+		{
+			name:    "literal_integer_leading_zeroes",
+			node:    &parse.LiteralNode{Token: syntax.MakeToken(syntax.TokenInteger, "01")},
+			scope:   &Scope{},
+			wantErr: true,
+		},
+		{
+			name:    "literal_integer_negative_leading_zeroes",
+			node:    &parse.LiteralNode{Token: syntax.MakeToken(syntax.TokenInteger, "-01")},
+			scope:   &Scope{},
+			wantErr: true,
+		},
+		{
+			name:    "literal_integer_invalid",
+			node:    &parse.LiteralNode{Token: syntax.MakeToken(syntax.TokenInteger, "123123612836217863781263781263786128371278637821678362817")},
+			scope:   &Scope{},
+			wantErr: true,
+		},
+		{
+			name:    "literal_string",
+			node:    &parse.LiteralNode{Token: syntax.MakeToken(syntax.TokenString, `"hello"`)},
+			scope:   &Scope{},
+			want:    &StringValue{value: "hello"},
+			wantErr: false,
+		},
+		{
+			name:    "literal_string_empty",
+			node:    &parse.LiteralNode{Token: syntax.MakeToken(syntax.TokenString, `""`)},
+			scope:   &Scope{},
+			want:    &StringValue{value: ""},
+			wantErr: false,
+		},
+		{
+			name:    "literal_unhandled_token",
+			node:    &parse.LiteralNode{Token: syntax.MakeToken(syntax.TokenPlus, "+")},
+			scope:   &Scope{},
+			wantErr: true,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

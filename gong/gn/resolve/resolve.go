@@ -7,8 +7,11 @@ package resolve
 
 import (
 	"fmt"
+	"strconv"
+	"strings"
 
 	"go.chromium.org/build/gong/gn/parse"
+	"go.chromium.org/build/gong/gn/syntax"
 )
 
 // ExecuteNode executes a given node in the AST.
@@ -76,7 +79,47 @@ func ExecuteNode(n parse.ParseNode, s *Scope) (Value, error) {
 		return nil, fmt.Errorf("don't know how to execute ListNode yet. got: %T(%v)", n, n)
 
 	case *parse.LiteralNode:
-		return nil, fmt.Errorf("don't know how to execute LiteralNode yet. got: %T(%v)", n, n)
+		switch n.Token.TokenType() {
+		case syntax.TokenTrue:
+			return &BooleanValue{
+				origin: n,
+				value:  true,
+			}, nil
+		case syntax.TokenFalse:
+			return &BooleanValue{
+				origin: n,
+				value:  false,
+			}, nil
+		case syntax.TokenInteger:
+			s := n.Token.Value()
+			if (strings.HasPrefix(s, "0") && len(s) > 1) || strings.HasPrefix(s, "-0") {
+				if s == "-0" {
+					return nil, parse.MakeErrFromParseNode(n, "Negative zero doesn't make sense", "")
+				}
+				return nil, parse.MakeErrFromParseNode(n, "Leading zeros not allowed", "")
+			}
+			i, err := strconv.ParseInt(s, 10, 64)
+			if err != nil {
+				return nil, parse.MakeErrFromParseNode(n, "This does not look like an integer", "")
+			}
+			return &IntegerValue{
+				origin: n,
+				value:  i,
+			}, nil
+		case syntax.TokenString:
+			// TODO: need string literal expansion.
+			s := n.Token.Value()
+			// Assume that the parser should have kept the quotes.
+			if len(s) < 2 {
+				return nil, parse.MakeErrFromParseNode(n, "Invalid AST", "Found a LiteralNode with an unquoted string")
+			}
+			s = s[1 : len(s)-1]
+			return &StringValue{
+				origin: n,
+				value:  s,
+			}, nil
+		}
+		return nil, parse.MakeErrFromParseNode(n, "Invalid AST", "Found a LiteralNode that wasn't a boolean, integer, or string")
 
 	case *parse.BlockCommentNode:
 		return nil, nil
