@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"sync"
 )
 
 // evalString is string to be evaluated (binding value, path).
@@ -85,6 +86,18 @@ loop:
 	return evalString{v: v, esc: esc}, nil
 }
 
+type evalLookupStack struct {
+	stack [][]byte
+}
+
+var evalLookupStackPool = sync.Pool{
+	New: func() any {
+		return &evalLookupStack{
+			stack: make([][]byte, 0, 256),
+		}
+	},
+}
+
 // evaluate evaluates val in env.
 // returned []byte will be valid until buf is reset or next evaluate.
 func evaluate(env evalEnv, buf *bytes.Buffer, val evalString) ([]byte, error) {
@@ -95,7 +108,12 @@ func evaluate(env evalEnv, buf *bytes.Buffer, val evalString) ([]byte, error) {
 		return val.v, nil
 	}
 	buf.Reset()
-	return evaluateAppend(env, buf, val, make([][]byte, 0, 256))
+	s := evalLookupStackPool.Get().(*evalLookupStack)
+	defer func() {
+		s.stack = s.stack[:0]
+		evalLookupStackPool.Put(s)
+	}()
+	return evaluateAppend(env, buf, val, s.stack)
 }
 
 // evaluateAppend is helper function of evaluate.
