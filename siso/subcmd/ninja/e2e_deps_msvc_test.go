@@ -37,6 +37,12 @@ func TestBuild_DepsMSVC(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		defer func() {
+			err := b.Close()
+			if err != nil {
+				t.Fatalf("b.Close()=%v; want nil err", err)
+			}
+		}()
 		err = b.Build(ctx, "build", "all")
 		if err != nil {
 			t.Fatalf(`b.Build(ctx, "build", "all")=%v; want nil err`, err)
@@ -71,6 +77,12 @@ func TestBuild_DepsMSVC(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		defer func() {
+			err := b.Close()
+			if err != nil {
+				t.Fatalf("b.Close()=%v; want nil err", err)
+			}
+		}()
 		err = b.Build(ctx, "build", "all")
 		if err != nil {
 			t.Fatalf(`b.Build(ctx, "build", "all")=%v; want nil err`, err)
@@ -136,6 +148,12 @@ Note: including file:   ../../base/other.h
 		if err != nil {
 			t.Fatal(err)
 		}
+		defer func() {
+			err := b.Close()
+			if err != nil {
+				t.Fatalf("b.Close()=%v; want nil err", err)
+			}
+		}()
 		err = b.Build(ctx, "build", "all")
 		if err != nil {
 			t.Fatalf(`b.Build(ctx, "build", "all")=%v; want nil err`, err)
@@ -196,6 +214,12 @@ Note: including file:   ../../base/other2.h
 		if err != nil {
 			t.Fatal(err)
 		}
+		defer func() {
+			err := b.Close()
+			if err != nil {
+				t.Fatalf("b.Close()=%v; want nil err", err)
+			}
+		}()
 		err = b.Build(ctx, "build", "all")
 		if err != nil {
 			t.Fatalf(`b.Build(ctx, "build", "all")=%v; want nil err`, err)
@@ -243,6 +267,12 @@ func TestBuild_DepsMSVC_fastlocal(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		defer func() {
+			err := b.Close()
+			if err != nil {
+				t.Fatalf("b.Close()=%v; want nil err", err)
+			}
+		}()
 		err = b.Build(ctx, "build", "all")
 		if err != nil {
 			t.Fatalf(`b.Build(ctx, "build", "all")=%v; want nil err`, err)
@@ -279,6 +309,12 @@ func TestBuild_DepsMSVC_fastlocal(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		defer func() {
+			err := b.Close()
+			if err != nil {
+				t.Fatalf("b.Close()=%v; want nil err", err)
+			}
+		}()
 		err = b.Build(ctx, "build", "all")
 		if err != nil {
 			t.Fatalf(`b.Build(ctx, "build", "all")=%v; want nil err`, err)

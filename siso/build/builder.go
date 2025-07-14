@@ -209,7 +209,7 @@ type Builder struct {
 	failedCommandsWriter io.Writer
 	localexecLogWriter   io.Writer
 	metricsJSONWriter    io.Writer
-	ninjaLogWriter       io.Writer
+	ninjaLogWriter       io.WriteCloser
 	outputLogWriter      io.Writer
 	traceExporter        *trace.Exporter
 	traceEvents          *traceEvents
@@ -280,10 +280,9 @@ func New(ctx context.Context, graph Graph, opts Options) (_ *Builder, err error)
 		return nil, err
 	}
 	defer func() {
-		clog.Infof(ctx, "close .ninja_log")
-		cerr := ninjaLogWriter.Close()
-		if err == nil {
-			err = cerr
+		if err != nil {
+			cerr := ninjaLogWriter.Close()
+			clog.Infof(ctx, "close .ninja_log: %v", cerr)
 		}
 	}()
 
@@ -422,10 +421,15 @@ func New(ctx context.Context, graph Graph, opts Options) (_ *Builder, err error)
 
 // Close cleans up the builder.
 func (b *Builder) Close() error {
-	if b.reproxyExec == nil {
-		return nil
+	var ninjaLogErr error
+	if b.ninjaLogWriter != nil {
+		ninjaLogErr = b.ninjaLogWriter.Close()
 	}
-	return b.reproxyExec.Close()
+	var reproxyErr error
+	if b.reproxyExec != nil {
+		reproxyErr = b.reproxyExec.Close()
+	}
+	return errors.Join(ninjaLogErr, reproxyErr)
 }
 
 // Stats returns stats of the builder.

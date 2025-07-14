@@ -28,6 +28,12 @@ func TestBuild_SwallowFailures(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer func() {
+		err := b.Close()
+		if err != nil {
+			t.Fatalf("b.Close()=%v; want nil err", err)
+		}
+	}()
 	err = b.Build(ctx, "build", "all")
 	if err == nil {
 		t.Fatal(`b.Build(ctx, "build", "all")=nil, want err`)
@@ -53,6 +59,12 @@ func TestBuild_SwallowFailuresLimit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer func() {
+		err := b.Close()
+		if err != nil {
+			t.Fatalf("b.Close()=%v; want nil err", err)
+		}
+	}()
 	err = b.Build(ctx, "build", "all")
 	if err == nil {
 		t.Fatal(`b.Build(ctx, "build", "all")=nil, want err`)
