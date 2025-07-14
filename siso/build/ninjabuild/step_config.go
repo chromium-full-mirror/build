@@ -282,6 +282,8 @@ func (r *StepRule) Init() error {
 
 // StepConfig is a config for ninja build manifest.
 type StepConfig struct {
+	StateDir string `json:"-"`
+
 	// Properties are config properties.
 	// Used for resultstore if enabled.
 	Properties map[string]string `json:"properties,omitempty"`

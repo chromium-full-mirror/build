@@ -90,7 +90,7 @@ func (g gnTarget) String() string {
 
 // NewStepConfig creates new *StepConfig and stores it in .siso_config
 // and .siso_filegroups.
-func NewStepConfig(ctx context.Context, config *buildconfig.Config, p *build.Path, hashFS *hashfs.HashFS, fname string) (*StepConfig, error) {
+func NewStepConfig(ctx context.Context, config *buildconfig.Config, p *build.Path, hashFS *hashfs.HashFS, fname, stateDir string) (*StepConfig, error) {
 	err := hashFS.WaitReady(ctx)
 	if err != nil {
 		return nil, err
@@ -110,11 +110,13 @@ func NewStepConfig(ctx context.Context, config *buildconfig.Config, p *build.Pat
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal config: %w", err)
 	}
-	err = os.WriteFile(".siso_config", buf, 0644)
+	stepConfig.StateDir = stateDir
+	configFilename := filepath.Join(stateDir, ".siso_config")
+	err = os.WriteFile(configFilename, buf, 0644)
 	if err != nil {
 		return nil, err
 	}
-	clog.Infof(ctx, "save to .siso_config")
+	clog.Infof(ctx, "save to %s", configFilename)
 	err = stepConfig.Init(ctx)
 	if err != nil {
 		return nil, err
@@ -134,16 +136,17 @@ func updateFilegroups(ctx context.Context, config *buildconfig.Config, buildPath
 		return err
 	}
 	fnameTime = fi.ModTime()
-	fi, err = os.Stat(".siso_filegroups")
+	filegroupsFilename := filepath.Join(sc.StateDir, ".siso_filegroups")
+	fi, err = os.Stat(filegroupsFilename)
 	if err == nil {
 		fgTime = fi.ModTime()
 	}
 	var fg buildconfig.Filegroups
 	// initializes fg with valid cached result.
 	if fnameTime.Before(fgTime) {
-		buf, err := os.ReadFile(".siso_filegroups")
+		buf, err := os.ReadFile(filegroupsFilename)
 		if err != nil {
-			clog.Warningf(ctx, "Failed to load .siso_filegroups: %v", err)
+			clog.Warningf(ctx, "Failed to load %s: %v", filegroupsFilename, err)
 		} else {
 			err = json.Unmarshal(buf, &fg)
 			if err != nil {
@@ -166,11 +169,11 @@ func updateFilegroups(ctx context.Context, config *buildconfig.Config, buildPath
 	if err != nil {
 		return fmt.Errorf("failed to marshal filegroups: %w", err)
 	}
-	err = os.WriteFile(".siso_filegroups", buf, 0644)
+	err = os.WriteFile(filegroupsFilename, buf, 0644)
 	if err != nil {
 		return err
 	}
-	clog.Infof(ctx, "save to .siso_filegroups")
+	clog.Infof(ctx, "save to %s", filegroupsFilename)
 	return sc.UpdateFilegroups(ctx, fg.Filegroups)
 }
 
@@ -215,8 +218,14 @@ func NewGraph(ctx context.Context, fname string, nstate *ninjautil.State, config
 	return graph
 }
 
+// StateDir returns state dir.
+func (g *Graph) StateDir() string {
+	return g.globals.stepConfig.StateDir
+}
+
 // Reload reloads hashfs, filegroups and build.ninja.
 func (g *Graph) Reload(ctx context.Context) error {
+	stateDir := g.globals.stepConfig.StateDir
 	eg, ctx := errgroup.WithContext(ctx)
 	eg.Go(func() error {
 		// need to refresh cached entries as `gn gen` updated files
@@ -225,7 +234,7 @@ func (g *Graph) Reload(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		g.globals.stepConfig, err = NewStepConfig(ctx, g.globals.buildConfig, g.globals.path, g.globals.hashFS, g.fname)
+		g.globals.stepConfig, err = NewStepConfig(ctx, g.globals.buildConfig, g.globals.path, g.globals.hashFS, g.fname, stateDir)
 		return err
 	})
 	eg.Go(func() error {

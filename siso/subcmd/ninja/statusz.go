@@ -11,12 +11,13 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
 
 	"go.chromium.org/build/siso/build"
 	"go.chromium.org/build/siso/o11y/clog"
 )
 
-func newStatuszServer(ctx context.Context, b *build.Builder) error {
+func newStatuszServer(ctx context.Context, b *build.Builder, dir string) error {
 	mux := http.NewServeMux()
 
 	mux.Handle("/api/active_steps", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
@@ -48,15 +49,16 @@ func newStatuszServer(ctx context.Context, b *build.Builder) error {
 	}()
 
 	s.Addr = listener.Addr().String()
-	clog.Infof(ctx, ".siso_port=%s", s.Addr)
-	err = os.WriteFile(".siso_port", []byte(s.Addr), 0644)
+	portFilename := filepath.Join(dir, ".siso_port")
+	clog.Infof(ctx, "%s=%s", portFilename, s.Addr)
+	err = os.WriteFile(portFilename, []byte(s.Addr), 0644)
 	if err != nil {
-		clog.Warningf(ctx, "failed to write .siso_port: %v", err)
+		clog.Warningf(ctx, "failed to write %s: %v", portFilename, err)
 	}
 	defer func() {
-		err := os.Remove(".siso_port")
+		err := os.Remove(portFilename)
 		if err != nil {
-			clog.Warningf(ctx, "failed to remove .siso_port: %v", err)
+			clog.Warningf(ctx, "failed to remove %s: %v", portFilename, err)
 		}
 	}()
 

@@ -69,6 +69,7 @@ type depsRun struct {
 	subcommands.CommandRunBase
 
 	dir         string
+	stateDir    string
 	fname       string
 	fsopt       *hashfs.Option
 	depsLogFile string
@@ -78,11 +79,12 @@ type depsRun struct {
 
 func (c *depsRun) init() {
 	c.Flags.StringVar(&c.dir, "C", ".", "ninja running directory to find dpes log")
+	c.Flags.StringVar(&c.stateDir, "state_dir", ".", "state directory (relative to -C)")
 	c.Flags.StringVar(&c.fname, "f", "build.ninja", "input build filename (relative to -C)")
 	c.fsopt = new(hashfs.Option)
 	c.fsopt.StateFile = ".siso_fs_state"
 	c.fsopt.RegisterFlags(&c.Flags)
-	c.Flags.StringVar(&c.depsLogFile, "deps_log", ".siso_deps", "deps log filename (relative to -C)")
+	c.Flags.StringVar(&c.depsLogFile, "deps_log", ".siso_deps", "deps log filename (relative to -C, -state_dir)")
 	c.Flags.BoolVar(&c.raw, "raw", false, "just check deps log. (no build.ninja nor .siso_fs_state needed)")
 	c.Flags.BoolVar(&c.depfile, "depfile", false, "check depfile too")
 }
@@ -116,7 +118,11 @@ func (c *depsRun) run(ctx context.Context, args []string) error {
 		return err
 	}
 
-	depsLog, err := ninjautil.NewDepsLog(ctx, c.depsLogFile)
+	if c.fsopt.StateFile != "" {
+		c.fsopt.StateFile = filepath.Join(c.stateDir, c.fsopt.StateFile)
+	}
+	depsLogFile := filepath.Join(c.stateDir, c.depsLogFile)
+	depsLog, err := ninjautil.NewDepsLog(ctx, depsLogFile)
 	if err != nil {
 		return err
 	}

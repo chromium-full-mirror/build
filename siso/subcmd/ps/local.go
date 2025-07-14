@@ -13,6 +13,7 @@ import (
 	"io/fs"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"go.chromium.org/build/siso/build"
@@ -20,10 +21,11 @@ import (
 )
 
 type localSource struct {
-	wd string
+	wd       string
+	stateDir string
 }
 
-func newLocalSource(ctx context.Context, dir string) (*localSource, error) {
+func newLocalSource(ctx context.Context, dir, stateDir string) (*localSource, error) {
 	err := os.Chdir(dir)
 	if err != nil {
 		return nil, fmt.Errorf("failed to chdir %s: %w", dir, err)
@@ -32,7 +34,7 @@ func newLocalSource(ctx context.Context, dir string) (*localSource, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to get wd: %w", err)
 	}
-	return &localSource{wd: wd}, nil
+	return &localSource{wd: wd, stateDir: stateDir}, nil
 }
 
 func (s *localSource) location() string {
@@ -42,12 +44,13 @@ func (s *localSource) location() string {
 func (s *localSource) text() string { return "" }
 
 func (s *localSource) fetch(ctx context.Context) ([]build.ActiveStepInfo, error) {
-	buf, err := os.ReadFile(".siso_port")
+	portFilename := filepath.Join(s.stateDir, ".siso_port")
+	buf, err := os.ReadFile(portFilename)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			return nil, fmt.Errorf("siso is not running in %s?", s.wd)
 		}
-		return nil, fmt.Errorf("siso is not running in %s? failed to read .siso_port: %w", s.wd, err)
+		return nil, fmt.Errorf("siso is not running in %s? failed to read %s: %w", s.wd, portFilename, err)
 	}
 	req, err := http.NewRequestWithContext(ctx, "GET", fmt.Sprintf("http://%s/api/active_steps", strings.TrimSpace(string(buf))), nil)
 	if err != nil {
@@ -55,7 +58,7 @@ func (s *localSource) fetch(ctx context.Context) ([]build.ActiveStepInfo, error)
 	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get active_steps via .siso_port: %w", err)
+		return nil, fmt.Errorf("failed to get active_steps via %s: %w", portFilename, err)
 	}
 	defer func() {
 		err := resp.Body.Close()

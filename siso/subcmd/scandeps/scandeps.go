@@ -56,11 +56,13 @@ type run struct {
 	subcommands.CommandRunBase
 
 	dir       string
+	stateDir  string
 	reqString string
 }
 
 func (c *run) init() {
-	c.Flags.StringVar(&c.dir, "C", ".", "ninja running directory to find .siso_config and .siso_filegroup for input_deps")
+	c.Flags.StringVar(&c.dir, "C", ".", "ninja running directory to find .siso_config and .siso_filegroup for input_deps in state dir")
+	c.Flags.StringVar(&c.stateDir, "state_dir", ".", "state directory (relative to -C)")
 	c.Flags.StringVar(&c.reqString, "req", "", "json format of scandeps request")
 }
 
@@ -89,7 +91,7 @@ func (c *run) run(ctx context.Context) error {
 		return err
 	}
 	fmt.Printf("request=%#v\n", req)
-	inputDeps, err := loadInputDeps(ctx, c.dir)
+	inputDeps, err := loadInputDeps(ctx, filepath.Join(c.dir, c.stateDir))
 	if err != nil {
 		return err
 	}

@@ -142,6 +142,8 @@ type ninjaCmdRun struct {
 	depsLogFile string
 	// depsLogBucket
 
+	stateDir string
+
 	logDir             string
 	frontendFile       string
 	failureSummaryFile string
@@ -386,7 +388,7 @@ func (errInterrupted) Error() string        { return "interrupt by signal" }
 func (errInterrupted) Is(target error) bool { return target == context.Canceled }
 
 const (
-	// relative to -log_dir
+	// relative to -state_dir
 	failedTargetsFile = ".siso_failed_targets"
 )
 
@@ -468,8 +470,13 @@ func (c *ninjaCmdRun) run(ctx context.Context) (stats build.Stats, err error) {
 	if err != nil {
 		return stats, err
 	}
+
+	if c.stateDir != "." && c.fsopt.StateFile != "" {
+		c.fsopt.StateFile = filepath.Join(c.stateDir, c.fsopt.StateFile)
+	}
+	lockFilename := filepath.Join(c.stateDir, ".siso_lock")
 	if !c.dryRun {
-		lock, err := newLockFile(ctx, ".siso_lock")
+		lock, err := newLockFile(ctx, lockFilename)
 		switch {
 		case errors.Is(err, errors.ErrUnsupported):
 			clog.Warningf(ctx, "lockfile is not supported")
@@ -507,11 +514,11 @@ func (c *ninjaCmdRun) run(ctx context.Context) (stats build.Stats, err error) {
 			defer func() {
 				err := lock.Unlock()
 				if err != nil {
-					ui.Default.Errorf("failed to unlock .siso_lock: %v\n", err)
+					ui.Default.Errorf("failed to unlock %s: %v\n", lockFilename, err)
 				}
 				err = lock.Close()
 				if err != nil {
-					ui.Default.Errorf("failed to close .siso_lock: %v\n", err)
+					ui.Default.Errorf("failed to close %s: %v\n", lockFilename, err)
 				}
 			}()
 		}
@@ -713,7 +720,7 @@ func (c *ninjaCmdRun) run(ctx context.Context) (stats build.Stats, err error) {
 		return stats, err
 	}
 
-	failedTargetsFilename := c.logFilename(failedTargetsFile, "")
+	failedTargetsFilename := filepath.Join(c.stateDir, failedTargetsFile)
 
 	var eg errgroup.Group
 	var localDepsLog *ninjautil.DepsLog
@@ -844,10 +851,11 @@ func (c *ninjaCmdRun) run(ctx context.Context) (stats build.Stats, err error) {
 			return
 		}
 		if c.subtool != "" {
-			// don't modify .siso_failed_targets, .siso_last_targets by subtool.
+			// don't modify .siso_failed_targets by subtool
 			return
 		}
 		if c.prepare {
+			// don't modify .siso_failed_targets for prepare (ide query).
 			return
 		}
 		if err != nil {
@@ -951,7 +959,7 @@ func (c *ninjaCmdRun) run(ctx context.Context) (stats build.Stats, err error) {
 	}
 	// TODO(b/286501388): init concurrently for .siso_config/.siso_filegroups, build.ninja.
 	spin.Start("load siso config")
-	stepConfig, err := ninjabuild.NewStepConfig(ctx, config, buildPath, hashFS, c.fname)
+	stepConfig, err := ninjabuild.NewStepConfig(ctx, config, buildPath, hashFS, c.fname, c.stateDir)
 	if err != nil {
 		spin.Stop(err)
 		return stats, err
@@ -991,7 +999,7 @@ func (c *ninjaCmdRun) run(ctx context.Context) (stats build.Stats, err error) {
 	if err != nil {
 		return stats, err
 	}
-	if err := os.WriteFile(sisoMetadataFilename, j, 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(c.stateDir, sisoMetadataFilename), j, 0644); err != nil {
 		return stats, err
 	}
 
@@ -1096,6 +1104,7 @@ func runNinja(ctx context.Context, fname string, graph *ninjabuild.Graph, bopts 
 }
 
 func (c *ninjaCmdRun) init() {
+	// TODO(b/340381100): extract common flags for ninja commands
 	c.Flags.StringVar(&c.dir, "C", ".", "ninja running directory")
 	c.Flags.StringVar(&c.configName, "config", "", "config name passed to starlark")
 	c.Flags.StringVar(&c.projectID, "project", os.Getenv("SISO_PROJECT"), "cloud project ID. can set by $SISO_PROJECT")
@@ -1141,7 +1150,9 @@ func (c *ninjaCmdRun) init() {
 	c.Flags.StringVar(&c.configRepoDir, "config_repo_dir", "build/config/siso", "config repo directory (relative to exec root)")
 	c.Flags.StringVar(&c.configFilename, "load", "@config//main.star", "config filename (@config// is --config_repo_dir)")
 	c.Flags.StringVar(&c.outputLocalStrategy, "output_local_strategy", "full", `strategy for output_local. "full": download all outputs. "greedy": downloads most outputs except intermediate objs. "minimum": downloads as few as possible`)
-	c.Flags.StringVar(&c.depsLogFile, "deps_log", ".siso_deps", "deps log filename (relative to -C)")
+	c.Flags.StringVar(&c.depsLogFile, "deps_log", ".siso_deps", "deps log filename (relative to -C, -state_dir)")
+
+	c.Flags.StringVar(&c.stateDir, "state_dir", ".", "state directory (relative to -C)")
 
 	c.Flags.StringVar(&c.logDir, "log_dir", ".", "log directory (relative to -C")
 
@@ -1433,12 +1444,13 @@ func (c *ninjaCmdRun) initConfig(ctx context.Context, execRoot string, targets [
 }
 
 func (c *ninjaCmdRun) initDepsLog(ctx context.Context) (*ninjautil.DepsLog, error) {
-	err := os.MkdirAll(filepath.Dir(c.depsLogFile), 0755)
+	depsLogFile := filepath.Join(c.stateDir, c.depsLogFile)
+	err := os.MkdirAll(filepath.Dir(depsLogFile), 0755)
 	if err != nil {
 		clog.Warningf(ctx, "failed to mkdir for deps log: %v", err)
 		return nil, err
 	}
-	depsLog, err := ninjautil.NewDepsLog(ctx, c.depsLogFile)
+	depsLog, err := ninjautil.NewDepsLog(ctx, depsLogFile)
 	if err != nil {
 		clog.Warningf(ctx, "failed to load deps log: %v", err)
 		return nil, err
@@ -1677,6 +1689,7 @@ func doBuild(ctx context.Context, graph *ninjabuild.Graph, bopts build.Options, 
 	if err != nil {
 		return stats, err
 	}
+	stateDir := graph.StateDir()
 	if bopts.ResultstoreUploader != nil {
 		err := bopts.ResultstoreUploader.NewConfiguration(ctx, "default", graph.ConfigProperties())
 		if err != nil {
@@ -1685,7 +1698,7 @@ func doBuild(ctx context.Context, graph *ninjabuild.Graph, bopts build.Options, 
 		bopts.ResultstoreUploader.HashFS = bopts.HashFS
 		bopts.ResultstoreUploader.REAPIClient = bopts.REAPIClient
 
-		ents, err := bopts.HashFS.Entries(ctx, filepath.Join(bopts.Path.ExecRoot, bopts.Path.Dir), []string{".siso_config", ".siso_filegroups"})
+		ents, err := bopts.HashFS.Entries(ctx, filepath.Join(bopts.Path.ExecRoot, bopts.Path.Dir), []string{filepath.Join(stateDir, ".siso_config"), filepath.Join(stateDir, ".siso_filegroups")})
 		if err != nil {
 			return stats, err
 		}
@@ -1718,7 +1731,7 @@ func doBuild(ctx context.Context, graph *ninjabuild.Graph, bopts build.Options, 
 	defer cancel()
 	if nopts.enableStatusz {
 		go func() {
-			err := newStatuszServer(hctx, b)
+			err := newStatuszServer(hctx, b, stateDir)
 			if err != nil {
 				clog.Warningf(ctx, "statusz: %v", err)
 			}

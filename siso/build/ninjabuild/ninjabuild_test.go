@@ -102,7 +102,7 @@ build all: phony exe
 			t.Error(err)
 		}
 	}()
-	stepConfig, err := NewStepConfig(ctx, config, path, hashFS, "build.ninja")
+	stepConfig, err := NewStepConfig(ctx, config, path, hashFS, "build.ninja", ".")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -10,6 +10,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 
 	"github.com/maruel/subcommands"
@@ -44,18 +45,21 @@ func cmdInputs() *subcommands.Command {
 type inputsRun struct {
 	subcommands.CommandRunBase
 
-	dir   string
-	fname string
+	dir      string
+	stateDir string
+	fname    string
 
 	includeDeps bool
 	depsLogFile string
 }
 
 func (c *inputsRun) init() {
+	// TODO(b/340381100): extract common flags for ninja commands
 	c.Flags.StringVar(&c.dir, "C", ".", "ninja running directory to find build.ninja")
+	c.Flags.StringVar(&c.stateDir, "state_dir", ".", "state directory (relative to -C)")
 	c.Flags.StringVar(&c.fname, "f", "build.ninja", "input build filename (relative to -C)")
 	c.Flags.BoolVar(&c.includeDeps, "include_deps", false, "include inputs recorded in deps log file")
-	c.Flags.StringVar(&c.depsLogFile, "deps_log", ".siso_deps", "deps log filename (relative to -C)")
+	c.Flags.StringVar(&c.depsLogFile, "deps_log", ".siso_deps", "deps log filename (relative to -C, -stateDir)")
 }
 
 func (c *inputsRun) Run(a subcommands.Application, args []string, env subcommands.Env) int {
@@ -86,7 +90,8 @@ func (c *inputsRun) run(ctx context.Context, args []string) error {
 	}
 	var depsLog *ninjautil.DepsLog
 	if c.includeDeps {
-		depsLog, err = ninjautil.NewDepsLog(ctx, c.depsLogFile)
+		depsLogFile := filepath.Join(c.stateDir, c.depsLogFile)
+		depsLog, err = ninjautil.NewDepsLog(ctx, depsLogFile)
 		if err != nil {
 			return fmt.Errorf("failed to load deps log: %w\nYou would need to build once?", err)
 		}

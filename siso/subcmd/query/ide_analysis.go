@@ -45,6 +45,7 @@ type ideAnalysisRun struct {
 
 	execRoot string
 	dir      string
+	stateDir string
 	fname    string
 	fsopt    *hashfs.Option
 	format   string
@@ -74,6 +75,7 @@ func cmdIDEAnalysis() *subcommands.Command {
 
 func (c *ideAnalysisRun) init() {
 	c.Flags.StringVar(&c.dir, "C", ".", "ninja running directory to find build.ninja")
+	c.Flags.StringVar(&c.stateDir, "state_dir", ".", "state directory (relative to -C)")
 	c.Flags.StringVar(&c.fname, "f", "build.ninja", "input build filename (relative to -C)")
 	c.fsopt = new(hashfs.Option)
 	c.fsopt.StateFile = ".siso_fs_state"
@@ -106,6 +108,9 @@ func (c *ideAnalysisRun) run(ctx context.Context, args []string) error {
 	}
 
 	// TODO: use ninja's initWorkdirs?
+	if c.fsopt.StateFile != "" {
+		c.fsopt.StateFile = filepath.Join(c.stateDir, c.fsopt.StateFile)
+	}
 
 	// don't use $PWD for current directory
 	// to avoid symlink issue. b/286779149
