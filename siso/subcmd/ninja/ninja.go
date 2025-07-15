@@ -1030,6 +1030,24 @@ func runNinja(ctx context.Context, fname string, graph *ninjabuild.Graph, bopts 
 	var stats build.Stats
 	spin := ui.Default.NewSpinner()
 
+	builddir := graph.Binding("builddir")
+	clog.Infof(ctx, "builddir=%q", builddir)
+	if builddir != "" {
+		err := os.MkdirAll(builddir, 0755)
+		if err != nil {
+			return build.Stats{}, err
+		}
+	}
+	ninjaLogWriter, err := ninjautil.InitializeNinjaLog(builddir)
+	if err != nil {
+		return build.Stats{}, err
+	}
+	defer func() {
+		cerr := ninjaLogWriter.Close()
+		clog.Infof(ctx, "close .ninja_log: %v", cerr)
+	}()
+	bopts.NinjaLogWriter = ninjaLogWriter
+
 	for {
 		clog.Infof(ctx, "build starts")
 		if len(nopts.checkFailedTargets) > 0 {

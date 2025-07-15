@@ -89,6 +89,7 @@ type Options struct {
 
 	OutputLocal          OutputLocalFunc
 	Cache                *Cache
+	NinjaLogWriter       io.Writer
 	FailureSummaryWriter io.Writer
 	FailedCommandsWriter io.Writer
 	OutputLogWriter      io.Writer
@@ -205,11 +206,11 @@ type Builder struct {
 	cache     *Cache
 
 	explainWriter        io.Writer
+	ninjaLogWriter       io.Writer
 	failureSummaryWriter io.Writer
 	failedCommandsWriter io.Writer
 	localexecLogWriter   io.Writer
 	metricsJSONWriter    io.Writer
-	ninjaLogWriter       io.WriteCloser
 	outputLogWriter      io.Writer
 	traceExporter        *trace.Exporter
 	traceEvents          *traceEvents
@@ -258,6 +259,10 @@ func New(ctx context.Context, graph Graph, opts Options) (_ *Builder, err error)
 	if ew == nil {
 		ew = io.Discard
 	}
+	nw := opts.NinjaLogWriter
+	if nw == nil {
+		nw = io.Discard
+	}
 	lelw := opts.LocalexecLogWriter
 	if lelw == nil {
 		lelw = io.Discard
@@ -266,25 +271,6 @@ func New(ctx context.Context, graph Graph, opts Options) (_ *Builder, err error)
 	if mw == nil {
 		mw = io.Discard
 	}
-
-	builddir := graph.Binding("builddir")
-	clog.Infof(ctx, "builddir=%q", builddir)
-	if builddir != "" {
-		err := os.MkdirAll(builddir, 0755)
-		if err != nil {
-			return nil, err
-		}
-	}
-	ninjaLogWriter, err := ninjautil.InitializeNinjaLog(builddir)
-	if err != nil {
-		return nil, err
-	}
-	defer func() {
-		if err != nil {
-			cerr := ninjaLogWriter.Close()
-			clog.Infof(ctx, "close .ninja_log: %v", cerr)
-		}
-	}()
 
 	if err := opts.Path.Check(); err != nil {
 		return nil, err
@@ -374,9 +360,9 @@ func New(ctx context.Context, graph Graph, opts Options) (_ *Builder, err error)
 		failedCommandsWriter: opts.FailedCommandsWriter,
 		outputLogWriter:      opts.OutputLogWriter,
 		explainWriter:        ew,
+		ninjaLogWriter:       nw,
 		localexecLogWriter:   lelw,
 		metricsJSONWriter:    mw,
-		ninjaLogWriter:       ninjaLogWriter,
 		traceExporter:        opts.TraceExporter,
 		traceEvents:          newTraceEvents(opts.TraceJSON, opts.Metadata),
 		traceStats:           newTraceStats(),
@@ -421,15 +407,10 @@ func New(ctx context.Context, graph Graph, opts Options) (_ *Builder, err error)
 
 // Close cleans up the builder.
 func (b *Builder) Close() error {
-	var ninjaLogErr error
-	if b.ninjaLogWriter != nil {
-		ninjaLogErr = b.ninjaLogWriter.Close()
+	if b.reproxyExec == nil {
+		return nil
 	}
-	var reproxyErr error
-	if b.reproxyExec != nil {
-		reproxyErr = b.reproxyExec.Close()
-	}
-	return errors.Join(ninjaLogErr, reproxyErr)
+	return b.reproxyExec.Close()
 }
 
 // Stats returns stats of the builder.
