@@ -940,15 +940,17 @@ func stepLogEntry(ctx context.Context, logger *clog.Logger, step *Step, duration
 		// CacheHit
 	}
 	logEntry.Labels = map[string]string{
-		"id":        step.def.String(),
-		"siso_rule": step.metrics.Rule,
-		"action":    step.metrics.Action,
-		"output":    step.metrics.Output,
-		"gn_target": step.metrics.GNTarget,
-		"cmdhash":   step.metrics.CmdHash,
-		"digest":    step.metrics.Digest,
-		"run_secs":  fmt.Sprintf("%.02f", time.Duration(step.metrics.RunTime).Seconds()),
-		"exec_secs": fmt.Sprintf("%.02f", time.Duration(step.metrics.ExecTime).Seconds()),
+		"id":          step.def.String(),
+		"siso_rule":   step.metrics.Rule,
+		"action":      step.metrics.Action,
+		"output":      step.metrics.Output,
+		"gn_target":   step.metrics.GNTarget,
+		"cmdhash":     step.metrics.CmdHash,
+		"prev":        step.metrics.PrevStepID,
+		"prev_output": step.metrics.PrevStepOut,
+		"digest":      step.metrics.Digest,
+		"run_secs":    fmt.Sprintf("%.02f", time.Duration(step.metrics.RunTime).Seconds()),
+		"exec_secs":   fmt.Sprintf("%.02f", time.Duration(step.metrics.ExecTime).Seconds()),
 	}
 	if step.metrics.NoExec {
 		logEntry.Labels["no_exec"] = "true"
