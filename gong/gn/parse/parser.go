@@ -6,9 +6,7 @@
 package parse
 
 import (
-	"errors"
 	"fmt"
-	"io"
 
 	"go.chromium.org/build/gong/gn/syntax"
 )
@@ -127,7 +125,7 @@ func (p *parser) parseFile() (ParseNode, error) {
 	}
 	for !p.atEnd() {
 		statement, err := p.parseStatement()
-		if errors.Is(err, io.EOF) {
+		if syntax.IsErrKind(err, syntax.ErrEOF) {
 			break
 		}
 		if err != nil {
@@ -139,7 +137,7 @@ func (p *parser) parseFile() (ParseNode, error) {
 	// if nil statement found but not at end of file, then \n is missing.
 	// https://gn.googlesource.com/gn/+/26baf4ba17029ceabd1b4aef1ab8690e13e58a63
 	if !p.atEnd() {
-		return nil, p.curToken().MakeError("Unexpected here, should be newline.")
+		return nil, p.curToken().MakeError(syntax.ErrUnknown, "Unexpected here, should be newline.")
 	}
 	return &file, nil
 }
@@ -161,12 +159,12 @@ func (p *parser) parseCondition() (ParseNode, error) {
 
 	// Consume "if ("
 	if ifToken, ok := p.consumeOnly(syntax.TokenIf); !ok {
-		return nil, p.curOrLastToken().MakeError("Expected 'if'")
+		return nil, p.curOrLastToken().MakeError(syntax.ErrUnknown, "Expected 'if'")
 	} else {
 		conditionNode.IfToken = ifToken
 	}
 	if _, ok := p.consumeOnly(syntax.TokenLeftParen); !ok {
-		return nil, p.curOrLastToken().MakeError("Expected '(' after 'if'")
+		return nil, p.curOrLastToken().MakeError(syntax.ErrUnknown, "Expected '(' after 'if'")
 	}
 
 	// Consume conditional.
@@ -178,17 +176,17 @@ func (p *parser) parseCondition() (ParseNode, error) {
 	// TODO: Don't allow assignments in parseExpression instead?
 	// https://gn.googlesource.com/gn/+/main/docs/reference.md#Grammar
 	if p.isAssignment(conditionNode.Condition) {
-		return nil, MakeErrFromParseNode(conditionNode.Condition, "Assignment not allowed in 'if'", "")
+		return nil, MakeErrFromParseNode(conditionNode.Condition, syntax.ErrUnknown, "Assignment not allowed in 'if'", "")
 	}
 
 	// Consume ")".
 	if _, ok := p.consumeOnly(syntax.TokenRightParen); !ok {
-		return nil, p.curOrLastToken().MakeError("Expected ')' after condition of 'if'")
+		return nil, p.curOrLastToken().MakeError(syntax.ErrUnknown, "Expected ')' after condition of 'if'")
 	}
 
 	// Consume the true block.
 	if leftBrace, ok := p.consumeOnly(syntax.TokenLeftBrace); !ok {
-		return nil, p.curOrLastToken().MakeError("Expected '{' to start 'if' block")
+		return nil, p.curOrLastToken().MakeError(syntax.ErrUnknown, "Expected '{' to start 'if' block")
 	} else {
 		if block, err := p.parseBlock(leftBrace, DiscardsResult); err == nil {
 			conditionNode.IfTrue = block
@@ -212,7 +210,7 @@ func (p *parser) parseCondition() (ParseNode, error) {
 				conditionNode.IfFalse = subCondition
 			}
 		} else {
-			return nil, p.curOrLastToken().MakeError("Expected '{' or 'if' after 'else'")
+			return nil, p.curOrLastToken().MakeError(syntax.ErrUnknown, "Expected '{' or 'if' after 'else'")
 		}
 	}
 
@@ -222,7 +220,7 @@ func (p *parser) parseCondition() (ParseNode, error) {
 func (p *parser) parseExpression(precedence precedence) (ParseNode, error) {
 	token, ok := p.consume()
 	if !ok {
-		return nil, io.EOF
+		return nil, p.curOrLastToken().MakeError(syntax.ErrEOF, "Reached end of file during parsing")
 	}
 
 	left, err := p.parsePrefix(token)
@@ -265,7 +263,7 @@ func (p *parser) parsePrefix(token syntax.Token) (ParseNode, error) {
 			return nil, err
 		}
 		if _, ok := p.consumeOnly(syntax.TokenRightParen); !ok {
-			return nil, p.curToken().MakeError("Expected ')'")
+			return nil, p.curToken().MakeError(syntax.ErrUnknown, "Expected ')'")
 		}
 		return expr, nil
 	case syntax.TokenLeftBracket:
@@ -275,7 +273,7 @@ func (p *parser) parsePrefix(token syntax.Token) (ParseNode, error) {
 			return nil, err
 		}
 		if _, ok := p.consumeOnly(syntax.TokenRightBracket); !ok {
-			return nil, p.curToken().MakeError("Expected ']'")
+			return nil, p.curToken().MakeError(syntax.ErrUnknown, "Expected ']'")
 		}
 		return &list, nil
 	case syntax.TokenLeftBrace:
@@ -287,7 +285,7 @@ func (p *parser) parsePrefix(token syntax.Token) (ParseNode, error) {
 		return &BlockCommentNode{token}, nil
 	}
 	// Print error with single quotes to match GN, rather than using %q.
-	return nil, token.MakeError(fmt.Sprintf("Unexpected token '%s'", token.Value()))
+	return nil, token.MakeError(syntax.ErrUnexpectedToken, fmt.Sprintf("Unexpected token '%s'", token.Value()))
 }
 
 func (p *parser) parseInfix(left ParseNode, token syntax.Token) (ParseNode, error) {
@@ -298,14 +296,14 @@ func (p *parser) parseInfix(left ParseNode, token syntax.Token) (ParseNode, erro
 		_, isIdentifier := left.(*IdentifierNode)
 		_, isAccessor := left.(*AccessorNode)
 		if !isIdentifier && !isAccessor {
-			return nil, MakeErrFromParseNode(left, "The left-hand side of an assignment must be an identifier, scope access, or array access.", "")
+			return nil, MakeErrFromParseNode(left, syntax.ErrUnknown, "The left-hand side of an assignment must be an identifier, scope access, or array access.", "")
 		}
 		value, err := p.parseExpression(precedenceAssignment)
 		if err != nil {
 			return nil, err
 		}
 		if value == nil {
-			return nil, token.MakeError("Expected right-hand side of assignment.")
+			return nil, token.MakeError(syntax.ErrUnknown, "Expected right-hand side of assignment.")
 		}
 		return &BinaryOpNode{
 			Op:    token,
@@ -315,7 +313,7 @@ func (p *parser) parseInfix(left ParseNode, token syntax.Token) (ParseNode, erro
 	case syntax.TokenDot:
 		leftIdentifier, isIdentifier := left.(*IdentifierNode)
 		if !isIdentifier {
-			return nil, MakeErrFromParseNode(left, `May only use "." for identifiers.`,
+			return nil, MakeErrFromParseNode(left, syntax.ErrUnknown, `May only use "." for identifiers.`,
 				"The thing on the left hand side of the dot must be an identifier\nand not an expression. If you need this, you'll have to assign the\nvalue to a temporary first. Sorry.")
 		}
 		right, err := p.parseExpression(precedenceDot)
@@ -324,7 +322,7 @@ func (p *parser) parseInfix(left ParseNode, token syntax.Token) (ParseNode, erro
 		}
 		rightIdentifier, isIdentifier := right.(*IdentifierNode)
 		if !isIdentifier {
-			return nil, token.MakeErrorWithHelp(`Expected identifier for right-hand-side of "."`,
+			return nil, token.MakeErrorWithHelp(syntax.ErrUnknown, `Expected identifier for right-hand-side of "."`,
 				"Good: a.cookies\nBad: a.42\nLooks good but still bad: a.cookies()")
 		}
 		return &AccessorNode{
@@ -334,7 +332,7 @@ func (p *parser) parseInfix(left ParseNode, token syntax.Token) (ParseNode, erro
 	case syntax.TokenLeftBracket:
 		leftIdentifier, isIdentifier := left.(*IdentifierNode)
 		if !isIdentifier {
-			return nil, MakeErrFromParseNode(left, "May only subscript identifiers.",
+			return nil, MakeErrFromParseNode(left, syntax.ErrUnknown, "May only subscript identifiers.",
 				"The thing on the left hand side of the [] must be an identifier\nand not an expression. If you need this, you'll have to assign the\nvalue to a temporary before subscripting. Sorry.")
 		}
 		value, err := p.parseExpression(precedenceNone)
@@ -342,7 +340,7 @@ func (p *parser) parseInfix(left ParseNode, token syntax.Token) (ParseNode, erro
 			return nil, err
 		}
 		if _, ok := p.consumeOnly(syntax.TokenRightBracket); !ok {
-			return nil, p.curToken().MakeError("Expecting ']' after subscript.")
+			return nil, p.curToken().MakeError(syntax.ErrUnknown, "Expecting ']' after subscript.")
 		}
 		return &AccessorNode{
 			Base:      leftIdentifier.Value,
@@ -360,9 +358,9 @@ func (p *parser) parseInfix(left ParseNode, token syntax.Token) (ParseNode, erro
 		syntax.TokenBooleanOr:
 		right, err := p.parseExpression(p.infixPrecedence(token) + 1)
 		if err != nil {
-			if errors.Is(err, io.EOF) {
+			if syntax.IsErrKind(err, syntax.ErrEOF) {
 				// Print error with single quotes to match GN, rather than using %q.
-				return nil, token.MakeError(fmt.Sprintf("Expected right-hand side for '%s'.", token.Value()))
+				return nil, token.MakeError(syntax.ErrUnknown, fmt.Sprintf("Expected right-hand side for '%s'.", token.Value()))
 			}
 			return nil, err
 		}
@@ -374,7 +372,7 @@ func (p *parser) parseInfix(left ParseNode, token syntax.Token) (ParseNode, erro
 	case syntax.TokenIdentifier:
 		return p.parseIdentifierOrCall(left, token)
 	}
-	return nil, token.MakeError(fmt.Sprintf("don't know how to parse %q yet", token.Value()))
+	return nil, token.MakeError(syntax.ErrNotImplemented, fmt.Sprintf("don't know how to parse %q yet", token.Value()))
 }
 
 func (p *parser) infixPrecedence(token syntax.Token) precedence {
@@ -418,7 +416,7 @@ func (p *parser) parseIdentifierOrCall(left ParseNode, token syntax.Token) (Pars
 				return nil, err
 			}
 			if _, ok := p.consumeOnly(syntax.TokenRightParen); !ok {
-				return nil, token.MakeError("Expected ')' after call")
+				return nil, token.MakeError(syntax.ErrUnknown, "Expected ')' after call")
 			}
 			args = &parsedList
 		} else {
@@ -468,7 +466,7 @@ func (p *parser) parseList(startToken syntax.Token, stopBefore syntax.TokenType,
 	for !p.lookAhead(stopBefore) {
 		if !firstTime && !lastWasComma {
 			// Require commas separate things in lists.
-			return ListNode{}, startToken.MakeError("Expected comma between items.")
+			return ListNode{}, startToken.MakeError(syntax.ErrUnknown, "Expected comma between items.")
 		}
 		firstTime = false
 
@@ -481,14 +479,14 @@ func (p *parser) parseList(startToken syntax.Token, stopBefore syntax.TokenType,
 		}
 		list.appendItem(expr)
 		if p.atEnd() {
-			return ListNode{}, startToken.MakeError("Unexpected end of file in list.")
+			return ListNode{}, startToken.MakeError(syntax.ErrUnknown, "Unexpected end of file in list.")
 		}
 		// TODO: If GN sees BlockCommentNode as last node it will pretend a
 		// comma was received, do we need to replicate this behavior?
 		_, lastWasComma = p.consumeOnly(syntax.TokenComma)
 	}
 	if lastWasComma && !allowTrailingComma {
-		return ListNode{}, startToken.MakeError("Trailing comma")
+		return ListNode{}, startToken.MakeError(syntax.ErrUnknown, "Trailing comma")
 	}
 	// Do not consume end node, this should be responsibility of the caller.
 	list.End = EndNode{p.curToken()}

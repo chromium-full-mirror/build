@@ -15,11 +15,11 @@ type ParseNode interface {
 }
 
 // MakeErrFromParseNode makes an error at the provided parse node.
-func MakeErrFromParseNode(parseNode ParseNode, message, helpText string) error {
+func MakeErrFromParseNode(parseNode ParseNode, kind syntax.ErrKind, message, helpText string) error {
 	if parseNode == nil {
-		return syntax.MakeErrorAt(syntax.Location{}, nil, message, helpText)
+		return syntax.MakeErrorAt(syntax.Location{}, nil, kind, message, helpText)
 	}
-	return syntax.MakeErrorAt(parseNode.LocationRange().Begin(), []syntax.LocationRange{parseNode.LocationRange()}, message, helpText)
+	return syntax.MakeErrorAt(parseNode.LocationRange().Begin(), []syntax.LocationRange{parseNode.LocationRange()}, kind, message, helpText)
 }
 
 // AccessorNode represents accessing an array or scope element.

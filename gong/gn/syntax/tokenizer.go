@@ -286,6 +286,7 @@ func (s *tokenizer) advanceToEndOfToken(location Location, tokenType TokenType) 
 						},
 					},
 					message: "This is not a valid number.",
+					kind:    ErrNotNumeric,
 				}
 			}
 		}
@@ -305,6 +306,7 @@ func (s *tokenizer) advanceToEndOfToken(location Location, tokenType TokenType) 
 					},
 					message:  "Unterminated string literal.",
 					helpText: "Don't leave me hanging like this!",
+					kind:     ErrUnterminatedString,
 				}
 			}
 			if s.isCurrentStringTerminator(initial) {
@@ -320,6 +322,7 @@ func (s *tokenizer) advanceToEndOfToken(location Location, tokenType TokenType) 
 						},
 					},
 					message: "Newline in string constant.",
+					kind:    ErrNewlineInStringConstant,
 				}
 			}
 			s.advance()
@@ -359,6 +362,7 @@ func (s *tokenizer) advanceToEndOfToken(location Location, tokenType TokenType) 
 			location: location,
 			message:  "Everything is all messed up",
 			helpText: "Please insert system disk in drive A: and press any key.",
+			kind:     ErrUnknown,
 		}
 	}
 	return nil
@@ -450,6 +454,7 @@ func (s *tokenizer) getErrorForInvalidToken(location Location) error {
 		location: location,
 		message:  "Invalid token.",
 		helpText: help,
+		kind:     ErrInvalidToken,
 	}
 }
 

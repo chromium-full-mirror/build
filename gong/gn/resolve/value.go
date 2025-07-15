@@ -118,10 +118,11 @@ func GNLiteralRvalue(v Value) string {
 }
 
 // MakeErrFromValue makes an error at the provided value.
-func MakeErrFromValue(value Value, message, helpText string) error {
+func MakeErrFromValue(value Value, kind syntax.ErrKind, message, helpText string) error {
 	return syntax.MakeErrorAt(
 		value.OriginNode().LocationRange().Begin(),
 		[]syntax.LocationRange{value.OriginNode().LocationRange()},
+		kind,
 		message,
 		helpText)
 }
@@ -133,6 +134,7 @@ func VerifyValueTypeIs(v Value, t ValueType) error {
 		return nil
 	}
 	return parse.MakeErrFromParseNode(v.OriginNode(),
+		syntax.ErrTypeMismatch,
 		fmt.Sprintf("This is not a %s. Instead I see a %s = true",
 			t.String(),
 			v.valueType().String()), "")

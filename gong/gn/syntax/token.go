@@ -127,20 +127,22 @@ func (t Token) Value() string {
 }
 
 // MakeError makes an error from this token and message.
-func (t Token) MakeError(message string) Error {
+func (t Token) MakeError(kind ErrKind, message string) error {
 	return Error{
 		location: t.location,
 		ranges:   []LocationRange{t.Range()},
 		message:  message,
+		kind:     kind,
 	}
 }
 
 // MakeErrorWithHelp makes an error from this token and message and help.
-func (t Token) MakeErrorWithHelp(message, helpText string) Error {
+func (t Token) MakeErrorWithHelp(kind ErrKind, message, helpText string) error {
 	return Error{
 		location: t.location,
 		ranges:   []LocationRange{t.Range()},
 		message:  message,
 		helpText: helpText,
+		kind:     kind,
 	}
 }

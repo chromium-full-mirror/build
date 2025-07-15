@@ -142,9 +142,9 @@ func (s *Scope) CheckForUnusedVars() error {
 			binary, ok := record.value.OriginNode().(*parse.BinaryOpNode)
 			if ok && binary.Op.TokenType() == syntax.TokenEqual {
 				// Make a nicer error message for normal var sets.
-				return syntax.MakeErrorAt(binary.Left.LocationRange().Begin(), nil, "Assignment had no effect.", help)
+				return syntax.MakeErrorAt(binary.Left.LocationRange().Begin(), nil, syntax.ErrUselessAssignment, "Assignment had no effect.", help)
 			}
-			return parse.MakeErrFromParseNode(record.value.OriginNode(), "Assignment had no effect.", help)
+			return parse.MakeErrFromParseNode(record.value.OriginNode(), syntax.ErrUselessAssignment, "Assignment had no effect.", help)
 		}
 	}
 	return nil

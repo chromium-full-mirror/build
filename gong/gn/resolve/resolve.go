@@ -46,6 +46,7 @@ func ExecuteNode(n parse.ParseNode, s *Scope) (Value, error) {
 			switch cur.(type) {
 			case *parse.ListNode, *parse.LiteralNode, *parse.UnaryOpNode, *parse.IdentifierNode, *parse.BlockNode:
 				return nil, parse.MakeErrFromParseNode(cur,
+					syntax.ErrUnknown,
 					"This statement has no effect.",
 					"Either delete it or do something with the result.")
 			}
@@ -94,13 +95,13 @@ func ExecuteNode(n parse.ParseNode, s *Scope) (Value, error) {
 			s := n.Token.Value()
 			if (strings.HasPrefix(s, "0") && len(s) > 1) || strings.HasPrefix(s, "-0") {
 				if s == "-0" {
-					return nil, parse.MakeErrFromParseNode(n, "Negative zero doesn't make sense", "")
+					return nil, parse.MakeErrFromParseNode(n, syntax.ErrUnknown, "Negative zero doesn't make sense", "")
 				}
-				return nil, parse.MakeErrFromParseNode(n, "Leading zeros not allowed", "")
+				return nil, parse.MakeErrFromParseNode(n, syntax.ErrUnknown, "Leading zeros not allowed", "")
 			}
 			i, err := strconv.ParseInt(s, 10, 64)
 			if err != nil {
-				return nil, parse.MakeErrFromParseNode(n, "This does not look like an integer", "")
+				return nil, parse.MakeErrFromParseNode(n, syntax.ErrUnknown, "This does not look like an integer", "")
 			}
 			return &IntegerValue{
 				origin: n,
@@ -111,7 +112,7 @@ func ExecuteNode(n parse.ParseNode, s *Scope) (Value, error) {
 			s := n.Token.Value()
 			// Assume that the parser should have kept the quotes.
 			if len(s) < 2 {
-				return nil, parse.MakeErrFromParseNode(n, "Invalid AST", "Found a LiteralNode with an unquoted string")
+				return nil, parse.MakeErrFromParseNode(n, syntax.ErrUnknown, "Invalid AST", "Found a LiteralNode with an unquoted string")
 			}
 			s = s[1 : len(s)-1]
 			return &StringValue{
@@ -119,7 +120,7 @@ func ExecuteNode(n parse.ParseNode, s *Scope) (Value, error) {
 				value:  s,
 			}, nil
 		}
-		return nil, parse.MakeErrFromParseNode(n, "Invalid AST", "Found a LiteralNode that wasn't a boolean, integer, or string")
+		return nil, parse.MakeErrFromParseNode(n, syntax.ErrUnknown, "Invalid AST", "Found a LiteralNode that wasn't a boolean, integer, or string")
 
 	case *parse.BlockCommentNode:
 		return nil, nil
@@ -128,5 +129,5 @@ func ExecuteNode(n parse.ParseNode, s *Scope) (Value, error) {
 		return nil, fmt.Errorf("don't know how to execute ConditionNode yet. got: %T(%v)", n, n)
 	}
 
-	return nil, parse.MakeErrFromParseNode(n, fmt.Sprintf("Unimplemented node found %T(%v)", n, n), "")
+	return nil, parse.MakeErrFromParseNode(n, syntax.ErrNotImplemented, fmt.Sprintf("Unimplemented node found %T(%v)", n, n), "")
 }

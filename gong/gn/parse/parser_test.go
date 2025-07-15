@@ -6,7 +6,6 @@ package parse
 
 import (
 	"bytes"
-	"errors"
 	"strings"
 	"testing"
 
@@ -493,17 +492,16 @@ else {
 
 			_, err = Parse(tokens)
 
-			if err == nil {
-				t.Errorf("Parse(_) = nil, nil; want error")
-			}
-			var syntaxErr syntax.Error
-			if !errors.As(err, &syntaxErr) {
-				t.Errorf("Parse(_) = nil, %v; want syntax.Error", err)
-			}
-			if syntaxErr.Location().LineNumber() != tc.line || syntaxErr.Location().ColumnNumber() != tc.column {
-				t.Errorf("syntax.Error at line = %d, column = %d; want line = %d, column = %d",
-					syntaxErr.Location().LineNumber(), syntaxErr.Location().ColumnNumber(),
-					tc.line, tc.column)
+			wantErrKind := syntax.ErrUnknown
+			se, gotErrKind := syntax.AsErrKind(err, wantErrKind)
+			if se == nil {
+				t.Errorf("Parse(_) = %v (%v), want %v", err, gotErrKind, wantErrKind)
+			} else {
+				if se.Location().LineNumber() != tc.line || se.Location().ColumnNumber() != tc.column {
+					t.Errorf("syntax.Error at line = %d, column = %d; want line = %d, column = %d",
+						se.Location().LineNumber(), se.Location().ColumnNumber(),
+						tc.line, tc.column)
+				}
 			}
 		})
 	}

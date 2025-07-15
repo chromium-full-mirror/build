@@ -96,6 +96,7 @@ func doLoadFile(origin syntax.LocationRange, inputFileResolver InputFileResolver
 			secondaryPath := inputFileResolver.FullPathSecondary(name)
 			if err = file.load(secondaryPath); err != nil {
 				return nil, nil, syntax.MakeErrorAt(origin.Begin(), []syntax.LocationRange{origin},
+					syntax.ErrFileLoadFail,
 					"Can't load input file.",
 					// NOTE: Yes, the quoting behavior is inconsistent between this
 					// error message below, this is intentional to be consistent
@@ -106,7 +107,7 @@ func doLoadFile(origin syntax.LocationRange, inputFileResolver InputFileResolver
 			}
 		} else {
 			return nil, nil, syntax.MakeErrorAt(origin.Begin(), []syntax.LocationRange{origin},
-				fmt.Sprintf("Unable to load %q.", primaryPath), "")
+				syntax.ErrFileLoadFail, fmt.Sprintf("Unable to load %q.", primaryPath), "")
 		}
 	}
 
