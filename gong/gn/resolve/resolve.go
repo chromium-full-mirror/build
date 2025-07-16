@@ -126,7 +126,35 @@ func ExecuteNode(n parse.ParseNode, s *Scope) (Value, error) {
 		return nil, nil
 
 	case *parse.ConditionNode:
-		return nil, fmt.Errorf("don't know how to execute ConditionNode yet. got: %T(%v)", n, n)
+		conditionResult, err := ExecuteNode(n.Condition, s)
+		if err != nil {
+			return nil, err
+		}
+		if conditionResult.valueType() != ValueTypeBoolean {
+			return nil, syntax.MakeErrorAt(
+				n.Condition.LocationRange().Begin(),
+				[]syntax.LocationRange{n.Condition.LocationRange(), n.IfToken.Range()},
+				syntax.ErrTypeMismatch,
+				"Condition does not evaluate to a boolean value.",
+				fmt.Sprintf("This is a value of type %q instead.", conditionResult.valueType()))
+		}
+		if b := conditionResult.(*BooleanValue); b.value {
+			// Additional check to what C++ GN does, it always assumes the true block exists.
+			if n.IfTrue == nil {
+				return nil, parse.MakeErrFromParseNode(n, syntax.ErrUnknown, "Invalid AST", "Found a ConditionNode without true block")
+			}
+			// Execute the true block if the boolean evaluated to true.
+			if _, err = ExecuteNode(n.IfTrue, s); err != nil {
+				return nil, err
+			}
+		} else if n.IfFalse != nil {
+			// Otherwise the else block if it exists.
+			if _, err = ExecuteNode(n.IfFalse, s); err != nil {
+				return nil, err
+			}
+		}
+		// Conditionals don't return values, just cause side effects.
+		return nil, nil
 	}
 
 	return nil, parse.MakeErrFromParseNode(n, syntax.ErrNotImplemented, fmt.Sprintf("Unimplemented node found %T(%v)", n, n), "")

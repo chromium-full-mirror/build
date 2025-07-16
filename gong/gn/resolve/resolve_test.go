@@ -99,6 +99,85 @@ func TestExecuteNode(t *testing.T) {
 			scope:       &Scope{},
 			wantErrKind: syntax.ErrUnknown,
 		},
+		{
+			// TODO(b/388723392): this is just a smoke test right now because
+			// we don't support anything that causes side effects yet.
+			// once we do, change this test so that it tests for the correct side effect.
+			name: "condition_true",
+			node: &parse.ConditionNode{
+				IfToken:   syntax.MakeToken(syntax.TokenIf, "if"),
+				Condition: &parse.LiteralNode{Token: syntax.MakeToken(syntax.TokenTrue, "true")},
+				IfTrue: &parse.BlockNode{
+					Statements: []parse.ParseNode{},
+				},
+				IfFalse: &parse.BlockNode{
+					Statements: []parse.ParseNode{},
+				},
+			},
+			scope:       &Scope{},
+			wantErrKind: syntax.ErrNone,
+		},
+		{
+			// TODO(b/388723392): this is just a smoke test right now because
+			// we don't support anything that causes side effects yet.
+			// once we do, change this test so that it tests for the correct side effect.
+			name: "condition_false",
+			node: &parse.ConditionNode{
+				IfToken:   syntax.MakeToken(syntax.TokenIf, "if"),
+				Condition: &parse.LiteralNode{Token: syntax.MakeToken(syntax.TokenFalse, "false")},
+				IfTrue: &parse.BlockNode{
+					Statements: []parse.ParseNode{},
+				},
+				IfFalse: &parse.BlockNode{
+					Statements: []parse.ParseNode{},
+				},
+			},
+			scope:       &Scope{},
+			wantErrKind: syntax.ErrNone,
+		},
+		{
+			// TODO(b/388723392): this is just a smoke test right now because
+			// we don't support anything that causes side effects yet.
+			// once we do, change this test so that it tests for the correct side effect.
+			name: "condition_true_no_else",
+			node: &parse.ConditionNode{
+				IfToken:   syntax.MakeToken(syntax.TokenIf, "if"),
+				Condition: &parse.LiteralNode{Token: syntax.MakeToken(syntax.TokenTrue, "true")},
+				IfTrue: &parse.BlockNode{
+					Statements: []parse.ParseNode{},
+				},
+			},
+			scope:       &Scope{},
+			wantErrKind: syntax.ErrNone,
+		},
+		{
+			// TODO(b/388723392): this is just a smoke test right now because
+			// we don't support anything that causes side effects yet.
+			// once we do, change this test so that it tests for the correct side effect.
+			name: "condition_false_no_else",
+			node: &parse.ConditionNode{
+				IfToken:   syntax.MakeToken(syntax.TokenIf, "if"),
+				Condition: &parse.LiteralNode{Token: syntax.MakeToken(syntax.TokenFalse, "false")},
+				IfTrue: &parse.BlockNode{
+					Statements: []parse.ParseNode{},
+				},
+			},
+			scope:       &Scope{},
+			wantErrKind: syntax.ErrNone,
+		},
+		{
+			name: "condition_non_boolean",
+			node: &parse.ConditionNode{
+				IfToken: syntax.MakeToken(syntax.TokenIf, "if"),
+				// Only boolean conditions are supported (no support for "truthy" values).
+				Condition: &parse.LiteralNode{Token: syntax.MakeToken(syntax.TokenInteger, "123")},
+				IfTrue: &parse.BlockNode{
+					Statements: []parse.ParseNode{},
+				},
+			},
+			scope:       &Scope{},
+			wantErrKind: syntax.ErrTypeMismatch,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			got, err := ExecuteNode(tc.node, tc.scope)
