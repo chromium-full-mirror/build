@@ -61,7 +61,30 @@ func TestBuild_Symlink(t *testing.T) {
 		}
 	}
 
-	t.Logf("check confirm no-op")
+	t.Logf("-- check confirm no-op")
+	stats, err = ninja(t)
+	if err != nil {
+		t.Fatalf("ninja %v; want nil err", err)
+	}
+	if stats.Skipped != stats.Total {
+		t.Errorf("stats.Skipped=%d Total=%d", stats.Skipped, stats.Total)
+	}
+	t.Logf("-- recreate symlink")
+	target, err := os.Readlink(filepath.Join(dir, "out/siso/out2"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("-- symlink out/siso/out2 -> %s", target)
+	err = os.Remove(filepath.Join(dir, "out/siso/out2"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = os.Symlink(target, filepath.Join(dir, "out/siso/out2"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Logf("-- check confirm no-op even if symlink is recreated")
 	stats, err = ninja(t)
 	if err != nil {
 		t.Fatalf("ninja %v; want nil err", err)

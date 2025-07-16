@@ -208,6 +208,21 @@ const (
 	entryAfterLocal
 )
 
+func (et entryStateType) String() string {
+	switch et {
+	case entryNoLocal:
+		return "no-local"
+	case entryBeforeLocal:
+		return "entry-before-local"
+	case entryEqLocal:
+		return "entry-eq-local"
+	case entryAfterLocal:
+		return "entry-after-local"
+	default:
+		return fmt.Sprintf("entryStateType=%d", int(et))
+	}
+}
+
 func toDigest(d *pb.Digest) digest.Digest {
 	if d == nil {
 		return digest.Digest{}
@@ -372,6 +387,11 @@ func (hfs *HashFS) SetState(ctx context.Context, state *pb.State) error {
 						fmt.Fprintf(logw, "invalidate symlink %q: target: %q->%q\n", ent.Name, e.target, t)
 					}
 					return nil
+				}
+				// symlink matches, make entry equals local
+				if et != entryEqLocal {
+					clog.Warningf(ctx, "symlink target match %q: state=%v->%v", ent.Name, et, entryEqLocal)
+					et = entryEqLocal
 				}
 			} else if !e.d.IsZero() && len(h) > 0 && et != entryEqLocal && !dirty.Load() {
 				// mtime differ for generated file?
