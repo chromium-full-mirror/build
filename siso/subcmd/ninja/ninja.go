@@ -524,12 +524,11 @@ func (c *ninjaCmdRun) run(ctx context.Context) (stats build.Stats, err error) {
 		}
 	}
 
-	isLogDirDefault := c.logDir == "."
 	err = c.initLogDir(ctx)
 	if err != nil {
 		return stats, err
 	}
-	clog.Infof(ctx, "siso log dir=%s default=%t", c.logDir, isLogDirDefault)
+	clog.Infof(ctx, "siso log dir=%s", c.logDir)
 
 	resetCrashOutput, err := c.setupCrashOutput(ctx)
 	if err != nil {
@@ -908,11 +907,11 @@ func (c *ninjaCmdRun) run(ctx context.Context) (stats build.Stats, err error) {
 	lastFailed := err == nil
 	isClean := hashFS.IsClean(targets)
 	clog.Infof(ctx, "hashfs loaderr: %v clean: %t (%q) last failed: %t", hashFSErr, isClean, targets, lastFailed)
-	// if not using non-default log_dir, it would see different
-	// .siso_last_targets, which won't match with .siso_fs_state.
+	// In prepare mode for ide_query, it won't record .siso_failed_targets
+	// and won't match with .siso_fs_state.
 	// in this case, don't shortcut noop build, but better to check
 	// build graph again.
-	if !c.clobber && !c.batch && !c.dryRun && !c.debugMode.Explain && c.subtool != "cleandead" && isLogDirDefault && hashFSErr == nil && isClean && !lastFailed {
+	if !c.clobber && !c.batch && !c.dryRun && !c.debugMode.Explain && c.subtool != "cleandead" && !c.prepare && hashFSErr == nil && isClean && !lastFailed {
 		// TODO: better to check digest of .siso_fs_state?
 		return stats, errNothingToDo
 	}
