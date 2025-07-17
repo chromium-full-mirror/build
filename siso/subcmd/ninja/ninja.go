@@ -113,6 +113,7 @@ type ninjaCmdRun struct {
 
 	offline         bool
 	batch           bool
+	quiet           bool
 	verbose         bool
 	verboseFailures bool
 	dryRun          bool
@@ -198,7 +199,9 @@ func (c *ninjaCmdRun) Run(a subcommands.Application, args []string, env subcomma
 		ui.Default.Errorf("%v\n", err)
 		return 2
 	}
-	if c.frontendFile != "" {
+	if c.quiet {
+		ui.Default = quietUI{}
+	} else if c.frontendFile != "" {
 		f := os.Stdout
 		if c.frontendFile != "-" {
 			f, err = os.OpenFile(c.frontendFile, os.O_WRONLY|os.O_APPEND, 0644)
@@ -1144,6 +1147,7 @@ func (c *ninjaCmdRun) init() {
 		}
 	}
 	c.Flags.BoolVar(&c.batch, "batch", !ui.IsTerminal(), "batch mode. prefer thoughput over low latency for build failures.")
+	c.Flags.BoolVar(&c.quiet, "quiet", false, "don't show progress status, just command output")
 	c.Flags.BoolVar(&c.verbose, "verbose", false, "show all command lines while building")
 	c.Flags.BoolVar(&c.verbose, "v", false, "show all command lines while building (alias of --verbose)")
 	c.Flags.BoolVar(&c.verboseFailures, "verbose_failures", true, "show failed command lines")

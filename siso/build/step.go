@@ -172,6 +172,16 @@ func (s *Step) ExitCode() int32 {
 	return s.cmd.ExitCode()
 }
 
+// Stdout returns step's stdout.
+func (s *Step) Stdout() []byte {
+	return s.cmd.Stdout()
+}
+
+// Stderr returns step's stderr.
+func (s *Step) Stderr() []byte {
+	return s.cmd.Stderr()
+}
+
 // OutputResult returns output result of the step.
 func (s *Step) OutputResult() string {
 	return s.cmd.OutputResult()
