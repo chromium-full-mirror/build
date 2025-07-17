@@ -100,6 +100,10 @@ type HashFS struct {
 
 	// trigger for SetState background goroutine finish.
 	setStateCh chan error
+
+	// records missing outputs to make hashfs non-clean when missing
+	// outputs exists, so trigger rebuilds b/374179435
+	missingOutputs sync.Map
 }
 
 // New creates a HashFS.
@@ -278,6 +282,11 @@ func (hfs *HashFS) PreviouslyGeneratedFiles() []string {
 // TaintedFiles returns a list of manually modified generated files.
 func (hfs *HashFS) TaintedFiles() []string {
 	return hfs.taintedFiles
+}
+
+// AddMissingOutput adds a missing output.
+func (hfs *HashFS) AddMissingOutput(ctx context.Context, root, fname string) {
+	hfs.missingOutputs.Store(filepath.ToSlash(filepath.Join(root, fname)), true)
 }
 
 // FileSystem returns FileSystem interface at dir.

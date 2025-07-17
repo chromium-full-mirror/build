@@ -31,6 +31,9 @@ var knownExperiments = map[string]string{
 	// TODO(b/430486641): remove this once bad *.d is fixed
 	"ignore-missing-out-in-depfile": "",
 
+	// TODO(b/374179435): remove this once BUILD_BROKEN_MISSING_OUTPUTS is removed.
+	"ignore-missing-outputs": "",
+
 	"ignore-missing-targets":  "",
 	"keep-going-handle-error": "",
 	"keep-going-impure":       "check siso_localexec",

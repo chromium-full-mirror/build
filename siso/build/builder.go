@@ -1095,7 +1095,11 @@ func (b *Builder) outputs(ctx context.Context, step *Step) error {
 		if err != nil {
 			reqOut := slices.Contains(defOutputs, out)
 			if reqOut {
-				return fmt.Errorf("missing outputs %s: %w", out, err)
+				if experiments.Enabled("ignore-missing-outputs", "") {
+					b.hashFS.AddMissingOutput(ctx, step.cmd.ExecRoot, out)
+				} else {
+					return fmt.Errorf("missing outputs %s: %w", out, err)
+				}
 			}
 			clog.Warningf(ctx, "missing outputs %s: %v", out, err)
 			if !local {

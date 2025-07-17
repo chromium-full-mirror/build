@@ -52,4 +52,6 @@ message State {
   // i.e. if all entries are clean and build_targets are the same,
   // everything is up-to-date.
   BuildTargets build_targets = 3;
+
+  repeated string missing_outputs = 4;
 }

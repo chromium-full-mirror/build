@@ -532,7 +532,8 @@ func (hfs *HashFS) SetState(ctx context.Context, state *pb.State) error {
 		}
 	}
 	hfs.setStateCh = make(chan error, 1)
-	clean := nnew.Load() == 0 && nnotexist.Load() == 0 && nfail.Load() == 0 && ninvalidate.Load() == 0
+	// missing outputs just makes dirty, but no need to set it in hfs.missingOutputs b/374179435
+	clean := nnew.Load() == 0 && nnotexist.Load() == 0 && nfail.Load() == 0 && ninvalidate.Load() == 0 && len(state.MissingOutputs) == 0
 	hfs.clean.Store(clean)
 	// store in background.
 	go func() {
@@ -572,7 +573,7 @@ func (hfs *HashFS) SetState(ctx context.Context, state *pb.State) error {
 		clog.Infof(ctx, "set state done: clean:%t loaded:true: %s", hfs.clean.Load(), time.Since(start))
 		hfs.setStateCh <- nil
 	}()
-	clog.Infof(ctx, "load state done: eq:%d new:%d not-exist:%d fail:%d invalidate:%d: tainted:%d %s", neq.Load(), nnew.Load(), nnotexist.Load(), nfail.Load(), ninvalidate.Load(), len(hfs.taintedFiles), time.Since(start))
+	clog.Infof(ctx, "load state done: eq:%d new:%d not-exist:%d fail:%d invalidate:%d: tainted:%d missingOutputs:%d %s", neq.Load(), nnew.Load(), nnotexist.Load(), nfail.Load(), ninvalidate.Load(), len(hfs.taintedFiles), len(state.MissingOutputs), time.Since(start))
 	return nil
 }
 
@@ -875,7 +876,13 @@ func (hfs *HashFS) State(ctx context.Context) *pb.State {
 			Targets: hfs.buildTargets,
 		}
 	}
-	clog.Infof(ctx, "state %d entries token:%q buildTargets:%v: %s", len(state.Entries), state.LastChecked, state.BuildTargets, time.Since(started))
+	hfs.missingOutputs.Range(func(key, value any) bool {
+		if fname, ok := key.(string); ok {
+			state.MissingOutputs = append(state.MissingOutputs, fname)
+		}
+		return true
+	})
+	clog.Infof(ctx, "state %d entries token:%q buildTargets:%v: missingOutputs:%d %s", len(state.Entries), state.LastChecked, state.BuildTargets, len(state.MissingOutputs), time.Since(started))
 	return state
 }
 

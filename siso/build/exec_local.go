@@ -274,7 +274,12 @@ func (b *Builder) checkLocalOutputs(ctx context.Context, step *Step) error {
 				clog.Warningf(ctx, "ignore missing outputs %s: %v", out, err)
 				continue
 			}
-			return fmt.Errorf("missing outputs %s: %w", out, err)
+			if experiments.Enabled("ignore-missing-outputs", "") {
+				b.hashFS.AddMissingOutput(ctx, step.cmd.ExecRoot, out)
+				clog.Warningf(ctx, "ignore missing outputs %s: %v", out, err)
+				continue
+			}
+			return fmt.Errorf("missing local outputs %s: %w", out, err)
 		}
 	}
 	// don't set result.OutputFiles etc to lazily calculate digest
