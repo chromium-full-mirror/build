@@ -8,6 +8,7 @@ package reapi
 import (
 	"context"
 	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"flag"
 	"fmt"
@@ -22,6 +23,7 @@ import (
 	"google.golang.org/api/option"
 	gtransport "google.golang.org/api/transport/grpc"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/keepalive"
 	"google.golang.org/grpc/metadata"
@@ -48,6 +50,8 @@ type Option struct {
 	// mTLS
 	TLSClientAuthCert string
 	TLSClientAuthKey  string
+
+	TLSCACert string
 
 	// use compressed blobs if server supports compressed blobs and size is bigger than this.
 	// When 0 is set, blob compression is disabled.
@@ -93,6 +97,8 @@ func (o *Option) RegisterFlags(fs *flag.FlagSet, envs map[string]string) {
 
 	fs.StringVar(&o.TLSClientAuthCert, o.Prefix+"_tls_client_auth_cert", os.Getenv("RBE_tls_client_auth_cert"), "Certificate to use when using mTLS to connect to the RE api service. default can be set by $RBE_tls_client_auth_cert")
 	fs.StringVar(&o.TLSClientAuthKey, o.Prefix+"_tls_client_auth_key", os.Getenv("RBE_tls_client_auth_key"), "Key to use when using mTLS to connect to the RE api service. default can be set by $RBE_tls_client_auth_key")
+
+	fs.StringVar(&o.TLSCACert, o.Prefix+"_tls_ca_cert", os.Getenv("RBE_tls_ca_cert"), "Load TLS CA certificates from this file to connect to the RE api service. default can be set by $RBE_tls_ca_cert")
 
 	fs.Int64Var(&o.CompressedBlob, o.Prefix+"_compress_blob", 1024, "use compressed blobs if server supports compressed blobs and size is bigger than this. specify 0 to disable comporession."+purpose)
 
@@ -303,10 +309,28 @@ func newConn(ctx context.Context, addr string, cred cred.Cred, opt Option) (grpc
 		if err != nil {
 			return nil, fmt.Errorf("failed to dial %s: %w", addr, err)
 		}
-	} else if opt.TLSClientAuthCert != "" && opt.TLSClientAuthKey != "" {
-		// use mTLS certificates for authentication.
-		copts = append(copts, cred.ClientOptions()...)
+		return conn, nil
+	}
 
+	copts = append(copts, cred.ClientOptions()...)
+
+	if opt.TLSCACert != "" {
+		clog.Infof(ctx, "using TLS CA certificates=%q", opt.TLSCACert)
+		var certPool *x509.CertPool
+		ca, err := os.ReadFile(opt.TLSCACert)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read TLS CA certificates %q: %w", opt.TLSCACert, err)
+		}
+		if ok := certPool.AppendCertsFromPEM(ca); !ok {
+			return nil, fmt.Errorf("failed to load TLS CA certificates from %s", opt.TLSCACert)
+		}
+		copts = append(copts, option.WithGRPCDialOption(grpc.WithTransportCredentials(credentials.NewTLS(&tls.Config{
+			RootCAs: certPool,
+		}))))
+	}
+
+	if opt.TLSClientAuthCert != "" && opt.TLSClientAuthKey != "" {
+		// use mTLS certificates for authentication.
 		clog.Infof(ctx, "using mTLS: cert=%q key=%q", opt.TLSClientAuthCert, opt.TLSClientAuthKey)
 		cert, err := tls.LoadX509KeyPair(opt.TLSClientAuthCert, opt.TLSClientAuthKey)
 		if err != nil {
@@ -315,28 +339,21 @@ func newConn(ctx context.Context, addr string, cred cred.Cred, opt Option) (grpc
 		copts = append(copts, option.WithClientCertSource(func(*tls.CertificateRequestInfo) (*tls.Certificate, error) {
 			return &cert, nil
 		}))
-		for _, dopt := range dopts {
-			copts = append(copts, option.WithGRPCDialOption(dopt))
-		}
-		conn, err = gtransport.Dial(ctx, copts...)
-		if err != nil {
-			return nil, fmt.Errorf("failed to dial %s: %w", addr, err)
-		}
 	} else if opt.TLSClientAuthCert != "" {
 		return nil, errors.New("tls_client_auth_cert is set, but tls_client_auth_key is not set")
 	} else if opt.TLSClientAuthKey != "" {
 		return nil, errors.New("tls_client_auth_key is set, but tls_client_auth_cert is not set")
-	} else {
-		copts = append(copts, cred.ClientOptions()...)
-		for _, dopt := range dopts {
-			copts = append(copts, option.WithGRPCDialOption(dopt))
-		}
-		conn, err = gtransport.DialPool(ctx, copts...)
-		if err != nil {
-			return nil, fmt.Errorf("failed to dial %s: %w", addr, err)
-		}
+
 	}
-	return conn, err
+
+	for _, dopt := range dopts {
+		copts = append(copts, option.WithGRPCDialOption(dopt))
+	}
+	conn, err = gtransport.Dial(ctx, copts...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to dial %s: %w", addr, err)
+	}
+	return conn, nil
 }
 
 // NewFromConn creates new remote exec API client from conn and casConn.
