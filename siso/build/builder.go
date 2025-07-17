@@ -964,6 +964,9 @@ func stepLogEntry(ctx context.Context, logger *clog.Logger, step *Step, duration
 	if step.metrics.FastLocal {
 		logEntry.Labels["fast_local"] = "true"
 	}
+	if step.metrics.StartLocal {
+		logEntry.Labels["start_local"] = "true"
+	}
 	if step.metrics.Cached {
 		logEntry.Labels["cached"] = "true"
 	}
