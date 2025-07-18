@@ -16,11 +16,254 @@ import (
 func TestExecuteNode(t *testing.T) {
 	for _, tc := range []struct {
 		name        string
-		node        parse.ParseNode
 		scope       *Scope
+		node        parse.ParseNode
 		want        Value
 		wantErrKind syntax.ErrKind
 	}{
+		{
+			name: "access_undefined_base",
+			scope: &Scope{
+				// The access should fail because a is not defined.
+				values: map[string]record{},
+			},
+			node: &parse.AccessorNode{
+				// a.b
+				Base:   syntax.MakeToken(syntax.TokenIdentifier, "a"),
+				Member: &parse.IdentifierNode{Value: syntax.MakeToken(syntax.TokenIdentifier, "b")},
+			},
+			wantErrKind: syntax.ErrMemberNotFound,
+		},
+		{
+			name: "access_undefined_member",
+			scope: &Scope{
+				values: map[string]record{
+					// Define a as a Scope. It should still fail because b isn't defined.
+					"a": {value: &ScopeValue{
+						scope: &Scope{
+							values: map[string]record{},
+						},
+					}},
+				},
+			},
+			node: &parse.AccessorNode{
+				// a = { }
+				// a.b
+				Base:   syntax.MakeToken(syntax.TokenIdentifier, "a"),
+				Member: &parse.IdentifierNode{Value: syntax.MakeToken(syntax.TokenIdentifier, "b")},
+			},
+			wantErrKind: syntax.ErrMemberNotFound,
+		},
+		{
+			name: "access_scope_member",
+			scope: &Scope{
+				values: map[string]record{
+					"a": {value: &ScopeValue{
+						scope: &Scope{
+							// Define b, accessor should succeed now.
+							values: map[string]record{
+								"b": {value: &IntegerValue{value: 42}},
+							},
+						},
+					}},
+				},
+			},
+			node: &parse.AccessorNode{
+				// a = { b = 42 }
+				// a.b
+				Base:   syntax.MakeToken(syntax.TokenIdentifier, "a"),
+				Member: &parse.IdentifierNode{Value: syntax.MakeToken(syntax.TokenIdentifier, "b")},
+			},
+			want:        &IntegerValue{value: 42},
+			wantErrKind: syntax.ErrNone,
+		},
+		{
+			name: "access_list_by_subscript",
+			scope: &Scope{
+				values: map[string]record{
+					"a": {value: &ListValue{
+						list: []Value{
+							&IntegerValue{value: 42},
+						},
+					}},
+				},
+			},
+			node: &parse.AccessorNode{
+				// a = [42]
+				// a[0]
+				Base:      syntax.MakeToken(syntax.TokenIdentifier, "a"),
+				Subscript: &parse.LiteralNode{Token: syntax.MakeToken(syntax.TokenInteger, "0")},
+			},
+			want:        &IntegerValue{value: 42},
+			wantErrKind: syntax.ErrNone,
+		},
+		{
+			name: "access_list_by_subscript_negative_index",
+			scope: &Scope{
+				values: map[string]record{
+					"a": {value: &ListValue{
+						list: []Value{
+							&IntegerValue{value: 42},
+						},
+					}},
+				},
+			},
+			node: &parse.AccessorNode{
+				// a = [42]
+				// a[-1]
+				Base: syntax.MakeToken(syntax.TokenIdentifier, "a"),
+				Subscript: &parse.LiteralNode{
+					Token: syntax.MakeToken(syntax.TokenInteger, "-1"),
+				},
+			},
+			wantErrKind: syntax.ErrSubscriptOutOfRange,
+		},
+		{
+			name: "access_list_by_subscript_out_of_bounds",
+			scope: &Scope{
+				values: map[string]record{
+					"a": {value: &ListValue{
+						list: []Value{
+							&IntegerValue{value: 42},
+						},
+					}},
+				},
+			},
+			node: &parse.AccessorNode{
+				// a = [42]
+				// a[1]
+				Base:      syntax.MakeToken(syntax.TokenIdentifier, "a"),
+				Subscript: &parse.LiteralNode{Token: syntax.MakeToken(syntax.TokenInteger, "1")},
+			},
+			wantErrKind: syntax.ErrSubscriptOutOfRange,
+		},
+		{
+			name: "access_list_by_subscript_empty_list",
+			scope: &Scope{
+				values: map[string]record{
+					"a": {value: &ListValue{
+						list: []Value{},
+					}},
+				},
+			},
+			node: &parse.AccessorNode{
+				// a = []
+				// a[0]
+				Base:      syntax.MakeToken(syntax.TokenIdentifier, "a"),
+				Subscript: &parse.LiteralNode{Token: syntax.MakeToken(syntax.TokenInteger, "0")},
+			},
+			wantErrKind: syntax.ErrSubscriptOutOfRange,
+		},
+		{
+			name: "access_list_by_subscript_non_integer",
+			scope: &Scope{
+				values: map[string]record{
+					"a": {value: &ListValue{
+						list: []Value{
+							&IntegerValue{value: 42},
+						},
+					}},
+				},
+			},
+			node: &parse.AccessorNode{
+				// a = [42]
+				// a["0"]
+				Base:      syntax.MakeToken(syntax.TokenIdentifier, "a"),
+				Subscript: &parse.LiteralNode{Token: syntax.MakeToken(syntax.TokenString, `"0"`)},
+			},
+			wantErrKind: syntax.ErrTypeMismatch,
+		},
+		{
+			name: "access_scope_by_subscript",
+			scope: &Scope{
+				values: map[string]record{
+					"a": {value: &ScopeValue{
+						scope: &Scope{
+							values: map[string]record{
+								"b": {value: &IntegerValue{value: 42}},
+							},
+						},
+					}},
+				},
+			},
+			node: &parse.AccessorNode{
+				// a = { b = 42 }
+				// a["b"]
+				Base:      syntax.MakeToken(syntax.TokenIdentifier, "a"),
+				Subscript: &parse.LiteralNode{Token: syntax.MakeToken(syntax.TokenString, `"b"`)},
+			},
+			want:        &IntegerValue{value: 42},
+			wantErrKind: syntax.ErrNone,
+		},
+		{
+			name: "access_scope_by_subscript_undefined_member",
+			scope: &Scope{
+				values: map[string]record{
+					"a": {value: &ScopeValue{
+						scope: &Scope{
+							values: map[string]record{
+								"b": {value: &IntegerValue{value: 42}},
+							},
+						},
+					}},
+				},
+			},
+			node: &parse.AccessorNode{
+				// a = { b = 42 }
+				// a["c"]
+				Base:      syntax.MakeToken(syntax.TokenIdentifier, "a"),
+				Subscript: &parse.LiteralNode{Token: syntax.MakeToken(syntax.TokenString, "c")},
+			},
+			wantErrKind: syntax.ErrUnknown,
+		},
+		{
+			name: "access_scope_by_subscript_non_string",
+			scope: &Scope{
+				values: map[string]record{
+					"a": {value: &ScopeValue{
+						scope: &Scope{
+							values: map[string]record{
+								"b": {value: &IntegerValue{value: 42}},
+							},
+						},
+					}},
+				},
+			},
+			node: &parse.AccessorNode{
+				// a = { b = 42 }
+				// a[0]
+				Base:      syntax.MakeToken(syntax.TokenIdentifier, "a"),
+				Subscript: &parse.LiteralNode{Token: syntax.MakeToken(syntax.TokenInteger, "0")},
+			},
+			wantErrKind: syntax.ErrTypeMismatch,
+		},
+		{
+			name: "access_by_subscript_invalid_base",
+			scope: &Scope{
+				values: map[string]record{
+					"a": {value: &IntegerValue{value: 1}},
+				},
+			},
+			node: &parse.AccessorNode{
+				// a = 1
+				// a[0]
+				Base:      syntax.MakeToken(syntax.TokenIdentifier, "a"),
+				Subscript: &parse.LiteralNode{Token: syntax.MakeToken(syntax.TokenInteger, "0")},
+			},
+			wantErrKind: syntax.ErrTypeMismatch,
+		},
+		{
+			name: "access_by_subscript_undefined_base",
+			scope: &Scope{
+				values: map[string]record{},
+			},
+			node: &parse.AccessorNode{
+				// a[0]
+				Base:      syntax.MakeToken(syntax.TokenIdentifier, "a"),
+				Subscript: &parse.LiteralNode{Token: syntax.MakeToken(syntax.TokenInteger, "0")},
+			},
+			wantErrKind: syntax.ErrUndefinedIdentifier,
+		},
 		{
 			name:        "blockcomment_nothing",
 			node:        &parse.BlockCommentNode{},

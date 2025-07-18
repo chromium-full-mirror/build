@@ -18,7 +18,14 @@ import (
 func ExecuteNode(n parse.ParseNode, s *Scope) (Value, error) {
 	switch n := n.(type) {
 	case *parse.AccessorNode:
-		return nil, fmt.Errorf("don't know how to execute AccessorNode yet. got: %T(%v)", n, n)
+		// Accessor nodes represent either a subscript `a[b]` or member `a.b` access.
+		if n.Subscript != nil {
+			return executeSubscriptAccess(n, s)
+		}
+		if n.Member != nil {
+			return executeScopeAccess(n.Base, n.Member.Value.Value(), n.Member.LocationRange(), s)
+		}
+		return nil, parse.MakeErrFromParseNode(n, syntax.ErrInvalidAST, "Invalid AST", "Found an AccessorNode without a subscript or member defined.")
 
 	case *parse.BinaryOpNode:
 		return nil, fmt.Errorf("don't know how to execute BinaryOpNode yet. got: %T(%v)", n, n)
@@ -158,4 +165,98 @@ func ExecuteNode(n parse.ParseNode, s *Scope) (Value, error) {
 	}
 
 	return nil, parse.MakeErrFromParseNode(n, syntax.ErrNotImplemented, fmt.Sprintf("Unimplemented node found %T(%v)", n, n), "")
+}
+
+// executeSubscriptAccess executes a subscript e.g. `a[b]` access for the parse.AccessorNode in the given scope.
+// This is permitted for both lists and scopes.
+func executeSubscriptAccess(n *parse.AccessorNode, scope *Scope) (Value, error) {
+	baseValue := scope.Value(n.Base.Value(), false)
+	if baseValue == nil {
+		return nil, n.Base.MakeError(syntax.ErrUndefinedIdentifier, "Undefined identifier.")
+	}
+	switch baseValue.valueType() {
+	case ValueTypeList:
+		// Lists support zero-based subscripting to extract values.
+		listValue := baseValue.(*ListValue)
+		i, err := computeAndValidateListIndex(n, scope, len(listValue.list))
+		if err != nil {
+			return nil, err
+		}
+		return listValue.list[i], nil
+	case ValueTypeScope:
+		// Scopes support string subscripting to extract members.
+		keyValue, err := ExecuteNode(n.Subscript, scope)
+		if keyValue == nil {
+			return nil, err
+		}
+		if err := VerifyValueTypeIs(keyValue, ValueTypeString); err != nil {
+			return nil, err
+		}
+		stringValue := keyValue.(*StringValue)
+		return executeScopeAccess(n.Base, stringValue.value, keyValue.OriginNode().LocationRange(), scope)
+	}
+	return nil, n.Base.MakeError(syntax.ErrTypeMismatch,
+		fmt.Sprintf("Expecting either a list or a scope for subscript, got %s.", baseValue.valueType()))
+}
+
+// executeScopeAccess executes a scope access for the base and member in the given scope.
+func executeScopeAccess(baseToken syntax.Token, member string, memberRange syntax.LocationRange, scope *Scope) (Value, error) {
+	if baseValue := scope.Value(baseToken.Value(), true); baseValue != nil {
+		if scopeValue, ok := baseValue.(*ScopeValue); ok {
+			if result := scopeValue.scope.Value(member, true); result != nil {
+				return result, nil
+			}
+		}
+	}
+	// Don't return early above, instead let all cases fall back to the same error.
+	// This matches C++ GN behavior.
+	//
+	// Given:
+	//     a = { b = "c" }
+	//
+	// ERROR at //BUILD.gn:8:9: No value named "c" in scope "a"
+	// print(a.c)
+	//         ^
+	// ERROR at //BUILD.gn:8:9: No value named "c" in scope "a"
+	// print(a["c"])
+	//         ^--
+	// ERROR at //BUILD.gn:8:10: No value named "c" in scope "ab"
+	// print(ab.c)
+	//          ^
+	//
+	// Given:
+	//     a = [ "b" ]
+	//
+	// ERROR at //BUILD.gn:10:9: No value named "b" in scope "a"
+	// print(a.b)
+	//         ^
+	return nil, syntax.MakeErrorAt(memberRange.Begin(), []syntax.LocationRange{memberRange},
+		syntax.ErrMemberNotFound,
+		fmt.Sprintf("No value named %q in scope %q", member, baseToken.Value()), "")
+}
+
+func computeAndValidateListIndex(n *parse.AccessorNode, s *Scope, maxLen int) (int64, error) {
+	indexValue, err := ExecuteNode(n.Subscript, s)
+	if err != nil {
+		return -1, err
+	}
+	if err := VerifyValueTypeIs(indexValue, ValueTypeInteger); err != nil {
+		return -1, err
+	}
+	integerValue := indexValue.(*IntegerValue)
+
+	indexInt := integerValue.value
+	if indexInt < 0 {
+		return -1, parse.MakeErrFromParseNode(n.Subscript, syntax.ErrSubscriptOutOfRange, "Negative array subscript.",
+			fmt.Sprintf("You gave me %d", indexInt))
+	}
+	if maxLen == 0 {
+		return -1, parse.MakeErrFromParseNode(n.Subscript, syntax.ErrSubscriptOutOfRange, "Array subscript out of range.",
+			fmt.Sprintf("You gave me %d but the array has no elements.", indexInt))
+	}
+	if indexInt >= int64(maxLen) {
+		return -1, parse.MakeErrFromParseNode(n.Subscript, syntax.ErrSubscriptOutOfRange, "Array subscript out of range.",
+			fmt.Sprintf("You gave me %d but I was expecting something from 0 to %d, inclusive.", indexInt, maxLen-1))
+	}
+	return indexInt, nil
 }

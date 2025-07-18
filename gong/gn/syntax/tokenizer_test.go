@@ -11,15 +11,6 @@ import (
 	"github.com/google/go-cmp/cmp/cmpopts"
 )
 
-type mockInput struct {
-	displayName string
-	contents    string
-}
-
-func (m mockInput) DisplayName() string          { return m.displayName }
-func (m mockInput) Contents() []byte             { return []byte(m.contents) }
-func (m mockInput) Equal(other InputSource) bool { return false }
-
 func TestTokenizer(t *testing.T) {
 	cmpOpts := []cmp.Option{
 		cmp.AllowUnexported(Token{}),
@@ -171,7 +162,7 @@ fun("foo") {  # A
 			},
 		},
 	} {
-		got, err := Tokenize(mockInput{
+		got, err := Tokenize(fakeInputSource{
 			displayName: "test.gni",
 			contents:    tc.input,
 		})
@@ -186,7 +177,7 @@ fun("foo") {  # A
 	}
 }
 func TestTokenizerWhitespace(t *testing.T) {
-	input := mockInput{
+	input := fakeInputSource{
 		displayName: "test.gni",
 		contents:    "a\t2\v\"st\tuff\"\f{",
 	}
