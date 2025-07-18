@@ -70,8 +70,10 @@ func (n *BlockNode) appendStatement(s ParseNode) {
 
 // LocationRange returns the location range for this node.
 func (n *BlockNode) LocationRange() syntax.LocationRange {
-	// TODO: implement by checking statements
-	return syntax.LocationRange{}
+	if n.BeginToken.TokenType() == syntax.TokenInvalid {
+		return syntax.LocationRange{}
+	}
+	return n.BeginToken.Range().Union(n.End.Value.Range())
 }
 
 // ConditionNode represents a conditional in the AST.

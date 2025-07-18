@@ -84,7 +84,22 @@ func ExecuteNode(n parse.ParseNode, s *Scope) (Value, error) {
 		return nil, fmt.Errorf("don't know how to execute IdentifierNode yet. got: %T(%v)", n, n)
 
 	case *parse.ListNode:
-		return nil, fmt.Errorf("don't know how to execute ListNode yet. got: %T(%v)", n, n)
+		listValue := &ListValue{}
+		for _, cur := range n.Contents {
+			if _, ok := cur.(*parse.BlockCommentNode); ok {
+				continue
+			}
+			value, err := ExecuteNode(cur, s)
+			if err != nil {
+				return nil, err
+			}
+			if value == nil || value.valueType() == ValueTypeNone {
+				return nil, parse.MakeErrFromParseNode(cur, syntax.ErrTypeMismatch,
+					"This does not evaluate to a value.", "I can't do something with nothing.")
+			}
+			listValue.list = append(listValue.list, value)
+		}
+		return listValue, nil
 
 	case *parse.LiteralNode:
 		switch n.Token.TokenType() {

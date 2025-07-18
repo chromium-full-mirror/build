@@ -421,6 +421,71 @@ func TestExecuteNode(t *testing.T) {
 			scope:       &Scope{},
 			wantErrKind: syntax.ErrTypeMismatch,
 		},
+		{
+			name:  "list_empty",
+			scope: &Scope{},
+			node: &parse.ListNode{
+				Contents: []parse.ParseNode{},
+			},
+			want:        &ListValue{list: []Value{}},
+			wantErrKind: syntax.ErrNone,
+		},
+		{
+			name:  "list_simple",
+			scope: &Scope{},
+			node: &parse.ListNode{
+				Contents: []parse.ParseNode{
+					&parse.LiteralNode{Token: syntax.MakeToken(syntax.TokenInteger, "1")},
+					&parse.LiteralNode{Token: syntax.MakeToken(syntax.TokenTrue, "true")},
+					&parse.LiteralNode{Token: syntax.MakeToken(syntax.TokenString, "\"a\"")},
+				},
+			},
+			want: &ListValue{
+				list: []Value{
+					&IntegerValue{value: 1},
+					&BooleanValue{value: true},
+					&StringValue{value: "a"},
+				},
+			},
+			wantErrKind: syntax.ErrNone,
+		},
+		{
+			name:  "list_with_comment",
+			scope: &Scope{},
+			node: &parse.ListNode{
+				Contents: []parse.ParseNode{
+					&parse.LiteralNode{Token: syntax.MakeToken(syntax.TokenInteger, "1")},
+					&parse.BlockCommentNode{},
+					&parse.LiteralNode{Token: syntax.MakeToken(syntax.TokenTrue, "true")},
+				},
+			},
+			want: &ListValue{
+				list: []Value{
+					&IntegerValue{value: 1},
+					&BooleanValue{value: true},
+				},
+			},
+			wantErrKind: syntax.ErrNone,
+		},
+		{
+			name:  "list_non_value",
+			scope: &Scope{},
+			node: &parse.ListNode{
+				Contents: []parse.ParseNode{
+					&parse.LiteralNode{Token: syntax.MakeToken(syntax.TokenInteger, "1")},
+					// A condition node isn't a usable value in a list.
+					&parse.ConditionNode{
+						IfToken:   syntax.MakeToken(syntax.TokenIf, "if"),
+						Condition: &parse.LiteralNode{Token: syntax.MakeToken(syntax.TokenTrue, "true")},
+						IfTrue: &parse.BlockNode{
+							BeginToken: syntax.MakeToken(syntax.TokenLeftBrace, "{"),
+							End:        parse.EndNode{Value: syntax.MakeToken(syntax.TokenRightBrace, "}")},
+						},
+					},
+				},
+			},
+			wantErrKind: syntax.ErrTypeMismatch,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			got, err := ExecuteNode(tc.node, tc.scope)
