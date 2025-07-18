@@ -349,7 +349,7 @@ func newConn(ctx context.Context, addr string, cred cred.Cred, opt Option) (grpc
 	for _, dopt := range dopts {
 		copts = append(copts, option.WithGRPCDialOption(dopt))
 	}
-	conn, err = gtransport.Dial(ctx, copts...)
+	conn, err = gtransport.DialPool(ctx, copts...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to dial %s: %w", addr, err)
 	}
