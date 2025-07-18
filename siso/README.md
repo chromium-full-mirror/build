@@ -77,6 +77,13 @@ Siso is named after shiso, a herb commonly used in Japan. It's a reference to ba
    Siso may not support Ninja features if they are not used for Chromium
    builds. e.g. [dynamic dependencies](https://ninja-build.org/manual.html#ref_dyndep), `ninja -t browse` etc
 
+## Documents
+
+- [Siso environment variables](./docs/environment_variables.md) explains
+  environment variables used by Siso.
+- [Siso starlark config](./docs/starlark_config.md) explains
+  Siso configs (e.g. `//build/config/siso/main.star`).
+
 ## Status
 
 Siso is the primary build system for Chromium and the projects that import //build from Chromium.
