@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"golang.org/x/oauth2"
+	"google.golang.org/grpc/credentials"
 
 	"go.chromium.org/build/siso/o11y/clog"
 )
@@ -128,10 +129,26 @@ func (h *credHelper) get(ctx context.Context, endpoint string) (credHelperPerRPC
 	return cce.cred, nil
 }
 
+func addMethod(ctx context.Context, uri string) string {
+	// grpc/internal/transport/http2_client createAudience strips the method
+	// name for the audience which is not what we expect for the credential
+	// helper.  Inject the method back in to the request.
+	// This works around https://github.com/grpc/grpc-go/issues/8421
+	ri, ok := credentials.RequestInfoFromContext(ctx)
+	if !ok {
+		return uri
+	}
+	pos := strings.LastIndex(ri.Method, "/")
+	if pos == -1 || !strings.HasSuffix(uri, ri.Method[:pos]) {
+		return uri
+	}
+	return uri + ri.Method[pos:]
+}
+
 func (h *credHelper) GetRequestMetadata(ctx context.Context, uri ...string) (map[string]string, error) {
 	endpoint := "https://*.googleapis.com/"
 	if len(uri) > 0 {
-		endpoint = uri[0]
+		endpoint = addMethod(ctx, uri[0])
 	}
 	prc, err := h.get(ctx, endpoint)
 	if err != nil {
