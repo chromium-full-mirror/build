@@ -204,10 +204,10 @@ func executeSubscriptAccess(n *parse.AccessorNode, scope *Scope) (Value, error) 
 		if keyValue == nil {
 			return nil, err
 		}
-		if err := VerifyValueTypeIs(keyValue, ValueTypeString); err != nil {
+		stringValue, err := AsValue[*StringValue](keyValue)
+		if err != nil {
 			return nil, err
 		}
-		stringValue := keyValue.(*StringValue)
 		return executeScopeAccess(n.Base, stringValue.value, keyValue.OriginNode().LocationRange(), scope)
 	}
 	return nil, n.Base.MakeError(syntax.ErrTypeMismatch,
@@ -255,10 +255,10 @@ func computeAndValidateListIndex(n *parse.AccessorNode, s *Scope, maxLen int) (i
 	if err != nil {
 		return -1, err
 	}
-	if err := VerifyValueTypeIs(indexValue, ValueTypeInteger); err != nil {
+	integerValue, err := AsValue[*IntegerValue](indexValue)
+	if err != nil {
 		return -1, err
 	}
-	integerValue := indexValue.(*IntegerValue)
 
 	indexInt := integerValue.value
 	if indexInt < 0 {

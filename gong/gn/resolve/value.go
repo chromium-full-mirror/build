@@ -127,15 +127,16 @@ func MakeErrFromValue(value Value, kind syntax.ErrKind, message, helpText string
 		helpText)
 }
 
-// VerifyValueTypeIs returns a user-facing error that references the parse node
+// AsValue returns a user-facing error that references the parse node
 // if the value isn't the expected type.
-func VerifyValueTypeIs(v Value, t ValueType) error {
-	if v.valueType() == t {
-		return nil
+func AsValue[T Value](v Value) (T, error) {
+	t, ok := v.(T)
+	if ok {
+		return t, nil
 	}
-	return parse.MakeErrFromParseNode(v.OriginNode(),
+	return t, parse.MakeErrFromParseNode(v.OriginNode(),
 		syntax.ErrTypeMismatch,
 		fmt.Sprintf("This is not a %s. Instead I see a %s = true",
-			t.String(),
+			v.String(),
 			v.valueType().String()), "")
 }
