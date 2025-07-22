@@ -291,6 +291,28 @@ func TestScanDepsParams(t *testing.T) {
 				Defines: map[string]string{},
 			},
 		},
+		{
+			name: "soong-g.cc.cc",
+			args: []string{
+				"/bin/sh",
+				"-c",
+				"PWD=/proc/self/cwd prebuilts/clang/host/linux-x86/clang-r563880/bin/clang -c -Wa,--noexecstack -fPIC --gcc-toolchain=prebuilts/gcc/linux-x86/host/x86_64-linux-glibc2.17-4.8 --sysroot prebuilts/gcc/linux-x86/host/x86_64-linux-glibc2.17-4.8/sysroot -O2 -Wall -no-canonical-prefixes -fdebug-prefix-map=/proc/self/cwd= -Iexternal/boringssl/src/include  -MD -MF out/soong/.intermediates/external/boringssl/libcrypto/linux_glibc_x86_static/obj/external/boringssl/src/gen/bcm/aesni-x86_64-linux.o.d -o out/soong/.intermediates/external/boringssl/libcrypto/linux_glibc_x86_static/obj/external/boringssl/src/gen/bcm/aesni-x86_64-linux.o external/boringssl/src/gen/bcm/aesni-x86_64-linux.S",
+			},
+			want: ScanDepsParams{
+				Sources: []string{
+					"external/boringssl/src/gen/bcm/aesni-x86_64-linux.S",
+				},
+				Dirs: []string{
+					"external/boringssl/src/include",
+				},
+				Sysroots: []string{
+					"prebuilts/clang/host/linux-x86/clang-r563880",
+					"prebuilts/gcc/linux-x86/host/x86_64-linux-glibc2.17-4.8",
+					"prebuilts/gcc/linux-x86/host/x86_64-linux-glibc2.17-4.8/sysroot",
+				},
+				Defines: map[string]string{},
+			},
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			got := ExtractScanDepsParams(ctx, tc.args, tc.env)

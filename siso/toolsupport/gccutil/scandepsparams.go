@@ -8,6 +8,9 @@ import (
 	"context"
 	"path/filepath"
 	"strings"
+
+	"go.chromium.org/build/siso/o11y/clog"
+	"go.chromium.org/build/siso/toolsupport/shutil"
 )
 
 // ScanDepsParams holds parameters used for scandeps.
@@ -42,6 +45,26 @@ func ExtractScanDepsParams(ctx context.Context, args, env []string) ScanDepsPara
 	res := ScanDepsParams{
 		Defines: make(map[string]string),
 	}
+	if len(args) == 3 && args[0] == "/bin/sh" && args[1] == "-c" {
+		// stepArgs in ninjabuild uses "/bin/sh -c $command" when
+		// $command is not simple command line.
+
+		// soong puts ${g.cc.relPwd} ("PWD=/proc/self/cwd")
+		// at the front of command line, so parse command line
+		// after dropping "PWD=/proc/self/cwd " if it exists.
+		// TODO: b/432599730 - remove the workaround
+		if !strings.HasPrefix(args[2], "PWD=/proc/self/cwd ") {
+			clog.Warningf(ctx, "unsupported commandline %q", args)
+			return res
+		}
+		// TODO: b/432374760 - need to strip ${postCmd} part?
+		cmdArgs, err := shutil.Split(strings.TrimPrefix(args[2], "PWD=/proc/self/cwd "))
+		if err != nil {
+			clog.Warningf(ctx, "failed to split %q: %v", args[2], err)
+			return res
+		}
+		args = cmdArgs
+	}
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 		if !strings.HasPrefix(arg, "-") {
@@ -74,6 +97,9 @@ func ExtractScanDepsParams(ctx context.Context, args, env []string) ScanDepsPara
 			i++
 			res.Sysroots = append(res.Sysroots, args[i])
 			continue
+		case "--sysroot":
+			i++
+			res.Sysroots = append(res.Sysroots, args[i])
 		case "-D":
 			i++
 			defineMacro(res.Defines, args[i])
