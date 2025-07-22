@@ -108,6 +108,8 @@ func ExtractScanDepsParams(ctx context.Context, args, env []string) ScanDepsPara
 		switch {
 		case strings.HasPrefix(arg, "-I"):
 			res.Dirs = append(res.Dirs, strings.TrimPrefix(arg, "-I"))
+		case strings.HasPrefix(arg, "--include="):
+			res.Includes = append(res.Includes, strings.TrimPrefix(arg, "--include="))
 		case strings.HasPrefix(arg, "--include-directory="):
 			res.Dirs = append(res.Dirs, strings.TrimPrefix(arg, "--include-directory="))
 		case strings.HasPrefix(arg, "-iquote"):
