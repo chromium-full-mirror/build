@@ -15,7 +15,7 @@ import (
 )
 
 // ExecuteNode executes a given node in the AST.
-func ExecuteNode(n parse.ParseNode, s *Scope) (Value, error) {
+func ExecuteNode(n parse.Node, s *Scope) (Value, error) {
 	switch n := n.(type) {
 	case *parse.AccessorNode:
 		// Accessor nodes represent either a subscript `a[b]` or member `a.b` access.
@@ -25,7 +25,7 @@ func ExecuteNode(n parse.ParseNode, s *Scope) (Value, error) {
 		if n.Member != nil {
 			return executeScopeAccess(n.Base, n.Member.Value.Value(), n.Member.LocationRange(), s)
 		}
-		return nil, parse.MakeErrFromParseNode(n, syntax.ErrInvalidAST, "Invalid AST", "Found an AccessorNode without a subscript or member defined.")
+		return nil, parse.MakeErrFromNode(n, syntax.ErrInvalidAST, "Invalid AST", "Found an AccessorNode without a subscript or member defined.")
 
 	case *parse.BinaryOpNode:
 		return nil, fmt.Errorf("don't know how to execute BinaryOpNode yet. got: %T(%v)", n, n)
@@ -52,7 +52,7 @@ func ExecuteNode(n parse.ParseNode, s *Scope) (Value, error) {
 			cur := n.Statements[i]
 			switch cur.(type) {
 			case *parse.ListNode, *parse.LiteralNode, *parse.UnaryOpNode, *parse.IdentifierNode, *parse.BlockNode:
-				return nil, parse.MakeErrFromParseNode(cur,
+				return nil, parse.MakeErrFromNode(cur,
 					syntax.ErrUnknown,
 					"This statement has no effect.",
 					"Either delete it or do something with the result.")
@@ -94,7 +94,7 @@ func ExecuteNode(n parse.ParseNode, s *Scope) (Value, error) {
 				return nil, err
 			}
 			if value == nil || value.valueType() == ValueTypeNone {
-				return nil, parse.MakeErrFromParseNode(cur, syntax.ErrTypeMismatch,
+				return nil, parse.MakeErrFromNode(cur, syntax.ErrTypeMismatch,
 					"This does not evaluate to a value.", "I can't do something with nothing.")
 			}
 			listValue.list = append(listValue.list, value)
@@ -117,13 +117,13 @@ func ExecuteNode(n parse.ParseNode, s *Scope) (Value, error) {
 			s := n.Token.Value()
 			if (strings.HasPrefix(s, "0") && len(s) > 1) || strings.HasPrefix(s, "-0") {
 				if s == "-0" {
-					return nil, parse.MakeErrFromParseNode(n, syntax.ErrUnknown, "Negative zero doesn't make sense", "")
+					return nil, parse.MakeErrFromNode(n, syntax.ErrUnknown, "Negative zero doesn't make sense", "")
 				}
-				return nil, parse.MakeErrFromParseNode(n, syntax.ErrUnknown, "Leading zeros not allowed", "")
+				return nil, parse.MakeErrFromNode(n, syntax.ErrUnknown, "Leading zeros not allowed", "")
 			}
 			i, err := strconv.ParseInt(s, 10, 64)
 			if err != nil {
-				return nil, parse.MakeErrFromParseNode(n, syntax.ErrUnknown, "This does not look like an integer", "")
+				return nil, parse.MakeErrFromNode(n, syntax.ErrUnknown, "This does not look like an integer", "")
 			}
 			return &IntegerValue{
 				origin: n,
@@ -134,7 +134,7 @@ func ExecuteNode(n parse.ParseNode, s *Scope) (Value, error) {
 			s := n.Token.Value()
 			// Assume that the parser should have kept the quotes.
 			if len(s) < 2 {
-				return nil, parse.MakeErrFromParseNode(n, syntax.ErrUnknown, "Invalid AST", "Found a LiteralNode with an unquoted string")
+				return nil, parse.MakeErrFromNode(n, syntax.ErrUnknown, "Invalid AST", "Found a LiteralNode with an unquoted string")
 			}
 			s = s[1 : len(s)-1]
 			return &StringValue{
@@ -142,7 +142,7 @@ func ExecuteNode(n parse.ParseNode, s *Scope) (Value, error) {
 				value:  s,
 			}, nil
 		}
-		return nil, parse.MakeErrFromParseNode(n, syntax.ErrUnknown, "Invalid AST", "Found a LiteralNode that wasn't a boolean, integer, or string")
+		return nil, parse.MakeErrFromNode(n, syntax.ErrUnknown, "Invalid AST", "Found a LiteralNode that wasn't a boolean, integer, or string")
 
 	case *parse.BlockCommentNode:
 		return nil, nil
@@ -163,7 +163,7 @@ func ExecuteNode(n parse.ParseNode, s *Scope) (Value, error) {
 		if b := conditionResult.(*BooleanValue); b.value {
 			// Additional check to what C++ GN does, it always assumes the true block exists.
 			if n.IfTrue == nil {
-				return nil, parse.MakeErrFromParseNode(n, syntax.ErrUnknown, "Invalid AST", "Found a ConditionNode without true block")
+				return nil, parse.MakeErrFromNode(n, syntax.ErrUnknown, "Invalid AST", "Found a ConditionNode without true block")
 			}
 			// Execute the true block if the boolean evaluated to true.
 			if _, err = ExecuteNode(n.IfTrue, s); err != nil {
@@ -179,7 +179,7 @@ func ExecuteNode(n parse.ParseNode, s *Scope) (Value, error) {
 		return nil, nil
 	}
 
-	return nil, parse.MakeErrFromParseNode(n, syntax.ErrNotImplemented, fmt.Sprintf("Unimplemented node found %T(%v)", n, n), "")
+	return nil, parse.MakeErrFromNode(n, syntax.ErrNotImplemented, fmt.Sprintf("Unimplemented node found %T(%v)", n, n), "")
 }
 
 // executeSubscriptAccess executes a subscript e.g. `a[b]` access for the parse.AccessorNode in the given scope.
@@ -262,15 +262,15 @@ func computeAndValidateListIndex(n *parse.AccessorNode, s *Scope, maxLen int) (i
 
 	indexInt := integerValue.value
 	if indexInt < 0 {
-		return -1, parse.MakeErrFromParseNode(n.Subscript, syntax.ErrSubscriptOutOfRange, "Negative array subscript.",
+		return -1, parse.MakeErrFromNode(n.Subscript, syntax.ErrSubscriptOutOfRange, "Negative array subscript.",
 			fmt.Sprintf("You gave me %d", indexInt))
 	}
 	if maxLen == 0 {
-		return -1, parse.MakeErrFromParseNode(n.Subscript, syntax.ErrSubscriptOutOfRange, "Array subscript out of range.",
+		return -1, parse.MakeErrFromNode(n.Subscript, syntax.ErrSubscriptOutOfRange, "Array subscript out of range.",
 			fmt.Sprintf("You gave me %d but the array has no elements.", indexInt))
 	}
 	if indexInt >= int64(maxLen) {
-		return -1, parse.MakeErrFromParseNode(n.Subscript, syntax.ErrSubscriptOutOfRange, "Array subscript out of range.",
+		return -1, parse.MakeErrFromNode(n.Subscript, syntax.ErrSubscriptOutOfRange, "Array subscript out of range.",
 			fmt.Sprintf("You gave me %d but I was expecting something from 0 to %d, inclusive.", indexInt, maxLen-1))
 	}
 	return indexInt, nil

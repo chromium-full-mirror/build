@@ -15,21 +15,21 @@ import (
 
 // ScopeValue represents a GN scope.
 type ScopeValue struct {
-	origin parse.ParseNode
+	origin parse.Node
 	scope  *Scope
 }
 
 // OriginNode returns the node that made this. May be nil.
-func (v *ScopeValue) OriginNode() parse.ParseNode {
+func (v *ScopeValue) OriginNode() parse.Node {
 	return v.origin
 }
 
-func (v *ScopeValue) setOrigin(origin parse.ParseNode) {
+func (v *ScopeValue) setOrigin(origin parse.Node) {
 	v.origin = origin
 }
 
 // CopyWithOrigin performs a shallow copy of the value with a new origin.
-func (v *ScopeValue) CopyWithOrigin(origin parse.ParseNode) Value {
+func (v *ScopeValue) CopyWithOrigin(origin parse.Node) Value {
 	return &ScopeValue{
 		origin: origin,
 		scope:  v.scope,

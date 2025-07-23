@@ -10,7 +10,7 @@ import (
 	"strings"
 )
 
-// NodeDump is a JSON-serializable representation of a ParseNode.
+// NodeDump is a JSON-serializable representation of a Node.
 type NodeDump struct {
 	Type         string     `json:"type"`
 	Value        string     `json:"value,omitempty"`

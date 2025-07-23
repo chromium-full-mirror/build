@@ -51,11 +51,11 @@ type Value interface {
 	valueType() ValueType
 	// setOrigin is a convenience method to allow this package to set
 	// the origin of a value without casting to a concrete type.
-	setOrigin(parse.ParseNode)
+	setOrigin(parse.Node)
 	// OriginNode returns the origin parse node of the value.
-	OriginNode() parse.ParseNode
+	OriginNode() parse.Node
 	// CopyWithOrigin performs a shallow copy of the value with a new origin.
-	CopyWithOrigin(parse.ParseNode) Value
+	CopyWithOrigin(parse.Node) Value
 	// RawGNString returns a GN-like stringification of the value.
 	//
 	// Behaves similarly to `Value::ToString(false)` in C++ GN, however because
@@ -134,7 +134,7 @@ func AsValue[T Value](v Value) (T, error) {
 	if ok {
 		return t, nil
 	}
-	return t, parse.MakeErrFromParseNode(v.OriginNode(),
+	return t, parse.MakeErrFromNode(v.OriginNode(),
 		syntax.ErrTypeMismatch,
 		fmt.Sprintf("This is not a %s. Instead I see a %s = true",
 			v.String(),

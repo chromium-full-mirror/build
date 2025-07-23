@@ -27,10 +27,10 @@ func (m mockInput) Equal(other syntax.InputSource) bool {
 }
 
 func TestParse_Simple(t *testing.T) {
-	// Directly compare with expected ParseNode output for smaller test cases.
+	// Directly compare with expected Node output for smaller test cases.
 	// For more complex comparisons, particularly ones that go-cmp do not
 	// support without a custom comparator (e.g. nodes that contain a
-	// []ParseNode will fail to be compared as expected because the cmpOpts
+	// []Node will fail to be compared as expected because the cmpOpts
 	// IgnoreFields here won't work), use TestParse_Large.
 	// TestParse_Large uses AST text dumps, which are easier to write and
 	// understand for more complex test cases.
@@ -41,7 +41,7 @@ func TestParse_Simple(t *testing.T) {
 	for _, tc := range []struct {
 		name     string
 		input    string
-		expected ParseNode
+		expected Node
 	}{
 		{
 			name:  "empty",
@@ -55,7 +55,7 @@ func TestParse_Simple(t *testing.T) {
 			input: "foo",
 			expected: &BlockNode{
 				ResultMode: DiscardsResult,
-				Statements: []ParseNode{
+				Statements: []Node{
 					&IdentifierNode{Value: syntax.MakeToken(syntax.TokenIdentifier, "foo")},
 				},
 			},

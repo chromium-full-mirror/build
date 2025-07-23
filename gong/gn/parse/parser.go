@@ -41,7 +41,7 @@ const (
 )
 
 // Parse converts a series of tokens into an AST.
-func Parse(tokens []syntax.Token) (ParseNode, error) {
+func Parse(tokens []syntax.Token) (Node, error) {
 	p := parser{}
 	// Collect line and suffix comments now so that they can be attached to the
 	// nearest appropriate node after building the AST.
@@ -75,7 +75,7 @@ func (p *parser) atEnd() bool {
 	return p.cur >= len(p.tokens)
 }
 
-func (p *parser) isAssignment(node ParseNode) bool {
+func (p *parser) isAssignment(node Node) bool {
 	if binaryOp, ok := node.(*BinaryOpNode); ok {
 		return binaryOp.Op.TokenType() == syntax.TokenEqual ||
 			binaryOp.Op.TokenType() == syntax.TokenPlusEquals ||
@@ -119,7 +119,7 @@ func (p *parser) consume() (syntax.Token, bool) {
 	return token, true
 }
 
-func (p *parser) parseFile() (ParseNode, error) {
+func (p *parser) parseFile() (Node, error) {
 	file := BlockNode{
 		ResultMode: DiscardsResult,
 	}
@@ -142,7 +142,7 @@ func (p *parser) parseFile() (ParseNode, error) {
 	return &file, nil
 }
 
-func (p *parser) parseStatement() (ParseNode, error) {
+func (p *parser) parseStatement() (Node, error) {
 	// GN handles ifs with recursive descent, block comments directly.
 	// https://source.chromium.org/gn/gn/+/main:src/gn/parser.cc;l=711-714;drc=4a64809c3631bd4365738ff8764cf357d9e80dbf
 	if p.lookAhead(syntax.TokenIf) {
@@ -154,7 +154,7 @@ func (p *parser) parseStatement() (ParseNode, error) {
 	return p.parseExpression(precedenceNone)
 }
 
-func (p *parser) parseCondition() (ParseNode, error) {
+func (p *parser) parseCondition() (Node, error) {
 	conditionNode := &ConditionNode{}
 
 	// Consume "if ("
@@ -176,7 +176,7 @@ func (p *parser) parseCondition() (ParseNode, error) {
 	// TODO: Don't allow assignments in parseExpression instead?
 	// https://gn.googlesource.com/gn/+/main/docs/reference.md#Grammar
 	if p.isAssignment(conditionNode.Condition) {
-		return nil, MakeErrFromParseNode(conditionNode.Condition, syntax.ErrUnknown, "Assignment not allowed in 'if'", "")
+		return nil, MakeErrFromNode(conditionNode.Condition, syntax.ErrUnknown, "Assignment not allowed in 'if'", "")
 	}
 
 	// Consume ")".
@@ -217,7 +217,7 @@ func (p *parser) parseCondition() (ParseNode, error) {
 	return conditionNode, nil
 }
 
-func (p *parser) parseExpression(precedence precedence) (ParseNode, error) {
+func (p *parser) parseExpression(precedence precedence) (Node, error) {
 	token, ok := p.consume()
 	if !ok {
 		return nil, p.curOrLastToken().MakeError(syntax.ErrEOF, "Reached end of file during parsing")
@@ -239,7 +239,7 @@ func (p *parser) parseExpression(precedence precedence) (ParseNode, error) {
 	return left, nil
 }
 
-func (p *parser) parsePrefix(token syntax.Token) (ParseNode, error) {
+func (p *parser) parsePrefix(token syntax.Token) (Node, error) {
 	switch token.TokenType() {
 	case syntax.TokenInteger,
 		syntax.TokenString,
@@ -288,7 +288,7 @@ func (p *parser) parsePrefix(token syntax.Token) (ParseNode, error) {
 	return nil, token.MakeError(syntax.ErrUnexpectedToken, fmt.Sprintf("Unexpected token '%s'", token.Value()))
 }
 
-func (p *parser) parseInfix(left ParseNode, token syntax.Token) (ParseNode, error) {
+func (p *parser) parseInfix(left Node, token syntax.Token) (Node, error) {
 	switch token.TokenType() {
 	case syntax.TokenEqual,
 		syntax.TokenPlusEquals,
@@ -296,7 +296,7 @@ func (p *parser) parseInfix(left ParseNode, token syntax.Token) (ParseNode, erro
 		_, isIdentifier := left.(*IdentifierNode)
 		_, isAccessor := left.(*AccessorNode)
 		if !isIdentifier && !isAccessor {
-			return nil, MakeErrFromParseNode(left, syntax.ErrUnknown, "The left-hand side of an assignment must be an identifier, scope access, or array access.", "")
+			return nil, MakeErrFromNode(left, syntax.ErrUnknown, "The left-hand side of an assignment must be an identifier, scope access, or array access.", "")
 		}
 		value, err := p.parseExpression(precedenceAssignment)
 		if err != nil {
@@ -313,7 +313,7 @@ func (p *parser) parseInfix(left ParseNode, token syntax.Token) (ParseNode, erro
 	case syntax.TokenDot:
 		leftIdentifier, isIdentifier := left.(*IdentifierNode)
 		if !isIdentifier {
-			return nil, MakeErrFromParseNode(left, syntax.ErrUnknown, `May only use "." for identifiers.`,
+			return nil, MakeErrFromNode(left, syntax.ErrUnknown, `May only use "." for identifiers.`,
 				"The thing on the left hand side of the dot must be an identifier\nand not an expression. If you need this, you'll have to assign the\nvalue to a temporary first. Sorry.")
 		}
 		right, err := p.parseExpression(precedenceDot)
@@ -332,7 +332,7 @@ func (p *parser) parseInfix(left ParseNode, token syntax.Token) (ParseNode, erro
 	case syntax.TokenLeftBracket:
 		leftIdentifier, isIdentifier := left.(*IdentifierNode)
 		if !isIdentifier {
-			return nil, MakeErrFromParseNode(left, syntax.ErrUnknown, "May only subscript identifiers.",
+			return nil, MakeErrFromNode(left, syntax.ErrUnknown, "May only subscript identifiers.",
 				"The thing on the left hand side of the [] must be an identifier\nand not an expression. If you need this, you'll have to assign the\nvalue to a temporary before subscripting. Sorry.")
 		}
 		value, err := p.parseExpression(precedenceNone)
@@ -399,7 +399,7 @@ func (p *parser) infixPrecedence(token syntax.Token) precedence {
 	return precedenceInvalid
 }
 
-func (p *parser) parseIdentifierOrCall(left ParseNode, token syntax.Token) (ParseNode, error) {
+func (p *parser) parseIdentifierOrCall(left Node, token syntax.Token) (Node, error) {
 	var err error
 	var args *ListNode
 	var block *BlockNode

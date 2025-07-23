@@ -17,7 +17,7 @@ func TestExecuteNode(t *testing.T) {
 	for _, tc := range []struct {
 		name        string
 		scope       *Scope
-		node        parse.ParseNode
+		node        parse.Node
 		want        Value
 		wantErrKind syntax.ErrKind
 	}{
@@ -351,10 +351,10 @@ func TestExecuteNode(t *testing.T) {
 				IfToken:   syntax.MakeToken(syntax.TokenIf, "if"),
 				Condition: &parse.LiteralNode{Token: syntax.MakeToken(syntax.TokenTrue, "true")},
 				IfTrue: &parse.BlockNode{
-					Statements: []parse.ParseNode{},
+					Statements: []parse.Node{},
 				},
 				IfFalse: &parse.BlockNode{
-					Statements: []parse.ParseNode{},
+					Statements: []parse.Node{},
 				},
 			},
 			scope:       &Scope{},
@@ -369,10 +369,10 @@ func TestExecuteNode(t *testing.T) {
 				IfToken:   syntax.MakeToken(syntax.TokenIf, "if"),
 				Condition: &parse.LiteralNode{Token: syntax.MakeToken(syntax.TokenFalse, "false")},
 				IfTrue: &parse.BlockNode{
-					Statements: []parse.ParseNode{},
+					Statements: []parse.Node{},
 				},
 				IfFalse: &parse.BlockNode{
-					Statements: []parse.ParseNode{},
+					Statements: []parse.Node{},
 				},
 			},
 			scope:       &Scope{},
@@ -387,7 +387,7 @@ func TestExecuteNode(t *testing.T) {
 				IfToken:   syntax.MakeToken(syntax.TokenIf, "if"),
 				Condition: &parse.LiteralNode{Token: syntax.MakeToken(syntax.TokenTrue, "true")},
 				IfTrue: &parse.BlockNode{
-					Statements: []parse.ParseNode{},
+					Statements: []parse.Node{},
 				},
 			},
 			scope:       &Scope{},
@@ -402,7 +402,7 @@ func TestExecuteNode(t *testing.T) {
 				IfToken:   syntax.MakeToken(syntax.TokenIf, "if"),
 				Condition: &parse.LiteralNode{Token: syntax.MakeToken(syntax.TokenFalse, "false")},
 				IfTrue: &parse.BlockNode{
-					Statements: []parse.ParseNode{},
+					Statements: []parse.Node{},
 				},
 			},
 			scope:       &Scope{},
@@ -415,7 +415,7 @@ func TestExecuteNode(t *testing.T) {
 				// Only boolean conditions are supported (no support for "truthy" values).
 				Condition: &parse.LiteralNode{Token: syntax.MakeToken(syntax.TokenInteger, "123")},
 				IfTrue: &parse.BlockNode{
-					Statements: []parse.ParseNode{},
+					Statements: []parse.Node{},
 				},
 			},
 			scope:       &Scope{},
@@ -425,7 +425,7 @@ func TestExecuteNode(t *testing.T) {
 			name:  "list_empty",
 			scope: &Scope{},
 			node: &parse.ListNode{
-				Contents: []parse.ParseNode{},
+				Contents: []parse.Node{},
 			},
 			want:        &ListValue{list: []Value{}},
 			wantErrKind: syntax.ErrNone,
@@ -434,7 +434,7 @@ func TestExecuteNode(t *testing.T) {
 			name:  "list_simple",
 			scope: &Scope{},
 			node: &parse.ListNode{
-				Contents: []parse.ParseNode{
+				Contents: []parse.Node{
 					&parse.LiteralNode{Token: syntax.MakeToken(syntax.TokenInteger, "1")},
 					&parse.LiteralNode{Token: syntax.MakeToken(syntax.TokenTrue, "true")},
 					&parse.LiteralNode{Token: syntax.MakeToken(syntax.TokenString, "\"a\"")},
@@ -453,7 +453,7 @@ func TestExecuteNode(t *testing.T) {
 			name:  "list_with_comment",
 			scope: &Scope{},
 			node: &parse.ListNode{
-				Contents: []parse.ParseNode{
+				Contents: []parse.Node{
 					&parse.LiteralNode{Token: syntax.MakeToken(syntax.TokenInteger, "1")},
 					&parse.BlockCommentNode{},
 					&parse.LiteralNode{Token: syntax.MakeToken(syntax.TokenTrue, "true")},
@@ -471,7 +471,7 @@ func TestExecuteNode(t *testing.T) {
 			name:  "list_non_value",
 			scope: &Scope{},
 			node: &parse.ListNode{
-				Contents: []parse.ParseNode{
+				Contents: []parse.Node{
 					&parse.LiteralNode{Token: syntax.MakeToken(syntax.TokenInteger, "1")},
 					// A condition node isn't a usable value in a list.
 					&parse.ConditionNode{

@@ -15,7 +15,7 @@ import (
 
 // ListValue represents a GN list.
 type ListValue struct {
-	origin parse.ParseNode
+	origin parse.Node
 	list   []Value
 }
 
@@ -23,15 +23,15 @@ func (v *ListValue) valueType() ValueType {
 	return ValueTypeList
 }
 
-func (v *ListValue) setOrigin(origin parse.ParseNode) {
+func (v *ListValue) setOrigin(origin parse.Node) {
 	v.origin = origin
 }
 
-func (v *ListValue) OriginNode() parse.ParseNode {
+func (v *ListValue) OriginNode() parse.Node {
 	return v.origin
 }
 
-func (v *ListValue) CopyWithOrigin(origin parse.ParseNode) Value {
+func (v *ListValue) CopyWithOrigin(origin parse.Node) Value {
 	return &ListValue{
 		origin: origin,
 		list:   v.list,

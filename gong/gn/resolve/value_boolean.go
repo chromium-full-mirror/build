@@ -12,7 +12,7 @@ import (
 
 // BooleanValue represents a GN boolean.
 type BooleanValue struct {
-	origin parse.ParseNode
+	origin parse.Node
 	value  bool
 }
 
@@ -20,15 +20,15 @@ func (v *BooleanValue) valueType() ValueType {
 	return ValueTypeBoolean
 }
 
-func (v *BooleanValue) setOrigin(origin parse.ParseNode) {
+func (v *BooleanValue) setOrigin(origin parse.Node) {
 	v.origin = origin
 }
 
-func (v *BooleanValue) OriginNode() parse.ParseNode {
+func (v *BooleanValue) OriginNode() parse.Node {
 	return v.origin
 }
 
-func (v *BooleanValue) CopyWithOrigin(origin parse.ParseNode) Value {
+func (v *BooleanValue) CopyWithOrigin(origin parse.Node) Value {
 	return &BooleanValue{
 		origin: origin,
 		value:  v.value,

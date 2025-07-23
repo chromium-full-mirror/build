@@ -124,7 +124,7 @@ func (s *Scope) valuesInCurrentScope() iter.Seq2[string, Value] {
 }
 
 // SetValue sets the value in the current scope with the origin node for error reporting purposes.
-func (s *Scope) SetValue(ident string, v Value, setNode parse.ParseNode) {
+func (s *Scope) SetValue(ident string, v Value, setNode parse.Node) {
 	s.values[ident] = record{
 		used:  false,
 		value: v.CopyWithOrigin(setNode),
@@ -144,7 +144,7 @@ func (s *Scope) CheckForUnusedVars() error {
 				// Make a nicer error message for normal var sets.
 				return syntax.MakeErrorAt(binary.Left.LocationRange().Begin(), nil, syntax.ErrUselessAssignment, "Assignment had no effect.", help)
 			}
-			return parse.MakeErrFromParseNode(record.value.OriginNode(), syntax.ErrUselessAssignment, "Assignment had no effect.", help)
+			return parse.MakeErrFromNode(record.value.OriginNode(), syntax.ErrUselessAssignment, "Assignment had no effect.", help)
 		}
 	}
 	return nil

@@ -16,7 +16,7 @@ import (
 func TestDump(t *testing.T) {
 	for _, tc := range []struct {
 		name  string
-		input ParseNode
+		input Node
 		want  NodeDump
 	}{
 		{
@@ -75,7 +75,7 @@ func TestDump(t *testing.T) {
 				End: EndNode{
 					Value: syntax.MakeToken(syntax.TokenRightBrace, "}"),
 				},
-				Statements: []ParseNode{&LiteralNode{
+				Statements: []Node{&LiteralNode{
 					Token: syntax.MakeToken(syntax.TokenInteger, "1"),
 				}},
 			},
@@ -169,7 +169,7 @@ func TestDump(t *testing.T) {
 func TestRenderDumpAsText(t *testing.T) {
 	for _, tc := range []struct {
 		name     string
-		input    ParseNode
+		input    Node
 		want     string
 		wantText string
 	}{

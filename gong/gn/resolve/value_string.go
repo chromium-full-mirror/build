@@ -13,7 +13,7 @@ import (
 
 // StringValue represents a GN string.
 type StringValue struct {
-	origin parse.ParseNode
+	origin parse.Node
 	value  string
 }
 
@@ -21,15 +21,15 @@ func (v *StringValue) valueType() ValueType {
 	return ValueTypeString
 }
 
-func (v *StringValue) setOrigin(origin parse.ParseNode) {
+func (v *StringValue) setOrigin(origin parse.Node) {
 	v.origin = origin
 }
 
-func (v *StringValue) OriginNode() parse.ParseNode {
+func (v *StringValue) OriginNode() parse.Node {
 	return v.origin
 }
 
-func (v *StringValue) CopyWithOrigin(origin parse.ParseNode) Value {
+func (v *StringValue) CopyWithOrigin(origin parse.Node) Value {
 	return &StringValue{
 		origin: origin,
 		value:  v.value,

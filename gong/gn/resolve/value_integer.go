@@ -14,7 +14,7 @@ import (
 
 // IntegerValue represents a GN integer, which is 64-bit.
 type IntegerValue struct {
-	origin parse.ParseNode
+	origin parse.Node
 	value  int64
 }
 
@@ -22,15 +22,15 @@ func (v *IntegerValue) valueType() ValueType {
 	return ValueTypeInteger
 }
 
-func (v *IntegerValue) setOrigin(origin parse.ParseNode) {
+func (v *IntegerValue) setOrigin(origin parse.Node) {
 	v.origin = origin
 }
 
-func (v *IntegerValue) OriginNode() parse.ParseNode {
+func (v *IntegerValue) OriginNode() parse.Node {
 	return v.origin
 }
 
-func (v *IntegerValue) CopyWithOrigin(origin parse.ParseNode) Value {
+func (v *IntegerValue) CopyWithOrigin(origin parse.Node) Value {
 	return &IntegerValue{
 		origin: origin,
 		value:  v.value,

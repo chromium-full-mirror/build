@@ -57,12 +57,12 @@ type inputFileData struct {
 	once       sync.Once
 	file       InputFile
 	tokens     []syntax.Token
-	parsedRoot parse.ParseNode
+	parsedRoot parse.Node
 	parseError error
 }
 
 // LoadFile loads and parses the given file, returning the root block corresponding to the parsed result.
-func (m *InputFileManager) LoadFile(origin syntax.LocationRange, inputFileResolver InputFileResolver, fileName SourceFile) (parse.ParseNode, error) {
+func (m *InputFileManager) LoadFile(origin syntax.LocationRange, inputFileResolver InputFileResolver, fileName SourceFile) (parse.Node, error) {
 	var data *inputFileData
 	v, _ := m.inputFiles.LoadOrStore(fileName, &inputFileData{
 		file: InputFile{
@@ -88,7 +88,7 @@ func (m *InputFileManager) LoadFile(origin syntax.LocationRange, inputFileResolv
 }
 
 // doLoadFile performs the actual load.
-func doLoadFile(origin syntax.LocationRange, inputFileResolver InputFileResolver, name SourceFile, file *InputFile) (parse.ParseNode, []syntax.Token, error) {
+func doLoadFile(origin syntax.LocationRange, inputFileResolver InputFileResolver, name SourceFile, file *InputFile) (parse.Node, []syntax.Token, error) {
 	// Read.
 	primaryPath := inputFileResolver.FullPath(name)
 	if err := file.load(primaryPath); err != nil {

@@ -6,26 +6,26 @@ package parse
 
 import "go.chromium.org/build/gong/gn/syntax"
 
-// ParseNode is a node in the AST.
-type ParseNode interface {
+// Node is a node in the AST.
+type Node interface {
 	// LocationRange is the file range this node represents.
 	LocationRange() syntax.LocationRange
 	// Dump returns a JSON-serializable representation of this node.
 	Dump() NodeDump
 }
 
-// MakeErrFromParseNode makes an error at the provided parse node.
-func MakeErrFromParseNode(parseNode ParseNode, kind syntax.ErrKind, message, helpText string) error {
-	if parseNode == nil {
+// MakeErrFromNode makes an error at the provided parse node.
+func MakeErrFromNode(node Node, kind syntax.ErrKind, message, helpText string) error {
+	if node == nil {
 		return syntax.MakeErrorAt(syntax.Location{}, nil, kind, message, helpText)
 	}
-	return syntax.MakeErrorAt(parseNode.LocationRange().Begin(), []syntax.LocationRange{parseNode.LocationRange()}, kind, message, helpText)
+	return syntax.MakeErrorAt(node.LocationRange().Begin(), []syntax.LocationRange{node.LocationRange()}, kind, message, helpText)
 }
 
 // AccessorNode represents accessing an array or scope element.
 type AccessorNode struct {
 	Base      syntax.Token
-	Subscript ParseNode
+	Subscript Node
 	Member    *IdentifierNode
 }
 
@@ -61,10 +61,10 @@ type BlockNode struct {
 	// End is the end token of this block.
 	End EndNode
 	// Statements is the list of statements in this block.
-	Statements []ParseNode
+	Statements []Node
 }
 
-func (n *BlockNode) appendStatement(s ParseNode) {
+func (n *BlockNode) appendStatement(s Node) {
 	n.Statements = append(n.Statements, s)
 }
 
@@ -81,11 +81,11 @@ type ConditionNode struct {
 	// IfToken represents the if token this node starts at.
 	IfToken syntax.Token
 	// Condition represents the conditional for this node.
-	Condition ParseNode
+	Condition Node
 	// IfTrue is the block to be executed if the conditional evaluates to true.
 	IfTrue *BlockNode
 	// IfFalse should be a *BlockNode or *ConditionNode to represent either the "else" block or "else if" condition, respectively.
-	IfFalse ParseNode
+	IfFalse Node
 }
 
 func (n *ConditionNode) LocationRange() syntax.LocationRange {
@@ -130,7 +130,7 @@ func (n *IdentifierNode) LocationRange() syntax.LocationRange {
 type ListNode struct {
 	BeginToken syntax.Token
 	End        EndNode
-	Contents   []ParseNode
+	Contents   []Node
 }
 
 // LocationRange returns the location range for this node.
@@ -138,7 +138,7 @@ func (n *ListNode) LocationRange() syntax.LocationRange {
 	return n.BeginToken.Range().Union(n.End.Value.Range())
 }
 
-func (n *ListNode) appendItem(s ParseNode) {
+func (n *ListNode) appendItem(s Node) {
 	n.Contents = append(n.Contents, s)
 }
 
@@ -158,7 +158,7 @@ type UnaryOpNode struct {
 	// Op is the operator token.
 	Op syntax.Token
 	// Operand represents the operand of the operation.
-	Operand ParseNode
+	Operand Node
 }
 
 // LocationRange returns the location range for this node.
@@ -168,8 +168,8 @@ func (n *UnaryOpNode) LocationRange() syntax.LocationRange {
 
 type BinaryOpNode struct {
 	Op    syntax.Token
-	Left  ParseNode
-	Right ParseNode
+	Left  Node
+	Right Node
 }
 
 func (n *BinaryOpNode) LocationRange() syntax.LocationRange {
