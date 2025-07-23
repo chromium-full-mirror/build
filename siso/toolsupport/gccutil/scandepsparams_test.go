@@ -296,11 +296,14 @@ func TestScanDepsParams(t *testing.T) {
 			args: []string{
 				"/bin/sh",
 				"-c",
-				"PWD=/proc/self/cwd prebuilts/clang/host/linux-x86/clang-r563880/bin/clang -c -Wa,--noexecstack -fPIC --gcc-toolchain=prebuilts/gcc/linux-x86/host/x86_64-linux-glibc2.17-4.8 --sysroot prebuilts/gcc/linux-x86/host/x86_64-linux-glibc2.17-4.8/sysroot -O2 -Wall -no-canonical-prefixes -fdebug-prefix-map=/proc/self/cwd= -Iexternal/boringssl/src/include  --include=warning_override_overrider.h  -MD -MF out/soong/.intermediates/external/boringssl/libcrypto/linux_glibc_x86_static/obj/external/boringssl/src/gen/bcm/aesni-x86_64-linux.o.d -o out/soong/.intermediates/external/boringssl/libcrypto/linux_glibc_x86_static/obj/external/boringssl/src/gen/bcm/aesni-x86_64-linux.o external/boringssl/src/gen/bcm/aesni-x86_64-linux.S",
+				"PWD=/proc/self/cwd prebuilts/clang/host/linux-x86/clang-r563880/bin/clang -c -Wa,--noexecstack -fPIC --gcc-toolchain=prebuilts/gcc/linux-x86/host/x86_64-linux-glibc2.17-4.8 --sysroot prebuilts/gcc/linux-x86/host/x86_64-linux-glibc2.17-4.8/sysroot -O2 -Wall -no-canonical-prefixes -fdebug-prefix-map=/proc/self/cwd= -Iexternal/boringssl/src/include  --include=warning_override_overrider.h -fprofile-list=external/cronet/exclude_coverage.list -MD -MF out/soong/.intermediates/external/boringssl/libcrypto/linux_glibc_x86_static/obj/external/boringssl/src/gen/bcm/aesni-x86_64-linux.o.d -o out/soong/.intermediates/external/boringssl/libcrypto/linux_glibc_x86_static/obj/external/boringssl/src/gen/bcm/aesni-x86_64-linux.o external/boringssl/src/gen/bcm/aesni-x86_64-linux.S",
 			},
 			want: ScanDepsParams{
 				Sources: []string{
 					"external/boringssl/src/gen/bcm/aesni-x86_64-linux.S",
+				},
+				Files: []string{
+					"external/cronet/exclude_coverage.list",
 				},
 				Includes: []string{
 					"warning_override_overrider.h",
