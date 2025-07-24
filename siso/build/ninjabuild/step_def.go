@@ -315,6 +315,11 @@ func (s *StepDef) Binding(name string) string {
 	case "pool":
 		pool := s.edge.Pool()
 		return pool.Name()
+	case "debug":
+		if s.rule.Debug {
+			return "true"
+		}
+		return ""
 	}
 	return s.edge.Binding(name)
 }

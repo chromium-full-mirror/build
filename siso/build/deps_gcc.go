@@ -184,6 +184,7 @@ func (gcc depsGCC) depsInputs(ctx context.Context, b *Builder, step *Step) ([]st
 func (depsGCC) scandeps(ctx context.Context, b *Builder, step *Step) ([]string, error) {
 	var ins []string
 	err := b.scanDepsSema.Do(ctx, func(ctx context.Context) error {
+		debug := step.def.Binding("debug") == "true"
 		// fastDeps + remote execution may have already run.
 		// In this case, do not change ActionStartTime set by the remote exec.
 		if step.metrics.ActionStartTime == 0 {
@@ -193,6 +194,9 @@ func (depsGCC) scandeps(ctx context.Context, b *Builder, step *Step) ([]string, 
 		if len(params.Sources) == 0 {
 			// If ExtractScanDepsParams doesn't return Sources, such action uses inputs from ninja build file directly, as the action doesn't need include scanning.
 			// e.g. clang modules, rust and etc.
+			if bool(log.V(1)) || debug {
+				clog.Infof(ctx, "no source extracted")
+			}
 			return nil
 		}
 
@@ -282,7 +286,7 @@ func (depsGCC) scandeps(ctx context.Context, b *Builder, step *Step) ([]string, 
 			// no-fallback has longer timeout for scandeps
 			req.Timeout = 2 * req.Timeout
 		}
-		if log.V(1) {
+		if bool(log.V(1)) || debug {
 			buf, berr := json.Marshal(req)
 			if berr != nil {
 				return berr
@@ -292,7 +296,7 @@ func (depsGCC) scandeps(ctx context.Context, b *Builder, step *Step) ([]string, 
 		started := time.Now()
 		var err error
 		ins, err = b.scanDeps.Scan(ctx, execRoot, req)
-		if log.V(1) {
+		if bool(log.V(1)) || debug {
 			clog.Infof(ctx, "scandeps %d %s: %v", len(ins), time.Since(started), err)
 		}
 		if err != nil {
