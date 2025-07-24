@@ -28,7 +28,7 @@ func ExecuteNode(n parse.Node, s *Scope) (Value, error) {
 		return nil, parse.MakeErrFromNode(n, syntax.ErrInvalidAST, "Invalid AST", "Found an AccessorNode without a subscript or member defined.")
 
 	case *parse.BinaryOpNode:
-		return nil, fmt.Errorf("don't know how to execute BinaryOpNode yet. got: %T(%v)", n, n)
+		return executeBinaryOperator(n, s)
 
 	case *parse.BlockNode:
 		// Execute in the current scope, unless the result mode is ReturnsScope.
