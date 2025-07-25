@@ -5,6 +5,7 @@
 package ninja
 
 import (
+	"fmt"
 	"os"
 
 	"go.chromium.org/build/siso/build"
@@ -34,7 +35,9 @@ func (quietUI) PrintLines(...string)    {}
 func (quietUI) NewSpinner() ui.Spinner  { return quietSpinner{} }
 func (quietUI) Infof(string, ...any)    {}
 func (quietUI) Warningf(string, ...any) {}
-func (quietUI) Errorf(string, ...any)   {}
+func (quietUI) Errorf(format string, args ...any) {
+	fmt.Fprintf(os.Stderr, format, args...)
+}
 
 type quietSpinner struct{}
 
