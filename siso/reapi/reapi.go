@@ -316,7 +316,7 @@ func newConn(ctx context.Context, addr string, cred cred.Cred, opt Option) (grpc
 
 	if opt.TLSCACert != "" {
 		clog.Infof(ctx, "using TLS CA certificates=%q", opt.TLSCACert)
-		var certPool *x509.CertPool
+		certPool := x509.NewCertPool()
 		ca, err := os.ReadFile(opt.TLSCACert)
 		if err != nil {
 			return nil, fmt.Errorf("failed to read TLS CA certificates %q: %w", opt.TLSCACert, err)
