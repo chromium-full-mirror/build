@@ -106,6 +106,10 @@ func ExtractScanDepsParams(ctx context.Context, args, env []string) ScanDepsPara
 			continue
 		}
 		switch {
+		case strings.HasPrefix(arg, "@"):
+			// https://llvm.org/docs/CommandLine.html#response-files
+			res.Files = append(res.Files, strings.TrimPrefix(arg, "@"))
+
 		case strings.HasPrefix(arg, "-I"):
 			res.Dirs = append(res.Dirs, strings.TrimPrefix(arg, "-I"))
 		case strings.HasPrefix(arg, "--include="):

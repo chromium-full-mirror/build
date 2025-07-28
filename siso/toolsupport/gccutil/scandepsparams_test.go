@@ -319,6 +319,26 @@ func TestScanDepsParams(t *testing.T) {
 				Defines: map[string]string{},
 			},
 		},
+		{
+			name: "soong-g.cc.cc-flags.txt",
+			args: []string{
+				"/bin/sh",
+				"-c",
+				"PWD=/proc/self/cwd prebuilts/clang/host/linux-x86/clang-r563880/bin/clang++ -c -nostdlibinc  -Werror=implicit-function-declaration @out/soong/.intermediates/frameworks/native/services/surfaceflinger/CompositionEngine/libcompositionengine_mocks/android_x86_64_silvermont_static/flags.txt  -MD -MF out/soong/.intermediates/frameworks/native/services/surfaceflinger/CompositionEngine/libcompositionengine_mocks/android_x86_64_silvermont_static/obj/frameworks/native/services/surfaceflinger/CompositionEngine/mock/RenderSurface.o.d -o out/soong/.intermediates/frameworks/native/services/surfaceflinger/CompositionEngine/libcompositionengine_mocks/android_x86_64_silvermont_static/obj/frameworks/native/services/surfaceflinger/CompositionEngine/mock/RenderSurface.o frameworks/native/services/surfaceflinger/CompositionEngine/mock/RenderSurface.cpp",
+			},
+			want: ScanDepsParams{
+				Sources: []string{
+					"frameworks/native/services/surfaceflinger/CompositionEngine/mock/RenderSurface.cpp",
+				},
+				Files: []string{
+					"out/soong/.intermediates/frameworks/native/services/surfaceflinger/CompositionEngine/libcompositionengine_mocks/android_x86_64_silvermont_static/flags.txt",
+				},
+				Sysroots: []string{
+					"prebuilts/clang/host/linux-x86/clang-r563880",
+				},
+				Defines: map[string]string{},
+			},
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			got := ExtractScanDepsParams(ctx, tc.args, tc.env)
