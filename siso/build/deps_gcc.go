@@ -45,7 +45,10 @@ func (gcc depsGCC) DepsFastCmd(ctx context.Context, b *Builder, cmd *execute.Cmd
 }
 
 func (gcc depsGCC) fixCmdInputs(ctx context.Context, b *Builder, cmd *execute.Cmd) ([]string, error) {
-	params := gccutil.ExtractScanDepsParams(ctx, cmd.Args, cmd.Env)
+	params, err := gccutil.ExtractScanDepsParams(ctx, cmd.Args, cmd.Env, b.hashFS.FileSystem(ctx, filepath.Join(cmd.ExecRoot, cmd.Dir)))
+	if err != nil {
+		return nil, err
+	}
 	for i := range params.Files {
 		params.Files[i] = b.path.MaybeFromWD(ctx, params.Files[i])
 	}
@@ -190,7 +193,10 @@ func (depsGCC) scandeps(ctx context.Context, b *Builder, step *Step) ([]string, 
 		if step.metrics.ActionStartTime == 0 {
 			step.metrics.ActionStartTime = IntervalMetric(time.Since(b.start))
 		}
-		params := gccutil.ExtractScanDepsParams(ctx, step.cmd.Args, step.cmd.Env)
+		params, err := gccutil.ExtractScanDepsParams(ctx, step.cmd.Args, step.cmd.Env, b.hashFS.FileSystem(ctx, filepath.Join(step.cmd.ExecRoot, step.cmd.Dir)))
+		if err != nil {
+			return err
+		}
 		if len(params.Sources) == 0 {
 			// If ExtractScanDepsParams doesn't return Sources, such action uses inputs from ninja build file directly, as the action doesn't need include scanning.
 			// e.g. clang modules, rust and etc.
@@ -294,7 +300,6 @@ func (depsGCC) scandeps(ctx context.Context, b *Builder, step *Step) ([]string, 
 			clog.Infof(ctx, "scandeps req=%s", buf)
 		}
 		started := time.Now()
-		var err error
 		ins, err = b.scanDeps.Scan(ctx, execRoot, req)
 		if bool(log.V(1)) || debug {
 			clog.Infof(ctx, "scandeps %d %s: %v", len(ins), time.Since(started), err)

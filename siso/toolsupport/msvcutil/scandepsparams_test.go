@@ -6,6 +6,7 @@ package msvcutil
 
 import (
 	"context"
+	"os"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -117,9 +118,12 @@ func TestScanDepsParams(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			got := ExtractScanDepsParams(ctx, tc.args, tc.env)
+			got, err := ExtractScanDepsParams(ctx, tc.args, tc.env, os.DirFS("."))
+			if err != nil {
+				t.Fatalf("ExtractScanDepsParams(ctx, %q, %q, .)=%v, %v; want nil err", tc.args, tc.env, got, err)
+			}
 			if diff := cmp.Diff(tc.want, got); diff != "" {
-				t.Errorf("ExtractScanDepsParams(ctx, %q, %q): diff -want +got:\n%s", tc.args, tc.env, diff)
+				t.Errorf("ExtractScanDepsParams(ctx, %q, %q, .): diff -want +got:\n%s", tc.args, tc.env, diff)
 			}
 		})
 	}

@@ -6,6 +6,8 @@ package gccutil
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -319,32 +321,56 @@ func TestScanDepsParams(t *testing.T) {
 				Defines: map[string]string{},
 			},
 		},
-		{
-			name: "soong-g.cc.cc-flags.txt",
-			args: []string{
-				"/bin/sh",
-				"-c",
-				"PWD=/proc/self/cwd prebuilts/clang/host/linux-x86/clang-r563880/bin/clang++ -c -nostdlibinc  -Werror=implicit-function-declaration @out/soong/.intermediates/frameworks/native/services/surfaceflinger/CompositionEngine/libcompositionengine_mocks/android_x86_64_silvermont_static/flags.txt  -MD -MF out/soong/.intermediates/frameworks/native/services/surfaceflinger/CompositionEngine/libcompositionengine_mocks/android_x86_64_silvermont_static/obj/frameworks/native/services/surfaceflinger/CompositionEngine/mock/RenderSurface.o.d -o out/soong/.intermediates/frameworks/native/services/surfaceflinger/CompositionEngine/libcompositionengine_mocks/android_x86_64_silvermont_static/obj/frameworks/native/services/surfaceflinger/CompositionEngine/mock/RenderSurface.o frameworks/native/services/surfaceflinger/CompositionEngine/mock/RenderSurface.cpp",
-			},
-			want: ScanDepsParams{
-				Sources: []string{
-					"frameworks/native/services/surfaceflinger/CompositionEngine/mock/RenderSurface.cpp",
-				},
-				Files: []string{
-					"out/soong/.intermediates/frameworks/native/services/surfaceflinger/CompositionEngine/libcompositionengine_mocks/android_x86_64_silvermont_static/flags.txt",
-				},
-				Sysroots: []string{
-					"prebuilts/clang/host/linux-x86/clang-r563880",
-				},
-				Defines: map[string]string{},
-			},
-		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			got := ExtractScanDepsParams(ctx, tc.args, tc.env)
+			got, err := ExtractScanDepsParams(ctx, tc.args, tc.env, os.DirFS("."))
+			if err != nil {
+				t.Fatalf("ExtractScanDepsParams(ctx, %q, %q, .)=%v, %v: want nil err", tc.args, tc.env, got, err)
+			}
 			if diff := cmp.Diff(tc.want, got); diff != "" {
-				t.Errorf("ExtractScanDepsParams(ctx, %q, %q): diff -want +got:\n%s", tc.args, tc.env, diff)
+				t.Errorf("ExtractScanDepsParams(ctx, %q, %q, .): diff -want +got:\n%s", tc.args, tc.env, diff)
 			}
 		})
+	}
+}
+
+func TestScanDepsParams_Rspfile(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+
+	err := os.MkdirAll(filepath.Join(dir, "out/soong/.intermediates/frameworks/native/services/surfaceflinger/CompositionEngine/libcompositionengine_mocks/android_x86_64_silvermont_static"), 0755)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = os.WriteFile(filepath.Join(dir, "out/soong/.intermediates/frameworks/native/services/surfaceflinger/CompositionEngine/libcompositionengine_mocks/android_x86_64_silvermont_static/flags.txt"), []byte(`-Isystem/core/include -D__LIBC_API__=10000`), 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
+	args := []string{
+		"/bin/sh",
+		"-c",
+		"PWD=/proc/self/cwd prebuilts/clang/host/linux-x86/clang-r563880/bin/clang++ -c -nostdlibinc  -Werror=implicit-function-declaration @out/soong/.intermediates/frameworks/native/services/surfaceflinger/CompositionEngine/libcompositionengine_mocks/android_x86_64_silvermont_static/flags.txt  -MD -MF out/soong/.intermediates/frameworks/native/services/surfaceflinger/CompositionEngine/libcompositionengine_mocks/android_x86_64_silvermont_static/obj/frameworks/native/services/surfaceflinger/CompositionEngine/mock/RenderSurface.o.d -o out/soong/.intermediates/frameworks/native/services/surfaceflinger/CompositionEngine/libcompositionengine_mocks/android_x86_64_silvermont_static/obj/frameworks/native/services/surfaceflinger/CompositionEngine/mock/RenderSurface.o frameworks/native/services/surfaceflinger/CompositionEngine/mock/RenderSurface.cpp",
+	}
+	want := ScanDepsParams{
+		Sources: []string{
+			"frameworks/native/services/surfaceflinger/CompositionEngine/mock/RenderSurface.cpp",
+		},
+		Files: []string{
+			"out/soong/.intermediates/frameworks/native/services/surfaceflinger/CompositionEngine/libcompositionengine_mocks/android_x86_64_silvermont_static/flags.txt",
+		},
+		Dirs: []string{
+			"system/core/include",
+		},
+		Sysroots: []string{
+			"prebuilts/clang/host/linux-x86/clang-r563880",
+		},
+		Defines: map[string]string{},
+	}
+	got, err := ExtractScanDepsParams(ctx, args, nil, os.DirFS(dir))
+	if err != nil {
+		t.Fatalf("ExtractScanDepsParams(ctx, %q, nil, dir)=%v, %v; want nil err", args, got, err)
+	}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("ExtractScanDepsParams(ctx, %q, nil, dir): diff -want +got:\n%s", args, diff)
 	}
 }

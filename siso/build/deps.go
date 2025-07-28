@@ -110,12 +110,20 @@ func depsExpandInputs(ctx context.Context, b *Builder, step *Step) {
 	ctx, span := trace.NewSpan(ctx, "deps-expand-inputs")
 	defer span.Close(nil)
 
+	fsys := b.hashFS.FileSystem(ctx, filepath.Join(step.cmd.ExecRoot, step.cmd.Dir))
+
 	// deps=gcc,msvc with sources doesn't need to expand inputs.
-	if step.cmd.Deps == "gcc" && len(gccutil.ExtractScanDepsParams(ctx, step.cmd.Args, step.cmd.Env).Sources) > 0 {
-		return
-	}
-	if step.cmd.Deps == "msvc" && len(msvcutil.ExtractScanDepsParams(ctx, step.cmd.Args, step.cmd.Env).Sources) > 0 {
-		return
+	switch step.cmd.Deps {
+	case "gcc":
+		params, err := gccutil.ExtractScanDepsParams(ctx, step.cmd.Args, step.cmd.Env, fsys)
+		if err == nil && len(params.Sources) > 0 {
+			return
+		}
+	case "msvc":
+		params, err := msvcutil.ExtractScanDepsParams(ctx, step.cmd.Args, step.cmd.Env, fsys)
+		if err == nil && len(params.Sources) > 0 {
+			return
+		}
 	}
 
 	oldlen := len(step.cmd.Inputs)

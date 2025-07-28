@@ -419,7 +419,14 @@ func (a *ideAnalyzer) analyzeCPP(ctx context.Context, edge *ninjautil.Edge, resu
 		return result, nil
 	}
 	// scandeps
-	params := gccutil.ExtractScanDepsParams(ctx, cmdArgs, nil)
+	params, err := gccutil.ExtractScanDepsParams(ctx, cmdArgs, nil, a.hashFS.FileSystem(ctx, filepath.Join(a.path.ExecRoot, a.path.Dir)))
+	if err != nil {
+		result.Status = &pb.AnalysisResult_Status{
+			Code:          pb.AnalysisResult_Status_CODE_BUILD_FAILED,
+			StatusMessage: proto.String(fmt.Sprintf("failed to extract scandeps params for %q: %v", cmdArgs, err)),
+		}
+		return result, nil
+	}
 	for i := range params.Sources {
 		params.Sources[i] = a.path.MaybeFromWD(ctx, params.Sources[i])
 	}

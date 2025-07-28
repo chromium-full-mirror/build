@@ -6,10 +6,12 @@ package gccutil
 
 import (
 	"context"
+	"fmt"
+	"io/fs"
 	"path/filepath"
+	"slices"
 	"strings"
 
-	"go.chromium.org/build/siso/o11y/clog"
 	"go.chromium.org/build/siso/toolsupport/shutil"
 )
 
@@ -38,10 +40,11 @@ type ScanDepsParams struct {
 }
 
 // ExtractScanDepsParams parses args and returns ScanDepsParams for scandeps.
-// It only parses major command line flags used in chromium.
-// full set of command line flags for include dirs can be found in
+// It only parses major command line flags used in chromium and android.
+// It reads @rspfile via fsys.
+// Full set of command line flags for include dirs can be found in
 // https://clang.llvm.org/docs/ClangCommandLineReference.html#include-path-management
-func ExtractScanDepsParams(ctx context.Context, args, env []string) ScanDepsParams {
+func ExtractScanDepsParams(ctx context.Context, args, env []string, fsys fs.FS) (ScanDepsParams, error) {
 	res := ScanDepsParams{
 		Defines: make(map[string]string),
 	}
@@ -54,14 +57,12 @@ func ExtractScanDepsParams(ctx context.Context, args, env []string) ScanDepsPara
 		// after dropping "PWD=/proc/self/cwd " if it exists.
 		// TODO: b/432599730 - remove the workaround
 		if !strings.HasPrefix(args[2], "PWD=/proc/self/cwd ") {
-			clog.Warningf(ctx, "unsupported commandline %q", args)
-			return res
+			return res, fmt.Errorf("unsupported commandline %q", args)
 		}
 		// TODO: b/432374760 - need to strip ${postCmd} part?
 		cmdArgs, err := shutil.Split(strings.TrimPrefix(args[2], "PWD=/proc/self/cwd "))
 		if err != nil {
-			clog.Warningf(ctx, "failed to split %q: %v", args[2], err)
-			return res
+			return res, fmt.Errorf("failed to split %q: %w", args[2], err)
 		}
 		args = cmdArgs
 	}
@@ -72,8 +73,6 @@ func ExtractScanDepsParams(ctx context.Context, args, env []string) ScanDepsPara
 			switch {
 			case strings.HasSuffix(cmdname, "clang"),
 				strings.HasSuffix(cmdname, "clang++"),
-				strings.HasSuffix(cmdname, "clang-cl"),
-				strings.HasSuffix(cmdname, "clang-cl.exe"),
 				strings.HasSuffix(cmdname, "gcc"),
 				strings.HasSuffix(cmdname, "g++"):
 				// add toolchain top dir as sysroots too
@@ -108,7 +107,18 @@ func ExtractScanDepsParams(ctx context.Context, args, env []string) ScanDepsPara
 		switch {
 		case strings.HasPrefix(arg, "@"):
 			// https://llvm.org/docs/CommandLine.html#response-files
-			res.Files = append(res.Files, strings.TrimPrefix(arg, "@"))
+			rspfile := strings.TrimPrefix(arg, "@")
+			res.Files = append(res.Files, rspfile)
+			buf, err := fs.ReadFile(fsys, rspfile)
+			if err != nil {
+				return res, fmt.Errorf("failed to read @%q: %w", rspfile, err)
+			}
+			rspArgs, err := shutil.Split(string(buf))
+			if err != nil {
+				return res, fmt.Errorf("failed to split @%q: %w", rspfile, err)
+			}
+			// better to delete args[i], insert rspArgs at args[i], and check args[i] again?
+			args = slices.Insert(args, i+1, rspArgs...)
 
 		case strings.HasPrefix(arg, "-I"):
 			res.Dirs = append(res.Dirs, strings.TrimPrefix(arg, "-I"))
@@ -156,7 +166,7 @@ func ExtractScanDepsParams(ctx context.Context, args, env []string) ScanDepsPara
 			}
 		}
 	}
-	return res
+	return res, nil
 }
 
 func defineMacro(defines map[string]string, arg string) {

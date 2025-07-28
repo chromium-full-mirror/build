@@ -6,9 +6,15 @@ package msvcutil
 
 import (
 	"context"
+	"fmt"
+	"io/fs"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
+
+	"go.chromium.org/build/siso/toolsupport/cmdutil"
+	"go.chromium.org/build/siso/toolsupport/shutil"
 )
 
 // ScanDepsParams holds parameters used for scandeps.
@@ -38,10 +44,11 @@ type ScanDepsParams struct {
 // ExtractScanDepsParams parses args and returns files, dirs, sysroots and defines
 // for scandeps.
 // It only parses major command line flags used in chromium.
-// full set of command line flags for include dirs can be found in
+// It reads @rspfile via fsys.
+// Full set of command line flags for include dirs can be found in
 // https://learn.microsoft.com/en-us/cpp/build/reference/compiler-options-listed-by-category?view=msvc-170
 // https://clang.llvm.org/docs/ClangCommandLineReference.html#include-path-management
-func ExtractScanDepsParams(ctx context.Context, args, env []string) ScanDepsParams {
+func ExtractScanDepsParams(ctx context.Context, args, env []string, fsys fs.FS) (ScanDepsParams, error) {
 	res := ScanDepsParams{
 		Defines: make(map[string]string),
 	}
@@ -74,6 +81,26 @@ func ExtractScanDepsParams(ctx context.Context, args, env []string) ScanDepsPara
 			continue
 		}
 		switch {
+		case strings.HasPrefix(arg, "@"):
+			// https://llvm.org/docs/CommandLine.html#response-files
+			rspfile := strings.TrimPrefix(arg, "@")
+			res.Files = append(res.Files, rspfile)
+			buf, err := fs.ReadFile(fsys, rspfile)
+			if err != nil {
+				return res, fmt.Errorf("failed to read @%q: %w", rspfile, err)
+			}
+			split := shutil.Split
+			if runtime.GOOS == "windows" {
+				// TODO: or only for clang-cl.exe?
+				split = cmdutil.Split
+			}
+			rspArgs, err := split(string(buf))
+			if err != nil {
+				return res, fmt.Errorf("failed to split @%q: %w", rspfile, err)
+			}
+			// better to delete args[i], insert rspArgs at args[i], and check args[i] again?
+			args = slices.Insert(args, i+1, rspArgs...)
+
 		case strings.HasPrefix(arg, "-I"):
 			res.Dirs = append(res.Dirs, filepath.ToSlash(strings.TrimPrefix(arg, "-I")))
 		case strings.HasPrefix(arg, "/I"):
@@ -104,7 +131,7 @@ func ExtractScanDepsParams(ctx context.Context, args, env []string) ScanDepsPara
 			}
 		}
 	}
-	return res
+	return res, nil
 }
 
 func defineMacro(defines map[string]string, arg string) {

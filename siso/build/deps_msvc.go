@@ -44,7 +44,10 @@ func (msvc depsMSVC) DepsFastCmd(ctx context.Context, b *Builder, cmd *execute.C
 }
 
 func (msvc depsMSVC) fixCmdInputs(ctx context.Context, b *Builder, cmd *execute.Cmd) ([]string, error) {
-	params := msvcutil.ExtractScanDepsParams(ctx, cmd.Args, cmd.Env)
+	params, err := msvcutil.ExtractScanDepsParams(ctx, cmd.Args, cmd.Env, b.hashFS.FileSystem(ctx, filepath.Join(cmd.ExecRoot, cmd.Dir)))
+	if err != nil {
+		return nil, err
+	}
 	for i := range params.Files {
 		params.Files[i] = b.path.MaybeFromWD(ctx, params.Files[i])
 	}
@@ -207,7 +210,10 @@ func (depsMSVC) scandeps(ctx context.Context, b *Builder, step *Step) ([]string,
 		if step.metrics.ActionStartTime == 0 {
 			step.metrics.ActionStartTime = IntervalMetric(time.Since(b.start))
 		}
-		params := msvcutil.ExtractScanDepsParams(ctx, step.cmd.Args, step.cmd.Env)
+		params, err := msvcutil.ExtractScanDepsParams(ctx, step.cmd.Args, step.cmd.Env, b.hashFS.FileSystem(ctx, filepath.Join(step.cmd.ExecRoot, step.cmd.Dir)))
+		if err != nil {
+			return err
+		}
 		if len(params.Sources) == 0 {
 			// If ExtractScanDepsParams doesn't return Sources, such action uses inputs from ninja build file directly, as the action doesn't need include scanning.
 			// e.g. clang modules, rust and etc.
@@ -244,7 +250,6 @@ func (depsMSVC) scandeps(ctx context.Context, b *Builder, step *Step) ([]string,
 			clog.Infof(ctx, "scandeps req=%#v", req)
 		}
 		started := time.Now()
-		var err error
 		ins, err = b.scanDeps.Scan(ctx, b.path.ExecRoot, req)
 		if log.V(1) {
 			clog.Infof(ctx, "scandeps %d %s: %v", len(ins), time.Since(started), err)
