@@ -56,7 +56,7 @@ type run struct {
 
 func (c *run) init() {
 	c.Flags.StringVar(&c.stdoutURL, "stdout_url", "", "stdout streaming URL")
-	c.Flags.StringVar(&c.dir, "C", "", "ninja running directory")
+	c.Flags.StringVar(&c.dir, "C", ".", "ninja running directory")
 	c.Flags.StringVar(&c.stateDir, "state_dir", ".", "state directory (relative to -C)")
 	c.Flags.IntVar(&c.n, "n", 0, "limit number of steps if it is positive")
 	c.Flags.DurationVar(&c.interval, "interval", -1, "query interval if it is positive. default 1s on terminal")

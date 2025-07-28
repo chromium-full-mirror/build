@@ -45,7 +45,7 @@ type webuiRun struct {
 func (c *webuiRun) init() {
 	c.Flags.BoolVar(&c.localDevelopment, "local_development", false, "whether to use local instead of embedded files")
 	c.Flags.IntVar(&c.port, "port", 8080, "port to use (defaults to 8080)")
-	c.Flags.StringVar(&c.outdir, "C", "", "path to outdir")
+	c.Flags.StringVar(&c.outdir, "C", ".", "path to outdir")
 	c.Flags.StringVar(&c.configRepoDir, "config_repo_dir", "build/config/siso", "config repo directory (relative to exec root)")
 	c.Flags.StringVar(&c.fname, "f", "build.ninja", "input build manifest filename (relative to -C)")
 	c.Flags.StringVar(&c.metricsFile, "metrics_file", "", "optional path to siso_metrics.json to load (experimental, -C is still required for now)")
