@@ -99,9 +99,9 @@ func TestBuild_TrustedLocal(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ninja err: %v", err)
 	}
-	if stats.Done != stats.Total || stats.Local != 4 || stats.CacheHit != 0 || stats.Remote != 0 {
-		t.Errorf("done=%d,local=%d,cache=%d,remote=%d; want done=%d,local=%d,cache=%d,remote=%d",
-			stats.Done, stats.Local, stats.CacheHit, stats.Remote, stats.Total, 4, 0, 0)
+	if stats.Done != stats.Total || stats.Local != 4 || stats.CacheHit != 0 || stats.LocalUpload != 4 || stats.Remote != 0 {
+		t.Errorf("done=%d,local=%d,cache=%d,local-upload=%d,remote=%d; want done=%d,local=%d,cache=%d,local-upload=%d,remote=%d",
+			stats.Done, stats.Local, stats.CacheHit, stats.LocalUpload, stats.Remote, stats.Total, 4, 0, 4, 0)
 	}
 
 	// In the second build all action should have remote cache hits available
@@ -110,8 +110,8 @@ func TestBuild_TrustedLocal(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ninja err: %v", err)
 	}
-	if stats.Done != stats.Total || stats.Local != 0 || stats.CacheHit != 4 || stats.Remote != 0 {
-		t.Errorf("done=%d,local=%d,cache=%d,remote=%d; want done=%d,local=%d,cache=%d,remote=%d",
-			stats.Done, stats.Local, stats.CacheHit, stats.Remote, stats.Total, 0, 4, 0)
+	if stats.Done != stats.Total || stats.Local != 0 || stats.CacheHit != 4 || stats.LocalUpload != 0 || stats.Remote != 0 {
+		t.Errorf("done=%d,local=%d,cache=%d,local-upload=%d,remote=%d; want done=%d,local=%d,cache=%d,local-upload=%d,remote=%d",
+			stats.Done, stats.Local, stats.CacheHit, stats.LocalUpload, stats.Remote, stats.Total, 0, 4, 0, 0)
 	}
 }

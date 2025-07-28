@@ -219,7 +219,11 @@ func (b *Builder) trustedLocalUpload(ctx context.Context, step *Step) error {
 		return err
 	}
 	// Now set the action result in RE
-	return b.reapiclient.UpdateActionResult(ctx, actionDigest, result)
+	err = b.reapiclient.UpdateActionResult(ctx, actionDigest, result)
+	if err == nil {
+		step.metrics.LocalUpload = true
+	}
+	return err
 }
 
 func (b *Builder) prepareLocalInputs(ctx context.Context, step *Step) error {

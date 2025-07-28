@@ -51,6 +51,9 @@ func (s *stats) update(ctx context.Context, m *StepMetric, pure bool) {
 	if m.Fallback {
 		s.s.LocalFallback++
 	}
+	if m.LocalUpload {
+		s.s.LocalUpload++
+	}
 	if m.Err {
 		s.s.Fail++
 	}
@@ -84,6 +87,7 @@ type Stats struct {
 	Local           int // locally executed actions
 	Remote          int // remote executed actions
 	LocalFallback   int // actions for which remote execution failed, and we did a local fallback
+	LocalUpload     int // locally executed actions whose trusted results were uploaded directly to RE
 	RemoteRetry     int // accumulated remote retry counts
 	Total           int // total actions that ran during this build
 }
