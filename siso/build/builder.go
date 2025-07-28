@@ -650,7 +650,6 @@ func (b *Builder) Build(ctx context.Context, name string, args ...string) (err e
 		} else {
 			clog.Infof(ctx, "no pprof uploader")
 		}
-
 	}(ctx)
 	pstat := b.plan.stats()
 	b.progress.report("\nbuild start: Ready %d Pending %d", pstat.nready, pstat.npendings)

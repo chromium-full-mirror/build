@@ -98,7 +98,6 @@ func (w *Watchman) ClockToken(ctx context.Context) (string, error) {
 		return "", fmt.Errorf("failed to parse `watchman clock` output: %w", err)
 	}
 	return clk.Clock, nil
-
 }
 
 // Scan calls `watchman since` to finds all files that were modified since token.

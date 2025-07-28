@@ -67,7 +67,6 @@ func TestNodeMap(t *testing.T) {
 				if n != nil || ok {
 					t.Errorf("nm.lookup(%q)=%p, %t; want false", "baz", n, ok)
 				}
-
 			}
 		}(&results[i])
 	}

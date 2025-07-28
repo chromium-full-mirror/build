@@ -452,7 +452,6 @@ func (c *run) initCloudLogging(ctx context.Context, projectID, execRoot string, 
 		timeout := 10 * time.Second
 		// Don't use clog as it's closing Cloud logging client.
 		select {
-
 		case <-time.After(timeout):
 			log.Warningf("close not finished in %s", timeout)
 		case err := <-errch:

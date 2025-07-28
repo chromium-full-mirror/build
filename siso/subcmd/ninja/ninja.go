@@ -1339,7 +1339,6 @@ func (c *ninjaCmdRun) initCloudLogging(ctx context.Context, projectID, execRoot 
 		}
 		// Don't use clog as it's closing Cloud logging client.
 		select {
-
 		case <-time.After(timeout):
 			log.Warningf("close not finished in %s", timeout)
 		case err := <-errch:

@@ -124,5 +124,4 @@ func TestStepSpanName(t *testing.T) {
 			}
 		})
 	}
-
 }

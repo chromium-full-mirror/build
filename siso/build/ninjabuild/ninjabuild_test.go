@@ -152,5 +152,4 @@ build all: phony exe
 			t.Errorf("g.Targets(ctx, %q) diff -want +got:\n%s", tc.args, diff)
 		}
 	}
-
 }

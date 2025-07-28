@@ -311,5 +311,4 @@ func TestExpandMacros(t *testing.T) {
 			}
 		})
 	}
-
 }

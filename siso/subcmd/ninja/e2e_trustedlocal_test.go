@@ -102,7 +102,6 @@ func TestBuild_TrustedLocal(t *testing.T) {
 	if stats.Done != stats.Total || stats.Local != 4 || stats.CacheHit != 0 || stats.Remote != 0 {
 		t.Errorf("done=%d,local=%d,cache=%d,remote=%d; want done=%d,local=%d,cache=%d,remote=%d",
 			stats.Done, stats.Local, stats.CacheHit, stats.Remote, stats.Total, 4, 0, 0)
-
 	}
 
 	// In the second build all action should have remote cache hits available
@@ -115,5 +114,4 @@ func TestBuild_TrustedLocal(t *testing.T) {
 		t.Errorf("done=%d,local=%d,cache=%d,remote=%d; want done=%d,local=%d,cache=%d,remote=%d",
 			stats.Done, stats.Local, stats.CacheHit, stats.Remote, stats.Total, 0, 4, 0)
 	}
-
 }

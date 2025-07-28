@@ -109,5 +109,4 @@ func Split(cmdline string) ([]string, error) {
 		return nil, fmt.Errorf("argv[0] is env set %q", args[0])
 	}
 	return args, nil
-
 }

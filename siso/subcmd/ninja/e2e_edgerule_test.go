@@ -231,7 +231,6 @@ func TestBuild_EdgeRule(t *testing.T) {
 	if stats.Total != 7 || stats.Done != stats.Total || stats.Remote != 2 || stats.Skipped != 5 || stats.LocalFallback != 0 {
 		t.Errorf("stats total=%d done=%d remote=%d skipped=%d local_fallback=%d; want total=7 done=7 remote=2 skipped=5 local_fallback=0: (%#v)", stats.Total, stats.Done, stats.Remote, stats.Skipped, stats.LocalFallback, stats)
 	}
-
 }
 
 func TestBuild_EdgeRule_solibs(t *testing.T) {

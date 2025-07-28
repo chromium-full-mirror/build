@@ -165,7 +165,6 @@ func evaluateAppend(env evalEnv, buf *bytes.Buffer, val evalString, lookups [][]
 					varname = val.v[i:]
 					i = len(val.v)
 				}
-
 			} else {
 				return nil, fmt.Errorf("invalid $-escape? %q", val.v)
 			}

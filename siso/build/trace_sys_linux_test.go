@@ -17,7 +17,6 @@ full avg10=0.00 avg60=0.00 avg300=0.00 total=9928704
 	if got != want || err != nil {
 		t.Errorf("parseProcPressureMemorySome(%q)=%d, %v; want=%d, nil", buf, got, err, want)
 	}
-
 }
 
 func FuzzParseProcPressureMemorySome(f *testing.F) {

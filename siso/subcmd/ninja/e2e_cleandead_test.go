@@ -100,7 +100,6 @@ func TestBuild_Cleandead(t *testing.T) {
 			t.Errorf("stat(%q)=%v; want nil error", fname, err)
 		}
 	}
-
 }
 
 func TestBuild_CleandeadPreserveNonOut(t *testing.T) {

@@ -542,7 +542,6 @@ func (g *Graph) CleanDead(ctx context.Context) (int, int, error) {
 	}
 	if err != nil {
 		clog.Warningf(ctx, "cleandead %d/%d %s: %v", len(deads), len(genFiles), time.Since(started), err)
-
 	} else {
 		clog.Infof(ctx, "cleandead %d/%d %s", len(deads), len(genFiles), time.Since(started))
 	}

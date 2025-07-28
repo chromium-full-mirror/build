@@ -204,7 +204,6 @@ type commit struct {
 
 func (c commit) String() string {
 	return fmt.Sprintf("%s %s\n %s by %s", c.revision[:10], c.summary, c.date.Format(time.RFC3339), c.author)
-
 }
 
 func getSisoCommit(ctx context.Context, rev string) (commit, error) {

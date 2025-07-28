@@ -60,5 +60,4 @@ func fromTokenString(ctx context.Context, src, token string) (*oauth2.Token, err
 		"x-token-email":  tok.Email,
 	})
 	return t, nil
-
 }

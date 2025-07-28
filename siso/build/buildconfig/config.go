@@ -115,7 +115,6 @@ type HandlerError struct {
 func (e HandlerError) Error() string {
 	if fn, ok := e.fn.(*starlark.Function); ok {
 		return fmt.Sprintf("failed to run %s[%s:%s]: %v", e.entry, fn.Position(), fn.Name(), e.err)
-
 	}
 	return fmt.Sprintf("failed to run %s[%s]: %v", e.entry, e.fn, e.err)
 }
@@ -260,7 +259,6 @@ func (cfg *Config) Handle(ctx context.Context, handler string, bpath *build.Path
 		if errors.As(err, &eerr) {
 			clog.Warningf(ctx, "stacktrace:\n%s", eerr.Backtrace())
 			return HandlerError{entry: handler, fn: fun, err: eerr}
-
 		}
 		return fmt.Errorf("failed to run %s: %w", handler, err)
 	}

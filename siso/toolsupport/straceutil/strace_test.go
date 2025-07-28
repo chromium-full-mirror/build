@@ -428,7 +428,6 @@ func TestScanStraceData(t *testing.T) {
 			}
 		})
 	}
-
 }
 
 const (

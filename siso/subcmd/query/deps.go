@@ -247,7 +247,6 @@ func depsTargets(ctx context.Context, state *ninjautil.State, depsLog *ninjautil
 		slices.SortFunc(nodes, func(a, b *ninjautil.Node) int {
 			return strings.Compare(a.Path(), b.Path())
 		})
-
 	}
 	targets := make([]string, 0, len(nodes))
 	for _, node := range nodes {

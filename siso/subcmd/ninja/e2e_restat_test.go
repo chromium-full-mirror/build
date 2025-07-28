@@ -177,7 +177,6 @@ func TestBuild_Restat(t *testing.T) {
 				t.Errorf("unexpected output %q", m.Output)
 			}
 		}
-
 	}()
 }
 
@@ -331,7 +330,6 @@ func TestBuild_Restat_RestatContent(t *testing.T) {
 				t.Errorf("unexpected output %q", m.Output)
 			}
 		}
-
 	}()
 }
 

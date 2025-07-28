@@ -112,7 +112,6 @@ func (t *TermUI) PrintLines(msgs ...string) {
 			fmt.Fprintf(&buf, "\r\033[K\033[A")
 		}
 		fmt.Fprintf(&buf, "\r\033[K")
-
 	}
 	writeLinesMaxWidth(&buf, msgs, t.width)
 	os.Stdout.Write(buf.Bytes())

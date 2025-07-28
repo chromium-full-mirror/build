@@ -266,5 +266,4 @@ func TestFilesystemSub_SymlinkDir(t *testing.T) {
 	if err != nil {
 		t.Errorf("sub.Stat(%q)=_, %v; want nil err", fname, err)
 	}
-
 }

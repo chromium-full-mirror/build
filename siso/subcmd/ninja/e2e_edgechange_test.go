@@ -147,5 +147,4 @@ build out: action ../../in | ../../in3
 	if strings.ReplaceAll(string(got), "\r", "") != want {
 		t.Errorf("out: got=%q; want=%q", got, want)
 	}
-
 }

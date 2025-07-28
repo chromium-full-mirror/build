@@ -343,7 +343,6 @@ func newConn(ctx context.Context, addr string, cred cred.Cred, opt Option) (grpc
 		return nil, errors.New("tls_client_auth_cert is set, but tls_client_auth_key is not set")
 	} else if opt.TLSClientAuthKey != "" {
 		return nil, errors.New("tls_client_auth_key is set, but tls_client_auth_cert is not set")
-
 	}
 
 	for _, dopt := range dopts {

@@ -210,7 +210,6 @@ func TestWriter(t *testing.T) {
 	if !bytes.Equal(c.buf.Bytes(), data) {
 		t.Errorf("write doesn't match: (-want +got)\n%s", cmp.Diff(data, c.buf.Bytes()))
 	}
-
 }
 
 func TestWriterAlreadyExists(t *testing.T) {

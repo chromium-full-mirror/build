@@ -463,5 +463,4 @@ func TestBuild_DepsMSVC_InstallerRC(t *testing.T) {
 	if stats.Done != stats.Total || stats.Local != 0 || stats.Skipped != stats.Total {
 		t.Errorf("done=%d local=%d skip=%d; want done=%d local=0 skip=%d", stats.Done, stats.Local, stats.Skipped, stats.Total, stats.Total)
 	}
-
 }

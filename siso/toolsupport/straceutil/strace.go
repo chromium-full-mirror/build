@@ -383,5 +383,4 @@ func extractPath(buf []byte, skipAt bool) (string, []byte) {
 		return "", nil
 	}
 	return string(buf[:i]), buf[i+1:]
-
 }

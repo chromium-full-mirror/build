@@ -274,7 +274,6 @@ build obj/base/nocompile.o: nocompile ../../base/test/nocompile.nc
 	if got, want := edge.Binding("command"), "python3 ../../tools/nocompile/wrapper.py ../../third_party/llvm-build/Release+Asserts/bin/clang++ ../../base/test/nocompile.nc obj/base/nocompile.o obj/base/nocompile.o.d -- -Wall -std=c++20 -DDCHECK_ALWAYS_ON=1 -I../.. -Igen -MMD -MF obj/base/nocompile.o.d -MT obj/base/nocompile.o -x c++"; got != want {
 		t.Errorf("command=%q; want=%q", got, want)
 	}
-
 }
 
 func TestParser_Binding_Recursive(t *testing.T) {
@@ -602,7 +601,6 @@ build out: foo in
 	if desc != want {
 		t.Errorf("description=%q; want=%q", desc, want)
 	}
-
 }
 
 func TestParser_whitespace_in_command(t *testing.T) {

@@ -98,5 +98,4 @@ func TestBuild_InvalidatedFile(t *testing.T) {
 	if stats.Done != stats.Total || stats.Total != 1 || stats.Skipped != 0 {
 		t.Errorf("done=%d total=%d skipped=%d; want done=1 total=1 skipped=0; %#v", stats.Done, stats.Total, stats.Skipped, stats)
 	}
-
 }

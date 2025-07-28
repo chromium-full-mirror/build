@@ -51,7 +51,6 @@ func (a *ideAnalyzer) analyzeJava(ctx context.Context, edge *ninjautil.Edge, res
 	}
 	fmt.Fprintf(os.Stderr, "%s analysis result in %s\n", result.SourceFilePath, ui.FormatDuration(time.Since(started)))
 	return result, deps
-
 }
 
 func (a *ideAnalyzer) appendIndirectJavaBuildableUnits(ctx context.Context, edge *ninjautil.Edge, buildableUnits map[string]*pb.BuildableUnit, seen map[string]bool) ([]string, error) {
@@ -84,7 +83,6 @@ func (a *ideAnalyzer) appendIndirectJavaBuildableUnits(ctx context.Context, edge
 			buildableUnits[in.Path()] = bu
 			depIDseen[in.Path()] = true
 		}
-
 	}
 	for _, edge := range nextEdges {
 		deps, err := a.appendIndirectJavaBuildableUnits(ctx, edge, buildableUnits, seen)

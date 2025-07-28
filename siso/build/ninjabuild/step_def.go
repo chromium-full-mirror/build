@@ -132,7 +132,6 @@ func (g *Graph) newStepDef(ctx context.Context, edge *ninjautil.Edge, next build
 			if log.V(1) {
 				outPath := globals.targetPath(ctx, out)
 				clog.Infof(ctx, "add edgeRule for %s [newStepDef]", outPath)
-
 			}
 		}
 	}
@@ -547,7 +546,6 @@ func fixInputs(ctx context.Context, stepDef *StepDef, inputs, excludes []string)
 				}
 				clog.Warningf(ctx, "input %s is phony: %v", in, err)
 				continue
-
 			}
 			clog.Infof(ctx, "input %s is phony, but exists", in)
 		}
@@ -901,7 +899,6 @@ func replacePhony(ctx context.Context, globals *globals, seen map[string]bool, t
 
 // appendIndirectInputs appends indirect inputs edge into inputs that matches with filter function, and updates seen.
 func (s *StepDef) appendIndirectInputs(ctx context.Context, filter func(context.Context, string, bool) bool, edge *ninjautil.Edge, inputs []string, seen map[string]bool) []string {
-
 	edgeName := edge.RuleName()
 	globals := s.globals
 	if !edge.IsPhony() {

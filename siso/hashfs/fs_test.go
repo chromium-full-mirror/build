@@ -391,7 +391,6 @@ func BenchmarkStat(b *testing.B) {
 			}
 		}
 	})
-
 }
 
 func TestStatAllocs(t *testing.T) {
@@ -1339,7 +1338,6 @@ func TestUpdate_FromLocal_NonLocalSymlink(t *testing.T) {
 	if e.Target != symlinkTarget {
 		t.Errorf("target=%q; want=%q", e.Target, symlinkTarget)
 	}
-
 }
 
 func TestSymlinkDir(t *testing.T) {

@@ -642,7 +642,6 @@ func createBatchUpdateBlobsRequests(instance string, blobReqs []*rpb.BatchUpdate
 			})
 			size = batchReqNoReqsSize
 			lastOffset = i + 1
-
 		}
 	}
 	return batchReqs

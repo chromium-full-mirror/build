@@ -50,7 +50,6 @@ func localDigest(ctx context.Context, src digest.Source, fname string) (digest.D
 		clog.Warningf(ctx, "too slow local digest %s %s in %s, err=%v", fname, d.Digest(), dur, err)
 	}
 	return d, err
-
 }
 
 type digestReq struct {

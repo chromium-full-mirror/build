@@ -217,7 +217,6 @@ func (c *run) run(ctx context.Context) error {
 		return fmt.Errorf("failed to get action result of %s: %w", actionDigest, err)
 	}
 	return nil
-
 }
 
 func (c *run) call(ctx context.Context, reopt reapi.Option, credential cred.Cred, executeReq *rpb.ExecuteRequest) error {

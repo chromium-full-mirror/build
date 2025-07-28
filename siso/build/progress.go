@@ -239,7 +239,6 @@ func (p *progress) step(ctx context.Context, b *Builder, step *Step, s string) {
 				msg += "\n" + outputResult + "\n"
 			}
 			ui.Default.Infof("%s\n", msg)
-
 		} else if step == nil {
 			ui.Default.Infof("%s\n", msg)
 		}

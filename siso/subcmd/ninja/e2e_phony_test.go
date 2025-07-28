@@ -447,7 +447,6 @@ func TestBuild_PhonyIndirectInputs(t *testing.T) {
 					ExitCode:  1,
 					StderrRaw: fmt.Appendf(nil, "wrong option %q", cmd.Arguments),
 				}, nil
-
 			}
 
 			tree := reapitest.InputTree{CAS: fakere.CAS, Root: action.InputRootDigest}

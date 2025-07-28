@@ -61,7 +61,6 @@ func (u *Uploader) UploadFiles(ctx context.Context, ents []merkletree.Entry) err
 		},
 	}
 	return u.Upload(ctx, req)
-
 }
 
 // SetFile set a file as the invocation's artifact.

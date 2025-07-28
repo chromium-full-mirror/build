@@ -146,7 +146,6 @@ func DataToBytes(ctx context.Context, d Data) ([]byte, error) {
 		return err
 	})
 	return buf, err
-
 }
 
 // FromProtoMessage creates Data from proto message.

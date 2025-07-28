@@ -2230,7 +2230,6 @@ func (d *directory) storeEntry(ctx context.Context, fname string, e *entry) (*en
 			}
 			// e is stored for fname
 			return e, "", nil
-
 		}
 		pe.n++
 		pe.elems = append(pe.elems, elem)

@@ -115,5 +115,4 @@ func TestBuild_RemovedUndeclaredArtifact(t *testing.T) {
 	if stats.Done != stats.Total || stats.Skipped != stats.Total || stats.Total != 7 {
 		t.Errorf("done=%d skipped=%d total=%d; want done=skipped=total=7: %#v", stats.Done, stats.Skipped, stats.Total, stats)
 	}
-
 }

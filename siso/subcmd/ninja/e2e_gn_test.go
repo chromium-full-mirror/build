@@ -250,5 +250,4 @@ func TestBuild_GNGen(t *testing.T) {
 			t.Errorf("fix build Skipped=%d want=%d", stats.Skipped, nsteps)
 		}
 	})
-
 }

@@ -380,7 +380,6 @@ func (c *Cmd) Digest(ctx context.Context, ds *digest.Store) (actionDigest digest
 	}
 	if c.HashFS == nil {
 		return digest.Digest{}, fmt.Errorf("unable to get the input root for %s: missing HashFS", c)
-
 	}
 	chrootPath, remoteChroot := c.Platform["dockerChrootPath"]
 	if remoteChroot {

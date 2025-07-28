@@ -293,7 +293,6 @@ func filesDiff(ctx context.Context, b *Builder, x, opts, y []string, ignorePatte
 			seen[target] = stateUsed
 			adds = append(adds, target)
 		}
-
 	}
 	for name, s := range seen {
 		if s == stateRequired {

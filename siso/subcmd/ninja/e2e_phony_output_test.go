@@ -87,5 +87,4 @@ func TestBuild_PhonyOutputOrderOnly(t *testing.T) {
 	if stats.Done != stats.Total || stats.Total != 2 || stats.Local != 2 {
 		t.Errorf("done=%d total=%d local=%d; want done=2 total=2 local=2; %#v", stats.Done, stats.Total, stats.Local, stats)
 	}
-
 }

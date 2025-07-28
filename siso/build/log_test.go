@@ -47,5 +47,4 @@ infra/build/siso/build.(*Builder).runStep(0xc019aa5200, {0x102a9c8, 0xc019181d40
 	if diff := cmp.Diff(want, got); diff != "" {
 		t.Errorf("panicLocation(...)=%q; want %q; diff -want +got:\n%s", got, want, diff)
 	}
-
 }

@@ -398,7 +398,6 @@ func scheduleTarget(ctx context.Context, sched *scheduler, graph Graph, target T
 			if log.V(1) {
 				clog.Infof(ctx, "schedule %s ignore output=%s", targetPath(ctx, graph, target), fname)
 			}
-
 		}
 	}
 	if log.V(1) {
