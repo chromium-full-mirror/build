@@ -8,18 +8,26 @@ import (
 	"context"
 )
 
-func (b *Builder) runStrategy(ctx context.Context, step *Step) func(context.Context, *Step) error {
+func (b *Builder) allowRemote(step *Step) bool {
 	// Criteria for remote executable:
 	// - Allow remote if available and command has platform property.
+	return (b.remoteExec != nil && len(step.cmd.Platform) > 0)
+}
+
+func (b *Builder) allowREProxy(step *Step) bool {
+	// Criteria for REProxy:
 	// - Allow reproxy if available and command has reproxy config set.
+	return (b.reproxyExec.Enabled() && step.cmd.REProxyConfig != nil)
+}
+
+func (b *Builder) runStrategy(ctx context.Context, step *Step) func(context.Context, *Step) error {
+	// Check criteria for allowRemote and allowREProxy
 	// If the command doesn't meet either criteria, fallback to local.
 	// Any further validation should be done in the exec handler, not here.
-	allowRemote := b.remoteExec != nil && len(step.cmd.Platform) > 0
-	allowREProxy := b.reproxyExec.Enabled() && step.cmd.REProxyConfig != nil
 	switch {
-	case step.cmd.Pure && allowREProxy:
+	case step.cmd.Pure && b.allowREProxy(step):
 		return b.runReproxy
-	case step.cmd.Pure && allowRemote:
+	case step.cmd.Pure && b.allowRemote(step):
 		return b.runRemote
 	default:
 		return b.runLocal

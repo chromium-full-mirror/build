@@ -153,6 +153,12 @@ func (b *Builder) trustedLocalUpload(ctx context.Context, step *Step) error {
 	if b.reapiclient == nil || !b.reCacheEnableWrite || !step.cmd.Pure {
 		return nil
 	}
+
+	// Upload only remotable steps
+	if !b.allowRemote(step) {
+		return nil
+	}
+
 	// Action digests are lazily computed for local so they are not available at this point
 	cmd := step.cmd
 	result, _ := cmd.ActionResult()
