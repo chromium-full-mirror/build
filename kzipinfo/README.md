@@ -29,8 +29,6 @@ foo      rust      1         1             2
 Total              1         1             2
 ```
 
-## Not yet implemented
-
 ```
 $ go run . ls input.kzip
 Compilation Units in /tmp/input.kzip:

@@ -16,6 +16,7 @@ var application = &subcommands.DefaultApplication{
 	Title: "A tool to inspect Kythe kzip files in a human-readable format.",
 	Commands: []*subcommands.Command{
 		cmdInfo,
+		cmdListUnits,
 		subcommands.CmdHelp,
 	},
 }
