@@ -352,6 +352,107 @@ func TestState_Dir(t *testing.T) {
 	}
 }
 
+func TestState_BadDirEntry(t *testing.T) {
+	ctx := context.Background()
+
+	dir := t.TempDir()
+	dir, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	opts := hashfs.Option{
+		StateFile:     filepath.Join(dir, ".siso_fs_state"),
+		CompressZstd:  false,
+		CompressLevel: 3,
+	}
+	mtime := time.Now()
+	h := sha256.New()
+	fmt.Fprint(h, "step command")
+	cmdhash := h.Sum(nil)
+	cmdhashStr := base64.StdEncoding.EncodeToString(cmdhash)
+	d := digest.FromBytes("action digest", []byte("action proto")).Digest()
+
+	func() {
+		t.Logf("-- generate .siso_fs_state for gen/output_file as dir")
+		hashFS, err := hashfs.New(ctx, opts)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer hashFS.Close(ctx)
+
+		err = hashFS.WaitReady(ctx)
+		if err != nil {
+			t.Fatalf("WaitReady=%v; want nil", err)
+		}
+
+		t.Logf("-- record gen/output_file. mtime=%s cmdhash=%s d=%s", mtime, cmdhashStr, d)
+		err = update(ctx, hashFS, dir, []merkletree.Entry{
+			{
+				Name: "gen/output_file",
+				// couldn't calculate file's digest.
+			},
+		}, mtime, cmdhash, d)
+		if err != nil {
+			t.Fatalf("Update %v; want nil err", err)
+		}
+	}()
+
+	st, err := hashfs.Load(ctx, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := hashfs.StateMap(st)
+	ent, ok := m[filepath.ToSlash(filepath.Join(dir, "gen/output_file"))]
+	if !ok {
+		t.Errorf("gen/output_file entry not exists?")
+	}
+	if ent.Id.ModTime != mtime.UnixNano() {
+		t.Errorf("mtime=%d want=%d", ent.Id.ModTime, mtime.UnixNano())
+	}
+	if !bytes.Equal(ent.CmdHash, cmdhash) {
+		t.Errorf("cmdhash=%s want=%s", base64.StdEncoding.EncodeToString(ent.CmdHash), cmdhashStr)
+	}
+	if ent.Action.Hash != d.Hash || ent.Action.SizeBytes != d.SizeBytes {
+		t.Errorf("action=%s want=%s", ent.Action, d)
+	}
+
+	t.Logf("-- ensure gen/output_file exists on disk")
+	err = os.MkdirAll(filepath.Join(dir, "gen"), 0755)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = os.WriteFile(filepath.Join(dir, "gen/output_file"), []byte("output file"), 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = os.Chtimes(filepath.Join(dir, "gen/output_file"), time.Time{}, mtime)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Logf("-- gen/output_file is dir in fs_state, but file on disk. should be invalidated")
+	hashFS, err := hashfs.New(ctx, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer hashFS.Close(ctx)
+
+	err = hashFS.WaitReady(ctx)
+	if err != nil {
+		t.Fatalf("WaitReady=%v; want nil", err)
+	}
+	if hashFS.IsClean([]string{}) {
+		t.Error("IsClean=true; want false")
+	}
+	st = hashFS.State(ctx)
+	m = hashfs.StateMap(st)
+	_, ok = m[filepath.ToSlash(filepath.Join(dir, "gen/output_file"))]
+	if ok {
+		t.Errorf("gen/output_file entry exists; want not exists")
+	}
+}
+
 func TestState_Symlink(t *testing.T) {
 	ctx := context.Background()
 

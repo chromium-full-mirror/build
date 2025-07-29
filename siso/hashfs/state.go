@@ -359,6 +359,15 @@ func (hfs *HashFS) SetState(ctx context.Context, state *pb.State) error {
 			e.local = ent.Local
 			ftype := "file"
 			if e.d.IsZero() && e.target == "" {
+				if !fi.IsDir() {
+					clog.Warningf(gctx, "entry is dir, but local is not dir: mode=%s", fi.Mode())
+					nfail.Add(1)
+					dirty.Store(true)
+					if logw != nil {
+						fmt.Fprintf(logw, "entry is dir, but local is not dir: mode=%s", fi.Mode())
+					}
+					return nil
+				}
 				ftype = "dir"
 				if len(e.cmdhash) == 0 {
 					clog.Infof(gctx, "ignore %s %q", ftype, ent.Name)
