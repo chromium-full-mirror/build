@@ -13,6 +13,7 @@ import (
 	"github.com/maruel/subcommands"
 
 	"go.chromium.org/build/gong/gn"
+	"go.chromium.org/build/gong/gn/build"
 	"go.chromium.org/build/gong/gn/syntax"
 	"go.chromium.org/build/gong/ui"
 )
@@ -36,7 +37,7 @@ type cleanCmdRun struct {
 }
 
 func (h *cleanCmdRun) cleanOneDir(dir string) error {
-	setup := gn.NewSetup()
+	setup := build.NewSetup()
 	if err := setup.DoSetup(dir, false, &h.CommonFlags); err != nil {
 		return err
 	}

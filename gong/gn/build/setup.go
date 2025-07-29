@@ -2,7 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-package gn
+// Package build builds a graph of GN targets based on an invocation.
+package build
 
 import (
 	"fmt"
@@ -10,7 +11,7 @@ import (
 	"path"
 	"path/filepath"
 
-	"go.chromium.org/build/gong/gn/build"
+	"go.chromium.org/build/gong/gn"
 	"go.chromium.org/build/gong/gn/build/fs"
 	"go.chromium.org/build/gong/gn/parse"
 	"go.chromium.org/build/gong/gn/resolve"
@@ -38,7 +39,7 @@ func findDotFile(currentDir string) (string, error) {
 // Setup is helper to set up the build settings and environment for the various
 // commands to run.
 type Setup struct {
-	buildSettings build.BuildSettings
+	buildSettings BuildSettings
 
 	// FillArguments sets whether the build arguments should be filled during setup from the
 	// command line/build argument file. This will be true by default. The use
@@ -48,7 +49,7 @@ type Setup struct {
 
 	// Settings object for interpreting the .gn config file, and build arguments
 	// from either the command line or build argument file.
-	dotfileSettings *build.Settings
+	dotfileSettings *Settings
 	// Scope object used to interpret the .gn config file.
 	// (This is separate from dotfileSettings because build arguments should not be
 	// able to reference variables defined in the root config file.)
@@ -62,13 +63,13 @@ func NewSetup() *Setup {
 	setup := &Setup{
 		FillArguments: true,
 	}
-	setup.dotfileSettings = build.NewSettings(&setup.buildSettings)
+	setup.dotfileSettings = NewSettings(&setup.buildSettings)
 	setup.dotfileScope = resolve.NewScopeFromExecContext(setup.dotfileSettings)
 	return setup
 }
 
 // DoSetup configures the build for the current command line.
-func (s *Setup) DoSetup(buildDir string, forceCreate bool, flags *CommonFlags) error {
+func (s *Setup) DoSetup(buildDir string, forceCreate bool, flags *gn.CommonFlags) error {
 	if flags.Time || flags.Tracelog != "" {
 		fmt.Fprintf(os.Stderr, "tracing not yet implemented")
 	}
@@ -99,7 +100,7 @@ func (s *Setup) DoSetup(buildDir string, forceCreate bool, flags *CommonFlags) e
 	return fmt.Errorf("not implemented. setup: %v", s)
 }
 
-func (s *Setup) fillArguments(flags *CommonFlags) error {
+func (s *Setup) fillArguments(flags *gn.CommonFlags) error {
 	// TODO: implement properly
 	if flags.Args != "" {
 		return fmt.Errorf("don't know how to parse args from command line yet")
@@ -135,7 +136,7 @@ func (s *Setup) fillArguments(flags *CommonFlags) error {
 }
 
 // FillSourceDir fills the root directory into the settings.
-func (s *Setup) FillSourceDir(flags *CommonFlags) error {
+func (s *Setup) FillSourceDir(flags *gn.CommonFlags) error {
 	// Find the .gn file.
 	var rootPath string
 
