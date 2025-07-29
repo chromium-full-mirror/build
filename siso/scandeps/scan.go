@@ -69,13 +69,21 @@ type scanner struct {
 	names []string
 }
 
+// scanResult contains includes, defines directives required for scandeps
+// for an include file.
 type scanResult struct {
 	mu sync.Mutex
 
 	done     bool
 	includes []string
 	defines  map[string][]string
-	err      error
+
+	// symlinkTargets are file paths used to access the file
+	// resolving symlinks, so need these paths to get access
+	// to the requesting include file.
+	symlinkTargets []string
+
+	err error
 }
 
 func (fsys *filesystem) scanner(ctx context.Context, execRoot string, inputDeps map[string][]string, precomputedTrees []string) *scanner {

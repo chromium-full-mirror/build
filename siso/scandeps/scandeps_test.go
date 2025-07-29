@@ -355,12 +355,16 @@ func TestScanDeps_Framework(t *testing.T) {
 		t.Errorf("scandeps()=%v, %v; want nil err", got, err)
 	}
 
+	// symlink to dir (Foo.framework/Headers) and real dir
+	// for the symlink (Foo.framework/Versions/Current/Headers).
 	want := []string{
 		"app",
 		"app/app.mm",
 		"out/siso",
+		"out/siso/Foo.framework/Headers",
 		"out/siso/Foo.framework/Headers/Bar.h",
 		"out/siso/Foo.framework/Headers/Baz.h",
+		"out/siso/Foo.framework/Versions/Current/Headers",
 	}
 	if diff := cmp.Diff(want, got, cmpopts.SortSlices(func(a, b string) bool { return a < b })); diff != "" {
 		t.Errorf("scandeps diff -want +got:\n%s", diff)
@@ -439,6 +443,11 @@ func TestScanDeps_AbsPath(t *testing.T) {
 }
 
 func TestScanDeps_SymlinkDir(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skipf("no symlink on windows")
+		return
+	}
+
 	ctx := context.Background()
 	dir := t.TempDir()
 
@@ -511,6 +520,9 @@ func TestScanDeps_SymlinkDir(t *testing.T) {
 		t.Errorf("scandeps()=%v, %v; want nil err", got, err)
 	}
 
+	// symlink_to_code is symlink but to out of exec root.
+	// hashfs Entries will resolve it as real one (i.e. directory)
+	// when it goes out of exec root.
 	want := []string{
 		"base",
 		"base/logging.h",
@@ -520,4 +532,239 @@ func TestScanDeps_SymlinkDir(t *testing.T) {
 	if diff := cmp.Diff(want, got, cmpopts.SortSlices(func(a, b string) bool { return a < b })); diff != "" {
 		t.Errorf("scandeps diff -want +got:\n%s", diff)
 	}
+}
+
+func TestScanDeps_SymlinkIntermediateDir(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skipf("no symlink on windows")
+		return
+	}
+	ctx := context.Background()
+	dir := t.TempDir()
+
+	for fname, content := range map[string]string{
+		"src/source.cc": `
+#include <android/log.h>
+`,
+		"include/android/log.h": ``,
+	} {
+		fname := filepath.Join(dir, fname)
+		err := os.MkdirAll(filepath.Dir(fname), 0755)
+		if err != nil {
+			t.Fatal(err)
+		}
+		err = os.WriteFile(fname, []byte(content), 0644)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	err := os.MkdirAll(filepath.Join(dir, "include_vndk"), 0755)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = os.Symlink("../include/android", filepath.Join(dir, "include_vndk/android"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	inputDeps := map[string][]string{
+		"prebuilts/clang/host/linux-x86/clang-r563880:headers": {
+			"prebuilts/clang/host/linux-x86/clang-r563880/bin/clang",
+		},
+		"prebuilts/gcc/linux-x86/host/x86_64-linux-glibc2.17-4.8/sysroot:headers": {
+			"prebuilts/gcc/linux-x86/host/x86_64-linux-glibc2.17-4.8/sysroot/usr/include/unistd.h",
+		},
+	}
+	hashFS, err := hashfs.New(ctx, hashfs.Option{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	scanDeps := New(hashFS, inputDeps)
+	req := Request{
+		Sources: []string{
+			"src/source.cc",
+		},
+		Dirs: []string{
+			"include_vndk",
+		},
+		Sysroots: []string{
+			"prebuilts/clang/host/linux-x86/clang-r563880:headers",
+			"prebuilts/gcc/linux-x86/host/x86_64-linux-glibc2.17-4.8/sysroot:headers",
+		},
+	}
+	got, err := scanDeps.Scan(ctx, dir, req)
+	if err != nil {
+		t.Errorf("scandeps()=%v, %v; want nil err", got, err)
+	}
+
+	want := []string{
+		"include/android",
+		"include_vndk",
+		"include_vndk/android",
+		"include_vndk/android/log.h",
+		"src",
+		"src/source.cc",
+	}
+	if diff := cmp.Diff(want, got, cmpopts.SortSlices(func(a, b string) bool { return a < b })); diff != "" {
+		t.Errorf("scandeps diff -want +got:\n%s", diff)
+	}
+}
+
+func TestScanDeps_SymlinkDirSymlinkIntermediateDir(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skipf("no symlink on windows")
+		return
+	}
+	ctx := context.Background()
+	dir := t.TempDir()
+
+	for fname, content := range map[string]string{
+		"src/source.cc": `
+#include <utils/RWLock.h>
+`,
+		"system/core/libutils/include/utils/RWLock.h": `
+#include <utils/Errors.h>
+`,
+		"system/core/libutils/binder/include/utils/Errors.h": ``,
+	} {
+		fname := filepath.Join(dir, fname)
+		err := os.MkdirAll(filepath.Dir(fname), 0755)
+		if err != nil {
+			t.Fatal(err)
+		}
+		err = os.WriteFile(fname, []byte(content), 0644)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	err := os.MkdirAll(filepath.Join(dir, "system/core/include"), 0755)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = os.Symlink("../libutils/include/utils/", filepath.Join(dir, "system/core/include/utils"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = os.Symlink("../../binder/include/utils/Errors.h", filepath.Join(dir, "system/core/libutils/include/utils/Errors.h"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	inputDeps := map[string][]string{
+		"prebuilts/clang/host/linux-x86/clang-r563880:headers": {
+			"prebuilts/clang/host/linux-x86/clang-r563880/bin/clang",
+		},
+		"prebuilts/gcc/linux-x86/host/x86_64-linux-glibc2.17-4.8/sysroot:headers": {
+			"prebuilts/gcc/linux-x86/host/x86_64-linux-glibc2.17-4.8/sysroot/usr/include/unistd.h",
+		},
+	}
+	hashFS, err := hashfs.New(ctx, hashfs.Option{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	scanDeps := New(hashFS, inputDeps)
+	req := Request{
+		Sources: []string{
+			"src/source.cc",
+		},
+		Dirs: []string{
+			"system/core/include",
+		},
+		Sysroots: []string{
+			"prebuilts/clang/host/linux-x86/clang-r563880:headers",
+			"prebuilts/gcc/linux-x86/host/x86_64-linux-glibc2.17-4.8/sysroot:headers",
+		},
+	}
+	got, err := scanDeps.Scan(ctx, dir, req)
+	if err != nil {
+		t.Errorf("scandeps()=%v, %v; want nil err", got, err)
+	}
+
+	want := []string{
+		"src",
+		"src/source.cc",
+		"system/core/include",
+		"system/core/include/utils",
+		"system/core/include/utils/Errors.h",
+		"system/core/include/utils/RWLock.h",
+		"system/core/libutils/binder/include/utils/Errors.h",
+		"system/core/libutils/include/utils",
+	}
+	if diff := cmp.Diff(want, got, cmpopts.SortSlices(func(a, b string) bool { return a < b })); diff != "" {
+		t.Errorf("scandeps diff -want +got:\n%s", diff)
+	}
+}
+
+func TestScanDeps_SymlinkFile(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skipf("no symlink on windows")
+		return
+	}
+	ctx := context.Background()
+	dir := t.TempDir()
+
+	for fname, content := range map[string]string{
+		"src/source.cc": `
+#include <log/log_id.h>
+`,
+		"include/log/log_id.h": ``,
+	} {
+		fname := filepath.Join(dir, fname)
+		err := os.MkdirAll(filepath.Dir(fname), 0755)
+		if err != nil {
+			t.Fatal(err)
+		}
+		err = os.WriteFile(fname, []byte(content), 0644)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	err := os.MkdirAll(filepath.Join(dir, "include_vndk/log"), 0755)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = os.Symlink("../../include/log/log_id.h", filepath.Join(dir, "include_vndk/log/log_id.h"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	inputDeps := map[string][]string{
+		"prebuilts/clang/host/linux-x86/clang-r563880:headers": {
+			"prebuilts/clang/host/linux-x86/clang-r563880/bin/clang",
+		},
+		"prebuilts/gcc/linux-x86/host/x86_64-linux-glibc2.17-4.8/sysroot:headers": {
+			"prebuilts/gcc/linux-x86/host/x86_64-linux-glibc2.17-4.8/sysroot/usr/include/unistd.h",
+		},
+	}
+	hashFS, err := hashfs.New(ctx, hashfs.Option{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	scanDeps := New(hashFS, inputDeps)
+	req := Request{
+		Sources: []string{
+			"src/source.cc",
+		},
+		Dirs: []string{
+			"include_vndk",
+		},
+		Sysroots: []string{
+			"prebuilts/clang/host/linux-x86/clang-r563880:headers",
+			"prebuilts/gcc/linux-x86/host/x86_64-linux-glibc2.17-4.8/sysroot:headers",
+		},
+	}
+	got, err := scanDeps.Scan(ctx, dir, req)
+	if err != nil {
+		t.Errorf("scandeps()=%v, %v; want nil err", got, err)
+	}
+
+	want := []string{
+		"include/log/log_id.h",
+		"include_vndk",
+		"include_vndk/log",
+		"include_vndk/log/log_id.h",
+		"src",
+		"src/source.cc",
+	}
+	if diff := cmp.Diff(want, got, cmpopts.SortSlices(func(a, b string) bool { return a < b })); diff != "" {
+		t.Errorf("scandeps diff -want +got:\n%s", diff)
+	}
+
 }

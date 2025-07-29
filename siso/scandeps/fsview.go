@@ -103,14 +103,16 @@ func (fv *fsview) addDir(ctx context.Context, dir string, searchPath searchPathT
 	if log.V(1) {
 		clog.Infof(ctx, "add dir readdir %s", dir)
 	}
-	dents, err := fv.fs.ReadDir(ctx, fv.execRoot, dir)
+	dents, symlinks, err := fv.fs.ReadDir(ctx, fv.execRoot, dir)
 	if err != nil {
 		if !errors.Is(err, fs.ErrNotExist) {
 			clog.Warningf(ctx, "failed in readdir %s: %v", dir, err)
 		}
 		return
 	}
-	fv.visited[dir] = true
+	// need to add the dir, and its symlinks.
+	fv.markVisited(dir)
+	fv.markVisited(symlinks...)
 	fv.topEnts[dir] = dents
 }
 
@@ -161,7 +163,8 @@ func (fv *fsview) get(ctx context.Context, dir, name string) (string, *scanResul
 		fv.visited[incpath] = false
 		return "", nil, err
 	}
-	fv.visited[incpath] = true
+	fv.markVisited(incpath)
+	fv.markVisited(sr.symlinkTargets...)
 	return incpath, sr, err
 }
 
@@ -178,9 +181,9 @@ func (fv *fsview) scanFile(ctx context.Context, fname string) (*scanResult, erro
 	ctx, span := trace.NewSpan(ctx, "scanFile")
 	defer span.Close(nil)
 
-	buf, err := fv.fs.hashfs.ReadFile(ctx, fv.execRoot, fname)
+	buf, visited, err := fv.fs.readFile(ctx, fv.execRoot, fname)
 	if log.V(1) {
-		clog.Infof(ctx, "scanFile readfile: %s %v", fname, err)
+		clog.Infof(ctx, "scanFile readfile: %s %s %v", fname, visited, err)
 	}
 	if err != nil {
 		return sr, sr.err
@@ -206,6 +209,7 @@ func (fv *fsview) scanFile(ctx context.Context, fname string) (*scanResult, erro
 		}
 		sr.defines[k] = values
 	}
+	sr.symlinkTargets = visited
 	sr.done = true
 	return sr, sr.err
 }
@@ -246,7 +250,7 @@ func (fv *fsview) scanResult(ctx context.Context, incpath string) (*scanResult, 
 				}
 				return nil, fs.ErrNotExist
 			}
-			fi, err := fv.fs.hashfs.Stat(ctx, fv.execRoot, dirname)
+			fi, err := fv.fs.statFollowSymlink(ctx, fv.execRoot, dirname)
 			if err != nil {
 				fv.setDir(dirname, false)
 				if log.V(1) {
@@ -264,7 +268,7 @@ func (fv *fsview) scanResult(ctx context.Context, incpath string) (*scanResult, 
 			fv.setDir(dirname, true)
 		}
 	}
-	fi, err := fv.fs.hashfs.Stat(ctx, fv.execRoot, incpath)
+	fi, err := fv.fs.statFollowSymlink(ctx, fv.execRoot, incpath)
 	if log.V(1) {
 		clog.Infof(ctx, "scanResult stat %q: %v", incpath, err)
 	}
@@ -323,6 +327,18 @@ func (fv *fsview) getFile(fname string) (*scanResult, bool) {
 func (fv *fsview) setFile(fname string, sr *scanResult) {
 	fv.files[fname] = sr
 	fv.fs.setFile(fv.execRoot, fname, sr)
+}
+
+func (fv *fsview) markVisited(visits ...string) {
+	for _, v := range visits {
+		if strings.Index(v, ":") > 0 {
+			// expand labels.
+			fv.markVisited(fv.inputDeps[v]...)
+			return
+		}
+		fv.visited[v] = true
+		fv.markVisited(fv.inputDeps[v]...)
+	}
 }
 
 func (fv *fsview) results() []string {

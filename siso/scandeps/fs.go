@@ -6,6 +6,7 @@ package scandeps
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"hash/maphash"
 	"path/filepath"
@@ -18,6 +19,8 @@ import (
 	"go.chromium.org/build/siso/hashfs"
 	"go.chromium.org/build/siso/o11y/clog"
 )
+
+const maxSymlinks = 40
 
 // filesystem is mirror of hashfs to optimize for scandeps access pattern.
 // it is shared for all scandeps processes.
@@ -41,9 +44,10 @@ type filesystem struct {
 }
 
 type dircache struct {
-	ready chan struct{}
-	m     sync.Map
-	err   error
+	ready          chan struct{}
+	m              sync.Map
+	symlinkTargets []string
+	err            error
 }
 
 // update updates filesystem modification by fi.
@@ -126,7 +130,7 @@ func (fsys *filesystem) markDirExists(dname string) bool {
 	return false
 }
 
-func (fsys *filesystem) ReadDir(ctx context.Context, execRoot, dname string) (*sync.Map, error) {
+func (fsys *filesystem) ReadDir(ctx context.Context, execRoot, dname string) (*sync.Map, []string, error) {
 	fullpath := filepath.ToSlash(filepath.Join(execRoot, dname))
 	dv, loaded := fsys.dircache.LoadOrStore(fullpath, &dircache{
 		ready: make(chan struct{}),
@@ -138,34 +142,40 @@ func (fsys *filesystem) ReadDir(ctx context.Context, execRoot, dname string) (*s
 				clog.Infof(ctx, "fsys readdir %s", dname)
 			}
 			symlinkErr := fmt.Errorf("readdir %s: %w", dname, syscall.ELOOP)
-			const maxSymlinks = 40
 			var dents []hashfs.DirEntry
+			var visited []string
 			var err error
 			for range maxSymlinks {
+				if filepath.IsAbs(dname) {
+					execRoot = ""
+				}
 				dents, err = fsys.hashfs.ReadDir(ctx, execRoot, dname)
 				if err == nil {
 					break
 				}
-				// may be symlink?
-				fi, serr := fsys.hashfs.Stat(ctx, execRoot, dname)
-				if serr != nil {
-					clog.Warningf(ctx, "stat %s: %v", dname, serr)
+				var errSymlink hashfs.SymlinkError
+				if !errors.As(err, &errSymlink) {
 					break
 				}
-				if fi.Target() == "" {
-					clog.Warningf(ctx, "not symlink? %s", dname)
-					break
+				clog.Infof(ctx, "readdir symlink %#v", errSymlink)
+				target := errSymlink.Target
+				if !filepath.IsAbs(target) {
+					target = filepath.ToSlash(filepath.Join(filepath.Dir(errSymlink.Path), target))
 				}
-				target := filepath.Join(filepath.Dir(dname), fi.Target())
 				// target may escape exec root.
 				if !filepath.IsLocal(target) {
-					dname = filepath.Join(execRoot, target)
-					execRoot = ""
+					target = filepath.ToSlash(filepath.Join(execRoot, target))
 				}
 				clog.Infof(ctx, "symlink dir: %s -> %s", dname, target)
+				dname = target
+				if filepath.IsLocal(dname) {
+					visited = append(visited, dname)
+				}
+				clog.Infof(ctx, "retry symlnk %s", dname)
 				err = symlinkErr
 			}
 			dc.err = err
+			dc.symlinkTargets = visited
 			for _, de := range dents {
 				if log.V(1) {
 					clog.Infof(ctx, "dirent %q %q", fullpath, de.Name())
@@ -184,13 +194,13 @@ func (fsys *filesystem) ReadDir(ctx context.Context, execRoot, dname string) (*s
 	}
 	select {
 	case <-ctx.Done():
-		return nil, fmt.Errorf("readdirnames[wait]: %w", context.Cause(ctx))
+		return nil, nil, fmt.Errorf("readdirnames[wait]: %w", context.Cause(ctx))
 	case <-dc.ready:
 	}
 	if dc.err != nil {
-		return nil, dc.err
+		return nil, dc.symlinkTargets, dc.err
 	}
-	return &dc.m, nil
+	return &dc.m, dc.symlinkTargets, nil
 }
 
 func (fsys *filesystem) intern(v string) string {
@@ -281,4 +291,71 @@ func (fsys *filesystem) getHmap(ctx context.Context, execRoot, fname string) (ma
 	hr.m = m
 	hr.ok = true
 	return hr.m, hr.ok
+}
+
+func (fsys *filesystem) readFile(ctx context.Context, root, fname string) ([]byte, []string, error) {
+	reqname := fname
+	var visited []string
+	execRoot := root
+	for range maxSymlinks {
+		if filepath.IsAbs(fname) {
+			execRoot = ""
+		}
+		buf, err := fsys.hashfs.ReadFile(ctx, execRoot, fname)
+		var errSymlink hashfs.SymlinkError
+		if err != nil && !errors.As(err, &errSymlink) {
+			return nil, visited, err
+		}
+		if err == nil {
+			return buf, visited, nil
+		}
+		clog.Infof(ctx, "readfile symlink %#v", errSymlink)
+		target := errSymlink.Target
+		if !filepath.IsAbs(target) {
+			target = filepath.ToSlash(filepath.Join(filepath.ToSlash(filepath.Dir(errSymlink.Path)), target))
+		}
+		if !filepath.IsLocal(target) {
+			target = filepath.ToSlash(filepath.Join(execRoot, target))
+		}
+		fname = target
+		if !filepath.IsAbs(fname) {
+			visited = append(visited, fname)
+		}
+		clog.Infof(ctx, "retry symlnk %s", fname)
+	}
+	return nil, visited, fmt.Errorf("read %q: %w", reqname, syscall.ELOOP)
+
+}
+
+func (fsys *filesystem) statFollowSymlink(ctx context.Context, root, fname string) (hashfs.FileInfo, error) {
+	reqname := fname
+	execRoot := root
+	for range maxSymlinks {
+		if filepath.IsAbs(fname) {
+			execRoot = ""
+		}
+		fi, err := fsys.hashfs.Stat(ctx, execRoot, fname)
+		if err != nil {
+			return fi, err
+		}
+		if fi.Target() == "" {
+			return fi, nil
+		}
+		target := fi.Target()
+		if !filepath.IsAbs(target) {
+			orig := fi.Path()
+			relOrig, err := filepath.Rel(root, orig)
+			if err != nil || !filepath.IsLocal(relOrig) {
+				target = filepath.ToSlash(filepath.Join(filepath.Dir(orig), target))
+			} else {
+				target = filepath.ToSlash(filepath.Join(filepath.Dir(relOrig), target))
+			}
+		}
+		if !filepath.IsLocal(target) {
+			target = filepath.ToSlash(filepath.Join(execRoot, target))
+		}
+		clog.Infof(ctx, "stat follow %s -> %s", fname, target)
+		fname = target
+	}
+	return hashfs.FileInfo{}, fmt.Errorf("stat %q: %w", reqname, syscall.ELOOP)
 }
