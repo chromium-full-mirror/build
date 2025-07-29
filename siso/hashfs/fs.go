@@ -336,23 +336,23 @@ func makeFullpath(root, fname string) string {
 	return filepath.ToSlash(filepath.Join(root, fname))
 }
 
-func (hfs *HashFS) dirLookup(ctx context.Context, root, fname string) (*entry, *directory, bool) {
+func (hfs *HashFS) dirLookup(ctx context.Context, root, fname string) (*entry, string, *directory, bool) {
 	if filepath.IsAbs(fname) {
 		return hfs.directory.lookup(ctx, filepath.ToSlash(fname))
 	}
 	if needPathClean(root, fname) {
 		return hfs.directory.lookup(ctx, filepath.ToSlash(filepath.Join(root, fname)))
 	}
-	e, _, ok := hfs.directory.lookup(ctx, root)
+	e, _, _, ok := hfs.directory.lookup(ctx, root)
 	if !ok {
-		return nil, nil, false
+		return nil, fname, nil, false
 	}
 	if e.directory == nil {
-		return nil, nil, false
+		return nil, fname, nil, false
 	}
 	e, dir, resolved, ok := e.directory.lookupEntry(ctx, fname)
 	if ok {
-		return e, dir, true
+		return e, fname, dir, true
 	}
 	if resolved != "" {
 		resolvedName := resolved
@@ -361,7 +361,7 @@ func (hfs *HashFS) dirLookup(ctx context.Context, root, fname string) (*entry, *
 		}
 		return hfs.directory.lookup(ctx, resolvedName)
 	}
-	return nil, nil, false
+	return nil, fname, nil, false
 }
 
 func (hfs *HashFS) dirStoreAndNotify(ctx context.Context, fullname string, e *entry) error {
@@ -385,7 +385,10 @@ func (hfs *HashFS) stat(ctx context.Context, root, fname string, needCompute boo
 	if log.V(1) {
 		clog.Infof(ctx, "stat @%s %s", root, fname)
 	}
-	e, dir, ok := hfs.dirLookup(ctx, root, fname)
+	e, fname, dir, ok := hfs.dirLookup(ctx, root, fname)
+	if log.V(1) {
+		clog.Infof(ctx, "stat @%s -> %s", root, fname)
+	}
 	if ok {
 		if e.err != nil {
 			return FileInfo{}, e.err
@@ -456,6 +459,16 @@ func (hfs *HashFS) stat(ctx context.Context, root, fname string, needCompute boo
 	return FileInfo{root: root, fname: fname, e: e}, nil
 }
 
+// SymlinkError is an error when reading symlink file.
+type SymlinkError struct {
+	Path   string
+	Target string
+}
+
+func (e SymlinkError) Error() string {
+	return fmt.Sprintf("reading symlink %q: target=%q", e.Path, e.Target)
+}
+
 // ReadDir returns directory entries of root/name.
 func (hfs *HashFS) ReadDir(ctx context.Context, root, name string) (dents []DirEntry, err error) {
 	ctx, span := trace.NewSpan(ctx, "read-dir")
@@ -467,7 +480,7 @@ func (hfs *HashFS) ReadDir(ctx context.Context, root, name string) (dents []DirE
 		}()
 	}
 	dname := makeFullpath(root, name)
-	e, _, ok := hfs.directory.lookup(ctx, dname)
+	e, dname, _, ok := hfs.directory.lookup(ctx, dname)
 	if !ok {
 		e = newLocalEntry()
 		e.init(ctx, dname, hfs.executables, hfs.OS)
@@ -485,6 +498,14 @@ func (hfs *HashFS) ReadDir(ctx context.Context, root, name string) (dents []DirE
 	err = e.err
 	if err != nil {
 		return nil, fmt.Errorf("read dir %s: %w", dname, err)
+	}
+	if e.target != "" {
+		relDname, err := filepath.Rel(root, dname)
+		if err != nil || !filepath.IsLocal(relDname) {
+			clog.Warningf(ctx, "read dir: symlink rel root %q: %v", dname, err)
+			return nil, SymlinkError{Path: dname, Target: e.target}
+		}
+		return nil, SymlinkError{Path: relDname, Target: e.target}
 	}
 	if e.directory == nil {
 		return nil, fmt.Errorf("read dir %s: not dir: %w", dname, os.ErrPermission)
@@ -522,7 +543,7 @@ func (hfs *HashFS) ReadFile(ctx context.Context, root, fname string) ([]byte, er
 	}
 	fname = makeFullpath(root, fname)
 	span.SetAttr("fname", fname)
-	e, _, ok := hfs.directory.lookup(ctx, fname)
+	e, fname, _, ok := hfs.directory.lookup(ctx, fname)
 	if !ok {
 		e = newLocalEntry()
 		e.init(ctx, fname, hfs.executables, hfs.OS)
@@ -562,6 +583,14 @@ func (hfs *HashFS) ReadFile(ctx context.Context, root, fname string) ([]byte, er
 			return buf, err
 		}
 		// already flushed. reading from local disk is faster.
+	}
+	if e.target != "" {
+		relFname, err := filepath.Rel(root, fname)
+		if err != nil || !filepath.IsLocal(relFname) {
+			clog.Warningf(ctx, "readfile: symlink rel root %q: %v", fname, err)
+			return nil, SymlinkError{Path: fname, Target: e.target}
+		}
+		return nil, SymlinkError{Path: relFname, Target: e.target}
 	}
 	if e.src == nil {
 		return nil, fmt.Errorf("readfile %s: no src", fname)
@@ -657,7 +686,7 @@ func (hfs *HashFS) Copy(ctx context.Context, root, src, dst string, mtime time.T
 	hfs.clean.Store(false)
 	srcfname := makeFullpath(root, src)
 	dstfname := makeFullpath(root, dst)
-	e, _, ok := hfs.directory.lookup(ctx, srcfname)
+	e, _, _, ok := hfs.directory.lookup(ctx, srcfname)
 	if !ok {
 		e = newLocalEntry()
 		if log.V(9) {
@@ -949,7 +978,7 @@ func (hfs *HashFS) Entries(ctx context.Context, root string, inputs []string) ([
 	ents := make([]*entry, 0, len(inputs))
 	for _, fname := range inputs {
 		fname := makeFullpath(root, fname)
-		e, _, ok := hfs.directory.lookup(ctx, fname)
+		e, _, _, ok := hfs.directory.lookup(ctx, fname)
 		if ok {
 			if log.V(2) {
 				clog.Infof(ctx, "tree cache hit %s", fname)
@@ -1023,7 +1052,7 @@ func (hfs *HashFS) Entries(ctx context.Context, root string, inputs []string) ([
 				name = tname
 				tname = ""
 				var ok bool
-				elink, _, ok = hfs.directory.lookup(ctx, name)
+				elink, _, _, ok = hfs.directory.lookup(ctx, name)
 				if ok {
 					if log.V(2) {
 						clog.Infof(ctx, "tree cache hit %s", name)
@@ -1177,7 +1206,7 @@ func (hfs *HashFS) Update(ctx context.Context, execRoot string, entries []Update
 		if ent.Entry == nil {
 			// UpdateEntry was captured by RetrieveUpdateEntriesFromLocal
 			// so the entry should exists in hfs.directory.
-			e, _, ok := hfs.dirLookup(ctx, execRoot, ent.Name)
+			e, _, _, ok := hfs.dirLookup(ctx, execRoot, ent.Name)
 			if !ok {
 				clog.Warningf(ctx, "failed to update: no entry %s", ent.Name)
 				continue
@@ -1444,7 +1473,7 @@ func (hfs *HashFS) Flush(ctx context.Context, execRoot string, files []string) e
 	eg, ctx := errgroup.WithContext(ctx)
 	for _, file := range files {
 		fname := makeFullpath(execRoot, file)
-		e, _, ok := hfs.directory.lookup(ctx, fname)
+		e, _, _, ok := hfs.directory.lookup(ctx, fname)
 		if !ok {
 			// If it doesn't exist in memory, just use local disk as is.
 			continue
@@ -2020,12 +2049,15 @@ type pathElements struct {
 	elems []string
 }
 
-func (d *directory) lookup(ctx context.Context, fname string) (*entry, *directory, bool) {
+// lookup fname in directory and returns an entry of the fname,
+// real file name and directory entry that contains the entry,
+// and bool indicates file exists or not.
+func (d *directory) lookup(ctx context.Context, fname string) (*entry, string, *directory, bool) {
 	// expect d.isRoot == true
 	for range maxSymlinks {
 		e, dir, resolved, ok := d.lookupEntry(ctx, fname)
 		if e != nil || dir != nil {
-			return e, dir, ok
+			return e, fname, dir, ok
 		}
 		if resolved != "" {
 			if !d.isRoot {
@@ -2034,9 +2066,9 @@ func (d *directory) lookup(ctx context.Context, fname string) (*entry, *director
 			fname = resolved
 			continue
 		}
-		return nil, nil, false
+		return nil, fname, nil, false
 	}
-	return nil, nil, false
+	return nil, fname, nil, false
 }
 
 func (d *directory) lookupEntry(ctx context.Context, fname string) (*entry, *directory, string, bool) {

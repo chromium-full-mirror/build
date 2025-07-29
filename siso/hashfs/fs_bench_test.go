@@ -18,7 +18,7 @@ func BenchmarkDirectoryLookup(b *testing.B) {
 		b.ReportAllocs()
 		b.ResetTimer()
 		for range b.N {
-			_, _, ok := root.lookup(ctx, fname)
+			_, _, _, ok := root.lookup(ctx, fname)
 			if ok {
 				b.Fatalf("lookup(ctx, %q)=_, _, %t; want false", fname, ok)
 			}
@@ -30,7 +30,7 @@ func BenchmarkDirectoryLookup(b *testing.B) {
 		b.ReportAllocs()
 		b.ResetTimer()
 		for range b.N {
-			_, _, ok := root.lookup(ctx, fname)
+			_, _, _, ok := root.lookup(ctx, fname)
 			if !ok {
 				b.Fatalf("lookup(ctx, %q)=_, _, %t; want true", fname, ok)
 			}
@@ -48,7 +48,7 @@ func TestDirectoryLookup(t *testing.T) {
 
 	t.Run("miss", func(t *testing.T) {
 		avg := testing.AllocsPerRun(1000, func() {
-			_, _, ok := root.lookup(ctx, fname)
+			_, _, _, ok := root.lookup(ctx, fname)
 			if ok {
 				t.Fatalf("lookup(ctx, %q)=_, _, %t; want false", fname, ok)
 			}
@@ -62,7 +62,7 @@ func TestDirectoryLookup(t *testing.T) {
 	root.store(ctx, fname, e)
 	t.Run("ok", func(t *testing.T) {
 		avg := testing.AllocsPerRun(1000, func() {
-			_, _, ok := root.lookup(ctx, fname)
+			_, _, _, ok := root.lookup(ctx, fname)
 			if !ok {
 				t.Fatalf("lookup(ctx, %q)=_, _, %t; want true", fname, ok)
 			}

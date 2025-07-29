@@ -60,7 +60,7 @@ func TestDirectoryLookup_Symlink(t *testing.T) {
 	osfs := osfs.New(ctx, "fs", osfs.Option{})
 
 	fname := filepath.Join(dir, symlinkName)
-	_, _, ok := d.lookup(ctx, fname)
+	_, _, _, ok := d.lookup(ctx, fname)
 	if ok {
 		t.Fatalf("d.lookup(ctx, %q): %t; want false", fname, ok)
 	}
@@ -72,7 +72,7 @@ func TestDirectoryLookup_Symlink(t *testing.T) {
 	}
 
 	fname = filepath.Join(dir, fileName)
-	_, _, ok = d.lookup(ctx, fname)
+	_, _, _, ok = d.lookup(ctx, fname)
 	if ok {
 		t.Fatalf("d.lookup(ctx, %q): %t; want false", fname, ok)
 	}
@@ -84,26 +84,26 @@ func TestDirectoryLookup_Symlink(t *testing.T) {
 	}
 
 	t.Log(fname)
-	_, _, ok = d.lookup(ctx, fname)
+	_, _, _, ok = d.lookup(ctx, fname)
 	if !ok {
 		t.Fatalf("d.lookup(ctx, %q) %t; want true", fname, ok)
 	}
 	fname = filepath.Dir(fname)
 	t.Log(fname)
-	_, _, ok = d.lookup(ctx, fname)
+	_, _, _, ok = d.lookup(ctx, fname)
 	if !ok {
 		t.Fatalf("d.lookup(ctx, %q) %t; want true", fname, ok)
 	}
 
 	fname = filepath.Join(dir, symlinkName)
 	t.Log(fname)
-	_, _, ok = d.lookup(ctx, fname)
+	_, _, _, ok = d.lookup(ctx, fname)
 	if !ok {
 		t.Fatalf("d.lookup(ctx, %q) %t; want true", fname, ok)
 	}
 	fname = filepath.Join(fname, "somefile")
 	t.Log(fname)
-	_, _, ok = d.lookup(ctx, fname)
+	_, _, _, ok = d.lookup(ctx, fname)
 	if !ok {
 		t.Fatalf("d.lookup(ctx, %q) %t; want true", fname, ok)
 	}

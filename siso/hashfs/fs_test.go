@@ -542,6 +542,72 @@ func TestStat_Dir(t *testing.T) {
 	}
 }
 
+func TestStat_Symlink_FileInfoPath(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skipf("no symlink on windows")
+		return
+	}
+	ctx := context.Background()
+	dir := t.TempDir()
+	dir, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	opt := hashfs.Option{}
+	hfs, err := hashfs.New(ctx, opt)
+	if err != nil {
+		t.Fatalf("New=%v", err)
+	}
+	defer func() {
+		err := hfs.Close(ctx)
+		if err != nil {
+			t.Fatalf("hfs.Close=%v", err)
+		}
+	}()
+	err = os.MkdirAll(filepath.Join(dir, "system/core/include"), 0755)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = os.Symlink("../libutils/include/utils/", filepath.Join(dir, "system/core/include/utils"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = os.MkdirAll(filepath.Join(dir, "system/core/libutils/include/utils"), 0755)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = os.Symlink("../../binder/include/utils/Errors.h", filepath.Join(dir, "system/core/libutils/include/utils/Errors.h"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = os.MkdirAll(filepath.Join(dir, "system/core/libutils/binder/include/utils"), 0755)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = os.WriteFile(filepath.Join(dir, "system/core/libutils/binder/include/utils/Errors.h"), nil, 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	fi, err := hfs.Stat(ctx, dir, "system/core/include/utils")
+	if err != nil {
+		t.Fatalf("Stat(%q)=%v, %v; want nil err", "system/core/include/utils", fi, err)
+	}
+	if got, want := fi.Target(), "../libutils/include/utils/"; got != want {
+		t.Errorf("fi.Target()=%q; want=%q", got, want)
+	}
+	fi, err = hfs.Stat(ctx, dir, "system/core/include/utils/Errors.h")
+	if err != nil {
+		t.Fatalf("Stat=%v, %v; want nil err", fi, err)
+	}
+	if got, want := fi.Target(), "../../binder/include/utils/Errors.h"; got != want {
+		t.Errorf("fi.Target()=%q; want=%q", got, want)
+	}
+	if got, want := fi.Path(), filepath.Join(dir, "system/core/libutils/include/utils/Errors.h"); got != want {
+		t.Errorf("fi.Path()=%q; want=%q", got, want)
+	}
+}
+
 func computeUpdateEntries(ctx context.Context, pre, post []hashfs.UpdateEntry, restat bool, updatedTime time.Time, cmdHash []byte) []hashfs.UpdateEntry {
 	// match with execute.(*Cmd).computeOutputEntries
 	m := make(map[string]hashfs.UpdateEntry)
