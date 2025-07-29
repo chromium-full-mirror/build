@@ -332,7 +332,11 @@ func (m *MerkleTree) setTree(cur dirstate, name string, d digest.Digest, store *
 
 // Build builds merkle tree and returns root's digest.
 func (m *MerkleTree) Build(ctx context.Context) (digest.Digest, error) {
-	d, err := m.buildTree(ctx, m.m[""], "")
+	err := m.resolveSymlinkDir(ctx, m.RootDirectory(), "")
+	if err != nil {
+		return digest.Digest{}, err
+	}
+	d, err := m.buildTree(ctx, m.RootDirectory(), "")
 	if err != nil {
 		return digest.Digest{}, err
 	}
@@ -342,6 +346,92 @@ func (m *MerkleTree) Build(ctx context.Context) (digest.Digest, error) {
 // RootDirectory returns root directory in the merkle tree.
 func (m *MerkleTree) RootDirectory() *rpb.Directory {
 	return m.m[""]
+}
+
+// resolveSymlinkDir resolves symlink to directory.
+// If "path/to/name" is symlink, target to "other/name",
+// and "path/to/name" is directory, then the directory entries
+// are merged into "path/to/other/name" directory.
+func (m *MerkleTree) resolveSymlinkDir(ctx context.Context, curdir *rpb.Directory, dirname string) error {
+	for _, s := range curdir.Symlinks {
+		dirname := pathJoin(dirname, s.Name)
+		dir, found := m.m[dirname]
+		if !found {
+			continue
+		}
+		realDirname := filepath.ToSlash(filepath.Join(filepath.Dir(dirname), s.Target))
+		err := m.mergeDir(ctx, realDirname, dir)
+		if err != nil {
+			return err
+		}
+		// relocate subdirs under dirname to realDirname.
+		for name, dir := range m.m {
+			if strings.HasPrefix(name, dirname+"/") {
+				tname := realDirname + strings.TrimPrefix(name, dirname)
+				tdir, ok := m.m[tname]
+				if ok {
+					proto.Merge(tdir, dir)
+				} else {
+					tdir = dir
+				}
+				m.m[tname] = tdir
+				delete(m.m, name)
+			}
+		}
+	}
+	for _, subdir := range curdir.Directories {
+		dirname := pathJoin(dirname, subdir.Name)
+		dir, found := m.m[dirname]
+		if !found {
+			continue
+		}
+		if dir != nil && subdir.Digest == nil {
+			err := m.resolveSymlinkDir(ctx, dir, dirname)
+			if err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// mergeDir merges dir into dirname's directory.
+func (m *MerkleTree) mergeDir(ctx context.Context, dirname string, dir *rpb.Directory) error {
+	elems := splitElem(dirname)
+	cur := dirstate{
+		name: ".",
+		dir:  m.RootDirectory(),
+	}
+	for {
+		var name string
+		name, elems = elems[0], elems[1:]
+		if len(elems) == 0 {
+			// leaf
+			cur, err := m.setDir(cur, name)
+			if err != nil {
+				if errors.Is(err, ErrPrecomputedSubTree) {
+					// build/mac_files/SDKs/MacOSX.sdk will hit this.
+					clog.Warningf(ctx, "mergeDir set %s: %v", dirname, err)
+					return nil
+				}
+				return fmt.Errorf("mergeDir: set %s: %w", dirname, err)
+			}
+			cur.dir.Files = append(cur.dir.Files, dir.Files...)
+			cur.dir.Symlinks = append(cur.dir.Symlinks, dir.Symlinks...)
+			cur.dir.Directories = append(cur.dir.Directories, dir.Directories...)
+			return nil
+		}
+		var err error
+		cur, err = m.setDir(cur, name)
+		if err != nil {
+			if errors.Is(err, ErrPrecomputedSubTree) {
+				// files under this dir should exist in precomputed tree.
+				clog.Warningf(ctx, "mergeDir set %s: %v", dirname, err)
+				return nil
+			}
+			return fmt.Errorf("mergeDir: set %s: %w", dirname, err)
+		}
+	}
 }
 
 // buildtree builds tree at curdir, which is located as dirname.
@@ -399,7 +489,7 @@ func (m *MerkleTree) buildTree(ctx context.Context, curdir *rpb.Directory, dirna
 		if found {
 			switch p.(type) {
 			case *rpb.SymlinkNode:
-				clog.Infof(ctx, "use symlink for dir: %s", filepath.Join(dirname, subdir.Name))
+				clog.Infof(ctx, "use symlink for dir: %s", dirname)
 				continue
 			}
 			// other checks later.

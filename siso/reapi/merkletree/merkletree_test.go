@@ -626,10 +626,216 @@ func TestBuildDuplicateSymlinkDir(t *testing.T) {
 		[]string{"dir"},
 		nil)
 	// use symlink rather than dir.
+	// dir/bar is real directory, since dir/foo is symlink to bar
+	// and dir/foo set as directory.
 	checkDir(ctx, t, ds, subdir, "dir",
 		nil,
-		nil,
+		[]string{"bar"},
 		[]string{"foo"})
+}
+
+func TestBuildResolveSymlinkDir(t *testing.T) {
+	ctx := context.Background()
+	ds := digest.NewStore()
+	mt := New(ds)
+	ents := []Entry{
+		{
+			Name:   "Foo.framework/Headers",
+			Target: "Versions/Current/Headers",
+		},
+		{
+			Name: "Foo.framework/Headers/Bar.h",
+			Data: digest.FromBytes("Bar.h", []byte("Bar.h")),
+		},
+		{
+			Name: "Foo.framework/Versions/Current/Headers",
+		},
+	}
+	for _, ent := range ents {
+		err := mt.Set(ent)
+		if err != nil {
+			t.Fatalf("mt.Set(%q)=%v; want=nil", ent.Name, err)
+		}
+	}
+	d, err := mt.Build(ctx)
+	if err != nil {
+		t.Errorf("mt.Build()=%v, %v, want nil err", d, err)
+	}
+	dir, err := openDir(ctx, ds, d)
+	if err != nil {
+		t.Fatalf("root %v not found: %v", d, err)
+	}
+	ffDir := checkDir(ctx, t, ds, dir, "Foo.framework", nil, []string{"Versions"}, []string{"Headers"})
+	vdir := checkDir(ctx, t, ds, ffDir, "Versions", nil, []string{"Current"}, nil)
+	cdir := checkDir(ctx, t, ds, vdir, "Current", nil, []string{"Headers"}, nil)
+	checkDir(ctx, t, ds, cdir, "Headers", []string{"Bar.h"}, nil, nil)
+}
+
+func TestBuildResolveSymlinkDirAndSymlinkFile(t *testing.T) {
+	ctx := context.Background()
+	ds := digest.NewStore()
+	mt := New(ds)
+	ents := []Entry{
+		{
+			Name: "system/core/include",
+		},
+		{
+			Name:   "system/core/include/utils",
+			Target: "../libutils/include/utils/",
+		},
+		{
+			Name:   "system/core/include/utils/Errors.h",
+			Target: "../../binder/include/utils/Errors.h",
+		},
+		{
+			Name: "system/core/include/utils/RWLock.h",
+			Data: digest.FromBytes("RWLock.h", []byte("#include <utils/Errors.h>\n")),
+		},
+		{
+			Name: "system/core/libutils/binder/include/utils/Errors.h",
+			Data: digest.FromBytes("Errors.h", []byte("")),
+		},
+		{
+			Name: "system/core/libutils/include/utils",
+		},
+	}
+	for _, ent := range ents {
+		err := mt.Set(ent)
+		if err != nil {
+			t.Fatalf("mt.Set(%q)=%v; want=nil", ent.Name, err)
+		}
+	}
+	d, err := mt.Build(ctx)
+	if err != nil {
+		t.Errorf("mt.Build()=%v, %v, want nil err", d, err)
+	}
+	dir, err := openDir(ctx, ds, d)
+	if err != nil {
+		t.Fatalf("root %v not found: %v", d, err)
+	}
+	// The expected tree looks like this:
+	// .
+	// └── system
+	//     └── core
+	//         ├── include
+	//         │   └── utils -> ../libutils/include/utils/
+	//         └── libutils
+	//             ├── binder
+	//             │   └── include
+	//             │       └── utils
+	//             │           └── Errors.h
+	//             └── include
+	//                 └── utils
+	//                     ├── Errors.h -> ../../binder/include/utils/Errors.h
+	//                     └── RWLock.h
+	sDir := checkDir(ctx, t, ds, dir, "system", nil, []string{"core"}, nil)
+	cDir := checkDir(ctx, t, ds, sDir, "core", nil, []string{"include", "libutils"}, nil)
+	checkDir(ctx, t, ds, cDir, "include", nil, nil, []string{"utils"})
+	libDir := checkDir(ctx, t, ds, cDir, "libutils", nil, []string{"binder", "include"}, nil)
+	bDir := checkDir(ctx, t, ds, libDir, "binder", nil, []string{"include"}, nil)
+	biDir := checkDir(ctx, t, ds, bDir, "include", nil, []string{"utils"}, nil)
+	checkDir(ctx, t, ds, biDir, "utils", []string{"Errors.h"}, nil, nil)
+	liDir := checkDir(ctx, t, ds, libDir, "include", nil, []string{"utils"}, nil)
+	checkDir(ctx, t, ds, liDir, "utils", []string{"RWLock.h"}, nil, []string{"Errors.h"})
+}
+
+func TestBuildResolveSymlinkTree(t *testing.T) {
+	ctx := context.Background()
+	ds := digest.NewStore()
+	mt := New(ds)
+	err := mt.SetTree(TreeEntry{
+		Name:   "build/mac_files/SDKs/MacOSX.sdk",
+		Digest: digest.Empty,
+		Store:  ds,
+	})
+	if err != nil {
+		t.Fatalf("mt.SetTree=%v; want nil", err)
+	}
+	ents := []Entry{
+		{
+			Name: "build/mac_files/SDKs/MacOSX.sdk",
+		},
+		{
+			Name:   "build/mac_files/SDKs/MacOSX14.0.sdk",
+			Target: "MacOSX.sdk",
+		},
+	}
+	for _, ent := range ents {
+		err := mt.Set(ent)
+		if err != nil {
+			t.Fatalf("mt.Set(%q)=%v; want=nil", ent.Name, err)
+		}
+	}
+	d, err := mt.Build(ctx)
+	if err != nil {
+		t.Errorf("mt.Build()=%v, %v; want nil err", d, err)
+	}
+	dir, err := openDir(ctx, ds, d)
+	if err != nil {
+		t.Fatalf("root %v not found: %v", d, err)
+	}
+	bDir := checkDir(ctx, t, ds, dir, "build", nil, []string{"mac_files"}, nil)
+	mDir := checkDir(ctx, t, ds, bDir, "mac_files", nil, []string{"SDKs"}, nil)
+	checkDir(ctx, t, ds, mDir, "SDKs", nil, []string{"MacOSX.sdk"}, []string{"MacOSX14.0.sdk"})
+}
+
+func TestBuildResolveSymlinkDirMerge(t *testing.T) {
+	ctx := context.Background()
+	ds := digest.NewStore()
+	mt := New(ds)
+	ents := []Entry{
+		{
+			Name: "external/puffin",
+		},
+		{
+			Name:   "external/puffin/puffin/src",
+			Target: "../src",
+		},
+		{
+			Name: "external/puffin/puffin/src/include/puffin",
+		},
+		{
+			Name: "external/puffin/puffin/src/include/puffin/common.h",
+			Data: digest.FromBytes("common.h", []byte("// common.h")),
+		},
+		{
+			Name: "external/puffin/puffin/src/logging.h",
+			Data: digest.FromBytes("logging.h", []byte("// logging.h")),
+		},
+		{
+			Name: "external/puffin/src",
+		},
+		{
+			Name: "external/puffin/src/include",
+		},
+		{
+			Name: "external/puffin/src/puff_reader.cc",
+			Data: digest.FromBytes("puff_reader.cc", []byte("// puff_reader.cc")),
+		},
+	}
+	for _, ent := range ents {
+		err := mt.Set(ent)
+		if err != nil {
+			t.Fatalf("mt.Set(%q)=%v; want=nil", ent.Name, err)
+		}
+	}
+	d, err := mt.Build(ctx)
+	if err != nil {
+		t.Errorf("mt.Build()=%v, %v; want nil err", d, err)
+	}
+	dir, err := openDir(ctx, ds, d)
+	if err != nil {
+		t.Fatalf("root %v not found: %v", d, err)
+	}
+	eDir := checkDir(ctx, t, ds, dir, "external", nil, []string{"puffin"}, nil)
+	pDir := checkDir(ctx, t, ds, eDir, "puffin", nil, []string{"puffin", "src"}, nil)
+	checkDir(ctx, t, ds, pDir, "puffin", nil, nil, []string{"src"})
+	sDir := checkDir(ctx, t, ds, pDir, "src", []string{"logging.h", "puff_reader.cc"}, []string{"include"}, nil)
+
+	// properly merge external/puffin/puffin/src/include/** into
+	// external/puffin/src/include
+	iDir := checkDir(ctx, t, ds, sDir, "include", nil, []string{"puffin"}, nil)
+	checkDir(ctx, t, ds, iDir, "puffin", []string{"common.h"}, nil, nil)
 }
 
 func checkDir(ctx context.Context, t *testing.T, ds *digest.Store, pdir *rpb.Directory, name string, wantFiles []string, wantDirs []string, wantSymlinks []string) *rpb.Directory {
