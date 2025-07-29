@@ -281,7 +281,7 @@ func (s *Service) write(server bspb.ByteStream_WriteServer) (resource string, er
 		// If the resource name is empty, this is the first request from the client.
 		if resource == "" {
 			if request.ResourceName == "" {
-				return resource, status.Errorf(codes.InvalidArgument, "must set resource name on first request")
+				return resource, status.Error(codes.InvalidArgument, "must set resource name on first request")
 			}
 			resource = request.ResourceName
 			var u uuid.UUID
@@ -313,7 +313,7 @@ func (s *Service) write(server bspb.ByteStream_WriteServer) (resource string, er
 			tempFile, err = os.OpenFile(tempPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0644)
 			if err != nil {
 				if errors.Is(err, fs.ErrExist) {
-					return resource, status.Errorf(codes.InvalidArgument, "upload with same uuid already in progress")
+					return resource, status.Error(codes.InvalidArgument, "upload with same uuid already in progress")
 				}
 				return resource, status.Errorf(codes.Internal, "could not create temporary file for upload: %v", err)
 			}
@@ -439,7 +439,7 @@ func (s *Service) batchUploadBlobs(request *repb.BatchUpdateBlobsRequest) (*repb
 	for _, blob := range request.Requests {
 		// Ensure that the client didn't send compressed data.
 		if blob.Compressor != repb.Compressor_IDENTITY {
-			return nil, status.Errorf(codes.InvalidArgument, "compressed data is not supported")
+			return nil, status.Error(codes.InvalidArgument, "compressed data is not supported")
 		}
 
 		// Parse the digest.
