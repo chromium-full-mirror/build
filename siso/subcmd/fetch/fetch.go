@@ -128,10 +128,10 @@ func (c *run) run(ctx context.Context) error {
 		digestStr = c.Flags.Arg(0)
 	}
 
-	projectID := c.reopt.UpdateProjectID(c.projectID)
+	c.reopt.UpdateProjectID(c.projectID)
 	var credential cred.Cred
 	var err error
-	if projectID == "" {
+	if !c.reopt.IsValid() {
 		return errors.New("project ID is not specified")
 	}
 	credential, err = cred.New(ctx, c.authOpts)

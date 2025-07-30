@@ -111,7 +111,7 @@ func (o *Option) RegisterFlags(fs *flag.FlagSet, envs map[string]string) {
 	fs.BoolVar(&o.KeepAliveParams.PermitWithoutStream, o.Prefix+"_grpc_keepalive_permit_without_stream", false, "grpc keepalive permit without stream"+purpose)
 }
 
-func isRBE(address string) bool {
+func isGoogleRBE(address string) bool {
 	return strings.HasSuffix(address, "remotebuildexecution.googleapis.com:443")
 }
 
@@ -120,7 +120,7 @@ func (o *Option) String() string {
 		return "no reapi backend"
 	}
 	addr := fmt.Sprintf("reapi %q", o.Address)
-	if isRBE(o.Address) {
+	if isGoogleRBE(o.Address) {
 		addr = "RBE"
 		if strings.HasSuffix(o.Address, "-remotebuildexecution.googleapis.com:443") {
 			addr = fmt.Sprintf("RBE(%s)", strings.TrimSuffix(o.Address, "-remotebuildexecution.googleapis.com:443"))
@@ -132,7 +132,7 @@ func (o *Option) String() string {
 // UpdateProjectID updates the Option for projID and returns cloud project ID to use.
 // Just returns empty string if backend is not RBE.
 func (o *Option) UpdateProjectID(projID string) string {
-	if !isRBE(o.Address) {
+	if !isGoogleRBE(o.Address) {
 		return ""
 	}
 	if projID != "" && !strings.HasPrefix(o.Instance, "projects/") {
@@ -153,7 +153,7 @@ func (o Option) IsValid() bool {
 	if o.Address == "" {
 		return false
 	}
-	if isRBE(o.Address) {
+	if isGoogleRBE(o.Address) {
 		return o.Instance != ""
 	}
 	return true
@@ -261,7 +261,7 @@ func New(ctx context.Context, cred cred.Cred, opt Option) (*Client, error) {
 	if opt.Address == "" {
 		return nil, errors.New("no reapi address")
 	}
-	if isRBE(opt.Address) && opt.Instance == "" {
+	if isGoogleRBE(opt.Address) && opt.Instance == "" {
 		return nil, errors.New("no reapi instance")
 	}
 	clog.Infof(ctx, "address: %q instance: %q", opt.Address, opt.Instance)
@@ -286,7 +286,7 @@ func newConn(ctx context.Context, addr string, cred cred.Cred, opt Option) (grpc
 		option.WithEndpoint(addr),
 		option.WithGRPCConnectionPool(opt.ConnPool),
 	}
-	if !isRBE(addr) {
+	if !isGoogleRBE(addr) {
 		// disable Google Application Default for non RBE backend.
 		// user should specify credential helper for the backend.
 		copts = append(copts, option.WithoutAuthentication())
