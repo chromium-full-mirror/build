@@ -83,6 +83,8 @@ Siso is named after shiso, a herb commonly used in Japan. It's a reference to ba
   environment variables used by Siso.
 - [Siso starlark config](./docs/starlark_config.md) explains
   Siso configs (e.g. `//build/config/siso/main.star`).
+- [REAPI platform properties](./docs/reapi_platform_properties.md) explains
+  RE API platform properties used in Siso.
 
 ## Status
 
