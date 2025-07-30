@@ -20,13 +20,13 @@ import (
 
 	"go.chromium.org/luci/auth"
 	"go.chromium.org/luci/common/cli"
-	"go.chromium.org/luci/common/system/signals"
 
 	"go.chromium.org/build/siso/auth/cred"
 	"go.chromium.org/build/siso/hashfs"
 	pb "go.chromium.org/build/siso/hashfs/proto"
 	"go.chromium.org/build/siso/reapi"
 	"go.chromium.org/build/siso/reapi/digest"
+	"go.chromium.org/build/siso/signals"
 )
 
 const flushUsage = `flush recorded files to the disk.
@@ -95,7 +95,7 @@ func (c *flushRun) Run(a subcommands.Application, args []string, env subcommands
 
 func (c *flushRun) run(ctx context.Context) error {
 	ctx, cancel := context.WithCancel(ctx)
-	defer signals.HandleInterrupt(cancel)()
+	defer signals.HandleInterrupt(ctx, cancel)()
 
 	if c.Flags.NArg() == 0 && c.fileListPath == "" {
 		return fmt.Errorf("no files to flush: %w", flag.ErrHelp)

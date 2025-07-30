@@ -28,7 +28,6 @@ import (
 
 	"go.chromium.org/luci/auth"
 	"go.chromium.org/luci/common/cli"
-	"go.chromium.org/luci/common/system/signals"
 	"go.chromium.org/luci/hardcoded/chromeinfra"
 
 	"go.chromium.org/build/siso/auth/cred"
@@ -37,6 +36,7 @@ import (
 	"go.chromium.org/build/siso/reapi"
 	"go.chromium.org/build/siso/reapi/digest"
 	"go.chromium.org/build/siso/reapi/merkletree"
+	"go.chromium.org/build/siso/signals"
 	"go.chromium.org/build/siso/ui"
 )
 
@@ -129,7 +129,7 @@ func (errInterrupted) Is(target error) bool { return target == context.Canceled 
 
 func (c *run) run(ctx context.Context) error {
 	ctx, cancel := context.WithCancelCause(ctx)
-	defer signals.HandleInterrupt(func() {
+	defer signals.HandleInterrupt(ctx, func() {
 		cancel(errInterrupted{})
 	})()
 	started := time.Now()

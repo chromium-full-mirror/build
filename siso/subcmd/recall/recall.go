@@ -30,7 +30,6 @@ import (
 
 	"go.chromium.org/luci/auth"
 	"go.chromium.org/luci/common/cli"
-	"go.chromium.org/luci/common/system/signals"
 
 	"go.chromium.org/build/siso/auth/cred"
 	"go.chromium.org/build/siso/reapi"
@@ -38,6 +37,7 @@ import (
 	"go.chromium.org/build/siso/reapi/merkletree/exporter"
 	"go.chromium.org/build/siso/reapi/merkletree/importer"
 	rbepb "go.chromium.org/build/siso/reapi/proto"
+	"go.chromium.org/build/siso/signals"
 )
 
 const usage = `recall action by digest, or remote exec call to run.
@@ -130,7 +130,7 @@ func (c *run) Run(a subcommands.Application, args []string, env subcommands.Env)
 
 func (c *run) run(ctx context.Context) error {
 	ctx, cancel := context.WithCancel(ctx)
-	defer signals.HandleInterrupt(cancel)()
+	defer signals.HandleInterrupt(ctx, cancel)()
 
 	projectID := c.reopt.UpdateProjectID(c.projectID)
 	var credential cred.Cred

@@ -20,9 +20,9 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"go.chromium.org/luci/common/cli"
-	"go.chromium.org/luci/common/system/signals"
 
 	"go.chromium.org/build/siso/o11y/clog"
+	"go.chromium.org/build/siso/signals"
 	pb "go.chromium.org/build/siso/toolsupport/soongutil/proto"
 )
 
@@ -85,7 +85,7 @@ func (c *run) Run(a subcommands.Application, args []string, env subcommands.Env)
 
 func (c *run) run(ctx context.Context) error {
 	ctx, cancel := context.WithCancel(ctx)
-	defer signals.HandleInterrupt(cancel)()
+	defer signals.HandleInterrupt(ctx, cancel)()
 
 	tmpl, err := template.New("").Parse(c.template)
 	if err != nil {

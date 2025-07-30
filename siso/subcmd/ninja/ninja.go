@@ -46,7 +46,6 @@ import (
 	"go.chromium.org/luci/auth"
 	"go.chromium.org/luci/cipd/version"
 	"go.chromium.org/luci/common/cli"
-	"go.chromium.org/luci/common/system/signals"
 
 	"go.chromium.org/build/siso/auth/cred"
 	"go.chromium.org/build/siso/build"
@@ -61,6 +60,7 @@ import (
 	"go.chromium.org/build/siso/reapi"
 	"go.chromium.org/build/siso/reapi/digest"
 	"go.chromium.org/build/siso/reapi/merkletree"
+	"go.chromium.org/build/siso/signals"
 	"go.chromium.org/build/siso/subcmd/ninja/ninjalog"
 	"go.chromium.org/build/siso/toolsupport/artfsutil"
 	"go.chromium.org/build/siso/toolsupport/cogutil"
@@ -397,7 +397,7 @@ const (
 
 func (c *ninjaCmdRun) run(ctx context.Context) (stats build.Stats, err error) {
 	ctx, cancel := context.WithCancelCause(ctx)
-	defer signals.HandleInterrupt(func() {
+	defer signals.HandleInterrupt(ctx, func() {
 		cancel(errInterrupted{})
 	})()
 	err = c.debugMode.check()

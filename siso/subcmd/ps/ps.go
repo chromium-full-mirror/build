@@ -16,9 +16,9 @@ import (
 	"github.com/maruel/subcommands"
 
 	"go.chromium.org/luci/common/cli"
-	"go.chromium.org/luci/common/system/signals"
 
 	"go.chromium.org/build/siso/build"
+	"go.chromium.org/build/siso/signals"
 	"go.chromium.org/build/siso/ui"
 )
 
@@ -71,7 +71,7 @@ type source interface {
 func (c *run) Run(a subcommands.Application, args []string, env subcommands.Env) int {
 	ctx := cli.GetContext(a, c, env)
 	ctx, cancel := context.WithCancel(ctx)
-	defer signals.HandleInterrupt(func() {
+	defer signals.HandleInterrupt(ctx, func() {
 		cancel()
 	})()
 

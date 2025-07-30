@@ -21,11 +21,11 @@ import (
 	"github.com/maruel/subcommands"
 
 	"go.chromium.org/luci/common/cli"
-	"go.chromium.org/luci/common/system/signals"
 
 	"go.chromium.org/build/siso/hashfs/osfs"
 	"go.chromium.org/build/siso/o11y/clog"
 	"go.chromium.org/build/siso/reapi/digest"
+	"go.chromium.org/build/siso/signals"
 	"go.chromium.org/build/siso/ui"
 )
 
@@ -78,7 +78,7 @@ func (c *run) Run(a subcommands.Application, args []string, env subcommands.Env)
 
 func (c *run) run(ctx context.Context) error {
 	ctx, cancel := context.WithCancel(ctx)
-	defer signals.HandleInterrupt(cancel)()
+	defer signals.HandleInterrupt(ctx, cancel)()
 
 	clog.Infof(ctx, "dir %s", c.dir)
 	err := os.Chdir(c.dir)

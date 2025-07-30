@@ -15,13 +15,13 @@ import (
 	"runtime"
 	"runtime/pprof"
 	"runtime/trace"
+	"syscall"
 
 	log "github.com/golang/glog"
 	"github.com/maruel/subcommands"
 
 	"go.chromium.org/luci/auth/client/authcli"
 	"go.chromium.org/luci/common/cli"
-	"go.chromium.org/luci/common/system/signals"
 
 	"go.chromium.org/build/siso/auth/cred"
 	"go.chromium.org/build/siso/hashfs/osfs"
@@ -178,7 +178,7 @@ Use "siso help -advanced" to display all commands.
 			fmt.Fprintf(os.Stderr, "pprof is still listening at http://%s/debug/pprof/\n", pprofAddr)
 			fmt.Fprintln(os.Stderr, "Press Ctrl-C to terminate the process")
 			sigch := make(chan os.Signal, 1)
-			signal.Notify(sigch, signals.Interrupts()...)
+			signal.Notify(sigch, os.Interrupt, syscall.SIGTERM)
 			<-sigch
 		}()
 	}

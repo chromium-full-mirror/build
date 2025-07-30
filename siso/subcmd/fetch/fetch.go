@@ -22,12 +22,12 @@ import (
 
 	"go.chromium.org/luci/auth"
 	"go.chromium.org/luci/common/cli"
-	"go.chromium.org/luci/common/system/signals"
 
 	"go.chromium.org/build/siso/auth/cred"
 	"go.chromium.org/build/siso/reapi"
 	"go.chromium.org/build/siso/reapi/digest"
 	"go.chromium.org/build/siso/reapi/merkletree/exporter"
+	"go.chromium.org/build/siso/signals"
 )
 
 const usage = `fetch contents from CAS.
@@ -101,7 +101,7 @@ func (c *run) Run(a subcommands.Application, args []string, env subcommands.Env)
 
 func (c *run) run(ctx context.Context) error {
 	ctx, cancel := context.WithCancel(ctx)
-	defer signals.HandleInterrupt(cancel)()
+	defer signals.HandleInterrupt(ctx, cancel)()
 
 	if c.Flags.NArg() == 0 {
 		return fmt.Errorf("no digest nor bytestream uri: %w", flag.ErrHelp)
