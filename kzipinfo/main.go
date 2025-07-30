@@ -17,6 +17,7 @@ var application = &subcommands.DefaultApplication{
 	Commands: []*subcommands.Command{
 		cmdInfo,
 		cmdListUnits,
+		cmdShow,
 		subcommands.CmdHelp,
 	},
 }
