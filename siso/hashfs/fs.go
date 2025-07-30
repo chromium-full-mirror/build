@@ -212,8 +212,15 @@ func (hfs *HashFS) Notify(f NotifyFunc) {
 
 // SetExecutables sets a map of full paths for files to be
 // considered as executable, even if it is not executable on local disk.
-func (hfs *HashFS) SetExecutables(m map[string]bool) {
+func (hfs *HashFS) SetExecutables(ctx context.Context, m map[string]bool) {
 	hfs.executables = m
+	for fname := range m {
+		e, _, _, ok := hfs.directory.lookup(ctx, fname)
+		if ok {
+			clog.Infof(ctx, "set executable bit on %q", fname)
+			e.mode |= 0111
+		}
+	}
 }
 
 // SetBuildTargets sets build targets.

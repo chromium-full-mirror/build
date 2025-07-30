@@ -291,7 +291,7 @@ func (g *Graph) initGlobals(ctx context.Context) {
 		hfsExecutables[absPath] = true
 		clog.Infof(ctx, "set executable %q %q", f, absPath)
 	}
-	g.globals.hashFS.SetExecutables(hfsExecutables)
+	g.globals.hashFS.SetExecutables(ctx, hfsExecutables)
 
 	// infer gn target.
 	// gn target will be node that is phony target and contains ":"
