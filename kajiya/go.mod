@@ -1,6 +1,6 @@
 module go.chromium.org/build/kajiya
 
-go 1.24.4
+go 1.24.5
 
 require (
 	cloud.google.com/go/longrunning v0.6.7
