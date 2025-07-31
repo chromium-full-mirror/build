@@ -9,8 +9,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -278,6 +280,41 @@ func (g *Graph) initGlobals(ctx context.Context) {
 	for _, f := range g.globals.stepConfig.CaseSensitiveInputs {
 		cif := strings.ToLower(f)
 		g.globals.caseSensitives[cif] = append(g.globals.caseSensitives[cif], f)
+	}
+	// initialize :inputs label
+	inputsLabels := make(map[string]bool)
+	for _, v := range g.globals.stepConfig.InputDeps {
+		for _, s := range v {
+			if !strings.HasSuffix(s, ":inputs") {
+				continue
+			}
+			inputsLabels[s] = true
+		}
+	}
+	for _, label := range slices.Sorted(maps.Keys(inputsLabels)) {
+		if _, ok := g.globals.stepConfig.InputDeps[label]; ok {
+			// already registered
+			clog.Warningf(ctx, "%q already in input_deps", label)
+			continue
+		}
+		target := g.globals.path.MaybeToWD(ctx, strings.TrimSuffix(label, ":inputs"))
+		n, ok := g.globals.nstate.LookupNodeByPath(target)
+		if !ok {
+			clog.Warningf(ctx, "no target for %q (%q)", label, target)
+			continue
+		}
+		edge, ok := n.InEdge()
+		if !ok {
+			clog.Warningf(ctx, "no inputs for %q (%q)", label, target)
+			continue
+		}
+		inputNodes := edge.Inputs()
+		inputs := make([]string, 0, len(inputNodes))
+		for _, n := range inputNodes {
+			inputs = append(inputs, g.globals.targetPath(ctx, n))
+		}
+		clog.Infof(ctx, "add %q (%q) in input_deps: %d", label, target, len(inputs))
+		g.globals.stepConfig.InputDeps[label] = inputs
 	}
 	// initialize executables.
 	hfsExecutables := make(map[string]bool)

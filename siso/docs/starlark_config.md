@@ -140,6 +140,9 @@ to register handlers and step configs.
         `:headers` label would be used for c++ scandeps for include dirs
          or sysroots.
        * values: other files or labels needed for the key.
+         `<target>:inputs` label would be expanded to inputs of `<target>`'s
+         inputs, if `<target>:inputs` is not explicitly defined in
+         `input_deps`.
      * `case_sensitive_inputs`
        * a list of filenames for case sensitive filesystem.
          if "a.txt" and "A.txt" are in this, and "a.txt" is
