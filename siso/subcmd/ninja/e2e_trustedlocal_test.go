@@ -66,20 +66,9 @@ func TestBuild_TrustedLocal(t *testing.T) {
 		opt.RECacheEnableWrite = true
 		opt.REAPIClient = ds.client
 		opt.OutputLocal = func(context.Context, string) bool { return true }
+		opt.REExecEnable = isRemote
 		opt.FailuresAllowed = 0
 
-		// Set limits to ensure local or remote action execution
-		// noLimit is just a value larger than the number of test steps
-		noLimit := 16
-		if isRemote {
-			opt.StrictRemote = true
-			opt.Limits.FastLocal = 0
-			opt.Limits.Remote = noLimit
-		} else {
-			opt.StrictRemote = false
-			opt.Limits.FastLocal = noLimit
-			opt.Limits.Remote = 0
-		}
 		stats, err := runNinja(ctx, "build.ninja", graph, opt, nil, runNinjaOpts{})
 
 		// Make sure that outputs are present locally after build
