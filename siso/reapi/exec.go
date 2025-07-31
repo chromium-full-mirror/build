@@ -20,9 +20,8 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 
-	"go.chromium.org/luci/common/retry"
-
 	"go.chromium.org/build/siso/o11y/clog"
+	"go.chromium.org/build/siso/reapi/retry"
 )
 
 // ErrBadPlatformContainerImage is an error if the request used bad platform container image.
@@ -45,7 +44,7 @@ func (c *Client) ExecuteAndWait(ctx context.Context, req *rpb.ExecuteRequest, op
 	execClient := rpb.NewExecutionClient(c.conn)
 	var err error
 	pctx := ctx
-	backoff := retry.Default()
+	var backoff retry.ExponentialBackoff
 retryLoop:
 	for i := 0; ; i++ {
 		err = func() error {
@@ -147,8 +146,9 @@ retryLoop:
 			clog.Infof(pctx, "retry exec call again: %v", err)
 			continue retryLoop
 		}
-		delay := backoff.Next(ctx, err)
-		if delay == retry.Stop {
+		var delay time.Duration
+		delay, err = backoff.Next(ctx, err)
+		if delay == 0 {
 			break
 		}
 		clog.Infof(pctx, "backoff %s for %v", delay, err)

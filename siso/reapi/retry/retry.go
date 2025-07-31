@@ -7,18 +7,29 @@ package retry
 
 import (
 	"context"
+	"fmt"
+	"math/rand/v2"
 	"time"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	"go.chromium.org/luci/common/retry"
-	"go.chromium.org/luci/common/retry/transient"
-
 	"go.chromium.org/build/siso/o11y/clog"
 )
 
-func retriableError(err error, authRetry *int) bool {
+// ExponentalBackoff handles exponental backoff.
+type ExponentialBackoff struct {
+	started time.Time
+	retries int
+	delay   time.Duration
+
+	// retried for auth failure.
+	// we allow auth retry at most once, since next call should
+	// succeed with credential refresh.
+	authRetry bool
+}
+
+func (b *ExponentialBackoff) retriableError(err error) bool {
 	st, ok := status.FromError(err)
 	if !ok {
 		st = status.FromContextError(err)
@@ -54,22 +65,62 @@ func retriableError(err error, authRetry *int) bool {
 		// token expired.
 		// It does not make sense to retry more if it is lack of
 		// permission or so.
-		*authRetry++
-		return *authRetry < 2
+		retry := b.authRetry
+		b.authRetry = true
+		return !retry
 	}
 	return false
 }
 
+// Next returns next backoff delay.
+// If delay is 0, no need to retry any more.
+func (b *ExponentialBackoff) Next(ctx context.Context, err error) (time.Duration, error) {
+	const maxRetries = 10
+	const multiplier = 2
+	const baseDelay = 200 * time.Millisecond
+	const maxDelay = float64(10 * time.Second)
+	const backoffRange = 0.4
+	if b.started.IsZero() {
+		b.started = time.Now()
+	}
+	if b.delay == 0 {
+		b.delay = baseDelay
+	}
+
+	if !b.retriableError(err) {
+		return 0, err
+	}
+
+	if b.retries >= maxRetries {
+		return 0, fmt.Errorf("too many retries %d %s: %w", b.retries, time.Since(b.started), err)
+	}
+	b.retries++
+	backoff := float64(b.delay) * multiplier
+	if backoff > maxDelay {
+		backoff = maxDelay
+	}
+	backoff -= backoff * backoffRange * rand.Float64()
+	b.delay = time.Duration(backoff)
+	if b.delay < baseDelay {
+		b.delay = baseDelay
+	}
+	return b.delay, nil
+}
+
 // Do calls function `f` and retries with exponential backoff for errors that are known to be retriable.
 func Do(ctx context.Context, f func() error) error {
-	authRetry := 0
-	return retry.Retry(ctx, transient.Only(retry.Default), func() error {
+	var backoff ExponentialBackoff
+	for {
 		err := f()
-		if retriableError(err, &authRetry) {
-			return transient.Tag.Apply(err)
+		delay, err := backoff.Next(ctx, err)
+		if delay == 0 {
+			return err
 		}
-		return err
-	}, func(err error, backoff time.Duration) {
-		clog.Warningf(ctx, "retry backoff:%s: %v", backoff, err)
-	})
+		clog.Warningf(ctx, "retry backoff=%s: %v", delay, err)
+		select {
+		case <-time.After(delay):
+		case <-ctx.Done():
+			return context.Cause(ctx)
+		}
+	}
 }

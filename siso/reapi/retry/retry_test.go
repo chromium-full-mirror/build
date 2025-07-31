@@ -13,65 +13,70 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	"go.chromium.org/luci/common/clock"
-	"go.chromium.org/luci/common/clock/testclock"
-
 	"go.chromium.org/build/siso/reapi/retry"
 )
 
-func TestDo(t *testing.T) {
-	t.Parallel()
-
+func TestDo_NoRetry(t *testing.T) {
 	ctx := context.Background()
-
-	t.Run("no retry", func(t *testing.T) {
-		called := 0
-		err := retry.Do(ctx, func() error {
-			called++
-			return nil
-		})
-		if err != nil {
-			t.Errorf("want nil, got err: %v", err)
-		}
-		if called != 1 {
-			t.Errorf("want 1, got %d", called)
-		}
+	called := 0
+	err := retry.Do(ctx, func() error {
+		called++
+		return nil
 	})
+	if err != nil {
+		t.Errorf("retry.Do=%v; want nil", err)
+	}
+	if called != 1 {
+		t.Errorf("called=%d; want 1", called)
+	}
+}
 
-	t.Run("non-retriable error", func(t *testing.T) {
-		called := 0
-		testErr := fmt.Errorf("error")
-		err := retry.Do(ctx, func() error {
-			called++
-			return testErr
-		})
-		if err != testErr {
-			t.Errorf("want testErr, got err: %v", err)
-		}
-		if called != 1 {
-			t.Errorf("want 1, got %d", called)
-		}
+func TestDo_NonRetriableError(t *testing.T) {
+	ctx := context.Background()
+	called := 0
+	testErr := fmt.Errorf("error")
+	err := retry.Do(ctx, func() error {
+		called++
+		return testErr
 	})
+	if err != testErr {
+		t.Errorf("retry.Do=%v; want testErr", err)
+	}
+	if called != 1 {
+		t.Errorf("called=%d; want 1", called)
+	}
+}
 
-	t.Run("retriable error", func(t *testing.T) {
-		ctx, c := testclock.UseTime(ctx, time.Now())
-		c.SetTimerCallback(func(time.Duration, clock.Timer) {
-			c.Add(time.Second)
-		})
-
-		called := 0
-		err := retry.Do(ctx, func() error {
-			called++
-			if called == 1 {
-				return status.Error(codes.Internal, "retriable error")
-			}
-			return nil
-		})
-		if err != nil {
-			t.Errorf("want nil, got err: %v", err)
+func TestDo_RetriableError(t *testing.T) {
+	ctx := context.Background()
+	called := 0
+	err := retry.Do(ctx, func() error {
+		called++
+		if called == 1 {
+			return status.Error(codes.Internal, "retriable error")
 		}
-		if called != 2 {
-			t.Errorf("want 2, got %d", called)
-		}
+		return nil
 	})
+	if err != nil {
+		t.Errorf("retry.Do=%v; want nil", err)
+	}
+	if called != 2 {
+		t.Errorf("called=%d; want 2", called)
+	}
+}
+
+func TestDo_AuthError(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	defer cancel()
+	called := 0
+	err := retry.Do(ctx, func() error {
+		called++
+		return status.Error(codes.PermissionDenied, "permission denied")
+	})
+	if code := status.Code(err); code != codes.PermissionDenied {
+		t.Errorf("retry.Do=%v; want %v", err, codes.PermissionDenied)
+	}
+	if called != 2 {
+		t.Errorf("called=%d; want 2", called)
+	}
 }
