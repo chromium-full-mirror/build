@@ -300,7 +300,8 @@ func checkDeps(ctx context.Context, b *Builder, step *Step, deps []string) error
 	var checkInputs []string
 
 	platform := step.cmd.Platform
-	if step.useReclient() {
+	if step.useReclient() && step.cmd.REProxyConfig != nil {
+		// TODO: get platform for use_remote_exec_wrapper case.
 		platform = step.cmd.REProxyConfig.Platform
 	}
 	relocatableReq := platform["InputRootAbsolutePath"] == ""
