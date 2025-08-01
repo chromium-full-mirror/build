@@ -1036,8 +1036,10 @@ func (hfs *HashFS) Entries(ctx context.Context, root string, inputs []string) ([
 		e := ents[i]
 		d := e.digest()
 		if e.err != nil || (d.IsZero() && e.target == "" && e.directory == nil) {
-			// TODO: hard fail instead?
-			clog.Warningf(ctx, "missing %s data:%v target:%q: %v", fname, e.d, e.target, e.err)
+			// TODO(b/435555841): hard fail instead
+			if e.entryErrLogged.CompareAndSwap(false, true) {
+				clog.Warningf(ctx, "missing %s data:%v target:%q: %v", fname, e.d, e.target, e.err)
+			}
 			continue
 		}
 		data := digest.NewData(e.src, d)
@@ -1228,6 +1230,7 @@ func (hfs *HashFS) Update(ctx context.Context, execRoot string, entries []Update
 				e.local = ent.IsLocal
 				e.updatedTime = ent.UpdatedTime
 				e.isChanged = ent.IsChanged
+				e.entryErrLogged.Store(false)
 				e.mu.Unlock()
 			} else {
 				e = newLocalEntry()
@@ -1599,6 +1602,8 @@ type entry struct {
 	// updatedTime should be equal or newer than mtime.
 	updatedTime time.Time
 
+	entryErrLogged atomic.Bool
+
 	d         digest.Digest
 	dch       chan struct{} // wait for digest computation
 	directory *directory
@@ -1701,12 +1706,14 @@ func (e *entry) compute(ctx context.Context, fname string) error {
 			e.mu.Lock()
 			close(e.dch)
 			e.err = err
+			e.entryErrLogged.Store(false)
 			e.mu.Unlock()
 			return err
 		}
 		e.mu.Lock()
 		e.d = data.Digest()
 		close(e.dch)
+		e.entryErrLogged.Store(false)
 		e.mu.Unlock()
 	} else {
 		select {
@@ -1739,6 +1746,7 @@ func (e *entry) getUpdatedTime() time.Time {
 func (e *entry) updateDir(ctx context.Context, hfs *HashFS, dname string) []string {
 	e.mu.Lock()
 	defer e.mu.Unlock()
+	defer e.entryErrLogged.Store(false)
 	d, err := os.Open(dname)
 	if err != nil {
 		if !errors.Is(err, fs.ErrNotExist) {
