@@ -149,6 +149,12 @@ func (b *Builder) execLocal(ctx context.Context, step *Step) error {
 // Uploads and sets local execution result in RE if builder is trusted
 // Note: currently does not work with layered cache and blocks on digest calculation
 func (b *Builder) trustedLocalUpload(ctx context.Context, step *Step) error {
+	ctx, span := trace.NewSpan(ctx, "local-upload")
+	defer span.Close(nil)
+	phase := stepLocalUpload
+	step.setPhase(phase)
+	clog.Infof(ctx, "step state: local upload started %s", step.cmd.Desc)
+
 	// Local upload must be enabled and step must have pure inputs/outputs
 	if b.reapiclient == nil || !b.reCacheEnableWrite || !step.cmd.Pure {
 		return nil
@@ -213,15 +219,22 @@ func (b *Builder) trustedLocalUpload(ctx context.Context, step *Step) error {
 		ds.Set(entry.Data)
 	}
 
-	// Upload all collected output data, input data, and action itself
-	_, err = b.reapiclient.UploadAll(ctx, ds)
-	if err != nil {
-		return err
-	}
-	// Now set the action result in RE
-	err = b.reapiclient.UpdateActionResult(ctx, actionDigest, result)
+	step.setPhase(phase.wait())
+	err = b.cacheSema.Do(ctx, func(ctx context.Context) error {
+		step.setPhase(phase)
+		// Upload all collected output data, input data, and action itself
+		_, err = b.reapiclient.UploadAll(ctx, ds)
+		if err != nil {
+			return err
+		}
+		// Now set the action result in RE
+		return b.reapiclient.UpdateActionResult(ctx, actionDigest, result)
+	})
 	if err == nil {
 		step.metrics.LocalUpload = true
+		b.progressStepLocalUpload(ctx, step)
+	} else {
+		clog.Warningf(ctx, "local upload failed %s: %v", step.cmd.Desc, err)
 	}
 	return err
 }

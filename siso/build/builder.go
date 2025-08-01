@@ -1148,6 +1148,11 @@ func (b *Builder) progressStepFallback(ctx context.Context, step *Step) {
 	b.progress.step(ctx, b, step, progressPrefixFallback+step.cmd.Desc)
 }
 
+// progressStepLocalUpload shows progress of the local-upload step.
+func (b *Builder) progressStepLocalUpload(ctx context.Context, step *Step) {
+	b.progress.step(ctx, b, step, progressPrefixLocalUpload+step.cmd.Desc)
+}
+
 var errNotRelocatable = errors.New("request is not relocatable")
 
 func (b *Builder) updateDeps(ctx context.Context, step *Step) error {

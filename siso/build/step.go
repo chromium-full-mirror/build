@@ -275,6 +275,8 @@ const (
 	stepRetryWait
 	stepRetryRun
 	stepOutput
+	stepLocalUpload
+	stepLocalUploadWait
 	stepDone
 )
 
@@ -312,6 +314,10 @@ func (s stepPhase) String() string {
 		return "retry"
 	case stepOutput:
 		return "output"
+	case stepLocalUpload:
+		return "local-upload"
+	case stepLocalUploadWait:
+		return "wait-local-upload"
 	case stepDone:
 		return "done"
 	default:
@@ -331,6 +337,8 @@ func (s stepPhase) wait() stepPhase {
 		return stepFallbackWait
 	case stepRetryRun:
 		return stepRetryWait
+	case stepLocalUpload:
+		return stepLocalUploadWait
 	default:
 		return s
 	}

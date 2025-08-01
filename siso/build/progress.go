@@ -170,11 +170,12 @@ func (p *progress) report(format string, args ...any) {
 }
 
 const (
-	progressPrefixCacheHit = "c "
-	progressPrefixStart    = "S "
-	progressPrefixFinish   = "F "
-	progressPrefixRetry    = "r "
-	progressPrefixFallback = "f "
+	progressPrefixCacheHit    = "c "
+	progressPrefixStart       = "S "
+	progressPrefixFinish      = "F "
+	progressPrefixLocalUpload = "U "
+	progressPrefixRetry       = "r "
+	progressPrefixFallback    = "f "
 )
 
 func (p *progress) step(ctx context.Context, b *Builder, step *Step, s string) {
@@ -286,17 +287,22 @@ func (p *progress) step(ctx context.Context, b *Builder, step *Step, s string) {
 		if stat.LocalFallback > 0 {
 			fallback = "fallback:" + ui.SGR(ui.BackgroundRed, fmt.Sprintf("%d", stat.LocalFallback)) + " "
 		}
+		var localUpload string
+		if stat.LocalUpload > 0 {
+			localUpload = fmt.Sprintf("local-upload:%d ", stat.LocalUpload)
+		}
 		var retry string
 		if stat.RemoteRetry > 0 {
 			retry = "retry:" + ui.SGR(ui.BackgroundRed, fmt.Sprintf("%d", stat.RemoteRetry)) + " "
 		}
 		if outputResult == "" {
-			lines = append(lines, fmt.Sprintf("pre:%s local:%s remote:%s %s%s%s%s",
+			lines = append(lines, fmt.Sprintf("pre:%s local:%s remote:%s %s%s%s%s%s",
 				preprocProgress,
 				localProgress,
 				remoteProgress,
 				stepsPerSec,
 				cacheHitRatio,
+				localUpload,
 				fallback,
 				retry,
 			))
