@@ -13,17 +13,19 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"os"
-	"runtime/debug"
+	"slices"
 	"strings"
 	"time"
 
 	"github.com/maruel/subcommands"
 
-	"go.chromium.org/luci/cipd/version"
 	"go.chromium.org/luci/common/cli"
 	"go.chromium.org/luci/hardcoded/chromeinfra"
+
+	"go.chromium.org/build/siso/version"
 )
 
 func Cmd(ver string) *subcommands.Command {
@@ -58,32 +60,28 @@ func (c *versionRun) Run(a subcommands.Application, args []string, env subcomman
 	fmt.Println(c.version)
 	cipdURL := c.cipdURL
 	if cipdURL == "" {
-		switch ver, err := version.GetStartupVersion(); {
-		case err != nil:
+		ver, err := version.Current()
+		if err != nil {
 			// Note: this is some sort of catastrophic error. If the binary is not
 			// installed via CIPD, err == nil && ver.InstanceID == "".
-			fmt.Fprintf(os.Stderr, "cannot determine CIPD package version: %s\n", err)
+			fmt.Fprintf(os.Stderr, "%s\n", err)
 			return 1
-		case ver.InstanceID == "":
-			buildInfo, ok := debug.ReadBuildInfo()
-			if !ok {
-				return 0
-			}
-			if buildInfo.GoVersion != "" {
-				fmt.Printf("go\t%s\n", buildInfo.GoVersion)
-			}
-			fmt.Printf("mod\t%s\t%s\t%s\n", buildInfo.Main.Path, buildInfo.Main.Version, buildInfo.Main.Sum)
-			for _, s := range buildInfo.Settings {
-				if strings.HasPrefix(s.Key, "vcs.") {
-					fmt.Printf("build\t%s=%s\n", s.Key, s.Value)
-				}
+		}
+		if ver.CIPD == nil && ver.Build != nil {
+			fmt.Printf("go\t%s\n", ver.Build.GoVersion)
+			fmt.Printf("mod\t%s\t%s\t%s\n", ver.Build.Main.Path, ver.Build.Main.Version, ver.Build.Main.Sum)
+			bs := ver.BuildSettings()
+			for _, k := range slices.Sorted(maps.Keys(bs)) {
+				v := bs[k]
+				fmt.Printf("build\t%s=%s\n", k, v)
 			}
 			return 0
-		default:
+		}
+		if ver.CIPD != nil {
 			fmt.Println()
-			fmt.Printf("CIPD package name: %s\n", ver.PackageName)
-			fmt.Printf("CIPD instance ID:  %s\n", ver.InstanceID)
-			cipdURL = fmt.Sprintf("%s/p/%s/+/%s", chromeinfra.CIPDServiceURL, ver.PackageName, ver.InstanceID)
+			fmt.Printf("CIPD package name: %s\n", ver.CIPD.PackageName)
+			fmt.Printf("CIPD instance ID:  %s\n", ver.CIPD.InstanceID)
+			cipdURL = fmt.Sprintf("%s/p/%s/+/%s", chromeinfra.CIPDServiceURL, ver.CIPD.PackageName, ver.CIPD.InstanceID)
 		}
 	}
 	fmt.Printf("CIPD URL: %s\n", cipdURL)

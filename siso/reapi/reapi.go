@@ -29,12 +29,11 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/proto"
 
-	"go.chromium.org/luci/cipd/version"
-
 	"go.chromium.org/build/siso/auth/cred"
 	"go.chromium.org/build/siso/o11y/clog"
 	"go.chromium.org/build/siso/o11y/iometrics"
 	"go.chromium.org/build/siso/reapi/digest"
+	"go.chromium.org/build/siso/version"
 )
 
 // Option contains options of remote exec API.
@@ -432,11 +431,11 @@ func (c *Client) UpdateActionResult(ctx context.Context, d digest.Digest, result
 
 // NewContext returns new context with request metadata.
 func NewContext(ctx context.Context, rmd *rpb.RequestMetadata) context.Context {
-	ver, err := version.GetStartupVersion()
+	ver, err := version.Current()
 	if err == nil {
 		rmd.ToolDetails = &rpb.ToolDetails{
-			ToolName:    ver.PackageName,
-			ToolVersion: ver.InstanceID,
+			ToolName:    ver.ToolName(),
+			ToolVersion: ver.ToolVersion(),
 		}
 	}
 	// Append metadata to the context.

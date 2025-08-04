@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"maps"
 	"math"
 	"os"
 	"os/exec"
@@ -44,7 +45,6 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"go.chromium.org/luci/auth"
-	"go.chromium.org/luci/cipd/version"
 	"go.chromium.org/luci/common/cli"
 
 	"go.chromium.org/build/siso/auth/cred"
@@ -68,6 +68,7 @@ import (
 	"go.chromium.org/build/siso/toolsupport/soongutil"
 	"go.chromium.org/build/siso/toolsupport/watchmanutil"
 	"go.chromium.org/build/siso/ui"
+	"go.chromium.org/build/siso/version"
 )
 
 // File name of siso metadata file.
@@ -602,30 +603,26 @@ func (c *ninjaCmdRun) run(ctx context.Context) (stats build.Stats, err error) {
 
 	clog.Infof(ctx, "siso version %s", c.version)
 	sisoMetadata.SisoVersion = c.version
-	if cmdver, err := version.GetStartupVersion(); err != nil {
-		clog.Warningf(ctx, "cannot determine CIPD package version: %s", err)
-	} else if cmdver.PackageName != "" {
-		clog.Infof(ctx, "CIPD package name: %s", cmdver.PackageName)
-		clog.Infof(ctx, "CIPD instance ID: %s", cmdver.InstanceID)
-		properties.Add("cipd_package_name", cmdver.PackageName)
-		properties.Add("cipd_instance_id", cmdver.InstanceID)
-	} else {
-		buildInfo, ok := debug.ReadBuildInfo()
-		if ok {
-			if buildInfo.GoVersion != "" {
-				clog.Infof(ctx, "Go version: %s", buildInfo.GoVersion)
-				properties.Add("go_version", buildInfo.GoVersion)
-			}
-			clog.Infof(ctx, "module %s %s %s", buildInfo.Main.Path, buildInfo.Main.Version, buildInfo.Main.Sum)
-			properties.Add("go_module_path", buildInfo.Main.Path)
-			properties.Add("go_module_version", buildInfo.Main.Version)
-			properties.Add("go_module_sum", buildInfo.Main.Sum)
-			for _, s := range buildInfo.Settings {
-				if strings.HasPrefix(s.Key, "vcs.") || strings.HasPrefix(s.Key, "-") {
-					clog.Infof(ctx, "build_%s=%s", s.Key, s.Value)
-					properties.Add(fmt.Sprintf("build_%s", s.Key), s.Value)
-				}
-			}
+	ver, err := version.Current()
+	if err != nil {
+		clog.Warningf(ctx, "version err: %v", err)
+	} else if ver.CIPD != nil {
+		clog.Infof(ctx, "CIPD package name: %s", ver.CIPD.PackageName)
+		clog.Infof(ctx, "CIPD instance ID: %s", ver.CIPD.InstanceID)
+		properties.Add("cipd_package_name", ver.CIPD.PackageName)
+		properties.Add("cipd_instance_id", ver.CIPD.InstanceID)
+	} else if ver.Build != nil {
+		clog.Infof(ctx, "Go version: %s", ver.Build.GoVersion)
+		properties.Add("go_version", ver.Build.GoVersion)
+		clog.Infof(ctx, "module %s %s %s", ver.Build.Main.Path, ver.Build.Main.Version, ver.Build.Main.Sum)
+		properties.Add("go_module_path", ver.Build.Main.Path)
+		properties.Add("go_module_version", ver.Build.Main.Version)
+		properties.Add("go_module_sum", ver.Build.Main.Sum)
+		bs := ver.BuildSettings()
+		for _, k := range slices.Sorted(maps.Keys(bs)) {
+			v := bs[k]
+			clog.Infof(ctx, "%s=%s", k, v)
+			properties.Add(k, v)
 		}
 	}
 	c.checkResourceLimits(ctx, limits)
