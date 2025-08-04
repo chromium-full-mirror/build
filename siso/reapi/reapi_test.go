@@ -78,7 +78,8 @@ func TestServiceConfig_CAS(t *testing.T) {
 			defer cancel()
 
 			ch := make(chan struct{})
-			lis, err := net.Listen("tcp", "localhost:0")
+			var lc net.ListenConfig
+			lis, err := lc.Listen(ctx, "tcp", "localhost:0")
 			if err != nil {
 				t.Fatal(err)
 			}
