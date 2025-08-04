@@ -170,12 +170,12 @@ func (p *progress) report(format string, args ...any) {
 }
 
 const (
-	progressPrefixCacheHit    = "c "
-	progressPrefixStart       = "S "
-	progressPrefixFinish      = "F "
-	progressPrefixLocalUpload = "U "
-	progressPrefixRetry       = "r "
-	progressPrefixFallback    = "f "
+	progressPrefixCacheHit   = "c "
+	progressPrefixStart      = "S "
+	progressPrefixFinish     = "F "
+	progressPrefixCacheWrite = "U "
+	progressPrefixRetry      = "r "
+	progressPrefixFallback   = "f "
 )
 
 func (p *progress) step(ctx context.Context, b *Builder, step *Step, s string) {
@@ -287,9 +287,9 @@ func (p *progress) step(ctx context.Context, b *Builder, step *Step, s string) {
 		if stat.LocalFallback > 0 {
 			fallback = "fallback:" + ui.SGR(ui.BackgroundRed, fmt.Sprintf("%d", stat.LocalFallback)) + " "
 		}
-		var localUpload string
-		if stat.LocalUpload > 0 {
-			localUpload = fmt.Sprintf("local-upload:%d ", stat.LocalUpload)
+		var CacheWrite string
+		if stat.CacheWrite > 0 {
+			CacheWrite = fmt.Sprintf("cache-write:%d ", stat.CacheWrite)
 		}
 		var retry string
 		if stat.RemoteRetry > 0 {
@@ -302,7 +302,7 @@ func (p *progress) step(ctx context.Context, b *Builder, step *Step, s string) {
 				remoteProgress,
 				stepsPerSec,
 				cacheHitRatio,
-				localUpload,
+				CacheWrite,
 				fallback,
 				retry,
 			))

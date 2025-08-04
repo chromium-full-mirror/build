@@ -15,12 +15,12 @@ import (
 	"go.chromium.org/build/siso/reapi/reapitest"
 )
 
-// This test simulates trusted local uploading mode
+// This test simulates cache-write mode
 // In this test the build will:
 //   - Execute action locally
 //   - Upload results of local execution back to RE
-//   - Use the trusted local uploads for future remote cache hits
-func TestBuild_TrustedLocal(t *testing.T) {
+//   - Use the locally uploaded cache-write for future remote cache hits
+func TestBuild_CacheWrite(t *testing.T) {
 	ctx := context.Background()
 
 	allOutputs := []string{
@@ -88,9 +88,9 @@ func TestBuild_TrustedLocal(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ninja err: %v", err)
 	}
-	if stats.Done != stats.Total || stats.Local != 4 || stats.CacheHit != 0 || stats.LocalUpload != 4 || stats.Remote != 0 {
-		t.Errorf("done=%d,local=%d,cache=%d,local-upload=%d,remote=%d; want done=%d,local=%d,cache=%d,local-upload=%d,remote=%d",
-			stats.Done, stats.Local, stats.CacheHit, stats.LocalUpload, stats.Remote, stats.Total, 4, 0, 4, 0)
+	if stats.Done != stats.Total || stats.Local != 4 || stats.CacheHit != 0 || stats.CacheWrite != 4 || stats.Remote != 0 {
+		t.Errorf("done=%d,local=%d,cache=%d,cache-write=%d,remote=%d; want done=%d,local=%d,cache=%d,cache-write=%d,remote=%d",
+			stats.Done, stats.Local, stats.CacheHit, stats.CacheWrite, stats.Remote, stats.Total, 4, 0, 4, 0)
 	}
 
 	// In the second build all action should have remote cache hits available
@@ -99,8 +99,8 @@ func TestBuild_TrustedLocal(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ninja err: %v", err)
 	}
-	if stats.Done != stats.Total || stats.Local != 0 || stats.CacheHit != 4 || stats.LocalUpload != 0 || stats.Remote != 0 {
-		t.Errorf("done=%d,local=%d,cache=%d,local-upload=%d,remote=%d; want done=%d,local=%d,cache=%d,local-upload=%d,remote=%d",
-			stats.Done, stats.Local, stats.CacheHit, stats.LocalUpload, stats.Remote, stats.Total, 0, 4, 0, 0)
+	if stats.Done != stats.Total || stats.Local != 0 || stats.CacheHit != 4 || stats.CacheWrite != 0 || stats.Remote != 0 {
+		t.Errorf("done=%d,local=%d,cache=%d,cache-write=%d,remote=%d; want done=%d,local=%d,cache=%d,cache-write=%d,remote=%d",
+			stats.Done, stats.Local, stats.CacheHit, stats.CacheWrite, stats.Remote, stats.Total, 0, 4, 0, 0)
 	}
 }

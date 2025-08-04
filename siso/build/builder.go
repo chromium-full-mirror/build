@@ -600,8 +600,8 @@ func (b *Builder) Build(ctx context.Context, name string, args ...string) (err e
 		}
 		if !b.reproxyExec.Used() {
 			// this stats will be shown by reproxy shutdown.
-			msg := fmt.Sprintf("\nlocal:%d remote:%d cache:%d local-upload:%d fallback:%d retry:%d skip:%d\n",
-				stat.Local+stat.NoExec, stat.Remote, stat.CacheHit, stat.LocalUpload, stat.LocalFallback, stat.RemoteRetry, stat.Skipped) +
+			msg := fmt.Sprintf("\nlocal:%d remote:%d cache:%d cache-write:%d fallback:%d retry:%d skip:%d\n",
+				stat.Local+stat.NoExec, stat.Remote, stat.CacheHit, stat.CacheWrite, stat.LocalFallback, stat.RemoteRetry, stat.Skipped) +
 				depsStatLine +
 				restatLine +
 				fsstatLine + "\n"
@@ -1148,9 +1148,9 @@ func (b *Builder) progressStepFallback(ctx context.Context, step *Step) {
 	b.progress.step(ctx, b, step, progressPrefixFallback+step.cmd.Desc)
 }
 
-// progressStepLocalUpload shows progress of the local-upload step.
-func (b *Builder) progressStepLocalUpload(ctx context.Context, step *Step) {
-	b.progress.step(ctx, b, step, progressPrefixLocalUpload+step.cmd.Desc)
+// progressStepCacheWrite shows progress of the cache-write step.
+func (b *Builder) progressStepCacheWrite(ctx context.Context, step *Step) {
+	b.progress.step(ctx, b, step, progressPrefixCacheWrite+step.cmd.Desc)
 }
 
 var errNotRelocatable = errors.New("request is not relocatable")
