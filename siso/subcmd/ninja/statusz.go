@@ -36,7 +36,8 @@ func newStatuszServer(ctx context.Context, b *build.Builder, dir string) error {
 	s := &http.Server{
 		Handler: mux,
 	}
-	listener, err := net.Listen("tcp", "localhost:0")
+	lc := net.ListenConfig{}
+	listener, err := lc.Listen(ctx, "tcp", "localhost:0")
 	if err != nil {
 		clog.Warningf(ctx, "listener error: %v", err)
 		return err
