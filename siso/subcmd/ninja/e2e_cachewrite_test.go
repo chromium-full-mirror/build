@@ -47,7 +47,7 @@ func TestBuild_CacheWrite(t *testing.T) {
 	ninja := func(t *testing.T, isRemote bool) (build.Stats, error) {
 		t.Helper()
 		dir := t.TempDir()
-		setupFiles(t, dir, t.Name(), allOutputs)
+		setupFiles(t, dir, t.Name(), nil)
 		opt, graph, cleanup := setupBuild(ctx, t, dir, hashfs.Option{
 			StateFile:   ".siso_fs_state",
 			OutputLocal: func(context.Context, string) bool { return true },
