@@ -470,7 +470,7 @@ func (c *Cmd) inputTree(ctx context.Context) ([]merkletree.Entry, error) {
 			// use "" as root as rootInputs are absolute paths.
 			rootEnts, err = c.HashFS.Entries(ctx, "", rootInputs)
 			if err != nil {
-				return nil, err
+				return nil, fmt.Errorf("failed to get entries for remote chroot inputs: %w", err)
 			}
 			clog.Infof(ctx, "external inputs %d -> %d", len(rootInputs), len(rootEnts))
 		}
@@ -490,7 +490,7 @@ func (c *Cmd) inputTree(ctx context.Context) ([]merkletree.Entry, error) {
 
 	ents, err := c.HashFS.Entries(ctx, c.ExecRoot, inputs)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to get entries for inputs in %s: %w", c.ExecRoot, err)
 	}
 	ents = append([]merkletree.Entry{{Name: c.Dir}}, ents...)
 	ents = append(ents, rootEnts...)
@@ -519,7 +519,7 @@ func (c *Cmd) inputTree(ctx context.Context) ([]merkletree.Entry, error) {
 	sort.Strings(reins)
 	reents, err := c.HashFS.Entries(ctx, c.ExecRoot, reins)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to get entries for remote inputs in %s: %w", c.ExecRoot, err)
 	}
 
 	// Convert local paths to remote paths.
