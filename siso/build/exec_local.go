@@ -133,10 +133,7 @@ func (b *Builder) execLocal(ctx context.Context, step *Step) error {
 	if err != nil {
 		return err
 	}
-	err = b.cacheWrite(ctx, step)
-	if err != nil {
-		return err
-	}
+	b.cacheWrite(ctx, step)
 	err = b.updateDeps(ctx, step)
 	if err != nil {
 		return err
@@ -148,95 +145,99 @@ func (b *Builder) execLocal(ctx context.Context, step *Step) error {
 
 // Uploads and sets local execution result in RE if builder is trusted
 // Note: currently does not work with layered cache and blocks on digest calculation
-func (b *Builder) cacheWrite(ctx context.Context, step *Step) error {
-	// Local upload must be enabled and step must have pure inputs/outputs
+// Note: local step does not fail if cache-write fails but error and metrics are logged
+func (b *Builder) cacheWrite(ctx context.Context, step *Step) {
+	// Cache write must be enabled and step must have pure inputs/outputs
 	if b.reapiclient == nil || !b.reCacheEnableWrite || !step.cmd.Pure {
-		return nil
+		return
 	}
 
 	// Upload only remotable steps
 	if !b.allowRemote(step) {
-		return nil
+		return
 	}
 
-	ctx, span := trace.NewSpan(ctx, "cache-write")
-	defer span.Close(nil)
-	phase := stepCacheWrite
-	step.setPhase(phase)
-	clog.Infof(ctx, "step state: cache write started %s", step.cmd.Desc)
-
-	// Action digests are lazily computed for local so they are not available at this point
-	cmd := step.cmd
-	result, _ := cmd.ActionResult()
-	ds := digest.NewStore()
-	actionDigest, err := cmd.Digest(ctx, ds)
-
-	if err != nil {
-		clog.Warningf(ctx, "failed to compute digest for trusted cache write: %v", err)
-		return err
-	}
-
-	// Create new ActionResult to not mutate cmd result
-	// We need to unset StderrRaw, StdoutRaw, and populate OutputFiles
-	result = &rpb.ActionResult{
-		OutputFiles:       result.GetOutputFiles(),
-		OutputSymlinks:    result.GetOutputSymlinks(),
-		OutputDirectories: result.GetOutputDirectories(),
-		ExitCode:          result.GetExitCode(),
-		StdoutRaw:         result.GetStdoutRaw(),
-		StderrRaw:         result.GetStderrRaw(),
-		StdoutDigest:      result.GetStdoutDigest(),
-		StderrDigest:      result.GetStderrDigest(),
-		ExecutionMetadata: result.GetExecutionMetadata(),
-	}
-
-	// Retrieve and compute output digests from HashFS on the action
-	hashFS := b.hashFS
-	outputEntries, err := hashFS.Entries(ctx, cmd.ExecRoot, cmd.AllOutputs())
-	if err != nil {
-		return err
-	}
-
-	// Convert rawStdout to digest since RE spec v2 prohibits inlining
-	if len(result.GetStdoutRaw()) != 0 && result.GetStdoutDigest() == nil {
-		stdoutDigest := digest.FromBytes("stdout", result.GetStdoutRaw())
-		result.StdoutDigest = stdoutDigest.Digest().Proto()
-		ds.Set(stdoutDigest)
-	}
-	result.StdoutRaw = nil
-
-	// Convert rawStderr to digest since RE spec v2 prohibits inlining
-	if len(result.GetStderrRaw()) != 0 && result.GetStderrDigest() == nil {
-		stderrDigest := digest.FromBytes("stderr", result.GetStderrRaw())
-		result.StderrDigest = stderrDigest.Digest().Proto()
-		ds.Set(stderrDigest)
-	}
-	result.StderrRaw = nil
-
-	// Set the outputs on the result
-	execute.ResultFromEntries(ctx, result, cmd.Dir, outputEntries)
-	for _, entry := range outputEntries {
-		ds.Set(entry.Data)
-	}
-
-	step.setPhase(phase.wait())
-	err = b.cacheSema.Do(ctx, func(ctx context.Context) error {
+	err := func() error {
+		ctx, span := trace.NewSpan(ctx, "cache-write")
+		defer span.Close(nil)
+		phase := stepCacheWrite
 		step.setPhase(phase)
-		// Upload all collected output data, input data, and action itself
-		_, err = b.reapiclient.UploadAll(ctx, ds)
+		clog.Infof(ctx, "step state: cache write started %s", step.cmd.Desc)
+
+		// Action digests are lazily computed for local so they are not available at this point
+		cmd := step.cmd
+		result, _ := cmd.ActionResult()
+		ds := digest.NewStore()
+		actionDigest, err := cmd.Digest(ctx, ds)
+
+		if err != nil {
+			clog.Warningf(ctx, "failed to compute digest for trusted local upload: %v", err)
+			return err
+		}
+
+		// Create new ActionResult to not mutate cmd result
+		// We need to unset StderrRaw, StdoutRaw, and populate OutputFiles
+		result = &rpb.ActionResult{
+			OutputFiles:       result.GetOutputFiles(),
+			OutputSymlinks:    result.GetOutputSymlinks(),
+			OutputDirectories: result.GetOutputDirectories(),
+			ExitCode:          result.GetExitCode(),
+			StdoutRaw:         result.GetStdoutRaw(),
+			StderrRaw:         result.GetStderrRaw(),
+			StdoutDigest:      result.GetStdoutDigest(),
+			StderrDigest:      result.GetStderrDigest(),
+			ExecutionMetadata: result.GetExecutionMetadata(),
+		}
+
+		// Retrieve and compute output digests from HashFS on the action
+		hashFS := b.hashFS
+		outputEntries, err := hashFS.Entries(ctx, cmd.ExecRoot, cmd.AllOutputs())
 		if err != nil {
 			return err
 		}
-		// Now set the action result in RE
-		return b.reapiclient.UpdateActionResult(ctx, actionDigest, result)
-	})
+
+		// Convert rawStdout to digest since RE spec v2 prohibits inlining
+		if len(result.GetStdoutRaw()) != 0 && result.GetStdoutDigest() == nil {
+			stdoutDigest := digest.FromBytes("stdout", result.GetStdoutRaw())
+			result.StdoutDigest = stdoutDigest.Digest().Proto()
+			ds.Set(stdoutDigest)
+		}
+		result.StdoutRaw = nil
+
+		// Convert rawStderr to digest since RE spec v2 prohibits inlining
+		if len(result.GetStderrRaw()) != 0 && result.GetStderrDigest() == nil {
+			stderrDigest := digest.FromBytes("stderr", result.GetStderrRaw())
+			result.StderrDigest = stderrDigest.Digest().Proto()
+			ds.Set(stderrDigest)
+		}
+		result.StderrRaw = nil
+
+		// Set the outputs on the result
+		execute.ResultFromEntries(ctx, result, cmd.Dir, outputEntries)
+		for _, entry := range outputEntries {
+			ds.Set(entry.Data)
+		}
+
+		step.setPhase(phase.wait())
+		err = b.cacheSema.Do(ctx, func(ctx context.Context) error {
+			step.setPhase(phase)
+			// Upload all collected output data, input data, and action itself
+			_, err = b.reapiclient.UploadAll(ctx, ds)
+			if err != nil {
+				return err
+			}
+			// Now set the action result in RE
+			return b.reapiclient.UpdateActionResult(ctx, actionDigest, result)
+		})
+		return nil
+	}()
 	if err == nil {
 		step.metrics.CacheWrite = true
 		b.progressStepCacheWrite(ctx, step)
 	} else {
-		clog.Warningf(ctx, "local upload failed %s: %v", step.cmd.Desc, err)
+		step.metrics.CacheWriteErr = true
+		clog.Warningf(ctx, "cache write failed %s: %v", step.cmd.Desc, err)
 	}
-	return err
 }
 
 func (b *Builder) prepareLocalInputs(ctx context.Context, step *Step) error {

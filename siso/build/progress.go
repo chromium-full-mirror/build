@@ -289,7 +289,7 @@ func (p *progress) step(ctx context.Context, b *Builder, step *Step, s string) {
 		}
 		var CacheWrite string
 		if stat.CacheWrite > 0 {
-			CacheWrite = fmt.Sprintf("cache-write:%d ", stat.CacheWrite)
+			CacheWrite = fmt.Sprintf("cache-write:%d(err:%d) ", stat.CacheWrite, stat.CacheWriteErr)
 		}
 		var retry string
 		if stat.RemoteRetry > 0 {

@@ -88,16 +88,17 @@ type StepMetric struct {
 	ScandepsErr   bool `json:"scandeps_err,omitempty"`   // whether the action failed in scandeps.
 	ClangScandeps bool `json:"clang_scandeps,omitempty"` // whether the action used the clang for scandeps.
 
-	NoExec      bool `json:"no_exec,omitempty"`      // whether the action didn't run any command (i.e. just use handler).
-	IsRemote    bool `json:"is_remote,omitempty"`    // whether the action uses remote result.
-	IsLocal     bool `json:"is_local,omitempty"`     // whether the action uses local result.
-	FastLocal   bool `json:"fast_local,omitempty"`   // whether the action chooses local for fast build.
-	StartLocal  bool `json:"start_local,omitempty"`  // whether the action chooses local for start in incremental build.
-	CacheWrite  bool `json:"cache_write,omitempty"`  // whether the action used cache write feature from local results.
-	Cached      bool `json:"cached,omitempty"`       // whether the action was a cache hit.
-	Fallback    bool `json:"fallback,omitempty"`     // whether the action failed remotely and was retried locally.
-	Err         bool `json:"err,omitempty"`          // whether the action failed.
-	RemoteRetry int  `json:"remote_retry,omitempty"` // count of remote retry
+	NoExec        bool `json:"no_exec,omitempty"`         // whether the action didn't run any command (i.e. just use handler).
+	IsRemote      bool `json:"is_remote,omitempty"`       // whether the action uses remote result.
+	IsLocal       bool `json:"is_local,omitempty"`        // whether the action uses local result.
+	FastLocal     bool `json:"fast_local,omitempty"`      // whether the action chooses local for fast build.
+	StartLocal    bool `json:"start_local,omitempty"`     // whether the action chooses local for start in incremental build.
+	CacheWrite    bool `json:"cache_write,omitempty"`     // whether the action used cache write feature from local results.
+	CacheWriteErr bool `json:"cache_write_err,omitempty"` // whether the action failed while using cache write feature.
+	Cached        bool `json:"cached,omitempty"`          // whether the action was a cache hit.
+	Fallback      bool `json:"fallback,omitempty"`        // whether the action failed remotely and was retried locally.
+	Err           bool `json:"err,omitempty"`             // whether the action failed.
+	RemoteRetry   int  `json:"remote_retry,omitempty"`    // count of remote retry
 
 	// DepsScanTime is the time it took in calculating deps for cmd inputs.
 	// TODO: set in reproxy mode too

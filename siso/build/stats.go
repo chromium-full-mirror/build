@@ -54,6 +54,9 @@ func (s *stats) update(ctx context.Context, m *StepMetric, pure bool) {
 	if m.CacheWrite {
 		s.s.CacheWrite++
 	}
+	if m.CacheWriteErr {
+		s.s.CacheWriteErr++
+	}
 	if m.Err {
 		s.s.Fail++
 	}
@@ -92,6 +95,7 @@ type Stats struct {
 	Remote          int // remote executed actions
 	LocalFallback   int // actions for which remote execution failed, and we did a local fallback
 	CacheWrite      int // locally executed actions whose trusted results were uploaded directly to RE
+	CacheWriteErr   int // locally executed actions that failed uploading results directly to RE
 	RemoteRetry     int // accumulated remote retry counts
 	Total           int // total actions that ran during this build
 }
