@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"syscall"
 	"time"
 
@@ -30,7 +31,16 @@ func DefaultCredentialHelper() string {
 				ch <- googleCredHelper
 				return
 			}
-			ch <- ""
+			path, err := exec.LookPath("luci-auth")
+			if err == nil {
+				ch <- path
+				return
+			}
+			path, err = exec.LookPath("gcloud")
+			if err == nil {
+				ch <- path
+				return
+			}
 		}()
 		select {
 		case helper := <-ch:

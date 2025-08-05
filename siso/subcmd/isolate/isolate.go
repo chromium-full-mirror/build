@@ -26,9 +26,7 @@ import (
 	mrpb "google.golang.org/genproto/googleapis/api/monitoredres"
 	"google.golang.org/grpc/grpclog"
 
-	"go.chromium.org/luci/auth"
 	"go.chromium.org/luci/common/cli"
-	"go.chromium.org/luci/hardcoded/chromeinfra"
 
 	"go.chromium.org/build/siso/auth/cred"
 	"go.chromium.org/build/siso/hashfs"
@@ -110,8 +108,6 @@ func (c *run) Run(a subcommands.Application, args []string, env subcommands.Env)
 	err := c.run(ctx)
 	if err != nil {
 		switch {
-		case errors.Is(err, auth.ErrLoginRequired):
-			fmt.Fprintf(os.Stderr, "need to login: run `siso login`\n")
 		case errors.Is(err, flag.ErrHelp):
 			fmt.Fprintf(os.Stderr, "%s\n", usage)
 		default:
@@ -306,13 +302,14 @@ func (c *run) casCred(ctx context.Context) (cred.Cred, error) {
 	}
 	project := strings.Split(c.casopt.Instance, "/")[1]
 	// Use Swarming specific authentication mechanism.
-	authOpts := chromeinfra.DefaultAuthOptions()
-	authOpts.ActAsServiceAccount = fmt.Sprintf("cas-read-write@%s.iam.gserviceaccount.com", project)
-	authOpts.ActViaLUCIRealm = fmt.Sprintf("@internal:%s/cas-read-write", project)
-	authOpts.Scopes = []string{"https://www.googleapis.com/auth/cloud-platform"}
-	return cred.New(ctx, cred.Options{
-		LUCIAuth: authOpts,
-	})
+	authOpts := cred.AuthOpts("luci-auth",
+		"context",
+		"--act-as-service-account",
+		fmt.Sprintf("cas-read-write@%s.iam.gserviceaccount.com", project),
+		"--act-via-realm",
+		fmt.Sprintf("@internal:%s/cas-read-write", project),
+	)
+	return cred.New(ctx, authOpts)
 }
 
 func upload(ctx context.Context, execRoot, buildDir string, hashFS *hashfs.HashFS, casClient *reapi.Client, target string) (digest.Digest, error) {

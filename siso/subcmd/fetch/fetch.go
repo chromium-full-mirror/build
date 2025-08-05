@@ -20,7 +20,6 @@ import (
 	"github.com/maruel/subcommands"
 	"google.golang.org/protobuf/proto"
 
-	"go.chromium.org/luci/auth"
 	"go.chromium.org/luci/common/cli"
 
 	"go.chromium.org/build/siso/auth/cred"
@@ -87,8 +86,6 @@ func (c *run) Run(a subcommands.Application, args []string, env subcommands.Env)
 	err := c.run(ctx)
 	if err != nil {
 		switch {
-		case errors.Is(err, auth.ErrLoginRequired):
-			fmt.Fprintf(os.Stderr, "need to login: run `siso login`\n")
 		case errors.Is(err, flag.ErrHelp):
 			fmt.Fprintf(os.Stderr, "%v\n%s\n", err, usage)
 		default:

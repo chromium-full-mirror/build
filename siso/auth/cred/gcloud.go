@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
+	"time"
 
 	"golang.org/x/oauth2"
 )
@@ -16,7 +17,9 @@ import (
 type gcloudTokenSource struct{}
 
 func (gcloudTokenSource) Token() (*oauth2.Token, error) {
-	cmd := exec.Command("gcloud", "auth", "print-access-token")
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "gcloud", "auth", "print-access-token")
 	out, err := cmd.Output()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get token %s: %w", string(out), err)

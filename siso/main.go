@@ -20,12 +20,11 @@ import (
 	log "github.com/golang/glog"
 	"github.com/maruel/subcommands"
 
-	"go.chromium.org/luci/auth/client/authcli"
 	"go.chromium.org/luci/common/cli"
 
 	"go.chromium.org/build/siso/auth/cred"
 	"go.chromium.org/build/siso/hashfs/osfs"
-	"go.chromium.org/build/siso/subcmd/authcheck"
+	"go.chromium.org/build/siso/subcmd/auth"
 	"go.chromium.org/build/siso/subcmd/fetch"
 	"go.chromium.org/build/siso/subcmd/fscmd"
 	"go.chromium.org/build/siso/subcmd/help"
@@ -73,11 +72,11 @@ func getApplication(authOpts cred.Options) *cli.Application {
 			metricscmd.Cmd(),
 			ps.Cmd(),
 			scandeps.Cmd(),
-			authcheck.Cmd(authOpts),
+			auth.CheckCmd(authOpts),
+			auth.LoginCmd(authOpts),
+			auth.LogoutCmd(authOpts),
 			webui.Cmd(versionID),
 
-			authcli.SubcommandLogin(authOpts.LUCIAuth, "login", true),
-			authcli.SubcommandLogout(authOpts.LUCIAuth, "logout", true),
 			version.Cmd(versionStr),
 		},
 		EnvVars: map[string]subcommands.EnvVarDefinition{

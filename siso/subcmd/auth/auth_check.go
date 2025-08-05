@@ -2,8 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Package authcheck provides auth_check subcommand.
-package authcheck
+package auth
 
 import (
 	"fmt"
@@ -17,7 +16,7 @@ import (
 	"go.chromium.org/build/siso/reapi"
 )
 
-func Cmd(authOpts cred.Options) *subcommands.Command {
+func CheckCmd(authOpts cred.Options) *subcommands.Command {
 	return &subcommands.Command{
 		UsageLine: "auth-check",
 		ShortDesc: "prints current auth status.",

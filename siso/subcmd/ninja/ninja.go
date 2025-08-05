@@ -44,7 +44,6 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	"go.chromium.org/luci/auth"
 	"go.chromium.org/luci/common/cli"
 
 	"go.chromium.org/build/siso/auth/cred"
@@ -230,8 +229,6 @@ func (c *ninjaCmdRun) Run(a subcommands.Application, args []string, env subcomma
 		var errFlag flagError
 		var errBuild buildError
 		switch {
-		case errors.Is(err, auth.ErrLoginRequired):
-			ui.Default.Errorf("need to login: run `siso login`\n")
 		case errors.Is(err, errNothingToDo):
 			msgPrefix := "Everything is up-to-date"
 			if ui.IsTerminal() {

@@ -10,16 +10,14 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
-	"os"
+	"path/filepath"
+	"strings"
 
 	"golang.org/x/oauth2"
 	"google.golang.org/api/option"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/oauth"
-
-	"go.chromium.org/luci/auth"
-	"go.chromium.org/luci/hardcoded/chromeinfra"
 
 	"go.chromium.org/build/siso/o11y/clog"
 )
@@ -38,53 +36,30 @@ type Cred struct {
 
 // Options is an options for credentials.
 type Options struct {
-	LUCIAuth         auth.Options
-	FallbackLUCIAuth auth.Options
-
+	Type              string
 	PerRPCCredentials credentials.PerRPCCredentials
 	// TokenSource is used when PerRPCCredentials is not set.
 	TokenSource oauth2.TokenSource
 }
 
 // AuthOpts returns the LUCI auth options that Siso uses.
-func AuthOpts(credHelperPath string) Options {
-	var authOpts, fallbackAuthOpts auth.Options
-	// don't use luci-auth if $HOME is not set,
-	// since chromeinfra.DefaultAuthOptions will print
-	// "Can't resolve $HOME: $HOME is not defined"
-	// to stderr.
-	// https://crrev.com/d0549b3d2cf7923dd33d1810ac5a8348d09237ac/hardcoded/chromeinfra/chromeinfra.go#137
-	_, err := os.UserHomeDir()
-	if err == nil {
-		authOpts = chromeinfra.DefaultAuthOptions()
-		authOpts.Scopes = []string{
-			auth.OAuthScopeEmail,
-			"https://www.googleapis.com/auth/cloud-platform",
-		}
-		// If the user is already logged in via `luci-auth login --scopes-context`,
-		// we can use that token and avoid having to prompt for another login.
-		fallbackAuthOpts = chromeinfra.DefaultAuthOptions()
-		// same scope as `--scopes-context`
-		// https://crrev.com/bdbc1802265493619ac518d392776af6593fd1e0/auth/client/authcli/authcli.go#22
-		fallbackAuthOpts.Scopes = []string{
-			"https://www.googleapis.com/auth/cloud-platform",
-			"https://www.googleapis.com/auth/firebase",
-			"https://www.googleapis.com/auth/gerritcodereview",
-			"https://www.googleapis.com/auth/userinfo.email",
-		}
-	}
+func AuthOpts(credHelperPath string, args ...string) Options {
 	var perRPCCredentials credentials.PerRPCCredentials
 	var tokenSource oauth2.TokenSource
-	if credHelperPath != "" {
+	base := filepath.Base(credHelperPath)
+	authType := strings.TrimSuffix(base, filepath.Ext(base))
+	switch authType {
+	case "luci-auth":
+		tokenSource = &luciAuthTokenSource{luciAuthPath: credHelperPath, contextArgs: args}
+	case "gcloud", "":
+		tokenSource = gcloudTokenSource{}
+	default:
 		h := &credHelper{path: credHelperPath}
 		perRPCCredentials = h
 		tokenSource = &credHelperGoogle{h: h}
-	} else {
-		tokenSource = gcloudTokenSource{}
 	}
 	return Options{
-		LUCIAuth:          authOpts,
-		FallbackLUCIAuth:  fallbackAuthOpts,
+		Type:              authType,
 		PerRPCCredentials: perRPCCredentials,
 		TokenSource:       tokenSource,
 	}
@@ -94,85 +69,45 @@ func AuthOpts(credHelperPath string) Options {
 // It ensures that the user is logged in and returns an error otherwise.
 func New(ctx context.Context, opts Options) (Cred, error) {
 	var t string
-	var authenticator *auth.Authenticator
-	_, err := os.UserHomeDir()
-	if err != nil {
-		clog.Warningf(ctx, "disable luci-auth: %v", err)
-		err = fmt.Errorf("disable luci-auth: %w", err)
-	} else {
-		t = "luci-auth-cloud-platform"
-		authenticator = auth.NewAuthenticator(ctx, auth.SilentLogin, opts.LUCIAuth)
-		err = authenticator.CheckLoginRequired()
-		if err != nil && len(opts.FallbackLUCIAuth.Scopes) > 0 {
-			t = "luci-auth-context"
-			authenticator = auth.NewAuthenticator(ctx, auth.SilentLogin, opts.FallbackLUCIAuth)
-			err = authenticator.CheckLoginRequired()
-		}
+	if opts.TokenSource == nil {
+		return Cred{}, nil
 	}
+	var email string
+	ts := opts.TokenSource
+	tok, err := ts.Token()
 	if err != nil {
-		if opts.TokenSource == nil {
+		if ctx.Err() != nil {
 			return Cred{}, err
 		}
-		var email string
-		ts := opts.TokenSource
-		tok, err := ts.Token()
-		if err != nil {
-			if ctx.Err() != nil {
-				return Cred{}, err
-			}
-			if errors.Is(err, errNoAuthorization) {
-				if ch, ok := ts.(*credHelperGoogle); ok {
-					t = ch.h.path
-					clog.Warningf(ctx, "use auth %s, no token source %v", ch.h.path, err)
-				} else {
-					t = fmt.Sprintf("%T", ts)
-					clog.Warningf(ctx, "use auth %T, no token source: %v", ts, err)
-				}
-				ts = nil
+		if errors.Is(err, errNoAuthorization) {
+			if ch, ok := ts.(*credHelperGoogle); ok {
+				t = ch.h.path
+				clog.Warningf(ctx, "use auth %s, no token source %v", ch.h.path, err)
 			} else {
-				return Cred{}, fmt.Errorf("need to run `siso login`: %w", err)
+				t = fmt.Sprintf("%T", ts)
+				clog.Warningf(ctx, "use auth %T, no token source: %v", ts, err)
 			}
+			ts = nil
 		} else {
-			t, _ = tok.Extra("x-token-source").(string)
-			email, _ = tok.Extra("x-token-email").(string)
-			clog.Infof(ctx, "use auth %v email: %s", t, email)
-			ts = oauth2.ReuseTokenSource(tok, ts)
+			return Cred{}, fmt.Errorf("need to run `siso login`: %w", err)
 		}
-		perRPCCredentials := opts.PerRPCCredentials
-		if perRPCCredentials == nil {
-			perRPCCredentials = oauth.TokenSource{
-				TokenSource: ts,
-			}
+	} else {
+		t, _ = tok.Extra("x-token-source").(string)
+		email, _ = tok.Extra("x-token-email").(string)
+		clog.Infof(ctx, "use auth %v email: %s", t, email)
+		ts = oauth2.ReuseTokenSource(tok, ts)
+	}
+	perRPCCredentials := opts.PerRPCCredentials
+	if perRPCCredentials == nil {
+		perRPCCredentials = oauth.TokenSource{
+			TokenSource: ts,
 		}
-		return Cred{
-			Type:              t,
-			Email:             email,
-			perRPCCredentials: perRPCCredentials,
-			tokenSource:       ts,
-		}, nil
 	}
-
-	email, err := authenticator.GetEmail()
-	if err != nil {
-		return Cred{}, err
-	}
-
-	tokenSource, err := authenticator.TokenSource()
-	if err != nil {
-		return Cred{}, err
-	}
-
-	rpcCredentials, err := authenticator.PerRPCCredentials()
-	if err != nil {
-		return Cred{}, err
-	}
-
-	clog.Infof(ctx, "use %s email: %s", t, email)
 	return Cred{
 		Type:              t,
 		Email:             email,
-		perRPCCredentials: rpcCredentials,
-		tokenSource:       tokenSource,
+		perRPCCredentials: perRPCCredentials,
+		tokenSource:       ts,
 	}, nil
 }
 

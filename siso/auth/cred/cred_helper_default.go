@@ -6,8 +6,18 @@
 
 package cred
 
+import "os/exec"
+
 // DefaultCredentialHelper returns default credential helper's path.
 func DefaultCredentialHelper() string {
+	path, err := exec.LookPath("luci-auth")
+	if err == nil {
+		return path
+	}
+	path, err = exec.LookPath("gcloud")
+	if err == nil {
+		return path
+	}
 	return ""
 }
 
