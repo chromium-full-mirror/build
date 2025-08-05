@@ -563,7 +563,7 @@ func (c *ninjaCmdRun) run(ctx context.Context) (stats build.Stats, err error) {
 	if !c.offline && (c.reopt.NeedCred() || c.enableCloudLogging || c.enableResultstore || c.enableCloudProfiler || c.enableCloudTrace || c.enableCloudMonitoring) {
 		// TODO: can be async until cred is needed?
 		spin := ui.Default.NewSpinner()
-		spin.Start("init credentials")
+		spin.Start("init credentials by %q", c.authOpts.Type)
 		credential, err = cred.New(ctx, c.authOpts)
 		if err != nil {
 			spin.Stop(errors.New(""))
