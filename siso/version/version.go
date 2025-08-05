@@ -36,7 +36,9 @@ func Current() (Version, error) {
 		if !ok && err == nil {
 			currentErr = fmt.Errorf("cannot read go build info")
 		}
-		currentVer.CIPD = &cipdver
+		if cipdver.InstanceID != "" {
+			currentVer.CIPD = &cipdver
+		}
 		currentVer.Build = buildInfo
 	})
 	return currentVer, currentErr
