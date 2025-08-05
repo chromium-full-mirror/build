@@ -22,9 +22,6 @@ import (
 
 	"github.com/maruel/subcommands"
 
-	"go.chromium.org/luci/common/cli"
-	"go.chromium.org/luci/hardcoded/chromeinfra"
-
 	"go.chromium.org/build/siso/version"
 )
 
@@ -47,12 +44,14 @@ type versionRun struct {
 	cipdURL string
 }
 
+const cipdServiceURL = "https://chrome-infra-packages.appspot.com"
+
 func (c *versionRun) init() {
 	c.Flags.StringVar(&c.cipdURL, "cipd_url", "", "show version info for this cipd URL.")
 }
 
 func (c *versionRun) Run(a subcommands.Application, args []string, env subcommands.Env) int {
-	ctx := cli.GetContext(a, c, env)
+	ctx := context.Background()
 	if len(args) != 0 {
 		fmt.Fprintf(a.GetErr(), "%s: position arguments not expected\n", a.GetName())
 		return 1
@@ -81,7 +80,7 @@ func (c *versionRun) Run(a subcommands.Application, args []string, env subcomman
 			fmt.Println()
 			fmt.Printf("CIPD package name: %s\n", ver.CIPD.PackageName)
 			fmt.Printf("CIPD instance ID:  %s\n", ver.CIPD.InstanceID)
-			cipdURL = fmt.Sprintf("%s/p/%s/+/%s", chromeinfra.CIPDServiceURL, ver.CIPD.PackageName, ver.CIPD.InstanceID)
+			cipdURL = fmt.Sprintf("%s/p/%s/+/%s", cipdServiceURL, ver.CIPD.PackageName, ver.CIPD.InstanceID)
 		}
 	}
 	fmt.Printf("CIPD URL: %s\n", cipdURL)

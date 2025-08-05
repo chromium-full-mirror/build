@@ -19,8 +19,6 @@ import (
 	"github.com/maruel/subcommands"
 	"google.golang.org/protobuf/proto"
 
-	"go.chromium.org/luci/common/cli"
-
 	"go.chromium.org/build/siso/o11y/clog"
 	"go.chromium.org/build/siso/signals"
 	pb "go.chromium.org/build/siso/toolsupport/soongutil/proto"
@@ -69,7 +67,7 @@ func (c *run) init() {
 }
 
 func (c *run) Run(a subcommands.Application, args []string, env subcommands.Env) int {
-	ctx := cli.GetContext(a, c, env)
+	ctx := context.Background()
 	err := c.run(ctx)
 	if err != nil {
 		switch {

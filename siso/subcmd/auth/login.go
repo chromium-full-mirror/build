@@ -5,13 +5,12 @@
 package auth
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
 
 	"github.com/maruel/subcommands"
-
-	"go.chromium.org/luci/common/cli"
 
 	"go.chromium.org/build/siso/auth/cred"
 )
@@ -38,7 +37,7 @@ func (r *loginRun) init() {
 }
 
 func (r *loginRun) Run(a subcommands.Application, args []string, env subcommands.Env) int {
-	ctx := cli.GetContext(a, r, env)
+	ctx := context.Background()
 	switch r.authOpts.Type {
 	case "luci-auth":
 		fmt.Println("using luci-auth for auth")

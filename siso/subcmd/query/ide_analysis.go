@@ -23,8 +23,6 @@ import (
 	"google.golang.org/protobuf/encoding/prototext"
 	"google.golang.org/protobuf/proto"
 
-	"go.chromium.org/luci/common/cli"
-
 	"go.chromium.org/build/siso/build"
 	"go.chromium.org/build/siso/hashfs"
 	fspb "go.chromium.org/build/siso/hashfs/proto"
@@ -85,7 +83,7 @@ func (c *ideAnalysisRun) init() {
 }
 
 func (c *ideAnalysisRun) Run(a subcommands.Application, args []string, env subcommands.Env) int {
-	ctx := cli.GetContext(a, c, env)
+	ctx := context.Background()
 	err := c.run(ctx, args)
 	if err != nil {
 		switch {

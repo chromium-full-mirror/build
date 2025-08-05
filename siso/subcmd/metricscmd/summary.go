@@ -17,8 +17,6 @@ import (
 
 	"github.com/maruel/subcommands"
 
-	"go.chromium.org/luci/common/cli"
-
 	"go.chromium.org/build/siso/build"
 )
 
@@ -67,7 +65,7 @@ func (c *summaryRun) init() {
 }
 
 func (c *summaryRun) Run(a subcommands.Application, args []string, env subcommands.Env) int {
-	ctx := cli.GetContext(a, c, env)
+	ctx := context.Background()
 	err := c.run(ctx)
 	if err != nil {
 		switch {

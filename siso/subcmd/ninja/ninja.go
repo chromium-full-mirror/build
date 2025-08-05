@@ -44,8 +44,6 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	"go.chromium.org/luci/common/cli"
-
 	"go.chromium.org/build/siso/auth/cred"
 	"go.chromium.org/build/siso/build"
 	"go.chromium.org/build/siso/build/buildconfig"
@@ -193,7 +191,7 @@ type ninjaCmdRun struct {
 // Run runs the `ninja` subcommand.
 func (c *ninjaCmdRun) Run(a subcommands.Application, args []string, env subcommands.Env) int {
 	c.started = time.Now()
-	ctx := cli.GetContext(a, c, env)
+	ctx := context.Background()
 	err := parseFlagsFully(&c.Flags)
 	if err != nil {
 		ui.Default.Errorf("%v\n", err)

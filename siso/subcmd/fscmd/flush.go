@@ -18,8 +18,6 @@ import (
 
 	"github.com/maruel/subcommands"
 
-	"go.chromium.org/luci/common/cli"
-
 	"go.chromium.org/build/siso/auth/cred"
 	"go.chromium.org/build/siso/hashfs"
 	pb "go.chromium.org/build/siso/hashfs/proto"
@@ -76,7 +74,7 @@ func (c *flushRun) init() {
 }
 
 func (c *flushRun) Run(a subcommands.Application, args []string, env subcommands.Env) int {
-	ctx := cli.GetContext(a, c, env)
+	ctx := context.Background()
 	err := c.run(ctx)
 	if err != nil {
 		switch {

@@ -20,8 +20,6 @@ import (
 	log "github.com/golang/glog"
 	"github.com/maruel/subcommands"
 
-	"go.chromium.org/luci/common/cli"
-
 	"go.chromium.org/build/siso/auth/cred"
 	"go.chromium.org/build/siso/hashfs/osfs"
 	"go.chromium.org/build/siso/subcmd/auth"
@@ -54,8 +52,8 @@ var (
 const versionID = "v1.3.12"
 const versionStr = "siso " + versionID
 
-func getApplication(authOpts cred.Options) *cli.Application {
-	return &cli.Application{
+func getApplication(authOpts cred.Options) subcommands.Application {
+	return &subcommands.DefaultApplication{
 		Name:  "siso",
 		Title: "Ninja-compatible build system optimized for remote execution",
 		Commands: []*subcommands.Command{

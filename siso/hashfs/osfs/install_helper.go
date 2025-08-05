@@ -12,8 +12,6 @@ import (
 	"os"
 
 	"github.com/maruel/subcommands"
-
-	"go.chromium.org/luci/common/cli"
 )
 
 func HelperCmd() *subcommands.Command {
@@ -49,7 +47,7 @@ func (c *run) init() {
 }
 
 func (c *run) Run(a subcommands.Application, args []string, env subcommands.Env) int {
-	ctx := cli.GetContext(a, c, env)
+	ctx := context.Background()
 	err := c.run(ctx)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)

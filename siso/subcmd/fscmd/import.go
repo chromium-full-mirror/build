@@ -5,6 +5,7 @@
 package fscmd
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -12,8 +13,6 @@ import (
 
 	"github.com/maruel/subcommands"
 	"google.golang.org/protobuf/encoding/prototext"
-
-	"go.chromium.org/luci/common/cli"
 
 	"go.chromium.org/build/siso/hashfs"
 	pb "go.chromium.org/build/siso/hashfs/proto"
@@ -45,7 +44,7 @@ func (c *importRun) init() {
 }
 
 func (c *importRun) Run(a subcommands.Application, args []string, env subcommands.Env) int {
-	ctx := cli.GetContext(a, c, env)
+	ctx := context.Background()
 
 	err := os.Chdir(c.dir)
 	if err != nil {

@@ -14,8 +14,6 @@ import (
 
 	"github.com/maruel/subcommands"
 
-	"go.chromium.org/luci/common/cli"
-
 	"go.chromium.org/build/siso/toolsupport/ninjautil"
 )
 
@@ -66,7 +64,7 @@ func (c *digraphRun) init() {
 }
 
 func (c *digraphRun) Run(a subcommands.Application, args []string, env subcommands.Env) int {
-	ctx := cli.GetContext(a, c, env)
+	ctx := context.Background()
 	err := c.run(ctx, args)
 	if err != nil {
 		switch {

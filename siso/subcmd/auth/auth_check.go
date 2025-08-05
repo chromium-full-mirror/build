@@ -5,12 +5,11 @@
 package auth
 
 import (
+	"context"
 	"fmt"
 	"os"
 
 	"github.com/maruel/subcommands"
-
-	"go.chromium.org/luci/common/cli"
 
 	"go.chromium.org/build/siso/auth/cred"
 	"go.chromium.org/build/siso/reapi"
@@ -44,7 +43,7 @@ func (r *authCheckRun) init() {
 }
 
 func (r *authCheckRun) Run(a subcommands.Application, args []string, env subcommands.Env) int {
-	ctx := cli.GetContext(a, r, env)
+	ctx := context.Background()
 	if len(args) != 0 {
 		fmt.Fprintf(a.GetErr(), "%s: position arguments not expected\n", a.GetName())
 		return 1

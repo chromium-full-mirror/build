@@ -26,8 +26,6 @@ import (
 	mrpb "google.golang.org/genproto/googleapis/api/monitoredres"
 	"google.golang.org/grpc/grpclog"
 
-	"go.chromium.org/luci/common/cli"
-
 	"go.chromium.org/build/siso/auth/cred"
 	"go.chromium.org/build/siso/hashfs"
 	"go.chromium.org/build/siso/o11y/clog"
@@ -104,7 +102,7 @@ func (c *run) init() {
 }
 
 func (c *run) Run(a subcommands.Application, args []string, env subcommands.Env) int {
-	ctx := cli.GetContext(a, c, env)
+	ctx := context.Background()
 	err := c.run(ctx)
 	if err != nil {
 		switch {
