@@ -56,7 +56,7 @@ func (tp *tracePprof) Add(ctx context.Context, tc *trace.Context) {
 	if len(spans) == 0 {
 		return
 	}
-	backtraces, _ := spans[0].Attrs[logLabelKeyBacktrace].([]string)
+	backtraces, _ := spans[0].Attrs[logLabelKeyBacktraces].([]string)
 
 	for _, span := range spans[1:] {
 		switch span.NameKind() {

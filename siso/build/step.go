@@ -402,14 +402,19 @@ func stepBacktraces(ctx context.Context, step *Step) []string {
 	var locs []string
 	var prev string
 	for s := step.def; s != nil; s = s.Next() {
-		outs := s.Outputs(ctx)
-		loc := stepSpanName(s)
-		if len(outs) > 0 {
-			out := outs[0]
-			if odir := filepath.Dir(out); odir != "." {
-				out = odir
+		var loc string
+		if gnTarget := s.Binding("gn_target"); gnTarget != "" {
+			loc = gnTarget
+		} else {
+			outs := s.Outputs(ctx)
+			loc = stepSpanName(s)
+			if len(outs) > 0 {
+				out := outs[0]
+				if odir := filepath.Dir(out); odir != "." {
+					out = odir
+				}
+				loc = fmt.Sprintf("%s %s", loc, out)
 			}
-			loc = fmt.Sprintf("%s %s", loc, out)
 		}
 		if loc != prev {
 			locs = append(locs, loc)

@@ -442,7 +442,7 @@ func newSpanEventAttr(attr map[string]any) spanEventAttr {
 	output0, _ := attr["output0"].(string)
 	command, _ := attr["command"].(string)
 	args := strings.Split(command, " ")
-	backtraces, _ := attr["backtraces"].([]string)
+	backtraces, _ := attr[logLabelKeyBacktraces].([]string)
 	if len(args) > 7 {
 		args = args[:7]
 		args = append(args, "...")

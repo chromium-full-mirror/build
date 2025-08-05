@@ -260,7 +260,7 @@ func (b *Builder) stepSpanInit(ctx context.Context, span *trace.Span, step *Step
 	if step.metrics.GNTarget != "" {
 		span.SetAttr("gn_target", step.metrics.GNTarget)
 	}
-	span.SetAttr("backtraces", stepBacktraces(ctx, step))
+	span.SetAttr(logLabelKeyBacktraces, stepBacktraces(ctx, step))
 }
 
 func (b *Builder) handleStep(ctx context.Context, step *Step) (bool, error) {

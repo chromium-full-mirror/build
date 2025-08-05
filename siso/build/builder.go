@@ -60,8 +60,8 @@ import (
 
 // logging labels's key.
 const (
-	logLabelKeyID        = "id"
-	logLabelKeyBacktrace = "backtrace"
+	logLabelKeyID         = "id"
+	logLabelKeyBacktraces = "backtraces"
 )
 
 // chromium recipe module expects this string.
