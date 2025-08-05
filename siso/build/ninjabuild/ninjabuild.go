@@ -532,6 +532,11 @@ func (g *Graph) InputDeps(ctx context.Context) map[string][]string {
 	return g.globals.stepConfig.InputDeps
 }
 
+// InputsRequiringClangScandeps returns inputs that requires clang scandeps.
+func (g *Graph) InputsRequiringClangScandeps(ctx context.Context) []string {
+	return g.globals.stepConfig.InputsRequiringClangScandeps
+}
+
 // StepLimits returns a map of maximum number of concurrent steps by pool name.
 func (g *Graph) StepLimits(ctx context.Context) map[string]int {
 	m := make(map[string]int)

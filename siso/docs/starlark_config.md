@@ -147,6 +147,8 @@ to register handlers and step configs.
        * a list of filenames for case sensitive filesystem.
          if "a.txt" and "A.txt" are in this, and "a.txt" is
          used as input, "A.txt" will be added as input too.
+     * `inputs_requiring_clang_scandeps`
+        a list of filename that requires clang scandeps.
      * `bad_deps`
        * key: output target known to have bad deps
        * value: annotation (usually bug link)

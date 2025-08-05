@@ -301,6 +301,10 @@ type StepConfig struct {
 	// use these case sensitive filename. apply only for deps?
 	CaseSensitiveInputs []string `json:"case_sensitive_inputs,omitempty"`
 
+	// InputsRequiringClangScandeps lists inputs that requires clang
+	// scan deps.
+	InputsRequiringClangScandeps []string `json:"inputs_requiring_clang_scandeps,omitempty"`
+
 	// Rules lists step rules.
 	Rules []*StepRule `json:"rules,omitempty"`
 

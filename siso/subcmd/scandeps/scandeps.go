@@ -106,7 +106,7 @@ func (c *run) run(ctx context.Context) error {
 		return err
 	}
 
-	s := scandeps.New(hashFS, inputDeps)
+	s := scandeps.New(hashFS, inputDeps, nil)
 
 	result, err := s.Scan(ctx, execRoot, req)
 	if err != nil {

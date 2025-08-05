@@ -6,6 +6,7 @@ package gccutil
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io/fs"
 	"path/filepath"
@@ -39,6 +40,27 @@ type ScanDepsParams struct {
 	Defines map[string]string
 }
 
+// stepArgs in ninjabuild uses "/bin/sh -c $command" when
+// $command is not simple command line.
+// soong puts ${g.cc.relPwd} ("PWD=/proc/self/cwd")
+// at the front of command line, so parse command line
+// after dropping "PWD=/proc/self/cwd " if it exists.
+// TODO: b/432599730 - remove the workaround
+func normalizeArgs(args []string) ([]string, error) {
+	if len(args) == 3 && args[0] == "/bin/sh" && args[1] == "-c" {
+		if !strings.HasPrefix(args[2], "PWD=/proc/self/cwd ") {
+			return nil, errors.New("unsupported commandline. no PWD=/proc/self/cwd prefix")
+		}
+		// TODO: b/432374760 - need to strip ${postCmd} part?
+		cmdArgs, err := shutil.Split(strings.TrimPrefix(args[2], "PWD=/proc/self/cwd "))
+		if err != nil {
+			return nil, fmt.Errorf("failed to split %q: %v", args[2], err)
+		}
+		return cmdArgs, nil
+	}
+	return args, nil
+}
+
 // ExtractScanDepsParams parses args and returns ScanDepsParams for scandeps.
 // It only parses major command line flags used in chromium and android.
 // It reads @rspfile via fsys.
@@ -48,23 +70,9 @@ func ExtractScanDepsParams(ctx context.Context, args, env []string, fsys fs.FS) 
 	res := ScanDepsParams{
 		Defines: make(map[string]string),
 	}
-	if len(args) == 3 && args[0] == "/bin/sh" && args[1] == "-c" {
-		// stepArgs in ninjabuild uses "/bin/sh -c $command" when
-		// $command is not simple command line.
-
-		// soong puts ${g.cc.relPwd} ("PWD=/proc/self/cwd")
-		// at the front of command line, so parse command line
-		// after dropping "PWD=/proc/self/cwd " if it exists.
-		// TODO: b/432599730 - remove the workaround
-		if !strings.HasPrefix(args[2], "PWD=/proc/self/cwd ") {
-			return res, fmt.Errorf("unsupported commandline %q", args)
-		}
-		// TODO: b/432374760 - need to strip ${postCmd} part?
-		cmdArgs, err := shutil.Split(strings.TrimPrefix(args[2], "PWD=/proc/self/cwd "))
-		if err != nil {
-			return res, fmt.Errorf("failed to split %q: %w", args[2], err)
-		}
-		args = cmdArgs
+	args, err := normalizeArgs(args)
+	if err != nil {
+		return res, fmt.Errorf("failed to normalize args: %w", err)
 	}
 	for i := 0; i < len(args); i++ {
 		arg := args[i]

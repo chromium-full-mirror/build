@@ -83,9 +83,10 @@ type StepMetric struct {
 	// The hash of the action proto of this build step.
 	Digest string `json:"digest,omitempty"`
 
-	DepsLog     bool `json:"deps_log,omitempty"`     // whether the action used the deps log.
-	DepsLogErr  bool `json:"deps_log_err,omitempty"` // whether the action failed with deps log.
-	ScandepsErr bool `json:"scandeps_err,omitempty"` // whether the action failed in scandeps.
+	DepsLog       bool `json:"deps_log,omitempty"`       // whether the action used the deps log.
+	DepsLogErr    bool `json:"deps_log_err,omitempty"`   // whether the action failed with deps log.
+	ScandepsErr   bool `json:"scandeps_err,omitempty"`   // whether the action failed in scandeps.
+	ClangScandeps bool `json:"clang_scandeps,omitempty"` // whether the action used the clang for scandeps.
 
 	NoExec      bool `json:"no_exec,omitempty"`      // whether the action didn't run any command (i.e. just use handler).
 	IsRemote    bool `json:"is_remote,omitempty"`    // whether the action uses remote result.

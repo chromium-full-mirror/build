@@ -193,11 +193,15 @@ func (msvc depsMSVC) DepsCmd(ctx context.Context, b *Builder, step *Step) ([]str
 
 func (msvc depsMSVC) depsInputs(ctx context.Context, b *Builder, step *Step) ([]string, error) {
 	ins, err := msvc.scandeps(ctx, b, step)
+	if errors.Is(err, scandeps.ErrRequireClangScandeps) {
+		step.metrics.ClangScandeps = true
+		ins, err = msvc.scandepsByClang(ctx, b, step)
+	}
 	if err != nil {
-		if !errors.Is(err, context.Canceled) {
-			step.metrics.ScandepsErr = true
+		if errors.Is(err, context.Canceled) {
+			return nil, err
 		}
-		return nil, err
+		step.metrics.ScandepsErr = true
 	}
 	return ins, nil
 }
@@ -365,4 +369,29 @@ func expandCPPCaseSensitiveIncludes(ctx context.Context, b *Builder, files []str
 	}
 	sort.Strings(files)
 	return files
+}
+
+func (depsMSVC) scandepsByClang(ctx context.Context, b *Builder, step *Step) ([]string, error) {
+	cwd := b.path.AbsFromWD(".")
+	err := b.prepareLocalInputs(ctx, step)
+	if err != nil {
+		return nil, fmt.Errorf("prepare for msvc deps: %w", err)
+	}
+	dargs := msvcutil.DepsArgs(step.cmd.Args)
+	ins, err := msvcutil.Deps(ctx, dargs, nil, cwd)
+	if err != nil {
+		return nil, err
+	}
+	var inputs []string
+	for _, in := range ins {
+		inpath := b.path.MaybeFromWD(ctx, in)
+		_, err := b.hashFS.Stat(ctx, b.path.ExecRoot, inpath)
+		if err != nil {
+			clog.Warningf(ctx, "missing inputs? %s: %v", inpath, err)
+			continue
+		}
+		inputs = append(inputs, inpath)
+	}
+	return inputs, nil
+
 }

@@ -210,7 +210,7 @@ func (c *ideAnalysisRun) analyze(ctx context.Context, args []string) (*pb.IdeAna
 	if err != nil {
 		return analysis, err
 	}
-	analyzer.scanDeps = scandeps.New(hashFS, nil)
+	analyzer.scanDeps = scandeps.New(hashFS, nil, nil)
 	buildableUnits := make(map[string]*pb.BuildableUnit)
 	for _, arg := range args {
 		result, bus := analyzer.analyzeTarget(ctx, arg)

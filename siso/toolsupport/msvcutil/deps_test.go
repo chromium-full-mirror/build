@@ -74,3 +74,66 @@ func TestParseShowIncludes_filename(t *testing.T) {
 		})
 	}
 }
+
+func TestDepsArgs(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		args []string
+		want []string
+	}{
+		{
+			name: "hasShowIncludes",
+			args: []string{
+				"../../third_party/llvm-build/Release+Asserts/bin/clang-cl",
+				"/showIncludes",
+				"/c",
+				"../../base/version.cc",
+				"/Foobj/base/version.obj",
+			},
+			want: []string{
+				"../../third_party/llvm-build/Release+Asserts/bin/clang-cl",
+				"/showIncludes",
+				"/P",
+				"../../base/version.cc",
+			},
+		},
+		{
+			name: "hasShowIncludesUser",
+			args: []string{
+				"../../third_party/llvm-build/Release+Asserts/bin/clang-cl",
+				"/showIncludes:user",
+				"/c",
+				"../../base/version.cc",
+				"/Foobj/base/version.obj",
+			},
+			want: []string{
+				"../../third_party/llvm-build/Release+Asserts/bin/clang-cl",
+				"/showIncludes",
+				"/P",
+				"../../base/version.cc",
+			},
+		},
+		{
+			name: "noShowIncludes",
+			args: []string{
+				"../../third_party/llvm-build/Release+Asserts/bin/clang-cl",
+				"/c",
+				"../../base/version.cc",
+				"/Foobj/base/version.obj",
+			},
+			want: []string{
+				"../../third_party/llvm-build/Release+Asserts/bin/clang-cl",
+				"/P",
+				"../../base/version.cc",
+				"/showIncludes",
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := msvcutil.DepsArgs(tc.args)
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Errorf("msvcutil.DepsArgs(%q): diff (-want +got):\n%s", tc.args, diff)
+			}
+		})
+	}
+}

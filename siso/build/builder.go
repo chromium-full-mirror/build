@@ -53,7 +53,9 @@ import (
 	"go.chromium.org/build/siso/runtimex"
 	"go.chromium.org/build/siso/scandeps"
 	"go.chromium.org/build/siso/sync/semaphore"
+	"go.chromium.org/build/siso/toolsupport/gccutil"
 	"go.chromium.org/build/siso/toolsupport/makeutil"
+	"go.chromium.org/build/siso/toolsupport/msvcutil"
 	"go.chromium.org/build/siso/toolsupport/ninjautil"
 	"go.chromium.org/build/siso/ui"
 )
@@ -338,7 +340,7 @@ func New(ctx context.Context, graph Graph, opts Options) (_ *Builder, err error)
 		stepSema:           semaphore.New("step", opts.Limits.Step),
 		preprocSema:        semaphore.New("preproc", opts.Limits.Preproc),
 		scanDepsSema:       semaphore.New("scandeps", opts.Limits.ScanDeps),
-		scanDeps:           scandeps.New(opts.HashFS, graph.InputDeps(ctx)),
+		scanDeps:           scandeps.New(opts.HashFS, graph.InputDeps(ctx), graph.InputsRequiringClangScandeps(ctx)),
 		localSema:          semaphore.New("localexec", opts.Limits.Local),
 		localExec:          le,
 		rewrapSema:         semaphore.New("rewrap", opts.Limits.REWrap),
@@ -588,9 +590,9 @@ func (b *Builder) Build(ctx context.Context, name string, args ...string) (err e
 		var restatLine string
 		if b.reapiclient != nil {
 			// fastdeps / scandeps is only used in siso native mode.
-			if stat.FastDepsSuccess != 0 || stat.FastDepsFailed != 0 || stat.ScanDepsFailed != 0 {
-				depsStatLine = fmt.Sprintf("deps log:%d logErr:%d scanErr:%d\n",
-					stat.FastDepsSuccess, stat.FastDepsFailed, stat.ScanDepsFailed)
+			if stat.FastDepsSuccess != 0 || stat.FastDepsFailed != 0 || stat.ScanDepsFailed != 0 || stat.ClangScanDeps != 0 {
+				depsStatLine = fmt.Sprintf("deps log:%d logErr:%d scanErr:%d cc-M:%d\n",
+					stat.FastDepsSuccess, stat.FastDepsFailed, stat.ScanDepsFailed, stat.ClangScanDeps)
 			}
 			restat := b.reapiclient.IOMetrics().Stats()
 			restatLine = fmt.Sprintf("reapi: ops: %d(err:%d) / r:%d(err:%d) %s / w:%d(err:%d) %s\n",
@@ -615,7 +617,6 @@ func (b *Builder) Build(ctx context.Context, name string, args ...string) (err e
 	}()
 	semas := []*semaphore.Semaphore{
 		b.cache.sema,
-		b.cacheSema,
 		b.localSema,
 		b.remoteSema,
 		b.reproxySema,
@@ -625,6 +626,8 @@ func (b *Builder) Build(ctx context.Context, name string, args ...string) (err e
 		hashfs.ForgetMissingsSemaphore,
 		osfs.LstatSemaphore,
 		reapi.FileSemaphore,
+		gccutil.Semaphore,
+		msvcutil.Semaphore,
 		remoteexec.Semaphore,
 	}
 	b.traceEvents.Start(ctx, semas, []*iometrics.IOMetrics{

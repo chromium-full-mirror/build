@@ -95,7 +95,7 @@ func TestScanDeps(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	scanDeps := New(hashFS, inputDeps)
+	scanDeps := New(hashFS, inputDeps, nil)
 
 	req := Request{
 		Sources: []string{
@@ -178,7 +178,7 @@ func TestScanDeps_SelfIncludeInCommentAndMacroInclude(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	scanDeps := New(hashFS, inputDeps)
+	scanDeps := New(hashFS, inputDeps, nil)
 
 	req := Request{
 		Sources: []string{
@@ -268,7 +268,7 @@ func TestScanDeps_IncludeByDifferentMacroValue(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	scanDeps := New(hashFS, inputDeps)
+	scanDeps := New(hashFS, inputDeps, nil)
 
 	req := Request{
 		Sources: []string{
@@ -338,7 +338,7 @@ func TestScanDeps_Framework(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	scanDeps := New(hashFS, inputDeps)
+	scanDeps := New(hashFS, inputDeps, nil)
 
 	req := Request{
 		Sources: []string{
@@ -410,7 +410,7 @@ func TestScanDeps_AbsPath(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	scanDeps := New(hashFS, inputDeps)
+	scanDeps := New(hashFS, inputDeps, nil)
 
 	req := Request{
 		Sources: []string{
@@ -499,7 +499,7 @@ func TestScanDeps_SymlinkDir(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	scanDeps := New(hashFS, inputDeps)
+	scanDeps := New(hashFS, inputDeps, nil)
 
 	req := Request{
 		Sources: []string{
@@ -578,7 +578,7 @@ func TestScanDeps_SymlinkIntermediateDir(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	scanDeps := New(hashFS, inputDeps)
+	scanDeps := New(hashFS, inputDeps, nil)
 	req := Request{
 		Sources: []string{
 			"src/source.cc",
@@ -660,7 +660,7 @@ func TestScanDeps_SymlinkDirSymlinkIntermediateDir(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	scanDeps := New(hashFS, inputDeps)
+	scanDeps := New(hashFS, inputDeps, nil)
 	req := Request{
 		Sources: []string{
 			"src/source.cc",
@@ -737,7 +737,7 @@ func TestScanDeps_SymlinkFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	scanDeps := New(hashFS, inputDeps)
+	scanDeps := New(hashFS, inputDeps, nil)
 	req := Request{
 		Sources: []string{
 			"src/source.cc",

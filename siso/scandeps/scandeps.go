@@ -24,16 +24,24 @@ type ScanDeps struct {
 	fs *filesystem
 
 	inputDeps map[string][]string
+
+	inputsRequiringClangScandeps map[string]bool
 }
 
+var ErrRequireClangScandeps = errors.New("scandeps: require clang scandeps")
+
 // New creates new ScanDeps.
-func New(hashfs *hashfs.HashFS, inputDeps map[string][]string) *ScanDeps {
+func New(hashfs *hashfs.HashFS, inputDeps map[string][]string, inputsRequiringClangScandeps []string) *ScanDeps {
 	s := &ScanDeps{
 		fs: &filesystem{
 			hashfs: hashfs,
 			seed:   maphash.MakeSeed(),
 		},
-		inputDeps: inputDeps,
+		inputDeps:                    inputDeps,
+		inputsRequiringClangScandeps: make(map[string]bool),
+	}
+	for _, i := range inputsRequiringClangScandeps {
+		s.inputsRequiringClangScandeps[i] = true
 	}
 	hashfs.Notify(s.fs.update)
 	return s
@@ -148,6 +156,9 @@ func (s *ScanDeps) Scan(ctx context.Context, execRoot string, req Request) ([]st
 			}
 			if log.V(1) {
 				clog.Infof(ctx, "include %s -> %s", name, incpath)
+			}
+			if s.inputsRequiringClangScandeps[incpath] {
+				return nil, ErrRequireClangScandeps
 			}
 			if deps, ok := s.inputDeps[incpath]; ok {
 				if log.V(1) {

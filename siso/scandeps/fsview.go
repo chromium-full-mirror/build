@@ -276,6 +276,9 @@ func (fv *fsview) scanResult(ctx context.Context, incpath string) (*scanResult, 
 		fv.setFile(incpath, nil)
 		return nil, fs.ErrNotExist
 	}
+	if log.V(1) {
+		clog.Infof(ctx, "scanResult stat %q mode=%s", incpath, fi.Mode())
+	}
 	if fi.Mode().IsDir() {
 		fv.setDir(incpath, true)
 		fv.setFile(incpath, nil)

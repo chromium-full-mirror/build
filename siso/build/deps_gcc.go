@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"slices"
+	"sort"
 	"strings"
 	"time"
 
@@ -175,11 +176,15 @@ func (gcc depsGCC) DepsCmd(ctx context.Context, b *Builder, step *Step) ([]strin
 
 func (gcc depsGCC) depsInputs(ctx context.Context, b *Builder, step *Step) ([]string, error) {
 	ins, err := gcc.scandeps(ctx, b, step)
+	if errors.Is(err, scandeps.ErrRequireClangScandeps) {
+		step.metrics.ClangScandeps = true
+		ins, err = gcc.scandepsByClang(ctx, b, step)
+	}
 	if err != nil {
-		if !errors.Is(err, context.Canceled) {
-			step.metrics.ScandepsErr = true
+		if errors.Is(err, context.Canceled) {
+			return nil, err
 		}
-		return nil, err
+		step.metrics.ScandepsErr = true
 	}
 	return ins, nil
 }
@@ -325,4 +330,73 @@ func (depsGCC) scandeps(ctx context.Context, b *Builder, step *Step) ([]string, 
 		ins[i] = b.path.Intern(ins[i])
 	}
 	return ins, nil
+}
+
+func (gcc depsGCC) scandepsByClang(ctx context.Context, b *Builder, step *Step) ([]string, error) {
+	cwd := b.path.AbsFromWD(".")
+	err := b.prepareLocalInputs(ctx, step)
+	if err != nil {
+		return nil, fmt.Errorf("prepare for gcc deps: %w", err)
+	}
+	dargs, err := gccutil.DepsArgs(step.cmd.Args)
+	if err != nil {
+		return nil, err
+	}
+	ins, err := gccutil.Deps(ctx, dargs, nil, cwd)
+	if err != nil {
+		return nil, err
+	}
+	var inputs []string
+	for _, in := range ins {
+		// TODO: need to preserve intermediate dirs
+		// e.g.
+		//  /usr/local/google/home/ukai/src/chromium/src/native_client/toolchain/linux_x86/nacl_x86_glibc/bin/../lib/gcc/x86_64-nacl/4.4.3/../../../../x86_64-nacl/include/stdint.h
+		inpath := b.path.MaybeFromWD(ctx, in)
+		fi, err := b.hashFS.Stat(ctx, b.path.ExecRoot, inpath)
+		if err != nil {
+			clog.Warningf(ctx, "missing inputs? %s: %v", inpath, err)
+			continue
+		}
+		inputs = append(inputs, inpath)
+		if target := fi.Target(); target != "" {
+			// checks all intermediate symlink dirs if leaf is symlink.
+			inputs = append(inputs, gcc.expandSymlinkDirs(ctx, b, inpath)...)
+		}
+	}
+	sort.Strings(inputs)
+	return inputs, nil
+}
+
+func (depsGCC) expandSymlinkDirs(ctx context.Context, b *Builder, inpath string) []string {
+	var inputs []string
+	const maxSymlinks = 40
+resolve:
+	for range maxSymlinks {
+		elems := strings.Split(inpath, "/")
+		for i := range elems {
+			pathname := strings.Join(elems[:i+1], "/")
+			fi, err := b.hashFS.Stat(ctx, b.path.ExecRoot, pathname)
+			if err != nil {
+				clog.Warningf(ctx, "no intermediate dir for %s: %s: %v", inpath, pathname, err)
+				continue
+			}
+			if target := fi.Target(); target != "" {
+				inputs = append(inputs, pathname)
+				// TODO: support remote chroot?
+				if filepath.IsAbs(target) {
+					// out of exec root
+					break resolve
+				}
+				targetPath := filepath.Join(filepath.Dir(pathname), target)
+				if !filepath.IsLocal(targetPath) {
+					// out of exec root
+					break resolve
+				}
+				inputs = append(inputs, targetPath)
+				inpath = filepath.Join(targetPath, strings.Join(elems[i+1:], "/"))
+				continue resolve
+			}
+		}
+	}
+	return inputs
 }

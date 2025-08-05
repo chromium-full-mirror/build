@@ -73,6 +73,10 @@ type Graph interface {
 	// it's "input_deps" in Starlark config.
 	InputDeps(context.Context) map[string][]string
 
+	// InputsRequiringClangScandeps returns inputs that requires
+	// clang scandeps.
+	InputsRequiringClangScandeps(context.Context) []string
+
 	// StepLimits returns a map of maximum number of concurrent
 	// steps by pool name.
 	StepLimits(context.Context) map[string]int

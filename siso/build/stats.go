@@ -68,6 +68,9 @@ func (s *stats) update(ctx context.Context, m *StepMetric, pure bool) {
 	if m.ScandepsErr {
 		s.s.ScanDepsFailed++
 	}
+	if m.ClangScandeps {
+		s.s.ClangScanDeps++
+	}
 	if pure {
 		s.s.Pure++
 	}
@@ -83,6 +86,7 @@ type Stats struct {
 	FastDepsSuccess int // actions that ran successfully when we used deps from the deps cache
 	FastDepsFailed  int // actions that failed when we used deps from the deps cache
 	ScanDepsFailed  int // actions that scandeps failed
+	ClangScanDeps   int // actions that use clang for scandeps.
 	CacheHit        int // actions for which we got a cache hit
 	Local           int // locally executed actions
 	Remote          int // remote executed actions
