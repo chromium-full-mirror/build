@@ -149,12 +149,6 @@ func (b *Builder) execLocal(ctx context.Context, step *Step) error {
 // Uploads and sets local execution result in RE if builder is trusted
 // Note: currently does not work with layered cache and blocks on digest calculation
 func (b *Builder) cacheWrite(ctx context.Context, step *Step) error {
-	ctx, span := trace.NewSpan(ctx, "cache-write")
-	defer span.Close(nil)
-	phase := stepCacheWrite
-	step.setPhase(phase)
-	clog.Infof(ctx, "step state: local upload started %s", step.cmd.Desc)
-
 	// Local upload must be enabled and step must have pure inputs/outputs
 	if b.reapiclient == nil || !b.reCacheEnableWrite || !step.cmd.Pure {
 		return nil
@@ -165,6 +159,12 @@ func (b *Builder) cacheWrite(ctx context.Context, step *Step) error {
 		return nil
 	}
 
+	ctx, span := trace.NewSpan(ctx, "cache-write")
+	defer span.Close(nil)
+	phase := stepCacheWrite
+	step.setPhase(phase)
+	clog.Infof(ctx, "step state: cache write started %s", step.cmd.Desc)
+
 	// Action digests are lazily computed for local so they are not available at this point
 	cmd := step.cmd
 	result, _ := cmd.ActionResult()
@@ -172,7 +172,7 @@ func (b *Builder) cacheWrite(ctx context.Context, step *Step) error {
 	actionDigest, err := cmd.Digest(ctx, ds)
 
 	if err != nil {
-		clog.Warningf(ctx, "failed to compute digest for trusted local upload: %v", err)
+		clog.Warningf(ctx, "failed to compute digest for trusted cache write: %v", err)
 		return err
 	}
 

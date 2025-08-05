@@ -173,7 +173,7 @@ const (
 	progressPrefixCacheHit   = "c "
 	progressPrefixStart      = "S "
 	progressPrefixFinish     = "F "
-	progressPrefixCacheWrite = "U "
+	progressPrefixCacheWrite = "W "
 	progressPrefixRetry      = "r "
 	progressPrefixFallback   = "f "
 )
