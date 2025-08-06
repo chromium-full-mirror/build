@@ -30,6 +30,21 @@ var (
 	digestFnames = make(map[string]struct{})
 )
 
+var noLazyForTests map[string]bool
+
+// SetNoLazyForTest sets filenames that would not calculate digest lazily
+// for test.
+func SetNoLazyForTest(fnames ...string) {
+	if len(fnames) == 0 {
+		noLazyForTests = nil
+		return
+	}
+	noLazyForTests = make(map[string]bool)
+	for _, fname := range fnames {
+		noLazyForTests[fname] = true
+	}
+}
+
 func localDigest(ctx context.Context, src digest.Source, fname string) (digest.Data, error) {
 	ctx, span := trace.NewSpan(ctx, "local-digest")
 	defer span.Close(nil)
@@ -132,6 +147,10 @@ func (d *digester) lazyCompute(ctx context.Context, fname string, e *entry) {
 	ed := e.d
 	e.mu.Unlock()
 	if !ed.IsZero() {
+		return
+	}
+	if noLazyForTests != nil && noLazyForTests[fname] {
+		clog.Warningf(ctx, "no lazy for test: %s", fname)
 		return
 	}
 	select {

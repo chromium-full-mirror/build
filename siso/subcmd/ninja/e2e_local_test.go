@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -110,4 +111,60 @@ build build.ninja: phony
 	if stats.NoExec != 1 || stats.Done != stats.Total {
 		t.Errorf("noexec=%d done=%d total=%d; want noexec=1 done=total: %#v", stats.NoExec, stats.Done, stats.Total, stats)
 	}
+}
+
+func TestBuild_Local_Inputs(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+
+	ninja := func(t *testing.T) (build.Stats, error) {
+		t.Helper()
+		opt, graph, cleanup := setupBuild(ctx, t, dir, hashfs.Option{
+			StateFile: ".siso_fs_state",
+		})
+		defer cleanup()
+		return runNinja(ctx, "build.ninja", graph, opt, nil, runNinjaOpts{})
+	}
+	fname := filepath.ToSlash(filepath.Join(dir, "test/input2"))
+	hashfs.SetNoLazyForTest(fname)
+	defer hashfs.SetNoLazyForTest()
+
+	setupFiles(t, dir, t.Name(), nil)
+	t.Logf("-- first build")
+	stats, err := ninja(t)
+	if err != nil {
+		t.Fatalf("ninja err: %v", err)
+	}
+	if stats.Done != stats.Total || stats.Local != 2 || stats.Total != 3 {
+		t.Errorf("done=%d total=%d local=%d; want done=total=3 local=2: %#v", stats.Done, stats.Total, stats.Local, stats)
+	}
+
+	t.Logf("-- check input file is recorded in missing_digests")
+	st, err := hashfs.Load(ctx, hashfs.Option{StateFile: filepath.Join(dir, "out/siso/.siso_fs_state")})
+	if err != nil {
+		t.Fatalf("hashfs load err: %v", err)
+	}
+	if !slices.Equal(st.MissingDigests, []string{fname}) {
+		t.Errorf("missing_digests=%q; want=%q", st.MissingDigests, []string{fname})
+	}
+
+	t.Logf("-- confirm no-op")
+	stats, err = ninja(t)
+	if err != nil {
+		t.Fatalf("ninja err: %v", err)
+	}
+	if stats.Done != stats.Total || stats.Local != 0 || stats.Skipped != 3 || stats.Total != 3 {
+		t.Errorf("done=%d total=%d skipped=%d local=%d; want done=total=skipped=3 local=0: %#v", stats.Done, stats.Total, stats.Skipped, stats.Local, stats)
+	}
+
+	touchFile(t, dir, "test/input2")
+	t.Logf("-- second build")
+	stats, err = ninja(t)
+	if err != nil {
+		t.Fatalf("ninja err: %v", err)
+	}
+	if stats.Done != stats.Total || stats.Local != 1 || stats.Skipped != 2 || stats.Total != 3 {
+		t.Errorf("done=%d total=%d skipped=%d local=%d; want done=total=3 skipped=2 local=1: %#v", stats.Done, stats.Total, stats.Skipped, stats.Local, stats)
+	}
+
 }

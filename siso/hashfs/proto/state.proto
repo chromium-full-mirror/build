@@ -53,5 +53,9 @@ message State {
   // everything is up-to-date.
   BuildTargets build_targets = 3;
 
+  // files that are used as outputs, but doesn't exist.
   repeated string missing_outputs = 4;
+
+  // files that are used as inputs, but digest is still unknown.
+  repeated string missing_digests = 5;
 }
