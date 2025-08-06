@@ -30,6 +30,13 @@ type ScanDeps struct {
 
 var ErrRequireClangScandeps = errors.New("scandeps: require clang scandeps")
 
+var errForTest error
+
+// SetErrForTest sets error for test.
+func SetErrForTest(err error) {
+	errForTest = err
+}
+
 // New creates new ScanDeps.
 func New(hashfs *hashfs.HashFS, inputDeps map[string][]string, inputsRequiringClangScandeps []string) *ScanDeps {
 	s := &ScanDeps{
@@ -76,6 +83,9 @@ type Request struct {
 
 // Scan scans C/C++ source/header files for req to get C/C++ dependencies.
 func (s *ScanDeps) Scan(ctx context.Context, execRoot string, req Request) ([]string, error) {
+	if errForTest != nil {
+		return nil, errForTest
+	}
 	ctx, span := trace.NewSpan(ctx, "scandeps")
 	defer span.Close(nil)
 

@@ -185,6 +185,7 @@ func (gcc depsGCC) depsInputs(ctx context.Context, b *Builder, step *Step) ([]st
 			return nil, err
 		}
 		step.metrics.ScandepsErr = true
+		return nil, err
 	}
 	return ins, nil
 }

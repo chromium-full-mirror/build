@@ -202,6 +202,7 @@ func (msvc depsMSVC) depsInputs(ctx context.Context, b *Builder, step *Step) ([]
 			return nil, err
 		}
 		step.metrics.ScandepsErr = true
+		return nil, err
 	}
 	return ins, nil
 }
