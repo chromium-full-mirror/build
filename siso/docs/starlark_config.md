@@ -66,7 +66,12 @@ def init(ctx):
     "config",
     step_config = json.encode(step_config),
     filegroups = {
-       "base:all_headers": {
+       # "base:headers" is set in input_deps by using glob.
+       # and it is used as precomputed tree for include dir "base",
+       # when command line uses the directory as include dir.
+       # e.g.
+       #  dir="out/Default" command="clang -I../../base"
+       "base:headers": {
           "type": "glob",
           "includes": ["*.h"],
        },
@@ -113,6 +118,9 @@ to register handlers and step configs.
 `init` should return a module.
 
    * `filegroups` dict
+     * `filegroups` is used to create `input_deps` at initialization phase
+       by using glob. It is recorded in `.siso_filegroups` and reuse
+       without running glob if build graph and config is not changed.
      * key: filegroup label (i.e. dir:name).
      * value: dict of a filegroup generator
        * "type" specifies filegroup generator type.
@@ -139,6 +147,13 @@ to register handlers and step configs.
          If the key is a label, it won't be included in the expanded inputs.
         `:headers` label would be used for c++ scandeps for include dirs
          or sysroots.
+         e.g. dir="out/Default" and
+              command="../../third_party/llvm-build/Release+Asserts/bin/clang
+                    -I../../base  ..."
+              then,
+                 "third_party/llvm-build/Release+Asserts:headers"
+                 "base:headers"
+              are used as precomputed tree in the remote exec inputs.
        * values: other files or labels needed for the key.
          `<target>:inputs` label would be expanded to inputs of `<target>`'s
          inputs, if `<target>:inputs` is not explicitly defined in
