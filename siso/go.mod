@@ -18,6 +18,7 @@ require (
 	github.com/biogo/hts v1.4.5
 	github.com/golang/glog v1.2.5
 	github.com/google/go-cmp v0.7.0
+	github.com/google/subcommands v1.2.0
 	github.com/google/uuid v1.6.0
 	github.com/klauspost/compress v1.18.0
 	github.com/klauspost/cpuid/v2 v2.2.11

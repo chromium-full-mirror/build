@@ -6,22 +6,21 @@
 package main
 
 import (
+	"context"
+	"flag"
 	"os"
 
-	"github.com/maruel/subcommands"
+	"github.com/google/subcommands"
 )
 
-var application = &subcommands.DefaultApplication{
-	Name:  "kzipinfo",
-	Title: "A tool to inspect Kythe kzip files in a human-readable format.",
-	Commands: []*subcommands.Command{
-		cmdInfo,
-		cmdListUnits,
-		cmdShow,
-		subcommands.CmdHelp,
-	},
-}
-
 func main() {
-	os.Exit(subcommands.Run(application, nil))
+	subcommands.Register(subcommands.HelpCommand(), "")
+	subcommands.Register(subcommands.FlagsCommand(), "")
+	subcommands.Register(subcommands.CommandsCommand(), "")
+	subcommands.Register(infoCmd{}, "")
+	subcommands.Register(lsCmd{}, "")
+	subcommands.Register(showCmd{}, "")
+
+	flag.Parse()
+	os.Exit(int(subcommands.Execute(context.Background())))
 }

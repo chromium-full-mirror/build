@@ -5,29 +5,38 @@
 package main
 
 import (
+	"context"
+	"flag"
 	"fmt"
 	"os"
 	"text/tabwriter"
 
-	"github.com/maruel/subcommands"
+	"github.com/google/subcommands"
 	"kythe.io/kythe/go/platform/kzip"
 )
 
-type lsCmd struct {
-	subcommands.CommandRunBase
-}
+type lsCmd struct{}
 
-func (c *lsCmd) Run(a subcommands.Application, args []string, env subcommands.Env) int {
-	if len(args) != 1 {
-		fmt.Fprintf(os.Stderr, "%s %s: expected <kzip_path>\n", a.GetName(), cmdListUnits.Name())
-		return 1
+func (lsCmd) Name() string     { return "ls" }
+func (lsCmd) Synopsis() string { return "Lists all compilation units in a kzip file." }
+func (lsCmd) Usage() string {
+	return `ls <kzip_path>
+Lists all compilation units in a kzip file.
+`
+}
+func (lsCmd) SetFlags(f *flag.FlagSet) {}
+
+func (c lsCmd) Execute(ctx context.Context, f *flag.FlagSet, args ...interface{}) subcommands.ExitStatus {
+	if f.NArg() != 1 {
+		fmt.Fprintf(os.Stderr, "Error: No kzip file was provided.\n\nUsage: %s\n", c.Usage())
+		return subcommands.ExitUsageError
 	}
-	kzipPath := args[0]
+	kzipPath := f.Arg(0)
 
 	file, err := os.Open(kzipPath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to open kzip file %s: %v\n", kzipPath, err)
-		return 1
+		return subcommands.ExitFailure
 	}
 	defer func() {
 		if err := file.Close(); err != nil {
@@ -38,14 +47,14 @@ func (c *lsCmd) Run(a subcommands.Application, args []string, env subcommands.En
 	stat, err := file.Stat()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to stat kzip file %s: %v\n", kzipPath, err)
-		return 1
+		return subcommands.ExitFailure
 	}
 
 	fileSize := stat.Size()
 	reader, err := kzip.NewReader(file, fileSize)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to create kzip reader for %s: %v\n", kzipPath, err)
-		return 1
+		return subcommands.ExitFailure
 	}
 
 	fmt.Printf("Compilation Units in %s:\n", kzipPath)
@@ -75,7 +84,7 @@ func (c *lsCmd) Run(a subcommands.Application, args []string, env subcommands.En
 
 	if scanErr != nil {
 		fmt.Fprintf(os.Stderr, "Error scanning kzip: %v\n", scanErr)
-		return 1
+		return subcommands.ExitFailure
 	}
 	err = tw.Flush()
 	if err != nil {
@@ -83,14 +92,5 @@ func (c *lsCmd) Run(a subcommands.Application, args []string, env subcommands.En
 	}
 	fmt.Printf("\nFound %d compilation units.\n", count)
 
-	return 0
-}
-
-var cmdListUnits = &subcommands.Command{
-	UsageLine: "ls <kzip_path>",
-	ShortDesc: "Lists all compilation units in a kzip file.",
-	LongDesc:  "Lists the digest, language, primary source, and output key for each compilation unit.",
-	CommandRun: func() subcommands.CommandRun {
-		return new(lsCmd)
-	},
+	return subcommands.ExitSuccess
 }

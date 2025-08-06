@@ -5,44 +5,53 @@
 package main
 
 import (
+	"context"
+	"flag"
 	"fmt"
 	"maps"
 	"os"
 	"slices"
 	"text/tabwriter"
 
-	"github.com/maruel/subcommands"
+	"github.com/google/subcommands"
 	"kythe.io/kythe/go/platform/kzip/info"
 )
 
-type infoCmd struct {
-	subcommands.CommandRunBase
-}
+type infoCmd struct{}
 
-func (c *infoCmd) Run(a subcommands.Application, args []string, env subcommands.Env) int {
-	if len(args) != 1 {
-		fmt.Fprintf(os.Stderr, "%s %s: expected <kzip_path>\n", a.GetName(), cmdInfo.Name())
-		return 1
+func (infoCmd) Name() string     { return "info" }
+func (infoCmd) Synopsis() string { return "Shows summary information of a kzip file." }
+func (infoCmd) Usage() string {
+	return `info <kzip_path>
+Shows summary information of a kzip file.
+`
+}
+func (infoCmd) SetFlags(f *flag.FlagSet) {}
+
+func (c infoCmd) Execute(ctx context.Context, f *flag.FlagSet, args ...interface{}) subcommands.ExitStatus {
+	if f.NArg() != 1 {
+		fmt.Fprintf(os.Stderr, "Error: No kzip file was provided.\n\nUsage: %s\n", c.Usage())
+		return subcommands.ExitUsageError
 	}
-	kzipPath := args[0]
+	kzipPath := f.Arg(0)
 
 	file, err := os.Open(kzipPath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error opening kzip file: %v\n", err)
-		return 1
+		return subcommands.ExitFailure
 	}
 	defer file.Close()
 
 	stat, err := file.Stat()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error stating kzip file: %v\n", err)
-		return 1
+		return subcommands.ExitFailure
 	}
 
 	info, err := info.KzipInfo(file, stat.Size())
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error getting kzip info: %v\n", err)
-		return 1
+		return subcommands.ExitFailure
 	}
 
 	fmt.Printf("Kzip Info for: %s\n", kzipPath)
@@ -105,14 +114,5 @@ func (c *infoCmd) Run(a subcommands.Application, args []string, env subcommands.
 	fmt.Fprintf(tw, "Total\t\t%d\t%d\t%d\n", totalCUs, totalSources, totalInputs)
 	tw.Flush()
 
-	return 0
-}
-
-var cmdInfo = &subcommands.Command{
-	UsageLine: "info <kzip_path>",
-	ShortDesc: "Shows summary information of a kzip file.",
-	LongDesc:  "Displays summary information about the kzip file, including total CUs, file counts per corpus/language, size, and any critical errors.",
-	CommandRun: func() subcommands.CommandRun {
-		return new(infoCmd)
-	},
+	return subcommands.ExitSuccess
 }

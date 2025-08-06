@@ -5,11 +5,13 @@
 package main
 
 import (
+	"context"
+	"flag"
 	"fmt"
 	"os"
 	"strings"
 
-	"github.com/maruel/subcommands"
+	"github.com/google/subcommands"
 	"kythe.io/kythe/go/platform/kzip"
 	spb "kythe.io/kythe/proto/storage_go_proto"
 )
@@ -41,22 +43,29 @@ func formatVName(vname *spb.VName) string {
 	return strings.Join(parts, ", ")
 }
 
-type showUnitCmd struct {
-	subcommands.CommandRunBase
-}
+type showCmd struct{}
 
-func (c *showUnitCmd) Run(a subcommands.Application, args []string, env subcommands.Env) int {
-	if len(args) != 2 {
-		fmt.Fprintf(os.Stderr, "%s %s: expected <kzip_path> <unit_digest>\n", a.GetName(), cmdShow.Name())
-		return 1
+func (showCmd) Name() string     { return "show" }
+func (showCmd) Synopsis() string { return "Shows information for a specific compilation unit." }
+func (showCmd) Usage() string {
+	return `show <kzip_path> <unit_digest>
+Shows information for a specific compilation unit.
+`
+}
+func (showCmd) SetFlags(f *flag.FlagSet) {}
+
+func (c showCmd) Execute(ctx context.Context, f *flag.FlagSet, args ...interface{}) subcommands.ExitStatus {
+	if f.NArg() != 2 {
+		fmt.Fprintf(os.Stderr, "Error: Both a kzip file and CU digest must be provided.\n\nUsage: %s\n", c.Usage())
+		return subcommands.ExitUsageError
 	}
-	kzipPath := args[0]
-	unitDigest := args[1]
+	kzipPath := f.Arg(0)
+	unitDigest := f.Arg(1)
 
 	file, err := os.Open(kzipPath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to open kzip file %s: %v\n", kzipPath, err)
-		return 1
+		return subcommands.ExitFailure
 	}
 	defer func() {
 		if err := file.Close(); err != nil {
@@ -67,20 +76,20 @@ func (c *showUnitCmd) Run(a subcommands.Application, args []string, env subcomma
 	stat, err := file.Stat()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to stat kzip file %s: %v\n", kzipPath, err)
-		return 1
+		return subcommands.ExitFailure
 	}
 
 	fileSize := stat.Size()
 	reader, err := kzip.NewReader(file, fileSize)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to create kzip reader for %s: %v\n", kzipPath, err)
-		return 1
+		return subcommands.ExitFailure
 	}
 
 	unit, err := reader.Lookup(unitDigest)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error looking up unit digest %s: %v\n", unitDigest, err)
-		return 1
+		return subcommands.ExitFailure
 	}
 
 	fmt.Printf("Details for Compilation Unit (Digest: %s):\n", unit.Digest)
@@ -146,15 +155,5 @@ func (c *showUnitCmd) Run(a subcommands.Application, args []string, env subcomma
 		fmt.Printf("    Revisions: %s\n", strings.Join(unit.Index.GetRevisions(), ", "))
 	}
 
-	return 0
-}
-
-var cmdShow = &subcommands.Command{
-	UsageLine: "show <kzip_path> <unit_digest>",
-	ShortDesc: "Shows information for a specific compilation unit.",
-	LongDesc:  "Looks up a compilation unit by its digest and prints its structured details.",
-	CommandRun: func() subcommands.CommandRun {
-		c := &showUnitCmd{}
-		return c
-	},
+	return subcommands.ExitSuccess
 }
