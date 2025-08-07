@@ -736,7 +736,7 @@ func (c *Command) run(ctx context.Context) (stats build.Stats, err error) {
 		if c.strictRemote {
 			return stats, flagError{err: fmt.Errorf("no reapi specified, but remote is requested as --strict_remote: %w", err)}
 		}
-		if c.remoteJobs > 0 {
+		if c.remoteJobs > 0 && c.reproxyAddr == "" {
 			return stats, flagError{err: fmt.Errorf("no reapi specified, but remote is requested as --remote_jobs=%d: %w", c.remoteJobs, err)}
 		}
 	}
