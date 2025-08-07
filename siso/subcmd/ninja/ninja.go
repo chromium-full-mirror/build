@@ -567,7 +567,7 @@ func (c *Command) run(ctx context.Context) (stats build.Stats, err error) {
 		// TODO: can be async until cred is needed?
 		spin := ui.Default.NewSpinner()
 		spin.Start("init credentials by %q", c.authOpts.Type)
-		credential, err = cred.New(ctx, c.authOpts)
+		credential, err = cred.New(ctx, c.reopt.ServiceURI(), c.authOpts)
 		if err != nil {
 			spin.Stop(errors.New(""))
 			return stats, err
@@ -730,14 +730,14 @@ func (c *Command) run(ctx context.Context) (stats build.Stats, err error) {
 		return nil
 	})
 
-	if c.reopt.IsValid() {
+	if err := c.reopt.CheckValid(); err == nil {
 		ui.Default.Infof(fmt.Sprintf("use %s\n", c.reopt))
 	} else {
 		if c.strictRemote {
-			return stats, flagError{err: errors.New("no reapi specified, but remote is requested as --strict_remote")}
+			return stats, flagError{err: fmt.Errorf("no reapi specified, but remote is requested as --strict_remote: %w", err)}
 		}
 		if c.remoteJobs > 0 {
-			return stats, flagError{err: fmt.Errorf("no reapi specified, but remote is requested as --remote_jobs=%d", c.remoteJobs)}
+			return stats, flagError{err: fmt.Errorf("no reapi specified, but remote is requested as --remote_jobs=%d: %w", c.remoteJobs, err)}
 		}
 	}
 	ds, err := c.initDataSource(ctx, credential)
@@ -1960,8 +1960,8 @@ func (c *Command) initDataSource(ctx context.Context, credential cred.Cred) (dat
 		c.cacheDir = ""
 	}
 	var ds dataSource
-	var err error
-	if c.reopt.IsValid() {
+	err := c.reopt.CheckValid()
+	if err == nil {
 		ds.client, err = reapi.New(ctx, credential, *c.reopt)
 		if err != nil {
 			return ds, err

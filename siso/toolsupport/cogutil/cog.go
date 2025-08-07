@@ -41,8 +41,8 @@ func New(ctx context.Context, dir string, reopt *reapi.Option) (*Client, error) 
 		return nil, err
 	}
 	clog.Infof(ctx, "cog version:\n%s", string(buf))
-	if !reopt.IsValid() {
-		clog.Warningf(ctx, "cog: reapi is not enabled")
+	if err := reopt.CheckValid(); err != nil {
+		clog.Warningf(ctx, "cog: reapi is not enabled: %v", err)
 		return &Client{}, nil
 	}
 	addr := fmt.Sprintf("unix:///google/cog/status/uds/%d", os.Getuid())

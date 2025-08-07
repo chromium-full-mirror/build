@@ -131,11 +131,11 @@ func (c *Command) run(ctx context.Context) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer signals.HandleInterrupt(ctx, cancel)()
 
-	projectID := c.reopt.UpdateProjectID(c.projectID)
+	c.reopt.UpdateProjectID(c.projectID)
 	var credential cred.Cred
-	var err error
-	if projectID != "" {
-		credential, err = cred.New(ctx, c.authOpts)
+	err := c.reopt.CheckValid()
+	if err == nil {
+		credential, err = cred.New(ctx, c.reopt.ServiceURI(), c.authOpts)
 		if err != nil {
 			return err
 		}
@@ -225,7 +225,7 @@ func (c *Command) call(ctx context.Context, reopt reapi.Option, credential cred.
 		return flag.ErrHelp
 	}
 
-	if c.local || !reopt.IsValid() {
+	if c.local || reopt.CheckValid() != nil {
 		return c.callLocal(ctx)
 	}
 	client, err := reapi.New(ctx, credential, reopt)

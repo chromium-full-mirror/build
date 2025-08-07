@@ -129,11 +129,11 @@ func (c *Command) run(ctx context.Context) error {
 
 	c.reopt.UpdateProjectID(c.projectID)
 	var credential cred.Cred
-	var err error
-	if !c.reopt.IsValid() {
-		return errors.New("project ID is not specified")
+	err := c.reopt.CheckValid()
+	if err != nil {
+		return fmt.Errorf("reapi option is invalid: %w", err)
 	}
-	credential, err = cred.New(ctx, c.authOpts)
+	credential, err = cred.New(ctx, c.reopt.ServiceURI(), c.authOpts)
 	if err != nil {
 		return err
 	}

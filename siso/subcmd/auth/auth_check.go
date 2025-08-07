@@ -54,7 +54,7 @@ func (c *CheckCommand) Execute(ctx context.Context, flagSet *flag.FlagSet, _ ...
 		fmt.Fprintf(os.Stderr, "position arguments not expected\n")
 		return subcommands.ExitUsageError
 	}
-	credential, err := cred.New(ctx, c.authOpts)
+	credential, err := cred.New(ctx, c.reopt.ServiceURI(), c.authOpts)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "auth error: %v\n", err)
 		return subcommands.ExitFailure
@@ -64,7 +64,7 @@ func (c *CheckCommand) Execute(ctx context.Context, flagSet *flag.FlagSet, _ ...
 		fmt.Printf(" as %s\n", credential.Email)
 	}
 	c.reopt.UpdateProjectID(c.projectID)
-	if c.reopt.IsValid() {
+	if err := c.reopt.CheckValid(); err == nil {
 		client, err := reapi.New(ctx, credential, *c.reopt)
 		fmt.Printf("use %s\n", c.reopt)
 		if err != nil {

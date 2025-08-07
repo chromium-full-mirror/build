@@ -106,11 +106,11 @@ func (c *flushCommand) run(ctx context.Context) error {
 		fnames = strings.Split(string(fileList), "\n")
 	}
 
-	projectID := c.reopt.UpdateProjectID(c.projectID)
-	if projectID == "" {
-		return errors.New("project ID is not specified")
+	c.reopt.UpdateProjectID(c.projectID)
+	if err := c.reopt.CheckValid(); err != nil {
+		return fmt.Errorf("reapi option is invalid: %w", err)
 	}
-	credential, err := cred.New(ctx, c.authOpts)
+	credential, err := cred.New(ctx, c.reopt.ServiceURI(), c.authOpts)
 	if err != nil {
 		return err
 	}

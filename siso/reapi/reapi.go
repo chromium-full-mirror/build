@@ -147,15 +147,15 @@ func (o *Option) UpdateProjectID(projID string) string {
 	return projID
 }
 
-// IsValid returns whether option is valid or not.
-func (o Option) IsValid() bool {
+// CheckValid checks whether option is valid or not.
+func (o Option) CheckValid() error {
 	if o.Address == "" {
-		return false
+		return errors.New("no reapi address")
 	}
-	if isGoogleRBE(o.Address) {
-		return o.Instance != ""
+	if isGoogleRBE(o.Address) && o.Instance == "" {
+		return errors.New("no reapi instance for Google RBE")
 	}
-	return true
+	return nil
 }
 
 // NeedCred returns whether credential is needed or not.
@@ -163,7 +163,7 @@ func (o Option) NeedCred() bool {
 	if o.Address == "" {
 		return false
 	}
-	if !o.IsValid() {
+	if o.CheckValid() != nil {
 		return false
 	}
 	if o.Insecure {
@@ -173,6 +173,25 @@ func (o Option) NeedCred() bool {
 		return false
 	}
 	return true
+}
+
+// ServiceURI returns service uri (capabilities) for PerRPCCredentials
+// to check auth in cred.New
+func (o Option) ServiceURI() string {
+	uri := o.Address
+	if uri == "" {
+		return ""
+	}
+	if !strings.HasPrefix(uri, "http") {
+		method := "http"
+		if strings.HasSuffix(uri, ":443") {
+			method = "https"
+			uri = strings.TrimSuffix(uri, ":443")
+		}
+		uri = fmt.Sprintf("%s://%s", method, uri)
+	}
+	uri += rpb.Capabilities_GetCapabilities_FullMethodName
+	return uri
 }
 
 type grpcClientConn interface {

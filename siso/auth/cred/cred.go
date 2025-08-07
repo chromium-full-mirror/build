@@ -67,10 +67,25 @@ func AuthOpts(credHelperPath string, args ...string) Options {
 
 // New creates a Cred using LUCI auth's default options.
 // It ensures that the user is logged in and returns an error otherwise.
-func New(ctx context.Context, opts Options) (Cred, error) {
+func New(ctx context.Context, uri string, opts Options) (Cred, error) {
 	var t string
 	if opts.TokenSource == nil {
 		return Cred{}, nil
+	}
+	if opts.PerRPCCredentials != nil && uri != "" {
+		_, err := opts.PerRPCCredentials.GetRequestMetadata(ctx, uri)
+		if err == nil {
+			t := "credential_helper"
+			if ch, ok := opts.PerRPCCredentials.(*credHelper); ok {
+				t = ch.path
+			}
+			return Cred{
+				Type:              t,
+				perRPCCredentials: opts.PerRPCCredentials,
+				tokenSource:       opts.TokenSource,
+			}, nil
+		}
+		clog.Warningf(ctx, "failed to get perRPCCredentials for %q: %v", uri, err)
 	}
 	var email string
 	ts := opts.TokenSource

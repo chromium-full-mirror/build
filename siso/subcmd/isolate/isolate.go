@@ -138,12 +138,13 @@ func (c *Command) run(ctx context.Context) error {
 		return fmt.Errorf("-job_id length %d must be less than 1024", len(c.jobID))
 	}
 	projectID := c.reopt.UpdateProjectID(c.projectID)
-	if projectID == "" {
-		return fmt.Errorf("no project id")
+	err = c.reopt.CheckValid()
+	if err != nil {
+		return fmt.Errorf("reapi option is invalid: %w", err)
 	}
 	spin := ui.Default.NewSpinner()
 	spin.Start("init credentials")
-	credential, err := cred.New(ctx, c.authOpts)
+	credential, err := cred.New(ctx, c.reopt.ServiceURI(), c.authOpts)
 	if err != nil {
 		spin.Stop(errors.New(""))
 		return err
@@ -310,7 +311,7 @@ func (c *Command) casCred(ctx context.Context) (cred.Cred, error) {
 		"--act-via-realm",
 		fmt.Sprintf("@internal:%s/cas-read-write", project),
 	)
-	return cred.New(ctx, authOpts)
+	return cred.New(ctx, c.casopt.ServiceURI(), authOpts)
 }
 
 func upload(ctx context.Context, execRoot, buildDir string, hashFS *hashfs.HashFS, casClient *reapi.Client, target string) (digest.Digest, error) {
