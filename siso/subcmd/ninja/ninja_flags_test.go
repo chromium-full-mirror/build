@@ -5,6 +5,7 @@
 package ninja
 
 import (
+	"flag"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -37,17 +38,18 @@ func TestParseFlagsFully(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			c := &ninjaCmdRun{}
-			c.init()
-			err := c.Flags.Parse(tc.args)
+			c := &Command{}
+			flagSet := flag.NewFlagSet("ninja", flag.ContinueOnError)
+			c.SetFlags(flagSet)
+			err := flagSet.Parse(tc.args)
 			if err != nil {
 				t.Fatalf("flag parse %v; want nil err", err)
 			}
-			err = parseFlagsFully(&c.Flags)
+			err = parseFlagsFully(flagSet)
 			if err != nil {
 				t.Fatalf("flag parse fully %v; want nil err", err)
 			}
-			if diff := cmp.Diff(tc.want, c.Flags.Args()); diff != "" {
+			if diff := cmp.Diff(tc.want, flagSet.Args()); diff != "" {
 				t.Errorf("args diff -want +got:\n%s", diff)
 			}
 			if diff := cmp.Diff(tc.wantDebug, c.debugMode); diff != "" {

@@ -20,8 +20,8 @@ import (
 
 	rpb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
 	log "github.com/golang/glog"
+	"github.com/google/subcommands"
 	"github.com/google/uuid"
-	"github.com/maruel/subcommands"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/prototext"
@@ -65,24 +65,27 @@ You can omit <dir> if it is current directory ".".
 `
 
 // Cmd returns the Command for the `recall` subcommand provided by this package.
-func Cmd(authOpts cred.Options) *subcommands.Command {
-	return &subcommands.Command{
-		UsageLine: "recall <args>....",
-		ShortDesc: "recall action",
-		LongDesc:  usage,
-		CommandRun: func() subcommands.CommandRun {
-			c := &run{
-				authOpts: authOpts,
-			}
-			c.init()
-			return c
-		},
+func Cmd(authOpts cred.Options) *Command {
+	return &Command{
+		authOpts: authOpts,
 	}
 }
 
-type run struct {
-	subcommands.CommandRunBase
+func (*Command) Name() string {
+	return "recall"
+}
 
+func (*Command) Synopsis() string {
+	return "recall action"
+}
+
+func (*Command) Usage() string {
+	return usage
+}
+
+// Command implements recall subcomand.
+type Command struct {
+	Flags             *flag.FlagSet
 	authOpts          cred.Options
 	projectID         string
 	reopt             *reapi.Option
@@ -95,35 +98,36 @@ type run struct {
 	stats             bool
 }
 
-func (c *run) init() {
-	c.Flags.StringVar(&c.projectID, "project", os.Getenv("SISO_PROJECT"), "cloud project ID. can be set by $SISO_PROJECT")
-	c.Flags.BoolVar(&c.reCacheEnableRead, "re_cache_enable_read", true, "remote exec cache enable read")
-	c.Flags.StringVar(&c.cpuLimit, "cpus", "", "how much of the available CPU resources the action can use (e.g. '1.5' for at most one and a half of the CPUs)")
-	c.Flags.StringVar(&c.memLimit, "memory", "", "the maximum amount of memory the action can use (e.g. 512m or 2g)")
-	c.Flags.BoolVar(&c.hddMode, "hdd", false, "run the action with slowed down I/O that resembles a hard-disk with 12MB/s throughput, 75 read IOPS and 150 write IOPS")
-	c.Flags.BoolVar(&c.local, "local", false, "force running the action locally using Docker, even if REAPI is configured")
-	c.Flags.BoolVar(&c.stats, "stats", false, "run the command under /usr/bin/time and print detailed resource stats after execution (note: this may fail if the container glibc is incompatible with the host)")
+func (c *Command) SetFlags(flagSet *flag.FlagSet) {
+	flagSet.StringVar(&c.projectID, "project", os.Getenv("SISO_PROJECT"), "cloud project ID. can be set by $SISO_PROJECT")
+	flagSet.BoolVar(&c.reCacheEnableRead, "re_cache_enable_read", true, "remote exec cache enable read")
+	flagSet.StringVar(&c.cpuLimit, "cpus", "", "how much of the available CPU resources the action can use (e.g. '1.5' for at most one and a half of the CPUs)")
+	flagSet.StringVar(&c.memLimit, "memory", "", "the maximum amount of memory the action can use (e.g. 512m or 2g)")
+	flagSet.BoolVar(&c.hddMode, "hdd", false, "run the action with slowed down I/O that resembles a hard-disk with 12MB/s throughput, 75 read IOPS and 150 write IOPS")
+	flagSet.BoolVar(&c.local, "local", false, "force running the action locally using Docker, even if REAPI is configured")
+	flagSet.BoolVar(&c.stats, "stats", false, "run the command under /usr/bin/time and print detailed resource stats after execution (note: this may fail if the container glibc is incompatible with the host)")
 	c.reopt = new(reapi.Option)
-	c.reopt.RegisterFlags(&c.Flags, reapi.Envs("REAPI"))
-	c.Flags.StringVar(&c.executeRequestStr, "execute_request", "", "execute request proto")
+	c.reopt.RegisterFlags(flagSet, reapi.Envs("REAPI"))
+	flagSet.StringVar(&c.executeRequestStr, "execute_request", "", "execute request proto")
 }
 
-func (c *run) Run(a subcommands.Application, args []string, env subcommands.Env) int {
-	ctx := context.Background()
+func (c *Command) Execute(ctx context.Context, flagSet *flag.FlagSet, _ ...any) subcommands.ExitStatus {
+	c.Flags = flagSet
 	err := c.run(ctx)
 	if err != nil {
 		switch {
 		case errors.Is(err, flag.ErrHelp):
 			fmt.Fprintf(os.Stderr, "%s\n", usage)
+			return subcommands.ExitUsageError
 		default:
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			return subcommands.ExitFailure
 		}
-		return 1
 	}
-	return 0
+	return subcommands.ExitSuccess
 }
 
-func (c *run) run(ctx context.Context) error {
+func (c *Command) run(ctx context.Context) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer signals.HandleInterrupt(ctx, cancel)()
 
@@ -214,7 +218,7 @@ func (c *run) run(ctx context.Context) error {
 	return nil
 }
 
-func (c *run) call(ctx context.Context, reopt reapi.Option, credential cred.Cred, executeReq *rpb.ExecuteRequest) error {
+func (c *Command) call(ctx context.Context, reopt reapi.Option, credential cred.Cred, executeReq *rpb.ExecuteRequest) error {
 	_, err := os.Stat("command.txt")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%v\n", err)
@@ -401,7 +405,7 @@ func loadTextProto(fname string, p proto.Message) error {
 	return nil
 }
 
-func (c *run) callLocal(ctx context.Context) error {
+func (c *Command) callLocal(ctx context.Context) error {
 	command := &rpb.Command{}
 	err := loadTextProto("command.txt", command)
 	if err != nil {

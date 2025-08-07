@@ -7,45 +7,41 @@ package fscmd
 import (
 	"context"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"io"
 	"os"
 
-	"github.com/maruel/subcommands"
+	"github.com/google/subcommands"
 	"google.golang.org/protobuf/encoding/prototext"
 
 	"go.chromium.org/build/siso/hashfs"
 	pb "go.chromium.org/build/siso/hashfs/proto"
 )
 
-func cmdFSImport() *subcommands.Command {
-	return &subcommands.Command{
-		UsageLine: "import",
-		ShortDesc: "import siso hashfs data",
-		LongDesc:  "import siso hashfs data from stdin.",
-		Advanced:  true,
-		CommandRun: func() subcommands.CommandRun {
-			c := &importRun{}
-			c.init()
-			return c
-		},
-	}
+func (*importCommand) Name() string {
+	return "import"
 }
 
-type importRun struct {
-	subcommands.CommandRunBase
+func (*importCommand) Synopsis() string {
+	return "import siso hashfs data"
+}
+
+func (*importCommand) Usage() string {
+	return "import siso hashfs data from stdin."
+}
+
+type importCommand struct {
 	dir    string
 	format string
 }
 
-func (c *importRun) init() {
-	c.Flags.StringVar(&c.dir, "C", ".", "ninja running directory")
-	c.Flags.StringVar(&c.format, "format", "json", "input format. json or prototext")
+func (c *importCommand) SetFlags(flagSet *flag.FlagSet) {
+	flagSet.StringVar(&c.dir, "C", ".", "ninja running directory")
+	flagSet.StringVar(&c.format, "format", "json", "input format. json or prototext")
 }
 
-func (c *importRun) Run(a subcommands.Application, args []string, env subcommands.Env) int {
-	ctx := context.Background()
-
+func (c *importCommand) Execute(ctx context.Context, flagSet *flag.FlagSet, _ ...any) subcommands.ExitStatus {
 	err := os.Chdir(c.dir)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed to chdir %s: %v\n", c.dir, err)

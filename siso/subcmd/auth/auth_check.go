@@ -6,66 +6,72 @@ package auth
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"os"
 
-	"github.com/maruel/subcommands"
+	"github.com/google/subcommands"
 
 	"go.chromium.org/build/siso/auth/cred"
 	"go.chromium.org/build/siso/reapi"
 )
 
-func CheckCmd(authOpts cred.Options) *subcommands.Command {
-	return &subcommands.Command{
-		UsageLine: "auth-check",
-		ShortDesc: "prints current auth status.",
-		LongDesc:  "Prints current auth status.",
-		CommandRun: func() subcommands.CommandRun {
-			r := &authCheckRun{authOpts: authOpts}
-			r.init()
-			return r
-		},
+// CheckCmd creates new CheckCommand.
+func CheckCmd(authOpts cred.Options) *CheckCommand {
+	return &CheckCommand{
+		authOpts: authOpts,
 	}
 }
 
-type authCheckRun struct {
-	subcommands.CommandRunBase
+func (*CheckCommand) Name() string {
+	return "auth-check"
+}
+
+func (*CheckCommand) Synopsis() string {
+	return "prints current auth status"
+}
+
+func (*CheckCommand) Usage() string {
+	return "Prints current auth status."
+}
+
+// CheckCommand implements auth-check subcommands.
+type CheckCommand struct {
 	authOpts  cred.Options
 	projectID string
 	reopt     *reapi.Option
 }
 
-func (r *authCheckRun) init() {
-	r.Flags.StringVar(&r.projectID, "project", os.Getenv("SISO_PROJECT"), "cloud project ID. can set by $SISO_PROJECT")
+func (c *CheckCommand) SetFlags(flagSet *flag.FlagSet) {
+	flagSet.StringVar(&c.projectID, "project", os.Getenv("SISO_PROJECT"), "cloud project ID. can set by $SISO_PROJECT")
 
-	r.reopt = new(reapi.Option)
-	r.reopt.RegisterFlags(&r.Flags, reapi.Envs("REAPI"))
+	c.reopt = new(reapi.Option)
+	c.reopt.RegisterFlags(flagSet, reapi.Envs("REAPI"))
 }
 
-func (r *authCheckRun) Run(a subcommands.Application, args []string, env subcommands.Env) int {
-	ctx := context.Background()
-	if len(args) != 0 {
-		fmt.Fprintf(a.GetErr(), "%s: position arguments not expected\n", a.GetName())
-		return 1
+func (c *CheckCommand) Execute(ctx context.Context, flagSet *flag.FlagSet, _ ...any) subcommands.ExitStatus {
+	if flagSet.NArg() != 0 {
+		fmt.Fprintf(os.Stderr, "position arguments not expected\n")
+		return subcommands.ExitUsageError
 	}
-	credential, err := cred.New(ctx, r.authOpts)
+	credential, err := cred.New(ctx, c.authOpts)
 	if err != nil {
-		fmt.Printf("auth error: %v\n", err)
-		return 1
+		fmt.Fprintf(os.Stderr, "auth error: %v\n", err)
+		return subcommands.ExitFailure
 	}
 	fmt.Printf("Logged in by %s\n", credential.Type)
 	if credential.Email != "" {
 		fmt.Printf(" as %s\n", credential.Email)
 	}
-	r.reopt.UpdateProjectID(r.projectID)
-	if r.reopt.IsValid() {
-		client, err := reapi.New(ctx, credential, *r.reopt)
-		fmt.Printf("use %s\n", r.reopt)
+	c.reopt.UpdateProjectID(c.projectID)
+	if c.reopt.IsValid() {
+		client, err := reapi.New(ctx, credential, *c.reopt)
+		fmt.Printf("use %s\n", c.reopt)
 		if err != nil {
 			fmt.Printf("access error: %v\n", err)
-			return 1
+			return subcommands.ExitFailure
 		}
 		defer client.Close()
 	}
-	return 0
+	return subcommands.ExitSuccess
 }

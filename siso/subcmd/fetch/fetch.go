@@ -17,7 +17,7 @@ import (
 	"strings"
 
 	rpb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
-	"github.com/maruel/subcommands"
+	"github.com/google/subcommands"
 	"google.golang.org/protobuf/proto"
 
 	"go.chromium.org/build/siso/auth/cred"
@@ -48,53 +48,57 @@ Print contents to stdout, or extract in <dir> for -type dir-extract.
 `
 
 // Cmd returns the Command for the `fetch` subcommand provided by this package.
-func Cmd(authOpts cred.Options) *subcommands.Command {
-	return &subcommands.Command{
-		UsageLine: "fetch <args>...",
-		ShortDesc: "fetch contents",
-		LongDesc:  usage,
-		CommandRun: func() subcommands.CommandRun {
-			c := &run{
-				authOpts: authOpts,
-			}
-			c.init()
-			return c
-		},
+func Cmd(authOpts cred.Options) *Command {
+	return &Command{
+		authOpts: authOpts,
 	}
 }
 
-type run struct {
-	subcommands.CommandRunBase
+func (*Command) Name() string {
+	return "fetch"
+}
 
+func (*Command) Synopsis() string {
+	return "fetch contents"
+}
+
+func (*Command) Usage() string {
+	return usage
+}
+
+// Command implements fetch subcommand.
+type Command struct {
+	Flags     *flag.FlagSet
 	authOpts  cred.Options
 	projectID string
 	reopt     *reapi.Option
 	dataType  string
 }
 
-func (c *run) init() {
-	c.Flags.StringVar(&c.projectID, "project", os.Getenv("SISO_PROJECT"), "cloud project ID. can be set by $SISO_PROJECT")
+func (c *Command) SetFlags(flagSet *flag.FlagSet) {
+	flagSet.StringVar(&c.projectID, "project", os.Getenv("SISO_PROJECT"), "cloud project ID. can be set by $SISO_PROJECT")
 	c.reopt = new(reapi.Option)
-	c.reopt.RegisterFlags(&c.Flags, reapi.Envs("REAPI"))
-	c.Flags.StringVar(&c.dataType, "type", "raw", `data type. "raw", "command", "action", "dir", "tree", "dir-extract"`)
+	c.reopt.RegisterFlags(flagSet, reapi.Envs("REAPI"))
+	flagSet.StringVar(&c.dataType, "type", "raw", `data type. "raw", "command", "action", "dir", "tree", "dir-extract"`)
 }
 
-func (c *run) Run(a subcommands.Application, args []string, env subcommands.Env) int {
-	ctx := context.Background()
+func (c *Command) Execute(ctx context.Context, flagSet *flag.FlagSet, _ ...any) subcommands.ExitStatus {
+	c.Flags = flagSet
 	err := c.run(ctx)
 	if err != nil {
 		switch {
 		case errors.Is(err, flag.ErrHelp):
 			fmt.Fprintf(os.Stderr, "%v\n%s\n", err, usage)
+			return subcommands.ExitUsageError
 		default:
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			return subcommands.ExitFailure
 		}
-		return 1
 	}
-	return 0
+	return subcommands.ExitSuccess
 }
 
-func (c *run) run(ctx context.Context) error {
+func (c *Command) run(ctx context.Context) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer signals.HandleInterrupt(ctx, cancel)()
 
@@ -205,7 +209,7 @@ func (c *run) run(ctx context.Context) error {
 	return nil
 }
 
-func (c *run) protoUnmarshal(b []byte, msg proto.Message) error {
+func (c *Command) protoUnmarshal(b []byte, msg proto.Message) error {
 	err := proto.Unmarshal(b, msg)
 	if err != nil {
 		return err

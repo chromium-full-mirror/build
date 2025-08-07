@@ -11,7 +11,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/maruel/subcommands"
+	"github.com/google/subcommands"
 
 	"go.chromium.org/build/siso/toolsupport/ninjautil"
 )
@@ -23,48 +23,44 @@ const commandsUsage = `list all commands required to rebuild given targets
 prints all commands required to rebuild given targets.
 `
 
-// cmdCommands returns the Command for the `commands` subcommand provided by this package.
-func cmdCommands() *subcommands.Command {
-	return &subcommands.Command{
-		UsageLine: "commands [-C <dir>] [<targets>...]",
-		ShortDesc: "list all commands required to rebuild given targets",
-		LongDesc:  commandsUsage,
-		CommandRun: func() subcommands.CommandRun {
-			c := &commandsRun{}
-			c.init()
-			return c
-		},
-	}
+func (*commandsCommand) Name() string {
+	return "commands"
 }
 
-type commandsRun struct {
-	subcommands.CommandRunBase
+func (*commandsCommand) Synopsis() string {
+	return "list all commands required to rebuild given targets"
+}
 
+func (*commandsCommand) Usage() string {
+	return commandsUsage
+}
+
+type commandsCommand struct {
 	dir   string
 	fname string
 }
 
-func (c *commandsRun) init() {
-	c.Flags.StringVar(&c.dir, "C", ".", "ninja running directory to find build.ninja")
-	c.Flags.StringVar(&c.fname, "f", "build.ninja", "input build filename (relative to -C)")
+func (c *commandsCommand) SetFlags(flagSet *flag.FlagSet) {
+	flagSet.StringVar(&c.dir, "C", ".", "ninja running directory to find build.ninja")
+	flagSet.StringVar(&c.fname, "f", "build.ninja", "input build filename (relative to -C)")
 }
 
-func (c *commandsRun) Run(a subcommands.Application, args []string, env subcommands.Env) int {
-	ctx := context.Background()
-	err := c.run(ctx, args)
+func (c *commandsCommand) Execute(ctx context.Context, flagSet *flag.FlagSet, _ ...any) subcommands.ExitStatus {
+	err := c.run(ctx, flagSet.Args())
 	if err != nil {
 		switch {
 		case errors.Is(err, flag.ErrHelp):
 			fmt.Fprintf(os.Stderr, "%v\n%s\n", err, commandsUsage)
+			return subcommands.ExitUsageError
 		default:
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			return subcommands.ExitFailure
 		}
-		return 1
 	}
-	return 0
+	return subcommands.ExitSuccess
 }
 
-func (c *commandsRun) run(ctx context.Context, args []string) error {
+func (c *commandsCommand) run(ctx context.Context, args []string) error {
 	state := ninjautil.NewState()
 	p := ninjautil.NewManifestParser(state)
 	err := os.Chdir(c.dir)

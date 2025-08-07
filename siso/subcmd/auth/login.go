@@ -6,39 +6,44 @@ package auth
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"os"
 	"os/exec"
 
-	"github.com/maruel/subcommands"
+	"github.com/google/subcommands"
 
 	"go.chromium.org/build/siso/auth/cred"
 )
 
-func LoginCmd(authOpts cred.Options) *subcommands.Command {
-	return &subcommands.Command{
-		UsageLine: "login",
-		ShortDesc: "login to siso system",
-		LongDesc:  "Login to siso system.",
-		CommandRun: func() subcommands.CommandRun {
-			r := &loginRun{authOpts: authOpts}
-			r.init()
-			return r
-		},
+// LoginCmd creates new LoginCommand.
+func LoginCmd(authOpts cred.Options) *LoginCommand {
+	return &LoginCommand{
+		authOpts: authOpts,
 	}
 }
 
-type loginRun struct {
-	subcommands.CommandRunBase
+func (*LoginCommand) Name() string {
+	return "login"
+}
+
+func (*LoginCommand) Synopsis() string {
+	return "login to siso system"
+}
+
+func (*LoginCommand) Usage() string {
+	return "login to siso system."
+}
+
+// LoginCommand implements login subcommand.
+type LoginCommand struct {
 	authOpts cred.Options
 }
 
-func (r *loginRun) init() {
-}
+func (*LoginCommand) SetFlags(flagSet *flag.FlagSet) {}
 
-func (r *loginRun) Run(a subcommands.Application, args []string, env subcommands.Env) int {
-	ctx := context.Background()
-	switch r.authOpts.Type {
+func (c *LoginCommand) Execute(ctx context.Context, flagSet *flag.FlagSet, _ ...any) subcommands.ExitStatus {
+	switch c.authOpts.Type {
 	case "luci-auth":
 		fmt.Println("using luci-auth for auth")
 		cmd := exec.CommandContext(ctx, "luci-auth", "login", "--scopes", "https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/cloud-platform")
@@ -47,9 +52,9 @@ func (r *loginRun) Run(a subcommands.Application, args []string, env subcommands
 		err := cmd.Run()
 		if err != nil {
 			fmt.Printf("Error: %v\n", err)
-			return 1
+			return subcommands.ExitFailure
 		}
-		return 0
+		return subcommands.ExitSuccess
 
 	case "gcloud":
 		fmt.Println("using gcloud for auth")
@@ -59,12 +64,12 @@ func (r *loginRun) Run(a subcommands.Application, args []string, env subcommands
 		err := cmd.Run()
 		if err != nil {
 			fmt.Printf("Error: %v\n", err)
-			return 1
+			return subcommands.ExitFailure
 		}
-		return 0
+		return subcommands.ExitSuccess
 
 	default:
-		fmt.Printf("unsupported auth type for login: %s\n", r.authOpts.Type)
+		fmt.Printf("unsupported auth type for login: %s\n", c.authOpts.Type)
+		return subcommands.ExitUsageError
 	}
-	return 0
 }

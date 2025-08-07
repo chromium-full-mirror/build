@@ -6,9 +6,10 @@
 package fscmd
 
 import (
-	"os"
+	"context"
+	"flag"
 
-	"github.com/maruel/subcommands"
+	"github.com/google/subcommands"
 
 	"go.chromium.org/build/siso/auth/cred"
 )
@@ -16,40 +17,41 @@ import (
 const stateFile = ".siso_fs_state"
 
 // Cmd returns the Command for the `fs` subcommand provided by this package.
-func Cmd(authOpts cred.Options) *subcommands.Command {
-	return &subcommands.Command{
-		UsageLine: "fs <subcommand>",
-		ShortDesc: "access siso hashfs data",
-		LongDesc:  "access siso hashfs data.",
-		Advanced:  true,
-		CommandRun: func() subcommands.CommandRun {
-			c := &fsRun{
-				app: &subcommands.DefaultApplication{
-					Name:  "siso fs",
-					Title: "tool to access siso hashfs data",
-					Commands: []*subcommands.Command{
-						cmdFSDiff(),
-						cmdFSExport(),
-						cmdFSFlush(authOpts),
-						cmdFSImport(),
-						subcommands.CmdHelp,
-					},
-				},
-			}
-			c.Flags.Usage = func() {
-				// TODO: handle -advanced?
-				subcommands.Usage(os.Stderr, c.app, true)
-			}
-			return c
-		},
+func Cmd(authOpts cred.Options) *Command {
+	return &Command{
+		authOpts: authOpts,
 	}
 }
 
-type fsRun struct {
-	subcommands.CommandRunBase
-	app *subcommands.DefaultApplication
+// Command implements fs subcommand.
+type Command struct {
+	authOpts cred.Options
 }
 
-func (c *fsRun) Run(a subcommands.Application, args []string, env subcommands.Env) int {
-	return subcommands.Run(c.app, args)
+func (*Command) Name() string {
+	return "fs"
+}
+
+func (*Command) Synopsis() string {
+	return "command group to access siso hashfs data"
+}
+
+func (*Command) Usage() string {
+	return `command group to access siso hashfs data
+
+Use "siso fs" to display subcommands.
+Use "siso fs help [subcommand]" for more information about a subcommand.
+`
+}
+
+func (*Command) SetFlags(flagSet *flag.FlagSet) {}
+
+func (c *Command) Execute(ctx context.Context, flagSet *flag.FlagSet, _ ...any) subcommands.ExitStatus {
+	commander := subcommands.NewCommander(flagSet, c.Name())
+	commander.Register(&diffCommand{}, "")
+	commander.Register(&exportCommand{}, "")
+	commander.Register(&flushCommand{}, "")
+	commander.Register(&importCommand{}, "")
+	commander.Register(commander.HelpCommand(), "command-help")
+	return commander.Execute(ctx)
 }

@@ -18,7 +18,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/maruel/subcommands"
+	"github.com/google/subcommands"
 
 	"go.chromium.org/build/siso/hashfs/osfs"
 	"go.chromium.org/build/siso/o11y/clog"
@@ -34,47 +34,49 @@ Collect siso logs in <dir>.
 `
 
 // Cmd returns the Command for the `report` subcommand provided by this package.
-func Cmd() *subcommands.Command {
-	return &subcommands.Command{
-		UsageLine: "report <args>...",
-		ShortDesc: "report siso logs",
-		LongDesc:  usage,
-		CommandRun: func() subcommands.CommandRun {
-			c := &run{}
-			c.init()
-			return c
-		},
-	}
+func Cmd() *Command {
+	return &Command{}
 }
 
-type run struct {
-	subcommands.CommandRunBase
+func (*Command) Name() string {
+	return "report"
+}
 
+func (*Command) Synopsis() string {
+	return "report siso logs"
+}
+
+func (*Command) Usage() string {
+	return usage
+}
+
+// Command implements report subcommand.
+type Command struct {
 	dir     string
 	osfsopt osfs.Option
 }
 
-func (c *run) init() {
-	c.Flags.StringVar(&c.dir, "C", ".", "ninja running directory")
-	c.osfsopt.RegisterFlags(&c.Flags)
+func (c *Command) SetFlags(flagSet *flag.FlagSet) {
+	flagSet.StringVar(&c.dir, "C", ".", "ninja running directory")
+	c.osfsopt.RegisterFlags(flagSet)
 }
 
-func (c *run) Run(a subcommands.Application, args []string, env subcommands.Env) int {
-	ctx := context.Background()
+func (c *Command) Execute(ctx context.Context, flagSet *flag.FlagSet, _ ...any) subcommands.ExitStatus {
 	err := c.run(ctx)
 	if err != nil {
 		switch {
 		case errors.Is(err, flag.ErrHelp):
 			fmt.Fprintf(os.Stderr, "%v\n%s\n", err, usage)
+			return subcommands.ExitUsageError
 		default:
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			return subcommands.ExitFailure
 		}
-		return 1
 	}
-	return 0
+	return subcommands.ExitSuccess
 }
 
-func (c *run) run(ctx context.Context) error {
+func (c *Command) run(ctx context.Context) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer signals.HandleInterrupt(ctx, cancel)()
 
@@ -87,7 +89,7 @@ func (c *run) run(ctx context.Context) error {
 	return c.archive(ctx)
 }
 
-func (c *run) collect(ctx context.Context) (map[string]digest.Data, error) {
+func (c *Command) collect(ctx context.Context) (map[string]digest.Data, error) {
 	report := make(map[string]digest.Data)
 	fsys := os.DirFS(".")
 	wd, err := os.Getwd()
@@ -164,7 +166,7 @@ func (c *run) collect(ctx context.Context) (map[string]digest.Data, error) {
 	return report, err
 }
 
-func (c *run) archive(ctx context.Context) (err error) {
+func (c *Command) archive(ctx context.Context) (err error) {
 	report, err := c.collect(ctx)
 	if err != nil {
 		return err

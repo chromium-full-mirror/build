@@ -16,7 +16,7 @@ import (
 	"strings"
 	"text/template"
 
-	"github.com/maruel/subcommands"
+	"github.com/google/subcommands"
 	"google.golang.org/protobuf/proto"
 
 	"go.chromium.org/build/siso/o11y/clog"
@@ -42,46 +42,47 @@ see template syntax: https://pkg.go.dev/text/template
 `
 
 // Cmd returns the Command for the `ninjafrontend` subcommand provided by this package.
-func Cmd() *subcommands.Command {
-	return &subcommands.Command{
-		UsageLine: "ninjafrontend <args>...",
-		ShortDesc: "ninjafrontend reader",
-		LongDesc:  usage,
-		Advanced:  true,
-		CommandRun: func() subcommands.CommandRun {
-			c := &run{}
-			c.init()
-			return c
-		},
-	}
+func Cmd() *Command {
+	return &Command{}
 }
 
-type run struct {
-	subcommands.CommandRunBase
+func (*Command) Name() string {
+	return "ninjafrontend"
+}
 
+func (*Command) Synopsis() string {
+	return "ninjafrontend reader"
+}
+
+func (*Command) Usage() string {
+	return usage
+}
+
+// Command implements ninjafrontend subcommand.
+type Command struct {
 	template string
 }
 
-func (c *run) init() {
-	c.Flags.StringVar(&c.template, "template", "{{.}}\n", "template for frontend.Status message")
+func (c *Command) SetFlags(flagSet *flag.FlagSet) {
+	flagSet.StringVar(&c.template, "template", "{{.}}\n", "template for frontend.Status message")
 }
 
-func (c *run) Run(a subcommands.Application, args []string, env subcommands.Env) int {
-	ctx := context.Background()
+func (c *Command) Execute(ctx context.Context, flagSet *flag.FlagSet, _ ...any) subcommands.ExitStatus {
 	err := c.run(ctx)
 	if err != nil {
 		switch {
 		case errors.Is(err, flag.ErrHelp):
 			fmt.Fprintf(os.Stderr, "%v\n%s\n", err, usage)
+			return subcommands.ExitUsageError
 		default:
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			return subcommands.ExitFailure
 		}
-		return 1
 	}
-	return 0
+	return subcommands.ExitSuccess
 }
 
-func (c *run) run(ctx context.Context) error {
+func (c *Command) run(ctx context.Context) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer signals.HandleInterrupt(ctx, cancel)()
 

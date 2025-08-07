@@ -6,6 +6,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"net/http"
@@ -18,14 +19,13 @@ import (
 	"syscall"
 
 	log "github.com/golang/glog"
-	"github.com/maruel/subcommands"
+	"github.com/google/subcommands"
 
 	"go.chromium.org/build/siso/auth/cred"
 	"go.chromium.org/build/siso/hashfs/osfs"
 	"go.chromium.org/build/siso/subcmd/auth"
 	"go.chromium.org/build/siso/subcmd/fetch"
 	"go.chromium.org/build/siso/subcmd/fscmd"
-	"go.chromium.org/build/siso/subcmd/help"
 	"go.chromium.org/build/siso/subcmd/isolate"
 	"go.chromium.org/build/siso/subcmd/metricscmd"
 	"go.chromium.org/build/siso/subcmd/ninja"
@@ -52,71 +52,37 @@ var (
 const versionID = "v1.3.14"
 const versionStr = "siso " + versionID
 
-func getApplication(authOpts cred.Options) subcommands.Application {
-	return &subcommands.DefaultApplication{
-		Name:  "siso",
-		Title: "Ninja-compatible build system optimized for remote execution",
-		Commands: []*subcommands.Command{
-			help.Cmd(),
-			ninja.Cmd(authOpts, versionID),
-			ninjafrontend.Cmd(),
-			query.Cmd(),
-			fscmd.Cmd(authOpts),
-			isolate.Cmd(authOpts),
-			osfs.HelperCmd(),
-			recall.Cmd(authOpts),
-			report.Cmd(),
-			fetch.Cmd(authOpts),
-			metricscmd.Cmd(),
-			ps.Cmd(),
-			scandeps.Cmd(),
-			auth.CheckCmd(authOpts),
-			auth.LoginCmd(authOpts),
-			auth.LogoutCmd(authOpts),
-			webui.Cmd(versionID),
-
-			version.Cmd(versionStr),
-		},
-		EnvVars: map[string]subcommands.EnvVarDefinition{
-			"SISO_PROJECT": {
-				ShortDesc: "cloud project ID",
-			},
-			"SISO_REAPI_INSTANCE": {
-				Advanced:  true,
-				ShortDesc: "RE API instance name",
-				Default:   "default_instance",
-			},
-			"SISO_REAPI_ADDRESS": {
-				Advanced:  true,
-				ShortDesc: "RE API address",
-				Default:   "remotebuildexecution.googleapis.com:443",
-			},
-			"SISO_CREDENTIAL_HELPER": {
-				Advanced:  true,
-				ShortDesc: "credential helper",
-				Default:   "",
-			},
-		},
-	}
-}
-
 func main() {
 	// Wraps sisoMain() because os.Exit() doesn't wait defers.
 	os.Exit(sisoMain())
 }
 
 func sisoMain() int {
-	flag.Usage = func() {
-		fmt.Fprint(flag.CommandLine.Output(), `
-Usage: siso [command] [arguments]
+	flag.CommandLine.Usage = func() {
+		w := flag.CommandLine.Output()
+		fmt.Fprint(w, `
+Usage: siso [flags] [command] [arguments]
 
-Use "siso help" to display commands.
-Use "siso help [command]" for more information about a command.
-Use "siso help -advanced" to display all commands.
+e.g.
+ $ siso ninja -C out/Default
 
 `)
-		fmt.Fprintf(flag.CommandLine.Output(), "flags of %s:\n", os.Args[0])
-		flag.PrintDefaults()
+		fmt.Fprintf(w, "important flags of %s:\n", os.Args[0])
+
+		f := flag.Lookup("credential_helper")
+		fmt.Fprintf(w, `  -credential_helper path
+    %s
+    (default %q)
+`, f.Usage, f.DefValue)
+		f = flag.Lookup("version")
+		fmt.Fprintf(w, `  -version
+   %s
+`, f.Usage)
+		fmt.Fprintf(flag.CommandLine.Output(), `
+Use "siso help" to display commands.
+Use "siso help [command]" for more information about a command.
+Use "siso flags" to display all flags.
+`)
 	}
 
 	flag.StringVar(&pprofAddr, "pprof_addr", "", `listen address for "go tool pprof". e.g. "localhost:6060"`)
@@ -130,12 +96,15 @@ Use "siso help -advanced" to display all commands.
 	if h, ok := os.LookupEnv("SISO_CREDENTIAL_HELPER"); ok {
 		credHelper = h
 	}
-	flag.StringVar(&credHelper, "credential_helper", credHelper, "path to a credential helper. see https://github.com/EngFlow/credential-helper-spec/blob/main/spec.md")
+	flag.StringVar(&credHelper, "credential_helper", credHelper, `path to a credential helper.
+    see https://github.com/EngFlow/credential-helper-spec/blob/main/spec.md
+    environment variable SISO_CREDENTIAL_HELPER sets default value.`)
 
 	var printVersion bool
 	flag.BoolVar(&printVersion, "version", false, "print version")
 	flag.Parse()
 
+	ctx := context.Background()
 	// Flush the log on exit to not lose any messages.
 	defer log.Flush()
 
@@ -149,14 +118,9 @@ Use "siso help -advanced" to display all commands.
 		}
 	}()
 
-	authOpts := cred.AuthOpts(credHelper)
 	if printVersion {
-		a := getApplication(authOpts)
-		c := version.Cmd(versionStr)
-		r := c.CommandRun()
-		return r.Run(a, nil, nil)
+		return int(version.Cmd(versionStr).Execute(ctx, flag.CommandLine))
 	}
-
 	if blockprofRate > 0 {
 		runtime.SetBlockProfileRate(blockprofRate)
 	}
@@ -231,5 +195,32 @@ Use "siso help -advanced" to display all commands.
 	ui.Init()
 	defer ui.Restore()
 
-	return subcommands.Run(getApplication(authOpts), nil)
+	authOpts := cred.AuthOpts(credHelper)
+	subcommands.Register(ninja.Cmd(authOpts, versionID), "")
+
+	subcommands.Register(recall.Cmd(authOpts), "reapi")
+	subcommands.Register(fetch.Cmd(authOpts), "reapi")
+	subcommands.Register(isolate.Cmd(authOpts), "reapi")
+
+	subcommands.Register(fscmd.Cmd(authOpts), "investigation")
+	subcommands.Register(metricscmd.Cmd(), "investigation")
+	subcommands.Register(ps.Cmd(), "investigation")
+	subcommands.Register(query.Cmd(), "investigation")
+	subcommands.Register(report.Cmd(), "investigation")
+	subcommands.Register(webui.Cmd(versionID), "investigation")
+
+	subcommands.Register(auth.CheckCmd(authOpts), "auth")
+	subcommands.Register(auth.LoginCmd(authOpts), "auth")
+	subcommands.Register(auth.LogoutCmd(authOpts), "auth")
+
+	subcommands.Register(ninjafrontend.Cmd(), "debugging")
+	subcommands.Register(scandeps.Cmd(), "debugging")
+
+	subcommands.Register(osfs.HelperCmd(), "internal-helper")
+
+	subcommands.Register(subcommands.FlagsCommand(), "command-help")
+	subcommands.Register(subcommands.HelpCommand(), "command-help")
+	subcommands.Register(version.Cmd(versionStr), "command-help")
+
+	return int(subcommands.Execute(ctx))
 }

@@ -14,7 +14,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/maruel/subcommands"
+	"github.com/google/subcommands"
 
 	"go.chromium.org/build/siso/toolsupport/ninjautil"
 )
@@ -26,22 +26,19 @@ const targetsUsage = `list targets by their rule or depth in the DAG
 prints targets by <rule> or in <depth>.
 `
 
-// cmdTargets returns the Command for the `targets` subcommand provided by this package.
-func cmdTargets() *subcommands.Command {
-	return &subcommands.Command{
-		UsageLine: "targets [-C <dir>] [--rule <rule>] [--depth <depth>]",
-		ShortDesc: "list targets by their rule or depth in the DAG",
-		LongDesc:  targetsUsage,
-		CommandRun: func() subcommands.CommandRun {
-			c := &targetsRun{w: os.Stdout}
-			c.init()
-			return c
-		},
-	}
+func (*targetsCommand) Name() string {
+	return "targets"
 }
 
-type targetsRun struct {
-	subcommands.CommandRunBase
+func (*targetsCommand) Synopsis() string {
+	return "list targets by their rule or depth in the DAG"
+}
+
+func (*targetsCommand) Usage() string {
+	return targetsUsage
+}
+
+type targetsCommand struct {
 	w io.Writer
 
 	dir   string
@@ -67,32 +64,32 @@ func (f *targetRuleFlag) Set(v string) error {
 	return nil
 }
 
-func (c *targetsRun) init() {
+func (c *targetsCommand) SetFlags(flagSet *flag.FlagSet) {
 	// TODO(b/340381100): extract common flags for ninja commands.
-	c.Flags.StringVar(&c.dir, "C", ".", "ninja running directory to find build.ninja")
-	c.Flags.StringVar(&c.fname, "f", "build.ninja", "input build filename (relative to -C)")
+	flagSet.StringVar(&c.dir, "C", ".", "ninja running directory to find build.ninja")
+	flagSet.StringVar(&c.fname, "f", "build.ninja", "input build filename (relative to -C)")
 
-	c.Flags.Var(&c.rule, "rule", "rule name for the targets")
-	c.Flags.IntVar(&c.depth, "depth", 1, "max depth of the targets. 0 does not check depth")
-	c.Flags.BoolVar(&c.all, "all", false, "list all targets")
+	flagSet.Var(&c.rule, "rule", "rule name for the targets")
+	flagSet.IntVar(&c.depth, "depth", 1, "max depth of the targets. 0 does not check depth")
+	flagSet.BoolVar(&c.all, "all", false, "list all targets")
 }
 
-func (c *targetsRun) Run(a subcommands.Application, args []string, env subcommands.Env) int {
-	ctx := context.Background()
-	err := c.run(ctx, args)
+func (c *targetsCommand) Execute(ctx context.Context, flagSet *flag.FlagSet, _ ...any) subcommands.ExitStatus {
+	err := c.run(ctx, flagSet.Args())
 	if err != nil {
 		switch {
 		case errors.Is(err, flag.ErrHelp):
 			fmt.Fprintf(os.Stderr, "%v\n%s\n", err, targetsUsage)
+			return subcommands.ExitUsageError
 		default:
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			return subcommands.ExitFailure
 		}
-		return 1
 	}
-	return 0
+	return subcommands.ExitSuccess
 }
 
-func (c *targetsRun) run(ctx context.Context, args []string) error {
+func (c *targetsCommand) run(ctx context.Context, args []string) error {
 	if c.rule.requested {
 		c.depth = 0
 	}

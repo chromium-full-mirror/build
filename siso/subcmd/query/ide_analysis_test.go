@@ -6,6 +6,7 @@ package query
 
 import (
 	"context"
+	"flag"
 	"os"
 	"path/filepath"
 	"sort"
@@ -124,8 +125,9 @@ func TestIDEAnalysis(t *testing.T) {
 		// This c.analysis call is equivalent with invocation of
 		//  ./build/util/ide_query --out-dir out/siso --source foo/foo.cc
 
-		c := &ideAnalysisRun{}
-		c.init()
+		c := &ideAnalysisCommand{}
+		flagSet := flag.NewFlagSet("ideanalysis", flag.ContinueOnError)
+		c.SetFlags(flagSet)
 		c.execRoot = topDir
 		c.dir = "out/siso"
 
@@ -253,8 +255,9 @@ func TestIDEAnalysis(t *testing.T) {
 
 		// pick foo.cc that includes foo.h
 
-		c := &ideAnalysisRun{}
-		c.init()
+		c := &ideAnalysisCommand{}
+		flagSet := flag.NewFlagSet("ideanalysis", flag.ContinueOnError)
+		c.SetFlags(flagSet)
 		c.execRoot = topDir
 		c.dir = "out/siso"
 
@@ -382,8 +385,9 @@ func TestIDEAnalysis(t *testing.T) {
 
 		// pick foo.cc as fallback for baz.h
 
-		c := &ideAnalysisRun{}
-		c.init()
+		c := &ideAnalysisCommand{}
+		flagSet := flag.NewFlagSet("ideanalysis", flag.ContinueOnError)
+		c.SetFlags(flagSet)
 		c.execRoot = topDir
 		c.dir = "out/siso"
 
@@ -511,8 +515,9 @@ func TestIDEAnalysis(t *testing.T) {
 
 		// fail since foo/bar.h doesn't exist
 
-		c := &ideAnalysisRun{}
-		c.init()
+		c := &ideAnalysisCommand{}
+		flagSet := flag.NewFlagSet("ideanalysis", flag.ContinueOnError)
+		c.SetFlags(flagSet)
 		c.execRoot = topDir
 		c.dir = "out/siso"
 

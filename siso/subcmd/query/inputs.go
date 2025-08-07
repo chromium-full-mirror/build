@@ -13,7 +13,7 @@ import (
 	"path/filepath"
 	"sort"
 
-	"github.com/maruel/subcommands"
+	"github.com/google/subcommands"
 
 	"go.chromium.org/build/siso/o11y/clog"
 	"go.chromium.org/build/siso/toolsupport/ninjautil"
@@ -26,23 +26,19 @@ const inputsUsage = `list all inputs required to rebuild given targets
 prints all inputs required to rebuild given targets.
 `
 
-// cmdInputs returns the Command for the `inputs` subcommand provided by this package.
-func cmdInputs() *subcommands.Command {
-	return &subcommands.Command{
-		UsageLine: "inputs [-C <dir>] [<targets>...]",
-		ShortDesc: "list all inputs required to rebuild given targets",
-		LongDesc:  inputsUsage,
-		CommandRun: func() subcommands.CommandRun {
-			c := &inputsRun{}
-			c.init()
-			return c
-		},
-	}
+func (*inputsCommand) Name() string {
+	return "inputs"
 }
 
-type inputsRun struct {
-	subcommands.CommandRunBase
+func (*inputsCommand) Synopsis() string {
+	return "list all inputs required to rebuild given targets"
+}
 
+func (*inputsCommand) Usage() string {
+	return inputsUsage
+}
+
+type inputsCommand struct {
 	dir      string
 	stateDir string
 	fname    string
@@ -51,31 +47,31 @@ type inputsRun struct {
 	depsLogFile string
 }
 
-func (c *inputsRun) init() {
+func (c *inputsCommand) SetFlags(flagSet *flag.FlagSet) {
 	// TODO(b/340381100): extract common flags for ninja commands
-	c.Flags.StringVar(&c.dir, "C", ".", "ninja running directory to find build.ninja")
-	c.Flags.StringVar(&c.stateDir, "state_dir", ".", "state directory (relative to -C)")
-	c.Flags.StringVar(&c.fname, "f", "build.ninja", "input build filename (relative to -C)")
-	c.Flags.BoolVar(&c.includeDeps, "include_deps", false, "include inputs recorded in deps log file")
-	c.Flags.StringVar(&c.depsLogFile, "deps_log", ".siso_deps", "deps log filename (relative to -C, -stateDir)")
+	flagSet.StringVar(&c.dir, "C", ".", "ninja running directory to find build.ninja")
+	flagSet.StringVar(&c.stateDir, "state_dir", ".", "state directory (relative to -C)")
+	flagSet.StringVar(&c.fname, "f", "build.ninja", "input build filename (relative to -C)")
+	flagSet.BoolVar(&c.includeDeps, "include_deps", false, "include inputs recorded in deps log file")
+	flagSet.StringVar(&c.depsLogFile, "deps_log", ".siso_deps", "deps log filename (relative to -C, -stateDir)")
 }
 
-func (c *inputsRun) Run(a subcommands.Application, args []string, env subcommands.Env) int {
-	ctx := context.Background()
-	err := c.run(ctx, args)
+func (c *inputsCommand) Execute(ctx context.Context, flagSet *flag.FlagSet, _ ...any) subcommands.ExitStatus {
+	err := c.run(ctx, flagSet.Args())
 	if err != nil {
 		switch {
 		case errors.Is(err, flag.ErrHelp):
 			fmt.Fprintf(os.Stderr, "%v\n%s\n", err, inputsUsage)
+			return subcommands.ExitUsageError
 		default:
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			return subcommands.ExitFailure
 		}
-		return 1
 	}
-	return 0
+	return subcommands.ExitSuccess
 }
 
-func (c *inputsRun) run(ctx context.Context, args []string) error {
+func (c *inputsCommand) run(ctx context.Context, args []string) error {
 	state := ninjautil.NewState()
 	p := ninjautil.NewManifestParser(state)
 	err := os.Chdir(c.dir)

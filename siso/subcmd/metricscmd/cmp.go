@@ -14,7 +14,7 @@ import (
 	"path/filepath"
 	"sort"
 
-	"github.com/maruel/subcommands"
+	"github.com/google/subcommands"
 
 	"go.chromium.org/build/siso/build"
 )
@@ -41,23 +41,19 @@ join makes a pair of metrics for each output.
 default output is diff.
 `
 
-// Cmd returns the Command for the `metricscmp` subcommand provided by this package.
-func cmpCmd() *subcommands.Command {
-	return &subcommands.Command{
-		UsageLine: "cmp <args>...",
-		ShortDesc: "compare siso_metrics.json",
-		LongDesc:  cmpUsage,
-		CommandRun: func() subcommands.CommandRun {
-			c := &cmpRun{}
-			c.init()
-			return c
-		},
-	}
+func (*cmpCommand) Name() string {
+	return "cmp"
 }
 
-type cmpRun struct {
-	subcommands.CommandRunBase
+func (*cmpCommand) Synopsis() string {
+	return "compare siso_metrics.json"
+}
 
+func (*cmpCommand) Usage() string {
+	return cmpUsage
+}
+
+type cmpCommand struct {
 	dir            string
 	inputA, inputB string
 	format         string
@@ -77,30 +73,30 @@ var formatKeys = func() []string {
 	return keys
 }()
 
-func (c *cmpRun) init() {
-	c.Flags.StringVar(&c.dir, "C", ".", "ninja running directory")
-	c.Flags.StringVar(&c.inputA, "input_a", "siso_metrics.json", "target siso_metrics.json")
-	c.Flags.StringVar(&c.inputB, "input_b", "siso_metrics.json.0", "base siso_metrics.json")
+func (c *cmpCommand) SetFlags(flagSet *flag.FlagSet) {
+	flagSet.StringVar(&c.dir, "C", ".", "ninja running directory")
+	flagSet.StringVar(&c.inputA, "input_a", "siso_metrics.json", "target siso_metrics.json")
+	flagSet.StringVar(&c.inputB, "input_b", "siso_metrics.json.0", "base siso_metrics.json")
 
-	c.Flags.StringVar(&c.format, "format", "diff", fmt.Sprintf("output format: %q", formatKeys))
+	flagSet.StringVar(&c.format, "format", "diff", fmt.Sprintf("output format: %q", formatKeys))
 }
 
-func (c *cmpRun) Run(a subcommands.Application, args []string, env subcommands.Env) int {
-	ctx := context.Background()
+func (c *cmpCommand) Execute(ctx context.Context, flagSet *flag.FlagSet, _ ...any) subcommands.ExitStatus {
 	err := c.run(ctx)
 	if err != nil {
 		switch {
 		case errors.Is(err, flag.ErrHelp):
 			fmt.Fprintf(os.Stderr, "%v\n%s\n", err, cmpUsage)
+			return subcommands.ExitUsageError
 		default:
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			return subcommands.ExitFailure
 		}
-		return 1
 	}
-	return 0
+	return subcommands.ExitSuccess
 }
 
-func (c *cmpRun) run(ctx context.Context) error {
+func (c *cmpCommand) run(ctx context.Context) error {
 	output, ok := formats[c.format]
 	if !ok {
 		return fmt.Errorf("unknown format %q: known formats %q: %w", c.format, formatKeys, flag.ErrHelp)

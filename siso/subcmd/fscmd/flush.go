@@ -16,7 +16,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/maruel/subcommands"
+	"github.com/google/subcommands"
 
 	"go.chromium.org/build/siso/auth/cred"
 	"go.chromium.org/build/siso/hashfs"
@@ -34,24 +34,20 @@ const flushUsage = `flush recorded files to the disk.
 It will fetch the specified files recorded in .siso_fs_state.
 `
 
-func cmdFSFlush(authOpts cred.Options) *subcommands.Command {
-	return &subcommands.Command{
-		UsageLine: "flush",
-		ShortDesc: "flush recorded files to the disk",
-		LongDesc:  flushUsage,
-		CommandRun: func() subcommands.CommandRun {
-			c := &flushRun{
-				authOpts: authOpts,
-			}
-			c.init()
-			return c
-		},
-	}
+func (*flushCommand) Name() string {
+	return "flush"
 }
 
-type flushRun struct {
-	subcommands.CommandRunBase
+func (*flushCommand) Synopsis() string {
+	return "flush recorded files to the disk"
+}
 
+func (*flushCommand) Usage() string {
+	return flushUsage
+}
+
+type flushCommand struct {
+	Flags        *flag.FlagSet
 	authOpts     cred.Options
 	dir          string
 	stateFile    string
@@ -62,33 +58,34 @@ type flushRun struct {
 	fileListPath string
 }
 
-func (c *flushRun) init() {
-	c.Flags.StringVar(&c.dir, "C", ".", "ninja running directory")
-	c.Flags.StringVar(&c.stateFile, "fs_state", stateFile, "fs_state filename")
-	c.Flags.StringVar(&c.projectID, "project", os.Getenv("SISO_PROJECT"), "cloud project ID. can be set by $SISO_PROJECT")
+func (c *flushCommand) SetFlags(flagSet *flag.FlagSet) {
+	flagSet.StringVar(&c.dir, "C", ".", "ninja running directory")
+	flagSet.StringVar(&c.stateFile, "fs_state", stateFile, "fs_state filename")
+	flagSet.StringVar(&c.projectID, "project", os.Getenv("SISO_PROJECT"), "cloud project ID. can be set by $SISO_PROJECT")
 	c.reopt = new(reapi.Option)
-	c.reopt.RegisterFlags(&c.Flags, reapi.Envs("REAPI"))
-	c.Flags.BoolVar(&c.force, "f", false, "force to fetch")
-	c.Flags.BoolVar(&c.recursive, "recursive", true, "flush recursively")
-	c.Flags.StringVar(&c.fileListPath, "file_list", "", "path to a file containing a list of files to flush, one per line")
+	c.reopt.RegisterFlags(flagSet, reapi.Envs("REAPI"))
+	flagSet.BoolVar(&c.force, "f", false, "force to fetch")
+	flagSet.BoolVar(&c.recursive, "recursive", true, "flush recursively")
+	flagSet.StringVar(&c.fileListPath, "file_list", "", "path to a file containing a list of files to flush, one per line")
 }
 
-func (c *flushRun) Run(a subcommands.Application, args []string, env subcommands.Env) int {
-	ctx := context.Background()
+func (c *flushCommand) Execute(ctx context.Context, flagSet *flag.FlagSet, _ ...any) subcommands.ExitStatus {
+	c.Flags = flagSet
 	err := c.run(ctx)
 	if err != nil {
 		switch {
 		case errors.Is(err, flag.ErrHelp):
 			fmt.Fprintf(os.Stderr, "%v\n%s\n", err, flushUsage)
+			return subcommands.ExitUsageError
 		default:
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			return subcommands.ExitFailure
 		}
-		return 1
 	}
-	return 0
+	return subcommands.ExitSuccess
 }
 
-func (c *flushRun) run(ctx context.Context) error {
+func (c *flushCommand) run(ctx context.Context) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer signals.HandleInterrupt(ctx, cancel)()
 
@@ -224,7 +221,7 @@ func childEntries(ctx context.Context, stm map[string]*pb.Entry, fullpath string
 	return children
 }
 
-func (c *flushRun) flushEntry(ctx context.Context, cacheStore reapi.CacheStore, fname string, ent *pb.Entry) error {
+func (c *flushCommand) flushEntry(ctx context.Context, cacheStore reapi.CacheStore, fname string, ent *pb.Entry) error {
 	mtime := time.Unix(0, ent.GetId().GetModTime())
 	fi, err := os.Lstat(ent.Name)
 	if !c.force && err == nil {
@@ -264,7 +261,7 @@ func (c *flushRun) flushEntry(ctx context.Context, cacheStore reapi.CacheStore, 
 	return nil
 }
 
-func (c *flushRun) flushFile(ctx context.Context, cacheStore reapi.CacheStore, fname string, d digest.Digest, ent *pb.Entry) error {
+func (c *flushCommand) flushFile(ctx context.Context, cacheStore reapi.CacheStore, fname string, d digest.Digest, ent *pb.Entry) error {
 	w, err := os.Create(fname)
 	if err != nil {
 		return err

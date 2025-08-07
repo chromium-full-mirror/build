@@ -8,53 +8,50 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"os"
 	"sort"
 
-	"github.com/maruel/subcommands"
+	"github.com/google/subcommands"
 	"google.golang.org/protobuf/proto"
 
 	"go.chromium.org/build/siso/hashfs"
 	pb "go.chromium.org/build/siso/hashfs/proto"
 )
 
-func cmdFSDiff() *subcommands.Command {
-	return &subcommands.Command{
-		UsageLine: "diff",
-		ShortDesc: "diff siso hashfs data",
-		LongDesc: `show difference between two siso hashfs data.
+func (*diffCommand) Name() string {
+	return "diff"
+}
+
+func (*diffCommand) Synopsis() string {
+	return "diff siso hashfs data"
+}
+
+func (*diffCommand) Usage() string {
+	return `show difference between two siso hashfs data.
 
  $ siso fs diff -C <dir>
 
 It will print mismatched file entries between .siso_fs_state (--fs_state)
 and .siso_fs_state.0 (--fs_state_base).
-`,
-		CommandRun: func() subcommands.CommandRun {
-			c := &diffRun{}
-			c.init()
-			return c
-		},
-	}
+`
 }
 
-type diffRun struct {
-	subcommands.CommandRunBase
+type diffCommand struct {
 	dir           string
 	stateFile     string
 	stateFileBase string
 	// TODO: options to compare mtime
 }
 
-func (c *diffRun) init() {
-	c.Flags.StringVar(&c.dir, "C", ".", "ninja running directory")
-	c.Flags.StringVar(&c.stateFile, "fs_state", stateFile, "fs_state filename")
-	c.Flags.StringVar(&c.stateFileBase, "fs_state_base", stateFile+".0", "fs_state filename for diff base")
+func (c *diffCommand) SetFlags(flagSet *flag.FlagSet) {
+	flagSet.StringVar(&c.dir, "C", ".", "ninja running directory")
+	flagSet.StringVar(&c.stateFile, "fs_state", stateFile, "fs_state filename")
+	flagSet.StringVar(&c.stateFileBase, "fs_state_base", stateFile+".0", "fs_state filename for diff base")
 }
 
-func (c *diffRun) Run(a subcommands.Application, args []string, env subcommands.Env) int {
-	ctx := context.Background()
-
+func (c *diffCommand) Execute(ctx context.Context, flagSet *flag.FlagSet, _ ...any) subcommands.ExitStatus {
 	err := os.Chdir(c.dir)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed to chdir %s: %v\n", c.dir, err)

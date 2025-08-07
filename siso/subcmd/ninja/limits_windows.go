@@ -12,5 +12,5 @@ import (
 	"go.chromium.org/build/siso/build"
 )
 
-func (c *ninjaCmdRun) checkResourceLimits(ctx context.Context, limits build.Limits) {
+func (c *Command) checkResourceLimits(ctx context.Context, limits build.Limits) {
 }

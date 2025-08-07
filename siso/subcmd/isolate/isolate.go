@@ -20,8 +20,8 @@ import (
 
 	"cloud.google.com/go/logging"
 	log "github.com/golang/glog"
+	"github.com/google/subcommands"
 	"github.com/google/uuid"
-	"github.com/maruel/subcommands"
 	"golang.org/x/sync/errgroup"
 	mrpb "google.golang.org/genproto/googleapis/api/monitoredres"
 	"google.golang.org/grpc/grpclog"
@@ -46,26 +46,28 @@ const usage = `isolate uploads and computes tree digest for each targets.
 
 `
 
-// Cmd returns the Command for the `isolate` subcommand provided by this package.
-func Cmd(authOpts cred.Options) *subcommands.Command {
-	return &subcommands.Command{
-		UsageLine: "isolate <args>...",
-		ShortDesc: "isolate uploads and computes tree digests",
-		LongDesc:  usage,
-		Advanced:  true,
-		CommandRun: func() subcommands.CommandRun {
-			c := &run{
-				authOpts: authOpts,
-			}
-			c.init()
-			return c
-		},
+// Cmd returns the Command for the `isolate` subcommand.
+func Cmd(authOpts cred.Options) *Command {
+	return &Command{
+		authOpts: authOpts,
 	}
 }
 
-type run struct {
-	subcommands.CommandRunBase
+func (*Command) Name() string {
+	return "isolate"
+}
 
+func (*Command) Synopsis() string {
+	return "isolate uploads and computes tree digests"
+}
+
+func (*Command) Usage() string {
+	return usage
+}
+
+// Command implements isolate subcommand.
+type Command struct {
+	Flags     *flag.FlagSet
 	authOpts  cred.Options
 	projectID string
 	reopt     *reapi.Option
@@ -81,39 +83,40 @@ type run struct {
 	enableCloudLogging bool
 }
 
-func (c *run) init() {
-	c.Flags.StringVar(&c.projectID, "project", os.Getenv("SISO_PROJECT"), "cloud project ID. can be set by $SISO_PROJECT")
+func (c *Command) SetFlags(flagSet *flag.FlagSet) {
+	flagSet.StringVar(&c.projectID, "project", os.Getenv("SISO_PROJECT"), "cloud project ID. can be set by $SISO_PROJECT")
 	c.reopt = new(reapi.Option)
-	c.reopt.RegisterFlags(&c.Flags, reapi.Envs("REAPI"))
+	c.reopt.RegisterFlags(flagSet, reapi.Envs("REAPI"))
 	c.casopt = new(reapi.Option)
 	c.casopt.Prefix = "cas"
-	c.casopt.RegisterFlags(&c.Flags, reapi.Envs("DEST_CASS"))
+	c.casopt.RegisterFlags(flagSet, reapi.Envs("DEST_CASS"))
 
-	c.Flags.StringVar(&c.dir, "C", ".", "ninja running directory")
+	flagSet.StringVar(&c.dir, "C", ".", "ninja running directory")
 
 	c.fsopt = new(hashfs.Option)
 	c.fsopt.StateFile = ".siso_fs_state"
-	c.fsopt.RegisterFlags(&c.Flags)
+	c.fsopt.RegisterFlags(flagSet)
 
-	c.Flags.StringVar(&c.dumpJSON, "dump_json", "", "dump in json file")
+	flagSet.StringVar(&c.dumpJSON, "dump_json", "", "dump in json file")
 
-	c.Flags.StringVar(&c.jobID, "job_id", uuid.New().String(), "ID for a grouping of related builds such as a Buildbucket job. ")
-	c.Flags.BoolVar(&c.enableCloudLogging, "enable_cloud_logging", true, "enable cloud logging")
+	flagSet.StringVar(&c.jobID, "job_id", uuid.New().String(), "ID for a grouping of related builds such as a Buildbucket job. ")
+	flagSet.BoolVar(&c.enableCloudLogging, "enable_cloud_logging", true, "enable cloud logging")
 }
 
-func (c *run) Run(a subcommands.Application, args []string, env subcommands.Env) int {
-	ctx := context.Background()
+func (c *Command) Execute(ctx context.Context, flagSet *flag.FlagSet, _ ...any) subcommands.ExitStatus {
+	c.Flags = flagSet
 	err := c.run(ctx)
 	if err != nil {
 		switch {
 		case errors.Is(err, flag.ErrHelp):
 			fmt.Fprintf(os.Stderr, "%s\n", usage)
+			return subcommands.ExitUsageError
 		default:
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			return subcommands.ExitFailure
 		}
-		return 1
 	}
-	return 0
+	return subcommands.ExitSuccess
 }
 
 type errInterrupted struct{}
@@ -121,7 +124,7 @@ type errInterrupted struct{}
 func (errInterrupted) Error() string        { return "interrupt by signal" }
 func (errInterrupted) Is(target error) bool { return target == context.Canceled }
 
-func (c *run) run(ctx context.Context) error {
+func (c *Command) run(ctx context.Context) error {
 	ctx, cancel := context.WithCancelCause(ctx)
 	defer signals.HandleInterrupt(ctx, func() {
 		cancel(errInterrupted{})
@@ -251,7 +254,7 @@ func (c *run) run(ctx context.Context) error {
 	return nil
 }
 
-func (c *run) initWorkdirs(ctx context.Context) (string, error) {
+func (c *Command) initWorkdirs(ctx context.Context) (string, error) {
 	// don't use $PWD for current directory
 	// to avoid symlink issue. b/286779149
 	pwd := os.Getenv("PWD")
@@ -290,7 +293,7 @@ func (c *run) initWorkdirs(ctx context.Context) (string, error) {
 	return execRoot, err
 }
 
-func (c *run) casCred(ctx context.Context) (cred.Cred, error) {
+func (c *Command) casCred(ctx context.Context) (cred.Cred, error) {
 	if c.casopt.Instance == "default_instance" || c.casopt.Instance == "" {
 		return cred.Cred{}, fmt.Errorf("-cas_instance must be set")
 	}
@@ -406,7 +409,7 @@ func upload(ctx context.Context, execRoot, buildDir string, hashFS *hashfs.HashF
 	return d, nil
 }
 
-func (c *run) initCloudLogging(ctx context.Context, projectID, execRoot string, credential cred.Cred) (context.Context, string, func(), error) {
+func (c *Command) initCloudLogging(ctx context.Context, projectID, execRoot string, credential cred.Cred) (context.Context, string, func(), error) {
 	taskID := uuid.New().String()
 	log.Infof("enable cloud logging project=%s id=%s", projectID, taskID)
 

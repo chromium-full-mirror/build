@@ -11,6 +11,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"io"
 	"maps"
@@ -20,41 +21,46 @@ import (
 	"strings"
 	"time"
 
-	"github.com/maruel/subcommands"
+	"github.com/google/subcommands"
 
 	"go.chromium.org/build/siso/version"
 )
 
-func Cmd(ver string) *subcommands.Command {
-	return &subcommands.Command{
-		UsageLine: "version",
-		ShortDesc: "prints the executable version",
-		LongDesc:  "Prints the executable version and the CIPD package the executable was installed from (if it was installed via CIPD).",
-		CommandRun: func() subcommands.CommandRun {
-			r := &versionRun{version: ver}
-			r.init()
-			return r
-		},
+const cipdServiceURL = "https://chrome-infra-packages.appspot.com"
+
+// Cmd returns the Command for the `version` subcommand.
+func Cmd(ver string) *Command {
+	return &Command{
+		version: ver,
 	}
 }
 
-type versionRun struct {
-	subcommands.CommandRunBase
+func (*Command) Name() string {
+	return "version"
+}
+
+func (*Command) Synopsis() string {
+	return "prints the executable version"
+}
+
+func (*Command) Usage() string {
+	return "Prints the executable version and the CIPD package the executable was installed from (if it was installed via CIPD)."
+}
+
+// Command implements version subcommand.
+type Command struct {
 	version string
 	cipdURL string
 }
 
-const cipdServiceURL = "https://chrome-infra-packages.appspot.com"
-
-func (c *versionRun) init() {
-	c.Flags.StringVar(&c.cipdURL, "cipd_url", "", "show version info for this cipd URL.")
+func (c *Command) SetFlags(flagSet *flag.FlagSet) {
+	flagSet.StringVar(&c.cipdURL, "cipd_url", "", "show version info for this cipd URL.")
 }
 
-func (c *versionRun) Run(a subcommands.Application, args []string, env subcommands.Env) int {
-	ctx := context.Background()
-	if len(args) != 0 {
-		fmt.Fprintf(a.GetErr(), "%s: position arguments not expected\n", a.GetName())
-		return 1
+func (c *Command) Execute(ctx context.Context, flagSet *flag.FlagSet, _ ...any) subcommands.ExitStatus {
+	if flagSet.NArg() > 0 {
+		fmt.Fprintf(os.Stderr, "position arguments not expected\n")
+		return subcommands.ExitUsageError
 	}
 	fmt.Println(c.version)
 	cipdURL := c.cipdURL

@@ -18,7 +18,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/maruel/subcommands"
+	"github.com/google/subcommands"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/protobuf/encoding/prototext"
 	"google.golang.org/protobuf/proto"
@@ -38,9 +38,7 @@ import (
 
 // go/reqs-for-peep
 
-type ideAnalysisRun struct {
-	subcommands.CommandRunBase
-
+type ideAnalysisCommand struct {
 	execRoot string
 	dir      string
 	stateDir string
@@ -58,46 +56,44 @@ format: proto, prototext or json
 output: pathname. "" or "-" is stdout.
 `
 
-func cmdIDEAnalysis() *subcommands.Command {
-	return &subcommands.Command{
-		UsageLine: "ideanalysis",
-		ShortDesc: "query ninja build graph ofor Cider-G",
-		LongDesc:  ideAnalysisUsage,
-		CommandRun: func() subcommands.CommandRun {
-			c := &ideAnalysisRun{}
-			c.init()
-			return c
-		},
-	}
+func (*ideAnalysisCommand) Name() string {
+	return "ideanalysis"
 }
 
-func (c *ideAnalysisRun) init() {
-	c.Flags.StringVar(&c.dir, "C", ".", "ninja running directory to find build.ninja")
-	c.Flags.StringVar(&c.stateDir, "state_dir", ".", "state directory (relative to -C)")
-	c.Flags.StringVar(&c.fname, "f", "build.ninja", "input build filename (relative to -C)")
+func (*ideAnalysisCommand) Synopsis() string {
+	return "query ninja build graph ofor Cider-G"
+}
+
+func (*ideAnalysisCommand) Usage() string {
+	return ideAnalysisUsage
+}
+func (c *ideAnalysisCommand) SetFlags(flagSet *flag.FlagSet) {
+	flagSet.StringVar(&c.dir, "C", ".", "ninja running directory to find build.ninja")
+	flagSet.StringVar(&c.stateDir, "state_dir", ".", "state directory (relative to -C)")
+	flagSet.StringVar(&c.fname, "f", "build.ninja", "input build filename (relative to -C)")
 	c.fsopt = new(hashfs.Option)
 	c.fsopt.StateFile = ".siso_fs_state"
-	c.fsopt.RegisterFlags(&c.Flags)
-	c.Flags.StringVar(&c.format, "format", "proto", `output format. "proto", "prototext" or "json"`)
-	c.Flags.StringVar(&c.output, "output", "", `output path. "" or "-" is stdout`)
+	c.fsopt.RegisterFlags(flagSet)
+	flagSet.StringVar(&c.format, "format", "proto", `output format. "proto", "prototext" or "json"`)
+	flagSet.StringVar(&c.output, "output", "", `output path. "" or "-" is stdout`)
 }
 
-func (c *ideAnalysisRun) Run(a subcommands.Application, args []string, env subcommands.Env) int {
-	ctx := context.Background()
-	err := c.run(ctx, args)
+func (c *ideAnalysisCommand) Execute(ctx context.Context, flagSet *flag.FlagSet, _ ...any) subcommands.ExitStatus {
+	err := c.run(ctx, flagSet.Args())
 	if err != nil {
 		switch {
 		case errors.Is(err, flag.ErrHelp):
 			fmt.Fprintf(os.Stderr, "%v\n%s\n", err, ideAnalysisUsage)
+			return subcommands.ExitUsageError
 		default:
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			return subcommands.ExitFailure
 		}
-		return 1
 	}
-	return 0
+	return subcommands.ExitSuccess
 }
 
-func (c *ideAnalysisRun) run(ctx context.Context, args []string) error {
+func (c *ideAnalysisCommand) run(ctx context.Context, args []string) error {
 	started := time.Now()
 	switch c.format {
 	case "proto", "prototext", "json":
@@ -157,7 +153,7 @@ func (c *ideAnalysisRun) run(ctx context.Context, args []string) error {
 	return err
 }
 
-func (c *ideAnalysisRun) analyze(ctx context.Context, args []string) (*pb.IdeAnalysis, error) {
+func (c *ideAnalysisCommand) analyze(ctx context.Context, args []string) (*pb.IdeAnalysis, error) {
 	analysis := &pb.IdeAnalysis{
 		BuildOutDir: c.dir,
 		WorkingDir:  c.dir,

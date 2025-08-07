@@ -15,7 +15,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/maruel/subcommands"
+	"github.com/google/subcommands"
 
 	"go.chromium.org/build/siso/build"
 )
@@ -32,23 +32,19 @@ summarize <dir>/.siso_metrics.json (--input)
 as depot_tools/post_ninja_build_summary.py does.
 `
 
-// summaryCmd returns the Command for the `metricssummary` subcommand provided by this package.
-func summaryCmd() *subcommands.Command {
-	return &subcommands.Command{
-		UsageLine: "summary <args>...",
-		ShortDesc: "summarize siso_metrics.json",
-		LongDesc:  summaryUsage,
-		CommandRun: func() subcommands.CommandRun {
-			c := &summaryRun{}
-			c.init()
-			return c
-		},
-	}
+func (*summaryCommand) Name() string {
+	return "summary"
 }
 
-type summaryRun struct {
-	subcommands.CommandRunBase
+func (*summaryCommand) Synopsis() string {
+	return "summarize siso_metrics.json"
+}
 
+func (*summaryCommand) Usage() string {
+	return summaryUsage
+}
+
+type summaryCommand struct {
 	dir                string
 	input              string
 	stepTypes          string
@@ -56,30 +52,30 @@ type summaryRun struct {
 	elapsedTimeSorting bool
 }
 
-func (c *summaryRun) init() {
-	c.Flags.StringVar(&c.dir, "C", ".", "ninja running directory, where siso_metrics.json exists")
-	c.Flags.StringVar(&c.input, "input", "siso_metrics.json", "filename of siso_metrics.json to summarize")
-	c.Flags.StringVar(&c.stepTypes, "step_types", "", "semicolon separated glob patterns (go filepath.Match) for build-step grouping")
-	c.Flags.StringVar(&c.elapsedTime, "elapsed_time", "run", `metrics to use for elapsed time. "run" or "step". "run": time to run local command or call remote execution.  "step": full duration for the step, including preproc, waiting resource to run command etc.`)
-	c.Flags.BoolVar(&c.elapsedTimeSorting, "elapsed_time_sorting", false, "Sort output by elapsed time instead of weighted time")
+func (c *summaryCommand) SetFlags(flagSet *flag.FlagSet) {
+	flagSet.StringVar(&c.dir, "C", ".", "ninja running directory, where siso_metrics.json exists")
+	flagSet.StringVar(&c.input, "input", "siso_metrics.json", "filename of siso_metrics.json to summarize")
+	flagSet.StringVar(&c.stepTypes, "step_types", "", "semicolon separated glob patterns (go filepath.Match) for build-step grouping")
+	flagSet.StringVar(&c.elapsedTime, "elapsed_time", "run", `metrics to use for elapsed time. "run" or "step". "run": time to run local command or call remote execution.  "step": full duration for the step, including preproc, waiting resource to run command etc.`)
+	flagSet.BoolVar(&c.elapsedTimeSorting, "elapsed_time_sorting", false, "Sort output by elapsed time instead of weighted time")
 }
 
-func (c *summaryRun) Run(a subcommands.Application, args []string, env subcommands.Env) int {
-	ctx := context.Background()
+func (c *summaryCommand) Execute(ctx context.Context, flagSet *flag.FlagSet, _ ...any) subcommands.ExitStatus {
 	err := c.run(ctx)
 	if err != nil {
 		switch {
 		case errors.Is(err, flag.ErrHelp):
 			fmt.Fprintf(os.Stderr, "%v\n%s\n", err, summaryUsage)
+			return subcommands.ExitUsageError
 		default:
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			return subcommands.ExitFailure
 		}
-		return 1
 	}
-	return 0
+	return subcommands.ExitSuccess
 }
 
-func (c *summaryRun) run(ctx context.Context) error {
+func (c *summaryCommand) run(ctx context.Context) error {
 	switch c.elapsedTime {
 	case "run", "step":
 	default:
@@ -292,7 +288,7 @@ type aggregatedMetric struct {
 	WeightedDuration time.Duration
 }
 
-func (c *summaryRun) aggregate(metrics []*targetMetric) ([]aggregatedMetric, error) {
+func (c *summaryCommand) aggregate(metrics []*targetMetric) ([]aggregatedMetric, error) {
 	pats := strings.Split(c.stepTypes, ";")
 	am := make(map[string]aggregatedMetric)
 	for _, m := range metrics {

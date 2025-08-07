@@ -6,44 +6,43 @@
 package metricscmd
 
 import (
-	"os"
+	"context"
+	"flag"
 
-	"github.com/maruel/subcommands"
+	"github.com/google/subcommands"
 )
 
 // Cmd returns the Command for the `metrics` subcommand provided by this package.
-func Cmd() *subcommands.Command {
-	return &subcommands.Command{
-		UsageLine: "metrics <subcommand>",
-		ShortDesc: "analyze siso_metrics.json",
-		LongDesc:  "analyze siso_metrics.json",
-		Advanced:  true,
-		CommandRun: func() subcommands.CommandRun {
-			c := &metricsRun{
-				app: &subcommands.DefaultApplication{
-					Name:  "siso metrics",
-					Title: "tools to analyze siso_metrics.json",
-					Commands: []*subcommands.Command{
-						cmpCmd(),
-						summaryCmd(),
-						subcommands.CmdHelp,
-					},
-				},
-			}
-			c.Flags.Usage = func() {
-				// TODO: handle -advanced?
-				subcommands.Usage(os.Stderr, c.app, true)
-			}
-			return c
-		},
-	}
+func Cmd() Command {
+	return Command{}
 }
 
-type metricsRun struct {
-	subcommands.CommandRunBase
-	app *subcommands.DefaultApplication
+// Command implements metrics subcommand.
+type Command struct{}
+
+func (Command) Name() string {
+	return "metrics"
 }
 
-func (c *metricsRun) Run(a subcommands.Application, args []string, env subcommands.Env) int {
-	return subcommands.Run(c.app, args)
+func (Command) Synopsis() string {
+	return "command group to analyze siso_metrics.json"
+}
+
+func (Command) Usage() string {
+	return `command group to analyze siso_metrics.json
+
+Use "siso metrics" to display subcommands.
+Use "siso metrics help [subcommand]" for more information about a subcommand.
+`
+}
+
+func (Command) SetFlags(flagSet *flag.FlagSet) {
+}
+
+func (c Command) Execute(ctx context.Context, flagSet *flag.FlagSet, _ ...any) subcommands.ExitStatus {
+	commander := subcommands.NewCommander(flagSet, c.Name())
+	commander.Register(&cmpCommand{}, "")
+	commander.Register(&summaryCommand{}, "")
+	commander.Register(commander.HelpCommand(), "command-help")
+	return commander.Execute(ctx)
 }

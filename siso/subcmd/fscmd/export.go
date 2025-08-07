@@ -7,44 +7,41 @@ package fscmd
 import (
 	"context"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"os"
 
-	"github.com/maruel/subcommands"
+	"github.com/google/subcommands"
 	"google.golang.org/protobuf/encoding/prototext"
 
 	"go.chromium.org/build/siso/hashfs"
 )
 
-func cmdFSExport() *subcommands.Command {
-	return &subcommands.Command{
-		UsageLine: "export",
-		ShortDesc: "export siso hashfs data",
-		LongDesc:  "export siso hashfs data to stdout.",
-		CommandRun: func() subcommands.CommandRun {
-			c := &exportRun{}
-			c.init()
-			return c
-		},
-	}
+func (*exportCommand) Name() string {
+	return "export"
 }
 
-type exportRun struct {
-	subcommands.CommandRunBase
+func (*exportCommand) Synopsis() string {
+	return "export siso hashfs data"
+}
+
+func (*exportCommand) Usage() string {
+	return "export siso hashfs data to stdout."
+}
+
+type exportCommand struct {
 	dir       string
 	format    string
 	stateFile string
 }
 
-func (c *exportRun) init() {
-	c.Flags.StringVar(&c.dir, "C", ".", "ninja running directory")
-	c.Flags.StringVar(&c.format, "format", "json", "output format. json or prototext")
-	c.Flags.StringVar(&c.stateFile, "fs_state", stateFile, "fs state filename")
+func (c *exportCommand) SetFlags(flagSet *flag.FlagSet) {
+	flagSet.StringVar(&c.dir, "C", ".", "ninja running directory")
+	flagSet.StringVar(&c.format, "format", "json", "output format. json or prototext")
+	flagSet.StringVar(&c.stateFile, "fs_state", stateFile, "fs state filename")
 }
 
-func (c *exportRun) Run(a subcommands.Application, args []string, env subcommands.Env) int {
-	ctx := context.Background()
-
+func (c *exportCommand) Execute(ctx context.Context, flagSet *flag.FlagSet, _ ...any) subcommands.ExitStatus {
 	err := os.Chdir(c.dir)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed to chdir %s: %v\n", c.dir, err)

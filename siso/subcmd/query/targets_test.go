@@ -7,6 +7,7 @@ package query
 import (
 	"bytes"
 	"context"
+	"flag"
 	"os"
 	"testing"
 
@@ -149,13 +150,14 @@ in3
 			}
 			err = os.WriteFile("build.ninja", []byte(tc.buildNinja), 0644)
 			var buf bytes.Buffer
-			c := &targetsRun{w: &buf}
-			c.init()
-			err = c.Flags.Parse(tc.args)
+			c := &targetsCommand{w: &buf}
+			flagSet := flag.NewFlagSet("targets", flag.ContinueOnError)
+			c.SetFlags(flagSet)
+			err = flagSet.Parse(tc.args)
 			if err != nil {
 				t.Fatal(err)
 			}
-			err = c.run(context.Background(), c.Flags.Args())
+			err = c.run(context.Background(), flagSet.Args())
 			if err != nil {
 				t.Fatal(err)
 			}

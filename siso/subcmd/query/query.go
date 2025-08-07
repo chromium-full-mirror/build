@@ -6,47 +6,48 @@
 package query
 
 import (
-	"os"
+	"context"
+	"flag"
 
-	"github.com/maruel/subcommands"
+	"github.com/google/subcommands"
 )
 
-func Cmd() *subcommands.Command {
-	return &subcommands.Command{
-		UsageLine: "query [-C <dir>] ...",
-		ShortDesc: "query ninja build graph",
-		LongDesc:  "query ninja build graph.",
-		CommandRun: func() subcommands.CommandRun {
-			c := &run{
-				app: &subcommands.DefaultApplication{
-					Name:  "siso query",
-					Title: "tool to access ninja build graph",
-					Commands: []*subcommands.Command{
-						cmdCommands(),
-						cmdDeps(),
-						cmdDigraph(),
-						cmdIDEAnalysis(),
-						cmdInputs(),
-						cmdRule(),
-						cmdTargets(),
-						// TODO: add more subcommands (ninja's tool like commands, etc.
-						subcommands.CmdHelp,
-					},
-				},
-			}
-			c.Flags.Usage = func() {
-				subcommands.Usage(os.Stderr, c.app, true)
-			}
-			return c
-		},
-	}
+// Cmd returns the Command for the `query` subcommand.
+func Cmd() Command {
+	return Command{}
 }
 
-type run struct {
-	subcommands.CommandRunBase
-	app *subcommands.DefaultApplication
+// Command implements query subcommand.
+type Command struct{}
+
+func (Command) Name() string {
+	return "query"
 }
 
-func (c *run) Run(a subcommands.Application, args []string, env subcommands.Env) int {
-	return subcommands.Run(c.app, args)
+func (Command) Synopsis() string {
+	return "command group to query ninja build graph"
+}
+
+func (Command) Usage() string {
+	return `command group to query ninja build graph.
+
+Use "siso query" to display subcommands.
+Use "siso query help [subcommand]" for more information about a subcommand.
+`
+}
+
+func (Command) SetFlags(flagSet *flag.FlagSet) {}
+
+func (c Command) Execute(ctx context.Context, flagSet *flag.FlagSet, _ ...any) subcommands.ExitStatus {
+	commander := subcommands.NewCommander(flagSet, c.Name())
+	commander.Register(&commandsCommand{}, "")
+	commander.Register(&depsCommand{}, "")
+	commander.Register(&digraphCommand{}, "advanced")
+	commander.Register(&ideAnalysisCommand{}, "advanced")
+	commander.Register(&inputsCommand{}, "")
+	commander.Register(&ruleCommand{}, "")
+	commander.Register(&targetsCommand{}, "")
+	commander.Register(commander.HelpCommand(), "command-help")
+	// TODO: add more subcommands?
+	return commander.Execute(ctx)
 }

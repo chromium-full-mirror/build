@@ -33,9 +33,9 @@ import (
 	"cloud.google.com/go/profiler"
 	"contrib.go.opencensus.io/exporter/stackdriver"
 	log "github.com/golang/glog"
+	"github.com/google/subcommands"
 	"github.com/google/uuid"
 	"github.com/klauspost/cpuid/v2"
-	"github.com/maruel/subcommands"
 	"golang.org/x/sync/errgroup"
 	mrpb "google.golang.org/genproto/googleapis/api/monitoredres"
 	rspb "google.golang.org/genproto/googleapis/devtools/resultstore/v2"
@@ -79,28 +79,20 @@ const ninjaUsage = `build the requested targets as ninja.
 `
 
 // Cmd returns the Command for the `ninja` subcommand provided by this package.
-func Cmd(authOpts cred.Options, version string) *subcommands.Command {
-	return &subcommands.Command{
-		UsageLine: "ninja <args>...",
-		ShortDesc: "build the requests targets as ninja",
-		LongDesc:  ninjaUsage,
-		CommandRun: func() subcommands.CommandRun {
-			r := ninjaCmdRun{
-				authOpts: authOpts,
-				version:  version,
-			}
-			r.init()
-			return &r
-		},
+func Cmd(authOpts cred.Options, version string) *Command {
+	return &Command{
+		authOpts: authOpts,
+		version:  version,
 	}
 }
 
-type ninjaCmdRun struct {
-	subcommands.CommandRunBase
+// Command implements ninja subcommand.
+type Command struct {
 	authOpts cred.Options
 	version  string
 	started  time.Time
 
+	Flags *flag.FlagSet
 	// flag values
 	dir        string
 	configName string
@@ -188,14 +180,25 @@ type ninjaCmdRun struct {
 	resultstoreUploader *resultstore.Uploader
 }
 
-// Run runs the `ninja` subcommand.
-func (c *ninjaCmdRun) Run(a subcommands.Application, args []string, env subcommands.Env) int {
+func (*Command) Name() string {
+	return "ninja"
+}
+
+func (*Command) Synopsis() string {
+	return "build the requests targets as ninja"
+}
+
+func (*Command) Usage() string {
+	return ninjaUsage
+}
+
+func (c *Command) Execute(ctx context.Context, flagSet *flag.FlagSet, _ ...interface{}) subcommands.ExitStatus {
+	c.Flags = flagSet
 	c.started = time.Now()
-	ctx := context.Background()
-	err := parseFlagsFully(&c.Flags)
+	err := parseFlagsFully(flagSet)
 	if err != nil {
 		ui.Default.Errorf("%v\n", err)
-		return 2
+		return subcommands.ExitUsageError
 	}
 	if c.quiet {
 		ui.Default = quietUI{}
@@ -300,7 +303,7 @@ func (c *ninjaCmdRun) Run(a subcommands.Application, args []string, env subcomma
 				ui.Default.Errorf("\n%6s %s: %v\n", ui.FormatDuration(time.Since(c.started)), msgPrefix, err)
 			}
 		}
-		return 1
+		return subcommands.ExitFailure
 	}
 	msgPrefix := "Build Succeeded"
 	if ui.IsTerminal() {
@@ -308,7 +311,7 @@ func (c *ninjaCmdRun) Run(a subcommands.Application, args []string, env subcomma
 		msgPrefix = ui.SGR(ui.Green, msgPrefix)
 	}
 	ui.Default.Warningf("%6s %s: %d steps - %.02f/s\n", dur, msgPrefix, stats.Done-stats.Skipped, sps)
-	return 0
+	return subcommands.ExitSuccess
 }
 
 // parse flags without stopping at non flags.
@@ -391,7 +394,7 @@ const (
 	failedTargetsFile = ".siso_failed_targets"
 )
 
-func (c *ninjaCmdRun) run(ctx context.Context) (stats build.Stats, err error) {
+func (c *Command) run(ctx context.Context) (stats build.Stats, err error) {
 	ctx, cancel := context.WithCancelCause(ctx)
 	defer signals.HandleInterrupt(ctx, func() {
 		cancel(errInterrupted{})
@@ -1115,22 +1118,22 @@ func runNinja(ctx context.Context, fname string, graph *ninjabuild.Graph, bopts 
 	}
 }
 
-func (c *ninjaCmdRun) init() {
+func (c *Command) SetFlags(flagSet *flag.FlagSet) {
 	// TODO(b/340381100): extract common flags for ninja commands
-	c.Flags.StringVar(&c.dir, "C", ".", "ninja running directory")
-	c.Flags.StringVar(&c.configName, "config", "", "config name passed to starlark")
-	c.Flags.StringVar(&c.projectID, "project", os.Getenv("SISO_PROJECT"), "cloud project ID. can set by $SISO_PROJECT")
+	flagSet.StringVar(&c.dir, "C", ".", "ninja running directory")
+	flagSet.StringVar(&c.configName, "config", "", "config name passed to starlark")
+	flagSet.StringVar(&c.projectID, "project", os.Getenv("SISO_PROJECT"), "cloud project ID. can set by $SISO_PROJECT")
 
 	defaultBuildID := os.Getenv("SISO_BUILD_ID")
 	if defaultBuildID == "" {
 		defaultBuildID = uuid.New().String()
 	}
-	c.Flags.StringVar(&c.buildID, "build_id", defaultBuildID, "ID for the build. used for `invocation_id` of remote-apis-sdks and `tool_invocation_id` of remote-apis, and Cloud logging resource `build_id` label.")
-	c.Flags.StringVar(&c.jobID, "job_id", uuid.New().String(), "ID for a grouping of related builds such as a Buildbucket job. used for `correlated_invocations_id` of remote-apis and remote-apis-sdks, and Cloud logging resource `job_id` label.")
+	flagSet.StringVar(&c.buildID, "build_id", defaultBuildID, "ID for the build. used for `invocation_id` of remote-apis-sdks and `tool_invocation_id` of remote-apis, and Cloud logging resource `build_id` label.")
+	flagSet.StringVar(&c.jobID, "job_id", uuid.New().String(), "ID for a grouping of related builds such as a Buildbucket job. used for `correlated_invocations_id` of remote-apis and remote-apis-sdks, and Cloud logging resource `job_id` label.")
 
-	c.Flags.BoolVar(&c.offline, "offline", false, "offline mode.")
-	c.Flags.BoolVar(&c.offline, "o", false, "alias of `-offline`")
-	if f := c.Flags.Lookup("offline"); f != nil {
+	flagSet.BoolVar(&c.offline, "offline", false, "offline mode.")
+	flagSet.BoolVar(&c.offline, "o", false, "alias of `-offline`")
+	if f := flagSet.Lookup("offline"); f != nil {
 		if s := os.Getenv("RBE_remote_disabled"); s != "" {
 			err := f.Value.Set(s)
 			if err != nil {
@@ -1138,88 +1141,88 @@ func (c *ninjaCmdRun) init() {
 			}
 		}
 	}
-	c.Flags.BoolVar(&c.batch, "batch", !ui.IsTerminal(), "batch mode. prefer thoughput over low latency for build failures.")
-	c.Flags.BoolVar(&c.quiet, "quiet", false, "don't show progress status, just command output")
-	c.Flags.BoolVar(&c.verbose, "verbose", false, "show all command lines while building")
-	c.Flags.BoolVar(&c.verbose, "v", false, "show all command lines while building (alias of --verbose)")
-	c.Flags.BoolVar(&c.verboseFailures, "verbose_failures", true, "show failed command lines")
-	c.Flags.BoolVar(&c.dryRun, "n", false, "dry run")
-	c.Flags.BoolVar(&c.clobber, "clobber", false, "clobber build")
-	c.Flags.BoolVar(&c.prepare, "prepare", false, "build inputs of targets, but not build target itself.")
-	c.Flags.BoolVar(&c.strictRemote, "strict_remote", false, "don't use local for remote step. i.e. no fastlocal, no local fallback")
-	c.Flags.IntVar(&c.failuresAllowed, "k", 1, "keep going until N jobs fail (0 means inifinity)")
-	c.Flags.StringVar(&c.actionSalt, "action_salt", "", "action salt")
+	flagSet.BoolVar(&c.batch, "batch", !ui.IsTerminal(), "batch mode. prefer thoughput over low latency for build failures.")
+	flagSet.BoolVar(&c.quiet, "quiet", false, "don't show progress status, just command output")
+	flagSet.BoolVar(&c.verbose, "verbose", false, "show all command lines while building")
+	flagSet.BoolVar(&c.verbose, "v", false, "show all command lines while building (alias of --verbose)")
+	flagSet.BoolVar(&c.verboseFailures, "verbose_failures", true, "show failed command lines")
+	flagSet.BoolVar(&c.dryRun, "n", false, "dry run")
+	flagSet.BoolVar(&c.clobber, "clobber", false, "clobber build")
+	flagSet.BoolVar(&c.prepare, "prepare", false, "build inputs of targets, but not build target itself.")
+	flagSet.BoolVar(&c.strictRemote, "strict_remote", false, "don't use local for remote step. i.e. no fastlocal, no local fallback")
+	flagSet.IntVar(&c.failuresAllowed, "k", 1, "keep going until N jobs fail (0 means inifinity)")
+	flagSet.StringVar(&c.actionSalt, "action_salt", "", "action salt")
 
-	c.Flags.IntVar(&c.ninjaJobs, "j", -1, "not supported. use -remote_jobs and -local_jobs instead")
-	c.Flags.IntVar(&c.ninjaLoadLimit, "l", -1, "not supported.")
-	c.Flags.IntVar(&c.localJobs, "local_jobs", 0, "run N local jobs in parallel. when the value is no positive, the default will be computed based on # of CPUs.")
-	c.Flags.IntVar(&c.remoteJobs, "remote_jobs", 0, "run N remote jobs in parallel. when the value is no positive, the default will be computed based on # of CPUs.")
-	c.Flags.StringVar(&c.fname, "f", "build.ninja", "input build manifest filename (relative to -C)")
+	flagSet.IntVar(&c.ninjaJobs, "j", -1, "not supported. use -remote_jobs and -local_jobs instead")
+	flagSet.IntVar(&c.ninjaLoadLimit, "l", -1, "not supported.")
+	flagSet.IntVar(&c.localJobs, "local_jobs", 0, "run N local jobs in parallel. when the value is no positive, the default will be computed based on # of CPUs.")
+	flagSet.IntVar(&c.remoteJobs, "remote_jobs", 0, "run N remote jobs in parallel. when the value is no positive, the default will be computed based on # of CPUs.")
+	flagSet.StringVar(&c.fname, "f", "build.ninja", "input build manifest filename (relative to -C)")
 
-	c.Flags.StringVar(&c.cacheDir, "cache_dir", defaultCacheDir(), "cache directory")
-	c.Flags.BoolVar(&c.localCacheEnable, "local_cache_enable", false, "local cache enable")
-	c.Flags.BoolVar(&c.cacheEnableRead, "cache_enable_read", true, "cache enable read")
+	flagSet.StringVar(&c.cacheDir, "cache_dir", defaultCacheDir(), "cache directory")
+	flagSet.BoolVar(&c.localCacheEnable, "local_cache_enable", false, "local cache enable")
+	flagSet.BoolVar(&c.cacheEnableRead, "cache_enable_read", true, "cache enable read")
 
-	c.Flags.StringVar(&c.configRepoDir, "config_repo_dir", "build/config/siso", "config repo directory (relative to exec root)")
-	c.Flags.StringVar(&c.configFilename, "load", "@config//main.star", "config filename (@config// is --config_repo_dir)")
-	c.Flags.StringVar(&c.outputLocalStrategy, "output_local_strategy", "full", `strategy for output_local. "full": download all outputs. "greedy": downloads most outputs except intermediate objs. "minimum": downloads as few as possible`)
-	c.Flags.StringVar(&c.depsLogFile, "deps_log", ".siso_deps", "deps log filename (relative to -C, -state_dir)")
+	flagSet.StringVar(&c.configRepoDir, "config_repo_dir", "build/config/siso", "config repo directory (relative to exec root)")
+	flagSet.StringVar(&c.configFilename, "load", "@config//main.star", "config filename (@config// is --config_repo_dir)")
+	flagSet.StringVar(&c.outputLocalStrategy, "output_local_strategy", "full", `strategy for output_local. "full": download all outputs. "greedy": downloads most outputs except intermediate objs. "minimum": downloads as few as possible`)
+	flagSet.StringVar(&c.depsLogFile, "deps_log", ".siso_deps", "deps log filename (relative to -C, -state_dir)")
 
-	c.Flags.StringVar(&c.stateDir, "state_dir", ".", "state directory (relative to -C)")
+	flagSet.StringVar(&c.stateDir, "state_dir", ".", "state directory (relative to -C)")
 
-	c.Flags.StringVar(&c.logDir, "log_dir", ".", "log directory (relative to -C")
+	flagSet.StringVar(&c.logDir, "log_dir", ".", "log directory (relative to -C")
 
 	// https://android.googlesource.com/platform/build/soong/+/refs/heads/main/ui/build/ninja.go
-	c.Flags.StringVar(&c.frontendFile, "frontend_file", "", "frontend FIFO file to report build status to soong ui, or `-` to report to stdout.")
+	flagSet.StringVar(&c.frontendFile, "frontend_file", "", "frontend FIFO file to report build status to soong ui, or `-` to report to stdout.")
 
-	c.Flags.StringVar(&c.failureSummaryFile, "failure_summary", "", "filename for failure summary (relative to -log_dir)")
+	flagSet.StringVar(&c.failureSummaryFile, "failure_summary", "", "filename for failure summary (relative to -log_dir)")
 	c.failedCommandsFile = "siso_failed_commands.sh"
 	if runtime.GOOS == "windows" {
 		c.failedCommandsFile = "siso_failed_commands.bat"
 	}
-	c.Flags.StringVar(&c.failedCommandsFile, "failed_commands", c.failedCommandsFile, "script file to rerun the last failed commands")
-	c.Flags.StringVar(&c.outputLogFile, "output_log", "siso_output", "output log filename (relative to -log_dir")
-	c.Flags.StringVar(&c.explainFile, "explain_log", "siso_explain", "explain log filename (relative to -log_dir")
-	c.Flags.StringVar(&c.localexecLogFile, "localexec_log", "siso_localexec", "localexec log filename (relative to -log_dir")
-	c.Flags.StringVar(&c.metricsJSON, "metrics_json", "siso_metrics.json", "metrics JSON filename (relative to -log_dir)")
-	c.Flags.StringVar(&c.traceJSON, "trace_json", "siso_trace.json", "trace JSON filename (relative to -log_dir)")
-	c.Flags.StringVar(&c.buildPprof, "build_pprof", "siso_build.pprof", "build pprof filename (relative to -log_dir)")
+	flagSet.StringVar(&c.failedCommandsFile, "failed_commands", c.failedCommandsFile, "script file to rerun the last failed commands")
+	flagSet.StringVar(&c.outputLogFile, "output_log", "siso_output", "output log filename (relative to -log_dir")
+	flagSet.StringVar(&c.explainFile, "explain_log", "siso_explain", "explain log filename (relative to -log_dir")
+	flagSet.StringVar(&c.localexecLogFile, "localexec_log", "siso_localexec", "localexec log filename (relative to -log_dir")
+	flagSet.StringVar(&c.metricsJSON, "metrics_json", "siso_metrics.json", "metrics JSON filename (relative to -log_dir)")
+	flagSet.StringVar(&c.traceJSON, "trace_json", "siso_trace.json", "trace JSON filename (relative to -log_dir)")
+	flagSet.StringVar(&c.buildPprof, "build_pprof", "siso_build.pprof", "build pprof filename (relative to -log_dir)")
 
 	c.fsopt = new(hashfs.Option)
 	c.fsopt.StateFile = ".siso_fs_state"
-	c.fsopt.RegisterFlags(&c.Flags)
+	c.fsopt.RegisterFlags(flagSet)
 
 	c.reopt = new(reapi.Option)
-	c.reopt.RegisterFlags(&c.Flags, reapi.Envs("REAPI"))
-	c.Flags.BoolVar(&c.reExecEnable, "re_exec_enable", true, "remote exec enable")
-	c.Flags.BoolVar(&c.reCacheEnableRead, "re_cache_enable_read", true, "remote exec cache enable read")
-	c.Flags.BoolVar(&c.reCacheEnableWrite, "re_cache_enable_write", false, "remote exec cache allow local trusted uploads")
+	c.reopt.RegisterFlags(flagSet, reapi.Envs("REAPI"))
+	flagSet.BoolVar(&c.reExecEnable, "re_exec_enable", true, "remote exec enable")
+	flagSet.BoolVar(&c.reCacheEnableRead, "re_cache_enable_read", true, "remote exec cache enable read")
+	flagSet.BoolVar(&c.reCacheEnableWrite, "re_cache_enable_write", false, "remote exec cache allow local trusted uploads")
 	// reclient_helper.py sets the RBE_server_address
 	// https://chromium.googlesource.com/chromium/tools/depot_tools.git/+/e13840bd9a04f464e3bef22afac1976fc15a96a0/reclient_helper.py#138
 	c.reproxyAddr = os.Getenv("RBE_server_address")
 
-	c.Flags.StringVar(&c.artfsDir, "artfs_dir", "", "artfs mount point")
-	c.Flags.StringVar(&c.artfsEndpoint, "artfs_endpoint", "localhost:65001", "artfs server endpoint")
+	flagSet.StringVar(&c.artfsDir, "artfs_dir", "", "artfs mount point")
+	flagSet.StringVar(&c.artfsEndpoint, "artfs_endpoint", "localhost:65001", "artfs server endpoint")
 
-	c.Flags.DurationVar(&c.traceThreshold, "trace_threshold", 1*time.Minute, "threshold for trace record")
-	c.Flags.DurationVar(&c.traceSpanThreshold, "trace_span_threshold", 100*time.Millisecond, "theshold for trace span record")
+	flagSet.DurationVar(&c.traceThreshold, "trace_threshold", 1*time.Minute, "threshold for trace record")
+	flagSet.DurationVar(&c.traceSpanThreshold, "trace_span_threshold", 100*time.Millisecond, "theshold for trace span record")
 
-	c.Flags.BoolVar(&c.enableCloudLogging, "enable_cloud_logging", false, "enable cloud logging")
-	c.Flags.BoolVar(&c.enableResultstore, "enable_resultstore", false, "enable resultstore")
-	c.Flags.BoolVar(&c.enableCloudProfiler, "enable_cloud_profiler", false, "enable cloud profiler")
-	c.Flags.StringVar(&c.cloudProfilerServiceName, "cloud_profiler_service_name", "siso", "cloud profiler service name")
-	c.Flags.BoolVar(&c.enableCloudTrace, "enable_cloud_trace", false, "enable cloud trace")
-	c.Flags.BoolVar(&c.enableCloudMonitoring, "enable_cloud_monitoring", false, "enable cloud monitoring")
-	c.Flags.StringVar(&c.metricsLabels, "metrics_labels", os.Getenv("RBE_metrics_labels"), "comma-separated arbitrary key value pairs in the form key=value, which are added to cloud monitoring metrics.")
-	c.Flags.StringVar(&c.metricsProject, "metrics_project", os.Getenv("RBE_metrics_project"), "Cloud Monitoring GCP project where Siso sends action and build metrics.")
+	flagSet.BoolVar(&c.enableCloudLogging, "enable_cloud_logging", false, "enable cloud logging")
+	flagSet.BoolVar(&c.enableResultstore, "enable_resultstore", false, "enable resultstore")
+	flagSet.BoolVar(&c.enableCloudProfiler, "enable_cloud_profiler", false, "enable cloud profiler")
+	flagSet.StringVar(&c.cloudProfilerServiceName, "cloud_profiler_service_name", "siso", "cloud profiler service name")
+	flagSet.BoolVar(&c.enableCloudTrace, "enable_cloud_trace", false, "enable cloud trace")
+	flagSet.BoolVar(&c.enableCloudMonitoring, "enable_cloud_monitoring", false, "enable cloud monitoring")
+	flagSet.StringVar(&c.metricsLabels, "metrics_labels", os.Getenv("RBE_metrics_labels"), "comma-separated arbitrary key value pairs in the form key=value, which are added to cloud monitoring metrics.")
+	flagSet.StringVar(&c.metricsProject, "metrics_project", os.Getenv("RBE_metrics_project"), "Cloud Monitoring GCP project where Siso sends action and build metrics.")
 
-	c.Flags.StringVar(&c.subtool, "t", "", "run a subtool (use '-t list' to list subtools)")
-	c.Flags.BoolVar(&c.cleandead, "cleandead", false, "clean built files that are no longer produced by the manifest")
-	c.Flags.Var(&c.debugMode, "d", "enable debugging (use '-d list' to list modes)")
-	c.Flags.StringVar(&c.adjustWarn, "w", "", "adjust warnings. not supported b/288807840")
+	flagSet.StringVar(&c.subtool, "t", "", "run a subtool (use '-t list' to list subtools)")
+	flagSet.BoolVar(&c.cleandead, "cleandead", false, "clean built files that are no longer produced by the manifest")
+	flagSet.Var(&c.debugMode, "d", "enable debugging (use '-d list' to list modes)")
+	flagSet.StringVar(&c.adjustWarn, "w", "", "adjust warnings. not supported b/288807840")
 }
 
-func (c *ninjaCmdRun) initWorkdirs(ctx context.Context) (string, error) {
+func (c *Command) initWorkdirs(ctx context.Context) (string, error) {
 	// don't use $PWD for current directory
 	// to avoid symlink issue. b/286779149
 	pwd := os.Getenv("PWD")
@@ -1288,7 +1291,7 @@ func (c *ninjaCmdRun) initWorkdirs(ctx context.Context) (string, error) {
 	return execRoot, err
 }
 
-func (c *ninjaCmdRun) initCloudLogging(ctx context.Context, projectID, execRoot string, credential cred.Cred) (context.Context, string, func(), error) {
+func (c *Command) initCloudLogging(ctx context.Context, projectID, execRoot string, credential cred.Cred) (context.Context, string, func(), error) {
 	log.Infof("enable cloud logging project=%s id=%s", projectID, c.buildID)
 
 	// log_id: "siso.log" and "siso.step"
@@ -1341,7 +1344,7 @@ func (c *ninjaCmdRun) initCloudLogging(ctx context.Context, projectID, execRoot 
 	}, nil
 }
 
-func (c *ninjaCmdRun) initCloudProfiler(ctx context.Context, projectID string, credential cred.Cred) {
+func (c *Command) initCloudProfiler(ctx context.Context, projectID string, credential cred.Cred) {
 	clog.Infof(ctx, "enable cloud profiler %q in %s", c.cloudProfilerServiceName, projectID)
 	config := profiler.Config{
 		Service:        c.cloudProfilerServiceName,
@@ -1370,7 +1373,7 @@ func (c *ninjaCmdRun) initCloudProfiler(ctx context.Context, projectID string, c
 	}
 }
 
-func (c *ninjaCmdRun) initCloudTrace(ctx context.Context, projectID string, credential cred.Cred) *trace.Exporter {
+func (c *Command) initCloudTrace(ctx context.Context, projectID string, credential cred.Cred) *trace.Exporter {
 	clog.Infof(ctx, "enable trace in %s [trace > %s]", projectID, c.traceThreshold)
 	traceExporter, err := trace.NewExporter(ctx, trace.Options{
 		ProjectID:     projectID,
@@ -1385,7 +1388,7 @@ func (c *ninjaCmdRun) initCloudTrace(ctx context.Context, projectID string, cred
 	return traceExporter
 }
 
-func (c *ninjaCmdRun) initCloudMonitoring(ctx context.Context, credential cred.Cred, projectID, prefix, rbeProjectID string, labels map[string]string) (*stackdriver.Exporter, error) {
+func (c *Command) initCloudMonitoring(ctx context.Context, credential cred.Cred, projectID, prefix, rbeProjectID string, labels map[string]string) (*stackdriver.Exporter, error) {
 	clog.Infof(ctx, "enable cloud monitoring in %s", projectID)
 	if err := monitoring.SetupViews(ctx, c.version, labels); err != nil {
 		return nil, err
@@ -1399,7 +1402,7 @@ func (c *ninjaCmdRun) initCloudMonitoring(ctx context.Context, credential cred.C
 	)
 }
 
-func (c *ninjaCmdRun) initLogDir(ctx context.Context) error {
+func (c *Command) initLogDir(ctx context.Context) error {
 	if !filepath.IsAbs(c.logDir) {
 		logDir, err := filepath.Abs(c.logDir)
 		if err != nil {
@@ -1414,7 +1417,7 @@ func (c *ninjaCmdRun) initLogDir(ctx context.Context) error {
 	return c.logSymlink(ctx)
 }
 
-func (c *ninjaCmdRun) initFlags(targets []string) map[string]string {
+func (c *Command) initFlags(targets []string) map[string]string {
 	flags := make(map[string]string)
 	c.Flags.Visit(func(f *flag.Flag) {
 		name := f.Name
@@ -1429,7 +1432,7 @@ func (c *ninjaCmdRun) initFlags(targets []string) map[string]string {
 	return flags
 }
 
-func (c *ninjaCmdRun) initConfig(ctx context.Context, execRoot string, targets []string) (*buildconfig.Config, error) {
+func (c *Command) initConfig(ctx context.Context, execRoot string, targets []string) (*buildconfig.Config, error) {
 	if c.configFilename == "" {
 		return nil, errors.New("no config filename")
 	}
@@ -1455,7 +1458,7 @@ func (c *ninjaCmdRun) initConfig(ctx context.Context, execRoot string, targets [
 	return config, nil
 }
 
-func (c *ninjaCmdRun) initDepsLog(ctx context.Context) (*ninjautil.DepsLog, error) {
+func (c *Command) initDepsLog(ctx context.Context) (*ninjautil.DepsLog, error) {
 	depsLogFile := filepath.Join(c.stateDir, c.depsLogFile)
 	err := os.MkdirAll(filepath.Dir(depsLogFile), 0755)
 	if err != nil {
@@ -1478,7 +1481,7 @@ func (c *ninjaCmdRun) initDepsLog(ctx context.Context) (*ninjautil.DepsLog, erro
 	return depsLog, nil
 }
 
-func (c *ninjaCmdRun) initBuildOpts(ctx context.Context, projectID string, buildPath *build.Path, config *buildconfig.Config, ds dataSource, hashFS *hashfs.HashFS, limits build.Limits, traceExporter *trace.Exporter) (bopts build.Options, done func(*error), err error) {
+func (c *Command) initBuildOpts(ctx context.Context, projectID string, buildPath *build.Path, config *buildconfig.Config, ds dataSource, hashFS *hashfs.HashFS, limits build.Limits, traceExporter *trace.Exporter) (bopts build.Options, done func(*error), err error) {
 	var dones []func(*error)
 	defer func() {
 		if err != nil {
@@ -1618,7 +1621,7 @@ func (c *ninjaCmdRun) initBuildOpts(ctx context.Context, projectID string, build
 }
 
 // logFilename returns siso's log filename relative to startDir, or absolute path.
-func (c *ninjaCmdRun) logFilename(fname, startDir string) string {
+func (c *Command) logFilename(fname, startDir string) string {
 	if fname == "" {
 		return ""
 	}
@@ -1636,7 +1639,7 @@ func (c *ninjaCmdRun) logFilename(fname, startDir string) string {
 }
 
 // glogFilename returns filename of glog logfile. i.e. siso.INFO.
-func (c *ninjaCmdRun) glogFilename() string {
+func (c *Command) glogFilename() string {
 	logFilename := "siso.INFO"
 	if runtime.GOOS == "windows" {
 		logFilename = "siso.exe.INFO"
@@ -1644,7 +1647,7 @@ func (c *ninjaCmdRun) glogFilename() string {
 	return filepath.Join(c.logDir, logFilename)
 }
 
-func (c *ninjaCmdRun) logWriter(ctx context.Context, fname string) (io.Writer, func(errp *error), error) {
+func (c *Command) logWriter(ctx context.Context, fname string) (io.Writer, func(errp *error), error) {
 	fname = c.logFilename(fname, "")
 	if fname == "" {
 		return nil, func(*error) {}, nil
@@ -1911,7 +1914,7 @@ type semaTrace struct {
 	waitBuckets, servBuckets [7]int
 }
 
-func (c *ninjaCmdRun) logSymlink(ctx context.Context) error {
+func (c *Command) logSymlink(ctx context.Context) error {
 	logFilename := c.glogFilename()
 	rotateFiles(ctx, logFilename)
 	logfiles, err := log.Names("INFO")
@@ -1943,7 +1946,7 @@ type dataSource struct {
 	client *reapi.Client
 }
 
-func (c *ninjaCmdRun) initDataSource(ctx context.Context, credential cred.Cred) (dataSource, error) {
+func (c *Command) initDataSource(ctx context.Context, credential cred.Cred) (dataSource, error) {
 	layeredCache := build.NewLayeredCache()
 	if c.localCacheEnable {
 		cache, err := build.NewLocalCache(c.cacheDir)
@@ -2038,7 +2041,7 @@ func rotateFiles(ctx context.Context, fname string) {
 	}
 }
 
-func (c *ninjaCmdRun) initOutputLocal() (func(context.Context, string) bool, error) {
+func (c *Command) initOutputLocal() (func(context.Context, string) bool, error) {
 	switch c.outputLocalStrategy {
 	case "full":
 		return func(context.Context, string) bool { return true }, nil
@@ -2179,7 +2182,7 @@ func gcinfo() string {
 	return sb.String()
 }
 
-func (c *ninjaCmdRun) invocation(ctx context.Context, buildID, projectID, execRoot string, properties resultstore.Properties) *rspb.Invocation {
+func (c *Command) invocation(ctx context.Context, buildID, projectID, execRoot string, properties resultstore.Properties) *rspb.Invocation {
 	username := lookupUser(ctx)
 	hostname, err := os.Hostname()
 	if err != nil {
@@ -2207,7 +2210,7 @@ func (c *ninjaCmdRun) invocation(ctx context.Context, buildID, projectID, execRo
 	}
 }
 
-func (c *ninjaCmdRun) commandLines() []*rspb.CommandLine {
+func (c *Command) commandLines() []*rspb.CommandLine {
 	var cmdlines []*rspb.CommandLine
 	cmdlines = append(cmdlines, &rspb.CommandLine{
 		Label:   "original",
@@ -2229,7 +2232,7 @@ func (c *ninjaCmdRun) commandLines() []*rspb.CommandLine {
 	return cmdlines
 }
 
-func (c *ninjaCmdRun) setupCrashOutput(ctx context.Context) (func(), error) {
+func (c *Command) setupCrashOutput(ctx context.Context) (func(), error) {
 	fname := c.logFilename("siso_crash", "")
 	rotateFiles(ctx, fname)
 	crashFile, err := os.Create(fname)

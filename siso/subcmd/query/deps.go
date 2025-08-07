@@ -17,7 +17,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/maruel/subcommands"
+	"github.com/google/subcommands"
 
 	"go.chromium.org/build/siso/build"
 	"go.chromium.org/build/siso/build/ninjabuild"
@@ -49,23 +49,19 @@ or depfile
 
 `
 
-// cmdDeps returns the Command for the `deps` subcommand provided by this package.
-func cmdDeps() *subcommands.Command {
-	return &subcommands.Command{
-		UsageLine: "deps [-C <dir>] [<targets>...]",
-		ShortDesc: "show dependencies stored in the deps log",
-		LongDesc:  depsUsage,
-		CommandRun: func() subcommands.CommandRun {
-			c := &depsRun{}
-			c.init()
-			return c
-		},
-	}
+func (*depsCommand) Name() string {
+	return "deps"
 }
 
-type depsRun struct {
-	subcommands.CommandRunBase
+func (*depsCommand) Synopsis() string {
+	return "show dependencies stored in the deps log"
+}
 
+func (*depsCommand) Usage() string {
+	return depsUsage
+}
+
+type depsCommand struct {
 	dir         string
 	stateDir    string
 	fname       string
@@ -75,34 +71,34 @@ type depsRun struct {
 	depfile     bool
 }
 
-func (c *depsRun) init() {
-	c.Flags.StringVar(&c.dir, "C", ".", "ninja running directory to find dpes log")
-	c.Flags.StringVar(&c.stateDir, "state_dir", ".", "state directory (relative to -C)")
-	c.Flags.StringVar(&c.fname, "f", "build.ninja", "input build filename (relative to -C)")
+func (c *depsCommand) SetFlags(flagSet *flag.FlagSet) {
+	flagSet.StringVar(&c.dir, "C", ".", "ninja running directory to find dpes log")
+	flagSet.StringVar(&c.stateDir, "state_dir", ".", "state directory (relative to -C)")
+	flagSet.StringVar(&c.fname, "f", "build.ninja", "input build filename (relative to -C)")
 	c.fsopt = new(hashfs.Option)
 	c.fsopt.StateFile = ".siso_fs_state"
-	c.fsopt.RegisterFlags(&c.Flags)
-	c.Flags.StringVar(&c.depsLogFile, "deps_log", ".siso_deps", "deps log filename (relative to -C, -state_dir)")
-	c.Flags.BoolVar(&c.raw, "raw", false, "just check deps log. (no build.ninja nor .siso_fs_state needed)")
-	c.Flags.BoolVar(&c.depfile, "depfile", false, "check depfile too")
+	c.fsopt.RegisterFlags(flagSet)
+	flagSet.StringVar(&c.depsLogFile, "deps_log", ".siso_deps", "deps log filename (relative to -C, -state_dir)")
+	flagSet.BoolVar(&c.raw, "raw", false, "just check deps log. (no build.ninja nor .siso_fs_state needed)")
+	flagSet.BoolVar(&c.depfile, "depfile", false, "check depfile too")
 }
 
-func (c *depsRun) Run(a subcommands.Application, args []string, env subcommands.Env) int {
-	ctx := context.Background()
-	err := c.run(ctx, args)
+func (c *depsCommand) Execute(ctx context.Context, flagSet *flag.FlagSet, _ ...any) subcommands.ExitStatus {
+	err := c.run(ctx, flagSet.Args())
 	if err != nil {
 		switch {
 		case errors.Is(err, flag.ErrHelp):
 			fmt.Fprintf(os.Stderr, "%v\n%s\n", err, depsUsage)
+			return subcommands.ExitUsageError
 		default:
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			return subcommands.ExitFailure
 		}
-		return 1
 	}
-	return 0
+	return subcommands.ExitSuccess
 }
 
-func (c *depsRun) run(ctx context.Context, args []string) error {
+func (c *depsCommand) run(ctx context.Context, args []string) error {
 	execRoot, err := os.Getwd()
 	if err != nil {
 		return err

@@ -6,57 +6,60 @@ package osfs
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"io"
 	"io/fs"
 	"os"
 
-	"github.com/maruel/subcommands"
+	"github.com/google/subcommands"
 )
 
-func HelperCmd() *subcommands.Command {
-	return &subcommands.Command{
-		UsageLine: "install-helper [-m mode] [-o file]",
-		ShortDesc: "helper tool to install executable",
-		LongDesc: `helper tool to install executable.
+// HelperCmd creates new HelperCommand.
+func HelperCmd() *HelperCommand {
+	return &HelperCommand{}
+}
+
+func (*HelperCommand) Name() string {
+	return "install-helper"
+}
+
+func (*HelperCommand) Synopsis() string {
+	return "helper tool to install executable"
+}
+
+func (*HelperCommand) Usage() string {
+	return `helper tool to install executable.
 
 User would not need to run this sub command.
 It is intended as workaround for https://github.com/golang/go/issues/22315.
 This tool just writes new executable in specified file with mode
 by using content given in stdin.
-`,
-		Advanced: true,
-		CommandRun: func() subcommands.CommandRun {
-			c := &run{}
-			c.init()
-			return c
-		},
-	}
+`
 }
 
-type run struct {
-	subcommands.CommandRunBase
-
+// HelperCommand implements install-helper command,
+// which is invoked by siso to install executable file.
+type HelperCommand struct {
 	mode int
 	file string
 }
 
-func (c *run) init() {
-	c.Flags.IntVar(&c.mode, "m", 0, "file mode")
-	c.Flags.StringVar(&c.file, "o", "", "output filename")
+func (c *HelperCommand) SetFlags(flagSet *flag.FlagSet) {
+	flagSet.IntVar(&c.mode, "m", 0, "file mode")
+	flagSet.StringVar(&c.file, "o", "", "output filename")
 }
 
-func (c *run) Run(a subcommands.Application, args []string, env subcommands.Env) int {
-	ctx := context.Background()
+func (c *HelperCommand) Execute(ctx context.Context, flagSet *flag.FlagSet, _ ...any) subcommands.ExitStatus {
 	err := c.run(ctx)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		return 1
+		return subcommands.ExitFailure
 	}
-	return 0
+	return subcommands.ExitSuccess
 }
 
-func (c *run) run(ctx context.Context) error {
+func (c *HelperCommand) run(ctx context.Context) error {
 	if c.mode&0700 == 0 {
 		return fmt.Errorf("invalid mode 0%o: %s", c.mode, fs.FileMode(c.mode))
 	}

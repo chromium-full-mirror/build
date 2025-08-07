@@ -17,7 +17,7 @@ import (
 	"go.chromium.org/build/siso/ui"
 )
 
-func (c *ninjaCmdRun) checkResourceLimits(ctx context.Context, limits build.Limits) {
+func (c *Command) checkResourceLimits(ctx context.Context, limits build.Limits) {
 	var lim unix.Rlimit
 	err := unix.Getrlimit(unix.RLIMIT_NOFILE, &lim)
 	if err != nil {

@@ -12,7 +12,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/maruel/subcommands"
+	"github.com/google/subcommands"
 
 	"go.chromium.org/build/siso/toolsupport/ninjautil"
 )
@@ -33,52 +33,47 @@ See https://pkg.go.dev/golang.org/x/tools/cmd/digraph
 for digraph command.
 `
 
-// cmdDigraph returns the Command for the `digraph` subcommand provided by this package.
-func cmdDigraph() *subcommands.Command {
-	return &subcommands.Command{
-		UsageLine: "digraph [-C <dir>] [<targets>...]",
-		ShortDesc: "show digraph",
-		LongDesc:  digraphUsage,
-		Advanced:  true,
-		CommandRun: func() subcommands.CommandRun {
-			c := &digraphRun{}
-			c.init()
-			return c
-		},
-	}
+func (*digraphCommand) Name() string {
+	return "digraph"
 }
 
-type digraphRun struct {
-	subcommands.CommandRunBase
+func (*digraphCommand) Synopsis() string {
+	return "show digraph"
+}
 
+func (*digraphCommand) Usage() string {
+	return digraphUsage
+}
+
+type digraphCommand struct {
 	dir   string
 	fname string
 
 	orderOnly bool
 }
 
-func (c *digraphRun) init() {
-	c.Flags.StringVar(&c.dir, "C", ".", "ninja running directory to find build.ninja")
-	c.Flags.StringVar(&c.fname, "f", "build.ninja", "input build filename (relative to -C)")
-	c.Flags.BoolVar(&c.orderOnly, "order_only", true, "includes order_only deps")
+func (c *digraphCommand) SetFlags(flagSet *flag.FlagSet) {
+	flagSet.StringVar(&c.dir, "C", ".", "ninja running directory to find build.ninja")
+	flagSet.StringVar(&c.fname, "f", "build.ninja", "input build filename (relative to -C)")
+	flagSet.BoolVar(&c.orderOnly, "order_only", true, "includes order_only deps")
 }
 
-func (c *digraphRun) Run(a subcommands.Application, args []string, env subcommands.Env) int {
-	ctx := context.Background()
-	err := c.run(ctx, args)
+func (c *digraphCommand) Execute(ctx context.Context, flagSet *flag.FlagSet, _ ...any) subcommands.ExitStatus {
+	err := c.run(ctx, flagSet.Args())
 	if err != nil {
 		switch {
 		case errors.Is(err, flag.ErrHelp):
 			fmt.Fprintf(os.Stderr, "%v\n%s\n", err, digraphUsage)
+			return subcommands.ExitUsageError
 		default:
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			return subcommands.ExitFailure
 		}
-		return 1
 	}
-	return 0
+	return subcommands.ExitSuccess
 }
 
-func (c *digraphRun) run(ctx context.Context, args []string) error {
+func (c *digraphCommand) run(ctx context.Context, args []string) error {
 	state := ninjautil.NewState()
 	p := ninjautil.NewManifestParser(state)
 	err := os.Chdir(c.dir)

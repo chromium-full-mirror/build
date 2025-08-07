@@ -11,7 +11,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/maruel/subcommands"
+	"github.com/google/subcommands"
 
 	"go.chromium.org/build/siso/toolsupport/ninjautil"
 )
@@ -23,50 +23,46 @@ const ruleUsage = `query build rule
 prints filtered ninja build rules for <targets>.
 `
 
-// cmdRule returns the Command for the `rule` subcommand provided by this package.
-func cmdRule() *subcommands.Command {
-	return &subcommands.Command{
-		UsageLine: "rule [-C <dir>] [<targets>...]",
-		ShortDesc: "query build step rule",
-		LongDesc:  ruleUsage,
-		CommandRun: func() subcommands.CommandRun {
-			c := &ruleRun{}
-			c.init()
-			return c
-		},
-	}
+func (*ruleCommand) Name() string {
+	return "rule"
 }
 
-type ruleRun struct {
-	subcommands.CommandRunBase
+func (*ruleCommand) Synopsis() string {
+	return "query build step rule"
+}
 
+func (*ruleCommand) Usage() string {
+	return ruleUsage
+}
+
+type ruleCommand struct {
 	dir     string
 	fname   string
 	binding string
 }
 
-func (c *ruleRun) init() {
-	c.Flags.StringVar(&c.dir, "C", ".", "ninja running directory to find build.ninja")
-	c.Flags.StringVar(&c.fname, "f", "build.ninja", "input build filename (relative to -C")
-	c.Flags.StringVar(&c.binding, "binding", "", "print binding value for the target")
+func (c *ruleCommand) SetFlags(flagSet *flag.FlagSet) {
+	flagSet.StringVar(&c.dir, "C", ".", "ninja running directory to find build.ninja")
+	flagSet.StringVar(&c.fname, "f", "build.ninja", "input build filename (relative to -C")
+	flagSet.StringVar(&c.binding, "binding", "", "print binding value for the target")
 }
 
-func (c *ruleRun) Run(a subcommands.Application, args []string, env subcommands.Env) int {
-	ctx := context.Background()
-	err := c.run(ctx, args)
+func (c *ruleCommand) Execute(ctx context.Context, flagSet *flag.FlagSet, _ ...any) subcommands.ExitStatus {
+	err := c.run(ctx, flagSet.Args())
 	if err != nil {
 		switch {
 		case errors.Is(err, flag.ErrHelp):
 			fmt.Fprintf(os.Stderr, "%v\n%s\n", err, ruleUsage)
+			return subcommands.ExitUsageError
 		default:
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			return subcommands.ExitFailure
 		}
-		return 1
 	}
-	return 0
+	return subcommands.ExitSuccess
 }
 
-func (c *ruleRun) run(ctx context.Context, args []string) error {
+func (c *ruleCommand) run(ctx context.Context, args []string) error {
 	state := ninjautil.NewState()
 	p := ninjautil.NewManifestParser(state)
 	err := os.Chdir(c.dir)

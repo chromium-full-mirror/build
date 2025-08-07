@@ -6,6 +6,7 @@ package ninja
 
 import (
 	"context"
+	"flag"
 	"os"
 	"testing"
 
@@ -66,11 +67,13 @@ func TestBuild_offline(t *testing.T) {
 					t.Error(err)
 				}
 			}()
-			ninja := &ninjaCmdRun{}
-			ninja.init()
+			ninja := &Command{}
+			flagSet := flag.NewFlagSet("ninja", flag.ContinueOnError)
+			ninja.SetFlags(flagSet)
+			ninja.Flags = flagSet
 			args := []string{"-C", "out/siso", "--offline"}
 			args = append(args, tc.args...)
-			err = ninja.Flags.Parse(args)
+			err = flagSet.Parse(args)
 			if err != nil {
 				t.Fatal(err)
 			}

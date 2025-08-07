@@ -15,7 +15,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/maruel/subcommands"
+	"github.com/google/subcommands"
 
 	"go.chromium.org/build/siso/build/buildconfig"
 	"go.chromium.org/build/siso/build/ninjabuild"
@@ -36,50 +36,51 @@ infra/build/siso/scandeps.Request.
 `
 
 // Cmd returns the Command for the `scandeps` subcommand provided by this package.
-func Cmd() *subcommands.Command {
-	return &subcommands.Command{
-		UsageLine: "scandeps <args>...",
-		ShortDesc: "run scandeps",
-		LongDesc:  usage,
-		Advanced:  true,
-		CommandRun: func() subcommands.CommandRun {
-			c := &run{}
-			c.init()
-			return c
-		},
-	}
+func Cmd() *Command {
+	return &Command{}
 }
 
-type run struct {
-	subcommands.CommandRunBase
+func (*Command) Name() string {
+	return "scandeps"
+}
 
+func (*Command) Synopsis() string {
+	return "run scandeps"
+}
+
+func (*Command) Usage() string {
+	return usage
+}
+
+// Command implements scandeps subcommand.
+type Command struct {
 	dir       string
 	stateDir  string
 	reqString string
 }
 
-func (c *run) init() {
-	c.Flags.StringVar(&c.dir, "C", ".", "ninja running directory to find .siso_config and .siso_filegroup for input_deps in state dir")
-	c.Flags.StringVar(&c.stateDir, "state_dir", ".", "state directory (relative to -C)")
-	c.Flags.StringVar(&c.reqString, "req", "", "json format of scandeps request")
+func (c *Command) SetFlags(flagSet *flag.FlagSet) {
+	flagSet.StringVar(&c.dir, "C", ".", "ninja running directory to find .siso_config and .siso_filegroup for input_deps in state dir")
+	flagSet.StringVar(&c.stateDir, "state_dir", ".", "state directory (relative to -C)")
+	flagSet.StringVar(&c.reqString, "req", "", "json format of scandeps request")
 }
 
-func (c *run) Run(a subcommands.Application, args []string, env subcommands.Env) int {
-	ctx := context.Background()
+func (c *Command) Execute(ctx context.Context, flagSet *flag.FlagSet, _ ...any) subcommands.ExitStatus {
 	err := c.run(ctx)
 	if err != nil {
 		switch {
 		case errors.Is(err, flag.ErrHelp):
 			fmt.Fprintf(os.Stderr, "%v\n%s\n", err, usage)
+			return subcommands.ExitUsageError
 		default:
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			return subcommands.ExitFailure
 		}
-		return 1
 	}
-	return 0
+	return subcommands.ExitSuccess
 }
 
-func (c *run) run(ctx context.Context) error {
+func (c *Command) run(ctx context.Context) error {
 	if c.reqString == "" {
 		return fmt.Errorf("missing req: %w", flag.ErrHelp)
 	}

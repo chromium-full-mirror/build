@@ -8,41 +8,45 @@ package ps
 import (
 	"context"
 	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"os"
 	"time"
 
-	"github.com/maruel/subcommands"
+	"github.com/google/subcommands"
 
 	"go.chromium.org/build/siso/build"
 	"go.chromium.org/build/siso/signals"
 	"go.chromium.org/build/siso/ui"
 )
 
-func Cmd() *subcommands.Command {
-	return &subcommands.Command{
-		UsageLine: "ps [-C dir] [--stdout_url url]",
-		ShortDesc: "display running steps of ninja build",
-		LongDesc: `Display running steps of ninja build.
+// Cmd returns the Command for the `ps` subcommand.
+func Cmd() *Command {
+	return &Command{}
+}
+
+func (*Command) Name() string {
+	return "ps"
+}
+
+func (*Command) Synopsis() string {
+	return "display running steps of ninja build"
+}
+
+func (*Command) Usage() string {
+	return `Display running steps of ninja build.
 
 for local build
  $ siso ps [-C dir]
 
 for buiders build
  $ siso ps --stdout_url <compile-step-stdout-URL>
-`,
-		CommandRun: func() subcommands.CommandRun {
-			c := &run{}
-			c.init()
-			return c
-		},
-	}
+`
 }
 
-type run struct {
-	subcommands.CommandRunBase
-
+// Command implements ps subcommand.
+type Command struct {
 	stdoutURL string
 	dir       string
 	stateDir  string
@@ -52,12 +56,12 @@ type run struct {
 	loc       string
 }
 
-func (c *run) init() {
-	c.Flags.StringVar(&c.stdoutURL, "stdout_url", "", "stdout streaming URL")
-	c.Flags.StringVar(&c.dir, "C", ".", "ninja running directory")
-	c.Flags.StringVar(&c.stateDir, "state_dir", ".", "state directory (relative to -C)")
-	c.Flags.IntVar(&c.n, "n", 0, "limit number of steps if it is positive")
-	c.Flags.DurationVar(&c.interval, "interval", -1, "query interval if it is positive. default 1s on terminal")
+func (c *Command) SetFlags(flagSet *flag.FlagSet) {
+	flagSet.StringVar(&c.stdoutURL, "stdout_url", "", "stdout streaming URL")
+	flagSet.StringVar(&c.dir, "C", ".", "ninja running directory")
+	flagSet.StringVar(&c.stateDir, "state_dir", ".", "state directory (relative to -C)")
+	flagSet.IntVar(&c.n, "n", 0, "limit number of steps if it is positive")
+	flagSet.DurationVar(&c.interval, "interval", -1, "query interval if it is positive. default 1s on terminal")
 }
 
 type source interface {
@@ -66,8 +70,7 @@ type source interface {
 	fetch(context.Context) ([]build.ActiveStepInfo, error)
 }
 
-func (c *run) Run(a subcommands.Application, args []string, env subcommands.Env) int {
-	ctx := context.Background()
+func (c *Command) Execute(ctx context.Context, flagSet *flag.FlagSet, _ ...any) subcommands.ExitStatus {
 	ctx, cancel := context.WithCancel(ctx)
 	defer signals.HandleInterrupt(ctx, func() {
 		cancel()
@@ -93,10 +96,10 @@ func (c *run) Run(a subcommands.Application, args []string, env subcommands.Env)
 	}
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		return 1
+		return subcommands.ExitFailure
 	}
 	c.loc = src.location()
-	ret := 0
+	ret := subcommands.ExitSuccess
 	for {
 		activeSteps, err := src.fetch(ctx)
 		if err != nil {
@@ -105,7 +108,7 @@ func (c *run) Run(a subcommands.Application, args []string, env subcommands.Env)
 			} else {
 				fmt.Fprintf(os.Stderr, "%s\n", err)
 			}
-			ret = 1
+			ret = subcommands.ExitFailure
 		} else {
 			var lines []string
 			if c.termui {
@@ -137,7 +140,7 @@ func (c *run) Run(a subcommands.Application, args []string, env subcommands.Env)
 	return ret
 }
 
-func (c *run) render(ctx context.Context, lines []string, activeSteps []build.ActiveStepInfo) {
+func (c *Command) render(ctx context.Context, lines []string, activeSteps []build.ActiveStepInfo) {
 	headings := len(lines)
 	for _, as := range activeSteps {
 		dur := as.ServDur
