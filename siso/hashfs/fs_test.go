@@ -1728,18 +1728,27 @@ func TestRefresh(t *testing.T) {
 	if err != nil {
 		t.Fatalf("stat(%q)=%v, %v; want nil err", fullname, lfi, err)
 	}
-	if !lfi.ModTime().After(omtime) {
-		t.Errorf("disk mtime=%v must be newer than state mtime=%v", lfi.ModTime(), omtime)
+	nmtime := lfi.ModTime()
+	if !nmtime.After(omtime) {
+		t.Errorf("disk mtime=%v must be newer than state mtime=%v", nmtime, omtime)
 	}
 	err = hashFS.Refresh(ctx, dir)
 	if err != nil {
 		t.Fatalf("hashFS.Refresh(ctx, %q)=%v; want nil err", dir, err)
 	}
-	// fullname should be invalidated after Refresh, so not exist in state.
+	// fullname should be invalidated after Refresh, so not exist in state,
+	// or properly refreshed.
 	m := hashfs.StateMap(hashFS.State(ctx))
-	_, ok := m[fullname]
+	ent, ok := m[fullname]
 	if ok {
-		t.Fatalf("entry for %s exists", fullname)
+		// if exists, mtime should match with local disk.
+		if ent.Id == nil {
+			t.Fatalf("entry for %s: Id should exists", fullname)
+		}
+		mtime := time.Unix(0, ent.Id.ModTime)
+		if !mtime.Equal(nmtime) {
+			t.Fatalf("entry for %s exists: mtime=%s; want=%s", fullname, mtime, nmtime)
+		}
 	}
 }
 
