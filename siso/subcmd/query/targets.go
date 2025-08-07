@@ -75,6 +75,9 @@ func (c *targetsCommand) SetFlags(flagSet *flag.FlagSet) {
 }
 
 func (c *targetsCommand) Execute(ctx context.Context, flagSet *flag.FlagSet, _ ...any) subcommands.ExitStatus {
+	if c.w == nil {
+		c.w = os.Stdout
+	}
 	err := c.run(ctx, flagSet.Args())
 	if err != nil {
 		switch {
