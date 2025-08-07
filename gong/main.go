@@ -6,32 +6,18 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"os"
 	"runtime"
 
 	log "github.com/golang/glog"
-	"github.com/maruel/subcommands"
-
-	"go.chromium.org/luci/common/cli"
+	"github.com/google/subcommands"
 
 	"go.chromium.org/build/gong/subcmd/clean"
 	"go.chromium.org/build/gong/subcmd/format"
-	"go.chromium.org/build/gong/subcmd/help"
 )
-
-func getApplication() *cli.Application {
-	return &cli.Application{
-		Name:  "gong",
-		Title: "Experimental Go reimplementation of the GN meta-build system",
-		Commands: []*subcommands.Command{
-			clean.Cmd(),
-			format.Cmd(),
-			help.Cmd(),
-		},
-	}
-}
 
 func main() {
 	// Wraps gongMain() because os.Exit() doesn't wait defers.
@@ -39,13 +25,12 @@ func main() {
 }
 
 func gongMain() int {
-	flag.Usage = func() {
+	flag.CommandLine.Usage = func() {
 		fmt.Fprint(flag.CommandLine.Output(), `
 Usage: gong [command] [arguments]
 
 Use "gong help" to display commands.
 Use "gong help [command]" for more information about a command.
-Use "gong help -advanced" to display all commands.
 
 `)
 		fmt.Fprintf(flag.CommandLine.Output(), "flags of %s:\n", os.Args[0])
@@ -67,5 +52,9 @@ Use "gong help -advanced" to display all commands.
 		}
 	}()
 
-	return subcommands.Run(getApplication(), nil)
+	subcommands.Register(&clean.Command{}, "")
+	subcommands.Register(&format.Command{}, "")
+	subcommands.Register(subcommands.FlagsCommand(), "")
+	subcommands.Register(subcommands.HelpCommand(), "")
+	return int(subcommands.Execute(context.Background()))
 }

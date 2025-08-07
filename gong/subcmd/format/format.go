@@ -6,12 +6,14 @@
 package format
 
 import (
+	"context"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"os"
 	"strings"
 
-	"github.com/maruel/subcommands"
+	"github.com/google/subcommands"
 
 	"go.chromium.org/build/gong/gn"
 	"go.chromium.org/build/gong/gn/build/fs"
@@ -19,59 +21,48 @@ import (
 	"go.chromium.org/build/gong/gn/syntax"
 )
 
-const formatUsage = `subset of the gn format command that only supports --dump-tree for one file.
-
- $ gong format --dump-tree <format> <build_file>
-
-format: text or json
-`
-
-// Cmd returns the Command for the `format` subcommand provided by this package.
-func Cmd() *subcommands.Command {
-	return &subcommands.Command{
-		UsageLine: "format --dump-tree <format> <build_file>",
-		ShortDesc: "formatted output of .gn files",
-		LongDesc:  formatUsage,
-		CommandRun: func() subcommands.CommandRun {
-			ret := &formatCmdRun{}
-			ret.init()
-			return ret
-		},
-	}
-}
-
-type formatCmdRun struct {
+// Command implements format subcommand.
+type Command struct {
 	gn.CommonFlags
 	format string
 }
 
-func (h *formatCmdRun) init() {
-	h.InitFlags()
-	h.Flags.StringVar(&h.format, "dump-tree", "", `output format. "text" or "json"`)
+func (*Command) Name() string     { return "format" }
+func (*Command) Synopsis() string { return "formatted output of .gn files" }
+func (*Command) Usage() string {
+	return `subset of the gn format command that only supports --dump-tree for one file.
+
+ $ gong format --dump-tree <format> <build_file>
+
+format: text or json`
+}
+func (h *Command) SetFlags(f *flag.FlagSet) {
+	h.SetCommonFlags(f)
+	f.StringVar(&h.format, "dump-tree", "", `output format. "text" or "json"`)
 }
 
-func (h *formatCmdRun) Run(_ subcommands.Application, _ []string, _ subcommands.Env) int {
-	buildFile := h.Flags.Arg(0)
+func (h *Command) Execute(ctx context.Context, f *flag.FlagSet, _ ...any) subcommands.ExitStatus {
+	buildFile := f.Arg(0)
 	if buildFile == "" {
 		fmt.Fprintf(os.Stderr, "expected build file, got none\n")
-		return 1
+		return subcommands.ExitFailure
 	}
 
 	if h.format != "text" && h.format != "json" {
 		fmt.Fprintf(os.Stderr, "--dump-tree must be one of 'text' or 'json'\n")
-		return 1
+		return subcommands.ExitFailure
 	}
 
 	dump, err := h.dumpTree(buildFile)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "format failed with error: %v\n", err)
-		return 1
+		return subcommands.ExitFailure
 	}
 	fmt.Print(dump, "\n")
-	return 0
+	return subcommands.ExitSuccess
 }
 
-func (h *formatCmdRun) dumpTree(buildFile string) (string, error) {
+func (h *Command) dumpTree(buildFile string) (string, error) {
 	inputFile, err := fs.NewInputFile("/BUILD.gn", buildFile)
 	if err != nil {
 		return "", fmt.Errorf("could not load as build file: %w", err)
