@@ -1,6 +1,6 @@
 module go.chromium.org/build/siso
 
-go 1.24.5
+go 1.24.6
 
 replace go.chromium.org/build/kajiya => ../kajiya
 
@@ -22,10 +22,8 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/klauspost/compress v1.18.0
 	github.com/klauspost/cpuid/v2 v2.2.11
-	github.com/maruel/subcommands v1.1.1
 	github.com/pkg/xattr v0.4.12
 	go.chromium.org/build/kajiya v0.0.0-00010101000000-000000000000
-	go.chromium.org/luci v0.0.0-20250709063223-f8ca329df43e
 	go.opencensus.io v0.24.0
 	go.starlark.net v0.0.0-20250701195324-d457b4515e0e
 	golang.org/x/oauth2 v0.30.0
@@ -53,17 +51,13 @@ require (
 	github.com/go-logr/logr v1.4.2 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da // indirect
-	github.com/golang/mock v1.7.0-rc.1 // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/google/pprof v0.0.0-20250602020802-c6617b811d0e // indirect
 	github.com/google/s2a-go v0.1.9 // indirect
 	github.com/googleapis/enterprise-certificate-proxy v0.3.6 // indirect
 	github.com/googleapis/gax-go/v2 v2.14.2 // indirect
 	github.com/jmespath/go-jmespath v0.4.0 // indirect
-	github.com/julienschmidt/httprouter v1.3.0 // indirect
 	github.com/prometheus/prometheus v0.35.0 // indirect
-	github.com/texttheater/golang-levenshtein v1.0.1 // indirect
-	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
 	go.opentelemetry.io/auto/sdk v1.1.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.61.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.61.0 // indirect
