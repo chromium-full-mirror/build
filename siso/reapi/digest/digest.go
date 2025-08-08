@@ -15,10 +15,12 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"time"
 
 	rpb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
 	"google.golang.org/protobuf/proto"
 
+	"go.chromium.org/build/siso/o11y/clog"
 	"go.chromium.org/build/siso/reapi/retry"
 )
 
@@ -83,6 +85,17 @@ func (d Digest) String() string {
 		return ""
 	}
 	return fmt.Sprintf("%s/%d", d.Hash, d.SizeBytes)
+}
+
+const slowThroughputPerSec = 1 * 1024 * 1024
+
+// ContextWithTimeout returns context with timeout appropriate for d.
+func ContextWithTimeout(ctx context.Context, d Digest) (context.Context, context.CancelFunc) {
+	timeout := max(time.Duration(d.SizeBytes/slowThroughputPerSec)*time.Second, 10*time.Minute)
+	if timeout > 10*time.Minute {
+		clog.Infof(ctx, "digest timeout for %s: %s", d, timeout)
+	}
+	return context.WithTimeout(ctx, timeout)
 }
 
 // Source is the interface that opens a data source.

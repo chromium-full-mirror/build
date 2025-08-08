@@ -50,8 +50,6 @@ const (
 
 	// batchBlobUploadLimit is max number of blobs in BatchUpdateBlobs.
 	batchBlobUploadLimit = 1000
-
-	bytestreamSlowThroughputPerSec = 1 * 1024 * 1024
 )
 
 func selectCompressor(serverSupported []rpb.Compressor_Value) rpb.Compressor_Value {
@@ -98,14 +96,6 @@ func (u *uploadOp) wait(ctx context.Context) error {
 }
 
 var errUploadNotFinished = errors.New("upload not finished")
-
-func contextWithTimeoutForBytestream(ctx context.Context, d digest.Digest) (context.Context, context.CancelFunc) {
-	timeout := max(time.Duration(d.SizeBytes/bytestreamSlowThroughputPerSec)*time.Second, 10*time.Minute)
-	if timeout > 10*time.Minute {
-		clog.Infof(ctx, "bytestream timeout for %s: %s", d, timeout)
-	}
-	return context.WithTimeout(ctx, timeout)
-}
 
 func (c *Client) useCompressedBlob(d digest.Digest) bool {
 	if c.opt.CompressedBlob <= 0 {
@@ -213,7 +203,7 @@ func (c *Client) getWithByteStream(ctx context.Context, d digest.Digest, name st
 	}
 	var buf []byte
 	err := retry.Do(ctx, func() error {
-		ctx, cancel := contextWithTimeoutForBytestream(ctx, d)
+		ctx, cancel := digest.ContextWithTimeout(ctx, d)
 		defer cancel()
 		r, err := bytestreamio.Open(ctx, bpb.NewByteStreamClient(c.casConn), resourceName)
 		if err != nil {
@@ -681,7 +671,7 @@ func (c *Client) uploadWithByteStream(ctx context.Context, digests []digest.Dige
 			continue
 		}
 		err := retry.Do(ctx, func() error {
-			ctx, cancel := contextWithTimeoutForBytestream(ctx, d)
+			ctx, cancel := digest.ContextWithTimeout(ctx, d)
 			defer cancel()
 			rd, err := data.Open(ctx)
 			if err != nil {

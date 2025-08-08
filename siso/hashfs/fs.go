@@ -35,6 +35,7 @@ import (
 	"go.chromium.org/build/siso/o11y/trace"
 	"go.chromium.org/build/siso/reapi/digest"
 	"go.chromium.org/build/siso/reapi/merkletree"
+	"go.chromium.org/build/siso/reapi/retry"
 	"go.chromium.org/build/siso/runtimex"
 	"go.chromium.org/build/siso/sync/semaphore"
 )
@@ -2008,7 +2009,11 @@ func (e *entry) flush(ctx context.Context, fname string, osfs *osfs.OSFS) error 
 			// we may need to remove fname for some reason
 			// (hardlink etc).
 			tmpname := filepath.Join(filepath.Dir(fname), "."+filepath.Base(fname)+".tmp")
-			err := osfs.WriteDigestData(ctx, tmpname, e.src, e.mode)
+			err := retry.Do(ctx, func() error {
+				ctx, cancel := digest.ContextWithTimeout(ctx, e.d)
+				defer cancel()
+				return osfs.WriteDigestData(ctx, tmpname, e.src, e.mode)
+			})
 			if err != nil {
 				return fmt.Errorf("flush tmp %s size=%d: %w", tmpname, d.SizeBytes, err)
 			}

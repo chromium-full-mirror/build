@@ -21,7 +21,6 @@ import (
 	"go.chromium.org/build/siso/o11y/clog"
 	"go.chromium.org/build/siso/o11y/iometrics"
 	"go.chromium.org/build/siso/reapi/digest"
-	"go.chromium.org/build/siso/reapi/retry"
 	"go.chromium.org/build/siso/runtimex"
 	"go.chromium.org/build/siso/sync/semaphore"
 )
@@ -202,7 +201,7 @@ func (ofs *OSFS) WriteFile(ctx context.Context, name string, data []byte, perm f
 func (ofs *OSFS) WriteDigestData(ctx context.Context, name string, src digest.Source, perm fs.FileMode) error {
 	started := time.Now()
 	var n int64
-	err := retry.Do(ctx, func() error {
+	err := func() error {
 		r, err := src.Open(ctx)
 		if err != nil {
 			return err
@@ -218,7 +217,7 @@ func (ofs *OSFS) WriteDigestData(ctx context.Context, name string, src digest.So
 			err = cerr
 		}
 		return err
-	})
+	}()
 	ofs.WriteDone(int(n), err)
 	if dur := time.Since(started); dur > 1*time.Minute {
 		logSlow(ctx, name, dur, err)
