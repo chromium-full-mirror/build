@@ -75,6 +75,9 @@ func (b *ExponentialBackoff) retriableError(err error) bool {
 // Next returns next backoff delay.
 // If delay is 0, no need to retry any more.
 func (b *ExponentialBackoff) Next(ctx context.Context, err error) (time.Duration, error) {
+	if err == nil {
+		return 0, nil
+	}
 	const maxRetries = 10
 	const multiplier = 2
 	const baseDelay = 200 * time.Millisecond
@@ -104,7 +107,7 @@ func (b *ExponentialBackoff) Next(ctx context.Context, err error) (time.Duration
 	if b.delay < baseDelay {
 		b.delay = baseDelay
 	}
-	return b.delay, nil
+	return b.delay, err
 }
 
 // Do calls function `f` and retries with exponential backoff for errors that are known to be retriable.
