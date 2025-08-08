@@ -838,7 +838,9 @@ func (hfs *HashFS) State(ctx context.Context) *pb.State {
 						clog.Warningf(ctx, "failed to calculate digest for %s: %v", name, err)
 					}
 				} else {
-					clog.Warningf(ctx, "digest is unknown %s", name)
+					if log.V(1) {
+						clog.Warningf(ctx, "digest is unknown %s", name)
+					}
 					state.MissingDigests = append(state.MissingDigests, name)
 				}
 			}
