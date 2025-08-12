@@ -52,6 +52,11 @@ type Option struct {
 
 	TLSCACert string
 
+	// ExecutionPriority sets the priority value to use when sending actions to the REAPI backend.
+	//
+	// This can be used, e.g., to prioritize interactive builds from developers over builds from CI.
+	ExecutionPriority int
+
 	// use compressed blobs if server supports compressed blobs and size is bigger than this.
 	// When 0 is set, blob compression is disabled.
 	CompressedBlob int64
@@ -108,6 +113,11 @@ func (o *Option) RegisterFlags(fs *flag.FlagSet, envs map[string]string) {
 	fs.DurationVar(&o.KeepAliveParams.Time, o.Prefix+"_grpc_keepalive_time", 30*time.Second, "grpc keepalive time"+purpose)
 	fs.DurationVar(&o.KeepAliveParams.Timeout, o.Prefix+"_grpc_keepalive_timeout", 20*time.Second, "grpc keepalive timeout"+purpose)
 	fs.BoolVar(&o.KeepAliveParams.PermitWithoutStream, o.Prefix+"_grpc_keepalive_permit_without_stream", false, "grpc keepalive permit without stream"+purpose)
+
+	// Flags only supported for "execution".
+	if o.Prefix == "reapi" {
+		fs.IntVar(&o.ExecutionPriority, o.Prefix+"_priority", 0, "reapi priority for action executions"+purpose+". The semantics and supported values depend on the backend")
+	}
 }
 
 func isGoogleRBE(address string) bool {

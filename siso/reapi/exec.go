@@ -35,6 +35,12 @@ func (c *Client) ExecuteAndWait(ctx context.Context, req *rpb.ExecuteRequest, op
 		req.InstanceName = c.opt.Instance
 	}
 
+	if req.ExecutionPolicy == nil && c.opt.ExecutionPriority != 0 {
+		req.ExecutionPolicy = &rpb.ExecutionPolicy{
+			Priority: int32(c.opt.ExecutionPriority),
+		}
+	}
+
 	var opName string
 	var waitReq *rpb.WaitExecutionRequest
 	resp := &rpb.ExecuteResponse{}
