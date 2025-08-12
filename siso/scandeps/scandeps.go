@@ -130,6 +130,7 @@ func (s *ScanDeps) Scan(ctx context.Context, execRoot string, req Request) ([]st
 	// but we see such scan recently, so set sufficient large timeout
 	// to avoid scan failure due to timed out.
 	scanTimeout := max(req.Timeout, 60*time.Second)
+	lastCtxCheck := time.Now()
 
 	icnt := 0
 	ncnt := 0
@@ -138,6 +139,14 @@ func (s *ScanDeps) Scan(ctx context.Context, execRoot string, req Request) ([]st
 		dur := time.Since(started)
 		if dur > scanTimeout {
 			return nil, fmt.Errorf("too slow scandeps: dirs:%d ds:%d i:%d n:%d %s %s", len(req.Dirs), scanner.maxDirstack, icnt, ncnt, setupDur, dur)
+		}
+		// ctx.Err() requires mutex lock, so not call so often.
+		if time.Since(lastCtxCheck) > 500*time.Millisecond {
+			// check whether ctx is canceled.
+			if ctx.Err() != nil {
+				return nil, fmt.Errorf("ctx err in scandeps dirs:%d ds:%d i:%d n:%d %s %s: %w", len(req.Dirs), scanner.maxDirstack, icnt, ncnt, setupDur, time.Since(started), ctx.Err())
+			}
+			lastCtxCheck = time.Now()
 		}
 		names := scanner.nextInputs(ctx)
 		if log.V(1) {
@@ -148,9 +157,6 @@ func (s *ScanDeps) Scan(ctx context.Context, execRoot string, req Request) ([]st
 			ncnt++
 			incpath, err := scanner.find(ctx, name)
 			if err != nil {
-				if errors.Is(err, ctx.Err()) {
-					return nil, fmt.Errorf("timeout dirs:%d ds:%d i:%d n:%d %s %s: %w", len(req.Dirs), scanner.maxDirstack, icnt, ncnt, setupDur, time.Since(started), err)
-				}
 				if log.V(2) {
 					lv := struct {
 						name string
