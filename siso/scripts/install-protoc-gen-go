@@ -17,7 +17,7 @@ die() { 1>&2 printf '%s\n' "$@"; exit 1; }
 mydir="$(realpath "$(dirname "$0")")"
 test -d "$mydir" || die 'cannot find myself'
 
-GOBIN="$mydir"/bin go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.5 || die 'cannot install'
+GOBIN="$mydir"/bin go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.7 || die 'cannot install'
 GOBIN="$mydir"/bin go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.5.1 || die 'cannot install'
 
 exec env PATH="${mydir}/bin:${PATH}" "$@"

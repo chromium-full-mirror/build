@@ -69,7 +69,7 @@ type CogLocalRpcServiceServer interface {
 type UnimplementedCogLocalRpcServiceServer struct{}
 
 func (UnimplementedCogLocalRpcServiceServer) BuildfsInsert(context.Context, *BuildfsInsertRequest) (*BuildfsInsertResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method BuildfsInsert not implemented")
+	return nil, status.Errorf(codes.Unimplemented, "method BuildfsInsert not implemented")
 }
 func (UnimplementedCogLocalRpcServiceServer) mustEmbedUnimplementedCogLocalRpcServiceServer() {}
 func (UnimplementedCogLocalRpcServiceServer) testEmbeddedByValue()                            {}

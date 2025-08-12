@@ -69,7 +69,7 @@ type ArtfsServer interface {
 type UnimplementedArtfsServer struct{}
 
 func (UnimplementedArtfsServer) AddCasFiles(grpc.ClientStreamingServer[manifest.FileManifest, AddCasFilesReply]) error {
-	return status.Error(codes.Unimplemented, "method AddCasFiles not implemented")
+	return status.Errorf(codes.Unimplemented, "method AddCasFiles not implemented")
 }
 func (UnimplementedArtfsServer) mustEmbedUnimplementedArtfsServer() {}
 func (UnimplementedArtfsServer) testEmbeddedByValue()               {}
