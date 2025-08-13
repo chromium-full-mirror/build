@@ -169,14 +169,46 @@ func (w *Writer) Close() error {
 	}
 	res, err := w.wr.CloseAndRecv()
 	if err != nil {
+		// TODO(yannic): Handle `ALREADY_EXISTS`.
 		return fmt.Errorf("failed to close for %s: %w", w.name, err)
 	}
-	// in case compressed-blobs, res.CommittedSize != w.offset.
-	// since w.offset is compressed size.
-	// res.CommittedSize is original data size, so it must match with
-	// size in resource name (i.e. size_bytes in digest).
-	if res.CommittedSize != w.size {
-		return status.Errorf(codes.Internal, "unexpected committedSize: %d != %d for %s", res.CommittedSize, w.size, w.name)
+
+	// Verify the committed size from the server is what we expect.
+	//
+	// For uncompressed blobs, `committed_size` is expected to always be `size`,
+	// even if we end up not uploading all chunks because there was a concurrent
+	// upload (possibly from another machine) that "won" uploading and the
+	// server deduplicated the request. `res.CommittedSize == w.size` always
+	// holds.
+	//
+	// For compressed uploads, the situation is more complex:
+	//
+	//   - `res.CommittedSize == w.size`: we may upload the blob, and the server
+	//     responds with the actual size of the blob (i.e., after the server
+	//     decompressed the data).
+	//
+	//   - `res.CommittedSize == -1`: another concurrent upload won server
+	//     indicated it does not want to receive all bytes from this upload.
+	//     This is common for servers that normally sent `w.offset` for
+	//     successful compressed uploads since the server has no way of knowing
+	//     how many bytes it would have received since it cannot predict the
+	//     number of bytes the client would have sent.
+	//
+	// See https://github.com/bazelbuild/remote-apis/blob/e94a7ece2a1e8da1dcf278a0baf2edfe7baafb94/build/bazel/remote/execution/v2/remote_execution.proto#L277-L284
+
+	switch res.CommittedSize {
+	case w.size:
+		return nil
+
+	case -1:
+		// Some servers use -1 as special value for `res.CommittedSize` when
+		// rejecting an upload in case the blob already exists.
+		if w.ok {
+			return nil
+		}
+		fallthrough
+
+	default:
+		return status.Errorf(codes.Internal, "unexpected committed_size=%d offset=%d size=%d for %s", res.CommittedSize, w.offset, w.size, w.name)
 	}
-	return nil
 }

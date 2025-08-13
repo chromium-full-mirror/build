@@ -106,6 +106,7 @@ type stubByteStreamWriteClient struct {
 	chunksize     int
 	alreadyExists bool
 	finished      bool
+	committedSize *int64
 }
 
 func (c *stubByteStreamWriteClient) Write(ctx context.Context, opts ...grpc.CallOption) (pb.ByteStream_WriteClient, error) {
@@ -147,6 +148,12 @@ func (w *stubWriteClient) Send(req *pb.WriteRequest) error {
 }
 
 func (w *stubWriteClient) CloseAndRecv() (*pb.WriteResponse, error) {
+	if w.c.committedSize != nil {
+		return &pb.WriteResponse{
+			CommittedSize: *w.c.committedSize,
+		}, nil
+	}
+
 	sizeStr := path.Base(w.c.resourceName)
 	size, err := strconv.ParseInt(sizeStr, 10, 64)
 	if err != nil {
@@ -255,6 +262,107 @@ func TestWriterAlreadyExists(t *testing.T) {
 		t.Errorf("write len=%d << %d", c.buf.Len(), len(data))
 	}
 	if bytes.Equal(c.buf.Bytes(), data) {
+		t.Errorf("write match? should not match for already exists resource")
+	}
+}
+
+func TestWriterCompressed(t *testing.T) {
+	t.Parallel()
+	const chunksize = 8192
+	const bufsize = 1024
+
+	data := make([]byte, 4*1024*1024)
+	_, err := rand.Read(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	compressedData := data[:len(data)/2]
+	committedSize := int64(len(data))
+
+	resourceName := fmt.Sprintf("resource-name/%d", len(data))
+	c := &stubByteStreamWriteClient{
+		resourceName:  resourceName,
+		chunksize:     chunksize,
+		committedSize: &committedSize,
+	}
+	if bytes.Equal(c.buf.Bytes(), compressedData) {
+		t.Fatalf("data setup failed")
+	}
+	ctx := context.Background()
+
+	w, err := Create(ctx, c, resourceName, "testdata")
+	if err != nil {
+		t.Fatal(err)
+	}
+	buf := make([]byte, bufsize)
+	_, err = io.CopyBuffer(w, bytesReader{bytes.NewReader(compressedData)}, buf)
+	if err != nil {
+		w.Close()
+		t.Fatal(err)
+	}
+	err = w.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !c.finished {
+		t.Errorf("write not finished")
+	}
+	if c.buf.Len() != len(compressedData) {
+		t.Errorf("write len=%d; want=%d", c.buf.Len(), len(data))
+	}
+	if !bytes.Equal(c.buf.Bytes(), compressedData) {
+		t.Errorf("write doesn't match: (-want +got)\n%s", cmp.Diff(data, c.buf.Bytes()))
+	}
+}
+
+func TestWriterAlreadyExistsCompressed(t *testing.T) {
+	t.Parallel()
+	const chunksize = 8192
+	const bufsize = 10
+
+	data := make([]byte, 4*1024*1024)
+	_, err := rand.Read(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	compressedData := data[:len(data)/2]
+	committedSize := int64(-1)
+
+	resourceName := fmt.Sprintf("resource-name/%d", len(data))
+	c := &stubByteStreamWriteClient{
+		resourceName:  resourceName,
+		chunksize:     chunksize,
+		alreadyExists: true,
+		committedSize: &committedSize,
+	}
+	if bytes.Equal(c.buf.Bytes(), compressedData) {
+		t.Fatalf("data setup failed")
+	}
+	ctx := context.Background()
+
+	w, err := Create(ctx, c, resourceName, "testdata")
+	if err != nil {
+		t.Fatal(err)
+	}
+	buf := make([]byte, bufsize)
+	_, err = io.CopyBuffer(w, bytesReader{bytes.NewReader(compressedData)}, buf)
+	if err != nil {
+		w.Close()
+		t.Fatal(err)
+	}
+	err = w.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !w.ok {
+		t.Errorf("writer.ok=%t; want=true", w.ok)
+	}
+	if c.buf.Len() == len(compressedData) {
+		t.Errorf("write len=%d << %d", c.buf.Len(), len(compressedData))
+	}
+	if bytes.Equal(c.buf.Bytes(), compressedData) {
 		t.Errorf("write match? should not match for already exists resource")
 	}
 }
