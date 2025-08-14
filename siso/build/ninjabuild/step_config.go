@@ -204,9 +204,18 @@ type StepRule struct {
 	REProxyConfig *execute.REProxyConfig `json:"reproxy_config,omitempty"`
 
 	// Timeout specifies time duration for the remote execution call of the step.
-	// Timeout*2 will be set to remote action's timeout to
-	// expect cache hit for long command execution.
+	// This covers the remote execution overheads that are not covered by
+	// the action timeout. e.g. scheduling, pre/post execution steps, network
+	// overheads etc.
 	Timeout string `json:"timeout,omitempty"` // duration format
+
+	// ExecTimeout specifies time duration for the action's timeout for the remote execution call
+	// of the step.
+	// If not specified, Timeout*2 will be set to expect cache hit for long command execution
+	// in the next build.
+	// See also the explanation of the action timeout in REAPI.
+	// https://github.com/bazelbuild/remote-apis/blob/e94a7ece2a1e8da1dcf278a0baf2edfe7baafb94/build/bazel/remote/execution/v2/remote_execution.proto#L610-L634
+	ExecTimeout string `json:"exec_timeout,omitempty"` // duration format
 
 	// Handler name.
 	Handler string `json:"handler,omitempty"`

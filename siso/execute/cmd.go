@@ -195,8 +195,11 @@ type Cmd struct {
 	// DoNotCache specifies whether it won't update cache in remote execution.
 	DoNotCache bool
 
-	// Timeout specifies timeout of the cmd.
+	// Timeout specifies timeout of the cmd, applicable only to the remote execution strategy.
 	Timeout time.Duration
+
+	// ExecTimeout specifies exec timeout of the cmd, applicable only to the remote execution strategy.
+	ExecTimeout time.Duration
 
 	// ActionSalt is arbitrary bytes used for cache salt.
 	ActionSalt []byte
@@ -419,7 +422,10 @@ func (c *Cmd) Digest(ctx context.Context, ds *digest.Store) (actionDigest digest
 	}
 
 	var timeout *durationpb.Duration
-	if c.Timeout > 0 {
+	if c.ExecTimeout > 0 {
+		// If ExecTimeout is specified explicitly, use it.
+		timeout = durationpb.New(c.ExecTimeout)
+	} else if c.Timeout > 0 {
 		// Set Timeout*2 to expect cache hit for long command.
 		// but prevent from keeping RBE worker busy.
 		timeout = durationpb.New(c.Timeout * 2)

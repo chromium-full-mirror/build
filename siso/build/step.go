@@ -495,6 +495,7 @@ func newCmd(ctx context.Context, b *Builder, stepDef StepDef, stepManifest *step
 		// DoNotCache: !b.reCacheEnableWrite,
 		SkipCacheLookup: !b.reCacheEnableRead,
 		Timeout:         stepTimeout(ctx, stepDef.Binding("timeout")),
+		ExecTimeout:     execTimeout(ctx, stepDef.Binding("exec_timeout")),
 		ActionSalt:      b.actionSalt,
 	}
 	if envfile := stepDef.Binding("envfile"); envfile != "" {
@@ -532,6 +533,18 @@ func stepTimeout(ctx context.Context, d string) time.Duration {
 	if err != nil {
 		clog.Warningf(ctx, "failed to parse duration %q: %v", d, err)
 		return defaultTimeout
+	}
+	return dur
+}
+
+func execTimeout(ctx context.Context, d string) time.Duration {
+	if d == "" {
+		return 0
+	}
+	dur, err := time.ParseDuration(d)
+	if err != nil {
+		clog.Warningf(ctx, "failed to parse duration %q: %v", d, err)
+		return 0
 	}
 	return dur
 }

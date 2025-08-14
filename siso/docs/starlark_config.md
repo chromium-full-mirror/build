@@ -223,6 +223,9 @@ to register handlers and step configs.
              `RBE_exec_strategy`, `RBE_server_address`.
              See also https://github.com/bazelbuild/reclient/blob/main/docs/cmd-line-flags.md#rewrapper for more details.
           * `timeout`: duration of the step remote execution.
+             See also `Timeout` field on [StepRule](../build/ninjabuild/step_config.go).
+          * `exec_timeout`: duration of the action timeout of the step remote execution.
+             See also `ExecTimeout` field on [StepRule](../build/ninjabuild/step_config.go).
           * `handler`: handler name to use for the step
           * `deps`: deps overrides
              * `gcc`: use `gcc -M`
