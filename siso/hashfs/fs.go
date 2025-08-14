@@ -1505,6 +1505,10 @@ func (hfs *HashFS) Flush(ctx context.Context, execRoot string, files []string) e
 					// and it makes the target invalidated
 					// in .siso_fs_state since mtime doesn't match.
 					err := hfs.OS.Chtimes(ctx, fname, time.Time{}, e.mtime)
+					if errors.Is(err, fs.ErrNotExist) {
+						e.mu.Unlock()
+						return fmt.Errorf("flush %s local-ready: %w", fname, err)
+					}
 					clog.Infof(ctx, "flush %s local ready mtime update: %v", fname, err)
 					if err == nil {
 						e.mtimeUpdated = false
