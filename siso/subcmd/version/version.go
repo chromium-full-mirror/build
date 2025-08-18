@@ -101,6 +101,7 @@ func (c *Command) Execute(ctx context.Context, flagSet *flag.FlagSet, _ ...any) 
 		return 0
 	}
 	fmt.Printf("%s/+/%s\n", repo, rev)
+	var dir string
 	switch repo {
 	case "https://chromium.googlesource.com/infra/infra_superproject":
 		rev, err = parseInfraSuperprojectDEPS(ctx, rev)
@@ -108,13 +109,18 @@ func (c *Command) Execute(ctx context.Context, flagSet *flag.FlagSet, _ ...any) 
 			fmt.Fprintf(os.Stderr, "failed to get infra revision in infra_superproject.git@%s/DEPS: %v\n", rev, err)
 			return 0
 		}
+		repo = "https://chromium.googlesource.com/infra/infra"
+		dir = "go/src/infra/build/siso"
 		fmt.Printf("https://chromium.googlesource.com/infra/infra/+/%s\n", rev)
 	case "https://chromium.googlesource.com/infra/infra":
+		dir = "go/src/infra/build/siso"
+	case "https://chromium.googlesource.com/build":
+		dir = "siso"
 	default:
 		fmt.Fprintf(os.Stderr, "unknown git_repository: %s\n", repo)
 		return 0
 	}
-	sisoCommit, err := getSisoCommit(ctx, rev)
+	sisoCommit, err := getSisoCommit(ctx, repo, dir, rev)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed to get siso commit in infra.git@%s: %v\n", rev, err)
 		return 0
@@ -209,8 +215,8 @@ func (c commit) String() string {
 	return fmt.Sprintf("%s %s\n %s by %s", c.revision[:10], c.summary, c.date.Format(time.RFC3339), c.author)
 }
 
-func getSisoCommit(ctx context.Context, rev string) (commit, error) {
-	sisoLogURL := fmt.Sprintf("https://chromium.googlesource.com/infra/infra/+log/%s/go/src/infra/build/siso?format=JSON", rev)
+func getSisoCommit(ctx context.Context, repo, dir, rev string) (commit, error) {
+	sisoLogURL := fmt.Sprintf("%s/+log/%s/%s?format=JSON", repo, rev, dir)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, sisoLogURL, nil)
 	if err != nil {
 		return commit{}, nil
