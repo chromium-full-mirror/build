@@ -89,12 +89,6 @@ func (d Digest) String() string {
 
 const slowThroughputPerSec = 1 * 1024 * 1024
 
-// FetchTimeout returns reasonable timeout to fetch d.
-func (d Digest) FetchTimeout() time.Duration {
-	// 99p latency of BatchReadBlobs is 1.72s and ByteStream.Read is 0.522s as of 2025-08 in rbe-chromium-trusted
-	return max(time.Duration(d.SizeBytes/slowThroughputPerSec)*time.Second, 10*time.Second)
-}
-
 // ContextWithTimeout returns context with timeout appropriate for d.
 func ContextWithTimeout(ctx context.Context, d Digest) (context.Context, context.CancelFunc) {
 	timeout := max(time.Duration(d.SizeBytes/slowThroughputPerSec)*time.Second, 10*time.Minute)
