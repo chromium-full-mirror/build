@@ -26,8 +26,6 @@ import (
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/reflection"
 
-	"go.chromium.org/luci/common/system/signals"
-
 	"go.chromium.org/build/kajiya/actioncache"
 	"go.chromium.org/build/kajiya/blobstore"
 	"go.chromium.org/build/kajiya/capabilities"
@@ -85,7 +83,7 @@ func main() {
 			log.Printf("pprof is still listening at http://%s/debug/pprof/\n", *pprofAddr)
 			log.Printf("Press Ctrl-C to terminate the process")
 			sigch := make(chan os.Signal, 1)
-			signal.Notify(sigch, signals.Interrupts()...)
+			signal.Notify(sigch, os.Interrupt, syscall.SIGTERM)
 			<-sigch
 		}()
 	}
