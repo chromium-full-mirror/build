@@ -2015,6 +2015,20 @@ func (s source) Open(ctx context.Context) (io.ReadCloser, error) {
 		}
 		// fallback
 	}
+	// ctx may be deadline exceeded or canceled.
+	// if so, return such error.
+	// DeadlineExceeded would trigger retry in hashfs flush.
+	if ctx.Err() != nil {
+		return nil, context.Cause(ctx)
+	}
+	// siso process runs at some directory, but
+	// s.fname may not be relative to the working directory.
+	// Actually, it is exec-root relative if it is created by
+	// *Cmd.entriesFromResult, and failed to open as such path
+	// doesn't exist. return with better error message.
+	if !filepath.IsAbs(s.fname) {
+		return nil, fmt.Errorf("failed to fetch source %v for %q", s.d, s.fname)
+	}
 	// no reapi configured. use local file?
 	f, err := os.Open(s.fname)
 	return f, err

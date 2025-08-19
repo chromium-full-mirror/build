@@ -1839,8 +1839,17 @@ func (e *entry) getDir() *directory {
 	return e.directory
 }
 
-func (e *entry) flush(ctx context.Context, fname string, osfs *osfs.OSFS) error {
-	defer close(e.lready)
+func (e *entry) flush(ctx context.Context, fname string, osfs *osfs.OSFS) (retErr error) {
+	defer func() {
+		if retErr != nil {
+			// flush failed, so may need to flush again.
+			e.lready <- true
+			return
+		}
+		// flush successfully completed.
+		// no need to flush again.
+		close(e.lready)
+	}()
 
 	if errors.Is(e.err, fs.ErrNotExist) {
 		// to protect concurrent digest calculation and removal
@@ -2013,10 +2022,17 @@ func (e *entry) flush(ctx context.Context, fname string, osfs *osfs.OSFS) error 
 			// we may need to remove fname for some reason
 			// (hardlink etc).
 			tmpname := filepath.Join(filepath.Dir(fname), "."+filepath.Base(fname)+".tmp")
+			ctx, cancel := digest.ContextWithTimeout(ctx, e.d)
+			defer cancel()
 			err := retry.Do(ctx, func() error {
-				ctx, cancel := digest.ContextWithTimeout(ctx, e.d)
+				ctx, cancel := context.WithTimeout(ctx, e.d.FetchTimeout())
 				defer cancel()
-				return osfs.WriteDigestData(ctx, tmpname, e.src, e.mode)
+				err := osfs.WriteDigestData(ctx, tmpname, e.src, e.mode)
+				if status.Code(err) == codes.DeadlineExceeded || errors.Is(err, context.DeadlineExceeded) {
+					// make it retriable error
+					return status.Errorf(codes.Aborted, "timed out in WriteDigestData %s: %v", e.d, err)
+				}
+				return err
 			})
 			if err != nil {
 				return fmt.Errorf("flush tmp %s size=%d: %w", tmpname, d.SizeBytes, err)
