@@ -1998,10 +1998,12 @@ type source struct {
 }
 
 func (s source) Open(ctx context.Context) (io.ReadCloser, error) {
+	var r io.ReadCloser
+	var err error
 	if s.dataSource.cache != nil {
 		src := s.dataSource.cache.Source(ctx, s.d, s.fname)
 		if src != nil {
-			r, err := src.Open(ctx)
+			r, err = src.Open(ctx)
 			if err == nil {
 				return r, nil
 			}
@@ -2009,7 +2011,8 @@ func (s source) Open(ctx context.Context) (io.ReadCloser, error) {
 		// fallback
 	}
 	if s.dataSource.client != nil {
-		buf, err := s.dataSource.client.Get(ctx, s.d, s.fname)
+		var buf []byte
+		buf, err = s.dataSource.client.Get(ctx, s.d, s.fname)
 		if err == nil {
 			return io.NopCloser(bytes.NewReader(buf)), nil
 		}
@@ -2027,7 +2030,7 @@ func (s source) Open(ctx context.Context) (io.ReadCloser, error) {
 	// *Cmd.entriesFromResult, and failed to open as such path
 	// doesn't exist. return with better error message.
 	if !filepath.IsAbs(s.fname) {
-		return nil, fmt.Errorf("failed to fetch source %v for %q", s.d, s.fname)
+		return nil, fmt.Errorf("failed to fetch source %v for %q: %w", s.d, s.fname, err)
 	}
 	// no reapi configured. use local file?
 	f, err := os.Open(s.fname)
