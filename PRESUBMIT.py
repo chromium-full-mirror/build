@@ -28,9 +28,7 @@ def CheckChange(input_api, output_api):
   results += input_api.canned_checks.CheckChangeHasNoStrayWhitespace(
       input_api, output_api, source_file_filter=files_to_skip)
   results += input_api.canned_checks.CheckInclusiveLanguage(
-      input_api,
-      output_api,
-      excluded_directories_relative_path=third_party_dirs)
+      input_api, output_api)
   results += input_api.canned_checks.CheckLicense(
       input_api, output_api, source_file_filter=files_to_skip)
 
