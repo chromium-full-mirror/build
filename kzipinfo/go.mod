@@ -4,12 +4,12 @@ go 1.24.6
 
 require (
 	github.com/google/subcommands v1.2.0
-	kythe.io v0.0.71
+	kythe.io v0.0.72
 )
 
 require (
-	bitbucket.org/creachadair/stringset v0.0.11 // indirect
-	github.com/golang/protobuf v1.5.3 // indirect
-	golang.org/x/sync v0.4.0 // indirect
-	google.golang.org/protobuf v1.31.0 // indirect
+	bitbucket.org/creachadair/stringset v0.0.14 // indirect
+	github.com/golang/protobuf v1.5.4 // indirect
+	golang.org/x/sync v0.16.0 // indirect
+	google.golang.org/protobuf v1.36.7 // indirect
 )
