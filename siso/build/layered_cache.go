@@ -5,9 +5,11 @@
 package build
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 
 	rpb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
@@ -130,15 +132,43 @@ func (lc *LayeredCache) HasContent(ctx context.Context, d digest.Digest) bool {
 	return false
 }
 
+const (
+	// getContentThreshold decides whether to use cache.GetContent or source.Open
+	getContentThreshold = 2 * 1024 * 1024
+)
+
 // Source returns digest source for the name identified by the digest.
 func (lc *LayeredCache) Source(ctx context.Context, d digest.Digest, f string) digest.Source {
 	if len(lc.caches) == 0 {
 		return nil
 	}
+	if len(lc.caches) > 1 && d.SizeBytes < getContentThreshold {
+		return layeredSource{lc: lc, d: d, f: f}
+	}
+	// TODO(crbug.com/437733082): Implement write-through for larger content
 	for _, cache := range lc.caches[:len(lc.caches)-1] {
 		if cache.HasContent(ctx, d) {
 			return cache.Source(ctx, d, f)
 		}
 	}
 	return lc.caches[len(lc.caches)-1].Source(ctx, d, f)
+}
+
+// layeredSource is a Source that performs write-through caching on a LayeredCache upon Open().
+type layeredSource struct {
+	lc *LayeredCache
+	d  digest.Digest
+	f  string
+}
+
+func (s layeredSource) Open(ctx context.Context) (io.ReadCloser, error) {
+	content, err := s.lc.GetContent(ctx, s.d, s.f)
+	if err != nil {
+		return nil, err
+	}
+	return io.NopCloser(bytes.NewReader(content)), nil
+}
+
+func (s layeredSource) String() string {
+	return fmt.Sprintf("cache %s for %s", s.d, s.f)
 }
