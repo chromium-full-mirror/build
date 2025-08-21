@@ -7,6 +7,7 @@
 package cred
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"os"
@@ -28,8 +29,16 @@ func DefaultCredentialHelper() string {
 	for i := range 3 {
 		go func() {
 			if fi, err := os.Stat(googleCredHelper); (err == nil && fi.Mode()&0111 != 0) || errors.Is(err, syscall.ENOKEY) {
-				ch <- googleCredHelper
-				return
+				// Make sure it's not a laptop. gLaptop should fall back to luci-auth below.
+				// See also go/glinux-roles.
+				dist, err := os.ReadFile("/etc/lsb-release")
+				if err != nil {
+					ui.Default.Warningf("WARNING: Failed to read /etc/lsb-release. Assuming this is not a laptop. err: %s", err)
+				}
+				if !bytes.Contains(dist, []byte("GOOGLE_ROLE=laptop")) {
+					ch <- googleCredHelper
+					return
+				}
 			}
 			path, err := exec.LookPath("luci-auth")
 			if err == nil {
