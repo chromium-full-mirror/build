@@ -93,46 +93,56 @@ func (c *Cache) GetActionResult(ctx context.Context, cmd *execute.Cmd) error {
 	// copy the action result into cmd.
 	cmd.SetActionDigest(d)
 	cmd.SetActionResult(result, true)
-	c.setActionResultStdout(ctx, cmd, result)
-	c.setActionResultStderr(ctx, cmd, result)
+	err = c.setActionResultStdout(ctx, cmd, result)
+	if err != nil {
+		clog.Errorf(ctx, "cache-get (elapsed %s): failed to set stdout to action result: %v", time.Since(now), err)
+		return err
+	}
+	err = c.setActionResultStderr(ctx, cmd, result)
+	if err != nil {
+		clog.Errorf(ctx, "cache-get (elapsed %s): failed to set stderr to action result: %v", time.Since(now), err)
+		return err
+	}
 	err = cmd.RecordOutputs(ctx, c.store, now)
 	if err != nil {
-		clog.Infof(ctx, "cache get %s: %v", time.Since(now), err)
+		clog.Errorf(ctx, "cache-get (elapsed %s): failed to record outputs from cache: %v", time.Since(now), err)
 		return err
 	}
 	return nil
 }
 
-func (c *Cache) setActionResultStdout(ctx context.Context, cmd *execute.Cmd, result *rpb.ActionResult) {
+func (c *Cache) setActionResultStdout(ctx context.Context, cmd *execute.Cmd, result *rpb.ActionResult) error {
 	w := cmd.StdoutWriter()
 	if len(result.StdoutRaw) > 0 {
 		w.Write(result.StdoutRaw)
-		return
+		return nil
 	}
 	d := digest.FromProto(result.GetStdoutDigest())
 	if d.SizeBytes == 0 {
-		return
+		return nil
 	}
 	buf, err := c.store.GetContent(ctx, d, "stdout")
 	if err != nil {
-		w.Write([]byte(err.Error()))
+		return err
 	}
 	w.Write(buf)
+	return nil
 }
 
-func (c *Cache) setActionResultStderr(ctx context.Context, cmd *execute.Cmd, result *rpb.ActionResult) {
+func (c *Cache) setActionResultStderr(ctx context.Context, cmd *execute.Cmd, result *rpb.ActionResult) error {
 	w := cmd.StderrWriter()
 	if len(result.StderrRaw) > 0 {
 		w.Write(result.StderrRaw)
-		return
+		return nil
 	}
 	d := digest.FromProto(result.GetStderrDigest())
 	if d.SizeBytes == 0 {
-		return
+		return nil
 	}
 	buf, err := c.store.GetContent(ctx, d, "stderr")
 	if err != nil {
-		w.Write([]byte(err.Error()))
+		return err
 	}
 	w.Write(buf)
+	return nil
 }
