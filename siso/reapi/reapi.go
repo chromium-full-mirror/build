@@ -251,7 +251,7 @@ var serviceConfig = `
                   { "service": "build.bazel.remote.execution.v2.ContentAddressableStorage" },
                   { "service": "build.bazel.remote.execution.v2.Capabilities" }
                 ],
-		"timeout": "60s",
+		"timeout": "600s",
 		"retryPolicy": {
 			"maxAttempts": 5,
 			"initialBackoff": "0.1s",
