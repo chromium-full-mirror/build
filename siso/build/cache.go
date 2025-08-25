@@ -95,17 +95,17 @@ func (c *Cache) GetActionResult(ctx context.Context, cmd *execute.Cmd) error {
 	cmd.SetActionResult(result, true)
 	err = c.setActionResultStdout(ctx, cmd, result)
 	if err != nil {
-		clog.Errorf(ctx, "cache-get (elapsed %s): failed to set stdout to action result: %v", time.Since(now), err)
+		clog.Warningf(ctx, "cache-get (elapsed %s): failed to set stdout to action result: %v", time.Since(now), err)
 		return err
 	}
 	err = c.setActionResultStderr(ctx, cmd, result)
 	if err != nil {
-		clog.Errorf(ctx, "cache-get (elapsed %s): failed to set stderr to action result: %v", time.Since(now), err)
+		clog.Warningf(ctx, "cache-get (elapsed %s): failed to set stderr to action result: %v", time.Since(now), err)
 		return err
 	}
 	err = cmd.RecordOutputs(ctx, c.store, now)
 	if err != nil {
-		clog.Errorf(ctx, "cache-get (elapsed %s): failed to record outputs from cache: %v", time.Since(now), err)
+		clog.Warningf(ctx, "cache-get (elapsed %s): failed to record outputs from cache: %v", time.Since(now), err)
 		return err
 	}
 	return nil
