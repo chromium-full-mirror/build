@@ -501,10 +501,6 @@ func (c *Client) uploadWithBatchUpdateBlobs(ctx context.Context, digests []diges
 
 	// TODO(b/273884978): It may be worth trying to send the batch requests in parallel.
 	for _, batchReq := range batchReqs {
-		n := 0
-		for _, r := range batchReq.Requests {
-			n += int(r.Digest.SizeBytes)
-		}
 		uploaded := false
 		for !uploaded {
 			var batchResp *rpb.BatchUpdateBlobsResponse
