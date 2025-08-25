@@ -58,8 +58,9 @@ type Option struct {
 	ExecutionPriority int
 
 	// use compressed blobs if server supports compressed blobs and size is bigger than this.
-	// When 0 is set, blob compression is disabled.
 	CompressedBlob int64
+	// compressor for ByteStream Read/Write APIs.
+	compressor rpb.Compressor_Value
 
 	ConnPool        int
 	KeepAliveParams keepalive.ClientParameters
@@ -395,11 +396,11 @@ func NewFromConn(ctx context.Context, opt Option, conn, casConn grpcClientConn) 
 	}
 	clog.Infof(ctx, "capabilities of %s: %s", opt.Instance, capa)
 	if opt.CompressedBlob > 0 {
-		if c := selectCompressor(capa.GetCacheCapabilities().GetSupportedCompressors()); c != rpb.Compressor_IDENTITY {
-			clog.Infof(ctx, "compressed-blobs/%s for > %d", strings.ToLower(c.String()), opt.CompressedBlob)
+		opt.compressor = selectCompressor(capa.GetCacheCapabilities().GetSupportedCompressors())
+		if opt.compressor != rpb.Compressor_IDENTITY {
+			clog.Infof(ctx, "compressed-blobs/%s for > %d", strings.ToLower(opt.compressor.String()), opt.CompressedBlob)
 		} else {
 			clog.Infof(ctx, "compressed-blobs is not supported")
-			opt.CompressedBlob = 0
 		}
 	}
 	c := &Client{

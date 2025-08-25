@@ -98,14 +98,15 @@ func (u *uploadOp) wait(ctx context.Context) error {
 var errUploadNotFinished = errors.New("upload not finished")
 
 func (c *Client) useCompressedBlob(d digest.Digest) bool {
-	if c.opt.CompressedBlob <= 0 {
+	if c.opt.compressor == rpb.Compressor_IDENTITY {
 		return false
 	}
 	return d.SizeBytes >= c.opt.CompressedBlob
 }
 
+// getCompressor returns a compressor for ByteStream Read/Write APIs.
 func (c *Client) getCompressor() rpb.Compressor_Value {
-	return selectCompressor(c.capabilities.CacheCapabilities.SupportedCompressors)
+	return c.opt.compressor
 }
 
 // resourceName constructs a resource name for reading the blob identified by the digest.
@@ -493,7 +494,7 @@ func separateBlobs(instance string, blobs []digest.Digest, byteLimit int64) (sma
 // uploadWithBatchUpdateBlobs uploads blobs using BatchUpdateBlobs RPC.
 // The blobs will be bundled into multiple batches that fit in the size limit.
 func (c *Client) uploadWithBatchUpdateBlobs(ctx context.Context, digests []digest.Digest, uploads map[digest.Digest]*uploadOp, ds *digest.Store, byteLimit int64) ([]missingBlob, error) {
-	blobReqs, missingBlobs := lookupBlobsInStore(ctx, digests, ds)
+	blobReqs, missingBlobs := blobsToUpload(ctx, digests, ds)
 
 	// Bundle the blobs to multiple batch requests.
 	batchReqs := createBatchUpdateBlobsRequests(c.opt.Instance, blobReqs, byteLimit)
@@ -546,7 +547,8 @@ func (c *Client) uploadWithBatchUpdateBlobs(ctx context.Context, digests []diges
 	return missingBlobs, nil
 }
 
-func lookupBlobsInStore(ctx context.Context, blobs []digest.Digest, ds *digest.Store) ([]*rpb.BatchUpdateBlobsRequest_Request, []missingBlob) {
+// blobsToUpload returns a list of blobs to upload by looking up the digest store.
+func blobsToUpload(ctx context.Context, blobs []digest.Digest, ds *digest.Store) ([]*rpb.BatchUpdateBlobsRequest_Request, []missingBlob) {
 	var wg sync.WaitGroup
 	type res struct {
 		err error
