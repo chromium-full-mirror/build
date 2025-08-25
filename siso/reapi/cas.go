@@ -501,51 +501,47 @@ func (c *Client) uploadWithBatchUpdateBlobs(ctx context.Context, digests []diges
 
 	// TODO(b/273884978): It may be worth trying to send the batch requests in parallel.
 	for _, batchReq := range batchReqs {
-		uploaded := false
-		for !uploaded {
-			var batchResp *rpb.BatchUpdateBlobsResponse
+		var batchResp *rpb.BatchUpdateBlobsResponse
 
-			// TODO(b/328332495): grpc should retry by service config?
-			err := retry.Do(ctx, func() error {
-				var err error
-				batchResp, err = casClient.BatchUpdateBlobs(ctx, batchReq)
-				return err
-			})
-			if err != nil {
-				c.m.WriteDone(0, err)
-				return nil, status.Errorf(status.Code(err), "batch update blobs: %v", err)
-			}
-
-			for _, res := range batchResp.Responses {
-				blob := digest.FromProto(res.Digest)
-				data, ok := ds.Get(blob)
-				if !ok {
-					clog.Warningf(ctx, "Not found %s in store", blob)
-					missingBlobs = append(missingBlobs, missingBlob{
-						Digest: blob,
-						Err:    errBlobNotInReq,
-					})
-					continue
-				}
-				st := status.FromProto(res.GetStatus())
-				if st.Code() != codes.OK {
-					clog.Warningf(ctx, "Failed to batch-update %s: %v", data, st)
-					err := status.Errorf(st.Code(), "batch update blobs: %v", res.Status)
-					missingBlobs = append(missingBlobs, missingBlob{
-						Digest: blob,
-						Err:    err,
-					})
-					c.m.WriteDone(int(res.Digest.SizeBytes), err)
-					uploads[blob].done(err)
-					continue
-				}
-				clog.Infof(ctx, "uploaded in batch: %s", data)
-				c.m.WriteDone(int(res.Digest.SizeBytes), nil)
-				uploads[blob].done(nil)
-			}
-			uploaded = true
-			clog.Infof(ctx, "upload by batch %d blobs (missing:%d)", len(batchReq.Requests), len(missingBlobs))
+		// TODO(b/328332495): grpc should retry by service config?
+		err := retry.Do(ctx, func() error {
+			var err error
+			batchResp, err = casClient.BatchUpdateBlobs(ctx, batchReq)
+			return err
+		})
+		if err != nil {
+			c.m.WriteDone(0, err)
+			return nil, status.Errorf(status.Code(err), "batch update blobs: %v", err)
 		}
+
+		for _, res := range batchResp.Responses {
+			blob := digest.FromProto(res.Digest)
+			data, ok := ds.Get(blob)
+			if !ok {
+				clog.Warningf(ctx, "Not found %s in store", blob)
+				missingBlobs = append(missingBlobs, missingBlob{
+					Digest: blob,
+					Err:    errBlobNotInReq,
+				})
+				continue
+			}
+			st := status.FromProto(res.GetStatus())
+			if st.Code() != codes.OK {
+				clog.Warningf(ctx, "Failed to batch-update %s: %v", data, st)
+				err := status.Errorf(st.Code(), "batch update blobs: %v", res.Status)
+				missingBlobs = append(missingBlobs, missingBlob{
+					Digest: blob,
+					Err:    err,
+				})
+				c.m.WriteDone(int(res.Digest.SizeBytes), err)
+				uploads[blob].done(err)
+				continue
+			}
+			clog.Infof(ctx, "uploaded in batch: %s", data)
+			c.m.WriteDone(int(res.Digest.SizeBytes), nil)
+			uploads[blob].done(nil)
+		}
+		clog.Infof(ctx, "upload by batch %d blobs (missing:%d)", len(batchReq.Requests), len(missingBlobs))
 	}
 	return missingBlobs, nil
 }
