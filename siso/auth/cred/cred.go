@@ -104,7 +104,12 @@ func New(ctx context.Context, uri string, opts Options) (Cred, error) {
 			}
 			ts = nil
 		} else {
-			return Cred{}, fmt.Errorf("need to run `siso login`: %w", err)
+			switch opts.Type {
+			case "luci-auth", "gcloud", "":
+				return Cred{}, fmt.Errorf("need to run `siso login`: %w", err)
+			default:
+				return Cred{}, err
+			}
 		}
 	} else {
 		t, _ = tok.Extra("x-token-source").(string)
