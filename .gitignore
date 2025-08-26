@@ -6,3 +6,12 @@
 # this file.
 /go.work
 /go.work.sum
+
+# People with misconfigured global ignores:
+*.pyc
+*.sublime-*
+.DS_Store
+.coverage
+.expect_tests_coverage*
+.vscode
+.idea
