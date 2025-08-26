@@ -13,7 +13,6 @@ import (
 	"log"
 	"net"
 	"net/http"
-	_ "net/http/pprof" // import to let pprof register its HTTP handlers
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -30,6 +29,8 @@ import (
 	"go.chromium.org/build/kajiya/blobstore"
 	"go.chromium.org/build/kajiya/capabilities"
 	"go.chromium.org/build/kajiya/execution"
+
+	_ "net/http/pprof" // import to let pprof register its HTTP handlers
 )
 
 var (

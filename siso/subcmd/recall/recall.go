@@ -8,7 +8,6 @@ package recall
 
 import (
 	"context"
-	_ "embed"
 	"errors"
 	"flag"
 	"fmt"
@@ -35,6 +34,8 @@ import (
 	"go.chromium.org/build/siso/reapi/merkletree/importer"
 	rbepb "go.chromium.org/build/siso/reapi/proto"
 	"go.chromium.org/build/siso/signals"
+
+	_ "embed"
 )
 
 const usage = `recall action by digest, or remote exec call to run.

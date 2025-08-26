@@ -6,10 +6,11 @@ package scandeps
 
 import (
 	"context"
-	_ "embed"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+
+	_ "embed"
 )
 
 // use chromium's build/config/ios/write_framework_hmap.py to

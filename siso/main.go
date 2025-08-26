@@ -10,7 +10,6 @@ import (
 	"flag"
 	"fmt"
 	"net/http"
-	_ "net/http/pprof" // import to let pprof register its HTTP handlers
 	"os"
 	"os/signal"
 	"runtime"
@@ -38,6 +37,8 @@ import (
 	"go.chromium.org/build/siso/subcmd/version"
 	"go.chromium.org/build/siso/subcmd/webui"
 	"go.chromium.org/build/siso/ui"
+
+	_ "net/http/pprof" // import to let pprof register its HTTP handlers
 )
 
 var (
