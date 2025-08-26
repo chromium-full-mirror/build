@@ -1183,7 +1183,7 @@ func TestUpdate_FromLocal_AbsSymlink(t *testing.T) {
 	if err != nil {
 		t.Errorf("Update(ctx, %q, {%q}, %v, cmdhash)=%v, want nil err", dir, outname, now, err)
 	}
-	stats := hfs.OS.IOMetrics.Stats()
+	stats := hfs.OS.Stats()
 	fi, err := hfs.Stat(ctx, dir, outname)
 	if err != nil {
 		t.Fatalf("Stat(ctx, %q, %q)=_, %v; want nil err", dir, outname, err)
@@ -1198,7 +1198,7 @@ func TestUpdate_FromLocal_AbsSymlink(t *testing.T) {
 	if !now.Equal(fi.UpdatedTime()) {
 		t.Errorf("fi.UpdatedTime=%v; want=%v", fi.UpdatedTime(), now)
 	}
-	nstats := hfs.OS.IOMetrics.Stats()
+	nstats := hfs.OS.Stats()
 	if stats.Ops != nstats.Ops {
 		t.Errorf("Stat access fs? old=%#v new=%#v", stats, nstats)
 	}
@@ -1339,7 +1339,7 @@ func TestUpdate_FromLocal_NonLocalSymlink(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Stat(ctx, %q, %q)=_, %v; want nil err", dir, outname, err)
 	}
-	stats := hfs.OS.IOMetrics.Stats()
+	stats := hfs.OS.Stats()
 	if fi.IsChanged() {
 		// restat=true, so no update
 		t.Errorf("fi.IsChanged()=%t; want false", fi.IsChanged())
@@ -1350,7 +1350,7 @@ func TestUpdate_FromLocal_NonLocalSymlink(t *testing.T) {
 	if !now.Equal(fi.UpdatedTime()) {
 		t.Errorf("fi.UpdatedTime=%v; want=%v", fi.UpdatedTime(), now)
 	}
-	nstats := hfs.OS.IOMetrics.Stats()
+	nstats := hfs.OS.Stats()
 	if stats.Ops != nstats.Ops {
 		t.Errorf("Stat access fs? old=%#v new=%#v", stats, nstats)
 	}
@@ -1689,7 +1689,7 @@ func TestXattr(t *testing.T) {
 	if got := ents[0].Data.Digest(); got != wantDigest {
 		t.Errorf("digest %v; want %v", got, wantDigest)
 	}
-	stats := hashFS.OS.IOMetrics.Stats()
+	stats := hashFS.OS.Stats()
 	if stats.RBytes > 0 {
 		t.Errorf("read %d; want 0", stats.RBytes)
 	}

@@ -581,7 +581,7 @@ func (b *Builder) Build(ctx context.Context, name string, args ...string) (err e
 			ui.Default.PrintLines(ninjaNoWorkToDo)
 			return
 		}
-		fsstat := b.hashFS.OS.IOMetrics.Stats()
+		fsstat := b.hashFS.OS.Stats()
 		fsstatLine := fmt.Sprintf("fs: ops: %d(err:%d) / r:%d(err:%d) %s / w:%d(err:%d) %s\n",
 			fsstat.Ops, fsstat.OpsErrs,
 			fsstat.ROps, fsstat.RErrs, numBytes(fsstat.RBytes),

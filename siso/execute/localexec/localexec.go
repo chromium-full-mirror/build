@@ -199,5 +199,5 @@ func exitCode(err error) int32 {
 	if !errors.As(err, &eerr) {
 		return -1
 	}
-	return int32(eerr.ProcessState.ExitCode())
+	return int32(eerr.ExitCode())
 }

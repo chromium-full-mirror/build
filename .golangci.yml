@@ -34,9 +34,6 @@ linters:
         # https://staticcheck.dev/docs/checks#QF1003
         # Convert if/else-if chain to tagged switch
         - "-QF1003"
-        # https://staticcheck.dev/docs/checks#QF1008
-        # Omit embedded fields from selector expression
-        - "-QF1008"
         # https://staticcheck.dev/docs/checks#SA1019
         # Using a deprecated function, variable, constant or field
         - "-SA1019"
