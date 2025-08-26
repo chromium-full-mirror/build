@@ -24,42 +24,47 @@ const googleCredHelper = "/google/src/head/depot/google3/devtools/blaze/bazel/cr
 
 // DefaultCredentialHelper returns default credential helper's path.
 func DefaultCredentialHelper() string {
+	if checkIfGoogleCredHelperExists() {
+		// googleCredHelper depends on stubby.
+		_, err := exec.LookPath("stubby")
+		if err == nil {
+			// Make sure it's not a laptop. gLaptop should fall back to luci-auth below.
+			// See also go/glinux-roles.
+			dist, err := os.ReadFile("/etc/lsb-release")
+			if err != nil {
+				ui.Default.Warningf("WARNING: Failed to read /etc/lsb-release. Assuming this is not a laptop. err: %s", err)
+			}
+			if !bytes.Contains(dist, []byte("GOOGLE_ROLE=laptop")) {
+				return googleCredHelper
+			}
+		}
+		// credhelper exists, but stubby doesn't or is not usable on gLaptop.
+		// fallback to luci-auth.
+	}
+	path, err := exec.LookPath("luci-auth")
+	if err == nil {
+		return path
+	}
+	path, err = exec.LookPath("gcloud")
+	if err == nil {
+		return path
+	}
+	return ""
+}
+
+func checkIfGoogleCredHelperExists() bool {
 	// workaround for b/360055934
-	ch := make(chan string, 3)
+	ch := make(chan bool, 3)
 	for i := range 3 {
 		go func() {
 			if fi, err := os.Stat(googleCredHelper); (err == nil && fi.Mode()&0111 != 0) || errors.Is(err, syscall.ENOKEY) {
-				// googleCredHelper depends on stubby.
-				_, err := exec.LookPath("stubby")
-				if err == nil {
-					// Make sure it's not a laptop. gLaptop should fall back to luci-auth below.
-					// See also go/glinux-roles.
-					dist, err := os.ReadFile("/etc/lsb-release")
-					if err != nil {
-						ui.Default.Warningf("WARNING: Failed to read /etc/lsb-release. Assuming this is not a laptop. err: %s", err)
-					}
-					if !bytes.Contains(dist, []byte("GOOGLE_ROLE=laptop")) {
-						ch <- googleCredHelper
-						return
-					}
-				}
-				// credhelper exists, but stubby doesn't.
-				// fallback to luci-auth.
+				ch <- true
 			}
-			path, err := exec.LookPath("luci-auth")
-			if err == nil {
-				ch <- path
-				return
-			}
-			path, err = exec.LookPath("gcloud")
-			if err == nil {
-				ch <- path
-				return
-			}
+			ch <- false
 		}()
 		select {
-		case helper := <-ch:
-			return helper
+		case ok := <-ch:
+			return ok
 		case <-time.After(5 * time.Second):
 			if i == 0 {
 				ui.Default.Warningf("WARNING: Accessing /google/src takes longer than expected. Retrying for 10 more seconds...\n")
@@ -69,7 +74,7 @@ func DefaultCredentialHelper() string {
 	ui.Default.Errorf(`ERROR: Timeout while accessing /google/src.
 Run "diagnose_me" or you would need RPC access: http://go/request-rpc
 `)
-	return ""
+	return false
 }
 
 func credHelperErr(fname string, err error) error {
