@@ -13,7 +13,6 @@ import (
 	"time"
 
 	log "github.com/golang/glog"
-	"go.starlark.net/resolve"
 	"go.starlark.net/starlark"
 	"go.starlark.net/starlarkstruct"
 
@@ -67,8 +66,6 @@ func New(ctx context.Context, fname string, flags map[string]string, repos map[s
 		repos:       repos,
 		predeclared: builtinModule(ctx),
 	}
-	clog.Infof(ctx, "enable starlark recursion")
-	resolve.AllowRecursion = true
 
 	thread := &starlark.Thread{
 		Name: "load",
