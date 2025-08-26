@@ -129,6 +129,8 @@ formatters:
         - standard
         # Default section: contains all imports that could not be matched to another section type.
         - default
+        # Custom section: groups all imports with the specified Prefix.
+        - prefix(go.chromium.org)
         # Custom section: groups all imports with the specified Prefix (local modules).
         - localmodule
       # Enable custom order of sections.
