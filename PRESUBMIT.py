@@ -10,6 +10,46 @@ details on the presubmit API built into gcl.
 PRESUBMIT_VERSION = '2.0.0'
 USE_PYTHON3 = True
 
+DISABLED_PYLINT_WARNINGS = [
+    'no-init',                # Class has no __init__ method
+    'super-init-not-called',  # __init__ method from base class is not called
+    'cyclic-import',
+    'unused-argument',
+    'import-outside-toplevel',
+    'inconsistent-return-statements',
+    'no-member',
+    'no-value-for-parameter',
+    'stop-iteration-return',
+    'subprocess-run-check',
+    # TODO(crbug.com/441191932): Re-enable these checks.
+    # ************* Module action
+    # siso/subcmd/ninja/testdata/TestBuild_CopyLocalOut/tools/action.py:21:8: W0612: Unused variable 'i' (unused-variable)
+    # ************* Module clang++
+    # siso/subcmd/ninja/testdata/TestBuild_Cleandead/tools/clang++.py:24:12: W0622: Redefining built-in 'input' (redefined-builtin)
+    # ************* Module link
+    # siso/subcmd/ninja/testdata/TestBuild_EdgeRule/tools/link.py:19:6: W0622: Redefining built-in 'input' (redefined-builtin)
+    # siso/subcmd/ninja/testdata/TestBuild_EdgeRule_solibs/tools/link.py:19:6: W0622: Redefining built-in 'input' (redefined-builtin)
+    # siso/subcmd/ninja/testdata/TestBuild_EdgeRule_solibs_recursive/tools/link.py:19:6: W0622: Redefining built-in 'input' (redefined-builtin)
+    # siso/subcmd/ninja/testdata/TestBuild_EdgeRule_stamp_solibs/tools/link.py:20:6: W0622: Redefining built-in 'input' (redefined-builtin)
+    # ************* Module ar
+    # siso/subcmd/ninja/testdata/TestBuild_EdgeRule/tools/ar.py:20:6: W0622: Redefining built-in 'input' (redefined-builtin)
+    # siso/subcmd/ninja/testdata/TestBuild_Local_Inputs/tools/action.py:17:6: W0622: Redefining built-in 'input' (redefined-builtin)
+    # ************* Module gen
+    # siso/subcmd/ninja/testdata/TestBuild_RemovedArtifact/tools/gen.py:8:0: W0622: Redefining built-in 'input' (redefined-builtin)
+    # ************* Module archive
+    # siso/subcmd/ninja/testdata/TestBuild_OutputDir/tools/archive.py:19:8: W0622: Redefining built-in 'input' (redefined-builtin)
+    # siso/subcmd/ninja/testdata/TestBuild_Restat/tools/action.py:17:6: W0622: Redefining built-in 'input' (redefined-builtin)
+    # siso/subcmd/ninja/testdata/TestBuild_RestatMultiout/tools/action.py:18:6: W0622: Redefining built-in 'input' (redefined-builtin)
+    # siso/subcmd/ninja/testdata/TestBuild_Restat_RestatContent/tools/action.py:17:6: W0622: Redefining built-in 'input' (redefined-builtin)
+    # ************* Module action2
+    # siso/subcmd/ninja/testdata/TestBuild_RestatMultiout/tools/action2.py:17:6: W0622: Redefining built-in 'input' (redefined-builtin)
+    # siso/subcmd/ninja/testdata/TestBuild_offline/tools/gen.py:9:0: W0622: Redefining built-in 'input' (redefined-builtin)
+    'redefined-builtin',
+    # ************* Module action
+    # siso/subcmd/ninja/testdata/TestBuild_CopyLocalOut/tools/action.py:21:8: W0612: Unused variable 'i' (unused-variable)
+    'unused-variable',
+]
+
 THIRD_PARTY_DIRS = [
     'siso/third_party',
 ]
@@ -42,6 +82,8 @@ def CheckGoChanges(input_api, output_api):
       files_to_check=[r'.*\.go$'],
       files_to_skip=THIRD_PARTY_DIRS + [r'.*\.pb\.go$', r'.*\.gen\.go$'])
   affected_files = sorted([
+      # TODO(b/430465030): Fix this.
+      # pylint: disable=unnecessary-comprehension
       f for f in input_api.AffectedFiles(
           include_deletes=False, file_filter=file_filter)
   ],
@@ -141,3 +183,28 @@ def CheckGoChanges(input_api, output_api):
         kwargs=kwargs,
         message=error_type))
   return input_api.RunTests(tests)
+
+
+def CheckPythonChanges(input_api, output_api):
+  files_to_skip = list(input_api.DEFAULT_FILES_TO_SKIP)
+  files_to_skip += [rf'{d}/.*' for d in THIRD_PARTY_DIRS]
+  files_to_skip += _IgnoredPaths(input_api)
+  return input_api.RunTests(input_api.canned_checks.GetPylint(
+      input_api,
+      output_api,
+      files_to_skip=files_to_skip,
+      disabled_warnings=DISABLED_PYLINT_WARNINGS,
+      version='2.7',
+  ))
+
+
+def _IgnoredPaths(input_api):
+  # This computes the list if repository-root-relative paths which are
+  # ignored by .gitignore files. There is probably a faster way to do this.
+  status_output = input_api.subprocess.check_output(
+      ['git', 'status', '--porcelain', '--ignored'], text=True)
+  statuses = [(line[:2], line[3:]) for line in status_output.splitlines()]
+  return [
+    input_api.re.escape(path) for (mode, path) in statuses
+    if mode in ('!!', '??') and not path.endswith('.pyc')
+  ]
