@@ -20,8 +20,6 @@ linters:
     errorlint:
       # Moving %v or %s to %w is a breaking API change.
       errorf: false
-      # type switches on errors are okay (for now)
-      asserts: false
     staticcheck:
       checks:
         - all

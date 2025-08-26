@@ -5,6 +5,7 @@
 package syntax
 
 import (
+	"errors"
 	"fmt"
 )
 
@@ -68,7 +69,8 @@ func (e Error) Kind() ErrKind {
 // GetErrKind returns the kind of error err corresponds to.
 func GetErrKind(err error) ErrKind {
 	if err != nil {
-		if syntaxErr, ok := err.(Error); ok {
+		var syntaxErr Error
+		if errors.As(err, &syntaxErr) {
 			return syntaxErr.kind
 		}
 		return ErrNotSyntaxError
@@ -84,7 +86,8 @@ func IsErrKind(err error, kind ErrKind) bool {
 	if err == nil {
 		return false
 	}
-	if syntaxErr, ok := err.(Error); ok {
+	var syntaxErr Error
+	if errors.As(err, &syntaxErr) {
 		return syntaxErr.kind == kind
 	}
 	return false
@@ -93,7 +96,8 @@ func IsErrKind(err error, kind ErrKind) bool {
 // AsErrKind returns the error if it matches the error kind.
 // If it doesn't match, returns nil and the actual error kind.
 func AsErrKind(err error, kind ErrKind) (*Error, ErrKind) {
-	if syntaxErr, ok := err.(Error); ok {
+	var syntaxErr Error
+	if errors.As(err, &syntaxErr) {
 		if syntaxErr.kind == kind {
 			return &syntaxErr, syntaxErr.kind
 		} else {
