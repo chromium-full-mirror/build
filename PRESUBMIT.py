@@ -11,7 +11,7 @@ PRESUBMIT_VERSION = '2.0.0'
 USE_PYTHON3 = True
 
 DISABLED_PYLINT_WARNINGS = [
-    'no-init',                # Class has no __init__ method
+    'no-init',  # Class has no __init__ method
     'super-init-not-called',  # __init__ method from base class is not called
     'cyclic-import',
     'unused-argument',
@@ -66,6 +66,8 @@ def CheckChange(input_api, output_api):
   results += input_api.canned_checks.CheckDoNotSubmit(input_api, output_api)
   results += input_api.canned_checks.CheckChangeHasNoTabs(
       input_api, output_api, source_file_filter=files_to_skip)
+  results += input_api.canned_checks.CheckPatchFormatted(
+      input_api, output_api, check_clang_format=False)
   results += input_api.canned_checks.CheckChangeHasNoStrayWhitespace(
       input_api, output_api, source_file_filter=files_to_skip)
   results += input_api.canned_checks.CheckInclusiveLanguage(
@@ -81,13 +83,14 @@ def CheckGoChanges(input_api, output_api):
       path,
       files_to_check=[r'.*\.go$'],
       files_to_skip=THIRD_PARTY_DIRS + [r'.*\.pb\.go$', r'.*\.gen\.go$'])
-  affected_files = sorted([
-      # TODO(b/430465030): Fix this.
-      # pylint: disable=unnecessary-comprehension
-      f for f in input_api.AffectedFiles(
-          include_deletes=False, file_filter=file_filter)
-  ],
-                          key=lambda source: source.AbsoluteLocalPath())
+  affected_files = sorted(
+      [
+          # TODO(b/430465030): Fix this.
+          # pylint: disable=unnecessary-comprehension
+          f for f in input_api.AffectedFiles(
+              include_deletes=False, file_filter=file_filter)
+      ],
+      key=lambda source: source.AbsoluteLocalPath())
   if not affected_files:
     return []
 
@@ -97,7 +100,7 @@ def CheckGoChanges(input_api, output_api):
   # golangci-lint should always be fetched to ensure errors are consistent
   # between local developer machines and presubmit bots.
   cipd_root = input_api.os_path.join(input_api.change.RepositoryRoot(),
-                                      '.cipd_bin')
+                                     '.cipd_bin')
   ensure_file_content = ('infra/3pp/tools/golangci-lint/${platform} '
                          'version:3@2.4.0\n')
   go = 'go'
@@ -131,8 +134,8 @@ def CheckGoChanges(input_api, output_api):
   # Make sure Go is available on $PATH.
   try:
     input_api.subprocess.check_call([go, 'version'],
-                                        stdout=input_api.subprocess.PIPE,
-                                        stderr=input_api.subprocess.PIPE)
+                                    stdout=input_api.subprocess.PIPE,
+                                    stderr=input_api.subprocess.PIPE)
   except input_api.subprocess.CalledProcessError as e:
     return [
         output_api.PresubmitPromptOrNotify(
@@ -153,15 +156,14 @@ def CheckGoChanges(input_api, output_api):
       return [output_api.PresubmitError(f'gofmt failed to run: {e}')]
   if bad:
     return [
-        output_api.PresubmitError(
-            ('Found badly formatted Go file(s). '
-             'Run `gofmt -s -w .` to fix them.'), bad)
+        output_api.PresubmitError(('Found badly formatted Go file(s). '
+                                   'Run `gofmt -s -w .` to fix them.'), bad)
     ]
 
   # Run `golangci-lint` on folders.
   dirs = {
-      input_api.os_path.dirname(f.AbsoluteLocalPath()): input_api.os_path.dirname(f.LocalPath())
-      for f in affected_files
+      input_api.os_path.dirname(f.AbsoluteLocalPath()):
+          input_api.os_path.dirname(f.LocalPath()) for f in affected_files
   }
   if input_api.is_committing:
     error_type = output_api.PresubmitError
@@ -175,13 +177,13 @@ def CheckGoChanges(input_api, output_api):
       kwargs['env'] = env
     tests.append(
         input_api.Command(
-        name=f'Check golangci-lint on {pretty}',
-        cmd=[
-            golangci_lint, 'run', '--timeout=15m',
-            '--allow-parallel-runners', '.'
-        ],
-        kwargs=kwargs,
-        message=error_type))
+            name=f'Check golangci-lint on {pretty}',
+            cmd=[
+                golangci_lint, 'run', '--timeout=15m',
+                '--allow-parallel-runners', '.'
+            ],
+            kwargs=kwargs,
+            message=error_type))
   return input_api.RunTests(tests)
 
 
@@ -189,13 +191,14 @@ def CheckPythonChanges(input_api, output_api):
   files_to_skip = list(input_api.DEFAULT_FILES_TO_SKIP)
   files_to_skip += [rf'{d}/.*' for d in THIRD_PARTY_DIRS]
   files_to_skip += _IgnoredPaths(input_api)
-  return input_api.RunTests(input_api.canned_checks.GetPylint(
-      input_api,
-      output_api,
-      files_to_skip=files_to_skip,
-      disabled_warnings=DISABLED_PYLINT_WARNINGS,
-      version='2.7',
-  ))
+  return input_api.RunTests(
+      input_api.canned_checks.GetPylint(
+          input_api,
+          output_api,
+          files_to_skip=files_to_skip,
+          disabled_warnings=DISABLED_PYLINT_WARNINGS,
+          version='2.7',
+      ))
 
 
 def _IgnoredPaths(input_api):
@@ -205,6 +208,7 @@ def _IgnoredPaths(input_api):
       ['git', 'status', '--porcelain', '--ignored'], text=True)
   statuses = [(line[:2], line[3:]) for line in status_output.splitlines()]
   return [
-    input_api.re.escape(path) for (mode, path) in statuses
-    if mode in ('!!', '??') and not path.endswith('.pyc')
+      input_api.re.escape(path)
+      for (mode, path) in statuses
+      if mode in ('!!', '??') and not path.endswith('.pyc')
   ]
