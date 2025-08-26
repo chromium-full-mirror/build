@@ -16,7 +16,6 @@ import (
 
 	log "github.com/golang/glog"
 	"go.starlark.net/starlark"
-	"go.starlark.net/syntax"
 
 	"go.chromium.org/build/siso/o11y/clog"
 )
@@ -102,5 +101,5 @@ func (r *repoLoader) Load(thread *starlark.Thread, module string) (starlark.Stri
 		Load: r.Load,
 	}
 	t.SetLocal("modulename", fullname)
-	return starlark.ExecFileOptions(&syntax.FileOptions{Recursion: true}, t, fullname, buf, r.predeclared)
+	return starlark.ExecFile(t, fullname, buf, r.predeclared)
 }
