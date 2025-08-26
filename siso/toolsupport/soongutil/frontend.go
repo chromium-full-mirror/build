@@ -49,7 +49,7 @@ func NewFrontend(ctx context.Context, w io.Writer) *Frontend {
 	f := &Frontend{
 		w:         w,
 		startTime: time.Now(),
-		ch:        make(chan *pb.Status, 1000),
+		ch:        make(chan *pb.Status, 10000),
 		quit:      make(chan struct{}),
 		done:      make(chan struct{}),
 	}
@@ -104,7 +104,7 @@ func (f *Frontend) PlanHasTotalSteps(total int) {
 			TotalEdges: proto.Uint32(uint32(f.total)),
 		},
 	}
-	go func() { f.ch <- m }()
+	f.ch <- m
 }
 
 // BuildActionStarted is called when build action started.
@@ -119,7 +119,7 @@ func (f *Frontend) BuildActionStarted(step *build.Step) {
 			// TODO: pass more info?
 		},
 	}
-	go func() { f.ch <- m }()
+	f.ch <- m
 }
 
 // BuildActionFinished is called when build action finished.
@@ -133,7 +133,7 @@ func (f *Frontend) BuildActionFinished(step *build.Step) {
 			// TODO: pass more info?
 		},
 	}
-	go func() { f.ch <- m }()
+	f.ch <- m
 }
 
 // BuildStarted is called when build started.
@@ -147,7 +147,7 @@ func (f *Frontend) BuildStarted() {
 	m := &pb.Status{
 		BuildStarted: &pb.Status_BuildStarted{},
 	}
-	go func() { f.ch <- m }()
+	f.ch <- m
 }
 
 // BuildFinished is called when build finished.
@@ -158,7 +158,7 @@ func (f *Frontend) BuildFinished() {
 	m := &pb.Status{
 		BuildFinished: &pb.Status_BuildFinished{},
 	}
-	go func() { f.ch <- m }()
+	f.ch <- m
 }
 
 func (f *Frontend) message(level pb.Status_Message_Level, msg string) {
@@ -168,7 +168,7 @@ func (f *Frontend) message(level pb.Status_Message_Level, msg string) {
 			Message: proto.String(msg),
 		},
 	}
-	go func() { f.ch <- m }()
+	f.ch <- m
 }
 
 // PrintLines reports message lines at info level.
