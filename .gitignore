@@ -1,2 +1,7 @@
 # Ignore CIPD packages.
 /.cipd_bin/
+
+# https://go.dev/ref/mod#go-work-file doesn't recommend to commit go.work files.
+# Run `go work init $(git ls-files | fgrep go.mod | xargs dirname)` to generate
+# this file.
+/go.work
