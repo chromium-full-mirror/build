@@ -9,11 +9,11 @@ type StatusReporter interface {
 	// PlanHasTotalSteps is called when total steps is updated.
 	PlanHasTotalSteps(total int)
 
-	// BuildStepStarted is called when build step started.
-	BuildStepStarted(*Step)
+	// BuildActionStarted is called when build action started.
+	BuildActionStarted(*Step)
 
-	// BuildStepFInished is called when build step finished.
-	BuildStepFinished(*Step)
+	// BuildActionFInished is called when build action finished.
+	BuildActionFinished(*Step)
 
 	// BuildStarted is called when build started.
 	BuildStarted()
@@ -26,8 +26,8 @@ type noopStatusReporter struct{}
 
 func (noopStatusReporter) PlanHasTotalSteps(total int) {}
 
-func (noopStatusReporter) BuildStepStarted(step *Step)  {}
-func (noopStatusReporter) BuildStepFinished(step *Step) {}
+func (noopStatusReporter) BuildActionStarted(step *Step)  {}
+func (noopStatusReporter) BuildActionFinished(step *Step) {}
 
 func (noopStatusReporter) BuildStarted()  {}
 func (noopStatusReporter) BuildFinished() {}

@@ -44,7 +44,7 @@ func (b *Builder) execReproxy(ctx context.Context, step *Step) error {
 	err = b.reproxySema.Do(ctx, func(ctx context.Context) error {
 		started := time.Now()
 		step.setPhase(phase)
-		step.metrics.ActionStartTime = IntervalMetric(started.Sub(b.start))
+		b.actionStarted(step)
 		ctx = reapi.NewContext(ctx, &rpb.RequestMetadata{
 			ActionId:                step.cmd.ID,
 			ToolInvocationId:        b.id,

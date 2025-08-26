@@ -107,8 +107,8 @@ func (f *Frontend) PlanHasTotalSteps(total int) {
 	go func() { f.ch <- m }()
 }
 
-// BuildStepStarted is called when build step started.
-func (f *Frontend) BuildStepStarted(step *build.Step) {
+// BuildActionStarted is called when build action started.
+func (f *Frontend) BuildActionStarted(step *build.Step) {
 	m := &pb.Status{
 		EdgeStarted: &pb.Status_EdgeStarted{
 			Id:        proto.Uint32(uint32(step.IDNum())),
@@ -122,8 +122,8 @@ func (f *Frontend) BuildStepStarted(step *build.Step) {
 	go func() { f.ch <- m }()
 }
 
-// BuildStepFInished is called when build step finished.
-func (f *Frontend) BuildStepFinished(step *build.Step) {
+// BuildActionFinished is called when build action finished.
+func (f *Frontend) BuildActionFinished(step *build.Step) {
 	m := &pb.Status{
 		EdgeFinished: &pb.Status_EdgeFinished{
 			Id:      proto.Uint32(uint32(step.IDNum())),
@@ -138,7 +138,7 @@ func (f *Frontend) BuildStepFinished(step *build.Step) {
 
 // BuildStarted is called when build started.
 // Once started, PrintLines will be suppressed to ignore build progress
-// since these are reported bia BuildStepStarted / BuildStepFinished.
+// since these are reported bia BuildActionStarted / BuildActionFinished.
 func (f *Frontend) BuildStarted() {
 	f.mu.Lock()
 	defer f.mu.Unlock()

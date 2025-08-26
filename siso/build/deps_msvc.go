@@ -212,9 +212,7 @@ func (depsMSVC) scandeps(ctx context.Context, b *Builder, step *Step) ([]string,
 	err := b.scanDepsSema.Do(ctx, func(ctx context.Context) error {
 		// fastDeps + remote execution may have already run.
 		// In this case, do not change ActionStartTime set by the remote exec.
-		if step.metrics.ActionStartTime == 0 {
-			step.metrics.ActionStartTime = IntervalMetric(time.Since(b.start))
-		}
+		b.actionStarted(step)
 		params, err := msvcutil.ExtractScanDepsParams(ctx, step.cmd.Args, step.cmd.Env, b.hashFS.FileSystem(ctx, filepath.Join(step.cmd.ExecRoot, step.cmd.Dir)))
 		if err != nil {
 			return err

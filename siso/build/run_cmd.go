@@ -6,6 +6,7 @@ package build
 
 import (
 	"context"
+	"time"
 )
 
 func (b *Builder) allowRemote(step *Step) bool {
@@ -49,4 +50,17 @@ func (b *Builder) runLocal(ctx context.Context, step *Step) error {
 	dedupInputs(ctx, step.cmd)
 	// TODO: use local cache?
 	return b.execLocal(ctx, step)
+}
+
+func (b *Builder) actionStarted(step *Step) {
+	// actionStarted may be called when fallback/retry.
+	// Do not change ActionStartTime if it's already set.
+	if step.metrics.ActionStartTime == 0 {
+		b.statusReporter.BuildActionStarted(step)
+		step.metrics.ActionStartTime = IntervalMetric(time.Since(b.start))
+	}
+}
+
+func (b *Builder) actionFinished(step *Step) {
+	b.statusReporter.BuildActionFinished(step)
 }

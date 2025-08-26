@@ -18,10 +18,10 @@ type quietUI struct{}
 
 var _ build.StatusReporter = quietUI{}
 
-func (quietUI) PlanHasTotalSteps(int)        {}
-func (quietUI) BuildStepStarted(*build.Step) {}
+func (quietUI) PlanHasTotalSteps(int)          {}
+func (quietUI) BuildActionStarted(*build.Step) {}
 
-func (quietUI) BuildStepFinished(step *build.Step) {
+func (quietUI) BuildActionFinished(step *build.Step) {
 	os.Stderr.Write(step.Stderr())
 	os.Stdout.Write(step.Stdout())
 }

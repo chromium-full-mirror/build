@@ -98,10 +98,7 @@ func (b *Builder) execLocal(ctx context.Context, step *Step) error {
 		}
 		started := time.Now()
 		// local exec might be called as fallback.
-		// Do not change ActionStartTime if it's already set.
-		if step.metrics.ActionStartTime == 0 {
-			step.metrics.ActionStartTime = IntervalMetric(started.Sub(b.start))
-		}
+		b.actionStarted(step)
 		err := executor.Run(ctx, step.cmd)
 		dur = time.Since(started)
 		step.setPhase(stepOutput)

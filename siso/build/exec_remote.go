@@ -47,11 +47,7 @@ func (b *Builder) execRemote(ctx context.Context, step *Step) error {
 				b.progressStepRetry(ctx, step)
 			}
 			reExecStarted := time.Now()
-			// Record ActionStartTime only when it's not set, yet.
-			// This avoids overriding ActionStartTime for retries.
-			if step.metrics.ActionStartTime == 0 {
-				step.metrics.ActionStartTime = IntervalMetric(reExecStarted.Sub(b.start))
-			}
+			b.actionStarted(step)
 			ctx = reapi.NewContext(ctx, &rpb.RequestMetadata{
 				ActionId:                step.cmd.ID,
 				ToolInvocationId:        b.id,
@@ -110,7 +106,7 @@ func (b *Builder) execRemoteCache(ctx context.Context, step *Step) error {
 	defer span.Close(nil)
 	err := b.cacheSema.Do(ctx, func(ctx context.Context) error {
 		start := time.Now()
-		step.metrics.ActionStartTime = IntervalMetric(start.Sub(b.start))
+		b.actionStarted(step)
 		err := b.cache.GetActionResult(ctx, step.cmd)
 		if err != nil {
 			return err
