@@ -221,7 +221,7 @@ func NewDepsLog(ctx context.Context, fname string) (*DepsLog, error) {
 	broken := false
 readLoop:
 	for {
-		offset, err = f.Seek(0, os.SEEK_CUR)
+		offset, err = f.Seek(0, io.SeekCurrent)
 		if log.V(3) {
 			clog.Infof(ctx, "offset=%d: %v", offset, err)
 		}
