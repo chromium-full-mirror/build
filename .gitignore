@@ -5,3 +5,4 @@
 # Run `go work init $(git ls-files | fgrep go.mod | xargs dirname)` to generate
 # this file.
 /go.work
+/go.work.sum
