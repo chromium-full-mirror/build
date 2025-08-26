@@ -96,7 +96,7 @@ func (c *Command) run(ctx context.Context) error {
 	n := 0
 	for {
 		size, err := readVarInt(r)
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			return nil
 		}
 		if err != nil {

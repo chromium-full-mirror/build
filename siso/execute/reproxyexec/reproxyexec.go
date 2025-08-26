@@ -59,7 +59,7 @@ const (
 var (
 	backoff     = retry.ExponentialBackoff(1*time.Second, 15*time.Second, retry.Attempts(10))
 	shouldRetry = func(err error) bool {
-		if err == context.DeadlineExceeded {
+		if errors.Is(err, context.DeadlineExceeded) {
 			return true
 		}
 		s, ok := status.FromError(err)

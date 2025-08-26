@@ -232,7 +232,7 @@ readLoop:
 		}
 		header, err := readRecordHeader(ctx, f)
 		if err != nil {
-			if err != io.EOF {
+			if !errors.Is(err, io.EOF) {
 				clog.Errorf(ctx, "failed to read header at %d: %v", offset, err)
 				broken = true
 			}

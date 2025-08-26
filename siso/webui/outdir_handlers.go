@@ -348,7 +348,7 @@ func (s *WebuiServer) handleOutdirViewLog(w http.ResponseWriter, r *http.Request
 		}
 		defer file.Close() // OK to ignore error, because we're just reading.
 		n, err := file.Read(buffer)
-		if err != nil && err != io.EOF {
+		if err != nil && !errors.Is(err, io.EOF) {
 			// TODO: log?
 			continue
 		}

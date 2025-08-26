@@ -92,7 +92,7 @@ func (b *Builder) runRemote(ctx context.Context, step *Step) error {
 			return err
 		}
 	}
-	if preprocErr == errNeedPreproc {
+	if errors.Is(preprocErr, errNeedPreproc) {
 		preprocErr = preprocCmd(ctx, b, step)
 	}
 	err := preprocErr

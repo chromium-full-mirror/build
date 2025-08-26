@@ -6,6 +6,7 @@ package retry_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"testing"
 	"time"
@@ -39,7 +40,7 @@ func TestDo_NonRetriableError(t *testing.T) {
 		called++
 		return testErr
 	})
-	if err != testErr {
+	if !errors.Is(err, testErr) {
 		t.Errorf("retry.Do=%v; want testErr", err)
 	}
 	if called != 1 {

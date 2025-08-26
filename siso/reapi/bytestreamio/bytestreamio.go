@@ -135,7 +135,7 @@ func (w *Writer) Write(buf []byte) (int, error) {
 		WriteOffset:  w.offset,
 		Data:         buf,
 	})
-	if err == io.EOF {
+	if errors.Is(err, io.EOF) {
 		// the blob already stored in CAS.
 		w.ok = true
 		clog.Infof(w.wr.Context(), "bytestream write %s for %s got EOF at %d: %v", w.resname, w.name, w.offset, err)

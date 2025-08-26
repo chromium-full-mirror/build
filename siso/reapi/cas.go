@@ -308,10 +308,10 @@ func (c *Client) UploadAll(ctx context.Context, ds *digest.Store) (numUploaded i
 
 	defer func() {
 		for d, uop := range newBlobs {
-			switch uop.err {
-			case nil:
+			switch {
+			case uop.err == nil:
 				c.knownDigests.CompareAndSwap(d, uop, true)
-			case errUploadNotFinished:
+			case errors.Is(uop.err, errUploadNotFinished):
 				if err != nil {
 					uop.err = err
 				}

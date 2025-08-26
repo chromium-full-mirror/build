@@ -22,8 +22,6 @@ linters:
       errorf: false
       # type switches on errors are okay (for now)
       asserts: false
-      # == is okay on errors (for now)
-      comparison: false
     staticcheck:
       checks:
         - all
