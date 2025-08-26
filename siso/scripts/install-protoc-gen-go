@@ -4,7 +4,7 @@
 # found in the LICENSE file.
 
 
-# This script `go install`s the necessary tools that we use to generate *.pb.go
+# This script sets up the necessary tools that we use to generate *.pb.go
 # files from *.proto files safely into its own directory.
 #
 # The rest of the arguments are the command to be run.
@@ -17,7 +17,8 @@ die() { 1>&2 printf '%s\n' "$@"; exit 1; }
 mydir="$(realpath "$(dirname "$0")")"
 test -d "$mydir" || die 'cannot find myself'
 
-GOBIN="$mydir"/bin go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.7 || die 'cannot install'
-GOBIN="$mydir"/bin go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.5.1 || die 'cannot install'
+test -d "$mydir/cipd" || cipd init "$mydir/cipd" || die 'cannot install'
+cipd install -root "$mydir/cipd" 'infra/3pp/tools/protoc/${platform}' 'version:3@32.0' > /dev/null || die 'cannot install'
 
-exec env PATH="${mydir}/bin:${PATH}" "$@"
+export PATH="${mydir}/cipd/bin:${mydir}:${PATH}"
+exec "$@"
