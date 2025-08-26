@@ -1850,6 +1850,7 @@ func (e *entry) flush(ctx context.Context, fname string, osfs *osfs.OSFS) (retEr
 		// no need to flush again.
 		close(e.lready)
 	}()
+	started := time.Now()
 
 	if errors.Is(e.err, fs.ErrNotExist) {
 		// to protect concurrent digest calculation and removal
@@ -2030,12 +2031,12 @@ func (e *entry) flush(ctx context.Context, fname string, osfs *osfs.OSFS) (retEr
 				err := osfs.WriteDigestData(ctx, tmpname, e.src, e.mode)
 				if status.Code(err) == codes.DeadlineExceeded || errors.Is(err, context.DeadlineExceeded) {
 					// make it retriable error
-					return status.Errorf(codes.Aborted, "timed out in WriteDigestData %s: %v", e.d, err)
+					return status.Errorf(codes.Aborted, "timed out in WriteDigestData %s %s: %v", e.d, time.Since(started), err)
 				}
 				return err
 			})
 			if err != nil {
-				return fmt.Errorf("flush tmp %s size=%d: %w", tmpname, d.SizeBytes, err)
+				return fmt.Errorf("flush tmp %s size=%d %s: %w", tmpname, d.SizeBytes, time.Since(started), err)
 			}
 			removeBeforeWrite()
 			clog.Infof(ctx, "flush %s %s from source %s", fname, d, srcname)
