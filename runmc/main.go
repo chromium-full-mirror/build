@@ -257,8 +257,7 @@ Please setup cgroup delegation and reboot your machine:
  $ sudo tee /etc/systemd/system/user@.service.d/delegate.conf <<EOF
  [Service]
  Delegate=yes
- EOF
-`, delegatedCgroups, wantDelegatedCgroups)
+ EOF`, delegatedCgroups, wantDelegatedCgroups)
 	}
 	return nil
 }

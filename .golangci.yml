@@ -42,9 +42,6 @@ linters:
         # https://staticcheck.dev/docs/checks#SA1019
         # Using a deprecated function, variable, constant or field
         - "-SA1019"
-        # https://staticcheck.dev/docs/checks#ST1005
-        # Incorrectly formatted error string
-        - "-ST1005"
 
   exclusions:
     # Independently from option `exclude` we use default exclude patterns,
