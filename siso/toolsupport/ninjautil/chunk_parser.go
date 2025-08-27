@@ -40,6 +40,9 @@ type chunk struct {
 	inPaths         []evalString
 	validationPaths []evalString
 
+	// temp env in parseBuild
+	env edgeEnv
+
 	nvar              int
 	nrule, nrulevar   int
 	nbuild, nbuildvar int
@@ -533,9 +536,10 @@ func (ch *chunk) parseBuild(ctx context.Context, i int, buf *bytes.Buffer, state
 		edge.pool = defaultPool
 	}
 	edge.outputs = ch.edgePathSlab.slice(len(outs))[:0]
-	env := &edgeEnv{edge: edge}
+	// setup ch.env for this edge to evaluate paths
+	ch.env.edge = edge
 	for i := range outs {
-		n, err := ch.targetNode(env, buf, outs[i])
+		n, err := ch.targetNode(&ch.env, buf, outs[i])
 		if err != nil {
 			return 0, err
 		}
@@ -547,7 +551,7 @@ func (ch *chunk) parseBuild(ctx context.Context, i int, buf *bytes.Buffer, state
 	edge.implicitOuts = implicitOuts
 	edge.inputs = ch.edgePathSlab.slice(len(ins))[:0]
 	for i := range ins {
-		n, err := ch.targetNode(env, buf, ins[i])
+		n, err := ch.targetNode(&ch.env, buf, ins[i])
 		if err != nil {
 			return 0, err
 		}
@@ -559,13 +563,14 @@ func (ch *chunk) parseBuild(ctx context.Context, i int, buf *bytes.Buffer, state
 	edge.orderOnlyDeps = orderOnly
 
 	for i := range validations {
-		n, err := ch.targetNode(env, buf, validations[i])
+		n, err := ch.targetNode(&ch.env, buf, validations[i])
 		if err != nil {
 			return 0, err
 		}
 		edge.validations = append(edge.validations, n)
 		n.nvalidations.Add(1)
 	}
+	ch.env.edge = nil
 	return i, nil
 }
 
