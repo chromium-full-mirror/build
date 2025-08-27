@@ -243,7 +243,7 @@ func (c *Client) Missing(ctx context.Context, blobs []digest.Digest) ([]digest.D
 	for len(blobspb) > 0 {
 		var remain []*rpb.Digest
 		// limit *rpb.FindMissingBlobsRequest size under 4MB.
-		// each digest is 2ha256 64 bytes + size 4 bytes.
+		// each digest is sha256 64 bytes + size 4 bytes.
 		// 48k is sufficiently large that would never exceeds 4MB.
 		const maxBlobs = 48 * 1024
 		if len(blobspb) > maxBlobs {
@@ -253,6 +253,8 @@ func (c *Client) Missing(ctx context.Context, blobs []digest.Digest) ([]digest.D
 		var resp *rpb.FindMissingBlobsResponse
 		// TODO(b/328332495): grpc should retry by service config?
 		err := retry.Do(ctx, func() error {
+			ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+			defer cancel()
 			var err error
 			resp, err = cas.FindMissingBlobs(ctx, &rpb.FindMissingBlobsRequest{
 				InstanceName: c.opt.Instance,
@@ -261,11 +263,18 @@ func (c *Client) Missing(ctx context.Context, blobs []digest.Digest) ([]digest.D
 			c.m.OpsDone(err)
 			return err
 		})
-		if err != nil {
+		if status.Code(err) == codes.DeadlineExceeded {
+			// consider blobs are missing and try uploading.
+			// uploading may detect they already exist in CAS.
+			for _, b := range blobspb {
+				ret = append(ret, digest.FromProto(b))
+			}
+		} else if err != nil {
 			return nil, fmt.Errorf("find missing: %w", err)
-		}
-		for _, b := range resp.GetMissingBlobDigests() {
-			ret = append(ret, digest.FromProto(b))
+		} else {
+			for _, b := range resp.GetMissingBlobDigests() {
+				ret = append(ret, digest.FromProto(b))
+			}
 		}
 		blobspb = remain
 	}
