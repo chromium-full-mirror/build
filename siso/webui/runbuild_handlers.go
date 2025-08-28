@@ -120,13 +120,14 @@ func (s *WebuiServer) handleRunbuildPost(w http.ResponseWriter, r *http.Request)
 				}
 
 				activeStepsLock.Lock()
-				if status == "S" {
+				switch status {
+				case "S":
 					activeSteps[stepOut] = runningStepInfo{
 						stepOut:  stepOut,
 						stepType: stepType,
 						started:  time.Now(),
 					}
-				} else if status == "F" {
+				case "F":
 					delete(activeSteps, stepOut)
 				}
 				activeStepsLock.Unlock()
