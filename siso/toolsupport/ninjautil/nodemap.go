@@ -13,7 +13,13 @@ import (
 	"go.chromium.org/build/siso/o11y/clog"
 )
 
-const nodeMapArraySize = 1 << 25
+// nodeMapArraySize is number of buckets used for nodemap.
+// If this is too small and close to 100% utilization,
+// it will become slow (too much contention and too many link traversal).
+// If this is too big, just waste of space.
+// Better to be about 2x of max usage.
+// As of Aug 2025, chromium 4%, android 68% of 8MB entries.
+const nodeMapArraySize = 1 << 23
 
 // It is originally designed by
 // https://github.com/pcc/ninja/commit/05cddede820a641a1d7793d7f90423e0cf63c3b3.
@@ -109,8 +115,13 @@ func (nm *nodeMap) freeze(ctx context.Context) []*Node {
 	id := 1
 	clog.Infof(ctx, "freeze bigmap")
 	maxDepth := 0
+	numBuckets := 0
 	for i := range nodeMapArraySize {
 		n := nm.nodes[i].Load()
+		if n == nil {
+			continue
+		}
+		numBuckets++
 		depth := 0
 		for n != nil {
 			n.id = id
@@ -121,6 +132,6 @@ func (nm *nodeMap) freeze(ctx context.Context) []*Node {
 		}
 		maxDepth = max(depth, maxDepth)
 	}
-	clog.Infof(ctx, "nodes=%d max deps=%d", len(nodes), maxDepth)
+	clog.Infof(ctx, "nodes=%d buckets=%d (%d%%, max deps=%d) %d%% of %d", len(nodes), numBuckets, numBuckets*100/nodeMapArraySize, maxDepth, len(nodes)*100/nodeMapArraySize, nodeMapArraySize)
 	return nodes
 }
