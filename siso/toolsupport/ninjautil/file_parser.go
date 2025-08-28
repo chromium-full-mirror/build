@@ -249,11 +249,6 @@ func (p *fileParser) alloc(ctx context.Context) {
 		ch.edgeArena = p.edgeArena.chunk(ch.nbuild)
 		ch.poolArena = p.poolArena.chunk(ch.npool)
 		ch.bindingArena = p.bindingArena.chunk(ch.nrulevar + ch.nbuildvar)
-
-		// estimates number of outputs/inputs/validations
-		ch.outPaths = make([]evalString, 0, (ch.end-ch.start)/256)
-		ch.inPaths = make([]evalString, 0, (ch.end-ch.start)/256)
-		ch.validationPaths = make([]evalString, 0, 4)
 		ch.edgePathSlab = newSlab[*Node](ch.nbuild)
 
 		if log.V(2) {

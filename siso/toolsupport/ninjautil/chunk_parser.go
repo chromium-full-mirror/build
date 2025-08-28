@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"runtime/trace"
 	"strconv"
+	"sync"
 	"time"
 
 	log "github.com/golang/glog"
@@ -17,6 +18,24 @@ import (
 	"go.chromium.org/build/siso/o11y/clog"
 	"go.chromium.org/build/siso/runtimex"
 )
+
+var evalStringsPool = sync.Pool{
+	New: func() any {
+		// Chromium peaks at using ~5500, so this means we should never need to grow a slice.
+		slice := make([]evalString, 0, 6000)
+		return &slice
+	},
+}
+
+func getEvalStrings() *[]evalString {
+	return evalStringsPool.Get().(*[]evalString)
+}
+
+func putEvalStrings(ptr *[]evalString) {
+	// Make it available for reuse.
+	*ptr = (*ptr)[:0]
+	evalStringsPool.Put(ptr)
+}
 
 // chunk is a chunk in a file.
 // a statement and its bindings won't across chunk boundary.
@@ -34,11 +53,6 @@ type chunk struct {
 	poolArena    arena[Pool]
 	bindingArena arena[binding]
 	edgePathSlab slab[*Node]
-
-	// temp slices for path parsing.
-	outPaths        []evalString
-	inPaths         []evalString
-	validationPaths []evalString
 
 	// temp env in parseBuild
 	env edgeEnv
@@ -477,17 +491,17 @@ func (ch *chunk) parseBuild(ctx context.Context, i int, buf *bytes.Buffer, state
 	edge := ch.edgeArena.new()
 	edge.scope = scope
 
-	outs := ch.outPaths[:0]
+	outs := getEvalStrings()
+	defer putEvalStrings(outs)
 	pp := newPathParser(ch.buf[st.v:st.e])
-	outs, _ = pp.pathList(outs)
+	*outs, _ = pp.pathList(*outs)
 	implicitOuts := 0
 	if pp.pipe() {
-		outs, implicitOuts = pp.pathList(outs)
+		*outs, implicitOuts = pp.pathList(*outs)
 	}
-	if len(outs) == 0 {
+	if len(*outs) == 0 {
 		return 0, fmt.Errorf("expected output path")
 	}
-	ch.outPaths = outs
 
 	if !pp.colon() {
 		return 0, fmt.Errorf("expected ':'")
@@ -502,23 +516,23 @@ func (ch *chunk) parseBuild(ctx context.Context, i int, buf *bytes.Buffer, state
 	}
 	edge.rule = rule
 
-	ins := ch.inPaths[:0]
-	ins, _ = pp.pathList(ins)
+	ins := getEvalStrings()
+	defer putEvalStrings(ins)
+	*ins, _ = pp.pathList(*ins)
 	implicit := 0
 	if pp.pipe() {
-		ins, implicit = pp.pathList(ins)
+		*ins, implicit = pp.pathList(*ins)
 	}
 	orderOnly := 0
 	if pp.pipe2() {
-		ins, orderOnly = pp.pathList(ins)
+		*ins, orderOnly = pp.pathList(*ins)
 	}
-	ch.inPaths = ins
 
-	validations := ch.validationPaths[:0]
+	validations := getEvalStrings()
+	defer putEvalStrings(validations)
 	if pp.pipeAt() {
-		validations, _ = pp.pathList(validations)
+		*validations, _ = pp.pathList(*validations)
 	}
-	ch.validationPaths = validations
 
 	i++
 	n := ch.countStatement(i, statementBuildVar)
@@ -535,11 +549,11 @@ func (ch *chunk) parseBuild(ctx context.Context, i int, buf *bytes.Buffer, state
 	} else {
 		edge.pool = defaultPool
 	}
-	edge.outputs = ch.edgePathSlab.slice(len(outs))[:0]
+	edge.outputs = ch.edgePathSlab.slice(len(*outs))[:0]
 	// setup ch.env for this edge to evaluate paths
 	ch.env.edge = edge
-	for i := range outs {
-		n, err := ch.targetNode(&ch.env, buf, outs[i])
+	for _, out := range *outs {
+		n, err := ch.targetNode(&ch.env, buf, out)
 		if err != nil {
 			return 0, err
 		}
@@ -549,9 +563,9 @@ func (ch *chunk) parseBuild(ctx context.Context, i int, buf *bytes.Buffer, state
 		edge.outputs = append(edge.outputs, n)
 	}
 	edge.implicitOuts = implicitOuts
-	edge.inputs = ch.edgePathSlab.slice(len(ins))[:0]
-	for i := range ins {
-		n, err := ch.targetNode(&ch.env, buf, ins[i])
+	edge.inputs = ch.edgePathSlab.slice(len(*ins))[:0]
+	for _, in := range *ins {
+		n, err := ch.targetNode(&ch.env, buf, in)
 		if err != nil {
 			return 0, err
 		}
@@ -562,8 +576,8 @@ func (ch *chunk) parseBuild(ctx context.Context, i int, buf *bytes.Buffer, state
 	edge.implicitDeps = implicit
 	edge.orderOnlyDeps = orderOnly
 
-	for i := range validations {
-		n, err := ch.targetNode(&ch.env, buf, validations[i])
+	for _, validation := range *validations {
+		n, err := ch.targetNode(&ch.env, buf, validation)
 		if err != nil {
 			return 0, err
 		}
