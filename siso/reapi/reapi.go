@@ -62,6 +62,11 @@ type Option struct {
 	// compressor for ByteStream Read/Write APIs.
 	compressor rpb.Compressor_Value
 
+	// Keep Execute stream open as lone as possible.
+	// If false, siso closes Execute stream every 1 minute and retries
+	// with WaitExecution to mitigate grpc/network issue.
+	KeepExecStream bool
+
 	ConnPool        int
 	KeepAliveParams keepalive.ClientParameters
 }
@@ -106,6 +111,8 @@ func (o *Option) RegisterFlags(fs *flag.FlagSet, envs map[string]string) {
 	fs.StringVar(&o.TLSCACert, o.Prefix+"_tls_ca_cert", os.Getenv("RBE_tls_ca_cert"), "Load TLS CA certificates from this file to connect to the RE api service. default can be set by $RBE_tls_ca_cert")
 
 	fs.Int64Var(&o.CompressedBlob, o.Prefix+"_compress_blob", 1024, "use compressed blobs if server supports compressed blobs and size is bigger than this. specify 0 to disable comporession."+purpose)
+
+	fs.BoolVar(&o.KeepExecStream, o.Prefix+"_keep_exec_stream", false, "keep Execute stream open as long as possible")
 
 	fs.IntVar(&o.ConnPool, o.Prefix+"_grpc_conn_pool", 25, "grpc connection pool")
 

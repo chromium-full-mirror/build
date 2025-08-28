@@ -56,10 +56,15 @@ retryLoop:
 		err = func() error {
 			var stream responseStream
 			var err error
-			ctx, cancel := context.WithTimeout(pctx, 1*time.Minute)
-			defer cancel()
-			if waitReq != nil {
-				stream, err = execClient.WaitExecution(ctx, waitReq, opts...)
+			if !c.opt.KeepExecStream {
+				var cancel context.CancelFunc
+				ctx, cancel = context.WithTimeout(pctx, 1*time.Minute)
+				defer cancel()
+				if waitReq != nil {
+					stream, err = execClient.WaitExecution(ctx, waitReq, opts...)
+				} else {
+					stream, err = execClient.Execute(ctx, req, opts...)
+				}
 			} else {
 				stream, err = execClient.Execute(ctx, req, opts...)
 			}
