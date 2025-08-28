@@ -568,7 +568,6 @@ func (ch *chunk) parseBuild(ctx context.Context, i int, buf *bytes.Buffer, state
 			return 0, err
 		}
 		edge.validations = append(edge.validations, n)
-		n.nvalidations.Add(1)
 	}
 	ch.env.edge = nil
 	return i, nil

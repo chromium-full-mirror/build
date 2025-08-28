@@ -21,8 +21,7 @@ type Node struct {
 
 	inEdge atomic.Pointer[Edge] // the edge that generates the file for this node.
 
-	nouts        atomic.Int64
-	nvalidations atomic.Int64
+	nouts atomic.Int64
 
 	outs []*Edge
 }
