@@ -330,7 +330,7 @@ func TestWriterAlreadyExistsCompressed(t *testing.T) {
 	compressedData := data[:len(data)/2]
 	committedSize := int64(-1)
 
-	resourceName := fmt.Sprintf("resource-name/%d", len(data))
+	resourceName := fmt.Sprintf("resource-name/compressed-blobs/%d", len(data))
 	c := &stubByteStreamWriteClient{
 		resourceName:  resourceName,
 		chunksize:     chunksize,

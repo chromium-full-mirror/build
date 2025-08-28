@@ -705,7 +705,23 @@ func (c *Client) uploadWithByteStream(ctx context.Context, digests []digest.Dige
 				wr.Close()
 				return err
 			}
-			return wr.Close()
+			var cserr bytestreamio.BadCommittedSizeError
+			err = wr.Close()
+			if errors.As(err, &cserr) {
+				// Some REAPI backends may return non-standard
+				// committed size.
+				// Check it by FindMissingBlobs API to see if
+				// the blob is already uploaded or not.
+				ds, merr := c.Missing(ctx, []digest.Digest{d})
+				if merr == nil && len(ds) == 0 {
+					clog.Infof(ctx, "bytestreamio.Create: %v -> %v exists in CAS", err, d)
+					err = nil
+				} else {
+					clog.Warningf(ctx, "bytestreamio.Create: %v -> missing %v, %v", err, ds, merr)
+					err = status.Errorf(codes.Internal, "%v", err)
+				}
+			}
+			return err
 		})
 		c.m.WriteDone(int(d.SizeBytes), err)
 		uploads[d].done(err)

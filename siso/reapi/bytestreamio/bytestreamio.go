@@ -12,10 +12,9 @@ import (
 	"io"
 	"path"
 	"strconv"
+	"strings"
 
 	pb "google.golang.org/genproto/googleapis/bytestream"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 
 	"go.chromium.org/build/siso/o11y/clog"
 )
@@ -120,6 +119,18 @@ type Writer struct {
 	ok bool
 }
 
+// ErrBadCommittedSize is an error when committed size doesn't match.
+type BadCommittedSizeError struct {
+	CommittedSize int64
+	Offset        int64
+	Size          int64
+	Name          string
+}
+
+func (e BadCommittedSizeError) Error() string {
+	return fmt.Sprintf("unexpected committed_size=%d offset=%d size=%d for %s", e.CommittedSize, e.Offset, e.Size, e.Name)
+}
+
 // Write writes data to bytestream.
 // The maximum data chunk size would be determined by server side,
 // so don't pass larger chunk than maximum data chunk size.
@@ -203,12 +214,17 @@ func (w *Writer) Close() error {
 	case -1:
 		// Some servers use -1 as special value for `res.CommittedSize` when
 		// rejecting an upload in case the blob already exists.
-		if w.ok {
+		if w.ok && strings.Contains(w.resname, "compressed-blobs") {
 			return nil
 		}
 		fallthrough
 
 	default:
-		return status.Errorf(codes.Internal, "unexpected committed_size=%d offset=%d size=%d for %s", res.CommittedSize, w.offset, w.size, w.name)
+		return BadCommittedSizeError{
+			CommittedSize: res.CommittedSize,
+			Offset:        w.offset,
+			Size:          w.size,
+			Name:          w.name,
+		}
 	}
 }
