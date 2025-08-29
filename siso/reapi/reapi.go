@@ -70,6 +70,12 @@ type Option struct {
 
 	ConnPool        int
 	KeepAliveParams keepalive.ClientParameters
+
+	// RE API version to use by siso, in format of v<major>.<minor>
+	// e.g. "v2.0".
+	// default to use high api version advertised by the server
+	// capabilities.
+	REAPIVersion string
 }
 
 // Envs returns environment flags for reapi.
@@ -122,6 +128,8 @@ func (o *Option) RegisterFlags(fs *flag.FlagSet, envs map[string]string) {
 	fs.DurationVar(&o.KeepAliveParams.Time, o.Prefix+"_grpc_keepalive_time", 30*time.Second, "grpc keepalive time"+purpose)
 	fs.DurationVar(&o.KeepAliveParams.Timeout, o.Prefix+"_grpc_keepalive_timeout", 20*time.Second, "grpc keepalive timeout"+purpose)
 	fs.BoolVar(&o.KeepAliveParams.PermitWithoutStream, o.Prefix+"_grpc_keepalive_permit_without_stream", false, "grpc keepalive permit without stream"+purpose)
+
+	fs.StringVar(&o.REAPIVersion, o.Prefix+"_version_to_use", "", "specify re api version to use, in format of v<major>.<minor>. e.g. v2.0")
 
 	// Flags only supported for "execution".
 	if o.Prefix == "reapi" {
@@ -225,6 +233,8 @@ type Client struct {
 	casConn grpcClientConn
 
 	capabilities *rpb.ServerCapabilities
+	apiVersion   *semverpb.SemVer
+
 	knownDigests sync.Map // key:digest.Digest, value: *uploadOp or true
 
 	m *iometrics.IOMetrics
@@ -439,11 +449,33 @@ func NewFromConn(ctx context.Context, opt Option, conn, casConn grpcClientConn) 
 			clog.Infof(ctx, "compressed-blobs is not supported")
 		}
 	}
+	var apiVersion *semverpb.SemVer
+	if opt.REAPIVersion != "" {
+		var major, minor int32
+		_, err := fmt.Sscanf(opt.REAPIVersion, "v%d.%d", &major, &minor)
+		if err != nil {
+			clog.Warningf(ctx, "failed to parse reapi version %q: %v", opt.REAPIVersion, err)
+		} else {
+			apiVersion = &semverpb.SemVer{
+				Major: major,
+				Minor: minor,
+			}
+			highVer := capa.GetHighApiVersion()
+			if highVer.GetMajor() < major || (highVer.GetMajor() == major && highVer.GetMinor() < minor) {
+				clog.Errorf(ctx, "higher api version is specified than server capabilities: %v > %v", apiVersion, highVer)
+			}
+			lowVer := capa.GetLowApiVersion()
+			if lowVer.GetMajor() > major || (lowVer.GetMajor() == major && lowVer.GetMinor() > minor) {
+				clog.Errorf(ctx, "lower api version is specified than server capabilities: %v < %v", apiVersion, lowVer)
+			}
+		}
+	}
 	c := &Client{
 		opt:          opt,
 		conn:         conn,
 		casConn:      casConn,
 		capabilities: capa,
+		apiVersion:   apiVersion,
 		m:            iometrics.New("reapi"),
 	}
 	c.knownDigests.Store(digest.Empty, true)
@@ -499,6 +531,9 @@ func (c *Client) UpdateActionResult(ctx context.Context, d digest.Digest, result
 func (c *Client) APIVersion() *semverpb.SemVer {
 	if c == nil {
 		return nil
+	}
+	if c.apiVersion != nil {
+		return c.apiVersion
 	}
 	return c.capabilities.GetHighApiVersion()
 }
