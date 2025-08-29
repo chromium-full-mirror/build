@@ -255,8 +255,31 @@ var serviceConfig = `
 			]
 		}
 	  },
+          {
+		"name": [
+                  {
+                    "service": "build.bazel.remote.execution.v2.ActionCache",
+                    "method": "GetActionResult"
+                  }
+                ],
+		"timeout": "10s",
+		"retryPolicy": {
+			"maxAttempts": 5,
+			"initialBackoff": "0.1s",
+			"maxBackoff": "1s",
+			"backoffMultiplier": 1.6,
+			"retryableStatusCodes": [
+				"ABORTED",
+				"INTERNAL",
+				"RESOURCE_EXHAUSTED",
+				"UNAVAILABLE",
+				"UNKNOWN"
+			]
+		}
+          },
 	  {
 		"name": [
+                  { "service": "build.bazel.remote.execution.v2.ActionCache" },
                   { "service": "build.bazel.remote.execution.v2.ContentAddressableStorage" },
                   { "service": "build.bazel.remote.execution.v2.Capabilities" }
                 ],
@@ -275,7 +298,7 @@ var serviceConfig = `
 			]
 		}
 	  }
-	]
+        ]
 }`
 
 func dialOptions(keepAliveParams keepalive.ClientParameters) []grpc.DialOption {
