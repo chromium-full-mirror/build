@@ -330,6 +330,7 @@ func newConn(ctx context.Context, addr string, cred cred.Cred, opt Option) (grpc
 	dopts := dialOptions(opt.KeepAliveParams)
 	var conn grpcClientConn
 	var err error
+	var tlsConfig *tls.Config
 	if opt.Insecure {
 		// Insecure mode for non-RBE remote execution API.
 		if strings.HasSuffix(addr, ".googleapis.com:443") {
@@ -360,9 +361,10 @@ func newConn(ctx context.Context, addr string, cred cred.Cred, opt Option) (grpc
 		if ok := certPool.AppendCertsFromPEM(ca); !ok {
 			return nil, fmt.Errorf("failed to load TLS CA certificates from %s", opt.TLSCACert)
 		}
-		copts = append(copts, option.WithGRPCDialOption(grpc.WithTransportCredentials(credentials.NewTLS(&tls.Config{
-			RootCAs: certPool,
-		}))))
+		if tlsConfig == nil {
+			tlsConfig = &tls.Config{}
+		}
+		tlsConfig.RootCAs = certPool
 	}
 
 	if opt.TLSClientAuthCert != "" && opt.TLSClientAuthKey != "" {
@@ -372,15 +374,18 @@ func newConn(ctx context.Context, addr string, cred cred.Cred, opt Option) (grpc
 		if err != nil {
 			return nil, fmt.Errorf("failed to read mTLS cert pair (%q, %q): %w", opt.TLSClientAuthCert, opt.TLSClientAuthKey, err)
 		}
-		copts = append(copts, option.WithClientCertSource(func(*tls.CertificateRequestInfo) (*tls.Certificate, error) {
-			return &cert, nil
-		}))
+		if tlsConfig == nil {
+			tlsConfig = &tls.Config{}
+		}
+		tlsConfig.Certificates = []tls.Certificate{cert}
 	} else if opt.TLSClientAuthCert != "" {
 		return nil, errors.New("tls_client_auth_cert is set, but tls_client_auth_key is not set")
 	} else if opt.TLSClientAuthKey != "" {
 		return nil, errors.New("tls_client_auth_key is set, but tls_client_auth_cert is not set")
 	}
-
+	if tlsConfig != nil {
+		copts = append(copts, option.WithGRPCDialOption(grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig))))
+	}
 	for _, dopt := range dopts {
 		copts = append(copts, option.WithGRPCDialOption(dopt))
 	}
