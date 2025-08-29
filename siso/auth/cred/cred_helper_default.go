@@ -6,10 +6,16 @@
 
 package cred
 
-import "os/exec"
+import (
+	"os"
+	"os/exec"
+)
 
 // DefaultCredentialHelper returns default credential helper's path.
 func DefaultCredentialHelper() string {
+	if os.Getenv("RBE_tls_client_auth_cert") != "" && os.Getenv("RBE_tls_client_auth_key") != "" {
+		return "mTLS"
+	}
 	path, err := exec.LookPath("luci-auth")
 	if err == nil {
 		return path

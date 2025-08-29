@@ -24,6 +24,9 @@ const googleCredHelper = "/google/src/head/depot/google3/devtools/blaze/bazel/cr
 
 // DefaultCredentialHelper returns default credential helper's path.
 func DefaultCredentialHelper() string {
+	if os.Getenv("RBE_tls_client_auth_cert") != "" && os.Getenv("RBE_tls_client_auth_key") != "" {
+		return "mTLS"
+	}
 	if checkIfGoogleCredHelperExists() {
 		// googleCredHelper depends on stubby.
 		_, err := exec.LookPath("stubby")

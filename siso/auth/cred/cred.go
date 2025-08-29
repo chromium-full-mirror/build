@@ -44,6 +44,9 @@ type Options struct {
 
 // AuthOpts returns the LUCI auth options that Siso uses.
 func AuthOpts(credHelperPath string, args ...string) Options {
+	if credHelperPath == "mTLS" {
+		return Options{Type: "mTLS"}
+	}
 	var perRPCCredentials credentials.PerRPCCredentials
 	var tokenSource oauth2.TokenSource
 	base := filepath.Base(credHelperPath)
@@ -51,7 +54,7 @@ func AuthOpts(credHelperPath string, args ...string) Options {
 	switch authType {
 	case "luci-auth":
 		tokenSource = &luciAuthTokenSource{luciAuthPath: credHelperPath, contextArgs: args}
-	case "gcloud", "":
+	case "gcloud":
 		tokenSource = gcloudTokenSource{}
 	default:
 		h := &credHelper{path: credHelperPath}
@@ -70,7 +73,7 @@ func AuthOpts(credHelperPath string, args ...string) Options {
 func New(ctx context.Context, uri string, opts Options) (Cred, error) {
 	var t string
 	if opts.TokenSource == nil {
-		return Cred{}, nil
+		return Cred{Type: opts.Type}, nil
 	}
 	if opts.PerRPCCredentials != nil && uri != "" {
 		_, err := opts.PerRPCCredentials.GetRequestMetadata(ctx, uri)
