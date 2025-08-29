@@ -17,7 +17,7 @@ import (
 	"go.chromium.org/build/siso/o11y/clog"
 )
 
-// ExponentalBackoff handles exponental backoff.
+// ExponentialBackoff handles exponential backoff.
 type ExponentialBackoff struct {
 	started time.Time
 	retries int

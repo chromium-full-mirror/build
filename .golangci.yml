@@ -11,6 +11,7 @@ linters:
     - errorlint
     - gomodguard
     - intrange
+    - misspell
     - unparam
   disable:
     # There are also many unchecked errors.
