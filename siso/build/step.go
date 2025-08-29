@@ -483,6 +483,7 @@ func newCmd(ctx context.Context, b *Builder, stepDef StepDef, stepManifest *step
 
 		HashFS: b.hashFS,
 
+		REAPIVersion:  b.reapiclient.APIVersion(),
 		Platform:      stepDef.Platform(),
 		RemoteWrapper: stepDef.Binding("remote_wrapper"),
 		RemoteCommand: stepDef.Binding("remote_command"),

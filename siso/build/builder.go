@@ -386,6 +386,10 @@ func New(ctx context.Context, graph Graph, opts Options) (_ *Builder, err error)
 	if opts.Limits.StartLocal > 0 {
 		b.startLocalCounter.Store(int32(opts.Limits.StartLocal))
 	}
+	if b.reapiclient != nil {
+		reapiVer := b.reapiclient.APIVersion()
+		clog.Infof(ctx, "reapi version=%v; output_paths=%t action.platform=%t", reapiVer, reapi.UseOutputPaths(reapiVer), reapi.UseActionForPlatformProperties(reapiVer))
+	}
 	var disableReason string
 	switch {
 	case b.reapiclient == nil:

@@ -20,6 +20,7 @@ import (
 	"time"
 
 	rpb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
+	semverpb "github.com/bazelbuild/remote-apis/build/bazel/semver"
 	"google.golang.org/api/option"
 	gtransport "google.golang.org/api/transport/grpc"
 	"google.golang.org/grpc"
@@ -469,6 +470,49 @@ func (c *Client) UpdateActionResult(ctx context.Context, d digest.Digest, result
 	})
 	c.m.OpsDone(err)
 	return err
+}
+
+// APIVersion returns api version to use.
+func (c *Client) APIVersion() *semverpb.SemVer {
+	if c == nil {
+		return nil
+	}
+	return c.capabilities.GetHighApiVersion()
+}
+
+// UseActionForPlatformProperties returns true
+// when set Platform properties in Action message, as well as Command.
+//
+//	message Action
+//	 // New in version 2.2: clients SHOULD set these platform properties
+//	 // as well as those in the Command. Servers SHOULD prefer those set here.
+//	 Platform platform
+//
+//	message Command
+//	 // DEPRECATED as of v2.2: platform properties are now specified directly
+//	 // in the action.
+//	 Platform platform
+func UseActionForPlatformProperties(apiVer *semverpb.SemVer) bool {
+	return apiVer.GetMajor() >= 2 && apiVer.GetMinor() >= 2
+}
+
+// UseOutputPaths returns true
+// when use output_paths instead of output_files, output_directories
+// in Command.
+//
+//	message Command
+//	  // DEPRECATED since v2.1: Use `output_paths` instead.
+//	  repeated string output_files
+//
+//	  // DEPRECATED since v2.1: Use `output_paths` instead.
+//	  repeated string output_directories
+//
+//	  // New in v2.1: this fields supersedes the DEPRECATED `output_files`
+//	  // and `output_directories` fields.  If `output_paths` is used,
+//	  // `output_files` and `output_directories` will be ignored!
+//	  repeated string output_paths
+func UseOutputPaths(apiVer *semverpb.SemVer) bool {
+	return apiVer.GetMajor() >= 2 && apiVer.GetMinor() >= 1
 }
 
 // NewContext returns new context with request metadata.

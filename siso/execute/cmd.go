@@ -20,11 +20,13 @@ import (
 	"time"
 
 	rpb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
+	semverpb "github.com/bazelbuild/remote-apis/build/bazel/semver"
 	log "github.com/golang/glog"
 	"google.golang.org/protobuf/types/known/durationpb"
 
 	"go.chromium.org/build/siso/hashfs"
 	"go.chromium.org/build/siso/o11y/clog"
+	"go.chromium.org/build/siso/reapi"
 	"go.chromium.org/build/siso/reapi/digest"
 	"go.chromium.org/build/siso/reapi/merkletree"
 )
@@ -165,6 +167,9 @@ type Cmd struct {
 
 	// HashFS is a hash fs that the cmd runs on.
 	HashFS *hashfs.HashFS
+
+	// REAPI version
+	REAPIVersion *semverpb.SemVer
 
 	// Platform is a platform properties for remote execution.
 	// e.g. OSFamily: {Linux, Windows}
@@ -431,14 +436,17 @@ func (c *Cmd) Digest(ctx context.Context, ds *digest.Store) (actionDigest digest
 		timeout = durationpb.New(c.Timeout * 2)
 	}
 
-	action, err := digest.FromProtoMessage(&rpb.Action{
+	actionMsg := &rpb.Action{
 		CommandDigest:   commandDigest.Proto(),
 		InputRootDigest: inputRootDigest.Proto(),
 		Timeout:         timeout,
 		DoNotCache:      c.DoNotCache,
 		Salt:            c.ActionSalt,
-		Platform:        c.remoteExecutionPlatform(),
-	})
+	}
+	if reapi.UseActionForPlatformProperties(c.REAPIVersion) {
+		actionMsg.Platform = c.remoteExecutionPlatform()
+	}
+	action, err := digest.FromProtoMessage(actionMsg)
 	if err != nil {
 		return digest.Digest{}, fmt.Errorf("failed to build action for %s: %w", c, err)
 	}
@@ -732,12 +740,19 @@ func (c *Cmd) commandDigest(ctx context.Context, ds *digest.Store) (digest.Diges
 	command := &rpb.Command{
 		Arguments:        args,
 		WorkingDirectory: filepath.ToSlash(dir),
-		// TODO(b/273151098): `OutputFiles` is deprecated. should use `OutputPaths` instead.
-		// https://github.com/bazelbuild/remote-apis/blob/main/build/bazel/remote/execution/v2/remote_execution.proto#L592
-		OutputFiles: outs,
 		// TODO(b/273152496): `Platform` in `Command` is deprecated. should specify it in `Action`.
 		// https://github.com/bazelbuild/remote-apis/blob/55153ba61dcf6277849562a30bca9fa3906ad9a0/build/bazel/remote/execution/v2/remote_execution.proto#L661-L664
+		// https://github.com/bazelbuild/remote-apis/blob/55153ba61dcf6277849562a30bca9fa3906ad9a0/build/bazel/remote/execution/v2/remote_execution.proto#L519-L521
+		// clients SHOULD set these platform properties as well
+		// as those in the Command.
 		Platform: c.remoteExecutionPlatform(), // deprecated?
+	}
+	// `OutputFiles` is deprecated. should use `OutputPaths` instead.
+	// https://github.com/bazelbuild/remote-apis/blob/main/build/bazel/remote/execution/v2/remote_execution.proto#L592
+	if reapi.UseOutputPaths(c.REAPIVersion) {
+		command.OutputPaths = outs
+	} else {
+		command.OutputFiles = outs
 	}
 	for _, env := range c.Env {
 		k, v, ok := strings.Cut(env, "=")
