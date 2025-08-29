@@ -175,13 +175,16 @@ func (c *LocalCache) SetContent(ctx context.Context, d digest.Digest, fname stri
 	if err == nil {
 		return nil
 	}
-	err = os.MkdirAll(filepath.Dir(cname), 0755)
-	c.m.OpsDone(err)
-	if err != nil {
-		return err
-	}
 	_, err, shared := c.singleflight.Do(cname, func() (any, error) {
-		w, err := os.Create(cname)
+		err = os.MkdirAll(filepath.Dir(cname), 0755)
+		c.m.OpsDone(err)
+		if err != nil {
+			return nil, err
+		}
+		// Write to a temporary file first before renaming to perform an atomic
+		// write.
+		tmp := cname + ".tmp"
+		w, err := os.Create(tmp)
 		if err != nil {
 			c.m.WriteDone(0, err)
 			return nil, err
@@ -191,15 +194,28 @@ func (c *LocalCache) SetContent(ctx context.Context, d digest.Digest, fname stri
 		if err != nil {
 			c.m.WriteDone(0, err)
 			w.Close()
+			os.Remove(tmp)
 			return nil, err
 		}
 		err = gw.Close()
 		if err != nil {
 			c.m.WriteDone(0, err)
 			w.Close()
+			os.Remove(tmp)
 			return nil, err
 		}
 		err = w.Close()
+		if err != nil {
+			c.m.WriteDone(0, err)
+			os.Remove(tmp)
+			return nil, err
+		}
+		err = os.Rename(tmp, cname)
+		if err != nil {
+			c.m.WriteDone(0, err)
+			os.Remove(tmp)
+			return nil, err
+		}
 		// TODO(b/274060507): local cache metric: iometrics uses compressed size or uncompressed size?
 		c.m.WriteDone(len(buf), err)
 		return nil, err
