@@ -18,10 +18,9 @@ import (
 	"go.chromium.org/build/siso/o11y/trace"
 )
 
-type targetState struct {
+type phonyState struct {
 	dirtyErr error
 	mtime    time.Time
-	changed  bool
 }
 
 // needToRun checks whether step needs to run or not.
@@ -35,7 +34,7 @@ func (b *Builder) needToRun(ctx context.Context, stepDef StepDef, stepManifest *
 			dirtyErr = err
 		}
 		for _, outpath := range stepManifest.outputs {
-			b.targets.Store(outpath, targetState{
+			b.phony.Store(outpath, phonyState{
 				dirtyErr: dirtyErr,
 				mtime:    mtime,
 			})
@@ -237,35 +236,27 @@ func inputMtime(ctx context.Context, b *Builder, stepDef StepDef) (string, time.
 	appendSeq(ins, depsIter)(func(in string) bool {
 		var mtime time.Time
 		var changed bool
-		v, ok := b.targets.Load(in)
+		v, ok := b.phony.Load(in)
 		if ok {
-			// seen/phony target
-			ts, ok := v.(targetState)
+			// phony target
+			ps, ok := v.(phonyState)
 			if !ok {
-				retErr = fmt.Errorf("unexpected value in b.targets for %s: %T", in, v)
+				retErr = fmt.Errorf("unexpected value in dirtyPhony for %s: %T", in, v)
 				return false
 			}
-			if ts.dirtyErr != nil {
-				retErr = fmt.Errorf("input %s: %w", in, ts.dirtyErr)
+			if ps.dirtyErr != nil {
+				retErr = fmt.Errorf("input %s (phony): %w", in, ps.dirtyErr)
 				return false
 			}
-			mtime = ts.mtime
-			changed = ts.changed
+			mtime = ps.mtime
 		} else {
 			fi, err := b.hashFS.Stat(ctx, b.path.ExecRoot, in)
 			if err != nil {
 				retErr = fmt.Errorf("missing input %s: %w", in, err)
-				b.targets.Store(in, targetState{
-					dirtyErr: retErr,
-				})
 				return false
 			}
 			mtime = fi.ModTime()
 			changed = fi.IsChanged()
-			b.targets.Store(in, targetState{
-				mtime:   mtime,
-				changed: changed,
-			})
 		}
 		if inmtime.Before(mtime) {
 			inmtime = mtime

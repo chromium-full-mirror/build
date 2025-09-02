@@ -168,8 +168,8 @@ type Builder struct {
 	plan  *plan
 	stats *stats
 
-	// record target's state.
-	targets sync.Map
+	// record phony targets state.
+	phony sync.Map
 
 	stepSema *semaphore.Semaphore
 
@@ -1097,11 +1097,8 @@ func (b *Builder) outputs(ctx context.Context, step *Step) error {
 				local = true
 			}
 		}
-		fi, err := b.hashFS.Stat(ctx, step.cmd.ExecRoot, out)
+		_, err := b.hashFS.Stat(ctx, step.cmd.ExecRoot, out)
 		if err != nil {
-			b.targets.Store(out, targetState{
-				dirtyErr: err,
-			})
 			reqOut := slices.Contains(defOutputs, out)
 			if reqOut {
 				if experiments.Enabled("ignore-missing-outputs", "") {
@@ -1121,10 +1118,6 @@ func (b *Builder) outputs(ctx context.Context, step *Step) error {
 			}
 			continue
 		}
-		b.targets.Store(out, targetState{
-			mtime:   fi.ModTime(),
-			changed: fi.IsChanged(),
-		})
 	}
 	if len(localOutputs) > 0 {
 		err := b.hashFS.Flush(ctx, step.cmd.ExecRoot, localOutputs)
