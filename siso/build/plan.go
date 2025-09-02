@@ -647,20 +647,20 @@ func (p *plan) done(ctx context.Context, step *Step) {
 
 	// Before processing the completed step,
 	// send ready steps from p.ready to p.q and resize p.ready.
-	i := 0
-	for _, s := range p.ready {
+loop:
+	for i, s := range p.ready {
 		select {
 		case p.q <- s:
 			s.queueDuration = time.Since(s.queueTime)
 		default:
-			p.ready[i] = s
-			i++
+			copy(p.ready, p.ready[i:])
+			for j := len(p.ready) - i; j < len(p.ready); j++ {
+				p.ready[j] = nil
+			}
+			p.ready = p.ready[:len(p.ready)-i]
+			break loop
 		}
 	}
-	for j := i; j < len(p.ready); j++ {
-		p.ready[j] = nil
-	}
-	p.ready = p.ready[:i]
 
 	// Unblock waiting steps and send them to the queue if they are ready.
 	npendings := p.npendings
@@ -670,7 +670,7 @@ func (p *plan) done(ctx context.Context, step *Step) {
 		if log.V(1) {
 			clog.Infof(ctx, "done %v", out)
 		}
-		i = 0
+		i := 0
 		for _, s := range p.targets[out].waits {
 			prevProcessed := step.String()
 			if step.metrics.skip || step.def.IsPhony() {
