@@ -142,16 +142,10 @@ func (lc *LayeredCache) Source(ctx context.Context, d digest.Digest, f string) d
 	if len(lc.caches) == 0 {
 		return nil
 	}
-	if len(lc.caches) > 1 && d.SizeBytes < getContentThreshold {
-		return layeredSource{lc: lc, d: d, f: f}
+	if len(lc.caches) == 1 {
+		return lc.caches[0].Source(ctx, d, f)
 	}
-	// TODO(crbug.com/437733082): Implement write-through for larger content
-	for _, cache := range lc.caches[:len(lc.caches)-1] {
-		if cache.HasContent(ctx, d) {
-			return cache.Source(ctx, d, f)
-		}
-	}
-	return lc.caches[len(lc.caches)-1].Source(ctx, d, f)
+	return layeredSource{lc: lc, d: d, f: f}
 }
 
 // layeredSource is a Source that performs write-through caching on a LayeredCache upon Open().
@@ -161,12 +155,61 @@ type layeredSource struct {
 	f  string
 }
 
-func (s layeredSource) Open(ctx context.Context) (io.ReadCloser, error) {
-	content, err := s.lc.GetContent(ctx, s.d, s.f)
-	if err != nil {
-		return nil, err
+type teeCloser struct {
+	r  io.Reader
+	rc io.Closer
+	wc io.Closer
+}
+
+func (r *teeCloser) Read(p []byte) (n int, err error) {
+	return r.r.Read(p)
+}
+
+func (r *teeCloser) Close() error {
+	err := r.rc.Close()
+	werr := r.wc.Close()
+	if err == nil {
+		err = werr
 	}
-	return io.NopCloser(bytes.NewReader(content)), nil
+	return err
+}
+
+func (s layeredSource) Open(ctx context.Context) (io.ReadCloser, error) {
+	if s.d.SizeBytes < getContentThreshold {
+		content, err := s.lc.GetContent(ctx, s.d, s.f)
+		if err != nil {
+			return nil, err
+		}
+		return io.NopCloser(bytes.NewReader(content)), nil
+	}
+	end := len(s.lc.caches) - 1
+	var source digest.Source
+	var localCache *LocalCache
+	for i, cache := range s.lc.caches {
+		if i == end || cache.HasContent(ctx, s.d) {
+			source = cache.Source(ctx, s.d, s.f)
+			break
+		}
+		if lc, ok := s.lc.caches[i].(*LocalCache); ok {
+			localCache = lc
+		}
+	}
+	r, err := source.Open(ctx)
+	if err != nil || localCache == nil {
+		return r, err
+	}
+	w, err := localCache.ContentSink(ctx, s.d, s.f)
+	if err != nil {
+		clog.Warningf(ctx, "failed to write digest %s to cache: %v", s.d.String(), err)
+		return r, nil
+	}
+	// If the entry already exists in local cache, just return the remote reader.
+	// This race can only happen with concurrent reads of the same entry.
+	if w == nil {
+		return r, err
+	}
+	tr := io.TeeReader(r, w)
+	return &teeCloser{r: tr, rc: r, wc: w}, nil
 }
 
 func (s layeredSource) String() string {

@@ -224,6 +224,73 @@ func (c *LocalCache) SetContent(ctx context.Context, d digest.Digest, fname stri
 	return err
 }
 
+type dataWriteCloser struct {
+	wc    io.WriteCloser
+	cname string
+	f     *os.File
+	m     *iometrics.IOMetrics
+	n     int
+	d     digest.Digest
+}
+
+func (w *dataWriteCloser) Write(buf []byte) (int, error) {
+	n, err := w.wc.Write(buf)
+	w.n += n
+	return n, err
+}
+
+func (w *dataWriteCloser) Close() error {
+	err := w.wc.Close()
+	cerr := w.f.Close()
+	if err == nil {
+		err = cerr
+	}
+	if int64(w.n) != w.d.SizeBytes {
+		err = fmt.Errorf("early EOF for %s (%d bytes): %w", w.d, w.n, err)
+	}
+	w.m.WriteDone(w.n, err)
+	fname := w.f.Name()
+	if err != nil {
+		w.m.OpsDone(os.Remove(fname))
+		return err
+	}
+	err = os.Rename(fname, w.cname)
+	w.m.OpsDone(err)
+	if err != nil {
+		w.m.OpsDone(os.Remove(fname))
+		// Consider losing a race as success
+		_, err = os.Stat(w.cname)
+		w.m.OpsDone(err)
+	}
+	return err
+}
+
+// ContentSink opens a temporary file for writing and renames it into place on close.
+// If the target file already exists, returns (nil, nil).
+func (c *LocalCache) ContentSink(ctx context.Context, d digest.Digest, fname string) (io.WriteCloser, error) {
+	cname := c.contentCacheFilename(d)
+	_, err := os.Stat(cname)
+	c.m.OpsDone(err)
+	if err == nil {
+		return nil, nil
+	}
+	err = os.MkdirAll(filepath.Dir(cname), 0755)
+	c.m.OpsDone(err)
+	if err != nil {
+		return nil, err
+	}
+	// Write to a temporary file first before renaming to perform an atomic
+	// write.
+	f, err := os.CreateTemp(filepath.Dir(cname), filepath.Base(cname))
+	c.m.OpsDone(err)
+	if err != nil {
+		return nil, err
+	}
+	clog.Infof(ctx, "write cache content %s for %s", d, fname)
+	gw := gzip.NewWriter(f)
+	return &dataWriteCloser{wc: gw, f: f, cname: cname, m: c.m, d: d}, nil
+}
+
 // HasContent checks whether content of the digest exists in the local cache.
 func (c *LocalCache) HasContent(ctx context.Context, d digest.Digest) bool {
 	cname := c.contentCacheFilename(d)
