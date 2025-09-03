@@ -141,22 +141,32 @@ func (w *Writer) Write(buf []byte) (int, error) {
 	if w.ok {
 		return len(buf), nil
 	}
-	err := w.wr.Send(&pb.WriteRequest{
-		ResourceName: w.resname,
-		WriteOffset:  w.offset,
-		Data:         buf,
-	})
-	if errors.Is(err, io.EOF) {
-		// the blob already stored in CAS.
-		w.ok = true
-		clog.Infof(w.wr.Context(), "bytestream write %s for %s got EOF at %d: %v", w.resname, w.name, w.offset, err)
-		return len(buf), nil
+	n := len(buf)
+	p := 0
+	const streamBufSize = 2 * 1024 * 1024 // 2MB, since grpc default max recv size is 4MB.
+	for p < n {
+		bufsize := len(buf[p:])
+		if bufsize > streamBufSize {
+			bufsize = streamBufSize
+		}
+		err := w.wr.Send(&pb.WriteRequest{
+			ResourceName: w.resname,
+			WriteOffset:  w.offset,
+			Data:         buf[p : p+bufsize],
+		})
+		if errors.Is(err, io.EOF) {
+			// the blob already stored in CAS.
+			w.ok = true
+			clog.Infof(w.wr.Context(), "bytestream write %s for %s got EOF at %d: %v", w.resname, w.name, w.offset, err)
+			return n, nil
+		}
+		if err != nil {
+			return p, fmt.Errorf("failed to send for %s: %w", w.name, err)
+		}
+		w.offset += int64(bufsize)
+		p += bufsize
 	}
-	if err != nil {
-		return 0, fmt.Errorf("failed to send for %s: %w", w.name, err)
-	}
-	w.offset += int64(len(buf))
-	return len(buf), nil
+	return n, nil
 }
 
 // Close closes the writer.
