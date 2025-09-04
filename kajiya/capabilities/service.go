@@ -60,6 +60,10 @@ func (s *Service) getCapabilities(request *repb.GetCapabilitiesRequest) (*repb.S
 			},
 			MaxBatchTotalSizeBytes:      0,                                           // no limit.
 			SymlinkAbsolutePathStrategy: repb.SymlinkAbsolutePathStrategy_DISALLOWED, // Same as RBE.
+			SupportedCompressors: []repb.Compressor_Value{
+				repb.Compressor_IDENTITY,
+				repb.Compressor_ZSTD,
+			},
 		},
 		ExecutionCapabilities: &repb.ExecutionCapabilities{
 			DigestFunction: repb.DigestFunction_SHA256,

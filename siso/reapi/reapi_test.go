@@ -2,9 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-package reapi
+package reapi_test
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"net"
@@ -18,7 +19,30 @@ import (
 	"google.golang.org/grpc/keepalive"
 	"google.golang.org/grpc/reflection"
 	"google.golang.org/grpc/status"
+
+	"go.chromium.org/build/siso/reapi"
+	"go.chromium.org/build/siso/reapi/digest"
+	"go.chromium.org/build/siso/reapi/reapitest"
 )
+
+type fakeCAS struct {
+	rpb.UnimplementedContentAddressableStorageServer
+	t    *testing.T
+	code codes.Code
+	// remaining number to reply error with code.
+	n int
+}
+
+func (f *fakeCAS) BatchUpdateBlobs(ctx context.Context, req *rpb.BatchUpdateBlobsRequest) (*rpb.BatchUpdateBlobsResponse, error) {
+	n := f.n
+	f.n--
+	var err error
+	if n > 0 {
+		err = status.Error(f.code, "error")
+	}
+	f.t.Logf("n=%d: err=%v", n, err)
+	return &rpb.BatchUpdateBlobsResponse{}, err
+}
 
 func TestServiceConfig_CAS(t *testing.T) {
 	for _, tc := range []struct {
@@ -73,7 +97,7 @@ func TestServiceConfig_CAS(t *testing.T) {
 		},
 	} {
 		t.Run(fmt.Sprintf("%s_%d", tc.code, tc.n), func(t *testing.T) {
-			ctx := context.Background()
+			ctx := t.Context()
 			ctx, cancel := context.WithTimeout(ctx, 6*time.Second)
 			defer cancel()
 
@@ -110,7 +134,7 @@ func TestServiceConfig_CAS(t *testing.T) {
 				Time:    30 * time.Second,
 				Timeout: 20 * time.Second,
 			}
-			conn, err := grpc.NewClient(addr, append([]grpc.DialOption{grpc.WithTransportCredentials(insecure.NewCredentials())}, dialOptions(keepAliveParams)...)...)
+			conn, err := grpc.NewClient(addr, append([]grpc.DialOption{grpc.WithTransportCredentials(insecure.NewCredentials())}, reapi.DialOptions(keepAliveParams)...)...)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -130,21 +154,81 @@ func TestServiceConfig_CAS(t *testing.T) {
 	}
 }
 
-type fakeCAS struct {
-	rpb.UnimplementedContentAddressableStorageServer
-	t    *testing.T
-	code codes.Code
-	// remaining number to reply error with code.
-	n int
+func TestUploadAll(t *testing.T) {
+	ctx := t.Context()
+	fakere := &reapitest.Fake{}
+	cl := reapitest.New(ctx, t, fakere)
+	ds := digest.NewStore()
+
+	// No uploads
+	n, err := cl.UploadAll(ctx, ds)
+	if err != nil || n != 0 {
+		t.Errorf("UploadAll()=%d,%v: want 0,nil", n, err)
+	}
+
+	// Upload missing blobs.
+	// The small blob will be uploaded by BatchUpdateBlobs RPC
+	smallBlob := []byte("foo")
+	sd := digest.FromBytes("small", smallBlob)
+	ds.Set(sd)
+	// The large blob will be uploaded by ByteStream RPC
+	largeBlob := make([]byte, 10*1024*1024)
+	ld := digest.FromBytes("large", largeBlob)
+	ds.Set(ld)
+	n, err = cl.UploadAll(ctx, ds)
+	if err != nil || n != 2 {
+		t.Fatalf("UploadAll()=%d,%v: want 2,nil", n, err)
+	}
+	// Download the small blob with BatchReadBlobs RPC
+	b, err := cl.Get(ctx, sd.Digest(), sd.String())
+	if !bytes.Equal(b, smallBlob) || err != nil {
+		t.Errorf("cl.Get()=%b,%v: want %v,nil", b, err, smallBlob)
+	}
+	// Download the large blob with ByteStream RPC
+	b, err = cl.Get(ctx, ld.Digest(), ld.String())
+	if !bytes.Equal(b, largeBlob) || err != nil {
+		t.Errorf("cl.Get()=_,%v: want _,nil", err)
+	}
 }
 
-func (f *fakeCAS) BatchUpdateBlobs(ctx context.Context, req *rpb.BatchUpdateBlobsRequest) (*rpb.BatchUpdateBlobsResponse, error) {
-	n := f.n
-	f.n--
-	var err error
-	if n > 0 {
-		err = status.Error(f.code, "error")
+// TODO: Record REAPI calls on reapitest.Fake and verify that the requests
+// are sent as expected.
+func TestUploadAllWithCompression(t *testing.T) {
+	ctx := t.Context()
+	fakere := &reapitest.Fake{}
+	opt := reapi.Option{
+		CompressedBlob: 1,
 	}
-	f.t.Logf("n=%d: err=%v", n, err)
-	return &rpb.BatchUpdateBlobsResponse{}, err
+	cl := reapitest.NewWithOption(ctx, t, fakere, opt)
+	ds := digest.NewStore()
+
+	// No uploads
+	n, err := cl.UploadAll(ctx, ds)
+	if err != nil || n != 0 {
+		t.Errorf("UploadAll()=%d,%v: want 0,nil", n, err)
+	}
+
+	// Upload missing blobs.
+	// The small blob will be uploaded by BatchUpdateBlobs RPC
+	smallBlob := []byte("foo")
+	sd := digest.FromBytes("small", smallBlob)
+	ds.Set(sd)
+	// The large blob will be uploaded by ByteStream RPC
+	largeBlob := make([]byte, 10*1024*1024)
+	ld := digest.FromBytes("large", largeBlob)
+	ds.Set(ld)
+	n, err = cl.UploadAll(ctx, ds)
+	if err != nil || n != 2 {
+		t.Fatalf("UploadAll()=%d,%v: want 2,nil", n, err)
+	}
+	// Download the small blob with BatchReadBlobs RPC
+	b, err := cl.Get(ctx, sd.Digest(), sd.String())
+	if !bytes.Equal(b, smallBlob) || err != nil {
+		t.Errorf("cl.Get()=%b,%v: want %v,nil", b, err, smallBlob)
+	}
+	// Download the large blob with ByteStream RPC
+	b, err = cl.Get(ctx, ld.Digest(), ld.String())
+	if !bytes.Equal(b, largeBlob) || err != nil {
+		t.Errorf("cl.Get()=_,%v: want _,nil", err)
+	}
 }

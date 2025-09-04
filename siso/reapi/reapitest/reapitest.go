@@ -121,12 +121,17 @@ func (s *server) Close() {
 
 // New starts new fake reapi grpc server and returns reapi client.
 func New(ctx context.Context, t *testing.T, fake *Fake) *reapi.Client {
+	return NewWithOption(ctx, t, fake, reapi.Option{})
+}
+
+// NewWithOption starts new fake reapi grpc server with reapi option and returns reapi client.
+func NewWithOption(ctx context.Context, t *testing.T, fake *Fake, opt reapi.Option) *reapi.Client {
 	t.Helper()
 	s := newServer(ctx, t, fake)
 	t.Cleanup(s.Close)
-	opt := reapi.Option{
-		Address:  s.addr,
-		Instance: "projects/siso-test/instances/default_instance",
+	opt.Address = s.addr
+	if opt.Instance == "" {
+		opt.Instance = "projects/siso-test/instances/default_instance"
 	}
 	conn, err := grpc.NewClient(s.addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {

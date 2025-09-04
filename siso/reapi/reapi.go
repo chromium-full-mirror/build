@@ -311,7 +311,7 @@ var serviceConfig = `
         ]
 }`
 
-func dialOptions(keepAliveParams keepalive.ClientParameters) []grpc.DialOption {
+func DialOptions(keepAliveParams keepalive.ClientParameters) []grpc.DialOption {
 	// TODO(b/273639326): handle auth failures gracefully.
 
 	// https://github.com/grpc/grpc/blob/c16338581dba2b054bf52484266b79e6934bbc1c/doc/service_config.md
@@ -361,7 +361,7 @@ func newConn(ctx context.Context, addr string, cred cred.Cred, opt Option) (grpc
 		// user should specify credential helper for the backend.
 		copts = append(copts, option.WithoutAuthentication())
 	}
-	dopts := dialOptions(opt.KeepAliveParams)
+	dopts := DialOptions(opt.KeepAliveParams)
 	var conn grpcClientConn
 	var err error
 	var tlsConfig *tls.Config

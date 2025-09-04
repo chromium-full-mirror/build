@@ -7,6 +7,7 @@ require (
 	github.com/bazelbuild/remote-apis v0.0.0-20250728120203-e94a7ece2a1e
 	github.com/bazelbuild/remote-apis-sdks v0.0.0-20250818214745-5c719541ba4a
 	github.com/google/uuid v1.6.0
+	github.com/klauspost/compress v1.17.8
 	golang.org/x/sync v0.16.0
 	golang.org/x/sys v0.35.0
 	google.golang.org/genproto/googleapis/bytestream v0.0.0-20250818200422-3122310a409c

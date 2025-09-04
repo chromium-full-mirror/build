@@ -6,6 +6,7 @@
 package blobstore
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -21,6 +22,7 @@ import (
 	"github.com/bazelbuild/remote-apis-sdks/go/pkg/digest"
 	repb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
 	"github.com/google/uuid"
+	"github.com/klauspost/compress/zstd"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -71,42 +73,82 @@ func NewService(cas *ContentAddressableStorage, uploadDir string) (*Service, err
 	}, nil
 }
 
-// parseReadResource parses a ReadRequest.ResourceName and returns the validated Digest.
-// The resource name should be of the format: {instance_name}/blobs/{hash}/{size}
-func parseReadResource(name string) (d digest.Digest, err error) {
+// parseReadResource parses a ReadRequest.ResourceName and returns the validated Digest and the compressor.
+// There is a difference on the resource name form between uncompressed data and compressed data.
+// For uncompressed data, it is in the following form:
+//
+// `{instance_name}/blobs/{hash}/{size}`
+//
+// For compressed data, it is in the following form:
+//
+// `{instance_name}/compressed-blobs/{compressor}/{uncompressed_hash}/{uncompressed_size}`
+func parseReadResource(name string) (digest.Digest, repb.Compressor_Value, error) {
+	var d digest.Digest
+
 	fields := strings.Split(name, "/")
 
-	// Strip any parts before "blobs", as they'll belong to an instance name.
+	// Strip any parts before "blobs"/"compressed-blobs", as they'll belong to an instance name.
 	for i := range fields {
-		if fields[i] == "blobs" {
+		if fields[i] == "blobs" || fields[i] == "compressed-blobs" {
 			fields = fields[i:]
 			break
 		}
 	}
 
-	if len(fields) != 3 || fields[0] != "blobs" {
-		return d, status.Errorf(codes.InvalidArgument, "invalid resource name, must match format {instance_name}/blobs/{hash}/{size}: %s", name)
+	var c repb.Compressor_Value
+	var hash string
+	var sizeField string
+	switch fields[0] {
+	case "blobs":
+		if len(fields) != 3 {
+			return d, c, status.Errorf(codes.InvalidArgument, "invalid resource name, must match format {instance_name}/blobs/{hash}/{size}: %s", name)
+		}
+		c = repb.Compressor_IDENTITY
+		hash = fields[1]
+		sizeField = fields[2]
+	case "compressed-blobs":
+		if len(fields) != 4 {
+			return d, c, status.Errorf(codes.InvalidArgument, "invalid resource name, must match format {instance_name}/compressed-blobs/{compressor}/{uncompressed_hash}/{uncompressed_size}: %s", name)
+		}
+		if fields[1] != "zstd" {
+			return d, c, status.Errorf(codes.InvalidArgument, "invalid compressor type, only \"zstd\" is supported: %q", fields[1])
+		}
+		c = repb.Compressor_ZSTD
+		hash = fields[2]
+		sizeField = fields[3]
+	default:
+		return d, c, status.Errorf(codes.InvalidArgument, "invalid resource name, must match format {instance_name}/blobs/{hash}/{size} or {instance_name}/compressed-blobs/{compressor}/{uncompressed_hash}/{uncompressed_size}: %s", name)
 	}
 
-	hash := fields[1]
-	size, err := strconv.ParseInt(fields[2], 10, 64)
+	size, err := strconv.ParseInt(sizeField, 10, 64)
 	if err != nil {
-		return d, status.Errorf(codes.InvalidArgument, "invalid resource name, fourth component (size) must be an integer: %s", fields[2])
+		return d, c, status.Errorf(codes.InvalidArgument, "invalid resource name, size must be an integer: %s", sizeField)
 	}
 	if size < 0 {
-		return d, status.Errorf(codes.InvalidArgument, "invalid resource name, fourth component (size) must be non-negative: %d", size)
+		return d, c, status.Errorf(codes.InvalidArgument, "invalid resource name, size must be non-negative: %d", size)
 	}
 	d, err = digest.New(hash, size)
 	if err != nil {
-		return d, status.Errorf(codes.InvalidArgument, "invalid resource name, third component is not a valid digest: %s => %s", hash, err)
+		return d, c, status.Errorf(codes.InvalidArgument, "invalid resource name, hash is not a valid digest: %s => %s", hash, err)
 	}
 
-	return d, nil
+	return d, c, nil
 }
 
-// parseWriteResource parses a WriteRequest.ResourceName and returns the validated Digest and upload ID.
-// The resource name must be of the form: {instance_name}/uploads/{uuid}/blobs/{hash}/{size}[/{optionalmetadata}]
-func parseWriteResource(name string) (d digest.Digest, u uuid.UUID, err error) {
+// parseWriteResource parses a WriteRequest.ResourceName and returns the validated Digest and upload ID and compressor.
+// There is a difference on the resource name form between uncompressed data and compressed data.
+// For uncompressed data, it is in the following form:
+//
+// `{instance_name}/uploads/{uuid}/blobs/{hash}/{size}[/{optionalmetadata}]`
+//
+// For compressed data, it is in the following form:
+//
+// `{instance_name}/uploads/{uuid}/compressed-blobs/{compressor}/{uncompressed_hash}/{uncompressed_size}[/{optionalmetadata}]`
+func parseWriteResource(name string) (digest.Digest, uuid.UUID, repb.Compressor_Value, error) {
+	var d digest.Digest
+	var u uuid.UUID
+	var c repb.Compressor_Value
+
 	fields := strings.Split(name, "/")
 
 	// Strip any parts before "uploads", as they'll belong to an instance name.
@@ -117,30 +159,53 @@ func parseWriteResource(name string) (d digest.Digest, u uuid.UUID, err error) {
 		}
 	}
 
-	if len(fields) < 5 || fields[0] != "uploads" || fields[2] != "blobs" {
-		return d, u, status.Errorf(codes.InvalidArgument, "invalid resource name, must follow format {instance_name}/uploads/{uuid}/blobs/{hash}/{size}[/{optionalmetadata}]: %s", name)
+	if len(fields) < 3 || fields[0] != "uploads" {
+		return d, u, c, status.Errorf(codes.InvalidArgument, "invalid resource name, must follow format {instance_name}/uploads/{uuid}/blobs/{hash}/{size}[/{optionalmetadata}] or {instance_name}/uploads/{uuid}/compressed-blobs/{compressor}/{hash}/{size}[/{optionalmetadata}]: %s", name)
+	}
+	u, err := uuid.Parse(fields[1])
+	if err != nil {
+		return d, u, c, status.Errorf(codes.InvalidArgument, "invalid resource name, second component is not a UUID: %s", fields[1])
 	}
 
-	u, err = uuid.Parse(fields[1])
-	if err != nil {
-		return d, u, status.Errorf(codes.InvalidArgument, "invalid resource name, second component is not a UUID: %s", fields[1])
+	var hash string
+	var sizeField string
+	switch fields[2] {
+	case "blobs":
+		fields = fields[3:]
+		if len(fields) < 2 {
+			return d, u, c, status.Errorf(codes.InvalidArgument, "invalid resource name, must match format {instance_name}/uploads/{uuid}/blobs/{hash}/{size}[/{optionalmetadata}]: %s", name)
+		}
+		c = repb.Compressor_IDENTITY
+		hash = fields[0]
+		sizeField = fields[1]
+	case "compressed-blobs":
+		fields = fields[3:]
+		if len(fields) < 3 {
+			return d, u, c, status.Errorf(codes.InvalidArgument, "invalid resource name, must match format {instance_name}/uploads/{uuid}/compressed-blobs/{compressor}/{uncompressed_hash}/{uncompressed_size}[/{optionalmetadata}]: %s", name)
+		}
+		if fields[0] != "zstd" {
+			return d, u, c, status.Errorf(codes.InvalidArgument, "invalid compressor type, only \"zstd\" is supported: %q", fields[0])
+		}
+		c = repb.Compressor_ZSTD
+		hash = fields[1]
+		sizeField = fields[2]
+	default:
+		return d, u, c, status.Errorf(codes.InvalidArgument, "invalid resource name, must follow format {instance_name}/uploads/{uuid}/blobs/{hash}/{size}[/{optionalmetadata}] or {instance_name}/uploads/{uuid}/compressed-blobs/{compressor}/{hash}/{size}[/{optionalmetadata}]: %s", name)
 	}
 
-	hash := fields[3]
-
-	size, err := strconv.ParseInt(fields[4], 10, 64)
+	size, err := strconv.ParseInt(sizeField, 10, 64)
 	if err != nil {
-		return d, u, status.Errorf(codes.InvalidArgument, "invalid resource name, fifth component (size) must be an integer: %s", fields[4])
+		return d, u, c, status.Errorf(codes.InvalidArgument, "invalid resource name, size must be an integer: %s", sizeField)
 	}
 	if size < 0 {
-		return d, u, status.Errorf(codes.InvalidArgument, "invalid resource name, fifth component (size) must be non-negative: %d", size)
+		return d, u, c, status.Errorf(codes.InvalidArgument, "invalid resource name, size must be non-negative: %d", size)
 	}
 	d, err = digest.New(hash, size)
 	if err != nil {
-		return d, u, status.Errorf(codes.InvalidArgument, "invalid resource name, fourth component is not a valid digest: %s => %s", hash, err)
+		return d, u, c, status.Errorf(codes.InvalidArgument, "invalid resource name, hash is not a valid digest: %s => %s", hash, err)
 	}
 
-	return d, u, nil
+	return d, u, c, nil
 }
 
 // Read implements the ByteStream.Read RPC.
@@ -155,7 +220,7 @@ func (s *Service) Read(request *bspb.ReadRequest, server bspb.ByteStream_ReadSer
 }
 
 func (s *Service) read(request *bspb.ReadRequest, server bspb.ByteStream_ReadServer) error {
-	d, err := parseReadResource(request.ResourceName)
+	d, c, err := parseReadResource(request.ResourceName)
 	if err != nil {
 		return err
 	}
@@ -168,13 +233,9 @@ func (s *Service) read(request *bspb.ReadRequest, server bspb.ByteStream_ReadSer
 	if request.ReadOffset > d.Size {
 		return status.Error(codes.OutOfRange, "offset is greater than the size of the file")
 	}
-
-	// Prepare a buffer to read the file into.
-	bufSize := maxChunkSize
-	if request.ReadLimit > 0 && request.ReadLimit < bufSize {
-		bufSize = request.ReadLimit
+	if c != repb.Compressor_IDENTITY && request.ReadLimit != 0 {
+		return status.Error(codes.InvalidArgument, "read_limit must be zero when reading compressed blob")
 	}
-	buf := make([]byte, bufSize)
 
 	// Open the file and seek to the offset.
 	f, err := s.cas.Open(d, request.ReadOffset, request.ReadLimit)
@@ -189,6 +250,23 @@ func (s *Service) read(request *bspb.ReadRequest, server bspb.ByteStream_ReadSer
 		// Safe to ignore, because we're only reading.
 		_ = f.Close()
 	}()
+
+	switch c {
+	case repb.Compressor_IDENTITY:
+		return readUncompressedChunks(f, request.ReadLimit, server)
+	case repb.Compressor_ZSTD:
+		return readWithZSTD(f, server)
+	}
+	return nil
+}
+
+func readUncompressedChunks(f io.ReadCloser, readLimit int64, server bspb.ByteStream_ReadServer) error {
+	// Prepare a buffer to read the file into.
+	bufSize := maxChunkSize
+	if readLimit > 0 && readLimit < bufSize {
+		bufSize = readLimit
+	}
+	buf := make([]byte, bufSize)
 
 	// Send the requested data to the client in chunks.
 	for {
@@ -207,7 +285,28 @@ func (s *Service) read(request *bspb.ReadRequest, server bspb.ByteStream_ReadSer
 			return status.Errorf(codes.Internal, "failed to read data from file: %v", err)
 		}
 	}
+	return nil
+}
 
+// TODO: Send the compressed data in chunks.
+func readWithZSTD(f io.ReadCloser, server bspb.ByteStream_ReadServer) error {
+	var b bytes.Buffer
+	enc, err := zstd.NewWriter(&b)
+	if err != nil {
+		return status.Error(codes.Internal, err.Error())
+	}
+	_, err = io.Copy(enc, f)
+	if err != nil {
+		enc.Close()
+		return status.Error(codes.Internal, err.Error())
+	}
+	enc.Close()
+	err = server.Send(&bspb.ReadResponse{
+		Data: b.Bytes(),
+	})
+	if err != nil {
+		return status.Errorf(codes.Internal, "failed to send data to client: %v", err)
+	}
 	return nil
 }
 
@@ -229,6 +328,10 @@ func (s *Service) write(server bspb.ByteStream_WriteServer) (resource string, er
 	finishedWriting := false
 	var tempFile *os.File
 	var tempPath string
+	var dest io.Writer
+	var comp repb.Compressor_Value
+	var dec *zstd.Decoder
+	var buf []byte
 	defer func() {
 		if tempFile != nil {
 			if err := tempFile.Close(); err != nil {
@@ -285,7 +388,7 @@ func (s *Service) write(server bspb.ByteStream_WriteServer) (resource string, er
 			}
 			resource = request.ResourceName
 			var u uuid.UUID
-			expectedDigest, u, err = parseWriteResource(request.ResourceName)
+			expectedDigest, u, comp, err = parseWriteResource(request.ResourceName)
 			if err != nil {
 				return resource, err
 			}
@@ -317,15 +420,26 @@ func (s *Service) write(server bspb.ByteStream_WriteServer) (resource string, er
 				}
 				return resource, status.Errorf(codes.Internal, "could not create temporary file for upload: %v", err)
 			}
+			dest = io.MultiWriter(tempFile, ourHash)
 		}
 
-		// Append the received data to the temporary file and hash it.
-		if _, err := tempFile.Write(request.Data); err != nil {
-			return resource, status.Errorf(codes.Internal, "failed to write data to temporary file: %v", err)
+		switch comp {
+		case repb.Compressor_IDENTITY:
+			// Append the received data to the temporary file and hash it.
+			n, err := dest.Write(request.Data)
+			if err != nil {
+				return resource, status.Errorf(codes.Internal, "failed to write data: %v", err)
+			}
+			committedSize += int64(n)
+		case repb.Compressor_ZSTD:
+			// Decompress the data later.
+			// TODO: It should be streamed to Decoder as it receives with a pipe.
+			// There should be a goroutine that runs the decoder should write to the tempfile as it completes
+			// the decoding.
+			buf = append(buf, request.Data...)
+		default:
+			return resource, status.Errorf(codes.InvalidArgument, "unsupported compressor: %q", comp)
 		}
-		ourHash.Write(request.Data)
-		committedSize += int64(len(request.Data))
-
 		// If the file is already larger than the expected size, something is wrong - return an error.
 		if committedSize > expectedDigest.Size {
 			return resource, status.Errorf(codes.InvalidArgument, "received %d bytes, more than expected %d", committedSize, expectedDigest.Size)
@@ -333,6 +447,18 @@ func (s *Service) write(server bspb.ByteStream_WriteServer) (resource string, er
 
 		if request.FinishWrite {
 			finishedWriting = true
+			if comp == repb.Compressor_ZSTD {
+				dec, err = zstd.NewReader(bytes.NewReader(buf))
+				if err != nil {
+					return resource, status.Errorf(codes.Internal, "failed to create a decoder: %v", err)
+				}
+				defer dec.Close()
+				n, err := io.Copy(dest, dec)
+				if err != nil {
+					return resource, status.Errorf(codes.Internal, "failed to decode: %v", err)
+				}
+				committedSize = int64(n)
+			}
 			err = tempFile.Close()
 			if err != nil {
 				return resource, status.Errorf(codes.Internal, "could not close temporary file: %v", err)
@@ -356,7 +482,7 @@ func (s *Service) QueryWriteStatus(ctx context.Context, request *bspb.QueryWrite
 }
 
 func (s *Service) queryWriteStatus(request *bspb.QueryWriteStatusRequest) (*bspb.QueryWriteStatusResponse, error) {
-	d, _, err := parseWriteResource(request.ResourceName)
+	d, _, _, err := parseWriteResource(request.ResourceName)
 	if err != nil {
 		return nil, err
 	}
