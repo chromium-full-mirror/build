@@ -314,28 +314,43 @@ func (c *Client) UploadAll(ctx context.Context, ds *digest.Store) (numUploaded i
 		// Case 3: We need to upload this blob after confirming that it's missing.
 		newBlobs[d] = uop.(*uploadOp)
 	}
-
+	var foundBlobs map[digest.Digest]bool
+	var durFindMissing time.Duration
+	var durUpload time.Duration
+	var durWaitPending time.Duration
 	defer func() {
 		for d, uop := range newBlobs {
-			switch {
-			case uop.err == nil:
+			if uop.err == nil {
+				// uop.done(nil) was called
 				c.knownDigests.CompareAndSwap(d, uop, true)
-			case errors.Is(uop.err, errUploadNotFinished):
+				continue
+			}
+			var s string
+			if data, ok := ds.Get(d); ok {
+				s = data.String()
+			} else {
+				s = d.String()
+			}
+			if errors.Is(uop.err, errUploadNotFinished) {
+				// uop.done(err) is not called
 				if err != nil {
 					uop.err = err
 				}
+				clog.Warningf(ctx, "upload %s not finished: %v", s, err)
 				close(uop.ch)
-			default:
-				var s string
-				if data, ok := ds.Get(d); ok {
-					s = data.String()
-				} else {
-					s = d.String()
-				}
-				clog.Infof(ctx, "upload %s failed: %v", s, uop.err)
-				c.knownDigests.CompareAndDelete(d, uop)
+			} else {
+				// uop.done(err) was called with non-nil err.
+				clog.Warningf(ctx, "upload %s failed: %v", s, uop.err)
 			}
+			// forget this digest, so next will try to upload again.
+			c.knownDigests.CompareAndDelete(d, uop)
 		}
+		clog.Infof(ctx, "upload all: blobs=%d -> {uploaded=%d, found=%d, pending=%d, skipped=%d}, timing: {find_missing=%s, upload=%s, wait_pending=%s}: %v",
+			len(blobs), len(newBlobs), len(foundBlobs), len(pendingBlobs), skippedBlobs,
+			durFindMissing.Round(time.Microsecond),
+			durUpload.Round(time.Microsecond),
+			durWaitPending.Round(time.Microsecond),
+			err)
 	}()
 
 	span.SetAttr("upload", len(newBlobs))
@@ -345,8 +360,6 @@ func (c *Client) UploadAll(ctx context.Context, ds *digest.Store) (numUploaded i
 	// For all "new" blobs, use FindMissingBlobs to ask the remote CAS which of them are
 	// really still missing - they might already be present and we just don't know about it yet.
 	var missingBlobs []digest.Digest
-	var foundBlobs map[digest.Digest]bool
-	var durFindMissing time.Duration
 	if len(newBlobs) > 0 {
 		t := time.Now()
 		newBlobDigests := make([]digest.Digest, 0, len(newBlobs))
@@ -379,7 +392,6 @@ func (c *Client) UploadAll(ctx context.Context, ds *digest.Store) (numUploaded i
 	}
 
 	// Let's upload the blobs that we know are still missing.
-	var durUpload time.Duration
 	if len(missingBlobs) > 0 {
 		t := time.Now()
 		numUploaded, err = c.upload(ctx, ds, missingBlobs, newBlobs)
@@ -391,7 +403,6 @@ func (c *Client) UploadAll(ctx context.Context, ds *digest.Store) (numUploaded i
 	}
 
 	// Finally, wait for any blobs that are being uploaded by other threads, before we return.
-	var durWaitPending time.Duration
 	if len(pendingBlobs) > 0 {
 		t := time.Now()
 		for d, uop := range pendingBlobs {
@@ -401,12 +412,6 @@ func (c *Client) UploadAll(ctx context.Context, ds *digest.Store) (numUploaded i
 		}
 		durWaitPending = time.Since(t)
 	}
-
-	clog.Infof(ctx, "upload all: blobs=%d -> {uploaded=%d, found=%d, pending=%d, skipped=%d}, timing: {find_missing=%s, upload=%s, wait_pending=%s}",
-		len(blobs), len(newBlobs), len(foundBlobs), len(pendingBlobs), skippedBlobs,
-		durFindMissing.Round(time.Microsecond),
-		durUpload.Round(time.Microsecond),
-		durWaitPending.Round(time.Microsecond))
 
 	return numUploaded, err
 }
@@ -551,7 +556,8 @@ func (c *Client) uploadWithBatchUpdateBlobs(ctx context.Context, digests []diges
 			c.m.WriteDone(int(res.Digest.SizeBytes), nil)
 			uploads[blob].done(nil)
 		}
-		clog.Infof(ctx, "upload by batch %d blobs (missing:%d)", len(batchReq.Requests), len(missingBlobs))
+		// TODO: set error if digest is missing in batchResp?
+		clog.Infof(ctx, "upload by batch %d->%d blobs (missing:%d)", len(batchReq.Requests), len(batchResp.Responses), len(missingBlobs))
 	}
 	return missingBlobs, nil
 }
