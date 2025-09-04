@@ -1,6 +1,6 @@
 module go.chromium.org/build/siso
 
-go 1.24.6
+go 1.24.7
 
 replace go.chromium.org/build/kajiya => ../kajiya
 
