@@ -90,6 +90,8 @@ Siso is named after shiso, a herb commonly used in Japan. It's a reference to ba
 
 Siso is the primary build system for Chromium and the projects that import //build from Chromium.
 
+As of Aug 2025, Siso is moved to [go.chromium.org/build/siso](https://pkg.go.dev/go.chromium.org/build/siso).
+
 As of June 2025, Siso is used in all the projects that import Chromium's //build, and is used by default on non-Google environments.
 
 As of Apr 2025, Siso built-in remote exec client is used for Chromium and Chrome builders.
@@ -121,4 +123,4 @@ Please check [go/siso-development](http://go/siso-development) (internal).
 
 ## References
 
-* [Previous location of Siso's source](https://chrome-internal.googlesource.com/infra/infra_internal/+/refs/heads/main/go/src/infra_internal/experimental/siso) (internal)
+* [Previous location of Siso's source](https://chromium.googlesource.com/infra/infra/+/9b440a2c2670568a7b6952d28ef5422e961be629/go/src/infra/build/siso) (infra)
