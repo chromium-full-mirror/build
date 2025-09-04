@@ -107,12 +107,12 @@ func (s *WebuiServer) handleRunbuildPost(w http.ResponseWriter, r *http.Request)
 		for err == nil {
 			if ninjaStepRe.MatchString(line) {
 				matches := ninjaStepRe.FindStringSubmatch(line)
-				stepNum := string(matches[ninjaStepRe.SubexpIndex("stepNum")])
-				totalSteps := string(matches[ninjaStepRe.SubexpIndex("totalSteps")])
+				stepNum := matches[ninjaStepRe.SubexpIndex("stepNum")]
+				totalSteps := matches[ninjaStepRe.SubexpIndex("totalSteps")]
 				// stepTime := string(matches[ninjaStepRe.SubexpIndex("time")])
-				status := string(matches[ninjaStepRe.SubexpIndex("status")])
-				stepType := string(matches[ninjaStepRe.SubexpIndex("type")])
-				stepOut := string(matches[ninjaStepRe.SubexpIndex("out")])
+				status := matches[ninjaStepRe.SubexpIndex("status")]
+				stepType := matches[ninjaStepRe.SubexpIndex("type")]
+				stepOut := matches[ninjaStepRe.SubexpIndex("out")]
 
 				stepNumParsed, err := strconv.ParseInt(stepNum, 0, 64)
 				if err == nil && stepNumParsed > maxStep {

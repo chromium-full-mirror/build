@@ -631,8 +631,8 @@ func (s *WebuiServer) handleOutdirListSteps(w http.ResponseWriter, r *http.Reque
 	sortParam := r.URL.Query().Get("sort")
 	if sortParamRe.MatchString(sortParam) {
 		matches := sortParamRe.FindStringSubmatch(sortParam)
-		sortBy = string(matches[sortParamRe.SubexpIndex("sortBy")])
-		if string(matches[sortParamRe.SubexpIndex("order")]) == "Dsc" {
+		sortBy = matches[sortParamRe.SubexpIndex("sortBy")]
+		if matches[sortParamRe.SubexpIndex("order")] == "Dsc" {
 			sortDescending = true
 		}
 	} else if len(sortParam) > 0 {
