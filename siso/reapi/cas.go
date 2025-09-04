@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"path"
 	"slices"
 	"sort"
@@ -96,6 +97,7 @@ func (u *uploadOp) wait(ctx context.Context) error {
 }
 
 var errUploadNotFinished = errors.New("upload not finished")
+var errUploadNoResponse = errors.New("upload no response")
 
 func (c *Client) useCompressedBlob(d digest.Digest) bool {
 	if c.opt.compressor == rpb.Compressor_IDENTITY {
@@ -517,7 +519,10 @@ func (c *Client) uploadWithBatchUpdateBlobs(ctx context.Context, digests []diges
 	// TODO(b/273884978): It may be worth trying to send the batch requests in parallel.
 	for _, batchReq := range batchReqs {
 		var batchResp *rpb.BatchUpdateBlobsResponse
-
+		checkBlobs := make(map[digest.Digest]bool)
+		for _, req := range batchReq.Requests {
+			checkBlobs[digest.FromProto(req.Digest)] = true
+		}
 		// TODO(b/328332495): grpc should retry by service config?
 		err := retry.Do(ctx, func() error {
 			var err error
@@ -531,6 +536,7 @@ func (c *Client) uploadWithBatchUpdateBlobs(ctx context.Context, digests []diges
 
 		for _, res := range batchResp.Responses {
 			blob := digest.FromProto(res.Digest)
+			delete(checkBlobs, blob)
 			data, ok := ds.Get(blob)
 			if !ok {
 				clog.Warningf(ctx, "Not found %s in store", blob)
@@ -556,8 +562,41 @@ func (c *Client) uploadWithBatchUpdateBlobs(ctx context.Context, digests []diges
 			c.m.WriteDone(int(res.Digest.SizeBytes), nil)
 			uploads[blob].done(nil)
 		}
-		// TODO: set error if digest is missing in batchResp?
-		clog.Infof(ctx, "upload by batch %d->%d blobs (missing:%d)", len(batchReq.Requests), len(batchResp.Responses), len(missingBlobs))
+		clog.Infof(ctx, "upload by batch %d->%d blobs (noresp:%d) (missing:%d)", len(batchReq.Requests), len(batchResp.Responses), len(checkBlobs), len(missingBlobs))
+		if len(checkBlobs) > 0 {
+			// check again if digest is missing in batchResp.
+			checks := slices.Collect(maps.Keys(checkBlobs))
+			clog.Warningf(ctx, "batch no response for %s", checks)
+			missings, err := c.Missing(ctx, checks)
+			if err != nil {
+				clog.Warningf(ctx, "recheck missing %s: %v", checks, err)
+				for _, d := range checks {
+					uploads[d].done(err)
+					missingBlobs = append(missingBlobs, missingBlob{
+						Digest: d,
+						Err:    err,
+					})
+				}
+			} else {
+				for _, d := range missings {
+					clog.Warningf(ctx, "recheck missing %s: not uploaded", d)
+					uploads[d].done(errUploadNoResponse)
+					missingBlobs = append(missingBlobs, missingBlob{
+						Digest: d,
+						Err:    errUploadNoResponse,
+					})
+					delete(checkBlobs, d)
+				}
+				// checkBlobs has blobs that are not reported
+				// in BatchUpdateBlobsResponse, but not reported
+				// as missing by FindMissing, so we can believe
+				// them exists in CAS.
+				for d := range checkBlobs {
+					clog.Warningf(ctx, "recheck missing %s: exists", d)
+					uploads[d].done(nil)
+				}
+			}
+		}
 	}
 	return missingBlobs, nil
 }
@@ -577,6 +616,7 @@ func blobsToUpload(ctx context.Context, blobs []digest.Digest, ds *digest.Store)
 			data, ok := ds.Get(blob)
 			if !ok {
 				result.err = errBlobNotInReq
+				clog.Warningf(ctx, "missing %s to upload: %v", blob, result.err)
 				return
 			}
 			var b []byte
@@ -587,6 +627,7 @@ func blobsToUpload(ctx context.Context, blobs []digest.Digest, ds *digest.Store)
 			})
 			if err != nil {
 				result.err = err
+				clog.Warningf(ctx, "read %s to upload: %v", blob, err)
 				return
 			}
 			result.req = &rpb.BatchUpdateBlobsRequest_Request{
