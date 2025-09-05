@@ -59,7 +59,7 @@ func (c lsCmd) Execute(ctx context.Context, f *flag.FlagSet, args ...interface{}
 
 	fmt.Printf("Compilation Units in %s:\n", kzipPath)
 	tw := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "Digest\tLanguage\tPrimary Source\tOutput Key")
+	fmt.Fprintln(tw, "Digest\tLanguage\tPrimary Source\tInputs\tOutput Key")
 
 	count := 0
 	scanErr := reader.Scan(func(unit *kzip.Unit) error {
@@ -68,6 +68,7 @@ func (c lsCmd) Execute(ctx context.Context, f *flag.FlagSet, args ...interface{}
 		primarySource := "n/a"
 		outputKey := "n/a"
 
+		reqInputs := 0
 		if unit.Proto != nil {
 			if vname := unit.Proto.GetVName(); vname != nil {
 				lang = vname.GetLanguage()
@@ -76,9 +77,10 @@ func (c lsCmd) Execute(ctx context.Context, f *flag.FlagSet, args ...interface{}
 				primarySource = unit.Proto.GetSourceFile()[0]
 			}
 			outputKey = unit.Proto.GetOutputKey()
+			reqInputs = len(unit.Proto.GetRequiredInput())
 		}
 
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", unit.Digest, lang, primarySource, outputKey)
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%d\t%s\n", unit.Digest, lang, primarySource, reqInputs, outputKey)
 		return nil
 	})
 
