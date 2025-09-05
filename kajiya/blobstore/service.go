@@ -321,17 +321,29 @@ func (s *Service) Write(server bspb.ByteStream_WriteServer) error {
 	return err
 }
 
+type committedSizeCounter struct {
+	Size int64
+}
+
+func (c *committedSizeCounter) Write(b []byte) (int, error) {
+	n := len(b)
+	c.Size += int64(n)
+	return n, nil
+}
+
 func (s *Service) write(server bspb.ByteStream_WriteServer) (resource string, err error) {
 	expectedDigest := digest.Empty
 	ourHash := sha256.New()
-	var committedSize int64
+	committedSize := &committedSizeCounter{}
 	finishedWriting := false
 	var tempFile *os.File
 	var tempPath string
-	var dest io.Writer
 	var comp repb.Compressor_Value
-	var dec *zstd.Decoder
-	var buf []byte
+	var dataDest io.Writer
+	// variables for compression.
+	var ir *io.PipeReader
+	var iw *io.PipeWriter
+	var decCh chan error
 	defer func() {
 		if tempFile != nil {
 			if err := tempFile.Close(); err != nil {
@@ -340,6 +352,12 @@ func (s *Service) write(server bspb.ByteStream_WriteServer) (resource string, er
 			if err := os.Remove(tempPath); err != nil {
 				log.Printf("could not delete temporary file %q: %v", tempPath, err)
 			}
+		}
+		if iw != nil {
+			iw.Close()
+		}
+		if ir != nil {
+			ir.Close()
 		}
 	}()
 
@@ -358,7 +376,7 @@ func (s *Service) write(server bspb.ByteStream_WriteServer) (resource string, er
 			}
 
 			// Check that the digests (= hash and size) match.
-			d := digest.Digest{Hash: hex.EncodeToString(ourHash.Sum(nil)), Size: committedSize}
+			d := digest.Digest{Hash: hex.EncodeToString(ourHash.Sum(nil)), Size: committedSize.Size}
 			if d != expectedDigest {
 				return resource, status.Errorf(codes.InvalidArgument, "computed digest %v did not match expected digest %v", d, expectedDigest)
 			}
@@ -370,7 +388,7 @@ func (s *Service) write(server bspb.ByteStream_WriteServer) (resource string, er
 
 			// Send the response to the client.
 			if err := server.SendAndClose(&bspb.WriteResponse{
-				CommittedSize: committedSize,
+				CommittedSize: committedSize.Size,
 			}); err != nil {
 				return resource, status.Errorf(codes.Internal, "failed to send response to client: %v", err)
 			}
@@ -420,44 +438,50 @@ func (s *Service) write(server bspb.ByteStream_WriteServer) (resource string, er
 				}
 				return resource, status.Errorf(codes.Internal, "could not create temporary file for upload: %v", err)
 			}
-			dest = io.MultiWriter(tempFile, ourHash)
+			finalDest := io.MultiWriter(tempFile, ourHash, committedSize)
+			switch comp {
+			case repb.Compressor_IDENTITY:
+				// Consume the received data as is.
+				dataDest = finalDest
+			case repb.Compressor_ZSTD:
+				// Consume the received data via decoder.
+				ir, iw = io.Pipe()
+				dec, err := zstd.NewReader(ir)
+				if err != nil {
+					return resource, status.Errorf(codes.Internal, "could not create decoder: %v", err)
+				}
+				defer dec.Close()
+				decCh = make(chan error, 1)
+				go func() {
+					_, derr := io.Copy(finalDest, dec)
+					decCh <- derr
+				}()
+				dataDest = iw // Pipe the stream data to the decoder.
+			default:
+				return resource, status.Errorf(codes.InvalidArgument, "unsupported compressor: %q", comp)
+			}
 		}
 
-		switch comp {
-		case repb.Compressor_IDENTITY:
-			// Append the received data to the temporary file and hash it.
-			n, err := dest.Write(request.Data)
-			if err != nil {
-				return resource, status.Errorf(codes.Internal, "failed to write data: %v", err)
-			}
-			committedSize += int64(n)
-		case repb.Compressor_ZSTD:
-			// Decompress the data later.
-			// TODO: It should be streamed to Decoder as it receives with a pipe.
-			// There should be a goroutine that runs the decoder should write to the tempfile as it completes
-			// the decoding.
-			buf = append(buf, request.Data...)
-		default:
-			return resource, status.Errorf(codes.InvalidArgument, "unsupported compressor: %q", comp)
+		// Append the received data to the destination.
+		_, err = dataDest.Write(request.Data)
+		if err != nil {
+			return resource, status.Errorf(codes.Internal, "failed to write data: %v", err)
 		}
+
 		// If the file is already larger than the expected size, something is wrong - return an error.
-		if committedSize > expectedDigest.Size {
-			return resource, status.Errorf(codes.InvalidArgument, "received %d bytes, more than expected %d", committedSize, expectedDigest.Size)
+		if committedSize.Size > expectedDigest.Size {
+			return resource, status.Errorf(codes.InvalidArgument, "received %d bytes, more than expected %d", committedSize.Size, expectedDigest.Size)
 		}
 
 		if request.FinishWrite {
 			finishedWriting = true
-			if comp == repb.Compressor_ZSTD {
-				dec, err = zstd.NewReader(bytes.NewReader(buf))
+			if comp != repb.Compressor_IDENTITY {
+				iw.Close() // Close the pipe to the decoder, so that the decoder can receive io.EOF.
+				iw = nil
+				err = <-decCh
 				if err != nil {
-					return resource, status.Errorf(codes.Internal, "failed to create a decoder: %v", err)
+					return resource, status.Errorf(codes.Internal, "failed to finish decoder: %v", err)
 				}
-				defer dec.Close()
-				n, err := io.Copy(dest, dec)
-				if err != nil {
-					return resource, status.Errorf(codes.Internal, "failed to decode: %v", err)
-				}
-				committedSize = int64(n)
 			}
 			err = tempFile.Close()
 			if err != nil {
