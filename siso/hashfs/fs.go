@@ -1526,12 +1526,12 @@ func (hfs *HashFS) Flush(ctx context.Context, execRoot string, files []string) e
 				continue
 			}
 		case <-ctx.Done():
-			return fmt.Errorf("flush %s: %w", fname, context.Cause(ctx))
+			return fmt.Errorf("flush wait local-ready %s: %w", fname, context.Cause(ctx))
 		}
 		hfs.digester.compute(ctx, fname, e)
 		ctx, done, err := FlushSemaphore.WaitAcquire(ctx)
 		if err != nil {
-			return fmt.Errorf("flush %s: %w", fname, err)
+			return fmt.Errorf("flush sempahore %s: %w", fname, err)
 		}
 		eg.Go(func() (err error) {
 			defer func() { done(err) }()
@@ -1843,7 +1843,11 @@ func (e *entry) flush(ctx context.Context, fname string, osfs *osfs.OSFS) (retEr
 	defer func() {
 		if retErr != nil {
 			// flush failed, so may need to flush again.
-			e.lready <- true
+			clog.Warningf(ctx, "failed to flush %s: %v", fname, retErr)
+			select {
+			case e.lready <- true:
+			default:
+			}
 			return
 		}
 		// flush successfully completed.
