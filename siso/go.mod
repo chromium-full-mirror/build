@@ -10,7 +10,7 @@ require (
 	cloud.google.com/go/longrunning v0.6.7
 	cloud.google.com/go/profiler v0.4.3
 	cloud.google.com/go/trace v1.11.6
-	contrib.go.opencensus.io/exporter/stackdriver v0.13.14
+	github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/metric v0.53.0
 	github.com/Microsoft/go-winio v0.6.2
 	github.com/bazelbuild/reclient/api v0.0.0-20240617160057-89d6134e48e5
 	github.com/bazelbuild/remote-apis v0.0.0-20250728120203-e94a7ece2a1e
@@ -24,7 +24,10 @@ require (
 	github.com/klauspost/cpuid/v2 v2.3.0
 	github.com/pkg/xattr v0.4.12
 	go.chromium.org/build/kajiya v0.0.0-20250819145859-52bc97e44cd3
-	go.opencensus.io v0.24.0
+	go.opentelemetry.io/otel v1.38.0
+	go.opentelemetry.io/otel/metric v1.38.0
+	go.opentelemetry.io/otel/sdk v1.38.0
+	go.opentelemetry.io/otel/sdk/metric v1.38.0
 	go.starlark.net v0.0.0-20250804182900-3c9dc17c5f2e
 	golang.org/x/oauth2 v0.30.0
 	golang.org/x/sync v0.16.0
@@ -44,9 +47,8 @@ require (
 	cloud.google.com/go/auth v0.16.5 // indirect
 	cloud.google.com/go/auth/oauth2adapt v0.2.8 // indirect
 	cloud.google.com/go/monitoring v1.24.2 // indirect
+	github.com/GoogleCloudPlatform/opentelemetry-operations-go/internal/resourcemapping v0.53.0 // indirect
 	github.com/GoogleCloudPlatform/protoc-gen-bq-schema v1.1.0 // indirect
-	github.com/aws/aws-sdk-go v1.55.8 // indirect
-	github.com/census-instrumentation/opencensus-proto v0.4.1 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
 	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
@@ -56,14 +58,11 @@ require (
 	github.com/google/s2a-go v0.1.9 // indirect
 	github.com/googleapis/enterprise-certificate-proxy v0.3.6 // indirect
 	github.com/googleapis/gax-go/v2 v2.15.0 // indirect
-	github.com/jmespath/go-jmespath v0.4.0 // indirect
-	github.com/prometheus/prometheus v0.305.0 // indirect
 	go.opentelemetry.io/auto/sdk v1.1.0 // indirect
+	go.opentelemetry.io/contrib/detectors/gcp v1.38.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.62.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.62.0 // indirect
-	go.opentelemetry.io/otel v1.37.0 // indirect
-	go.opentelemetry.io/otel/metric v1.37.0 // indirect
-	go.opentelemetry.io/otel/trace v1.37.0 // indirect
+	go.opentelemetry.io/otel/trace v1.38.0 // indirect
 	golang.org/x/crypto v0.41.0 // indirect
 	golang.org/x/net v0.43.0 // indirect
 	golang.org/x/text v0.28.0 // indirect

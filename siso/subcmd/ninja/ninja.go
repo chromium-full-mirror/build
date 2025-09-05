@@ -31,11 +31,12 @@ import (
 	"cloud.google.com/go/compute/metadata"
 	"cloud.google.com/go/logging"
 	"cloud.google.com/go/profiler"
-	"contrib.go.opencensus.io/exporter/stackdriver"
 	log "github.com/golang/glog"
 	"github.com/google/subcommands"
 	"github.com/google/uuid"
 	"github.com/klauspost/cpuid/v2"
+	"go.opentelemetry.io/otel"
+	smetric "go.opentelemetry.io/otel/sdk/metric"
 	"golang.org/x/sync/errgroup"
 	mrpb "google.golang.org/genproto/googleapis/api/monitoredres"
 	rspb "google.golang.org/genproto/googleapis/devtools/resultstore/v2"
@@ -661,11 +662,6 @@ func (c *Command) run(ctx context.Context) (stats build.Stats, err error) {
 		c.initCloudProfiler(ctx, projectID, credential)
 	}
 	if c.enableCloudMonitoring && c.reproxyAddr == "" {
-		// When using the builtin RBE client instead of Reclient, Siso sends metrics
-		// to Cloud monitoring. For now, keep using the same project, prefix etc with
-		// what Reclient uses, so that we can reuse the existing metrics pipeline and
-		// alerts.
-		monitoringPrefix := "go.chromium.org"
 		metricsLabels := make(map[string]string)
 		for _, l := range strings.Split(c.metricsLabels, ",") {
 			kv := strings.Split(l, "=")
@@ -681,7 +677,7 @@ func (c *Command) run(ctx context.Context) (stats build.Stats, err error) {
 			// It may require changes on monitoring pipeline and permissions etc.
 			return stats, errors.New("cloud project ID for Cloud monitoring must be specified by -metrics_project or RBE_metrics_project")
 		}
-		e, err := c.initCloudMonitoring(ctx, credential, c.metricsProject, monitoringPrefix, projectID, metricsLabels)
+		e, err := c.initCloudMonitoring(ctx, credential, c.metricsProject, projectID, metricsLabels)
 		if err != nil {
 			return stats, err
 		}
@@ -695,9 +691,7 @@ func (c *Command) run(ctx context.Context) (stats build.Stats, err error) {
 			monitoring.ExportBuildMetrics(ctx, time.Since(c.started), cacheHitRatio, isErr)
 
 			spin.Start("finishing upload metrics to Cloud monitoring")
-			e.StopMetricsExporter()
-			e.Flush()
-			cerr := e.Close()
+			cerr := e.Shutdown(ctx)
 			if cerr != nil {
 				clog.Warningf(ctx, "failed to close Cloud monitoring exporter: %v", cerr)
 			}
@@ -1388,18 +1382,24 @@ func (c *Command) initCloudTrace(ctx context.Context, projectID string, credenti
 	return traceExporter
 }
 
-func (c *Command) initCloudMonitoring(ctx context.Context, credential cred.Cred, projectID, prefix, rbeProjectID string, labels map[string]string) (*stackdriver.Exporter, error) {
+func (c *Command) initCloudMonitoring(ctx context.Context, credential cred.Cred, projectID, rbeProjectID string, labels map[string]string) (*smetric.MeterProvider, error) {
 	clog.Infof(ctx, "enable cloud monitoring in %s", projectID)
-	if err := monitoring.SetupViews(ctx, c.version, labels); err != nil {
+	views, err := monitoring.SetupViews(ctx, c.version, rbeProjectID, labels)
+	if err != nil {
 		return nil, err
 	}
-	return monitoring.NewExporter(
+	e, err := monitoring.NewExporter(
 		ctx,
 		projectID,
-		prefix,
 		rbeProjectID,
 		credential.ClientOptions(),
+		views,
 	)
+	if err != nil {
+		return nil, err
+	}
+	otel.SetMeterProvider(e)
+	return e, nil
 }
 
 func (c *Command) initLogDir(ctx context.Context) error {

@@ -2,28 +2,26 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Package monitoring provides Cloud Monitoring (aka Stackdriver) support.
-// It reuses the same stats with Reclient uses so that the existing dashboards
-// and alerts can be shared.
-// See also https://github.com/bazelbuild/reclient/blob/4d9d00de3f05c24ce2af03455243bed45e94a9fe/internal/pkg/monitoring/monitoring.go
+// Package monitoring provides OpenTelemetry support.
 package monitoring
 
 import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"runtime"
-	"slices"
-	"strconv"
 	"sync"
 	"time"
 
-	"contrib.go.opencensus.io/exporter/stackdriver"
+	cloudmetric "github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/metric"
 	rpb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
-	"go.opencensus.io/stats"
-	"go.opencensus.io/stats/view"
-	"go.opencensus.io/tag"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric"
+	smetric "go.opentelemetry.io/otel/sdk/metric"
+	"go.opentelemetry.io/otel/sdk/metric/metricdata"
+	"go.opentelemetry.io/otel/sdk/resource"
+	semconv "go.opentelemetry.io/otel/semconv/v1.20.0"
 	"google.golang.org/api/option"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -32,144 +30,170 @@ import (
 )
 
 var (
-	osFamilyKey       = tag.MustNewKey("os_family")
-	versionKey        = tag.MustNewKey("siso_version")
-	statusKey         = tag.MustNewKey("status")
-	remoteStatusKey   = tag.MustNewKey("remote_status")
-	exitCodeKey       = tag.MustNewKey("exit_code")
-	remoteExitCodeKey = tag.MustNewKey("remote_exit_code")
+	osFamilyKey       = "os_family"
+	versionKey        = "siso_version"
+	statusKey         = "status"
+	remoteStatusKey   = "remote_status"
+	exitCodeKey       = "exit_code"
+	remoteExitCodeKey = "remote_exit_code"
+
+	meter = otel.Meter("go.opentelemetry.io/otel/siso")
 
 	// actionCount is a metric for tracking the number of actions.
-	actionCount = stats.Int64("rbe/action/count", "Number of actions processed", stats.UnitDimensionless)
+	actionCount metric.Int64Counter
 	// actionLatency is a metric for tracking the e2e latency of an action.
-	actionLatency = stats.Float64("rbe/action/latency", "Time spent processing an action", stats.UnitMilliseconds)
+	actionLatency metric.Float64Histogram
 	// buildCacheHitRatio is a metric of the ratio of cache hits in a build.
-	buildCacheHitRatio = stats.Float64("rbe/build/cache_hit_ratio", "Ratio of cache hits in a build", stats.UnitDimensionless)
+	buildCacheHitRatio metric.Float64Histogram
 	// buildLatency is a metric for tracking the e2e latency of a build.
-	buildLatency = stats.Float64("rbe/build/latency", "E2e build time spent in Siso", stats.UnitSeconds)
+	buildLatency metric.Float64Histogram
 	// buildCount is a metric for tracking the number of builds.
-	buildCount = stats.Int64("rbe/build/count", "Counter for builds", stats.UnitDimensionless)
+	buildCount metric.Int64Counter
 
-	// mu protects updating staticLabels.
+	// mu protects updating staticMetricLabels.
 	mu sync.Mutex
-	// staticLabels are the labels for all metrics.
-	staticLabels = make(map[tag.Key]string)
+	// staticMetricLabels are the labels for all metrics.
+	staticMetricLabels []attribute.KeyValue
 )
 
+func otelHandleError(ctx context.Context) otel.ErrorHandlerFunc {
+	return func(err error) {
+		clog.Warningf(ctx, "failed to export to OpenTelemetry: %v", err)
+	}
+}
+
 // SetupViews sets up monitoring views. This can only be run once.
-func SetupViews(ctx context.Context, version string, labels map[string]string) error {
-	if len(staticLabels) != 0 {
-		return errors.New("views were already setup, cannot overwrite")
+func SetupViews(ctx context.Context, version, rbeProject string, labels map[string]string) ([]smetric.View, error) {
+	otel.SetErrorHandler(otelHandleError(ctx))
+
+	if len(staticMetricLabels) != 0 {
+		return nil, errors.New("views were already setup, cannot overwrite")
 	}
 	mu.Lock()
 	defer mu.Unlock()
 
-	staticLabels[osFamilyKey] = runtime.GOOS
-	staticLabels[versionKey] = version
-
-	keys := []tag.Key{osFamilyKey, versionKey}
-	for l, v := range labels {
-		k, err := tag.NewKey(l)
-		if err != nil {
-			return err
-		}
-		staticLabels[k] = v
-		keys = append(keys, k)
+	staticMetricLabels = []attribute.KeyValue{
+		attribute.String(osFamilyKey, runtime.GOOS),
+		attribute.String(versionKey, version),
 	}
-	clog.Infof(ctx, "static labels for monitoring were set. %v", staticLabels)
-	views := []*view.View{
-		{
-			Measure:     actionLatency,
-			TagKeys:     append(slices.Clone(keys), statusKey, remoteStatusKey, exitCodeKey, remoteExitCodeKey),
-			Aggregation: view.Distribution(1, 2, 3, 4, 5, 6, 8, 10, 13, 16, 20, 25, 30, 40, 50, 65, 80, 100, 130, 160, 200, 250, 300, 400, 500, 650, 800, 1000, 2000, 5000, 10000, 20000, 50000, 100000, 200000, 500000),
-		},
-		{
-			Measure:     actionCount,
-			TagKeys:     append(slices.Clone(keys), statusKey, remoteStatusKey, exitCodeKey, remoteExitCodeKey),
-			Aggregation: view.Sum(),
-		},
-		{
-			Measure:     buildCacheHitRatio,
-			TagKeys:     slices.Clone(keys),
-			Aggregation: view.Distribution(0.05, 0.1, 0.15, 0.20, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95, 1),
-		},
-		{
-			Measure:     buildLatency,
-			TagKeys:     slices.Clone(keys),
-			Aggregation: view.Distribution(1, 10, 60, 120, 300, 600, 1200, 2400, 3000, 3600, 4200, 4800, 5400, 6000, 6600, 7200, 9000, 10800, 12600, 14400),
-		},
-		{
-			Measure:     buildCount,
-			TagKeys:     append(slices.Clone(keys), statusKey),
-			Aggregation: view.Sum(),
-		},
+	for k, v := range labels {
+		staticMetricLabels = append(staticMetricLabels, attribute.String(k, v))
+	}
+	clog.Infof(ctx, "static labels for monitoring were set. %v", staticMetricLabels)
+
+	var err error
+	actionCount, err = meter.Int64Counter(
+		"action.count",
+		metric.WithDescription("Number of actions processed"),
+		metric.WithUnit("{action}"),
+	)
+	if err != nil {
+		return nil, err
 	}
 
-	return view.Register(views...)
+	actionLatency, err = meter.Float64Histogram(
+		"action.latency",
+		metric.WithDescription("Time spent processing an action"),
+		metric.WithUnit("ms"),
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	buildCacheHitRatio, err = meter.Float64Histogram(
+		"build.cache_hit_ratio",
+		metric.WithDescription("Ratio of cache hits in a build"),
+		metric.WithUnit("{hit_ratio}"),
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	buildLatency, err = meter.Float64Histogram(
+		"build.latency",
+		metric.WithDescription("E2e build time spent in Siso"),
+		metric.WithUnit("s"),
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	buildCount, err = meter.Int64Counter(
+		"build.count",
+		metric.WithDescription("Counter for builds"),
+		metric.WithUnit("{unit}"),
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	views := []smetric.View{
+		func(i smetric.Instrument) (smetric.Stream, bool) {
+			s := smetric.Stream{Name: i.Name, Description: i.Description, Unit: i.Unit}
+			switch i.Name {
+			case "action.latency":
+				s.Aggregation = smetric.AggregationExplicitBucketHistogram{
+					Boundaries: []float64{1, 2, 3, 4, 5, 6, 8, 10, 13, 16, 20, 25, 30, 40, 50, 65, 80, 100, 130, 160, 200, 250, 300, 400, 500, 650, 800, 1000, 2000, 5000, 10000, 20000, 50000, 100000, 200000, 500000},
+				}
+			case "action.count":
+				s.Aggregation = smetric.AggregationSum{}
+			case "build.cache_hit_ratio":
+				s.Aggregation = smetric.AggregationExplicitBucketHistogram{
+					Boundaries: []float64{0.05, 0.1, 0.15, 0.20, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95, 1},
+				}
+			case "build.latency":
+				s.Aggregation = smetric.AggregationExplicitBucketHistogram{
+					Boundaries: []float64{1, 10, 60, 120, 300, 600, 1200, 2400, 3000, 3600, 4200, 4800, 5400, 6000, 6600, 7200, 9000, 10800, 12600, 14400},
+				}
+			case "build.count":
+				s.Aggregation = smetric.AggregationSum{}
+			default:
+				return s, false
+			}
+			return s, true
+		},
+	}
+	return views, nil
 }
 
 // NewExporter returns a new Cloud monitoring metrics exporter.
-func NewExporter(ctx context.Context, project, prefix, rbeProject string, copts []option.ClientOption) (*stackdriver.Exporter, error) {
-	hostname, err := os.Hostname()
+func NewExporter(ctx context.Context, project, rbeProject string, copts []option.ClientOption, views []smetric.View) (*smetric.MeterProvider, error) {
+	newOpts := []cloudmetric.Option{
+		cloudmetric.WithProjectID(project),
+		cloudmetric.WithMonitoringClientOptions(copts...),
+		cloudmetric.WithMetricDescriptorTypeFormatter(func(metrics metricdata.Metrics) string {
+			return fmt.Sprintf("workload.googleapis.com/siso/%s", metrics.Name)
+		}),
+	}
+	res, err := resource.New(ctx,
+		resource.WithTelemetrySDK(),
+		resource.WithOS(),
+		resource.WithHost(),
+		resource.WithFromEnv(),
+		resource.WithAttributes(semconv.ServiceNamespaceKey.String(rbeProject)),
+	)
+	if err != nil && !errors.Is(err, resource.ErrPartialResource) && !errors.Is(err, resource.ErrSchemaURLConflict) {
+		return nil, err
+	}
+	cm, err := cloudmetric.New(newOpts...)
 	if err != nil {
 		return nil, err
 	}
-	// Location is hard-coded in Reclient.
-	// https://github.com/bazelbuild/reclient/blob/4d9d00de3f05c24ce2af03455243bed45e94a9fe/internal/pkg/monitoring/monitoring.go#L50C17-L50C30
-	// TODO: Check if it's fine to set different locations, also non-GCE bots and workstations don't have GCE zone value.
-	location := "us-central1-a"
-	opts := stackdriver.Options{
-		ProjectID:               project,
-		MonitoringClientOptions: copts,
-		OnError: func(err error) {
-			switch status.Code(err) {
-			case codes.Unavailable:
-				clog.Warningf(ctx, "failed to export to Stackdriver: %v", err)
-			default:
-				clog.Errorf(ctx, "failed to export to Stackdriver: %v %v", status.Code(err), err)
-			}
-		},
-		MetricPrefix:      prefix,
-		ReportingInterval: time.Minute,
-		MonitoredResource: genericNode{
-			project:   project,
-			namespace: rbeProject,
-			location:  location,
-			node:      hostname,
-		},
-		DefaultMonitoringLabels: &stackdriver.Labels{},
-	}
-	e, err := stackdriver.NewExporter(opts)
-	if err != nil {
-		return nil, err
-	}
-	if err = e.StartMetricsExporter(); err != nil {
-		return nil, err
-	}
-	clog.Infof(ctx, "Stackdriver exporter has started in %q. metric_prefix=%q, generic node labels={project=%q, namespace=%q, location=%q, node=%q}", project, prefix, project, rbeProject, location, hostname)
-	return e, nil
-}
-
-// genericNode implements https://pkg.go.dev/contrib.go.opencensus.io/exporter/stackdriver/monitoredresource#Interface
-// See also https://cloud.google.com/monitoring/api/resources#tag_generic_node
-type genericNode struct {
-	project   string
-	namespace string
-	location  string
-	node      string
-}
-
-func (mr genericNode) MonitoredResource() (resType string, labels map[string]string) {
-	return "generic_node", map[string]string{
-		"project_id": mr.project,
-		"namespace":  mr.namespace,
-		"location":   mr.location,
-		"node_id":    mr.node,
-	}
+	meterProvider := smetric.NewMeterProvider(
+		smetric.WithResource(res),
+		smetric.WithReader(smetric.NewPeriodicReader(cm,
+			smetric.WithInterval(1*time.Minute))),
+		smetric.WithView(views...),
+	)
+	clog.Infof(ctx, "OpenTelemetry exporter has started in %q", project)
+	return meterProvider, nil
 }
 
 // ExportActionMetrics exports metrics for one log record to opencensus.
 func ExportActionMetrics(ctx context.Context, latency time.Duration, ar, remoteAr *rpb.ActionResult, actionErr, remoteErr error, cached bool) {
+	if !enabled() {
+		return
+	}
 	// Use the same status values with CommandResultStatus in remote-apis-sdks to be aligned with Reclient. e.g. SUCCESS, CACHE_HIT
 	// See also CommandResultStatus in remote-apis-sdks.
 	// https://github.com/bazelbuild/remote-apis-sdks/blob/f4821a2a072c44f9af83002cf7a272fff8223fa3/go/api/command/command.proto#L172
@@ -199,40 +223,38 @@ func ExportActionMetrics(ctx context.Context, latency time.Duration, ar, remoteA
 	default:
 		remoteStatus = "SUCCESS"
 	}
-	actCtx := contextWithTags(contextWithTags(ctx, staticLabels), map[tag.Key]string{
-		statusKey:         st,
-		exitCodeKey:       strconv.FormatInt(int64(exitCode), 10),
-		remoteStatusKey:   remoteStatus,
-		remoteExitCodeKey: strconv.FormatInt(int64(remoteExitCode), 10),
-	})
-	stats.Record(actCtx, actionCount.M(1))
-	stats.Record(actCtx, actionLatency.M(float64(latency)/1e6))
+	attributes := append(staticMetricLabels, []attribute.KeyValue{
+		attribute.String(statusKey, st),
+		attribute.Int64(exitCodeKey, int64(exitCode)),
+		attribute.String(remoteStatusKey, remoteStatus),
+		attribute.Int64(remoteExitCodeKey, int64(remoteExitCode)),
+	}...)
+	actionCount.Add(ctx, 1, metric.WithAttributes(attributes...))
+	actionLatency.Record(ctx, float64(latency)/1e6, metric.WithAttributes(attributes...))
 }
 
-// ExportBuildMetrics exports overall build metrics to opencensus.
+// ExportBuildMetrics exports overall build metrics to OpenTelemetry.
 func ExportBuildMetrics(ctx context.Context, latency time.Duration, cacheHitRatio float64, isErr bool) {
+	if !enabled() {
+		return
+	}
 	status := "SUCCESS"
 	if isErr {
 		status = "FAILURE"
 	}
-	buildCtx := contextWithTags(contextWithTags(ctx, staticLabels), map[tag.Key]string{
-		statusKey: status,
-	})
-	stats.Record(buildCtx, buildCount.M(1))
-	stats.Record(buildCtx, buildLatency.M(latency.Seconds()))
-	stats.Record(buildCtx, buildCacheHitRatio.M(cacheHitRatio))
+	attributes := append(staticMetricLabels, []attribute.KeyValue{
+		attribute.String(statusKey, status),
+	}...)
+	buildCount.Add(ctx, 1, metric.WithAttributes(attributes...))
+	buildLatency.Record(ctx, latency.Seconds(), metric.WithAttributes(attributes...))
+	buildCacheHitRatio.Record(ctx, cacheHitRatio, metric.WithAttributes(attributes...))
 }
 
-func contextWithTags(ctx context.Context, tags map[tag.Key]string) context.Context {
-	var m []tag.Mutator
-	kvs := ""
-	for k, v := range tags {
-		m = append(m, tag.Insert(k, v))
-		kvs += fmt.Sprintf("%v=%v,", k.Name(), v)
-	}
-	newCtx, err := tag.New(ctx, m...)
-	if err != nil {
-		clog.Warningf(ctx, "failed to set tags %v: %v", kvs, err)
-	}
-	return newCtx
+func enabled() bool {
+	return otel.GetMeterProvider() != nil &&
+		actionCount != nil &&
+		actionLatency != nil &&
+		buildCount != nil &&
+		buildLatency != nil &&
+		buildCacheHitRatio != nil
 }
