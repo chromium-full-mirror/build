@@ -2,10 +2,6 @@
 
 This repository contains tools developed and owned by the Chrome Build Team.
 
-We're currently in the process of finalizing our migration from the
-[infra/infra](https://source.chromium.org/chromium/infra/infra_superproject/+/main:infra/go/src/infra/build/)
-repository. Please bear with us whilst we tidy up around here!
-
 ## Quick start
 
 The steps for getting the code are:
