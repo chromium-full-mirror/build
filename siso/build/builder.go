@@ -142,6 +142,9 @@ type Options struct {
 
 	// Limits specifies resource limits.
 	Limits Limits
+
+	// Upload Build Ninja files over REAPI
+	UploadBuildNinjaFiles bool
 }
 
 // Builder is a builder.
@@ -226,13 +229,14 @@ type Builder struct {
 
 	disableFastDeps atomic.Value // string
 
-	clobber         bool
-	batch           bool
-	prepare         bool
-	verbose         bool
-	verboseFailures bool
-	dryRun          bool
-	strictRemote    bool
+	clobber               bool
+	batch                 bool
+	prepare               bool
+	verbose               bool
+	verboseFailures       bool
+	dryRun                bool
+	strictRemote          bool
+	UploadBuildNinjaFiles bool
 
 	failures failures
 
@@ -355,33 +359,34 @@ func New(ctx context.Context, graph Graph, opts Options) (_ *Builder, err error)
 		actionSalt:         opts.ActionSalt,
 		reapiclient:        opts.REAPIClient,
 
-		outputLocal:          opts.OutputLocal,
-		cacheSema:            semaphore.New("cache", opts.Limits.Cache),
-		cache:                opts.Cache,
-		failureSummaryWriter: opts.FailureSummaryWriter,
-		failedCommandsWriter: opts.FailedCommandsWriter,
-		outputLogWriter:      opts.OutputLogWriter,
-		explainWriter:        ew,
-		ninjaLogWriter:       nw,
-		localexecLogWriter:   lelw,
-		metricsJSONWriter:    mw,
-		traceExporter:        opts.TraceExporter,
-		traceEvents:          newTraceEvents(opts.TraceJSON, opts.Metadata),
-		traceStats:           newTraceStats(),
-		tracePprof:           newTracePprof(opts.Pprof),
-		pprofUploader:        opts.PprofUploader,
-		resultstoreUploader:  opts.ResultstoreUploader,
-		clobber:              opts.Clobber,
-		batch:                opts.Batch,
-		prepare:              opts.Prepare,
-		verbose:              opts.Verbose,
-		verboseFailures:      opts.VerboseFailures,
-		dryRun:               opts.DryRun,
-		strictRemote:         opts.StrictRemote,
-		failures:             failures{allowed: opts.FailuresAllowed},
-		keepRSP:              opts.KeepRSP,
-		keepDepfile:          opts.KeepDepfile,
-		rebuildManifest:      opts.RebuildManifest,
+		outputLocal:           opts.OutputLocal,
+		cacheSema:             semaphore.New("cache", opts.Limits.Cache),
+		cache:                 opts.Cache,
+		failureSummaryWriter:  opts.FailureSummaryWriter,
+		failedCommandsWriter:  opts.FailedCommandsWriter,
+		outputLogWriter:       opts.OutputLogWriter,
+		explainWriter:         ew,
+		ninjaLogWriter:        nw,
+		localexecLogWriter:    lelw,
+		metricsJSONWriter:     mw,
+		traceExporter:         opts.TraceExporter,
+		traceEvents:           newTraceEvents(opts.TraceJSON, opts.Metadata),
+		traceStats:            newTraceStats(),
+		tracePprof:            newTracePprof(opts.Pprof),
+		pprofUploader:         opts.PprofUploader,
+		resultstoreUploader:   opts.ResultstoreUploader,
+		clobber:               opts.Clobber,
+		batch:                 opts.Batch,
+		prepare:               opts.Prepare,
+		verbose:               opts.Verbose,
+		verboseFailures:       opts.VerboseFailures,
+		dryRun:                opts.DryRun,
+		strictRemote:          opts.StrictRemote,
+		failures:              failures{allowed: opts.FailuresAllowed},
+		keepRSP:               opts.KeepRSP,
+		keepDepfile:           opts.KeepDepfile,
+		rebuildManifest:       opts.RebuildManifest,
+		UploadBuildNinjaFiles: opts.UploadBuildNinjaFiles,
 	}
 	if opts.Limits.StartLocal > 0 {
 		b.startLocalCounter.Store(int32(opts.Limits.StartLocal))
@@ -491,7 +496,7 @@ func (b *Builder) Build(ctx context.Context, name string, args ...string) (err e
 		clog.Infof(ctx, "build %v", err)
 	}()
 
-	if b.rebuildManifest == "" && b.reapiclient != nil {
+	if b.UploadBuildNinjaFiles && b.rebuildManifest == "" && b.reapiclient != nil {
 		// upload build.ninja in background.
 		// if build finished earilier, we'll cancel the uploading
 		// since it would be better to finish build soon rather

@@ -161,14 +161,15 @@ type Command struct {
 	enableCloudLogging bool
 	enableResultstore  bool
 	// enableCPUProfiler bool
-	enableCloudProfiler      bool
-	cloudProfilerServiceName string
-	enableCloudTrace         bool
-	enableCloudMonitoring    bool
-	metricsLabels            string
-	metricsProject           string
-	traceThreshold           time.Duration
-	traceSpanThreshold       time.Duration
+	enableCloudProfiler         bool
+	cloudProfilerServiceName    string
+	enableCloudTrace            bool
+	enableCloudMonitoring       bool
+	enableBuildNinjaFilesUpload bool
+	metricsLabels               string
+	metricsProject              string
+	traceThreshold              time.Duration
+	traceSpanThreshold          time.Duration
 
 	subtool    string
 	cleandead  bool
@@ -1207,6 +1208,7 @@ func (c *Command) SetFlags(flagSet *flag.FlagSet) {
 	flagSet.StringVar(&c.cloudProfilerServiceName, "cloud_profiler_service_name", "siso", "cloud profiler service name")
 	flagSet.BoolVar(&c.enableCloudTrace, "enable_cloud_trace", false, "enable cloud trace")
 	flagSet.BoolVar(&c.enableCloudMonitoring, "enable_cloud_monitoring", false, "enable cloud monitoring")
+	flagSet.BoolVar(&c.enableBuildNinjaFilesUpload, "enable_build_ninja_files_upload", true, "enable Build Ninja files upload to RBE-CAS")
 	flagSet.StringVar(&c.metricsLabels, "metrics_labels", os.Getenv("RBE_metrics_labels"), "comma-separated arbitrary key value pairs in the form key=value, which are added to cloud monitoring metrics.")
 	flagSet.StringVar(&c.metricsProject, "metrics_project", os.Getenv("RBE_metrics_project"), "Cloud Monitoring GCP project where Siso sends action and build metrics.")
 
@@ -1576,42 +1578,43 @@ func (c *Command) initBuildOpts(ctx context.Context, projectID string, buildPath
 		clog.Warningf(ctx, "no cache enabled: %v", err)
 	}
 	bopts = build.Options{
-		JobID:                c.jobID,
-		ID:                   c.buildID,
-		StartTime:            c.started,
-		ProjectID:            projectID,
-		Metadata:             config.Metadata,
-		Path:                 buildPath,
-		HashFS:               hashFS,
-		REAPIClient:          ds.client,
-		REExecEnable:         c.reExecEnable,
-		RECacheEnableRead:    c.reCacheEnableRead,
-		RECacheEnableWrite:   c.reCacheEnableWrite,
-		ReproxyAddr:          c.reproxyAddr,
-		ActionSalt:           actionSaltBytes,
-		OutputLocal:          build.OutputLocalFunc(c.fsopt.OutputLocal),
-		Cache:                cache,
-		FailureSummaryWriter: failureSummaryWriter,
-		FailedCommandsWriter: failedCommandsWriter,
-		OutputLogWriter:      outputLogWriter,
-		ExplainWriter:        explainWriter,
-		LocalexecLogWriter:   localexecLogWriter,
-		MetricsJSONWriter:    metricsJSONWriter,
-		TraceExporter:        traceExporter,
-		TraceJSON:            c.traceJSON,
-		Pprof:                c.buildPprof,
-		ResultstoreUploader:  c.resultstoreUploader,
-		Clobber:              c.clobber,
-		Batch:                c.batch,
-		Prepare:              c.prepare,
-		Verbose:              c.verbose,
-		VerboseFailures:      c.verboseFailures,
-		DryRun:               c.dryRun,
-		StrictRemote:         c.strictRemote,
-		FailuresAllowed:      c.failuresAllowed,
-		KeepRSP:              c.debugMode.Keeprsp,
-		KeepDepfile:          c.debugMode.Keepdepfile,
-		Limits:               limits,
+		JobID:                 c.jobID,
+		ID:                    c.buildID,
+		StartTime:             c.started,
+		ProjectID:             projectID,
+		Metadata:              config.Metadata,
+		Path:                  buildPath,
+		HashFS:                hashFS,
+		REAPIClient:           ds.client,
+		REExecEnable:          c.reExecEnable,
+		RECacheEnableRead:     c.reCacheEnableRead,
+		RECacheEnableWrite:    c.reCacheEnableWrite,
+		ReproxyAddr:           c.reproxyAddr,
+		ActionSalt:            actionSaltBytes,
+		OutputLocal:           build.OutputLocalFunc(c.fsopt.OutputLocal),
+		Cache:                 cache,
+		FailureSummaryWriter:  failureSummaryWriter,
+		FailedCommandsWriter:  failedCommandsWriter,
+		OutputLogWriter:       outputLogWriter,
+		ExplainWriter:         explainWriter,
+		LocalexecLogWriter:    localexecLogWriter,
+		MetricsJSONWriter:     metricsJSONWriter,
+		TraceExporter:         traceExporter,
+		TraceJSON:             c.traceJSON,
+		Pprof:                 c.buildPprof,
+		ResultstoreUploader:   c.resultstoreUploader,
+		Clobber:               c.clobber,
+		Batch:                 c.batch,
+		Prepare:               c.prepare,
+		Verbose:               c.verbose,
+		VerboseFailures:       c.verboseFailures,
+		DryRun:                c.dryRun,
+		StrictRemote:          c.strictRemote,
+		FailuresAllowed:       c.failuresAllowed,
+		KeepRSP:               c.debugMode.Keeprsp,
+		KeepDepfile:           c.debugMode.Keepdepfile,
+		Limits:                limits,
+		UploadBuildNinjaFiles: c.enableBuildNinjaFilesUpload,
 	}
 	return bopts, func(err *error) {
 		for i := len(dones) - 1; i >= 0; i-- {
