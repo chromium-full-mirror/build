@@ -31,10 +31,6 @@ linters:
         - "-ST1021"
         - "-ST1022"
         # Aboves are default set of checks in golangci-lint.
-        # Belows are additional checks we currently need to disable in infra repo.
-        # https://staticcheck.dev/docs/checks#SA1019
-        # Using a deprecated function, variable, constant or field
-        - "-SA1019"
 
   exclusions:
     # Independently from option `exclude` we use default exclude patterns,
@@ -84,6 +80,11 @@ linters:
           siso/webui/runbuild_handlers.go|\
           siso/webui/serve.go|\
         )$"
+      - path: "^(\
+          siso/execute/cmd.go|\
+          siso/subcmd/recall/recall.go|\
+        )$"
+        text: "(OutputFiles|Platform) is deprecated: Marked as deprecated in build/bazel/remote/execution/v2/remote_execution.proto"
     paths:
       # Ignore files under third_party dir.
       - ^third_party/.*\.go$
