@@ -202,6 +202,12 @@ func (c *Command) Execute(ctx context.Context, flagSet *flag.FlagSet, _ ...inter
 		ui.Default.Errorf("%v\n", err)
 		return subcommands.ExitUsageError
 	}
+	if c.stateDir == "" {
+		c.stateDir = filepath.Dir(c.fname)
+	}
+	if c.logDir == "" {
+		c.logDir = filepath.Dir(c.fname)
+	}
 	if c.quiet {
 		ui.Default = quietUI{}
 	} else if c.frontendFile != "" {
@@ -1163,9 +1169,9 @@ func (c *Command) SetFlags(flagSet *flag.FlagSet) {
 	flagSet.StringVar(&c.outputLocalStrategy, "output_local_strategy", "full", `strategy for output_local. "full": download all outputs. "greedy": downloads most outputs except intermediate objs. "minimum": downloads as few as possible`)
 	flagSet.StringVar(&c.depsLogFile, "deps_log", ".siso_deps", "deps log filename (relative to -C, -state_dir)")
 
-	flagSet.StringVar(&c.stateDir, "state_dir", ".", "state directory (relative to -C)")
+	flagSet.StringVar(&c.stateDir, "state_dir", "", "state directory (relative to -C) [default: same dir as build.ninja]")
 
-	flagSet.StringVar(&c.logDir, "log_dir", ".", "log directory (relative to -C")
+	flagSet.StringVar(&c.logDir, "log_dir", "", "log directory (relative to -C) [default: same dir as build.ninja]")
 
 	// https://android.googlesource.com/platform/build/soong/+/refs/heads/main/ui/build/ninja.go
 	flagSet.StringVar(&c.frontendFile, "frontend_file", "", "frontend FIFO file to report build status to soong ui, or `-` to report to stdout.")
