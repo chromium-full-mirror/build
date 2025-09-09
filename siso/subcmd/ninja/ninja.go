@@ -278,7 +278,7 @@ func (c *Command) Execute(ctx context.Context, flagSet *flag.FlagSet, _ ...inter
 				dur = ui.SGR(ui.Bold, dur)
 				msgPrefix = ui.SGR(ui.BackgroundRed, msgPrefix)
 			}
-			ui.Default.Errorf("\n%6s %s: %d done %d failed %d remaining - %.02f/s\n %v\n", dur, msgPrefix, stats.Done-stats.Skipped, stats.Fail, stats.Total-stats.Done, sps, errBuild.err)
+			ui.Default.Errorf("\n%6s %s: %d done, %d failed, %d remaining - %.02f/s\n %v\n", dur, msgPrefix, stats.Done-stats.Skipped, stats.Fail, stats.Total-stats.Done, sps, errBuild.err)
 			suggest := fmt.Sprintf("see %s for full command line and output", c.logFilename(c.outputLogFile, c.startDir))
 			if c.sisoInfoLog != "" {
 				suggest += fmt.Sprintf("\n or %s", c.logFilename(c.sisoInfoLog, c.startDir))
