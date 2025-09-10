@@ -66,7 +66,6 @@ func isSmartTerminal(term string) bool {
 func init() {
 	if isSmartTerminal(os.Getenv("TERM")) && term.IsTerminal(int(os.Stdout.Fd())) {
 		termUI := &TermUI{}
-		termUI.init()
 		Default = termUI
 	} else {
 		Default = &LogUI{}

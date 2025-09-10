@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"fmt"
 	"os"
+	"sync"
 	"time"
 
 	"golang.org/x/term"
@@ -74,20 +75,30 @@ func (s *termSpinner) Done(format string, args ...any) {
 
 // TermUI is a terminal-based UI.
 type TermUI struct {
-	width  int
+	mu     sync.Mutex
+	timer  time.Time
 	height int
+	width  int
 }
 
-func (t *TermUI) init() {
-	t.width, t.height, _ = term.GetSize(int(os.Stdout.Fd()))
+func (t *TermUI) update() (int, int) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if time.Since(t.timer) > 200*time.Millisecond {
+		t.timer = time.Now()
+		t.width, t.height, _ = term.GetSize(int(os.Stdout.Fd()))
+	}
+	return t.width, t.height
 }
 
 func (t *TermUI) Height() int {
-	return t.height
+	_, h := t.update()
+	return h
 }
 
 func (t *TermUI) Width() int {
-	return t.width
+	w, _ := t.update()
+	return w
 }
 
 // PrintLines implements the ui.ui interface.
@@ -113,26 +124,26 @@ func (t *TermUI) PrintLines(msgs ...string) {
 		}
 		fmt.Fprintf(&buf, "\r\033[K")
 	}
-	writeLinesMaxWidth(&buf, msgs, t.width)
+	writeLinesMaxWidth(&buf, msgs, t.Width())
 	os.Stdout.Write(buf.Bytes())
 }
 
 // NewSpinner returns a terminal-based spinner.
-func (TermUI) NewSpinner() Spinner {
+func (t *TermUI) NewSpinner() Spinner {
 	return &termSpinner{}
 }
 
 // Infof reports to stdout.
-func (TermUI) Infof(format string, args ...any) {
+func (t *TermUI) Infof(format string, args ...any) {
 	fmt.Fprintf(os.Stdout, format, args...)
 }
 
 // Warningf reports to stderr.
-func (TermUI) Warningf(format string, args ...any) {
+func (t *TermUI) Warningf(format string, args ...any) {
 	fmt.Fprintf(os.Stderr, format, args...)
 }
 
 // Errorf reports to stderr.
-func (TermUI) Errorf(format string, args ...any) {
+func (t *TermUI) Errorf(format string, args ...any) {
 	fmt.Fprintf(os.Stderr, format, args...)
 }
