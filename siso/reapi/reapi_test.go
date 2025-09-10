@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"math/rand"
 	"net"
 	"testing"
 	"time"
@@ -172,7 +173,12 @@ func TestUploadAll(t *testing.T) {
 	sd := digest.FromBytes("small", smallBlob)
 	ds.Set(sd)
 	// The large blob will be uploaded by ByteStream RPC
-	largeBlob := make([]byte, 10*1024*1024)
+	pattern := []byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A}
+	var buf bytes.Buffer
+	for buf.Len() < 10*1024*1024 {
+		buf.WriteByte(pattern[rand.Intn(len(pattern))])
+	}
+	largeBlob := buf.Bytes()
 	ld := digest.FromBytes("large", largeBlob)
 	ds.Set(ld)
 	n, err = cl.UploadAll(ctx, ds)
@@ -214,7 +220,12 @@ func TestUploadAllWithCompression(t *testing.T) {
 	sd := digest.FromBytes("small", smallBlob)
 	ds.Set(sd)
 	// The large blob will be uploaded by ByteStream RPC
-	largeBlob := make([]byte, 10*1024*1024)
+	pattern := []byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A}
+	var buf bytes.Buffer
+	for buf.Len() < 10*1024*1024 {
+		buf.WriteByte(pattern[rand.Intn(len(pattern))])
+	}
+	largeBlob := buf.Bytes()
 	ld := digest.FromBytes("large", largeBlob)
 	ds.Set(ld)
 	n, err = cl.UploadAll(ctx, ds)

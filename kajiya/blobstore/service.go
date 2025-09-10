@@ -32,7 +32,7 @@ import (
 
 const (
 	// The maximum chunk size to write back to the client in Send calls.
-	maxChunkSize int64 = 2 * 1024 * 1024 // 2M
+	maxChunkSize int64 = 2 * 1024 * 1024
 )
 
 // Service implements the REAPI ContentAddressableStorage and ByteStream services.
@@ -251,61 +251,58 @@ func (s *Service) read(request *bspb.ReadRequest, server bspb.ByteStream_ReadSer
 		_ = f.Close()
 	}()
 
-	switch c {
-	case repb.Compressor_IDENTITY:
-		return readUncompressedChunks(f, request.ReadLimit, server)
-	case repb.Compressor_ZSTD:
-		return readWithZSTD(f, server)
-	}
-	return nil
+	return readByChunks(f, request.ReadLimit, server, c)
 }
 
-func readUncompressedChunks(f io.ReadCloser, readLimit int64, server bspb.ByteStream_ReadServer) error {
+func readByChunks(f io.Reader, readLimit int64, server bspb.ByteStream_ReadServer, comp repb.Compressor_Value) error {
 	// Prepare a buffer to read the file into.
 	bufSize := maxChunkSize
 	if readLimit > 0 && readLimit < bufSize {
 		bufSize = readLimit
 	}
-	buf := make([]byte, bufSize)
+	buf := bytes.NewBuffer(make([]byte, bufSize))
+	var dataReader io.Reader
+	switch comp {
+	case repb.Compressor_IDENTITY:
+		// Read the data from the file directly.
+		dataReader = f
+	case repb.Compressor_ZSTD:
+		// Read the data via the pipe from Encoder.
+		ir, iw := io.Pipe()
+		defer ir.Close()
+		enc, err := zstd.NewWriter(iw)
+		if err != nil {
+			return status.Error(codes.Internal, err.Error())
+		}
+		go func() {
+			_, err := io.Copy(enc, f)
+			if e := enc.Close(); e != nil && err == nil {
+				err = e
+			}
+			iw.CloseWithError(err)
+		}()
+		dataReader = ir
+	default:
+		return status.Errorf(codes.InvalidArgument, "unsupported compressor: %q", comp)
+	}
 
 	// Send the requested data to the client in chunks.
 	for {
-		n, err := f.Read(buf)
+		buf.Reset()
+		n, err := io.CopyN(buf, dataReader, bufSize)
 		if n > 0 {
 			if err := server.Send(&bspb.ReadResponse{
-				Data: buf[:n],
+				Data: buf.Bytes(),
 			}); err != nil {
 				return status.Errorf(codes.Internal, "failed to send data to client: %v", err)
 			}
 		}
-		if errors.Is(err, io.EOF) {
+		if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
 			break
 		}
 		if err != nil {
 			return status.Errorf(codes.Internal, "failed to read data from file: %v", err)
 		}
-	}
-	return nil
-}
-
-// TODO: Send the compressed data in chunks.
-func readWithZSTD(f io.ReadCloser, server bspb.ByteStream_ReadServer) error {
-	var b bytes.Buffer
-	enc, err := zstd.NewWriter(&b)
-	if err != nil {
-		return status.Error(codes.Internal, err.Error())
-	}
-	_, err = io.Copy(enc, f)
-	if err != nil {
-		enc.Close()
-		return status.Error(codes.Internal, err.Error())
-	}
-	enc.Close()
-	err = server.Send(&bspb.ReadResponse{
-		Data: b.Bytes(),
-	})
-	if err != nil {
-		return status.Errorf(codes.Internal, "failed to send data to client: %v", err)
 	}
 	return nil
 }
