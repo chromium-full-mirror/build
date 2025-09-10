@@ -51,7 +51,8 @@ func (c *LoginCommand) Execute(ctx context.Context, flagSet *flag.FlagSet, _ ...
 		cmd.Stderr = os.Stderr
 		err := cmd.Run()
 		if err != nil {
-			fmt.Printf("Error: %v\n", err)
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			fmt.Fprintf(os.Stderr, "If you got 'This app is blocked', see https://chromium.googlesource.com/build/+/refs/heads/main/siso/docs/auth.md#this-app-is-blocked\n")
 			return subcommands.ExitFailure
 		}
 		return subcommands.ExitSuccess
