@@ -12,6 +12,7 @@ linters:
     - gomodguard
     - intrange
     - misspell
+    - unconvert
     - unparam
   disable:
     # There are also many unchecked errors.
