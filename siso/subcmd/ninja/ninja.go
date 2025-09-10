@@ -857,12 +857,8 @@ func (c *Command) run(ctx context.Context) (stats build.Stats, err error) {
 			return
 		}
 		if err != nil {
-			// when batch mode, no need to record failed targets,
-			// as it will build full targets when rebuilding
-			// for throughput, rather than latency.
-			if c.batch {
-				return
-			}
+			// Even when batch mode, it records failed targets.
+			// It will be read by Chromium recipe.
 			var errBuild buildError
 			if !errors.As(err, &errBuild) {
 				return
