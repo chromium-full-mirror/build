@@ -6,6 +6,7 @@ package ninjabuild
 
 import (
 	"bufio"
+	"cmp"
 	"context"
 	"crypto/rand"
 	"encoding/json"
@@ -16,6 +17,7 @@ import (
 	"maps"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -396,15 +398,31 @@ func (s *StepDef) Inputs(ctx context.Context) []string {
 
 // TriggerInputs returns inputs of the step that would trigger the step's action.
 func (s *StepDef) TriggerInputs(ctx context.Context) []string {
-	seen := make(map[string]bool)
-	var targets []string
 	globals := s.globals
-	for _, in := range s.edge.TriggerInputs() {
+	inputs := s.edge.TriggerInputs()
+	// map dedup is not fast enough here.
+	// dedup by sort+compact.
+	type idxid struct {
+		idx, id int
+	}
+	inIDs := make([]idxid, 0, len(inputs))
+	for i, in := range inputs {
+		inIDs = append(inIDs, idxid{idx: i, id: in.ID()})
+	}
+	slices.SortStableFunc(inIDs, func(a, b idxid) int {
+		return cmp.Compare(a.id, b.id)
+	})
+	inIDs = slices.CompactFunc(inIDs, func(a, b idxid) bool {
+		return a.id == b.id
+	})
+	// sort by idx to preserve original order.
+	slices.SortFunc(inIDs, func(a, b idxid) int {
+		return cmp.Compare(a.idx, b.idx)
+	})
+	targets := make([]string, 0, len(inIDs))
+	for _, i := range inIDs {
+		in := inputs[i.idx]
 		p := globals.targetPath(ctx, in)
-		if seen[p] {
-			continue
-		}
-		seen[p] = true
 		targets = append(targets, p)
 	}
 	return targets
