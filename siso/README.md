@@ -79,6 +79,8 @@ Siso is named after shiso, a herb commonly used in Japan. It's a reference to ba
 
 ## Documents
 
+- [Siso authentication options](./docs/auth.md) explains authentication
+  options available in Siso to communicate with RE API backend.
 - [Siso environment variables](./docs/environment_variables.md) explains
   environment variables used by Siso.
 - [Siso starlark config](./docs/starlark_config.md) explains
