@@ -8,21 +8,17 @@ package monitoring
 import (
 	"context"
 	"errors"
-	"fmt"
 	"runtime"
 	"sync"
 	"time"
 
-	cloudmetric "github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/metric"
 	rpb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 	smetric "go.opentelemetry.io/otel/sdk/metric"
-	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 	"go.opentelemetry.io/otel/sdk/resource"
 	semconv "go.opentelemetry.io/otel/semconv/v1.20.0"
-	"google.golang.org/api/option"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -156,15 +152,8 @@ func SetupViews(ctx context.Context, version, rbeProject string, labels map[stri
 	return views, nil
 }
 
-// NewExporter returns a new Cloud monitoring metrics exporter.
-func NewExporter(ctx context.Context, project, rbeProject string, copts []option.ClientOption, views []smetric.View) (*smetric.MeterProvider, error) {
-	newOpts := []cloudmetric.Option{
-		cloudmetric.WithProjectID(project),
-		cloudmetric.WithMonitoringClientOptions(copts...),
-		cloudmetric.WithMetricDescriptorTypeFormatter(func(metrics metricdata.Metrics) string {
-			return fmt.Sprintf("workload.googleapis.com/siso/%s", metrics.Name)
-		}),
-	}
+// NewMetricProvider returns a new Cloud monitoring metrics provider.
+func NewMetricProvider(ctx context.Context, rbeProject string, exporter smetric.Exporter, views []smetric.View) (*smetric.MeterProvider, error) {
 	res, err := resource.New(ctx,
 		resource.WithTelemetrySDK(),
 		resource.WithOS(),
@@ -175,21 +164,16 @@ func NewExporter(ctx context.Context, project, rbeProject string, copts []option
 	if err != nil && !errors.Is(err, resource.ErrPartialResource) && !errors.Is(err, resource.ErrSchemaURLConflict) {
 		return nil, err
 	}
-	cm, err := cloudmetric.New(newOpts...)
-	if err != nil {
-		return nil, err
-	}
 	meterProvider := smetric.NewMeterProvider(
 		smetric.WithResource(res),
-		smetric.WithReader(smetric.NewPeriodicReader(cm,
+		smetric.WithReader(smetric.NewPeriodicReader(exporter,
 			smetric.WithInterval(1*time.Minute))),
 		smetric.WithView(views...),
 	)
-	clog.Infof(ctx, "OpenTelemetry exporter has started in %q", project)
 	return meterProvider, nil
 }
 
-// ExportActionMetrics exports metrics for one log record to opencensus.
+// ExportActionMetrics exports metrics for one log record to OpenTelemetry.
 func ExportActionMetrics(ctx context.Context, latency time.Duration, ar, remoteAr *rpb.ActionResult, actionErr, remoteErr error, cached bool) {
 	if !enabled() {
 		return

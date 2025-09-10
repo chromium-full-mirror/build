@@ -31,12 +31,14 @@ import (
 	"cloud.google.com/go/compute/metadata"
 	"cloud.google.com/go/logging"
 	"cloud.google.com/go/profiler"
+	cloudmetric "github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/metric"
 	log "github.com/golang/glog"
 	"github.com/google/subcommands"
 	"github.com/google/uuid"
 	"github.com/klauspost/cpuid/v2"
 	"go.opentelemetry.io/otel"
 	smetric "go.opentelemetry.io/otel/sdk/metric"
+	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 	"golang.org/x/sync/errgroup"
 	mrpb "google.golang.org/genproto/googleapis/api/monitoredres"
 	rspb "google.golang.org/genproto/googleapis/devtools/resultstore/v2"
@@ -1392,18 +1394,23 @@ func (c *Command) initCloudMonitoring(ctx context.Context, credential cred.Cred,
 	if err != nil {
 		return nil, err
 	}
-	e, err := monitoring.NewExporter(
-		ctx,
-		projectID,
-		rbeProjectID,
-		credential.ClientOptions(),
-		views,
+	exporter, err := cloudmetric.New(
+		cloudmetric.WithProjectID(projectID),
+		cloudmetric.WithMonitoringClientOptions(credential.ClientOptions()...),
+		cloudmetric.WithMetricDescriptorTypeFormatter(func(metrics metricdata.Metrics) string {
+			return fmt.Sprintf("workload.googleapis.com/siso/%s", metrics.Name)
+		}),
 	)
 	if err != nil {
 		return nil, err
 	}
-	otel.SetMeterProvider(e)
-	return e, nil
+	mp, err := monitoring.NewMetricProvider(ctx, rbeProjectID, exporter, views)
+	if err != nil {
+		return nil, err
+	}
+	otel.SetMeterProvider(mp)
+	clog.Infof(ctx, "OpenTelemetry exporter has started in %q for %q", projectID, rbeProjectID)
+	return mp, nil
 }
 
 func (c *Command) initLogDir(ctx context.Context) error {
