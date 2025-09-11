@@ -35,3 +35,22 @@ Compilation Units in /tmp/input.kzip:
 Digest                                                            Language  Primary Source        Output Key
 f805b985dc4417d44db05516fc0b61c48680b040d551b46c1324718e4fbe0385  rust      ../../foo/bar/baz.rs
 ```
+
+```
+$ go run . files input.kzip
+Unique Files in input.kzip (by digest and paths):
+File Digest                                                       Known Paths
+...
+182e584f14e0984934130425dd2be0781ca2c131449b3ae1734a07c72c3d43cd  ../../foo/bar/baz.rs, ../../foo/bar/qux.rs
+3ca9b99c0a00b29c89b23b7f4f941a5fe9a2123e56ad3e55e433df33610458bf  ../../foobar/bazqux.rs
+...
+
+Found 1234 unique file digests.
+```
+
+```
+$ go run . cat input.kzip 3ca9b99c0a00b29c89b23b7f4f941a5fe9a2123e56ad3e55e433df33610458bf
+fn main() {
+  println!("Hello, world!");
+}
+```

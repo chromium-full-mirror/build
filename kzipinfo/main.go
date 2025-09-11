@@ -20,6 +20,8 @@ func main() {
 	subcommands.Register(infoCmd{}, "")
 	subcommands.Register(lsCmd{}, "")
 	subcommands.Register(showCmd{}, "")
+	subcommands.Register(filesCmd{}, "")
+	subcommands.Register(catCmd{}, "")
 
 	flag.Parse()
 	os.Exit(int(subcommands.Execute(context.Background())))
