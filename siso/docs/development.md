@@ -2,6 +2,8 @@
 
 This document is intended for Siso developers.
 
+Also check [go/siso-development](http://go/siso-development) (internal).
+
 ## How to get the code
 ```
 $ git clone https://chromium.googlesource.com/build
