@@ -92,19 +92,14 @@ func (b *Builder) checkUpToDate(ctx context.Context, stepDef StepDef, stepManife
 		return false
 	}
 	if !generator && !bytes.Equal(cmdhash, stepManifest.cmdHash) {
-		// TODO: remove old cmdhash support
-		oldCmdHash := calculateOldCmdHash(stepManifest.cmdline, stepManifest.rspfileContent)
-		if !bytes.Equal(cmdhash, oldCmdHash) {
-			clog.Infof(ctx, "need: cmdhash differ %q -> %q", base64.StdEncoding.EncodeToString(cmdhash), base64.StdEncoding.EncodeToString(stepManifest.cmdHash))
-			span.SetAttr("run-reason", "cmdhash-update")
-			if len(cmdhash) == 0 {
-				fmt.Fprintf(b.explainWriter, "command line not found in log for %s\n", outname)
-			} else {
-				fmt.Fprintf(b.explainWriter, "command line changed for %s\n", outname)
-			}
-			return false
+		clog.Infof(ctx, "need: cmdhash differ %q -> %q", base64.StdEncoding.EncodeToString(cmdhash), base64.StdEncoding.EncodeToString(stepManifest.cmdHash))
+		span.SetAttr("run-reason", "cmdhash-update")
+		if len(cmdhash) == 0 {
+			fmt.Fprintf(b.explainWriter, "command line not found in log for %s\n", outname)
+		} else {
+			fmt.Fprintf(b.explainWriter, "command line changed for %s\n", outname)
 		}
-		// match with old cmd hash.
+		return false
 	}
 	if len(edgehash) == 0 {
 		// old version of siso didn't record edgehash...

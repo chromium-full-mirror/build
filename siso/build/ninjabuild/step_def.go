@@ -245,6 +245,11 @@ func (s *StepDef) IsPhony() bool {
 	return s.edge.IsPhony()
 }
 
+// CmdHash returns command hash of the step.
+func (s *StepDef) CmdHash() []byte {
+	return s.edge.CmdHash()
+}
+
 // Binding returns a binding of the step.
 //
 // Ninja bindings are explained in https://ninja-build.org/manual.html#ref_rule:~:text=bindings

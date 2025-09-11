@@ -7,7 +7,6 @@ package build
 import (
 	"context"
 	"crypto/sha256"
-	"fmt"
 	"io"
 )
 
@@ -16,10 +15,6 @@ import (
 // and used to check step's re-validation with their hashes.
 // TODO: unify cmd hash and edge hash into one hash.
 type stepManifest struct {
-	// command line of the step.
-	cmdline string
-	// rspfile content of the step.
-	rspfileContent string
 	// hash of cmdline and rspfileContent.
 	cmdHash []byte
 
@@ -32,40 +27,17 @@ type stepManifest struct {
 }
 
 func newStepManifest(ctx context.Context, stepDef StepDef) *stepManifest {
-	cmdline := stepDef.Binding("command")
-	rspfileContent := stepDef.Binding("rspfile_content")
 	inputs := stepDef.TriggerInputs(ctx)
 	outputs := stepDef.Outputs(ctx)
 	return &stepManifest{
-		cmdline:        cmdline,
-		rspfileContent: rspfileContent,
-		cmdHash:        calculateCmdHash(cmdline, rspfileContent),
-		inputs:         inputs,
-		outputs:        outputs,
-		edgeHash:       calculateEdgeHash(inputs, outputs),
+		cmdHash:  stepDef.CmdHash(),
+		inputs:   inputs,
+		outputs:  outputs,
+		edgeHash: calculateEdgeHash(inputs, outputs),
 	}
-}
-
-func calculateOldCmdHash(cmdline, rspfileContent string) []byte {
-	h := sha256.New()
-	fmt.Fprint(h, cmdline)
-	if rspfileContent != "" {
-		fmt.Fprint(h, rspfileContent)
-	}
-	return h.Sum(nil)
 }
 
 const unitSeparator = "\x1f"
-
-func calculateCmdHash(cmdline, rspfileContent string) []byte {
-	h := sha256.New()
-	io.WriteString(h, cmdline)
-	if rspfileContent != "" {
-		io.WriteString(h, unitSeparator)
-		io.WriteString(h, rspfileContent)
-	}
-	return h.Sum(nil)
-}
 
 func calculateEdgeHash(inputs, outputs []string) []byte {
 	h := sha256.New()

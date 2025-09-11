@@ -46,6 +46,9 @@ type StepDef interface {
 	// IsPhony returns true if the step is phony.
 	IsPhony() bool
 
+	// CmdHash returns command hash of the step.
+	CmdHash() []byte
+
 	// Binding returns binding value.
 	Binding(string) string
 
@@ -463,7 +466,7 @@ func newCmd(ctx context.Context, b *Builder, stepDef StepDef, stepManifest *step
 		ActionName:     stepDef.ActionName(),
 		Args:           b.argTab.InternSlice(stepDef.Args(ctx)),
 		RSPFile:        stepDef.Rspfile(ctx),
-		RSPFileContent: []byte(stepManifest.rspfileContent),
+		RSPFileContent: []byte(stepDef.Binding("rspfile_content")),
 		CmdHash:        stepManifest.cmdHash,
 		ExecRoot:       b.path.ExecRoot, // use step binding?
 		Dir:            b.path.Dir,

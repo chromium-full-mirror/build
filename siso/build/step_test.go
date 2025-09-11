@@ -31,7 +31,8 @@ func (f fakeStepDef) ActionName() string { return f.actionName }
 func (f fakeStepDef) Args(context.Context) []string {
 	return strings.Split(f.command, " ")
 }
-func (fakeStepDef) IsPhony() bool { return false }
+func (fakeStepDef) IsPhony() bool   { return false }
+func (fakeStepDef) CmdHash() []byte { return []byte("<cmdhash>") }
 func (f fakeStepDef) Binding(b string) string {
 	switch b {
 	case "command":

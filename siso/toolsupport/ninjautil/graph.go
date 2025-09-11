@@ -6,9 +6,11 @@ package ninjautil
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"fmt"
 	"io"
 	"strings"
+	"sync"
 	"sync/atomic"
 )
 
@@ -75,39 +77,58 @@ type edgeEnv struct {
 	shellEscape bool
 }
 
+var lookupBuf = sync.Pool{
+	New: func() any {
+		buf := new(bytes.Buffer)
+		return buf
+	},
+}
+
 // Lookup looks up a variable by key, and returns evaludated value.
 func (e *edgeEnv) Lookup(key string) string {
-	var buf bytes.Buffer
+	buf := lookupBuf.Get().(*bytes.Buffer)
+	defer func() {
+		buf.Reset()
+		lookupBuf.Put(buf)
+	}()
+	s, err := e.lookup(buf, key)
+	if err != nil {
+		return ""
+	}
+	return string(s)
+}
+
+func (e *edgeEnv) lookup(buf *bytes.Buffer, key string) ([]byte, error) {
 	val, ok := e.edge.env.lookupVar(e.edge.pos, []byte(key))
 	if ok {
-		s, err := evaluate(e, &buf, val)
+		s, err := evaluate(e, buf, val)
 		if err != nil {
-			return ""
+			return nil, err
 		}
-		return string(s)
+		return s, nil
 	}
 	// rule may be in parent scope
 	val, ok = e.edge.rule.lookupVar(-1, []byte(key))
 	if ok {
 		val.pos = e.edge.pos
-		s, err := evaluate(e, &buf, val)
+		s, err := evaluate(e, buf, val)
 		if err != nil {
-			return ""
+			return nil, err
 		}
-		return string(s)
+		return s, nil
 	}
 	if e.edge.scope == nil {
-		return ""
+		return nil, nil
 	}
 	val, ok = e.edge.scope.lookupVar(e.edge.pos, []byte(key))
 	if ok {
-		s, err := evaluate(e, &buf, val)
+		s, err := evaluate(e, buf, val)
 		if err != nil {
-			return ""
+			return nil, err
 		}
-		return string(s)
+		return s, nil
 	}
-	return ""
+	return nil, nil
 }
 
 func (e *edgeEnv) lookupVar(pos int, key []byte) (evalString, bool) {
@@ -154,6 +175,39 @@ func (e *edgeEnv) pathList(paths []*Node, sep string) string {
 		s = append(s, p)
 	}
 	return strings.Join(s, sep)
+}
+
+var cmdhashBuf = sync.Pool{
+	New: func() any {
+		// 8192 would be large enough for most command lines.
+		buf := bytes.NewBuffer(make([]byte, 0, 8192))
+		return buf
+	},
+}
+
+const unitSeparator = "\x1f"
+
+// CmdHash returns command hash of the edge.
+func (e *Edge) CmdHash() []byte {
+	buf := cmdhashBuf.Get().(*bytes.Buffer)
+	defer func() {
+		buf.Reset()
+		cmdhashBuf.Put(buf)
+	}()
+
+	h := sha256.New()
+	env := edgeEnv{edge: e, shellEscape: true}
+	cmdline, err := env.lookup(buf, "command")
+	if err == nil {
+		h.Write(cmdline)
+	}
+	buf.Reset()
+	rspfileContent, err := env.lookup(buf, "rspfile_content")
+	if err == nil && len(rspfileContent) > 0 {
+		h.Write([]byte(unitSeparator))
+		h.Write(rspfileContent)
+	}
+	return h.Sum(nil)
 }
 
 // Binding returns binding value in the edge.
