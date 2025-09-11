@@ -62,7 +62,37 @@ Please check [go/siso-faq](http://go/siso-faq) (internal).
 
 ## Development
 
-Please check [go/siso-development](http://go/siso-development) (internal).
+```
+$ git clone https://chromium.googlesource.com/build
+$ cd build/siso
+$ go install .
+```
+
+To build chromium with your Siso,
+
+```
+# in chromium workspace
+$ export SISO_PATH=$HOME/go/bin/siso
+$ autoninja -C out/Default chrome
+```
+
+When modifying code with kajiya, use [go workspace](https://go.dev/doc/tutorial/workspaces).
+
+At build repo checkout root,
+```
+$ go work init siso kajiya
+```
+Then, siso will use kajiya code in the checkout, not kajiya specified by go.mod.
+So, modify code in kajiya and siso.
+
+To land the change,
+
+1. land kajiya change.
+2. in siso, run `go get go.chromium.org/build/kajiya@latest` to update kajiya dependency for siso. check building siso by `GOWORK=off go install .`
+3. land siso change.
+
+Better to sync dependencies by `go work sync` and `go mod tidy` in siso and
+kajiya.
 
 ## References
 

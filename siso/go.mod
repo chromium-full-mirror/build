@@ -2,8 +2,6 @@ module go.chromium.org/build/siso
 
 go 1.24.7
 
-replace go.chromium.org/build/kajiya => ../kajiya
-
 require (
 	cloud.google.com/go/compute/metadata v0.8.0
 	cloud.google.com/go/logging v1.13.0
@@ -23,7 +21,7 @@ require (
 	github.com/klauspost/compress v1.18.0
 	github.com/klauspost/cpuid/v2 v2.3.0
 	github.com/pkg/xattr v0.4.12
-	go.chromium.org/build/kajiya v0.0.0-20250819145859-52bc97e44cd3
+	go.chromium.org/build/kajiya v0.0.0-20250910212413-ea6a96517373
 	go.opentelemetry.io/otel v1.38.0
 	go.opentelemetry.io/otel/metric v1.38.0
 	go.opentelemetry.io/otel/sdk v1.38.0
