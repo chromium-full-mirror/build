@@ -77,6 +77,22 @@ You can check auth status by running `siso auth-check [-reapi_*]`
 ## Note
 
 reclient credential helper is slightly different from bazel credential helper
-(timestamp format for expiry, etc)
+(timestamp format for expiry, etc).
+To convert reclient credential helper's output to bazel credential helper,
+
+```
+import datetime
+import json
+import os
+import subprocess
+
+v = json.loads("<reclient credential helper's output>")
+resp = {
+    "headers":{"Authorization": [f"Bearer {v['token']}"]},
+    "expires": datetime.datetime.strftime(datetime.datetime.strptime(v['expiry'], '%a %b %d %H:%M:%S UTC %Y'), '%Y-%m-%dT%H:%M:%SZ'),
+}
+print(json.dumps(resp))
+
+```
 
 `luci-auth` has `–json-format` option for `luci`, `reclient` or `bazel`.
