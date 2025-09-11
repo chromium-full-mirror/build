@@ -571,20 +571,6 @@ func (s *Service) BatchUpdateBlobs(ctx context.Context, request *repb.BatchUpdat
 	return response, err
 }
 
-func newDecoderForBatchUpload(data []byte, comp repb.Compressor_Value) (io.ReadCloser, error) {
-	buf := bytes.NewBuffer(data)
-	switch comp {
-	case repb.Compressor_IDENTITY:
-		return io.NopCloser(buf), nil
-	case repb.Compressor_ZSTD:
-		rd, err := zstd.NewReader(buf)
-		return rd.IOReadCloser(), err
-	default:
-		return nil, status.Errorf(codes.InvalidArgument, "unsupported compressor %q", comp)
-	}
-
-}
-
 func (s *Service) batchUploadBlobs(request *repb.BatchUpdateBlobsRequest) (*repb.BatchUpdateBlobsResponse, error) {
 	// If the client explicitly specifies a DigestFunction, ensure that it's SHA256.
 	if request.DigestFunction != repb.DigestFunction_UNKNOWN && request.DigestFunction != repb.DigestFunction_SHA256 {
@@ -598,36 +584,26 @@ func (s *Service) batchUploadBlobs(request *repb.BatchUpdateBlobsRequest) (*repb
 
 	// For each blob in the list, check if it exists in the CAS. If not, write it to the CAS.
 	for _, blob := range request.Requests {
+		// Ensure that the client didn't send compressed data.
+		if blob.Compressor != repb.Compressor_IDENTITY {
+			return nil, status.Error(codes.InvalidArgument, "compressed data is not supported")
+		}
+
 		// Parse the digest.
 		expectedDigest, err := digest.NewFromProto(blob.Digest)
 		if err != nil {
 			return nil, status.Errorf(codes.InvalidArgument, "invalid digest: %v", err)
 		}
 
-		r, err := newDecoderForBatchUpload(blob.Data, blob.GetCompressor())
-		if err != nil {
-			return nil, err
-		}
-
-		buf := make([]byte, expectedDigest.Size)
-		n, err := r.Read(buf)
-		if err != nil && !errors.Is(err, io.EOF) {
-			return nil, status.Errorf(codes.Internal, "could not read data: %v", err)
-		}
-		// Check that the calculated digest matches the data.
-		if int64(n) != expectedDigest.Size {
-			return nil, status.Errorf(codes.InvalidArgument, "data size does not match (expected=%d, actual=%d, compressor=%s)", expectedDigest.Size, n, blob.Compressor)
-		}
-
 		// Store the blob in our CAS.
-		actualDigest, err := s.cas.Put(buf[:n])
+		actualDigest, err := s.cas.Put(blob.Data)
 		if err != nil {
 			return nil, status.Errorf(codes.Internal, "could not store blob in CAS: %v", err)
 		}
 
 		// Check that the calculated digest matches the data.
 		if actualDigest != expectedDigest {
-			return nil, status.Errorf(codes.InvalidArgument, "digest does not match data (expected=%s, actual=%s, compressor=%s)", expectedDigest, actualDigest, blob.Compressor)
+			return nil, status.Errorf(codes.InvalidArgument, "digest does not match data (expected %s, actual %s)", expectedDigest, actualDigest)
 		}
 
 		// Add the response to the list.

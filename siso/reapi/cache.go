@@ -116,7 +116,7 @@ func (s digestSource) Open(ctx context.Context) (io.ReadCloser, error) {
 		s.c.m.ReadDone(0, err)
 		return nil, err
 	}
-	rd, err := s.c.newDecoder(r, s.c.getCompressor(s.d))
+	rd, err := s.c.newDecoder(r, s.d)
 	if err != nil {
 		s.c.m.ReadDone(0, err)
 		return nil, err

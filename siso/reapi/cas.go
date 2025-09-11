@@ -5,7 +5,6 @@
 package reapi
 
 import (
-	"bytes"
 	"compress/flate"
 	"context"
 	"errors"
@@ -108,19 +107,8 @@ func (c *Client) useCompressedBlob(d digest.Digest) bool {
 }
 
 // getCompressor returns a compressor for ByteStream Read/Write APIs.
-func (c *Client) getCompressor(d digest.Digest) rpb.Compressor_Value {
-	if !c.useCompressedBlob(d) {
-		return rpb.Compressor_IDENTITY
-	}
+func (c *Client) getCompressor() rpb.Compressor_Value {
 	return c.opt.compressor
-}
-
-// getCompressorForBatchUpdateBlobs returns a compressor for BatchUpdateBlobs API.
-func (c *Client) getCompressorForBatchUpdateBlobs(d digest.Digest) rpb.Compressor_Value {
-	if !c.useCompressedBlob(d) {
-		return rpb.Compressor_IDENTITY
-	}
-	return c.opt.compressorForBatchUpdateBlobs
 }
 
 // resourceName constructs a resource name for reading the blob identified by the digest.
@@ -137,7 +125,7 @@ func (c *Client) getCompressorForBatchUpdateBlobs(d digest.Digest) rpb.Compresso
 func (c *Client) resourceName(d digest.Digest) string {
 	if c.useCompressedBlob(d) {
 		return path.Join(c.opt.Instance, "compressed-blobs",
-			strings.ToLower(c.getCompressor(d).String()),
+			strings.ToLower(c.getCompressor().String()),
 			d.Hash, strconv.FormatInt(d.SizeBytes, 10))
 	}
 	return path.Join(c.opt.Instance, "blobs", d.Hash, strconv.FormatInt(d.SizeBytes, 10))
@@ -145,18 +133,19 @@ func (c *Client) resourceName(d digest.Digest) string {
 
 // newDecoder returns a decoder to uncompress blob.
 // For uncompressed blob, it returns a nop closer.
-func (c *Client) newDecoder(r io.Reader, comp rpb.Compressor_Value) (io.ReadCloser, error) {
-	switch comp {
-	case rpb.Compressor_IDENTITY:
-		return io.NopCloser(r), nil
-	case rpb.Compressor_ZSTD:
-		rd, err := zstd.NewReader(r)
-		return rd.IOReadCloser(), err
-	case rpb.Compressor_DEFLATE:
-		return flate.NewReader(r), nil
-	default:
-		return nil, fmt.Errorf("unsupported compressor %q", comp)
+func (c *Client) newDecoder(r io.Reader, d digest.Digest) (io.ReadCloser, error) {
+	if c.useCompressedBlob(d) {
+		switch comp := c.getCompressor(); comp {
+		case rpb.Compressor_ZSTD:
+			rd, err := zstd.NewReader(r)
+			return rd.IOReadCloser(), err
+		case rpb.Compressor_DEFLATE:
+			return flate.NewReader(r), nil
+		default:
+			return nil, fmt.Errorf("unsupported compressor %q", comp)
+		}
 	}
+	return io.NopCloser(r), nil
 }
 
 // Get fetches the content of blob from CAS by digest.
@@ -224,7 +213,7 @@ func (c *Client) getWithByteStream(ctx context.Context, d digest.Digest, name st
 			c.m.ReadDone(0, err)
 			return err
 		}
-		rd, err := c.newDecoder(r, c.getCompressor(d))
+		rd, err := c.newDecoder(r, d)
 		if err != nil {
 			c.m.ReadDone(0, err)
 			return err
@@ -521,7 +510,7 @@ func separateBlobs(instance string, blobs []digest.Digest, byteLimit int64) (sma
 // uploadWithBatchUpdateBlobs uploads blobs using BatchUpdateBlobs RPC.
 // The blobs will be bundled into multiple batches that fit in the size limit.
 func (c *Client) uploadWithBatchUpdateBlobs(ctx context.Context, digests []digest.Digest, uploads map[digest.Digest]*uploadOp, ds *digest.Store, byteLimit int64) ([]missingBlob, error) {
-	blobReqs, missingBlobs := c.blobsToUpload(ctx, digests, ds)
+	blobReqs, missingBlobs := blobsToUpload(ctx, digests, ds)
 
 	// Bundle the blobs to multiple batch requests.
 	batchReqs := createBatchUpdateBlobsRequests(c.opt.Instance, blobReqs, byteLimit)
@@ -613,7 +602,7 @@ func (c *Client) uploadWithBatchUpdateBlobs(ctx context.Context, digests []diges
 }
 
 // blobsToUpload returns a list of blobs to upload by looking up the digest store.
-func (c *Client) blobsToUpload(ctx context.Context, blobs []digest.Digest, ds *digest.Store) ([]*rpb.BatchUpdateBlobsRequest_Request, []missingBlob) {
+func blobsToUpload(ctx context.Context, blobs []digest.Digest, ds *digest.Store) ([]*rpb.BatchUpdateBlobsRequest_Request, []missingBlob) {
 	var wg sync.WaitGroup
 	type res struct {
 		err error
@@ -630,15 +619,20 @@ func (c *Client) blobsToUpload(ctx context.Context, blobs []digest.Digest, ds *d
 				clog.Warningf(ctx, "missing %s to upload: %v", blob, result.err)
 				return
 			}
+			var b []byte
 			err := FileSemaphore.Do(ctx, func(ctx context.Context) error {
 				var err error
-				result.req, err = c.readAllForBatchUpload(ctx, data)
+				b, err = readAll(ctx, data)
 				return err
 			})
 			if err != nil {
 				result.err = err
 				clog.Warningf(ctx, "read %s to upload: %v", blob, err)
 				return
+			}
+			result.req = &rpb.BatchUpdateBlobsRequest_Request{
+				Digest: data.Digest().Proto(),
+				Data:   b,
 			}
 		}(blobs[i], &results[i])
 	}
@@ -693,42 +687,21 @@ func createBatchUpdateBlobsRequests(instance string, blobReqs []*rpb.BatchUpdate
 	return batchReqs
 }
 
-func (c *Client) readAllForBatchUpload(ctx context.Context, data digest.Data) (*rpb.BatchUpdateBlobsRequest_Request, error) {
-	d := data.Digest()
-	comp := c.getCompressorForBatchUpdateBlobs(d)
-	req := &rpb.BatchUpdateBlobsRequest_Request{
-		Digest:     d.Proto(),
-		Data:       nil,
-		Compressor: comp,
-	}
+func readAll(ctx context.Context, data digest.Data) ([]byte, error) {
+	var buf []byte
 	err := retry.Do(ctx, func() error {
-		var b bytes.Buffer
-		w, err := c.newEncoder(&b, comp)
-		if err != nil {
-			return err
-		}
 		r, err := data.Open(ctx)
 		if err != nil {
-			w.Close()
 			return err
 		}
 		defer r.Close()
-		_, err = io.Copy(w, r)
-		if err != nil {
-			w.Close()
-			return err
-		}
-		err = w.Close()
-		if err != nil {
-			return err
-		}
-		req.Data = b.Bytes()
-		return nil
+		buf, err = io.ReadAll(r)
+		return err
 	})
 	if err != nil {
 		return nil, err
 	}
-	return req, nil
+	return buf, nil
 }
 
 func (c *Client) uploadWithByteStream(ctx context.Context, digests []digest.Digest, uploads map[digest.Digest]*uploadOp, ds *digest.Store) []missingBlob {
@@ -763,7 +736,7 @@ func (c *Client) uploadWithByteStream(ctx context.Context, digests []digest.Dige
 			if err != nil {
 				return err
 			}
-			cwr, err := c.newEncoder(wr, c.getCompressor(d))
+			cwr, err := c.newEncoder(wr, d)
 			if err != nil {
 				wr.Close()
 				return err
@@ -829,7 +802,7 @@ func (c *Client) uploadResourceName(d digest.Digest) string {
 	if c.useCompressedBlob(d) {
 		return path.Join(c.opt.Instance, "uploads", uuid.New().String(),
 			"compressed-blobs",
-			strings.ToLower(c.getCompressor(d).String()),
+			strings.ToLower(c.getCompressor().String()),
 			d.Hash,
 			strconv.FormatInt(d.SizeBytes, 10))
 	}
@@ -844,17 +817,18 @@ func (c *Client) FileURI(d digest.Digest) string {
 
 // newEncoder returns an encoder to compress blob.
 // For uncompressed blob, it returns a nop closer.
-func (c *Client) newEncoder(w io.Writer, comp rpb.Compressor_Value) (io.WriteCloser, error) {
-	switch comp {
-	case rpb.Compressor_IDENTITY:
-		return nopWriteCloser{w}, nil
-	case rpb.Compressor_ZSTD:
-		return zstd.NewWriter(w)
-	case rpb.Compressor_DEFLATE:
-		return flate.NewWriter(w, flate.DefaultCompression)
-	default:
-		return nil, fmt.Errorf("unsupported compressor %q", comp)
+func (c *Client) newEncoder(w io.Writer, d digest.Digest) (io.WriteCloser, error) {
+	if c.useCompressedBlob(d) {
+		switch comp := c.getCompressor(); comp {
+		case rpb.Compressor_ZSTD:
+			return zstd.NewWriter(w)
+		case rpb.Compressor_DEFLATE:
+			return flate.NewWriter(w, flate.DefaultCompression)
+		default:
+			return nil, fmt.Errorf("unsupported compressor %q", comp)
+		}
 	}
+	return nopWriteCloser{w}, nil
 }
 
 type nopWriteCloser struct {

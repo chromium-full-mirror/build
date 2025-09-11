@@ -62,8 +62,6 @@ type Option struct {
 	CompressedBlob int64
 	// compressor for ByteStream Read/Write APIs.
 	compressor rpb.Compressor_Value
-	// compressor for BatchUpdateBlobs API.
-	compressorForBatchUpdateBlobs rpb.Compressor_Value
 
 	// Keep Execute stream open as lone as possible.
 	// If false, siso closes Execute stream every 1 minute and retries
@@ -449,12 +447,6 @@ func NewFromConn(ctx context.Context, opt Option, conn, casConn grpcClientConn) 
 			clog.Infof(ctx, "compressed-blobs/%s for > %d", strings.ToLower(opt.compressor.String()), opt.CompressedBlob)
 		} else {
 			clog.Infof(ctx, "compressed-blobs is not supported")
-		}
-		opt.compressorForBatchUpdateBlobs = selectCompressor(capa.GetCacheCapabilities().GetSupportedBatchUpdateCompressors())
-		if opt.compressorForBatchUpdateBlobs != rpb.Compressor_IDENTITY {
-			clog.Infof(ctx, "blob compression with %q in BatchUpdateBlobs for > %d", strings.ToLower(opt.compressorForBatchUpdateBlobs.String()), opt.CompressedBlob)
-		} else {
-			clog.Infof(ctx, "blob compression in BatchUpdateBlobs is not supported")
 		}
 	}
 	var apiVersion *semverpb.SemVer
