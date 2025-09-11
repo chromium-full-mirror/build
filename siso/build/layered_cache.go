@@ -69,7 +69,7 @@ func (lc *LayeredCache) GetActionResult(ctx context.Context, d digest.Digest) (a
 		}
 		return ar, err
 	}
-	return nil, fmt.Errorf("no caches to retrieve content from")
+	return nil, fmt.Errorf("no caches to retrieve action cache %v from", d)
 }
 
 // SetActionResult sets the action result of the action identified by the digest.
@@ -104,7 +104,7 @@ func (lc *LayeredCache) GetContent(ctx context.Context, d digest.Digest, f strin
 		}
 		return content, err
 	}
-	return nil, fmt.Errorf("no caches to retrieve content from")
+	return nil, fmt.Errorf("no caches to retrieve content %q %v from", f, d)
 }
 
 // SetContent sets the content of the file identified by the digest.
