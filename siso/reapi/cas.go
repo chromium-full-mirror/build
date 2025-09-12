@@ -13,7 +13,6 @@ import (
 	"maps"
 	"path"
 	"slices"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -26,7 +25,6 @@ import (
 	bpb "google.golang.org/genproto/googleapis/bytestream"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	"google.golang.org/protobuf/proto"
 
 	"go.chromium.org/build/siso/o11y/clog"
 	"go.chromium.org/build/siso/o11y/trace"
@@ -46,8 +44,9 @@ const (
 	// bytestreamReadThreshold is the threshold that decides whether to use BatchReadBlobs or ByteStream API.
 	bytestreamReadThreshold = 2 * 1024 * 1024
 
-	// defaultBatchUpdateByteLimit is bytes limit for cas BatchUpdateBlobs.
-	defaultBatchUpdateByteLimit = 4 * 1024 * 1024
+	// defaultBatchUpdateByteLimit is the max total size of the blobs in cas BatchUpdateBlobs.
+	// The minus 100KiB is buffer to avoid exceeding the default protobuf receive size limit (4MiB).
+	defaultBatchUpdateByteLimit = 4*1024*1024 - 100*1024
 
 	// batchBlobUploadLimit is max number of blobs in BatchUpdateBlobs.
 	batchBlobUploadLimit = 1000
@@ -446,7 +445,7 @@ func (c *Client) upload(ctx context.Context, ds *digest.Store, blobs []digest.Di
 	}
 
 	// Separate small blobs and large blobs because they are going to use different RPCs.
-	smalls, larges := separateBlobs(c.opt.Instance, blobs, byteLimit)
+	smalls, larges := separateBlobs(blobs, byteLimit)
 	clog.Infof(ctx, "upload by batch %d out of %d", len(smalls), len(blobs))
 	span.SetAttr("small", len(smalls))
 	span.SetAttr("large", len(larges))
@@ -476,35 +475,18 @@ func (c *Client) upload(ctx context.Context, ds *digest.Store, blobs []digest.Di
 // separateBlobs separates blobs to two groups.
 // One group is for small blobs that can fit in BatchUpdateBlobsRequest, and the other is for large blobs.
 // TODO(b/273884978): simplify and optimize the code.
-func separateBlobs(instance string, blobs []digest.Digest, byteLimit int64) (smalls, larges []digest.Digest) {
+func separateBlobs(blobs []digest.Digest, byteLimit int64) (smalls, larges []digest.Digest) {
 	if len(blobs) == 0 {
 		return nil, nil
 	}
-	sort.Slice(blobs, func(i, j int) bool {
-		return blobs[i].SizeBytes < blobs[j].SizeBytes
-	})
-	maxSizeBytes := min(blobs[len(blobs)-1].SizeBytes, byteLimit)
-	// Prepare a dummy request message to calculate the size of the BatchUpdateBlobsRequest accurately.
-	dummyReq := &rpb.BatchUpdateBlobsRequest{
-		InstanceName: instance,
-		Requests: []*rpb.BatchUpdateBlobsRequest_Request{
-			{Data: make([]byte, 0, maxSizeBytes)},
-		},
-	}
-	i := sort.Search(len(blobs), func(i int) bool {
-		if blobs[i].SizeBytes >= byteLimit {
-			return true
+	for _, d := range blobs {
+		if d.SizeBytes > byteLimit {
+			larges = append(larges, d)
+		} else {
+			smalls = append(smalls, d)
 		}
-		// When the BatchUpdateBlobsRequest with the single blob already exceeds the size limit.
-		// It can't send the blob via BatchUpdateBlobsRequest.
-		dummyReq.Requests[0].Digest = blobs[i].Proto()
-		dummyReq.Requests[0].Data = dummyReq.Requests[0].Data[:blobs[i].SizeBytes]
-		return int64(proto.Size(dummyReq)) >= byteLimit
-	})
-	if i < len(blobs) {
-		return blobs[:i], blobs[i:]
 	}
-	return blobs, nil
+	return
 }
 
 // uploadWithBatchUpdateBlobs uploads blobs using BatchUpdateBlobs RPC.
@@ -661,26 +643,22 @@ func blobsToUpload(ctx context.Context, blobs []digest.Digest, ds *digest.Store)
 // createBatchUpdateBlobsRequests bundles blobs into multiple batch requests.
 func createBatchUpdateBlobsRequests(instance string, blobReqs []*rpb.BatchUpdateBlobsRequest_Request, byteLimit int64) []*rpb.BatchUpdateBlobsRequest {
 	var batchReqs []*rpb.BatchUpdateBlobsRequest
-
-	// Initial batch request size without blobs.
-	batchReqNoReqsSize := int64(proto.Size(&rpb.BatchUpdateBlobsRequest{InstanceName: instance}))
-	size := batchReqNoReqsSize
-
+	size := int64(0)
 	lastOffset := 0
 	for i := range blobReqs {
-		size += int64(proto.Size(&rpb.BatchUpdateBlobsRequest{Requests: blobReqs[i : i+1]}))
+		size += blobReqs[i].Digest.SizeBytes
 		switch {
 		case i == len(blobReqs)-1:
 			fallthrough
 		case i+1 == lastOffset+batchBlobUploadLimit:
 			fallthrough
-		case byteLimit > 0 && size+int64(proto.Size(&rpb.BatchUpdateBlobsRequest{Requests: blobReqs[i+1 : i+2]})) > byteLimit:
+		case byteLimit > 0 && size+blobReqs[i+1].Digest.SizeBytes > byteLimit:
 			// When the batch request exceeds the size limit, it starts creating a new batch request.
 			batchReqs = append(batchReqs, &rpb.BatchUpdateBlobsRequest{
 				InstanceName: instance,
 				Requests:     blobReqs[lastOffset : i+1],
 			})
-			size = batchReqNoReqsSize
+			size = 0
 			lastOffset = i + 1
 		}
 	}
