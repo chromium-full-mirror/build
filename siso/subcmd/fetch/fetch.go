@@ -133,9 +133,11 @@ func (c *Command) run(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("reapi option is invalid: %w", err)
 	}
-	credential, err = cred.New(ctx, c.reopt.ServiceURI(), c.authOpts)
-	if err != nil {
-		return err
+	if c.reopt.NeedCred() {
+		credential, err = cred.New(ctx, c.reopt.ServiceURI(), c.authOpts)
+		if err != nil {
+			return err
+		}
 	}
 	d, err := digest.Parse(digestStr)
 	if err != nil {

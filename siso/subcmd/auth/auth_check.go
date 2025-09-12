@@ -54,24 +54,32 @@ func (c *CheckCommand) Execute(ctx context.Context, flagSet *flag.FlagSet, _ ...
 		fmt.Fprintf(os.Stderr, "position arguments not expected\n")
 		return subcommands.ExitUsageError
 	}
-	credential, err := cred.New(ctx, c.reopt.ServiceURI(), c.authOpts)
+	c.reopt.UpdateProjectID(c.projectID)
+	err := c.reopt.CheckValid()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "auth error: %v\n", err)
+		fmt.Fprintf(os.Stderr, "reapi option is invalid: %v\n", err)
 		return subcommands.ExitFailure
 	}
-	fmt.Printf("Logged in by %s\n", credential.Type)
-	if credential.Email != "" {
-		fmt.Printf(" as %s\n", credential.Email)
-	}
-	c.reopt.UpdateProjectID(c.projectID)
-	if err := c.reopt.CheckValid(); err == nil {
-		client, err := reapi.New(ctx, credential, *c.reopt)
-		fmt.Printf("use %s\n", c.reopt)
+	var credential cred.Cred
+	if c.reopt.NeedCred() {
+		credential, err = cred.New(ctx, c.reopt.ServiceURI(), c.authOpts)
 		if err != nil {
-			fmt.Printf("access error: %v\n", err)
+			fmt.Fprintf(os.Stderr, "auth error: %v\n", err)
 			return subcommands.ExitFailure
 		}
-		defer client.Close()
+		fmt.Printf("Logged in by %s\n", credential.Type)
+		if credential.Email != "" {
+			fmt.Printf(" as %s\n", credential.Email)
+		}
+	} else {
+		fmt.Fprintf(os.Stderr, "no credential required for reapi: %s\n", c.reopt)
 	}
+	client, err := reapi.New(ctx, credential, *c.reopt)
+	fmt.Printf("use %s\n", c.reopt)
+	if err != nil {
+		fmt.Printf("access error: %v\n", err)
+		return subcommands.ExitFailure
+	}
+	client.Close()
 	return subcommands.ExitSuccess
 }

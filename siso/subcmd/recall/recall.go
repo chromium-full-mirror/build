@@ -133,9 +133,12 @@ func (c *Command) run(ctx context.Context) error {
 	defer signals.HandleInterrupt(ctx, cancel)()
 
 	c.reopt.UpdateProjectID(c.projectID)
-	var credential cred.Cred
 	err := c.reopt.CheckValid()
-	if err == nil {
+	if err != nil {
+		return fmt.Errorf("reapi option is invalid: %w", err)
+	}
+	var credential cred.Cred
+	if c.reopt.NeedCred() {
 		credential, err = cred.New(ctx, c.reopt.ServiceURI(), c.authOpts)
 		if err != nil {
 			return err

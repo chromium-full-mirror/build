@@ -143,13 +143,16 @@ func (c *Command) run(ctx context.Context) error {
 		return fmt.Errorf("reapi option is invalid: %w", err)
 	}
 	spin := ui.Default.NewSpinner()
-	spin.Start("init credentials")
-	credential, err := cred.New(ctx, c.reopt.ServiceURI(), c.authOpts)
-	if err != nil {
-		spin.Stop(errors.New(""))
-		return err
+	var credential cred.Cred
+	if c.reopt.NeedCred() || c.enableCloudLogging {
+		spin.Start("init credentials")
+		credential, err = cred.New(ctx, c.reopt.ServiceURI(), c.authOpts)
+		if err != nil {
+			spin.Stop(errors.New(""))
+			return err
+		}
+		spin.Stop(nil)
 	}
-	spin.Stop(nil)
 	if c.enableCloudLogging {
 		logCtx, loggerURL, done, err := c.initCloudLogging(ctx, projectID, execRoot, credential)
 		if err != nil {
