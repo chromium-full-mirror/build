@@ -226,7 +226,7 @@ func (b *Builder) cacheWrite(ctx context.Context, step *Step) {
 			// Now set the action result in RE
 			return b.reapiclient.UpdateActionResult(ctx, actionDigest, result)
 		})
-		return nil
+		return err
 	}()
 	if err == nil {
 		step.metrics.CacheWrite = true
