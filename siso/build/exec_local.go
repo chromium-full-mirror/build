@@ -27,7 +27,6 @@ func (b *Builder) execLocal(ctx context.Context, step *Step) error {
 	ctx, span := trace.NewSpan(ctx, "exec-local")
 	defer span.Close(nil)
 	clog.Infof(ctx, "exec local %s", step.cmd.Desc)
-	step.cmd.RemoteWrapper = ""
 
 	step.setPhase(stepInput)
 	err := b.prepareLocalInputs(ctx, step)
