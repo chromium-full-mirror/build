@@ -138,14 +138,18 @@ func (s *Service) execute(request *repb.ExecuteRequest, _ *repb.RequestMetadata,
 		return status.Errorf(codes.InvalidArgument, "hash function %q is not supported", request.DigestFunction.String())
 	}
 
-	// Parse the action digest.
+	// Fetch the Action from the CAS.
 	actionDigest, err := digest.NewFromProto(request.ActionDigest)
 	if err != nil {
-		return status.Errorf(codes.InvalidArgument, "invalid action digest: %v", err)
+		return err
+	}
+	action, err := s.cas.Action(actionDigest)
+	if err != nil {
+		return err
 	}
 
-	// Fetch the Action from the CAS.
-	action, err := s.cas.Action(actionDigest)
+	// Generate a unique identifier for this operation.
+	opName, err := uuid.NewV7()
 	if err != nil {
 		return err
 	}
@@ -156,7 +160,7 @@ func (s *Service) execute(request *repb.ExecuteRequest, _ *repb.RequestMetadata,
 		if err != nil {
 			return err
 		}
-		reply, err := wrapActionResult(actionDigest, ar, false)
+		reply, err := wrapActionResult(request.ActionDigest, opName, ar, false)
 		if err != nil {
 			return err
 		}
@@ -174,7 +178,7 @@ func (s *Service) execute(request *repb.ExecuteRequest, _ *repb.RequestMetadata,
 				return nil, fmt.Errorf("failed to get action from cache: %w", err)
 			}
 			if ar != nil {
-				return wrapActionResult(actionDigest, ar, true)
+				return wrapActionResult(request.ActionDigest, opName, ar, true)
 			}
 		}
 
@@ -185,7 +189,7 @@ func (s *Service) execute(request *repb.ExecuteRequest, _ *repb.RequestMetadata,
 		}
 
 		// Store the result in the action cache if possible. We only cache successful
-		// result, as it's always possible that a failed action is due to a transient
+		// results, as it's always possible that a failed action is due to a transient
 		// issue that will be resolved on the next execution.
 		if s.actionCache != nil && ar.ExitCode == 0 {
 			if err = s.actionCache.Put(actionDigest, ar); err != nil {
@@ -193,7 +197,7 @@ func (s *Service) execute(request *repb.ExecuteRequest, _ *repb.RequestMetadata,
 			}
 		}
 
-		return wrapActionResult(actionDigest, ar, false)
+		return wrapActionResult(request.ActionDigest, opName, ar, false)
 	})
 	if err != nil {
 		return err
@@ -225,11 +229,11 @@ func formatMissingBlobsError(e *blobstore.MissingBlobsError) error {
 	return st.Err()
 }
 
-func wrapActionResult(d digest.Digest, r *repb.ActionResult, cached bool) (*longrunningpb.Operation, error) {
+func wrapActionResult(actionDigest *repb.Digest, opName uuid.UUID, r *repb.ActionResult, cached bool) (*longrunningpb.Operation, error) {
 	// Construct some metadata for the execution operation and wrap it in an Any.
 	md, err := anypb.New(&repb.ExecuteOperationMetadata{
 		Stage:        repb.ExecutionStage_COMPLETED,
-		ActionDigest: d.ToProto(),
+		ActionDigest: actionDigest,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal metadata: %w", err)
@@ -242,13 +246,6 @@ func wrapActionResult(d digest.Digest, r *repb.ActionResult, cached bool) (*long
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal response: %w", err)
-	}
-
-	// Generate a unique operation name.
-	// TODO: Use a real operation ID that's consistent across the lifetime of the operation.
-	opName, err := uuid.NewV7()
-	if err != nil {
-		return nil, fmt.Errorf("failed to generate operation ID: %w", err)
 	}
 
 	// Wrap all the protos in another proto and return it.
