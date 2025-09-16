@@ -279,6 +279,14 @@ func (e *Executor) buildNsjailArgs(sandboxDir string, imageDir string, cmd *repb
 		args = append(args, "--env", env.Name)
 	}
 
+	// Provide a minimal /dev environment. We need to explicitly set the mode to 0755,
+	// because otherwise nsjail sets the sticky bit on /dev, which causes "Permission denied"
+	// errors when shells try to write into /dev/null.
+	// See: https://github.com/lucidBrot/kctf-usage?tab=readme-ov-file#mount-devnull
+	args = append(args, "--mount", "none:/dev:tmpfs:mode=0755")
+	args = append(args, "--bindmount", "/dev/null")
+	args = append(args, "--bindmount_ro", "/dev/zero")
+
 	// Python and other tools use /dev/shm for shared memory, so we need to mount it.
 	// Otherwise we get errors like this:
 	// _multiprocessing.SemLock(kind, value, maxvalue)
