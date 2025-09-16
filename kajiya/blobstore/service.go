@@ -540,23 +540,23 @@ func (s *Service) findMissingBlobs(request *repb.FindMissingBlobsRequest) (*repb
 		return nil, status.Errorf(codes.InvalidArgument, "hash function %q is not supported", request.DigestFunction.String())
 	}
 
-	// Make a list that stores the missing blobs. We set the capacity so that we never have to reallocate.
-	missing := make([]*repb.Digest, 0, len(request.BlobDigests))
-
-	// For each blob in the list, check if it exists in the CAS. If not, add it to the list of missing blobs.
+	// Filter the list in place so that only the missing blobs remain.
+	n := 0
 	for _, d := range request.BlobDigests {
 		dg, err := digest.NewFromProto(d)
 		if err != nil {
 			return nil, status.Errorf(codes.InvalidArgument, "invalid digest: %v", err)
 		}
 		if !s.cas.Has(dg) {
-			missing = append(missing, d)
+			request.BlobDigests[n] = d
+			n++
 		}
 	}
+	request.BlobDigests = request.BlobDigests[:n]
 
 	// Return the list of missing blobs to the client.
 	return &repb.FindMissingBlobsResponse{
-		MissingBlobDigests: missing,
+		MissingBlobDigests: request.BlobDigests,
 	}, nil
 }
 
