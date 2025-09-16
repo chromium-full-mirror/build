@@ -27,7 +27,6 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	"google.golang.org/protobuf/proto"
 )
 
 const (
@@ -689,50 +688,22 @@ func (s *Service) getTree(request *repb.GetTreeRequest, treeServer repb.ContentA
 		return status.Errorf(codes.InvalidArgument, "hash function %q is not supported", request.DigestFunction.String())
 	}
 
+	// Parse the digest.
+	d, err := digest.NewFromProto(request.RootDigest)
+	if err != nil {
+		return status.Errorf(codes.InvalidArgument, "invalid digest: %v", err)
+	}
+
+	// Flatten the directory tree.
+	dirs, err := s.cas.FlattenDirectory(d)
+	if err != nil {
+		return err
+	}
+
 	// Prepare a response that we can fill in.
 	response := &repb.GetTreeResponse{
-		Directories: make([]*repb.Directory, 0),
+		Directories: dirs,
 	}
-
-	// Create a queue of directories to process and add the root directory.
-	dirQueue := []*repb.DirectoryNode{
-		{
-			Digest: request.RootDigest,
-		},
-	}
-
-	// Iteratively process the directories.
-	for len(dirQueue) > 0 {
-		// Take a directoryNode from the queue.
-		directoryNode := dirQueue[0]
-		dirQueue = dirQueue[1:]
-
-		// Parse the digest.
-		d, err := digest.NewFromProto(directoryNode.Digest)
-		if err != nil {
-			return status.Errorf(codes.InvalidArgument, "invalid digest: %v", err)
-		}
-
-		// Get the blob for the directory message from the CAS.
-		directoryBlob, err := s.cas.Get(d)
-		if err != nil {
-			return status.Errorf(codes.NotFound, "directory not found: %v", err)
-		}
-
-		// Unmarshal the directory message.
-		directory := &repb.Directory{}
-		if err := proto.Unmarshal(directoryBlob, directory); err != nil {
-			return status.Errorf(codes.Internal, "failed to unmarshal directory: %v", err)
-		}
-
-		// Add the directory to the response.
-		response.Directories = append(response.Directories, directory)
-
-		// Add all subdirectory nodes to the queue.
-		dirQueue = append(dirQueue, directory.Directories...)
-	}
-
-	// TODO: Add support for pagination?
 
 	// Send the tree to the client.
 	return treeServer.Send(response)

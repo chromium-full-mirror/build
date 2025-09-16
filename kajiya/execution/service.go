@@ -111,8 +111,8 @@ func (s *Service) execute(request *repb.ExecuteRequest, executeServer repb.Execu
 	}
 
 	// Fetch the Action from the CAS.
-	action := &repb.Action{}
-	if err := s.cas.Proto(actionDigest, action); err != nil {
+	action, err := s.cas.Action(actionDigest)
+	if err != nil {
 		return err
 	}
 

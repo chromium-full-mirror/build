@@ -95,8 +95,8 @@ func (e *Executor) Execute(action *repb.Action) (*repb.ActionResult, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse command digest: %w", err)
 	}
-	cmd := &repb.Command{}
-	if err := e.cas.Proto(cmdDigest, cmd); err != nil {
+	cmd, err := e.cas.Command(cmdDigest)
+	if err != nil {
 		return nil, err
 	}
 

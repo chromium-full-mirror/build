@@ -129,9 +129,9 @@ func (t *TreeRepository) StageDirectory(dirDigest *repb.Digest, path string) err
 func (t *TreeRepository) materializeDirectory(dirDigest digest.Digest) (map[string]*repb.Directory, error) {
 	dirs, err, _ := t.materializeSyncer.Do(dirDigest.Hash, func() (any, error) {
 		// Get the directory message from the CAS.
-		d := &repb.Directory{}
-		if err := t.cas.Proto(dirDigest, d); err != nil {
-			return nil, fmt.Errorf("failed to fetch directory proto: %w", err)
+		d, err := t.cas.Directory(dirDigest)
+		if err != nil {
+			return nil, err
 		}
 
 		dirs := make(map[string]*repb.Directory)
