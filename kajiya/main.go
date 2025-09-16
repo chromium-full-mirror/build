@@ -59,6 +59,10 @@ func main() {
 	// performance when generating many UUIDs.
 	uuid.EnableRandPool()
 
+	// Reset the umask to a known value, so we know which permissions newly
+	// created files and directories will have.
+	blobstore.ResetUmask()
+
 	// Enable CPU profiling if requested.
 	if *cpuprofile != "" {
 		log.Printf("📈 CPU profiling enabled, writing to %v", *cpuprofile)
