@@ -6,6 +6,7 @@
 package execution
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -20,7 +21,9 @@ import (
 	errpb "google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/anypb"
 
 	"go.chromium.org/build/kajiya/actioncache"
@@ -71,11 +74,42 @@ func NewService(executor ExecutorInterface, ac *actioncache.ActionCache, cas *bl
 	}, nil
 }
 
+func Metadata(ctx context.Context) (*repb.RequestMetadata, error) {
+	// Extract the "build.bazel.remote.execution.v2.requestmetadata-bin" metadata
+	// and convert it to a string slice for logging.
+	md, ok := metadata.FromIncomingContext(ctx)
+	if !ok {
+		// Metadata is optional, so it's not an error if the request doesn't have any.
+		return nil, nil
+	}
+	bmdStrs, ok := md["build.bazel.remote.execution.v2.requestmetadata-bin"]
+	if !ok {
+		return nil, nil
+	}
+	if len(bmdStrs) != 1 {
+		return nil, fmt.Errorf("expected exactly one 'build.bazel.remote.execution.v2.requestmetadata-bin' metadata entry, got %d", len(bmdStrs))
+	}
+
+	// Unmarshal the metadata from the binary string.
+	bmd := &repb.RequestMetadata{}
+	if err := proto.Unmarshal([]byte(bmdStrs[0]), bmd); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal request metadata: %w", err)
+	}
+
+	// Return the unmarshaled metadata.
+	return bmd, nil
+}
+
 // Execute executes the given action and returns the result.
 func (s *Service) Execute(request *repb.ExecuteRequest, executeServer repb.Execution_ExecuteServer) error {
+	bmd, err := Metadata(executeServer.Context())
+	if err != nil {
+		return status.Errorf(codes.InvalidArgument, "request contained invalid metadata: %v", err)
+	}
+
 	// Just for fun, measure how long the execution takes and log it.
 	start := time.Now()
-	err := s.execute(request, executeServer)
+	err = s.execute(request, bmd, executeServer)
 	duration := time.Since(start)
 
 	if err != nil {
@@ -98,7 +132,7 @@ func (s *Service) Execute(request *repb.ExecuteRequest, executeServer repb.Execu
 	return nil
 }
 
-func (s *Service) execute(request *repb.ExecuteRequest, executeServer repb.Execution_ExecuteServer) error {
+func (s *Service) execute(request *repb.ExecuteRequest, _ *repb.RequestMetadata, executeServer repb.Execution_ExecuteServer) error {
 	// If the client explicitly specifies a DigestFunction, ensure that it's SHA256.
 	if request.DigestFunction != repb.DigestFunction_UNKNOWN && request.DigestFunction != repb.DigestFunction_SHA256 {
 		return status.Errorf(codes.InvalidArgument, "hash function %q is not supported", request.DigestFunction.String())
