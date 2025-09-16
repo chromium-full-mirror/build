@@ -14,6 +14,7 @@ import (
 
 	rpb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
 	log "github.com/golang/glog"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"go.chromium.org/build/siso/execute"
@@ -172,6 +173,14 @@ func (b *Builder) cacheWrite(ctx context.Context, step *Step) {
 			return err
 		}
 
+		var metadata *rpb.ExecutedActionMetadata
+		if md := result.GetExecutionMetadata(); md != nil {
+			metadata = proto.CloneOf(md)
+			// don't store auxiliary metadata
+			// as buildfarm can't accept unknown auxiliary metadata.
+			metadata.AuxiliaryMetadata = nil
+		}
+
 		// Create new ActionResult to not mutate cmd result
 		// We need to unset StderrRaw, StdoutRaw, and populate OutputFiles
 		result = &rpb.ActionResult{
@@ -183,7 +192,7 @@ func (b *Builder) cacheWrite(ctx context.Context, step *Step) {
 			StderrRaw:         result.GetStderrRaw(),
 			StdoutDigest:      result.GetStdoutDigest(),
 			StderrDigest:      result.GetStderrDigest(),
-			ExecutionMetadata: result.GetExecutionMetadata(),
+			ExecutionMetadata: metadata,
 		}
 
 		// Retrieve and compute output digests from HashFS on the action
