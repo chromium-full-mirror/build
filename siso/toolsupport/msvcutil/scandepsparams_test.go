@@ -116,6 +116,40 @@ func TestScanDepsParams(t *testing.T) {
 				Defines: map[string]string{},
 			},
 		},
+		{
+			name: "clang-module-file",
+			args: []string{
+				"../../third_party/llvm-build/Release+Asserts/bin/clang-cl.exe",
+				"/c",
+				"../../base/base64.cc",
+				"/Foobj/base/base/base64.obj",
+				"/winsysroot../../third_party/depot_tools/win_toolchain/vs_files/27370823e7",
+				"-fmodules",
+				"-fmodule-map-file=../../third_party/libc++/src/include/module.modulemap",
+				"-fno-implicit-module-maps",
+				"-fmodule-file=obj/buildtools/third_party/libc++/_Builtin_limits/module.pcm",
+				"-fmodule-file=obj/buildtools/third_party/libc++/_Builtin_stdarg/module.pcm",
+				"-fmodule-file=obj/buildtools/third_party/libc++/_Builtin_stddef/module.pcm",
+				"-fmodule-file=std=obj/buildtools/third_party/libc++/std/module.pcm",
+			},
+			want: ScanDepsParams{
+				Sources: []string{
+					"../../base/base64.cc",
+				},
+				Files: []string{
+					"../../third_party/libc++/src/include/module.modulemap",
+					"obj/buildtools/third_party/libc++/_Builtin_limits/module.pcm",
+					"obj/buildtools/third_party/libc++/_Builtin_stdarg/module.pcm",
+					"obj/buildtools/third_party/libc++/_Builtin_stddef/module.pcm",
+					"obj/buildtools/third_party/libc++/std/module.pcm",
+				},
+				Sysroots: []string{
+					"../../third_party/llvm-build/Release+Asserts",
+					"../../third_party/depot_tools/win_toolchain/vs_files/27370823e7",
+				},
+				Defines: map[string]string{},
+			},
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			got, err := ExtractScanDepsParams(ctx, tc.args, tc.env, os.DirFS("."))

@@ -111,6 +111,16 @@ func ExtractScanDepsParams(ctx context.Context, args, env []string, fsys fs.FS) 
 		case strings.HasPrefix(arg, "/D"):
 			defineMacro(res.Defines, strings.TrimPrefix(arg, "/D"))
 
+		case strings.HasPrefix(arg, "-fmodule-file="):
+			moduleFile := strings.TrimPrefix(arg, "-fmodule-file=")
+			if _, after, found := strings.Cut(moduleFile, "="); found {
+				res.Files = append(res.Files, after)
+			} else {
+				res.Files = append(res.Files, moduleFile)
+			}
+		case strings.HasPrefix(arg, "-fmodule-map-file="):
+			res.Files = append(res.Files, strings.TrimPrefix(arg, "-fmodule-map-file="))
+
 		case strings.HasPrefix(arg, "-FI"):
 			res.Includes = append(res.Includes, filepath.ToSlash(strings.TrimPrefix(arg, "-FI")))
 		case strings.HasPrefix(arg, "/FI"):
