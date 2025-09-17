@@ -29,6 +29,7 @@ import (
 	"go.chromium.org/build/siso/subcmd/metricscmd"
 	"go.chromium.org/build/siso/subcmd/ninja"
 	"go.chromium.org/build/siso/subcmd/ninjafrontend"
+	"go.chromium.org/build/siso/subcmd/proxy"
 	"go.chromium.org/build/siso/subcmd/ps"
 	"go.chromium.org/build/siso/subcmd/query"
 	"go.chromium.org/build/siso/subcmd/recall"
@@ -202,6 +203,7 @@ Use "siso flags" to display all flags.
 	subcommands.Register(recall.Cmd(authOpts), "reapi")
 	subcommands.Register(fetch.Cmd(authOpts), "reapi")
 	subcommands.Register(isolate.Cmd(authOpts), "reapi")
+	subcommands.Register(proxy.Cmd(authOpts), "reapi")
 
 	subcommands.Register(fscmd.Cmd(authOpts), "investigation")
 	subcommands.Register(metricscmd.Cmd(), "investigation")
