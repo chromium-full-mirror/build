@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"golang.org/x/sync/errgroup"
@@ -46,6 +47,9 @@ type globals struct {
 
 	// node id -> string
 	targetPaths []string
+
+	// deps path id -> *depsPath
+	depsPaths []atomic.Pointer[depsPath]
 
 	// node id -> edgeRuleHolder that produces the output
 	edgeRules []edgeRuleHolder
@@ -209,6 +213,7 @@ func NewGraph(ctx context.Context, fname string, nstate *ninjautil.State, config
 			buildConfig:    config,
 			stepConfig:     stepConfig,
 			targetPaths:    make([]string, nstate.NumNodes()),
+			depsPaths:      make([]atomic.Pointer[depsPath], depsLog.NumPaths()),
 			edgeRules:      make([]edgeRuleHolder, nstate.NumNodes()),
 			phony:          make(map[string]bool),
 			caseSensitives: make(map[string][]string),
@@ -267,6 +272,7 @@ func (g *Graph) reset(ctx context.Context) {
 	g.visited = make(map[*ninjautil.Edge]*build.Edge)
 	g.globals.depsLog.Reset()
 	g.globals.targetPaths = make([]string, g.globals.nstate.NumNodes())
+	g.globals.depsPaths = make([]atomic.Pointer[depsPath], g.globals.depsLog.NumPaths())
 	g.globals.edgeRules = make([]edgeRuleHolder, g.globals.nstate.NumNodes())
 	g.globals.phony = make(map[string]bool)
 	g.globals.caseSensitives = make(map[string][]string)

@@ -42,21 +42,21 @@ func TestBuild_Deps_Incremental(t *testing.T) {
 			}
 		}()
 		var errs error
-		got, _, err := depsLog.Get(ctx, "foo.o")
+		got, _, err := depsLog.RetrievePaths(ctx, "foo.o")
 		if err != nil {
 			errs = errors.Join(errs, fmt.Errorf("deps for foo.o: %w", err))
 		} else if !slices.Equal(got, gccDeps) {
 			errs = errors.Join(errs, fmt.Errorf("deps for foo.o: got=%q want=%q", got, gccDeps))
 		}
 
-		got, _, err = depsLog.Get(ctx, "foo.obj")
+		got, _, err = depsLog.RetrievePaths(ctx, "foo.obj")
 		if err != nil {
 			errs = errors.Join(errs, fmt.Errorf("deps for foo.obj: %w", err))
 		} else if !slices.Equal(got, msvcDeps) {
 			errs = errors.Join(errs, fmt.Errorf("deps for foo.obj: got=%q want=%q", got, msvcDeps))
 		}
 
-		_, _, err = depsLog.Get(ctx, "foo.out")
+		_, _, err = depsLog.RetrievePaths(ctx, "foo.out")
 		if !errors.Is(err, ninjautil.ErrNoDepsLog) {
 			errs = errors.Join(errs, fmt.Errorf("deps for foo.out: %w", err))
 		}
@@ -247,7 +247,7 @@ func TestBuild_Deps_Stale(t *testing.T) {
 				err = fmt.Errorf("depsLog.Close: %w", cerr)
 			}
 		}()
-		got, gott, err := depsLog.Get(ctx, "foo.o")
+		got, gott, err := depsLog.RetrievePaths(ctx, "foo.o")
 		if err != nil {
 			return fmt.Errorf("deps for foo.o: %w", err)
 		}

@@ -53,9 +53,9 @@ func TestBuild_DepsMSVC(t *testing.T) {
 		t.Logf("first_check_deps")
 		depsLog, cleanup := openDepsLog(ctx, t, dir)
 		defer cleanup()
-		deps, mtime, err := depsLog.Get(ctx, "foo.o")
+		deps, mtime, err := depsLog.RetrievePaths(ctx, "foo.o")
 		if err != nil {
-			t.Fatalf(`depsLog.Get(ctx, "foo.o")=%v, %v, %v; want nil err`, deps, mtime, err)
+			t.Fatalf(`depsLog.RetrievePaths(ctx, "foo.o")=%v, %v, %v; want nil err`, deps, mtime, err)
 		}
 		want := []string{
 			"../../base/foo.h",
@@ -93,9 +93,9 @@ func TestBuild_DepsMSVC(t *testing.T) {
 		t.Logf("second_check_deps")
 		depsLog, cleanup := openDepsLog(ctx, t, dir)
 		defer cleanup()
-		deps, mtime, err := depsLog.Get(ctx, "foo.o")
+		deps, mtime, err := depsLog.RetrievePaths(ctx, "foo.o")
 		if err != nil {
-			t.Fatalf(`depsLog.Get(ctx, "foo.o")=%v, %v, %v; want nil err`, deps, mtime, err)
+			t.Fatalf(`depsLog.RetrievePaths(ctx, "foo.o")=%v, %v, %v; want nil err`, deps, mtime, err)
 		}
 		want := []string{
 			"../../base/foo.h",
@@ -164,9 +164,9 @@ Note: including file:   ../../base/other.h
 		t.Logf("first_check_deps")
 		depsLog, cleanup := openDepsLog(ctx, t, dir)
 		defer cleanup()
-		deps, mtime, err := depsLog.Get(ctx, "foo.o")
+		deps, mtime, err := depsLog.RetrievePaths(ctx, "foo.o")
 		if err != nil {
-			t.Fatalf(`depsLog.Get(ctx, "foo.o")=%v, %v, %v; want nil err`, deps, mtime, err)
+			t.Fatalf(`depsLog.RetrievePaths(ctx, "foo.o")=%v, %v, %v; want nil err`, deps, mtime, err)
 		}
 		want := []string{
 			"../../base/foo.h",
@@ -230,9 +230,9 @@ Note: including file:   ../../base/other2.h
 		t.Logf("second_check_deps")
 		depsLog, cleanup := openDepsLog(ctx, t, dir)
 		defer cleanup()
-		deps, mtime, err := depsLog.Get(ctx, "foo.o")
+		deps, mtime, err := depsLog.RetrievePaths(ctx, "foo.o")
 		if err != nil {
-			t.Fatalf(`depsLog.Get(ctx, "foo.o")=%v, %v, %v; want nil err`, deps, mtime, err)
+			t.Fatalf(`depsLog.RetrievePaths(ctx, "foo.o")=%v, %v, %v; want nil err`, deps, mtime, err)
 		}
 		want := []string{
 			"../../base/foo.h",
@@ -283,9 +283,9 @@ func TestBuild_DepsMSVC_fastlocal(t *testing.T) {
 		t.Logf("first_check_deps")
 		depsLog, cleanup := openDepsLog(ctx, t, dir)
 		defer cleanup()
-		deps, mtime, err := depsLog.Get(ctx, "foo.o")
+		deps, mtime, err := depsLog.RetrievePaths(ctx, "foo.o")
 		if err != nil {
-			t.Fatalf(`depsLog.Get(ctx, "foo.o")=%v, %v, %v; want nil err`, deps, mtime, err)
+			t.Fatalf(`depsLog.RetrievePaths(ctx, "foo.o")=%v, %v, %v; want nil err`, deps, mtime, err)
 		}
 		want := []string{
 			"../../base/foo.h",
@@ -325,9 +325,9 @@ func TestBuild_DepsMSVC_fastlocal(t *testing.T) {
 		t.Logf("second_check_deps")
 		depsLog, cleanup := openDepsLog(ctx, t, dir)
 		defer cleanup()
-		deps, mtime, err := depsLog.Get(ctx, "foo.o")
+		deps, mtime, err := depsLog.RetrievePaths(ctx, "foo.o")
 		if err != nil {
-			t.Fatalf(`depsLog.Get(ctx, "foo.o")=%v, %v, %v; want nil err`, deps, mtime, err)
+			t.Fatalf(`depsLog.RetrievePaths(ctx, "foo.o")=%v, %v, %v; want nil err`, deps, mtime, err)
 		}
 		want := []string{
 			"../../base/foo.h",
@@ -366,7 +366,7 @@ func TestBuild_DepsMSVC_InstallerRC(t *testing.T) {
 				t.Errorf("depsLog.Close=%v", err)
 			}
 		}()
-		deps, _, err := depsLog.Get(ctx, output)
+		deps, _, err := depsLog.RetrievePaths(ctx, output)
 		if err != nil {
 			t.Fatalf("deps %s: %v", output, err)
 		}

@@ -476,6 +476,11 @@ func CheckDepsLogState(ctx context.Context, hashFS *hashfs.HashFS, bpath *build.
 	return DepsLogValid, ""
 }
 
+type depsPath struct {
+	path      string
+	canonpath string
+}
+
 // depInputs returns deps inputs of the step.
 func depInputs(ctx context.Context, s *StepDef) (func(yield func(string) bool), error) {
 	var deps []string
@@ -489,7 +494,8 @@ func depInputs(ctx context.Context, s *StepDef) (func(yield func(string) bool), 
 		}
 		out := outputs[0].Path()
 		var depsTime time.Time
-		deps, depsTime, err = s.globals.depsLog.Get(ctx, out)
+		var depIDs []int
+		depIDs, depsTime, err = s.globals.depsLog.RetrieveIDs(ctx, out)
 		if err != nil {
 			return nil, fmt.Errorf("%w: failed to lookup deps log %s: %w", build.ErrMissingDeps, out, err)
 		}
@@ -505,6 +511,41 @@ func depInputs(ctx context.Context, s *StepDef) (func(yield func(string) bool), 
 		if log.V(1) {
 			clog.Infof(ctx, "depslog %s: %d", out, len(deps))
 		}
+		return func(yield func(string) bool) {
+			for _, depID := range depIDs {
+				if depID < 0 || depID >= len(s.globals.depsPaths) {
+					in, err := s.globals.depsLog.Path(depID)
+					if err != nil {
+						clog.Warningf(ctx, "unexpected dep id=%d for %q: %v", depID, out, err)
+						continue
+					}
+					in = s.globals.path.MaybeFromWD(ctx, in)
+					if !yield(in) {
+						return
+					}
+					continue
+				}
+				dp := s.globals.depsPaths[depID].Load()
+				if dp == nil {
+					in, err := s.globals.depsLog.Path(depID)
+					if err != nil {
+						clog.Warningf(ctx, "unexpected depid=%d for %q: %v", depID, out, err)
+						continue
+					}
+					dp = &depsPath{
+						path:      in,
+						canonpath: s.globals.path.MaybeFromWD(ctx, in),
+					}
+					// dp should be the same for depID, so
+					// no need to use compareAndSwap.
+					s.globals.depsPaths[depID].Store(dp)
+				}
+				in := dp.canonpath
+				if !yield(in) {
+					return
+				}
+			}
+		}, nil
 
 	case "":
 		// deps info is in depfile
@@ -531,15 +572,16 @@ func depInputs(ctx context.Context, s *StepDef) (func(yield func(string) bool), 
 		if log.V(1) {
 			clog.Infof(ctx, "depfile %s: %d", depfile, len(deps))
 		}
-	}
-	return func(yield func(string) bool) {
-		for _, in := range deps {
-			rin := s.globals.path.MaybeFromWD(ctx, in)
-			if !yield(rin) {
-				return
+		return func(yield func(string) bool) {
+			for _, in := range deps {
+				in = s.globals.path.MaybeFromWD(ctx, in)
+				if !yield(in) {
+					return
+				}
 			}
-		}
-	}, nil
+		}, nil
+	}
+	return func(yield func(string) bool) {}, nil
 }
 
 // ToolInputs returns tool inputs of the step.

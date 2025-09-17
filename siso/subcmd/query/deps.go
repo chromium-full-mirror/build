@@ -181,7 +181,7 @@ func (c *depsCommand) run(ctx context.Context, args []string) error {
 
 func lookupDeps(ctx context.Context, state *ninjautil.State, hashFS *hashfs.HashFS, depsLog *ninjautil.DepsLog, bpath *build.Path, target string) (string, []string, time.Time, ninjabuild.DepsLogState, error) {
 	var depState ninjabuild.DepsLogState
-	deps, depsTime, err := depsLog.Get(ctx, target)
+	deps, depsTime, err := depsLog.RetrievePaths(ctx, target)
 	if err == nil {
 		if hashFS != nil {
 			depState, _ = ninjabuild.CheckDepsLogState(ctx, hashFS, bpath, target, depsTime)

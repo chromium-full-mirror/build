@@ -37,15 +37,15 @@ func TestReadWriteDepsLog(t *testing.T) {
 	}
 	// Get will not see recorded entry in the same session.
 	var want []string
-	deps, mtime, err := dl1.Get(ctx, "out.o")
+	deps, mtime, err := dl1.RetrievePaths(ctx, "out.o")
 	if err == nil {
-		t.Errorf(`d1.Get(ctx, "out.o")=_, _, %v; want _, _, error`, err)
+		t.Errorf(`d1.RetrievePaths(ctx, "out.o")=_, _, %v; want _, _, error`, err)
 	}
 	if diff := cmp.Diff(deps, want); diff != "" {
-		t.Errorf(`d1.Get(ctx, "out.o")=%v, _, _ mismatch (-got +want):\n%s`, deps, diff)
+		t.Errorf(`d1.RetrievePaths(ctx, "out.o")=%v, _, _ mismatch (-got +want):\n%s`, deps, diff)
 	}
 	if mtime.Equal(t1) {
-		t.Errorf(`d1.Get(ctx, "out.o")=_, %v, _; want _, %v, _`, mtime, t1)
+		t.Errorf(`d1.RetrievePaths(ctx, "out.o")=_, %v, _; want _, %v, _`, mtime, t1)
 	}
 
 	err = dl1.Close()
@@ -64,27 +64,27 @@ func TestReadWriteDepsLog(t *testing.T) {
 		}
 	}()
 
-	deps, mtime, err = dl2.Get(ctx, "out.o")
+	deps, mtime, err = dl2.RetrievePaths(ctx, "out.o")
 	if err != nil {
-		t.Errorf(`dl2.Get(ctx, "out.o")=_, _, %v; want _, _, nil error`, err)
+		t.Errorf(`dl2.RetrievePaths(ctx, "out.o")=_, _, %v; want _, _, nil error`, err)
 	}
 	want = []string{"foo.h", "bar.h"}
 	if diff := cmp.Diff(deps, want); diff != "" {
-		t.Errorf(`dl2.Get(ctx, "out.o")=%v, _, _ mismatch (-got +want):\n%s`, deps, diff)
+		t.Errorf(`dl2.RetrievePaths(ctx, "out.o")=%v, _, _ mismatch (-got +want):\n%s`, deps, diff)
 	}
 	if !mtime.Equal(t1) {
-		t.Errorf(`dl2.Get(ctx, "out.o")=_, %v, _; want _, %v, _`, mtime, t1)
+		t.Errorf(`dl2.RetrivePaths(ctx, "out.o")=_, %v, _; want _, %v, _`, mtime, t1)
 	}
 	want = []string{"foo.h", "bar2.h"}
-	deps, mtime, err = dl2.Get(ctx, "out2.o")
+	deps, mtime, err = dl2.RetrievePaths(ctx, "out2.o")
 	if err != nil {
-		t.Errorf(`dl2.Get(ctx, "out2.o")=_, _, %v; want _, _, nil error`, err)
+		t.Errorf(`dl2.RetrievePaths(ctx, "out2.o")=_, _, %v; want _, _, nil error`, err)
 	}
 	if diff := cmp.Diff(deps, want); diff != "" {
-		t.Errorf(`dl2.Get(ctx, "out2.o")=%v, _, _ mismatch (-got +want):\n%s`, deps, diff)
+		t.Errorf(`dl2.RetrievePaths(ctx, "out2.o")=%v, _, _ mismatch (-got +want):\n%s`, deps, diff)
 	}
 	if !mtime.Equal(t2) {
-		t.Errorf(`dl2.Get(ctx, "out2.o")=_, %v, _; want _, %v, _`, mtime, t2)
+		t.Errorf(`dl2.RetrievePaths(ctx, "out2.o")=_, %v, _; want _, %v, _`, mtime, t2)
 	}
 }
 
@@ -157,16 +157,16 @@ func TestRecompact(t *testing.T) {
 		if err != nil {
 			t.Fatalf("NewDepsLog(ctx, %s)=_, %v; want nil error", fname, err)
 		}
-		deps, ts, err := dl.Get(ctx, "out.o")
+		deps, ts, err := dl.RetrievePaths(ctx, "out.o")
 		want := []string{"foo.h"}
 		if !cmp.Equal(deps, want) || !ts.Equal(t3) || err != nil {
-			t.Errorf(`dl.Get(ctx, "out.o")=%v, %v, %v; want %v, %v, %v`, deps, ts, err, want, t3, nil)
+			t.Errorf(`dl.RetrievePaths(ctx, "out.o")=%v, %v, %v; want %v, %v, %v`, deps, ts, err, want, t3, nil)
 		}
 
-		deps, ts, err = dl.Get(ctx, "other_out.o")
+		deps, ts, err = dl.RetrievePaths(ctx, "other_out.o")
 		want = []string{"foo.h", "baz.h"}
 		if !cmp.Equal(deps, want) || !ts.Equal(t2) || err != nil {
-			t.Errorf(`d1.Get(ctx, "other_out.o")=%v, %v, %v; want %v, %v, %v`, deps, ts, err, want, t2, nil)
+			t.Errorf(`d1.RetrievePaths(ctx, "other_out.o")=%v, %v, %v; want %v, %v, %v`, deps, ts, err, want, t2, nil)
 		}
 
 		err = dl.Recompact(ctx)
@@ -175,15 +175,15 @@ func TestRecompact(t *testing.T) {
 		}
 
 		t.Logf("The in-memory deps graph should still be valid after recompaction.")
-		deps, ts, err = dl.Get(ctx, "out.o")
+		deps, ts, err = dl.RetrievePaths(ctx, "out.o")
 		want = []string{"foo.h"}
 		if !cmp.Equal(deps, want) || !ts.Equal(t3) || err != nil {
-			t.Errorf(`dl.Get(ctx, "out.o")=%v, %v, %v; want %v, %v, %v`, deps, ts, err, want, t3, nil)
+			t.Errorf(`dl.RetrievePaths(ctx, "out.o")=%v, %v, %v; want %v, %v, %v`, deps, ts, err, want, t3, nil)
 		}
-		deps, ts, err = dl.Get(ctx, "other_out.o")
+		deps, ts, err = dl.RetrievePaths(ctx, "other_out.o")
 		want = []string{"foo.h", "baz.h"}
 		if !cmp.Equal(deps, want) || !ts.Equal(t2) || err != nil {
-			t.Errorf(`d1.Get("other_out.o")=%v, %v, %v; want %v, %v, %v`, deps, ts, err, want, t2, nil)
+			t.Errorf(`d1.RetrievePaths("other_out.o")=%v, %v, %v; want %v, %v, %v`, deps, ts, err, want, t2, nil)
 		}
 
 		err = dl.Close()

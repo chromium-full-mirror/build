@@ -68,7 +68,7 @@ func (h recordHeader) RecordSize() int {
 
 type depsRecord struct {
 	mtime  int64
-	inputs []string
+	inputs []int // index of depsLog.rPaths
 }
 
 func verifySignature(ctx context.Context, f io.Reader) error {
@@ -133,13 +133,13 @@ func readDepsRecord(ctx context.Context, buf []byte, size int, depsLogPaths []st
 	mtimeHi := rec[2]
 	mtime := int64(uint32(mtimeHi))<<32 | int64(uint32(mtimeLo))
 	rec = rec[3:]
-	deps := &depsRecord{mtime: mtime, inputs: make([]string, 0, len(rec))}
+	deps := &depsRecord{mtime: mtime, inputs: make([]int, 0, len(rec))}
 	for _, id := range rec {
 		if int(id) < 0 || int(id) >= len(depsLogPaths) {
 			clog.Warningf(ctx, "bad path id=%d (depsLog.paths=%d)", id, len(depsLogPaths))
 			return -1, nil, nil
 		}
-		deps.inputs = append(deps.inputs, depsLogPaths[id])
+		deps.inputs = append(deps.inputs, int(id))
 	}
 
 	return outID, deps, nil
@@ -336,7 +336,11 @@ func (d *DepsLog) Recompact(ctx context.Context) error {
 		// TODO: ignore if entry has deps= for now?
 		out := d.rPaths[i]
 		mtime := time.Unix(0, deps.mtime)
-		_, err = nd.Record(ctx, out, mtime, deps.inputs)
+		inputs := make([]string, len(deps.inputs))
+		for i, in := range deps.inputs {
+			inputs[i] = d.rPaths[in]
+		}
+		_, err = nd.Record(ctx, out, mtime, inputs)
 		if err != nil {
 			nd.Close()
 			return fmt.Errorf("record in recompaction: %w", err)
@@ -405,8 +409,25 @@ func (d *DepsLog) update(ctx context.Context, outID int32, deps *depsRecord) boo
 
 var ErrNoDepsLog = errors.New("deps not found")
 
-// Get returns deps log for the output.
-func (d *DepsLog) Get(ctx context.Context, output string) ([]string, time.Time, error) {
+// RetrievePaths returns deps log for the output, converting from id to path.
+func (d *DepsLog) RetrievePaths(ctx context.Context, output string) ([]string, time.Time, error) {
+	ids, mtime, err := d.RetrieveIDs(ctx, output)
+	if err != nil {
+		return nil, mtime, err
+	}
+	deps := make([]string, len(ids))
+	for i, id := range ids {
+		path, err := d.Path(id)
+		if err != nil {
+			return nil, mtime, fmt.Errorf("inputs[%d]=%d: %w", i, id, err)
+		}
+		deps[i] = path
+	}
+	return deps, mtime, err
+}
+
+// RetrieveIDs returns deps log for the output.
+func (d *DepsLog) RetrieveIDs(ctx context.Context, output string) ([]int, time.Time, error) {
 	var mtime time.Time
 	if d == nil {
 		return nil, mtime, errors.New("no deps log")
@@ -431,6 +452,27 @@ func (d *DepsLog) Get(ctx context.Context, output string) ([]string, time.Time, 
 		return nil, mtime, fmt.Errorf("no deps log entry: %w", ErrNoDepsLog)
 	}
 	return deps.inputs, time.Unix(0, deps.mtime), nil
+}
+
+// NumPaths returns number of paths read at startup time.
+func (d *DepsLog) NumPaths() int {
+	return len(d.rPaths)
+}
+
+// Path returns pathname for path id.
+func (d *DepsLog) Path(id int) (string, error) {
+	if id < 0 {
+		return "", fmt.Errorf("index=%d (< 0)", id)
+	}
+	if id < len(d.rPaths) {
+		return d.rPaths[id], nil
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if id < len(d.paths) {
+		return d.paths[id], nil
+	}
+	return "", fmt.Errorf("index=%d (> %d)", id, len(d.paths))
 }
 
 func (d *DepsLog) lookupDepRecord(ctx context.Context, i int) (*depsRecord, error) {
@@ -502,7 +544,7 @@ func (d *DepsLog) Record(ctx context.Context, output string, mtime time.Time, de
 				willUpdateDeps = true
 			} else {
 				for i, di := range dr.inputs {
-					if di != deps[i] {
+					if di != depIDs[i] {
 						willUpdateDeps = true
 					}
 				}
@@ -512,7 +554,7 @@ func (d *DepsLog) Record(ctx context.Context, output string, mtime time.Time, de
 	if !willUpdateDeps {
 		return false, nil
 	}
-	d.update(ctx, int32(i), &depsRecord{mtime: mtime.UnixNano(), inputs: deps})
+	d.update(ctx, int32(i), &depsRecord{mtime: mtime.UnixNano(), inputs: depIDs})
 	err := d.recordDeps(ctx, i, mtime, depIDs)
 	if err != nil {
 		return false, err
