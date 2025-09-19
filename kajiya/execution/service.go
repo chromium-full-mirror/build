@@ -151,32 +151,65 @@ func (s *Service) execute(request *repb.ExecuteRequest, _ *repb.RequestMetadata,
 
 	// If we're not supposed to cache the result, just execute the action and return the result.
 	if action.DoNotCache {
+		// Tell the client that we're in EXECUTING stage now.
+		reply, err := executionStage(request.ActionDigest, opName, repb.ExecutionStage_EXECUTING)
+		if err != nil {
+			return err
+		}
+		if err = executeServer.Send(reply); err != nil {
+			return err
+		}
+
+		// Execute the action and send the result back.
 		ar, err := s.executor.Execute(action)
 		if err != nil {
 			return err
 		}
-		reply, err := wrapActionResult(request.ActionDigest, opName, ar, false)
+		reply, err = executionComplete(request.ActionDigest, opName, ar, false)
 		if err != nil {
 			return err
 		}
 		return executeServer.Send(reply)
 	}
 
+	// If we have an action cache, check if the action is already cached.
+	if s.actionCache != nil && !request.SkipCacheLookup {
+		// Tell the client that we're in CACHE_CHECK stage now.
+		reply, err := executionStage(request.ActionDigest, opName, repb.ExecutionStage_CACHE_CHECK)
+		if err != nil {
+			return err
+		}
+		if err = executeServer.Send(reply); err != nil {
+			return err
+		}
+
+		// Check the action cache and if we get a hit, send the result back.
+		ar, err := s.actionCache.Get(action.ActionDigest)
+		if err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return fmt.Errorf("failed to get action from cache: %w", err)
+		}
+		if ar != nil {
+			reply, err := executionComplete(request.ActionDigest, opName, ar, true)
+			if err != nil {
+				return err
+			}
+			return executeServer.Send(reply)
+		}
+	}
+
+	// Tell the client that we're in EXECUTING stage now.
+	reply, err := executionStage(request.ActionDigest, opName, repb.ExecutionStage_EXECUTING)
+	if err != nil {
+		return err
+	}
+	if err = executeServer.Send(reply); err != nil {
+		return err
+	}
+
 	// According to the REAPI specification, in-flight requests for the same `Action` may be
 	// merged unless the `DoNotCache` bit is set. This improves efficiency and performance by
 	// avoiding duplicate work.
 	ar, err, _ := s.actionDigestDeduper.Do(action.ActionDigest.String(), func() (any, error) {
-		// If we have an action cache, check if the action is already cached.
-		if s.actionCache != nil && !request.SkipCacheLookup {
-			ar, err := s.actionCache.Get(action.ActionDigest)
-			if err != nil && !errors.Is(err, fs.ErrNotExist) {
-				return nil, fmt.Errorf("failed to get action from cache: %w", err)
-			}
-			if ar != nil {
-				return wrapActionResult(request.ActionDigest, opName, ar, true)
-			}
-		}
-
 		// Cache miss, so we have to execute the action.
 		ar, err := s.executor.Execute(action)
 		if err != nil {
@@ -188,24 +221,29 @@ func (s *Service) execute(request *repb.ExecuteRequest, _ *repb.RequestMetadata,
 		// issue that will be resolved on the next execution.
 		if s.actionCache != nil && ar.ExitCode == 0 {
 			if err = s.actionCache.Put(action.ActionDigest, ar); err != nil {
-				return nil, fmt.Errorf("failed to put action into cache: %w", err)
+				log.Printf("🚨 failed to put action into cache: %v", err)
 			}
 		}
 
-		return wrapActionResult(request.ActionDigest, opName, ar, false)
+		return ar, nil
 	})
 	if err != nil {
 		return err
 	}
-	if err = executeServer.Send(ar.(*longrunningpb.Operation)); err != nil {
+
+	reply, err = executionComplete(request.ActionDigest, opName, ar.(*repb.ActionResult), false)
+	if err != nil {
+		return err
+	}
+	if err = executeServer.Send(reply); err != nil {
 		return fmt.Errorf("failed to send result to client: %w", err)
 	}
 
 	return nil
 }
 
-// Return the list of missing blobs as a "FailedPrecondition" error as
-// described in the Remote Execution API.
+// Return the list of missing blobs as a "FailedPrecondition" error as described in the Remote
+// Execution API.
 func formatMissingBlobsError(e *blobstore.MissingBlobsError) error {
 	violations := make([]*errpb.PreconditionFailure_Violation, 0, len(e.Blobs))
 	for _, b := range e.Blobs {
@@ -224,14 +262,27 @@ func formatMissingBlobsError(e *blobstore.MissingBlobsError) error {
 	return st.Err()
 }
 
-func wrapActionResult(actionDigest *repb.Digest, opName uuid.UUID, r *repb.ActionResult, cached bool) (*longrunningpb.Operation, error) {
-	// Construct some metadata for the execution operation and wrap it in an Any.
+// executionStage returns an Operation message with an update on the current state of opName
+func executionStage(actionDigest *repb.Digest, opName uuid.UUID, stage repb.ExecutionStage_Value) (*longrunningpb.Operation, error) {
 	md, err := anypb.New(&repb.ExecuteOperationMetadata{
-		Stage:        repb.ExecutionStage_COMPLETED,
 		ActionDigest: actionDigest,
+		Stage:        stage,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal metadata: %w", err)
+	}
+	return &longrunningpb.Operation{
+		Name:     fmt.Sprintf("operations/%s", opName),
+		Metadata: md,
+		Done:     false,
+	}, nil
+}
+
+// executionComplete returns an Operation message with the final ExecuteResponse for an action
+func executionComplete(actionDigest *repb.Digest, opName uuid.UUID, r *repb.ActionResult, cached bool) (*longrunningpb.Operation, error) {
+	op, err := executionStage(actionDigest, opName, repb.ExecutionStage_COMPLETED)
+	if err != nil {
+		return nil, err
 	}
 
 	// Put the action result into an Any-wrapped ExecuteResponse.
@@ -243,14 +294,10 @@ func wrapActionResult(actionDigest *repb.Digest, opName uuid.UUID, r *repb.Actio
 		return nil, fmt.Errorf("failed to marshal response: %w", err)
 	}
 
-	// Wrap all the protos in another proto and return it.
-	op := &longrunningpb.Operation{
-		Name:     fmt.Sprintf("operations/%s", opName),
-		Metadata: md,
-		Done:     true,
-		Result: &longrunningpb.Operation_Response{
-			Response: resp,
-		},
+	// Wrap the proto in another proto and return it.
+	op.Done = true
+	op.Result = &longrunningpb.Operation_Response{
+		Response: resp,
 	}
 	return op, nil
 }
