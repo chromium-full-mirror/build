@@ -29,18 +29,19 @@ import (
 // into a sandbox directory, executes the action in that sandbox directory, and
 // then uploads the output files and directories to the CAS after the action has finished.
 type Executor struct {
-	cas         *blobstore.ContentAddressableStorage
-	images      *ImageRepository
-	nsjailPath  string
-	sandboxBase string
-	trees       *TreeRepository
+	cas             *blobstore.ContentAddressableStorage
+	images          *ImageRepository
+	nsjailPath      string
+	sandboxBase     string
+	sandboxStrategy SandboxStrategy
+	trees           *TreeRepository
 }
 
 // New creates a new Executor.
 // baseDir is a directory used to store temporary files required during execution, such as
 // sandbox directories.
 // cas is the ContentAddressableStorage to use for fetching and uploading blobs.
-func New(baseDir string, cas *blobstore.ContentAddressableStorage) (*Executor, error) {
+func New(baseDir string, cas *blobstore.ContentAddressableStorage, sb SandboxStrategy) (*Executor, error) {
 	if baseDir == "" {
 		return nil, fmt.Errorf("baseDir must be set")
 	}
@@ -79,11 +80,12 @@ func New(baseDir string, cas *blobstore.ContentAddressableStorage) (*Executor, e
 	}
 
 	return &Executor{
-		cas:         cas,
-		images:      images,
-		nsjailPath:  nsjailPath,
-		sandboxBase: sandboxBase,
-		trees:       trees,
+		cas:             cas,
+		images:          images,
+		nsjailPath:      nsjailPath,
+		sandboxBase:     sandboxBase,
+		sandboxStrategy: sb,
+		trees:           trees,
 	}, nil
 }
 
@@ -96,15 +98,11 @@ func (e *Executor) Execute(action *model.Action) (*repb.ActionResult, error) {
 	}
 	defer e.deleteSandbox(sandboxDir)
 
-	// Ensure that we have all directories required to build our sandbox.
-	if err = e.trees.EnsureDirectory(action.InputTrie); err != nil {
-		return nil, fmt.Errorf("failed to materialize directory: %w", err)
-	}
-
 	sb := &Sandbox{
 		cas:        e.cas,
 		trees:      e.trees,
 		sandboxDir: sandboxDir,
+		strategy:   e.sandboxStrategy,
 	}
 
 	// Stage the input files and directories into the sandbox.
@@ -176,10 +174,12 @@ func (e *Executor) buildNsjailArgs(sb *Sandbox, imageDir string, action *model.A
 		"--quiet",
 		"--chroot", imageDir,
 		"--cwd", workDir,
-		"--bindmount", fmt.Sprintf("%s:%s", sb.sandboxDir, inputRoot),
 		"--env", "HOME=" + workDir,
 		"--env", "PATH=" + strings.Join(searchPath, ":"),
 	}
+
+	// Add any extra args required by the sandbox.
+	args = append(args, sb.extraNsjailArgs...)
 
 	// We don't need to set the values of the environment variables here because we
 	// already set them in the environment of the nsjail process.
@@ -252,7 +252,14 @@ func (e *Executor) executeCommand(sb *Sandbox, action *model.Action) (*repb.Acti
 	args = append(args, action.Args...)
 
 	c := exec.Command(args[0], args[1:]...)
-	c.Dir = filepath.Join(sb.sandboxDir, action.WorkingDir)
+
+	// If we're using nsjail, the working directory doesn't really matter, because nsjail will
+	// change to the correct working directory inside the sandbox anyway. However, if we're not
+	// using nsjail, we need to set the working directory to the sandbox directory.
+	c.Dir = sb.sandboxDir
+	if e.nsjailPath == "" {
+		c.Dir = filepath.Join(c.Dir, action.WorkingDir)
+	}
 
 	for _, v := range action.EnvVars {
 		c.Env = append(c.Env, fmt.Sprintf("%s=%s", v.Name, v.Value))
@@ -280,21 +287,44 @@ func (e *Executor) executeCommand(sb *Sandbox, action *model.Action) (*repb.Acti
 }
 
 func (e *Executor) deleteSandbox(dir string) {
-	// Walk through all directories inside the sandbox and give ourselves permission to delete
-	// everything. This is necessary, because actions can create directories or files with wrong
-	// permissions, causing os.RemoveAll to fail to delete them.
+	// The "work" directory is a special case, because it is used by the kernel as a temporary
+	// scratch space for overlayfs. It will usually be empty or only contain very few
+	// directories or marker files without any permission bits set. We need to reset them so
+	// that os.RemoveAll() below can successfully delete this dir.
+	if e.sandboxStrategy == OverlayFS || e.sandboxStrategy == NestedOverlayFS {
+		_ = filepath.WalkDir(filepath.Join(dir, "work"), func(path string, d fs.DirEntry, err error) error {
+			if d.IsDir() {
+				_ = os.Chmod(path, 0700)
+			}
+			return nil
+		})
+	}
+
+	// First, try to delete the sandbox via os.RemoveAll. This works in most cases and is the
+	// fastest way, using the least amount of CPU and syscalls.
+	if err := os.RemoveAll(dir); err == nil {
+		return
+	}
+
+	// If that didn't work, the action probably created a directory with restrictive
+	// permissions, so we need to walk through all directories and make them writable.
 	_ = filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
 		if d.IsDir() {
-			_ = os.Chmod(path, 0700)
-		} else {
-			// While we're here, attempt to remove the file. If it works, we save some
-			// work later. If not, just ignore the error and continue, because
-			// os.RemoveAll will take care of it.
-			_ = os.Remove(path)
+			fi, err := d.Info()
+			if err != nil {
+				log.Printf("🚨 failed to get file info for %q: %v", path, err)
+				return nil
+			}
+			mode := fi.Mode()
+			if mode&0200 == 0 {
+				err = os.Chmod(path, mode|0200)
+				if err != nil {
+					log.Printf("🚨 failed to chmod %q: %v", path, err)
+				}
+			}
 		}
 		return nil
 	})
-
 	if err := os.RemoveAll(dir); err != nil {
 		log.Printf("🚨 failed to remove sandbox: %v", err)
 	}

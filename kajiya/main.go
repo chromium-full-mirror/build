@@ -16,6 +16,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"runtime/pprof"
 	"strings"
 	"syscall"
@@ -42,6 +43,9 @@ var (
 	cpuprofile      = flag.String("cpuprofile", "", "write cpu profile to file")
 	tlsCertFile     = flag.String("tls_cert_file", "", "TLS certificate file")
 	tlsKeyFile      = flag.String("tls_key_file", "", "TLS key file")
+	sandboxStrategy = flag.String("sandbox", "overlayfs", "sandbox strategy to use (one of: files, overlayfs, nested-overlayfs)")
+
+	sb execution.SandboxStrategy
 )
 
 func getDefaultDataDir() string {
@@ -54,6 +58,21 @@ func getDefaultDataDir() string {
 
 func main() {
 	flag.Parse()
+
+	// Validate the sandbox strategy flag.
+	switch *sandboxStrategy {
+	case "files":
+		sb = execution.Files
+	case "overlayfs":
+		sb = execution.OverlayFS
+	case "nested-overlayfs":
+		sb = execution.NestedOverlayFS
+	default:
+		log.Fatalf("invalid sandbox strategy %q", *sandboxStrategy)
+	}
+	if sb != execution.Files && runtime.GOOS != "linux" {
+		log.Fatalf("sandbox strategy %q is only supported on Linux", *sandboxStrategy)
+	}
 
 	// Enable the internal randomness pool for UUID generation, which can improve
 	// performance when generating many UUIDs.
@@ -195,7 +214,7 @@ func createServer(dataDir string) (*grpc.Server, error) {
 	// Execution service.
 	if *enableExecution {
 		execDir := filepath.Join(dataDir, "exec")
-		executor, err := execution.New(execDir, cas)
+		executor, err := execution.New(execDir, cas, sb)
 		if err != nil {
 			return nil, err
 		}

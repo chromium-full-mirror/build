@@ -21,6 +21,30 @@ import (
 	"go.chromium.org/build/kajiya/execution/model"
 )
 
+// SandboxStrategy is an enum that defines the different sandbox strategies that can be used.
+type SandboxStrategy int
+
+const (
+	// Files creates a sandbox directory for the input root. Each input file is copied into the
+	// sandbox via clonefile (on macOS) or hardlink (on other OS). There is no protection
+	// against modification of the input files. This strategy requires O(n+m) time with
+	// n = number of input directories, m = number of input files.
+	Files SandboxStrategy = iota
+
+	// OverlayFS is similar to Files, but Kajiya will mount an overlayfs filesystem over the
+	// sandbox to redirect any writes into a separate "upper" directory. This ensures that the
+	// action cannot modify any files in the CAS.
+	OverlayFS
+
+	// NestedOverlayFS is an experimental strategy that materializes each directory of the input
+	// root only once (even across actions) inside a tree repository and reuses them across
+	// actions. It then mounts each input directory from the repository into the location inside
+	// the sandbox as a separate overlayfs. This reduces the time needed for building the
+	// sandbox to amortized O(n), with n = number of input directories, under the assumption
+	// that most actions share the majority of their input dirs.
+	NestedOverlayFS
+)
+
 // Sandbox manages the sandbox environment for an action.
 type Sandbox struct {
 	// The CAS to use.
@@ -29,21 +53,114 @@ type Sandbox struct {
 
 	// The directory of the sandbox.
 	sandboxDir string
+
+	// Whether to use overlayfs for the sandbox.
+	strategy        SandboxStrategy
+	overlayLowerDir string
+	overlayUpperDir string
+	overlayWorkDir  string
+	extraNsjailArgs []string
 }
 
-// Prepare ensures that all necessary directories and files for the given action are present in the
-// sandbox.
+// Id returns a unique identifier for the mount point of a directory. This is used to construct
+// mount paths in the overlay filesystem. We use the address of the directory as the identifier,
+// because it's unique, cheap to compute, deterministic, and short enough to be used as a filename.
+// It is not visible to the action itself, and the sandbox is deleted after each action, so it
+// doesn't matter that these IDs aren't stable across Kajiya invocations.
+func mountID(dir *model.KajiyaDirectory) string {
+	// Drop the "0x". It's cleaner.
+	return fmt.Sprintf("%p", dir)[2:]
+}
+
+// Prepare creates the directories and files in the sandbox for the given DirectoryTrie.
 func (sb *Sandbox) Prepare(action *model.Action) (err error) {
-	// Recursively materialize all directories in the sandbox.
-	action.InputTrie.Root().Walk(func(k []byte, dir *model.KajiyaDirectory) bool {
-		dirPath := filepath.Join(sb.sandboxDir, string(k))
-		if err = MaterializeDirectory(sb.cas, dirPath, dir, true); err != nil {
-			return true
+	switch sb.strategy {
+	case NestedOverlayFS:
+		// Ensure that we have all directories required to build our sandbox.
+		if err = sb.trees.EnsureDirectory(action.InputTrie); err != nil {
+			return err
 		}
+		fallthrough
+	case OverlayFS:
+		// Create the lower, upper, work directories required by overlayfs.
+		sb.overlayLowerDir = filepath.Join(sb.sandboxDir, "lower")
+		if err = os.Mkdir(sb.overlayLowerDir, 0755); err != nil {
+			return fmt.Errorf("failed to create overlay lower directory: %w", err)
+		}
+		sb.overlayUpperDir = filepath.Join(sb.sandboxDir, "upper")
+		if err = os.Mkdir(sb.overlayUpperDir, 0755); err != nil {
+			return fmt.Errorf("failed to create overlay upper directory: %w", err)
+		}
+		sb.overlayWorkDir = filepath.Join(sb.sandboxDir, "work")
+		if err = os.Mkdir(sb.overlayWorkDir, 0755); err != nil {
+			return fmt.Errorf("failed to create overlay work directory: %w", err)
+		}
+	}
+
+	action.InputTrie.Root().Walk(func(k []byte, dir *model.KajiyaDirectory) bool {
+		// Create the directory in the sandbox.
+		switch sb.strategy {
+		case Files:
+			dirPath := filepath.Join(sb.sandboxDir, string(k))
+			if err = MaterializeDirectory(sb.cas, dirPath, dir, true); err != nil {
+				return true
+			}
+		case OverlayFS:
+			dirPath := filepath.Join(sb.overlayLowerDir, string(k))
+			if err = MaterializeDirectory(sb.cas, dirPath, dir, true); err != nil {
+				return true
+			}
+		case NestedOverlayFS:
+			mntTarget := filepath.Join("/mnt", string(k))
+			mntLowerDir := sb.trees.Path(dir.Digest)
+			mntUpperDir := filepath.Join(sb.overlayUpperDir, mountID(dir))
+			if err = os.Mkdir(mntUpperDir, 0755); err != nil {
+				return true
+			}
+			mntWorkDir := filepath.Join(sb.overlayWorkDir, mountID(dir))
+			if err = os.Mkdir(mntWorkDir, 0755); err != nil {
+				return true
+			}
+
+			sb.extraNsjailArgs = append(
+				sb.extraNsjailArgs,
+				"--mount",
+				fmt.Sprintf("overlay:%s:overlay:lowerdir=%s,upperdir=%s,workdir=%s,userxattr,index=off,xino=off,volatile",
+					mntTarget,
+					mntLowerDir,
+					mntUpperDir,
+					mntWorkDir,
+				),
+			)
+		}
+
 		return false
 	})
 
-	return err
+	if err != nil {
+		return err
+	}
+
+	switch sb.strategy {
+	case Files:
+		sb.extraNsjailArgs = append(
+			sb.extraNsjailArgs,
+			"--bindmount",
+			fmt.Sprintf("%s:%s", sb.sandboxDir, "/mnt"),
+		)
+	case OverlayFS:
+		sb.extraNsjailArgs = append(
+			sb.extraNsjailArgs,
+			"--mount",
+			fmt.Sprintf("overlay:/mnt:overlay:lowerdir=%s,upperdir=%s,workdir=%s,userxattr,index=off,xino=off,volatile",
+				sb.overlayLowerDir,
+				sb.overlayUpperDir,
+				sb.overlayWorkDir,
+			),
+		)
+	}
+
+	return nil
 }
 
 // buildMerkleTree recursively walks through the given directory and builds a
@@ -114,7 +231,14 @@ func (sb *Sandbox) UploadOutputs(action *model.Action, actionResult *repb.Action
 	action.InputTrie.Root().Walk(func(k []byte, dir *model.KajiyaDirectory) bool {
 		for _, outputPath := range dir.Outputs {
 			var fullPath, pathFromWorkDir string
-			fullPath = filepath.Join(sb.sandboxDir, string(k), outputPath.Name)
+			switch sb.strategy {
+			case Files:
+				fullPath = filepath.Join(sb.sandboxDir, string(k), outputPath.Name)
+			case OverlayFS:
+				fullPath = filepath.Join(sb.overlayUpperDir, string(k), outputPath.Name)
+			case NestedOverlayFS:
+				fullPath = filepath.Join(sb.overlayUpperDir, mountID(dir), outputPath.Name)
+			}
 			pathFromWorkDir, err = filepath.Rel(action.WorkingDir, filepath.Join(string(k), outputPath.Name))
 			if err != nil {
 				log.Printf("🚨 failed to get relative path: %v", err)
