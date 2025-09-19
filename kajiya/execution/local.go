@@ -20,7 +20,6 @@ import (
 	repb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	"google.golang.org/protobuf/proto"
 
 	"go.chromium.org/build/kajiya/blobstore"
 )
@@ -99,6 +98,18 @@ func (e *Executor) Execute(action *repb.Action) (*repb.ActionResult, error) {
 	if err != nil {
 		return nil, err
 	}
+	if cmd.WorkingDirectory != "" {
+		if !filepath.IsLocal(cmd.WorkingDirectory) {
+			return nil, fmt.Errorf("working directory %q points outside of input root", cmd.WorkingDirectory)
+		}
+	}
+	// REAPI v2.0 clients specify output files and directories in two separate fields. In order
+	// to simplify our code, we just merge them into REAPI v2.1+'s OutputPaths field here.
+	if cmd.OutputPaths == nil {
+		cmd.OutputPaths = make([]string, 0, len(cmd.OutputFiles)+len(cmd.OutputDirectories)) //nolint:staticcheck
+		cmd.OutputPaths = append(cmd.OutputPaths, cmd.OutputFiles...)                        //nolint:staticcheck
+		cmd.OutputPaths = append(cmd.OutputPaths, cmd.OutputDirectories...)                  //nolint:staticcheck
+	}
 
 	// Build a sandbox directory for the action.
 	sandboxDir, err := os.MkdirTemp(e.sandboxBase, "*")
@@ -107,31 +118,19 @@ func (e *Executor) Execute(action *repb.Action) (*repb.ActionResult, error) {
 	}
 	defer e.deleteSandbox(sandboxDir)
 
+	sb := &Sandbox{
+		cas:        e.cas,
+		trees:      e.trees,
+		sandboxDir: sandboxDir,
+	}
+
 	// Stage the input files and directories into the sandbox.
-	if err := e.trees.StageDirectory(action.InputRootDigest, sandboxDir); err != nil {
-		return nil, fmt.Errorf("failed to materialize input root: %w", err)
-	}
-
-	// If a working directory was specified, verify that it exists.
-	workDir := sandboxDir
-	if cmd.WorkingDirectory != "" {
-		if !filepath.IsLocal(cmd.WorkingDirectory) {
-			return nil, fmt.Errorf("working directory %q points outside of input root", cmd.WorkingDirectory)
-		}
-		workDir = filepath.Join(sandboxDir, cmd.WorkingDirectory)
-		if _, err := os.Stat(workDir); err != nil {
-			return nil, status.Errorf(codes.FailedPrecondition, "working directory %q is not an input directory: %v", cmd.WorkingDirectory, err)
-		}
-	}
-
-	// Create the directories required by all output files and directories.
-	outputPaths, err := e.createOutputPaths(cmd, workDir)
-	if err != nil {
-		return nil, err
+	if err := sb.Prepare(action, cmd); err != nil {
+		return nil, fmt.Errorf("failed to prepare input root: %w", err)
 	}
 
 	// Execute the command.
-	actionResult, err := e.executeCommand(sandboxDir, action, cmd)
+	actionResult, err := e.executeCommand(sb, action, cmd)
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute command: %w", err)
 	}
@@ -142,85 +141,11 @@ func (e *Executor) Execute(action *repb.Action) (*repb.ActionResult, error) {
 	}
 
 	// Go through all output files and directories and upload them to the CAS.
-	for _, outputPath := range outputPaths {
-		joinedPath := filepath.Join(workDir, outputPath)
-		fi, err := os.Stat(joinedPath)
-		if err != nil {
-			if errors.Is(err, fs.ErrNotExist) {
-				// Ignore non-existing output files.
-				log.Printf("🚨 output file %q does not exist, ignoring", joinedPath)
-				continue
-			}
-			return nil, fmt.Errorf("failed to stat output path %q: %w", outputPath, err)
-		}
-		if fi.IsDir() {
-			// Upload the directory to the CAS.
-			dirs, err := e.buildMerkleTree(joinedPath)
-			if err != nil {
-				return nil, fmt.Errorf("failed to build merkle tree for %q: %w", outputPath, err)
-			}
-
-			tree := repb.Tree{
-				Root: dirs[0],
-			}
-			if len(dirs) > 1 {
-				tree.Children = dirs[1:]
-			}
-			treeBytes, err := proto.Marshal(&tree)
-			if err != nil {
-				return nil, fmt.Errorf("failed to marshal tree: %w", err)
-			}
-			d, err := e.cas.Put(treeBytes)
-			if err != nil {
-				return nil, fmt.Errorf("failed to upload tree to CAS: %w", err)
-			}
-
-			actionResult.OutputDirectories = append(actionResult.OutputDirectories, &repb.OutputDirectory{
-				Path:                  outputPath,
-				TreeDigest:            d.ToProto(),
-				IsTopologicallySorted: false,
-			})
-		} else {
-			// Upload the file to the CAS.
-			d, err := digest.NewFromFile(joinedPath)
-			if err != nil {
-				return nil, fmt.Errorf("failed to compute digest of file %q: %w", outputPath, err)
-			}
-			if err := e.cas.Adopt(d, joinedPath); err != nil {
-				return nil, fmt.Errorf("failed to upload file %q to CAS: %w", outputPath, err)
-			}
-
-			actionResult.OutputFiles = append(actionResult.OutputFiles, &repb.OutputFile{
-				Path:         outputPath,
-				Digest:       d.ToProto(),
-				IsExecutable: fi.Mode()&0111 != 0,
-			})
-		}
+	if err := sb.UploadOutputs(cmd, actionResult); err != nil {
+		return nil, fmt.Errorf("failed to upload outputs: %w", err)
 	}
 
 	return actionResult, nil
-}
-
-// createOutputPaths creates the directories required by all output files and directories.
-// It transforms and returns the list of output paths so that they're relative to our current working directory.
-func (e *Executor) createOutputPaths(cmd *repb.Command, workDir string) (outputPaths []string, err error) {
-	if cmd.OutputPaths != nil {
-		// REAPI v2.1+
-		outputPaths = cmd.OutputPaths
-	} else {
-		// REAPI v2.0 (deprecated, but required for backwards compatibility)
-		outputPaths = make([]string, 0, len(cmd.OutputFiles)+len(cmd.OutputDirectories)) //nolint:staticcheck
-		outputPaths = append(outputPaths, cmd.OutputFiles...)                            //nolint:staticcheck
-		outputPaths = append(outputPaths, cmd.OutputDirectories...)                      //nolint:staticcheck
-	}
-	for _, outputPath := range outputPaths {
-		// We need to create the parent directories of the output path, because the command
-		// may not create them itself.
-		if err := os.MkdirAll(filepath.Join(workDir, filepath.Dir(outputPath)), 0755); err != nil {
-			return nil, fmt.Errorf("failed to create parent directories for %q: %w", outputPath, err)
-		}
-	}
-	return outputPaths, nil
 }
 
 // saveStdOutErr saves stdout and stderr to the CAS and returns the updated action result.
@@ -246,7 +171,7 @@ func (e *Executor) saveStdOutErr(actionResult *repb.ActionResult) error {
 }
 
 // buildNsjailArgs builds the arguments for nsjail.
-func (e *Executor) buildNsjailArgs(sandboxDir string, imageDir string, cmd *repb.Command) []string {
+func (e *Executor) buildNsjailArgs(sb *Sandbox, imageDir string, cmd *repb.Command) []string {
 	// We use /mnt as the input root inside the sandbox. The exact path doesn't matter,
 	// because all paths in REAPI are relative to the input root anyway, so the action
 	// is relocatable and not tied to a specific input root.
@@ -268,7 +193,7 @@ func (e *Executor) buildNsjailArgs(sandboxDir string, imageDir string, cmd *repb
 		"--quiet",
 		"--chroot", imageDir,
 		"--cwd", workDir,
-		"--bindmount", fmt.Sprintf("%s:%s", sandboxDir, inputRoot),
+		"--bindmount", fmt.Sprintf("%s:%s", sb.sandboxDir, inputRoot),
 		"--env", "HOME=" + workDir,
 		"--env", "PATH=" + strings.Join(searchPath, ":"),
 	}
@@ -321,7 +246,7 @@ func (e *Executor) buildNsjailArgs(sandboxDir string, imageDir string, cmd *repb
 // If we were able to execute the command, a valid ActionResult will be returned and error is nil.
 // This includes the case where we ran the command, and it exited with an exit code != 0.
 // However, if something went wrong during preparation or while spawning the process, an error is returned.
-func (e *Executor) executeCommand(sandboxDir string, action *repb.Action, cmd *repb.Command) (*repb.ActionResult, error) {
+func (e *Executor) executeCommand(sb *Sandbox, action *repb.Action, cmd *repb.Command) (*repb.ActionResult, error) {
 	var args []string
 
 	imageURL := e.images.ImageURL(action, cmd)
@@ -334,7 +259,7 @@ func (e *Executor) executeCommand(sandboxDir string, action *repb.Action, cmd *r
 		}
 
 		// If nsjail is available, we use it to sandbox the command.
-		args = e.buildNsjailArgs(sandboxDir, imageDir, cmd)
+		args = e.buildNsjailArgs(sb, imageDir, cmd)
 	} else {
 		// Otherwise, we just run the command directly on the host.
 		// However, we can only do this if the action doesn't require a container image.
@@ -345,7 +270,7 @@ func (e *Executor) executeCommand(sandboxDir string, action *repb.Action, cmd *r
 	args = append(args, cmd.Arguments...)
 
 	c := exec.Command(args[0], args[1:]...)
-	c.Dir = filepath.Join(sandboxDir, cmd.WorkingDirectory)
+	c.Dir = filepath.Join(sb.sandboxDir, cmd.WorkingDirectory)
 
 	for _, env := range cmd.EnvironmentVariables {
 		c.Env = append(c.Env, fmt.Sprintf("%s=%s", env.Name, env.Value))
@@ -370,64 +295,6 @@ func (e *Executor) executeCommand(sandboxDir string, action *repb.Action, cmd *r
 		StdoutRaw: stdout.Bytes(),
 		StderrRaw: stderr.Bytes(),
 	}, nil
-}
-
-// addDirectoryToTree recursively walks through the given directory and adds itself, all files and
-// subdirectories to the given Tree.
-func (e *Executor) buildMerkleTree(path string) (dirs []*repb.Directory, err error) {
-	dir := &repb.Directory{}
-
-	dirEntries, err := os.ReadDir(path)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read directory: %w", err)
-	}
-
-	for _, dirEntry := range dirEntries {
-		if dirEntry.IsDir() {
-			subDirs, err := e.buildMerkleTree(filepath.Join(path, dirEntry.Name()))
-			if err != nil {
-				return nil, fmt.Errorf("failed to build merkle tree: %w", err)
-			}
-			d, err := digest.NewFromMessage(subDirs[0])
-			if err != nil {
-				return nil, fmt.Errorf("failed to get digest: %w", err)
-			}
-			dir.Directories = append(dir.Directories, &repb.DirectoryNode{
-				Name:   dirEntry.Name(),
-				Digest: d.ToProto(),
-			})
-			dirs = append(dirs, subDirs...)
-		} else {
-			d, err := digest.NewFromFile(filepath.Join(path, dirEntry.Name()))
-			if err != nil {
-				return nil, fmt.Errorf("failed to get digest: %w", err)
-			}
-			fi, err := dirEntry.Info()
-			if err != nil {
-				return nil, fmt.Errorf("failed to get file info: %w", err)
-			}
-			fileNode := &repb.FileNode{
-				Name:         dirEntry.Name(),
-				Digest:       d.ToProto(),
-				IsExecutable: fi.Mode()&0111 != 0,
-			}
-			err = e.cas.Adopt(d, filepath.Join(path, dirEntry.Name()))
-			if err != nil {
-				return nil, fmt.Errorf("failed to move file into CAS: %w", err)
-			}
-			dir.Files = append(dir.Files, fileNode)
-		}
-	}
-
-	dirBytes, err := proto.Marshal(dir)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal directory: %w", err)
-	}
-	if _, err = e.cas.Put(dirBytes); err != nil {
-		return nil, err
-	}
-
-	return append([]*repb.Directory{dir}, dirs...), nil
 }
 
 func (e *Executor) deleteSandbox(dir string) {
