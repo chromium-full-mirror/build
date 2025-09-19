@@ -96,6 +96,11 @@ func (e *Executor) Execute(action *model.Action) (*repb.ActionResult, error) {
 	}
 	defer e.deleteSandbox(sandboxDir)
 
+	// Ensure that we have all directories required to build our sandbox.
+	if err = e.trees.EnsureDirectory(action.InputTrie); err != nil {
+		return nil, fmt.Errorf("failed to materialize directory: %w", err)
+	}
+
 	sb := &Sandbox{
 		cas:        e.cas,
 		trees:      e.trees,

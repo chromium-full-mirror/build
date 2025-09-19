@@ -14,8 +14,7 @@ import (
 
 	"github.com/bazelbuild/remote-apis-sdks/go/pkg/digest"
 	repb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
+	errpb "google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/protobuf/proto"
 
 	"go.chromium.org/build/kajiya/blobstore"
@@ -35,27 +34,16 @@ type Sandbox struct {
 // Prepare ensures that all necessary directories and files for the given action are present in the
 // sandbox.
 func (sb *Sandbox) Prepare(action *model.Action) (err error) {
-	// Stage the input files and directories into the sandbox.
-	if err := sb.trees.StageDirectory(action.InputRootDigest, sb.sandboxDir); err != nil {
-		return fmt.Errorf("failed to materialize input root: %w", err)
-	}
-
-	// Verify that the working directory exists. REAPI requires that the working directory
-	// is part of the input root.
-	workDir := filepath.Join(sb.sandboxDir, action.WorkingDir)
-	if _, err := os.Stat(workDir); err != nil {
-		return status.Errorf(codes.FailedPrecondition, "working directory %q is not an input directory: %v", action.WorkingDir, err)
-	}
-
-	// In contrast to the working directory, REAPI does not require that the parent directories
-	// of output paths are part of the input root, so we need to create them ourselves.
-	for _, outputPath := range action.OutputPaths {
-		if err := os.MkdirAll(filepath.Join(workDir, filepath.Dir(outputPath)), 0755); err != nil {
-			return fmt.Errorf("failed to create parent directories for output path %q: %w", outputPath, err)
+	// Recursively materialize all directories in the sandbox.
+	action.InputTrie.Root().Walk(func(k []byte, dir *model.KajiyaDirectory) bool {
+		dirPath := filepath.Join(sb.sandboxDir, string(k))
+		if err = MaterializeDirectory(sb.cas, dirPath, dir, true); err != nil {
+			return true
 		}
-	}
+		return false
+	})
 
-	return nil
+	return err
 }
 
 // buildMerkleTree recursively walks through the given directory and builds a
@@ -122,61 +110,160 @@ func (sb *Sandbox) buildMerkleTree(path string) ([]*repb.Directory, error) {
 // UploadOutputs moves all outputs declared in the Command into the CAS and updates the
 // OutputDirectories and OutputFiles attributes of the actionResult with metadata about them.
 func (sb *Sandbox) UploadOutputs(action *model.Action, actionResult *repb.ActionResult) (err error) {
-	workDir := filepath.Join(sb.sandboxDir, action.WorkingDir)
-	for _, outputPath := range action.OutputPaths {
-		joinedPath := filepath.Join(workDir, outputPath)
-		fi, err := os.Stat(joinedPath)
-		if err != nil {
-			if errors.Is(err, fs.ErrNotExist) {
-				// Ignore non-existing output files.
-				log.Printf("🚨 output file %q does not exist, ignoring", joinedPath)
+	var violations []*errpb.PreconditionFailure_Violation
+	action.InputTrie.Root().Walk(func(k []byte, dir *model.KajiyaDirectory) bool {
+		for _, outputPath := range dir.Outputs {
+			var fullPath, pathFromWorkDir string
+			fullPath = filepath.Join(sb.sandboxDir, string(k), outputPath.Name)
+			pathFromWorkDir, err = filepath.Rel(action.WorkingDir, filepath.Join(string(k), outputPath.Name))
+			if err != nil {
+				log.Printf("🚨 failed to get relative path: %v", err)
+				return true
+			}
+
+			var lfi os.FileInfo
+			lfi, err = os.Lstat(fullPath)
+			if err != nil {
+				if errors.Is(err, fs.ErrNotExist) {
+					// Ignore non-existing output files.
+					log.Printf("🚨 output file %q does not exist, ignoring", fullPath)
+					continue
+				}
+				return true
+			}
+
+			if lfi.Mode()&os.ModeSymlink != 0 {
+				var fi os.FileInfo
+				fi, err = os.Stat(fullPath)
+				if err != nil {
+					// Ignore dangling symlinks.
+					log.Printf("🚨 output file %q is a dangling symlink, ignoring", fullPath)
+					continue
+				}
+				if fi.Mode().IsDir() {
+					switch outputPath.Type {
+					case model.File:
+						violations = append(violations, &errpb.PreconditionFailure_Violation{
+							Type:        "INVALID_ARGUMENT",
+							Subject:     pathFromWorkDir,
+							Description: fmt.Sprintf("output %q links to directory, but was expected to link to a file", pathFromWorkDir),
+						})
+						continue
+					case model.Directory:
+						actionResult.OutputDirectorySymlinks = append(actionResult.OutputDirectorySymlinks, &repb.OutputSymlink{ //nolint:staticcheck
+							Path:   pathFromWorkDir,
+							Target: fi.Name(),
+						})
+					case model.Unknown:
+						actionResult.OutputSymlinks = append(actionResult.OutputSymlinks, &repb.OutputSymlink{
+							Path:   pathFromWorkDir,
+							Target: fi.Name(),
+						})
+					}
+				} else if fi.Mode().IsRegular() {
+					switch outputPath.Type {
+					case model.File:
+						actionResult.OutputFileSymlinks = append(actionResult.OutputFileSymlinks, &repb.OutputSymlink{ //nolint:staticcheck
+							Path:   pathFromWorkDir,
+							Target: fi.Name(),
+						})
+					case model.Directory:
+						violations = append(violations, &errpb.PreconditionFailure_Violation{
+							Type:        "INVALID_ARGUMENT",
+							Subject:     pathFromWorkDir,
+							Description: fmt.Sprintf("output %q links to a file, but was expected to link to a directory", pathFromWorkDir),
+						})
+						continue
+					case model.Unknown:
+						actionResult.OutputSymlinks = append(actionResult.OutputSymlinks, &repb.OutputSymlink{
+							Path:   pathFromWorkDir,
+							Target: fi.Name(),
+						})
+					}
+				} else {
+					violations = append(violations, &errpb.PreconditionFailure_Violation{
+						Type:        "INVALID_ARGUMENT",
+						Subject:     pathFromWorkDir,
+						Description: fmt.Sprintf("output %q links to a special file (mode: %q), which is not supported", pathFromWorkDir, fi.Mode().String()),
+					})
+					continue
+				}
+			} else if lfi.IsDir() {
+				if outputPath.Type == model.File {
+					violations = append(violations, &errpb.PreconditionFailure_Violation{
+						Type:        "INVALID_ARGUMENT",
+						Subject:     pathFromWorkDir,
+						Description: fmt.Sprintf("output %q is a directory, but was expected to be a file", pathFromWorkDir),
+					})
+					continue
+				}
+
+				// Upload the directory to the CAS.
+				var dirs []*repb.Directory
+				dirs, err = sb.buildMerkleTree(fullPath)
+				if err != nil {
+					return true
+				}
+
+				tree := repb.Tree{
+					Root: dirs[0],
+				}
+				if len(dirs) > 1 {
+					tree.Children = dirs[1:]
+				}
+
+				var treeBytes []byte
+				treeBytes, err = proto.Marshal(&tree)
+				if err != nil {
+					return true
+				}
+
+				var d digest.Digest
+				d, err = sb.cas.Put(treeBytes)
+				if err != nil {
+					return true
+				}
+
+				actionResult.OutputDirectories = append(actionResult.OutputDirectories, &repb.OutputDirectory{
+					Path:                  pathFromWorkDir,
+					TreeDigest:            d.ToProto(),
+					IsTopologicallySorted: false,
+				})
+			} else if lfi.Mode().IsRegular() {
+				if outputPath.Type == model.Directory {
+					violations = append(violations, &errpb.PreconditionFailure_Violation{
+						Type:        "INVALID_ARGUMENT",
+						Subject:     pathFromWorkDir,
+						Description: fmt.Sprintf("output %q is a file, but was expected to be a directory", pathFromWorkDir),
+					})
+					continue
+				}
+
+				// Upload the file to the CAS.
+				var d digest.Digest
+				d, err = digest.NewFromFile(fullPath)
+				if err != nil {
+					return true
+				}
+				if err = sb.cas.Adopt(d, fullPath); err != nil {
+					return true
+				}
+
+				actionResult.OutputFiles = append(actionResult.OutputFiles, &repb.OutputFile{
+					Path:         pathFromWorkDir,
+					Digest:       d.ToProto(),
+					IsExecutable: lfi.Mode()&0111 != 0,
+				})
+			} else {
+				violations = append(violations, &errpb.PreconditionFailure_Violation{
+					Type:        "INVALID_ARGUMENT",
+					Subject:     pathFromWorkDir,
+					Description: fmt.Sprintf("output %q is a special file (mode: %q), which is not supported", pathFromWorkDir, lfi.Mode().String()),
+				})
 				continue
 			}
-			return fmt.Errorf("failed to stat output path %q: %w", outputPath, err)
 		}
-		if fi.IsDir() {
-			// Upload the directory to the CAS.
-			dirs, err := sb.buildMerkleTree(joinedPath)
-			if err != nil {
-				return fmt.Errorf("failed to build merkle tree for %q: %w", outputPath, err)
-			}
-
-			tree := repb.Tree{
-				Root: dirs[0],
-			}
-			if len(dirs) > 1 {
-				tree.Children = dirs[1:]
-			}
-			treeBytes, err := proto.Marshal(&tree)
-			if err != nil {
-				return fmt.Errorf("failed to marshal tree: %w", err)
-			}
-			d, err := sb.cas.Put(treeBytes)
-			if err != nil {
-				return fmt.Errorf("failed to upload tree to CAS: %w", err)
-			}
-
-			actionResult.OutputDirectories = append(actionResult.OutputDirectories, &repb.OutputDirectory{
-				Path:                  outputPath,
-				TreeDigest:            d.ToProto(),
-				IsTopologicallySorted: false,
-			})
-		} else {
-			// Upload the file to the CAS.
-			d, err := digest.NewFromFile(joinedPath)
-			if err != nil {
-				return fmt.Errorf("failed to compute digest of file %q: %w", outputPath, err)
-			}
-			if err := sb.cas.Adopt(d, joinedPath); err != nil {
-				return fmt.Errorf("failed to upload file %q to CAS: %w", outputPath, err)
-			}
-
-			actionResult.OutputFiles = append(actionResult.OutputFiles, &repb.OutputFile{
-				Path:         outputPath,
-				Digest:       d.ToProto(),
-				IsExecutable: fi.Mode()&0111 != 0,
-			})
-		}
-	}
-	return nil
+		return false
+	})
+	return err
 }
