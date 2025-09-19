@@ -1535,7 +1535,7 @@ func (hfs *HashFS) Flush(ctx context.Context, execRoot string, files []string) e
 		}
 		eg.Go(func() (err error) {
 			defer func() { done(err) }()
-			err = e.flush(ctx, fname, hfs.OS)
+			err = e.flush(ctx, fname, hfs.OS, max(e.d.FetchTimeout(), hfs.opt.MinFlushTimeout))
 			// flush should not fail with cas not found error.
 			// but if it failed, current recorded digest should
 			// be wrong, so should delete from the hashfs.
@@ -1839,7 +1839,7 @@ func (e *entry) getDir() *directory {
 	return e.directory
 }
 
-func (e *entry) flush(ctx context.Context, fname string, osfs *osfs.OSFS) (retErr error) {
+func (e *entry) flush(ctx context.Context, fname string, osfs *osfs.OSFS, timeout time.Duration) (retErr error) {
 	defer func() {
 		if retErr != nil {
 			// flush failed, so may need to flush again.
@@ -2030,7 +2030,7 @@ func (e *entry) flush(ctx context.Context, fname string, osfs *osfs.OSFS) (retEr
 			ctx, cancel := digest.ContextWithTimeout(ctx, e.d)
 			defer cancel()
 			err := retry.Do(ctx, func() error {
-				ctx, cancel := context.WithTimeout(ctx, e.d.FetchTimeout())
+				ctx, cancel := context.WithTimeout(ctx, timeout)
 				defer cancel()
 				err := osfs.WriteDigestData(ctx, tmpname, e.src, e.mode)
 				if status.Code(err) == codes.DeadlineExceeded || errors.Is(err, context.DeadlineExceeded) {

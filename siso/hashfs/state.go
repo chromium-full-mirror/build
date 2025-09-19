@@ -62,6 +62,8 @@ type Option struct {
 
 	KeepTainted bool // keep manually modified generated file
 
+	MinFlushTimeout time.Duration // minimum timeout to flush operation (>= 10s)
+
 	OSFSOption osfs.Option
 
 	FSMonitor FSMonitor
@@ -83,6 +85,7 @@ func (o *Option) RegisterFlags(flagSet *flag.FlagSet) {
 	flagSet.IntVar(&o.CompressLevel, "fs_state_compression_level", 3, "fs state compression level (0 = uncompressed, 1 = fastest, 10 = best)")
 	flagSet.IntVar(&o.CompressThreads, "fs_state_compression_threads", defaultCompressThreads, "number of threads to use for data compression")
 	flagSet.BoolVar(&o.KeepTainted, "fs_keep_tainted", false, "keep manually modified generated file")
+	flagSet.DurationVar(&o.MinFlushTimeout, "fs_min_flush_timeout", 10*time.Second, "minimum timeout for flush. ignored if it is shorter than 10s")
 	o.OSFSOption.RegisterFlags(flagSet)
 }
 
