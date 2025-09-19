@@ -33,17 +33,14 @@ func New(dataDir string) (*ContentAddressableStorage, error) {
 		return nil, fmt.Errorf("data directory must be specified")
 	}
 
-	if err := os.MkdirAll(dataDir, 0755); err != nil {
+	if err := os.Mkdir(dataDir, 0755); err != nil && !errors.Is(err, fs.ErrExist) {
 		return nil, err
 	}
 
 	// Create subdirectories {00, 01, ..., ff} for sharding by hash prefix.
 	for i := range 256 {
 		err := os.Mkdir(filepath.Join(dataDir, fmt.Sprintf("%02x", i)), 0755)
-		if err != nil {
-			if errors.Is(err, fs.ErrExist) {
-				continue
-			}
+		if err != nil && !errors.Is(err, fs.ErrExist) {
 			return nil, err
 		}
 	}

@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"log"
 	"os"
 	"os/exec"
@@ -38,7 +39,7 @@ func NewImageRepository(baseDir string) (*ImageRepository, error) {
 		return nil, fmt.Errorf("baseDir must not be empty")
 	}
 
-	if err := os.MkdirAll(baseDir, 0755); err != nil {
+	if err := os.Mkdir(baseDir, 0755); err != nil && !errors.Is(err, fs.ErrExist) {
 		return nil, fmt.Errorf("failed to create directory %q: %w", baseDir, err)
 	}
 

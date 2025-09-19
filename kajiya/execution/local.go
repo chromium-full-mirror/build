@@ -51,7 +51,7 @@ func New(baseDir string, cas *blobstore.ContentAddressableStorage, sb SandboxStr
 	}
 
 	// Create the data directory if it doesn't exist.
-	if err := os.MkdirAll(baseDir, 0755); err != nil {
+	if err := os.Mkdir(baseDir, 0755); err != nil && !errors.Is(err, fs.ErrExist) {
 		return nil, fmt.Errorf("failed to create directory %q: %w", baseDir, err)
 	}
 
@@ -61,7 +61,7 @@ func New(baseDir string, cas *blobstore.ContentAddressableStorage, sb SandboxStr
 	}
 
 	sandboxBase := filepath.Join(baseDir, "tmp")
-	if err := os.MkdirAll(sandboxBase, 0755); err != nil {
+	if err := os.Mkdir(sandboxBase, 0755); err != nil && !errors.Is(err, fs.ErrExist) {
 		return nil, fmt.Errorf("failed to create directory %q: %w", sandboxBase, err)
 	}
 

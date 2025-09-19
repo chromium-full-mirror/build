@@ -62,7 +62,7 @@ func NewService(cas *ContentAddressableStorage, uploadDir string) (*Service, err
 	}
 
 	// Ensure that our temporary upload directory exists.
-	if err := os.MkdirAll(uploadDir, 0755); err != nil {
+	if err := os.Mkdir(uploadDir, 0755); err != nil && !errors.Is(err, fs.ErrExist) {
 		return nil, err
 	}
 

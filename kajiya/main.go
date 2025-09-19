@@ -116,8 +116,10 @@ func main() {
 	if *dataDir == "" {
 		log.Fatalf("no data directory specified")
 	}
-
 	log.Printf("💾 using data directory: %v", *dataDir)
+	if err := os.MkdirAll(*dataDir, 0755); err != nil {
+		log.Fatalf("failed to create data directory: %v", err)
+	}
 
 	// Listen on the specified address.
 	network, addr := parseAddress(*listen)
