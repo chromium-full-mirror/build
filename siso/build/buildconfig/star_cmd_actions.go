@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"path/filepath"
 	"time"
 
@@ -18,6 +19,7 @@ import (
 	"go.starlark.net/starlarkstruct"
 
 	"go.chromium.org/build/siso/execute"
+	"go.chromium.org/build/siso/o11y/clog"
 )
 
 // starCmdActions returns actions, which contains
@@ -251,6 +253,11 @@ func actionsCopyRecursively(ctx context.Context, cmd *execute.Cmd, src, dst stri
 		return files, nil
 	}
 	err = cmd.HashFS.Copy(ctx, cmd.ExecRoot, src, dst, t, cmdhash, edgehash)
+	if errors.Is(err, fs.ErrNotExist) {
+		clog.Warningf(ctx, "copy src not exists %s: %v", src, err)
+		// just ignores
+		return nil, nil
+	}
 	if err != nil {
 		return nil, err
 	}

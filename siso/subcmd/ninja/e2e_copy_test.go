@@ -255,3 +255,66 @@ func TestBuild_CopyLocalOut(t *testing.T) {
 		t.Errorf("snapshot version mismatch: got=%q want=%q", got, want)
 	}
 }
+
+func TestBuild_CopyBundleDataRemovedFile(t *testing.T) {
+	ctx := context.Background()
+
+	ninja := func(t *testing.T, dir string) (build.Stats, error) {
+		t.Helper()
+		opt, graph, cleanup := setupBuild(ctx, t, dir, hashfs.Option{
+			StateFile:   ".siso_fs_state",
+			OutputLocal: func(context.Context, string) bool { return true },
+		})
+		defer cleanup()
+		stats, err := runNinja(ctx, "build.ninja", graph, opt, nil, runNinjaOpts{})
+		return stats, err
+	}
+
+	tdir := t.TempDir()
+	dir, err := filepath.EvalSymlinks(tdir)
+	if err != nil {
+		t.Fatalf("evalSymlinks(%q)=%q, %v; want nil err", tdir, dir, err)
+	}
+	setupFiles(t, dir, t.Name(), nil)
+	t.Logf("-- first build")
+	stats, err := ninja(t, dir)
+	if err != nil {
+		t.Fatalf("ninja %v; want nil err", err)
+	}
+	if stats.Done != 3 || stats.Local != 1 || stats.NoExec != 1 || stats.Total != 3 {
+		t.Errorf("stats done=%d local=%d noexec=%d total=%d; want done=3 local=1 noexec=1 total=3; %#v", stats.Done, stats.Local, stats.NoExec, stats.Total, stats)
+	}
+	_, err = os.Stat(filepath.Join(dir, "out/siso/appex/SSOConfig.plist"))
+	if err != nil {
+		t.Errorf("out/siso/appex/SSOConfig.plist=%v; want nil err", err)
+	}
+	_, err = os.Stat(filepath.Join(dir, "out/siso/plugins/appex/SSOConfig.plist"))
+	if err != nil {
+		t.Errorf("out/siso/plugins/appex/SSOConfig.plist=%v; want nil err", err)
+	}
+
+	t.Logf("-- remove SSOConfig.plist")
+	err = os.Remove(filepath.Join(dir, "appex/SSOConfig.plist"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	touchFile(t, dir, "appex/input")
+
+	t.Logf("-- second build")
+	stats, err = ninja(t, dir)
+	if err != nil {
+		t.Fatalf("ninja %v; want nil err", err)
+	}
+	if stats.Done != 3 || stats.Local != 1 || stats.NoExec != 1 || stats.Total != 3 {
+		t.Errorf("stats done=%d local=%d noexec=%d total=%d; want done=3 local=1 noexec=1 total=3; %#v", stats.Done, stats.Local, stats.NoExec, stats.Total, stats)
+	}
+	_, err = os.Stat(filepath.Join(dir, "out/siso/appex/SSOConfig.plist"))
+	if !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("out/siso/appex/SSOConfig.plist=%v; want %v", err, fs.ErrNotExist)
+	}
+	_, err = os.Stat(filepath.Join(dir, "out/siso/plugins/appex/SSOConfig.plist"))
+	if !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("out/siso/plugins/appex/SSOConfig.plist=%v; want %v", err, fs.ErrNotExist)
+	}
+
+}
