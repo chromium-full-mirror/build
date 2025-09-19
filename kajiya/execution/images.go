@@ -16,7 +16,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	repb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
 	"golang.org/x/sync/singleflight"
 )
 
@@ -52,24 +51,6 @@ func NewImageRepository(baseDir string) (*ImageRepository, error) {
 		baseDir:    baseDir,
 		dockerPath: dockerPath,
 	}, nil
-}
-
-// ImageURL returns the container image to use for the given action.
-func (r *ImageRepository) ImageURL(action *repb.Action, cmd *repb.Command) string {
-	// REAPI v2.2+ clients set the container image in the action itself.
-	platform := action.Platform
-	if platform == nil {
-		// REAPI v2.1 and earlier clients set the container image in the command.
-		platform = cmd.Platform //nolint:staticcheck
-	}
-	if platform != nil {
-		for _, prop := range platform.Properties {
-			if prop.Name == "container-image" {
-				return prop.Value
-			}
-		}
-	}
-	return ""
 }
 
 // FetchImage fetches the container image for the given action and extracts it into the image directory.

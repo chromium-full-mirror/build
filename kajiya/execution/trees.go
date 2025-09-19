@@ -58,13 +58,7 @@ func newTreeRepository(baseDir string, cas *blobstore.ContentAddressableStorage)
 
 // StageDirectory downloads the given directory from the CAS and writes it to
 // the given path. If the directory already exists, it is overwritten.
-func (t *TreeRepository) StageDirectory(dirDigest *repb.Digest, path string) error {
-	// Parse the directory digest.
-	d, err := digest.NewFromProto(dirDigest)
-	if err != nil {
-		return fmt.Errorf("failed to parse digest: %w", err)
-	}
-
+func (t *TreeRepository) StageDirectory(d digest.Digest, path string) error {
 	// First, ensure that the directory tree has been materialized.
 	dirs, err := t.materializeDirectory(d)
 	if err != nil {

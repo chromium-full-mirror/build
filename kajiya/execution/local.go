@@ -16,12 +16,12 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/bazelbuild/remote-apis-sdks/go/pkg/digest"
 	repb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
 	"go.chromium.org/build/kajiya/blobstore"
+	"go.chromium.org/build/kajiya/execution/model"
 )
 
 // Executor is a local executor that executes actions on the local machine.
@@ -88,29 +88,7 @@ func New(baseDir string, cas *blobstore.ContentAddressableStorage) (*Executor, e
 }
 
 // Execute executes the given action and returns the result.
-func (e *Executor) Execute(action *repb.Action) (*repb.ActionResult, error) {
-	// Get the command from the CAS.
-	cmdDigest, err := digest.NewFromProto(action.CommandDigest)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse command digest: %w", err)
-	}
-	cmd, err := e.cas.Command(cmdDigest)
-	if err != nil {
-		return nil, err
-	}
-	if cmd.WorkingDirectory != "" {
-		if !filepath.IsLocal(cmd.WorkingDirectory) {
-			return nil, fmt.Errorf("working directory %q points outside of input root", cmd.WorkingDirectory)
-		}
-	}
-	// REAPI v2.0 clients specify output files and directories in two separate fields. In order
-	// to simplify our code, we just merge them into REAPI v2.1+'s OutputPaths field here.
-	if cmd.OutputPaths == nil {
-		cmd.OutputPaths = make([]string, 0, len(cmd.OutputFiles)+len(cmd.OutputDirectories)) //nolint:staticcheck
-		cmd.OutputPaths = append(cmd.OutputPaths, cmd.OutputFiles...)                        //nolint:staticcheck
-		cmd.OutputPaths = append(cmd.OutputPaths, cmd.OutputDirectories...)                  //nolint:staticcheck
-	}
-
+func (e *Executor) Execute(action *model.Action) (*repb.ActionResult, error) {
 	// Build a sandbox directory for the action.
 	sandboxDir, err := os.MkdirTemp(e.sandboxBase, "*")
 	if err != nil {
@@ -125,12 +103,12 @@ func (e *Executor) Execute(action *repb.Action) (*repb.ActionResult, error) {
 	}
 
 	// Stage the input files and directories into the sandbox.
-	if err := sb.Prepare(action, cmd); err != nil {
+	if err := sb.Prepare(action); err != nil {
 		return nil, fmt.Errorf("failed to prepare input root: %w", err)
 	}
 
 	// Execute the command.
-	actionResult, err := e.executeCommand(sb, action, cmd)
+	actionResult, err := e.executeCommand(sb, action)
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute command: %w", err)
 	}
@@ -141,7 +119,7 @@ func (e *Executor) Execute(action *repb.Action) (*repb.ActionResult, error) {
 	}
 
 	// Go through all output files and directories and upload them to the CAS.
-	if err := sb.UploadOutputs(cmd, actionResult); err != nil {
+	if err := sb.UploadOutputs(action, actionResult); err != nil {
 		return nil, fmt.Errorf("failed to upload outputs: %w", err)
 	}
 
@@ -171,14 +149,14 @@ func (e *Executor) saveStdOutErr(actionResult *repb.ActionResult) error {
 }
 
 // buildNsjailArgs builds the arguments for nsjail.
-func (e *Executor) buildNsjailArgs(sb *Sandbox, imageDir string, cmd *repb.Command) []string {
+func (e *Executor) buildNsjailArgs(sb *Sandbox, imageDir string, action *model.Action) []string {
 	// We use /mnt as the input root inside the sandbox. The exact path doesn't matter,
 	// because all paths in REAPI are relative to the input root anyway, so the action
 	// is relocatable and not tied to a specific input root.
 	// TODO: Add support for overriding this via RBE's InputRootAbsolutePath feature?
 	inputRoot := "/mnt"
 
-	workDir := filepath.Join(inputRoot, cmd.WorkingDirectory)
+	workDir := filepath.Join(inputRoot, action.WorkingDir)
 	searchPath := []string{"/usr/local/sbin", "/usr/local/bin", "/usr/sbin", "/usr/bin", "/sbin", "/bin"}
 
 	// If we're not using a container image, it means the action should be executed
@@ -200,8 +178,8 @@ func (e *Executor) buildNsjailArgs(sb *Sandbox, imageDir string, cmd *repb.Comma
 
 	// We don't need to set the values of the environment variables here because we
 	// already set them in the environment of the nsjail process.
-	for _, env := range cmd.EnvironmentVariables {
-		args = append(args, "--env", env.Name)
+	for _, v := range action.EnvVars {
+		args = append(args, "--env", v.Name)
 	}
 
 	// Provide a minimal /dev environment. We need to explicitly set the mode to 0755,
@@ -230,10 +208,10 @@ func (e *Executor) buildNsjailArgs(sb *Sandbox, imageDir string, cmd *repb.Comma
 
 	// nsjail doesn't look up argv[0] in PATH, so we need to resolve it ourselves
 	// and pass it to nsjail via --exec_file.
-	if !strings.ContainsAny(cmd.Arguments[0], "/") {
+	if !strings.ContainsAny(action.Args[0], "/") {
 		for _, p := range searchPath {
-			if _, err := os.Stat(filepath.Join(imageDir, p, cmd.Arguments[0])); err == nil {
-				args = append(args, "--exec_file", filepath.Join(p, cmd.Arguments[0]))
+			if _, err := os.Stat(filepath.Join(imageDir, p, action.Args[0])); err == nil {
+				args = append(args, "--exec_file", filepath.Join(p, action.Args[0]))
 				break
 			}
 		}
@@ -246,34 +224,33 @@ func (e *Executor) buildNsjailArgs(sb *Sandbox, imageDir string, cmd *repb.Comma
 // If we were able to execute the command, a valid ActionResult will be returned and error is nil.
 // This includes the case where we ran the command, and it exited with an exit code != 0.
 // However, if something went wrong during preparation or while spawning the process, an error is returned.
-func (e *Executor) executeCommand(sb *Sandbox, action *repb.Action, cmd *repb.Command) (*repb.ActionResult, error) {
+func (e *Executor) executeCommand(sb *Sandbox, action *model.Action) (*repb.ActionResult, error) {
 	var args []string
-
-	imageURL := e.images.ImageURL(action, cmd)
 
 	if e.nsjailPath != "" {
 		// Prepare the container image for the action.
-		imageDir, err := e.images.FetchImage(imageURL)
+		imageDir, err := e.images.FetchImage(action.ContainerImage)
 		if err != nil {
 			return nil, fmt.Errorf("failed to fetch container image: %w", err)
 		}
 
 		// If nsjail is available, we use it to sandbox the command.
-		args = e.buildNsjailArgs(sb, imageDir, cmd)
+		args = e.buildNsjailArgs(sb, imageDir, action)
 	} else {
 		// Otherwise, we just run the command directly on the host.
 		// However, we can only do this if the action doesn't require a container image.
-		if imageURL != "" {
+		if action.ContainerImage != "" {
 			return nil, fmt.Errorf("action requires container image, but nsjail is not available")
 		}
 	}
-	args = append(args, cmd.Arguments...)
+
+	args = append(args, action.Args...)
 
 	c := exec.Command(args[0], args[1:]...)
-	c.Dir = filepath.Join(sb.sandboxDir, cmd.WorkingDirectory)
+	c.Dir = filepath.Join(sb.sandboxDir, action.WorkingDir)
 
-	for _, env := range cmd.EnvironmentVariables {
-		c.Env = append(c.Env, fmt.Sprintf("%s=%s", env.Name, env.Value))
+	for _, v := range action.EnvVars {
+		c.Env = append(c.Env, fmt.Sprintf("%s=%s", v.Name, v.Value))
 	}
 
 	var stdout, stderr bytes.Buffer

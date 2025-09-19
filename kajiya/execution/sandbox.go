@@ -19,6 +19,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"go.chromium.org/build/kajiya/blobstore"
+	"go.chromium.org/build/kajiya/execution/model"
 )
 
 // Sandbox manages the sandbox environment for an action.
@@ -33,7 +34,7 @@ type Sandbox struct {
 
 // Prepare ensures that all necessary directories and files for the given action are present in the
 // sandbox.
-func (sb *Sandbox) Prepare(action *repb.Action, cmd *repb.Command) error {
+func (sb *Sandbox) Prepare(action *model.Action) (err error) {
 	// Stage the input files and directories into the sandbox.
 	if err := sb.trees.StageDirectory(action.InputRootDigest, sb.sandboxDir); err != nil {
 		return fmt.Errorf("failed to materialize input root: %w", err)
@@ -41,14 +42,14 @@ func (sb *Sandbox) Prepare(action *repb.Action, cmd *repb.Command) error {
 
 	// Verify that the working directory exists. REAPI requires that the working directory
 	// is part of the input root.
-	workDir := filepath.Join(sb.sandboxDir, cmd.WorkingDirectory)
+	workDir := filepath.Join(sb.sandboxDir, action.WorkingDir)
 	if _, err := os.Stat(workDir); err != nil {
-		return status.Errorf(codes.FailedPrecondition, "working directory %q is not an input directory: %v", cmd.WorkingDirectory, err)
+		return status.Errorf(codes.FailedPrecondition, "working directory %q is not an input directory: %v", action.WorkingDir, err)
 	}
 
 	// In contrast to the working directory, REAPI does not require that the parent directories
 	// of output paths are part of the input root, so we need to create them ourselves.
-	for _, outputPath := range cmd.OutputPaths {
+	for _, outputPath := range action.OutputPaths {
 		if err := os.MkdirAll(filepath.Join(workDir, filepath.Dir(outputPath)), 0755); err != nil {
 			return fmt.Errorf("failed to create parent directories for output path %q: %w", outputPath, err)
 		}
@@ -120,9 +121,9 @@ func (sb *Sandbox) buildMerkleTree(path string) ([]*repb.Directory, error) {
 
 // UploadOutputs moves all outputs declared in the Command into the CAS and updates the
 // OutputDirectories and OutputFiles attributes of the actionResult with metadata about them.
-func (sb *Sandbox) UploadOutputs(cmd *repb.Command, actionResult *repb.ActionResult) error {
-	workDir := filepath.Join(sb.sandboxDir, cmd.WorkingDirectory)
-	for _, outputPath := range cmd.OutputPaths {
+func (sb *Sandbox) UploadOutputs(action *model.Action, actionResult *repb.ActionResult) (err error) {
+	workDir := filepath.Join(sb.sandboxDir, action.WorkingDir)
+	for _, outputPath := range action.OutputPaths {
 		joinedPath := filepath.Join(workDir, outputPath)
 		fi, err := os.Stat(joinedPath)
 		if err != nil {

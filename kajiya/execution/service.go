@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"cloud.google.com/go/longrunning/autogen/longrunningpb"
-	"github.com/bazelbuild/remote-apis-sdks/go/pkg/digest"
 	repb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
 	"github.com/google/uuid"
 	"golang.org/x/sync/singleflight"
@@ -28,6 +27,7 @@ import (
 
 	"go.chromium.org/build/kajiya/actioncache"
 	"go.chromium.org/build/kajiya/blobstore"
+	"go.chromium.org/build/kajiya/execution/model"
 )
 
 // Service implements the REAPI Execution service.
@@ -44,7 +44,7 @@ type Service struct {
 
 // ExecutorInterface is an interface of Executor.
 type ExecutorInterface interface {
-	Execute(*repb.Action) (*repb.ActionResult, error)
+	Execute(*model.Action) (*repb.ActionResult, error)
 }
 
 // Register creates and registers a new Service with the given gRPC server.
@@ -138,12 +138,7 @@ func (s *Service) execute(request *repb.ExecuteRequest, _ *repb.RequestMetadata,
 		return status.Errorf(codes.InvalidArgument, "hash function %q is not supported", request.DigestFunction.String())
 	}
 
-	// Fetch the Action from the CAS.
-	actionDigest, err := digest.NewFromProto(request.ActionDigest)
-	if err != nil {
-		return err
-	}
-	action, err := s.cas.Action(actionDigest)
+	action, err := model.LoadAction(request.ActionDigest, s.cas)
 	if err != nil {
 		return err
 	}
@@ -170,10 +165,10 @@ func (s *Service) execute(request *repb.ExecuteRequest, _ *repb.RequestMetadata,
 	// According to the REAPI specification, in-flight requests for the same `Action` may be
 	// merged unless the `DoNotCache` bit is set. This improves efficiency and performance by
 	// avoiding duplicate work.
-	ar, err, _ := s.actionDigestDeduper.Do(actionDigest.String(), func() (any, error) {
+	ar, err, _ := s.actionDigestDeduper.Do(action.ActionDigest.String(), func() (any, error) {
 		// If we have an action cache, check if the action is already cached.
 		if s.actionCache != nil && !request.SkipCacheLookup {
-			ar, err := s.actionCache.Get(actionDigest)
+			ar, err := s.actionCache.Get(action.ActionDigest)
 			if err != nil && !errors.Is(err, fs.ErrNotExist) {
 				return nil, fmt.Errorf("failed to get action from cache: %w", err)
 			}
@@ -192,7 +187,7 @@ func (s *Service) execute(request *repb.ExecuteRequest, _ *repb.RequestMetadata,
 		// results, as it's always possible that a failed action is due to a transient
 		// issue that will be resolved on the next execution.
 		if s.actionCache != nil && ar.ExitCode == 0 {
-			if err = s.actionCache.Put(actionDigest, ar); err != nil {
+			if err = s.actionCache.Put(action.ActionDigest, ar); err != nil {
 				return nil, fmt.Errorf("failed to put action into cache: %w", err)
 			}
 		}
