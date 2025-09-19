@@ -38,7 +38,7 @@ func (p *Proxy) Serve(ctx context.Context) error {
 		return fmt.Errorf("invalid addr %q: %w", p.addr, err)
 	}
 	err = os.Remove(loc.Path)
-	if err != nil {
+	if err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("failed to remove %s: %w", loc.Path, err)
 	}
 	lis, err := net.Listen(loc.Scheme, loc.Path)
