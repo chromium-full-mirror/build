@@ -92,6 +92,10 @@ See https://github.com/EngFlow/credential-helper-spec/blob/main/spec.md
 `TERM` is used to detect smart terminal.
 `dump` or `dump-emacs-ansi` are not smart terminal.
 
+### NO_COLOR
+
+`NO_COLOR` is used to [disable colorted text output](https://no-color.org/).
+
 ### SISO_FSMONITOR
 
 `SISO_FSMONITOR` is a path of file system monitoring tool.

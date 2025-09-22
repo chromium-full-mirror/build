@@ -75,10 +75,11 @@ func (s *termSpinner) Done(format string, args ...any) {
 
 // TermUI is a terminal-based UI.
 type TermUI struct {
-	mu     sync.Mutex
-	timer  time.Time
-	height int
-	width  int
+	noColor bool
+	mu      sync.Mutex
+	timer   time.Time
+	height  int
+	width   int
 }
 
 func (t *TermUI) update() (int, int) {
@@ -99,6 +100,13 @@ func (t *TermUI) Height() int {
 func (t *TermUI) Width() int {
 	w, _ := t.update()
 	return w
+}
+
+func (t *TermUI) msg(s string) string {
+	if t.noColor {
+		return StripANSIEscapeCodes(s)
+	}
+	return s
 }
 
 // PrintLines implements the ui.ui interface.
@@ -124,6 +132,9 @@ func (t *TermUI) PrintLines(msgs ...string) {
 		}
 		fmt.Fprintf(&buf, "\r\033[K")
 	}
+	for i := range msgs {
+		msgs[i] = t.msg(msgs[i])
+	}
 	writeLinesMaxWidth(&buf, msgs, t.Width())
 	os.Stdout.Write(buf.Bytes())
 }
@@ -135,15 +146,15 @@ func (t *TermUI) NewSpinner() Spinner {
 
 // Infof reports to stdout.
 func (t *TermUI) Infof(format string, args ...any) {
-	fmt.Fprintf(os.Stdout, format, args...)
+	fmt.Fprintf(os.Stdout, "%s", t.msg(fmt.Sprintf(format, args...)))
 }
 
 // Warningf reports to stderr.
 func (t *TermUI) Warningf(format string, args ...any) {
-	fmt.Fprintf(os.Stderr, format, args...)
+	fmt.Fprintf(os.Stderr, "%s", t.msg(fmt.Sprintf(format, args...)))
 }
 
 // Errorf reports to stderr.
 func (t *TermUI) Errorf(format string, args ...any) {
-	fmt.Fprintf(os.Stderr, format, args...)
+	fmt.Fprintf(os.Stderr, "%s", t.msg(fmt.Sprintf(format, args...)))
 }
