@@ -82,7 +82,7 @@ type luciAuthTokenResponse struct {
 }
 
 func (ts *luciAuthTokenSource) Token() (*oauth2.Token, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
 	for {
@@ -135,7 +135,7 @@ type luciAuthInfoResponse struct {
 
 func (ts *luciAuthTokenSource) Email() string {
 	ts.once.Do(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 
 		if ts.email != "" {
