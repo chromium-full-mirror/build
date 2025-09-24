@@ -681,12 +681,11 @@ func (c *Command) run(ctx context.Context) (stats build.Stats, err error) {
 			metricsLabels[kv[0]] = kv[1]
 		}
 
-		if c.metricsProject == "" {
-			// TODO: crbug.com/368518993 - Use the siso project ID by default.
-			// It may require changes on monitoring pipeline and permissions etc.
-			return stats, errors.New("cloud project ID for Cloud monitoring must be specified by -metrics_project or RBE_metrics_project")
+		metricsProject := projectID
+		if c.metricsProject != "" {
+			metricsProject = projectID
 		}
-		e, err := c.initCloudMonitoring(ctx, credential, c.metricsProject, projectID, metricsLabels)
+		e, err := c.initCloudMonitoring(ctx, credential, metricsProject, projectID, metricsLabels)
 		if err != nil {
 			return stats, err
 		}
@@ -1214,7 +1213,7 @@ func (c *Command) SetFlags(flagSet *flag.FlagSet) {
 	flagSet.BoolVar(&c.enableCloudMonitoring, "enable_cloud_monitoring", false, "enable cloud monitoring")
 	flagSet.BoolVar(&c.enableBuildNinjaFilesUpload, "enable_build_ninja_files_upload", true, "enable Build Ninja files upload to RBE-CAS")
 	flagSet.StringVar(&c.metricsLabels, "metrics_labels", os.Getenv("RBE_metrics_labels"), "comma-separated arbitrary key value pairs in the form key=value, which are added to cloud monitoring metrics.")
-	flagSet.StringVar(&c.metricsProject, "metrics_project", os.Getenv("RBE_metrics_project"), "Cloud Monitoring GCP project where Siso sends action and build metrics.")
+	flagSet.StringVar(&c.metricsProject, "metrics_project", os.Getenv("RBE_metrics_project"), "override Cloud Monitoring GCP project where Siso sends action and build metrics.")
 
 	flagSet.StringVar(&c.subtool, "t", "", "run a subtool (use '-t list' to list subtools)")
 	flagSet.BoolVar(&c.cleandead, "cleandead", false, "clean built files that are no longer produced by the manifest")
@@ -1388,14 +1387,14 @@ func (c *Command) initCloudTrace(ctx context.Context, projectID string, credenti
 	return traceExporter
 }
 
-func (c *Command) initCloudMonitoring(ctx context.Context, credential cred.Cred, projectID, rbeProjectID string, labels map[string]string) (*smetric.MeterProvider, error) {
-	clog.Infof(ctx, "enable cloud monitoring in %s", projectID)
+func (c *Command) initCloudMonitoring(ctx context.Context, credential cred.Cred, metricsProject, rbeProjectID string, labels map[string]string) (*smetric.MeterProvider, error) {
+	clog.Infof(ctx, "enable cloud monitoring in %s", metricsProject)
 	views, err := monitoring.SetupViews(ctx, c.version, rbeProjectID, labels)
 	if err != nil {
 		return nil, err
 	}
 	exporter, err := cloudmetric.New(
-		cloudmetric.WithProjectID(projectID),
+		cloudmetric.WithProjectID(metricsProject),
 		cloudmetric.WithMonitoringClientOptions(credential.ClientOptions()...),
 		cloudmetric.WithMetricDescriptorTypeFormatter(func(metrics metricdata.Metrics) string {
 			return fmt.Sprintf("workload.googleapis.com/siso/%s", metrics.Name)
@@ -1409,7 +1408,7 @@ func (c *Command) initCloudMonitoring(ctx context.Context, credential cred.Cred,
 		return nil, err
 	}
 	otel.SetMeterProvider(mp)
-	clog.Infof(ctx, "OpenTelemetry exporter has started in %q for %q", projectID, rbeProjectID)
+	clog.Infof(ctx, "OpenTelemetry exporter has started in %q for RBE project %q", metricsProject, rbeProjectID)
 	return mp, nil
 }
 
