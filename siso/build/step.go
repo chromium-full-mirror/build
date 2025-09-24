@@ -126,10 +126,11 @@ type Edge struct {
 
 // Step is a build step.
 type Step struct {
-	idnum   int
-	def     StepDef
-	nwaits  int
-	outputs []Target
+	idnum       int
+	def         StepDef
+	nwaits      int
+	outputs     []Target
+	outputPaths []string // target name in ninja, i.e. output path relative to wd.
 
 	cmd *execute.Cmd
 
@@ -163,6 +164,11 @@ func (s *Step) Desc() string {
 // Command returns step's command line.
 func (s *Step) Command() string {
 	return s.def.Binding("command")
+}
+
+// Outputs returns step's outputs (target name in ninja, i.e. output path relative to wd.)
+func (s *Step) Outputs() []string {
+	return s.outputPaths
 }
 
 // IsConsole reports whether it uses console pool.
@@ -437,6 +443,10 @@ func (s *Step) init(ctx context.Context, b *Builder, stepManifest *stepManifest)
 	ctx, span := trace.NewSpan(ctx, "step-init")
 	defer span.Close(nil)
 	s.def.EnsureRule(ctx)
+	s.outputPaths = make([]string, 0, len(stepManifest.outputs))
+	for _, out := range stepManifest.outputs {
+		s.outputPaths = append(s.outputPaths, b.path.MaybeToWD(ctx, out))
+	}
 	s.cmd = newCmd(ctx, b, s.def, stepManifest)
 	clog.Infof(ctx, "cmdhash:%s", base64.StdEncoding.EncodeToString(s.cmd.CmdHash))
 }

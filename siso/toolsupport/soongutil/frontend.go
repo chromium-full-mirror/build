@@ -113,6 +113,7 @@ func (f *Frontend) BuildActionStarted(step *build.Step) {
 		EdgeStarted: &pb.Status_EdgeStarted{
 			Id:        proto.Uint32(uint32(step.IDNum())),
 			StartTime: proto.Uint32(uint32(time.Since(f.startTime).Milliseconds())),
+			Outputs:   step.Outputs(),
 			Desc:      proto.String(step.Desc()),
 			Command:   proto.String(step.Command()),
 			Console:   proto.Bool(step.IsConsole()),
