@@ -683,7 +683,7 @@ func (c *Command) run(ctx context.Context) (stats build.Stats, err error) {
 
 		metricsProject := projectID
 		if c.metricsProject != "" {
-			metricsProject = projectID
+			metricsProject = c.metricsProject
 		}
 		e, err := c.initCloudMonitoring(ctx, credential, metricsProject, projectID, metricsLabels)
 		if err != nil {
