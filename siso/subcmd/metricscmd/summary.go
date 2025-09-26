@@ -5,12 +5,14 @@
 package metricscmd
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -156,11 +158,8 @@ func (c *summaryCommand) run(ctx context.Context) error {
 	length := latest - earliest
 
 	// sort by time/event records
-	sort.Slice(events, func(i, j int) bool {
-		if events[i].ts < events[j].ts {
-			return true
-		}
-		return events[i].event < events[j].event
+	slices.SortFunc(events, func(a, b buildEvent) int {
+		return cmp.Or(cmp.Compare(a.ts, b.ts), cmp.Compare(a.event, b.event))
 	})
 	// current running task -> weighted time when the task started.
 	runningTasks := make(map[*targetMetric]time.Duration)
