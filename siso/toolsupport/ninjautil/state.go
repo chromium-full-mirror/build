@@ -375,8 +375,11 @@ func (s *State) Binding(name string) string {
 		return ""
 	}
 	var buf bytes.Buffer
-	evaluate(s.scope, &buf, val)
-	return buf.String()
+	value, err := evaluate(s.scope, &buf, val)
+	if err != nil {
+		return ""
+	}
+	return string(value)
 }
 
 // Filenames returns files parsed by the parser (e.g. build.ninja and its subninja etc.)
