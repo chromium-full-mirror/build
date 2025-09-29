@@ -96,12 +96,12 @@ type DataSource interface {
 
 func isGzip(b []byte) bool {
 	// Files compressed with gzip always start with the magic bytes 0x1f 0x8b.
-	return len(b) >= 2 && b[0] == 0x1f && b[1] == 0x8b
+	return bytes.HasPrefix(b, []byte{0x1f, 0x8b})
 }
 
 func isZstd(b []byte) bool {
 	// Files compressed with zstd always start with the magic bytes 0x28 0xb5 0x2f 0xfd.
-	return len(b) >= 4 && b[0] == 0x28 && b[1] == 0xb5 && b[2] == 0x2f && b[3] == 0xfd
+	return bytes.HasPrefix(b, []byte{0x28, 0xb5, 0x2f, 0xfd})
 }
 
 func loadFile(ctx context.Context, opts Option) ([]byte, error) {
