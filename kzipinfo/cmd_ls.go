@@ -5,17 +5,21 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"flag"
 	"fmt"
 	"os"
+	"slices"
 	"text/tabwriter"
 
 	"github.com/google/subcommands"
 	"kythe.io/kythe/go/platform/kzip"
 )
 
-type lsCmd struct{}
+type lsCmd struct {
+	sort string
+}
 
 func (lsCmd) Name() string     { return "ls" }
 func (lsCmd) Synopsis() string { return "Lists all compilation units in a kzip file." }
@@ -24,11 +28,17 @@ func (lsCmd) Usage() string {
 Lists all compilation units in a kzip file.
 `
 }
-func (lsCmd) SetFlags(f *flag.FlagSet) {}
+func (c *lsCmd) SetFlags(f *flag.FlagSet) {
+	f.StringVar(&c.sort, "sort", "", "Sort order for compilation units. Valid values: 'inputs'.")
+}
 
-func (c lsCmd) Execute(ctx context.Context, f *flag.FlagSet, args ...interface{}) subcommands.ExitStatus {
+func (c *lsCmd) Execute(ctx context.Context, f *flag.FlagSet, args ...interface{}) subcommands.ExitStatus {
 	if f.NArg() != 1 {
 		fmt.Fprintf(os.Stderr, "Error: No kzip file was provided.\n\nUsage: %s\n", c.Usage())
+		return subcommands.ExitUsageError
+	}
+	if c.sort != "" && c.sort != "inputs" {
+		fmt.Fprintf(os.Stderr, "Error: Invalid sort value %q. Valid values: 'inputs'.\n", c.sort)
 		return subcommands.ExitUsageError
 	}
 	kzipPath := f.Arg(0)
@@ -57,17 +67,19 @@ func (c lsCmd) Execute(ctx context.Context, f *flag.FlagSet, args ...interface{}
 		return subcommands.ExitFailure
 	}
 
-	fmt.Printf("Compilation Units in %s:\n", kzipPath)
-	tw := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "Digest\tLanguage\tPrimary Source\tInputs\tOutput Key")
+	type unitInfo struct {
+		digest        string
+		lang          string
+		primarySource string
+		reqInputs     int
+		outputKey     string
+	}
+	var units []unitInfo
 
-	count := 0
 	scanErr := reader.Scan(func(unit *kzip.Unit) error {
-		count++
 		lang := "unknown"
 		primarySource := "n/a"
 		outputKey := "n/a"
-
 		reqInputs := 0
 		if unit.Proto != nil {
 			if vname := unit.Proto.GetVName(); vname != nil {
@@ -79,8 +91,13 @@ func (c lsCmd) Execute(ctx context.Context, f *flag.FlagSet, args ...interface{}
 			outputKey = unit.Proto.GetOutputKey()
 			reqInputs = len(unit.Proto.GetRequiredInput())
 		}
-
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%d\t%s\n", unit.Digest, lang, primarySource, reqInputs, outputKey)
+		units = append(units, unitInfo{
+			digest:        unit.Digest,
+			lang:          lang,
+			primarySource: primarySource,
+			reqInputs:     reqInputs,
+			outputKey:     outputKey,
+		})
 		return nil
 	})
 
@@ -88,11 +105,26 @@ func (c lsCmd) Execute(ctx context.Context, f *flag.FlagSet, args ...interface{}
 		fmt.Fprintf(os.Stderr, "Error scanning kzip: %v\n", scanErr)
 		return subcommands.ExitFailure
 	}
+
+	if c.sort == "inputs" {
+		slices.SortStableFunc(units, func(i, j unitInfo) int {
+			return cmp.Compare(i.reqInputs, j.reqInputs)
+		})
+	}
+
+	fmt.Printf("Compilation Units in %s:\n", kzipPath)
+	tw := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(tw, "Digest\tLanguage\tPrimary Source\tInputs\tOutput Key")
+
+	for _, u := range units {
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%d\t%s\n", u.digest, u.lang, u.primarySource, u.reqInputs, u.outputKey)
+	}
+
 	err = tw.Flush()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error flushing: %v\n", err)
 	}
-	fmt.Printf("\nFound %d compilation units.\n", count)
+	fmt.Printf("\nFound %d compilation units.\n", len(units))
 
 	return subcommands.ExitSuccess
 }

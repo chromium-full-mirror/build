@@ -18,7 +18,7 @@ func main() {
 	subcommands.Register(subcommands.FlagsCommand(), "")
 	subcommands.Register(subcommands.CommandsCommand(), "")
 	subcommands.Register(infoCmd{}, "")
-	subcommands.Register(lsCmd{}, "")
+	subcommands.Register(&lsCmd{}, "")
 	subcommands.Register(showCmd{}, "")
 	subcommands.Register(filesCmd{}, "")
 	subcommands.Register(catCmd{}, "")
