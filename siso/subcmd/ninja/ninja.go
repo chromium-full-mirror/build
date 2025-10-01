@@ -61,7 +61,6 @@ import (
 	"go.chromium.org/build/siso/reapi/digest"
 	"go.chromium.org/build/siso/reapi/merkletree"
 	"go.chromium.org/build/siso/signals"
-	"go.chromium.org/build/siso/subcmd/ninja/ninjalog"
 	"go.chromium.org/build/siso/toolsupport/artfsutil"
 	"go.chromium.org/build/siso/toolsupport/cogutil"
 	"go.chromium.org/build/siso/toolsupport/ninjautil"
@@ -74,6 +73,14 @@ import (
 // File name of siso metadata file.
 // This file is read by ninjalog_uploader.py, in order to populate metadata.
 const sisoMetadataFilename = "siso_metadata.json"
+
+// SisoMetadata contains metadata that is populated directly by siso.
+type SisoMetadata struct {
+	// SisoVersion is the SemVer of siso.
+	SisoVersion string `json:"siso_version"`
+	// StartTime is the time that the ninja build started.
+	StartTime time.Time `json:"start_time"`
+}
 
 const ninjaUsage = `build the requested targets as ninja.
 
@@ -570,8 +577,6 @@ func (c *Command) run(ctx context.Context) (stats build.Stats, err error) {
 
 	projectID := c.reopt.UpdateProjectID(c.projectID)
 
-	var sisoMetadata ninjalog.SisoMetadata
-
 	var credential cred.Cred
 	if !c.offline && (c.reopt.NeedCred() || c.enableCloudLogging || c.enableResultstore || c.enableCloudProfiler || c.enableCloudTrace || c.enableCloudMonitoring) {
 		// TODO: can be async until cred is needed?
@@ -610,7 +615,7 @@ func (c *Command) run(ctx context.Context) (stats build.Stats, err error) {
 	properties.Add("memgc", info)
 
 	clog.Infof(ctx, "siso version %s", c.version)
-	sisoMetadata.SisoVersion = c.version
+
 	ver, err := version.Current()
 	if err != nil {
 		clog.Warningf(ctx, "version err: %v", err)
@@ -990,7 +995,10 @@ func (c *Command) run(ctx context.Context) (stats build.Stats, err error) {
 		clog.Warningf(ctx, "failed to remove %s: %v", failedTargetsFilename, err)
 	}
 
-	j, err := json.Marshal(sisoMetadata)
+	j, err := json.Marshal(SisoMetadata{
+		SisoVersion: c.version,
+		StartTime:   c.started,
+	})
 	if err != nil {
 		return stats, err
 	}
