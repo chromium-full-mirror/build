@@ -18,6 +18,7 @@ import (
 	"math"
 	"os"
 	"os/exec"
+	"os/user"
 	"path/filepath"
 	"runtime"
 	"runtime/debug"
@@ -2222,7 +2223,14 @@ func gcinfo() string {
 }
 
 func (c *Command) invocation(ctx context.Context, buildID, projectID, execRoot string, properties resultstore.Properties) *rspb.Invocation {
-	username := lookupUser(ctx)
+	var username string
+	currentUser, err := user.Current()
+	if err != nil {
+		clog.Warningf(ctx, "failed to get current user: %v", err)
+		username = "unknownuser"
+	} else {
+		username = currentUser.Username
+	}
 	hostname, err := os.Hostname()
 	if err != nil {
 		clog.Warningf(ctx, "failed to get hostname: %v", err)
