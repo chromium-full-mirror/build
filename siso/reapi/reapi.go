@@ -138,7 +138,7 @@ func (o *Option) RegisterFlags(fs *flag.FlagSet, envs map[string]string) {
 }
 
 func isGoogleRBE(address string) bool {
-	return strings.HasSuffix(address, "remotebuildexecution.googleapis.com:443")
+	return strings.HasSuffix(address, "remotebuildexecution.googleapis.com:443") || strings.HasSuffix(address, "remotebuildexecution.sandbox.googleapis.com:443")
 }
 
 func (o *Option) String() string {
@@ -148,8 +148,11 @@ func (o *Option) String() string {
 	addr := fmt.Sprintf("reapi %q", o.Address)
 	if isGoogleRBE(o.Address) {
 		addr = "RBE"
-		if strings.HasSuffix(o.Address, "-remotebuildexecution.googleapis.com:443") {
+		switch {
+		case strings.HasSuffix(o.Address, "-remotebuildexecution.googleapis.com:443"):
 			addr = fmt.Sprintf("RBE(%s)", strings.TrimSuffix(o.Address, "-remotebuildexecution.googleapis.com:443"))
+		case strings.HasSuffix(o.Address, "-remotebuildexecution.sandbox.googleapis.com:443"):
+			addr = fmt.Sprintf("RBE(%s sandbox)", strings.TrimSuffix(o.Address, "-remotebuildexecution.sandbox.googleapis.com:443"))
 		}
 	}
 	return fmt.Sprintf("%s instance %q", addr, o.Instance)
