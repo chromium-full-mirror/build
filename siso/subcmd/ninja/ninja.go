@@ -80,6 +80,8 @@ type SisoMetadata struct {
 	SisoVersion string `json:"siso_version"`
 	// StartTime is the time that the ninja build started.
 	StartTime time.Time `json:"start_time"`
+	// MetricsLabels are arbitrary labels for the build.
+	MetricsLabels map[string]string `json:"metrics_labels,omitempty"`
 }
 
 const ninjaUsage = `build the requested targets as ninja.
@@ -675,17 +677,16 @@ func (c *Command) run(ctx context.Context) (stats build.Stats, err error) {
 	if c.enableCloudProfiler {
 		c.initCloudProfiler(ctx, projectID, credential)
 	}
-	if c.enableCloudMonitoring && c.reproxyAddr == "" {
-		metricsLabels := make(map[string]string)
-		for _, l := range strings.Split(c.metricsLabels, ",") {
-			kv := strings.Split(l, "=")
-			if len(kv) != 2 {
-				clog.Warningf(ctx, "metrics label must be in the form key=value. got %q", l)
-				continue
-			}
-			metricsLabels[kv[0]] = kv[1]
+	metricsLabels := make(map[string]string)
+	for _, l := range strings.Split(c.metricsLabels, ",") {
+		kv := strings.Split(l, "=")
+		if len(kv) != 2 {
+			clog.Warningf(ctx, "metrics label must be in the form key=value. got %q", l)
+			continue
 		}
-
+		metricsLabels[kv[0]] = kv[1]
+	}
+	if c.enableCloudMonitoring && c.reproxyAddr == "" {
 		metricsProject := projectID
 		if c.metricsProject != "" {
 			metricsProject = c.metricsProject
@@ -995,10 +996,12 @@ func (c *Command) run(ctx context.Context) (stats build.Stats, err error) {
 		clog.Warningf(ctx, "failed to remove %s: %v", failedTargetsFilename, err)
 	}
 
-	j, err := json.Marshal(SisoMetadata{
-		SisoVersion: c.version,
-		StartTime:   c.started,
-	})
+	sisoMetadata := SisoMetadata{
+		SisoVersion:   c.version,
+		StartTime:     c.started,
+		MetricsLabels: metricsLabels,
+	}
+	j, err := json.Marshal(sisoMetadata)
 	if err != nil {
 		return stats, err
 	}
@@ -1220,7 +1223,7 @@ func (c *Command) SetFlags(flagSet *flag.FlagSet) {
 	flagSet.BoolVar(&c.enableCloudTrace, "enable_cloud_trace", false, "enable cloud trace")
 	flagSet.BoolVar(&c.enableCloudMonitoring, "enable_cloud_monitoring", false, "enable cloud monitoring")
 	flagSet.BoolVar(&c.enableBuildNinjaFilesUpload, "enable_build_ninja_files_upload", true, "enable Build Ninja files upload to RBE-CAS")
-	flagSet.StringVar(&c.metricsLabels, "metrics_labels", os.Getenv("RBE_metrics_labels"), "comma-separated arbitrary key value pairs in the form key=value, which are added to cloud monitoring metrics.")
+	flagSet.StringVar(&c.metricsLabels, "metrics_labels", os.Getenv("RBE_metrics_labels"), "comma-separated arbitrary key value pairs in the form key=value, which are added to cloud monitoring metrics and siso_metadata.json.")
 	flagSet.StringVar(&c.metricsProject, "metrics_project", os.Getenv("RBE_metrics_project"), "override Cloud Monitoring GCP project where Siso sends action and build metrics.")
 
 	flagSet.StringVar(&c.subtool, "t", "", "run a subtool (use '-t list' to list subtools)")
