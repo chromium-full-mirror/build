@@ -81,6 +81,7 @@ to define default of `rewrap`'s limit for Reclient compatibility.
 `SISO_CREDENTIAL_HELPER` sets the default value of `-credential_helper`.
 It specifies a path to a credential helper program.
 See https://github.com/EngFlow/credential-helper-spec/blob/main/spec.md
+See also [Siso authentication](./auth.md).
 
 ### RBE_remote_disabled
 

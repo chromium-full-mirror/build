@@ -100,6 +100,10 @@ Use "siso flags" to display all flags.
 	}
 	flag.StringVar(&credHelper, "credential_helper", credHelper, `path to a credential helper.
     see https://github.com/EngFlow/credential-helper-spec/blob/main/spec.md
+    "luci-auth" uses luci-auth.
+    "gcloud" uses gcloud.
+    "google-application-default" or "" uses Google Application Default Credentials.
+    "mTLS" disables per RPC credentials.
     environment variable SISO_CREDENTIAL_HELPER sets default value.`)
 
 	var printVersion bool

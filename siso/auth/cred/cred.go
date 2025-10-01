@@ -44,8 +44,13 @@ type Options struct {
 
 // AuthOpts returns the LUCI auth options that Siso uses.
 func AuthOpts(credHelperPath string, args ...string) Options {
-	if credHelperPath == "mTLS" {
+	switch credHelperPath {
+	case "mTLS":
 		return Options{Type: "mTLS"}
+	case "google-application-default":
+		return Options{Type: "google-application-default"}
+	case "":
+		return Options{}
 	}
 	var perRPCCredentials credentials.PerRPCCredentials
 	var tokenSource oauth2.TokenSource
@@ -71,6 +76,9 @@ func AuthOpts(credHelperPath string, args ...string) Options {
 // New creates a Cred using LUCI auth's default options.
 // It ensures that the user is logged in and returns an error otherwise.
 func New(ctx context.Context, uri string, opts Options) (Cred, error) {
+	if opts.Type == "" {
+		return Cred{}, fmt.Errorf(`empty credential helper. need to set credential helper path, "luci-auth", "gcloud" or "google-application-default" in SISO_CREDENTIAL_HELPER`)
+	}
 	var t string
 	if opts.TokenSource == nil {
 		return Cred{Type: opts.Type}, nil

@@ -15,6 +15,8 @@ no TLS, no auth.  use it only in a closed network.
 Set `--reapi_tls_client_auth_cert` and `--reapi_tls_client_auth_key` flags,
 or `RBE_tls_client_auth_cert` and `RBE_tls_client_auth_key` env vars.
 
+It will set `SISO_CREDENTIAL_HELPER=mTLS` to disable per RPC credentials.
+
 ### Non-standard TLS CA certs
 
 Set `--reapi_tls_ca_cert` flag or `RBE_tls_ca_cert` env var.
@@ -34,7 +36,8 @@ the bazel cred helper spec.
 
 ### Luci-auth
 
-Siso supports the `luci-auth` command line tool. Siso uses scopes
+Siso supports the `luci-auth` command line tool by
+`SISO_CREDENTIAL_HELPER=luci-auth`. Siso uses scopes
 `cloud-platform` and `userinfo.email`, or same scopes for `luci-auth context`
 (i.e. `--scopes-context`)
 
@@ -50,8 +53,13 @@ In this case, try `gcloud` instead.
 ### Gcloud
 
 Siso supports the [gcloud](https://cloud.google.com/sdk/gcloud) command line
-tool.  need to [install gcloud
+tool by `SISO_CREDENTIAL_HELPER=gcloud`.  need to [install gcloud
 sdk](https://cloud.google.com/sdk/gcloud#download_and_install_the).
+
+### Google Application Default Credentials
+
+Siso supports [Google Application Default Credentials](https://cloud.google.com/docs/authentication/application-default-credentials)
+by `SISO_CREDENTIAL_HELPER=google-application-default`.
 
 ## Note
 
@@ -61,8 +69,8 @@ profiler, cloud tracing, resultstore etc. So,credential helper should return
 valid Google OAuth2 access token for `{"uri":"https://*.googleapis.com/"}`, if
 you use these cloud services.
 
-`luci-auth` and `gcloud` are also for Google platform, so it can be used for
-Google RBE and Google cloud platform.
+`luci-auth`, `gcloud` and `google-application-default` are also for Google
+platform, so it can be used for Google RBE and Google cloud platform.
 
 If you're using a non-Google RE API backend, you'll need to use a credential
 helper (or insecure, mTLS) for your RE API backend.
