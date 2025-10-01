@@ -73,7 +73,7 @@ import (
 
 // File name of siso metadata file.
 // This file is read by ninjalog_uploader.py, in order to populate metadata.
-const sisoMetadataFilename = ".siso_metadata.json"
+const sisoMetadataFilename = "siso_metadata.json"
 
 const ninjaUsage = `build the requested targets as ninja.
 
