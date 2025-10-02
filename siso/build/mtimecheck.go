@@ -10,6 +10,9 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"path"
+	"path/filepath"
+	"syscall"
 	"time"
 
 	log "github.com/golang/glog"
@@ -247,16 +250,59 @@ func inputMtime(ctx context.Context, b *Builder, stepDef StepDef) (string, time.
 			mtime = ts.mtime
 			changed = ts.changed
 		} else {
-			fi, err := b.hashFS.Stat(ctx, b.path.ExecRoot, in)
-			if err != nil {
-				retErr = fmt.Errorf("missing input %s: %w", in, err)
+			const maxSymlinks = 40
+			root := b.path.ExecRoot
+			fname := in
+			resolved := false
+			for range maxSymlinks {
+				fi, err := b.hashFS.Stat(ctx, root, fname)
+				if err != nil {
+					retErr = fmt.Errorf("missing input %s (%s): %w", in, fname, err)
+					b.targets.Store(in, targetState{
+						dirtyErr: retErr,
+					})
+					return false
+				}
+				fmt.Printf("mtime %q %v\n", fname, fi.ModTime())
+				if mtime.Before(fi.ModTime()) {
+					mtime = fi.ModTime()
+				}
+				if !changed {
+					changed = fi.IsChanged()
+				}
+				if len(fi.CmdHash()) > 0 {
+					// generated file. not resolve symlink
+					resolved = true
+					break
+				}
+				target := fi.Target()
+				if target == "" {
+					// not symlink.
+					resolved = true
+					break
+				}
+				if filepath.IsAbs(target) {
+					root = ""
+					clog.Infof(ctx, "input symlink %q -> %q", fname, target)
+					fname = target
+					continue
+				}
+				target = path.Join(path.Dir(fname), target)
+				if !filepath.IsLocal(target) {
+					// go outside of exec root.
+					target = path.Join(root, target)
+					root = ""
+				}
+				clog.Infof(ctx, "input symlink %q -> %q", fname, target)
+				fname = target
+			}
+			if !resolved {
+				retErr = fmt.Errorf("missing input %s: %w", in, syscall.ELOOP)
 				b.targets.Store(in, targetState{
 					dirtyErr: retErr,
 				})
 				return false
 			}
-			mtime = fi.ModTime()
-			changed = fi.IsChanged()
 			b.targets.Store(in, targetState{
 				mtime:   mtime,
 				changed: changed,

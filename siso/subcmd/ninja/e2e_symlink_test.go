@@ -5,6 +5,7 @@
 package ninja
 
 import (
+	"bytes"
 	"context"
 	"os"
 	"path/filepath"
@@ -92,4 +93,137 @@ func TestBuild_Symlink(t *testing.T) {
 	if stats.Skipped != stats.Total {
 		t.Errorf("stats.Skipped=%d Total=%d", stats.Skipped, stats.Total)
 	}
+}
+
+// Test symlink source uses mtime of symlink's target.
+func TestBuild_SymlinkSource(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink not available on windows")
+		return
+	}
+	ctx := t.Context()
+	dir := t.TempDir()
+
+	ninja := func(t *testing.T) (build.Stats, error) {
+		t.Helper()
+		opt, graph, cleanup := setupBuild(ctx, t, dir, hashfs.Option{
+			StateFile: ".siso_fs_state",
+		})
+		defer cleanup()
+		return runNinja(ctx, "build.ninja", graph, opt, nil, runNinjaOpts{})
+	}
+	setupFiles(t, dir, t.Name(), nil)
+
+	err := os.Symlink("input_file1", filepath.Join(dir, "input_symlink"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	stats, err := ninja(t)
+	if err != nil {
+		t.Fatalf("ninja %v: want nil err", err)
+	}
+	if stats.Done != stats.Total {
+		t.Errorf("stats done=%d total=%d", stats.Done, stats.Total)
+	}
+
+	input1, err := os.ReadFile(filepath.Join(dir, "input_file1"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	input2, err := os.ReadFile(filepath.Join(dir, "input_file2"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := os.ReadFile(filepath.Join(dir, "out/siso/out"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(input1, out) {
+		t.Errorf("unexpected out: got:\n%s\nwant:\n%s", out, input1)
+	}
+
+	t.Logf("-- check confirm no-op")
+	stats, err = ninja(t)
+	if err != nil {
+		t.Fatalf("ninja %v; want nil err", err)
+	}
+	if stats.Skipped != stats.Total {
+		t.Errorf("stats.Skipped=%d Total=%d", stats.Skipped, stats.Total)
+	}
+
+	touchFile(t, dir, "input_file1")
+	t.Logf("-- check action triggered if input_symlink target is updated")
+	stats, err = ninja(t)
+	if err != nil {
+		t.Fatalf("ninja %v; want nil err", err)
+	}
+	if stats.Skipped != 0 {
+		t.Errorf("not triggered? stats=%#v", stats)
+	}
+	out, err = os.ReadFile(filepath.Join(dir, "out/siso/out"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(input1, out) {
+		t.Errorf("unexpected out: got:\n%s\nwant:\n%s", out, input1)
+	}
+
+	modifyFile(t, dir, "input_file1", func(data []byte) []byte {
+		return append(data, []byte("modified\n")...)
+	})
+	input1Modified, err := os.ReadFile(filepath.Join(dir, "input_file1"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("-- check action triggered if input_symlink target file is modified")
+	stats, err = ninja(t)
+	if err != nil {
+		t.Fatalf("ninja %v; want nil err", err)
+	}
+	if stats.Skipped != 0 {
+		t.Errorf("not triggered? stats=%#v", stats)
+	}
+	out, err = os.ReadFile(filepath.Join(dir, "out/siso/out"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(input1Modified, out) {
+		t.Errorf("unexpected out: got:\n%s\nwant:\n%s", out, input1Modified)
+	}
+
+	t.Logf("-- check action triggered if symlink is updated")
+	lastTimestamp := time.Now()
+	for {
+		err = os.Remove(filepath.Join(dir, "input_symlink"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		err = os.Symlink("input_file2", filepath.Join(dir, "input_symlink"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		fi, err := os.Lstat(filepath.Join(dir, "input_symlink"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if fi.ModTime().After(lastTimestamp) {
+			break
+		}
+	}
+	stats, err = ninja(t)
+	if err != nil {
+		t.Fatalf("ninja %v; want nil err", err)
+	}
+	if stats.Skipped != 0 {
+		t.Errorf("not triggered? stats=%#v", stats)
+	}
+	out, err = os.ReadFile(filepath.Join(dir, "out/siso/out"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(input2, out) {
+		t.Errorf("unexpected out: got:\n%s\nwant:\n%s", out, input2)
+	}
+
 }
