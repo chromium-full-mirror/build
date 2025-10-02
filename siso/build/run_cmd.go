@@ -61,6 +61,9 @@ func (b *Builder) actionStarted(step *Step) {
 	}
 }
 
-func (b *Builder) actionFinished(step *Step) {
+func (b *Builder) actionFinished(ctx context.Context, step *Step) {
+	if ctx.Err() != nil {
+		return
+	}
 	b.statusReporter.BuildActionFinished(step)
 }
