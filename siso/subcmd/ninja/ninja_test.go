@@ -22,6 +22,20 @@ import (
 	"go.chromium.org/build/siso/toolsupport/ninjautil"
 )
 
+// tempDir returns real path of temp dir.
+// mac uses /tmp -> private/tmp symlink, so TempDir may contains
+// symlink in the path, which confuses hashfs, so use EvalSymlinks
+// to make it real path.
+func tempDir(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	dir, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
 func setupFiles(t *testing.T, dir, name string, deletes []string) {
 	t.Helper()
 	wd, err := os.Getwd()

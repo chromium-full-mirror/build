@@ -20,7 +20,7 @@ import (
 // Test schedule for abs path correctly. b/354792946
 func TestBuild_Local_AbsPath(t *testing.T) {
 	ctx := context.Background()
-	topdir := t.TempDir()
+	topdir := tempDir(t)
 
 	dir := filepath.Join(topdir, "src")
 	err := os.MkdirAll(dir, 0755)
@@ -115,7 +115,7 @@ build build.ninja: phony
 
 func TestBuild_Local_Inputs(t *testing.T) {
 	ctx := context.Background()
-	dir := t.TempDir()
+	dir := tempDir(t)
 
 	ninja := func(t *testing.T) (build.Stats, error) {
 		t.Helper()

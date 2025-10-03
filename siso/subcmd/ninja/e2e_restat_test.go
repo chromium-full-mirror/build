@@ -30,7 +30,7 @@ import (
 //	actions.
 func TestBuild_Restat(t *testing.T) {
 	ctx := context.Background()
-	dir := t.TempDir()
+	dir := tempDir(t)
 
 	exists := func(fname string) error {
 		_, err := os.Stat(filepath.Join(dir, "out/siso", fname))
@@ -183,7 +183,7 @@ func TestBuild_Restat(t *testing.T) {
 // Test restat=1 behavior when restat_content=true is set
 func TestBuild_Restat_RestatContent(t *testing.T) {
 	ctx := context.Background()
-	dir := t.TempDir()
+	dir := tempDir(t)
 
 	exists := func(fname string) error {
 		_, err := os.Stat(filepath.Join(dir, "out/siso", fname))
@@ -337,7 +337,7 @@ func TestBuild_Restat_RestatContent(t *testing.T) {
 // some output may keep mtime, but some output was updated.
 func TestBuild_RestatMultiout(t *testing.T) {
 	ctx := context.Background()
-	dir := t.TempDir()
+	dir := tempDir(t)
 
 	exists := func(fname string) error {
 		_, err := os.Stat(filepath.Join(dir, "out/siso", fname))

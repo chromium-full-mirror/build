@@ -26,7 +26,7 @@ func TestBuild_MacOSXSDK(t *testing.T) {
 		return
 	}
 	ctx := context.Background()
-	dir := t.TempDir()
+	dir := tempDir(t)
 
 	ninja := func(t *testing.T, refake *reapitest.Fake) (build.Stats, error) {
 		t.Helper()

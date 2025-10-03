@@ -19,7 +19,7 @@ import (
 
 func TestBuild_MultiOut(t *testing.T) {
 	ctx := context.Background()
-	dir := t.TempDir()
+	dir := tempDir(t)
 
 	setupFiles(t, dir, t.Name(), nil)
 	opt, graph, cleanup := setupBuild(ctx, t, dir, hashfs.Option{})
@@ -45,7 +45,7 @@ func TestBuild_MultiOut(t *testing.T) {
 // Test step that outputs multiple targets correctly generates the outputs.
 func TestBuild_MultiOut_Remote(t *testing.T) {
 	ctx := context.Background()
-	dir := t.TempDir()
+	dir := tempDir(t)
 
 	ninja := func(t *testing.T, refake *reapitest.Fake) (build.Stats, error) {
 		t.Helper()

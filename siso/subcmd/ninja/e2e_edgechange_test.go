@@ -18,7 +18,7 @@ import (
 
 func TestBuild_EdgeChange(t *testing.T) {
 	ctx := context.Background()
-	dir := t.TempDir()
+	dir := tempDir(t)
 
 	ninja := func(t *testing.T) (build.Stats, error) {
 		t.Helper()

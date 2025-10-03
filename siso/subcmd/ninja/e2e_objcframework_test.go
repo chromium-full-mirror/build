@@ -20,7 +20,7 @@ import (
 // test precomputed tree for sysroot/frameworks.
 func TestBuild_ObjcxxFrameworks(t *testing.T) {
 	ctx := context.Background()
-	dir := t.TempDir()
+	dir := tempDir(t)
 
 	ninja := func(t *testing.T, refake *reapitest.Fake) (build.Stats, error) {
 		t.Helper()

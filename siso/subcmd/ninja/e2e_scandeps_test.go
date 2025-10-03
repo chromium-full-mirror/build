@@ -20,7 +20,7 @@ import (
 
 func TestBuild_ScanDeps_ClangCL_FI(t *testing.T) {
 	ctx := context.Background()
-	dir := t.TempDir()
+	dir := tempDir(t)
 
 	ninja := func(t *testing.T, fakere *reapitest.Fake) (build.Stats, error) {
 		t.Helper()
@@ -80,7 +80,7 @@ func TestBuild_ScanDeps_ClangCL_FI(t *testing.T) {
 
 func TestBuild_ScanDeps_Timeout(t *testing.T) {
 	ctx := context.Background()
-	dir := t.TempDir()
+	dir := tempDir(t)
 
 	ninja := func(t *testing.T, fakere *reapitest.Fake) (build.Stats, error) {
 		t.Helper()

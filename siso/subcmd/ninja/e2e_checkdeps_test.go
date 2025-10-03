@@ -17,7 +17,7 @@ import (
 
 func TestBuild_CheckDeps(t *testing.T) {
 	ctx := context.Background()
-	dir := t.TempDir()
+	dir := tempDir(t)
 
 	ninja := func(t *testing.T, target string, w io.Writer) (build.Stats, error) {
 		t.Helper()

@@ -21,7 +21,7 @@ import (
 
 func TestBuild_EdgeRule(t *testing.T) {
 	ctx := context.Background()
-	dir := t.TempDir()
+	dir := tempDir(t)
 
 	ninja := func(t *testing.T, ds dataSource) (build.Stats, error) {
 		t.Helper()
@@ -235,7 +235,7 @@ func TestBuild_EdgeRule(t *testing.T) {
 
 func TestBuild_EdgeRule_solibs(t *testing.T) {
 	ctx := context.Background()
-	dir := t.TempDir()
+	dir := tempDir(t)
 
 	ninja := func(t *testing.T, ds dataSource) (build.Stats, error) {
 		t.Helper()
@@ -341,7 +341,7 @@ func TestBuild_EdgeRule_solibs(t *testing.T) {
 
 func TestBuild_EdgeRule_solibs_recursive(t *testing.T) {
 	ctx := context.Background()
-	dir := t.TempDir()
+	dir := tempDir(t)
 
 	ninja := func(t *testing.T, ds dataSource) (build.Stats, error) {
 		t.Helper()
@@ -448,7 +448,7 @@ func TestBuild_EdgeRule_solibs_recursive(t *testing.T) {
 
 func TestBuild_EdgeRule_stamp_solibs(t *testing.T) {
 	ctx := context.Background()
-	dir := t.TempDir()
+	dir := tempDir(t)
 
 	ninja := func(t *testing.T, ds dataSource) (build.Stats, error) {
 		t.Helper()

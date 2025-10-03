@@ -16,7 +16,7 @@ import (
 
 func TestBuild_Validations(t *testing.T) {
 	ctx := context.Background()
-	dir := t.TempDir()
+	dir := tempDir(t)
 
 	ninja := func(t *testing.T) (build.Stats, error) {
 		t.Helper()
@@ -105,7 +105,7 @@ func TestBuild_Validations(t *testing.T) {
 
 func TestBuild_ValidationsDependsOnOutput(t *testing.T) {
 	ctx := context.Background()
-	dir := t.TempDir()
+	dir := tempDir(t)
 
 	ninja := func(t *testing.T) (build.Stats, error) {
 		t.Helper()
@@ -194,7 +194,7 @@ func TestBuild_ValidationsDependsOnOutput(t *testing.T) {
 
 func TestBuild_ValidationsNested(t *testing.T) {
 	ctx := context.Background()
-	dir := t.TempDir()
+	dir := tempDir(t)
 
 	ninja := func(t *testing.T) (build.Stats, error) {
 		t.Helper()

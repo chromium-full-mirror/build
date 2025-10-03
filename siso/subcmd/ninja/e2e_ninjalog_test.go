@@ -17,7 +17,7 @@ import (
 
 func TestBuild_NinjaLog(t *testing.T) {
 	ctx := context.Background()
-	dir := t.TempDir()
+	dir := tempDir(t)
 
 	ninja := func(t *testing.T) (build.Stats, error) {
 		t.Helper()

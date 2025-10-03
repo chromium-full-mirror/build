@@ -20,7 +20,7 @@ import (
 
 func TestBuild_InvalidatedFile(t *testing.T) {
 	ctx := context.Background()
-	dir := t.TempDir()
+	dir := tempDir(t)
 
 	ninja := func(t *testing.T) (build.Stats, error) {
 		t.Helper()

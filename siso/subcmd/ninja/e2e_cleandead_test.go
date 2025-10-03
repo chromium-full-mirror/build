@@ -18,7 +18,7 @@ import (
 
 func TestBuild_Cleandead(t *testing.T) {
 	ctx := context.Background()
-	dir := t.TempDir()
+	dir := tempDir(t)
 
 	copy := func(t *testing.T, src, dst string) {
 		t.Helper()
@@ -104,8 +104,8 @@ func TestBuild_Cleandead(t *testing.T) {
 
 func TestBuild_CleandeadPreserveNonOut(t *testing.T) {
 	ctx := context.Background()
-	dir := t.TempDir()
-	sdkDir := filepath.Join(t.TempDir(), "sdk")
+	dir := tempDir(t)
+	sdkDir := filepath.Join(tempDir(t), "sdk")
 	err := os.MkdirAll(sdkDir, 0755)
 	if err != nil {
 		t.Fatal(err)

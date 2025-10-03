@@ -20,7 +20,7 @@ import (
 
 func TestBuild_RemovedArtifact(t *testing.T) {
 	ctx := context.Background()
-	dir := t.TempDir()
+	dir := tempDir(t)
 
 	func() {
 		t.Logf("first build")
@@ -97,7 +97,7 @@ func TestBuild_RemovedArtifact(t *testing.T) {
 
 func TestBuild_RemovedArtifactOutputLocalMinimum(t *testing.T) {
 	ctx := context.Background()
-	dir := t.TempDir()
+	dir := tempDir(t)
 
 	ninja := func(t *testing.T, refake *reapitest.Fake) (build.Stats, error) {
 		t.Helper()

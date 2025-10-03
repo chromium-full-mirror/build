@@ -27,7 +27,7 @@ import (
 // tools/cp has is_executable even from windows to make it executable.
 func TestBuild_CrossWindows_Remote(t *testing.T) {
 	ctx := context.Background()
-	dir := t.TempDir()
+	dir := tempDir(t)
 
 	ninja := func(t *testing.T, refake *reapitest.Fake) (build.Stats, error) {
 		t.Helper()
@@ -87,7 +87,7 @@ func TestBuild_CrossWindows_Remote(t *testing.T) {
 // tools/cp is passed via toolchain_inputs from windows to make it executable.
 func TestBuild_CrossWindows_Reproxy(t *testing.T) {
 	ctx := context.Background()
-	dir := t.TempDir()
+	dir := tempDir(t)
 
 	ninja := func(t *testing.T, refake *reproxytest.Fake) (build.Stats, error) {
 		t.Helper()

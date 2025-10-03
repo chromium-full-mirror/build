@@ -14,7 +14,7 @@ import (
 
 func TestBuild_PhonyOutput(t *testing.T) {
 	ctx := context.Background()
-	dir := t.TempDir()
+	dir := tempDir(t)
 
 	ninja := func(t *testing.T) (build.Stats, error) {
 		t.Helper()
@@ -47,7 +47,7 @@ func TestBuild_PhonyOutput(t *testing.T) {
 
 func TestBuild_PhonyOutputDepError(t *testing.T) {
 	ctx := context.Background()
-	dir := t.TempDir()
+	dir := tempDir(t)
 
 	ninja := func(t *testing.T) (build.Stats, error) {
 		t.Helper()
@@ -68,7 +68,7 @@ func TestBuild_PhonyOutputDepError(t *testing.T) {
 
 func TestBuild_PhonyOutputOrderOnly(t *testing.T) {
 	ctx := context.Background()
-	dir := t.TempDir()
+	dir := tempDir(t)
 
 	ninja := func(t *testing.T) (build.Stats, error) {
 		t.Helper()

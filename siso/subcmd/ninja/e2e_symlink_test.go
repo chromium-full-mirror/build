@@ -24,7 +24,7 @@ func TestBuild_Symlink(t *testing.T) {
 		return
 	}
 	ctx := context.Background()
-	dir := t.TempDir()
+	dir := tempDir(t)
 
 	ninja := func(t *testing.T) (build.Stats, error) {
 		t.Helper()
@@ -102,7 +102,7 @@ func TestBuild_SymlinkSource(t *testing.T) {
 		return
 	}
 	ctx := t.Context()
-	dir := t.TempDir()
+	dir := tempDir(t)
 
 	ninja := func(t *testing.T) (build.Stats, error) {
 		t.Helper()

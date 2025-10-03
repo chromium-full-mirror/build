@@ -20,7 +20,7 @@ import (
 // Test rebuild build.ninja (gn gen) behavior.
 func TestBuild_GNGen(t *testing.T) {
 	ctx := context.Background()
-	dir := t.TempDir()
+	dir := tempDir(t)
 
 	run := func(args ...string) error {
 		cmd := exec.CommandContext(ctx, "python3", args...)

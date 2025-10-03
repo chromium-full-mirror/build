@@ -95,11 +95,7 @@ func TestBuild_Copy(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			tdir := t.TempDir()
-			dir, err := filepath.EvalSymlinks(tdir)
-			if err != nil {
-				t.Fatalf("evalsymlinks(%q)=%q, %v; want nil err", tdir, dir, err)
-			}
+			dir := tempDir(t)
 			setupFiles(t, dir, tname, nil)
 			stats, err := ninja(t, dir, tc.outputLocal)
 			if err != nil {
@@ -206,13 +202,9 @@ func TestBuild_CopyLocalOut(t *testing.T) {
 		return string(bytes.TrimSpace(v[:i]))
 	}
 
-	tdir := t.TempDir()
-	dir, err := filepath.EvalSymlinks(tdir)
-	if err != nil {
-		t.Fatalf("evalsymlinks(%q)=%q, %v; want nil err", tdir, dir, err)
-	}
+	dir := tempDir(t)
 	setupFiles(t, dir, t.Name(), nil)
-	err = ninja(t, dir)
+	err := ninja(t, dir)
 	if err != nil {
 		t.Fatalf("ninja %v; want nil err", err)
 	}
@@ -270,11 +262,7 @@ func TestBuild_CopyBundleDataRemovedFile(t *testing.T) {
 		return stats, err
 	}
 
-	tdir := t.TempDir()
-	dir, err := filepath.EvalSymlinks(tdir)
-	if err != nil {
-		t.Fatalf("evalSymlinks(%q)=%q, %v; want nil err", tdir, dir, err)
-	}
+	dir := tempDir(t)
 	setupFiles(t, dir, t.Name(), nil)
 	t.Logf("-- first build")
 	stats, err := ninja(t, dir)

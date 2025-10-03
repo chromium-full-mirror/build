@@ -22,7 +22,7 @@ import (
 
 func TestBuild_PhonyDir(t *testing.T) {
 	ctx := context.Background()
-	dir := t.TempDir()
+	dir := tempDir(t)
 
 	ninja := func(t *testing.T) (build.Stats, error) {
 		t.Helper()
@@ -77,7 +77,7 @@ func TestBuild_PhonyDir(t *testing.T) {
 
 func TestBuild_PhonyDirCopyHandler(t *testing.T) {
 	ctx := context.Background()
-	dir := t.TempDir()
+	dir := tempDir(t)
 
 	ninja := func(t *testing.T) (build.Stats, error) {
 		t.Helper()
@@ -133,7 +133,7 @@ func TestBuild_PhonyDirCopyHandler(t *testing.T) {
 
 func TestBuild_PhonyDirStampHandler(t *testing.T) {
 	ctx := context.Background()
-	dir := t.TempDir()
+	dir := tempDir(t)
 
 	ninja := func(t *testing.T) (build.Stats, error) {
 		t.Helper()
@@ -189,7 +189,7 @@ func TestBuild_PhonyDirStampHandler(t *testing.T) {
 
 func TestBuild_PhonyDirStampCopyHandler(t *testing.T) {
 	ctx := context.Background()
-	dir := t.TempDir()
+	dir := tempDir(t)
 
 	ninja := func(t *testing.T) (build.Stats, error) {
 		t.Helper()
@@ -245,7 +245,7 @@ func TestBuild_PhonyDirStampCopyHandler(t *testing.T) {
 
 func TestBuild_PhonyStamp(t *testing.T) {
 	ctx := context.Background()
-	dir := t.TempDir()
+	dir := tempDir(t)
 
 	ninja := func(t *testing.T) (build.Stats, error) {
 		t.Helper()
@@ -293,7 +293,7 @@ func TestBuild_PhonyStamp(t *testing.T) {
 
 func TestBuild_PhonyReplace(t *testing.T) {
 	ctx := context.Background()
-	dir := t.TempDir()
+	dir := tempDir(t)
 
 	ninja := func(t *testing.T, refake *reapitest.Fake) (build.Stats, error) {
 		t.Helper()
@@ -376,7 +376,7 @@ func TestBuild_PhonyReplace(t *testing.T) {
 
 func TestBuild_PhonyIndirectInputs(t *testing.T) {
 	ctx := context.Background()
-	dir := t.TempDir()
+	dir := tempDir(t)
 
 	ninja := func(t *testing.T, refake *reapitest.Fake) (build.Stats, error) {
 		t.Helper()
@@ -493,7 +493,7 @@ func TestBuild_PhonyIndirectInputs(t *testing.T) {
 
 func TestBuild_PhonyDirty(t *testing.T) {
 	ctx := context.Background()
-	dir := t.TempDir()
+	dir := tempDir(t)
 
 	ninja := func(t *testing.T) (build.Stats, error) {
 		t.Helper()

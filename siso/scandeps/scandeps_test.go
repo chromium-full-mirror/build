@@ -18,9 +18,23 @@ import (
 	"go.chromium.org/build/siso/hashfs"
 )
 
+// tempDir returns real path of temp dir.
+// mac uses /tmp -> private/tmp symlink, so TempDir may contains
+// symlink in the path, which confuses hashfs, so use EvalSymlinks
+// to make it real path.
+func tempDir(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	dir, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
 func TestScanDeps(t *testing.T) {
 	ctx := context.Background()
-	dir := t.TempDir()
+	dir := tempDir(t)
 
 	for fname, content := range map[string]string{
 		"base/base.h": `
@@ -139,7 +153,7 @@ func TestScanDeps(t *testing.T) {
 
 func TestScanDeps_SelfIncludeInCommentAndMacroInclude(t *testing.T) {
 	ctx := context.Background()
-	dir := t.TempDir()
+	dir := tempDir(t)
 
 	for fname, content := range map[string]string{
 		"third_party/vulkan-deps/vulkan-validation-layers/src/layers/external/vma/vk_mem_alloc.h": `
@@ -208,7 +222,7 @@ func TestScanDeps_SelfIncludeInCommentAndMacroInclude(t *testing.T) {
 
 func TestScanDeps_IncludeByDifferentMacroValue(t *testing.T) {
 	ctx := context.Background()
-	dir := t.TempDir()
+	dir := tempDir(t)
 
 	for fname, content := range map[string]string{
 		"third_party/harfbuzz-ng/src/src/hb-subset.cc": `
@@ -300,7 +314,7 @@ func TestScanDeps_IncludeByDifferentMacroValue(t *testing.T) {
 
 func TestScanDeps_Framework(t *testing.T) {
 	ctx := context.Background()
-	dir := t.TempDir()
+	dir := tempDir(t)
 
 	for fname, content := range map[string]string{
 		"app/app.mm": `
@@ -377,7 +391,7 @@ func TestScanDeps_AbsPath(t *testing.T) {
 		return
 	}
 	ctx := context.Background()
-	dir := t.TempDir()
+	dir := tempDir(t)
 
 	for fname, content := range map[string]string{
 		"app/app.mm": `
@@ -449,7 +463,7 @@ func TestScanDeps_SymlinkDir(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	dir := t.TempDir()
+	dir := tempDir(t)
 
 	for fname, content := range map[string]string{
 		"x/logging.cc": `
@@ -540,7 +554,7 @@ func TestScanDeps_SymlinkIntermediateDir(t *testing.T) {
 		return
 	}
 	ctx := context.Background()
-	dir := t.TempDir()
+	dir := tempDir(t)
 
 	for fname, content := range map[string]string{
 		"src/source.cc": `
@@ -615,7 +629,7 @@ func TestScanDeps_SymlinkDirSymlinkIntermediateDir(t *testing.T) {
 		return
 	}
 	ctx := context.Background()
-	dir := t.TempDir()
+	dir := tempDir(t)
 
 	for fname, content := range map[string]string{
 		"src/source.cc": `
@@ -699,7 +713,7 @@ func TestScanDeps_SymlinkFile(t *testing.T) {
 		return
 	}
 	ctx := context.Background()
-	dir := t.TempDir()
+	dir := tempDir(t)
 
 	for fname, content := range map[string]string{
 		"src/source.cc": `

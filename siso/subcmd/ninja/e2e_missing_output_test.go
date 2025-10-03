@@ -14,7 +14,7 @@ import (
 
 func TestBuild_MissingOutput(t *testing.T) {
 	ctx := context.Background()
-	dir := t.TempDir()
+	dir := tempDir(t)
 
 	defer build.SetExperimentForTest("")
 

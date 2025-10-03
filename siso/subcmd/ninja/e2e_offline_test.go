@@ -15,7 +15,7 @@ import (
 
 func TestBuild_offline(t *testing.T) {
 	ctx := context.Background()
-	dir := t.TempDir()
+	dir := tempDir(t)
 
 	uiDefault := ui.Default
 	ui.Default = &ui.TermUI{}

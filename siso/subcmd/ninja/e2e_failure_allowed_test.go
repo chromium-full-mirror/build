@@ -17,7 +17,7 @@ import (
 
 func TestBuild_SwallowFailures(t *testing.T) {
 	ctx := context.Background()
-	dir := t.TempDir()
+	dir := tempDir(t)
 
 	setupFiles(t, dir, t.Name(), nil)
 	opt, graph, cleanup := setupBuild(ctx, t, dir, hashfs.Option{})
@@ -48,7 +48,7 @@ func TestBuild_SwallowFailures(t *testing.T) {
 
 func TestBuild_SwallowFailuresLimit(t *testing.T) {
 	ctx := context.Background()
-	dir := t.TempDir()
+	dir := tempDir(t)
 
 	setupFiles(t, dir, t.Name(), nil)
 	opt, graph, cleanup := setupBuild(ctx, t, dir, hashfs.Option{})
@@ -79,7 +79,7 @@ func TestBuild_SwallowFailuresLimit(t *testing.T) {
 
 func TestBuild_KeepGoing(t *testing.T) {
 	ctx := context.Background()
-	dir := t.TempDir()
+	dir := tempDir(t)
 
 	setupFiles(t, dir, t.Name(), nil)
 	opt, graph, cleanup := setupBuild(ctx, t, dir, hashfs.Option{})

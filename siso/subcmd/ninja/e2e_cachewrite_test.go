@@ -46,7 +46,7 @@ func TestBuild_CacheWrite(t *testing.T) {
 	// Setup isolated new ninja runs with global RE
 	ninja := func(t *testing.T, isRemote bool) (build.Stats, error) {
 		t.Helper()
-		dir := t.TempDir()
+		dir := tempDir(t)
 		setupFiles(t, dir, t.Name(), nil)
 		opt, graph, cleanup := setupBuild(ctx, t, dir, hashfs.Option{
 			StateFile:   ".siso_fs_state",

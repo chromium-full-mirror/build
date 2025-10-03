@@ -21,7 +21,7 @@ import (
 
 func TestBuild_Depfile_OutputLocalMinimum(t *testing.T) {
 	ctx := context.Background()
-	dir := t.TempDir()
+	dir := tempDir(t)
 
 	ninja := func(t *testing.T, ds dataSource) (build.Stats, error) {
 		t.Helper()
@@ -112,7 +112,7 @@ func TestBuild_Depfile_OutputLocalMinimum(t *testing.T) {
 
 func TestBuild_Depfile_AsOutput(t *testing.T) {
 	ctx := context.Background()
-	dir := t.TempDir()
+	dir := tempDir(t)
 
 	ninja := func(t *testing.T) (build.Stats, error) {
 		t.Helper()

@@ -24,7 +24,7 @@ import (
 
 func TestBuild_Deps_Incremental(t *testing.T) {
 	ctx := context.Background()
-	dir := t.TempDir()
+	dir := tempDir(t)
 
 	gccDeps := []string{"../../base/foo.cc", "../../base/foo.h"}
 	msvcDeps := []string{"../../base/foo.h", "../../base/foo.cc"}
@@ -232,7 +232,7 @@ func TestBuild_Deps_Incremental(t *testing.T) {
 // (foo.o is modified, so newer than mtime recorded in deps log).
 func TestBuild_Deps_Stale(t *testing.T) {
 	ctx := context.Background()
-	dir := t.TempDir()
+	dir := tempDir(t)
 
 	gccDeps := []string{"../../base/foo.cc", "../../base/foo.h"}
 
