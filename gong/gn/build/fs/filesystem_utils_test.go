@@ -81,6 +81,16 @@ func TestNormalizePath(t *testing.T) {
 			path: "//foo/bar/",
 			want: "//foo/bar/",
 		},
+		// System root relative paths should be safely handled.
+		{
+			path: "/./foo",
+			want: "/foo",
+		},
+		// Source root relative paths should be safely handled.
+		{
+			path: "//./foo",
+			want: "//foo",
+		},
 	} {
 		t.Run(tc.path, func(t *testing.T) {
 			t.Parallel()
@@ -273,6 +283,59 @@ func TestNormalizePathWithSourceRoot_Windows(t *testing.T) {
 			s := normalizePathWithSourceRoot(tc.path, tc.sourceRoot, true)
 			if s != tc.want {
 				t.Errorf("normalizePathWithSourceRoot(%q, %q, isWindows=true)=%s; want=%v", tc.path, tc.sourceRoot, s, tc.want)
+			}
+		})
+	}
+}
+
+func TestDirectoryWithNoLastSlash(t *testing.T) {
+	for _, tc := range []struct {
+		path string
+		want string
+	}{
+		{
+			path: "",
+			want: "",
+		},
+		{
+			path: "/",
+			want: "/.",
+		},
+		{
+			path: "//",
+			want: "//.",
+		},
+		{
+			path: "//foo/",
+			want: "//foo",
+		},
+		{
+			path: "/bar/",
+			want: "/bar",
+		},
+		{
+			path: "//foo",
+			want: "//foo",
+		},
+		{
+			path: "/./foo",
+			want: "/./foo",
+		},
+		{
+			path: "//./foo",
+			want: "//./foo",
+		},
+		// Only the final slash should be removed.
+		{
+			path: "/bar//",
+			want: "/bar/",
+		},
+	} {
+		t.Run(tc.path, func(t *testing.T) {
+			t.Parallel()
+			s := DirectoryWithNoLastSlash(tc.path)
+			if s != tc.want {
+				t.Errorf("DirectoryWithNoLastSlash(%q)=%s; want=%v", tc.path, s, tc.want)
 			}
 		})
 	}

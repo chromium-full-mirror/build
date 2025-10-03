@@ -103,3 +103,40 @@ func normalizePathWithSourceRoot(path, sourceRoot string, isWindows bool) string
 	}
 	return path
 }
+
+// DirectoryWithNoLastSlash prepares a directory path string with its last
+// slash removed if in the string, allowing for safe naive string concatenation
+// with another path component.
+//
+// It ensures the path does not have a trailing slash, and it handles the special
+// cases of the system root ("/") and source root ("//") by converting them to
+// "/." and "//." respectively. This prevents incorrect path joining.
+// (For example, naively joining "/" and "foo" would result in "//foo", which is
+// source-absolute path, whereas joining "/." and "foo" instead would correctly
+// result in "/./foo", which maintains the correct relativity.)
+//
+// This function does not attempt to canonicalize the path. For example,
+// "a/./b" is returned as-is. Use [NormalizePath] instead if this is desired.
+//
+// Consequently, calling with the path "/bar//" would return the result "/bar/".
+// This is expected because only the last slash is removed, not all trailing
+// slashes. However, this also maintains the requirement of safe naive path
+// component concatenation, as "/bar/" + "/baz" would result in "/bar//baz".
+//
+// (While on the surface this may appear to be a deviation from C++ GN's
+// DirectoryWithNoLastSlash, the aforementioned function take C++ GN's SourceDir
+// class as an input, which pre-normalizes directory paths. Here, we deliberately
+// do not ensure that the input has been pre-normalized. Callers that desire
+// such behavior are expected to call [NormalizePath] ahead of time themselves.)
+func DirectoryWithNoLastSlash(path string) string {
+	if path == "/" {
+		return "/."
+	}
+	if path == "//" {
+		return "//."
+	}
+	if strings.HasSuffix(path, "/") {
+		return path[:len(path)-1]
+	}
+	return path
+}

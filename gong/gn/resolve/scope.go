@@ -22,6 +22,13 @@ type ExecContext interface {
 	BaseConfig() *Scope
 }
 
+// ProgrammaticProvider allows code to provide values for built-in variables.
+type ProgrammaticProvider interface {
+	// ProgrammaticBuiltin returns (Value, true) if the given value can be programmatically
+	// generated, or (nil, false) if there is none.
+	ProgrammaticBuiltin(ident string) (Value, bool)
+}
+
 // Scope for the script execution.
 //
 // Scopes are nested. Writing goes into the current scope, reading checks
@@ -36,9 +43,10 @@ type ExecContext interface {
 // checked as a last-resort, and no mutate operations will not be performed on
 // that scope.
 type Scope struct {
-	execContext    ExecContext
-	skipBaseConfig bool
-	parent         *Scope
+	execContext          ExecContext
+	programmaticProvider ProgrammaticProvider
+	skipBaseConfig       bool
+	parent               *Scope
 
 	values map[string]record
 }
@@ -61,13 +69,14 @@ func (s *Scope) isolate() {
 }
 
 // NewScope creates a top-level scope.
-func NewScope() *Scope {
+func NewScope(programmaticProvider ProgrammaticProvider) *Scope {
 	return &Scope{
-		values: make(map[string]record),
+		programmaticProvider: programmaticProvider,
+		values:               make(map[string]record),
 	}
 }
 
-// NewScopeFromExecContext creates a scope dependent on a ExecContext.
+// NewScopeFromExecContext creates a dependent scope whose parent is an ExecContext.
 func NewScopeFromExecContext(c ExecContext) *Scope {
 	return &Scope{
 		execContext: c,
@@ -75,7 +84,7 @@ func NewScopeFromExecContext(c ExecContext) *Scope {
 	}
 }
 
-// NewNestedScope creates a dependent scope.
+// NewNestedScope creates a dependent scope whose parent is this scope.
 func (s *Scope) NewNestedScope() *Scope {
 	return &Scope{
 		parent:      s,
@@ -96,6 +105,12 @@ func (s *Scope) HasValues() bool {
 // markAsUsed should be set if the variable is being read in a way that should
 // count for unused variable checking.
 func (s *Scope) Value(ident string, markAsUsed bool) Value {
+	if s.programmaticProvider != nil {
+		if v, ok := s.programmaticProvider.ProgrammaticBuiltin(ident); ok {
+			return v
+		}
+	}
+
 	if value, found := s.values[ident]; found {
 		if markAsUsed {
 			value.used = true

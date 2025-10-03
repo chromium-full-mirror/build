@@ -17,6 +17,10 @@ type StringValue struct {
 	value  string
 }
 
+func NewOriginlessStringValue(value string) *StringValue {
+	return &StringValue{value: value}
+}
+
 func (v *StringValue) valueType() ValueType {
 	return ValueTypeString
 }
