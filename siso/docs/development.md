@@ -92,9 +92,17 @@ performance.  Please see the documentation of
 [go tool pprof](https://pkg.go.dev/net/http/pprof) for instructions
 and examples how to use it effectively.
 
-Alternatively, you can use `-cpuprofile=cpu.pprof` or
-`-memprofile=memory.pprof` to collect a CPU or memory profile while
-Siso runs and save it to disk.
+Alternatively, you can use `-cpuprofile=cpu.prof` or `-memprofile=memory.prof`
+to collect profiling data and save it to disk.
+
+> **Note**: If you get an error like `Error: could not find file go.chromium.org/build/siso/main.go ...` when using the `list` command in `go tool pprof`, it means `pprof` can't find the source files. This often happens if you run `go tool pprof` from a directory other than the `siso` source root. Try running `go tool pprof` from the `siso` directory.
+>
+> If that doesn't work, you can fix this by using `-source_path` to point to your source code and `-trim_path` to map from the package path.
+>
+> For example:
+> ```sh
+> go tool pprof -source_path=path/to/build -trim_path=go.chromium.org/build cpu.prof
+> ```
 
 ## Tracing
 
