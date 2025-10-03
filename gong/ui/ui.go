@@ -27,12 +27,15 @@ func formatError(err syntax.Error, isSubErr bool) string {
 
 	// File name and location.
 	locStr := err.Location().Describe(true)
-	if isSubErr {
-		sb.WriteString("See ")
-	} else {
-		sb.WriteString("at ")
+	if locStr != "" {
+		if isSubErr {
+			sb.WriteString("See ")
+		} else {
+			sb.WriteString("at ")
+		}
+		sb.WriteString(": " + locStr)
 	}
-	sb.WriteString(locStr + ": " + err.Message() + "\n")
+	sb.WriteString(err.Message() + "\n")
 
 	// TODO: print snippet of file.
 

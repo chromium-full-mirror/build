@@ -47,6 +47,9 @@ func (l Location) ColumnNumber() int {
 
 // Describe returns a string representation of the location.
 func (l Location) Describe(includeColumnNumber bool) string {
+	if l.file == nil {
+		return ""
+	}
 	if !includeColumnNumber {
 		return fmt.Sprintf("%s:%d", l.file.DisplayName(), l.lineNumber)
 	}

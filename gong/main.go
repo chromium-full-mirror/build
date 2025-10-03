@@ -17,6 +17,7 @@ import (
 
 	"go.chromium.org/build/gong/subcmd/clean"
 	"go.chromium.org/build/gong/subcmd/format"
+	"go.chromium.org/build/gong/subcmd/help"
 )
 
 func main() {
@@ -55,6 +56,6 @@ Use "gong help [command]" for more information about a command.
 	subcommands.Register(&clean.Command{}, "")
 	subcommands.Register(&format.Command{}, "")
 	subcommands.Register(subcommands.FlagsCommand(), "")
-	subcommands.Register(subcommands.HelpCommand(), "")
+	subcommands.Register(&help.Command{}, "")
 	return int(subcommands.Execute(context.Background()))
 }
