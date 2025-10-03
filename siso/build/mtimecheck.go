@@ -263,7 +263,6 @@ func inputMtime(ctx context.Context, b *Builder, stepDef StepDef) (string, time.
 					})
 					return false
 				}
-				fmt.Printf("mtime %q %v\n", fname, fi.ModTime())
 				if mtime.Before(fi.ModTime()) {
 					mtime = fi.ModTime()
 				}
