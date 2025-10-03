@@ -25,24 +25,11 @@ import (
 
 func TestIDEAnalysis(t *testing.T) {
 	ctx := context.Background()
-	wd, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
 	topDir := t.TempDir()
-	err = os.Chdir(topDir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() {
-		err = os.Chdir(wd)
-		if err != nil {
-			t.Error(err)
-		}
-	}()
+	t.Chdir(topDir)
 
 	dir := filepath.Join(topDir, "out/siso")
-	err = os.MkdirAll(dir, 0755)
+	err := os.MkdirAll(dir, 0755)
 	if err != nil {
 		t.Fatal(err)
 	}

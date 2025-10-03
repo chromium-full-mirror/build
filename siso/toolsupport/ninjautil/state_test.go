@@ -15,26 +15,13 @@ import (
 
 func TestState_Targets(t *testing.T) {
 	dir := t.TempDir()
-	wd, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
 	dir = filepath.Join(dir, "out/siso")
-	err = os.MkdirAll(dir, 0755)
+	err := os.MkdirAll(dir, 0755)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	err = os.Chdir(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() {
-		err := os.Chdir(wd)
-		if err != nil {
-			t.Error(err)
-		}
-	}()
+	t.Chdir(dir)
 
 	err = os.MkdirAll(filepath.Join(dir, "../../foo"), 0755)
 	if err != nil {

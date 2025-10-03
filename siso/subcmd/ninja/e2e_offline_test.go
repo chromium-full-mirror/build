@@ -7,7 +7,6 @@ package ninja
 import (
 	"context"
 	"flag"
-	"os"
 	"testing"
 
 	"go.chromium.org/build/siso/build"
@@ -17,16 +16,6 @@ import (
 func TestBuild_offline(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
-	wd, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() {
-		err = os.Chdir(wd)
-		if err != nil {
-			t.Error(err)
-		}
-	}()
 
 	uiDefault := ui.Default
 	ui.Default = &ui.TermUI{}
@@ -57,23 +46,14 @@ func TestBuild_offline(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			setupFiles(t, dir, testName, nil)
-			err = os.Chdir(dir)
-			if err != nil {
-				t.Fatal(err)
-			}
-			defer func() {
-				err = os.Chdir(wd)
-				if err != nil {
-					t.Error(err)
-				}
-			}()
+			t.Chdir(dir)
 			ninja := &Command{}
 			flagSet := flag.NewFlagSet("ninja", flag.ContinueOnError)
 			ninja.SetFlags(flagSet)
 			ninja.Flags = flagSet
 			args := []string{"-C", "out/siso", "--offline"}
 			args = append(args, tc.args...)
-			err = flagSet.Parse(args)
+			err := flagSet.Parse(args)
 			if err != nil {
 				t.Fatal(err)
 			}

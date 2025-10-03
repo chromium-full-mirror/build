@@ -134,26 +134,14 @@ in3
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
-			wd, err := os.Getwd()
-			if err != nil {
-				t.Fatal(err)
-			}
-			defer func() {
-				err = os.Chdir(wd)
-				if err != nil {
-					t.Fatal(err)
-				}
-			}()
-			err = os.Chdir(dir)
-			if err != nil {
-				t.Fatal(err)
-			}
-			err = os.WriteFile("build.ninja", []byte(tc.buildNinja), 0644)
+			t.Chdir(dir)
+
+			os.WriteFile("build.ninja", []byte(tc.buildNinja), 0644)
 			var buf bytes.Buffer
 			c := &targetsCommand{w: &buf}
 			flagSet := flag.NewFlagSet("targets", flag.ContinueOnError)
 			c.SetFlags(flagSet)
-			err = flagSet.Parse(tc.args)
+			err := flagSet.Parse(tc.args)
 			if err != nil {
 				t.Fatal(err)
 			}

@@ -21,12 +21,8 @@ import (
 
 func TestTargets(t *testing.T) {
 	ctx := context.Background()
-	wd, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
 	dir := t.TempDir()
-	err = os.MkdirAll(filepath.Join(dir, "build/config/siso"), 0755)
+	err := os.MkdirAll(filepath.Join(dir, "build/config/siso"), 0755)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -55,16 +51,7 @@ def init(ctx):
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = os.Chdir(filepath.Join(dir, "out/siso"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() {
-		err = os.Chdir(wd)
-		if err != nil {
-			t.Fatal(err)
-		}
-	}()
+	t.Chdir(filepath.Join(dir, "out/siso"))
 	path := build.NewPath(dir, "out/siso")
 	hashFS, err := hashfs.New(ctx, hashfs.Option{})
 	if err != nil {
