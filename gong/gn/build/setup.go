@@ -10,6 +10,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"runtime"
 
 	"go.chromium.org/build/gong/gn"
 	"go.chromium.org/build/gong/gn/build/fs"
@@ -90,6 +91,9 @@ func (s *Setup) DoSetup(buildDir string, forceCreate bool, flags *gn.CommonFlags
 		if err := s.fillArguments(flags); err != nil {
 			fmt.Fprintf(os.Stderr, "don't know how to fill args yet, skipping for now: %v\n", err)
 		}
+	}
+	if err := s.fillPythonPath(flags); err != nil {
+		return err
 	}
 
 	// Check for unused variables in the .gn file.
@@ -191,6 +195,46 @@ func (s *Setup) fillBuildDir(buildDir string) error {
 		return err
 	}
 	s.buildSettings.BuildDir = filepath.ToSlash(absBuildDir)
+	return nil
+}
+
+func (s *Setup) fillPythonPath(flags *gn.CommonFlags) error {
+	// TODO(b/388723392): Need parity with C++ GN's Windows handling
+	// https://source.chromium.org/gn/gn/+/main:src/gn/setup.cc;l=791-825;drc=81dab9f25cb2381400c237fdea7030d5068f9a73
+	// Maybe this can be resolved using exec.LookPath?
+	// https://pkg.go.dev/os/exec?GOOS=windows#LookPath
+	if runtime.GOOS == "windows" {
+		fmt.Fprintf(os.Stderr, "WARNING: python path detection will not function as expected on windows\n")
+	}
+
+	// Command line takes precedence.
+	if flags.ScriptExecutable != "" {
+		// TODO(b/388723392): C++ GN uses a function here GetSwitchValueNative
+		// https://source.chromium.org/search?q=GetSwitchValueNative&sq=&ss=gn
+		// to ensure only the last flag is used, but calling this is done where
+		// the flags are used rather than processing them all in advance.
+		// This raises the risk of behavioral incompatibility with C++ GN.
+		// May need to look into this issue further?
+		s.buildSettings.pythonPath = flags.ScriptExecutable
+		return nil
+	}
+
+	// Use `script_executable` from the dotfile if available.
+	if value := s.dotfileScope.Value("script_executable", true); value != nil {
+		stringValue, err := resolve.AsValue[*resolve.StringValue](value)
+		if err != nil {
+			return err
+		}
+		s.buildSettings.pythonPath = stringValue.String()
+		return nil
+	}
+
+	// Fallback to Python from PATH.
+	// (Yes, this is a line of code referencing "python" in 2025 because that's
+	// what C++ GN does, and you're probably going to want to override that
+	// manually with `script_executable = "python3"` in your .gn file like these:
+	// https://source.chromium.org/search?q=script_executable)
+	s.buildSettings.pythonPath = "python"
 	return nil
 }
 

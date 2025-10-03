@@ -25,6 +25,7 @@ type Settings struct {
 func NewSettings(buildSettings *BuildSettings) *Settings {
 	return &Settings{
 		buildSettings: buildSettings,
+		baseConfig:    resolve.NewScope(),
 	}
 }
 

@@ -60,6 +60,13 @@ func (s *Scope) isolate() {
 	s.skipBaseConfig = true
 }
 
+// NewScope creates a top-level scope.
+func NewScope() *Scope {
+	return &Scope{
+		values: make(map[string]record),
+	}
+}
+
 // NewScopeFromExecContext creates a scope dependent on a ExecContext.
 func NewScopeFromExecContext(c ExecContext) *Scope {
 	return &Scope{

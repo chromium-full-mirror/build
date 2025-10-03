@@ -30,6 +30,8 @@ type BuildSettings struct {
 	// search for buildfiles if they're not found in the root higherarchy. This
 	// allows us to keep buildfiles in a separate tree during development.
 	secondarySourcePath string
+	// Path of the python executable to run scripts with.
+	pythonPath string
 	// BuildDir is the absolute, slash-separated path to the build output directory.
 	BuildDir string
 }
