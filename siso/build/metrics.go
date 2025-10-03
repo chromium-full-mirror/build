@@ -110,10 +110,13 @@ type StepMetric struct {
 	// ActionStartTime is the time it took since build start until
 	// the action starts. After ActionStartTime, scandeps/retry/fallback
 	// may happen and there might be internal waiting time. e.g. remote
-	// exec semaphore.
+	// exec semaphore. ActionStartTime is set within the execution semaphores
+	// (localSema, remoteSema, rewrapSema, etc).
 	ActionStartTime IntervalMetric `json:"action_start,omitempty"`
 	// RunTime is the total duration of the action execution, including
-	// overhead such as uploading / downloading files.
+	// overhead such as uploading / downloading files. Semaphore waiting time
+	// (namely execution semaphores like localSema, remoteSema, rewrapSema, etc)
+	//  is not included.
 	RunTime IntervalMetric `json:"run,omitempty"`
 	// QueueTime is the time it took until the worker could begin executing
 	// the action.
