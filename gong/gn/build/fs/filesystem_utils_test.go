@@ -288,6 +288,127 @@ func TestNormalizePathWithSourceRoot_Windows(t *testing.T) {
 	}
 }
 
+func TestRebasePath(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		input   string
+		destDir string
+		want    string
+		wantErr bool
+	}{
+		{
+			name:    "simple subdirectory",
+			input:   "//foo/bar/baz.txt",
+			destDir: "//foo/",
+			want:    "bar/baz.txt",
+			wantErr: false,
+		},
+		{
+			name:  "simple subdirectory with no slash",
+			input: "//foo/bar/baz.txt",
+			// in case destDir is from DirectoryWithNoLastSlash
+			destDir: "//foo",
+			want:    "bar/baz.txt",
+			wantErr: false,
+		},
+		{
+			name:    "peer directories",
+			input:   "//foo/bar/baz.txt",
+			destDir: "//foo/qux/",
+			want:    "../bar/baz.txt",
+			wantErr: false,
+		},
+		{
+			name:  "peer directories with no slash",
+			input: "//foo/bar/baz.txt",
+			// in case destDir is from DirectoryWithNoLastSlash
+			destDir: "//foo/qux",
+			want:    "../bar/baz.txt",
+			wantErr: false,
+		},
+		{
+			name:    "parent directory",
+			input:   "//foo/",
+			destDir: "//foo/bar/baz/",
+			want:    "../..",
+			wantErr: false,
+		},
+		{
+			name:    "identical paths",
+			input:   "//foo/bar.txt",
+			destDir: "//foo/bar.txt",
+			want:    ".",
+			wantErr: false,
+		},
+		{
+			name:    "to root",
+			input:   "//foo/bar.txt",
+			destDir: "//",
+			want:    "foo/bar.txt",
+			wantErr: false,
+		},
+		{
+			name:  "to root with no slash",
+			input: "//foo/bar.txt",
+			// in case destDir is from DirectoryWithNoLastSlash
+			destDir: "//.",
+			want:    "foo/bar.txt",
+			wantErr: false,
+		},
+		{
+			name:    "from root",
+			input:   "//",
+			destDir: "//foo/bar/",
+			want:    "../..",
+			wantErr: false,
+		},
+		{
+			name:    "error relative input not yet supported",
+			input:   "foo/bar.txt",
+			destDir: "//foo/",
+			wantErr: true,
+		},
+		{
+			name:    "error relative destDir not yet supported",
+			input:   "//foo/bar.txt",
+			destDir: "foo/",
+			wantErr: true,
+		},
+		{
+			name:    "error system absolute input not yet supported",
+			input:   "/foo/bar.txt",
+			destDir: "//foo/",
+			wantErr: true,
+		},
+		{
+			name:    "error system absolute destDir not yet supported",
+			input:   "//foo/bar.txt",
+			destDir: "/foo/",
+			wantErr: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := RebasePath(tc.input, tc.destDir)
+
+			if tc.wantErr {
+				if err == nil {
+					t.Errorf("RebasePath(%q, %q) succeeded with %q, want error", tc.input, tc.destDir, got)
+				}
+				return
+			}
+
+			if err != nil {
+				t.Errorf("RebasePath(%q, %q) returned error %v, want success", tc.input, tc.destDir, err)
+				return
+			}
+
+			if got != tc.want {
+				t.Errorf("RebasePath(%q, %q) = %q; want %q", tc.input, tc.destDir, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestDirectoryWithNoLastSlash(t *testing.T) {
 	for _, tc := range []struct {
 		path string

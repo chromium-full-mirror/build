@@ -5,6 +5,7 @@
 package fs
 
 import (
+	"fmt"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -102,6 +103,25 @@ func normalizePathWithSourceRoot(path, sourceRoot string, isWindows bool) string
 		path = path + "/"
 	}
 	return path
+}
+
+// RebasePath performs a subset of C++ GN's RebasePath utility function,
+// calculating the relative path from destDir to input only if both
+// paths are source-absolute (start with "//").
+//
+// TODO: Add support for relative paths and system-absolute paths.
+func RebasePath(input, destDir string) (string, error) {
+	if IsPathSourceAbsolute(input) && IsPathSourceAbsolute(destDir) {
+		// Strip "//" prefix so we can use filepath.Rel.
+		inputRel := strings.TrimPrefix(input, "//")
+		destRel := strings.TrimPrefix(destDir, "//")
+		relPath, err := filepath.Rel(destRel, inputRel)
+		if err != nil {
+			return "", err
+		}
+		return filepath.ToSlash(filepath.Clean(relPath)), nil
+	}
+	return "", fmt.Errorf("got unsupported path combination for RebasePath: %q, %q", input, destDir)
 }
 
 // DirectoryWithNoLastSlash prepares a directory path string with its last
