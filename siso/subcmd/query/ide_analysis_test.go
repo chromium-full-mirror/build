@@ -118,13 +118,6 @@ func TestIDEAnalysis(t *testing.T) {
 		c.execRoot = topDir
 		c.dir = "out/siso"
 
-		defer func() {
-			err = os.Chdir("../..")
-			if err != nil {
-				t.Error(err)
-			}
-		}()
-
 		got, err := c.analyze(ctx, []string{"../../foo/foo.cc^"})
 		if err != nil {
 			t.Errorf(`analyze(ctx, "../../foo/foo.cc^")=%v, %v; want nil err`, got, err)
@@ -247,13 +240,6 @@ func TestIDEAnalysis(t *testing.T) {
 		c.SetFlags(flagSet)
 		c.execRoot = topDir
 		c.dir = "out/siso"
-
-		defer func() {
-			err = os.Chdir("../..")
-			if err != nil {
-				t.Error(err)
-			}
-		}()
 
 		got, err := c.analyze(ctx, []string{"../../foo/foo.h^"})
 		if err != nil {
@@ -378,13 +364,6 @@ func TestIDEAnalysis(t *testing.T) {
 		c.execRoot = topDir
 		c.dir = "out/siso"
 
-		defer func() {
-			err = os.Chdir("../..")
-			if err != nil {
-				t.Error(err)
-			}
-		}()
-
 		got, err := c.analyze(ctx, []string{"../../foo/baz.h^"})
 		if err != nil {
 			t.Errorf(`analyze(ctx, "../../foo/baz.h^")=%v, %v; want nil err`, got, err)
@@ -507,13 +486,6 @@ func TestIDEAnalysis(t *testing.T) {
 		c.SetFlags(flagSet)
 		c.execRoot = topDir
 		c.dir = "out/siso"
-
-		defer func() {
-			err = os.Chdir("../..")
-			if err != nil {
-				t.Error(err)
-			}
-		}()
 
 		got, err := c.analyze(ctx, []string{"../../foo/bar.h^"})
 		if err != nil {

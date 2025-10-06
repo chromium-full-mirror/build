@@ -14,6 +14,7 @@ linters:
     - misspell
     - unconvert
     - unparam
+    - usetesting
   disable:
     # There are also many unchecked errors.
     - errcheck

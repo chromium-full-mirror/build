@@ -161,10 +161,15 @@ func (c *ideAnalysisCommand) analyze(ctx context.Context, args []string) (*pb.Id
 	if len(args) == 0 {
 		return analysis, errors.New("no target given")
 	}
-	err := os.Chdir(c.dir)
+	wd, err := os.Getwd()
 	if err != nil {
 		return analysis, err
 	}
+	err = os.Chdir(c.dir)
+	if err != nil {
+		return analysis, err
+	}
+	defer os.Chdir(wd)
 	analyzer := &ideAnalyzer{
 		path: build.NewPath(c.execRoot, c.dir),
 	}
