@@ -186,8 +186,8 @@ func LoadAction(d *repb.Digest, cas *blobstore.ContentAddressableStorage) (ka *A
 	if ka.WorkingDir == "" {
 		ka.WorkingDir = "."
 	}
-	if ka.WorkingDir != filepath.Clean(ka.WorkingDir) {
-		return nil, fmt.Errorf("working directory is not a clean path, wanted %q, got %q", ka.WorkingDir, cmd.WorkingDirectory)
+	if filepath.FromSlash(ka.WorkingDir) != filepath.Clean(ka.WorkingDir) {
+		return nil, fmt.Errorf("working directory is not a clean path, wanted %q, got %q", filepath.Clean(ka.WorkingDir), filepath.FromSlash(cmd.WorkingDirectory))
 	}
 	if _, ok := ka.InputTrie.Get([]byte(ka.WorkingDir + "/")); !ok {
 		return nil, fmt.Errorf("working directory %q not found in input root", ka.WorkingDir)
