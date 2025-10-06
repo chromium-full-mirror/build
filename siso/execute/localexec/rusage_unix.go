@@ -9,6 +9,7 @@ package localexec
 import (
 	"os/exec"
 	"syscall"
+	"time"
 
 	durationpb "google.golang.org/protobuf/types/known/durationpb"
 
@@ -22,8 +23,8 @@ func rusage(cmd *exec.Cmd) *epb.Rusage {
 			Majflt:  u.Majflt,
 			Inblock: u.Inblock,
 			Oublock: u.Oublock,
-			Utime:   &durationpb.Duration{Seconds: u.Utime.Sec, Nanos: int32(u.Utime.Usec)},
-			Stime:   &durationpb.Duration{Seconds: u.Stime.Sec, Nanos: int32(u.Stime.Usec)},
+			Utime:   durationpb.New(time.Duration(u.Utime.Nano()) * time.Nanosecond),
+			Stime:   durationpb.New(time.Duration(u.Stime.Nano()) * time.Nanosecond),
 		}
 	}
 	return nil
