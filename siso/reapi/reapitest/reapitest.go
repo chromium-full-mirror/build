@@ -183,11 +183,11 @@ type InputTree struct {
 func (t InputTree) get(ctx context.Context, d *rpb.Digest, m proto.Message) error {
 	dd, err := digest.NewFromProto(d)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to convert proto digest %s: %w", d, err)
 	}
 	b, err := t.CAS.Get(dd)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to get %s from CAS: %w", dd, err)
 	}
 	return proto.Unmarshal(b, m)
 }
@@ -197,7 +197,7 @@ func (t InputTree) LookupFileNode(ctx context.Context, name string) (*rpb.FileNo
 	dir := &rpb.Directory{}
 	err := t.get(ctx, t.Root, dir)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to call get: %w", err)
 	}
 	var elems []string
 pathElements:
