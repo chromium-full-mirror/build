@@ -226,3 +226,51 @@ func TestBuild_SymlinkSource(t *testing.T) {
 	}
 
 }
+
+// Test symlink source uses mtime of symlink's target.
+func TestBuild_SymlinkSourceSymlinkDir(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink not available on windows")
+		return
+	}
+	ctx := t.Context()
+	dir := tempDir(t)
+
+	ninja := func(t *testing.T) (build.Stats, error) {
+		t.Helper()
+		opt, graph, cleanup := setupBuild(ctx, t, dir, hashfs.Option{
+			StateFile: ".siso_fs_state",
+		})
+		defer cleanup()
+		return runNinja(ctx, "build.ninja", graph, opt, nil, runNinjaOpts{})
+	}
+	setupFiles(t, dir, t.Name(), nil)
+
+	err := os.Symlink("../libutils/include/utils/", filepath.Join(dir, "system/core/include/utils"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = os.Symlink("../../binder/include/utils/Errors.h", filepath.Join(dir, "system/core/libutils/include/utils/Errors.h"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// system/core/include/utils/Errors.h should be resolved as
+	// system/core/libutils/binder/include/utils/Errors.h
+
+	stats, err := ninja(t)
+	if err != nil {
+		t.Fatalf("ninja %v: want nil err", err)
+	}
+	if stats.Done != stats.Total {
+		t.Errorf("stats done=%d total=%d", stats.Done, stats.Total)
+	}
+	t.Logf("-- check confirm no-op")
+	stats, err = ninja(t)
+	if err != nil {
+		t.Fatalf("ninja %v; want nil err", err)
+	}
+	if stats.Skipped != stats.Total {
+		t.Errorf("stats.Skipped=%d Total=%d", stats.Skipped, stats.Total)
+	}
+}

@@ -286,7 +286,14 @@ func inputMtime(ctx context.Context, b *Builder, stepDef StepDef) (string, time.
 					fname = target
 					continue
 				}
-				target = path.Join(path.Dir(fname), target)
+				orig := fi.Path()
+				relOrig, err := filepath.Rel(b.path.ExecRoot, orig)
+				if err != nil || !filepath.IsLocal(relOrig) || root == "" {
+					target = filepath.ToSlash(filepath.Join(filepath.Dir(orig), target))
+					root = ""
+				} else {
+					target = filepath.ToSlash(filepath.Join(filepath.Dir(relOrig), target))
+				}
 				if !filepath.IsLocal(target) {
 					// go outside of exec root.
 					target = path.Join(root, target)
