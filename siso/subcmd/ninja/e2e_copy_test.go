@@ -22,7 +22,7 @@ import (
 )
 
 func TestBuild_Copy(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 
 	ninja := func(t *testing.T, dir string, outputLocal hashfs.OutputLocalFunc) (build.Stats, error) {
 		t.Helper()
@@ -176,7 +176,7 @@ func TestBuild_Copy(t *testing.T) {
 }
 
 func TestBuild_CopyLocalOut(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 
 	ninja := func(t *testing.T, dir string) error {
 		t.Helper()
@@ -249,7 +249,7 @@ func TestBuild_CopyLocalOut(t *testing.T) {
 }
 
 func TestBuild_CopyBundleDataRemovedFile(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 
 	ninja := func(t *testing.T, dir string) (build.Stats, error) {
 		t.Helper()

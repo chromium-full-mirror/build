@@ -5,7 +5,6 @@
 package buildconfig
 
 import (
-	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -103,7 +102,7 @@ func TestFilegroupGlob(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			ctx := context.Background()
+			ctx := t.Context()
 			got, err := tc.globSpec.Update(ctx, fsys, tc.cache)
 			if err != nil {
 				t.Fatalf("globSpec.Update(...)=%v, %v; want nil err", got, err)

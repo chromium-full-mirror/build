@@ -5,7 +5,6 @@
 package ninjabuild
 
 import (
-	"context"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -82,7 +81,7 @@ func TestIndirectInputsFilter(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			ctx := context.Background()
+			ctx := t.Context()
 			f := tc.ii.filter(ctx)
 			for _, p := range tc.matches {
 				if !f(ctx, p, false) {
@@ -99,7 +98,7 @@ func TestIndirectInputsFilter(t *testing.T) {
 }
 
 func TestStepConfigExpandInputs(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	tdir := t.TempDir()
 	err := os.MkdirAll(tdir, 0755)
 	if err != nil {
@@ -179,7 +178,7 @@ func TestStepConfigLookup_WinPath(t *testing.T) {
 		t.Skip(`this test only works for windows: require filepath.IsAbs("c:/") == true`)
 		return
 	}
-	ctx := context.Background()
+	ctx := t.Context()
 	dir := t.TempDir()
 	path := build.NewPath(dir, "out/siso")
 	err := os.MkdirAll(filepath.Join(dir, "out/siso"), 0755)

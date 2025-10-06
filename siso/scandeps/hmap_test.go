@@ -5,7 +5,6 @@
 package scandeps
 
 import (
-	"context"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -22,7 +21,7 @@ import (
 var testHmapData []byte
 
 func TestParseHeaderMap(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 
 	got, err := ParseHeaderMap(ctx, testHmapData)
 	if err != nil {

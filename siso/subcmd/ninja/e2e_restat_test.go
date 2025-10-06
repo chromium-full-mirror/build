@@ -6,7 +6,6 @@ package ninja
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -29,7 +28,7 @@ import (
 //	dependencies to be removed from the list of pending build
 //	actions.
 func TestBuild_Restat(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	dir := tempDir(t)
 
 	exists := func(fname string) error {
@@ -182,7 +181,7 @@ func TestBuild_Restat(t *testing.T) {
 
 // Test restat=1 behavior when restat_content=true is set
 func TestBuild_Restat_RestatContent(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	dir := tempDir(t)
 
 	exists := func(fname string) error {
@@ -336,7 +335,7 @@ func TestBuild_Restat_RestatContent(t *testing.T) {
 // Test restat=1 behavior for multiple output.
 // some output may keep mtime, but some output was updated.
 func TestBuild_RestatMultiout(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	dir := tempDir(t)
 
 	exists := func(fname string) error {

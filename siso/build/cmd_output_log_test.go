@@ -5,7 +5,6 @@
 package build
 
 import (
-	"context"
 	"errors"
 	"testing"
 
@@ -108,7 +107,7 @@ build step: cxx "./foo.o"
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			ctx := context.Background()
+			ctx := t.Context()
 			cmd := &execute.Cmd{}
 			*cmd = *execcmd
 			if len(tc.stdout) > 0 {
@@ -228,7 +227,7 @@ build step: cxx "./foo.o"
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			ctx := context.Background()
+			ctx := t.Context()
 			cmd := &execute.Cmd{}
 			*cmd = *execcmd
 			res := cmdOutput(ctx, cmdOutputResultFAILED, "", cmd, tc.command, "", errors.New("exit=1"))

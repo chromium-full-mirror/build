@@ -5,7 +5,6 @@
 package ninjabuild
 
 import (
-	"context"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -20,7 +19,7 @@ import (
 )
 
 func TestTargets(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	dir := t.TempDir()
 	err := os.MkdirAll(filepath.Join(dir, "build/config/siso"), 0755)
 	if err != nil {

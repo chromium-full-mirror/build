@@ -33,6 +33,9 @@ linters:
         - "-ST1021"
         - "-ST1022"
         # Aboves are default set of checks in golangci-lint.
+    usetesting:
+      context-background: true
+      context-todo: true
 
   exclusions:
     # Independently from option `exclude` we use default exclude patterns,

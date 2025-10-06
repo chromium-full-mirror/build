@@ -48,7 +48,7 @@ func setupFile(t *testing.T, dir, fname string) {
 
 func TestRun_Unauthenticated(t *testing.T) {
 	defer glog.Flush()
-	ctx := context.Background()
+	ctx := t.Context()
 	dir := t.TempDir()
 
 	hashFS, err := hashfs.New(ctx, hashfs.Option{})
@@ -103,7 +103,7 @@ func TestRun_Unauthenticated(t *testing.T) {
 
 func TestRun_RemoteSuccess(t *testing.T) {
 	defer glog.Flush()
-	ctx := context.Background()
+	ctx := t.Context()
 	dir := t.TempDir()
 
 	hashFS, err := hashfs.New(ctx, hashfs.Option{})
@@ -214,7 +214,7 @@ func TestRun_RemoteSuccess(t *testing.T) {
 
 func TestRun_LocalFallback(t *testing.T) {
 	defer glog.Flush()
-	ctx := context.Background()
+	ctx := t.Context()
 	dir := t.TempDir()
 
 	hashFS, err := hashfs.New(ctx, hashfs.Option{})

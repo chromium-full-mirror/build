@@ -5,7 +5,6 @@
 package scandeps
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -33,7 +32,7 @@ func tempDir(t *testing.T) string {
 }
 
 func TestScanDeps(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	dir := tempDir(t)
 
 	for fname, content := range map[string]string{
@@ -152,7 +151,7 @@ func TestScanDeps(t *testing.T) {
 }
 
 func TestScanDeps_SelfIncludeInCommentAndMacroInclude(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	dir := tempDir(t)
 
 	for fname, content := range map[string]string{
@@ -221,7 +220,7 @@ func TestScanDeps_SelfIncludeInCommentAndMacroInclude(t *testing.T) {
 }
 
 func TestScanDeps_IncludeByDifferentMacroValue(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	dir := tempDir(t)
 
 	for fname, content := range map[string]string{
@@ -313,7 +312,7 @@ func TestScanDeps_IncludeByDifferentMacroValue(t *testing.T) {
 }
 
 func TestScanDeps_Framework(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	dir := tempDir(t)
 
 	for fname, content := range map[string]string{
@@ -390,7 +389,7 @@ func TestScanDeps_AbsPath(t *testing.T) {
 		t.Skipf("need to check on darwin only for swift generated header, and fails on windows in handling abs path?")
 		return
 	}
-	ctx := context.Background()
+	ctx := t.Context()
 	dir := tempDir(t)
 
 	for fname, content := range map[string]string{
@@ -462,7 +461,7 @@ func TestScanDeps_SymlinkDir(t *testing.T) {
 		return
 	}
 
-	ctx := context.Background()
+	ctx := t.Context()
 	dir := tempDir(t)
 
 	for fname, content := range map[string]string{
@@ -553,7 +552,7 @@ func TestScanDeps_SymlinkIntermediateDir(t *testing.T) {
 		t.Skipf("no symlink on windows")
 		return
 	}
-	ctx := context.Background()
+	ctx := t.Context()
 	dir := tempDir(t)
 
 	for fname, content := range map[string]string{
@@ -628,7 +627,7 @@ func TestScanDeps_SymlinkDirSymlinkIntermediateDir(t *testing.T) {
 		t.Skipf("no symlink on windows")
 		return
 	}
-	ctx := context.Background()
+	ctx := t.Context()
 	dir := tempDir(t)
 
 	for fname, content := range map[string]string{
@@ -712,7 +711,7 @@ func TestScanDeps_SymlinkFile(t *testing.T) {
 		t.Skipf("no symlink on windows")
 		return
 	}
-	ctx := context.Background()
+	ctx := t.Context()
 	dir := tempDir(t)
 
 	for fname, content := range map[string]string{

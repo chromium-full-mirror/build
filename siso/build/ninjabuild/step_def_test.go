@@ -5,7 +5,6 @@
 package ninjabuild
 
 import (
-	"context"
 	"os"
 	"path/filepath"
 	"sort"
@@ -19,7 +18,7 @@ import (
 )
 
 func TestStepExpandLabels(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	g := &globals{
 		path: build.NewPath("/b/w", "out/Default"),
 		stepConfig: &StepConfig{
@@ -55,7 +54,7 @@ func TestStepExpandLabels(t *testing.T) {
 }
 
 func TestExpandedInputs_no_expansion(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	state := ninjautil.NewState()
 	p := ninjautil.NewManifestParser(state)
 	dir := t.TempDir()
@@ -157,7 +156,7 @@ build target1: __rule target2 | ../../source1 || target3
 }
 
 func TestExpandedInputs_replace_accumulate(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	state := ninjautil.NewState()
 	p := ninjautil.NewManifestParser(state)
 	dir := t.TempDir()
@@ -278,7 +277,7 @@ build target1: __rule ../../source1 foo.stamp foo.a
 }
 
 func TestExpandedInputs_solibs(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	state := ninjautil.NewState()
 	p := ninjautil.NewManifestParser(state)
 	dir := t.TempDir()
@@ -371,7 +370,7 @@ build foo.h: __rule | ./protoc
 }
 
 func TestExpandedInputs_indirect_inputs(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	state := ninjautil.NewState()
 	p := ninjautil.NewManifestParser(state)
 	dir := t.TempDir()

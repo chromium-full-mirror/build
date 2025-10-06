@@ -5,7 +5,6 @@
 package hashfs
 
 import (
-	"context"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -19,7 +18,7 @@ func TestDirectoryLookup_Symlink(t *testing.T) {
 		t.Skip("no symlink on windows")
 		return
 	}
-	ctx := context.Background()
+	ctx := t.Context()
 	dir := t.TempDir()
 	dir, err := filepath.EvalSymlinks(dir)
 	if err != nil {

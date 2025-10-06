@@ -5,7 +5,6 @@
 package ninja
 
 import (
-	"context"
 	"fmt"
 	"path"
 	"runtime"
@@ -25,7 +24,7 @@ func TestBuild_MacOSXSDK(t *testing.T) {
 		t.Skip("skip: no symlink support on windows")
 		return
 	}
-	ctx := context.Background()
+	ctx := t.Context()
 	dir := tempDir(t)
 
 	ninja := func(t *testing.T, refake *reapitest.Fake) (build.Stats, error) {

@@ -6,7 +6,6 @@ package ninja
 
 import (
 	"bytes"
-	"context"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -23,7 +22,7 @@ func TestBuild_Symlink(t *testing.T) {
 		t.Skip("symlink not available on windows")
 		return
 	}
-	ctx := context.Background()
+	ctx := t.Context()
 	dir := tempDir(t)
 
 	ninja := func(t *testing.T) (build.Stats, error) {

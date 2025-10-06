@@ -16,7 +16,7 @@ import (
 )
 
 func TestWaitAcquire(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	sema := semaphore.New(t.Name(), 3)
 	if n := sema.NumServs(); n != 0 {
 		t.Errorf("NumServs=%d; want %d", n, 0)
@@ -102,7 +102,7 @@ func TestWaitAcquire(t *testing.T) {
 }
 
 func TestTryAcquire(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	sema := semaphore.New(t.Name(), 3)
 	if n := sema.NumServs(); n != 0 {
 		t.Errorf("NumServs=%d; want %d", n, 0)
@@ -185,7 +185,7 @@ func TestTryAcquire(t *testing.T) {
 
 // TestDo tests the Do function.
 func TestDo(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	sema := semaphore.New(t.Name(), 3)
 	if n := sema.NumServs(); n != 0 {
 		t.Errorf("NumServs=%d; want %d", n, 0)
@@ -231,7 +231,7 @@ func TestDo(t *testing.T) {
 }
 
 func TestDo_err(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	sema := semaphore.New(t.Name(), 3)
 	if n := sema.NumServs(); n != 0 {
 		t.Errorf("NumServs=%d; want %d", n, 0)
@@ -257,7 +257,7 @@ func TestDo_err(t *testing.T) {
 
 func TestDo_timeout(t *testing.T) {
 	started := time.Now()
-	ctx := context.Background()
+	ctx := t.Context()
 	const count = 3
 	sema := semaphore.New(t.Name(), count)
 

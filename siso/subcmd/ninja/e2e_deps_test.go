@@ -23,7 +23,7 @@ import (
 )
 
 func TestBuild_Deps_Incremental(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	dir := tempDir(t)
 
 	gccDeps := []string{"../../base/foo.cc", "../../base/foo.h"}
@@ -231,7 +231,7 @@ func TestBuild_Deps_Incremental(t *testing.T) {
 // TestBuild_Deps_Stale checks ninja runs step if deps log is stale
 // (foo.o is modified, so newer than mtime recorded in deps log).
 func TestBuild_Deps_Stale(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	dir := tempDir(t)
 
 	gccDeps := []string{"../../base/foo.cc", "../../base/foo.h"}

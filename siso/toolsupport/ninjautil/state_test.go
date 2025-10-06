@@ -5,7 +5,6 @@
 package ninjautil
 
 import (
-	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -150,7 +149,7 @@ default all
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			ctx := context.Background()
+			ctx := t.Context()
 			err := os.WriteFile("input", []byte(tc.input), 0644)
 			if err != nil {
 				t.Fatal(err)

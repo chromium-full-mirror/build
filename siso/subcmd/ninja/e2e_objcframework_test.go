@@ -5,7 +5,6 @@
 package ninja
 
 import (
-	"context"
 	"fmt"
 	"path"
 	"testing"
@@ -19,7 +18,7 @@ import (
 
 // test precomputed tree for sysroot/frameworks.
 func TestBuild_ObjcxxFrameworks(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	dir := tempDir(t)
 
 	ninja := func(t *testing.T, refake *reapitest.Fake) (build.Stats, error) {

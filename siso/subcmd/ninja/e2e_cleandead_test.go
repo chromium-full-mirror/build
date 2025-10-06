@@ -5,7 +5,6 @@
 package ninja
 
 import (
-	"context"
 	"errors"
 	"io/fs"
 	"os"
@@ -17,7 +16,7 @@ import (
 )
 
 func TestBuild_Cleandead(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	dir := tempDir(t)
 
 	copy := func(t *testing.T, src, dst string) {
@@ -103,7 +102,7 @@ func TestBuild_Cleandead(t *testing.T) {
 }
 
 func TestBuild_CleandeadPreserveNonOut(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	dir := tempDir(t)
 	sdkDir := filepath.Join(tempDir(t), "sdk")
 	err := os.MkdirAll(sdkDir, 0755)

@@ -5,7 +5,6 @@
 package ninja
 
 import (
-	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -15,7 +14,7 @@ import (
 )
 
 func TestBuild_Validations(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	dir := tempDir(t)
 
 	ninja := func(t *testing.T) (build.Stats, error) {
@@ -104,7 +103,7 @@ func TestBuild_Validations(t *testing.T) {
 }
 
 func TestBuild_ValidationsDependsOnOutput(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	dir := tempDir(t)
 
 	ninja := func(t *testing.T) (build.Stats, error) {
@@ -193,7 +192,7 @@ func TestBuild_ValidationsDependsOnOutput(t *testing.T) {
 }
 
 func TestBuild_ValidationsNested(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	dir := tempDir(t)
 
 	ninja := func(t *testing.T) (build.Stats, error) {

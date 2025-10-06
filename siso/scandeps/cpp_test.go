@@ -5,14 +5,13 @@
 package scandeps
 
 import (
-	"context"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
 )
 
 func TestCPPScan(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	for _, tc := range []struct {
 		name         string
 		buf          string
@@ -133,7 +132,7 @@ namespace base {
 }
 
 func TestAddInclude(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	for _, tc := range []struct {
 		name  string
 		input string
@@ -192,7 +191,7 @@ func TestAddInclude(t *testing.T) {
 }
 
 func TestAddDefine(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	for _, tc := range []struct {
 		name  string
 		input string
@@ -256,7 +255,7 @@ func TestAddDefine(t *testing.T) {
 }
 
 func TestExpandMacros(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 
 	for _, tc := range []struct {
 		name    string

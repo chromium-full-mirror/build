@@ -5,13 +5,12 @@
 package hashfs
 
 import (
-	"context"
 	"io/fs"
 	"testing"
 )
 
 func BenchmarkDirectoryLookup(b *testing.B) {
-	ctx := context.Background()
+	ctx := b.Context()
 	root := &directory{}
 	fname := "/b/s/w/ir/cache/builder/src/out/siso/gen"
 	b.Run("miss", func(b *testing.B) {
@@ -42,7 +41,7 @@ func BenchmarkDirectoryLookup(b *testing.B) {
 // allocations that was measured by the above benchmark.
 // fs_test.go is eternal test, but this is internal test.
 func TestDirectoryLookup(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	root := &directory{}
 	fname := "/b/s/w/ir/cache/builder/src/out/siso/gen"
 

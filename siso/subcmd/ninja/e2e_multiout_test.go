@@ -5,7 +5,6 @@
 package ninja
 
 import (
-	"context"
 	"fmt"
 	"path/filepath"
 	"testing"
@@ -18,7 +17,7 @@ import (
 )
 
 func TestBuild_MultiOut(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	dir := tempDir(t)
 
 	setupFiles(t, dir, t.Name(), nil)
@@ -44,7 +43,7 @@ func TestBuild_MultiOut(t *testing.T) {
 
 // Test step that outputs multiple targets correctly generates the outputs.
 func TestBuild_MultiOut_Remote(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	dir := tempDir(t)
 
 	ninja := func(t *testing.T, refake *reapitest.Fake) (build.Stats, error) {

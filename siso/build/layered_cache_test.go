@@ -32,7 +32,7 @@ func setContent(ctx context.Context, cache cachestore.CacheStore, s string) erro
 }
 
 func TestLayeredCache(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	cache := NewLayeredCache()
 
 	first, err := NewLocalCache(t.TempDir())
@@ -107,7 +107,7 @@ func TestLayeredCache(t *testing.T) {
 }
 
 func TestWriteThroughCache(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	cache := NewLayeredCache()
 
 	first, err := NewLocalCache(t.TempDir())

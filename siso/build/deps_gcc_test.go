@@ -58,7 +58,7 @@ func TestDepsGCCFixCmdInputs_ios(t *testing.T) {
 		t.Skip("depsGCC is not used on windows")
 		return
 	}
-	ctx := context.Background()
+	ctx := t.Context()
 	dir := t.TempDir()
 	hashFS, err := hashfs.New(ctx, hashfs.Option{})
 	if err != nil {
@@ -190,7 +190,7 @@ func TestDepsGCCFixCmdInputs_chromeos(t *testing.T) {
 		t.Skip("depsGCC is not used on windows")
 		return
 	}
-	ctx := context.Background()
+	ctx := t.Context()
 	dir := t.TempDir()
 	hashFS, err := hashfs.New(ctx, hashfs.Option{})
 	if err != nil {

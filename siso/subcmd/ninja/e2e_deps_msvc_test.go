@@ -24,7 +24,7 @@ import (
 )
 
 func TestBuild_DepsMSVC(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	dir := tempDir(t)
 
 	func() {
@@ -109,7 +109,7 @@ func TestBuild_DepsMSVC(t *testing.T) {
 }
 
 func TestBuild_DepsMSVC_Reproxy(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	dir := tempDir(t)
 	func() {
 		t.Logf("first build")
@@ -245,7 +245,7 @@ Note: including file:   ../../base/other2.h
 }
 
 func TestBuild_DepsMSVC_fastlocal(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	dir := tempDir(t)
 
 	limits := build.DefaultLimits(ctx)
@@ -341,7 +341,7 @@ func TestBuild_DepsMSVC_fastlocal(t *testing.T) {
 
 // regression test for b/322270122
 func TestBuild_DepsMSVC_InstallerRC(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	dir := tempDir(t)
 
 	ninja := func(t *testing.T, dryRun bool) (build.Stats, error) {

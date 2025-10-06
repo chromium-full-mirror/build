@@ -5,7 +5,6 @@
 package msvcutil
 
 import (
-	"context"
 	"os"
 	"testing"
 
@@ -13,7 +12,7 @@ import (
 )
 
 func TestScanDepsParams(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	for _, tc := range []struct {
 		name string
 		args []string

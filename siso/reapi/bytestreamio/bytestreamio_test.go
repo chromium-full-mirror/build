@@ -78,7 +78,7 @@ func TestReader(t *testing.T) {
 		data:         data,
 		chunksize:    chunksize,
 	}
-	ctx := context.Background()
+	ctx := t.Context()
 
 	r, err := Open(ctx, c, resourceName)
 	if err != nil {
@@ -192,7 +192,7 @@ func TestWriter(t *testing.T) {
 	if bytes.Equal(c.buf.Bytes(), data) {
 		t.Fatalf("data setup failed")
 	}
-	ctx := context.Background()
+	ctx := t.Context()
 
 	w, err := Create(ctx, c, resourceName, "testdata")
 	if err != nil {
@@ -239,7 +239,7 @@ func TestWriterAlreadyExists(t *testing.T) {
 	if bytes.Equal(c.buf.Bytes(), data) {
 		t.Fatalf("data setup failed")
 	}
-	ctx := context.Background()
+	ctx := t.Context()
 
 	w, err := Create(ctx, c, resourceName, "testdata")
 	if err != nil {
@@ -289,7 +289,7 @@ func TestWriterCompressed(t *testing.T) {
 	if bytes.Equal(c.buf.Bytes(), compressedData) {
 		t.Fatalf("data setup failed")
 	}
-	ctx := context.Background()
+	ctx := t.Context()
 
 	w, err := Create(ctx, c, resourceName, "testdata")
 	if err != nil {
@@ -340,7 +340,7 @@ func TestWriterAlreadyExistsCompressed(t *testing.T) {
 	if bytes.Equal(c.buf.Bytes(), compressedData) {
 		t.Fatalf("data setup failed")
 	}
-	ctx := context.Background()
+	ctx := t.Context()
 
 	w, err := Create(ctx, c, resourceName, "testdata")
 	if err != nil {

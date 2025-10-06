@@ -24,7 +24,7 @@ import (
 )
 
 func TestBuild_Fail_Reproxy(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	dir := tempDir(t)
 
 	ninja := func(t *testing.T, refake *reproxytest.Fake) (build.Stats, error) {
@@ -126,7 +126,7 @@ func TestBuild_Fail_Reproxy(t *testing.T) {
 }
 
 func TestBuild_Fail_Remote(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	dir := tempDir(t)
 
 	ninja := func(t *testing.T, refake *reapitest.Fake, failureSummary, outputLog *bytes.Buffer) (build.Stats, error) {

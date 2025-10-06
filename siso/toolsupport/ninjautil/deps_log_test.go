@@ -5,7 +5,6 @@
 package ninjautil
 
 import (
-	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -18,7 +17,7 @@ import (
 // https://github.com/ninja-build/ninja/blob/d4017a2b1ea642f12dabe05ec99b2a16c93e99aa/src/deps_log_test.cc
 
 func TestReadWriteDepsLog(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	fname := filepath.Join(t.TempDir(), "mydepslog")
 	t1 := time.Unix(1, 0)
 	t2 := time.Unix(2, 0)
@@ -89,7 +88,7 @@ func TestReadWriteDepsLog(t *testing.T) {
 }
 
 func TestRecompact(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	fname := filepath.Join(t.TempDir(), "mydepslog")
 	t1 := time.Unix(1, 0)
 	t2 := time.Unix(2, 0)
@@ -205,7 +204,7 @@ func TestRecompact(t *testing.T) {
 }
 
 func TestDepsLog_broken(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	fname := filepath.Join(t.TempDir(), "mydepslog")
 	t1 := time.Unix(1, 0)
 	t2 := time.Unix(2, 0)

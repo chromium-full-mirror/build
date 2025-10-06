@@ -5,7 +5,6 @@
 package ninja
 
 import (
-	"context"
 	"errors"
 	"io/fs"
 	"os"
@@ -17,7 +16,7 @@ import (
 )
 
 func TestBuild_PrepareHeaderOnly(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	dir := tempDir(t)
 
 	ninja := func(t *testing.T, targets []string) (build.Stats, error) {

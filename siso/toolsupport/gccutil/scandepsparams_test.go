@@ -5,7 +5,6 @@
 package gccutil
 
 import (
-	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -14,7 +13,7 @@ import (
 )
 
 func TestScanDepsParams(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	for _, tc := range []struct {
 		name string
 		args []string
@@ -335,7 +334,7 @@ func TestScanDepsParams(t *testing.T) {
 }
 
 func TestScanDepsParams_Rspfile(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	dir := t.TempDir()
 
 	err := os.MkdirAll(filepath.Join(dir, "out/soong/.intermediates/frameworks/native/services/surfaceflinger/CompositionEngine/libcompositionengine_mocks/android_x86_64_silvermont_static"), 0755)

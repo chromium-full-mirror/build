@@ -5,7 +5,6 @@
 package build
 
 import (
-	"context"
 	"testing"
 	"time"
 
@@ -13,7 +12,7 @@ import (
 )
 
 func TestStepMetricsDone_NoExecutionMetadata(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	step := &Step{
 		state: &stepState{},
 		cmd:   &execute.Cmd{},

@@ -23,7 +23,7 @@ func TestProgress_NotIsTerminal(t *testing.T) {
 		plan:           &plan{},
 		stats:          &stats{},
 	}
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	p.start(ctx, b)
 

@@ -6,7 +6,6 @@ package ninja
 
 import (
 	"bytes"
-	"context"
 	"io"
 	"strings"
 	"testing"
@@ -16,7 +15,7 @@ import (
 )
 
 func TestBuild_CheckDeps(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	dir := tempDir(t)
 
 	ninja := func(t *testing.T, target string, w io.Writer) (build.Stats, error) {

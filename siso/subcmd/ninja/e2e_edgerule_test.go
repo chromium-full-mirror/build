@@ -6,7 +6,6 @@ package ninja
 
 import (
 	"bytes"
-	"context"
 	"fmt"
 	"path"
 	"testing"
@@ -20,7 +19,7 @@ import (
 )
 
 func TestBuild_EdgeRule(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	dir := tempDir(t)
 
 	ninja := func(t *testing.T, ds dataSource) (build.Stats, error) {
@@ -234,7 +233,7 @@ func TestBuild_EdgeRule(t *testing.T) {
 }
 
 func TestBuild_EdgeRule_solibs(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	dir := tempDir(t)
 
 	ninja := func(t *testing.T, ds dataSource) (build.Stats, error) {
@@ -340,7 +339,7 @@ func TestBuild_EdgeRule_solibs(t *testing.T) {
 }
 
 func TestBuild_EdgeRule_solibs_recursive(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	dir := tempDir(t)
 
 	ninja := func(t *testing.T, ds dataSource) (build.Stats, error) {
@@ -447,7 +446,7 @@ func TestBuild_EdgeRule_solibs_recursive(t *testing.T) {
 }
 
 func TestBuild_EdgeRule_stamp_solibs(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	dir := tempDir(t)
 
 	ninja := func(t *testing.T, ds dataSource) (build.Stats, error) {

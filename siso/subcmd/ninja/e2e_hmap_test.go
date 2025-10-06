@@ -5,7 +5,6 @@
 package ninja
 
 import (
-	"context"
 	"fmt"
 	"path"
 	"testing"
@@ -18,7 +17,7 @@ import (
 )
 
 func TestBuild_Hmap(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	dir := tempDir(t)
 
 	ninja := func(t *testing.T, refake *reapitest.Fake) (build.Stats, error) {

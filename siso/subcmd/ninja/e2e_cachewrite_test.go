@@ -21,7 +21,7 @@ import (
 //   - Upload results of local execution back to RE
 //   - Use the locally uploaded cache-write for future remote cache hits
 func TestBuild_CacheWrite(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 
 	allOutputs := []string{
 		"out/siso/gen/asserts.out",

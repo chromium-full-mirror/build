@@ -35,7 +35,7 @@ import (
 
 func TestStamp(t *testing.T) {
 	t.Parallel()
-	ctx := context.Background()
+	ctx := t.Context()
 	execRoot := t.TempDir()
 	execRoot, err := filepath.EvalSymlinks(execRoot)
 	if err != nil {
@@ -136,7 +136,7 @@ func TestReadDir(t *testing.T) {
 		"base/debug/debug.h": "",
 		"base/version.h":     "",
 	})
-	ctx := context.Background()
+	ctx := t.Context()
 	hashFS, err := hashfs.New(ctx, hashfs.Option{})
 	if err != nil {
 		t.Fatalf("hashfs.New(...)=_, %v; want nil err", err)
@@ -237,7 +237,7 @@ func TestMkdir(t *testing.T) {
 		"out/siso/gen/v8/stamp": "",
 	})
 
-	ctx := context.Background()
+	ctx := t.Context()
 	hashFS, err := hashfs.New(ctx, hashfs.Option{})
 	if err != nil {
 		t.Fatalf("hashfs.New(...)=_, %v; want nil err", err)
@@ -313,7 +313,7 @@ func TestStat_Race(t *testing.T) {
 	setupFiles(t, dir, map[string]string{
 		fname: "",
 	})
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	hashFS, err := hashfs.New(ctx, hashfs.Option{})
 	if err != nil {
@@ -351,7 +351,7 @@ func TestStat_Race(t *testing.T) {
 }
 
 func BenchmarkStat(b *testing.B) {
-	ctx := context.Background()
+	ctx := b.Context()
 	dir := b.TempDir()
 	opt := hashfs.Option{}
 	hfs, err := hashfs.New(ctx, opt)
@@ -400,7 +400,7 @@ func TestStatAllocs(t *testing.T) {
 		allocBase = 7.0
 	}
 
-	ctx := context.Background()
+	ctx := t.Context()
 	dir := t.TempDir()
 	dir, err := filepath.EvalSymlinks(dir)
 	if err != nil {
@@ -449,7 +449,7 @@ func TestStatAllocs(t *testing.T) {
 }
 
 func TestStat_IntermediateDir(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	dir := t.TempDir()
 	dir, err := filepath.EvalSymlinks(dir)
 	if err != nil {
@@ -490,7 +490,7 @@ func TestStat_IntermediateDir(t *testing.T) {
 }
 
 func TestStat_Dir(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	dir := t.TempDir()
 	dir, err := filepath.EvalSymlinks(dir)
 	if err != nil {
@@ -547,7 +547,7 @@ func TestStat_Symlink_FileInfoPath(t *testing.T) {
 		t.Skipf("no symlink on windows")
 		return
 	}
-	ctx := context.Background()
+	ctx := t.Context()
 	dir := t.TempDir()
 	dir, err := filepath.EvalSymlinks(dir)
 	if err != nil {
@@ -634,7 +634,7 @@ func computeUpdateEntries(ctx context.Context, pre, post []hashfs.UpdateEntry, r
 }
 
 func TestUpdate_FromLocal(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	dir := t.TempDir()
 	dir, err := filepath.EvalSymlinks(dir)
 	if err != nil {
@@ -727,7 +727,7 @@ func TestUpdate_FromLocal(t *testing.T) {
 }
 
 func TestUpdate_FromLocal_update(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	dir := t.TempDir()
 	dir, err := filepath.EvalSymlinks(dir)
 	if err != nil {
@@ -843,7 +843,7 @@ func TestUpdate_FromLocal_update(t *testing.T) {
 // Test IsChanged is true after Update from local with restat,
 // if stamp file didn't exist before.
 func TestUpdate_FromLocal_Restat_update(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	dir := t.TempDir()
 	dir, err := filepath.EvalSymlinks(dir)
 	if err != nil {
@@ -936,7 +936,7 @@ func TestUpdate_FromLocal_Restat_update(t *testing.T) {
 // Test IsChanged is false after Update from local with restat,
 // if stamp file is not changed.
 func TestUpdate_FromLocal_Restat_noupdate(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	dir := t.TempDir()
 	dir, err := filepath.EvalSymlinks(dir)
 	if err != nil {
@@ -1027,7 +1027,7 @@ func TestUpdate_FromLocal_Restat_noupdate(t *testing.T) {
 }
 
 func TestUpdate_FromLocal_Dir(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	dir := t.TempDir()
 	dir, err := filepath.EvalSymlinks(dir)
 	if err != nil {
@@ -1111,7 +1111,7 @@ func TestUpdate_FromLocal_AbsSymlink(t *testing.T) {
 		t.Skip("no symlink test on windows")
 		return
 	}
-	ctx := context.Background()
+	ctx := t.Context()
 	dir := t.TempDir()
 	dir, err := filepath.EvalSymlinks(dir)
 	if err != nil {
@@ -1260,7 +1260,7 @@ func TestUpdate_FromLocal_NonLocalSymlink(t *testing.T) {
 		t.Skip("no symlink test on windows")
 		return
 	}
-	ctx := context.Background()
+	ctx := t.Context()
 	dir := t.TempDir()
 	dir, err := filepath.EvalSymlinks(dir)
 	if err != nil {
@@ -1411,7 +1411,7 @@ func TestSymlinkDir(t *testing.T) {
 		t.Skip("no symlink test on windows")
 		return
 	}
-	ctx := context.Background()
+	ctx := t.Context()
 	dir := t.TempDir()
 	dir, err := filepath.EvalSymlinks(dir)
 	if err != nil {
@@ -1570,7 +1570,7 @@ func TestFlusTohHardlink(t *testing.T) {
 		t.Skip("no hardlink on windows")
 		return
 	}
-	ctx := context.Background()
+	ctx := t.Context()
 	dir := t.TempDir()
 	dir, err := filepath.EvalSymlinks(dir)
 	if err != nil {
@@ -1652,7 +1652,7 @@ func TestXattr(t *testing.T) {
 	}
 	dir := *xattrTestDir
 	file := *xattrTestPath
-	ctx := context.Background()
+	ctx := t.Context()
 	wantDigest := func() digest.Digest {
 		hashFS, err := hashfs.New(ctx, hashfs.Option{})
 		if err != nil {
@@ -1696,7 +1696,7 @@ func TestXattr(t *testing.T) {
 }
 
 func TestRefresh(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	dir := t.TempDir()
 	dir, err := filepath.EvalSymlinks(dir)
 	if err != nil {
@@ -1769,7 +1769,7 @@ func init() {
 
 func setupForFlush(t *testing.T) (*hashfs.HashFS, string) {
 	t.Helper()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	dir := t.TempDir()
 	dir, err := filepath.EvalSymlinks(dir)
@@ -1846,7 +1846,7 @@ func setupForFlush(t *testing.T) (*hashfs.HashFS, string) {
 }
 
 func TestMkdirFlush(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 
 	for _, name := range flushTestNames {
 		t.Run(name, func(t *testing.T) {
@@ -1887,7 +1887,7 @@ func TestMkdirFlush(t *testing.T) {
 }
 
 func TestMkdirFlush_mtime(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	dir := t.TempDir()
 	dir, err := filepath.EvalSymlinks(dir)
 	if err != nil {
@@ -1948,7 +1948,7 @@ func TestMkdirFlush_mtime(t *testing.T) {
 }
 
 func TestWriteEmptyFlush(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 
 	for _, name := range flushTestNames {
 		t.Run(name, func(t *testing.T) {
@@ -2005,7 +2005,7 @@ func TestWriteEmptyFlush(t *testing.T) {
 }
 
 func TestWriteDataFlush(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 
 	for _, name := range flushTestNames {
 		t.Run(name, func(t *testing.T) {
@@ -2092,7 +2092,7 @@ func update(ctx context.Context, hfs *hashfs.HashFS, execRoot string, entries []
 }
 
 func TestUpdate_WithLocalFlush(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	osfs := osfs.New(ctx, "fs", osfs.Option{})
 
 	for _, name := range flushTestNames {
@@ -2156,7 +2156,7 @@ func TestSymlinkFlush(t *testing.T) {
 		t.Skipf("no symlink on windows")
 		return
 	}
-	ctx := context.Background()
+	ctx := t.Context()
 
 	for _, name := range flushTestNames {
 		t.Run(name, func(t *testing.T) {
@@ -2201,7 +2201,7 @@ func TestSymlinkFlush(t *testing.T) {
 }
 
 func TestRemoveFlush(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 
 	for _, name := range flushTestNames {
 		t.Run(name, func(t *testing.T) {
@@ -2236,7 +2236,7 @@ func TestEntries_Symlink(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skipf("no symlink on windows")
 	}
-	ctx := context.Background()
+	ctx := t.Context()
 	execRoot := t.TempDir()
 
 	hashFS, err := hashfs.New(ctx, hashfs.Option{})
@@ -2288,7 +2288,7 @@ func TestEntries_EscapedSymlink(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skipf("no symlink on windows")
 	}
-	ctx := context.Background()
+	ctx := t.Context()
 	execRoot := t.TempDir()
 	extDir := t.TempDir()
 	extRel, err := filepath.Rel(execRoot, extDir)

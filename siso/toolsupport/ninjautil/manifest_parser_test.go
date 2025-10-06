@@ -5,7 +5,6 @@
 package ninjautil
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -16,7 +15,7 @@ import (
 )
 
 func TestParser_Empty(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	dir := t.TempDir()
 	err := os.WriteFile(filepath.Join(dir, "input"), nil, 0644)
 	if err != nil {
@@ -33,7 +32,7 @@ func TestParser_Empty(t *testing.T) {
 }
 
 func TestParser_Rules(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	dir := t.TempDir()
 	err := os.WriteFile(filepath.Join(dir, "input"), []byte(`
 rule cat
@@ -72,7 +71,7 @@ build result: cat in_1.cc in-2.O
 }
 
 func TestParser_EscapedPath(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	dir := t.TempDir()
 	err := os.WriteFile(filepath.Join(dir, "build.ninja"), []byte(`
 rule echo
@@ -129,7 +128,7 @@ build out: echo foo$ bar $
 }
 
 func TestParser_Binding_flags(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	dir := t.TempDir()
 	err := os.WriteFile(filepath.Join(dir, "build.ninja"), []byte(`
 ninja_required_version = 1.7.2
@@ -182,7 +181,7 @@ build obj/armv8-linux.o: asm ../../armv8-linux.S
 }
 
 func TestParser_Binding_rsp(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	dir := t.TempDir()
 	err := os.WriteFile(filepath.Join(dir, "build.ninja"), []byte(`
 rule gen_buildflags
@@ -229,7 +228,7 @@ build gen/base/debug/debugging_buildflags.h $
 }
 
 func TestParser_Binding_buildscope(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	dir := t.TempDir()
 	err := os.WriteFile(filepath.Join(dir, "build.ninja"), []byte(`
 pool build_toolchain_action_pool
@@ -277,7 +276,7 @@ build obj/base/nocompile.o: nocompile ../../base/test/nocompile.nc
 }
 
 func TestParser_Binding_Recursive(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	dir := t.TempDir()
 	err := os.WriteFile(filepath.Join(dir, "build.ninja"), []byte(`
 cflags_cc = /Fpobj/generated_api_types_cc.pch /Yubuild/precompile.h
@@ -313,7 +312,7 @@ build obj/api/generated_api_types/precompile.cc.obj: cxx ../../build/precompile.
 }
 
 func TestParser_Dupbuild_Error(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	dir := t.TempDir()
 	err := os.WriteFile(filepath.Join(dir, "build.ninja"), []byte(`
 rule cat
@@ -338,7 +337,7 @@ func TestParser_ConcurrentSubninja(t *testing.T) {
 	origLoaderConcurrency := loaderConcurrency
 	loaderConcurrency = 8
 	defer func() { loaderConcurrency = origLoaderConcurrency }()
-	ctx := context.Background()
+	ctx := t.Context()
 	dir := t.TempDir()
 
 	state := NewState()
@@ -401,7 +400,7 @@ subninja %[1]s/i/build.ninja
 }
 
 func TestParser_Validation(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	dir := t.TempDir()
 	err := os.WriteFile(filepath.Join(dir, "input"), []byte(`
 rule cat
@@ -438,7 +437,7 @@ build foo: cat bar |@ baz baz2
 }
 
 func TestParser_eval_path(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	dir := t.TempDir()
 	err := os.WriteFile(filepath.Join(dir, "build.ninja"), []byte(`
 root=.
@@ -478,7 +477,7 @@ build build.ninja: configure | $root/configure.py $root/misc/ninja_syntax.py
 }
 
 func TestParser_eval_path_in_build_binding(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	dir := t.TempDir()
 	err := os.WriteFile(filepath.Join(dir, "build.ninja"), []byte(`
 rule bootstrap
@@ -525,7 +524,7 @@ build out/soong/build.ninja: bootstrap $
 }
 
 func TestParser_simplevar(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	dir := t.TempDir()
 	err := os.WriteFile(filepath.Join(dir, "build.ninja"), []byte(`
 root = .
@@ -565,7 +564,7 @@ build $root/src/depfile_parser.cc: re2c $root/src/depfile_parser.in.cc
 }
 
 func TestParser_space_in_binding(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	dir := t.TempDir()
 	err := os.WriteFile(filepath.Join(dir, "build.ninja"), []byte(`
 two_words_with_one_space = foo $
@@ -606,7 +605,7 @@ build out: foo in
 func TestParser_whitespace_in_command(t *testing.T) {
 	// https://github.com/ninja-build/ninja/issues/952
 	// b/430748593
-	ctx := context.Background()
+	ctx := t.Context()
 	dir := t.TempDir()
 	err := os.WriteFile(filepath.Join(dir, "build.ninja"), []byte(`
 rule echo_tab

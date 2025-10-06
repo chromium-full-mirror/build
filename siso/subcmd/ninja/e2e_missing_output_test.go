@@ -5,7 +5,6 @@
 package ninja
 
 import (
-	"context"
 	"testing"
 
 	"go.chromium.org/build/siso/build"
@@ -13,7 +12,7 @@ import (
 )
 
 func TestBuild_MissingOutput(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	dir := tempDir(t)
 
 	defer build.SetExperimentForTest("")

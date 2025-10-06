@@ -5,7 +5,6 @@
 package ninja
 
 import (
-	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -16,7 +15,7 @@ import (
 )
 
 func TestBuild_NinjaLog(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	dir := tempDir(t)
 
 	ninja := func(t *testing.T) (build.Stats, error) {

@@ -5,7 +5,6 @@
 package merkletree_test
 
 import (
-	"context"
 	"path/filepath"
 	"testing"
 
@@ -19,7 +18,7 @@ import (
 )
 
 func TestTraverse(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	defer glog.Flush()
 
 	ds := digest.NewStore()

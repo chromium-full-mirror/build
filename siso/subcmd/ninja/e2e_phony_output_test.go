@@ -5,7 +5,6 @@
 package ninja
 
 import (
-	"context"
 	"testing"
 
 	"go.chromium.org/build/siso/build"
@@ -13,7 +12,7 @@ import (
 )
 
 func TestBuild_PhonyOutput(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	dir := tempDir(t)
 
 	ninja := func(t *testing.T) (build.Stats, error) {
@@ -46,7 +45,7 @@ func TestBuild_PhonyOutput(t *testing.T) {
 }
 
 func TestBuild_PhonyOutputDepError(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	dir := tempDir(t)
 
 	ninja := func(t *testing.T) (build.Stats, error) {
@@ -67,7 +66,7 @@ func TestBuild_PhonyOutputDepError(t *testing.T) {
 }
 
 func TestBuild_PhonyOutputOrderOnly(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	dir := tempDir(t)
 
 	ninja := func(t *testing.T) (build.Stats, error) {

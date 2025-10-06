@@ -5,7 +5,6 @@
 package buildconfig
 
 import (
-	"context"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -18,7 +17,7 @@ import (
 )
 
 func TestConfig(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 
 	for _, tc := range []struct {
 		name  string
@@ -73,7 +72,7 @@ func TestConfigHandler(t *testing.T) {
 		t.Skip("Linux only test.")
 	}
 
-	ctx := context.Background()
+	ctx := t.Context()
 
 	flags := map[string]string{
 		"dir":    "out/Default",
@@ -112,7 +111,7 @@ func TestConfigHandler(t *testing.T) {
 }
 
 func TestGNStar(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	flags := map[string]string{
 		"dir": "out/siso",
 	}

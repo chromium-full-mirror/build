@@ -80,7 +80,7 @@ func setupBuildDir(ctx context.Context, t *testing.T, dir string, buildDir strin
 }
 
 func TestUpload(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	dir := t.TempDir()
 
 	setupFiles(t, dir, t.Name())

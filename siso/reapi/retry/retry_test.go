@@ -18,7 +18,7 @@ import (
 )
 
 func TestDo_NoRetry(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	called := 0
 	err := retry.Do(ctx, func() error {
 		called++
@@ -33,7 +33,7 @@ func TestDo_NoRetry(t *testing.T) {
 }
 
 func TestDo_NonRetriableError(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	called := 0
 	testErr := fmt.Errorf("error")
 	err := retry.Do(ctx, func() error {
@@ -49,7 +49,7 @@ func TestDo_NonRetriableError(t *testing.T) {
 }
 
 func TestDo_RetriableError(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	called := 0
 	err := retry.Do(ctx, func() error {
 		called++
@@ -67,7 +67,7 @@ func TestDo_RetriableError(t *testing.T) {
 }
 
 func TestDo_AuthError(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 1*time.Second)
 	defer cancel()
 	called := 0
 	err := retry.Do(ctx, func() error {

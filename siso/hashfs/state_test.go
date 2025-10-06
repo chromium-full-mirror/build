@@ -6,7 +6,6 @@ package hashfs_test
 
 import (
 	"bytes"
-	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
@@ -65,7 +64,7 @@ func mockState(t *testing.T) *pb.State {
 func TestLoadMissingStateFile(t *testing.T) {
 	t.Parallel()
 
-	ctx := context.Background()
+	ctx := t.Context()
 	dir := t.TempDir()
 	dir, err := filepath.EvalSymlinks(dir)
 	if err != nil {
@@ -89,7 +88,7 @@ func TestLoadMissingStateFile(t *testing.T) {
 func TestLoadSaveEmptyState(t *testing.T) {
 	t.Parallel()
 
-	ctx := context.Background()
+	ctx := t.Context()
 	dir := t.TempDir()
 	dir, err := filepath.EvalSymlinks(dir)
 	if err != nil {
@@ -125,7 +124,7 @@ func TestLoadSaveEmptyState(t *testing.T) {
 func TestLoadSave(t *testing.T) {
 	t.Parallel()
 
-	ctx := context.Background()
+	ctx := t.Context()
 	savedState := mockState(t)
 
 	// Test with both gzip and zstd compression.
@@ -205,7 +204,7 @@ func TestLoadSave(t *testing.T) {
 func TestBgzfCompatibility(t *testing.T) {
 	t.Parallel()
 
-	ctx := context.Background()
+	ctx := t.Context()
 	savedState := mockState(t)
 
 	tests := map[string]bool{
@@ -250,7 +249,7 @@ func TestBgzfCompatibility(t *testing.T) {
 }
 
 func TestState(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 
 	dir := t.TempDir()
 	dir, err := filepath.EvalSymlinks(dir)
@@ -294,7 +293,7 @@ func TestState(t *testing.T) {
 }
 
 func TestState_Dir(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 
 	dir := t.TempDir()
 	dir, err := filepath.EvalSymlinks(dir)
@@ -353,7 +352,7 @@ func TestState_Dir(t *testing.T) {
 }
 
 func TestState_BadDirEntry(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 
 	dir := t.TempDir()
 	dir, err := filepath.EvalSymlinks(dir)
@@ -454,7 +453,7 @@ func TestState_BadDirEntry(t *testing.T) {
 }
 
 func TestState_Symlink(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 
 	dir := t.TempDir()
 	dir, err := filepath.EvalSymlinks(dir)
@@ -569,7 +568,7 @@ func createBenchmarkState(tb testing.TB, dir string) *pb.State {
 			tb.Fatal(err)
 		}
 	}
-	ctx := context.Background()
+	ctx := tb.Context()
 	hashFS, err := hashfs.New(ctx, hashfs.Option{})
 	if err != nil {
 		tb.Fatal(err)
@@ -594,7 +593,7 @@ func createBenchmarkState(tb testing.TB, dir string) *pb.State {
 func BenchmarkSetState(b *testing.B) {
 	dir := b.TempDir()
 	st := createBenchmarkState(b, dir)
-	ctx := context.Background()
+	ctx := b.Context()
 
 	b.ReportAllocs()
 	b.ResetTimer()
@@ -614,7 +613,7 @@ func BenchmarkSetState(b *testing.B) {
 
 func BenchmarkLoadState(b *testing.B) {
 	dir := b.TempDir()
-	ctx := context.Background()
+	ctx := b.Context()
 	st := createBenchmarkState(b, dir)
 
 	opts := hashfs.Option{

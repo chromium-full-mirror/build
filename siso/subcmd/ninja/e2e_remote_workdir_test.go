@@ -5,7 +5,6 @@
 package ninja
 
 import (
-	"context"
 	"testing"
 
 	rpb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
@@ -19,7 +18,7 @@ import (
 )
 
 func TestBuild_RemoteWorkDir(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	dir := tempDir(t)
 
 	ninja := func(t *testing.T, refake *reapitest.Fake) (build.Stats, error) {

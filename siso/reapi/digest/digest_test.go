@@ -53,7 +53,7 @@ func TestDigest(t *testing.T) {
 }
 
 func TestData(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 
 	name := "123"
 	b := []byte{1, 2, 3}
@@ -83,7 +83,7 @@ func TestData(t *testing.T) {
 }
 
 func TestByteSource(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 
 	name := "123"
 	b := []byte{1, 2, 3}
@@ -119,7 +119,7 @@ func (l localFileSource) String() string {
 }
 
 func TestLocalFileSource(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 
 	dir := t.TempDir()
 	fname := filepath.Join(dir, "123")

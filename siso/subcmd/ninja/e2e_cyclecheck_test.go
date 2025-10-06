@@ -5,7 +5,6 @@
 package ninja
 
 import (
-	"context"
 	"errors"
 	"testing"
 
@@ -16,7 +15,7 @@ import (
 )
 
 func TestBuild_CycleCheck(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	dir := tempDir(t)
 
 	ninja := func(t *testing.T) (build.Stats, error) {

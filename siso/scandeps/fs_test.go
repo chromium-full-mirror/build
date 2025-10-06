@@ -5,7 +5,6 @@
 package scandeps
 
 import (
-	"context"
 	"hash/maphash"
 	"testing"
 	"time"
@@ -15,7 +14,7 @@ import (
 
 func TestFilesystemUpdate(t *testing.T) {
 	dir := t.TempDir()
-	ctx := context.Background()
+	ctx := t.Context()
 	hashFS, err := hashfs.New(ctx, hashfs.Option{})
 	if err != nil {
 		t.Fatal(err)

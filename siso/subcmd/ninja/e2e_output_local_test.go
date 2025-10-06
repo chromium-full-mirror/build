@@ -20,7 +20,7 @@ import (
 )
 
 func TestBuild_OutputLocal(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	dir := tempDir(t)
 
 	ninja := func(t *testing.T, outputLocal bool, fakere *reapitest.Fake) (build.Stats, error) {

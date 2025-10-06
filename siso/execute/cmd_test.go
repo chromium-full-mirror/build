@@ -5,7 +5,6 @@
 package execute
 
 import (
-	"context"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -127,7 +126,7 @@ func TestCanonicalizeDir(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			ctx := context.Background()
+			ctx := t.Context()
 			ents, treeInputs := tc.cmd.canonicalizeDir(ctx, tc.ents, tc.treeInputs)
 			if diff := cmp.Diff(tc.wantEnts, ents, cmp.Comparer(cmpDigestData)); diff != "" {
 				t.Errorf("ents: -want +got:\n%s", diff)

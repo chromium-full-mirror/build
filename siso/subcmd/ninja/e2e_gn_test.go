@@ -6,7 +6,6 @@ package ninja
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"errors"
 	"os"
@@ -19,7 +18,7 @@ import (
 
 // Test rebuild build.ninja (gn gen) behavior.
 func TestBuild_GNGen(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	dir := tempDir(t)
 
 	run := func(args ...string) error {

@@ -24,7 +24,7 @@ import (
 )
 
 func TestBuild_Trace_remote(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	dir := tempDir(t)
 
 	ninja := func(t *testing.T, refake *reapitest.Fake) (build.Stats, error) {
@@ -185,7 +185,7 @@ func TestBuild_Trace_remote(t *testing.T) {
 }
 
 func TestBuild_Trace_reproxy(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	dir := tempDir(t)
 
 	ninja := func(t *testing.T, refake *reproxytest.Fake) (build.Stats, error) {

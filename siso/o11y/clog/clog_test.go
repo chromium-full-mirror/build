@@ -6,7 +6,6 @@
 package clog_test
 
 import (
-	"context"
 	"fmt"
 	"sync"
 	"testing"
@@ -26,7 +25,7 @@ func testFormater(e logging.Entry) string {
 }
 
 func Test(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 
 	l := clog.FromContext(ctx)
 	defer l.Close()

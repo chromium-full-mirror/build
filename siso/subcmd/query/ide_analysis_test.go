@@ -5,7 +5,6 @@
 package query
 
 import (
-	"context"
 	"flag"
 	"os"
 	"path/filepath"
@@ -24,7 +23,7 @@ import (
 )
 
 func TestIDEAnalysis(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	topDir := t.TempDir()
 	t.Chdir(topDir)
 
@@ -557,7 +556,7 @@ type fileState struct {
 
 func setupFileState(t *testing.T, topdir, fname string, files map[string]fileState) {
 	t.Helper()
-	ctx := context.Background()
+	ctx := t.Context()
 	srcMtime := time.Now().Add(-10 * time.Second)
 	cmdHash := []byte("someCommandHash")
 	state := &fspb.State{

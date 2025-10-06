@@ -5,7 +5,6 @@
 package straceutil
 
 import (
-	"context"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -419,7 +418,7 @@ func TestScanStraceData(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			inputs, outputs := scanStraceData(context.Background(), tc.data)
+			inputs, outputs := scanStraceData(t.Context(), tc.data)
 			if diff := cmp.Diff(tc.inputs, inputs); diff != "" {
 				t.Errorf("inputs: -want +got\n%s", diff)
 			}

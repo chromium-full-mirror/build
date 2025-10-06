@@ -311,7 +311,7 @@ func TestBuildInvalidEntry(t *testing.T) {
 }
 
 func TestBuild(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 
 	ds := digest.NewStore()
 	mt := New(ds)
@@ -416,7 +416,7 @@ func TestBuild(t *testing.T) {
 }
 
 func TestBuildWithSubTree(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	ds := digest.NewStore()
 	mt := New(ds)
 
@@ -577,7 +577,7 @@ func TestBuildDuplicateError(t *testing.T) {
 		},
 	} {
 		t.Run(tc.desc, func(t *testing.T) {
-			ctx := context.Background()
+			ctx := t.Context()
 			ds := digest.NewStore()
 			mt := New(ds)
 			for _, ent := range tc.ents {
@@ -595,7 +595,7 @@ func TestBuildDuplicateError(t *testing.T) {
 }
 
 func TestBuildDuplicateSymlinkDir(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	ds := digest.NewStore()
 	mt := New(ds)
 	ents := []Entry{
@@ -635,7 +635,7 @@ func TestBuildDuplicateSymlinkDir(t *testing.T) {
 }
 
 func TestBuildResolveSymlinkDir(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	ds := digest.NewStore()
 	mt := New(ds)
 	ents := []Entry{
@@ -672,7 +672,7 @@ func TestBuildResolveSymlinkDir(t *testing.T) {
 }
 
 func TestBuildResolveSymlinkDirAndSymlinkFile(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	ds := digest.NewStore()
 	mt := New(ds)
 	ents := []Entry{
@@ -740,7 +740,7 @@ func TestBuildResolveSymlinkDirAndSymlinkFile(t *testing.T) {
 }
 
 func TestBuildResolveSymlinkTree(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	ds := digest.NewStore()
 	mt := New(ds)
 	err := mt.SetTree(TreeEntry{
@@ -780,7 +780,7 @@ func TestBuildResolveSymlinkTree(t *testing.T) {
 }
 
 func TestBuildResolveSymlinkDirMerge(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	ds := digest.NewStore()
 	mt := New(ds)
 	ents := []Entry{

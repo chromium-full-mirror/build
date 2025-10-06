@@ -5,7 +5,6 @@
 package build
 
 import (
-	"context"
 	"path/filepath"
 	"testing"
 	"time"
@@ -15,7 +14,7 @@ import (
 )
 
 func TestActionResultCache(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	cache, err := NewLocalCache(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
@@ -40,7 +39,7 @@ func TestActionResultCache(t *testing.T) {
 }
 
 func TestGarbageCollector(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	d := filepath.Join(t.TempDir(), "cache")
 	cache, err := NewLocalCache(d)
 	if err != nil {

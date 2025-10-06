@@ -5,7 +5,6 @@
 package build
 
 import (
-	"context"
 	"testing"
 	"time"
 
@@ -16,7 +15,7 @@ import (
 )
 
 func TestDescMSVCDepsAfterRun(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	dir := t.TempDir()
 
 	hfs, err := hashfs.New(ctx, hashfs.Option{})

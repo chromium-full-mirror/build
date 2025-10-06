@@ -6,7 +6,6 @@ package query
 
 import (
 	"bytes"
-	"context"
 	"flag"
 	"os"
 	"testing"
@@ -145,7 +144,7 @@ in3
 			if err != nil {
 				t.Fatal(err)
 			}
-			err = c.run(context.Background(), flagSet.Args())
+			err = c.run(t.Context(), flagSet.Args())
 			if err != nil {
 				t.Fatal(err)
 			}

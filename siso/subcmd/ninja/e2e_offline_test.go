@@ -5,7 +5,6 @@
 package ninja
 
 import (
-	"context"
 	"flag"
 	"testing"
 
@@ -14,7 +13,7 @@ import (
 )
 
 func TestBuild_offline(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	dir := tempDir(t)
 
 	uiDefault := ui.Default

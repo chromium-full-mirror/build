@@ -6,7 +6,6 @@ package ninja
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"path/filepath"
 	"testing"
@@ -16,7 +15,7 @@ import (
 )
 
 func TestBuild_SwallowFailures(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	dir := tempDir(t)
 
 	setupFiles(t, dir, t.Name(), nil)
@@ -47,7 +46,7 @@ func TestBuild_SwallowFailures(t *testing.T) {
 }
 
 func TestBuild_SwallowFailuresLimit(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	dir := tempDir(t)
 
 	setupFiles(t, dir, t.Name(), nil)
@@ -78,7 +77,7 @@ func TestBuild_SwallowFailuresLimit(t *testing.T) {
 }
 
 func TestBuild_KeepGoing(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	dir := tempDir(t)
 
 	setupFiles(t, dir, t.Name(), nil)
