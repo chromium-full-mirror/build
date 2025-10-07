@@ -915,6 +915,11 @@ func (b *Builder) recordNinjaLogs(ctx context.Context, s *Step) {
 	// TODO: b/298594790 - Use the same mtime with hashFS.
 	start := time.Duration(s.metrics.ActionStartTime).Milliseconds()
 	end := time.Duration(s.metrics.ActionEndTime).Milliseconds()
+	if start == end {
+		// Artificially forward the end time to give a minimal duration for visibility
+		// in trace viewers that do not properly handle 0 duration steps.
+		end++
+	}
 
 	// Remove prefixed working directory path from Outputs.
 	outputs := make([]string, 0, len(s.cmd.Outputs))
