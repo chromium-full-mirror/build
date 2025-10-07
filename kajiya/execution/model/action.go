@@ -388,13 +388,13 @@ func treeToTrie(cas *blobstore.ContentAddressableStorage, rootDigest *repb.Diges
 			kd.Dirs = append(kd.Dirs, subDir.Name)
 
 			// Prepend the parent directory's name so that we can insert the node with its full path into the trie.
-			subDir.Name = filepath.Join(dirNode.Name, subDir.Name)
+			subDir.Name = filepath.ToSlash(filepath.Join(dirNode.Name, subDir.Name))
 			dirQueue = append(dirQueue, subDir)
 		}
 
 		// Add the directory to the trie. Ensure that the directory name ends with a slash,
 		// so that we can prefix-match paths safely in the trie later.
-		if _, didUpdate := trieBuilder.Insert([]byte(dirNode.Name+"/"), &kd); didUpdate {
+		if _, didUpdate := trieBuilder.Insert([]byte(filepath.ToSlash(dirNode.Name)+"/"), &kd); didUpdate {
 			return nil, fmt.Errorf("duplicate directory name in tree %q", dirNode.Name)
 		}
 	}
