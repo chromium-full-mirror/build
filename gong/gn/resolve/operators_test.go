@@ -208,13 +208,15 @@ func TestBinaryOps_NoSideEffects(t *testing.T) {
 func TestBinaryOps_Assignment(t *testing.T) {
 	for _, tc := range []struct {
 		name        string
+		scope       *Scope
 		node        *parse.BinaryOpNode
 		ident       string
 		want        Value
 		wantErrKind syntax.ErrKind
 	}{
 		{
-			name: "assign_integer",
+			name:  "assign_integer",
+			scope: &Scope{values: map[string]record{}},
 			node: &parse.BinaryOpNode{
 				Op:    syntax.MakeToken(syntax.TokenEqual, "="),
 				Left:  &parse.IdentifierNode{Value: syntax.MakeToken(syntax.TokenIdentifier, "a")},
@@ -225,7 +227,8 @@ func TestBinaryOps_Assignment(t *testing.T) {
 			wantErrKind: syntax.ErrNone,
 		},
 		{
-			name: "assign_string",
+			name:  "assign_string",
+			scope: &Scope{values: map[string]record{}},
 			node: &parse.BinaryOpNode{
 				Op:    syntax.MakeToken(syntax.TokenEqual, "="),
 				Left:  &parse.IdentifierNode{Value: syntax.MakeToken(syntax.TokenIdentifier, "a")},
@@ -236,7 +239,34 @@ func TestBinaryOps_Assignment(t *testing.T) {
 			wantErrKind: syntax.ErrNone,
 		},
 		{
-			name: "assign_accessor_not_implemented",
+			name:  "assign_list",
+			scope: &Scope{values: map[string]record{}},
+			node: &parse.BinaryOpNode{
+				Op:    syntax.MakeToken(syntax.TokenEqual, "="),
+				Left:  &parse.IdentifierNode{Value: syntax.MakeToken(syntax.TokenIdentifier, "a")},
+				Right: &parse.ListNode{Contents: []parse.Node{&parse.LiteralNode{Token: syntax.MakeToken(syntax.TokenInteger, "1")}}},
+			},
+			ident:       "a",
+			want:        &ListValue{list: []Value{&IntegerValue{value: 1}}},
+			wantErrKind: syntax.ErrNone,
+		},
+		{
+			name: "assign_list_clobber",
+			scope: &Scope{values: map[string]record{
+				"a": {value: &ListValue{list: []Value{&IntegerValue{value: 1}}}},
+			}},
+			node: &parse.BinaryOpNode{
+				Op:    syntax.MakeToken(syntax.TokenEqual, "="),
+				Left:  &parse.IdentifierNode{Value: syntax.MakeToken(syntax.TokenIdentifier, "a")},
+				Right: &parse.ListNode{Contents: []parse.Node{&parse.LiteralNode{Token: syntax.MakeToken(syntax.TokenInteger, "1")}}},
+			},
+			wantErrKind: syntax.ErrInvalidOperation,
+			// TODO: clobber test for scopes as well? but need to set up using BlockNode, the syntax is too complex.
+			// maybe consider using integration tests with GN native assert func?
+		},
+		{
+			name:  "assign_accessor_not_implemented",
+			scope: &Scope{values: map[string]record{}},
 			node: &parse.BinaryOpNode{
 				Op: syntax.MakeToken(syntax.TokenEqual, "="),
 				Left: &parse.AccessorNode{
@@ -249,8 +279,7 @@ func TestBinaryOps_Assignment(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			scope := &Scope{values: map[string]record{}}
-			got, err := executeBinaryOperator(tc.node, scope)
+			got, err := executeBinaryOperator(tc.node, tc.scope)
 			wantErr := tc.wantErrKind != syntax.ErrNone
 			gotErr := err != nil
 
@@ -268,7 +297,7 @@ func TestBinaryOps_Assignment(t *testing.T) {
 			if diff := cmp.Diff(tc.want, got); diff != "" {
 				t.Errorf("executeBinaryOperator(%T, _); diff -want +got:\n%s", tc.node, diff)
 			}
-			if diff := cmp.Diff(tc.want, scope.values[tc.ident].value); diff != "" {
+			if diff := cmp.Diff(tc.want, tc.scope.values[tc.ident].value); diff != "" {
 				t.Errorf("scope.values[%q].value; diff -want +got:\n%s", tc.ident, diff)
 			}
 		})

@@ -85,7 +85,33 @@ func executeBinaryOperator(opNode *parse.BinaryOpNode, scope *Scope) (Value, err
 			if rvalue.valueType() == ValueTypeNone {
 				return nil, fmt.Errorf("operator requires a rvalue")
 			}
-			// TODO: check if this is [] or {} clobber, this is not allowed.
+
+			// GN does not allow clobbering non-empty lists/scopes with another non-empty list/scope.
+			// The expectation is that users generally want to append to lists and merge scopes, not
+			// replace them. If the user really wants to replace, they're asked to first overwrite the
+			// value with an empty list/scope.
+			oldValue := scope.Value(ident, true)
+			isClobber := false
+			switch lv := oldValue.(type) {
+			case *ListValue:
+				if rv, ok := rvalue.(*ListValue); ok && len(lv.list) > 0 && len(rv.list) > 0 {
+					isClobber = true
+				}
+			case *ScopeValue:
+				if rv, ok := rvalue.(*ScopeValue); ok && lv.scope.HasValues() && rv.scope.HasValues() {
+					isClobber = true
+				}
+			}
+			if isClobber {
+				// TODO: to match GN precisely, need to also add a sub-error with hint about how to fix
+				// e.g. if you really wanted to do this then you must run `foo = []` first.
+				return nil, syntax.MakeErrorAt(opNode.LocationRange().Begin(), nil,
+					syntax.ErrInvalidOperation,
+					fmt.Sprintf("Replacing nonempty %s.", oldValue.valueType().String()),
+					fmt.Sprintf("This overwrites a previously-defined nonempty %s.", oldValue.valueType().String()))
+			}
+
+			// Validation passed, perform the assignment.
 			scope.values[ident] = record{
 				used:  false,
 				value: rvalue.CopyWithOrigin(opNode.Right),

@@ -21,6 +21,7 @@ const (
 	ErrEOF                     ErrKind = "ErrEOF"
 	ErrFileLoadFail            ErrKind = "ErrFileLoadFail"
 	ErrInvalidAST              ErrKind = "ErrInvalidAST"
+	ErrInvalidOperation        ErrKind = "ErrInvalidOperation"
 	ErrInvalidToken            ErrKind = "ErrInvalidToken"
 	ErrMemberNotFound          ErrKind = "ErrKeyNotFound"
 	ErrNewlineInStringConstant ErrKind = "ErrNewlineInStringConstant"
