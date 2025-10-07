@@ -6,6 +6,7 @@
 package model
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -242,7 +243,7 @@ func (ka *Action) addOutputsToTrie(outputs []string, ft FileType) error {
 			return fmt.Errorf("output path %q escapes the input root", path)
 		}
 		parentPath, parent, _ := ka.InputTrie.Root().LongestPrefix([]byte(path))
-		if parentPath[len(parentPath)-1] != '/' {
+		if !bytes.HasSuffix(parentPath, []byte("/")) {
 			return fmt.Errorf("parent path %q does not end with a slash", parentPath)
 		}
 		pathInParent := strings.TrimPrefix(path, string(parentPath))
