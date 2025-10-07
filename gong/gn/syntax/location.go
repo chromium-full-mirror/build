@@ -66,7 +66,7 @@ type LocationRange struct {
 // Union returns a location range combined with the current location range.
 // Returns blank if the files are not the same.
 func (l LocationRange) Union(other LocationRange) LocationRange {
-	if !l.begin.file.Equal(other.begin.file) {
+	if l.begin.file != nil && other.begin.file != nil && !l.begin.file.Equal(other.begin.file) {
 		return LocationRange{}
 	}
 	return LocationRange{l.begin.min(other.begin), l.end.max(other.end)}

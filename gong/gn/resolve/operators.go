@@ -74,11 +74,32 @@ func executeOr(opNode *parse.BinaryOpNode, scope *Scope) (Value, error) {
 func executeBinaryOperator(opNode *parse.BinaryOpNode, scope *Scope) (Value, error) {
 	// Operators that do not require pre-evaluation of both LHS/RHS.
 	switch opNode.Op.TokenType() {
-	case syntax.TokenEqual,
-		syntax.TokenPlusEquals,
+	case syntax.TokenEqual:
+		switch left := opNode.Left.(type) {
+		case *parse.IdentifierNode:
+			ident := left.Value.Value()
+			rvalue, err := ExecuteNode(opNode.Right, scope)
+			if err != nil {
+				return nil, err
+			}
+			if rvalue.valueType() == ValueTypeNone {
+				return nil, fmt.Errorf("operator requires a rvalue")
+			}
+			// TODO: check if this is [] or {} clobber, this is not allowed.
+			scope.values[ident] = record{
+				used:  false,
+				value: rvalue.CopyWithOrigin(opNode.Right),
+			}
+			return scope.values[ident].value, nil
+		case *parse.AccessorNode:
+			return nil, parse.MakeErrFromNode(opNode, syntax.ErrNotImplemented,
+				"Not implemented", "= with a.b or a[b] on LHS isn't implemented yet.")
+		}
+
+	case syntax.TokenPlusEquals,
 		syntax.TokenMinusEquals:
 		return nil, parse.MakeErrFromNode(opNode, syntax.ErrNotImplemented,
-			"Not implemented", "Operators mutating an lvalue aren't implemented yet.")
+			"Not implemented", "+= and -= aren't implemented yet.")
 
 	// ||, &&.
 	case syntax.TokenBooleanOr:

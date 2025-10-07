@@ -13,7 +13,7 @@ import (
 	"go.chromium.org/build/gong/gn/syntax"
 )
 
-func TestBinaryOps(t *testing.T) {
+func TestBinaryOps_NoSideEffects(t *testing.T) {
 	for _, tc := range []struct {
 		name        string
 		node        *parse.BinaryOpNode
@@ -183,7 +183,7 @@ func TestBinaryOps(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := executeBinaryOperator(tc.node, &Scope{})
+			got, err := executeBinaryOperator(tc.node, &Scope{values: map[string]record{}})
 			wantErr := tc.wantErrKind != syntax.ErrNone
 			gotErr := err != nil
 
@@ -200,6 +200,76 @@ func TestBinaryOps(t *testing.T) {
 
 			if diff := cmp.Diff(tc.want, got); diff != "" {
 				t.Errorf("executeBinaryOperator(%T, _); diff -want +got:\n%s", tc.node, diff)
+			}
+		})
+	}
+}
+
+func TestBinaryOps_Assignment(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		node        *parse.BinaryOpNode
+		ident       string
+		want        Value
+		wantErrKind syntax.ErrKind
+	}{
+		{
+			name: "assign_integer",
+			node: &parse.BinaryOpNode{
+				Op:    syntax.MakeToken(syntax.TokenEqual, "="),
+				Left:  &parse.IdentifierNode{Value: syntax.MakeToken(syntax.TokenIdentifier, "a")},
+				Right: &parse.LiteralNode{Token: syntax.MakeToken(syntax.TokenInteger, "123")},
+			},
+			ident:       "a",
+			want:        &IntegerValue{value: 123},
+			wantErrKind: syntax.ErrNone,
+		},
+		{
+			name: "assign_string",
+			node: &parse.BinaryOpNode{
+				Op:    syntax.MakeToken(syntax.TokenEqual, "="),
+				Left:  &parse.IdentifierNode{Value: syntax.MakeToken(syntax.TokenIdentifier, "a")},
+				Right: &parse.LiteralNode{Token: syntax.MakeToken(syntax.TokenString, `"b"`)},
+			},
+			ident:       "a",
+			want:        &StringValue{value: "b"},
+			wantErrKind: syntax.ErrNone,
+		},
+		{
+			name: "assign_accessor_not_implemented",
+			node: &parse.BinaryOpNode{
+				Op: syntax.MakeToken(syntax.TokenEqual, "="),
+				Left: &parse.AccessorNode{
+					Base:   syntax.MakeToken(syntax.TokenIdentifier, "a"),
+					Member: &parse.IdentifierNode{Value: syntax.MakeToken(syntax.TokenIdentifier, "b")},
+				},
+				Right: &parse.LiteralNode{Token: syntax.MakeToken(syntax.TokenInteger, "123")},
+			},
+			wantErrKind: syntax.ErrNotImplemented,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			scope := &Scope{values: map[string]record{}}
+			got, err := executeBinaryOperator(tc.node, scope)
+			wantErr := tc.wantErrKind != syntax.ErrNone
+			gotErr := err != nil
+
+			if gotErr != wantErr {
+				t.Fatalf("executeBinaryOperator(%T, _): got err=%v, wantErrKind=%v", tc.node, err, tc.wantErrKind)
+			}
+
+			if gotErr {
+				if match, gotErrKind := syntax.AsErrKind(err, tc.wantErrKind); match == nil {
+					t.Fatalf("executeBinaryOperator(%T, _): got err=%v (kind %s), wantErrKind=%s", tc.node, err, gotErrKind, tc.wantErrKind)
+				}
+				return
+			}
+
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Errorf("executeBinaryOperator(%T, _); diff -want +got:\n%s", tc.node, diff)
+			}
+			if diff := cmp.Diff(tc.want, scope.values[tc.ident].value); diff != "" {
+				t.Errorf("scope.values[%q].value; diff -want +got:\n%s", tc.ident, diff)
 			}
 		})
 	}
