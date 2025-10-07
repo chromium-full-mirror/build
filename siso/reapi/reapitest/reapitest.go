@@ -28,6 +28,7 @@ import (
 	"go.chromium.org/build/kajiya/blobstore"
 	"go.chromium.org/build/kajiya/capabilities"
 	"go.chromium.org/build/kajiya/execution"
+	"go.chromium.org/build/kajiya/execution/model"
 
 	"go.chromium.org/build/siso/reapi"
 )
@@ -40,11 +41,15 @@ type Fake struct {
 }
 
 // Execute runs command on fake reapi.
-func (f *Fake) Execute(action *rpb.Action) (*rpb.ActionResult, error) {
+func (f *Fake) Execute(action *model.Action) (*rpb.ActionResult, error) {
 	if f.ExecuteFunc == nil {
 		return nil, status.Error(codes.Unimplemented, "nil ExecuteFunc")
 	}
-	return f.ExecuteFunc(f, action)
+
+	return f.ExecuteFunc(f, &rpb.Action{
+		InputRootDigest: action.InputRootDigest.ToProto(),
+		CommandDigest:   action.CommandDigest.ToProto(),
+	})
 }
 
 type server struct {
