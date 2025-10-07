@@ -175,6 +175,10 @@ func LoadAction(d *repb.Digest, cas *blobstore.ContentAddressableStorage) (ka *A
 		ka.ContainerImage = containerImages[0]
 	}
 
+	ka.InputRootDigest, err = digest.NewFromProto(action.InputRootDigest)
+	if err != nil {
+		return nil, err
+	}
 	// Convert the input root to a radix trie.
 	ka.InputTrie, err = treeToTrie(cas, action.InputRootDigest)
 	if err != nil {
