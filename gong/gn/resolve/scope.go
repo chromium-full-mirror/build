@@ -39,14 +39,15 @@ type ProgrammaticProvider interface {
 // The closest analogue to a "const scope" is that a scope here may reference
 // an ExecContext object, like the `Settings` object that scopes in C++ GN
 // will reference.
-// When reading values, the base config returned by the ExecContext will be
-// checked as a last-resort, and no mutate operations will not be performed on
-// that scope.
+// When reading values, the *Scope returned by the ExecContext will be checked
+// as a last-resort, and we avoid performing direct mutate operations on it.
 type Scope struct {
 	execContext          ExecContext
 	programmaticProvider ProgrammaticProvider
 	skipBaseConfig       bool
 	parent               *Scope
+	// functions is a map from names to GN functions and/or GN templates.
+	functions map[string]FunctionInfo
 
 	values map[string]record
 }
@@ -69,9 +70,10 @@ func (s *Scope) isolate() {
 }
 
 // NewScope creates a top-level scope.
-func NewScope(programmaticProvider ProgrammaticProvider) *Scope {
+func NewScope(programmaticProvider ProgrammaticProvider, functions map[string]FunctionInfo) *Scope {
 	return &Scope{
 		programmaticProvider: programmaticProvider,
+		functions:            functions,
 		values:               make(map[string]record),
 	}
 }
@@ -130,6 +132,27 @@ func (s *Scope) Value(ident string, markAsUsed bool) Value {
 	}
 
 	return nil
+}
+
+// function gets the function with the ident in the current scope if found,
+// otherwise recursively searches containing scopes until a match is found
+// or there are no more containing scopes.
+func (s *Scope) function(name string) (FunctionInfo, bool) {
+	if f, found := s.functions[name]; found {
+		return f, true
+	}
+
+	// Search in the containing scope.
+	if s.parent != nil {
+		return s.parent.function(name)
+	}
+
+	// If there is no containing scope, search the base config.
+	if !s.skipBaseConfig && s.execContext != nil {
+		return s.execContext.BaseConfig().function(name)
+	}
+
+	return nil, false
 }
 
 // valuesInCurrentScope returns an iterator over the values in the current scope

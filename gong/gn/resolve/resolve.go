@@ -78,7 +78,21 @@ func ExecuteNode(n parse.Node, s *Scope) (Value, error) {
 		return nil, err
 
 	case *parse.FunctionCallNode:
-		return nil, fmt.Errorf("don't know how to execute FunctionCallNode yet. got: %T(%v)", n, n)
+		// TODO: Implement support for functions with blocks (i.e. targets) etc.
+		name := n.Function
+		f, ok := s.function(name.Value())
+		if !ok {
+			return nil, name.MakeError(syntax.ErrUnknown, "Unknown function.")
+		}
+		argsValue, err := ExecuteNode(n.Args, s)
+		if err != nil {
+			return nil, err
+		}
+		args, err := AsValue[*ListValue](argsValue)
+		if err != nil {
+			return nil, err
+		}
+		return f.Run(s, n, args.list)
 
 	case *parse.IdentifierNode:
 		return nil, fmt.Errorf("don't know how to execute IdentifierNode yet. got: %T(%v)", n, n)

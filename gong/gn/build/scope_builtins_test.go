@@ -16,7 +16,7 @@ func TestBuiltinProvider(t *testing.T) {
 			BuildDir:   "//out/Debug/",
 			pythonPath: "python3",
 		},
-	})
+	}, map[string]resolve.FunctionInfo{})
 
 	for _, tc := range []struct {
 		name          string

@@ -253,6 +253,52 @@ func TestExecuteNode(t *testing.T) {
 			wantErrKind: syntax.ErrTypeMismatch,
 		},
 		{
+			name:  "function_call_success",
+			scope: &Scope{functions: map[string]FunctionInfo{"mock_func": &mockFunction{value: 42}}},
+			node: &parse.FunctionCallNode{
+				Function: syntax.MakeToken(syntax.TokenIdentifier, "mock_func"),
+				Args: &parse.ListNode{
+					Contents: []parse.Node{
+						&parse.LiteralNode{Token: syntax.MakeToken(syntax.TokenInteger, "10")},
+					},
+				},
+			},
+			want:        &IntegerValue{value: 52},
+			wantErrKind: syntax.ErrNone,
+		},
+		{
+			name:  "function_call_undefined",
+			scope: &Scope{functions: map[string]FunctionInfo{}},
+			node: &parse.FunctionCallNode{
+				Function: syntax.MakeToken(syntax.TokenIdentifier, "mock_func"),
+				Args: &parse.ListNode{
+					Contents: []parse.Node{},
+				},
+			},
+			wantErrKind: syntax.ErrUnknown,
+		},
+		{
+			name: "function_call_fails_if_args_cannot_evaluate",
+			scope: &Scope{
+				functions: map[string]FunctionInfo{"mock_func": &mockFunction{}},
+				values:    map[string]record{},
+			},
+			node: &parse.FunctionCallNode{
+				Function: syntax.MakeToken(syntax.TokenIdentifier, "mock_func"),
+				Args: &parse.ListNode{
+					Contents: []parse.Node{
+						// a.b where 'a' is not defined.
+						&parse.AccessorNode{
+							Base:   syntax.MakeToken(syntax.TokenIdentifier, "a"),
+							Member: &parse.IdentifierNode{Value: syntax.MakeToken(syntax.TokenIdentifier, "b")},
+						},
+					},
+				},
+			},
+			// Error should reflect what was encountered evaluating the args.
+			wantErrKind: syntax.ErrMemberNotFound,
+		},
+		{
 			name: "access_by_subscript_undefined_base",
 			scope: &Scope{
 				values: map[string]record{},

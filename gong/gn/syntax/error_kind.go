@@ -17,6 +17,7 @@ const (
 	ErrUnknown        ErrKind = "ErrUnknown"
 	ErrNotImplemented ErrKind = "ErrNotImplemented"
 	// go/keep-sorted start
+	ErrArgumentCount           ErrKind = "ErrArgumentCount"
 	ErrEOF                     ErrKind = "ErrEOF"
 	ErrFileLoadFail            ErrKind = "ErrFileLoadFail"
 	ErrInvalidAST              ErrKind = "ErrInvalidAST"
