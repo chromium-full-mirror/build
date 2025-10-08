@@ -107,12 +107,11 @@ type Options struct {
 	// Clobber forces to rebuild ignoring existing generated files.
 	Clobber bool
 
+	// don't check slow termination.
+	FastExit bool
+
 	// Build inputs of targets, but not build targets itself.
 	Prepare bool
-
-	// Batch modes for throughput.
-	// non-batch mode for low latency, interactive.
-	Batch bool
 
 	// Verbose shows all command lines while building rather than step description.
 	Verbose bool
@@ -229,8 +228,10 @@ type Builder struct {
 
 	disableFastDeps atomic.Value // string
 
-	clobber               bool
-	batch                 bool
+	clobber bool
+
+	fastExit bool
+
 	prepare               bool
 	verbose               bool
 	verboseFailures       bool
@@ -308,9 +309,6 @@ func New(ctx context.Context, graph Graph, opts Options) (_ *Builder, err error)
 	case opts.StrictRemote:
 		logger.Infof("strict remote.  no fastlocal, no local fallback")
 		opts.Limits.FastLocal = 0
-	case opts.Batch:
-		logger.Infof("batch mode. no fastlocal")
-		opts.Limits.FastLocal = 0
 	}
 	// On many cores machine, it would hit default max thread limit = 10000.
 	// Usually, it would require 1/3 of stepLimit threads (cache miss case?).
@@ -376,7 +374,7 @@ func New(ctx context.Context, graph Graph, opts Options) (_ *Builder, err error)
 		pprofUploader:         opts.PprofUploader,
 		resultstoreUploader:   opts.ResultstoreUploader,
 		clobber:               opts.Clobber,
-		batch:                 opts.Batch,
+		fastExit:              opts.FastExit,
 		prepare:               opts.Prepare,
 		verbose:               opts.Verbose,
 		verboseFailures:       opts.VerboseFailures,
@@ -824,9 +822,8 @@ loop:
 	metrics.Err = err != nil
 	b.recordMetrics(ctx, metrics)
 	clog.Infof(ctx, "%s finished: %v", name, err)
-	if b.rebuildManifest == "" && b.batch && b.failureSummaryWriter != nil {
-		// non batch mode (ui.IsTerminal) may build last failed command
-		// so should not trigger this check at the end of build.
+	if b.rebuildManifest == "" && !b.fastExit && b.failureSummaryWriter != nil {
+		// fastExit should not trigger this check at the end of build.
 		// also check it uses failureSummaryWriter (which is mainly
 		// used on builder only), as we want to check this builder only.
 		// developer would kill/interrupt if it won't finish.

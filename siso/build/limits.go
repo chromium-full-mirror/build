@@ -184,7 +184,7 @@ func limitForFastLocal(numCPU int) int {
 	// We want to use local resources on powerful machine (but not so
 	// many, as it needs to run local only steps too),
 	// but not want to use on cheap machine (*-standard-8 etc) on builder.
-	// we'll set 0 in batch mode in ninja.go
+	// we'll set 0 in non fast_local mode in ninja.go
 	// <32 cpus -> 1
 	// 64 cpus -> 2
 	// 128 cpus -> 6

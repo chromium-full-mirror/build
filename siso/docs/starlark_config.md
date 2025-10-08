@@ -97,7 +97,8 @@ to register handlers and step configs.
   * `flags` dict
     * command line flags. key doesn't have prefix `-` of flag.
       "project" is set even if it is specified by SISO_PROJECT_ID.
-      "batch" is always set, as its default value is based on terminal or not.
+      "is_terminal" is set to indicate terminal or not, which would change
+      some default value of flags.
       `-C` uses "dir" as key.
       targets (non-flags) uses "target" as key.
   * `fs`: path is exec root relative.

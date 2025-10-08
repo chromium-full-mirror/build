@@ -115,10 +115,15 @@ type Command struct {
 	jobID   string
 
 	offline         bool
-	batch           bool
+	fastNop         bool
+	fastLocal       bool
+	fastLastFailure bool
+	fastExit        bool
+
 	quiet           bool
 	verbose         bool
 	verboseFailures bool
+
 	dryRun          bool
 	clobber         bool
 	prepare         bool
@@ -414,6 +419,28 @@ const (
 	failedTargetsFile = ".siso_failed_targets"
 )
 
+type batchFlag struct {
+	c *Command
+}
+
+func (f *batchFlag) IsBoolFlag() bool { return true }
+
+func (f *batchFlag) String() string {
+	return strconv.FormatBool(!f.c.fastNop && !f.c.fastLocal && !f.c.fastLastFailure && !f.c.fastExit)
+}
+
+func (f *batchFlag) Set(v string) error {
+	b, err := strconv.ParseBool(v)
+	if err != nil {
+		return err
+	}
+	f.c.fastNop = !b
+	f.c.fastLocal = !b
+	f.c.fastLastFailure = !b
+	f.c.fastExit = !b
+	return nil
+}
+
 func (c *Command) run(ctx context.Context) (stats build.Stats, err error) {
 	ctx, cancel := context.WithCancelCause(ctx)
 	defer signals.HandleInterrupt(ctx, func() {
@@ -465,9 +492,6 @@ func (c *Command) run(ctx context.Context) (stats build.Stats, err error) {
 	}
 	if c.failuresAllowed <= 0 {
 		c.failuresAllowed = math.MaxInt
-	}
-	if c.failuresAllowed > 1 {
-		c.batch = true
 	}
 
 	if c.adjustWarn != "" {
@@ -570,6 +594,10 @@ func (c *Command) run(ctx context.Context) (stats build.Stats, err error) {
 		limits.Remote = c.remoteJobs
 		limits.REWrap = c.remoteJobs
 	}
+	if !c.fastLocal {
+		limits.FastLocal = 0
+		limits.StartLocal = 0
+	}
 
 	if err = uuid.Validate(c.buildID); err != nil {
 		return stats, flagError{err: fmt.Errorf("%q is an invalid build ID. -build_id must be a UUID", c.buildID)}
@@ -648,7 +676,7 @@ func (c *Command) run(ctx context.Context) (stats build.Stats, err error) {
 	clog.Infof(ctx, "build id: %q", c.buildID)
 	clog.Infof(ctx, "project id: %q", projectID)
 	clog.Infof(ctx, "commandline %q", os.Args)
-	clog.Infof(ctx, "is_terminal=%t batch=%t", ui.IsTerminal(), c.batch)
+	clog.Infof(ctx, "is_terminal=%t fast_nop=%t fast_local=%t fast_last_failure=%t fast_exit=%t", ui.IsTerminal(), c.fastNop, c.fastLocal, c.fastLastFailure, c.fastExit)
 
 	spin := ui.Default.NewSpinner()
 
@@ -914,7 +942,7 @@ func (c *Command) run(ctx context.Context) (stats build.Stats, err error) {
 	// and won't match with .siso_fs_state.
 	// in this case, don't shortcut noop build, but better to check
 	// build graph again.
-	if !c.clobber && !c.batch && !c.dryRun && !c.debugMode.Explain && c.subtool != "cleandead" && !c.prepare && hashFSErr == nil && isClean && !lastFailed {
+	if !c.clobber && c.fastNop && !c.dryRun && !c.debugMode.Explain && c.subtool != "cleandead" && !c.prepare && hashFSErr == nil && isClean && !lastFailed {
 		// TODO: better to check digest of .siso_fs_state?
 		return stats, errNothingToDo
 	}
@@ -989,7 +1017,7 @@ func (c *Command) run(ctx context.Context) (stats build.Stats, err error) {
 	graph := ninjabuild.NewGraph(ctx, c.fname, nstate, config, buildPath, hashFS, stepConfig, localDepsLog)
 
 	var lastFailedTargets []string
-	if !c.batch && !c.clobber {
+	if c.fastLastFailure && !c.clobber {
 		lastFailedTargets, _ = checkTargets(ctx, failedTargetsFilename, targets)
 	}
 	err = os.Remove(failedTargetsFilename)
@@ -1151,7 +1179,14 @@ func (c *Command) SetFlags(flagSet *flag.FlagSet) {
 			}
 		}
 	}
-	flagSet.BoolVar(&c.batch, "batch", !ui.IsTerminal(), "batch mode. prefer thoughput over low latency for build failures.")
+
+	flagSet.BoolVar(&c.fastNop, "fast_nop", ui.IsTerminal(), "enable fast nop check")
+	flagSet.BoolVar(&c.fastLocal, "fast_local", ui.IsTerminal(), "enable fast local")
+	flagSet.BoolVar(&c.fastLastFailure, "fast_last_failure", ui.IsTerminal(), "enable fast last failure check")
+	flagSet.BoolVar(&c.fastExit, "fast_exit", ui.IsTerminal(), "enable fast exit")
+	batch := &batchFlag{c: c}
+	flagSet.Var(batch, "batch", "batch mode. prefer thoughput over low latency for build failures. disable -fast_nop, -fast_local -fast_last_failure -fast_exit")
+
 	flagSet.BoolVar(&c.quiet, "quiet", false, "don't show progress status, just command output")
 	flagSet.BoolVar(&c.verbose, "verbose", false, "show all command lines while building")
 	flagSet.BoolVar(&c.verbose, "v", false, "show all command lines while building (alias of --verbose)")
@@ -1340,7 +1375,7 @@ func (c *Command) initCloudLogging(ctx context.Context, projectID, execRoot stri
 			errch <- logger.Close()
 		}()
 		timeout := 1 * time.Second
-		if c.batch {
+		if !c.fastExit {
 			timeout = 10 * time.Second
 		}
 		// Don't use clog as it's closing Cloud logging client.
@@ -1449,7 +1484,7 @@ func (c *Command) initFlags(targets []string) map[string]string {
 		flags[name] = f.Value.String()
 	})
 	flags["project"] = c.projectID
-	flags["batch"] = strconv.FormatBool(c.batch)
+	flags["is_terminal"] = strconv.FormatBool(ui.IsTerminal())
 	flags["targets"] = strings.Join(targets, " ")
 	return flags
 }
@@ -1624,7 +1659,7 @@ func (c *Command) initBuildOpts(ctx context.Context, projectID string, buildPath
 		Pprof:                 c.buildPprof,
 		ResultstoreUploader:   c.resultstoreUploader,
 		Clobber:               c.clobber,
-		Batch:                 c.batch,
+		FastExit:              c.fastExit,
 		Prepare:               c.prepare,
 		Verbose:               c.verbose,
 		VerboseFailures:       c.verboseFailures,
