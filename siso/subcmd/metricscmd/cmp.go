@@ -11,7 +11,6 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"path/filepath"
 	"sort"
 
 	"github.com/google/subcommands"
@@ -102,11 +101,15 @@ func (c *cmpCommand) run() error {
 		return fmt.Errorf("unknown format %q: known formats %q: %w", c.format, formatKeys, flag.ErrHelp)
 	}
 
-	x, err := loadMetrics(filepath.Join(c.dir, c.inputA))
+	err := os.Chdir(c.dir)
 	if err != nil {
 		return err
 	}
-	y, err := loadMetrics(filepath.Join(c.dir, c.inputB))
+	x, err := loadMetrics(c.inputA)
+	if err != nil {
+		return err
+	}
+	y, err := loadMetrics(c.inputB)
 	if err != nil {
 		return err
 	}
