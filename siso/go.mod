@@ -1,6 +1,6 @@
 module go.chromium.org/build/siso
 
-go 1.24.7
+go 1.24.8
 
 require (
 	cloud.google.com/go/compute/metadata v0.8.0
