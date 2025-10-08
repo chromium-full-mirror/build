@@ -82,11 +82,14 @@ need its own login flow.
 
 You can check auth status by running `siso auth-check [-reapi_*]`
 
-## Note
+## Interoperability
 
-reclient credential helper is slightly different from bazel credential helper
-(timestamp format for expiry, etc).
-To convert reclient credential helper's output to bazel credential helper,
+reclient (>= 0.185.*) supports bazel credential helper
+compatible format, and credshelper supports `-bazel_compat`.
+
+Old reclient credshelper is slightly different from bazel credential
+helper (timestamp format for expiry, etc).
+To convert reclient credshelper's output to bazel credential helper,
 
 ```
 import datetime
@@ -103,4 +106,5 @@ print(json.dumps(resp))
 
 ```
 
-`luci-auth` has `–json-format` option for `luci`, `reclient` or `bazel`.
+`luci-auth` has `–json-format` option for `luci`, `reclient` or `bazel`,
+but fixed version (v1.5.7) is not yet rolled out in depot_tools.
