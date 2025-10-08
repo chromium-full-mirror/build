@@ -63,7 +63,7 @@ func (c *summaryCommand) SetFlags(flagSet *flag.FlagSet) {
 }
 
 func (c *summaryCommand) Execute(ctx context.Context, flagSet *flag.FlagSet, _ ...any) subcommands.ExitStatus {
-	err := c.run(ctx)
+	err := c.run()
 	if err != nil {
 		switch {
 		case errors.Is(err, flag.ErrHelp):
@@ -77,7 +77,7 @@ func (c *summaryCommand) Execute(ctx context.Context, flagSet *flag.FlagSet, _ .
 	return subcommands.ExitSuccess
 }
 
-func (c *summaryCommand) run(ctx context.Context) error {
+func (c *summaryCommand) run() error {
 	switch c.elapsedTime {
 	case "run", "step":
 	default:
@@ -88,7 +88,7 @@ func (c *summaryCommand) run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	metrics, err := loadMetrics(ctx, c.input)
+	metrics, err := loadMetrics(c.input)
 	if err != nil {
 		return err
 	}

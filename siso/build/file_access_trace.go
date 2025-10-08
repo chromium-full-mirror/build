@@ -206,7 +206,7 @@ allInputs:
 	b.localexecLogWriter.Write(buf.Bytes())
 	if step.cmd.Pure {
 		clog.Warningf(ctx, "impure cmd deps=%q marked as pure", step.cmd.Deps)
-		return depsImpureCheck(ctx, step, command)
+		return depsImpureCheck(step, command)
 	}
 	return nil
 }
@@ -303,7 +303,7 @@ func filesDiff(ctx context.Context, b *Builder, x, opts, y []string, ignorePatte
 	return uniqueFiles(adds), uniqueFiles(dels), uniqueFiles(platforms), errs
 }
 
-func depsImpureCheck(ctx context.Context, step *Step, command string) error {
+func depsImpureCheck(step *Step, command string) error {
 	// deps="gcc","msvc" doesn't use file access. new *.d will have correct deps.
 	switch step.cmd.Deps {
 	case "gcc", "msvc":

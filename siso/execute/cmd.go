@@ -619,14 +619,14 @@ func (c *Cmd) canonicalizeDir(ctx context.Context, ents []merkletree.Entry, tree
 	if log.V(1) {
 		clog.Infof(ctx, "canonicalize dir: %s -> %s", c.Dir, cdir)
 	}
-	ents = c.canonicalizeEntries(ctx, cdir, ents)
+	ents = c.canonicalizeEntries(cdir, ents)
 	treeInputs = slices.Clone(treeInputs)
-	treeInputs = c.canonicalizeTrees(ctx, cdir, treeInputs)
+	treeInputs = c.canonicalizeTrees(cdir, treeInputs)
 	return ents, treeInputs
 }
 
 // canonicalizeEntries canonicalizes working dir to cdir in the entries.
-func (c *Cmd) canonicalizeEntries(ctx context.Context, cdir string, entries []merkletree.Entry) []merkletree.Entry {
+func (c *Cmd) canonicalizeEntries(cdir string, entries []merkletree.Entry) []merkletree.Entry {
 	for i := range entries {
 		e := &entries[i]
 		e.Name = canonicalizeDir(e.Name, c.Dir, cdir)
@@ -635,7 +635,7 @@ func (c *Cmd) canonicalizeEntries(ctx context.Context, cdir string, entries []me
 }
 
 // canonicalizeTrees canonicalizes working dir to cdir in the trees.
-func (c *Cmd) canonicalizeTrees(ctx context.Context, cdir string, trees []merkletree.TreeEntry) []merkletree.TreeEntry {
+func (c *Cmd) canonicalizeTrees(cdir string, trees []merkletree.TreeEntry) []merkletree.TreeEntry {
 	for i := range trees {
 		e := &trees[i]
 		e.Name = canonicalizeDir(e.Name, c.Dir, cdir)
@@ -887,7 +887,7 @@ func (c *Cmd) RecordPreOutputs(ctx context.Context) {
 func (c *Cmd) RecordOutputs(ctx context.Context, ds hashfs.DataSource, now time.Time) error {
 	entries, additionalEntries := c.entriesFromResult(ctx, ds, now)
 	clog.Infof(ctx, "output entries %d+%d", len(entries), len(additionalEntries))
-	entries = c.computeOutputEntries(ctx, entries, now, c.CmdHash)
+	entries = c.computeOutputEntries(entries, now, c.CmdHash)
 	err := c.HashFS.Update(ctx, c.ExecRoot, entries)
 	if err != nil {
 		return fmt.Errorf("failed to update hashfs from remote: %w", err)
@@ -895,7 +895,7 @@ func (c *Cmd) RecordOutputs(ctx context.Context, ds hashfs.DataSource, now time.
 	if len(additionalEntries) == 0 {
 		return nil
 	}
-	additionalEntries = c.computeOutputEntries(ctx, additionalEntries, now, nil)
+	additionalEntries = c.computeOutputEntries(additionalEntries, now, nil)
 	err = c.HashFS.Update(ctx, c.ExecRoot, additionalEntries)
 	if err != nil {
 		return fmt.Errorf("failed to update hashfs from remote[additional]: %w", err)
@@ -960,7 +960,7 @@ func updateLocalOutputDir(ctx context.Context, hfs *hashfs.HashFS, root, dir str
 // if c.Restat or c.ResetContent is true, it checks preOutputEntries recorded
 // by RecordPreOutputs and don't update mtime/is_changed
 // if entry is the same as before.
-func (c *Cmd) computeOutputEntries(ctx context.Context, entries []hashfs.UpdateEntry, updatedTime time.Time, cmdhash []byte) []hashfs.UpdateEntry {
+func (c *Cmd) computeOutputEntries(entries []hashfs.UpdateEntry, updatedTime time.Time, cmdhash []byte) []hashfs.UpdateEntry {
 	pre := make(map[string]hashfs.UpdateEntry)
 	if c.Restat || c.RestatContent {
 		// check with previous content recorded by
@@ -1022,7 +1022,7 @@ func (c *Cmd) RecordOutputsFromLocal(ctx context.Context, now time.Time) error {
 	if len(additionalFiles) > 0 {
 		sort.Strings(additionalFiles)
 		entries := retrieveLocalOutputEntries(ctx, c.HashFS, c.ExecRoot, additionalFiles)
-		entries = c.computeOutputEntries(ctx, entries, now, nil)
+		entries = c.computeOutputEntries(entries, now, nil)
 		err := c.HashFS.Update(ctx, c.ExecRoot, entries)
 		if err != nil {
 			return fmt.Errorf("failed to update hashfs from local[additional]: %w", err)
@@ -1034,7 +1034,7 @@ func (c *Cmd) RecordOutputsFromLocal(ctx context.Context, now time.Time) error {
 	}
 	sort.Strings(outs)
 	entries := retrieveLocalOutputEntries(ctx, c.HashFS, c.ExecRoot, outs)
-	entries = c.computeOutputEntries(ctx, entries, now, c.CmdHash)
+	entries = c.computeOutputEntries(entries, now, c.CmdHash)
 	err := c.HashFS.Update(ctx, c.ExecRoot, entries)
 	if err != nil {
 		return fmt.Errorf("failed to update hashfs from local: %w", err)

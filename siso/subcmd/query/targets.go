@@ -78,7 +78,7 @@ func (c *targetsCommand) Execute(ctx context.Context, flagSet *flag.FlagSet, _ .
 	if c.w == nil {
 		c.w = os.Stdout
 	}
-	err := c.run(ctx, flagSet.Args())
+	err := c.run(ctx)
 	if err != nil {
 		switch {
 		case errors.Is(err, flag.ErrHelp):
@@ -92,7 +92,7 @@ func (c *targetsCommand) Execute(ctx context.Context, flagSet *flag.FlagSet, _ .
 	return subcommands.ExitSuccess
 }
 
-func (c *targetsCommand) run(ctx context.Context, args []string) error {
+func (c *targetsCommand) run(ctx context.Context) error {
 	if c.rule.requested {
 		c.depth = 0
 	}

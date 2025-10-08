@@ -133,15 +133,15 @@ func (b *Builder) runStep(ctx context.Context, step *Step) (err error) {
 		return nil
 	}
 
-	b.progressStepStarted(ctx, step)
-	defer b.progressStepFinished(ctx, step)
+	b.progressStepStarted(step)
+	defer b.progressStepFinished(step)
 
 	step.setPhase(stepHandler)
 	exited, err := b.handleStep(ctx, step)
 	if err != nil {
 		if !experiments.Enabled("keep-going-handle-error", "handle %s failed: %v", step, err) {
-			res := cmdOutput(ctx, cmdOutputResultFAILED, "handle", step.cmd, step.def.Binding("command"), step.def.RuleName(), err)
-			step.cmd.SetOutputResult(b.logOutput(ctx, res, step.cmd.Console))
+			res := cmdOutput(ctx, cmdOutputResultFAILED, step.cmd, step.def.Binding("command"), step.def.RuleName(), err)
+			step.cmd.SetOutputResult(b.logOutput(res, step.cmd.Console))
 			clog.Warningf(ctx, "Failed to exec(handle): %v", err)
 			return fmt.Errorf("failed to run handler for %s: %w", step, err)
 		}
@@ -158,8 +158,8 @@ func (b *Builder) runStep(ctx context.Context, step *Step) (err error) {
 	}
 	err = b.setupRSP(ctx, step)
 	if err != nil {
-		res := cmdOutput(ctx, cmdOutputResultFAILED, "rsp", step.cmd, step.def.Binding("command"), step.def.RuleName(), err)
-		step.cmd.SetOutputResult(b.logOutput(ctx, res, step.cmd.Console))
+		res := cmdOutput(ctx, cmdOutputResultFAILED, step.cmd, step.def.Binding("command"), step.def.RuleName(), err)
+		step.cmd.SetOutputResult(b.logOutput(res, step.cmd.Console))
 		return fmt.Errorf("failed to setup rsp: %s: %w", step, err)
 	}
 	defer func() {
@@ -179,7 +179,7 @@ func (b *Builder) runStep(ctx context.Context, step *Step) (err error) {
 	// BuildActionStarted is called just before remote exec calls or
 	// local execution.
 	defer b.actionFinished(ctx, step)
-	runCmd := b.runStrategy(ctx, step)
+	runCmd := b.runStrategy(step)
 	err = runCmd(ctx, step)
 	clog.Infof(ctx, "done err=%v", err)
 	if err != nil {
@@ -194,11 +194,11 @@ func (b *Builder) runStep(ctx context.Context, step *Step) (err error) {
 			// RBE returns permission denied when
 			// platform container image are not available
 			// on RBE worker.
-			res := cmdOutput(ctx, cmdOutputResultFAILED, "badContainer", step.cmd, step.def.Binding("command"), step.def.RuleName(), err)
-			step.cmd.SetOutputResult(b.logOutput(ctx, res, step.cmd.Console))
+			res := cmdOutput(ctx, cmdOutputResultFAILED, step.cmd, step.def.Binding("command"), step.def.RuleName(), err)
+			step.cmd.SetOutputResult(b.logOutput(res, step.cmd.Console))
 		default:
-			msgs := cmdOutput(ctx, cmdOutputResultFAILED, "", step.cmd, step.def.Binding("command"), step.def.RuleName(), err)
-			step.cmd.SetOutputResult(b.logOutput(ctx, msgs, step.cmd.Console))
+			msgs := cmdOutput(ctx, cmdOutputResultFAILED, step.cmd, step.def.Binding("command"), step.def.RuleName(), err)
+			step.cmd.SetOutputResult(b.logOutput(msgs, step.cmd.Console))
 		}
 		return StepError{
 			Target: b.path.MaybeToWD(ctx, step.cmd.Outputs[0]),
@@ -206,9 +206,9 @@ func (b *Builder) runStep(ctx context.Context, step *Step) (err error) {
 		}
 	}
 
-	res := cmdOutput(ctx, cmdOutputResultSUCCESS, "", step.cmd, step.def.Binding("command"), step.def.RuleName(), nil)
+	res := cmdOutput(ctx, cmdOutputResultSUCCESS, step.cmd, step.def.Binding("command"), step.def.RuleName(), nil)
 	if res != nil {
-		step.cmd.SetOutputResult(b.logOutput(ctx, res, step.cmd.Console))
+		step.cmd.SetOutputResult(b.logOutput(res, step.cmd.Console))
 		if experiments.Enabled("fail-on-stdouterr", "step %s emit stdout/stderr", step) {
 			return fmt.Errorf("%s emit stdout/stderr", step)
 		}

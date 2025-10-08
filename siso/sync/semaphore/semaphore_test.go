@@ -198,18 +198,16 @@ func TestDo(t *testing.T) {
 	}
 
 	var called atomic.Int32
-	f := func(ctx context.Context) error {
-		called.Add(1)
-		return nil
-	}
-
 	const count = 50
 	var wg sync.WaitGroup
 	for i := range count {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			err := sema.Do(ctx, f)
+			err := sema.Do(ctx, func(context.Context) error {
+				called.Add(1)
+				return nil
+			})
 			if err != nil {
 				t.Errorf("Do %d: %v", i, err)
 			}

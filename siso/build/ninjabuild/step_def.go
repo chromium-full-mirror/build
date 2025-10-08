@@ -132,7 +132,7 @@ func (g *Graph) newStepDef(ctx context.Context, edge *ninjautil.Edge, next build
 		for _, out := range edge.Outputs() {
 			globals.edgeRules[out.ID()].set(er)
 			if log.V(1) {
-				outPath := globals.targetPath(ctx, out)
+				outPath := globals.targetPath(out)
 				clog.Infof(ctx, "add edgeRule for %s [newStepDef]", outPath)
 			}
 		}
@@ -158,7 +158,7 @@ func (s *StepDef) EnsureRule(ctx context.Context) {
 	er := s.globals.edgeRules[outputs[0].ID()].get()
 	if er == nil {
 		// *edgeRule was removed by er.ensure by other output of the edge?
-		outPath := s.globals.targetPath(ctx, outputs[0])
+		outPath := s.globals.targetPath(outputs[0])
 		clog.Warningf(ctx, "edgeRule not found for %s: pure=%t", outPath, s.pure)
 		return
 	}
@@ -375,7 +375,7 @@ func (s *StepDef) Inputs(ctx context.Context) []string {
 	var targets []string
 	globals := s.globals
 	for _, in := range s.edge.Inputs() {
-		p := globals.targetPath(ctx, in)
+		p := globals.targetPath(in)
 		if seen[p] {
 			continue
 		}
@@ -427,7 +427,7 @@ func (s *StepDef) TriggerInputs(ctx context.Context) []string {
 	targets := make([]string, 0, len(inIDs))
 	for _, i := range inIDs {
 		in := inputs[i.idx]
-		p := globals.targetPath(ctx, in)
+		p := globals.targetPath(in)
 		targets = append(targets, p)
 	}
 	return targets
@@ -785,7 +785,7 @@ func (s *StepDef) ExpandedInputs(ctx context.Context) []string {
 	var inputs []string
 	globals := s.globals
 	for _, in := range s.edge.Inputs() {
-		p := globals.targetPath(ctx, in)
+		p := globals.targetPath(in)
 		if seen[p] {
 			continue
 		}
@@ -844,7 +844,7 @@ func (s *StepDef) ExpandedInputs(ctx context.Context) []string {
 	for _, inEdge := range phonyEdges {
 		// replace phony inputs here before ExpandInput,
 		// since ExpandInputs removes non-exist inputs.
-		p := globals.targetPath(ctx, inEdge.Outputs()[0])
+		p := globals.targetPath(inEdge.Outputs()[0])
 		inputs = append(inputs, replacePhony(ctx, globals, seen, p, inEdge, s.rule.Debug)...)
 	}
 
@@ -870,7 +870,7 @@ func (s *StepDef) ExpandedInputs(ctx context.Context) []string {
 		}
 		var ins []string
 		for _, in := range er.edge.Inputs() {
-			p := globals.targetPath(ctx, in)
+			p := globals.targetPath(in)
 			if seen[p] {
 				continue
 			}
@@ -912,12 +912,12 @@ func (s *StepDef) ExpandedInputs(ctx context.Context) []string {
 		}
 		// when accumulate expands inputs/outputs.
 		edgeOuts := er.edge.Outputs()
-		if inputs[i] == globals.targetPath(ctx, edgeOuts[0]) {
+		if inputs[i] == globals.targetPath(edgeOuts[0]) {
 			// associates additional outputs to main output.
 			// so step depends on the main output of this step can access
 			// additional outputs of this step (in local run).
 			for _, out := range edgeOuts[1:] {
-				o := globals.targetPath(ctx, out)
+				o := globals.targetPath(out)
 				if seen[o] {
 					continue
 				}
@@ -947,7 +947,7 @@ func (s *StepDef) ExpandedInputs(ctx context.Context) []string {
 func replacePhony(ctx context.Context, globals *globals, seen map[string]bool, target string, edge *ninjautil.Edge, debug bool) []string {
 	var inputs []string
 	for _, in := range edge.Inputs() {
-		p := globals.targetPath(ctx, in)
+		p := globals.targetPath(in)
 		if seen[p] {
 			continue
 		}
@@ -971,7 +971,7 @@ func (s *StepDef) appendIndirectInputs(ctx context.Context, filter func(context.
 	if !edge.IsPhony() {
 		// allow to use outputs of the edge.
 		for _, out := range edge.Outputs() {
-			p := globals.targetPath(ctx, out)
+			p := globals.targetPath(out)
 			if seen[p] {
 				continue
 			}
@@ -990,7 +990,7 @@ func (s *StepDef) appendIndirectInputs(ctx context.Context, filter func(context.
 	}
 	var nextEdges []*ninjautil.Edge
 	for _, in := range edge.Inputs() {
-		p := globals.targetPath(ctx, in)
+		p := globals.targetPath(in)
 		if seen[p] {
 			continue
 		}
@@ -1031,7 +1031,7 @@ func (s *StepDef) CheckInputDeps(ctx context.Context, depInputs []string) (bool,
 	seen := make(map[string]bool)
 	// check input deps from s.edge's inputs.
 	// it doesn't check output of s.edge.
-	edges := checkInputDep(ctx, s.globals, s.edge, false, deps, seen)
+	edges := checkInputDep(s.globals, s.edge, false, deps, seen)
 	// avoid recursion for memory efficiency (e.g. avoid deep stack)
 	for len(edges) > 0 {
 		edge := edges[0]
@@ -1041,7 +1041,7 @@ func (s *StepDef) CheckInputDeps(ctx context.Context, depInputs []string) (bool,
 		edges[len(edges)-1] = nil
 		edges = edges[:len(edges)-1]
 		// check input deps for edge's inputs and outputs.
-		edges = append(edges, checkInputDep(ctx, s.globals, edge, true, deps, seen)...)
+		edges = append(edges, checkInputDep(s.globals, edge, true, deps, seen)...)
 		if len(deps) == 0 {
 			return false, nil
 		}
@@ -1067,13 +1067,13 @@ func (s *StepDef) CheckInputDeps(ctx context.Context, depInputs []string) (bool,
 	return true, fmt.Errorf("deps inputs have no dependencies from %q to %q - unknown", outputPath, depInputs)
 }
 
-func checkInputDep(ctx context.Context, globals *globals, edge *ninjautil.Edge, checkOutputs bool, deps, seen map[string]bool) []*ninjautil.Edge {
+func checkInputDep(globals *globals, edge *ninjautil.Edge, checkOutputs bool, deps, seen map[string]bool) []*ninjautil.Edge {
 	if len(deps) == 0 {
 		return nil
 	}
 	var edges []*ninjautil.Edge
 	for _, in := range edge.Inputs() {
-		p := globals.targetPath(ctx, in)
+		p := globals.targetPath(in)
 		if deps[p] {
 			delete(deps, p)
 			if len(deps) == 0 {
@@ -1092,7 +1092,7 @@ func checkInputDep(ctx context.Context, globals *globals, edge *ninjautil.Edge, 
 	}
 	if checkOutputs {
 		for _, out := range edge.Outputs() {
-			p := globals.targetPath(ctx, out)
+			p := globals.targetPath(out)
 			if deps[p] {
 				delete(deps, p)
 				if len(deps) == 0 {
@@ -1148,7 +1148,7 @@ func (s *StepDef) Outputs(ctx context.Context) []string {
 	var targets []string
 	globals := s.globals
 	for _, out := range s.edge.Outputs() {
-		p := globals.targetPath(ctx, out)
+		p := globals.targetPath(out)
 		if seen[p] {
 			continue
 		}

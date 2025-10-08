@@ -246,7 +246,7 @@ func TestAddDefine(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			defines := make(map[string][]string)
-			addDefine(ctx, defines, "test.h", []byte(tc.input))
+			addDefine(ctx, defines, []byte(tc.input))
 			if diff := cmp.Diff(tc.want, defines); diff != "" {
 				t.Errorf("addDefines(ctx,defines,file,%q): diff -want +got:\n%s", tc.input, diff)
 			}

@@ -58,7 +58,7 @@ type server struct {
 	closed   chan struct{}
 }
 
-func newServer(ctx context.Context, t *testing.T, fake *Fake) *server {
+func newServer(t *testing.T, fake *Fake) *server {
 	t.Helper()
 	s := &server{
 		closed: make(chan struct{}),
@@ -132,7 +132,7 @@ func New(ctx context.Context, t *testing.T, fake *Fake) *reapi.Client {
 // NewWithOption starts new fake reapi grpc server with reapi option and returns reapi client.
 func NewWithOption(ctx context.Context, t *testing.T, fake *Fake, opt reapi.Option) *reapi.Client {
 	t.Helper()
-	s := newServer(ctx, t, fake)
+	s := newServer(t, fake)
 	t.Cleanup(s.Close)
 	opt.Address = s.addr
 	if opt.Instance == "" {
@@ -185,7 +185,7 @@ type InputTree struct {
 	Root *rpb.Digest
 }
 
-func (t InputTree) get(ctx context.Context, d *rpb.Digest, m proto.Message) error {
+func (t InputTree) get(d *rpb.Digest, m proto.Message) error {
 	dd, err := digest.NewFromProto(d)
 	if err != nil {
 		return fmt.Errorf("failed to convert proto digest %s: %w", d, err)
@@ -200,7 +200,7 @@ func (t InputTree) get(ctx context.Context, d *rpb.Digest, m proto.Message) erro
 // LookupFileNode looks up name's file node in tree.
 func (t InputTree) LookupFileNode(ctx context.Context, name string) (*rpb.FileNode, error) {
 	dir := &rpb.Directory{}
-	err := t.get(ctx, t.Root, dir)
+	err := t.get(t.Root, dir)
 	if err != nil {
 		return nil, fmt.Errorf("failed to call get: %w", err)
 	}
@@ -213,7 +213,7 @@ pathElements:
 		for _, s := range dir.Directories {
 			if elem == s.Name {
 				subdir := &rpb.Directory{}
-				err = t.get(ctx, s.Digest, subdir)
+				err = t.get(s.Digest, subdir)
 				if err != nil {
 					return nil, fmt.Errorf("missing %s %s: %w", strings.Join(elems, "/"), s.Digest, err)
 				}
@@ -236,7 +236,7 @@ pathElements:
 // LookupSymlinkNode looks up name's symlink node in tree.
 func (t InputTree) LookupSymlinkNode(ctx context.Context, name string) (*rpb.SymlinkNode, error) {
 	dir := &rpb.Directory{}
-	err := t.get(ctx, t.Root, dir)
+	err := t.get(t.Root, dir)
 	if err != nil {
 		return nil, err
 	}
@@ -249,7 +249,7 @@ pathElements:
 		for _, s := range dir.Directories {
 			if elem == s.Name {
 				subdir := &rpb.Directory{}
-				err = t.get(ctx, s.Digest, subdir)
+				err = t.get(s.Digest, subdir)
 				if err != nil {
 					return nil, fmt.Errorf("missing %s %s: %w", strings.Join(elems, "/"), s.Digest, err)
 				}
@@ -273,7 +273,7 @@ pathElements:
 func (t InputTree) LookupDirectoryNode(ctx context.Context, name string) (*rpb.DirectoryNode, error) {
 	dir := &rpb.Directory{}
 	dirnode := &rpb.DirectoryNode{}
-	err := t.get(ctx, t.Root, dir)
+	err := t.get(t.Root, dir)
 	if err != nil {
 		return nil, err
 	}
@@ -286,7 +286,7 @@ pathElements:
 		for _, s := range dir.Directories {
 			if elem == s.Name {
 				subdir := &rpb.Directory{}
-				err = t.get(ctx, s.Digest, subdir)
+				err = t.get(s.Digest, subdir)
 				if err != nil {
 					return nil, fmt.Errorf("missing %s %s: %w", strings.Join(elems, "/"), s.Digest, err)
 				}
@@ -305,14 +305,14 @@ pathElements:
 }
 
 func (t InputTree) Dump(ctx context.Context, w io.Writer) error {
-	return t.dump(ctx, w, t.Root, ".", "")
+	return t.dump(w, t.Root, ".", "")
 }
 
-func (t InputTree) dump(ctx context.Context, w io.Writer, d *rpb.Digest, dname, indent string) error {
+func (t InputTree) dump(w io.Writer, d *rpb.Digest, dname, indent string) error {
 	fmt.Fprintf(w, "%s%s dir:%s\n", indent, dname, d)
 	indent += " "
 	dir := &rpb.Directory{}
-	err := t.get(ctx, d, dir)
+	err := t.get(d, dir)
 	if err != nil {
 		return fmt.Errorf("failed to get %s %s: %w", dname, d, err)
 	}
@@ -323,7 +323,7 @@ func (t InputTree) dump(ctx context.Context, w io.Writer, d *rpb.Digest, dname, 
 		fmt.Fprintf(w, "%s%s symlink:%s\n", indent, s.Name, s.Target)
 	}
 	for _, subdir := range dir.Directories {
-		err := t.dump(ctx, w, subdir.Digest, subdir.Name, indent)
+		err := t.dump(w, subdir.Digest, subdir.Name, indent)
 		if err != nil {
 			return err
 		}

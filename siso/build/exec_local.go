@@ -238,7 +238,7 @@ func (b *Builder) cacheWrite(ctx context.Context, step *Step) {
 	}()
 	if err == nil {
 		step.metrics.CacheWrite = true
-		b.progressStepCacheWrite(ctx, step)
+		b.progressStepCacheWrite(step)
 	} else {
 		step.metrics.CacheWriteErr = true
 		clog.Warningf(ctx, "cache write failed %s: %v", step.cmd.Desc, err)

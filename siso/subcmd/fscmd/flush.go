@@ -162,7 +162,7 @@ func (c *flushCommand) run(ctx context.Context) error {
 				fmt.Printf("dir\n")
 				continue
 			}
-			children := childEntries(ctx, stm, fullpath)
+			children := childEntries(stm, fullpath)
 			fmt.Printf("dir - expands %d\n", len(children))
 			for _, ent := range children {
 				fname, err := filepath.Rel(wd, ent.Name)
@@ -200,7 +200,7 @@ func isDirEnt(ent *pb.Entry) bool {
 // flush need nothing to do.
 // Note that `siso isolate` need to collect local files to send isolate server,
 // so should use hashfs Walk to collect files.
-func childEntries(ctx context.Context, stm map[string]*pb.Entry, fullpath string) []*pb.Entry {
+func childEntries(stm map[string]*pb.Entry, fullpath string) []*pb.Entry {
 	var fnames []string
 	for k := range stm {
 		fnames = append(fnames, k)

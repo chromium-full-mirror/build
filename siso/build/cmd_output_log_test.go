@@ -118,7 +118,7 @@ build step: cxx "./foo.o"
 				w := cmd.StderrWriter()
 				w.Write(tc.stderr)
 			}
-			res := cmdOutput(ctx, tc.result, "", cmd, command, tc.rule, tc.err)
+			res := cmdOutput(ctx, tc.result, cmd, command, tc.rule, tc.err)
 			if got := res.String(); got != tc.want {
 				t.Errorf("cmdOutput got:\n%s\nwant:\n%s", got, tc.want)
 			}
@@ -230,7 +230,7 @@ build step: cxx "./foo.o"
 			ctx := t.Context()
 			cmd := &execute.Cmd{}
 			*cmd = *execcmd
-			res := cmdOutput(ctx, cmdOutputResultFAILED, "", cmd, tc.command, "", errors.New("exit=1"))
+			res := cmdOutput(ctx, cmdOutputResultFAILED, cmd, tc.command, "", errors.New("exit=1"))
 			if res == nil {
 				t.Fatalf("res=nil; want non-nil")
 			}

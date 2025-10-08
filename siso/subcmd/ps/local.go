@@ -25,7 +25,7 @@ type localSource struct {
 	stateDir string
 }
 
-func newLocalSource(ctx context.Context, dir, stateDir string) (*localSource, error) {
+func newLocalSource(dir, stateDir string) (*localSource, error) {
 	err := os.Chdir(dir)
 	if err != nil {
 		return nil, fmt.Errorf("failed to chdir %s: %w", dir, err)

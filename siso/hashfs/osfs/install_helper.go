@@ -51,7 +51,7 @@ func (c *HelperCommand) SetFlags(flagSet *flag.FlagSet) {
 }
 
 func (c *HelperCommand) Execute(ctx context.Context, flagSet *flag.FlagSet, _ ...any) subcommands.ExitStatus {
-	err := c.run(ctx)
+	err := c.run()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		return subcommands.ExitFailure
@@ -59,7 +59,7 @@ func (c *HelperCommand) Execute(ctx context.Context, flagSet *flag.FlagSet, _ ..
 	return subcommands.ExitSuccess
 }
 
-func (c *HelperCommand) run(ctx context.Context) error {
+func (c *HelperCommand) run() error {
 	if c.mode&0700 == 0 {
 		return fmt.Errorf("invalid mode 0%o: %s", c.mode, fs.FileMode(c.mode))
 	}

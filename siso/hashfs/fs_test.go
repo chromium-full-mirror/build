@@ -608,7 +608,7 @@ func TestStat_Symlink_FileInfoPath(t *testing.T) {
 	}
 }
 
-func computeUpdateEntries(ctx context.Context, pre, post []hashfs.UpdateEntry, restat bool, updatedTime time.Time, cmdHash []byte) []hashfs.UpdateEntry {
+func computeUpdateEntries(pre, post []hashfs.UpdateEntry, restat bool, updatedTime time.Time, cmdHash []byte) []hashfs.UpdateEntry {
 	// match with execute.(*Cmd).computeOutputEntries
 	m := make(map[string]hashfs.UpdateEntry)
 	if restat {
@@ -682,7 +682,7 @@ func TestUpdate_FromLocal(t *testing.T) {
 	cmdhash := h.Sum(nil)
 
 	post := hfs.RetrieveUpdateEntriesFromLocal(ctx, dir, []string{fname})
-	entries := computeUpdateEntries(ctx, pre, post, false, now, cmdhash)
+	entries := computeUpdateEntries(pre, post, false, now, cmdhash)
 	err = hfs.Update(ctx, dir, entries)
 	if err != nil {
 		t.Errorf("Update(ctx, %q, {%q}, %v, cmdhash)=%v; want nil err", dir, fname, now, err)
@@ -773,7 +773,7 @@ func TestUpdate_FromLocal_update(t *testing.T) {
 	cmdhash := h.Sum(nil)
 	post := hfs.RetrieveUpdateEntriesFromLocal(ctx, dir, []string{fname})
 	now := time.Now()
-	entries := computeUpdateEntries(ctx, pre, post, false, now, cmdhash)
+	entries := computeUpdateEntries(pre, post, false, now, cmdhash)
 	err = hfs.Update(ctx, dir, entries)
 	if err != nil {
 		t.Errorf("Update(ctx, %q, {%q}, %v, cmdhash)=%v; want nil err", dir, fname, now, err)
@@ -786,7 +786,7 @@ func TestUpdate_FromLocal_update(t *testing.T) {
 	})
 	post = hfs.RetrieveUpdateEntriesFromLocal(ctx, dir, []string{fname})
 	now = time.Now()
-	entries = computeUpdateEntries(ctx, pre, post, false, now, cmdhash)
+	entries = computeUpdateEntries(pre, post, false, now, cmdhash)
 	err = hfs.Update(ctx, dir, entries)
 	if err != nil {
 		t.Errorf("Update(ctx, %q, {%q}, %v, cmdhash)=%v; want nil err", dir, fname, now, err)
@@ -889,7 +889,7 @@ func TestUpdate_FromLocal_Restat_update(t *testing.T) {
 	h.Write([]byte("command line"))
 	cmdhash := h.Sum(nil)
 	post := hfs.RetrieveUpdateEntriesFromLocal(ctx, dir, []string{fname})
-	entries := computeUpdateEntries(ctx, pre, post, true, now, cmdhash)
+	entries := computeUpdateEntries(pre, post, true, now, cmdhash)
 	err = hfs.Update(ctx, dir, entries)
 	if err != nil {
 		t.Errorf("Update(ctx, %q, {%q}, %v, cmdhash)=%v; want nil err", dir, fname, now, err)
@@ -982,7 +982,7 @@ func TestUpdate_FromLocal_Restat_noupdate(t *testing.T) {
 	h.Write([]byte("command line"))
 	cmdhash := h.Sum(nil)
 	post := hfs.RetrieveUpdateEntriesFromLocal(ctx, dir, []string{fname})
-	entries := computeUpdateEntries(ctx, pre, post, true, now, cmdhash)
+	entries := computeUpdateEntries(pre, post, true, now, cmdhash)
 	err = hfs.Update(ctx, dir, entries)
 	if err != nil {
 		t.Errorf("Update(ctx, %q, {%q}, %v, cmdhash)=%v; want nil err", dir, fname, now, err)
@@ -1062,7 +1062,7 @@ func TestUpdate_FromLocal_Dir(t *testing.T) {
 	now := time.Now()
 
 	post := hfs.RetrieveUpdateEntriesFromLocal(ctx, dir, []string{outname, outdirname})
-	entries := computeUpdateEntries(ctx, pre, post, false, now, cmdhash)
+	entries := computeUpdateEntries(pre, post, false, now, cmdhash)
 	err = hfs.Update(ctx, dir, entries)
 	if err != nil {
 		t.Errorf("Update(ctx, %q, {%q, %q}, %v, cmdhash)=%v; want nil err", dir, outname, outdirname, now, err)
@@ -1178,7 +1178,7 @@ func TestUpdate_FromLocal_AbsSymlink(t *testing.T) {
 	now := time.Now()
 
 	post := hfs.RetrieveUpdateEntriesFromLocal(ctx, dir, []string{outname})
-	entries := computeUpdateEntries(ctx, pre, post, true, now, cmdhash)
+	entries := computeUpdateEntries(pre, post, true, now, cmdhash)
 	err = hfs.Update(ctx, dir, entries)
 	if err != nil {
 		t.Errorf("Update(ctx, %q, {%q}, %v, cmdhash)=%v, want nil err", dir, outname, now, err)
@@ -1330,7 +1330,7 @@ func TestUpdate_FromLocal_NonLocalSymlink(t *testing.T) {
 	cmdhash := h.Sum(nil)
 	now := time.Now()
 	post := hfs.RetrieveUpdateEntriesFromLocal(ctx, dir, []string{outname})
-	entries := computeUpdateEntries(ctx, pre, post, true, now, cmdhash)
+	entries := computeUpdateEntries(pre, post, true, now, cmdhash)
 	err = hfs.Update(ctx, dir, entries)
 	if err != nil {
 		t.Errorf("Update(ctx, %q, {%q}, %v, cmdhash)=%v, want nil err", dir, outname, now, err)

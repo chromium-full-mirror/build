@@ -910,7 +910,7 @@ func (c *Command) run(ctx context.Context) (stats build.Stats, err error) {
 			// store failed targets only when build steps failed.
 			// i.e., don't store with error like context canceled, etc.
 			clog.Infof(ctx, "record failed targets: %q", stepError.Target)
-			serr := saveTargets(ctx, failedTargetsFilename, targets, []string{stepError.Target})
+			serr := saveTargets(failedTargetsFilename, targets, []string{stepError.Target})
 			if serr != nil {
 				clog.Warningf(ctx, "failed to save failed targets: %v", serr)
 				return
@@ -1894,7 +1894,7 @@ func doBuild(ctx context.Context, graph *ninjabuild.Graph, bopts build.Options, 
 		semaTraces[name] = t
 	}
 	if len(semaTraces) > 0 {
-		rut := dumpResourceUsageTable(ctx, semaTraces)
+		rut := dumpResourceUsageTable(semaTraces)
 		clog.Infof(ctx, "resource usage table:\n%s", rut)
 		if bopts.ResultstoreUploader != nil {
 			bopts.ResultstoreUploader.AddBuildLog(rut + "\n")
@@ -1912,7 +1912,7 @@ func doBuild(ctx context.Context, graph *ninjabuild.Graph, bopts build.Options, 
 	return stats, err
 }
 
-func dumpResourceUsageTable(ctx context.Context, semaTraces map[string]semaTrace) string {
+func dumpResourceUsageTable(semaTraces map[string]semaTrace) string {
 	var semaNames []string
 	for key := range semaTraces {
 		semaNames = append(semaNames, key)
@@ -2152,7 +2152,7 @@ type lastTargets struct {
 	Failed  []string `json:"failed,omitempty"`
 }
 
-func loadTargets(ctx context.Context, targetsFile string) ([]string, []string, error) {
+func loadTargets(targetsFile string) ([]string, []string, error) {
 	buf, err := os.ReadFile(targetsFile)
 	if err != nil {
 		return nil, nil, err
@@ -2165,7 +2165,7 @@ func loadTargets(ctx context.Context, targetsFile string) ([]string, []string, e
 	return last.Targets, last.Failed, nil
 }
 
-func saveTargets(ctx context.Context, targetsFile string, targets, failed []string) error {
+func saveTargets(targetsFile string, targets, failed []string) error {
 	v := lastTargets{
 		Targets: targets,
 		Failed:  failed,
@@ -2182,7 +2182,7 @@ func saveTargets(ctx context.Context, targetsFile string, targets, failed []stri
 }
 
 func checkTargets(ctx context.Context, lastTargetsFilename string, targets []string) ([]string, bool) {
-	lastTargets, failed, err := loadTargets(ctx, lastTargetsFilename)
+	lastTargets, failed, err := loadTargets(lastTargetsFilename)
 	if err != nil {
 		clog.Warningf(ctx, "checkTargets: %v", err)
 		return nil, false

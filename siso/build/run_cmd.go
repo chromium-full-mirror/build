@@ -21,7 +21,7 @@ func (b *Builder) allowREProxy(step *Step) bool {
 	return (b.reproxyExec.Enabled() && step.cmd.REProxyConfig != nil)
 }
 
-func (b *Builder) runStrategy(ctx context.Context, step *Step) func(context.Context, *Step) error {
+func (b *Builder) runStrategy(step *Step) func(context.Context, *Step) error {
 	// Check criteria for allowRemote and allowREProxy
 	// If the command doesn't meet either criteria, fallback to local.
 	// Any further validation should be done in the exec handler, not here.

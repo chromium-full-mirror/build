@@ -33,15 +33,9 @@ type runbuildState struct {
 }
 
 func (s *WebuiServer) handleRunbuildGet(w http.ResponseWriter, r *http.Request) {
-	outdirInfo, err := s.getOutdirForRequest(r)
-	if err != nil {
-		s.renderBuildViewError(http.StatusNotFound, fmt.Sprintf("outdir failed to load for request %s: %v", r.URL, err), w, r, outdirInfo)
-		return
-	}
-
 	tmpl, err := s.loadView("_run.html")
 	if err != nil {
-		s.renderBuildViewError(http.StatusInternalServerError, fmt.Sprintf("failed to load view: %s", err), w, r, outdirInfo)
+		s.renderBuildViewError(http.StatusInternalServerError, fmt.Sprintf("failed to load view: %s", err), w, r)
 		return
 	}
 
@@ -54,33 +48,27 @@ func (s *WebuiServer) handleRunbuildGet(w http.ResponseWriter, r *http.Request) 
 		"activeBuildTarget":  s.activeBuildTarget,
 	})
 	if err != nil {
-		s.renderBuildViewError(http.StatusInternalServerError, fmt.Sprintf("failed to render view: %v", err), w, r, outdirInfo)
+		s.renderBuildViewError(http.StatusInternalServerError, fmt.Sprintf("failed to render view: %v", err), w, r)
 	}
 }
 
 func (s *WebuiServer) handleRunbuildPost(w http.ResponseWriter, r *http.Request) {
-	outdirInfo, err := s.getOutdirForRequest(r)
-	if err != nil {
-		s.renderBuildViewError(http.StatusNotFound, fmt.Sprintf("outdir failed to load for request %s: %v", r.URL, err), w, r, outdirInfo)
-		return
-	}
-
 	exe, err := os.Executable()
 	if err != nil {
-		s.renderBuildViewError(http.StatusInternalServerError, fmt.Sprintf("failed to detect siso path: %v", err), w, r, outdirInfo)
+		s.renderBuildViewError(http.StatusInternalServerError, fmt.Sprintf("failed to detect siso path: %v", err), w, r)
 	}
 
 	// We'll render the same view again, but in a "building" state.
 	tmpl, err := s.loadView("_run.html")
 	if err != nil {
-		s.renderBuildViewError(http.StatusInternalServerError, fmt.Sprintf("failed to load view: %s", err), w, r, outdirInfo)
+		s.renderBuildViewError(http.StatusInternalServerError, fmt.Sprintf("failed to load view: %s", err), w, r)
 		return
 	}
 
 	s.activeBuildMu.Lock()
 	defer s.activeBuildMu.Unlock()
 	if s.activeBuildRunning {
-		s.renderBuildViewError(http.StatusServiceUnavailable, "Existing build already running", w, r, outdirInfo)
+		s.renderBuildViewError(http.StatusServiceUnavailable, "Existing build already running", w, r)
 		return
 	}
 
@@ -93,7 +81,7 @@ func (s *WebuiServer) handleRunbuildPost(w http.ResponseWriter, r *http.Request)
 	pipe, _ := cmd.StdoutPipe()
 	cmd.Stderr = cmd.Stdout
 	if err := cmd.Start(); err != nil {
-		s.renderBuildViewError(http.StatusInternalServerError, fmt.Sprintf("failed to launch process: %s", err), w, r, outdirInfo)
+		s.renderBuildViewError(http.StatusInternalServerError, fmt.Sprintf("failed to launch process: %s", err), w, r)
 		return
 	}
 
@@ -102,7 +90,7 @@ func (s *WebuiServer) handleRunbuildPost(w http.ResponseWriter, r *http.Request)
 	var maxStep int64
 
 	go func(p io.ReadCloser) {
-		reader := bufio.NewReader(pipe)
+		reader := bufio.NewReader(p)
 		line, err := reader.ReadString('\n')
 		for err == nil {
 			if ninjaStepRe.MatchString(line) {
@@ -191,6 +179,6 @@ func (s *WebuiServer) handleRunbuildPost(w http.ResponseWriter, r *http.Request)
 		"activeBuildTarget":  s.activeBuildTarget,
 	})
 	if err != nil {
-		s.renderBuildViewError(http.StatusInternalServerError, fmt.Sprintf("failed to render view: %v", err), w, r, outdirInfo)
+		s.renderBuildViewError(http.StatusInternalServerError, fmt.Sprintf("failed to render view: %v", err), w, r)
 	}
 }

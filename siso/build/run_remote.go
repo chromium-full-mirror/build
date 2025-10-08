@@ -140,11 +140,11 @@ func (b *Builder) runRemote(ctx context.Context, step *Step) error {
 			return fmt.Errorf("remote-exec %s failed no-fallback: %w", step.cmd.ActionDigest(), err)
 		}
 		clog.Warningf(ctx, "remote-exec %s failed, fallback to local: %v", step.cmd.ActionDigest(), err)
-		b.progressStepFallback(ctx, step)
+		b.progressStepFallback(step)
 		step.metrics.IsRemote = false
 		step.metrics.Fallback = true
-		res := cmdOutput(ctx, cmdOutputResultFALLBACK, "", step.cmd, step.def.Binding("command"), step.def.RuleName(), err)
-		b.logOutput(ctx, res, false)
+		res := cmdOutput(ctx, cmdOutputResultFALLBACK, step.cmd, step.def.Binding("command"), step.def.RuleName(), err)
+		b.logOutput(res, false)
 		// Preserve remote action result and error.
 		ar, _ := step.cmd.ActionResult()
 		step.cmd.SetRemoteFallbackResult(ar, err)
@@ -188,9 +188,9 @@ func (b *Builder) tryFastStep(ctx context.Context, step, fastStep *Step, cacheCh
 func (b *Builder) fastStepDone(ctx context.Context, step, fastStep *Step) error {
 	step.metrics = fastStep.metrics
 	step.metrics.DepsLog = true
-	res := cmdOutput(ctx, cmdOutputResultSUCCESS, "fast", fastStep.cmd, step.def.Binding("command"), step.def.RuleName(), nil)
+	res := cmdOutput(ctx, cmdOutputResultSUCCESS, fastStep.cmd, step.def.Binding("command"), step.def.RuleName(), nil)
 	if res != nil {
-		b.logOutput(ctx, res, step.cmd.Console)
+		b.logOutput(res, step.cmd.Console)
 		if experiments.Enabled("fail-on-stdouterr", "step %s emit stdout/stderr", step) {
 			return fmt.Errorf("%s emit stdout/stderr", step)
 		}

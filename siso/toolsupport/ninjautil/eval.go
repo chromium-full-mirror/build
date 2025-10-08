@@ -6,7 +6,6 @@ package ninjautil
 
 import (
 	"bytes"
-	"context"
 	"fmt"
 	"sync"
 )
@@ -35,7 +34,7 @@ type evalSetEnv interface {
 }
 
 // parseEvalString parses v as evalString.
-func parseEvalString(ctx context.Context, v []byte) (evalString, error) {
+func parseEvalString(v []byte) (evalString, error) {
 	i := skipSpaces(v, 0, whitespaceChar)
 	v = v[i:]
 	svc := simpleVarnameChar

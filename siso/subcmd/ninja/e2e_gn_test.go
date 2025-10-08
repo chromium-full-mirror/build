@@ -171,7 +171,7 @@ func TestBuild_GNGen(t *testing.T) {
 	})
 
 	t.Run("failure_regen", func(t *testing.T) {
-		ninja := func(s string, lastFailedTargets []string) (build.Stats, error) {
+		ninja := func(lastFailedTargets []string) (build.Stats, error) {
 			opt, graph, cleanup := setupBuild(ctx, t, dir, hashfs.Option{
 				StateFile: ".siso_fs_state",
 			})
@@ -186,7 +186,7 @@ func TestBuild_GNGen(t *testing.T) {
 			t.Fatalf("gn gen failed: %v", err)
 		}
 
-		stats, err := ninja("first", nil)
+		stats, err := ninja(nil)
 		if err != nil {
 			t.Fatalf("first build  %v, want nil err", err)
 		}
@@ -195,7 +195,7 @@ func TestBuild_GNGen(t *testing.T) {
 			return append(buf, []byte("!!!")...)
 		})
 
-		stats, err = ninja("fix", []string{"base.stamp"})
+		stats, err = ninja([]string{"base.stamp"})
 		if err != nil {
 			t.Errorf("build err: %v", err)
 		}
@@ -211,7 +211,7 @@ func TestBuild_GNGen(t *testing.T) {
 	})
 
 	t.Run("failure_missing_targets", func(t *testing.T) {
-		ninja := func(s string, lastFailedTargets []string) (build.Stats, error) {
+		ninja := func(lastFailedTargets []string) (build.Stats, error) {
 			opt, graph, cleanup := setupBuild(ctx, t, dir, hashfs.Option{
 				StateFile: ".siso_fs_state",
 			})
@@ -226,7 +226,7 @@ func TestBuild_GNGen(t *testing.T) {
 			t.Fatalf("gn gen failed: %v", err)
 		}
 
-		stats, err := ninja("first", nil)
+		stats, err := ninja(nil)
 		if err != nil {
 			t.Fatalf("first build  %v, want nil err", err)
 		}
@@ -235,7 +235,7 @@ func TestBuild_GNGen(t *testing.T) {
 		})
 
 		// mark deprecated.stamp failed to simulate missing last failed targets in next build
-		stats, err = ninja("fix", []string{"deprecated.stamp"})
+		stats, err = ninja([]string{"deprecated.stamp"})
 		if err != nil {
 			t.Errorf("build err: %v", err)
 		}

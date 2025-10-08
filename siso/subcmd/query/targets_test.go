@@ -144,7 +144,7 @@ in3
 			if err != nil {
 				t.Fatal(err)
 			}
-			err = c.run(t.Context(), flagSet.Args())
+			err = c.run(t.Context())
 			if err != nil {
 				t.Fatal(err)
 			}

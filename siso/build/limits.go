@@ -65,7 +65,7 @@ var (
 func DefaultLimits(ctx context.Context) Limits {
 	limitOnce.Do(func() {
 		numCPU := runtimex.NumCPU()
-		stepLimit := limitForStep(ctx, numCPU)
+		stepLimit := limitForStep(numCPU)
 		defaultLimits = Limits{
 			Step:      stepLimit,
 			Preproc:   stepLimit,
@@ -73,7 +73,7 @@ func DefaultLimits(ctx context.Context) Limits {
 			Local:     numCPU,
 			FastLocal: limitForFastLocal(numCPU),
 			// TODO(crbug.com/429473708): set reasonable default for StartLocal
-			Remote: limitForRemote(ctx, numCPU),
+			Remote: limitForRemote(numCPU),
 			REWrap: limitForREWrapper(ctx, numCPU),
 			Cache:  stepLimitFactor * numCPU,
 		}
@@ -155,7 +155,7 @@ func SetDefaultForTest(limits Limits) {
 	defaultLimits = limits
 }
 
-func limitForStep(ctx context.Context, numCPU int) int {
+func limitForStep(numCPU int) int {
 	limit := stepLimitFactor * numCPU
 	// limit step for reproxy to protect from thread exceeeds.
 	// reclient_helper.py sets the RBE_server_address
@@ -166,7 +166,7 @@ func limitForStep(ctx context.Context, numCPU int) int {
 	return limit
 }
 
-func limitForRemote(ctx context.Context, numCPU int) int {
+func limitForRemote(numCPU int) int {
 	limit := remoteLimitFactor * numCPU
 	// Intel Mac has bad performance with a large number of remote actions.
 	if runtime.GOOS == "darwin" && runtime.GOARCH == "amd64" {

@@ -11,7 +11,6 @@ import (
 	"path/filepath"
 	"testing"
 
-	"go.chromium.org/build/siso/build"
 	"go.chromium.org/build/siso/hashfs"
 )
 
@@ -36,16 +35,17 @@ func TestBuild_Cleandead(t *testing.T) {
 		}
 	}
 
-	ninja := func(t *testing.T, subtool string) (build.Stats, error) {
+	ninja := func(t *testing.T, subtool string) error {
 		t.Helper()
 		opt, graph, cleanup := setupBuild(ctx, t, dir, hashfs.Option{
 			StateFile: ".siso_fs_state",
 		})
 		defer cleanup()
-		return runNinja(ctx, "build.ninja", graph, opt, nil, runNinjaOpts{
+		_, err := runNinja(ctx, "build.ninja", graph, opt, nil, runNinjaOpts{
 			cleandead: true,
 			subtool:   subtool,
 		})
+		return err
 	}
 
 	t.Logf("setup workspace")
@@ -53,7 +53,7 @@ func TestBuild_Cleandead(t *testing.T) {
 	copy(t, "out/siso/build.ninja.0", "out/siso/build.ninja")
 
 	t.Logf("first build")
-	_, err := ninja(t, "")
+	err := ninja(t, "")
 	if err != nil {
 		t.Fatalf("ninja err: %v", err)
 	}
@@ -75,7 +75,7 @@ func TestBuild_Cleandead(t *testing.T) {
 	copy(t, "out/siso/build.ninja.1", "out/siso/build.ninja")
 
 	t.Logf("cleandead")
-	_, err = ninja(t, "cleandead")
+	err = ninja(t, "cleandead")
 	if err != nil {
 		t.Fatalf("cleandead err: %v", err)
 	}
@@ -110,16 +110,17 @@ func TestBuild_CleandeadPreserveNonOut(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ninja := func(t *testing.T, subtool string) (build.Stats, error) {
+	ninja := func(t *testing.T, subtool string) error {
 		t.Helper()
 		opt, graph, cleanup := setupBuild(ctx, t, dir, hashfs.Option{
 			StateFile: ".siso_fs_state",
 		})
 		defer cleanup()
-		return runNinja(ctx, "build.ninja", graph, opt, nil, runNinjaOpts{
+		_, err := runNinja(ctx, "build.ninja", graph, opt, nil, runNinjaOpts{
 			cleandead: true,
 			subtool:   subtool,
 		})
+		return err
 	}
 
 	t.Logf("-- setup workspace")
@@ -134,7 +135,7 @@ func TestBuild_CleandeadPreserveNonOut(t *testing.T) {
 	}
 
 	t.Logf("-- first build")
-	_, err = ninja(t, "")
+	err = ninja(t, "")
 	if err != nil {
 		t.Fatalf("ninja err: %v", err)
 	}
@@ -149,7 +150,7 @@ func TestBuild_CleandeadPreserveNonOut(t *testing.T) {
 	}
 
 	t.Logf("-- cleandead")
-	_, err = ninja(t, "cleandead")
+	err = ninja(t, "cleandead")
 	if err != nil {
 		t.Fatalf("cleandead err: %v", err)
 	}

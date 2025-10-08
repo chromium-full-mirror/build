@@ -317,7 +317,7 @@ func (g *Graph) initGlobals(ctx context.Context) {
 		inputNodes := edge.Inputs()
 		inputs := make([]string, 0, len(inputNodes))
 		for _, n := range inputNodes {
-			inputs = append(inputs, g.globals.targetPath(ctx, n))
+			inputs = append(inputs, g.globals.targetPath(n))
 		}
 		clog.Infof(ctx, "add %q (%q) in input_deps: %d", label, target, len(inputs))
 		g.globals.stepConfig.InputDeps[label] = inputs
@@ -467,10 +467,10 @@ func (g *Graph) TargetPath(ctx context.Context, target build.Target) (string, er
 	if !ok {
 		return "", fmt.Errorf("invalid target %v", target)
 	}
-	return g.globals.targetPath(ctx, node), nil
+	return g.globals.targetPath(node), nil
 }
 
-func (g *globals) targetPath(ctx context.Context, node *ninjautil.Node) string {
+func (g *globals) targetPath(node *ninjautil.Node) string {
 	p := g.targetPaths[node.ID()]
 	if p != "" {
 		return p
@@ -499,7 +499,7 @@ func (g *Graph) Edge(ctx context.Context, target build.Target, next build.StepDe
 		return v, build.ErrDuplicateStep
 	}
 	if edge.IsPhony() {
-		g.globals.phony[g.globals.targetPath(ctx, n)] = true
+		g.globals.phony[g.globals.targetPath(n)] = true
 	}
 	stepDef := g.newStepDef(ctx, edge, next)
 	edgeInputs := edge.TriggerInputs()

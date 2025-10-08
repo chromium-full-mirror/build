@@ -7,7 +7,6 @@
 package build
 
 import (
-	"context"
 	"time"
 )
 
@@ -18,7 +17,7 @@ type usageRecord struct {
 func (u *usageRecord) get() {
 }
 
-func (u *usageRecord) sample(ctx context.Context, t time.Time) []traceEventObject {
+func (u *usageRecord) sample(time.Time) []traceEventObject {
 	// TODO(b/273653666): resource usage collection on windows
 	return nil
 }

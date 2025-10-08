@@ -665,7 +665,7 @@ func (b *Builder) Build(ctx context.Context, name string, args ...string) (err e
 	b.progress.report("\nbuild start: Ready %d Pending %d", pstat.nready, pstat.npendings)
 	clog.Infof(ctx, "build pendings=%d ready=%d", pstat.npendings, pstat.nready)
 	b.progress.start(ctx, b)
-	defer b.progress.stop(ctx)
+	defer b.progress.stop()
 
 	if b.clobber {
 		fmt.Fprintf(b.explainWriter, "--clobber is specified\n")
@@ -1143,35 +1143,35 @@ func (b *Builder) outputs(ctx context.Context, step *Step) error {
 }
 
 // progressStepCacheHit shows progress of the cache hit step.
-func (b *Builder) progressStepCacheHit(ctx context.Context, step *Step) {
-	b.progress.step(ctx, b, step, progressPrefixCacheHit+step.cmd.Desc)
+func (b *Builder) progressStepCacheHit(step *Step) {
+	b.progress.step(b, step, progressPrefixCacheHit+step.cmd.Desc)
 }
 
 // progressStepStarted shows progress of the started step.
-func (b *Builder) progressStepStarted(ctx context.Context, step *Step) {
+func (b *Builder) progressStepStarted(step *Step) {
 	step.setPhase(stepStart)
-	b.progress.step(ctx, b, step, progressPrefixStart+step.cmd.Desc)
+	b.progress.step(b, step, progressPrefixStart+step.cmd.Desc)
 }
 
 // progressStepFinished shows progress of the finished step.
-func (b *Builder) progressStepFinished(ctx context.Context, step *Step) {
+func (b *Builder) progressStepFinished(step *Step) {
 	step.setPhase(stepDone)
-	b.progress.step(ctx, b, step, progressPrefixFinish+step.cmd.Desc)
+	b.progress.step(b, step, progressPrefixFinish+step.cmd.Desc)
 }
 
 // progressStepRetry shows progress of the retried step.
-func (b *Builder) progressStepRetry(ctx context.Context, step *Step) {
-	b.progress.step(ctx, b, step, progressPrefixRetry+step.cmd.Desc)
+func (b *Builder) progressStepRetry(step *Step) {
+	b.progress.step(b, step, progressPrefixRetry+step.cmd.Desc)
 }
 
 // progressStepFallback shows progress of the fallback step.
-func (b *Builder) progressStepFallback(ctx context.Context, step *Step) {
-	b.progress.step(ctx, b, step, progressPrefixFallback+step.cmd.Desc)
+func (b *Builder) progressStepFallback(step *Step) {
+	b.progress.step(b, step, progressPrefixFallback+step.cmd.Desc)
 }
 
 // progressStepCacheWrite shows progress of the cache-write step.
-func (b *Builder) progressStepCacheWrite(ctx context.Context, step *Step) {
-	b.progress.step(ctx, b, step, progressPrefixCacheWrite+step.cmd.Desc)
+func (b *Builder) progressStepCacheWrite(step *Step) {
+	b.progress.step(b, step, progressPrefixCacheWrite+step.cmd.Desc)
 }
 
 var errNotRelocatable = errors.New("request is not relocatable")
@@ -1214,7 +1214,7 @@ func (b *Builder) updateDeps(ctx context.Context, step *Step) error {
 
 func (b *Builder) finalizeTrace(ctx context.Context, tc *trace.Context) {
 	b.traceEvents.Add(ctx, tc)
-	b.traceStats.update(ctx, tc)
+	b.traceStats.update(tc)
 	b.traceExporter.Export(ctx, tc)
 	b.tracePprof.Add(ctx, tc)
 }

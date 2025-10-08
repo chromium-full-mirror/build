@@ -7,7 +7,6 @@
 package build
 
 import (
-	"context"
 	"syscall"
 	"time"
 )
@@ -21,7 +20,7 @@ func (u *usageRecord) get() {
 	syscall.Getrusage(syscall.RUSAGE_SELF, &u.rusage)
 }
 
-func (u *usageRecord) sample(ctx context.Context, t time.Time) []traceEventObject {
+func (u *usageRecord) sample(t time.Time) []traceEventObject {
 	var rusage syscall.Rusage
 	syscall.Getrusage(syscall.RUSAGE_SELF, &rusage)
 	ret := make([]traceEventObject, 0, 2)

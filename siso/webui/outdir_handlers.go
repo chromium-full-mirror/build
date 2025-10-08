@@ -261,7 +261,7 @@ func (s *WebuiServer) getOutdirForRequest(r *http.Request) (*outdirInfo, error) 
 func (s *WebuiServer) handleOutdirReload(w http.ResponseWriter, r *http.Request) {
 	outdirInfo, err := s.getOutdirForRequest(r)
 	if err != nil {
-		s.renderBuildViewError(http.StatusNotFound, fmt.Sprintf("outdir failed to load for request %s: %v", r.URL, err), w, r, outdirInfo)
+		s.renderBuildViewError(http.StatusNotFound, fmt.Sprintf("outdir failed to load for request %s: %v", r.URL, err), w, r)
 		return
 	}
 
@@ -284,12 +284,12 @@ func (s *WebuiServer) handleOutdirReload(w http.ResponseWriter, r *http.Request)
 func (s *WebuiServer) handleOutdirRoot(w http.ResponseWriter, r *http.Request) {
 	outdirInfo, err := s.getOutdirForRequest(r)
 	if err != nil {
-		s.renderBuildViewError(http.StatusNotFound, fmt.Sprintf("outdir failed to load for request %s: %v", r.URL, err), w, r, outdirInfo)
+		s.renderBuildViewError(http.StatusNotFound, fmt.Sprintf("outdir failed to load for request %s: %v", r.URL, err), w, r)
 		return
 	}
 
 	if outdirInfo.latestRevID == "" {
-		s.renderBuildViewError(http.StatusNotFound, "outdir has no metrics", w, r, outdirInfo)
+		s.renderBuildViewError(http.StatusNotFound, "outdir has no metrics", w, r)
 		return
 	}
 
@@ -299,13 +299,13 @@ func (s *WebuiServer) handleOutdirRoot(w http.ResponseWriter, r *http.Request) {
 func (s *WebuiServer) handleOutdirViewLog(w http.ResponseWriter, r *http.Request) {
 	outdirInfo, err := s.getOutdirForRequest(r)
 	if err != nil {
-		s.renderBuildViewError(http.StatusNotFound, fmt.Sprintf("outdir failed to load for request %s: %v", r.URL, err), w, r, outdirInfo)
+		s.renderBuildViewError(http.StatusNotFound, fmt.Sprintf("outdir failed to load for request %s: %v", r.URL, err), w, r)
 		return
 	}
 
 	tmpl, err := s.loadView("_logs.html")
 	if err != nil {
-		s.renderBuildViewError(http.StatusInternalServerError, fmt.Sprintf("failed to load view: %s", err), w, r, outdirInfo)
+		s.renderBuildViewError(http.StatusInternalServerError, fmt.Sprintf("failed to load view: %s", err), w, r)
 		return
 	}
 
@@ -321,7 +321,7 @@ func (s *WebuiServer) handleOutdirViewLog(w http.ResponseWriter, r *http.Request
 	requestedFile := r.PathValue("file")
 	revFileFormatter, ok := allowedFilesMap[requestedFile]
 	if !ok {
-		s.renderBuildViewError(http.StatusNotFound, fmt.Sprintf("unknown file: %s", requestedFile), w, r, outdirInfo)
+		s.renderBuildViewError(http.StatusNotFound, fmt.Sprintf("unknown file: %s", requestedFile), w, r)
 		return
 	}
 
@@ -333,7 +333,7 @@ func (s *WebuiServer) handleOutdirViewLog(w http.ResponseWriter, r *http.Request
 	// (The alternative is either store all files in-memory, or refactor Webui to watch for files changing.)
 	matches, err := filepath.Glob(filepath.Join(outdirInfo.path, "siso_metrics*.json"))
 	if err != nil {
-		s.renderBuildViewError(http.StatusInternalServerError, fmt.Sprintf("failed to glob siso_metrics*.json: %v", err), w, r, outdirInfo)
+		s.renderBuildViewError(http.StatusInternalServerError, fmt.Sprintf("failed to glob siso_metrics*.json: %v", err), w, r)
 		return
 	}
 	buildSuffix := "unknown"
@@ -362,10 +362,10 @@ func (s *WebuiServer) handleOutdirViewLog(w http.ResponseWriter, r *http.Request
 	}
 	if buildSuffix == "unknown" {
 		if err != nil {
-			s.renderBuildViewError(http.StatusInternalServerError, fmt.Sprintf("failed to read siso_metrics*.json: %v", err), w, r, outdirInfo)
+			s.renderBuildViewError(http.StatusInternalServerError, fmt.Sprintf("failed to read siso_metrics*.json: %v", err), w, r)
 			return
 		}
-		s.renderBuildViewError(http.StatusNotFound, fmt.Sprintf("couldn't find siso_metrics identifying build %s", revID), w, r, outdirInfo)
+		s.renderBuildViewError(http.StatusNotFound, fmt.Sprintf("couldn't find siso_metrics identifying build %s", revID), w, r)
 		return
 	}
 
@@ -377,7 +377,7 @@ func (s *WebuiServer) handleOutdirViewLog(w http.ResponseWriter, r *http.Request
 
 	fileContents, err := os.ReadFile(filepath.Join(s.defaultOutdir, actualFile))
 	if err != nil {
-		s.renderBuildViewError(http.StatusInternalServerError, fmt.Sprintf("failed to open file: %v", err), w, r, outdirInfo)
+		s.renderBuildViewError(http.StatusInternalServerError, fmt.Sprintf("failed to open file: %v", err), w, r)
 		return
 	}
 
@@ -385,7 +385,7 @@ func (s *WebuiServer) handleOutdirViewLog(w http.ResponseWriter, r *http.Request
 		w.Header().Add("Content-Type", "text/plain; charset=UTF-8")
 		_, err := w.Write(fileContents)
 		if err != nil {
-			s.renderBuildViewError(http.StatusInternalServerError, fmt.Sprintf("failed to write file contents: %v", err), w, r, outdirInfo)
+			s.renderBuildViewError(http.StatusInternalServerError, fmt.Sprintf("failed to write file contents: %v", err), w, r)
 		}
 		return
 	}
@@ -403,14 +403,14 @@ func (s *WebuiServer) handleOutdirViewLog(w http.ResponseWriter, r *http.Request
 		"fileContents": string(fileContents),
 	})
 	if err != nil {
-		s.renderBuildViewError(http.StatusInternalServerError, fmt.Sprintf("failed to render view: %v", err), w, r, outdirInfo)
+		s.renderBuildViewError(http.StatusInternalServerError, fmt.Sprintf("failed to render view: %v", err), w, r)
 	}
 }
 
 func (s *WebuiServer) handleOutdirAggregates(w http.ResponseWriter, r *http.Request) {
 	outdirInfo, err := s.getOutdirForRequest(r)
 	if err != nil {
-		s.renderBuildViewError(http.StatusNotFound, fmt.Sprintf("outdir failed to load for request %s: %v", r.URL, err), w, r, outdirInfo)
+		s.renderBuildViewError(http.StatusNotFound, fmt.Sprintf("outdir failed to load for request %s: %v", r.URL, err), w, r)
 		return
 	}
 
@@ -422,7 +422,7 @@ func (s *WebuiServer) handleOutdirAggregates(w http.ResponseWriter, r *http.Requ
 		}
 	}
 	if metrics == nil {
-		s.renderBuildViewError(http.StatusNotFound, fmt.Sprintf("no metrics found for request %s", r.URL), w, r, outdirInfo)
+		s.renderBuildViewError(http.StatusNotFound, fmt.Sprintf("no metrics found for request %s", r.URL), w, r)
 		return
 	}
 
@@ -456,7 +456,7 @@ func (s *WebuiServer) handleOutdirAggregates(w http.ResponseWriter, r *http.Requ
 
 	tmpl, err := s.loadView("_aggregates.html")
 	if err != nil {
-		s.renderBuildViewError(http.StatusInternalServerError, fmt.Sprintf("failed to load view: %s", err), w, r, outdirInfo)
+		s.renderBuildViewError(http.StatusInternalServerError, fmt.Sprintf("failed to load view: %s", err), w, r)
 		return
 	}
 
@@ -464,14 +464,14 @@ func (s *WebuiServer) handleOutdirAggregates(w http.ResponseWriter, r *http.Requ
 		"aggregates": sortedAggregates,
 	})
 	if err != nil {
-		s.renderBuildViewError(http.StatusInternalServerError, fmt.Sprintf("failed to render view: %v", err), w, r, outdirInfo)
+		s.renderBuildViewError(http.StatusInternalServerError, fmt.Sprintf("failed to render view: %v", err), w, r)
 	}
 }
 
 func (s *WebuiServer) handleOutdirDoRecall(w http.ResponseWriter, r *http.Request) {
 	outdirInfo, err := s.getOutdirForRequest(r)
 	if err != nil {
-		s.renderBuildViewError(http.StatusNotFound, fmt.Sprintf("outdir failed to load for request %s: %v", r.URL, err), w, r, outdirInfo)
+		s.renderBuildViewError(http.StatusNotFound, fmt.Sprintf("outdir failed to load for request %s: %v", r.URL, err), w, r)
 		return
 	}
 
@@ -483,19 +483,19 @@ func (s *WebuiServer) handleOutdirDoRecall(w http.ResponseWriter, r *http.Reques
 		}
 	}
 	if metrics == nil {
-		s.renderBuildViewError(http.StatusNotFound, fmt.Sprintf("no metrics found for request %s", r.URL), w, r, outdirInfo)
+		s.renderBuildViewError(http.StatusNotFound, fmt.Sprintf("no metrics found for request %s", r.URL), w, r)
 		return
 	}
 
 	tmpl, err := s.loadView("_recall.html")
 	if err != nil {
-		s.renderBuildViewError(http.StatusInternalServerError, fmt.Sprintf("failed to load view: %s", err), w, r, outdirInfo)
+		s.renderBuildViewError(http.StatusInternalServerError, fmt.Sprintf("failed to load view: %s", err), w, r)
 		return
 	}
 
 	metric, ok := metrics.stepByStepID[r.PathValue("id")]
 	if !ok {
-		s.renderBuildViewError(http.StatusNotFound, fmt.Sprintf("stepID %s not found", r.PathValue("id")), w, r, outdirInfo)
+		s.renderBuildViewError(http.StatusNotFound, fmt.Sprintf("stepID %s not found", r.PathValue("id")), w, r)
 		return
 	}
 
@@ -506,7 +506,7 @@ func (s *WebuiServer) handleOutdirDoRecall(w http.ResponseWriter, r *http.Reques
 		"reapiInstance": r.FormValue("reapi_instance"),
 	})
 	if err != nil {
-		s.renderBuildViewError(http.StatusInternalServerError, fmt.Sprintf("failed to render view: %v", err), w, r, outdirInfo)
+		s.renderBuildViewError(http.StatusInternalServerError, fmt.Sprintf("failed to render view: %v", err), w, r)
 	}
 }
 
@@ -524,7 +524,7 @@ func (s *WebuiServer) handleOutdirViewStep(w http.ResponseWriter, r *http.Reques
 	} else {
 		outdirInfo, err = s.getOutdirForRequest(r)
 		if err != nil {
-			s.renderBuildViewError(http.StatusNotFound, fmt.Sprintf("outdir failed to load for request %s: %v", r.URL, err), w, r, outdirInfo)
+			s.renderBuildViewError(http.StatusNotFound, fmt.Sprintf("outdir failed to load for request %s: %v", r.URL, err), w, r)
 			return
 		}
 		for _, m := range outdirInfo.metrics {
@@ -535,20 +535,20 @@ func (s *WebuiServer) handleOutdirViewStep(w http.ResponseWriter, r *http.Reques
 		}
 	}
 	if metrics == nil {
-		s.renderBuildViewError(http.StatusNotFound, fmt.Sprintf("no metrics found for request %s", r.URL), w, r, outdirInfo)
+		s.renderBuildViewError(http.StatusNotFound, fmt.Sprintf("no metrics found for request %s", r.URL), w, r)
 		return
 	}
 
 	tmpl, err := s.loadView("_step.html")
 	if err != nil {
-		s.renderBuildViewError(http.StatusInternalServerError, fmt.Sprintf("failed to load view: %s", err), w, r, outdirInfo)
+		s.renderBuildViewError(http.StatusInternalServerError, fmt.Sprintf("failed to load view: %s", err), w, r)
 		return
 	}
 
 	// Load the step.
 	stepData, ok := metrics.stepByStepID[r.PathValue("id")]
 	if !ok {
-		s.renderBuildViewError(http.StatusNotFound, fmt.Sprintf("stepID %s not found", r.PathValue("id")), w, r, outdirInfo)
+		s.renderBuildViewError(http.StatusNotFound, fmt.Sprintf("stepID %s not found", r.PathValue("id")), w, r)
 		return
 	}
 
@@ -568,11 +568,11 @@ func (s *WebuiServer) handleOutdirViewStep(w http.ResponseWriter, r *http.Reques
 	var stepRaw map[string]any
 	asJSON, err := json.Marshal(stepData)
 	if err != nil {
-		s.renderBuildViewError(http.StatusInternalServerError, fmt.Sprintf("failed to marshal metrics: %v", err), w, r, outdirInfo)
+		s.renderBuildViewError(http.StatusInternalServerError, fmt.Sprintf("failed to marshal metrics: %v", err), w, r)
 	}
 	err = json.Unmarshal(asJSON, &stepRaw)
 	if err != nil {
-		s.renderBuildViewError(http.StatusInternalServerError, fmt.Sprintf("failed to unmarshal metrics: %v", err), w, r, outdirInfo)
+		s.renderBuildViewError(http.StatusInternalServerError, fmt.Sprintf("failed to unmarshal metrics: %v", err), w, r)
 	}
 
 	err = s.renderBuildView(w, r, tmpl, map[string]any{
@@ -581,7 +581,7 @@ func (s *WebuiServer) handleOutdirViewStep(w http.ResponseWriter, r *http.Reques
 		"inOtherRevs": inOtherRevs,
 	})
 	if err != nil {
-		s.renderBuildViewError(http.StatusInternalServerError, fmt.Sprintf("failed to render view: %v", err), w, r, outdirInfo)
+		s.renderBuildViewError(http.StatusInternalServerError, fmt.Sprintf("failed to render view: %v", err), w, r)
 	}
 }
 
@@ -599,7 +599,7 @@ func (s *WebuiServer) handleOutdirListSteps(w http.ResponseWriter, r *http.Reque
 	} else {
 		outdirInfo, err = s.getOutdirForRequest(r)
 		if err != nil {
-			s.renderBuildViewError(http.StatusNotFound, fmt.Sprintf("outdir failed to load for request %s: %v", r.URL, err), w, r, outdirInfo)
+			s.renderBuildViewError(http.StatusNotFound, fmt.Sprintf("outdir failed to load for request %s: %v", r.URL, err), w, r)
 			return
 		}
 		for _, m := range outdirInfo.metrics {
@@ -610,13 +610,13 @@ func (s *WebuiServer) handleOutdirListSteps(w http.ResponseWriter, r *http.Reque
 		}
 	}
 	if metrics == nil {
-		s.renderBuildViewError(http.StatusNotFound, fmt.Sprintf("no metrics found for request %s", r.URL), w, r, outdirInfo)
+		s.renderBuildViewError(http.StatusNotFound, fmt.Sprintf("no metrics found for request %s", r.URL), w, r)
 		return
 	}
 
 	tmpl, err := s.loadView("_steps.html")
 	if err != nil {
-		s.renderBuildViewError(http.StatusInternalServerError, fmt.Sprintf("failed to load view: %s", err), w, r, outdirInfo)
+		s.renderBuildViewError(http.StatusInternalServerError, fmt.Sprintf("failed to load view: %s", err), w, r)
 		return
 	}
 
@@ -636,7 +636,7 @@ func (s *WebuiServer) handleOutdirListSteps(w http.ResponseWriter, r *http.Reque
 			sortDescending = true
 		}
 	} else if len(sortParam) > 0 {
-		s.renderBuildViewError(http.StatusBadRequest, fmt.Sprintf("invalid sort param: %s", sortParam), w, r, outdirInfo)
+		s.renderBuildViewError(http.StatusBadRequest, fmt.Sprintf("invalid sort param: %s", sortParam), w, r)
 		return
 	}
 
@@ -687,7 +687,7 @@ func (s *WebuiServer) handleOutdirListSteps(w http.ResponseWriter, r *http.Reque
 				return cmp.Compare(a.Ready+a.Duration, b.Ready+b.Duration)
 			})
 		default:
-			s.renderBuildViewError(http.StatusBadRequest, fmt.Sprintf("unknown sort column: %s", sortBy), w, r, outdirInfo)
+			s.renderBuildViewError(http.StatusBadRequest, fmt.Sprintf("unknown sort column: %s", sortBy), w, r)
 			return
 		}
 		if sortDescending {
@@ -737,20 +737,20 @@ func (s *WebuiServer) handleOutdirListSteps(w http.ResponseWriter, r *http.Reque
 	}
 	err = s.renderBuildView(w, r, tmpl, data)
 	if err != nil {
-		s.renderBuildViewError(http.StatusInternalServerError, fmt.Sprintf("failed to render view: %v", err), w, r, outdirInfo)
+		s.renderBuildViewError(http.StatusInternalServerError, fmt.Sprintf("failed to render view: %v", err), w, r)
 	}
 }
 
 func (s *WebuiServer) handleOutdirListTargets(w http.ResponseWriter, r *http.Request) {
 	outdirInfo, err := s.getOutdirForRequest(r)
 	if err != nil {
-		s.renderBuildViewError(http.StatusNotFound, fmt.Sprintf("outdir failed to load for request %s: %v", r.URL, err), w, r, outdirInfo)
+		s.renderBuildViewError(http.StatusNotFound, fmt.Sprintf("outdir failed to load for request %s: %v", r.URL, err), w, r)
 		return
 	}
 
 	target := r.PathValue("target")
 	if target == "" {
-		s.renderBuildViewError(http.StatusNotFound, "missing target", w, r, outdirInfo)
+		s.renderBuildViewError(http.StatusNotFound, "missing target", w, r)
 		return
 	}
 
@@ -758,7 +758,7 @@ func (s *WebuiServer) handleOutdirListTargets(w http.ResponseWriter, r *http.Req
 	// Don't continue if failed to stat manifest, but ignore if manifest.stamp failed to stat.
 	stat, err := os.Stat(filepath.Join(outdirInfo.path, outdirInfo.manifestPath))
 	if err != nil {
-		s.renderBuildViewError(http.StatusInternalServerError, fmt.Sprintf("failed to stat %s: %v", outdirInfo.manifestPath, err), w, r, outdirInfo)
+		s.renderBuildViewError(http.StatusInternalServerError, fmt.Sprintf("failed to stat %s: %v", outdirInfo.manifestPath, err), w, r)
 		return
 	}
 	buildNinjaMtime := stat.ModTime()
@@ -774,7 +774,7 @@ func (s *WebuiServer) handleOutdirListTargets(w http.ResponseWriter, r *http.Req
 		p.SetWd(outdirInfo.path)
 		err = p.Load(r.Context(), outdirInfo.manifestPath)
 		if err != nil {
-			s.renderBuildViewError(http.StatusInternalServerError, fmt.Sprintf("failed to load manifest: %v", err), w, r, outdirInfo)
+			s.renderBuildViewError(http.StatusInternalServerError, fmt.Sprintf("failed to load manifest: %v", err), w, r)
 			return
 		}
 		outdirInfo.ninjaState = state
@@ -784,11 +784,11 @@ func (s *WebuiServer) handleOutdirListTargets(w http.ResponseWriter, r *http.Req
 	// Use cached *ninjautil.State to read info.
 	nodes, err := outdirInfo.ninjaState.Targets([]string{target})
 	if err != nil {
-		s.renderBuildViewError(http.StatusInternalServerError, fmt.Sprintf("failed to get node for target %s: %v", target, err), w, r, outdirInfo)
+		s.renderBuildViewError(http.StatusInternalServerError, fmt.Sprintf("failed to get node for target %s: %v", target, err), w, r)
 		return
 	}
 	if len(nodes) != 1 {
-		s.renderBuildViewError(http.StatusInternalServerError, fmt.Sprintf("unexpectedly got %d nodes querying target %s: %v", len(nodes), target, err), w, r, outdirInfo)
+		s.renderBuildViewError(http.StatusInternalServerError, fmt.Sprintf("unexpectedly got %d nodes querying target %s: %v", len(nodes), target, err), w, r)
 		return
 	}
 	targetNode := nodes[0]
@@ -822,7 +822,7 @@ func (s *WebuiServer) handleOutdirListTargets(w http.ResponseWriter, r *http.Req
 
 	tmpl, err := s.loadView("_targets.html")
 	if err != nil {
-		s.renderBuildViewError(http.StatusInternalServerError, fmt.Sprintf("failed to load view: %s", err), w, r, outdirInfo)
+		s.renderBuildViewError(http.StatusInternalServerError, fmt.Sprintf("failed to load view: %s", err), w, r)
 		return
 	}
 
@@ -834,6 +834,6 @@ func (s *WebuiServer) handleOutdirListTargets(w http.ResponseWriter, r *http.Req
 		"outputs":   outputs,
 	})
 	if err != nil {
-		s.renderBuildViewError(http.StatusInternalServerError, fmt.Sprintf("failed to render view: %v", err), w, r, outdirInfo)
+		s.renderBuildViewError(http.StatusInternalServerError, fmt.Sprintf("failed to render view: %v", err), w, r)
 	}
 }

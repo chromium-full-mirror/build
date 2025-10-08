@@ -861,7 +861,7 @@ func (hfs *HashFS) RemoveAll(ctx context.Context, root, name string) error {
 func (hfs *HashFS) Forget(ctx context.Context, root string, inputs []string) {
 	for _, fname := range inputs {
 		fullname := makeFullpath(root, fname)
-		hfs.directory.delete(ctx, fullname)
+		hfs.directory.delete(fullname)
 	}
 }
 
@@ -906,7 +906,7 @@ func (hfs *HashFS) ForgetMissingsInDir(ctx context.Context, root, dir string) {
 			_, err := hfs.OS.Lstat(ctx, fullname)
 			if errors.Is(err, fs.ErrNotExist) {
 				clog.Infof(ctx, "forget missing %s", fullname)
-				hfs.directory.delete(ctx, fullname)
+				hfs.directory.delete(fullname)
 				continue
 			}
 		}
@@ -947,7 +947,7 @@ func (hfs *HashFS) ForgetMissings(ctx context.Context, root string, inputs []str
 			_, err := hfs.OS.Lstat(ctx, fullname)
 			if errors.Is(err, fs.ErrNotExist) {
 				clog.Infof(ctx, "forget missing %s", fullname)
-				hfs.directory.delete(ctx, fullname)
+				hfs.directory.delete(fullname)
 				continue
 			}
 			fi, err := hfs.Stat(ctx, root, fname)
@@ -1426,17 +1426,17 @@ func (hfs *HashFS) RetrieveUpdateEntriesFromLocal(ctx context.Context, root stri
 		lfi, err := hfs.OS.Lstat(ctx, fullname)
 		if errors.Is(err, fs.ErrNotExist) {
 			clog.Warningf(ctx, "missing local %s: %v", fname, err)
-			hfs.directory.delete(ctx, fullname)
+			hfs.directory.delete(fullname)
 			continue
 		} else if err != nil {
 			clog.Warningf(ctx, "failed to access local %s: %v", fname, err)
-			hfs.directory.delete(ctx, fullname)
+			hfs.directory.delete(fullname)
 			continue
 		}
 		if !lfi.IsDir() {
 			// forget old entries unless dir.
 			// need to keep dir to keep other files in the dir.
-			hfs.directory.delete(ctx, fullname)
+			hfs.directory.delete(fullname)
 		}
 		ent := UpdateEntry{
 			Name:    fname,
@@ -1548,7 +1548,7 @@ func (hfs *HashFS) Flush(ctx context.Context, execRoot string, files []string) e
 			// be wrong, so should delete from the hashfs.
 			if code := status.Code(err); code == codes.NotFound {
 				clog.Warningf(ctx, "flush failed. delete %s from hashfs: %v", fname, err)
-				hfs.directory.delete(ctx, fname)
+				hfs.directory.delete(fname)
 			}
 			return err
 		})
@@ -2523,7 +2523,7 @@ func nextDir(ctx context.Context, d *directory, pe pathElements, elem string) (*
 	return d, target, true
 }
 
-func (d *directory) delete(ctx context.Context, fname string) {
+func (d *directory) delete(fname string) {
 	for fname != "" {
 		fname = strings.TrimPrefix(fname, "/")
 		elem, rest, ok := strings.Cut(fname, "/")

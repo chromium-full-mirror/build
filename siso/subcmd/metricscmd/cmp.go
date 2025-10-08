@@ -82,7 +82,7 @@ func (c *cmpCommand) SetFlags(flagSet *flag.FlagSet) {
 }
 
 func (c *cmpCommand) Execute(ctx context.Context, flagSet *flag.FlagSet, _ ...any) subcommands.ExitStatus {
-	err := c.run(ctx)
+	err := c.run()
 	if err != nil {
 		switch {
 		case errors.Is(err, flag.ErrHelp):
@@ -96,17 +96,17 @@ func (c *cmpCommand) Execute(ctx context.Context, flagSet *flag.FlagSet, _ ...an
 	return subcommands.ExitSuccess
 }
 
-func (c *cmpCommand) run(ctx context.Context) error {
+func (c *cmpCommand) run() error {
 	output, ok := formats[c.format]
 	if !ok {
 		return fmt.Errorf("unknown format %q: known formats %q: %w", c.format, formatKeys, flag.ErrHelp)
 	}
 
-	x, err := loadMetrics(ctx, filepath.Join(c.dir, c.inputA))
+	x, err := loadMetrics(filepath.Join(c.dir, c.inputA))
 	if err != nil {
 		return err
 	}
-	y, err := loadMetrics(ctx, filepath.Join(c.dir, c.inputB))
+	y, err := loadMetrics(filepath.Join(c.dir, c.inputB))
 	if err != nil {
 		return err
 	}

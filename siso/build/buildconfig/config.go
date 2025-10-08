@@ -179,7 +179,7 @@ func (cfg *Config) Init(ctx context.Context, hashFS *hashfs.HashFS, buildPath *b
 	if err != nil {
 		return "", fmt.Errorf("no filegroups in %v: %w", ret, err)
 	}
-	cfg.filegroups, err = parseFilegroups(ctx, fg)
+	cfg.filegroups, err = parseFilegroups(fg)
 	if err != nil {
 		return "", fmt.Errorf("bad filegroups: %w", err)
 	}
@@ -241,7 +241,7 @@ func (cfg *Config) Handle(ctx context.Context, handler string, bpath *build.Path
 		clog.Infof(ctx, "hctx: %v", hctx)
 	}
 
-	hcmd, err := packCmd(ctx, cmd, expandedInputs)
+	hcmd, err := packCmd(cmd, expandedInputs)
 	if err != nil {
 		return fmt.Errorf("failed to pack cmd: %w", err)
 	}

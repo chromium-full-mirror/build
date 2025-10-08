@@ -49,41 +49,6 @@ linters:
           kajiya/capabilities/service.go|\
           runmc/machine_type.go|\
           runmc/main.go|\
-          siso/build/buildconfig/star.go|\
-          siso/build/buildconfig/star_filegroups.go|\
-          siso/build/cmd_output_log.go|\
-          siso/build/deps_msvc.go|\
-          siso/build/file_access_trace.go|\
-          siso/build/limits.go|\
-          siso/build/ninjabuild/ninjabuild.go|\
-          siso/build/plan.go|\
-          siso/build/progress.go|\
-          siso/build/run_cmd.go|\
-          siso/build/step.go|\
-          siso/build/trace.go|\
-          siso/execute/cmd.go|\
-          siso/hashfs/fs.go|\
-          siso/hashfs/fs_test.go|\
-          siso/hashfs/osfs/install_helper.go|\
-          siso/reapi/reapitest/reapitest.go|\
-          siso/scandeps/cpp.go|\
-          siso/scandeps/scan.go|\
-          siso/subcmd/fscmd/flush.go|\
-          siso/subcmd/metricscmd/load.go|\
-          siso/subcmd/ninja/e2e_cleandead_test.go|\
-          siso/subcmd/ninja/e2e_gn_test.go|\
-          siso/subcmd/ninja/ninja.go|\
-          siso/subcmd/ps/local.go|\
-          siso/subcmd/ps/ps.go|\
-          siso/subcmd/query/deps.go|\
-          siso/subcmd/query/targets.go|\
-          siso/subcmd/scandeps/scandeps.go|\
-          siso/sync/semaphore/semaphore_test.go|\
-          siso/toolsupport/ninjautil/chunk_parser.go|\
-          siso/toolsupport/ninjautil/deps_log.go|\
-          siso/toolsupport/ninjautil/eval.go|\
-          siso/webui/runbuild_handlers.go|\
-          siso/webui/serve.go|\
         )$"
       - path: "^(\
           siso/execute/cmd.go|\

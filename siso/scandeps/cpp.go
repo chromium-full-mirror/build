@@ -95,7 +95,7 @@ func CPPScan(ctx context.Context, fname string, buf []byte) ([]string, map[strin
 				continue
 			}
 			line = bytes.TrimSpace(line)
-			addDefine(ctx, defines, fname, line)
+			addDefine(ctx, defines, line)
 			continue
 		default:
 			// ignore other directives
@@ -183,7 +183,7 @@ func addInclude(ctx context.Context, paths []string, incpath []byte) []string {
 	return append(paths, strings.Clone(string(incpath)))
 }
 
-func addDefine(ctx context.Context, defines map[string][]string, fname string, line []byte) {
+func addDefine(ctx context.Context, defines map[string][]string, line []byte) {
 	// line
 	//  MACRO "path.h"
 	//  MACRO <path.h>

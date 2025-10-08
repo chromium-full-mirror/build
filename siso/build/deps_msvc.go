@@ -88,7 +88,7 @@ func (msvc depsMSVC) fixCmdInputs(ctx context.Context, b *Builder, cmd *execute.
 		// but if we use it with OSFamily=Windows, need to
 		// deduplicate such case sensitive filenames.
 		fixFn = func(ctx context.Context, files []string) []string {
-			return fixCaseSensitiveIncludes(ctx, b, files)
+			return fixCaseSensitiveIncludes(ctx, files)
 		}
 	}
 
@@ -274,7 +274,7 @@ func (depsMSVC) scandeps(ctx context.Context, b *Builder, step *Step) ([]string,
 	return ins, nil
 }
 
-func fixCaseSensitiveIncludes(ctx context.Context, b *Builder, files []string) []string {
+func fixCaseSensitiveIncludes(ctx context.Context, files []string) []string {
 	m := make(map[string]bool)
 	newFiles := make([]string, 0, len(files))
 	for _, f := range files {

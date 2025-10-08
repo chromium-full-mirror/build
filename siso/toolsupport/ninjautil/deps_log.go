@@ -322,7 +322,7 @@ func (d *DepsLog) Recompact(ctx context.Context) error {
 		rPathIdx: make(map[string]int),
 		pathIdx:  make(map[string]int),
 	}
-	err = nd.openForWrite(ctx)
+	err = nd.openForWrite()
 	if err != nil {
 		return err
 	}
@@ -475,7 +475,7 @@ func (d *DepsLog) Path(id int) (string, error) {
 	return "", fmt.Errorf("index=%d (> %d)", id, len(d.paths))
 }
 
-func (d *DepsLog) lookupDepRecord(ctx context.Context, i int) (*depsRecord, error) {
+func (d *DepsLog) lookupDepRecord(i int) (*depsRecord, error) {
 	if i >= len(d.deps) {
 		return nil, fmt.Errorf("index=%d (> %d)", i, len(d.deps))
 	}
@@ -486,7 +486,7 @@ func (d *DepsLog) lookupDepRecord(ctx context.Context, i int) (*depsRecord, erro
 	return deps, nil
 }
 
-func (d *DepsLog) openForWrite(ctx context.Context) error {
+func (d *DepsLog) openForWrite() error {
 	var err error
 	d.w, err = os.OpenFile(d.fname, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	return err
@@ -503,7 +503,7 @@ func (d *DepsLog) Record(ctx context.Context, output string, mtime time.Time, de
 	defer d.mu.Unlock()
 
 	if d.w == nil {
-		err := d.openForWrite(ctx)
+		err := d.openForWrite()
 		if err != nil {
 			return false, err
 		}
@@ -513,7 +513,7 @@ func (d *DepsLog) Record(ctx context.Context, output string, mtime time.Time, de
 	i, added := d.uniquePathIdx(output)
 	if added {
 		willUpdateDeps = true
-		err := d.recordPath(ctx, i, output)
+		err := d.recordPath(i, output)
 		if err != nil {
 			return false, fmt.Errorf("failed to record for output %s: %w", output, err)
 		}
@@ -525,7 +525,7 @@ func (d *DepsLog) Record(ctx context.Context, output string, mtime time.Time, de
 		deps[i] = d.paths[di]
 		if added {
 			willUpdateDeps = true
-			err := d.recordPath(ctx, di, dep)
+			err := d.recordPath(di, dep)
 			if err != nil {
 				return false, fmt.Errorf("failed to record for dep %s: %w", dep, err)
 			}
@@ -533,7 +533,7 @@ func (d *DepsLog) Record(ctx context.Context, output string, mtime time.Time, de
 		depIDs = append(depIDs, di)
 	}
 	if !willUpdateDeps {
-		dr, err := d.lookupDepRecord(ctx, i)
+		dr, err := d.lookupDepRecord(i)
 		if err != nil {
 			willUpdateDeps = true
 		} else {
@@ -555,7 +555,7 @@ func (d *DepsLog) Record(ctx context.Context, output string, mtime time.Time, de
 		return false, nil
 	}
 	d.update(ctx, int32(i), &depsRecord{mtime: mtime.UnixNano(), inputs: depIDs})
-	err := d.recordDeps(ctx, i, mtime, depIDs)
+	err := d.recordDeps(i, mtime, depIDs)
 	if err != nil {
 		return false, err
 	}
@@ -594,7 +594,7 @@ func createNewDepsLogFile(ctx context.Context, fname string) {
 	clog.Infof(ctx, "created new deps log file: %s", fname)
 }
 
-func (d *DepsLog) recordPath(ctx context.Context, i int, path string) error {
+func (d *DepsLog) recordPath(i int, path string) error {
 	pathSize := len(path)
 	padding := (4 - pathSize%4) % 4 // Pad path to 4 byte boundary.
 	size := pathSize + padding + 4
@@ -616,7 +616,7 @@ func (d *DepsLog) recordPath(ctx context.Context, i int, path string) error {
 	return err
 }
 
-func (d *DepsLog) recordDeps(ctx context.Context, i int, mtime time.Time, inputs []int) error {
+func (d *DepsLog) recordDeps(i int, mtime time.Time, inputs []int) error {
 	size := 4 + 4 + 4 + 4*len(inputs)
 	if size > maxRecordSize {
 		return fmt.Errorf("too large record %d for %s", size, d.paths[i])

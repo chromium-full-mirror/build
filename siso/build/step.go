@@ -480,7 +480,7 @@ func newCmd(ctx context.Context, b *Builder, stepDef StepDef, stepManifest *step
 		CmdHash:        stepManifest.cmdHash,
 		ExecRoot:       b.path.ExecRoot, // use step binding?
 		Dir:            b.path.Dir,
-		Inputs:         stepInputs(ctx, b, stepDef),
+		Inputs:         stepInputs(ctx, stepDef),
 		ToolInputs:     stepDef.ToolInputs(ctx),
 		Outputs:        stepManifest.outputs,
 		EdgeHash:       stepManifest.edgeHash,
@@ -563,7 +563,7 @@ func execTimeout(ctx context.Context, d string) time.Duration {
 	return dur
 }
 
-func stepInputs(ctx context.Context, b *Builder, stepDef StepDef) []string {
+func stepInputs(ctx context.Context, stepDef StepDef) []string {
 	seen := make(map[string]bool)
 	var inputs []string
 	for _, in := range stepDef.Inputs(ctx) {

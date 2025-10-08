@@ -18,6 +18,6 @@ type sysRecord struct {
 
 func (*sysRecord) get(ctx context.Context) {}
 
-func (*sysRecord) sample(ctx context.Context, t time.Time) []traceEventObject {
+func (*sysRecord) sample(context.Context, time.Time) []traceEventObject {
 	return nil
 }

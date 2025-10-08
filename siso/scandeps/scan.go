@@ -153,17 +153,17 @@ func (s *scanner) nextInputs(ctx context.Context) []string {
 	return nil
 }
 
-func (s *scanner) addInputs(ctx context.Context, ins ...string) {
+func (s *scanner) addInputs(ins ...string) {
 	s.inputs = slices.Concat(ins, s.inputs)
 }
 
-func (s *scanner) setMacros(ctx context.Context, macros map[string]string) {
+func (s *scanner) setMacros(macros map[string]string) {
 	for k, v := range macros {
 		s.macros[k] = append(s.macros[k], v)
 	}
 }
 
-func (s *scanner) updateMacros(ctx context.Context, macros map[string][]string) {
+func (s *scanner) updateMacros(macros map[string][]string) {
 	for k, vs := range macros {
 		seen := make(map[string]bool)
 		for _, v := range s.macros[k] {
@@ -264,7 +264,7 @@ func (s *scanner) find(ctx context.Context, name string) (string, error) {
 		s.macroCheck(ctx, ".", rel, incpath, sr.includes)
 		dir := path.Dir(incpath)
 		s.pushDir(ctx, dir)
-		s.updateMacros(ctx, sr.defines)
+		s.updateMacros(sr.defines)
 		s.pushInputs(sr.includes...)
 		return incpath, nil
 	}
@@ -312,7 +312,7 @@ func (s *scanner) find(ctx context.Context, name string) (string, error) {
 				clog.Infof(ctx, "find %s -> includes:%q defines:%q", incpath, sr.includes, sr.defines)
 			}
 
-			s.updateMacros(ctx, sr.defines)
+			s.updateMacros(sr.defines)
 			if i >= qi && i < mi {
 				s.pushMacroInputs(sr.includes...)
 			} else {
@@ -359,7 +359,7 @@ func (s *scanner) find(ctx context.Context, name string) (string, error) {
 					clog.Infof(ctx, "find %s -> includes:%q defines:%q", incpath, sr.includes, sr.defines)
 				}
 
-				s.updateMacros(ctx, sr.defines)
+				s.updateMacros(sr.defines)
 				s.pushInputs(sr.includes...)
 				return incpath, nil
 			}

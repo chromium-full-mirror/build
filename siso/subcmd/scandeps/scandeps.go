@@ -90,7 +90,7 @@ func (c *Command) run(ctx context.Context) error {
 		return err
 	}
 	fmt.Printf("request=%#v\n", req)
-	inputDeps, err := loadInputDeps(ctx, filepath.Join(c.dir, c.stateDir))
+	inputDeps, err := loadInputDeps(filepath.Join(c.dir, c.stateDir))
 	if err != nil {
 		return err
 	}
@@ -117,7 +117,7 @@ func (c *Command) run(ctx context.Context) error {
 	return nil
 }
 
-func loadInputDeps(ctx context.Context, dir string) (map[string][]string, error) {
+func loadInputDeps(dir string) (map[string][]string, error) {
 	buf, err := os.ReadFile(filepath.Join(dir, ".siso_config"))
 	if err != nil {
 		return nil, err

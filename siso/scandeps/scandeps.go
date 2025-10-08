@@ -98,7 +98,7 @@ func (s *ScanDeps) Scan(ctx context.Context, execRoot string, req Request) ([]st
 	// if precomputed tree is defined for the dir (in addDir later).
 
 	scanner := s.fs.scanner(ctx, execRoot, s.inputDeps, precomputedTrees)
-	scanner.setMacros(ctx, req.Defines)
+	scanner.setMacros(req.Defines)
 
 	for _, s := range req.Includes {
 		scanner.addInclude(ctx, s)
@@ -181,7 +181,7 @@ func (s *ScanDeps) Scan(ctx context.Context, execRoot string, req Request) ([]st
 					logDeps := deps
 					clog.Infof(ctx, "add inputDeps %q", logDeps)
 				}
-				scanner.addInputs(ctx, deps...)
+				scanner.addInputs(deps...)
 			}
 			// TODO: check name in precomputed subtrees (i.e. sysroots etc)?
 			// if not found, fallback to `clang -M`?

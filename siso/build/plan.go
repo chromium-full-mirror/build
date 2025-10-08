@@ -487,7 +487,7 @@ func scheduleTarget(ctx context.Context, sched *scheduler, graph Graph, target T
 		clog.Infof(ctx, "sched: add target %s: %s", targetPath(ctx, graph, target), newStep)
 	}
 	step.outputs = newEdge.Outputs
-	sched.add(ctx, graph, step)
+	sched.add(ctx, step)
 	return validationQueue, nil
 }
 
@@ -559,7 +559,7 @@ func (s *scheduler) finish(ctx context.Context, d time.Duration) {
 }
 
 // add adds new stepDef to run.
-func (s *scheduler) add(ctx context.Context, graph Graph, step *Step) {
+func (s *scheduler) add(ctx context.Context, step *Step) {
 	s.plan.mu.Lock()
 	defer s.plan.mu.Unlock()
 	defer func() {

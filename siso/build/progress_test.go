@@ -34,7 +34,7 @@ func TestProgress_NotIsTerminal(t *testing.T) {
 		state: &stepState{},
 	}
 	step.setPhase(stepStart)
-	p.step(ctx, b, step, progressPrefixStart)
+	p.step(b, step, progressPrefixStart)
 	started := time.Now()
 	var count int64
 	for count == 0 && time.Since(started) < 1*time.Second {
@@ -46,8 +46,8 @@ func TestProgress_NotIsTerminal(t *testing.T) {
 		t.Errorf("progress count=%d; want >0", count)
 	}
 	step.setPhase(stepDone)
-	p.step(ctx, b, step, progressPrefixFinish)
-	p.stop(ctx)
+	p.step(b, step, progressPrefixFinish)
+	p.stop()
 
 	if w := step.getWeightedDuration(); w == 0 {
 		t.Errorf("weighted_duration=0; want non-zero")

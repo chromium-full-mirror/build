@@ -241,7 +241,7 @@ func (s *WebuiServer) renderBuildView(wr http.ResponseWriter, r *http.Request, t
 }
 
 // renderBuildViewError renders a build-related error.
-func (s *WebuiServer) renderBuildViewError(status int, message string, w http.ResponseWriter, r *http.Request, outdirInfo *outdirInfo) {
+func (s *WebuiServer) renderBuildViewError(status int, message string, w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(status)
 	tmpl, err := s.loadView("_error.html")
 	if err != nil {

@@ -268,10 +268,10 @@ type traceEventObject struct {
 }
 
 func (te *traceEvents) sample(ctx context.Context, w io.Writer, t time.Time) {
-	for _, o := range te.traceMemStats(ctx, t) {
+	for _, o := range te.traceMemStats(t) {
 		te.write(ctx, w, o)
 	}
-	for _, o := range te.rusage.sample(ctx, t) {
+	for _, o := range te.rusage.sample(t) {
 		te.write(ctx, w, o)
 	}
 	for _, o := range te.sys.sample(ctx, t) {
@@ -282,7 +282,7 @@ func (te *traceEvents) sample(ctx context.Context, w io.Writer, t time.Time) {
 		if sema == nil {
 			continue
 		}
-		for _, o := range te.traceSemaphore(ctx, t, sema, &te.semaReqs[i]) {
+		for _, o := range te.traceSemaphore(t, sema, &te.semaReqs[i]) {
 			te.write(ctx, w, o)
 		}
 	}
@@ -290,13 +290,13 @@ func (te *traceEvents) sample(ctx context.Context, w io.Writer, t time.Time) {
 		if m == nil {
 			continue
 		}
-		for _, o := range te.traceIOMetrics(ctx, t, int64(sisoIOPid+i), m, &te.iostats[i]) {
+		for _, o := range te.traceIOMetrics(t, int64(sisoIOPid+i), m, &te.iostats[i]) {
 			te.write(ctx, w, o)
 		}
 	}
 }
 
-func (te *traceEvents) traceMemStats(ctx context.Context, t time.Time) []traceEventObject {
+func (te *traceEvents) traceMemStats(t time.Time) []traceEventObject {
 	ret := []traceEventObject{
 		{
 			Name: "memstats",
@@ -317,7 +317,7 @@ func (te *traceEvents) traceMemStats(ctx context.Context, t time.Time) []traceEv
 	return ret
 }
 
-func (te *traceEvents) traceSemaphore(ctx context.Context, t time.Time, sema *semaphore.Semaphore, reqs *int) []traceEventObject {
+func (te *traceEvents) traceSemaphore(t time.Time, sema *semaphore.Semaphore, reqs *int) []traceEventObject {
 	r := sema.NumRequests()
 	rate := r - *reqs
 	*reqs = r
@@ -337,7 +337,7 @@ func (te *traceEvents) traceSemaphore(ctx context.Context, t time.Time, sema *se
 	}
 }
 
-func (te *traceEvents) traceIOMetrics(ctx context.Context, t time.Time, pid int64, m *iometrics.IOMetrics, s *iometrics.Stats) []traceEventObject {
+func (te *traceEvents) traceIOMetrics(t time.Time, pid int64, m *iometrics.IOMetrics, s *iometrics.Stats) []traceEventObject {
 	stats := m.Stats()
 
 	o := traceEventObject{
@@ -658,7 +658,7 @@ func (t *TraceStat) Avg() time.Duration {
 	return t.Total / time.Duration(int64(t.N))
 }
 
-func (s *traceStats) update(ctx context.Context, tc *trace.Context) {
+func (s *traceStats) update(tc *trace.Context) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for _, span := range tc.Spans() {
