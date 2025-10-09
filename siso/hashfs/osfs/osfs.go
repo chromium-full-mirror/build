@@ -212,6 +212,9 @@ func (ofs *OSFS) WriteDigestData(ctx context.Context, name string, src digest.So
 			return err
 		}
 		n, err = io.Copy(w, r)
+		if err != nil {
+			err = fmt.Errorf("failed to call io.Copy, read %d bytes in %s: %w", n, time.Since(started), err)
+		}
 		cerr := w.Close()
 		if err == nil {
 			err = cerr
