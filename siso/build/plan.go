@@ -509,8 +509,9 @@ func newScheduler(ctx context.Context, opt schedulerOption) *scheduler {
 		path:   opt.Path,
 		hashFS: opt.HashFS,
 		plan: &plan{
-			// preallocate capacity for performance optimization.
-			q:       make(chan *Step, 10000),
+			// TODO: b/374179498 - temporarily reduce the buffer
+			// size to 1 to measure performance differences.
+			q:       make(chan *Step, 1),
 			targets: make([]targetInfo, opt.NumTargets),
 		},
 		prepare:           opt.Prepare,
