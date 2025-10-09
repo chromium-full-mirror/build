@@ -1538,6 +1538,11 @@ func (hfs *HashFS) Flush(ctx context.Context, execRoot string, files []string) e
 		hfs.digester.compute(ctx, fname, e)
 		ctx, done, err := FlushSemaphore.WaitAcquire(ctx)
 		if err != nil {
+			// flush failed, so may need to flush again.
+			select {
+			case e.lready <- true:
+			default:
+			}
 			return fmt.Errorf("flush sempahore %s: %w", fname, err)
 		}
 		eg.Go(func() (err error) {
