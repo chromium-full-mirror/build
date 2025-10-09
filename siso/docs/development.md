@@ -102,6 +102,10 @@ instructions and examples how to use it effectively.
 Alternatively, you can use `-cpuprofile=cpu.prof` or `-memprofile=memory.prof`
 to collect profiling data and save it to disk.
 
+For using the commands mentioned above, you could add the flags into
+[.sisorc](https://chromium.googlesource.com/chromium/src/+/HEAD/docs/siso_tips.md#preferred-command-line-flags)
+so `autoninja` is able to pick it up when you build chromium.
+
 > **Note**: If you get an error like `Error: could not find file
 > go.chromium.org/build/siso/main.go ...` when using the `list` command in `go
 > tool pprof`, it means `pprof` can't find the source files. This often happens
