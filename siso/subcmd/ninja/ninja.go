@@ -423,13 +423,19 @@ type batchFlag struct {
 	c *Command
 }
 
-func (f *batchFlag) IsBoolFlag() bool { return true }
+func (*batchFlag) IsBoolFlag() bool { return true }
 
 func (f *batchFlag) String() string {
+	if f == nil || f.c == nil {
+		return "false"
+	}
 	return strconv.FormatBool(!f.c.fastNop && !f.c.fastLocal && !f.c.fastLastFailure && !f.c.fastExit)
 }
 
 func (f *batchFlag) Set(v string) error {
+	if f == nil || f.c == nil {
+		return errors.New("nil batchFlag")
+	}
 	b, err := strconv.ParseBool(v)
 	if err != nil {
 		return err
