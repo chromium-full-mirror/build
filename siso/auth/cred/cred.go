@@ -79,7 +79,6 @@ func New(ctx context.Context, uri string, opts Options) (Cred, error) {
 	if opts.Type == "" {
 		return Cred{}, fmt.Errorf(`empty credential helper. need to set credential helper path, "luci-auth", "gcloud" or "google-application-default" in SISO_CREDENTIAL_HELPER`)
 	}
-	var t string
 	if opts.TokenSource == nil {
 		return Cred{Type: opts.Type}, nil
 	}
@@ -98,12 +97,13 @@ func New(ctx context.Context, uri string, opts Options) (Cred, error) {
 		}
 		clog.Warningf(ctx, "failed to get perRPCCredentials for %q: %v", uri, err)
 	}
+	var t string
 	var email string
 	ts := opts.TokenSource
 	tok, err := ts.Token()
 	if err != nil {
 		if ctx.Err() != nil {
-			return Cred{}, err
+			return Cred{Type: opts.Type}, err
 		}
 		if errors.Is(err, errNoAuthorization) {
 			if ch, ok := ts.(*credHelperGoogle); ok {
@@ -117,9 +117,9 @@ func New(ctx context.Context, uri string, opts Options) (Cred, error) {
 		} else {
 			switch opts.Type {
 			case "luci-auth", "gcloud", "":
-				return Cred{}, fmt.Errorf("need to run `siso login`: %w", err)
+				return Cred{Type: opts.Type}, fmt.Errorf("need to run `siso login`: %w", err)
 			default:
-				return Cred{}, err
+				return Cred{Type: opts.Type}, err
 			}
 		}
 	} else {
@@ -156,13 +156,17 @@ func (c Cred) grpcDialOptions() []grpc.DialOption {
 
 // ClientOptions returns client options to use the credential.
 func (c Cred) ClientOptions() []option.ClientOption {
+	if c.Type == "google-application-default" {
+		// Google Application Default Credentials will be used.
+		return nil
+	}
+	// disable Google Application Default, and use PerRPCCredentials in dial option, or TokenSource
+	// https://github.com/googleapis/google-api-go-client/issues/3149
+	copts := []option.ClientOption{
+		option.WithoutAuthentication(),
+	}
 	dopts := c.grpcDialOptions()
 	if len(dopts) > 0 {
-		copts := []option.ClientOption{
-			// disable Google Application Default, and use PerRPCCredentials in dial option.
-			// https://github.com/googleapis/google-api-go-client/issues/3149
-			option.WithoutAuthentication(),
-		}
 		for _, opt := range dopts {
 			copts = append(copts, option.WithGRPCDialOption(opt))
 		}
