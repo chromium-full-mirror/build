@@ -100,7 +100,7 @@ func (h *credHelper) get(ctx context.Context, endpoint string) (credHelperPerRPC
 	cce.mu.Lock()
 	defer cce.mu.Unlock()
 	if cce.cred.expires.IsZero() || cce.cred.expires.Before(time.Now()) {
-		ctx, cancel := context.WithTimeout(ctx, 1*time.Minute)
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 1*time.Minute)
 		defer cancel()
 		// first call, or expired
 		started := time.Now()
