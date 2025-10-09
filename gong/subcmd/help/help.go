@@ -10,10 +10,13 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"maps"
 	"os"
+	"slices"
 
 	"github.com/google/subcommands"
 
+	"go.chromium.org/build/gong/gn/build"
 	"go.chromium.org/build/gong/gn/syntax"
 	"go.chromium.org/build/gong/ui"
 )
@@ -37,6 +40,15 @@ func (*Command) Usage() string {
 func (h *Command) Execute(ctx context.Context, f *flag.FlagSet, _ ...any) subcommands.ExitStatus {
 	if f.NArg() == 0 {
 		subcommands.DefaultCommander.Explain(os.Stdout)
+
+		fmt.Fprintf(os.Stdout, "\nBuildfile functions ")
+		fmt.Fprintf(os.Stdout, `(type "%s help <function>" for more help)`, subcommands.DefaultCommander.Name())
+		fmt.Fprintf(os.Stdout, ":\n")
+		functionMap := build.FunctionMap(&build.BuildSettings{})
+		for _, name := range slices.Sorted(maps.Keys(functionMap)) {
+			fmt.Fprintf(os.Stdout, "  %s\n", functionMap[name].HelpShort())
+		}
+
 		return subcommands.ExitSuccess
 	}
 
@@ -50,6 +62,7 @@ func (h *Command) Execute(ctx context.Context, f *flag.FlagSet, _ ...any) subcom
 		return subcommands.ExitSuccess
 
 	default:
+		// First try to find it as a subcommand.
 		var command subcommands.Command
 		subcommands.DefaultCommander.VisitCommands(func(_ *subcommands.CommandGroup, c subcommands.Command) {
 			if c.Name() == what {
@@ -61,7 +74,15 @@ func (h *Command) Execute(ctx context.Context, f *flag.FlagSet, _ ...any) subcom
 			return subcommands.ExitSuccess
 		}
 
-		// Print as if it was a GN-style error.
+		// Then try to find it as a build function.
+		functionMap := build.FunctionMap(&build.BuildSettings{})
+		if info, ok := functionMap[what]; ok {
+			fmt.Fprintf(os.Stdout, "%s\n%s", info.HelpShort(), info.Help())
+			return subcommands.ExitSuccess
+		}
+
+		// Otherwise, print an error.
+		// To match C++ GN, construct a GN-style error and then print it.
 		err := syntax.MakeErrorAt(syntax.Location{}, []syntax.LocationRange{},
 			syntax.ErrUnknown,
 			fmt.Sprintf("No help on %q.", what), "")

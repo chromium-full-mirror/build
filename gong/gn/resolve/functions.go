@@ -22,6 +22,49 @@ type FunctionInfo interface {
 	Run(scope *Scope, call *parse.FunctionCallNode, args []Value) (Value, error)
 }
 
+// AssertFunction is a function that asserts an expression is true.
+type AssertFunction struct{}
+
+func (AssertFunction) HelpShort() string {
+	return "assert: Assert an expression is true at generation time."
+}
+func (AssertFunction) Help() string {
+	return `assert(<condition> [, <error string>])
+
+  If the condition is false, the build will fail with an error. If the
+  optional second argument is provided, that string will be printed
+  with the error message.`
+}
+func (AssertFunction) IsTarget() bool { return false }
+func (AssertFunction) Run(scope *Scope, call *parse.FunctionCallNode, args []Value) (Value, error) {
+	if len(args) < 1 || len(args) > 2 {
+		return nil, call.Function.MakeErrorWithHelp(syntax.ErrArgumentCount,
+			"Wrong number of arguments for assert.",
+			"assert() takes one or two arguments, were you expecting something else?")
+	}
+
+	assertValue, err := AsValue[*BooleanValue](args[0])
+	if err != nil {
+		return nil, call.Function.MakeError(syntax.ErrTypeMismatch, "Assertion value not a bool.")
+	}
+	assertMessage := ""
+	if len(args) == 2 {
+		assertMessageValue, err := AsValue[*StringValue](args[1])
+		if err != nil {
+			return nil, call.Function.MakeError(syntax.ErrTypeMismatch, "Assertion message is not a string.")
+		}
+		assertMessage = assertMessageValue.value
+	}
+
+	if !assertValue.value {
+		// TODO: use args[0].origin to add extra hint "this is where it was set"
+		return nil, call.Function.MakeErrorWithHelp(syntax.ErrInvalidOperation,
+			"Assertion failed.",
+			assertMessage)
+	}
+	return nil, nil
+}
+
 // mockFunction is a mock implementation of FunctionInfo for testing.
 type mockFunction struct {
 	value int64

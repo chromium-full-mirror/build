@@ -27,9 +27,7 @@ func NewSettings(buildSettings *BuildSettings) *Settings {
 		buildSettings: buildSettings,
 		baseConfig: resolve.NewScope(&builtinProvider{
 			buildSettings: buildSettings,
-		}, map[string]resolve.FunctionInfo{
-			"rebase_path": &rebasePathFunction{buildSettings: buildSettings},
-		}),
+		}, FunctionMap(buildSettings)),
 	}
 }
 
