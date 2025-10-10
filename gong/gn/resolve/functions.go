@@ -85,34 +85,59 @@ type assertFailureFunction struct{}
 
 func (assertFailureFunction) HelpShort() string { return "assert_failure: Internal function." }
 func (assertFailureFunction) Help() string {
-	return `assert_failure: Internal function.
+	return `assert_failure(<error string> [, <help string>]) {
+  <block that should fail>
+}
+
+  Executes the provided block, expecting it to fail with the provided
+  error string. If the optional help string is specified, also checks
+  that the help string matches.
 
   Only GN errors are expected. Any other Go error type is treated as an
   internal failure.
 
-Example
+Examples
 
   assert_failure("Assertion failed.") {
 	assert(false)
+  }
+
+  assert_failure("Negative array subscript.", "You gave me -1") {
+    a = b[-1]
   }
 `
 }
 func (assertFailureFunction) IsTarget() bool { return false }
 func (assertFailureFunction) Run(scope *Scope, call *parse.FunctionCallNode, args []Value, block *parse.BlockNode) (Value, error) {
-	if len(args) != 1 {
-		return nil, call.Function.MakeError(syntax.ErrArgumentCount, "Expected assertion message.")
+	if len(args) < 1 || len(args) > 2 {
+		return nil, call.Function.MakeErrorWithHelp(syntax.ErrArgumentCount,
+			"Wrong number of arguments for assert_failure.",
+			fmt.Sprintf("assert_failure() takes one or two arguments, but %d were given.", len(args)))
 	}
-	assertMessageValue, err := AsValue[*StringValue](args[0])
-	if err != nil {
-		return nil, MakeErrFromValue(args[0], syntax.ErrTypeMismatch, "Assertion message is not a string.", "")
-	}
-	assertMessage := assertMessageValue.value
-	_, err = ExecuteNode(block, scope)
+
+	_, err := ExecuteNode(block, scope)
 	var gnErr syntax.Error
 	if errors.As(err, &gnErr) {
+		assertMessageValue, err := AsValue[*StringValue](args[0])
+		if err != nil {
+			return nil, MakeErrFromValue(args[0], syntax.ErrTypeMismatch, "Assertion message is not a string.", "")
+		}
+		assertMessage := assertMessageValue.value
 		if gnErr.Message() != assertMessage {
 			return nil, parse.MakeErrFromNode(block, syntax.ErrInvalidOperation,
 				fmt.Sprintf("Wanted %q, got %q", assertMessage, gnErr.Message()), "")
+		}
+
+		if len(args) == 2 {
+			helpMessageValue, err := AsValue[*StringValue](args[1])
+			if err != nil {
+				return nil, MakeErrFromValue(args[1], syntax.ErrTypeMismatch, "Help message is not a string.", "")
+			}
+			helpMessage := helpMessageValue.value
+			if gnErr.HelpText() != helpMessage {
+				return nil, parse.MakeErrFromNode(block, syntax.ErrInvalidOperation,
+					fmt.Sprintf("Wanted %q, got %q", helpMessage, gnErr.HelpText()), "")
+			}
 		}
 		return nil, nil
 	}

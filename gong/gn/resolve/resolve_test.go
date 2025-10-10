@@ -576,6 +576,7 @@ func TestExecFile(t *testing.T) {
 		"testdata/bool.gni",
 		"testdata/int.gni",
 		"testdata/functions.gni",
+		"testdata/lists.gni",
 		"testdata/resolve.gni",
 	} {
 		content, err := os.ReadFile(file)

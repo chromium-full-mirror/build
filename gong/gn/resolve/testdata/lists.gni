@@ -1,0 +1,12 @@
+# Copyright 2025 The Chromium Authors
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+foo = [1, 2, 3]
+assert(foo[0] == 1)
+assert(foo[1] == 2)
+assert(foo[2] == 3)
+
+assert_failure("Negative array subscript.", "You gave me -1") {
+    a = foo[-1]
+}
