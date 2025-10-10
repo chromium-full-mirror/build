@@ -5,6 +5,7 @@
 package build
 
 import (
+	"container/heap"
 	"context"
 	"errors"
 	"fmt"
@@ -156,11 +157,51 @@ type targetInfo struct {
 type plan struct {
 	mu     sync.Mutex
 	closed bool
-	q      chan *Step // queue for next step to run
-	ready  []*Step
+	// q is a channel where selected ready setps are pushed to.
+	q chan *Step
+	// ready is a queue of ready steps prioritized with weights.
+	ready priorityQueue
 	// indexed by Target
 	targets   []targetInfo
 	npendings int
+}
+
+// priorityQueue is a pool of ready steps.
+// It implements https://pkg.go.dev/container/heap#Interface to prioritize
+// steps with larger weights.
+// See also https://pkg.go.dev/container/heap#example-package-PriorityQueue
+type priorityQueue []*Step
+
+// Len is the number of ready steps in the queue.
+func (pq priorityQueue) Len() int {
+	return len(pq)
+}
+
+// Less reports whether the element i has higher priority than the element j.
+func (pq priorityQueue) Less(i, j int) bool {
+	// We want to prioritize a step with a larger weight.
+	return pq[i].weight > pq[j].weight
+}
+
+// Swap swaps the steps with indexes i and j.
+func (pq priorityQueue) Swap(i, j int) {
+	pq[i], pq[j] = pq[j], pq[i]
+}
+
+// Push pushes a ready step to the end.
+func (pq *priorityQueue) Push(x any) {
+	s := x.(*Step)
+	*pq = append(*pq, s)
+}
+
+// Push pops the last step.
+func (pq *priorityQueue) Pop() any {
+	old := *pq
+	n := len(old)
+	s := old[n-1]
+	old[n-1] = nil
+	*pq = old[0 : n-1]
+	return s
 }
 
 // schedulerOption is scheduler option.
@@ -506,11 +547,14 @@ func newScheduler(ctx context.Context, opt schedulerOption) *scheduler {
 		clog.Infof(ctx, "schedule: enable trace")
 	}
 	clog.Infof(ctx, "schedule: new: targets=%d", opt.NumTargets)
+	var ready priorityQueue
+	heap.Init(&ready)
 	return &scheduler{
 		path:   opt.Path,
 		hashFS: opt.HashFS,
 		plan: &plan{
 			q:       make(chan *Step, 1),
+			ready:   ready,
 			targets: make([]targetInfo, opt.NumTargets),
 		},
 		prepare:           opt.Prepare,
@@ -619,18 +663,16 @@ func (p *plan) pushReadyUnlocked(s *Step) {
 	if s != nil {
 		s.queueTime = time.Now()
 		s.queueSize = len(p.ready)
-		p.ready = append(p.ready, s)
+		heap.Push(&p.ready, s)
 	}
 	if len(p.ready) == 0 {
 		return
 	}
+	// select the highest priority step from `ready` pool.
 	select {
 	case p.q <- p.ready[0]:
-		p.ready[0].queueDuration = time.Since(p.ready[0].queueTime)
-		// Deallocate p.ready[0] explicitly.
-		copy(p.ready, p.ready[1:])
-		p.ready[len(p.ready)-1] = nil
-		p.ready = p.ready[:len(p.ready)-1]
+		sent := heap.Pop(&p.ready).(*Step)
+		sent.queueDuration = time.Since(sent.queueTime)
 	default:
 	}
 }
