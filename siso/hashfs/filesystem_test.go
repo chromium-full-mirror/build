@@ -266,3 +266,56 @@ func TestFilesystemSub_SymlinkDir(t *testing.T) {
 		t.Errorf("sub.Stat(%q)=_, %v; want nil err", fname, err)
 	}
 }
+
+func TestResolveSymlinkPath(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink not available on windows")
+		return
+	}
+	for _, tc := range []struct {
+		root, path, target string
+		want               string
+	}{
+		{
+			root:   "/b/w",
+			path:   "/b/w/foo/bar",
+			target: "baz",
+			want:   "foo/baz",
+		},
+		{
+			root:   "/b/w",
+			path:   "/b/w/foo/bar",
+			target: "../baz",
+			want:   "baz",
+		},
+		{
+			root:   "/b/w",
+			path:   "/b/w/foo/bar",
+			target: "../../baz",
+			want:   "/b/baz",
+		},
+		{
+			root:   "/b/w",
+			path:   "/b/w/foo/bar",
+			target: "/b/w/baz",
+			want:   "baz",
+		},
+		{
+			root:   "/b/w",
+			path:   "/b/w/foo/bar",
+			target: "/b/baz",
+			want:   "/b/baz",
+		},
+		{
+			root:   "/b/w",
+			path:   "/b/x",
+			target: "baz",
+			want:   "/b/baz",
+		},
+	} {
+		got := resolveSymlinkPath(tc.root, tc.path, tc.target)
+		if got != tc.want {
+			t.Errorf("resolveSymlinkPath(%q,%q,%q)=%q; want=%q", tc.root, tc.path, tc.target, got, tc.want)
+		}
+	}
+}

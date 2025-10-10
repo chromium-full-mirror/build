@@ -2554,9 +2554,10 @@ type FileInfo struct {
 	root  string
 	fname string
 	e     *entry
+	fis   []FileInfo
 }
 
-func (fi *FileInfo) Path() string {
+func (fi FileInfo) Path() string {
 	return makeFullpath(fi.root, fi.fname)
 }
 
@@ -2637,6 +2638,11 @@ func (fi FileInfo) Action() digest.Digest {
 // Target returns a symlink target of the file, or empty if it is not symlink.
 func (fi FileInfo) Target() string {
 	return fi.e.target
+}
+
+// Symlinks returns a symlink's FileInfo to resolve the file.
+func (fi FileInfo) Symlinks() []FileInfo {
+	return fi.fis
 }
 
 // DirEntry implements https://pkg.go.dev/io/fs#DirEntry.

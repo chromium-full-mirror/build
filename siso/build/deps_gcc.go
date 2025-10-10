@@ -367,35 +367,6 @@ func (gcc depsGCC) scandepsByClang(ctx context.Context, b *Builder, step *Step) 
 }
 
 func (depsGCC) expandSymlinkDirs(ctx context.Context, b *Builder, inpath string) []string {
-	var inputs []string
-	const maxSymlinks = 40
-resolve:
-	for range maxSymlinks {
-		elems := strings.Split(inpath, "/")
-		for i := range elems {
-			pathname := strings.Join(elems[:i+1], "/")
-			fi, err := b.hashFS.Stat(ctx, b.path.ExecRoot, pathname)
-			if err != nil {
-				clog.Warningf(ctx, "no intermediate dir for %s: %s: %v", inpath, pathname, err)
-				continue
-			}
-			if target := fi.Target(); target != "" {
-				inputs = append(inputs, pathname)
-				// TODO: support remote chroot?
-				if filepath.IsAbs(target) {
-					// out of exec root
-					break resolve
-				}
-				targetPath := filepath.Join(filepath.Dir(pathname), target)
-				if !filepath.IsLocal(targetPath) {
-					// out of exec root
-					break resolve
-				}
-				inputs = append(inputs, targetPath)
-				inpath = filepath.Join(targetPath, strings.Join(elems[i+1:], "/"))
-				continue resolve
-			}
-		}
-	}
-	return inputs
+	fsys := b.hashFS.FileSystem(ctx, b.path.ExecRoot)
+	return fsys.ExpandSymlinks(inpath)
 }
