@@ -156,8 +156,8 @@ type targetInfo struct {
 type plan struct {
 	mu     sync.Mutex
 	closed bool
-	q      chan *Step // queue for ready to run
-	ready  []*Step    // spilled over from q
+	q      chan *Step // queue for next step to run
+	ready  []*Step
 	// indexed by Target
 	targets   []targetInfo
 	npendings int
@@ -582,13 +582,7 @@ func (s *scheduler) add(ctx context.Context, step *Step) {
 		if log.V(1) {
 			clog.Infof(ctx, "step state: %s ready to run", step.String())
 		}
-		select {
-		case s.plan.q <- step:
-		default:
-			step.queueTime = time.Now()
-			step.queueSize = len(s.plan.ready)
-			s.plan.ready = append(s.plan.ready, step)
-		}
+		s.plan.pushReadyUnlocked(step)
 		return
 	}
 	if log.V(1) {
@@ -611,9 +605,21 @@ func (p *plan) stats() planStats {
 	}
 }
 
+// pushReady pushes a ready step.
 func (p *plan) pushReady() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	p.pushReadyUnlocked(nil)
+}
+
+// pushReadyUnlocked pushes a ready step to q.
+// This function should be called with mutex held.
+func (p *plan) pushReadyUnlocked(s *Step) {
+	if s != nil {
+		s.queueTime = time.Now()
+		s.queueSize = len(p.ready)
+		p.ready = append(p.ready, s)
+	}
 	if len(p.ready) == 0 {
 		return
 	}
@@ -664,13 +670,7 @@ func (p *plan) done(ctx context.Context, step *Step) {
 				if log.V(1) {
 					clog.Infof(ctx, "step state: %s ready to run %q", s.String(), s.def.Outputs(ctx)[0])
 				}
-				select {
-				case p.q <- s:
-				default:
-					s.queueTime = time.Now()
-					s.queueSize = len(ready)
-					ready = append(ready, s)
-				}
+				p.pushReadyUnlocked(s)
 				continue
 			}
 			p.targets[out].waits[i] = s
