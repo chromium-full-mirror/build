@@ -238,7 +238,7 @@ func schedule(ctx context.Context, sched *scheduler, graph Graph, args ...string
 			continue
 		}
 
-		validationQueue, err = scheduleTarget(ctx, sched, graph, t, nil, sched.prepare, validationQueue)
+		validationQueue, err = scheduleTarget(ctx, sched, graph, t, nil, sched.prepare, 1, validationQueue)
 		if err != nil {
 			return fmt.Errorf("failed in schedule %s: %w", targetPath(ctx, graph, t), err)
 		}
@@ -254,7 +254,7 @@ func schedule(ctx context.Context, sched *scheduler, graph Graph, args ...string
 			case scanStateDone, scanStateIgnored:
 				continue
 			}
-			validationQueue, err = scheduleTarget(ctx, sched, graph, t, nil, false, validationQueue)
+			validationQueue, err = scheduleTarget(ctx, sched, graph, t, nil, false, 1, validationQueue)
 			if err != nil {
 				return fmt.Errorf("failed in schedule %s: %w", targetPath(ctx, graph, t), err)
 			}
@@ -275,7 +275,7 @@ func (d DependencyCycleError) Error() string {
 
 // scheduleTarget schedules a build plan for target, which is required to next StepDef, from graph into sched.
 // It also returns validationQueue updated while scheduling.
-func scheduleTarget(ctx context.Context, sched *scheduler, graph Graph, target Target, next StepDef, ignore bool, validationQueue []Target) ([]Target, error) {
+func scheduleTarget(ctx context.Context, sched *scheduler, graph Graph, target Target, next StepDef, ignore bool, weight int, validationQueue []Target) ([]Target, error) {
 	targets := sched.plan.targets
 	scanState := targets[target].scan
 	switch scanState {
@@ -422,8 +422,9 @@ func scheduleTarget(ctx context.Context, sched *scheduler, graph Graph, target T
 	//     missing dependencies. It would be better to fix gn/ninja's
 	//     build graph, rather than mitigating here in the siso.
 	step := &Step{
-		def:   newStep,
-		state: &stepState{},
+		def:    newStep,
+		state:  &stepState{},
+		weight: weight,
 	}
 	orderOnlyIndex := len(newEdge.Inputs)
 	for i, in := range append(newEdge.Inputs, newEdge.OrderOnly...) {
@@ -444,7 +445,7 @@ func scheduleTarget(ctx context.Context, sched *scheduler, graph Graph, target T
 					inIgnore = true
 				}
 			}
-			validationQueue, err = scheduleTarget(ctx, sched, graph, in, next, inIgnore, validationQueue)
+			validationQueue, err = scheduleTarget(ctx, sched, graph, in, next, inIgnore, weight+1, validationQueue)
 			if err != nil {
 				var cycleErr DependencyCycleError
 				if errors.As(err, &cycleErr) {
