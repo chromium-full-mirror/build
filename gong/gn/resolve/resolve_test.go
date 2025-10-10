@@ -5,6 +5,8 @@
 package resolve
 
 import (
+	"bytes"
+	"os"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -555,5 +557,50 @@ func TestExecuteNode(t *testing.T) {
 				t.Errorf("ExecuteNode(%T, %T); diff -want +got:\n%s", tc.node, tc.scope, diff)
 			}
 		})
+	}
+}
+
+type mockInput struct {
+	displayName string
+	contents    string
+}
+
+func (m mockInput) DisplayName() string { return m.displayName }
+func (m mockInput) Contents() []byte    { return []byte(m.contents) }
+func (m mockInput) Equal(other syntax.InputSource) bool {
+	return bytes.Equal(m.Contents(), other.Contents())
+}
+
+func TestExecFile(t *testing.T) {
+	for _, file := range []string{
+		"testdata/bool.gni",
+		"testdata/int.gni",
+		"testdata/resolve.gni",
+	} {
+		content, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatalf("failed to read %q: %v", file, err)
+		}
+		tokens, err := syntax.Tokenize(mockInput{
+			displayName: file,
+			contents:    string(content),
+		})
+		if err != nil {
+			t.Fatalf("failed to tokenize %q: %v", file, err)
+		}
+		root, err := parse.Parse(tokens)
+		if err != nil {
+			t.Fatalf("failed to parse %q: %v", file, err)
+		}
+
+		_, err = ExecuteNode(root, &Scope{
+			functions: map[string]FunctionInfo{
+				"assert": AssertFunction{},
+			},
+			values: map[string]record{},
+		})
+		if err != nil {
+			t.Errorf("execute failed: %v", err)
+		}
 	}
 }

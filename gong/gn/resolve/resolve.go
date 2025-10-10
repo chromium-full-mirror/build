@@ -95,7 +95,13 @@ func ExecuteNode(n parse.Node, s *Scope) (Value, error) {
 		return f.Run(s, n, args.list)
 
 	case *parse.IdentifierNode:
-		return nil, fmt.Errorf("don't know how to execute IdentifierNode yet. got: %T(%v)", n, n)
+		value := s.Value(n.Value.Value(), true)
+		if value == nil {
+			return nil, n.Value.MakeError(syntax.ErrUndefinedIdentifier, "Undefined identifier.")
+		}
+		// TODO: EnsureNotReadingFromSameDeclareArgs
+		value.setOrigin(n)
+		return value, nil
 
 	case *parse.ListNode:
 		listValue := &ListValue{}
