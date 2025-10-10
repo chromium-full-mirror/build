@@ -1,0 +1,13 @@
+#:schema https://jj-vcs.github.io/jj/latest/config-schema.json
+
+[revset-aliases]
+"trunk()" = "main@origin"
+"immutable_heads()" = "remote_bookmarks() | tags()"
+
+[fix.tools.gofmt]
+command = ["gofmt"]
+patterns = ["glob:'**/*.go'"]
+
+[fix.tools.yapf]
+command = ["yapf"]
+patterns = ["glob:'**/*.py'"]
