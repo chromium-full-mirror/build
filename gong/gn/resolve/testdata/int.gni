@@ -3,3 +3,21 @@
 # found in the LICENSE file.
 
 assert(1 > 0)
+
+assert_failure("Negative zero doesn't make sense") {
+    negative_zero = -0
+}
+
+assert_failure("Leading zeros not allowed") {
+    leading_zero = 01
+}
+
+int64_max = 9223372036854775807
+assert_failure("This does not look like an integer") {
+    int64_over = 9223372036854775808
+}
+
+int64_min = -9223372036854775808
+assert_failure("This does not look like an integer") {
+    int64_under = -9223372036854775809
+}
