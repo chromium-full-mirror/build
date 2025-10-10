@@ -509,8 +509,6 @@ func newScheduler(ctx context.Context, opt schedulerOption) *scheduler {
 		path:   opt.Path,
 		hashFS: opt.HashFS,
 		plan: &plan{
-			// TODO: b/374179498 - temporarily reduce the buffer
-			// size to 1 to measure performance differences.
 			q:       make(chan *Step, 1),
 			targets: make([]targetInfo, opt.NumTargets),
 		},
@@ -645,25 +643,6 @@ func (p *plan) done(ctx context.Context, step *Step) {
 		clog.Infof(ctx, "build already finished. nothing triggers")
 		return
 	}
-
-	// Before processing the completed step,
-	// send ready steps from p.ready to p.q and resize p.ready.
-	nr := len(p.ready)
-loop:
-	for i, s := range p.ready {
-		select {
-		case p.q <- s:
-			s.queueDuration = time.Since(s.queueTime)
-		default:
-			nr = i
-			break loop
-		}
-	}
-	copy(p.ready, p.ready[nr:])
-	for j := len(p.ready) - nr; j < len(p.ready); j++ {
-		p.ready[j] = nil
-	}
-	p.ready = p.ready[:len(p.ready)-nr]
 
 	// Unblock waiting steps and send them to the queue if they are ready.
 	npendings := p.npendings
