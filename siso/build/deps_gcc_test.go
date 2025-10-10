@@ -239,7 +239,6 @@ func TestDepsGCCFixCmdInputs_chromeos(t *testing.T) {
 	setupFile("build/cros_cache/chrome-sdk/tarballs/target_toolchain/chromiumos-sdk-2023-09-x86_64-cros-linux-gnu-2023.09.28.020006.tar.xz/bin/x86_64-cros-linux-gnu-clang")
 	setupSymlink("build/cros_cache/chrome-sdk/symlinks/amd64-generic+15633.0.0+sysroot_chromeos-base_chromeos-chrome.tar.xz", "../tarballs/sysroot_chromeos-base_chromeos-chrome.tar.xz/chromiumos-image-archive-amd64-generic-public-R119-15633.0.0-sysroot_chromeos-base_chromeos-chrome.tar.xz")
 	setupFile("build/cros_cache/chrome-sdk/tarballs/sysroot_chromeos-base_chromeos-chrome.tar.xz/chromiumos-image-archive-amd64-generic-public-R119-15633.0.0-sysroot_chromeos-base_chromeos-chrome.tar.xz/usr/include/stdio.h")
-	setupFile("third_party/libc++/src/include/stdout.h")
 
 	b := &Builder{
 		path:   NewPath(dir, "out_amd64-generic/Release"),

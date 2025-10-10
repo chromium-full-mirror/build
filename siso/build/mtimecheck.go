@@ -10,6 +10,9 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"path"
+	"path/filepath"
+	"syscall"
 	"time"
 
 	log "github.com/golang/glog"
@@ -247,9 +250,19 @@ func inputMtime(ctx context.Context, b *Builder, stepDef StepDef) (string, time.
 			mtime = ts.mtime
 			changed = ts.changed
 		} else {
-			fsys := b.hashFS.FileSystem(ctx, b.path.ExecRoot)
-			fi, err := fsys.Stat(in)
-			for _, fi := range fsys.Visited(fi) {
+			const maxSymlinks = 40
+			root := b.path.ExecRoot
+			fname := in
+			resolved := false
+			for range maxSymlinks {
+				fi, err := b.hashFS.Stat(ctx, root, fname)
+				if err != nil {
+					retErr = fmt.Errorf("missing input %s (%s): %w", in, fname, err)
+					b.targets.Store(in, targetState{
+						dirtyErr: retErr,
+					})
+					return false
+				}
 				if mtime.Before(fi.ModTime()) {
 					mtime = fi.ModTime()
 				}
@@ -257,20 +270,43 @@ func inputMtime(ctx context.Context, b *Builder, stepDef StepDef) (string, time.
 					changed = fi.IsChanged()
 				}
 				if len(fi.CmdHash()) > 0 {
-					// generated file.
-					// we don't resolve symlink.
-					// android platform uses dangling
-					// symlink for output, so ignore
-					// Stat error.
-					err = nil
+					// generated file. not resolve symlink
+					resolved = true
 					break
 				}
+				target := fi.Target()
+				if target == "" {
+					// not symlink.
+					resolved = true
+					break
+				}
+				if filepath.IsAbs(target) {
+					root = ""
+					clog.Infof(ctx, "input symlink %q -> %q", fname, target)
+					fname = target
+					continue
+				}
+				orig := fi.Path()
+				relOrig, err := filepath.Rel(b.path.ExecRoot, orig)
+				if err != nil || !filepath.IsLocal(relOrig) || root == "" {
+					target = filepath.ToSlash(filepath.Join(filepath.Dir(orig), target))
+					root = ""
+				} else {
+					target = filepath.ToSlash(filepath.Join(filepath.Dir(relOrig), target))
+				}
+				if !filepath.IsLocal(target) {
+					// go outside of exec root.
+					target = path.Join(root, target)
+					root = ""
+				}
+				clog.Infof(ctx, "input symlink %q -> %q", fname, target)
+				fname = target
 			}
-			if err != nil {
+			if !resolved {
+				retErr = fmt.Errorf("missing input %s: %w", in, syscall.ELOOP)
 				b.targets.Store(in, targetState{
-					dirtyErr: err,
+					dirtyErr: retErr,
 				})
-				retErr = fmt.Errorf("inupt %s: %w", in, err)
 				return false
 			}
 			b.targets.Store(in, targetState{

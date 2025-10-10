@@ -377,8 +377,7 @@ func TestScanDeps_Framework(t *testing.T) {
 		"out/siso/Foo.framework/Headers",
 		"out/siso/Foo.framework/Headers/Bar.h",
 		"out/siso/Foo.framework/Headers/Baz.h",
-		"out/siso/Foo.framework/Versions/A/Headers",
-		"out/siso/Foo.framework/Versions/Current",
+		"out/siso/Foo.framework/Versions/Current/Headers",
 	}
 	if diff := cmp.Diff(want, got, cmpopts.SortSlices(func(a, b string) bool { return a < b })); diff != "" {
 		t.Errorf("scandeps diff -want +got:\n%s", diff)
@@ -701,7 +700,6 @@ func TestScanDeps_SymlinkDirSymlinkIntermediateDir(t *testing.T) {
 		"system/core/include/utils/RWLock.h",
 		"system/core/libutils/binder/include/utils/Errors.h",
 		"system/core/libutils/include/utils",
-		"system/core/libutils/include/utils/Errors.h",
 	}
 	if diff := cmp.Diff(want, got, cmpopts.SortSlices(func(a, b string) bool { return a < b })); diff != "" {
 		t.Errorf("scandeps diff -want +got:\n%s", diff)
