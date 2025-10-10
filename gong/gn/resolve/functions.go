@@ -5,12 +5,14 @@
 package resolve
 
 import (
+	"errors"
+	"fmt"
+
 	"go.chromium.org/build/gong/gn/parse"
 	"go.chromium.org/build/gong/gn/syntax"
 )
 
-// FunctionInfo represents a simple function that only takes arguments and returns a Value.
-// TODO: Implement support for functions with blocks (i.e. targets) etc.
+// FunctionInfo represents common metadata for a function.
 type FunctionInfo interface {
 	// HelpShort returns a short help string.
 	HelpShort() string
@@ -18,6 +20,19 @@ type FunctionInfo interface {
 	Help() string
 	// IsTarget returns whether this function represents a target.
 	IsTarget() bool
+}
+
+// BlockFunctionInfo represents a function that takes arguments and a block and returns a Value.
+// The Run function may assume that block is never nil.
+type BlockFunctionInfo interface {
+	FunctionInfo
+	// Run executes the function.
+	Run(scope *Scope, call *parse.FunctionCallNode, args []Value, block *parse.BlockNode) (Value, error)
+}
+
+// SimpleFunctionInfo represents a simple function that only takes arguments and returns a Value.
+type SimpleFunctionInfo interface {
+	FunctionInfo
 	// Run executes the function.
 	Run(scope *Scope, call *parse.FunctionCallNode, args []Value) (Value, error)
 }
@@ -63,6 +78,49 @@ func (AssertFunction) Run(scope *Scope, call *parse.FunctionCallNode, args []Val
 			assertMessage)
 	}
 	return nil, nil
+}
+
+// assertFailureFunction is an internal function for testing that checks a block fails with the given error message.
+type assertFailureFunction struct{}
+
+func (assertFailureFunction) HelpShort() string { return "assert_failure: Internal function." }
+func (assertFailureFunction) Help() string {
+	return `assert_failure: Internal function.
+
+  Only GN errors are expected. Any other Go error type is treated as an
+  internal failure.
+
+Example
+
+  assert_failure("Assertion failed.") {
+	assert(false)
+  }
+`
+}
+func (assertFailureFunction) IsTarget() bool { return false }
+func (assertFailureFunction) Run(scope *Scope, call *parse.FunctionCallNode, args []Value, block *parse.BlockNode) (Value, error) {
+	if len(args) != 1 {
+		return nil, call.Function.MakeError(syntax.ErrArgumentCount, "Expected assertion message.")
+	}
+	assertMessageValue, err := AsValue[*StringValue](args[0])
+	if err != nil {
+		return nil, MakeErrFromValue(args[0], syntax.ErrTypeMismatch, "Assertion message is not a string.", "")
+	}
+	assertMessage := assertMessageValue.value
+	_, err = ExecuteNode(block, scope)
+	var gnErr syntax.Error
+	if errors.As(err, &gnErr) {
+		if gnErr.Message() != assertMessage {
+			return nil, parse.MakeErrFromNode(block, syntax.ErrInvalidOperation,
+				fmt.Sprintf("Wanted %q, got %q", assertMessage, gnErr.Message()), "")
+		}
+		return nil, nil
+	}
+	if err != nil {
+		return nil, parse.MakeErrFromNode(block, syntax.ErrInvalidOperation,
+			"Internal error.", "Non-GN error encountered during execution of this block.")
+	}
+	return nil, call.Function.MakeError(syntax.ErrInvalidOperation, "Block did not fail.")
 }
 
 // mockFunction is a mock implementation of FunctionInfo for testing.

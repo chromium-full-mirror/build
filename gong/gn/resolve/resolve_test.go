@@ -575,6 +575,7 @@ func TestExecFile(t *testing.T) {
 	for _, file := range []string{
 		"testdata/bool.gni",
 		"testdata/int.gni",
+		"testdata/functions.gni",
 		"testdata/resolve.gni",
 	} {
 		content, err := os.ReadFile(file)
@@ -595,7 +596,8 @@ func TestExecFile(t *testing.T) {
 
 		_, err = ExecuteNode(root, &Scope{
 			functions: map[string]FunctionInfo{
-				"assert": AssertFunction{},
+				"assert":         AssertFunction{},
+				"assert_failure": assertFailureFunction{},
 			},
 			values: map[string]record{},
 		})

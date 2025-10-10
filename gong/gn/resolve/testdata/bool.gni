@@ -3,8 +3,10 @@
 # found in the LICENSE file.
 
 # truth
-# TODO: test that assert(false) fails?
 assert(true)
+assert_failure("Assertion failed.") {
+    assert(false)
+}
 
 # comparison
 assert(0 == 0)

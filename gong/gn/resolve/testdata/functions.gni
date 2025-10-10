@@ -1,0 +1,23 @@
+# Copyright 2025 The Chromium Authors
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+assert_failure("Block did not fail.") {
+    assert_failure("") {
+        assert(true)
+    }
+}
+
+assert_failure("Unexpected '{'.") {
+    assert(true) {
+        assert(true)
+    }
+}
+
+assert_failure("Unknown function.") {
+    foo()
+}
+
+assert_failure("This function call requires a block.") {
+    assert_failure()
+}

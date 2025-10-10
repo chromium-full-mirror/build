@@ -78,9 +78,8 @@ func ExecuteNode(n parse.Node, s *Scope) (Value, error) {
 		return nil, err
 
 	case *parse.FunctionCallNode:
-		// TODO: Implement support for functions with blocks (i.e. targets) etc.
 		name := n.Function
-		f, ok := s.function(name.Value())
+		info, ok := s.function(name.Value())
 		if !ok {
 			return nil, name.MakeError(syntax.ErrUnknown, "Unknown function.")
 		}
@@ -92,7 +91,25 @@ func ExecuteNode(n parse.Node, s *Scope) (Value, error) {
 		if err != nil {
 			return nil, err
 		}
-		return f.Run(s, n, args.list)
+		switch f := info.(type) {
+		case BlockFunctionInfo:
+			if n.Block == nil {
+				return nil, n.Function.MakeErrorWithHelp(syntax.ErrArgumentCount,
+					"This function call requires a block.",
+					`The block's "{" must be on the same line as the function call's ")".`)
+			}
+			return f.Run(s, n, args.list, n.Block)
+		case SimpleFunctionInfo:
+			if n.Block != nil {
+				return nil, parse.MakeErrFromNode(n.Block, syntax.ErrArgumentCount,
+					"Unexpected '{'.",
+					`This function call doesn't take a {} block following it, and you
+can't have a {} block that's not connected to something like an if
+statement or a target declaration.`)
+			}
+			return f.Run(s, n, args.list)
+		}
+		return nil, fmt.Errorf("don't know how to execute this function yet")
 
 	case *parse.IdentifierNode:
 		value := s.Value(n.Value.Value(), true)

@@ -4,3 +4,8 @@
 
 x = 1
 assert(x == 1)
+
+# use of undefined global
+assert_failure("Undefined identifier.") {
+    y = z
+}
