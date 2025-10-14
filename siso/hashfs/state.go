@@ -583,11 +583,11 @@ func (hfs *HashFS) SetState(ctx context.Context, state *pb.State) error {
 		}
 		hfs.loaded.Store(true)
 		clog.Infof(ctx, "set state done: clean:%t loaded:true: %s", hfs.clean.Load(), time.Since(start))
-		start = time.Now()
+		missingDigestsStart := time.Now()
 		for _, fname := range state.MissingDigests {
 			hfs.Stat(ctx, "", fname) // access and trigger lazy digest calculation.
 		}
-		clog.Infof(ctx, "stat missing_digests=%d: %s", len(state.MissingDigests), time.Since(start))
+		clog.Infof(ctx, "stat missing_digests=%d: %s", len(state.MissingDigests), time.Since(missingDigestsStart))
 		hfs.setStateCh <- nil
 	}()
 	clog.Infof(ctx, "load state done: eq:%d new:%d not-exist:%d fail:%d invalidate:%d: tainted:%d missingOutputs:%d missingDigests:%d %s", neq.Load(), nnew.Load(), nnotexist.Load(), nfail.Load(), ninvalidate.Load(), len(hfs.taintedFiles), len(state.MissingOutputs), len(state.MissingDigests), time.Since(start))
