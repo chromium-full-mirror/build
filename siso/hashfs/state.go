@@ -829,7 +829,8 @@ func (hfs *HashFS) State(ctx context.Context) *pb.State {
 				continue
 			}
 			// need to record the entry for incremental build
-			if e.directory == nil && e.target == "" && e.d.IsZero() {
+			ed := e.digest()
+			if e.directory == nil && e.target == "" && ed.IsZero() {
 				// digest is not calculated yet?
 				if e.src == nil {
 					clog.Warningf(ctx, "wrong entry for %s?", name)
@@ -847,8 +848,8 @@ func (hfs *HashFS) State(ctx context.Context) *pb.State {
 					state.MissingDigests = append(state.MissingDigests, name)
 				}
 			}
-			if !e.d.IsZero() || e.target != "" {
-				e.mu.Lock()
+			if !ed.IsZero() || e.target != "" {
+				e.mu.RLock()
 				state.Entries = append(state.Entries, &pb.Entry{
 					Id: &pb.FileID{
 						ModTime: e.mtime.UnixNano(),
@@ -863,10 +864,10 @@ func (hfs *HashFS) State(ctx context.Context) *pb.State {
 					Local:        e.local,
 					UpdatedTime:  e.updatedTime.UnixNano(),
 				})
-				e.mu.Unlock()
+				e.mu.RUnlock()
 			} else if e.directory != nil && len(e.cmdhash) > 0 {
 				// preserve dir for cmdhash
-				e.mu.Lock()
+				e.mu.RLock()
 				state.Entries = append(state.Entries, &pb.Entry{
 					Id: &pb.FileID{
 						ModTime: e.mtime.UnixNano(),
@@ -878,7 +879,7 @@ func (hfs *HashFS) State(ctx context.Context) *pb.State {
 					Local:       e.local,
 					UpdatedTime: e.updatedTime.UnixNano(),
 				})
-				e.mu.Unlock()
+				e.mu.RUnlock()
 			} else if len(e.cmdhash) > 0 {
 				clog.Warningf(ctx, "wrong entry for %s: cmdhash is set, but no digest?", name)
 			}
