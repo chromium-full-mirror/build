@@ -214,9 +214,9 @@ func TestExecuteNode(t *testing.T) {
 				// a = { b = 42 }
 				// a["c"]
 				Base:      syntax.MakeToken(syntax.TokenIdentifier, "a"),
-				Subscript: &parse.LiteralNode{Token: syntax.MakeToken(syntax.TokenString, "c")},
+				Subscript: &parse.LiteralNode{Token: syntax.MakeToken(syntax.TokenString, `"c"`)},
 			},
-			wantErrKind: syntax.ErrUnknown,
+			wantErrKind: syntax.ErrMemberNotFound,
 		},
 		{
 			name: "access_scope_by_subscript_non_string",
@@ -578,6 +578,8 @@ func TestExecFile(t *testing.T) {
 		"testdata/functions.gni",
 		"testdata/lists.gni",
 		"testdata/resolve.gni",
+		"testdata/scope.gni",
+		"testdata/string.gni",
 	} {
 		content, err := os.ReadFile(file)
 		if err != nil {

@@ -1,0 +1,11 @@
+# Copyright 2025 The Chromium Authors
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+a = { b = "c" }
+
+assert(a.b == "c")
+
+assert_failure("No value named \"c\" in scope \"a\"") {
+    foo = a.c
+}

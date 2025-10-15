@@ -167,17 +167,12 @@ statement or a target declaration.`)
 				value:  i,
 			}, nil
 		case syntax.TokenString:
-			// TODO: need string literal expansion.
-			s := n.Token.Value()
-			// Assume that the parser should have kept the quotes.
-			if len(s) < 2 {
-				return nil, parse.MakeErrFromNode(n, syntax.ErrUnknown, "Invalid AST", "Found a LiteralNode with an unquoted string")
+			str, err := expandStringLiteral(n.Token)
+			if err != nil {
+				return nil, err
 			}
-			s = s[1 : len(s)-1]
-			return &StringValue{
-				origin: n,
-				value:  s,
-			}, nil
+			str.setOrigin(n)
+			return str, nil
 		}
 		return nil, parse.MakeErrFromNode(n, syntax.ErrUnknown, "Invalid AST", "Found a LiteralNode that wasn't a boolean, integer, or string")
 
