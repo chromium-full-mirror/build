@@ -79,6 +79,7 @@ func (g globSpec) Update(ctx context.Context, fsys fs.FS, fg filegroup) (filegro
 	}
 	fsys, err := fs.Sub(fsys, g.dir)
 	if err != nil {
+		clog.Warningf(ctx, "filegroup dir: %v", err)
 		return filegroup{}, err
 	}
 	m := g.matcher()
@@ -104,6 +105,9 @@ func (g globSpec) Update(ctx context.Context, fsys fs.FS, fg filegroup) (filegro
 	})
 	sort.Strings(files)
 	fg.files = files
+	if err != nil {
+		clog.Warningf(ctx, "filegroup dir %q: %v", g.dir, err)
+	}
 	return fg, err
 }
 

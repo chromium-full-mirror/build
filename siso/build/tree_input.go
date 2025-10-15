@@ -8,13 +8,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"path"
 	"path/filepath"
 	"slices"
 	"sort"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	log "github.com/golang/glog"
@@ -61,42 +59,24 @@ func treeInputs(ctx context.Context, fn func(context.Context, string) (merkletre
 }
 
 func (b *Builder) resolveSymlinkForInputDeps(ctx context.Context, dir, labelSuffix string, inputDeps map[string][]string) (string, []string, error) {
-	// Linux imposes a limit of at most 40 symlinks in any one path lookup.
-	// see: https://lwn.net/Articles/650786/
-	const maxSymlinks = 40
-	for range maxSymlinks {
-		root := b.path.ExecRoot
-		if !filepath.IsLocal(dir) {
-			// make it absolute path when dir is not under exec root for dockerChrootPath=.
-			root = ""
-			if !filepath.IsAbs(dir) {
-				dir = filepath.Join(b.path.ExecRoot, dir)
-			}
-		}
-		if log.V(1) {
-			clog.Infof(ctx, "check input deps %q", dir+labelSuffix)
-		}
+	fsys := b.hashFS.FileSystem(ctx, b.path.ExecRoot)
+	fi, err := fsys.Stat(dir)
+	if log.V(1) {
+		clog.Infof(ctx, "input deps stat %q: %v", dir, err)
+	}
+	if err != nil {
+		return "", nil, fmt.Errorf("not in input_deps: stat err %s: %w", dir, err)
+	}
+	// check given dir and visited paths.
+	// visited may be out side of exec root, which won't be returned
+	// by VisitedPath, so dir is always exec root relative path.
+	for _, dir := range append([]string{dir}, fsys.VisitedPaths(fi)...) {
 		files, ok := inputDeps[dir+labelSuffix]
 		if ok {
 			return dir, files, nil
 		}
-		fi, err := b.hashFS.Stat(ctx, root, dir)
-		if log.V(1) {
-			clog.Infof(ctx, "input deps stat %q %q: %v", root, dir, err)
-		}
-		if err != nil {
-			return "", nil, fmt.Errorf("not in input_deps, and stat err %s: %w", dir, err)
-		}
-		if target := fi.Target(); target != "" {
-			if filepath.IsAbs(target) {
-				return "", nil, fmt.Errorf("not in input_deps, and abs symlink %s -> %s", dir, target)
-			}
-			dir = path.Join(path.Dir(dir), target)
-			continue
-		}
-		return "", nil, fmt.Errorf("not in input_deps %s", dir)
 	}
-	return "", nil, fmt.Errorf("not in input_deps %s: %w", dir, syscall.ELOOP)
+	return "", nil, fmt.Errorf("not in input_deps %s", dir)
 }
 
 func (b *Builder) treeInput(ctx context.Context, dir, labelSuffix string, fixFn func(context.Context, []string) []string) (merkletree.TreeEntry, error) {

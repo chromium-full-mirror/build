@@ -6,21 +6,17 @@ package scandeps
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"hash/maphash"
 	"path/filepath"
 	"strings"
 	"sync"
-	"syscall"
 
 	log "github.com/golang/glog"
 
 	"go.chromium.org/build/siso/hashfs"
 	"go.chromium.org/build/siso/o11y/clog"
 )
-
-const maxSymlinks = 40
 
 // filesystem is mirror of hashfs to optimize for scandeps access pattern.
 // it is shared for all scandeps processes.
@@ -141,38 +137,22 @@ func (fsys *filesystem) ReadDir(ctx context.Context, execRoot, dname string) (*s
 			if log.V(1) {
 				clog.Infof(ctx, "fsys readdir %s", dname)
 			}
-			symlinkErr := fmt.Errorf("readdir %s: %w", dname, syscall.ELOOP)
 			var dents []hashfs.DirEntry
 			var visited []string
 			var err error
-			for range maxSymlinks {
-				if filepath.IsAbs(dname) {
-					execRoot = ""
+			hfsys := fsys.hashfs.FileSystem(ctx, execRoot)
+			fi, err := hfsys.Stat(dname)
+			if err == nil {
+				if len(hfsys.Visited(fi)) > 1 {
+					visited = hfsys.ExpandSymlinks(dname)
 				}
-				dents, err = fsys.hashfs.ReadDir(ctx, execRoot, dname)
+				des, err := hfsys.ReadDir(dname)
 				if err == nil {
-					break
+					dents = make([]hashfs.DirEntry, len(des))
+					for _, de := range des {
+						dents = append(dents, de.(hashfs.DirEntry))
+					}
 				}
-				var errSymlink hashfs.SymlinkError
-				if !errors.As(err, &errSymlink) {
-					break
-				}
-				clog.Infof(ctx, "readdir symlink %#v", errSymlink)
-				target := errSymlink.Target
-				if !filepath.IsAbs(target) {
-					target = filepath.ToSlash(filepath.Join(filepath.Dir(errSymlink.Path), target))
-				}
-				// target may escape exec root.
-				if !filepath.IsLocal(target) {
-					target = filepath.ToSlash(filepath.Join(execRoot, target))
-				}
-				clog.Infof(ctx, "symlink dir: %s -> %s", dname, target)
-				dname = target
-				if filepath.IsLocal(dname) {
-					visited = append(visited, dname)
-				}
-				clog.Infof(ctx, "retry symlnk %s", dname)
-				err = symlinkErr
 			}
 			dc.err = err
 			dc.symlinkTargets = visited
@@ -294,68 +274,27 @@ func (fsys *filesystem) getHmap(ctx context.Context, execRoot, fname string) (ma
 }
 
 func (fsys *filesystem) readFile(ctx context.Context, root, fname string) ([]byte, []string, error) {
-	reqname := fname
-	var visited []string
-	execRoot := root
-	for range maxSymlinks {
-		if filepath.IsAbs(fname) {
-			execRoot = ""
-		}
-		buf, err := fsys.hashfs.ReadFile(ctx, execRoot, fname)
-		var errSymlink hashfs.SymlinkError
-		if err != nil && !errors.As(err, &errSymlink) {
-			return nil, visited, err
-		}
-		if err == nil {
-			return buf, visited, nil
-		}
-		clog.Infof(ctx, "readfile symlink %#v", errSymlink)
-		target := errSymlink.Target
-		if !filepath.IsAbs(target) {
-			target = filepath.ToSlash(filepath.Join(filepath.ToSlash(filepath.Dir(errSymlink.Path)), target))
-		}
-		if !filepath.IsLocal(target) {
-			target = filepath.ToSlash(filepath.Join(execRoot, target))
-		}
-		fname = target
-		if !filepath.IsAbs(fname) {
-			visited = append(visited, fname)
-		}
-		clog.Infof(ctx, "retry symlnk %s", fname)
+	hfsys := fsys.hashfs.FileSystem(ctx, root)
+	fi, err := hfsys.Stat(fname)
+	if err != nil {
+		return nil, nil, err
 	}
-	return nil, visited, fmt.Errorf("read %q: %w", reqname, syscall.ELOOP)
-
+	var visited []string
+	if len(hfsys.VisitedPaths(fi)) > 1 {
+		visited = hfsys.ExpandSymlinks(fname)
+	}
+	buf, err := hfsys.ReadFile(fname)
+	if err != nil {
+		return nil, nil, err
+	}
+	return buf, visited, nil
 }
 
 func (fsys *filesystem) statFollowSymlink(ctx context.Context, root, fname string) (hashfs.FileInfo, error) {
-	reqname := fname
-	execRoot := root
-	for range maxSymlinks {
-		if filepath.IsAbs(fname) {
-			execRoot = ""
-		}
-		fi, err := fsys.hashfs.Stat(ctx, execRoot, fname)
-		if err != nil {
-			return fi, err
-		}
-		if fi.Target() == "" {
-			return fi, nil
-		}
-		target := fi.Target()
-		if !filepath.IsAbs(target) {
-			orig := fi.Path()
-			relOrig, err := filepath.Rel(root, orig)
-			if err != nil || !filepath.IsLocal(relOrig) {
-				target = filepath.ToSlash(filepath.Join(filepath.Dir(orig), target))
-			} else {
-				target = filepath.ToSlash(filepath.Join(filepath.Dir(relOrig), target))
-			}
-		}
-		if !filepath.IsLocal(target) {
-			target = filepath.ToSlash(filepath.Join(execRoot, target))
-		}
-		clog.Infof(ctx, "stat follow %s -> %s", fname, target)
-		fname = target
+	hfsys := fsys.hashfs.FileSystem(ctx, root)
+	fi, err := hfsys.Stat(fname)
+	if err != nil {
+		return hashfs.FileInfo{}, err
 	}
-	return hashfs.FileInfo{}, fmt.Errorf("stat %q: %w", reqname, syscall.ELOOP)
+	return fi.(hashfs.FileInfo), err
 }
