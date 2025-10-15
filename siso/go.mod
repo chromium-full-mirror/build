@@ -21,7 +21,7 @@ require (
 	github.com/klauspost/compress v1.18.0
 	github.com/klauspost/cpuid/v2 v2.3.0
 	github.com/pkg/xattr v0.4.12
-	go.chromium.org/build/kajiya v0.0.0-20251007065746-65faf71464ad
+	go.chromium.org/build/kajiya v0.0.0-20251015062654-cd7695ac03de
 	go.opentelemetry.io/otel v1.38.0
 	go.opentelemetry.io/otel/metric v1.38.0
 	go.opentelemetry.io/otel/sdk v1.38.0

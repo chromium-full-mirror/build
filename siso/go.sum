@@ -110,8 +110,8 @@ github.com/stretchr/testify v1.11.1 h1:7s2iGBzp5EwR7/aIZr8ao5+dra3wiQyKjjFuvgVKu
 github.com/stretchr/testify v1.11.1/go.mod h1:wZwfW3scLgRK+23gO65QZefKpKQRnfz6sD981Nm4B6U=
 github.com/zeebo/errs v1.4.0 h1:XNdoD/RRMKP7HD0UhJnIzUy74ISdGGxURlYG8HSWSfM=
 github.com/zeebo/errs v1.4.0/go.mod h1:sgbWHsvVuTPHcqJJGQ1WhI5KbWlHYz+2+2C/LSEtCw4=
-go.chromium.org/build/kajiya v0.0.0-20251007065746-65faf71464ad h1:iikpalWImYDNkW+Ady9e5Nj8ouzx90VJUoYbORFqjZE=
-go.chromium.org/build/kajiya v0.0.0-20251007065746-65faf71464ad/go.mod h1:MGpJAVmAsaHUNlMu7JKSZGR/xX4K9rk81qwOU7m8CuM=
+go.chromium.org/build/kajiya v0.0.0-20251015062654-cd7695ac03de h1:ZArYeLQprZncsI5a3U0gw8oWkERnx304COuFtFIbfIY=
+go.chromium.org/build/kajiya v0.0.0-20251015062654-cd7695ac03de/go.mod h1:fRmRQsGHvYv7FL59r9dZqMcQmMRO2S1hVIIao3tL5EM=
 go.opencensus.io v0.24.0 h1:y73uSU6J157QMP2kn2r30vwW1A2W2WFwSCGnAVxeaD0=
 go.opencensus.io v0.24.0/go.mod h1:vNK8G9p7aAivkbmorf4v+7Hgx+Zs0yY+0fOtgBfjQKo=
 go.opentelemetry.io/auto/sdk v1.1.0 h1:cH53jehLUN6UFLY71z+NDOiNJqDdPRaXzTel0sJySYA=
