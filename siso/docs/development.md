@@ -74,8 +74,10 @@ To land the change,
 
 1.  land kajiya change.
 2.  in siso, run `go get go.chromium.org/build/kajiya@latest` to update kajiya
-    dependency for siso. check building siso by `GOWORK=off go install .`
-3.  land siso change.
+    dependency for siso. check building siso by `GOWORK=off go install .` and
+    `GOWORK=off go test ./...`
+3.  `go mod tidy` to tidy up `go.mod` and `go.sum`.
+4.  land siso change.
 
 Better to sync dependencies by `go work sync` and `go mod tidy` in siso and
 kajiya.
