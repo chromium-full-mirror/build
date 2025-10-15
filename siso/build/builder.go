@@ -1090,6 +1090,10 @@ func (b *Builder) outputs(ctx context.Context, step *Step) error {
 		}
 		seen[out] = true
 		var local bool
+		fullOut := out
+		if !filepath.IsAbs(fullOut) {
+			fullOut = filepath.Join(step.cmd.ExecRoot, out)
+		}
 		if b.outputLocal != nil && b.outputLocal(ctx, out) {
 			localOutputs = append(localOutputs, out)
 			local = true
@@ -1097,7 +1101,7 @@ func (b *Builder) outputs(ctx context.Context, step *Step) error {
 			// check if it already exists on local.
 			// if so, better to flush to the disk
 			// as other future step would access it locally.
-			_, err := b.hashFS.OS.Lstat(ctx, filepath.Join(step.cmd.ExecRoot, out))
+			_, err := b.hashFS.OS.Lstat(ctx, fullOut)
 			if err == nil {
 				clog.Infof(ctx, "output_local=false but local exists: %q", out)
 				localOutputs = append(localOutputs, out)
@@ -1121,7 +1125,7 @@ func (b *Builder) outputs(ctx context.Context, step *Step) error {
 			if !local {
 				// need to make sure it doesn't exist on disk too
 				// for local=true, Flush will remove.
-				err = b.hashFS.OS.Remove(ctx, filepath.Join(step.cmd.ExecRoot, out))
+				err = b.hashFS.OS.Remove(ctx, fullOut)
 				if err != nil && !errors.Is(err, fs.ErrNotExist) {
 					clog.Warningf(ctx, "remove missing outputs %q: %v", out, err)
 				}
@@ -1262,7 +1266,10 @@ func (b *Builder) prepareAllOutDirs(ctx context.Context) error {
 		// we don't use hashfs here for performance.
 		// just create dirs on local disk, so reproxy and local process
 		// can detect the dirs.
-		err := os.MkdirAll(filepath.Join(b.path.ExecRoot, dir), 0755)
+		if !filepath.IsAbs(dir) {
+			dir = filepath.Join(b.path.ExecRoot, dir)
+		}
+		err := os.MkdirAll(dir, 0755)
 		if err != nil {
 			return err
 		}
