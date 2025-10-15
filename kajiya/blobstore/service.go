@@ -18,6 +18,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync/atomic"
 
 	"github.com/bazelbuild/remote-apis-sdks/go/pkg/digest"
 	repb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
@@ -318,12 +319,12 @@ func (s *Service) Write(server bspb.ByteStream_WriteServer) error {
 }
 
 type committedSizeCounter struct {
-	Size int64
+	Size atomic.Int64
 }
 
 func (c *committedSizeCounter) Write(b []byte) (int, error) {
 	n := len(b)
-	c.Size += int64(n)
+	c.Size.Add(int64(n))
 	return n, nil
 }
 
@@ -372,7 +373,7 @@ func (s *Service) write(server bspb.ByteStream_WriteServer) (resource string, er
 			}
 
 			// Check that the digests (= hash and size) match.
-			d := digest.Digest{Hash: hex.EncodeToString(ourHash.Sum(nil)), Size: committedSize.Size}
+			d := digest.Digest{Hash: hex.EncodeToString(ourHash.Sum(nil)), Size: committedSize.Size.Load()}
 			if d != expectedDigest {
 				return resource, status.Errorf(codes.InvalidArgument, "computed digest %v did not match expected digest %v", d, expectedDigest)
 			}
@@ -384,7 +385,7 @@ func (s *Service) write(server bspb.ByteStream_WriteServer) (resource string, er
 
 			// Send the response to the client.
 			if err := server.SendAndClose(&bspb.WriteResponse{
-				CommittedSize: committedSize.Size,
+				CommittedSize: committedSize.Size.Load(),
 			}); err != nil {
 				return resource, status.Errorf(codes.Internal, "failed to send response to client: %v", err)
 			}
@@ -465,8 +466,8 @@ func (s *Service) write(server bspb.ByteStream_WriteServer) (resource string, er
 		}
 
 		// If the file is already larger than the expected size, something is wrong - return an error.
-		if committedSize.Size > expectedDigest.Size {
-			return resource, status.Errorf(codes.InvalidArgument, "received %d bytes, more than expected %d", committedSize.Size, expectedDigest.Size)
+		if committedSize.Size.Load() > expectedDigest.Size {
+			return resource, status.Errorf(codes.InvalidArgument, "received %d bytes, more than expected %d", committedSize.Size.Load(), expectedDigest.Size)
 		}
 
 		if request.FinishWrite {
