@@ -46,6 +46,8 @@ var (
 	pprofAddr     string
 	cpuprofile    string
 	memprofile    string
+	mutexprofile  string
+	blockprofile  string
 	blockprofRate int
 	mutexprofFrac int
 	traceFile     string
@@ -90,6 +92,8 @@ Use "siso flags" to display all flags.
 	flag.StringVar(&pprofAddr, "pprof_addr", "", `listen address for "go tool pprof". e.g. "localhost:6060"`)
 	flag.StringVar(&cpuprofile, "cpuprofile", "", "write cpu profile to this file")
 	flag.StringVar(&memprofile, "memprofile", "", "write memory profile to this file")
+	flag.StringVar(&mutexprofile, "mutexprofile", "", "write mutex profile to this file")
+	flag.StringVar(&blockprofile, "blockprofile", "", "write block profile to this file")
 	flag.IntVar(&blockprofRate, "blockprof_rate", 0, "block profile rate")
 	flag.IntVar(&mutexprofFrac, "mutexprof_frac", 0, "mutex profile fraction")
 	flag.StringVar(&traceFile, "trace", "", `go trace output for "go tool trace"`)
@@ -126,6 +130,12 @@ Use "siso flags" to display all flags.
 
 	if printVersion {
 		return int(version.Cmd(versionStr).Execute(ctx, flag.CommandLine))
+	}
+	if blockprofile != "" && blockprofRate == 0 {
+		blockprofRate = 1
+	}
+	if mutexprofile != "" && mutexprofFrac == 0 {
+		mutexprofFrac = 1
 	}
 	if blockprofRate > 0 {
 		runtime.SetBlockProfileRate(blockprofRate)
@@ -173,6 +183,38 @@ Use "siso flags" to display all flags.
 			err := pprof.WriteHeapProfile(f)
 			if err != nil {
 				log.Errorf("failed to write heap profile: %v", err)
+			}
+		}()
+	}
+
+	// Save a mutex profile to disk on exit.
+	if mutexprofile != "" {
+		f, err := os.Create(mutexprofile)
+		if err != nil {
+			log.Fatalf("failed to create mutexprofile file: %v", err)
+		}
+		defer func() {
+			if err := pprof.Lookup("mutex").WriteTo(f, 0); err != nil {
+				log.Errorf("failed to write mutex profile: %v", err)
+			}
+			if err := f.Close(); err != nil {
+				log.Errorf("failed to close mutexprofile file: %v", err)
+			}
+		}()
+	}
+
+	// Save a block profile to disk on exit.
+	if blockprofile != "" {
+		f, err := os.Create(blockprofile)
+		if err != nil {
+			log.Fatalf("failed to create blockprofile file: %v", err)
+		}
+		defer func() {
+			if err := pprof.Lookup("block").WriteTo(f, 0); err != nil {
+				log.Errorf("failed to write block profile: %v", err)
+			}
+			if err := f.Close(); err != nil {
+				log.Errorf("failed to close blockprofile file: %v", err)
 			}
 		}()
 	}
