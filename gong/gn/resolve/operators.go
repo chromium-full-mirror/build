@@ -18,6 +18,18 @@ const (
 	sideRight side = "right"
 )
 
+// valueDestination represents the lvalue in =, +=, and -= operations, where the lvalue can be an identifier
+// e.g. `a = 42`, or the results of evaluating an AccessorNode e.g. `a.b = 42` or `a[b] = 42`.
+type valueDestination interface {
+	assign(newValue Value, origin parse.Node) Value
+	// valueForValidation returns the underlying Value if it already exists,
+	// such that operations can check whether an assignment operation is legal.
+	// Callers are expected not to modify the returned Value.
+	// TODO: maybe this can be enforced by moving Value into a separate package?
+	// alternatively handle check in assign, or new method in Value?
+	valueForValidation() Value
+}
+
 func executeOpSide(opNode *parse.BinaryOpNode, side side, scope *Scope) (Value, error) {
 	var node parse.Node
 	switch side {
@@ -71,56 +83,111 @@ func executeOr(opNode *parse.BinaryOpNode, scope *Scope) (Value, error) {
 	return &BooleanValue{origin: opNode, value: rightBool.value}, nil
 }
 
+// prepareAssignOp prepares lvalue and rvalue for =, +=, -= operations.
+func prepareAssignOp(opNode *parse.BinaryOpNode, scope *Scope) (lvalue valueDestination, rvalue Value, err error) {
+	// First prepare lvalue.
+	switch left := opNode.Left.(type) {
+	case *parse.IdentifierNode:
+		lvalue = scope.access(left.Value)
+
+	case *parse.AccessorNode:
+		baseStr := left.Base.Value()
+		// Only allow mutations `a.b = c` or `a[b] = c` where `a` is in this scope.
+		base := scope.valueInCurrentScope(baseStr, false)
+		if base == nil {
+			// TODO(b/388723392): GN makes an error "Suspicious in-place modification" with a detailed
+			// help message if the value is found in a parent scope.
+			// But we don't support import() yet, so there's no point in doing this currently.
+			return nil, nil, left.Base.MakeError(syntax.ErrUndefinedIdentifier, "Undefined identifier.")
+		}
+		if left.Subscript != nil {
+			// List access `a[b] = c`, where base = `a`.
+			listValue, err := AsValue[*ListValue](base)
+			if err != nil {
+				// TODO(b/388723392): C++ GN has to rewrite the error location here because it will
+				// end up pointing at the original variable declaration instead of usage.
+				// Do we also need to perform a similar check?
+				return nil, nil, err
+			}
+			// Need to evaluate the subscript (`b` in `a[b] = c`).
+			indexValue, err := ExecuteNode(left.Subscript, scope)
+			if err != nil {
+				return nil, nil, err
+			}
+			index, err := AsValue[*IntegerValue](indexValue)
+			if err != nil {
+				return nil, nil, err
+			}
+			// Finally we have concrete list `a` and integer `b`.
+			lvalue, err = listValue.access(index.value, left.Subscript)
+			if err != nil {
+				return nil, nil, err
+			}
+		} else if left.Member != nil {
+			// Scope access `a.b = c`, where base = `a`.
+			scopeValue, err := AsValue[*ScopeValue](base)
+			if err != nil {
+				// TODO(b/388723392): C++ GN has to rewrite the error location here because it will
+				// end up pointing at the original variable declaration instead of usage.
+				// Do we also need to perform a similar check?
+				return nil, nil, err
+			}
+			// Finally we have concrete scope `a` and identifier `b`.
+			lvalue = scopeValue.scope.access(left.Member.Value)
+		} else {
+			return nil, nil, parse.MakeErrFromNode(opNode, syntax.ErrInvalidAST,
+				"Invalid AST", "Got an AccessorNode without a member or subscript.")
+		}
+
+	default:
+		return nil, nil, parse.MakeErrFromNode(opNode, syntax.ErrTypeMismatch,
+			"Invalid AST", "Got a BinaryOpNode for assign operation where lvalue was not an ident, scope, list.")
+	}
+	// Then prepare rvalue.
+	rvalue, err = ExecuteNode(opNode.Right, scope)
+	if err != nil {
+		return nil, nil, err
+	}
+	if rvalue.valueType() == ValueTypeNone {
+		return nil, nil, fmt.Errorf("operator requires a rvalue")
+	}
+	return lvalue, rvalue, nil
+}
+
 func executeBinaryOperator(opNode *parse.BinaryOpNode, scope *Scope) (Value, error) {
 	// Operators that do not require pre-evaluation of both LHS/RHS.
 	switch opNode.Op.TokenType() {
 	case syntax.TokenEqual:
-		switch left := opNode.Left.(type) {
-		case *parse.IdentifierNode:
-			ident := left.Value.Value()
-			rvalue, err := ExecuteNode(opNode.Right, scope)
-			if err != nil {
-				return nil, err
-			}
-			if rvalue.valueType() == ValueTypeNone {
-				return nil, fmt.Errorf("operator requires a rvalue")
-			}
-
-			// GN does not allow clobbering non-empty lists/scopes with another non-empty list/scope.
-			// The expectation is that users generally want to append to lists and merge scopes, not
-			// replace them. If the user really wants to replace, they're asked to first overwrite the
-			// value with an empty list/scope.
-			oldValue := scope.Value(ident, true)
-			isClobber := false
-			switch lv := oldValue.(type) {
-			case *ListValue:
-				if rv, ok := rvalue.(*ListValue); ok && len(lv.list) > 0 && len(rv.list) > 0 {
-					isClobber = true
-				}
-			case *ScopeValue:
-				if rv, ok := rvalue.(*ScopeValue); ok && lv.scope.HasValues() && rv.scope.HasValues() {
-					isClobber = true
-				}
-			}
-			if isClobber {
-				// TODO: to match GN precisely, need to also add a sub-error with hint about how to fix
-				// e.g. if you really wanted to do this then you must run `foo = []` first.
-				return nil, syntax.MakeErrorAt(opNode.LocationRange().Begin(), nil,
-					syntax.ErrInvalidOperation,
-					fmt.Sprintf("Replacing nonempty %s.", oldValue.valueType().String()),
-					fmt.Sprintf("This overwrites a previously-defined nonempty %s.", oldValue.valueType().String()))
-			}
-
-			// Validation passed, perform the assignment.
-			scope.values[ident] = record{
-				used:  false,
-				value: rvalue.CopyWithOrigin(opNode.Right),
-			}
-			return scope.values[ident].value, nil
-		case *parse.AccessorNode:
-			return nil, parse.MakeErrFromNode(opNode, syntax.ErrNotImplemented,
-				"Not implemented", "= with a.b or a[b] on LHS isn't implemented yet.")
+		lvalue, rvalue, err := prepareAssignOp(opNode, scope)
+		if err != nil {
+			return nil, err
 		}
+		// GN does not allow clobbering non-empty lists/scopes with another non-empty list/scope.
+		// The expectation is that users generally want to append to lists and merge scopes, not
+		// replace them. If the user really wants to replace, they're asked to first overwrite the
+		// value with an empty list/scope.
+		oldValue := lvalue.valueForValidation()
+		isClobber := false
+		switch lv := oldValue.(type) {
+		case *ListValue:
+			if rv, ok := rvalue.(*ListValue); ok && len(lv.list) > 0 && len(rv.list) > 0 {
+				isClobber = true
+			}
+		case *ScopeValue:
+			if rv, ok := rvalue.(*ScopeValue); ok && lv.scope.HasValues() && rv.scope.HasValues() {
+				isClobber = true
+			}
+		}
+		if isClobber {
+			// TODO: to match GN precisely, need to also add a sub-error with hint about how to fix
+			// e.g. if you really wanted to do this then you must run `foo = []` first.
+			return nil, syntax.MakeErrorAt(opNode.LocationRange().Begin(), nil,
+				syntax.ErrInvalidOperation,
+				fmt.Sprintf("Replacing nonempty %s.", oldValue.valueType().String()),
+				fmt.Sprintf("This overwrites a previously-defined nonempty %s.", oldValue.valueType().String()))
+		}
+		// Validation passed, perform the assignment.
+		return lvalue.assign(rvalue, opNode.Right), nil
 
 	case syntax.TokenPlusEquals,
 		syntax.TokenMinusEquals:

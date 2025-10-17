@@ -2,10 +2,48 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+# basic list
 foo = [1, 2, 3]
 assert(foo[0] == 1)
 assert(foo[1] == 2)
 assert(foo[2] == 3)
+assert_failure("Array subscript out of range.", "You gave me 3 but I was expecting something from 0 to 2, inclusive.") {
+    foo[3] = 1
+}
+assert_failure("Array subscript out of range.", "You gave me 42 but I was expecting something from 0 to 2, inclusive.") {
+    foo[42] = 1
+}
+assert_failure("Negative array subscript.", "You gave me -42.") {
+    foo[-42] = 1
+}
+
+# empty list
+empty = []
+assert_failure("Array subscript out of range.", "You gave me 42 but the array has no elements.") {
+    empty[42] = 1
+}
+
+# list subscript with evaluated values should work too
+i = 0
+assert(foo[i] == 1)
+i = 1
+assert(foo[i] == 2)
+i = 2
+assert(foo[i] == 3)
+assert_failure("Array subscript out of range.", "You gave me 3 but I was expecting something from 0 to 2, inclusive.") {
+    foo[foo[i]] = 1
+}
+
+# mutate existing list value
+foo[0] = 3
+assert(foo[0] == 3)
+assert(foo[1] == 2)
+assert(foo[2] == 3)
+
+# TODO(b/388723392): this error message looks wrong, fix this!
+assert_failure("This is not a \"non_integer_index\". Instead I see a string = true") {
+    foo["non_integer_index"] = 1
+}
 
 assert_failure("Negative array subscript.", "You gave me -1") {
     a = foo[-1]

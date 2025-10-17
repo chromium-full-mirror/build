@@ -3,9 +3,16 @@
 # found in the LICENSE file.
 
 a = { b = "c" }
-
 assert(a.b == "c")
+
+a.b = "d"
+assert(a.b == "d")
 
 assert_failure("No value named \"c\" in scope \"a\"") {
     foo = a.c
 }
+
+# nested scopes
+foo = { bar = { baz = "qux" } }
+foobar = foo.bar  # foo.bar.baz is a syntax error
+assert(foobar.baz == "qux")

@@ -5,6 +5,7 @@
 package resolve
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -261,12 +262,12 @@ func TestBinaryOps_Assignment(t *testing.T) {
 				Right: &parse.ListNode{Contents: []parse.Node{&parse.LiteralNode{Token: syntax.MakeToken(syntax.TokenInteger, "1")}}},
 			},
 			wantErrKind: syntax.ErrInvalidOperation,
-			// TODO: clobber test for scopes as well? but need to set up using BlockNode, the syntax is too complex.
-			// maybe consider using integration tests with GN native assert func?
 		},
 		{
-			name:  "assign_accessor_not_implemented",
-			scope: &Scope{values: map[string]record{}},
+			name: "assign_accessor",
+			scope: &Scope{values: map[string]record{
+				"a": {value: &ScopeValue{scope: &Scope{values: map[string]record{}}}},
+			}},
 			node: &parse.BinaryOpNode{
 				Op: syntax.MakeToken(syntax.TokenEqual, "="),
 				Left: &parse.AccessorNode{
@@ -275,7 +276,9 @@ func TestBinaryOps_Assignment(t *testing.T) {
 				},
 				Right: &parse.LiteralNode{Token: syntax.MakeToken(syntax.TokenInteger, "123")},
 			},
-			wantErrKind: syntax.ErrNotImplemented,
+			ident:       "a.b",
+			want:        &IntegerValue{value: 123},
+			wantErrKind: syntax.ErrNone,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -297,8 +300,11 @@ func TestBinaryOps_Assignment(t *testing.T) {
 			if diff := cmp.Diff(tc.want, got); diff != "" {
 				t.Errorf("executeBinaryOperator(%T, _); diff -want +got:\n%s", tc.node, diff)
 			}
-			if diff := cmp.Diff(tc.want, tc.scope.values[tc.ident].value); diff != "" {
-				t.Errorf("scope.values[%q].value; diff -want +got:\n%s", tc.ident, diff)
+			// TODO: fix if destination is not simple ident
+			if !strings.Contains(tc.ident, ".") {
+				if diff := cmp.Diff(tc.want, tc.scope.values[tc.ident].value); diff != "" {
+					t.Errorf("scope.values[%q].value; diff -want +got:\n%s", tc.ident, diff)
+				}
 			}
 		})
 	}

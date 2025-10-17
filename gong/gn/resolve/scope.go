@@ -57,6 +57,35 @@ type record struct {
 	value Value
 }
 
+func (s *Scope) access(name syntax.Token) valueDestination {
+	return scopeAccess{
+		scope: s,
+		ident: name.Value(),
+	}
+}
+
+// scopeAccess represents a lvalue access of a scope's values.
+type scopeAccess struct {
+	scope *Scope
+	ident string
+}
+
+// assign performs the action of mutating a scope's value.
+// It implements valueDestination.
+func (a scopeAccess) assign(newValue Value, origin parse.Node) Value {
+	a.scope.values[a.ident] = record{
+		used:  false,
+		value: newValue.CopyWithOrigin(origin),
+	}
+	return newValue
+}
+
+// valueForValidation returns the current Value this scope access `a.b` represents,
+// such that operations can check whether an assignment operation `a.b = c` is legal.
+func (a scopeAccess) valueForValidation() Value {
+	return a.scope.Value(a.ident, true)
+}
+
 // isolate makes this scope isolated when resolving variables, in other words
 // will force all variable resolution to happen in this scope only. If this
 // scope references a ExecContext object, that will also be ignored.
@@ -113,12 +142,10 @@ func (s *Scope) Value(ident string, markAsUsed bool) Value {
 		}
 	}
 
-	if value, found := s.values[ident]; found {
-		if markAsUsed {
-			value.used = true
-			s.values[ident] = value
-		}
-		return value.value
+	// Search in the current scope.
+	value := s.valueInCurrentScope(ident, markAsUsed)
+	if value != nil {
+		return value
 	}
 
 	// Search in the containing scope.
@@ -131,6 +158,17 @@ func (s *Scope) Value(ident string, markAsUsed bool) Value {
 		return s.execContext.BaseConfig().Value(ident, false)
 	}
 
+	return nil
+}
+
+func (s *Scope) valueInCurrentScope(ident string, markAsUsed bool) Value {
+	if value, found := s.values[ident]; found {
+		if markAsUsed {
+			value.used = true
+			s.values[ident] = value
+		}
+		return value.value
+	}
 	return nil
 }
 

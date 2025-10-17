@@ -11,12 +11,61 @@ import (
 	"go.starlark.net/starlark"
 
 	"go.chromium.org/build/gong/gn/parse"
+	"go.chromium.org/build/gong/gn/syntax"
 )
 
 // ListValue represents a GN list.
 type ListValue struct {
 	origin parse.Node
 	list   []Value
+}
+
+func (v *ListValue) access(index int64, origin parse.Node) (valueDestination, error) {
+	if index < 0 {
+		return nil, syntax.MakeErrorAt(
+			origin.LocationRange().Begin(), []syntax.LocationRange{origin.LocationRange()},
+			syntax.ErrSubscriptOutOfRange,
+			"Negative array subscript.",
+			fmt.Sprintf("You gave me %d.", index))
+	}
+	if len(v.list) == 0 {
+		return nil, syntax.MakeErrorAt(
+			origin.LocationRange().Begin(), []syntax.LocationRange{origin.LocationRange()},
+			syntax.ErrSubscriptOutOfRange,
+			"Array subscript out of range.",
+			fmt.Sprintf("You gave me %d but the array has no elements.", index))
+	}
+	if index >= int64(len(v.list)) {
+		return nil, syntax.MakeErrorAt(
+			origin.LocationRange().Begin(), []syntax.LocationRange{origin.LocationRange()},
+			syntax.ErrSubscriptOutOfRange,
+			"Array subscript out of range.",
+			fmt.Sprintf("You gave me %d but I was expecting something from 0 to %d, inclusive.", index, len(v.list)-1))
+	}
+	return listValue{
+		list:  v,
+		index: index,
+	}, nil
+}
+
+// listValue represents a lvalue access of a scope's values.
+type listValue struct {
+	list  *ListValue
+	index int64
+}
+
+// assign performs the action of mutating a list's value.
+// It implements valueDestination, hence takes an origin AST node.
+// However the origin AST node is ignored, which matches C++ GN behavior.
+func (a listValue) assign(newValue Value, _ parse.Node) Value {
+	a.list.list[a.index] = newValue
+	return newValue
+}
+
+// valueForValidation returns the current Value this list access `a[b]` represents,
+// such that operations can check whether an assignment operation `a[b] = c` is legal.
+func (a listValue) valueForValidation() Value {
+	return a.list.list[a.index]
 }
 
 func (v *ListValue) valueType() ValueType {
