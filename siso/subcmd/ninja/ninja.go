@@ -1040,7 +1040,7 @@ func (c *Command) run(ctx context.Context) (stats build.Stats, err error) {
 	if err != nil {
 		return stats, err
 	}
-	if err := os.WriteFile(filepath.Join(c.stateDir, sisoMetadataFilename), j, 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(c.logDir, sisoMetadataFilename), j, 0644); err != nil {
 		return stats, err
 	}
 
