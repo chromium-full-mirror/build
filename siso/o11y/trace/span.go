@@ -7,9 +7,8 @@ package trace
 
 import (
 	"context"
-	"crypto/sha256"
+	"crypto/rand"
 	"encoding/hex"
-	"fmt"
 	"path"
 	"sort"
 	"strings"
@@ -91,27 +90,28 @@ func (t *Context) SpanProtos(ctx context.Context, projectID string) []*tracepb.S
 }
 
 func (t *Context) newSpan(ctx context.Context, name string, parent *Span) *Span {
-	var spanID [8]byte
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	id := fmt.Sprintf("%s-%d", name, len(t.spans))
-	if parent == nil && len(t.spans) > 0 {
-		parent = t.spans[0]
-	}
-	s := sha256.Sum256([]byte(id))
-	copy(spanID[:], s[:])
 	span := &Span{
 		t:           t,
-		spanID:      spanID,
 		parent:      parent,
 		displayName: name,
 		start:       time.Now(),
 	}
+	// crypt/rand.Read never returns an error.
+	rand.Read(span.spanID[:])
+
 	span.attrs = span.attrBuf[:0] // assign a new empty slice with the pre-allocated capacity (=2) for attrBuf.
-	if log.V(2) {
-		clog.Infof(ctx, "new span %s %q<%v", name, spanID, parent)
+
+	// This function is called in hot path, so we need to minimize the lock time.
+	t.mu.Lock()
+	if parent == nil && len(t.spans) > 0 {
+		span.parent = t.spans[0]
 	}
 	t.spans = append(t.spans, span)
+	t.mu.Unlock()
+
+	if log.V(2) {
+		clog.Infof(ctx, "new span %s %q<%v", name, span.spanID, span.parent)
+	}
 	return span
 }
 
