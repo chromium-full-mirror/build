@@ -573,9 +573,9 @@ func (hfs *HashFS) ReadFile(ctx context.Context, root, fname string) ([]byte, er
 	if len(e.buf) > 0 {
 		return e.buf, nil
 	}
-	e.mu.Lock()
+	e.mu.RLock()
 	ed := e.d
-	e.mu.Unlock()
+	e.mu.RUnlock()
 	// If digest is known and the file is not flushed to disk, read from CAS.
 	// Otherwise, read from local disk, which will also compute the digest if unknown.
 	if !ed.IsZero() {
@@ -1000,9 +1000,9 @@ func (hfs *HashFS) Entries(ctx context.Context, root string, inputs []string) ([
 			}
 			ents = append(ents, e)
 			if e.mode.IsRegular() {
-				e.mu.Lock()
+				e.mu.RLock()
 				ready := !e.d.IsZero()
-				e.mu.Unlock()
+				e.mu.RUnlock()
 				if !ready {
 					wg.Add(1)
 					nwait++
