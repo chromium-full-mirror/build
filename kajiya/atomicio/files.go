@@ -14,6 +14,7 @@ import (
 // WriteFile writes data to a file named by filename by first writing to a
 // temporary file in the same directory, then renaming it to the final name.
 func WriteFile(filename string, data []byte) error {
+	fileClosed := false
 	f, err := os.CreateTemp(filepath.Dir(filename), "tmp_")
 	if err != nil {
 		return err
@@ -21,26 +22,28 @@ func WriteFile(filename string, data []byte) error {
 
 	// Best effort cleanup in case something goes wrong.
 	defer func() {
-		if f != nil {
-			if err := f.Close(); err != nil {
-				fmt.Printf("Failed to close temporary file %q: %v", f.Name(), err)
+		if err != nil {
+			if !fileClosed {
+				if err := f.Close(); err != nil {
+					fmt.Printf("Failed to close temporary file %q: %v\n", f.Name(), err)
+				}
 			}
 			if err := os.Remove(f.Name()); err != nil {
-				fmt.Printf("Failed to remove temporary file %q: %v", f.Name(), err)
+				fmt.Printf("Failed to remove temporary file %q: %v\n", f.Name(), err)
 			}
 		}
 	}()
 
-	if _, err := f.Write(data); err != nil {
+	if _, err = f.Write(data); err != nil {
 		return err
 	}
-	if err := f.Close(); err != nil {
+	if err = f.Close(); err != nil {
 		return err
 	}
-	if err := os.Rename(f.Name(), filename); err != nil {
+	fileClosed = true
+	if err = os.Rename(f.Name(), filename); err != nil {
 		return err
 	}
-	f = nil // prevent defer from trying to remove the temporary file
 
 	return nil
 }
