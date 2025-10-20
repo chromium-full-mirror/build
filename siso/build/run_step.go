@@ -101,7 +101,7 @@ func (b *Builder) runStep(ctx context.Context, step *Step) (err error) {
 
 	if !b.needToRun(ctx, step.def, stepManifest) {
 		step.metrics.skip = true
-		b.plan.done(ctx, step)
+		b.plan.completeStep(ctx, step)
 		b.stats.update(ctx, &step.metrics, true)
 		return nil
 	}
@@ -129,7 +129,7 @@ func (b *Builder) runStep(ctx context.Context, step *Step) (err error) {
 		default:
 		}
 		ui.Default.Infof("%s\n", step.def.Binding("command"))
-		b.plan.done(ctx, step)
+		b.plan.completeStep(ctx, step)
 		return nil
 	}
 
@@ -151,7 +151,7 @@ func (b *Builder) runStep(ctx context.Context, step *Step) (err error) {
 		clog.Infof(ctx, "outputs[handler] %d", len(step.cmd.Outputs))
 		err = b.hashFS.Flush(ctx, step.cmd.ExecRoot, step.cmd.Outputs)
 		if err == nil {
-			b.plan.done(ctx, step)
+			b.plan.completeStep(ctx, step)
 			return nil
 		}
 		clog.Warningf(ctx, "handle step failure: %v", err)
@@ -213,7 +213,7 @@ func (b *Builder) runStep(ctx context.Context, step *Step) (err error) {
 			return fmt.Errorf("%s emit stdout/stderr", step)
 		}
 	}
-	b.plan.done(ctx, step)
+	b.plan.completeStep(ctx, step)
 	return nil
 }
 

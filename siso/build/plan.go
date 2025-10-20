@@ -529,7 +529,7 @@ func scheduleTarget(ctx context.Context, sched *scheduler, graph Graph, target T
 		clog.Infof(ctx, "sched: add target %s: %s", targetPath(ctx, graph, target), newStep)
 	}
 	step.outputs = newEdge.Outputs
-	sched.add(ctx, step)
+	sched.addStep(ctx, step)
 	return validationQueue, nil
 }
 
@@ -593,6 +593,7 @@ func (s *scheduler) progressReport(format string, args ...any) {
 func (s *scheduler) finish(ctx context.Context, d time.Duration) {
 	s.plan.mu.Lock()
 	defer s.plan.mu.Unlock()
+	s.plan.pushReadyUnlocked()
 	nready := len(s.plan.q) + len(s.plan.ready)
 	npendings := s.plan.npendings
 	clog.Infof(ctx, "schedule finish pending:%d+ready:%d (node:%d edge:%d) in %s", npendings, nready, len(s.plan.targets), s.visited, d)
@@ -602,8 +603,9 @@ func (s *scheduler) finish(ctx context.Context, d time.Duration) {
 	s.progressReport("%6s schedule pending:%d+ready:%d (node:%d edge:%d)\n", ui.FormatDuration(d), npendings, nready, len(s.plan.targets), s.visited)
 }
 
-// add adds new stepDef to run.
-func (s *scheduler) add(ctx context.Context, step *Step) {
+// addStep adds a Step to the scheduler.
+// This is called before finish().
+func (s *scheduler) addStep(ctx context.Context, step *Step) {
 	s.plan.mu.Lock()
 	defer s.plan.mu.Unlock()
 	defer func() {
@@ -627,7 +629,7 @@ func (s *scheduler) add(ctx context.Context, step *Step) {
 		if log.V(1) {
 			clog.Infof(ctx, "step state: %s ready to run", step.String())
 		}
-		s.plan.pushReadyUnlocked(step)
+		s.plan.addReady(step)
 		return
 	}
 	if log.V(1) {
@@ -650,25 +652,20 @@ func (p *plan) stats() planStats {
 	}
 }
 
-// pushReady pushes a ready step.
+// pushReady pushes a ready step to q.
+// This function is called after planning is done.
 func (p *plan) pushReady() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	p.pushReadyUnlocked(nil)
+	p.pushReadyUnlocked()
 }
 
-// pushReadyUnlocked pushes a ready step to q.
+// pushReadyUnlocked pushes the highest priority step from ready pool to q.
 // This function should be called with mutex held.
-func (p *plan) pushReadyUnlocked(s *Step) {
-	if s != nil {
-		s.queueTime = time.Now()
-		s.queueSize = len(p.ready)
-		heap.Push(&p.ready, s)
-	}
+func (p *plan) pushReadyUnlocked() {
 	if len(p.ready) == 0 {
 		return
 	}
-	// select the highest priority step from `ready` pool.
 	select {
 	case p.q <- p.ready[0]:
 		sent := heap.Pop(&p.ready).(*Step)
@@ -677,13 +674,22 @@ func (p *plan) pushReadyUnlocked(s *Step) {
 	}
 }
 
+// addReady adds a step to ready pool.
+// This function should be called with mutex held.
+func (p *plan) addReady(s *Step) {
+	s.queueTime = time.Now()
+	s.queueSize = len(p.ready)
+	heap.Push(&p.ready, s)
+}
+
 func (p *plan) hasReady() bool {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return len(p.q) > 0 || len(p.ready) > 0
 }
 
-func (p *plan) done(ctx context.Context, step *Step) {
+// completeStep updates waiting pools and pushes unblocked steps to ready pool.
+func (p *plan) completeStep(ctx context.Context, step *Step) {
 	outs := step.outputs
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -696,7 +702,6 @@ func (p *plan) done(ctx context.Context, step *Step) {
 	// Unblock waiting steps and send them to the queue if they are ready.
 	npendings := p.npendings
 	nready := 0
-	ready := make([]*Step, 0, len(outs))
 	for _, out := range outs {
 		if log.V(1) {
 			clog.Infof(ctx, "done %v", out)
@@ -713,7 +718,7 @@ func (p *plan) done(ctx context.Context, step *Step) {
 				if log.V(1) {
 					clog.Infof(ctx, "step state: %s ready to run %q", s.String(), s.def.Outputs(ctx)[0])
 				}
-				p.pushReadyUnlocked(s)
+				p.addReady(s)
 				continue
 			}
 			p.targets[out].waits[i] = s
@@ -735,7 +740,7 @@ func (p *plan) done(ctx context.Context, step *Step) {
 			clog.Infof(ctx, "zero-trigger outs=%v", outs)
 		}
 	}
-	p.ready = append(p.ready, ready...)
+	p.pushReadyUnlocked()
 	if len(p.ready) == 0 && p.npendings == 0 && !p.closed {
 		p.closed = true
 		clog.Infof(ctx, "no step in pending. closing q")
