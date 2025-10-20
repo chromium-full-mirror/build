@@ -48,3 +48,8 @@ assert_failure("This is not a \"non_integer_index\". Instead I see a string = tr
 assert_failure("Negative array subscript.", "You gave me -1") {
     a = foo[-1]
 }
+
+# clobbering non-empty lists not allowed
+assert_failure("Replacing nonempty list.", "This overwrites a previously-defined nonempty list.") {
+    foo = [4, 5, 6]
+}

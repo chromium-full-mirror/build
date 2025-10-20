@@ -16,3 +16,8 @@ assert_failure("No value named \"c\" in scope \"a\"") {
 foo = { bar = { baz = "qux" } }
 foobar = foo.bar  # foo.bar.baz is a syntax error
 assert(foobar.baz == "qux")
+
+# clobbering non-empty scopes not allowed
+assert_failure("Replacing nonempty scope.", "This overwrites a previously-defined nonempty scope.") {
+    a = { b = "c" }
+}
