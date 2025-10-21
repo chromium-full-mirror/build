@@ -26,6 +26,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/encoding/gzip"
 	"google.golang.org/grpc/keepalive"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/proto"
@@ -62,6 +63,10 @@ type Option struct {
 	CompressedBlob int64
 	// compressor for ByteStream Read/Write APIs.
 	compressor rpb.Compressor_Value
+
+	// Enables GRPC compression. If enabled, blob-level compression will be
+	// forcibly disabled.
+	EnableGRPCCompression bool
 
 	// Keep Execute stream open as lone as possible.
 	// If false, siso closes Execute stream every 1 minute and retries
@@ -117,7 +122,9 @@ func (o *Option) RegisterFlags(fs *flag.FlagSet, envs map[string]string) {
 
 	fs.StringVar(&o.TLSCACert, o.Prefix+"_tls_ca_cert", os.Getenv("RBE_tls_ca_cert"), "Load TLS CA certificates from this file to connect to the RE api service. default can be set by $RBE_tls_ca_cert")
 
-	fs.Int64Var(&o.CompressedBlob, o.Prefix+"_compress_blob", 1024, "use compressed blobs if server supports compressed blobs and size is bigger than this. specify 0 to disable comporession."+purpose)
+	fs.Int64Var(&o.CompressedBlob, o.Prefix+"_compress_blob", 1024, "use compressed blobs if server supports compressed blobs and size is bigger than this. specify 0 to disable blob-level compression."+purpose)
+
+	fs.BoolVar(&o.EnableGRPCCompression, o.Prefix+"_enable_grpc_compression", false, "enable grpc compression.  if enabled, blob-level compression will be forcibly disabled."+purpose)
 
 	fs.BoolVar(&o.KeepExecStream, o.Prefix+"_keep_exec_stream", false, "keep Execute stream open as long as possible")
 
@@ -365,6 +372,13 @@ func newConn(ctx context.Context, addr string, cred cred.Cred, opt Option) (grpc
 		copts = append(copts, option.WithoutAuthentication())
 	}
 	dopts := DialOptions(opt.KeepAliveParams)
+	if opt.EnableGRPCCompression {
+		dopts = append(dopts, grpc.WithDefaultCallOptions(grpc.UseCompressor(gzip.Name)))
+		if opt.CompressedBlob != 0 {
+			opt.CompressedBlob = 0
+			clog.Warningf(ctx, "disabling blob compression because grpc compression is enabled")
+		}
+	}
 	var conn grpcClientConn
 	var err error
 	var tlsConfig *tls.Config
