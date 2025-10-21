@@ -6,5 +6,4 @@
 // See
 //
 //	http://shortn/_i28Te0webh - unconditional writes, local redirect mode
-//	http://shortn/_rBwmJ3sRKS - buildfs prototype
 package cogutil

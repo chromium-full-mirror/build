@@ -834,8 +834,7 @@ func (c *Command) run(ctx context.Context) (stats build.Stats, err error) {
 			return fname == ninjaLogFname
 		}
 	}
-	// TODO: pass reopt for reclient mode?
-	cogfs, err := cogutil.New(ctx, execRoot, c.reopt)
+	cogfs, err := cogutil.New(ctx, execRoot)
 	if err != nil && !errors.Is(err, errors.ErrUnsupported) {
 		clog.Warningf(ctx, "unable to use cog? %v", err)
 	}

@@ -1195,24 +1195,19 @@ func (hfs *HashFS) Update(ctx context.Context, execRoot string, entries []Update
 			updates = append(updates, *ent.Entry)
 		}
 		if len(updates) > 0 {
-			var err error
-			if hfs.opt.CogFS != nil {
-				err = hfs.opt.CogFS.BuildfsInsert(ctx, execRoot, updates)
-			} else {
-				err = hfs.opt.ArtFS.ArtfsInsert(ctx, execRoot, updates)
-			}
+			err := hfs.opt.ArtFS.ArtfsInsert(ctx, execRoot, updates)
 			if err != nil {
-				clog.Warningf(ctx, "cog buildfs insert %d under %s: %v", len(updates), execRoot, err)
+				clog.Warningf(ctx, "artfs insert %d under %s: %v", len(updates), execRoot, err)
 			} else {
-				clog.Infof(ctx, "cog buildfs insert %d under %s", len(updates), execRoot)
-				// cogfs inserted the update, so we can assume
+				clog.Infof(ctx, "artfs insert %d under %s", len(updates), execRoot)
+				// artfsfs inserted the update, so we can assume
 				// these files exist locally.
 				for _, i := range updateIdx {
 					entries[i].IsLocal = true
 				}
 			}
 		} else {
-			clog.Warningf(ctx, "cog buildfs insert 0 from_local=%d not_file=%d", nFromLocals, nNonFiles)
+			clog.Warningf(ctx, "artfs insert 0 from_local=%d not_file=%d", nFromLocals, nNonFiles)
 		}
 	}
 
