@@ -151,6 +151,19 @@ type targetInfo struct {
 	output bool
 	// true if the target is phony_output.
 	phonyOutput bool
+	// pointer to Step.
+	step *Step
+	// pointer to Edge.
+	edge *Edge
+	// priority of the target.
+	criticalPathWeight int
+}
+
+func (ti targetInfo) Weight() int {
+	if ti.phonyOutput {
+		return 0
+	}
+	return 1
 }
 
 // plan maintains which step to execute next.
@@ -162,8 +175,11 @@ type plan struct {
 	// ready is a queue of ready steps prioritized with weights.
 	ready priorityQueue
 	// indexed by Target
-	targets   []targetInfo
-	npendings int
+	targets []targetInfo
+	// targets sorted topologically.
+	// Used to calculate weights efficiently.
+	targetsSorted []Target
+	npendings     int
 }
 
 // priorityQueue is a pool of ready steps.
@@ -279,7 +295,7 @@ func schedule(ctx context.Context, sched *scheduler, graph Graph, args ...string
 			continue
 		}
 
-		validationQueue, err = scheduleTarget(ctx, sched, graph, t, nil, sched.prepare, 1, validationQueue)
+		validationQueue, err = scheduleTarget(ctx, sched, graph, t, nil, sched.prepare, validationQueue)
 		if err != nil {
 			return fmt.Errorf("failed in schedule %s: %w", targetPath(ctx, graph, t), err)
 		}
@@ -295,7 +311,7 @@ func schedule(ctx context.Context, sched *scheduler, graph Graph, args ...string
 			case scanStateDone, scanStateIgnored:
 				continue
 			}
-			validationQueue, err = scheduleTarget(ctx, sched, graph, t, nil, false, 1, validationQueue)
+			validationQueue, err = scheduleTarget(ctx, sched, graph, t, nil, false, validationQueue)
 			if err != nil {
 				return fmt.Errorf("failed in schedule %s: %w", targetPath(ctx, graph, t), err)
 			}
@@ -316,7 +332,7 @@ func (d DependencyCycleError) Error() string {
 
 // scheduleTarget schedules a build plan for target, which is required to next StepDef, from graph into sched.
 // It also returns validationQueue updated while scheduling.
-func scheduleTarget(ctx context.Context, sched *scheduler, graph Graph, target Target, next StepDef, ignore bool, weight int, validationQueue []Target) ([]Target, error) {
+func scheduleTarget(ctx context.Context, sched *scheduler, graph Graph, target Target, next StepDef, ignore bool, validationQueue []Target) ([]Target, error) {
 	targets := sched.plan.targets
 	scanState := targets[target].scan
 	switch scanState {
@@ -407,6 +423,9 @@ func scheduleTarget(ctx context.Context, sched *scheduler, graph Graph, target T
 			}
 		}
 	}()
+	// Add a back reference from targetInfo to Edge.
+	targets[target].edge = newEdge
+
 	// Add found validations to the validations queue to be scheduled later.
 	validationQueue = append(validationQueue, newEdge.Validations...)
 	newStep := newEdge.StepDef
@@ -463,10 +482,10 @@ func scheduleTarget(ctx context.Context, sched *scheduler, graph Graph, target T
 	//     missing dependencies. It would be better to fix gn/ninja's
 	//     build graph, rather than mitigating here in the siso.
 	step := &Step{
-		def:    newStep,
-		state:  &stepState{},
-		weight: weight,
+		def:   newStep,
+		state: &stepState{},
 	}
+	targets[target].step = step
 	orderOnlyIndex := len(newEdge.Inputs)
 	for i, in := range append(newEdge.Inputs, newEdge.OrderOnly...) {
 		if targets[in].scan != scanStateDone {
@@ -486,7 +505,7 @@ func scheduleTarget(ctx context.Context, sched *scheduler, graph Graph, target T
 					inIgnore = true
 				}
 			}
-			validationQueue, err = scheduleTarget(ctx, sched, graph, in, next, inIgnore, weight+1, validationQueue)
+			validationQueue, err = scheduleTarget(ctx, sched, graph, in, next, inIgnore, validationQueue)
 			if err != nil {
 				var cycleErr DependencyCycleError
 				if errors.As(err, &cycleErr) {
@@ -529,7 +548,7 @@ func scheduleTarget(ctx context.Context, sched *scheduler, graph Graph, target T
 		clog.Infof(ctx, "sched: add target %s: %s", targetPath(ctx, graph, target), newStep)
 	}
 	step.outputs = newEdge.Outputs
-	sched.addStep(ctx, step)
+	sched.addStep(ctx, step, target)
 	return validationQueue, nil
 }
 
@@ -553,9 +572,10 @@ func newScheduler(ctx context.Context, opt schedulerOption) *scheduler {
 		path:   opt.Path,
 		hashFS: opt.HashFS,
 		plan: &plan{
-			q:       make(chan *Step, 1),
-			ready:   ready,
-			targets: make([]targetInfo, opt.NumTargets),
+			q:             make(chan *Step, 1),
+			ready:         ready,
+			targets:       make([]targetInfo, opt.NumTargets),
+			targetsSorted: make([]Target, 0, opt.NumTargets),
 		},
 		prepare:           opt.Prepare,
 		prepareHeaderOnly: prepareHeaderOnly,
@@ -593,6 +613,38 @@ func (s *scheduler) progressReport(format string, args ...any) {
 func (s *scheduler) finish(ctx context.Context, d time.Duration) {
 	s.plan.mu.Lock()
 	defer s.plan.mu.Unlock()
+
+	// Propagate and accumulate weights in reverse topological order.
+	for i := len(s.plan.targetsSorted) - 1; i >= 0; i-- {
+		curTarget := &s.plan.targets[s.plan.targetsSorted[i]]
+		if len(curTarget.waits) == 0 {
+			curTarget.criticalPathWeight = curTarget.Weight()
+			if curTarget.step != nil {
+				curTarget.step.weight = curTarget.criticalPathWeight
+			}
+		}
+		for _, in := range append(curTarget.edge.Inputs, curTarget.edge.OrderOnly...) {
+			inTarget := &s.plan.targets[in]
+			if inTarget.source {
+				continue
+			}
+			inTarget.criticalPathWeight = max(curTarget.criticalPathWeight + inTarget.Weight())
+			if inTarget.step != nil {
+				inTarget.step.weight = inTarget.criticalPathWeight
+			}
+		}
+		step := curTarget.step
+		if step != nil && step.ReadyToRun("", Target(0)) {
+			if log.V(1) {
+				clog.Infof(ctx, "step state: %s ready to run", step.String())
+			}
+			s.plan.addReady(step)
+		}
+	}
+
+	// free up s.plan.targetsSorted since it's not necessary anymore.
+	s.plan.targetsSorted = nil
+
 	s.plan.pushReadyUnlocked()
 	nready := len(s.plan.q) + len(s.plan.ready)
 	npendings := s.plan.npendings
@@ -605,7 +657,7 @@ func (s *scheduler) finish(ctx context.Context, d time.Duration) {
 
 // addStep adds a Step to the scheduler.
 // This is called before finish().
-func (s *scheduler) addStep(ctx context.Context, step *Step) {
+func (s *scheduler) addStep(ctx context.Context, step *Step, target Target) {
 	s.plan.mu.Lock()
 	defer s.plan.mu.Unlock()
 	defer func() {
@@ -619,18 +671,12 @@ func (s *scheduler) addStep(ctx context.Context, step *Step) {
 	}()
 	s.total++
 	step.idnum = s.total
+	s.plan.targetsSorted = append(s.plan.targetsSorted, target)
 	if !step.def.IsPhony() {
 		// don't add output for phony targets. https://crbug.com/1517575
 		for _, output := range step.outputs {
 			s.plan.targets[output].output = true
 		}
-	}
-	if step.ReadyToRun("", Target(0)) {
-		if log.V(1) {
-			clog.Infof(ctx, "step state: %s ready to run", step.String())
-		}
-		s.plan.addReady(step)
-		return
 	}
 	if log.V(1) {
 		clog.Infof(ctx, "pending to run: %s (waits: %d)", step, step.NumWaits())
@@ -680,6 +726,7 @@ func (p *plan) addReady(s *Step) {
 	s.queueTime = time.Now()
 	s.queueSize = len(p.ready)
 	heap.Push(&p.ready, s)
+	p.npendings--
 }
 
 func (p *plan) hasReady() bool {
@@ -713,7 +760,6 @@ func (p *plan) completeStep(ctx context.Context, step *Step) {
 				prevProcessed = step.prevStepID
 			}
 			if s.ReadyToRun(prevProcessed, out) {
-				p.npendings--
 				nready++
 				if log.V(1) {
 					clog.Infof(ctx, "step state: %s ready to run %q", s.String(), s.def.Outputs(ctx)[0])
