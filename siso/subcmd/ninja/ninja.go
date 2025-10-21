@@ -81,6 +81,8 @@ type SisoMetadata struct {
 	SisoVersion string `json:"siso_version"`
 	// StartTime is the time that the ninja build started.
 	StartTime time.Time `json:"start_time"`
+	// BuildID is the Ninja build ID used for analytics and identification.
+	BuildID string `json:"build_id"`
 	// Targets of the build.
 	Targets []string `json:"targets,omitempty"`
 	// MetricsLabels are arbitrary labels for the build.
@@ -1035,6 +1037,7 @@ func (c *Command) run(ctx context.Context) (stats build.Stats, err error) {
 	sisoMetadata := SisoMetadata{
 		SisoVersion:   c.version,
 		StartTime:     c.started,
+		BuildID:       c.buildID,
 		Targets:       targets,
 		MetricsLabels: metricsLabels,
 	}
