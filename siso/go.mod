@@ -18,7 +18,7 @@ require (
 	github.com/google/go-cmp v0.7.0
 	github.com/google/subcommands v1.2.0
 	github.com/google/uuid v1.6.0
-	github.com/klauspost/compress v1.18.0
+	github.com/klauspost/compress v1.18.1
 	github.com/klauspost/cpuid/v2 v2.3.0
 	github.com/pkg/xattr v0.4.12
 	go.chromium.org/build/kajiya v0.0.0-20251015062654-cd7695ac03de
