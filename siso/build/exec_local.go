@@ -90,7 +90,7 @@ func (b *Builder) execLocal(ctx context.Context, step *Step) error {
 	queueTime := time.Now()
 	var dur time.Duration
 	step.setPhase(phase.wait())
-	err = sema.Do(ctx, func(ctx context.Context) error {
+	err = sema.Do(ctx, step.weight, func(ctx context.Context) error {
 		clog.Infof(ctx, "step state: %s", stateMessage)
 		step.setPhase(phase)
 		if step.cmd.Console {

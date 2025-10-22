@@ -40,7 +40,7 @@ func (b *Builder) execRemote(ctx context.Context, step *Step) error {
 	var reExecDur time.Duration
 	err := retry.Do(ctx, func() error {
 		step.setPhase(phase.wait())
-		err := b.remoteSema.Do(ctx, func(ctx context.Context) error {
+		err := b.remoteSema.Do(ctx, step.weight, func(ctx context.Context) error {
 			step.setPhase(phase)
 			if phase == stepRetryRun {
 				step.metrics.RemoteRetry++

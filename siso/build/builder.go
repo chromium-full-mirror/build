@@ -183,23 +183,23 @@ type Builder struct {
 	scanDepsSema *semaphore.Semaphore
 	scanDeps     *scandeps.ScanDeps
 
-	localSema *semaphore.Semaphore
-	poolSemas map[string]*semaphore.Semaphore
+	localSema *semaphore.Prioritized
+	poolSemas map[string]*semaphore.Prioritized
 	localExec localexec.LocalExec
 
-	rewrapSema *semaphore.Semaphore
+	rewrapSema *semaphore.Prioritized
 
 	fastLocalSema     *semaphore.Semaphore
 	startLocalCounter atomic.Int32
 
-	remoteSema         *semaphore.Semaphore
+	remoteSema         *semaphore.Prioritized
 	remoteExec         *remoteexec.RemoteExec
 	reExecEnable       bool
 	reCacheEnableRead  bool
 	reCacheEnableWrite bool
 	reapiclient        *reapi.Client
 
-	reproxySema *semaphore.Semaphore
+	reproxySema *semaphore.Prioritized
 	reproxyExec *reproxyexec.REProxyExec
 
 	actionSalt []byte
@@ -343,17 +343,17 @@ func New(ctx context.Context, graph Graph, opts Options) (_ *Builder, err error)
 		preprocSema:        semaphore.New("preproc", opts.Limits.Preproc),
 		scanDepsSema:       semaphore.New("scandeps", opts.Limits.ScanDeps),
 		scanDeps:           scandeps.New(opts.HashFS, graph.InputDeps(ctx), graph.InputsRequiringClangScandeps(ctx)),
-		localSema:          semaphore.New("localexec", opts.Limits.Local),
+		localSema:          semaphore.NewPrioritized("localexec", opts.Limits.Local),
 		localExec:          le,
-		rewrapSema:         semaphore.New("rewrap", opts.Limits.REWrap),
+		rewrapSema:         semaphore.NewPrioritized("rewrap", opts.Limits.REWrap),
 		fastLocalSema:      fastLocalSema,
-		remoteSema:         semaphore.New("remoteexec", opts.Limits.Remote),
+		remoteSema:         semaphore.NewPrioritized("remoteexec", opts.Limits.Remote),
 		remoteExec:         re,
 		reExecEnable:       opts.REExecEnable,
 		reCacheEnableRead:  opts.RECacheEnableRead,
 		reCacheEnableWrite: opts.RECacheEnableWrite,
 		reproxyExec:        pe,
-		reproxySema:        semaphore.New("reproxyexec", opts.Limits.Remote),
+		reproxySema:        semaphore.NewPrioritized("reproxyexec", opts.Limits.Remote),
 		actionSalt:         opts.ActionSalt,
 		reapiclient:        opts.REAPIClient,
 
@@ -536,7 +536,7 @@ func (b *Builder) Build(ctx context.Context, name string, args ...string) (err e
 		pools = append(pools, k)
 	}
 	sort.Strings(pools)
-	b.poolSemas = map[string]*semaphore.Semaphore{}
+	b.poolSemas = make(map[string]*semaphore.Prioritized)
 	for _, k := range pools {
 		v := stepLimits[k]
 		name := "pool=" + k
@@ -550,7 +550,7 @@ func (b *Builder) Build(ctx context.Context, name string, args ...string) (err e
 		if v > localLimit {
 			v = localLimit
 		}
-		b.poolSemas[k] = semaphore.New(name, v)
+		b.poolSemas[k] = semaphore.NewPrioritized(name, v)
 		clog.Infof(ctx, "limit %s -> %s=%d", k, name, v)
 	}
 
@@ -622,7 +622,7 @@ func (b *Builder) Build(ctx context.Context, name string, args ...string) (err e
 			ui.Default.PrintLines("\n", "\n")
 		}
 	}()
-	semas := []*semaphore.Semaphore{
+	semas := []semaphore.Monitorable{
 		b.cache.sema,
 		b.localSema,
 		b.remoteSema,

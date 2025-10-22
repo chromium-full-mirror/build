@@ -53,7 +53,7 @@ type traceEvents struct {
 	// iostats to emit in trace json.
 	iostats []iometrics.Stats
 	// semaphores to emit in trace json.
-	semas []*semaphore.Semaphore
+	semas []semaphore.Monitorable
 	// last number of requests using in semaphore.
 	semaReqs []int
 
@@ -73,7 +73,7 @@ func newTraceEvents(fname string, metadata metadata.Metadata) *traceEvents {
 	}
 }
 
-func (te *traceEvents) Start(ctx context.Context, semas []*semaphore.Semaphore, ioms []*iometrics.IOMetrics) {
+func (te *traceEvents) Start(ctx context.Context, semas []semaphore.Monitorable, ioms []*iometrics.IOMetrics) {
 	te.semas = semas
 	te.semaReqs = make([]int, len(semas))
 	te.ioms = ioms
@@ -317,7 +317,7 @@ func (te *traceEvents) traceMemStats(t time.Time) []traceEventObject {
 	return ret
 }
 
-func (te *traceEvents) traceSemaphore(t time.Time, sema *semaphore.Semaphore, reqs *int) []traceEventObject {
+func (te *traceEvents) traceSemaphore(t time.Time, sema semaphore.Monitorable, reqs *int) []traceEventObject {
 	r := sema.NumRequests()
 	rate := r - *reqs
 	*reqs = r

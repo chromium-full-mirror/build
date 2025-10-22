@@ -18,6 +18,15 @@ import (
 	"go.chromium.org/build/siso/o11y/trace"
 )
 
+// Monitorable is an interface for semaphore monitoring.
+type Monitorable interface {
+	Name() string
+	Capacity() int
+	NumServs() int
+	NumWaits() int
+	NumRequests() int
+}
+
 // Semaphore is a semaphore.
 type Semaphore struct {
 	name string

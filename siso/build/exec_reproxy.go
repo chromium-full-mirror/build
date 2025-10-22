@@ -41,7 +41,7 @@ func (b *Builder) execReproxy(ctx context.Context, step *Step) error {
 	step.cmd.RecordPreOutputs(ctx)
 	phase := stepRemoteRun
 	step.setPhase(phase.wait())
-	err = b.reproxySema.Do(ctx, func(ctx context.Context) error {
+	err = b.reproxySema.Do(ctx, step.weight, func(ctx context.Context) error {
 		started := time.Now()
 		step.setPhase(phase)
 		b.actionStarted(step)
