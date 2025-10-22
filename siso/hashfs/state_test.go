@@ -340,6 +340,9 @@ func TestState_Dir(t *testing.T) {
 	if !ok {
 		t.Errorf("gen/generate_all entry not exists?")
 	}
+	if ent == nil {
+		t.Fatalf("gen/generate_all entry is nil")
+	}
 	if ent.Id.ModTime != mtime.UnixNano() {
 		t.Errorf("mtime=%d want=%d", ent.Id.ModTime, mtime.UnixNano())
 	}
@@ -405,6 +408,9 @@ func TestState_BadDirEntry(t *testing.T) {
 	ent, ok := m[filepath.ToSlash(filepath.Join(dir, "gen/output_file"))]
 	if !ok {
 		t.Errorf("gen/output_file entry not exists?")
+	}
+	if ent == nil {
+		t.Fatalf("gen/output_file entry is nil")
 	}
 	if ent.Id.ModTime != mtime.UnixNano() {
 		t.Errorf("mtime=%d want=%d", ent.Id.ModTime, mtime.UnixNano())

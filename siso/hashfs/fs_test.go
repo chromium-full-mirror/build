@@ -2354,6 +2354,9 @@ func TestEntries_EscapedSymlink(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		if len(ents) != 1 {
+			t.Fatalf("len(ents)=%d; want 1", len(ents))
+		}
 		t.Logf("%s/%s=%s", root, name, ents[0].Data.Digest())
 		return ents[0]
 	}
