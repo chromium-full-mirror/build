@@ -350,6 +350,43 @@ func TestStat_Race(t *testing.T) {
 	}
 }
 
+func TestStat_NonExistentIntermediateDirectory(t *testing.T) {
+	ctx := t.Context()
+	hfs, err := hashfs.New(ctx, hashfs.Option{})
+	if err != nil {
+		t.Fatalf("hashfs.New(...)=_, %v; want nil err", err)
+	}
+	defer func() {
+		if err := hfs.Close(ctx); err != nil {
+			t.Errorf("hfs.Close=%v", err)
+		}
+	}()
+
+	dir := t.TempDir()
+	existDir := filepath.Join(dir, "exist_dir")
+
+	if err := os.Mkdir(existDir, 0755); err != nil {
+		t.Fatalf("os.Mkdir(%q)=%v; want nil err", existDir, err)
+	}
+
+	if _, err := hfs.Stat(ctx, dir, "exist_dir"); err != nil {
+		t.Errorf("hfs.Stat(ctx, %q, %q)=_, %v; want nil err", dir, "exist_dir", err)
+	}
+
+	if _, err := hfs.Stat(ctx, dir, "exist_dir/not_exist_dir"); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("hfs.Stat(ctx, %q, %q)=_, %v; want %v", dir, "exist_dir/not_exist_dir", err, fs.ErrNotExist)
+	}
+
+	if _, err := hfs.Stat(ctx, dir, "exist_dir/not_exist_dir/foo"); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("hfs.Stat(ctx, %q, %q)=_, %v; want %v", dir, "exist_dir/not_exist_dir/foo", err, fs.ErrNotExist)
+	}
+
+	// TODO(b/453883005): This should return fs.ErrNotExist instead of nil err.
+	if _, err := hfs.Stat(ctx, dir, "exist_dir/not_exist_dir"); err != nil {
+		t.Errorf("hfs.Stat(ctx, %q, %q)=_, %v; want %v", dir, "exist_dir/not_exist_dir", err, fs.ErrNotExist)
+	}
+}
+
 func BenchmarkStat(b *testing.B) {
 	ctx := b.Context()
 	dir := b.TempDir()
