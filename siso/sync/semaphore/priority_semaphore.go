@@ -27,7 +27,7 @@ const (
 // request represents a pending request in the priority queue.
 type request struct {
 	weight int
-	ready  chan struct{}
+	ready  chan int
 	index  int // The index of the request in the heap.
 	state  atomic.Int32
 }
@@ -87,8 +87,8 @@ func NewPrioritized(name string, n int) *Prioritized {
 	s := &Prioritized{
 		name:         fmt.Sprintf("%s/%d", name, n),
 		capacity:     n,
-		waitSpanName: fmt.Sprintf("wait-priority:%s/%d", name, n),
-		servSpanName: fmt.Sprintf("serv-priority:%s/%d", name, n),
+		waitSpanName: fmt.Sprintf("wait:%s/%d", name, n),
+		servSpanName: fmt.Sprintf("serv:%s/%d", name, n),
 	}
 	heap.Init(&s.pq)
 	return s
@@ -107,43 +107,47 @@ func (s *Prioritized) WaitAcquire(ctx context.Context, weight int) (context.Cont
 	s.mu.Lock()
 	// If there's capacity, acquire immediately.
 	if s.used < s.capacity {
+		tid := s.used
 		s.used++
 		s.mu.Unlock()
 		s.reqs.Add(1)
 		ctx, servSpan := trace.NewSpan(ctx, s.servSpanName)
+		servSpan.SetAttr("tid", tid)
 		servSpan.SetAttr("weight", weight)
-		return ctx, s.onServeCompleteFunc(servSpan), nil
+		return ctx, s.onServeCompleteFunc(servSpan, tid), nil
 	}
 
 	// Otherwise, wait in the priority queue.
 	req := &request{
 		weight: weight,
-		ready:  make(chan struct{}),
+		ready:  make(chan int),
 	}
 	heap.Push(&s.pq, req)
 	s.mu.Unlock()
 
 	select {
-	case <-req.ready:
+	case tid := <-req.ready:
 		// Acquired the semaphore.
 		s.reqs.Add(1)
 		if dur := time.Since(now); dur > 1*time.Second {
 			clog.Infof(ctx, "wait-priority %s for %s (weight: %d)", s.name, dur, weight)
 		}
 		ctx, servSpan := trace.NewSpan(ctx, s.servSpanName)
+		servSpan.SetAttr("tid", tid)
 		servSpan.SetAttr("weight", weight)
-		return ctx, s.onServeCompleteFunc(servSpan), nil
+		return ctx, s.onServeCompleteFunc(servSpan, tid), nil
 	case <-ctx.Done():
 		oerr := context.Cause(ctx)
 		// Attempt to atomically cancel the request.
 		if !req.state.CompareAndSwap(stateWaiting, stateCanceled) {
 			// The request was already acquired. We lost the race.
 			// Block until the ready signal is sent to maintain invariants.
-			<-req.ready
+			tid := <-req.ready
 			s.reqs.Add(1)
 			ctx, servSpan := trace.NewSpan(ctx, s.servSpanName)
+			servSpan.SetAttr("tid", tid)
 			servSpan.SetAttr("weight", weight)
-			return ctx, s.onServeCompleteFunc(servSpan), nil
+			return ctx, s.onServeCompleteFunc(servSpan, tid), nil
 		}
 
 		// We successfully canceled. Remove from the queue.
@@ -156,7 +160,7 @@ func (s *Prioritized) WaitAcquire(ctx context.Context, weight int) (context.Cont
 	}
 }
 
-func (s *Prioritized) onServeCompleteFunc(servSpan *trace.Span) func(error) {
+func (s *Prioritized) onServeCompleteFunc(servSpan *trace.Span, tid int) func(error) {
 	return func(err error) {
 		if servSpan != nil {
 			st, ok := status.FromError(err)
@@ -165,12 +169,12 @@ func (s *Prioritized) onServeCompleteFunc(servSpan *trace.Span) func(error) {
 			}
 			servSpan.Close(st.Proto())
 		}
-		s.privateRelease()
+		s.privateRelease(tid)
 	}
 }
 
 // privateRelease releases a semaphore slot.
-func (s *Prioritized) privateRelease() {
+func (s *Prioritized) privateRelease(tid int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -178,7 +182,7 @@ func (s *Prioritized) privateRelease() {
 		req := heap.Pop(&s.pq).(*request)
 		if req.state.CompareAndSwap(stateWaiting, stateAcquired) {
 			// Successfully acquired, signal the waiter.
-			close(req.ready)
+			req.ready <- tid
 			return
 		}
 		// The request was canceled, try the next one.
