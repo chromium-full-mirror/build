@@ -1630,6 +1630,9 @@ func newLocalEntry() *entry {
 }
 
 func (e *entry) String() string {
+	if e.err != nil {
+		return fmt.Sprintf("err:%v", e.err)
+	}
 	return fmt.Sprintf("size:%d mode:%s mtime:%s", e.size, e.mode, e.getMtime())
 }
 
