@@ -1355,6 +1355,13 @@ func (c *Command) initCloudLogging(ctx context.Context, projectID, execRoot stri
 	// use generic_task resource
 	// https://cloud.google.com/logging/docs/api/v2/resource-list
 	// https://cloud.google.com/monitoring/api/resources#tag_generic_task
+	// Use a switchable logger to avoid data race.
+	// The race happens between `logging.NewClient()` which may start using
+	// the logger in background goroutines, and `grpclog.SetLoggerV2()`
+	// which sets the logger.
+	// `grpclog.SetLoggerV2` is not thread-safe and should only be called once at init time.
+	slogger := clog.NewSwitchableGRPCLogger()
+	grpclog.SetLoggerV2(slogger)
 	client, err := logging.NewClient(ctx, projectID, credential.ClientOptions()...)
 	if err != nil {
 		return ctx, "", func() {}, err
@@ -1379,7 +1386,7 @@ func (c *Command) initCloudLogging(ctx context.Context, projectID, execRoot stri
 		return ctx, "", func() {}, err
 	}
 	ctx = clog.NewContext(ctx, logger)
-	grpclog.SetLoggerV2(logger)
+	slogger.SetLogger(logger)
 	return ctx, logger.URL(), func() {
 		errch := make(chan error, 1)
 		go func() {

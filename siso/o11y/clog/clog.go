@@ -15,14 +15,165 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 
 	"cloud.google.com/go/logging"
 	"cloud.google.com/go/logging/apiv2/loggingpb"
 	"github.com/golang/glog"
 	mrpb "google.golang.org/genproto/googleapis/api/monitoredres"
+	"google.golang.org/grpc/grpclog"
 	"google.golang.org/protobuf/proto"
 )
+
+// SwitchableGRPCLogger is a grpclog.LoggerV2 that can be updated with a new logger.
+type SwitchableGRPCLogger struct {
+	mu     sync.Mutex
+	logger grpclog.LoggerV2
+}
+
+// NewSwitchableGRPCLogger creates a new SwitchableGRPCLogger.
+func NewSwitchableGRPCLogger() *SwitchableGRPCLogger {
+	return &SwitchableGRPCLogger{}
+}
+
+// SetLogger sets the logger.
+func (s *SwitchableGRPCLogger) SetLogger(logger grpclog.LoggerV2) {
+	s.mu.Lock()
+	s.logger = logger
+	s.mu.Unlock()
+}
+
+// Info logs to the INFO log.
+func (s *SwitchableGRPCLogger) Info(args ...any) {
+	s.mu.Lock()
+	logger := s.logger
+	s.mu.Unlock()
+	if logger != nil {
+		logger.Info(args...)
+	}
+}
+
+// Infoln logs to the INFO log.
+func (s *SwitchableGRPCLogger) Infoln(args ...any) {
+	s.mu.Lock()
+	logger := s.logger
+	s.mu.Unlock()
+	if logger != nil {
+		logger.Infoln(args...)
+	}
+}
+
+// Infof logs to the INFO log.
+func (s *SwitchableGRPCLogger) Infof(format string, args ...any) {
+	s.mu.Lock()
+	logger := s.logger
+	s.mu.Unlock()
+	if logger != nil {
+		logger.Infof(format, args...)
+	}
+}
+
+// Warning logs to the WARNING log.
+func (s *SwitchableGRPCLogger) Warning(args ...any) {
+	s.mu.Lock()
+	logger := s.logger
+	s.mu.Unlock()
+	if logger != nil {
+		logger.Warning(args...)
+	}
+}
+
+// Warningln logs to the WARNING log.
+func (s *SwitchableGRPCLogger) Warningln(args ...any) {
+	s.mu.Lock()
+	logger := s.logger
+	s.mu.Unlock()
+	if logger != nil {
+		logger.Warningln(args...)
+	}
+}
+
+// Warningf logs to the WARNING log.
+func (s *SwitchableGRPCLogger) Warningf(format string, args ...any) {
+	s.mu.Lock()
+	logger := s.logger
+	s.mu.Unlock()
+	if logger != nil {
+		logger.Warningf(format, args...)
+	}
+}
+
+// Error logs to the ERROR log.
+func (s *SwitchableGRPCLogger) Error(args ...any) {
+	s.mu.Lock()
+	logger := s.logger
+	s.mu.Unlock()
+	if logger != nil {
+		logger.Error(args...)
+	}
+}
+
+// Errorln logs to the ERROR log.
+func (s *SwitchableGRPCLogger) Errorln(args ...any) {
+	s.mu.Lock()
+	logger := s.logger
+	s.mu.Unlock()
+	if logger != nil {
+		logger.Errorln(args...)
+	}
+}
+
+// Errorf logs to the ERROR log.
+func (s *SwitchableGRPCLogger) Errorf(format string, args ...any) {
+	s.mu.Lock()
+	logger := s.logger
+	s.mu.Unlock()
+	if logger != nil {
+		logger.Errorf(format, args...)
+	}
+}
+
+// Fatal logs to the FATAL log.
+func (s *SwitchableGRPCLogger) Fatal(args ...any) {
+	s.mu.Lock()
+	logger := s.logger
+	s.mu.Unlock()
+	if logger != nil {
+		logger.Fatal(args...)
+	} else {
+		glog.Fatal(args...)
+	}
+}
+
+// Fatalln logs to the FATAL log.
+func (s *SwitchableGRPCLogger) Fatalln(args ...any) {
+	s.mu.Lock()
+	logger := s.logger
+	s.mu.Unlock()
+	if logger != nil {
+		logger.Fatalln(args...)
+	} else {
+		glog.Fatalln(args...)
+	}
+}
+
+// Fatalf logs to the FATAL log.
+func (s *SwitchableGRPCLogger) Fatalf(format string, args ...any) {
+	s.mu.Lock()
+	logger := s.logger
+	s.mu.Unlock()
+	if logger != nil {
+		logger.Fatalf(format, args...)
+	} else {
+		glog.Fatalf(format, args...)
+	}
+}
+
+// V reports whether verbosity level l is at least the requested verbose level.
+func (s *SwitchableGRPCLogger) V(l int) bool {
+	return bool(glog.VDepth(1, glog.Level(l)))
+}
 
 // https://cloud.google.com/logging/quotas
 const logEntrySizeLimit = 256 * 1024
@@ -374,7 +525,7 @@ func (l *Logger) Entry(severity logging.Severity, payload any) logging.Entry {
 
 // V checks at verbose log level.
 func (l *Logger) V(level int) bool {
-	return bool(glog.V(glog.Level(level)))
+	return bool(glog.VDepth(1, glog.Level(level)))
 }
 
 // Close closes the logger. it will flush log entries.
