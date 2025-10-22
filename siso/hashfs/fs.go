@@ -2213,6 +2213,7 @@ func (d *directory) storeEntry(ctx context.Context, fname string, e *entry) (*en
 			v, loaded := d.m.LoadOrStore(fname, e)
 			if !loaded {
 				if log.V(8) {
+					// lv is to reduce the number of memory allocations when variables are escaping to heap.
 					lv := struct {
 						origFname string
 						d         *directory
@@ -2242,6 +2243,7 @@ func (d *directory) storeEntry(ctx context.Context, fname string, e *entry) (*en
 			actionchanged := ee.action != e.action
 			if e.target != "" && ee.target != e.target {
 				if log.V(1) {
+					// lv is to reduce the number of memory allocations when variables are escaping to heap.
 					lv := struct {
 						origFname         string
 						cmdchanged        bool
@@ -2253,6 +2255,7 @@ func (d *directory) storeEntry(ctx context.Context, fname string, e *entry) (*en
 			} else if !e.d.IsZero() && eed != e.d && eed.SizeBytes != 0 && e.d.SizeBytes != 0 {
 				if log.V(1) {
 					// don't log nil to digest of empty file (size=0)
+					// lv is to reduce the number of memory allocations when variables are escaping to heap.
 					lv := struct {
 						origFname   string
 						cmdchanged  bool
@@ -2263,6 +2266,7 @@ func (d *directory) storeEntry(ctx context.Context, fname string, e *entry) (*en
 				}
 			} else if cmdchanged || edgechanged || actionchanged {
 				if log.V(1) {
+					// lv is to reduce the number of memory allocations when variables are escaping to heap.
 					lv := struct {
 						origFname     string
 						cmdchanged    bool
@@ -2287,6 +2291,7 @@ func (d *directory) storeEntry(ctx context.Context, fname string, e *entry) (*en
 				ee.isChanged = e.isChanged
 				ee.mu.Unlock()
 				if log.V(1) {
+					// lv is to reduce the number of memory allocations when variables are escaping to heap.
 					lv := struct {
 						origFname   string
 						mtime       time.Time
@@ -2425,6 +2430,7 @@ func nextDir(ctx context.Context, d *directory, pe pathElements, elem string) (*
 			target := dent.target
 			subdir := dent.getDir()
 			if log.V(9) {
+				// lv is to reduce the number of memory allocations when variables are escaping to heap.
 				lv := struct {
 					origFname, elem string
 					d               *directory
@@ -2442,6 +2448,7 @@ func nextDir(ctx context.Context, d *directory, pe pathElements, elem string) (*
 		}
 		deleted := d.m.CompareAndDelete(elem, dent)
 		if log.V(9) {
+			// lv is to reduce the number of memory allocations when variables are escaping to heap.
 			lv := struct {
 				origFname, elem string
 				deleted         bool
@@ -2511,6 +2518,7 @@ func nextDir(ctx context.Context, d *directory, pe pathElements, elem string) (*
 	}
 	subdir := dent.getDir()
 	if log.V(9) {
+		// lv is to reduce the number of memory allocations when variables are escaping to heap.
 		lv := struct {
 			origFname, elem string
 			subdir          *directory
