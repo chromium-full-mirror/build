@@ -23,6 +23,15 @@ $ go install .
 $ go test ./...
 ```
 
+To enable glog/clog output during tests, use the `-args` flag to pass glog flags:
+
+```
+$ go test -v ./... -args -logtostderr
+```
+
+Other glog flags can also be passed after `-args`. See
+https://pkg.go.dev/github.com/golang/glog for more details.
+
 To build chromium with your Siso,
 
 ```
