@@ -31,7 +31,7 @@ func fastDepsCmd(ctx context.Context, b *Builder, step *Step) (*Step, bool) {
 
 func preprocCmd(ctx context.Context, b *Builder, step *Step) error {
 	step.setPhase(stepPreproc)
-	err := b.preprocSema.Do(ctx, func(ctx context.Context) error {
+	err := b.preprocSema.Do(ctx, step.weight, func(ctx context.Context) error {
 		ctx, span := trace.NewSpan(ctx, "preproc")
 		defer span.Close(nil)
 		err := depsCmd(ctx, b, step)
