@@ -503,6 +503,9 @@ func (c *Command) run(ctx context.Context) (stats build.Stats, err error) {
 	if c.failuresAllowed <= 0 {
 		c.failuresAllowed = math.MaxInt
 	}
+	if c.failuresAllowed > 1 {
+		c.fastLastFailure = false
+	}
 
 	if c.adjustWarn != "" {
 		ui.Default.Warningf("-w is specified. but not supported. b/288807840\n")
