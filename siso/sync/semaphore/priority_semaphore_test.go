@@ -255,7 +255,7 @@ func TestPrioritized_MultiCapacityPrioritization(t *testing.T) {
 
 	var wg sync.WaitGroup
 	wg.Add(len(priorities))
-	order := make(chan int, len(priorities))
+	order := make(chan int)
 
 	for _, p := range priorities {
 		go func() {
@@ -272,17 +272,17 @@ func TestPrioritized_MultiCapacityPrioritization(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 
+	initialDones[0](nil)
 	for i, expected := range expectedOrder {
-		if i < len(initialDones) {
-			initialDones[i](nil)
-		}
 		p := <-order
 		if p != expected {
 			t.Fatalf("after release %d, got priority %d; want %d", i+1, p, expected)
 		}
 	}
+	for _, done := range initialDones[1:] {
+		done(nil)
+	}
 
-	// Wait for all waiters to complete.
 	wg.Wait()
 	close(order)
 
