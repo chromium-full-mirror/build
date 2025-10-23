@@ -628,7 +628,7 @@ func (s *scheduler) finish(ctx context.Context, d time.Duration) {
 			if inTarget.source {
 				continue
 			}
-			inTarget.criticalPathWeight = max(curTarget.criticalPathWeight + inTarget.Weight())
+			inTarget.criticalPathWeight = max(inTarget.criticalPathWeight, curTarget.criticalPathWeight+inTarget.Weight())
 			if inTarget.step != nil {
 				inTarget.step.weight = inTarget.criticalPathWeight
 			}
