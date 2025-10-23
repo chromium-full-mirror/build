@@ -192,7 +192,7 @@ func (gcc depsGCC) depsInputs(ctx context.Context, b *Builder, step *Step) ([]st
 
 func (depsGCC) scandeps(ctx context.Context, b *Builder, step *Step) ([]string, error) {
 	var ins []string
-	err := b.scanDepsSema.Do(ctx, func(ctx context.Context) error {
+	err := b.scanDepsSema.Do(ctx, step.weight, func(ctx context.Context) error {
 		debug := step.def.Binding("debug") == "true"
 		// fastDeps + remote execution may have already run.
 		// In this case, do not change ActionStartTime set by the remote exec.

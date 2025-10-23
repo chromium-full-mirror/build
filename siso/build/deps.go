@@ -66,7 +66,7 @@ func depsFastStep(ctx context.Context, b *Builder, step *Step) (*Step, error) {
 	// protect from thread exhaustion,
 	// because it would access many files, which would call syscalls
 	// and may create new threads.
-	err := b.scanDepsSema.Do(ctx, func(ctx context.Context) error {
+	err := b.scanDepsSema.Do(ctx, step.weight, func(ctx context.Context) error {
 		depsIter, err := step.def.DepInputs(ctx)
 		if err != nil {
 			return fmt.Errorf("failed to get fast deps log (deps=%q): %w", step.cmd.Deps, err)

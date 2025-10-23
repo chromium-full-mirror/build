@@ -180,7 +180,7 @@ type Builder struct {
 	// for subtree: dir -> *subtree
 	trees sync.Map
 
-	scanDepsSema *semaphore.Semaphore
+	scanDepsSema *semaphore.Prioritized
 	scanDeps     *scandeps.ScanDeps
 
 	localSema *semaphore.Prioritized
@@ -341,7 +341,7 @@ func New(ctx context.Context, graph Graph, opts Options) (_ *Builder, err error)
 		graph:              graph,
 		stepSema:           semaphore.New("step", opts.Limits.Step),
 		preprocSema:        semaphore.New("preproc", opts.Limits.Preproc),
-		scanDepsSema:       semaphore.New("scandeps", opts.Limits.ScanDeps),
+		scanDepsSema:       semaphore.NewPrioritized("scandeps", opts.Limits.ScanDeps),
 		scanDeps:           scandeps.New(opts.HashFS, graph.InputDeps(ctx), graph.InputsRequiringClangScandeps(ctx)),
 		localSema:          semaphore.NewPrioritized("localexec", opts.Limits.Local),
 		localExec:          le,

@@ -209,7 +209,7 @@ func (msvc depsMSVC) depsInputs(ctx context.Context, b *Builder, step *Step) ([]
 
 func (depsMSVC) scandeps(ctx context.Context, b *Builder, step *Step) ([]string, error) {
 	var ins []string
-	err := b.scanDepsSema.Do(ctx, func(ctx context.Context) error {
+	err := b.scanDepsSema.Do(ctx, step.weight, func(ctx context.Context) error {
 		// fastDeps + remote execution may have already run.
 		// In this case, do not change ActionStartTime set by the remote exec.
 		b.actionStarted(step)
