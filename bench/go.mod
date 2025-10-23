@@ -1,6 +1,6 @@
 module go.chromium.org/build/bench
 
-go 1.24.8
+go 1.24.9
 
 require (
 	github.com/google/go-cmp v0.7.0
