@@ -1519,7 +1519,7 @@ func (hfs *HashFS) Flush(ctx context.Context, execRoot string, files []string) e
 				}
 				e.mu.Unlock()
 				err := e.err
-				if errors.Is(err, fs.ErrNotExist) {
+				if errors.Is(err, fs.ErrNotExist) || errors.Is(err, errNotRegular) {
 					clog.Warningf(ctx, "flush %s local-ready: %v", fname, err)
 					continue
 				}
@@ -1637,6 +1637,8 @@ func (e *entry) String() string {
 	return fmt.Sprintf("size:%d mode:%s mtime:%s", e.size, e.mode, e.getMtime())
 }
 
+var errNotRegular = errors.New("unexpected filetype not regular")
+
 func (e *entry) init(ctx context.Context, fname string, executables map[string]bool, osfs *osfs.OSFS) {
 	fi, err := osfs.Lstat(ctx, fname)
 	if errors.Is(err, fs.ErrNotExist) {
@@ -1682,7 +1684,7 @@ func (e *entry) init(ctx context.Context, fname string, executables map[string]b
 	default:
 		// e.g. fifo in chromiumos build tree?
 		// /build/amd64-generic/tmp/portage/chromeos-base/chromeos-chrome-139.0.7206.0_rc-r1/.ipc/in: unknown filetype prwxrwx---
-		e.err = fmt.Errorf("unexpected filetype not regular %s: %s", fi.Mode(), fname)
+		e.err = fmt.Errorf("entry %s: %s: %w", fname, fi.Mode(), errNotRegular)
 		clog.Warningf(ctx, "tree entry %s: unknown filetype %s", fname, fi.Mode())
 		return
 	}
