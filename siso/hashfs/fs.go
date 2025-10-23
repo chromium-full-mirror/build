@@ -411,7 +411,8 @@ func (hfs *HashFS) stat(ctx context.Context, root, fname string, needCompute boo
 			case errors.Is(err, fs.ErrNotExist):
 				// virtually created dir in hashfs,
 				// so no need to update mtime.
-				clog.Infof(ctx, "stat hashfs dir %s. not local", fullname)
+				clog.Infof(ctx, "stat hashfs dir %s. doesn't exist in local", fullname)
+				return FileInfo{}, err
 			case err != nil:
 				clog.Warningf(ctx, "unexpected dir stat fail %s: %v", fullname, err)
 				return FileInfo{}, err

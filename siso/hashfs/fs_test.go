@@ -381,8 +381,7 @@ func TestStat_NonExistentIntermediateDirectory(t *testing.T) {
 		t.Errorf("hfs.Stat(ctx, %q, %q)=_, %v; want %v", dir, "exist_dir/not_exist_dir/foo", err, fs.ErrNotExist)
 	}
 
-	// TODO(b/453883005): This should return fs.ErrNotExist instead of nil err.
-	if _, err := hfs.Stat(ctx, dir, "exist_dir/not_exist_dir"); err != nil {
+	if _, err := hfs.Stat(ctx, dir, "exist_dir/not_exist_dir"); !errors.Is(err, fs.ErrNotExist) {
 		t.Errorf("hfs.Stat(ctx, %q, %q)=_, %v; want %v", dir, "exist_dir/not_exist_dir", err, fs.ErrNotExist)
 	}
 }
