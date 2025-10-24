@@ -10,6 +10,8 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -40,6 +42,9 @@ type Options struct {
 	PerRPCCredentials credentials.PerRPCCredentials
 	// TokenSource is used when PerRPCCredentials is not set.
 	TokenSource oauth2.TokenSource
+
+	login  func(context.Context) error
+	logout func(context.Context) error
 }
 
 // AuthOpts returns the LUCI auth options that Siso uses.
@@ -48,29 +53,104 @@ func AuthOpts(credHelperPath string, args ...string) Options {
 	case "mTLS":
 		return Options{Type: "mTLS"}
 	case "google-application-default":
-		return Options{Type: "google-application-default"}
+		return Options{
+			Type: "google-application-default",
+			login: func(ctx context.Context) error {
+				cmd := exec.CommandContext(ctx, "gcloud", "auth", "application-default", "login")
+				cmd.Stdout = os.Stdout
+				cmd.Stderr = os.Stderr
+				return cmd.Run()
+			},
+			logout: func(ctx context.Context) error {
+				cmd := exec.CommandContext(ctx, "gcloud", "auth", "application-default", "revoke")
+				cmd.Stdout = os.Stdout
+				cmd.Stderr = os.Stderr
+				return cmd.Run()
+			},
+		}
 	case "":
 		return Options{}
 	}
 	var perRPCCredentials credentials.PerRPCCredentials
 	var tokenSource oauth2.TokenSource
+	var login, logout func(context.Context) error
 	base := filepath.Base(credHelperPath)
 	authType := strings.TrimSuffix(base, filepath.Ext(base))
 	switch authType {
 	case "luci-auth":
 		tokenSource = &luciAuthTokenSource{luciAuthPath: credHelperPath, contextArgs: args}
+		login = func(ctx context.Context) error {
+			cmd := exec.CommandContext(ctx, credHelperPath, "login", "--scopes", "https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/cloud-platform")
+			cmd.Stdout = os.Stdout
+			cmd.Stderr = os.Stderr
+			err := cmd.Run()
+			if err != nil {
+				return fmt.Errorf("%w\nIf you get 'This app is blocked', see https://chromium.googlesource.com/build/+/refs/heads/main/siso/docs/auth.md#this-app-is-blocked", err)
+			}
+			return nil
+		}
+		logout = func(ctx context.Context) error {
+			cmd := exec.CommandContext(ctx, credHelperPath, "logout", "--scopes", "https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/cloud-platform")
+			cmd.Stdout = os.Stdout
+			cmd.Stderr = os.Stderr
+			return cmd.Run()
+		}
 	case "gcloud":
 		tokenSource = gcloudTokenSource{}
+		login = func(ctx context.Context) error {
+			cmd := exec.CommandContext(ctx, credHelperPath, "auth", "login", "--update-adc")
+			cmd.Stdout = os.Stdout
+			cmd.Stderr = os.Stderr
+			return cmd.Run()
+		}
+		logout = func(ctx context.Context) error {
+			cmd := exec.CommandContext(ctx, credHelperPath, "auth", "revoke")
+			cmd.Stdout = os.Stdout
+			cmd.Stderr = os.Stderr
+			return cmd.Run()
+		}
 	default:
 		h := &credHelper{path: credHelperPath}
 		perRPCCredentials = h
 		tokenSource = &credHelperGoogle{h: h}
+		if credHelperPath == googleCredHelper {
+			login = func(ctx context.Context) error {
+				fmt.Printf("running gcert\n")
+				cmd := exec.CommandContext(ctx, "gcert")
+				cmd.Stdout = os.Stdout
+				cmd.Stderr = os.Stderr
+				return cmd.Run()
+			}
+			logout = func(ctx context.Context) error {
+				fmt.Printf("running gcertdestroy\n")
+				cmd := exec.CommandContext(ctx, "gcertdestroy")
+				cmd.Stdout = os.Stdout
+				cmd.Stderr = os.Stderr
+				return cmd.Run()
+			}
+		}
 	}
 	return Options{
 		Type:              authType,
 		PerRPCCredentials: perRPCCredentials,
 		TokenSource:       tokenSource,
+		login:             login,
+		logout:            logout,
 	}
+}
+
+func (o Options) Login(ctx context.Context) error {
+	if o.login == nil {
+		return fmt.Errorf("unsupported auth type for login")
+	}
+	return o.login(ctx)
+}
+
+func (o Options) Logout(ctx context.Context) error {
+	if o.logout == nil {
+		return fmt.Errorf("unsupported auth type for logout")
+	}
+	return o.logout(ctx)
 }
 
 // New creates a Cred using LUCI auth's default options.

@@ -18,10 +18,6 @@ import (
 	"go.chromium.org/build/siso/ui"
 )
 
-// https://fuchsia.googlesource.com/fuchsia/+/ba3ebe3223ab95245f974d11f1f0c960dbabbf50/build/bazel/templates/template.bazelrc#73
-// ENOKEY when missing to run `gcert`. http://shortn/_WS1VNAwslp
-const googleCredHelper = "/google/src/head/depot/google3/devtools/blaze/bazel/credhelper/credhelper"
-
 // DefaultCredentialHelper returns default credential helper's path.
 func DefaultCredentialHelper() string {
 	if os.Getenv("RBE_tls_client_auth_cert") != "" && os.Getenv("RBE_tls_client_auth_key") != "" {

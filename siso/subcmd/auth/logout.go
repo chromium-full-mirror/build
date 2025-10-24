@@ -9,7 +9,6 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"os/exec"
 
 	"github.com/google/subcommands"
 
@@ -43,33 +42,11 @@ type LogoutCommand struct {
 func (*LogoutCommand) SetFlags(flagSet *flag.FlagSet) {}
 
 func (c *LogoutCommand) Execute(ctx context.Context, flagSet *flag.FlagSet, _ ...any) subcommands.ExitStatus {
-	switch c.authOpts.Type {
-	case "luci-auth":
-		fmt.Println("using luci-auth for auth")
-		cmd := exec.CommandContext(ctx, "luci-auth", "logout", "--scopes", "https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/cloud-platform")
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-		err := cmd.Run()
-		if err != nil {
-			fmt.Printf("Error: %v\n", err)
-			return subcommands.ExitFailure
-		}
-		return subcommands.ExitSuccess
-
-	case "gcloud":
-		fmt.Println("using gcloud for auth")
-		cmd := exec.CommandContext(ctx, "gcloud", "auth", "revoke")
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-		err := cmd.Run()
-		if err != nil {
-			fmt.Printf("Error: %v\n", err)
-			return subcommands.ExitFailure
-		}
-		return subcommands.ExitSuccess
-
-	default:
-		fmt.Printf("unsupported auth type for login: %s\n", c.authOpts.Type)
-		return subcommands.ExitUsageError
+	fmt.Printf("using %s for auth\n", c.authOpts.Type)
+	err := c.authOpts.Login(ctx)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		return subcommands.ExitFailure
 	}
+	return subcommands.ExitSuccess
 }

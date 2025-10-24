@@ -32,6 +32,10 @@ type credHelper struct {
 	cache map[string]*credCacheEntry
 }
 
+// https://fuchsia.googlesource.com/fuchsia/+/ba3ebe3223ab95245f974d11f1f0c960dbabbf50/build/bazel/templates/template.bazelrc#73
+// ENOKEY when missing to run `gcert`. http://shortn/_WS1VNAwslp
+const googleCredHelper = "/google/src/head/depot/google3/devtools/blaze/bazel/credhelper/credhelper"
+
 // https://github.com/EngFlow/credential-helper-spec/blob/7df9bef60ef05636fd93114a17a7b2ea08143af6/schemas/get-credentials-response.schema.json
 type credHelperResp struct {
 	Headers map[string][]string `json:"headers"`
