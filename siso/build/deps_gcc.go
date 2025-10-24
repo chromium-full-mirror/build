@@ -128,10 +128,10 @@ func (depsGCC) DepsAfterRun(ctx context.Context, b *Builder, step *Step) (_ []st
 			clog.Warningf(ctx, "preserve depfile=%q: %v", step.cmd.Depfile, err)
 			return
 		}
-		if b.keepDepfile {
-			return
+		if !b.keepDepfile {
+			b.hashFS.Remove(ctx, step.cmd.ExecRoot, step.cmd.Depfile)
 		}
-		b.hashFS.Remove(ctx, step.cmd.ExecRoot, step.cmd.Depfile)
+
 		b.hashFS.Flush(ctx, step.cmd.ExecRoot, []string{step.cmd.Depfile})
 	}()
 	buf, err := b.hashFS.ReadFile(ctx, step.cmd.ExecRoot, step.cmd.Depfile)
