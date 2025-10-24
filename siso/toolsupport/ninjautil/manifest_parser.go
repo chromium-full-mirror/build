@@ -104,3 +104,34 @@ func (p *ManifestParser) loadFile(ctx context.Context, fname string) error {
 	}
 	return nil
 }
+
+// LoadSingle loads the Ninja manifest given an fname, but not loads subninjas.
+func (p *ManifestParser) LoadSingle(ctx context.Context, fname string) error {
+	if p.eg == nil {
+		p.eg, ctx = errgroup.WithContext(ctx)
+		p.sema = make(chan struct{}, loaderConcurrency)
+		p.fsema = make(chan struct{}, loaderConcurrency)
+	}
+	p.eg.Go(func() error {
+		fp := &fileParser{
+			scope: p.scope,
+			state: p.state,
+			sema:  p.fsema,
+		}
+		return fp.parseFile(ctx, filepath.Join(p.wd, fname))
+	})
+	err := p.eg.Wait()
+	if err != nil {
+		return err
+	}
+	p.state.nodes = p.state.nodeMap.freeze(ctx)
+	for _, edge := range p.state.edges {
+		for _, in := range edge.inputs {
+			if in.outs == nil {
+				in.outs = make([]*Edge, 0, in.nouts.Load())
+			}
+			in.outs = append(in.outs, edge)
+		}
+	}
+	return nil
+}
