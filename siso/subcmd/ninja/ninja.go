@@ -744,10 +744,13 @@ func (c *Command) run(ctx context.Context) (stats build.Stats, err error) {
 				cacheHitRatio = float64(stats.CacheHit) / float64(stats.CacheHit+stats.Remote)
 			}
 			isErr := err != nil && !errors.Is(err, errNothingToDo)
+			shutdownStart := time.Now()
 			monitoring.ExportBuildMetrics(ctx, time.Since(c.started), cacheHitRatio, isErr)
 
 			spin.Start("finishing upload metrics to Cloud monitoring")
 			cerr := e.Shutdown(ctx)
+			shutdownDuration := time.Since(shutdownStart)
+			clog.Infof(ctx, "cloud monitoring shutdown took: %s", shutdownDuration)
 			if cerr != nil {
 				clog.Warningf(ctx, "failed to close Cloud monitoring exporter: %v", cerr)
 			}
@@ -757,7 +760,12 @@ func (c *Command) run(ctx context.Context) (stats build.Stats, err error) {
 	var traceExporter *trace.Exporter
 	if c.enableCloudTrace {
 		traceExporter = c.initCloudTrace(ctx, projectID, credential)
-		defer traceExporter.Close(ctx)
+		defer func() {
+			closeStart := time.Now()
+			traceExporter.Close(ctx)
+			closeDuration := time.Since(closeStart)
+			clog.Infof(ctx, "cloud trace shutdown took: %s", closeDuration)
+		}()
 	}
 	// upload build pprof
 
@@ -1427,6 +1435,7 @@ func (c *Command) initCloudLogging(ctx context.Context, projectID, execRoot stri
 	slogger.SetLogger(logger)
 	return ctx, logger.URL(), func() {
 		errch := make(chan error, 1)
+		closeStart := time.Now()
 		go func() {
 			errch <- logger.Close()
 		}()
@@ -1441,6 +1450,8 @@ func (c *Command) initCloudLogging(ctx context.Context, projectID, execRoot stri
 		case err := <-errch:
 			if err != nil {
 				log.Warningf("falied to close Cloud logger: %v", err)
+			} else {
+				log.Infof("cloud logging shutdown took: %s", time.Since(closeStart))
 			}
 		}
 	}, nil
