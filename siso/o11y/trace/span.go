@@ -7,8 +7,9 @@ package trace
 
 import (
 	"context"
-	"crypto/rand"
+	"encoding/binary"
 	"encoding/hex"
+	"math/rand/v2"
 	"path"
 	"sort"
 	"strings"
@@ -89,6 +90,8 @@ func (t *Context) SpanProtos(ctx context.Context, projectID string) []*tracepb.S
 	return spans
 }
 
+var invalidSpanID [8]byte
+
 func (t *Context) newSpan(ctx context.Context, name string, parent *Span) *Span {
 	span := &Span{
 		t:           t,
@@ -96,8 +99,13 @@ func (t *Context) newSpan(ctx context.Context, name string, parent *Span) *Span 
 		displayName: name,
 		start:       time.Now(),
 	}
-	// crypt/rand.Read never returns an error.
-	rand.Read(span.spanID[:])
+	// https://github.com/open-telemetry/opentelemetry-go/blob/main/sdk%2Ftrace%2Fid_generator.go
+	for {
+		binary.NativeEndian.PutUint64(span.spanID[:], rand.Uint64())
+		if span.spanID != invalidSpanID {
+			break
+		}
+	}
 
 	span.attrs = span.attrBuf[:0] // assign a new empty slice with the pre-allocated capacity (=2) for attrBuf.
 
