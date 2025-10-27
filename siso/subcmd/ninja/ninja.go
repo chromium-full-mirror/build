@@ -122,7 +122,7 @@ type Command struct {
 	offline         bool
 	fastNop         bool
 	fastLocal       bool
-	fastLastFailure bool
+	fastLastFailure bool // TODO: Always prioritize last failed targets.
 	fastExit        bool
 
 	quiet           bool
@@ -1067,6 +1067,10 @@ func (c *Command) run(ctx context.Context) (stats build.Stats, err error) {
 	var lastFailedTargets []string
 	if c.fastLastFailure && !c.clobber {
 		lastFailedTargets, _ = checkTargets(ctx, failedTargetsFilename, targets)
+		if len(lastFailedTargets) > 0 {
+			bopts.LastFailureTargets = lastFailedTargets
+			ui.Default.PrintLines(fmt.Sprintf(ui.SGR(ui.Yellow, "Prioritizing last failed targets: %s\n"), lastFailedTargets))
+		}
 	}
 	err = os.Remove(failedTargetsFilename)
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
@@ -1089,10 +1093,9 @@ func (c *Command) run(ctx context.Context) (stats build.Stats, err error) {
 	}
 
 	return runNinja(ctx, c.fname, graph, bopts, targets, runNinjaOpts{
-		checkFailedTargets: lastFailedTargets,
-		cleandead:          c.cleandead,
-		subtool:            c.subtool,
-		enableStatusz:      true,
+		cleandead:     c.cleandead,
+		subtool:       c.subtool,
+		enableStatusz: true,
 	})
 }
 
@@ -1130,9 +1133,6 @@ func (c *Command) checkBuildNinja(ctx context.Context, buildPath *build.Path, co
 }
 
 type runNinjaOpts struct {
-	// build the last failed targets first.
-	checkFailedTargets []string
-
 	// whether to perform cleandead or not.
 	cleandead bool
 
@@ -1145,7 +1145,6 @@ type runNinjaOpts struct {
 }
 
 func runNinja(ctx context.Context, fname string, graph *ninjabuild.Graph, bopts build.Options, targets []string, nopts runNinjaOpts) (build.Stats, error) {
-	var stats build.Stats
 	spin := ui.Default.NewSpinner()
 
 	builddir := graph.Binding("builddir")
@@ -1168,49 +1167,6 @@ func runNinja(ctx context.Context, fname string, graph *ninjabuild.Graph, bopts 
 
 	for {
 		clog.Infof(ctx, "build starts")
-		if len(nopts.checkFailedTargets) > 0 {
-			failedTargets := nopts.checkFailedTargets
-			ui.Default.PrintLines(fmt.Sprintf("Building last failed targets: %s...\n", failedTargets))
-			var err error
-			stats, err = doBuild(ctx, graph, bopts, nopts, failedTargets...)
-			if errors.Is(err, build.ErrManifest) {
-				return stats, err
-			}
-			if errors.Is(err, build.ErrManifestModified) {
-				if bopts.DryRun {
-					return stats, nil
-				}
-				clog.Infof(ctx, "%s modified.", fname)
-				spin.Start("reloading")
-				err := graph.Reload(ctx)
-				if err != nil {
-					spin.Stop(err)
-					return stats, err
-				}
-				spin.Stop(nil)
-				ui.Default.PrintLines("\n", "\n")
-				clog.Infof(ctx, "reload done. build retry")
-				continue
-			}
-			var errBuild buildError
-			if errors.As(err, &errBuild) {
-				var stepError build.StepError
-				if errors.As(errBuild.err, &stepError) {
-					// last failed is not fixed yet.
-					return stats, err
-				}
-			}
-			nopts.checkFailedTargets = nil
-			if err != nil {
-				ui.Default.PrintLines(fmt.Sprintf(" %s: %s: %v\n\n", ui.SGR(ui.Yellow, "err in last failed targets, rebuild again"), failedTargets, err))
-			} else {
-				ui.Default.PrintLines(fmt.Sprintf(" %s: %s\n\n", ui.SGR(ui.Green, "last failed targets fixed"), failedTargets))
-			}
-			err = graph.Reset(ctx)
-			if err != nil {
-				return stats, err
-			}
-		}
 		stats, err := doBuild(ctx, graph, bopts, nopts, targets...)
 		if errors.Is(err, build.ErrManifestModified) {
 			if bopts.DryRun {

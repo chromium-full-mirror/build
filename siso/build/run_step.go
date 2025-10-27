@@ -213,6 +213,12 @@ func (b *Builder) runStep(ctx context.Context, step *Step) (err error) {
 			return fmt.Errorf("%s emit stdout/stderr", step)
 		}
 	}
+	if len(b.lastFailureTargets) > 0 {
+		out := b.path.MaybeToWD(ctx, step.cmd.Outputs[0])
+		if _, ok := b.lastFailureTargets[out]; ok {
+			ui.Default.PrintLines(fmt.Sprintf(ui.SGR(ui.Green, "last failed target fixed: %s\n\n"), out))
+		}
+	}
 	b.plan.completeStep(ctx, step)
 	return nil
 }

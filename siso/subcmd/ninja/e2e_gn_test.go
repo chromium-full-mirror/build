@@ -169,16 +169,14 @@ func TestBuild_GNGen(t *testing.T) {
 			t.Errorf("clean build Skipped=%d want=1", stats.Skipped)
 		}
 	})
-
 	t.Run("failure_regen", func(t *testing.T) {
 		ninja := func(lastFailedTargets []string) (build.Stats, error) {
 			opt, graph, cleanup := setupBuild(ctx, t, dir, hashfs.Option{
 				StateFile: ".siso_fs_state",
 			})
 			defer cleanup()
-			return runNinja(ctx, "build.ninja", graph, opt, nil, runNinjaOpts{
-				checkFailedTargets: lastFailedTargets,
-			})
+			opt.LastFailureTargets = lastFailedTargets
+			return runNinja(ctx, "build.ninja", graph, opt, nil, runNinjaOpts{})
 		}
 		setupFiles(t, dir, testName, nil)
 		err := run("buildtools/gn.py", "gen", "out/siso")
@@ -216,9 +214,8 @@ func TestBuild_GNGen(t *testing.T) {
 				StateFile: ".siso_fs_state",
 			})
 			defer cleanup()
-			return runNinja(ctx, "build.ninja", graph, opt, nil, runNinjaOpts{
-				checkFailedTargets: lastFailedTargets,
-			})
+			opt.LastFailureTargets = lastFailedTargets
+			return runNinja(ctx, "build.ninja", graph, opt, nil, runNinjaOpts{})
 		}
 		setupFiles(t, dir, testName, nil)
 		err := run("buildtools/gn.py", "gen", "out/siso")

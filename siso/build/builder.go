@@ -12,6 +12,8 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"maps"
+	"math"
 	"net/http"
 	"net/url"
 	"os"
@@ -144,6 +146,9 @@ type Options struct {
 
 	// Upload Build Ninja files over REAPI
 	UploadBuildNinjaFiles bool
+
+	// LastFailureTargets is a list of targets that failed in the previous build.
+	LastFailureTargets []string
 }
 
 // Builder is a builder.
@@ -246,6 +251,8 @@ type Builder struct {
 	keepDepfile bool
 
 	rebuildManifest string
+
+	lastFailureTargets map[string]struct{}
 }
 
 // New creates new builder.
@@ -385,6 +392,10 @@ func New(ctx context.Context, graph Graph, opts Options) (_ *Builder, err error)
 		keepDepfile:           opts.KeepDepfile,
 		rebuildManifest:       opts.RebuildManifest,
 		UploadBuildNinjaFiles: opts.UploadBuildNinjaFiles,
+		lastFailureTargets:    make(map[string]struct{}),
+	}
+	for _, t := range opts.LastFailureTargets {
+		b.lastFailureTargets[t] = struct{}{}
 	}
 	if opts.Limits.StartLocal > 0 {
 		b.startLocalCounter.Store(int32(opts.Limits.StartLocal))
@@ -504,11 +515,22 @@ func (b *Builder) Build(ctx context.Context, name string, args ...string) (err e
 
 	// scheduling
 	// TODO: run asynchronously?
+	knownTargetWeights := make(map[Target]int)
+	if len(b.lastFailureTargets) > 0 {
+		targets, err := b.graph.Targets(ctx, slices.Collect(maps.Keys(b.lastFailureTargets))...)
+		if err != nil {
+			clog.Warningf(ctx, "failed to get targets for known weights: %v", err)
+		}
+		for _, t := range targets {
+			knownTargetWeights[t] = math.MaxInt
+		}
+	}
 	schedOpts := schedulerOption{
-		NumTargets: b.graph.NumTargets(),
-		Path:       b.path,
-		HashFS:     b.hashFS,
-		Prepare:    b.prepare,
+		NumTargets:   b.graph.NumTargets(),
+		Path:         b.path,
+		HashFS:       b.hashFS,
+		Prepare:      b.prepare,
+		KnownWeights: knownTargetWeights,
 	}
 	sched := newScheduler(ctx, schedOpts)
 	err = schedule(ctx, sched, b.graph, args...)

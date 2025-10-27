@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"path/filepath"
 	"slices"
 	"sort"
@@ -155,15 +156,10 @@ type targetInfo struct {
 	step *Step
 	// pointer to Edge.
 	edge *Edge
-	// priority of the target.
+	// weight of the target.
+	weight int
+	// accumulated weight of the target.
 	criticalPathWeight int
-}
-
-func (ti targetInfo) Weight() int {
-	if ti.phonyOutput {
-		return 0
-	}
-	return 1
 }
 
 // plan maintains which step to execute next.
@@ -222,11 +218,12 @@ func (pq *priorityQueue) Pop() any {
 
 // schedulerOption is scheduler option.
 type schedulerOption struct {
-	NumTargets  int
-	Path        *Path
-	HashFS      *hashfs.HashFS
-	Prepare     bool
-	EnableTrace bool
+	NumTargets   int
+	Path         *Path
+	HashFS       *hashfs.HashFS
+	Prepare      bool
+	EnableTrace  bool
+	KnownWeights map[Target]int
 }
 
 // scheduler creates a plan.
@@ -568,13 +565,23 @@ func newScheduler(ctx context.Context, opt schedulerOption) *scheduler {
 	clog.Infof(ctx, "schedule: new: targets=%d", opt.NumTargets)
 	var ready priorityQueue
 	heap.Init(&ready)
+	targets := make([]targetInfo, opt.NumTargets)
+	for i, ti := range targets {
+		// Default weight is 1.
+		// If there is a known weight, it will be overridden.
+		// If the target is phony, it will be set to 0 during scheduling.
+		ti.weight = 1
+		if w, ok := opt.KnownWeights[Target(i)]; ok {
+			ti.weight = w
+		}
+	}
 	return &scheduler{
 		path:   opt.Path,
 		hashFS: opt.HashFS,
 		plan: &plan{
 			q:             make(chan *Step, 1),
 			ready:         ready,
-			targets:       make([]targetInfo, opt.NumTargets),
+			targets:       targets,
 			targetsSorted: make([]Target, 0, opt.NumTargets),
 		},
 		prepare:           opt.Prepare,
@@ -616,9 +623,10 @@ func (s *scheduler) finish(ctx context.Context, d time.Duration) {
 
 	// Propagate and accumulate weights in reverse topological order.
 	for i := len(s.plan.targetsSorted) - 1; i >= 0; i-- {
-		curTarget := &s.plan.targets[s.plan.targetsSorted[i]]
+		t := s.plan.targetsSorted[i]
+		curTarget := &s.plan.targets[t]
 		if len(curTarget.waits) == 0 {
-			curTarget.criticalPathWeight = curTarget.Weight()
+			curTarget.criticalPathWeight = curTarget.weight
 			if curTarget.step != nil {
 				curTarget.step.weight = curTarget.criticalPathWeight
 			}
@@ -628,7 +636,14 @@ func (s *scheduler) finish(ctx context.Context, d time.Duration) {
 			if inTarget.source {
 				continue
 			}
-			inTarget.criticalPathWeight = max(inTarget.criticalPathWeight, curTarget.criticalPathWeight+inTarget.Weight())
+			if curTarget.criticalPathWeight == math.MaxInt || inTarget.weight == math.MaxInt {
+				// Avoid overflow if either of the weights above is max int.
+				inTarget.criticalPathWeight = math.MaxInt
+			} else {
+				// Otherwise, `curTarget.criticalPathWeight+inTarget.weight` should fit in the max int in practice.
+				// When inTarget.criticalPathWeight is already max int, it will be kept as is.
+				inTarget.criticalPathWeight = max(inTarget.criticalPathWeight, curTarget.criticalPathWeight+inTarget.weight)
+			}
 			if inTarget.step != nil {
 				inTarget.step.weight = inTarget.criticalPathWeight
 			}
@@ -672,7 +687,10 @@ func (s *scheduler) addStep(ctx context.Context, step *Step, target Target) {
 	s.total++
 	step.idnum = s.total
 	s.plan.targetsSorted = append(s.plan.targetsSorted, target)
-	if !step.def.IsPhony() {
+	if step.def.IsPhony() {
+		// It turned out that the step is phony, which doesn't have any weight.
+		s.plan.targets[target].weight = 0
+	} else {
 		// don't add output for phony targets. https://crbug.com/1517575
 		for _, output := range step.outputs {
 			s.plan.targets[output].output = true
