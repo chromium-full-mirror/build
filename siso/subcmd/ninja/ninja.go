@@ -461,6 +461,8 @@ func (c *Command) run(ctx context.Context) (stats build.Stats, err error) {
 
 	defer func() {
 		var wg sync.WaitGroup
+		spin := ui.Default.NewSpinner()
+		spin.Start("shutdown cloud logging/monitoring")
 		for _, cleanup := range pCleanups {
 			wg.Add(1)
 			go func(cl func()) {
@@ -469,6 +471,7 @@ func (c *Command) run(ctx context.Context) (stats build.Stats, err error) {
 			}(cleanup)
 		}
 		wg.Wait()
+		spin.Stop(nil)
 	}()
 
 	ctx, cancel := context.WithCancelCause(ctx)
