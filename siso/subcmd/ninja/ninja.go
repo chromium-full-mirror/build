@@ -26,6 +26,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"text/tabwriter"
 	"time"
 
@@ -452,6 +453,24 @@ func (f *batchFlag) Set(v string) error {
 }
 
 func (c *Command) run(ctx context.Context) (stats build.Stats, err error) {
+	// Cleanup functions to run after serial cleanups in parallel.
+	// This mostly exists for logger and metrics functions cleanup.
+	// Each of these functions take about 1 second on no-op builds to finish,
+	// so to speed things up these 2 cleanups run in parallel, reducing 1 second or above from the build times.
+	var pCleanups []func()
+
+	defer func() {
+		var wg sync.WaitGroup
+		for _, cleanup := range pCleanups {
+			wg.Add(1)
+			go func(cl func()) {
+				defer wg.Done()
+				cl()
+			}(cleanup)
+		}
+		wg.Wait()
+	}()
+
 	ctx, cancel := context.WithCancelCause(ctx)
 	defer signals.HandleInterrupt(ctx, func() {
 		cancel(errInterrupted{})
@@ -644,7 +663,7 @@ func (c *Command) run(ctx context.Context) (stats build.Stats, err error) {
 		} else {
 			// use stderr for confirm no-op step. b/288534744
 			ui.Default.Warningf("%s\n", loggerURL)
-			defer done()
+			pCleanups = append(pCleanups, done)
 			ctx = logCtx
 		}
 	}
@@ -737,6 +756,7 @@ func (c *Command) run(ctx context.Context) (stats build.Stats, err error) {
 		if err != nil {
 			return stats, err
 		}
+		// Export all the metrics before shutting down as we still need the cloud logger to be present.
 		defer func() {
 			// Report build metrics.
 			var cacheHitRatio float64
@@ -744,18 +764,21 @@ func (c *Command) run(ctx context.Context) (stats build.Stats, err error) {
 				cacheHitRatio = float64(stats.CacheHit) / float64(stats.CacheHit+stats.Remote)
 			}
 			isErr := err != nil && !errors.Is(err, errNothingToDo)
-			shutdownStart := time.Now()
 			monitoring.ExportBuildMetrics(ctx, time.Since(c.started), cacheHitRatio, isErr)
-
-			spin.Start("finishing upload metrics to Cloud monitoring")
+		}()
+		pCleanups = append(pCleanups, func() {
+			// Cloud logger is getting shut down in parallel, report locally.
+			otel.SetErrorHandler(otel.ErrorHandlerFunc(func(err error) {
+				log.Warningf("failed to export to OpenTelemetry: %v", err)
+			}))
+			shutdownStart := time.Now()
 			cerr := e.Shutdown(ctx)
 			shutdownDuration := time.Since(shutdownStart)
-			clog.Infof(ctx, "cloud monitoring shutdown took: %s", shutdownDuration)
+			log.Infof("cloud monitoring shutdown took: %s", shutdownDuration)
 			if cerr != nil {
-				clog.Warningf(ctx, "failed to close Cloud monitoring exporter: %v", cerr)
+				log.Warningf("failed to close Cloud monitoring exporter: %v", cerr)
 			}
-			spin.Stop(cerr)
-		}()
+		})
 	}
 	var traceExporter *trace.Exporter
 	if c.enableCloudTrace {
