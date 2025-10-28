@@ -2161,6 +2161,20 @@ func (s source) String() string {
 func rotateFiles(ctx context.Context, fname string) {
 	ext := filepath.Ext(fname)
 	fnameBase := strings.TrimSuffix(fname, ext)
+
+	oldestFilename := fmt.Sprintf("%s.9%s", fnameBase, ext)
+	fi, err := os.Lstat(oldestFilename)
+	if err == nil && fi.Mode().Type() == fs.ModeSymlink {
+		target, err := os.Readlink(oldestFilename)
+		if err == nil {
+			if !filepath.IsAbs(target) {
+				target = filepath.Join(filepath.Dir(oldestFilename), target)
+			}
+			err = os.Remove(target)
+			clog.Infof(ctx, "remove oldest log %s: %v", target, err)
+		}
+	}
+	// oldestFilename itself will be replaced with <base>.8<ext>.
 	for i := 8; i >= 0; i-- {
 		err := os.Rename(
 			fmt.Sprintf("%s.%d%s", fnameBase, i, ext),
@@ -2169,7 +2183,7 @@ func rotateFiles(ctx context.Context, fname string) {
 			clog.Warningf(ctx, "rotate %s %d->%d failed: %v", fname, i, i+1, err)
 		}
 	}
-	err := os.Rename(fname, fmt.Sprintf("%s.0%s", fnameBase, ext))
+	err = os.Rename(fname, fmt.Sprintf("%s.0%s", fnameBase, ext))
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		clog.Warningf(ctx, "rotate %s ->0 failed: %v", fname, err)
 	}
