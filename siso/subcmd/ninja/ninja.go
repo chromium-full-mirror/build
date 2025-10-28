@@ -1125,6 +1125,16 @@ func (c *Command) checkBuildNinja(ctx context.Context, buildPath *build.Path, co
 	graph := ninjabuild.NewGraph(ctx, c.fname, nstate, config, buildPath, hashFS, stepConfig, localDepsLog)
 
 	err = rebuildManifest(ctx, graph, bopts)
+	if errors.Is(err, build.ErrManifestModified) {
+		started := time.Now()
+		err := hashFS.Refresh(ctx, buildPath.ExecRoot)
+		if err != nil {
+			clog.Warningf(ctx, "%s modified. failed to refresh hashfs %s: %v", c.fname, time.Since(started), err)
+			return
+		}
+		clog.Infof(ctx, "%s modifnied. refresh hashfs %s", c.fname, time.Since(started))
+		return
+	}
 	if err != nil {
 		// ignore failure: e.g. build.ninja target not defined
 		clog.Warningf(ctx, "check build ninja: rebuild manifest %v", err)
