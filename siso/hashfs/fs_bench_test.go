@@ -39,7 +39,7 @@ func BenchmarkDirectoryLookup(b *testing.B) {
 
 // test to make sure keep allocations under
 // allocations that was measured by the above benchmark.
-// fs_test.go is eternal test, but this is internal test.
+// fs_test.go is external test, but this is internal test.
 func TestDirectoryLookup(t *testing.T) {
 	ctx := t.Context()
 	root := &directory{}
