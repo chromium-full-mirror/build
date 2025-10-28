@@ -2425,3 +2425,42 @@ func TestEntries_EscapedSymlink(t *testing.T) {
 		t.Errorf("inputRoot: -want +got:\n%s", diff)
 	}
 }
+
+func TestEntries_NonExistentIntermediateDirectory(t *testing.T) {
+	ctx := t.Context()
+
+	hfs, err := hashfs.New(ctx, hashfs.Option{})
+	if err != nil {
+		t.Fatalf("hashfs.New(...)=_, %v; want nil err", err)
+	}
+	defer func() {
+		if err := hfs.Close(ctx); err != nil {
+			t.Errorf("hfs.Close=%v", err)
+		}
+	}()
+
+	dir := t.TempDir()
+
+	ents, err := hfs.Entries(ctx, dir, []string{"not_exist_dir"})
+	if err != nil {
+		t.Fatalf("hfs.Entries(ctx, _, _)=_, %v; want nil err", err)
+	}
+
+	if len(ents) != 0 {
+		t.Fatalf("len(ent)=%d; want 0", len(ents))
+	}
+
+	if _, err := hfs.Stat(ctx, dir, "not_exist_dir/foo"); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("hfs.Stat(ctx, %q, %q)=_, %v; want %v", dir, "not_exist_dir/foo", err, fs.ErrNotExist)
+	}
+
+	ents, err = hfs.Entries(ctx, dir, []string{"not_exist_dir"})
+	if err != nil {
+		t.Fatalf("hfs.Entries(ctx, _, _)=_, %v; want nil err", err)
+	}
+
+	// TODO(b/455446876): Entries shouldn't return entry for non-existing directory.
+	if len(ents) != 1 {
+		t.Fatalf("len(ent)=%d; want 1", len(ents))
+	}
+}
