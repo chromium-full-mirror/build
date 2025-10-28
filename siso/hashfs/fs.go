@@ -1040,7 +1040,7 @@ func (hfs *HashFS) Entries(ctx context.Context, root string, inputs []string) ([
 	wg.Wait()
 	wspan.SetAttr("waits", nwait)
 	wspan.Close(nil)
-	var entries []merkletree.Entry
+	entries := make([]merkletree.Entry, 0, len(inputs))
 	for i, fname := range inputs {
 		e := ents[i]
 		d := e.digest()

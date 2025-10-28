@@ -43,7 +43,7 @@ type scanner struct {
 	macros map[string][]string
 
 	// name -> dir -> visited
-	included map[string]map[string]bool
+	included map[string]map[string]struct{}
 
 	// macro name -> value -> used?
 	macroUsed map[string]map[string]bool
@@ -99,7 +99,7 @@ func (fsys *filesystem) scanner(ctx context.Context, execRoot string, inputDeps 
 			topEnts:          make(map[string]*sync.Map),
 		},
 		macros:       make(map[string][]string),
-		included:     make(map[string]map[string]bool),
+		included:     make(map[string]map[string]struct{}),
 		macroUsed:    make(map[string]map[string]bool),
 		macroInclude: make(map[string]bool),
 		macroDirs:    make(map[string][]string),
@@ -246,7 +246,7 @@ func (s *scanner) find(ctx context.Context, name string) (string, error) {
 	name = name[1 : len(name)-1]
 	included, ok := s.included[name]
 	if !ok {
-		included = make(map[string]bool)
+		included = make(map[string]struct{})
 		s.included[name] = included
 	}
 	if filepath.IsAbs(name) {
@@ -287,10 +287,10 @@ func (s *scanner) find(ctx context.Context, name string) (string, error) {
 		// TODO: lookup hmap appropriately.
 		s.ds = ds
 		for i, dir := range ds {
-			if included[dir] {
+			if _, ok := included[dir]; ok {
 				continue
 			}
-			included[dir] = true
+			included[dir] = struct{}{}
 			if log.V(1) {
 				clog.Infof(ctx, "find check %s/%s", dir, name)
 			}
@@ -334,10 +334,10 @@ func (s *scanner) find(ctx context.Context, name string) (string, error) {
 				clog.Infof(ctx, "check framework %s -> %s : %s", name, fwname, s.fsview.frameworkPaths)
 			}
 			for _, dir := range s.fsview.frameworkPaths {
-				if included[dir] {
+				if _, ok := included[dir]; ok {
 					continue
 				}
-				included[dir] = true
+				included[dir] = struct{}{}
 				if log.V(1) {
 					clog.Infof(ctx, "find check %s/%s", dir, fwname)
 				}
@@ -381,7 +381,7 @@ func (s *scanner) macroCheck(ctx context.Context, dir, name, incpath string, inc
 				s.macroDirs[name] = append(s.macroDirs[name], dir)
 			}
 			s.macroInclude[incpath] = true
-			s.included[name][dir] = false
+			delete(s.included[name], dir)
 			return
 		}
 	}
