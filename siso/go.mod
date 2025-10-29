@@ -9,7 +9,7 @@ go 1.24.9
 
 require (
 	cloud.google.com/go/compute/metadata v0.8.0
-	cloud.google.com/go/logging v1.13.0
+	cloud.google.com/go/logging v1.13.1
 	cloud.google.com/go/longrunning v0.6.7
 	cloud.google.com/go/profiler v0.4.3
 	cloud.google.com/go/trace v1.11.6
