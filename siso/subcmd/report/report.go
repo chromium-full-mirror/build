@@ -107,9 +107,16 @@ func (c *Command) collect(ctx context.Context) (map[string]digest.Data, error) {
 			continue
 		}
 		for _, fname := range matches {
-			_, err := os.Stat(fname)
+			fi, err := os.Stat(fname)
 			if errors.Is(err, fs.ErrNotExist) {
 				// dangling symlink or so?
+				continue
+			}
+			if fi.IsDir() {
+				err = collectInDir(ctx, fsys, osfs, fname, report)
+				if err != nil {
+					clog.Errorf(ctx, "failed to collect in dir %s: %v", fname, err)
+				}
 				continue
 			}
 			ui.Default.PrintLines(fmt.Sprintf("reading %s", fname))
@@ -145,11 +152,20 @@ func (c *Command) collect(ctx context.Context) (map[string]digest.Data, error) {
 		clog.Infof(ctx, "no .reproxy_tmp/logs: %v", err)
 		return report, nil
 	}
-	err = fs.WalkDir(fsys, ".reproxy_tmp/logs", func(fname string, d fs.DirEntry, err error) error {
+	err = collectInDir(ctx, fsys, osfs, ".reproxy_tmp/logs", report)
+	if err != nil {
+		clog.Errorf(ctx, "failed to collect in .reproxy_tmp/logs: %v", err)
+	}
+	return report, nil
+}
+
+func collectInDir(ctx context.Context, fsys fs.FS, osfs *osfs.OSFS, dname string, report map[string]digest.Data) error {
+	return fs.WalkDir(fsys, dname, func(fname string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
 		if d.IsDir() {
+			clog.Infof(ctx, "skip dir %s", fname)
 			return nil
 		}
 		ui.Default.PrintLines(fmt.Sprintf("reading %s", fname))
@@ -163,7 +179,6 @@ func (c *Command) collect(ctx context.Context) (map[string]digest.Data, error) {
 		report[fname] = data
 		return nil
 	})
-	return report, err
 }
 
 func (c *Command) archive(ctx context.Context) (err error) {
