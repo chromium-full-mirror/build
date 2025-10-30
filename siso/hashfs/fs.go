@@ -887,6 +887,7 @@ func (hfs *HashFS) ForgetMissingsInDir(ctx context.Context, root, dir string) {
 				dents, err := hfs.ReadDir(ctx, root, fname)
 				if err != nil {
 					clog.Warningf(ctx, "readdir failed for %q: %v", fname, err)
+					needCheck = append(needCheck, fname)
 					continue
 				}
 				for _, dent := range dents {
