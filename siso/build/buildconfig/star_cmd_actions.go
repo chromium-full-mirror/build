@@ -192,7 +192,8 @@ func starActionsCopy(thread *starlark.Thread, fn *starlark.Builtin, args starlar
 	}
 	var src, dst string
 	var recursive bool
-	err := starlark.UnpackArgs("copy", args, kwargs, "src", &src, "dst", &dst, "recursive?", &recursive)
+	ignoreMissings := true // TODO: make it false by default.
+	err := starlark.UnpackArgs("copy", args, kwargs, "src", &src, "dst", &dst, "recursive?", &recursive, "ignore_missings?", &ignoreMissings)
 	if err != nil {
 		return starlark.None, err
 	}
@@ -209,7 +210,7 @@ func starActionsCopy(thread *starlark.Thread, fn *starlark.Builtin, args starlar
 			return starlark.None, err
 		}
 		var files []string
-		files, err = actionsCopyRecursively(c.ctx, c.cmd, src, dst, time.Now(), c.cmd.CmdHash, c.cmd.EdgeHash)
+		files, err = actionsCopyRecursively(c.ctx, c.cmd, src, dst, time.Now(), c.cmd.CmdHash, c.cmd.EdgeHash, ignoreMissings)
 		if err == nil && len(files) > 0 {
 			err = c.cmd.HashFS.Flush(c.ctx, c.cmd.ExecRoot, files)
 		}
@@ -223,17 +224,22 @@ func starActionsCopy(thread *starlark.Thread, fn *starlark.Builtin, args starlar
 // and returns a list of files that needs to be written to the disk.
 // if src is a directory, it recurrsively calls itself without cmdhash.
 // if src is a file, it just copies the file.
-func actionsCopyRecursively(ctx context.Context, cmd *execute.Cmd, src, dst string, t time.Time, cmdhash, edgehash []byte) ([]string, error) {
+func actionsCopyRecursively(ctx context.Context, cmd *execute.Cmd, src, dst string, t time.Time, cmdhash, edgehash []byte, ignoreMissings bool) ([]string, error) {
 	fi, err := cmd.HashFS.Stat(ctx, cmd.ExecRoot, src)
 	if err != nil {
 		return nil, err
 	}
 	if fi.IsDir() {
-		err := cmd.HashFS.Mkdir(ctx, cmd.ExecRoot, dst, cmdhash, edgehash)
+		ents, err := cmd.HashFS.ReadDir(ctx, cmd.ExecRoot, src)
+		if ignoreMissings && errors.Is(err, fs.ErrNotExist) {
+			// hashfs Stat exists, but ReadDir may detect missing dir on local disk.
+			clog.Warningf(ctx, "copy src not exists %s: %v", src, err)
+			return nil, nil
+		}
 		if err != nil {
 			return nil, err
 		}
-		ents, err := cmd.HashFS.ReadDir(ctx, cmd.ExecRoot, src)
+		err = cmd.HashFS.Mkdir(ctx, cmd.ExecRoot, dst, cmdhash, edgehash)
 		if err != nil {
 			return nil, err
 		}
@@ -244,7 +250,7 @@ func actionsCopyRecursively(ctx context.Context, cmd *execute.Cmd, src, dst stri
 			// don't record cmdhash for recursive copy
 			// since these are not appeared in build graph
 			// but cleandead will try to delete these dirs/files.
-			f, err := actionsCopyRecursively(ctx, cmd, s, d, t, nil, nil)
+			f, err := actionsCopyRecursively(ctx, cmd, s, d, t, nil, nil, ignoreMissings)
 			if err != nil {
 				return files, err
 			}
@@ -253,7 +259,7 @@ func actionsCopyRecursively(ctx context.Context, cmd *execute.Cmd, src, dst stri
 		return files, nil
 	}
 	err = cmd.HashFS.Copy(ctx, cmd.ExecRoot, src, dst, t, cmdhash, edgehash)
-	if errors.Is(err, fs.ErrNotExist) {
+	if ignoreMissings && errors.Is(err, fs.ErrNotExist) {
 		clog.Warningf(ctx, "copy src not exists %s: %v", src, err)
 		// just ignores
 		return nil, nil
