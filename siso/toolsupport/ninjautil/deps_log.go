@@ -518,7 +518,7 @@ func (d *DepsLog) Record(ctx context.Context, output string, mtime time.Time, de
 			return false, fmt.Errorf("failed to record for output %s: %w", output, err)
 		}
 	}
-	var depIDs []int
+	depIDs := make([]int, 0, len(deps))
 	for i, dep := range deps {
 		dep = filepath.ToSlash(dep)
 		di, added := d.uniquePathIdx(dep)
