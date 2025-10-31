@@ -137,6 +137,19 @@ func (f *Frontend) BuildActionFinished(step *build.Step) {
 	f.ch <- m
 }
 
+// BuildActionCanceled is called when build action canceled.
+func (f *Frontend) BuildActionCanceled(step *build.Step) {
+	m := &pb.Status{
+		EdgeFinished: &pb.Status_EdgeFinished{
+			Id:       proto.Uint32(uint32(step.IDNum())),
+			EndTime:  proto.Uint32(uint32(time.Since(f.startTime).Milliseconds())),
+			Status:   proto.Int32(-1),
+			Canceled: proto.Bool(true),
+		},
+	}
+	f.ch <- m
+}
+
 // BuildStarted is called when build started.
 // Once started, PrintLines will be suppressed to ignore build progress
 // since these are reported bia BuildActionStarted / BuildActionFinished.

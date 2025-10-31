@@ -12,8 +12,11 @@ type StatusReporter interface {
 	// BuildActionStarted is called when build action started.
 	BuildActionStarted(*Step)
 
-	// BuildActionFInished is called when build action finished.
+	// BuildActionFinished is called when build action finished.
 	BuildActionFinished(*Step)
+
+	// BuildActionCanceled is called when build action canceled.
+	BuildActionCanceled(*Step)
 
 	// BuildStarted is called when build started.
 	BuildStarted()
@@ -28,6 +31,7 @@ func (noopStatusReporter) PlanHasTotalSteps(total int) {}
 
 func (noopStatusReporter) BuildActionStarted(step *Step)  {}
 func (noopStatusReporter) BuildActionFinished(step *Step) {}
+func (noopStatusReporter) BuildActionCanceled(step *Step) {}
 
 func (noopStatusReporter) BuildStarted()  {}
 func (noopStatusReporter) BuildFinished() {}

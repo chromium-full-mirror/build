@@ -63,6 +63,7 @@ func (b *Builder) actionStarted(step *Step) {
 
 func (b *Builder) actionFinished(ctx context.Context, step *Step) {
 	if ctx.Err() != nil {
+		b.statusReporter.BuildActionCanceled(step)
 		return
 	}
 	b.statusReporter.BuildActionFinished(step)

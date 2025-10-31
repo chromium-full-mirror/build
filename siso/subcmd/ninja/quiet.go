@@ -26,6 +26,8 @@ func (quietUI) BuildActionFinished(step *build.Step) {
 	os.Stdout.Write(step.Stdout())
 }
 
+func (quietUI) BuildActionCanceled(*build.Step) {}
+
 func (quietUI) BuildStarted()  {}
 func (quietUI) BuildFinished() {}
 
