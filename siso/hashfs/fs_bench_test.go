@@ -7,6 +7,8 @@ package hashfs
 import (
 	"io/fs"
 	"testing"
+
+	log "github.com/golang/glog"
 )
 
 func BenchmarkDirectoryLookup(b *testing.B) {
@@ -46,7 +48,11 @@ func TestDirectoryLookup(t *testing.T) {
 	fname := "/b/s/w/ir/cache/builder/src/out/siso/gen"
 
 	t.Run("miss", func(t *testing.T) {
-		avg := testing.AllocsPerRun(1000, func() {
+		num := 1000
+		if log.V(1) {
+			num = 1
+		}
+		avg := testing.AllocsPerRun(num, func() {
 			_, _, _, ok := root.lookup(ctx, fname)
 			if ok {
 				t.Fatalf("lookup(ctx, %q)=_, _, %t; want false", fname, ok)
@@ -60,7 +66,11 @@ func TestDirectoryLookup(t *testing.T) {
 	e := &entry{err: fs.ErrNotExist}
 	root.store(ctx, fname, e)
 	t.Run("ok", func(t *testing.T) {
-		avg := testing.AllocsPerRun(1000, func() {
+		num := 1000
+		if log.V(1) {
+			num = 1
+		}
+		avg := testing.AllocsPerRun(num, func() {
 			_, _, _, ok := root.lookup(ctx, fname)
 			if !ok {
 				t.Fatalf("lookup(ctx, %q)=_, _, %t; want true", fname, ok)

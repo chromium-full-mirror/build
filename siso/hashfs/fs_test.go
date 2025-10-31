@@ -23,6 +23,7 @@ import (
 	"testing"
 	"time"
 
+	log "github.com/golang/glog"
 	"github.com/google/go-cmp/cmp"
 	"golang.org/x/sync/errgroup"
 
@@ -455,7 +456,11 @@ func TestStatAllocs(t *testing.T) {
 	}()
 	fname := "out/siso/gen/base/base/base.o.d"
 	t.Run("not_exist", func(t *testing.T) {
-		avg := testing.AllocsPerRun(1000, func() {
+		num := 1000
+		if log.V(1) {
+			num = 1
+		}
+		avg := testing.AllocsPerRun(num, func() {
 			_, err := hfs.Stat(ctx, dir, fname)
 			if !errors.Is(err, fs.ErrNotExist) {
 				t.Fatalf("hfs.Stat(ctx,%q,%q)=%v; want %v", dir, fname, err, fs.ErrNotExist)
@@ -472,7 +477,11 @@ func TestStatAllocs(t *testing.T) {
 	hfs.Forget(ctx, dir, []string{fname})
 
 	t.Run("emptyfile", func(t *testing.T) {
-		avg := testing.AllocsPerRun(1000, func() {
+		num := 1000
+		if log.V(1) {
+			num = 1
+		}
+		avg := testing.AllocsPerRun(num, func() {
 			_, err := hfs.Stat(ctx, dir, fname)
 			if err != nil {
 				t.Fatalf("hfs.Stat(ctx,%q,%q)=%v; want nil", dir, fname, err)
