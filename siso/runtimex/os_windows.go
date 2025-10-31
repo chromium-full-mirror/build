@@ -7,12 +7,11 @@
 package runtimex
 
 import (
-	"syscall"
-
 	"golang.org/x/sys/windows"
 )
 
+const allProcessorGroups = 0xFFFF
+
 func getproccount() int {
-	r0, _, _ := syscall.SyscallN(windows.NewLazySystemDLL("kernel32.dll").NewProc("GetActiveProcessorCount").Addr(), uintptr(0xFFFF))
-	return int(r0)
+	return int(windows.GetActiveProcessorCount(allProcessorGroups))
 }
