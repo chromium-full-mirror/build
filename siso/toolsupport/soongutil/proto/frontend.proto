@@ -12,14 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// copy from https://android.googlesource.com/platform/external/ninja/+/75a0997a4be6439f824ef84834dbc9ab76ab34e5/src/frontend.proto
+// copy from https://googleplex-android.googlesource.com/platform/build/soong/+/afa116d431cea6fc77cea243f1b024daf8596a64/ui/status/ninja_frontend/frontend.proto
 
 syntax = "proto2";
 
 option optimize_for = LITE_RUNTIME;
 
 package ninja;
-
 option go_package = "go.chromium.org/build/siso/toolsupport/soongutil/proto";
 
 message Status {
@@ -91,6 +90,8 @@ message Status {
     // Arbitrary tags for build system profiling (module names and types, rule
     // names, etc). Format of the string is implementation defined.
     optional string tags = 14;
+    // True if edge was canceled.
+    optional bool canceled = 15;
   }
 
   message Message {
