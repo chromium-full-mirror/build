@@ -566,13 +566,13 @@ func newScheduler(ctx context.Context, opt schedulerOption) *scheduler {
 	var ready priorityQueue
 	heap.Init(&ready)
 	targets := make([]targetInfo, opt.NumTargets)
-	for i, ti := range targets {
+	for i := range opt.NumTargets {
 		// Default weight is 1.
 		// If there is a known weight, it will be overridden.
 		// If the target is phony, it will be set to 0 during scheduling.
-		ti.weight = 1
+		targets[i].weight = 1
 		if w, ok := opt.KnownWeights[Target(i)]; ok {
-			ti.weight = w
+			targets[i].weight = w
 		}
 	}
 	return &scheduler{
