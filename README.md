@@ -14,3 +14,5 @@ We use the standard Go module workflow to work on our projects.
 ## Links
 
 - [Code Search](https://source.chromium.org/chromium/build)
+- [buildinfra CI recipe](https://source.chromium.org/chromium/infra/infra_superproject/+/main:infra/recipes/recipes/buildinfra.py)
+- [build CIPD packaging recipe](https://source.chromium.org/chromium/infra/infra_superproject/+/main:infra/recipes/recipes/buildinfra_packager.py)
