@@ -2,6 +2,8 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+# yaml-language-server: $schema=https://golangci-lint.run/jsonschema/golangci.jsonschema.json
+
 version: "2"
 
 # https://golangci-lint.run/usage/configuration/#linters-configuration
@@ -49,11 +51,11 @@ linters:
           kajiya/capabilities/service.go|\
           runmc/machine_type.go|\
           runmc/main.go|\
-        )$"
+          )$"
       - path: "^(\
           siso/execute/cmd.go|\
           siso/subcmd/recall/recall.go|\
-        )$"
+          )$"
         text: "(OutputFiles|Platform) is deprecated: Marked as deprecated in build/bazel/remote/execution/v2/remote_execution.proto"
     paths:
       # Ignore files under third_party dir.
