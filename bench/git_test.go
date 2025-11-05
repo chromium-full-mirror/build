@@ -95,18 +95,7 @@ func TestGetCommits(t *testing.T) {
 	if err := os.MkdirAll(repoDir, 0755); err != nil {
 		t.Fatalf("Failed to create directory %s: %v", repoDir, err)
 	}
-	// Change to the repo directory and change back to the original directory when done.
-	// TODO: go.dev/issue/62516 - Use t.Chdir when it's available.
-	oldCwd, err := os.Getwd()
-	if err != nil {
-		t.Fatalf("Failed to get current working directory: %v", err)
-	}
-	t.Cleanup(func() {
-		_ = os.Chdir(oldCwd)
-	})
-	if err = os.Chdir(repoDir); err != nil {
-		t.Fatalf("Failed to change to directory %s: %v", repoDir, err)
-	}
+	t.Chdir(repoDir)
 
 	// Don't load the system's or user's git configuration, as it may interfere with the test.
 	t.Setenv("GIT_CONFIG_GLOBAL", "/dev/null")
