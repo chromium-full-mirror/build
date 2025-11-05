@@ -102,7 +102,7 @@ def CheckGoChanges(input_api, output_api):
   cipd_root = input_api.os_path.join(input_api.change.RepositoryRoot(),
                                      '.cipd_bin')
   ensure_file_content = ('infra/3pp/tools/golangci-lint/${platform} '
-                         'version:3@2.4.0\n')
+                         'version:3@2.6.1\n')
   go = 'go'
   gofmt = 'gofmt'
   golangci_lint = input_api.os_path.join(cipd_root, 'golangci-lint')
