@@ -245,8 +245,8 @@ func (a *ideAnalyzer) Close(ctx context.Context) {
 
 func (a *ideAnalyzer) analyzeTarget(ctx context.Context, target string) (*pb.AnalysisResult, map[string]*pb.BuildableUnit) {
 	result := &pb.AnalysisResult{}
-	if strings.HasSuffix(target, "^") {
-		result.SourceFilePath = strings.TrimSuffix(target, "^")
+	if before, ok := strings.CutSuffix(target, "^"); ok {
+		result.SourceFilePath = before
 	}
 	nodes, err := a.targetForCPP(ctx, target)
 	if err != nil {

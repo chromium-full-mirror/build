@@ -88,7 +88,8 @@ func (v *ListValue) CopyWithOrigin(origin parse.Node) Value {
 }
 
 func (v *ListValue) RawGNString() string {
-	result := "["
+	var result strings.Builder
+	result.WriteString("[")
 	for i, value := range v.list {
 		if value == v {
 			// Handle edge case where self-referential lists are possible.
@@ -98,11 +99,12 @@ func (v *ListValue) RawGNString() string {
 			return "[...]"
 		}
 		if i > 0 {
-			result += ", "
+			result.WriteString(", ")
 		}
-		result += GNLiteralRvalue(value)
+		result.WriteString(GNLiteralRvalue(value))
 	}
-	return result + "]"
+	result.WriteString("]")
+	return result.String()
 }
 
 // starlark.Value interface.

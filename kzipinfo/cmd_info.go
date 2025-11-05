@@ -28,7 +28,7 @@ Shows summary information of a kzip file.
 }
 func (infoCmd) SetFlags(f *flag.FlagSet) {}
 
-func (c infoCmd) Execute(ctx context.Context, f *flag.FlagSet, args ...interface{}) subcommands.ExitStatus {
+func (c infoCmd) Execute(ctx context.Context, f *flag.FlagSet, args ...any) subcommands.ExitStatus {
 	if f.NArg() != 1 {
 		fmt.Fprintf(os.Stderr, "Error: No kzip file was provided.\n\nUsage: %s\n", c.Usage())
 		return subcommands.ExitUsageError

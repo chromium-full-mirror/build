@@ -6,6 +6,7 @@ package resolve
 
 import (
 	"fmt"
+	"strings"
 
 	"go.starlark.net/starlark"
 
@@ -88,7 +89,8 @@ func GNLiteralRvalue(v Value) string {
 	if str, ok := v.(*StringValue); ok {
 		// Direct port of the C++ GN string quotation logic.
 		// This includes iterating through char instead of runes.
-		result := "\""
+		var result strings.Builder
+		result.WriteString("\"")
 		hangingBackslash := false
 		for i := range len(str.value) {
 			ch := str.value[i]
@@ -96,23 +98,23 @@ func GNLiteralRvalue(v Value) string {
 			// character could form a valid escape sequence, we need to insert
 			// an extra backslash to prevent that.
 			if hangingBackslash && (ch == '$' || ch == '"' || ch == '\\') {
-				result += "\\"
+				result.WriteString("\\")
 			}
 			// If the next character is a dollar sign or double quote, it needs
 			// to be escaped; otherwise it can be printed as is.
 			if ch == '$' || ch == '"' {
-				result += "\\"
+				result.WriteString("\\")
 			}
-			result += string(ch)
+			result.WriteString(string(ch))
 			hangingBackslash = ch == '\\'
 		}
 		// Again, we need to prevent the closing double quotes from becoming
 		// an escape sequence.
 		if hangingBackslash {
-			result += "\\"
+			result.WriteString("\\")
 		}
-		result += "\""
-		return result
+		result.WriteString("\"")
+		return result.String()
 	}
 	return v.RawGNString()
 }

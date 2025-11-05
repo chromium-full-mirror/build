@@ -104,8 +104,8 @@ func (depsGCC) fixForSplitDwarf(ctx context.Context, cmd *execute.Cmd) {
 	}
 	dwo := ""
 	for _, out := range cmd.Outputs {
-		if strings.HasSuffix(out, ".o") { // TODO: or ".obj" for win?
-			dwo = strings.TrimSuffix(out, ".o") + ".dwo"
+		if before, ok := strings.CutSuffix(out, ".o"); ok { // TODO: or ".obj" for win?
+			dwo = before + ".dwo"
 			continue
 		}
 	}

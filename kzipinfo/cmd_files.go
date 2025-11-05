@@ -31,7 +31,7 @@ Scans all compilation units, extracts required input file information, and lists
 }
 func (filesCmd) SetFlags(f *flag.FlagSet) {}
 
-func (c filesCmd) Execute(ctx context.Context, f *flag.FlagSet, args ...interface{}) subcommands.ExitStatus {
+func (c filesCmd) Execute(ctx context.Context, f *flag.FlagSet, args ...any) subcommands.ExitStatus {
 	if f.NArg() != 1 {
 		fmt.Fprintf(os.Stderr, "Error: No kzip file was provided.\n\nUsage: %s\n", c.Usage())
 		return subcommands.ExitUsageError

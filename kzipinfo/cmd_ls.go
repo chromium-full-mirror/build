@@ -32,7 +32,7 @@ func (c *lsCmd) SetFlags(f *flag.FlagSet) {
 	f.StringVar(&c.sort, "sort", "", "Sort order for compilation units. Valid values: 'inputs'.")
 }
 
-func (c *lsCmd) Execute(ctx context.Context, f *flag.FlagSet, args ...interface{}) subcommands.ExitStatus {
+func (c *lsCmd) Execute(ctx context.Context, f *flag.FlagSet, args ...any) subcommands.ExitStatus {
 	if f.NArg() != 1 {
 		fmt.Fprintf(os.Stderr, "Error: No kzip file was provided.\n\nUsage: %s\n", c.Usage())
 		return subcommands.ExitUsageError

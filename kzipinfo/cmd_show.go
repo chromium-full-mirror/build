@@ -54,7 +54,7 @@ Shows information for a specific compilation unit.
 }
 func (showCmd) SetFlags(f *flag.FlagSet) {}
 
-func (c showCmd) Execute(ctx context.Context, f *flag.FlagSet, args ...interface{}) subcommands.ExitStatus {
+func (c showCmd) Execute(ctx context.Context, f *flag.FlagSet, args ...any) subcommands.ExitStatus {
 	if f.NArg() != 2 {
 		fmt.Fprintf(os.Stderr, "Error: Both a kzip file and CU digest must be provided.\n\nUsage: %s\n", c.Usage())
 		return subcommands.ExitUsageError

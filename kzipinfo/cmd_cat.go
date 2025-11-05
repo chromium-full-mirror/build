@@ -26,7 +26,7 @@ Retrieves and prints the complete content of the file identified by the given di
 }
 func (catCmd) SetFlags(f *flag.FlagSet) {}
 
-func (c catCmd) Execute(ctx context.Context, f *flag.FlagSet, args ...interface{}) subcommands.ExitStatus {
+func (c catCmd) Execute(ctx context.Context, f *flag.FlagSet, args ...any) subcommands.ExitStatus {
 	if f.NArg() != 2 {
 		fmt.Fprintf(os.Stderr, "Error: Both a kzip file and file digest must be provided.\n\nUsage: %s\n", c.Usage())
 		return subcommands.ExitUsageError

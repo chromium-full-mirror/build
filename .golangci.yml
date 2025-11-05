@@ -14,6 +14,7 @@ linters:
     - gomodguard
     - intrange
     - misspell
+    - modernize
     - unconvert
     - unparam
     - usetesting
