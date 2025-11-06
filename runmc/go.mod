@@ -1,3 +1,3 @@
 module go.chromium.org/build/runmc
 
-go 1.24.9
+go 1.24.10
