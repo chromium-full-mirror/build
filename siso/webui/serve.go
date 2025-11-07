@@ -28,7 +28,7 @@ import (
 	mwc "go.chromium.org/build/siso/third_party/material_web_components"
 )
 
-//go:embed *.html css/*.css
+//go:embed templates/*.html css/*.css
 var content embed.FS
 
 var (
@@ -143,7 +143,7 @@ type WebuiServer struct {
 	sisoVersion       string
 	localDevelopment  bool
 	port              int
-	templatesFS       fs.FS
+	staticFS          fs.FS
 	sseServer         *sseServer
 	execRoot          string
 	defaultOutdir     string
@@ -191,7 +191,11 @@ func (s *WebuiServer) loadView(view string) (*template.Template, error) {
 	if template, ok := templates[view]; ok {
 		return template, nil
 	}
-	template, err := template.New("").Funcs(baseFunctions).ParseFS(s.templatesFS, "base.html", view)
+	templatesFS, err := fs.Sub(s.staticFS, "templates")
+	if err != nil {
+		return nil, fmt.Errorf("templates not found: %w", err)
+	}
+	template, err := template.New("").Funcs(baseFunctions).ParseFS(templatesFS, "webui_base.html", view)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse view: %w", err)
 	}
@@ -216,7 +220,7 @@ func (s *WebuiServer) ensureCSS() error {
 		"css/dark-mc.css",
 		"css/style.css",
 	} {
-		f, err := s.templatesFS.Open(stylesheet)
+		f, err := s.staticFS.Open(stylesheet)
 		if err != nil {
 			return fmt.Errorf("failed to open %q: %w", stylesheet, err)
 		}
@@ -307,14 +311,14 @@ func NewServer(version string, localDevelopment bool, port int, defaultOutdir, c
 	s := WebuiServer{
 		sisoVersion:      version,
 		localDevelopment: localDevelopment,
-		templatesFS:      fs.FS(content),
+		staticFS:         fs.FS(content),
 		sseServer:        newSseServer(),
 		defaultOutdir:    defaultOutdir,
 		outdirMetrics:    make(map[string]*outdirInfo),
 		port:             port,
 	}
 	if localDevelopment {
-		s.templatesFS = os.DirFS("webui/")
+		s.staticFS = os.DirFS("webui/")
 	}
 
 	// Get execroot.
