@@ -104,10 +104,9 @@ found in the LICENSE file. */}}
     };
     // Open in Perfetto.
     const PERFETTO_ORIGIN = 'https://ui.perfetto.dev';
-    const TRACE_URL = new URL('{{.outdirRevBaseURL}}/logs/siso_trace.json?raw=true', document.baseURI).href;
-    window.openInPerfetto = async () => {
+    window.openInPerfetto = async (traceUrl) => {
       // TODO: check for and present errors.
-      const resp = await fetch(TRACE_URL);
+      const resp = await fetch(traceUrl);
       const blob = await resp.blob();
       const arrayBuffer = await blob.arrayBuffer();
       // Technique to deep-link to Perfetto documented in:
@@ -119,7 +118,7 @@ found in the LICENSE file. */}}
         window.clearInterval(timer);
         window.removeEventListener('message', onMessageHandler);
         const reopenUrl = new URL(location.href);
-        reopenUrl.hash = `#reopen=${TRACE_URL}`;
+        reopenUrl.hash = `#reopen=${traceUrl}`;
         handle.postMessage({
           perfetto: {
             buffer: arrayBuffer,
@@ -178,10 +177,6 @@ found in the LICENSE file. */}}
         </div>
       </div>
       <div class="header-controls">
-        <md-text-button trailing-icon onclick="openInPerfetto()">
-          Open in Perfetto
-          <md-icon slot="icon">open_in_new</md-icon>
-        </md-text-button>
         <md-icon-button class="toggle-dark-mode" onclick="toggleDarkMode()">
           <md-icon></md-icon>
         </md-icon-button>

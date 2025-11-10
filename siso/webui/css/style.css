@@ -183,6 +183,8 @@ html, body {
 
     > li {
         position: relative;
+        padding: 0 0 var(--timeline-vertical-spacing) 0;
+        --md-icon-size: 20px;
     }
     .rev-label {
         position: relative;
@@ -206,7 +208,7 @@ html, body {
         padding:
             var(--timeline-vertical-padding)
             var(--timeline-horizontal-padding)
-            var(--timeline-vertical-spacing)
+            0
             calc(var(--timeline-horizontal-padding) + var(--timeline-dot-indent));
         color: var(--md-sys-color-on-surface-variant);
         font-weight: var(--md-sys-typescale-body-medium-weight);
@@ -559,6 +561,58 @@ a {
     color: var(--md-sys-color-primary);
     text-decoration: none;
     &:focus-visible, &:hover {
+        text-decoration: underline;
+    }
+}
+
+/* Link buttons.
+ *
+ * Use this to style a <button> to look like a hyperlink.
+ * This is useful for situations where a deemphasized appearance is desired.
+ *
+ * Consider using <md-text-button> instead if the significantly enlarged
+ * touch-friendly target and Material Design ripple behavior are acceptable.
+ *
+ * For context on why <button> is preferred over <a>, even if a text-like
+ * appearance is desired:
+ * https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Elements/a#onclick_events
+ *
+ * Adding a Material Design icon is supported, but text must be wrapped in
+ * an item with class="text" in order to display underlines correctly.
+ *
+ * Examples:
+ *
+ *     <button class="link-button">Hello world</button>
+ *
+ *     <button class="link-button">
+ *         <md-icon>check</md-icon>
+ *         <span class="text">Done</span>
+ *     </button>
+ */
+.link-button {
+    /* This is the part to style it like a link. */
+    border: 0;
+    background: transparent;
+    color: var(--md-sys-color-primary);
+    font-family: inherit;
+    font-weight: var(--md-ref-typeface-weight-regular);
+    cursor: pointer;
+    &:hover {
+        text-decoration: underline;
+    }
+    /* Vertically center everything, since you're most likely going to
+     * just have an icon and text here at most. */
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+}
+.link-button:has(md-icon):has(.text) {
+    /* If the link button has both an md-icon and .text element,
+     * then disable underline on the md-icon and only enable on .text */
+    &:hover {
+        text-decoration: none;
+    }
+    &:hover .text {
         text-decoration: underline;
     }
 }
