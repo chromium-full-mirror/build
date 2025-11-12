@@ -61,7 +61,7 @@ func (*ideAnalysisCommand) Name() string {
 }
 
 func (*ideAnalysisCommand) Synopsis() string {
-	return "query ninja build graph ofor Cider-G"
+	return "query ninja build graph for Cider-G"
 }
 
 func (*ideAnalysisCommand) Usage() string {
