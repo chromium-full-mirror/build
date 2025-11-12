@@ -656,11 +656,13 @@ func (c *Command) run(ctx context.Context) (stats build.Stats, err error) {
 		spin.Stop(nil)
 	}
 	if c.enableCloudLogging {
+		spin := ui.Default.NewSpinner()
+		spin.Start("init cloud logging")
 		logCtx, loggerURL, done, err := c.initCloudLogging(ctx, projectID, execRoot, credential)
+		spin.Stop(err)
 		if err != nil {
 			// b/335295396 Compile step hitting write requests quota
 			// rather than build fails, fallback to glog.
-			ui.Default.Errorf("cloud logging: %v\n", err)
 			ui.Default.Warningf("fallback to glog\n")
 			c.enableCloudLogging = false
 		} else {
