@@ -9,7 +9,7 @@ import (
 )
 
 // PathTable manages the mapping between path strings and unique integer indices.
-// It is designed to be thread-safe.
+// It is NOT designed to be thread-safe.
 type PathTable struct {
 	pathToIdx map[string]int
 	idxToPath []string
