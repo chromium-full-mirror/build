@@ -552,34 +552,54 @@ func (hfs *HashFS) SetState(ctx context.Context, state *pb.State) error {
 		defer close(hfs.setStateCh)
 		// name is sorted in state.Entries.
 
-		// store dir early.
-		// otherwise, flaky confirm no-op failure
-		// for step that outputs dir and dir/file.
-		// i.e. if dir/file is stored before dir,
-		// dir/file's cmdhash etc will be lost.
-		for i, ent := range state.Entries {
-			e := dirs[i]
-			if e == nil {
-				continue
+		{
+			// store dir early.
+			// otherwise, flaky confirm no-op failure
+			// for step that outputs dir and dir/file.
+			// i.e. if dir/file is stored before dir,
+			// dir/file's cmdhash etc will be lost.
+			eg, gctx := errgroup.WithContext(ctx)
+			eg.SetLimit(runtimex.NumCPU())
+			for i, ent := range state.Entries {
+				e := dirs[i]
+				if e == nil {
+					continue
+				}
+				eg.Go(func() error {
+					_, err := hfs.directory.store(gctx, ent.Name, e)
+					if err != nil {
+						return fmt.Errorf("failed to store dir %s: %w", ent.Name, err)
+					}
+					return nil
+				})
 			}
-			_, err := hfs.directory.store(ctx, ent.Name, e)
+			err := eg.Wait()
 			if err != nil {
 				hfs.clean.Store(false)
-				hfs.setStateCh <- fmt.Errorf("failed to store dir %s: %w", ent.Name, err)
+				hfs.setStateCh <- err
 				return
 			}
 		}
+		eg, gctx := errgroup.WithContext(ctx)
+		eg.SetLimit(runtimex.NumCPU())
 		for i, ent := range state.Entries {
 			e := entries[i]
 			if e == nil {
 				continue
 			}
-			_, err := hfs.directory.store(ctx, ent.Name, e)
-			if err != nil {
-				hfs.clean.Store(false)
-				hfs.setStateCh <- fmt.Errorf("failed to store file %s: %w", ent.Name, err)
-				return
-			}
+			eg.Go(func() error {
+				_, err := hfs.directory.store(gctx, ent.Name, e)
+				if err != nil {
+					return fmt.Errorf("failed to store file %s: %w", ent.Name, err)
+				}
+				return nil
+			})
+		}
+		err := eg.Wait()
+		if err != nil {
+			hfs.clean.Store(false)
+			hfs.setStateCh <- err
+			return
 		}
 		hfs.loaded.Store(true)
 		clog.Infof(ctx, "set state done: clean:%t loaded:true: %s", hfs.clean.Load(), time.Since(start))
