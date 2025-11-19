@@ -955,7 +955,10 @@ func (e *ensureOutDirs) run(ctx context.Context, path *Path, graph Graph) {
 				return
 			}
 			fname := targetPath(ctx, graph, target)
-			dir := filepath.ToSlash(filepath.Join(path.ExecRoot, filepath.Dir(fname)))
+			dir := filepath.ToSlash(filepath.Dir(fname))
+			if !filepath.IsAbs(dir) {
+				dir = filepath.ToSlash(filepath.Join(path.ExecRoot, dir))
+			}
 			_, found := e.knownDirs[dir]
 			if found {
 				continue
