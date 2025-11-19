@@ -402,7 +402,9 @@ func (hfs *HashFS) SetState(ctx context.Context, state *pb.State) error {
 				}
 				// symlink matches, make entry equals local
 				if et != entryEqLocal {
-					clog.Warningf(ctx, "symlink target match %q: state=%v->%v", ent.Name, et, entryEqLocal)
+					if log.V(1) {
+						clog.Warningf(ctx, "symlink target match %q: state=%v->%v", ent.Name, et, entryEqLocal)
+					}
 					et = entryEqLocal
 				}
 			} else if !e.d.IsZero() && len(h) > 0 && et != entryEqLocal && !dirty.Load() {
