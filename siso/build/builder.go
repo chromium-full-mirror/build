@@ -693,16 +693,6 @@ func (b *Builder) Build(ctx context.Context, name string, args ...string) (err e
 		fmt.Fprintf(b.explainWriter, "--clobber is specified\n")
 	}
 
-	// prepare all output directories for local process and reproxy,
-	// to minimize mkdir operations.
-	// if we create out dirs before each action concurrently,
-	// need to check the dir many times and worry about race.
-	err = b.prepareAllOutDirs(ctx)
-	if err != nil {
-		clog.Warningf(ctx, "failed to prepare all out dirs: %v", err)
-		return err
-	}
-
 	var wg sync.WaitGroup
 	var stuck bool
 	errch := make(chan error, 1000)
@@ -1244,61 +1234,6 @@ func (b *Builder) finalizeTrace(ctx context.Context, tc *trace.Context) {
 	b.traceStats.update(tc)
 	b.traceExporter.Export(ctx, tc)
 	b.tracePprof.Add(ctx, tc)
-}
-
-func (b *Builder) prepareAllOutDirs(ctx context.Context) error {
-	started := time.Now()
-	seen := make(map[string]struct{})
-	// Collect only the deepest directories to avoid redundant `os.MkdirAll`.
-	for target, ti := range b.plan.targets {
-		if !ti.output {
-			continue
-		}
-		p, err := b.graph.TargetPath(ctx, Target(target))
-		if err != nil {
-			return err
-		}
-		seen[filepath.Dir(p)] = struct{}{}
-	}
-	dirs := make([]string, 0, len(seen))
-	for dir := range seen {
-		dirs = append(dirs, dir)
-	}
-	ndirs := len(dirs)
-	sort.Strings(dirs)
-	// Delete intermediate directories of `dir` from `seen`, because
-	// `os.MkdirAll` will create the intermediate directories anyway.
-	for _, dir := range dirs {
-		for {
-			pdir := filepath.Dir(dir)
-			_, found := seen[pdir]
-			if !found {
-				break
-			}
-			delete(seen, pdir)
-			dir = pdir
-		}
-	}
-	dirs = dirs[:0]
-	for dir := range seen {
-		dirs = append(dirs, dir)
-	}
-	sort.Strings(dirs)
-	clog.Infof(ctx, "prepare out dirs: targets:%d -> %d -> %d ", len(b.plan.targets), ndirs, len(dirs))
-	for _, dir := range dirs {
-		// we don't use hashfs here for performance.
-		// just create dirs on local disk, so reproxy and local process
-		// can detect the dirs.
-		if !filepath.IsAbs(dir) {
-			dir = filepath.Join(b.path.ExecRoot, dir)
-		}
-		err := os.MkdirAll(dir, 0755)
-		if err != nil {
-			return err
-		}
-	}
-	clog.Infof(ctx, "prepare out dirs %d in %s", len(dirs), time.Since(started))
-	return nil
 }
 
 func (b *Builder) ActiveSteps() []ActiveStepInfo {

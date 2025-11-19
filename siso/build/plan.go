@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"os"
 	"path/filepath"
 	"slices"
 	"sort"
@@ -231,6 +232,8 @@ type scheduler struct {
 	path   *Path
 	hashFS *hashfs.HashFS
 
+	outDirs ensureOutDirs
+
 	plan *plan
 
 	// number of steps scheduled.
@@ -259,7 +262,7 @@ func targetPath(ctx context.Context, g Graph, t Target) string {
 }
 
 // schedule schedules build plans for args from graph into sched.
-func schedule(ctx context.Context, sched *scheduler, graph Graph, args ...string) error {
+func schedule(ctx context.Context, sched *scheduler, graph Graph, args ...string) (retErr error) {
 	targets, err := graph.Targets(ctx, args...)
 	started := time.Now()
 	clog.Infof(ctx, "schedule targets: %v [%d]: %v", targets, graph.NumTargets(), err)
@@ -281,6 +284,9 @@ func schedule(ctx context.Context, sched *scheduler, graph Graph, args ...string
 			ui.Default.PrintLines(fmt.Sprintf("target: %q\n    ->  %q\n\n", args, targetNames))
 		}
 	}
+	sched.outDirs.init()
+	go sched.outDirs.run(ctx, sched.path, graph)
+
 	// validationQueue collects validation targets found during scheduling.
 	var validationQueue []Target
 	for _, t := range targets {
@@ -314,8 +320,7 @@ func schedule(ctx context.Context, sched *scheduler, graph Graph, args ...string
 			}
 		}
 	}
-	sched.finish(ctx, time.Since(started))
-	return nil
+	return sched.finish(ctx, started)
 }
 
 // DependencyCycleError is error type for dependency cycle.
@@ -617,7 +622,7 @@ func (s *scheduler) progressReport(format string, args ...any) {
 }
 
 // finish finishes the scheduling.
-func (s *scheduler) finish(ctx context.Context, d time.Duration) {
+func (s *scheduler) finish(ctx context.Context, started time.Time) error {
 	s.plan.mu.Lock()
 	defer s.plan.mu.Unlock()
 
@@ -663,11 +668,14 @@ func (s *scheduler) finish(ctx context.Context, d time.Duration) {
 	s.plan.pushReadyUnlocked()
 	nready := len(s.plan.q) + len(s.plan.ready)
 	npendings := s.plan.npendings
+	err := s.outDirs.wait()
+	d := time.Since(started)
 	clog.Infof(ctx, "schedule finish pending:%d+ready:%d (node:%d edge:%d) in %s", npendings, nready, len(s.plan.targets), s.visited, d)
 	if d < ui.DurationThreshold {
-		return
+		return err
 	}
 	s.progressReport("%6s schedule pending:%d+ready:%d (node:%d edge:%d)\n", ui.FormatDuration(d), npendings, nready, len(s.plan.targets), s.visited)
+	return err
 }
 
 // addStep adds a Step to the scheduler.
@@ -694,6 +702,7 @@ func (s *scheduler) addStep(ctx context.Context, step *Step, target Target) {
 		// don't add output for phony targets. https://crbug.com/1517575
 		for _, output := range step.outputs {
 			s.plan.targets[output].output = true
+			s.outDirs.ensure(output)
 		}
 	}
 	if log.V(1) {
@@ -910,4 +919,75 @@ func suggestTargets(ctx context.Context, sched *scheduler, graph Graph, args ...
 		}
 	}
 	return suggests
+}
+
+// prepare all output directories for local process and reproxy,
+// to minimize mkdir operations.
+// if we create out dirs before each action concurrently,
+// need to check the dir many times and worry about race.
+// TODO: remove this once generator makes sure out dirs in gen time.
+// gn: https://crbug.com/gn/461698357
+// soong: b/461917619
+type ensureOutDirs struct {
+	req       chan Target
+	done      chan error
+	err       error
+	knownDirs map[string]struct{}
+}
+
+func (e *ensureOutDirs) init() {
+	e.req = make(chan Target, 1000)
+	e.done = make(chan error)
+	e.knownDirs = make(map[string]struct{})
+}
+
+func (e *ensureOutDirs) run(ctx context.Context, path *Path, graph Graph) {
+	defer func() {
+		e.done <- e.err
+	}()
+	for {
+		select {
+		case <-ctx.Done():
+			e.err = context.Cause(ctx)
+			return
+		case target, ok := <-e.req:
+			if !ok {
+				return
+			}
+			fname := targetPath(ctx, graph, target)
+			dir := filepath.ToSlash(filepath.Join(path.ExecRoot, filepath.Dir(fname)))
+			_, found := e.knownDirs[dir]
+			if found {
+				continue
+			}
+			err := os.MkdirAll(dir, 0755)
+			if err != nil && e.err == nil {
+				e.err = err
+				continue
+			}
+			e.knownDirs[dir] = struct{}{}
+			dir = filepath.ToSlash(filepath.Dir(dir))
+			for {
+				_, found := e.knownDirs[dir]
+				if found {
+					break
+				}
+				e.knownDirs[dir] = struct{}{}
+				pdir := filepath.ToSlash(filepath.Dir(dir))
+				if pdir == dir {
+					break
+				}
+				dir = pdir
+			}
+		}
+	}
+}
+
+func (e *ensureOutDirs) ensure(t Target) {
+	e.req <- t
+}
+
+func (e *ensureOutDirs) wait() error {
+	close(e.req)
+	return <-e.done
 }
