@@ -41,6 +41,9 @@ func CPPScan(ctx context.Context, fname string, buf []byte) ([]string, map[strin
 			buf = buf[i+1:]
 		}
 		lineStart := line
+		if len(line) == 0 {
+			continue
+		}
 		if line[0] != '#' {
 			// not directive line
 			if log.V(3) {
@@ -56,6 +59,13 @@ func CPPScan(ctx context.Context, fname string, buf []byte) ([]string, map[strin
 		switch {
 		case bytes.HasPrefix(line, []byte("include")):
 			line = bytes.TrimPrefix(line, []byte("include"))
+			if len(line) == 0 {
+				if log.V(2) {
+					logLineStart := lineStart
+					clog.Infof(ctx, "skip %q", logLineStart)
+				}
+				continue
+			}
 			switch {
 			case bytes.HasPrefix(line, []byte("_next")):
 				// #include_next
@@ -72,6 +82,13 @@ func CPPScan(ctx context.Context, fname string, buf []byte) ([]string, map[strin
 			}
 		case bytes.HasPrefix(line, []byte("import")):
 			line = bytes.TrimPrefix(line, []byte("import"))
+			if len(line) == 0 {
+				if log.V(2) {
+					logLineStart := lineStart
+					clog.Infof(ctx, "skip %q", logLineStart)
+				}
+				continue
+			}
 			switch line[0] {
 			case ' ', '\t':
 			default:
@@ -84,6 +101,13 @@ func CPPScan(ctx context.Context, fname string, buf []byte) ([]string, map[strin
 
 		case bytes.HasPrefix(line, []byte("define")):
 			line = bytes.TrimPrefix(line, []byte("define"))
+			if len(line) == 0 {
+				if log.V(2) {
+					logLineStart := lineStart
+					clog.Infof(ctx, "skip %q", logLineStart)
+				}
+				continue
+			}
 			switch line[0] {
 			case ' ', '\t':
 			default:

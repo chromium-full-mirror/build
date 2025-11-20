@@ -115,6 +115,33 @@ namespace base {
 			},
 			wantDefines: map[string][]string{},
 		},
+		{
+			name: "no-include",
+			buf: `
+#include
+`,
+			wantDefines: map[string][]string{},
+		},
+		{
+			name: "no-define",
+			buf: `
+#define
+`,
+			wantDefines: map[string][]string{},
+		},
+		{
+			name: "no-directive",
+			buf: `
+#
+`,
+			wantDefines: map[string][]string{},
+		},
+		{
+			name: "empty-line",
+			buf: `
+`,
+			wantDefines: map[string][]string{},
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			gotIncludes, gotDefines, err := CPPScan(ctx, tc.name, []byte(tc.buf))
