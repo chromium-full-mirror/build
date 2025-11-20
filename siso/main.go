@@ -23,6 +23,7 @@ import (
 	"go.chromium.org/build/siso/auth/cred"
 	"go.chromium.org/build/siso/hashfs/osfs"
 	"go.chromium.org/build/siso/subcmd/auth"
+	"go.chromium.org/build/siso/subcmd/collector"
 	"go.chromium.org/build/siso/subcmd/fetch"
 	"go.chromium.org/build/siso/subcmd/fscmd"
 	"go.chromium.org/build/siso/subcmd/isolate"
@@ -245,6 +246,7 @@ Use "siso flags" to display all flags.
 
 	authOpts := cred.AuthOpts(credHelper)
 	subcommands.Register(ninja.Cmd(authOpts, versionID), "")
+	subcommands.Register(collector.Cmd(authOpts, versionID), "")
 
 	subcommands.Register(recall.Cmd(authOpts), "reapi")
 	subcommands.Register(fetch.Cmd(authOpts), "reapi")

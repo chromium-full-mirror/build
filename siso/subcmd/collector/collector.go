@@ -1,0 +1,105 @@
+// Copyright 2025 The Chromium Authors
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+package collector
+
+import (
+	"context"
+	"flag"
+	"fmt"
+	"log"
+	"os"
+
+	"github.com/google/subcommands"
+	"go.opentelemetry.io/collector/confmap"
+	envprovider "go.opentelemetry.io/collector/confmap/provider/envprovider"
+	fileprovider "go.opentelemetry.io/collector/confmap/provider/fileprovider"
+	httpprovider "go.opentelemetry.io/collector/confmap/provider/httpprovider"
+	httpsprovider "go.opentelemetry.io/collector/confmap/provider/httpsprovider"
+	yamlprovider "go.opentelemetry.io/collector/confmap/provider/yamlprovider"
+	"go.opentelemetry.io/collector/otelcol"
+
+	"go.chromium.org/build/siso/auth/cred"
+)
+
+type Command struct {
+	authOpts   cred.Options
+	version    string
+	configFile string
+}
+
+func Cmd(authOpts cred.Options, version string) *Command {
+	return &Command{
+		authOpts: authOpts,
+		version:  version,
+	}
+}
+
+func (*Command) Name() string {
+	return "collector"
+}
+
+func (*Command) Synopsis() string {
+	return "OTEL collector daemon"
+}
+
+func (*Command) Usage() string {
+	return "Starts the OTEL collector daemon."
+}
+
+func (c *Command) SetFlags(flagSet *flag.FlagSet) {
+	flagSet.StringVar(&c.configFile, "config", "", "path to config file or the config itself in yaml format.")
+}
+func (c *Command) Execute(ctx context.Context, f *flag.FlagSet, args ...any) subcommands.ExitStatus {
+	credential, err := cred.New(ctx, "https://logging.googleapis.com/", c.authOpts)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		return subcommands.ExitFailure
+	}
+
+	set := otelcol.CollectorSettings{
+		Factories: func() (otelcol.Factories, error) {
+			return components(credential)
+		},
+		ConfigProviderSettings: otelcol.ConfigProviderSettings{
+			ResolverSettings: confmap.ResolverSettings{
+				ProviderFactories: []confmap.ProviderFactory{
+					envprovider.NewFactory(),
+					fileprovider.NewFactory(),
+					httpprovider.NewFactory(),
+					httpsprovider.NewFactory(),
+					yamlprovider.NewFactory(),
+				},
+			},
+		},
+		ProviderModules: map[string]string{
+			envprovider.NewFactory().Create(confmap.ProviderSettings{}).Scheme():   "go.opentelemetry.io/collector/confmap/provider/envprovider",
+			fileprovider.NewFactory().Create(confmap.ProviderSettings{}).Scheme():  "go.opentelemetry.io/collector/confmap/provider/fileprovider",
+			httpprovider.NewFactory().Create(confmap.ProviderSettings{}).Scheme():  "go.opentelemetry.io/collector/confmap/provider/httpprovider",
+			httpsprovider.NewFactory().Create(confmap.ProviderSettings{}).Scheme(): "go.opentelemetry.io/collector/confmap/provider/httpsprovider",
+			yamlprovider.NewFactory().Create(confmap.ProviderSettings{}).Scheme():  "go.opentelemetry.io/collector/confmap/provider/yamlprovider",
+		},
+		ConverterModules: []string{},
+	}
+
+	otelcolArgs := f.Args()
+	if c.configFile != "" {
+		otelcolArgs = append(otelcolArgs, "--config", c.configFile)
+	}
+
+	if err := run(set, otelcolArgs); err != nil {
+		log.Fatal(err)
+		return subcommands.ExitFailure
+	}
+	return subcommands.ExitSuccess
+}
+
+func runInteractive(params otelcol.CollectorSettings, args []string) error {
+	cmd := otelcol.NewCommand(params)
+	cmd.SetArgs(args)
+	if err := cmd.Execute(); err != nil {
+		log.Fatalf("collector server run finished with error: %v", err)
+	}
+
+	return nil
+}
