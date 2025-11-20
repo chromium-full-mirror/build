@@ -404,8 +404,7 @@ func BenchmarkStat(b *testing.B) {
 	fname := "out/siso/gen/base/base/base.o.d"
 	b.Run("not_exist", func(b *testing.B) {
 		b.ReportAllocs()
-		b.ResetTimer()
-		for range b.N {
+		for b.Loop() {
 			_, err := hfs.Stat(ctx, dir, fname)
 			if !errors.Is(err, fs.ErrNotExist) {
 				b.Fatalf("hfs.Stat(ctx,%q,%q)=%v; want %v", dir, fname, err, fs.ErrNotExist)
@@ -420,8 +419,7 @@ func BenchmarkStat(b *testing.B) {
 
 	b.Run("emptyfile", func(b *testing.B) {
 		b.ReportAllocs()
-		b.ResetTimer()
-		for range b.N {
+		for b.Loop() {
 			_, err := hfs.Stat(ctx, dir, fname)
 			if err != nil {
 				b.Fatalf("hfs.Stat(ctx,%q,%q)=%v; want nil", dir, fname, err)
