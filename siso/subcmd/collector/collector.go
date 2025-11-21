@@ -4,11 +4,13 @@
 package collector
 
 import (
+	"bytes"
 	"context"
 	"flag"
 	"fmt"
 	"log"
 	"os"
+	"text/template"
 
 	"github.com/google/subcommands"
 	"go.opentelemetry.io/collector/confmap"
@@ -20,12 +22,17 @@ import (
 	"go.opentelemetry.io/collector/otelcol"
 
 	"go.chromium.org/build/siso/auth/cred"
+
+	_ "embed"
 )
 
+//go:embed config.yaml.tmpl
+var collectorConfig []byte
+
 type Command struct {
-	authOpts   cred.Options
-	version    string
-	configFile string
+	authOpts  cred.Options
+	version   string
+	projectID string
 }
 
 func Cmd(authOpts cred.Options, version string) *Command {
@@ -48,12 +55,26 @@ func (*Command) Usage() string {
 }
 
 func (c *Command) SetFlags(flagSet *flag.FlagSet) {
-	flagSet.StringVar(&c.configFile, "config", "", "path to config file or the config itself in yaml format.")
+	flagSet.StringVar(&c.projectID, "project", os.Getenv("SISO_PROJECT"), "cloud project ID. can be set by $SISO_PROJECT")
 }
+
 func (c *Command) Execute(ctx context.Context, f *flag.FlagSet, args ...any) subcommands.ExitStatus {
 	credential, err := cred.New(ctx, "https://logging.googleapis.com/", c.authOpts)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		return subcommands.ExitFailure
+	}
+
+	tmpl, err := template.New("collector-config").Parse(string(collectorConfig))
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error parsing embedded config template: %v\n", err)
+		return subcommands.ExitFailure
+	}
+
+	var configBuf bytes.Buffer
+	err = tmpl.Execute(&configBuf, map[string]string{"projectID": c.projectID})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error executing config template: %v\n", err)
 		return subcommands.ExitFailure
 	}
 
@@ -83,9 +104,7 @@ func (c *Command) Execute(ctx context.Context, f *flag.FlagSet, args ...any) sub
 	}
 
 	otelcolArgs := f.Args()
-	if c.configFile != "" {
-		otelcolArgs = append(otelcolArgs, "--config", c.configFile)
-	}
+	otelcolArgs = append(otelcolArgs, "--config", "yaml:"+configBuf.String())
 
 	if err := run(set, otelcolArgs); err != nil {
 		log.Fatal(err)
