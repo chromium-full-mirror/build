@@ -266,7 +266,7 @@ func (s *scanner) find(ctx context.Context, name string) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		dirIndex := s.pt.GetIndex(".")
+		dirIndex := s.pt.Index(".")
 		if dirIndex > math.MaxUint16 {
 			return "", fmt.Errorf("path table overflow: %d", dirIndex)
 		}
@@ -296,7 +296,7 @@ func (s *scanner) find(ctx context.Context, name string) (string, error) {
 		// TODO: lookup hmap appropriately.
 		s.ds = ds
 		for i, dir := range ds {
-			dirIndex := s.pt.GetIndex(dir)
+			dirIndex := s.pt.Index(dir)
 			if dirIndex > math.MaxUint16 {
 				return "", fmt.Errorf("path table overflow: %d", dirIndex)
 			}
@@ -348,7 +348,7 @@ func (s *scanner) find(ctx context.Context, name string) (string, error) {
 				clog.Infof(ctx, "check framework %s -> %s : %s", name, fwname, s.fsview.frameworkPaths)
 			}
 			for _, dir := range s.fsview.frameworkPaths {
-				dirIndex := s.pt.GetIndex(dir)
+				dirIndex := s.pt.Index(dir)
 				if dirIndex > math.MaxUint16 {
 					return "", fmt.Errorf("path table overflow: %d", dirIndex)
 				}
@@ -397,7 +397,7 @@ func (s *scanner) macroCheck(ctx context.Context, dirIndex uint16, name, incpath
 			// need to try include again
 			// because macro value may have been changed.
 			if !s.macroInclude[incpath] {
-				dir, err := s.pt.GetPath(int(dirIndex))
+				dir, err := s.pt.Path(int(dirIndex))
 				if err != nil {
 					clog.Warningf(ctx, "failed to get path for index %d: %v", dirIndex, err)
 					return

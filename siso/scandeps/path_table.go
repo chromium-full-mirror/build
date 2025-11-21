@@ -22,9 +22,9 @@ func NewPathTable() *PathTable {
 	}
 }
 
-// GetIndex returns the unique integer index for a given path string.
+// Index returns the unique integer index for a given path string.
 // If the path is new, it assigns a new index and stores the mapping.
-func (pt *PathTable) GetIndex(path string) int {
+func (pt *PathTable) Index(path string) int {
 	idx, ok := pt.pathToIdx[path]
 	if ok {
 		return idx
@@ -36,9 +36,9 @@ func (pt *PathTable) GetIndex(path string) int {
 	return idx
 }
 
-// GetPath returns the path string for a given integer index.
+// Path returns the path string for a given integer index.
 // It returns an error if the index is invalid.
-func (pt *PathTable) GetPath(idx int) (string, error) {
+func (pt *PathTable) Path(idx int) (string, error) {
 	if idx < 0 || idx >= len(pt.idxToPath) {
 		return "", fmt.Errorf("invalid path index %d", idx)
 	}

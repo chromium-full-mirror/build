@@ -10,7 +10,7 @@ import (
 
 func TestNewPathTable(t *testing.T) {
 	pt := NewPathTable()
-	_, err := pt.GetPath(0)
+	_, err := pt.Path(0)
 	if err == nil {
 		t.Fatalf("Expected error for index 0 on a new table, but got none")
 	}
@@ -28,47 +28,47 @@ func TestGetIndexAndGetPath(t *testing.T) {
 	// 1. Add a new path and verify its index and retrieval.
 	path1 := "path/to/file1.h"
 	wantIdx1 := 0
-	gotIdx1 := pt.GetIndex(path1)
+	gotIdx1 := pt.Index(path1)
 	if gotIdx1 != wantIdx1 {
-		t.Errorf("GetIndex(%q) = %d; want %d", path1, gotIdx1, wantIdx1)
+		t.Errorf("Index(%q) = %d; want %d", path1, gotIdx1, wantIdx1)
 	}
-	gotPath1, err := pt.GetPath(gotIdx1)
+	gotPath1, err := pt.Path(gotIdx1)
 	if err != nil {
-		t.Errorf("GetPath(%d) returned error: %v; want nil", gotIdx1, err)
+		t.Errorf("Path(%d) returned error: %v; want nil", gotIdx1, err)
 	}
 	if gotPath1 != path1 {
-		t.Errorf("GetPath(%d) = %q; want %q", gotIdx1, gotPath1, path1)
+		t.Errorf("Path(%d) = %q; want %q", gotIdx1, gotPath1, path1)
 	}
 
 	// 2. Add a second path.
 	path2 := "path/to/file2.cc"
 	wantIdx2 := 1
-	gotIdx2 := pt.GetIndex(path2)
+	gotIdx2 := pt.Index(path2)
 	if gotIdx2 != wantIdx2 {
-		t.Errorf("GetIndex(%q) = %d; want %d", path2, gotIdx2, wantIdx2)
+		t.Errorf("Index(%q) = %d; want %d", path2, gotIdx2, wantIdx2)
 	}
 
 	// 3. Get the first path again to ensure it returns the same index.
-	gotIdx1Again := pt.GetIndex(path1)
+	gotIdx1Again := pt.Index(path1)
 	if gotIdx1Again != wantIdx1 {
-		t.Errorf("GetIndex(%q) again = %d; want %d", path1, gotIdx1Again, wantIdx1)
+		t.Errorf("Index(%q) again = %d; want %d", path1, gotIdx1Again, wantIdx1)
 	}
 
 	// 4. Add an empty string path.
 	path3 := ""
 	wantIdx3 := 2
-	gotIdx3 := pt.GetIndex(path3)
+	gotIdx3 := pt.Index(path3)
 	if gotIdx3 != wantIdx3 {
-		t.Errorf("GetIndex(%q) = %d; want %d", path3, gotIdx3, wantIdx3)
+		t.Errorf("Index(%q) = %d; want %d", path3, gotIdx3, wantIdx3)
 	}
 
 	// 5. Test invalid indices.
-	_, err = pt.GetPath(999)
+	_, err = pt.Path(999)
 	if err == nil {
-		t.Errorf("GetPath(999) expected error, got nil")
+		t.Errorf("Path(999) expected error, got nil")
 	}
-	_, err = pt.GetPath(-1)
+	_, err = pt.Path(-1)
 	if err == nil {
-		t.Errorf("GetPath(-1) expected error, got nil")
+		t.Errorf("Path(-1) expected error, got nil")
 	}
 }
