@@ -4,7 +4,7 @@ receivers:
       grpc:
 exporters:
   googlecloud:
-    project: {{.projectID}}
+    # project is set in "siso collector"
     log:
       default_log_name: opentelemetry.io/collector-exported-log
     metric:

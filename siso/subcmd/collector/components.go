@@ -20,7 +20,7 @@ import (
 	"go.chromium.org/build/siso/auth/cred"
 )
 
-func components(credential cred.Cred) (otelcol.Factories, error) {
+func components(credential cred.Cred, projectID string) (otelcol.Factories, error) {
 	var err error
 	factories := otelcol.Factories{}
 
@@ -44,6 +44,7 @@ func components(credential cred.Cred) (otelcol.Factories, error) {
 	exporterFactory := &gceFactory{
 		Factory:    googlecloudexporter.NewFactory(),
 		credential: credential,
+		projectID:  projectID,
 	}
 	factories.Exporters, err = otelcol.MakeFactoryMap[exporter.Factory](
 		exporterFactory,
@@ -75,10 +76,12 @@ func components(credential cred.Cred) (otelcol.Factories, error) {
 type gceFactory struct {
 	exporter.Factory
 	credential cred.Cred
+	projectID  string
 }
 
 func (f gceFactory) CreateDefaultConfig() component.Config {
 	config := f.Factory.CreateDefaultConfig().(*googlecloudexporter.Config)
+	config.ProjectID = f.projectID
 	config.TraceConfig.ClientConfig.GetClientOptions = f.credential.ClientOptions
 	config.LogConfig.ClientConfig.GetClientOptions = f.credential.ClientOptions
 	config.MetricConfig.ClientConfig.GetClientOptions = f.credential.ClientOptions

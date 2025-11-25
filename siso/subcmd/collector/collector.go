@@ -4,13 +4,11 @@
 package collector
 
 import (
-	"bytes"
 	"context"
 	"flag"
 	"fmt"
 	"log"
 	"os"
-	"text/template"
 
 	"github.com/google/subcommands"
 	"go.opentelemetry.io/collector/confmap"
@@ -26,7 +24,7 @@ import (
 	_ "embed"
 )
 
-//go:embed config.yaml.tmpl
+//go:embed config.yaml
 var collectorConfig []byte
 
 type Command struct {
@@ -51,7 +49,7 @@ func (*Command) Synopsis() string {
 }
 
 func (*Command) Usage() string {
-	return "Starts the OTEL collector daemon."
+	return "Starts the OTEL collector daemon.\n"
 }
 
 func (c *Command) SetFlags(flagSet *flag.FlagSet) {
@@ -65,22 +63,9 @@ func (c *Command) Execute(ctx context.Context, f *flag.FlagSet, args ...any) sub
 		return subcommands.ExitFailure
 	}
 
-	tmpl, err := template.New("collector-config").Parse(string(collectorConfig))
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error parsing embedded config template: %v\n", err)
-		return subcommands.ExitFailure
-	}
-
-	var configBuf bytes.Buffer
-	err = tmpl.Execute(&configBuf, map[string]string{"projectID": c.projectID})
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error executing config template: %v\n", err)
-		return subcommands.ExitFailure
-	}
-
 	set := otelcol.CollectorSettings{
 		Factories: func() (otelcol.Factories, error) {
-			return components(credential)
+			return components(credential, c.projectID)
 		},
 		ConfigProviderSettings: otelcol.ConfigProviderSettings{
 			ResolverSettings: confmap.ResolverSettings{
@@ -104,7 +89,7 @@ func (c *Command) Execute(ctx context.Context, f *flag.FlagSet, args ...any) sub
 	}
 
 	otelcolArgs := f.Args()
-	otelcolArgs = append(otelcolArgs, "--config", "yaml:"+configBuf.String())
+	otelcolArgs = append(otelcolArgs, "--config", "yaml:"+string(collectorConfig))
 
 	if err := run(set, otelcolArgs); err != nil {
 		log.Fatal(err)
