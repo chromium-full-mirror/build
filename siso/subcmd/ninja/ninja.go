@@ -246,6 +246,8 @@ func (c *Command) Execute(ctx context.Context, flagSet *flag.FlagSet, _ ...any) 
 					ui.Default.Errorf("failed to close frontend file: %v\n", err)
 				}
 			}()
+			// defer digest calculation for fast nop build on android
+			c.fsopt.DeferDigest = true
 		}
 		frontend := soongutil.NewFrontend(ctx, f)
 		ui.Default = frontend

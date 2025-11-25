@@ -249,9 +249,13 @@ func (hfs *HashFS) Close(ctx context.Context) error {
 		clog.Warningf(ctx, "Failed to close journal %v", err)
 	}
 	clog.Infof(ctx, "close journal")
-	if hfs.clean.Load() || !hfs.loaded.Load() || len(hfs.taintedFiles) > 0 {
+	if hfs.clean.Load() || !hfs.loaded.Load() || (hfs.opt.DeferDigest && hfs.loaded.Load() && hfs.journal.n == 0) || len(hfs.taintedFiles) > 0 {
 		// don't update fs state when there are tainted files.
-		clog.Warningf(ctx, "not save state clean=%t loaded=%t tainted:%d", hfs.clean.Load(), hfs.loaded.Load(), len(hfs.taintedFiles))
+		// - if state is clean, state matches between memory and disk, so no need to save
+		// - if state is not loaded, memory state is incomplete, so should not save.
+		// - if defer digest, state is loaded and no updates (i.e. 0 journal entries), no need to save.
+		// - if it uses tainted files, should not save.
+		clog.Warningf(ctx, "not save state clean=%t loaded=%t journal:%d tainted:%d", hfs.clean.Load(), hfs.loaded.Load(), hfs.journal.n, len(hfs.taintedFiles))
 		return nil
 	}
 	err = Save(ctx, hfs.State(ctx), hfs.opt)

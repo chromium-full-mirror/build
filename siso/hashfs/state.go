@@ -62,6 +62,8 @@ type Option struct {
 
 	KeepTainted bool // keep manually modified generated file
 
+	DeferDigest bool // defer digest calculation to speed up nop build.
+
 	MinFlushTimeout time.Duration // minimum timeout to flush operation (>= 10s)
 
 	OSFSOption osfs.Option
@@ -85,6 +87,7 @@ func (o *Option) RegisterFlags(flagSet *flag.FlagSet) {
 	flagSet.IntVar(&o.CompressLevel, "fs_state_compression_level", 3, "fs state compression level (0 = uncompressed, 1 = fastest, 10 = best)")
 	flagSet.IntVar(&o.CompressThreads, "fs_state_compression_threads", defaultCompressThreads, "number of threads to use for data compression")
 	flagSet.BoolVar(&o.KeepTainted, "fs_keep_tainted", false, "keep manually modified generated file")
+	flagSet.BoolVar(&o.DeferDigest, "fs_defer_digest", false, "defer digest calculation")
 	flagSet.DurationVar(&o.MinFlushTimeout, "fs_min_flush_timeout", 10*time.Second, "minimum timeout for flush. ignored if it is shorter than 10s")
 	o.OSFSOption.RegisterFlags(flagSet)
 }
@@ -605,11 +608,15 @@ func (hfs *HashFS) SetState(ctx context.Context, state *pb.State) error {
 		}
 		hfs.loaded.Store(true)
 		clog.Infof(ctx, "set state done: clean:%t loaded:true: %s", hfs.clean.Load(), time.Since(start))
-		missingDigestsStart := time.Now()
-		for _, fname := range state.MissingDigests {
-			hfs.Stat(ctx, "", fname) // access and trigger lazy digest calculation.
+		if hfs.opt.DeferDigest {
+			clog.Infof(ctx, "deferred stat missing_digests=%d", len(state.MissingDigests))
+		} else {
+			missingDigestsStart := time.Now()
+			for _, fname := range state.MissingDigests {
+				hfs.Stat(ctx, "", fname) // access and trigger lazy digest calculation.
+			}
+			clog.Infof(ctx, "stat missing_digests=%d: %s", len(state.MissingDigests), time.Since(missingDigestsStart))
 		}
-		clog.Infof(ctx, "stat missing_digests=%d: %s", len(state.MissingDigests), time.Since(missingDigestsStart))
 		hfs.setStateCh <- nil
 	}()
 	clog.Infof(ctx, "load state done: eq:%d new:%d not-exist:%d fail:%d invalidate:%d: tainted:%d missingOutputs:%d missingDigests:%d %s", neq.Load(), nnew.Load(), nnotexist.Load(), nfail.Load(), ninvalidate.Load(), len(hfs.taintedFiles), len(state.MissingOutputs), len(state.MissingDigests), time.Since(start))
@@ -1021,6 +1028,7 @@ func (hfs *HashFS) journalEntry(ctx context.Context, fname string, e *entry) {
 type journalWriter struct {
 	mu sync.Mutex
 	w  io.WriteCloser
+	n  int
 }
 
 func (w *journalWriter) Write(buf []byte) (int, error) {
@@ -1029,6 +1037,7 @@ func (w *journalWriter) Write(buf []byte) (int, error) {
 	if w.w == nil {
 		return len(buf), nil
 	}
+	w.n++
 	return w.w.Write(buf)
 }
 
