@@ -1279,9 +1279,9 @@ func (c *Command) SetFlags(flagSet *flag.FlagSet) {
 		c.failedCommandsFile = "siso_failed_commands.bat"
 	}
 	flagSet.StringVar(&c.failedCommandsFile, "failed_commands", c.failedCommandsFile, "script file to rerun the last failed commands")
-	flagSet.StringVar(&c.outputLogFile, "output_log", "siso_output", "output log filename (relative to -log_dir")
-	flagSet.StringVar(&c.explainFile, "explain_log", "siso_explain", "explain log filename (relative to -log_dir")
-	flagSet.StringVar(&c.localexecLogFile, "localexec_log", "siso_localexec", "localexec log filename (relative to -log_dir")
+	flagSet.StringVar(&c.outputLogFile, "output_log", "siso_output", "output log filename (relative to -log_dir)")
+	flagSet.StringVar(&c.explainFile, "explain_log", "siso_explain", "explain log filename (relative to -log_dir)")
+	flagSet.StringVar(&c.localexecLogFile, "localexec_log", "siso_localexec", "localexec log filename (relative to -log_dir)")
 	flagSet.StringVar(&c.metricsJSON, "metrics_json", "siso_metrics.json", "metrics JSON filename (relative to -log_dir)")
 	flagSet.StringVar(&c.traceJSON, "trace_json", "siso_trace.json", "trace JSON filename (relative to -log_dir)")
 	flagSet.StringVar(&c.buildPprof, "build_pprof", "siso_build.pprof", "build pprof filename (relative to -log_dir)")
