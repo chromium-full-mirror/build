@@ -40,7 +40,7 @@ func TestBuild_CycleCheck(t *testing.T) {
 		t.Fatalf("err type %T; want %T", err, cycleErr)
 	}
 	want := build.DependencyCycleError{
-		Targets: []string{"out/siso/gen/foo.txt", "out/siso/gen/foo.txt"},
+		Targets: []string{"gen/foo.txt", "gen/foo.txt"},
 	}
 	if diff := cmp.Diff(want, cycleErr); diff != "" {
 		t.Errorf("diff (-want +got):\n%s", diff)

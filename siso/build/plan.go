@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"math"
 	"os"
 	"path/filepath"
@@ -109,13 +110,21 @@ func (e TargetError) Error() string {
 type MissingSourceError struct {
 	Target   string
 	NeededBy string
+	Err      error
+	Deps     []string
 }
 
 func (e MissingSourceError) Error() string {
-	if e.NeededBy != "" {
-		return fmt.Sprintf("%q, needed by %q, missing and no known rule to make it", e.Target, e.NeededBy)
+	deps := slices.Clone(e.Deps)
+	slices.Reverse(deps)
+	errmsg := "missing and no known rule to make it"
+	if !errors.Is(e.Err, fs.ErrNotExist) {
+		errmsg = fmt.Sprintf("no known rule to make it: %v", e.Err)
 	}
-	return fmt.Sprintf("%q missing and no known rule to make it", e.Target)
+	if e.NeededBy != "" {
+		return fmt.Sprintf("deps chain:\n  %s\n %q, needed by %q, %s", strings.Join(deps, " ->\n  "), e.Target, e.NeededBy, errmsg)
+	}
+	return fmt.Sprintf("deps chain:\n  %s\n %q %s", strings.Join(deps, " ->\n  "), e.Target, errmsg)
 }
 
 type scanState int
@@ -293,14 +302,14 @@ func schedule(ctx context.Context, sched *scheduler, graph Graph, args ...string
 		switch sched.plan.targets[t].scan {
 		case scanStateNotVisited:
 		case scanStateVisiting:
-			return fmt.Errorf("scan state %q: visiting", targetPath(ctx, graph, t))
+			return fmt.Errorf("scan state %q: visiting", sched.path.MaybeToWD(ctx, targetPath(ctx, graph, t)))
 		case scanStateDone, scanStateIgnored:
 			continue
 		}
 
 		validationQueue, err = scheduleTarget(ctx, sched, graph, t, nil, sched.prepare, validationQueue)
 		if err != nil {
-			return fmt.Errorf("failed in schedule %s: %w", targetPath(ctx, graph, t), err)
+			return fmt.Errorf("failed in schedule %s: %w", sched.path.MaybeToWD(ctx, targetPath(ctx, graph, t)), err)
 		}
 	}
 	if !sched.prepare {
@@ -310,13 +319,13 @@ func schedule(ctx context.Context, sched *scheduler, graph Graph, args ...string
 			switch sched.plan.targets[t].scan {
 			case scanStateNotVisited:
 			case scanStateVisiting:
-				return fmt.Errorf("scan state %q: visiting", targetPath(ctx, graph, t))
+				return fmt.Errorf("scan state %q: visiting", sched.path.MaybeToWD(ctx, targetPath(ctx, graph, t)))
 			case scanStateDone, scanStateIgnored:
 				continue
 			}
 			validationQueue, err = scheduleTarget(ctx, sched, graph, t, nil, false, validationQueue)
 			if err != nil {
-				return fmt.Errorf("failed in schedule %s: %w", targetPath(ctx, graph, t), err)
+				return fmt.Errorf("failed in schedule %s: %w", sched.path.MaybeToWD(ctx, targetPath(ctx, graph, t)), err)
 			}
 		}
 	}
@@ -353,7 +362,7 @@ func scheduleTarget(ctx context.Context, sched *scheduler, graph Graph, target T
 		}()
 	case scanStateVisiting:
 		return validationQueue, DependencyCycleError{
-			Targets: []string{targetPath(ctx, graph, target)},
+			Targets: []string{sched.path.MaybeToWD(ctx, targetPath(ctx, graph, target))},
 		}
 	case scanStateIgnored:
 		if ignore {
@@ -512,10 +521,16 @@ func scheduleTarget(ctx context.Context, sched *scheduler, graph Graph, target T
 				var cycleErr DependencyCycleError
 				if errors.As(err, &cycleErr) {
 					if len(cycleErr.Targets) <= 1 || cycleErr.Targets[0] != cycleErr.Targets[len(cycleErr.Targets)-1] {
-						cur := targetPath(ctx, graph, in)
+						cur := sched.path.MaybeToWD(ctx, targetPath(ctx, graph, in))
 						cycleErr.Targets = append(cycleErr.Targets, cur)
 					}
 					return validationQueue, cycleErr
+				}
+				var missingErr MissingSourceError
+				if errors.As(err, &missingErr) {
+					cur := sched.path.MaybeToWD(ctx, targetPath(ctx, graph, in))
+					missingErr.Deps = append(missingErr.Deps, cur)
+					return validationQueue, missingErr
 				}
 				return validationQueue, fmt.Errorf("schedule %s: %w", targetPath(ctx, graph, in), err)
 			}
@@ -610,6 +625,7 @@ func (s *scheduler) mark(ctx context.Context, graph Graph, target Target, next S
 		return MissingSourceError{
 			Target:   s.path.MaybeToWD(ctx, fname),
 			NeededBy: neededBy,
+			Err:      err,
 		}
 	}
 	s.plan.targets[target].source = true
