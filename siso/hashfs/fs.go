@@ -124,9 +124,10 @@ func New(ctx context.Context, opt Option) (*HashFS, error) {
 		OS:        osfs.New(ctx, "fs", opt.OSFSOption),
 
 		digester: digester{
-			q:    make(chan digestReq, 1000),
-			quit: make(chan struct{}),
-			done: make(chan struct{}),
+			quitEarly: opt.DeferDigest,
+			q:         make(chan digestReq, 1000),
+			quit:      make(chan struct{}),
+			done:      make(chan struct{}),
 		},
 	}
 	if opt.StateFile != "" {
@@ -175,7 +176,7 @@ func New(ctx context.Context, opt Option) (*HashFS, error) {
 			fsys.journal.w = f
 		}
 	}
-	go fsys.digester.start()
+	go fsys.digester.start(ctx)
 	return fsys, nil
 }
 
@@ -1724,20 +1725,39 @@ func (e *entry) compute(ctx context.Context, fname string) error {
 		return err
 	}
 	if doCompute {
-		data, err := localDigest(ctx, e.src, fname)
-		if err != nil {
+		type res struct {
+			data digest.Data
+			err  error
+		}
+		ch := make(chan res, 1)
+		go func() {
+			data, err := localDigest(ctx, e.src, fname)
+			ch <- res{data: data, err: err}
+		}()
+		select {
+		case <-ctx.Done():
+			err := context.Cause(ctx)
 			e.mu.Lock()
 			close(e.dch)
 			e.err = err
 			e.entryErrLogged.Store(false)
 			e.mu.Unlock()
 			return err
+		case r := <-ch:
+			if r.err != nil {
+				e.mu.Lock()
+				close(e.dch)
+				e.err = r.err
+				e.entryErrLogged.Store(false)
+				e.mu.Unlock()
+				return r.err
+			}
+			e.mu.Lock()
+			e.d = r.data.Digest()
+			close(e.dch)
+			e.entryErrLogged.Store(false)
+			e.mu.Unlock()
 		}
-		e.mu.Lock()
-		e.d = data.Digest()
-		close(e.dch)
-		e.entryErrLogged.Store(false)
-		e.mu.Unlock()
 	} else {
 		select {
 		case <-ctx.Done():

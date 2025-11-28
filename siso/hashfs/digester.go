@@ -68,13 +68,14 @@ func localDigest(ctx context.Context, src digest.Source, fname string) (digest.D
 }
 
 type digestReq struct {
-	ctx   context.Context
+	id    string
 	fname string
 	e     *entry
 }
 
 type digester struct {
-	q chan digestReq
+	quitEarly bool
+	q         chan digestReq
 
 	mu    sync.Mutex
 	queue []digestReq
@@ -83,7 +84,7 @@ type digester struct {
 	done chan struct{}
 }
 
-func (d *digester) start() {
+func (d *digester) start(ctx context.Context) {
 	defer close(d.done)
 	n := runtimex.NumCPU() - 1
 	if n == 0 {
@@ -94,19 +95,39 @@ func (d *digester) start() {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			d.worker()
+			d.worker(ctx)
 		}()
 	}
 	wg.Wait()
 }
 
-func (d *digester) worker() {
+func (d *digester) worker(ctx context.Context) {
 	for {
 		select {
 		case <-d.quit:
 			return
 		case req := <-d.q:
-			d.compute(req.ctx, req.fname, req.e)
+			dctx := ctx
+			if req.id != "" {
+				dctx = trace.NewContext(dctx, trace.New(dctx, req.id))
+			}
+			if d.quitEarly {
+				dctx, cancel := context.WithCancel(dctx)
+				go func() {
+					d.compute(dctx, req.fname, req.e)
+					cancel()
+				}()
+				select {
+				case <-d.quit:
+					cancel()
+					return
+				case <-dctx.Done():
+					// cancel called after d.compute
+				}
+			} else {
+				d.compute(dctx, req.fname, req.e)
+			}
+
 			d.mu.Lock()
 			if len(d.queue) > 0 {
 				select {
@@ -132,11 +153,23 @@ func (d *digester) stop(ctx context.Context) {
 	d.mu.Unlock()
 	close(q)
 	clog.Infof(ctx, "run pending digest chan:%d + queue:%d", len(d.q), len(d.queue))
+	if d.quitEarly {
+		clog.Infof(ctx, "finish digester early")
+		return
+	}
 	for req := range q {
-		d.compute(req.ctx, req.fname, req.e)
+		dctx := ctx
+		if req.id != "" {
+			dctx = trace.NewContext(dctx, trace.New(dctx, req.id))
+		}
+		d.compute(dctx, req.fname, req.e)
 	}
 	for _, req := range d.queue {
-		d.compute(req.ctx, req.fname, req.e)
+		dctx := ctx
+		if req.id != "" {
+			dctx = trace.NewContext(dctx, trace.New(dctx, req.id))
+		}
+		d.compute(dctx, req.fname, req.e)
 	}
 	d.queue = nil
 	clog.Infof(ctx, "finish digester")
@@ -160,7 +193,7 @@ func (d *digester) lazyCompute(ctx context.Context, fname string, e *entry) {
 	default:
 	}
 	req := digestReq{
-		ctx:   ctx,
+		id:    trace.ID(ctx),
 		fname: fname,
 		e:     e,
 	}
