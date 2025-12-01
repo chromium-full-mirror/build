@@ -133,15 +133,17 @@ func (c *Command) run(ctx context.Context) error {
 	defer signals.HandleInterrupt(ctx, cancel)()
 
 	c.reopt.UpdateProjectID(c.projectID)
-	err := c.reopt.CheckValid()
-	if err != nil {
-		return fmt.Errorf("reapi option is invalid: %w", err)
-	}
 	var credential cred.Cred
-	if c.reopt.NeedCred() {
-		credential, err = cred.New(ctx, c.reopt.ServiceURI(), c.authOpts)
+	if !c.local {
+		err := c.reopt.CheckValid()
 		if err != nil {
-			return err
+			return fmt.Errorf("reapi option is invalid: %w", err)
+		}
+		if c.reopt.NeedCred() {
+			credential, err = cred.New(ctx, c.reopt.ServiceURI(), c.authOpts)
+			if err != nil {
+				return err
+			}
 		}
 	}
 	dir := "."
@@ -149,7 +151,7 @@ func (c *Command) run(ctx context.Context) error {
 		dir = c.Flags.Arg(0)
 	}
 	if c.Flags.NArg() <= 1 {
-		err = os.Chdir(dir)
+		err := os.Chdir(dir)
 		if err != nil {
 			return err
 		}
