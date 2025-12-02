@@ -116,6 +116,16 @@ namespace base {
 			wantDefines: map[string][]string{},
 		},
 		{
+			name: "include-next",
+			buf: `
+#include_next <limits.h>
+`,
+			wantIncludes: []string{
+				`<limits.h>`,
+			},
+			wantDefines: map[string][]string{},
+		},
+		{
 			name: "no-include",
 			buf: `
 #include
@@ -141,6 +151,37 @@ namespace base {
 			buf: `
 `,
 			wantDefines: map[string][]string{},
+		},
+		{
+			// b/465210078
+			name: "no-space-qinclude",
+			buf: `
+#include"gf_error.h"
+`,
+			wantIncludes: []string{
+				`"gf_error.h"`,
+			},
+			wantDefines: map[string][]string{},
+		},
+		{
+			name: "no-space-include",
+			buf: `
+#include<stdio.h>
+`,
+			wantIncludes: []string{
+				`<stdio.h>`,
+			},
+			wantDefines: map[string][]string{},
+		},
+		{
+			name: "wrong-directive",
+			buf: `
+#define FOO "foo.h"
+#includeFOO
+`,
+			wantDefines: map[string][]string{
+				"FOO": {`"foo.h"`},
+			},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

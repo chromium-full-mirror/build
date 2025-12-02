@@ -66,20 +66,25 @@ func CPPScan(ctx context.Context, fname string, buf []byte) ([]string, map[strin
 				}
 				continue
 			}
-			switch {
-			case bytes.HasPrefix(line, []byte("_next")):
-				// #include_next
-				line = bytes.TrimPrefix(line, []byte("_next"))
-			case line[0] == ' ':
-			case line[0] == '\t':
-			default:
-				// not '#include ' nor '#include_next ' ?
+			// for #include_next
+			line = bytes.TrimPrefix(line, []byte("_next"))
+			if len(line) == 0 {
 				if log.V(2) {
 					logLineStart := lineStart
 					clog.Infof(ctx, "skip %q", logLineStart)
 				}
 				continue
 			}
+			switch line[0] {
+			case ' ', '\t', '"', '<':
+			default:
+				if log.V(2) {
+					logLineStart := lineStart
+					clog.Infof(ctx, "skip %q", logLineStart)
+				}
+				continue
+			}
+
 		case bytes.HasPrefix(line, []byte("import")):
 			line = bytes.TrimPrefix(line, []byte("import"))
 			if len(line) == 0 {
@@ -90,7 +95,7 @@ func CPPScan(ctx context.Context, fname string, buf []byte) ([]string, map[strin
 				continue
 			}
 			switch line[0] {
-			case ' ', '\t':
+			case ' ', '\t', '"', '<':
 			default:
 				if log.V(2) {
 					logLineStart := lineStart
