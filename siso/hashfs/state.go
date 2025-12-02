@@ -249,475 +249,14 @@ func fromDigest(d digest.Digest) *pb.Digest {
 	}
 }
 
-// entryState is used to convert *pb.Entry,local disk to *entry.
-type entryState struct {
-	ent *pb.Entry      // file entry state at the last build.
-	et  entryStateType // indicate mtime difference from local disk
-
-	ftype string    // valid if "dir","symlink" or "file"
-	e     entry     // file entry data
-	dir   directory // used if ftype="dir"
-
-	prevGenerated bool // if file is generated output of build step.
-	tainted       bool // if file is generated, but modified locally.
-}
-
-// initialEntryStates initializes file entries from *pb.State and local disk.
-type initialEntryStates struct {
-	alloc []entryState
-
-	missingDigests []string // missing digests in *pb.State
-	missingOutputs []string // missing outputs in *pb.State
-
-	// interfaces to be used during initialization
-	fsm         FileInfoer
-	ignore      IgnoreFunc
-	outputLocal OutputLocalFunc
-	dataSource  DataSource
-	osfs        *osfs.OSFS
-
-	keepTainted bool
-
-	// counters
-	neq         atomic.Int64
-	nnew        atomic.Int64
-	nnotexist   atomic.Int64
-	nfail       atomic.Int64
-	ninvalidate atomic.Int64
-
-	dirty atomic.Bool
-}
-
-// prepare prepares alloc/missingDigests/missingOutputs from state.
-func (ies *initialEntryStates) prepare(ctx context.Context, state *pb.State) {
-	started := time.Now()
-	ies.missingDigests = state.MissingDigests
-	ies.missingOutputs = state.MissingOutputs
-	ndirs := 0
-	ies.alloc = make([]entryState, len(state.Entries))
-
-	for i, ent := range state.Entries {
-		s := &ies.alloc[i]
-		if runtime.GOOS == "windows" {
-			ent.Name = strings.TrimPrefix(ent.Name, `\`)
-		}
-		ent.Name = filepath.ToSlash(ent.Name)
-		s.ent = ent
-		if ies.ignore(ctx, ent.Name) {
-			clog.Infof(ctx, "ignore %q", ent.Name)
-			continue
-		}
-
-		if ent.Digest == nil && ent.Target == "" {
-			// directory
-			ndirs++
-		}
-	}
-	clog.Infof(ctx, "initial entryState init %d (dirs=%d) %s", len(state.Entries), ndirs, time.Since(started))
-}
-
-// updateFromDisk updates file entries from *pb.State and local disk
-// and returns previouslyGeneratedFiles and taintedFiles.
-func (ies *initialEntryStates) updateFromDisk(ctx context.Context) ([]string, []string, error) {
-	started := time.Now()
-	eg, ctx := errgroup.WithContext(ctx)
-	eg.SetLimit(runtimex.NumCPU())
-	for i := range ies.alloc {
-		eg.Go(func() error {
-			if i%1000 == 0 {
-				select {
-				case <-ctx.Done():
-					err := context.Cause(ctx)
-					return err
-				default:
-				}
-			}
-			es := &ies.alloc[i]
-			return ies.updateEntryFromDisk(ctx, es)
-		})
-	}
-	err := eg.Wait()
-	if err != nil {
-		return nil, nil, err
-	}
-	var previouslyGeneratedFiles, taintedFiles []string
-	for i := range ies.alloc {
-		es := &ies.alloc[i]
-		if es.prevGenerated {
-			previouslyGeneratedFiles = append(previouslyGeneratedFiles, es.ent.Name)
-		}
-		if es.tainted {
-			taintedFiles = append(taintedFiles, es.ent.Name)
-		}
-	}
-	clog.Infof(ctx, "update from disk %s", time.Since(started))
-	return previouslyGeneratedFiles, taintedFiles, nil
-
-}
-
-// updateEntryFromDisk updates entry in es from *pb.Entry and local disk.
-func (ies *initialEntryStates) updateEntryFromDisk(ctx context.Context, es *entryState) error {
-	fi, err := ies.fsm.FileInfo(ctx, es.ent)
-	if errors.Is(err, fs.ErrNotExist) {
-		ies.initNotExist(ctx, es)
-		return nil
-	}
-	if err != nil {
-		ies.initErr(ctx, es, err)
-		return nil
-	}
-	err = waitUntilModTime(ctx, es.ent.Name, fi.ModTime())
-	if err != nil {
-		return err
-	}
-	ies.initStateEntry(ctx, es, fi.ModTime())
-
-	switch es.ftype {
-	case "dir":
-		if !ies.initDir(ctx, es, fi) {
-			return nil
-		}
-	case "symlink":
-		if !ies.initSymlink(ctx, es) {
-			return nil
-		}
-	case "file":
-		if !ies.initFile(ctx, es, fi) {
-			return nil
-		}
-	}
-	return ies.handleModTime(ctx, es, fi)
-}
-
-// initNotExist initializes an entry for file that doesn't exist on local disk.
-func (ies *initialEntryStates) initNotExist(ctx context.Context, es *entryState) {
-	if log.V(1) {
-		clog.Infof(ctx, "not exist %q", es.ent.Name)
-	}
-	if len(es.ent.CmdHash) == 0 {
-		es.e.err = fs.ErrNotExist
-		ies.nnotexist.Add(1)
-		ies.dirty.Store(true)
-		clog.Infof(ctx, "not exist with no cmd hash: %q", es.ent.Name)
-		return
-	}
-	// recorded as output file, but missing on disk.
-	if es.ent.Local || ies.outputLocal(ctx, es.ent.Name) {
-		// command output file that is needed on the disk doesn't exist on the disk.
-		// need to forget to trigger steps for the output. b/298523549
-		es.e.err = fs.ErrNotExist
-		ies.nnotexist.Add(1)
-		ies.dirty.Store(true)
-		clog.Warningf(ctx, "not exist output-needed file: %q", es.ent.Name)
-		return
-	}
-	// remote generated file, build without bytes.
-	ies.initStateEntry(ctx, es, time.Time{})
-}
-
-// initErr initializes an entry for file with err.
-func (ies *initialEntryStates) initErr(ctx context.Context, es *entryState, err error) {
-	es.e.err = err
-	clog.Warningf(ctx, "failed to stat %q: %v", es.ent.Name, err)
-	ies.nfail.Add(1)
-	ies.dirty.Store(true)
-}
-
-// initStateEntry initializes es.{et,ftype,e} with ftime.
-// if ftime is zero, it doesn't exist on local disk.
-func (ies *initialEntryStates) initStateEntry(ctx context.Context, es *entryState, ftime time.Time) {
-	lready := make(chan bool, 1)
-	entTime := time.Unix(0, es.ent.Id.ModTime)
-	switch {
-	case ftime.IsZero():
-		// local doesn't exist
-		es.et = entryNoLocal
-		lready <- true
-	case entTime.Before(ftime):
-		es.et = entryBeforeLocal
-		close(lready)
-	case entTime.Equal(ftime):
-		es.et = entryEqLocal
-		close(lready)
-	case entTime.After(ftime):
-		es.et = entryAfterLocal
-		lready <- true
-	}
-	mode := fs.FileMode(0644)
-	if es.ent.IsExecutable {
-		mode |= 0111
-	}
-	var dir *directory
-	var src digest.Source
-	entDigest := toDigest(es.ent.Digest)
-	if !entDigest.IsZero() {
-		es.ftype = "file"
-		// regular file
-		if es.et == entryEqLocal {
-			src = ies.osfs.FileSource(es.ent.Name, entDigest.SizeBytes)
-		} else {
-			// not the same as local, but digest is in state.
-			// probably, eixsts in RBE side, or local cache.
-			src = ies.dataSource.Source(ctx, entDigest, es.ent.Name)
-		}
-	} else if es.ent.Target != "" {
-		es.ftype = "symlink"
-		// symlink
-		mode |= fs.ModeSymlink
-	} else {
-		es.ftype = "dir"
-		// directory
-		dir = &es.dir
-		mode |= fs.ModeDir
-	}
-	updatedTime := time.Unix(0, es.ent.UpdatedTime)
-	if updatedTime.Before(entTime) {
-		updatedTime = entTime
-	}
-	es.e.lready = lready
-	es.e.size = entDigest.SizeBytes
-	es.e.mtime = entTime
-	es.e.mode = mode
-	es.e.updatedTime = updatedTime
-	es.e.target = es.ent.Target
-	es.e.src = src
-	es.e.d = entDigest
-	es.e.directory = dir
-
-	es.e.cmdhash = es.ent.CmdHash
-	es.e.edgehash = es.ent.EdgeHash
-	es.e.action = toDigest(es.ent.Action)
-	es.e.local = es.ent.Local
-
-	es.prevGenerated = len(es.e.cmdhash) > 0
-}
-
-// initDir initializes es as dir.
-func (ies *initialEntryStates) initDir(ctx context.Context, es *entryState, fi fs.FileInfo) bool {
-	if !fi.IsDir() {
-		es.ftype = ""
-		clog.Warningf(ctx, "entry is dir, but local is not dir %q: mode=%s", es.ent.Name, fi.Mode())
-		ies.nfail.Add(1)
-		ies.dirty.Store(true)
-		return false
-	}
-	if !es.prevGenerated { // len(es.e.cmdhash) == 0
-		es.ftype = ""
-		clog.Infof(ctx, "ignore dir %q: no cmd hash", es.ent.Name)
-		return false
-	}
-	return true
-}
-
-// initSymlink initializes es as symlink.
-func (ies *initialEntryStates) initSymlink(ctx context.Context, es *entryState) bool {
-	t, err := os.Readlink(es.ent.Name)
-	if err != nil {
-		es.ftype = ""
-		clog.Warningf(ctx, "failed to readlink %q: %v", es.ent.Name, err)
-		ies.nfail.Add(1)
-		ies.dirty.Store(true)
-		return false
-	}
-	if t != es.e.target {
-		es.ftype = ""
-		clog.Warningf(ctx, "invalidate symlink %q: target:%q->%q", es.ent.Name, es.e.target, t)
-		ies.ninvalidate.Add(1)
-		ies.dirty.Store(true)
-		return false
-	}
-	// symlink matches, make entry equals local
-	if es.et != entryEqLocal {
-		if log.V(1) {
-			clog.Warningf(ctx, "symlnk target match %q: state=%v->%v", es.ent.Name, es.et, entryEqLocal)
-		}
-		es.et = entryEqLocal
-	}
-	return true
-}
-
-// initFile initializes as a file.
-func (ies *initialEntryStates) initFile(ctx context.Context, es *entryState, fi fs.FileInfo) bool {
-	if es.prevGenerated && es.et != entryEqLocal && !ies.dirty.Load() {
-		// mtime differ for generated file?
-		// check digest is the same and fix mtime if it matches.
-		// don't reconcile for source (non-generated file),
-		// as user may want to trigger build by touch.
-		src := ies.osfs.FileSource(es.ent.Name, fi.Size())
-		data, err := localDigest(ctx, src, es.ent.Name)
-		if err == nil && data.Digest() == es.e.d {
-			es.et = entryEqLocal
-			err = ies.osfs.Chtimes(ctx, es.ent.Name, time.Now(), es.e.mtime)
-			clog.Infof(ctx, "reconcile mtime %q %v -> %v: %v", es.ent.Name, fi.ModTime(), es.e.mtime, err)
-		} else {
-			clog.Warningf(ctx, "failed to reconcile mtime %q digest %s(stat) != %s(local) err: %v", es.ent.Name, es.e.d, data.Digest(), err)
-		}
-	}
-	return true
-}
-
-// handleModTime handles modtime difference between *pb.Entry and fi (local disk).
-func (ies *initialEntryStates) handleModTime(ctx context.Context, es *entryState, fi fs.FileInfo) error {
-	switch es.et {
-	case entryNoLocal:
-		// it should not happen since we already checked it.
-		return ies.handleNoLocal(ctx, es)
-
-	case entryBeforeLocal:
-		return ies.handleBeforeLocal(ctx, es, fi)
-	case entryEqLocal:
-		return ies.handleEqLocal(ctx, es)
-	case entryAfterLocal:
-		return ies.handleAfterLocal(ctx, es, fi)
-	}
-	return fmt.Errorf("invalid entryStateType: %s", es.et)
-}
-
-// handleNoLocal handles for entryNoLocal.
-func (ies *initialEntryStates) handleNoLocal(ctx context.Context, es *entryState) error {
-	ies.initNotExist(ctx, es)
-	return nil
-}
-
-// handleBeforeLocal handles for entryBeforeLocal.
-// i.e. *pb.Entry is older than local disk. local disk may be modified since last build.
-func (ies *initialEntryStates) handleBeforeLocal(ctx context.Context, es *entryState, fi fs.FileInfo) error {
-	ies.ninvalidate.Add(1)
-	ies.dirty.Store(true)
-	if !es.prevGenerated || !ies.keepTainted {
-		es.ftype = ""
-		clog.Warningf(ctx, "invalidate %s %q: state:%s disk:%s", es.ftype, es.ent.Name, es.e.mtime, fi.ModTime())
-		return nil
-	}
-	es.tainted = true
-	clog.Warningf(ctx, "keep tainted %s %q: state:%s disk:%s", es.ftype, es.ent.Name, es.e.mtime, fi.ModTime())
-	// keep this entry to preserve cmdhash
-	// but use mtime of actual file.
-	es.e.mtime = fi.ModTime()
-	return nil
-}
-
-// handleEqLocal handles for entryEqLocal.
-// i.e. *pb.Entry matches with local disk. no modification since last build.
-func (ies *initialEntryStates) handleEqLocal(ctx context.Context, es *entryState) error {
-	ies.neq.Add(1)
-	if log.V(1) {
-		clog.Infof(ctx, "equal local %s %q: %s", es.ftype, es.ent.Name, es.e.mtime)
-	}
-	return nil
-}
-
-// handleAfterLocal handles for entryAfterLocal.
-// i.e. *pb.Entry is newer than local disk.
-func (ies *initialEntryStates) handleAfterLocal(ctx context.Context, es *entryState, fi fs.FileInfo) error {
-	ies.nnew.Add(1)
-	ies.dirty.Store(true)
-	if !es.prevGenerated {
-		es.ftype = ""
-		clog.Warningf(ctx, "old local source %s %q: state:%s disk:%s", es.ftype, es.ent.Name, es.e.mtime, fi.ModTime())
-		return nil
-	}
-	isOutputLocal := ies.outputLocal(ctx, es.ent.Name)
-	clog.Infof(ctx, "old local %s %q: state:%s disk:%s cmdhash:%s outputLocal:%t", es.ftype, es.ent.Name, es.e.mtime, fi.ModTime(), base64.StdEncoding.EncodeToString(es.e.cmdhash), isOutputLocal)
-	if isOutputLocal {
-		// output file that is needed on the disk is stale.
-		// need to forget to trigger steps for the output. b/418221857
-		es.ftype = ""
-		ies.ninvalidate.Add(1)
-		return nil
-	}
-	// local file would be stale.
-	// TODO: flush instead of removing local?
-	err := os.Remove(es.ent.Name)
-	if err != nil {
-		clog.Warningf(ctx, "failed to remove stale old local file %q: %v", es.ent.Name, err)
-		es.ftype = ""
-		ies.ninvalidate.Add(1)
-		return nil
-	}
-	// keep remote entry
-	return nil
-}
-
-// clean reports whether state is clean or not.
-func (ies *initialEntryStates) clean() bool {
-	// missing outputs just makes dirty, but no need to set it in hfs.missingOutputs b/374179435
-	return ies.nnew.Load() == 0 && ies.nnotexist.Load() == 0 && ies.nfail.Load() == 0 && ies.ninvalidate.Load() == 0 && len(ies.missingOutputs) == 0 && len(ies.missingDigests) == 0
-}
-
-// storeDirs stores dir entries in hfs.
-func (ies *initialEntryStates) storeDirs(ctx context.Context, hfs *HashFS) error {
-	eg, ctx := errgroup.WithContext(ctx)
-	eg.SetLimit(runtimex.NumCPU())
-	for i := range ies.alloc {
-		es := &ies.alloc[i]
-		if es.ftype != "dir" {
-			continue
-		}
-		eg.Go(func() error {
-			_, err := hfs.directory.store(ctx, es.ent.Name, &es.e)
-			if err != nil {
-				return fmt.Errorf("failed to store dir %q: %w", es.ent.Name, err)
-			}
-			return nil
-		})
-	}
-	return eg.Wait()
-}
-
-// storeNonDirs stores non-dir entries (files, symlinks) in hfs.
-func (ies *initialEntryStates) storeNonDirs(ctx context.Context, hfs *HashFS) error {
-	eg, ctx := errgroup.WithContext(ctx)
-	eg.SetLimit(runtimex.NumCPU())
-	for i := range ies.alloc {
-		es := &ies.alloc[i]
-		switch es.ftype {
-		case "symlink", "file":
-			eg.Go(func() error {
-				_, err := hfs.directory.store(ctx, es.ent.Name, &es.e)
-				if err != nil {
-					return fmt.Errorf("failed to store %s %q: %w", es.ftype, es.ent.Name, err)
-				}
-				return nil
-			})
-		}
-	}
-	return eg.Wait()
-}
-
-// triggerDigestCalculation triggers digest calculation for missing digest files.
-func (ies *initialEntryStates) triggerDigestCalculation(ctx context.Context, hfs *HashFS) {
-	start := time.Now()
-	for _, fname := range ies.missingDigests {
-		hfs.Stat(ctx, "", fname) // access and trigger lazy digest calculation
-	}
-	clog.Infof(ctx, "set missing_digests=%d: %s", len(ies.missingDigests), time.Since(start))
-}
-
-// info returns info of the entryStates initialization.
-func (ies *initialEntryStates) info() string {
-	return fmt.Sprintf("eq:%d new:%d not-exist:%d fail:%d invalidate:%d missingOutputs:%d missingDigests:%d",
-		ies.neq.Load(),
-		ies.nnew.Load(),
-		ies.nnotexist.Load(),
-		ies.nfail.Load(),
-		ies.ninvalidate.Load(),
-		len(ies.missingOutputs),
-		len(ies.missingDigests))
-}
-
 // SetState sets states to the HashFS.
 func (hfs *HashFS) SetState(ctx context.Context, state *pb.State) error {
 	start := time.Now()
-
-	octx := ctx // preserve original ctx
 	logw := hfs.opt.SetStateLogger
 	if logw != nil {
 		fmt.Fprintf(logw, "hashfs.SetState\n")
 		defer fmt.Fprintf(logw, "hashfs.SetState done\n")
-		ctx = clog.NewContext(ctx, clog.FromContext(ctx).WithWriter(logw))
 	}
-
 	if state.BuildTargets != nil {
 		hfs.buildTargets = make([]string, len(state.BuildTargets.Targets))
 		copy(hfs.buildTargets, state.BuildTargets.Targets)
@@ -739,49 +278,329 @@ func (hfs *HashFS) SetState(ctx context.Context, state *pb.State) error {
 			fsm = f
 		}
 	}
-	hfs.initial = new(initialEntryStates)
-	hfs.initial.fsm = fsm
-	hfs.initial.ignore = hfs.opt.Ignore
-	hfs.initial.outputLocal = hfs.opt.OutputLocal
-	hfs.initial.dataSource = hfs.opt.DataSource
-	hfs.initial.osfs = hfs.OS
-	hfs.initial.keepTainted = hfs.opt.KeepTainted
+	outputLocal := hfs.opt.OutputLocal
+	var neq, nnew, nnotexist, nfail, ninvalidate atomic.Int64
+	var dirty atomic.Bool
+	eg, gctx := errgroup.WithContext(ctx)
+	eg.SetLimit(runtimex.NumCPU())
+	dirs := make([]*entry, len(state.Entries))
+	entries := make([]*entry, len(state.Entries))
+	prevGenerated := make([]bool, len(state.Entries))
+	tainted := make([]bool, len(state.Entries))
+	for i, ent := range state.Entries {
+		eg.Go(func() error {
+			if i%1000 == 0 {
+				select {
+				case <-gctx.Done():
+					err := context.Cause(gctx)
+					return err
+				default:
+				}
+			}
+			// If cmdhash is not set, the file is a source input, not a generated output file.
+			// In that case, we leave `h` empty, so we can skip this file in case it is missing
+			// on disk.
+			h := ent.CmdHash
+			if runtime.GOOS == "windows" {
+				ent.Name = strings.TrimPrefix(ent.Name, `\`)
+			}
+			ent.Name = filepath.ToSlash(ent.Name)
+			if hfs.opt.Ignore(ctx, ent.Name) {
+				clog.Infof(ctx, "ignore %q", ent.Name)
+				if logw != nil {
+					fmt.Fprintf(logw, "ignore %q\n", ent.Name)
+				}
+				return nil
+			}
+			fi, err := fsm.FileInfo(ctx, ent)
+			if errors.Is(err, fs.ErrNotExist) {
+				if log.V(1) {
+					clog.Infof(gctx, "not exist %q", ent.Name)
+				}
+				nnotexist.Add(1)
+				if len(h) == 0 {
+					clog.Infof(gctx, "not exist with no cmdhash: %q", ent.Name)
+					if logw != nil {
+						fmt.Fprintf(logw, "not exist with no cmd hash: %q\n", ent.Name)
+					}
+					return nil
+				}
+				if outputLocal(ctx, ent.Name) || ent.Local {
+					// command output file that is needed on the disk doesn't exist on the disk.
+					// need to forget to trigger steps for the output. b/298523549
+					clog.Warningf(gctx, "not exist output-needed file: %q", ent.Name)
+					if logw != nil {
+						fmt.Fprintf(logw, "not exist output-needed file: %q\n", ent.Name)
+					}
+					return nil
+				}
+				e, _ := newStateEntry(ctx, ent, time.Time{}, hfs.opt.DataSource, hfs.OS)
+				e.cmdhash = h
+				e.edgehash = ent.EdgeHash
+				e.action = toDigest(ent.Action)
+				e.local = ent.Local
+				entries[i] = e
+				if logw != nil {
+					fmt.Fprintf(logw, "not exist with cmd hash: %q\n", ent.Name)
+				}
+				return nil
+			}
+			if err != nil {
+				clog.Warningf(gctx, "Failed to stat %q: %v", ent.Name, err)
+				nfail.Add(1)
+				dirty.Store(true)
+				if logw != nil {
+					fmt.Fprintf(logw, "failed to stat %q: %v\n", ent.Name, err)
+				}
+				return nil
+			}
+			err = waitUntilModTime(ctx, ent.Name, fi.ModTime())
+			if err != nil {
+				return err
+			}
+			e, et := newStateEntry(ctx, ent, fi.ModTime(), hfs.opt.DataSource, hfs.OS)
+			e.cmdhash = h
+			e.edgehash = ent.EdgeHash
+			e.action = toDigest(ent.Action)
+			e.local = ent.Local
+			ftype := "file"
+			if e.d.IsZero() && e.target == "" {
+				if !fi.IsDir() {
+					clog.Warningf(gctx, "entry is dir, but local is not dir: mode=%s", fi.Mode())
+					nfail.Add(1)
+					dirty.Store(true)
+					if logw != nil {
+						fmt.Fprintf(logw, "entry is dir, but local is not dir: mode=%s", fi.Mode())
+					}
+					return nil
+				}
+				ftype = "dir"
+				if len(e.cmdhash) == 0 {
+					clog.Infof(gctx, "ignore %s %q", ftype, ent.Name)
+					if logw != nil {
+						fmt.Fprintf(logw, "ignore dir no cmd hash: %q\n", ent.Name)
+					}
+					return nil
+				}
+			} else if e.d.IsZero() && e.target != "" {
+				ftype = "symlink"
+				t, err := os.Readlink(ent.Name)
+				if err != nil {
+					clog.Warningf(gctx, "failed to readlink %q: %v", ent.Name, err)
+					nfail.Add(1)
+					dirty.Store(true)
+					if logw != nil {
+						fmt.Fprintf(logw, "failed to readlink %q: %v\n", ent.Name, err)
+					}
+					return nil
+				}
+				if t != e.target {
+					clog.Warningf(gctx, "invalidate %s %q: target:%q->%q", ftype, ent.Name, e.target, t)
+					ninvalidate.Add(1)
+					dirty.Store(true)
+					if logw != nil {
+						fmt.Fprintf(logw, "invalidate symlink %q: target: %q->%q\n", ent.Name, e.target, t)
+					}
+					return nil
+				}
+				// symlink matches, make entry equals local
+				if et != entryEqLocal {
+					if log.V(1) {
+						clog.Warningf(ctx, "symlink target match %q: state=%v->%v", ent.Name, et, entryEqLocal)
+					}
+					et = entryEqLocal
+				}
+			} else if !e.d.IsZero() && len(h) > 0 && et != entryEqLocal && !dirty.Load() {
+				// mtime differ for generated file?
+				// check digest is the same and fix mtime if it matches.
+				// don't reconcile for source (non-generated file),
+				// as user may want to trigger build by touch.
+				src := hfs.OS.FileSource(ent.Name, fi.Size())
+				data, err := localDigest(ctx, src, ent.Name)
+				if err == nil && data.Digest() == e.d {
+					et = entryEqLocal
+					err = hfs.OS.Chtimes(ctx, ent.Name, time.Now(), e.mtime)
+					clog.Infof(ctx, "reconcile mtime %q %v -> %v: %v", ent.Name, fi.ModTime(), e.mtime, err)
+					if logw != nil {
+						fmt.Fprintf(logw, "reconcile mtime %q %v -> %v: %v\n", ent.Name, fi.ModTime(), e.mtime, err)
+					}
+				} else {
+					clog.Warningf(ctx, "failed to reconcile mtime %q digest %s(state) != %s(local) err: %v", ent.Name, e.d, data.Digest(), err)
+					if logw != nil {
+						fmt.Fprintf(logw, "failed to reconcile mtime %q digest mismatch\n", ent.Name)
+					}
+				}
+			}
+			switch et {
+			case entryNoLocal:
+				// it should not happen since we already checked it in `if errors.Is(err, os.ErrNotExist)` above.
+				nnotexist.Add(1)
+				dirty.Store(true)
+				if len(h) == 0 {
+					// file is a source input, not generated
+					if logw != nil {
+						fmt.Fprintf(logw, "no local entry source: %q\n", ent.Name)
+					}
+					return nil
+				}
+				if outputLocal(ctx, ent.Name) {
+					// file is a output file and needed on the disk
+					if logw != nil {
+						fmt.Fprintf(logw, "no local output local: %s %q\n", ftype, ent.Name)
+					}
+					return nil
+				}
 
-	hfs.initial.prepare(ctx, state)
-
-	var err error
-	hfs.previouslyGeneratedFiles, hfs.taintedFiles, err = hfs.initial.updateFromDisk(ctx)
+				clog.Infof(gctx, "not exist %s %q cmdhash:%s", ftype, ent.Name, base64.StdEncoding.EncodeToString(e.cmdhash))
+				if logw != nil {
+					fmt.Fprintf(logw, "no local output: %s %q\n", ftype, ent.Name)
+				}
+			case entryBeforeLocal:
+				ninvalidate.Add(1)
+				dirty.Store(true)
+				clog.Warningf(gctx, "invalidate %s %q: state:%s disk:%s", ftype, ent.Name, e.mtime, fi.ModTime())
+				if h == nil || !hfs.opt.KeepTainted {
+					if logw != nil {
+						fmt.Fprintf(logw, "invalidate %s %q: state:%s disk:%s\n", ftype, ent.Name, e.mtime, fi.ModTime())
+					}
+					return nil
+				}
+				tainted[i] = true
+				if logw != nil {
+					fmt.Fprintf(logw, "keep tainted %s %q: state:%s disk:%s\n", ftype, ent.Name, e.mtime, fi.ModTime())
+				}
+				// keep this entry to preserve cmdhash
+				// but use mtime of actual file.
+				le := newLocalEntry()
+				le.init(ctx, ent.Name, hfs.executables, hfs.OS)
+				le.cmdhash = e.cmdhash
+				le.edgehash = e.edgehash
+				le.action = e.action
+				le.local = e.local
+				e = le
+			case entryEqLocal:
+				neq.Add(1)
+				if log.V(1) {
+					clog.Infof(gctx, "equal local %s %q: %s", ftype, ent.Name, e.mtime)
+				}
+				if logw != nil {
+					fmt.Fprintf(logw, "equal local %s %q: %s\n", ftype, ent.Name, e.mtime)
+				}
+			case entryAfterLocal:
+				nnew.Add(1)
+				dirty.Store(true)
+				if len(h) == 0 {
+					if logw != nil {
+						fmt.Fprintf(logw, "old local source %s %q: state:%s disk:%s\n", ftype, ent.Name, e.mtime, fi.ModTime())
+					}
+					return nil
+				}
+				isOutputLocal := outputLocal(ctx, ent.Name)
+				clog.Infof(gctx, "old local %s %q: state:%s disk:%s cmdhash:%s outputLocal:%t", ftype, ent.Name, e.mtime, fi.ModTime(), base64.StdEncoding.EncodeToString(e.cmdhash), isOutputLocal)
+				if logw != nil {
+					fmt.Fprintf(logw, "old local %s %q: state:%s disk:%s cmdhash:%s outputLocal:%t\n", ftype, ent.Name, e.mtime, fi.ModTime(), base64.StdEncoding.EncodeToString(e.cmdhash), isOutputLocal)
+				}
+				if isOutputLocal {
+					// command output file that is needed on the disk is stale.
+					// need to forget to trigger steps for the output. b/418221857
+					ninvalidate.Add(1)
+					return nil
+				}
+				// local file would be stale.
+				// TODO: flush instead of removing local?
+				err = os.Remove(ent.Name)
+				if err != nil {
+					clog.Warningf(gctx, "failed to remove stale old local file %q: %v", ent.Name, err)
+					if logw != nil {
+						fmt.Fprintf(logw, "failed to remove stale old local file %q: %v\n", ent.Name, err)
+					}
+					ninvalidate.Add(1)
+					// invalidate entry
+					return nil
+				}
+				// keep remote entry.
+			}
+			if log.V(1) {
+				clog.Infof(gctx, "set state %q: d:%s %s s:%s m:%s cmdhash:%s action:%s", ent.Name, e.d, e.mode, e.target, e.mtime, base64.StdEncoding.EncodeToString(e.cmdhash), e.action)
+			}
+			if ftype == "dir" {
+				dirs[i] = e
+			} else {
+				entries[i] = e
+			}
+			if len(e.cmdhash) > 0 {
+				// records generated files found in the loaded .siso_fs_state into previouslyGeneratedFiles.
+				prevGenerated[i] = true
+			}
+			return err
+		})
+	}
+	err := eg.Wait()
 	if err != nil {
-		clog.Warningf(ctx, "failed in SetState updateFromDisk: %v", err)
-		hfs.initial = nil
+		clog.Warningf(ctx, "failed in SetState: %v", err)
 		return err
 	}
-
+	for i, ent := range state.Entries {
+		if prevGenerated[i] {
+			hfs.previouslyGeneratedFiles = append(hfs.previouslyGeneratedFiles, ent.Name)
+		}
+		if tainted[i] {
+			hfs.taintedFiles = append(hfs.taintedFiles, ent.Name)
+		}
+	}
 	hfs.setStateCh = make(chan error, 1)
-
-	clean := hfs.initial.clean()
+	// missing outputs just makes dirty, but no need to set it in hfs.missingOutputs b/374179435
+	clean := nnew.Load() == 0 && nnotexist.Load() == 0 && nfail.Load() == 0 && ninvalidate.Load() == 0 && len(state.MissingOutputs) == 0 && len(state.MissingDigests) == 0
 	hfs.clean.Store(clean)
 	// store in background.
 	go func() {
-		ctx := octx // use ctx without logw.
 		defer close(hfs.setStateCh)
-		defer func() {
-			hfs.initial = nil
-		}()
 		// name is sorted in state.Entries.
 
-		// store dir early.
-		// otherwise, flaky confirm no-op failure
-		// for step that outputs dir and dir/file.
-		// i.e. if dir/file is stored before dir,
-		// dir/file's cmdhash etc will be lost.
-		err := hfs.initial.storeDirs(ctx, hfs)
-		if err != nil {
-			hfs.clean.Store(false)
-			hfs.setStateCh <- err
-			return
+		{
+			// store dir early.
+			// otherwise, flaky confirm no-op failure
+			// for step that outputs dir and dir/file.
+			// i.e. if dir/file is stored before dir,
+			// dir/file's cmdhash etc will be lost.
+			eg, gctx := errgroup.WithContext(ctx)
+			eg.SetLimit(runtimex.NumCPU())
+			for i, ent := range state.Entries {
+				e := dirs[i]
+				if e == nil {
+					continue
+				}
+				eg.Go(func() error {
+					_, err := hfs.directory.store(gctx, ent.Name, e)
+					if err != nil {
+						return fmt.Errorf("failed to store dir %s: %w", ent.Name, err)
+					}
+					return nil
+				})
+			}
+			err := eg.Wait()
+			if err != nil {
+				hfs.clean.Store(false)
+				hfs.setStateCh <- err
+				return
+			}
 		}
-		err = hfs.initial.storeNonDirs(ctx, hfs)
+		eg, gctx := errgroup.WithContext(ctx)
+		eg.SetLimit(runtimex.NumCPU())
+		for i, ent := range state.Entries {
+			e := entries[i]
+			if e == nil {
+				continue
+			}
+			eg.Go(func() error {
+				_, err := hfs.directory.store(gctx, ent.Name, e)
+				if err != nil {
+					return fmt.Errorf("failed to store file %s: %w", ent.Name, err)
+				}
+				return nil
+			})
+		}
+		err := eg.Wait()
 		if err != nil {
 			hfs.clean.Store(false)
 			hfs.setStateCh <- err
@@ -792,12 +611,74 @@ func (hfs *HashFS) SetState(ctx context.Context, state *pb.State) error {
 		if hfs.opt.DeferDigest {
 			clog.Infof(ctx, "deferred stat missing_digests=%d", len(state.MissingDigests))
 		} else {
-			hfs.initial.triggerDigestCalculation(ctx, hfs)
+			missingDigestsStart := time.Now()
+			for _, fname := range state.MissingDigests {
+				hfs.Stat(ctx, "", fname) // access and trigger lazy digest calculation.
+			}
+			clog.Infof(ctx, "stat missing_digests=%d: %s", len(state.MissingDigests), time.Since(missingDigestsStart))
 		}
 		hfs.setStateCh <- nil
 	}()
-	clog.Infof(ctx, "load state done: %s tainted:%d prevGenerated:%d %s", hfs.initial.info(), len(hfs.taintedFiles), len(hfs.previouslyGeneratedFiles), time.Since(start))
+	clog.Infof(ctx, "load state done: eq:%d new:%d not-exist:%d fail:%d invalidate:%d: tainted:%d missingOutputs:%d missingDigests:%d %s", neq.Load(), nnew.Load(), nnotexist.Load(), nfail.Load(), ninvalidate.Load(), len(hfs.taintedFiles), len(state.MissingOutputs), len(state.MissingDigests), time.Since(start))
 	return nil
+}
+
+func newStateEntry(ctx context.Context, ent *pb.Entry, ftime time.Time, dataSource DataSource, osfs *osfs.OSFS) (*entry, entryStateType) {
+	lready := make(chan bool, 1)
+	entTime := time.Unix(0, ent.Id.ModTime)
+	var entType entryStateType
+	switch {
+	case ftime.IsZero():
+		// local doesn't exist
+		entType = entryNoLocal
+		lready <- true
+	case entTime.Before(ftime):
+		entType = entryBeforeLocal
+		close(lready)
+	case entTime.Equal(ftime):
+		entType = entryEqLocal
+		close(lready)
+	case entTime.After(ftime):
+		entType = entryAfterLocal
+		lready <- true
+	}
+	mode := fs.FileMode(0644)
+	if ent.IsExecutable {
+		mode |= 0111
+	}
+	var dir *directory
+	var src digest.Source
+	entDigest := toDigest(ent.Digest)
+	if !entDigest.IsZero() {
+		if entType == entryEqLocal {
+			src = osfs.FileSource(ent.Name, entDigest.SizeBytes)
+		} else {
+			// not the same as local, but digest is in state.
+			// probably, exists in RBE side, or local cache.
+			src = dataSource.Source(ctx, entDigest, ent.Name)
+		}
+	} else if ent.Target != "" {
+		mode |= fs.ModeSymlink
+	} else {
+		dir = &directory{}
+		mode |= fs.ModeDir
+	}
+	updatedTime := time.Unix(0, ent.UpdatedTime)
+	if updatedTime.Before(entTime) {
+		updatedTime = entTime
+	}
+	e := &entry{
+		lready:      lready,
+		size:        entDigest.SizeBytes,
+		mtime:       entTime,
+		mode:        mode,
+		updatedTime: updatedTime,
+		target:      ent.Target,
+		src:         src,
+		d:           entDigest,
+		directory:   dir,
+	}
+	return e, entType
 }
 
 func saveFile(ctx context.Context, data []byte, opts Option) (retErr error) {

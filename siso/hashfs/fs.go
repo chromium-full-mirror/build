@@ -66,9 +66,6 @@ type HashFS struct {
 	opt       Option
 	directory *directory
 
-	// initial loaded data from .siso_fs_state file.
-	initial *initialEntryStates
-
 	notifies []NotifyFunc
 
 	// OS wraps of OS I/O operations in the HashFS.
