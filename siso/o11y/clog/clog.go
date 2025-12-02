@@ -12,6 +12,7 @@ package clog
 import (
 	"context"
 	"fmt"
+	"io"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -241,6 +242,9 @@ type Logger struct {
 	// Default to `fmt.Sprintf("%v", e.Payload)`.
 	Formatter func(e logging.Entry) string
 
+	// Additional log writer if non-nil
+	writer io.Writer
+
 	client *logging.Client
 	// https://pkg.go.dev/cloud.google.com/go/logging#hdr-Grouping_Logs_by_Request
 	// parent in access log has httprequest.request.{method,url} and httprequest.status
@@ -258,6 +262,17 @@ type Logger struct {
 	trace  string
 	spanID string
 	labels map[string]string
+}
+
+// WithWriter returns logger with additional log writer.
+func (l *Logger) WithWriter(w io.Writer) *Logger {
+	if l == nil {
+		l = &Logger{}
+	}
+	newLogger := &Logger{}
+	*newLogger = *l
+	newLogger.writer = w
+	return newLogger
 }
 
 // URL returns url of cloud logging.
@@ -283,6 +298,7 @@ func (l *Logger) Span(trace, spanID string, labels map[string]string) *Logger {
 	}
 	return &Logger{
 		Formatter:    l.Formatter,
+		writer:       l.writer,
 		logger:       l.logger,
 		accessLogger: l.accessLogger,
 		res:          l.res,
@@ -315,6 +331,9 @@ func (l *Logger) log(e logging.Entry) {
 			e.Severity = logging.Error
 		}
 		l.accessLogger.Log(e)
+		if l.writer != nil {
+			fmt.Fprintln(l.writer, l.Formatter(e))
+		}
 		return
 	}
 	if l == nil || l.logger == nil {
@@ -322,6 +341,9 @@ func (l *Logger) log(e logging.Entry) {
 		return
 	}
 	l.logger.Log(e)
+	if l.writer != nil {
+		fmt.Fprintln(l.writer, l.Formatter(e))
+	}
 }
 
 func (l *Logger) glogEntry(e logging.Entry) {
@@ -339,6 +361,9 @@ func (l *Logger) glogEntry(e logging.Entry) {
 		glog.ExitDepth(3, msg)
 	default:
 		glog.InfoDepth(3, fmt.Sprintf("%s %s", e.Severity, msg))
+	}
+	if l.writer != nil {
+		fmt.Fprintln(l.writer, msg)
 	}
 }
 
