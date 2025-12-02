@@ -27,7 +27,7 @@ func TestGetIndexAndGetPath(t *testing.T) {
 
 	// 1. Add a new path and verify its index and retrieval.
 	path1 := "path/to/file1.h"
-	wantIdx1 := 0
+	var wantIdx1 uint32 = 0
 	gotIdx1 := pt.Index(path1)
 	if gotIdx1 != wantIdx1 {
 		t.Errorf("Index(%q) = %d; want %d", path1, gotIdx1, wantIdx1)
@@ -42,7 +42,7 @@ func TestGetIndexAndGetPath(t *testing.T) {
 
 	// 2. Add a second path.
 	path2 := "path/to/file2.cc"
-	wantIdx2 := 1
+	var wantIdx2 uint32 = 1
 	gotIdx2 := pt.Index(path2)
 	if gotIdx2 != wantIdx2 {
 		t.Errorf("Index(%q) = %d; want %d", path2, gotIdx2, wantIdx2)
@@ -56,7 +56,7 @@ func TestGetIndexAndGetPath(t *testing.T) {
 
 	// 4. Add an empty string path.
 	path3 := ""
-	wantIdx3 := 2
+	var wantIdx3 uint32 = 2
 	gotIdx3 := pt.Index(path3)
 	if gotIdx3 != wantIdx3 {
 		t.Errorf("Index(%q) = %d; want %d", path3, gotIdx3, wantIdx3)
@@ -66,9 +66,5 @@ func TestGetIndexAndGetPath(t *testing.T) {
 	_, err = pt.Path(999)
 	if err == nil {
 		t.Errorf("Path(999) expected error, got nil")
-	}
-	_, err = pt.Path(-1)
-	if err == nil {
-		t.Errorf("Path(-1) expected error, got nil")
 	}
 }

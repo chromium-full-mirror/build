@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"math"
 	"path"
 	"path/filepath"
 	"slices"
@@ -17,6 +16,7 @@ import (
 	"sync"
 
 	log "github.com/golang/glog"
+	"github.com/kelindar/bitmap"
 
 	"go.chromium.org/build/siso/o11y/clog"
 )
@@ -45,9 +45,8 @@ type scanner struct {
 	macros map[string][]string
 
 	// name -> dirIndex -> visited
-	// Uses uint16 for dirIndex to optimize memory usage, with checks
-	// to ensure the index is within uint16 bounds.
-	included map[string]map[uint16]struct{}
+	// Uses uint32 for dirIndex.
+	included map[string]*bitmap.Bitmap
 
 	// macro name -> value -> used?
 	macroUsed map[string]map[string]bool
@@ -104,7 +103,7 @@ func (fsys *filesystem) scanner(ctx context.Context, execRoot string, inputDeps 
 			topEnts:          make(map[string]*sync.Map),
 		},
 		macros:       make(map[string][]string),
-		included:     make(map[string]map[uint16]struct{}),
+		included:     make(map[string]*bitmap.Bitmap),
 		macroUsed:    make(map[string]map[string]bool),
 		macroInclude: make(map[string]bool),
 		macroDirs:    make(map[string][]string),
@@ -251,7 +250,7 @@ func (s *scanner) find(ctx context.Context, name string) (string, error) {
 	name = name[1 : len(name)-1]
 	included, ok := s.included[name]
 	if !ok {
-		included = make(map[uint16]struct{})
+		included = &bitmap.Bitmap{}
 		s.included[name] = included
 	}
 	if filepath.IsAbs(name) {
@@ -267,10 +266,7 @@ func (s *scanner) find(ctx context.Context, name string) (string, error) {
 			return "", err
 		}
 		dirIndex := s.pt.Index(".")
-		if dirIndex > math.MaxUint16 {
-			return "", fmt.Errorf("path table overflow: %d", dirIndex)
-		}
-		s.macroCheck(ctx, uint16(dirIndex), rel, incpath, sr.includes)
+		s.macroCheck(ctx, dirIndex, rel, incpath, sr.includes)
 		dir := path.Dir(incpath)
 		s.pushDir(ctx, dir)
 		s.updateMacros(sr.defines)
@@ -297,14 +293,10 @@ func (s *scanner) find(ctx context.Context, name string) (string, error) {
 		s.ds = ds
 		for i, dir := range ds {
 			dirIndex := s.pt.Index(dir)
-			if dirIndex > math.MaxUint16 {
-				return "", fmt.Errorf("path table overflow: %d", dirIndex)
-			}
-			u16DirIndex := uint16(dirIndex)
-			if _, ok := included[u16DirIndex]; ok {
+			if included.Contains(dirIndex) {
 				continue
 			}
-			included[u16DirIndex] = struct{}{}
+			included.Set(dirIndex)
 			if log.V(1) {
 				clog.Infof(ctx, "find check %s/%s", dir, name)
 			}
@@ -315,8 +307,7 @@ func (s *scanner) find(ctx context.Context, name string) (string, error) {
 			if err != nil {
 				continue
 			}
-			s.macroCheck(ctx, u16DirIndex, name, incpath, sr.includes)
-
+			s.macroCheck(ctx, dirIndex, name, incpath, sr.includes)
 			// `#include "xx"` in incpath may include "xx"
 			// from the dir of incpath.
 			dir := path.Dir(incpath)
@@ -349,14 +340,10 @@ func (s *scanner) find(ctx context.Context, name string) (string, error) {
 			}
 			for _, dir := range s.fsview.frameworkPaths {
 				dirIndex := s.pt.Index(dir)
-				if dirIndex > math.MaxUint16 {
-					return "", fmt.Errorf("path table overflow: %d", dirIndex)
-				}
-				u16DirIndex := uint16(dirIndex)
-				if _, ok := included[u16DirIndex]; ok {
+				if included.Contains(dirIndex) {
 					continue
 				}
-				included[u16DirIndex] = struct{}{}
+				included.Set(dirIndex)
 				if log.V(1) {
 					clog.Infof(ctx, "find check %s/%s", dir, fwname)
 				}
@@ -367,7 +354,7 @@ func (s *scanner) find(ctx context.Context, name string) (string, error) {
 				if err != nil {
 					continue
 				}
-				s.macroCheck(ctx, u16DirIndex, name, incpath, sr.includes)
+				s.macroCheck(ctx, dirIndex, name, incpath, sr.includes)
 
 				// `#include "xx"` in incpath may include "xx"
 				// from the dir of incpath.
@@ -390,14 +377,14 @@ func (s *scanner) find(ctx context.Context, name string) (string, error) {
 	return "", fs.ErrNotExist
 }
 
-func (s *scanner) macroCheck(ctx context.Context, dirIndex uint16, name, incpath string, incnames []string) {
+func (s *scanner) macroCheck(ctx context.Context, dirIndex uint32, name, incpath string, incnames []string) {
 	for _, iname := range incnames {
 		if isMacro(iname) && !s.macroAllUsed(ctx, iname) {
 			// incname uses macro.
 			// need to try include again
 			// because macro value may have been changed.
 			if !s.macroInclude[incpath] {
-				dir, err := s.pt.Path(int(dirIndex))
+				dir, err := s.pt.Path(dirIndex)
 				if err != nil {
 					clog.Warningf(ctx, "failed to get path for index %d: %v", dirIndex, err)
 					return
@@ -405,7 +392,7 @@ func (s *scanner) macroCheck(ctx context.Context, dirIndex uint16, name, incpath
 				s.macroDirs[name] = append(s.macroDirs[name], dir)
 			}
 			s.macroInclude[incpath] = true
-			delete(s.included[name], dirIndex)
+			s.included[name].Remove(dirIndex)
 			return
 		}
 	}
