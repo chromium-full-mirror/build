@@ -1,6 +1,6 @@
 module go.chromium.org/build/kzipinfo
 
-go 1.24.10
+go 1.24.11
 
 require (
 	github.com/google/subcommands v1.2.0
