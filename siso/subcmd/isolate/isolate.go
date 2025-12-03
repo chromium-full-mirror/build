@@ -440,7 +440,7 @@ func (c *Command) initCloudLogging(ctx context.Context, projectID, execRoot stri
 			"location":   hostname,
 			"namespace":  execRoot,
 		},
-	})
+	}, false, "")
 	if err != nil {
 		return ctx, "", func() {}, err
 	}

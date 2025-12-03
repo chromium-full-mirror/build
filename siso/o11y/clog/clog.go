@@ -11,6 +11,7 @@ package clog
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"path/filepath"
@@ -22,7 +23,14 @@ import (
 	"cloud.google.com/go/logging"
 	"cloud.google.com/go/logging/apiv2/loggingpb"
 	"github.com/golang/glog"
+	"go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc"
+	otelog "go.opentelemetry.io/otel/log"
+	sdklog "go.opentelemetry.io/otel/sdk/log"
+	sdkresource "go.opentelemetry.io/otel/sdk/resource"
+	semconv "go.opentelemetry.io/otel/semconv/v1.37.0"
 	mrpb "google.golang.org/genproto/googleapis/api/monitoredres"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/grpclog"
 	"google.golang.org/protobuf/proto"
 )
@@ -189,25 +197,83 @@ var defaultFormatter = func(e logging.Entry) string {
 }
 
 // New creates a new Logger.
-func New(ctx context.Context, client *logging.Client, logID, accessLogID string, res *mrpb.MonitoredResource, opts ...logging.LoggerOption) (*Logger, error) {
-	client.OnError = func(err error) {
-		glog.Warningf("logger: %v", err)
+func New(ctx context.Context, client *logging.Client, logID, accessLogID string, res *mrpb.MonitoredResource, enableCollector bool, collectorAddr string, opts ...logging.LoggerOption) (*Logger, error) {
+	var otelLogger otelog.Logger
+	var otelProvider *sdklog.LoggerProvider
+	var otelGRPCConn *grpc.ClientConn
+	directClient := client
+
+	if enableCollector {
+		conn, provider, logger, err := func() (*grpc.ClientConn, *sdklog.LoggerProvider, otelog.Logger, error) {
+			conn, err := grpc.NewClient(collectorAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+			if err != nil {
+				return nil, nil, nil, fmt.Errorf("failed to create gRPC connection to OTLP collector: %w", err)
+			}
+			logExporter, err := otlploggrpc.New(ctx, otlploggrpc.WithGRPCConn(conn))
+			if err != nil {
+				return conn, nil, nil, fmt.Errorf("failed to create OTLP log exporter: %w", err)
+			}
+			otelResource, err := sdkresource.New(ctx, sdkresource.WithAttributes(
+				semconv.ServiceName(res.Labels["job"]),
+				semconv.ServiceInstanceID(res.Labels["task_id"]),
+				semconv.ServiceNamespace(res.Labels["namespace"]),
+				// https://github.com/GoogleCloudPlatform/opentelemetry-operations-go/blob/b50231bb7ac2630d764dea1fe6dc269121eab82f/internal/resourcemapping/resourcemapping.go#L147C21-L147C35
+				semconv.CloudRegion(res.Labels["location"])))
+			if err != nil {
+				return conn, nil, nil, fmt.Errorf("failed to create OTLP resource: %w", err)
+			}
+			provider := sdklog.NewLoggerProvider(
+				sdklog.WithProcessor(sdklog.NewBatchProcessor(logExporter)),
+				sdklog.WithResource(otelResource),
+			)
+			logger := provider.Logger("siso")
+			return conn, provider, logger, nil
+		}()
+		if err != nil {
+			glog.Warningf("OTEL collector init failed, falling back to cloud logging: %v", err)
+			if conn != nil {
+				conn.Close()
+			}
+		} else {
+			glog.Infof("OTEL logging is ready. Disabling direct cloud logging uploads.")
+			directClient = nil
+			otelGRPCConn = conn
+			otelProvider = provider
+			otelLogger = logger
+		}
 	}
-	err := client.Ping(ctx)
-	if err != nil {
-		client.Close()
-		return nil, fmt.Errorf("failed to ping logging service: %w", err)
-	}
+
 	// recommends to use logging.CommonResource to set default resource for log entry.
 	opts = append(opts, logging.CommonResource(res))
+	var cl, acl *logging.Logger
+	if directClient != nil {
+		directClient.OnError = func(err error) {
+			glog.Warningf("logger: %v", err)
+		}
+		err := directClient.Ping(ctx)
+		if err != nil {
+			directClient.Close()
+			return nil, fmt.Errorf("failed to ping logging service: %w", err)
+		}
+		cl = directClient.Logger(logID, opts...)
+		acl = directClient.Logger(accessLogID, opts...)
+	}
+
 	logger := &Logger{
 		Formatter:    defaultFormatter,
-		client:       client,
-		logger:       client.Logger(logID, opts...),
-		accessLogger: client.Logger(accessLogID, opts...),
+		client:       directClient,
+		logger:       cl,
+		accessLogger: acl,
 		res:          res,
+		otelLogger:   otelLogger,
+		otelProvider: otelProvider,
+		otelGRPCConn: otelGRPCConn,
 	}
-	glog.Infof("cloud logging is ready: %s", logger.URL())
+	if otelLogger != nil {
+		glog.Infof("OTEL logging is ready: %s", logger.URL())
+	} else if directClient != nil {
+		glog.Infof("cloud logging is ready: %s", logger.URL())
+	}
 
 	logger.Infof("Binary: Built with %s %s for %s/%s", runtime.Compiler, runtime.Version(), runtime.GOOS, runtime.GOARCH)
 	return logger, nil
@@ -259,9 +325,12 @@ type Logger struct {
 	// The following properties are equivalent to the ones in logging.LogEntry.
 	// See the document for the details.
 	// https://cloud.google.com/logging/docs/reference/v2/rest/v2/LogEntry
-	trace  string
-	spanID string
-	labels map[string]string
+	trace        string
+	spanID       string
+	labels       map[string]string
+	otelLogger   otelog.Logger
+	otelProvider *sdklog.LoggerProvider
+	otelGRPCConn *grpc.ClientConn
 }
 
 // WithWriter returns logger with additional log writer.
@@ -298,6 +367,7 @@ func (l *Logger) Span(trace, spanID string, labels map[string]string) *Logger {
 	}
 	return &Logger{
 		Formatter:    l.Formatter,
+		client:       l.client,
 		writer:       l.writer,
 		logger:       l.logger,
 		accessLogger: l.accessLogger,
@@ -305,6 +375,9 @@ func (l *Logger) Span(trace, spanID string, labels map[string]string) *Logger {
 		trace:        trace,
 		spanID:       spanID,
 		labels:       labels,
+		otelLogger:   l.otelLogger,
+		otelProvider: l.otelProvider,
+		otelGRPCConn: l.otelGRPCConn,
 	}
 }
 
@@ -314,6 +387,55 @@ func (l *Logger) Log(e logging.Entry) {
 }
 
 func (l *Logger) log(e logging.Entry) {
+	if l != nil && l.otelLogger != nil {
+		rec := otelog.Record{}
+		rec.SetTimestamp(e.Timestamp)
+		var s otelog.Severity
+		switch e.Severity {
+		case logging.Info:
+			s = otelog.SeverityInfo
+		case logging.Warning:
+			s = otelog.SeverityWarn
+		case logging.Error:
+			s = otelog.SeverityError
+		case logging.Critical:
+			s = otelog.SeverityFatal
+		case logging.Emergency:
+			s = otelog.SeverityFatal
+		default:
+			s = otelog.SeverityInfo
+		}
+		rec.SetSeverity(s)
+		rec.SetSeverityText(e.Severity.String())
+
+		rec.SetBody(otelog.StringValue(fmt.Sprintf("%v", e.Payload)))
+
+		var attrs []otelog.KeyValue
+		for k, v := range e.Labels {
+			attrs = append(attrs, otelog.String(k, v))
+		}
+		for k, v := range l.res.Labels {
+			attrs = append(attrs, otelog.String(k, v))
+		}
+		if e.SourceLocation != nil {
+			// Must use JSON instead of proto marshalling.
+			// https://github.com/GoogleCloudPlatform/opentelemetry-operations-go/blob/b50231bb7ac2630d764dea1fe6dc269121eab82f/exporter/collector/logs.go#L718
+			message, err := json.Marshal(e.SourceLocation)
+			if err != nil {
+				glog.Warning("failed to marshal source location: %v", err)
+			} else {
+				attrs = append(attrs, otelog.Bytes("gcp.source_location", message))
+			}
+		}
+
+		// Magic name overriding key.
+		// https://github.com/GoogleCloudPlatform/opentelemetry-operations-go/blob/b50231bb7ac2630d764dea1fe6dc269121eab82f/exporter/collector/logs.go#L60
+		attrs = append(attrs, otelog.String("gcp.log_name", "siso.log"))
+		rec.AddAttributes(attrs...)
+		l.otelLogger.Emit(context.Background(), rec)
+		return
+	}
+
 	if l != nil && l.logger != nil {
 		m, err := logging.ToLogEntry(e, "log-entry-project-name")
 		if err != nil {
@@ -569,6 +691,16 @@ func (l *Logger) Close() error {
 	}
 	if l.accessLogger != nil {
 		aerr = l.accessLogger.Flush()
+	}
+	if l.otelProvider != nil {
+		if err := l.otelProvider.Shutdown(context.Background()); err != nil {
+			glog.Warningf("failed to shutdown OTLP log provider: %v", err)
+		}
+	}
+	if l.otelGRPCConn != nil {
+		if err := l.otelGRPCConn.Close(); err != nil {
+			glog.Warningf("failed to close OTLP gRPC connection: %v", err)
+		}
 	}
 	// not close client to avoid 'panic: send on closed channel'
 	// b/282860686

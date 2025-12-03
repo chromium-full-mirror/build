@@ -1431,7 +1431,7 @@ func (c *Command) initCloudLogging(ctx context.Context, projectID, execRoot stri
 			"location":   hostname,
 			"namespace":  execRoot,
 		},
-	})
+	}, c.enableCollector, c.getCollectorAddr())
 	if err != nil {
 		return ctx, "", func() {}, err
 	}
@@ -1513,7 +1513,7 @@ func (c *Command) initCloudMonitoring(ctx context.Context, credential cred.Cred,
 	}
 	var exporter smetric.Exporter
 	if c.enableCollector {
-		exporter = newOTELMetricsExporter(ctx, c.collectorSocketPath)
+		exporter = c.newOTELMetricsExporter(ctx)
 	}
 	if exporter == nil {
 		exporter, err = cloudmetric.New(
@@ -2238,11 +2238,16 @@ func (c *Command) initOutputLocal() (func(context.Context, string) bool, error) 
 	}
 }
 
-func newOTELMetricsExporter(ctx context.Context, sockPath string) *otlpmetricgrpc.Exporter {
+func (c *Command) getCollectorAddr() string {
 	collectorAddr := "127.0.0.1:4317"
-	if sockPath != "" {
-		collectorAddr = "unix://" + sockPath
+	if c.collectorSocketPath != "" {
+		collectorAddr = "unix://" + c.collectorSocketPath
 	}
+	return collectorAddr
+}
+
+func (c *Command) newOTELMetricsExporter(ctx context.Context) *otlpmetricgrpc.Exporter {
+	collectorAddr := c.getCollectorAddr()
 	conn, err := grpc.NewClient(collectorAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		clog.Warningf(ctx, "failed to create connection to OTLP collector: %v", err)
