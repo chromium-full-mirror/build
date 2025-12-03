@@ -39,12 +39,15 @@ import (
 	"github.com/google/uuid"
 	"github.com/klauspost/cpuid/v2"
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc"
 	smetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 	"golang.org/x/sync/errgroup"
 	mrpb "google.golang.org/genproto/googleapis/api/monitoredres"
 	rspb "google.golang.org/genproto/googleapis/devtools/resultstore/v2"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/grpclog"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -180,8 +183,10 @@ type Command struct {
 	artfsDir      string
 	artfsEndpoint string
 
-	enableCloudLogging bool
-	enableResultstore  bool
+	enableCloudLogging  bool
+	enableResultstore   bool
+	enableCollector     bool
+	collectorSocketPath string
 	// enableCPUProfiler bool
 	enableCloudProfiler         bool
 	cloudProfilerServiceName    string
@@ -541,6 +546,7 @@ func (c *Command) run(ctx context.Context) (stats build.Stats, err error) {
 		c.reopt = new(reapi.Option)
 		c.reopt.Insecure = true
 		c.projectID = ""
+		c.enableCollector = false
 		c.enableCloudLogging = false
 		c.enableResultstore = false
 		c.enableCloudProfiler = false
@@ -1305,6 +1311,8 @@ func (c *Command) SetFlags(flagSet *flag.FlagSet) {
 	flagSet.DurationVar(&c.traceThreshold, "trace_threshold", 1*time.Minute, "threshold for trace record")
 	flagSet.DurationVar(&c.traceSpanThreshold, "trace_span_threshold", 100*time.Millisecond, "theshold for trace span record")
 
+	flagSet.BoolVar(&c.enableCollector, "enable_collector", false, "enable OTEL collector")
+	flagSet.StringVar(&c.collectorSocketPath, "collector_socket_path", "", "path to socket collector. If empty - assume TCP connection.")
 	flagSet.BoolVar(&c.enableCloudLogging, "enable_cloud_logging", false, "enable cloud logging")
 	flagSet.BoolVar(&c.enableResultstore, "enable_resultstore", false, "enable resultstore")
 	flagSet.BoolVar(&c.enableCloudProfiler, "enable_cloud_profiler", false, "enable cloud profiler")
@@ -1503,15 +1511,21 @@ func (c *Command) initCloudMonitoring(ctx context.Context, credential cred.Cred,
 	if err != nil {
 		return nil, err
 	}
-	exporter, err := cloudmetric.New(
-		cloudmetric.WithProjectID(metricsProject),
-		cloudmetric.WithMonitoringClientOptions(credential.ClientOptions()...),
-		cloudmetric.WithMetricDescriptorTypeFormatter(func(metrics metricdata.Metrics) string {
-			return fmt.Sprintf("workload.googleapis.com/siso/%s", metrics.Name)
-		}),
-	)
-	if err != nil {
-		return nil, err
+	var exporter smetric.Exporter
+	if c.enableCollector {
+		exporter = newOTELMetricsExporter(ctx, c.collectorSocketPath)
+	}
+	if exporter == nil {
+		exporter, err = cloudmetric.New(
+			cloudmetric.WithProjectID(metricsProject),
+			cloudmetric.WithMonitoringClientOptions(credential.ClientOptions()...),
+			cloudmetric.WithMetricDescriptorTypeFormatter(func(metrics metricdata.Metrics) string {
+				return fmt.Sprintf("workload.googleapis.com/siso/%s", metrics.Name)
+			}),
+		)
+		if err != nil {
+			return nil, err
+		}
 	}
 	mp, err := monitoring.NewMetricProvider(ctx, rbeProjectID, exporter, views)
 	if err != nil {
@@ -2222,6 +2236,26 @@ func (c *Command) initOutputLocal() (func(context.Context, string) bool, error) 
 	default:
 		return nil, fmt.Errorf("unknown output local strategy: %q. should be full/greedy/minimum", c.outputLocalStrategy)
 	}
+}
+
+func newOTELMetricsExporter(ctx context.Context, sockPath string) *otlpmetricgrpc.Exporter {
+	collectorAddr := "127.0.0.1:4317"
+	if sockPath != "" {
+		collectorAddr = "unix://" + sockPath
+	}
+	conn, err := grpc.NewClient(collectorAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		clog.Warningf(ctx, "failed to create connection to OTLP collector: %v", err)
+		return nil
+	}
+
+	exporter, err := otlpmetricgrpc.New(ctx, otlpmetricgrpc.WithGRPCConn(conn))
+	if err != nil {
+		clog.Warningf(ctx, "failed to create OTLP metric exporter: %v", err)
+		return nil
+	}
+	clog.Infof(ctx, "OTEL metrics exporter to %s", collectorAddr)
+	return exporter
 }
 
 type lastTargets struct {
