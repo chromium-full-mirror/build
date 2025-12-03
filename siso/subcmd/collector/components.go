@@ -21,7 +21,7 @@ import (
 	"go.chromium.org/build/siso/auth/cred"
 )
 
-func components(credential cred.Cred, projectID string) (otelcol.Factories, error) {
+func components(credential cred.Cred, projectID, otelSocket string) (otelcol.Factories, error) {
 	var err error
 	factories := otelcol.Factories{
 		Telemetry: otelconftelemetry.NewFactory(),
@@ -36,8 +36,12 @@ func components(credential cred.Cred, projectID string) (otelcol.Factories, erro
 	factories.ExtensionModules = make(map[component.Type]string, len(factories.Extensions))
 	factories.ExtensionModules[healthcheckv2extension.NewFactory().Type()] = "github.com/open-telemetry/opentelemetry-collector-contrib/extension/healthcheckv2extension"
 
+	receiverFactory := &otlpFactory{
+		Factory:    otlpreceiver.NewFactory(),
+		otelSocket: otelSocket,
+	}
 	factories.Receivers, err = otelcol.MakeFactoryMap[receiver.Factory](
-		otlpreceiver.NewFactory(),
+		receiverFactory,
 	)
 	if err != nil {
 		return otelcol.Factories{}, err
