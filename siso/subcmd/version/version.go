@@ -72,7 +72,14 @@ func (c *Command) Execute(ctx context.Context, flagSet *flag.FlagSet, _ ...any) 
 			fmt.Fprintf(os.Stderr, "%s\n", err)
 			return 1
 		}
-		if ver.CIPD == nil && ver.Build != nil {
+		fmt.Printf("ProdCIPD=%t\n", ver.IsProdCIPD())
+		if ver.CIPD != nil {
+			fmt.Println()
+			fmt.Printf("CIPD package name: %s\n", ver.CIPD.PackageName)
+			fmt.Printf("CIPD instance ID:  %s\n", ver.CIPD.InstanceID)
+			cipdURL = fmt.Sprintf("%s/p/%s/+/%s", cipdServiceURL, ver.CIPD.PackageName, ver.CIPD.InstanceID)
+		}
+		if ver.Build != nil {
 			fmt.Printf("go\t%s\n", ver.Build.GoVersion)
 			fmt.Printf("mod\t%s\t%s\t%s\n", ver.Build.Main.Path, ver.Build.Main.Version, ver.Build.Main.Sum)
 			bs := ver.BuildSettings()
@@ -80,13 +87,10 @@ func (c *Command) Execute(ctx context.Context, flagSet *flag.FlagSet, _ ...any) 
 				v := bs[k]
 				fmt.Printf("build\t%s=%s\n", k, v)
 			}
-			return 0
 		}
-		if ver.CIPD != nil {
-			fmt.Println()
-			fmt.Printf("CIPD package name: %s\n", ver.CIPD.PackageName)
-			fmt.Printf("CIPD instance ID:  %s\n", ver.CIPD.InstanceID)
-			cipdURL = fmt.Sprintf("%s/p/%s/+/%s", cipdServiceURL, ver.CIPD.PackageName, ver.CIPD.InstanceID)
+		if cipdURL == "" || !ver.IsProdCIPD() {
+			// no need to check version from cipdURL.
+			return 0
 		}
 	}
 	fmt.Printf("CIPD URL: %s\n", cipdURL)

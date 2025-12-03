@@ -695,7 +695,7 @@ func (c *Command) run(ctx context.Context) (stats build.Stats, err error) {
 	ver, err := version.Current()
 	if err != nil {
 		clog.Warningf(ctx, "version err: %v", err)
-	} else if ver.CIPD != nil {
+	} else if ver.IsProdCIPD() {
 		clog.Infof(ctx, "CIPD package name: %s", ver.CIPD.PackageName)
 		clog.Infof(ctx, "CIPD instance ID: %s", ver.CIPD.InstanceID)
 		properties.Add("cipd_package_name", ver.CIPD.PackageName)
