@@ -1545,7 +1545,7 @@ func (hfs *HashFS) Flush(ctx context.Context, execRoot string, files []string) e
 			case e.lready <- true:
 			default:
 			}
-			return fmt.Errorf("flush sempahore %s: %w", fname, err)
+			return fmt.Errorf("flush semaphore %s: %w", fname, err)
 		}
 		eg.Go(func() (err error) {
 			defer func() { done(err) }()
