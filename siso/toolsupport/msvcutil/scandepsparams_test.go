@@ -35,6 +35,8 @@ func TestScanDepsParams(t *testing.T) {
 				"-Igen",
 				"-I../../buildtools/third_party/libc++",
 				"-I../../buildtools/third_party/libc++/trunk/include",
+				"-Xclang",
+				"-iquote../../subtree",
 				"-D__DATE_=",
 				"/FIcompat/msvcrt/snprintf.h",
 				"/Fdobj/base/base64_cc.pdb",
@@ -51,6 +53,9 @@ func TestScanDepsParams(t *testing.T) {
 					"gen",
 					"../../buildtools/third_party/libc++",
 					"../../buildtools/third_party/libc++/trunk/include",
+				},
+				QuoteDirs: []string{
+					"../../subtree",
 				},
 				Sysroots: []string{
 					"../../third_party/llvm-build/Release+Asserts",

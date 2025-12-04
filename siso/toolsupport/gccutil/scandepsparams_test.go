@@ -31,6 +31,7 @@ func TestScanDepsParams(t *testing.T) {
 				`-DCR_CLANG_REVISION="llvmorg-17-init-10134-g3da83fba-1"`,
 				"-I../..",
 				"-Igen",
+				"-iquote../../subtree",
 				"-D__DATE_=",
 				"-isystem",
 				"../../buildtools/third_party/libc++/trunk/include",
@@ -50,6 +51,9 @@ func TestScanDepsParams(t *testing.T) {
 					"gen",
 					"../../buildtools/third_party/libc++/trunk/include",
 					"../../buildtools/third_party/libc++abi/trunk/include",
+				},
+				QuoteDirs: []string{
+					"../../subtree",
 				},
 				Sysroots: []string{
 					"../../third_party/llvm-build/Release+Asserts",

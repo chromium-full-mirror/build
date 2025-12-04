@@ -437,6 +437,9 @@ func (a *ideAnalyzer) analyzeCPP(ctx context.Context, edge *ninjautil.Edge, resu
 	for i := range params.Dirs {
 		params.Dirs[i] = a.path.MaybeFromWD(ctx, params.Dirs[i])
 	}
+	for i := range params.QuoteDirs {
+		params.QuoteDirs[i] = a.path.MaybeFromWD(ctx, params.QuoteDirs[i])
+	}
 	for i := range params.Frameworks {
 		params.Frameworks[i] = a.path.MaybeFromWD(ctx, params.Frameworks[i])
 	}
@@ -448,6 +451,7 @@ func (a *ideAnalyzer) analyzeCPP(ctx context.Context, edge *ninjautil.Edge, resu
 		Sources:    params.Sources,
 		Includes:   params.Includes,
 		Dirs:       params.Dirs,
+		QuoteDirs:  params.QuoteDirs,
 		Frameworks: params.Frameworks,
 		Sysroots:   params.Sysroots,
 	}

@@ -205,6 +205,10 @@ func (s *scanner) addDir(ctx context.Context, dir string) {
 	s.fsview.addDir(ctx, dir, includeSearchPath)
 }
 
+func (s *scanner) addQuoteDir(ctx context.Context, dir string) {
+	s.fsview.addDir(ctx, dir, quoteSearchPath)
+}
+
 func (s *scanner) addFrameworkDir(ctx context.Context, dir string) {
 	s.fsview.addDir(ctx, dir, frameworkSearchPath)
 }
@@ -279,6 +283,7 @@ func (s *scanner) find(ctx context.Context, name string) (string, error) {
 		for i := len(s.dirstack) - 1; i >= 0; i-- {
 			ds = append(ds, s.dirstack[i])
 		}
+		ds = append(ds, s.fsview.quotePaths...)
 	}
 	qi := len(ds)
 	ds = append(ds, s.macroDirs[name]...)

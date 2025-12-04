@@ -31,6 +31,9 @@ type ScanDepsParams struct {
 	// Dirs are include directories.
 	Dirs []string
 
+	// QuoteDirs are include directories specified by -iquote.
+	QuoteDirs []string
+
 	// Frameworks are framework directories.
 	Frameworks []string
 
@@ -71,6 +74,10 @@ func ExtractScanDepsParams(ctx context.Context, args, env []string, fsys fs.FS) 
 			i++
 			res.Dirs = append(res.Dirs, filepath.ToSlash(args[i]))
 			continue
+		case "-iquote":
+			i++
+			res.QuoteDirs = append(res.QuoteDirs, filepath.ToSlash(args[i]))
+			continue
 		case "-D", "/D":
 			i++
 			defineMacro(res.Defines, args[i])
@@ -105,6 +112,8 @@ func ExtractScanDepsParams(ctx context.Context, args, env []string, fsys fs.FS) 
 			res.Dirs = append(res.Dirs, filepath.ToSlash(strings.TrimPrefix(arg, "-I")))
 		case strings.HasPrefix(arg, "/I"):
 			res.Dirs = append(res.Dirs, filepath.ToSlash(strings.TrimPrefix(arg, "/I")))
+		case strings.HasPrefix(arg, "-iquote"):
+			res.QuoteDirs = append(res.QuoteDirs, filepath.ToSlash(strings.TrimPrefix(arg, "-iquote")))
 
 		case strings.HasPrefix(arg, "-D"):
 			defineMacro(res.Defines, strings.TrimPrefix(arg, "-D"))

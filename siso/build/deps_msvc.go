@@ -54,6 +54,9 @@ func (msvc depsMSVC) fixCmdInputs(ctx context.Context, b *Builder, cmd *execute.
 	for i := range params.Dirs {
 		params.Dirs[i] = b.path.MaybeFromWD(ctx, params.Dirs[i])
 	}
+	for i := range params.QuoteDirs {
+		params.QuoteDirs[i] = b.path.MaybeFromWD(ctx, params.QuoteDirs[i])
+	}
 	for i := range params.Sysroots {
 		params.Sysroots[i] = b.path.MaybeFromWD(ctx, params.Sysroots[i])
 	}
@@ -67,9 +70,10 @@ func (msvc depsMSVC) fixCmdInputs(ctx context.Context, b *Builder, cmd *execute.
 	// These would not be in depsfile, different from Sources.
 	inputs = append(inputs, params.Files...)
 
-	// include directory must be included, even if no include files there.
-	// without the dir, it may fail for `#include "../config.h"`
+	// include directories must be included, even if no include files there.
+	// without the dirs, it may fail for `#include "../config.h"`
 	inputs = append(inputs, params.Dirs...)
+	inputs = append(inputs, params.QuoteDirs...)
 	// sysroot directory must be included, eve if no include files there.
 	// or error with
 	// clang++: error: no such sysroot directory: ... [-Werror, -Wmissing-sysroot]
@@ -98,7 +102,7 @@ func (msvc depsMSVC) fixCmdInputs(ctx context.Context, b *Builder, cmd *execute.
 	if msvc.treeInput != nil {
 		fn = msvc.treeInput
 	}
-	cmd.TreeInputs = append(cmd.TreeInputs, treeInputs(ctx, fn, params.Sysroots, params.Dirs)...)
+	cmd.TreeInputs = append(cmd.TreeInputs, treeInputs(ctx, fn, params.Sysroots, append(params.Dirs, params.QuoteDirs...))...)
 	clog.Infof(ctx, "treeInputs=%v", cmd.TreeInputs)
 	return inputs, nil
 }
@@ -245,6 +249,9 @@ func (depsMSVC) scandeps(ctx context.Context, b *Builder, step *Step) ([]string,
 				externals = append(externals, params.Dirs[i])
 			}
 		}
+		for i := range params.QuoteDirs {
+			params.QuoteDirs[i] = b.path.MaybeFromWD(ctx, params.QuoteDirs[i])
+		}
 		for i := range params.Sysroots {
 			params.Sysroots[i] = b.path.MaybeFromWD(ctx, params.Sysroots[i])
 			if !filepath.IsLocal(params.Sysroots[i]) {
@@ -257,12 +264,13 @@ func (depsMSVC) scandeps(ctx context.Context, b *Builder, step *Step) ([]string,
 			return fmt.Errorf("%w %d %q...: platform=%q", errNotUnderExecRoot, n, v, step.cmd.Platform)
 		}
 		req := scandeps.Request{
-			Defines:  params.Defines,
-			Sources:  params.Sources,
-			Includes: params.Includes,
-			Dirs:     params.Dirs,
-			Sysroots: params.Sysroots,
-			Timeout:  step.cmd.Timeout,
+			Defines:   params.Defines,
+			Sources:   params.Sources,
+			Includes:  params.Includes,
+			Dirs:      params.Dirs,
+			QuoteDirs: params.QuoteDirs,
+			Sysroots:  params.Sysroots,
+			Timeout:   step.cmd.Timeout,
 		}
 		if !b.localFallbackEnabled() {
 			// no-fallback has longer timeout for scandeps

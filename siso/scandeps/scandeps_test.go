@@ -385,6 +385,126 @@ func TestScanDeps_Framework(t *testing.T) {
 	}
 }
 
+func TestScanDeps_IQuoteDirs(t *testing.T) {
+	tests := []struct {
+		name  string
+		files map[string]string
+		want  []string
+	}{
+		{
+			name: "DoubleQuoteInclude",
+			files: map[string]string{
+				"a.cc": `
+#include "header.h"
+`,
+				"i/header.h": `
+`,
+				"iquote/header.h": `
+`,
+				"iquote2/header.h": `
+`,
+			},
+			want: []string{
+				".",
+				"a.cc",
+				"i",
+				"iquote",
+				"iquote/header.h",
+				"iquote2",
+			},
+		},
+		{
+			name: "AngleBracketInclude",
+			files: map[string]string{
+				"a.cc": `
+#include <header.h>
+`,
+				"i/header.h": `
+`,
+				"iquote/header.h": `
+`,
+			},
+			want: []string{
+				".",
+				"a.cc",
+				"i",
+				"i/header.h",
+				"iquote",
+			},
+		},
+		{
+			name: "BothStyleInclude",
+			files: map[string]string{
+				"a.cc": `
+#include "header.h"
+`,
+				"i/header.h": `
+`,
+				"iquote/header.h": `
+#include <header.h>
+`,
+			},
+			want: []string{
+				".",
+				"a.cc",
+				"i",
+				"i/header.h",
+				"iquote",
+				"iquote/header.h",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := t.Context()
+			dir := tempDir(t)
+
+			for fname, content := range tt.files {
+				fname := filepath.Join(dir, fname)
+				err := os.MkdirAll(filepath.Dir(fname), 0755)
+				if err != nil {
+					t.Fatal(err)
+				}
+				err = os.WriteFile(fname, []byte(content), 0644)
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			inputDeps := map[string][]string{}
+
+			hashFS, err := hashfs.New(ctx, hashfs.Option{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			scanDeps := New(hashFS, inputDeps, nil)
+
+			req := Request{
+				Sources: []string{
+					"a.cc",
+				},
+				Dirs: []string{
+					"i",
+				},
+				QuoteDirs: []string{
+					"iquote",
+					"iquote2",
+				},
+			}
+
+			got, err := scanDeps.Scan(ctx, dir, req)
+			if err != nil {
+				t.Errorf("scandeps()=%v, %v; want nil err", got, err)
+			}
+
+			if diff := cmp.Diff(tt.want, got, cmpopts.SortSlices(func(a, b string) bool { return a < b })); diff != "" {
+				t.Errorf("scandeps diff -want +got:\n%s", diff)
+			}
+		})
+	}
+}
+
 func TestScanDeps_AbsPath(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skipf("need to check on darwin only for swift generated header, and fails on windows in handling abs path?")

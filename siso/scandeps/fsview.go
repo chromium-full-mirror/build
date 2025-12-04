@@ -39,6 +39,9 @@ type fsview struct {
 	// search path: i.e. -I
 	searchPaths []string
 
+	// quote search path: i.e. -iquote
+	quotePaths []string
+
 	// framework search path: i.e. -F
 	frameworkPaths []string
 
@@ -62,6 +65,7 @@ type searchPathType int
 const (
 	noSearchPath searchPathType = iota
 	includeSearchPath
+	quoteSearchPath
 	frameworkSearchPath
 )
 
@@ -89,6 +93,14 @@ func (fv *fsview) addDir(ctx context.Context, dir string, searchPath searchPathT
 			fv.searchPaths = append(fv.searchPaths, dir)
 			if log.V(1) {
 				clog.Infof(ctx, "add dir:%d %s", len(fv.searchPaths), dir)
+			}
+		}
+	case quoteSearchPath:
+		seen := slices.Contains(fv.quotePaths, dir)
+		if !seen {
+			fv.quotePaths = append(fv.quotePaths, dir)
+			if log.V(1) {
+				clog.Infof(ctx, "add dir[quote]:%d %s", len(fv.quotePaths), dir)
 			}
 		}
 	case frameworkSearchPath:

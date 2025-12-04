@@ -56,6 +56,9 @@ func (gcc depsGCC) fixCmdInputs(ctx context.Context, b *Builder, cmd *execute.Cm
 	for i := range params.Dirs {
 		params.Dirs[i] = b.path.MaybeFromWD(ctx, params.Dirs[i])
 	}
+	for i := range params.QuoteDirs {
+		params.QuoteDirs[i] = b.path.MaybeFromWD(ctx, params.QuoteDirs[i])
+	}
 	for i := range params.Frameworks {
 		params.Frameworks[i] = b.path.MaybeFromWD(ctx, params.Frameworks[i])
 	}
@@ -71,9 +74,10 @@ func (gcc depsGCC) fixCmdInputs(ctx context.Context, b *Builder, cmd *execute.Cm
 	// include files detected by command line. i.e. sanitaizer ignore lists.
 	// These would not be in depsfile, different from Sources.
 	inputs = append(inputs, params.Files...)
-	// include directory must be included, even if no include files there.
-	// without the dir, it may fail for `#include "../config.h"`
+	// include directories must be included, even if no include files there.
+	// without the dirs, it may fail for `#include "../config.h"`
 	inputs = append(inputs, params.Dirs...)
+	inputs = append(inputs, params.QuoteDirs...)
 	// also frameworks include dirs.
 	inputs = append(inputs, params.Frameworks...)
 	// sysroot directory must be included, even if no include files there.
@@ -92,7 +96,7 @@ func (gcc depsGCC) fixCmdInputs(ctx context.Context, b *Builder, cmd *execute.Cm
 	precomputedDirs := make([]string, 0, len(params.Sysroots)+len(params.Frameworks))
 	precomputedDirs = append(precomputedDirs, params.Sysroots...)
 	precomputedDirs = append(precomputedDirs, params.Frameworks...)
-	cmd.TreeInputs = append(cmd.TreeInputs, treeInputs(ctx, fn, precomputedDirs, params.Dirs)...)
+	cmd.TreeInputs = append(cmd.TreeInputs, treeInputs(ctx, fn, precomputedDirs, append(params.Dirs, params.QuoteDirs...))...)
 	return inputs, nil
 }
 
@@ -237,6 +241,12 @@ func (depsGCC) scandeps(ctx context.Context, b *Builder, step *Step) ([]string, 
 				externals = append(externals, params.Dirs[i])
 			}
 		}
+		for i := range params.QuoteDirs {
+			params.QuoteDirs[i] = b.path.MaybeFromWD(ctx, params.QuoteDirs[i])
+			if !filepath.IsLocal(params.QuoteDirs[i]) {
+				externals = append(externals, params.QuoteDirs[i])
+			}
+		}
 		for i := range params.Frameworks {
 			params.Frameworks[i] = b.path.MaybeFromWD(ctx, params.Frameworks[i])
 			if !filepath.IsLocal(params.Frameworks[i]) {
@@ -276,6 +286,9 @@ func (depsGCC) scandeps(ctx context.Context, b *Builder, step *Step) ([]string, 
 			for i := range params.Dirs {
 				params.Dirs[i] = filepath.Join(b.path.ExecRoot, params.Dirs[i])[1:]
 			}
+			for i := range params.QuoteDirs {
+				params.QuoteDirs[i] = filepath.Join(b.path.ExecRoot, params.QuoteDirs[i])[1:]
+			}
 			for i := range params.Frameworks {
 				params.Frameworks[i] = filepath.Join(b.path.ExecRoot, params.Frameworks[i])[1:]
 			}
@@ -288,6 +301,7 @@ func (depsGCC) scandeps(ctx context.Context, b *Builder, step *Step) ([]string, 
 			Sources:    params.Sources,
 			Includes:   params.Includes,
 			Dirs:       params.Dirs,
+			QuoteDirs:  params.QuoteDirs,
 			Frameworks: params.Frameworks,
 			Sysroots:   params.Sysroots,
 			Timeout:    step.cmd.Timeout,

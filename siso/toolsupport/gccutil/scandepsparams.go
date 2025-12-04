@@ -30,6 +30,9 @@ type ScanDepsParams struct {
 	// Dirs are include directories.
 	Dirs []string
 
+	// QuoteDirs are include directories specified by -iquote.
+	QuoteDirs []string
+
 	// Frameworks are framework directories.
 	Frameworks []string
 
@@ -88,9 +91,13 @@ func ExtractScanDepsParams(ctx context.Context, args, env []string, fsys fs.FS) 
 			}
 		}
 		switch arg {
-		case "-I", "--include-directory", "-isystem", "-iquote":
+		case "-I", "--include-directory", "-isystem":
 			i++
 			res.Dirs = append(res.Dirs, args[i])
+			continue
+		case "-iquote":
+			i++
+			res.QuoteDirs = append(res.QuoteDirs, args[i])
 			continue
 		case "-F", "-iframework":
 			i++
@@ -134,10 +141,10 @@ func ExtractScanDepsParams(ctx context.Context, args, env []string, fsys fs.FS) 
 			res.Includes = append(res.Includes, strings.TrimPrefix(arg, "--include="))
 		case strings.HasPrefix(arg, "--include-directory="):
 			res.Dirs = append(res.Dirs, strings.TrimPrefix(arg, "--include-directory="))
-		case strings.HasPrefix(arg, "-iquote"):
-			res.Dirs = append(res.Dirs, strings.TrimPrefix(arg, "-iquote"))
 		case strings.HasPrefix(arg, "-isystem"):
 			res.Dirs = append(res.Dirs, strings.TrimPrefix(arg, "-isystem"))
+		case strings.HasPrefix(arg, "-iquote"):
+			res.QuoteDirs = append(res.QuoteDirs, strings.TrimPrefix(arg, "-iquote"))
 		case strings.HasPrefix(arg, "-F"):
 			res.Frameworks = append(res.Frameworks, strings.TrimPrefix(arg, "-F"))
 		case strings.HasPrefix(arg, "-fmodule-file="):

@@ -70,6 +70,9 @@ type Request struct {
 	// Dirs are include directories (search paths) or hmap paths.
 	Dirs []string
 
+	// QuoteDirs are include directories specified by -iquote.
+	QuoteDirs []string
+
 	// Frameworks are framework directories (search paths).
 	Frameworks []string
 
@@ -111,6 +114,9 @@ func (s *ScanDeps) Scan(ctx context.Context, execRoot string, req Request) ([]st
 			continue
 		}
 		scanner.addDir(ctx, dir)
+	}
+	for _, dir := range req.QuoteDirs {
+		scanner.addQuoteDir(ctx, dir)
 	}
 	for _, dir := range req.Frameworks {
 		scanner.addFrameworkDir(ctx, dir)
