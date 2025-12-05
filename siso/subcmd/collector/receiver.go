@@ -19,7 +19,7 @@ type otlpFactory struct {
 func (f *otlpFactory) CreateDefaultConfig() component.Config {
 	cfg := f.Factory.CreateDefaultConfig().(*otlpreceiver.Config)
 
-	grpcCfg := cfg.GRPC.Get()
+	grpcCfg := cfg.GRPC.GetOrInsertDefault()
 	if f.otelSocket != "" {
 		grpcCfg.NetAddr.Endpoint = f.otelSocket
 		grpcCfg.NetAddr.Transport = "unix"

@@ -1,3 +1,7 @@
+receivers:
+  otlp:
+    protocols:
+        grpc:
 exporters:
   googlecloud:
     # project is set in "siso collector"
