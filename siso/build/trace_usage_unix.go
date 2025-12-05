@@ -23,7 +23,7 @@ func (u *usageRecord) get() {
 func (u *usageRecord) sample(t time.Time) []traceEventObject {
 	var rusage syscall.Rusage
 	syscall.Getrusage(syscall.RUSAGE_SELF, &rusage)
-	ret := make([]traceEventObject, 0, 2)
+	ret := make([]traceEventObject, 0, 3)
 	o := traceEventObject{
 		Ph:  "C",
 		T:   t.Sub(u.start).Microseconds(),
@@ -41,6 +41,13 @@ func (u *usageRecord) sample(t time.Time) []traceEventObject {
 	o.Name = "mem"
 	o.Args = map[string]any{
 		"maxrss": rusage.Maxrss,
+	}
+	ret = append(ret, o)
+	o.Name = "io"
+	o.Args = map[string]any{
+		// TODO: use /proc/self/io syscr/syscw for linux?
+		"rop": rusage.Inblock,
+		"wop": rusage.Oublock,
 	}
 	ret = append(ret, o)
 	u.rusage = rusage
