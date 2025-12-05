@@ -204,31 +204,7 @@ func New(ctx context.Context, client *logging.Client, logID, accessLogID string,
 	directClient := client
 
 	if enableCollector {
-		conn, provider, logger, err := func() (*grpc.ClientConn, *sdklog.LoggerProvider, otelog.Logger, error) {
-			conn, err := grpc.NewClient(collectorAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
-			if err != nil {
-				return nil, nil, nil, fmt.Errorf("failed to create gRPC connection to OTLP collector: %w", err)
-			}
-			logExporter, err := otlploggrpc.New(ctx, otlploggrpc.WithGRPCConn(conn))
-			if err != nil {
-				return conn, nil, nil, fmt.Errorf("failed to create OTLP log exporter: %w", err)
-			}
-			otelResource, err := sdkresource.New(ctx, sdkresource.WithAttributes(
-				semconv.ServiceName(res.Labels["job"]),
-				semconv.ServiceInstanceID(res.Labels["task_id"]),
-				semconv.ServiceNamespace(res.Labels["namespace"]),
-				// https://github.com/GoogleCloudPlatform/opentelemetry-operations-go/blob/b50231bb7ac2630d764dea1fe6dc269121eab82f/internal/resourcemapping/resourcemapping.go#L147C21-L147C35
-				semconv.CloudRegion(res.Labels["location"])))
-			if err != nil {
-				return conn, nil, nil, fmt.Errorf("failed to create OTLP resource: %w", err)
-			}
-			provider := sdklog.NewLoggerProvider(
-				sdklog.WithProcessor(sdklog.NewBatchProcessor(logExporter)),
-				sdklog.WithResource(otelResource),
-			)
-			logger := provider.Logger("siso")
-			return conn, provider, logger, nil
-		}()
+		conn, provider, logger, err := newOtelCollectorClient(ctx, collectorAddr, res)
 		if err != nil {
 			glog.Warningf("OTEL collector init failed, falling back to cloud logging: %v", err)
 			if conn != nil {
@@ -331,6 +307,32 @@ type Logger struct {
 	otelLogger   otelog.Logger
 	otelProvider *sdklog.LoggerProvider
 	otelGRPCConn *grpc.ClientConn
+}
+
+func newOtelCollectorClient(ctx context.Context, collectorAddr string, res *mrpb.MonitoredResource) (*grpc.ClientConn, *sdklog.LoggerProvider, otelog.Logger, error) {
+	conn, err := grpc.NewClient(collectorAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("failed to create gRPC connection to OTLP collector: %w", err)
+	}
+	logExporter, err := otlploggrpc.New(ctx, otlploggrpc.WithGRPCConn(conn))
+	if err != nil {
+		return conn, nil, nil, fmt.Errorf("failed to create OTLP log exporter: %w", err)
+	}
+	otelResource, err := sdkresource.New(ctx, sdkresource.WithAttributes(
+		semconv.ServiceName(res.Labels["job"]),
+		semconv.ServiceInstanceID(res.Labels["task_id"]),
+		semconv.ServiceNamespace(res.Labels["namespace"]),
+		// https://github.com/GoogleCloudPlatform/opentelemetry-operations-go/blob/b50231bb7ac2630d764dea1fe6dc269121eab82f/internal/resourcemapping/resourcemapping.go#L147C21-L147C35
+		semconv.CloudRegion(res.Labels["location"])))
+	if err != nil {
+		return conn, nil, nil, fmt.Errorf("failed to create OTLP resource: %w", err)
+	}
+	provider := sdklog.NewLoggerProvider(
+		sdklog.WithProcessor(sdklog.NewBatchProcessor(logExporter)),
+		sdklog.WithResource(otelResource),
+	)
+	logger := provider.Logger("siso")
+	return conn, provider, logger, nil
 }
 
 // WithWriter returns logger with additional log writer.
