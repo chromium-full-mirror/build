@@ -1758,14 +1758,16 @@ func (e *entry) compute(ctx context.Context, fname string) error {
 			e.entryErrLogged.Store(false)
 			e.mu.Unlock()
 		}
-	} else {
-		select {
-		case <-ctx.Done():
-			return context.Cause(ctx)
-		case <-e.dch:
-		}
+		return nil
 	}
-	return nil
+	select {
+	case <-ctx.Done():
+		return context.Cause(ctx)
+	case <-e.dch:
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.err
 }
 
 func (e *entry) digest() digest.Digest {

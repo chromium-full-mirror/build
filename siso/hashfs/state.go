@@ -984,6 +984,14 @@ func (hfs *HashFS) State(ctx context.Context) *pb.State {
 					err := e.compute(ctx, name)
 					if err != nil {
 						clog.Warningf(ctx, "failed to calculate digest for %s: %v", name, err)
+						state.MissingDigests = append(state.MissingDigests, name)
+					} else {
+						ed = e.digest()
+						if ed.IsZero() {
+							// e.compute failed to calculate digest?
+							clog.Warningf(ctx, "compute returned nil-error, but failed to calculate digest for %s?", name)
+							state.MissingDigests = append(state.MissingDigests, name)
+						}
 					}
 				} else {
 					if log.V(1) {
@@ -992,7 +1000,7 @@ func (hfs *HashFS) State(ctx context.Context) *pb.State {
 					state.MissingDigests = append(state.MissingDigests, name)
 				}
 			}
-			if !ed.IsZero() || e.target != "" {
+			if !ed.IsZero() || e.target != "" || (e.directory == nil && len(e.cmdhash) > 0) {
 				e.mu.RLock()
 				state.Entries = append(state.Entries, &pb.Entry{
 					Id: &pb.FileID{
