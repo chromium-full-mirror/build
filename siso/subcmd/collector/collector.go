@@ -7,7 +7,6 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"log"
 	"os"
 
 	"github.com/google/subcommands"
@@ -94,7 +93,7 @@ func (c *Command) Execute(ctx context.Context, f *flag.FlagSet, args ...any) sub
 	otelcolArgs = append(otelcolArgs, "--config", "yaml:"+string(collectorConfig))
 
 	if err := run(set, otelcolArgs); err != nil {
-		log.Fatal(err)
+		fmt.Fprintf(os.Stderr, "Failed to start collector: %v\n", err)
 		return subcommands.ExitFailure
 	}
 	return subcommands.ExitSuccess
@@ -104,7 +103,7 @@ func runInteractive(params otelcol.CollectorSettings, args []string) error {
 	cmd := otelcol.NewCommand(params)
 	cmd.SetArgs(args)
 	if err := cmd.Execute(); err != nil {
-		log.Fatalf("collector server run finished with error: %v", err)
+		return fmt.Errorf("collector server run finished with error: %v", err)
 	}
 
 	return nil
