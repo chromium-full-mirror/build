@@ -54,8 +54,8 @@ func (u *usageRecord) sample(t time.Time) []traceEventObject {
 	// TODO: mem
 	o.Name = "io"
 	o.Args = map[string]any{
-		"rop": ioCounter.ReadOperationCount,
-		"wop": ioCounter.WriteOperationCount,
+		"rop": ioCounter.ReadOperationCount - u.ioCounter.ReadOperationCount,
+		"wop": ioCounter.WriteOperationCount - u.ioCounter.WriteOperationCount,
 	}
 	ret = append(ret, o)
 	u.kernelTime = kernelTime

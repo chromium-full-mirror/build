@@ -46,8 +46,8 @@ func (u *usageRecord) sample(t time.Time) []traceEventObject {
 	o.Name = "io"
 	o.Args = map[string]any{
 		// TODO: use /proc/self/io syscr/syscw for linux?
-		"rop": rusage.Inblock,
-		"wop": rusage.Oublock,
+		"rop": rusage.Inblock - u.rusage.Inblock,
+		"wop": rusage.Oublock - u.rusage.Oublock,
 	}
 	ret = append(ret, o)
 	u.rusage = rusage
