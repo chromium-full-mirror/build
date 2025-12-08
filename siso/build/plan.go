@@ -277,7 +277,10 @@ func schedule(ctx context.Context, sched *scheduler, graph Graph, args ...string
 	clog.Infof(ctx, "schedule targets: %v [%d]: %v", targets, graph.NumTargets(), err)
 	if err != nil {
 		if !experiments.Enabled("ignore-missing-targets", "") {
-			return TargetError{err: err, Suggests: suggestTargets(ctx, sched, graph, args...)}
+			if len(args) <= 7 {
+				return TargetError{err: err, Suggests: suggestTargets(ctx, sched, graph, args...)}
+			}
+			return TargetError{err: fmt.Errorf("%w\ntarget error in too many targets. use `SISO_EXPERIMENTS=ignore-missing-targets` to ignore missing targets", err)}
 		}
 		ui.Default.PrintLines(ui.SGR(ui.Yellow, fmt.Sprintf("WARNING: ignore missing targets: %v\n\n", err)))
 	}
