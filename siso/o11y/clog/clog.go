@@ -23,6 +23,7 @@ import (
 	"cloud.google.com/go/logging"
 	"cloud.google.com/go/logging/apiv2/loggingpb"
 	"github.com/golang/glog"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc"
 	otelog "go.opentelemetry.io/otel/log"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
@@ -319,6 +320,8 @@ func newOtelCollectorClient(ctx context.Context, collectorAddr string, res *mrpb
 		return conn, nil, nil, fmt.Errorf("failed to create OTLP log exporter: %w", err)
 	}
 	otelResource, err := sdkresource.New(ctx, sdkresource.WithAttributes(
+		// Manually set project: https://github.com/GoogleCloudPlatform/opentelemetry-operations-go/blob/94a7f44c3457d9e6583824b74eefc4610381238a/exporter/collector/config.go#L46C2-L46C72
+		attribute.String("gcp.project.id", res.Labels["project_id"]),
 		semconv.ServiceName(res.Labels["job"]),
 		semconv.ServiceInstanceID(res.Labels["task_id"]),
 		semconv.ServiceNamespace(res.Labels["namespace"]),

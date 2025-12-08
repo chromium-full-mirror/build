@@ -1527,7 +1527,7 @@ func (c *Command) initCloudMonitoring(ctx context.Context, credential cred.Cred,
 			return nil, err
 		}
 	}
-	mp, err := monitoring.NewMetricProvider(ctx, rbeProjectID, exporter, views)
+	mp, err := monitoring.NewMetricProvider(ctx, metricsProject, rbeProjectID, exporter, views)
 	if err != nil {
 		return nil, err
 	}

@@ -153,13 +153,16 @@ func SetupViews(ctx context.Context, version, rbeProject string, labels map[stri
 }
 
 // NewMetricProvider returns a new Cloud monitoring metrics provider.
-func NewMetricProvider(ctx context.Context, rbeProject string, exporter smetric.Exporter, views []smetric.View) (*smetric.MeterProvider, error) {
+func NewMetricProvider(ctx context.Context, metricsProject, rbeProject string, exporter smetric.Exporter, views []smetric.View) (*smetric.MeterProvider, error) {
 	res, err := resource.New(ctx,
 		resource.WithTelemetrySDK(),
 		resource.WithOS(),
 		resource.WithHost(),
 		resource.WithFromEnv(),
-		resource.WithAttributes(semconv.ServiceNamespaceKey.String(rbeProject)),
+		resource.WithAttributes(
+			semconv.ServiceNamespaceKey.String(rbeProject),
+			// Manually set project: https://github.com/GoogleCloudPlatform/opentelemetry-operations-go/blob/94a7f44c3457d9e6583824b74eefc4610381238a/exporter/collector/config.go#L46C2-L46C72
+			attribute.String("gcp.project.id", metricsProject)),
 	)
 	if err != nil && !errors.Is(err, resource.ErrPartialResource) && !errors.Is(err, resource.ErrSchemaURLConflict) {
 		return nil, err
