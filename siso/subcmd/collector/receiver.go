@@ -5,6 +5,8 @@
 package collector
 
 import (
+	"strings"
+
 	"go.opentelemetry.io/collector/component"
 	"go.opentelemetry.io/collector/config/configoptional"
 	"go.opentelemetry.io/collector/receiver"
@@ -13,19 +15,21 @@ import (
 
 type otlpFactory struct {
 	receiver.Factory
-	otelSocket string
+	collectorAddress string
 }
 
 func (f *otlpFactory) CreateDefaultConfig() component.Config {
 	cfg := f.Factory.CreateDefaultConfig().(*otlpreceiver.Config)
 
 	grpcCfg := cfg.GRPC.GetOrInsertDefault()
-	if f.otelSocket != "" {
-		grpcCfg.NetAddr.Endpoint = f.otelSocket
+	switch {
+	case strings.HasPrefix(f.collectorAddress, "unix:///"):
+		// Submitting unix:/// path will result in error. It needs to be trimmed first.
+		socketPath := strings.TrimPrefix(f.collectorAddress, "unix://")
+		grpcCfg.NetAddr.Endpoint = socketPath
 		grpcCfg.NetAddr.Transport = "unix"
-	} else {
-		// this is default, but to be explicit.
-		grpcCfg.NetAddr.Endpoint = "127.0.0.1:4317"
+	default:
+		grpcCfg.NetAddr.Endpoint = f.collectorAddress
 		grpcCfg.NetAddr.Transport = "tcp"
 	}
 	cfg.GRPC = configoptional.Default(*grpcCfg)
