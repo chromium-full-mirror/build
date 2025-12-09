@@ -183,10 +183,10 @@ type Command struct {
 	artfsDir      string
 	artfsEndpoint string
 
-	enableCloudLogging  bool
-	enableResultstore   bool
-	enableCollector     bool
-	collectorSocketPath string
+	enableCloudLogging bool
+	enableResultstore  bool
+	enableCollector    bool
+	collectorAddress   string
 	// enableCPUProfiler bool
 	enableCloudProfiler         bool
 	cloudProfilerServiceName    string
@@ -1312,7 +1312,7 @@ func (c *Command) SetFlags(flagSet *flag.FlagSet) {
 	flagSet.DurationVar(&c.traceSpanThreshold, "trace_span_threshold", 100*time.Millisecond, "theshold for trace span record")
 
 	flagSet.BoolVar(&c.enableCollector, "enable_collector", false, "enable OTEL collector")
-	flagSet.StringVar(&c.collectorSocketPath, "collector_socket_path", "", "path to socket collector. If empty - assume TCP connection.")
+	flagSet.StringVar(&c.collectorAddress, "collector_address", "127.0.0.1:4317", "address to dial the collector. Can be path for unix socket unix:///path/to/socket or host:port.")
 	flagSet.BoolVar(&c.enableCloudLogging, "enable_cloud_logging", false, "enable cloud logging")
 	flagSet.BoolVar(&c.enableResultstore, "enable_resultstore", false, "enable resultstore")
 	flagSet.BoolVar(&c.enableCloudProfiler, "enable_cloud_profiler", false, "enable cloud profiler")
@@ -1431,7 +1431,7 @@ func (c *Command) initCloudLogging(ctx context.Context, projectID, execRoot stri
 			"location":   hostname,
 			"namespace":  execRoot,
 		},
-	}, c.enableCollector, c.getCollectorAddr())
+	}, c.enableCollector, c.collectorAddress)
 	if err != nil {
 		return ctx, "", func() {}, err
 	}
@@ -2238,16 +2238,8 @@ func (c *Command) initOutputLocal() (func(context.Context, string) bool, error) 
 	}
 }
 
-func (c *Command) getCollectorAddr() string {
-	collectorAddr := "127.0.0.1:4317"
-	if c.collectorSocketPath != "" {
-		collectorAddr = "unix://" + c.collectorSocketPath
-	}
-	return collectorAddr
-}
-
 func (c *Command) newOTELMetricsExporter(ctx context.Context) *otlpmetricgrpc.Exporter {
-	collectorAddr := c.getCollectorAddr()
+	collectorAddr := c.collectorAddress
 	conn, err := grpc.NewClient(collectorAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		clog.Warningf(ctx, "failed to create connection to OTLP collector: %v", err)
