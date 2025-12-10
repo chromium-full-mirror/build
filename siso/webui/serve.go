@@ -28,7 +28,7 @@ import (
 	mwc "go.chromium.org/build/siso/third_party/material_web_components"
 )
 
-//go:embed templates/*.html css/*.css
+//go:embed templates/*.html css/*.css js/*.js
 var content embed.FS
 
 var (
@@ -455,6 +455,8 @@ func (s *WebuiServer) Serve() int {
 		// Delegate all other requests to the outdir subrouter.
 		outdirRouter.ServeHTTP(w, r)
 	})
+
+	http.Handle("/js/", s.staticFileHandler(http.FileServerFS(s.staticFS)))
 
 	// Serve third party JS. No other third party libraries right now, so just serve Material Design node_modules root.
 	http.Handle("/third_party/", http.StripPrefix("/third_party/", s.staticFileHandler(http.FileServerFS(mwc.NodeModulesFS))))

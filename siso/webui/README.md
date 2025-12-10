@@ -33,6 +33,13 @@ For example:
 - `<md-dialog>` from Material Web Components provides dialog behaviors, and
   can be utilized without custom JavaScript.
 
+Unavoidable cases of custom JavaScript include:
+
+- Custom handlers for HTMX errors, so that they are gracefully handled instead
+  of causing unexpected page breakages and/or requiring full page refreshes.
+- Our [deep-linking to Perfetto UI][perfetto-deep-linking], due to Perfetto's
+  security requirements.
+
 Prefer avoiding technologies that require a web bundler.
 
 Requiring an additional build step is strongly undesirable. The current web UI
@@ -46,6 +53,7 @@ For example:
 
 [mwc]: https://github.com/material-components/material-web
 [htmx]: https://htmx.org/
+[perfetto-deep-linking]: https://perfetto.dev/docs/visualization/deep-linking-to-perfetto-ui
 [popover-baseline]: https://web.dev/blog/popover-baseline
 [css-nesting-baseline]: https://web.dev/blog/baseline2023#more-features
 
