@@ -6,6 +6,7 @@
 package osfs
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"flag"
@@ -211,9 +212,21 @@ func (ofs *OSFS) WriteDigestData(ctx context.Context, name string, src digest.So
 		if err != nil {
 			return err
 		}
-		n, err = io.Copy(w, r)
+		// for standard-pd, Write IOPS per GiB is 1.5 and Throughput
+		// per GiB (MiBps) is 0.12.
+		// If it uses max IOPS, we can write at most 0.12*1024/1.5 =
+		// 81.3KB per IOPS.
+		// Use 96KB buffer to reduce IOPS.
+		// TODO: use sync.Pool?
+		const bufsize = 96 * 1024
+		bufw := bufio.NewWriterSize(w, bufsize)
+		n, err = io.Copy(bufw, r)
 		if err != nil {
 			err = fmt.Errorf("failed to call io.Copy, read %d bytes in %s: %w", n, time.Since(started), err)
+		}
+		berr := bufw.Flush()
+		if err == nil {
+			err = berr
 		}
 		cerr := w.Close()
 		if err == nil {
