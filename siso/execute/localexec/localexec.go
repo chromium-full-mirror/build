@@ -15,6 +15,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	rpb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
@@ -70,7 +71,32 @@ func run(ctx context.Context, cmd *execute.Cmd) (*rpb.ActionResult, error) {
 	if len(cmd.Args) == 0 {
 		return nil, fmt.Errorf("no arguments in the command. ID: %s", cmd.ID)
 	}
+	var done atomic.Bool
 	c := exec.CommandContext(ctx, cmd.Args[0], cmd.Args[1:]...)
+	c.Cancel = func() error {
+		// Cancel is called when interrupted.
+		// send interrupt signal, so cmd could perform
+		// cleanup task, such as remove temp files.
+		// note: it won't send signal on Windows, but
+		// cmd would receive CTRL_C_EVENT or CTRL_BREAK_EVENT
+		// on console process group?
+		// https://github.com/golang/go/issues/6720
+		if c.Process == nil {
+			clog.Warningf(ctx, "cancel before process start?")
+			return errors.New("cancel on not-started process")
+		}
+		err := c.Process.Signal(os.Interrupt)
+		clog.Warningf(ctx, "send interrupt to pid=%d: %v", c.Process.Pid, err)
+		// allow 1 second for cleanup task.
+		time.Sleep(1 * time.Second)
+		if done.Load() {
+			return os.ErrProcessDone
+		}
+		// still running?
+		err = c.Process.Kill()
+		clog.Warningf(ctx, "send kill to pid=%d: %v", c.Process.Pid, err)
+		return err
+	}
 	c.Env = cmd.Env
 	c.Dir = filepath.Join(cmd.ExecRoot, cmd.Dir)
 	c.Stdout = cmd.StdoutWriter()
@@ -149,6 +175,7 @@ func run(ctx context.Context, cmd *execute.Cmd) (*rpb.ActionResult, error) {
 			oomScoreAdj(ctx, c.Process.Pid, *cmd.OOMScoreAdj)
 		}
 		err = c.Wait()
+		done.Store(true)
 	}
 	if err == nil {
 		ru = rusage(c)
