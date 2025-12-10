@@ -18,7 +18,9 @@ type SourceFile struct {
 	value unique.Handle[string]
 }
 
-func makeSourceFile(value string) (SourceFile, error) {
+// MakeSourceFile creates a source file representation from a known absolute source file.
+// Always begins in a slash.
+func MakeSourceFile(value string) (SourceFile, error) {
 	if !strings.HasPrefix(value, "/") {
 		return SourceFile{}, fmt.Errorf("should start with slash")
 	}

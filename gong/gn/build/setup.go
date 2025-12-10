@@ -79,7 +79,10 @@ func (s *Setup) DoSetup(buildDir string, forceCreate bool, flags *gn.CommonFlags
 		return err
 	}
 	if err := s.RunConfigFile(); err != nil {
-		fmt.Fprintf(os.Stderr, "don't know how to run config file yet, skipping for now: %v\n", err)
+		return err
+	}
+	if err := s.fillOtherConfig(); err != nil {
+		return err
 	}
 
 	// Must be after FillSourceDir to resolve.
@@ -259,6 +262,53 @@ func (s *Setup) RunConfigFile() error {
 	if err != nil {
 		return fmt.Errorf("execute failed: %w", err)
 	}
+
+	return nil
+}
+
+func (s *Setup) fillOtherConfig() error {
+	// Secondary source path, read from the config file if present.
+	// TODO: implement
+
+	// Build file names.
+	// TODO: implement
+
+	// Ninja required version.
+	// TODO: implement
+
+	// Build config file.
+	buildConfigValue := s.dotfileScope.Value("buildconfig", true)
+	if buildConfigValue == nil {
+		return makeError(
+			"No build config file.",
+			fmt.Sprintf(`Your .gn file ("%s") didn't specify a "buildconfig" value.`, s.dotfileName))
+	}
+	buildConfigFile, err := fs.MakeSourceFile(buildConfigValue.String())
+	if err != nil {
+		return err
+	}
+	s.buildSettings.BuildConfigFile = buildConfigFile
+
+	// Targets to check.
+	// TODO: implement
+
+	// Targets not to check.
+	// TODO: implement
+
+	// Fill exec_script_allowlist.
+	// TODO: implement
+
+	// Fill optional default args.
+	// TODO: implement
+
+	// No stamp files.
+	// TODO: implement
+
+	// Export compile commands.
+	// TODO: implement
+
+	// Append any additional export compile command patterns from the cmdline.
+	// TODO: implement
 
 	return nil
 }

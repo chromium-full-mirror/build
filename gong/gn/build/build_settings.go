@@ -34,6 +34,10 @@ type BuildSettings struct {
 	pythonPath string
 	// BuildDir is the absolute, slash-separated path to the build output directory.
 	BuildDir string
+	// BuildConfigFile is a reference to the build config file for this build.
+	// It is expected that the root .gn file defines a `buildconfig` variable
+	// that points to the location of the build config file.
+	BuildConfigFile fs.SourceFile
 }
 
 // SetRootPath sets the absolute path of the source root on the local system.

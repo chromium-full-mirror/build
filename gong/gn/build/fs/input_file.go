@@ -24,7 +24,7 @@ type InputFile struct {
 
 // NewInputFile creates an input file from provided path.
 func NewInputFile(name, path string) (*InputFile, error) {
-	source, err := makeSourceFile(name)
+	source, err := MakeSourceFile(name)
 	if err != nil {
 		return nil, err
 	}
