@@ -198,20 +198,84 @@ func (ofs *OSFS) WriteFile(ctx context.Context, name string, data []byte, perm f
 	return err
 }
 
+type measuringReader struct {
+	r     io.Reader
+	ops   int64
+	bytes int64
+	dur   time.Duration
+}
+
+func (r *measuringReader) Read(buf []byte) (int, error) {
+	start := time.Now()
+	n, err := r.r.Read(buf)
+	r.ops++
+	r.bytes += int64(n)
+	r.dur += time.Since(start)
+	return n, err
+}
+
+func (r *measuringReader) opsPerSec() float64 {
+	if r.dur == 0 {
+		return 0
+	}
+	return float64(r.ops) / r.dur.Seconds()
+}
+
+func (r *measuringReader) bytesPerSec() float64 {
+	if r.dur == 0 {
+		return 0
+	}
+	return float64(r.bytes) / r.dur.Seconds()
+}
+
+type measuringWriter struct {
+	w     io.Writer
+	ops   int64
+	bytes int64
+	dur   time.Duration
+}
+
+func (w *measuringWriter) Write(buf []byte) (int, error) {
+	start := time.Now()
+	n, err := w.w.Write(buf)
+	w.ops++
+	w.bytes += int64(n)
+	w.dur += time.Since(start)
+	return n, err
+}
+
+func (w *measuringWriter) opsPerSec() float64 {
+	if w.dur == 0 {
+		return 0
+	}
+	return float64(w.ops) / w.dur.Seconds()
+}
+
+func (w *measuringWriter) bytesPerSec() float64 {
+	if w.dur == 0 {
+		return 0
+	}
+	return float64(w.bytes) / w.dur.Seconds()
+}
+
 // WriteDigestData writes digest source into the named file.
 func (ofs *OSFS) WriteDigestData(ctx context.Context, name string, src digest.Source, perm fs.FileMode) error {
 	started := time.Now()
 	var n int64
+	var rd measuringReader
+	var wr measuringWriter
 	err := func() error {
 		r, err := src.Open(ctx)
 		if err != nil {
 			return err
 		}
 		defer r.Close()
+		rd.r = r
 		w, err := openForWrite(name, perm)
 		if err != nil {
 			return err
 		}
+		wr.w = w
 		// for standard-pd, Write IOPS per GiB is 1.5 and Throughput
 		// per GiB (MiBps) is 0.12.
 		// If it uses max IOPS, we can write at most 0.12*1024/1.5 =
@@ -219,8 +283,8 @@ func (ofs *OSFS) WriteDigestData(ctx context.Context, name string, src digest.So
 		// Use 96KB buffer to reduce IOPS.
 		// TODO: use sync.Pool?
 		const bufsize = 96 * 1024
-		bufw := bufio.NewWriterSize(w, bufsize)
-		n, err = io.Copy(bufw, r)
+		bufw := bufio.NewWriterSize(&wr, bufsize)
+		n, err = io.Copy(bufw, &rd)
 		if err != nil {
 			err = fmt.Errorf("failed to call io.Copy, read %d bytes in %s: %w", n, time.Since(started), err)
 		}
@@ -236,6 +300,7 @@ func (ofs *OSFS) WriteDigestData(ctx context.Context, name string, src digest.So
 	}()
 	ofs.WriteDone(int(n), err)
 	if dur := time.Since(started); dur > 1*time.Minute {
+		name = fmt.Sprintf("%s r:%.02fop/s %.02fb/s w:%.02fop/s %.02fb/s", name, rd.opsPerSec(), rd.bytesPerSec(), wr.opsPerSec(), wr.bytesPerSec())
 		logSlow(ctx, name, dur, err)
 	}
 	return err
