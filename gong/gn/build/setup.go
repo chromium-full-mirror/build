@@ -41,6 +41,7 @@ func findDotFile(currentDir string) (string, error) {
 // commands to run.
 type Setup struct {
 	buildSettings BuildSettings
+	loader        Loader
 
 	// FillArguments sets whether the build arguments should be filled during setup from the
 	// command line/build argument file. This will be true by default. The use
@@ -64,6 +65,7 @@ func NewSetup() *Setup {
 	setup := &Setup{
 		FillArguments: true,
 	}
+	setup.loader = MakeLoader(&setup.buildSettings)
 	setup.dotfileSettings = NewSettings(&setup.buildSettings)
 	setup.dotfileScope = resolve.NewScopeFromExecContext(setup.dotfileSettings)
 	return setup
@@ -104,7 +106,8 @@ func (s *Setup) DoSetup(buildDir string, forceCreate bool, flags *gn.CommonFlags
 		return err
 	}
 
-	return fmt.Errorf("not implemented. setup: %v", s)
+	fmt.Fprintf(os.Stderr, "warn: DoSetup not completely implemented\n")
+	return nil
 }
 
 func (s *Setup) fillArguments(flags *gn.CommonFlags) error {
@@ -309,6 +312,23 @@ func (s *Setup) fillOtherConfig() error {
 
 	// Append any additional export compile command patterns from the cmdline.
 	// TODO: implement
+
+	return nil
+}
+
+// Run runs the load, returning nil on success. On failure, returns the error.
+func (s *Setup) Run() error {
+	// TODO: detect root build file correctly instead of hardcoding it like this.
+	rootBuildFile, err := fs.MakeSourceFile("//BUILD.gn")
+	if err != nil {
+		return err
+	}
+	err = s.loader.Load(rootBuildFile, syntax.LocationRange{})
+	if err != nil {
+		return err
+	}
+
+	// TODO: watch load/execute tasks, verify results once done.
 
 	return nil
 }
