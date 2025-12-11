@@ -12,8 +12,6 @@ import (
 	"go.opentelemetry.io/collector/exporter"
 	"go.opentelemetry.io/collector/extension"
 	"go.opentelemetry.io/collector/otelcol"
-	"go.opentelemetry.io/collector/processor"
-	memorylimiterprocessor "go.opentelemetry.io/collector/processor/memorylimiterprocessor"
 	"go.opentelemetry.io/collector/receiver"
 	otlpreceiver "go.opentelemetry.io/collector/receiver/otlpreceiver"
 	"go.opentelemetry.io/collector/service/telemetry/otelconftelemetry"
@@ -61,15 +59,6 @@ func components(credential cred.Cred, projectID, collectorAddress string) (otelc
 	}
 	factories.ExporterModules = make(map[component.Type]string, len(factories.Exporters))
 	factories.ExporterModules[googlecloudexporter.NewFactory().Type()] = "github.com/open-telemetry/opentelemetry-collector-contrib/exporter/googlecloudexporter"
-
-	factories.Processors, err = otelcol.MakeFactoryMap[processor.Factory](
-		memorylimiterprocessor.NewFactory(),
-	)
-	if err != nil {
-		return otelcol.Factories{}, err
-	}
-	factories.ProcessorModules = make(map[component.Type]string, len(factories.Processors))
-	factories.ProcessorModules[memorylimiterprocessor.NewFactory().Type()] = "go.opentelemetry.io/collector/processor/memorylimiterprocessor"
 
 	factories.Connectors, err = otelcol.MakeFactoryMap[connector.Factory]()
 	if err != nil {

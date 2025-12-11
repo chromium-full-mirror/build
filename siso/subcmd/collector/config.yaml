@@ -9,25 +9,20 @@ exporters:
       default_log_name: opentelemetry.io/collector-exported-log
     metric:
       prefix: workload.googleapis.com/siso
-processors:
-  memory_limiter:
-    check_interval: 1s
-    limit_percentage: 65
-    spike_limit_percentage: 20
 service:
   extensions: [healthcheckv2]
   pipelines:
     traces:
       receivers: [otlp]
-      processors: [memory_limiter]
+      processors: []
       exporters: [googlecloud]
     metrics:
       receivers: [otlp]
-      processors: [memory_limiter]
+      processors: []
       exporters: [googlecloud]
     logs:
       receivers: [otlp]
-      processors: [memory_limiter]
+      processors: []
       exporters: [googlecloud]
 extensions:
   healthcheckv2:
