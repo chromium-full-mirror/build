@@ -14,6 +14,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"time"
 
 	log "github.com/golang/glog"
 	"github.com/kelindar/bitmap"
@@ -70,6 +71,22 @@ type scanner struct {
 	// allocation
 	ds    []string
 	names []string
+
+	// stats
+	nextInputsCount int // count of nextInputs call
+	findCount       int // count of find call
+	// duration buckets of find: [<10ms][<100ms][<1s][<10s][<1m][>=1m]
+	findDurs   [6]int
+	slowest    string // slowest include name
+	slowestDur time.Duration
+}
+
+func (s *scanner) stats() string {
+	return fmt.Sprintf("ds:%d i:%d n:%d find:%d 10ms %d 100ms %d 1s %d 10s %d 1m %d slowest:%s %s",
+		s.maxDirstack,
+		s.nextInputsCount, s.findCount,
+		s.findDurs[0], s.findDurs[1], s.findDurs[2], s.findDurs[3], s.findDurs[4], s.findDurs[5],
+		s.slowest, s.slowestDur)
 }
 
 // scanResult contains includes, defines directives required for scandeps
@@ -144,6 +161,7 @@ func (s *scanner) popInput() string {
 }
 
 func (s *scanner) nextInputs(ctx context.Context) []string {
+	s.nextInputsCount++
 	for s.hasInputs() {
 		incname := s.popInput()
 		if incname == "" {
@@ -247,9 +265,32 @@ func (s *scanner) addHmap(ctx context.Context, hmap string) bool {
 }
 
 func (s *scanner) find(ctx context.Context, name string) (string, error) {
+	s.findCount++
 	if name == "" {
 		return "", io.EOF
 	}
+	started := time.Now()
+	defer func() {
+		dur := time.Since(started)
+		if dur >= s.slowestDur {
+			s.slowest = name
+			s.slowestDur = dur
+		}
+		switch {
+		case dur < 10*time.Millisecond:
+			s.findDurs[0]++
+		case dur < 100*time.Millisecond:
+			s.findDurs[1]++
+		case dur < 1*time.Second:
+			s.findDurs[2]++
+		case dur < 10*time.Second:
+			s.findDurs[3]++
+		case dur < 1*time.Minute:
+			s.findDurs[4]++
+		default:
+			s.findDurs[5]++
+		}
+	}()
 	form := name[0] // '"' or '<'
 	name = name[1 : len(name)-1]
 	included, ok := s.included[name]

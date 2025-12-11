@@ -138,19 +138,16 @@ func (s *ScanDeps) Scan(ctx context.Context, execRoot string, req Request) ([]st
 	scanTimeout := max(req.Timeout, 60*time.Second)
 	lastCtxCheck := time.Now()
 
-	icnt := 0
-	ncnt := 0
 	for scanner.hasInputs() {
-		icnt++
 		dur := time.Since(started)
 		if dur > scanTimeout {
-			return nil, fmt.Errorf("too slow scandeps: dirs:%d ds:%d i:%d n:%d %s %s", len(req.Dirs), scanner.maxDirstack, icnt, ncnt, setupDur, dur)
+			return nil, fmt.Errorf("too slow scandeps: dirs:%d %s setup:%s total:%s", len(req.Dirs), scanner.stats(), setupDur, dur)
 		}
 		// ctx.Err() requires mutex lock, so not call so often.
 		if time.Since(lastCtxCheck) > 500*time.Millisecond {
 			// check whether ctx is canceled.
 			if ctx.Err() != nil {
-				return nil, fmt.Errorf("ctx err in scandeps dirs:%d ds:%d i:%d n:%d %s %s: %w", len(req.Dirs), scanner.maxDirstack, icnt, ncnt, setupDur, time.Since(started), ctx.Err())
+				return nil, fmt.Errorf("ctx err in scandeps dirs:%d %s setup:%s %s: %w", len(req.Dirs), scanner.stats(), setupDur, time.Since(started), ctx.Err())
 			}
 			lastCtxCheck = time.Now()
 		}
@@ -160,7 +157,6 @@ func (s *ScanDeps) Scan(ctx context.Context, execRoot string, req Request) ([]st
 			clog.Infof(ctx, "try include %q", logNames)
 		}
 		for _, name := range names {
-			ncnt++
 			incpath, err := scanner.find(ctx, name)
 			if err != nil {
 				if log.V(2) {
