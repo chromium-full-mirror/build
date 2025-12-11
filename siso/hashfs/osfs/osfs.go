@@ -286,20 +286,20 @@ func (ofs *OSFS) WriteDigestData(ctx context.Context, name string, src digest.So
 	go func() {
 		// watchdog for reader.
 		// if no operations in timeout, abort the operations.
-		prevOpsPerSec := rd.opsPerSec()
+		var prevOps, prevBytes int64
 		for {
 			select {
 			case <-ctx.Done():
 				return
 			case <-time.After(timeout):
 			}
-			opsPerSec := rd.opsPerSec()
-			if prevOpsPerSec == opsPerSec {
-				ops, bytes, dur := rd.stats()
+			ops, bytes, dur := rd.stats()
+			if prevOps == ops || prevBytes == bytes {
 				cancel(status.Errorf(codes.Aborted, "no ops in %s: ops=%d bytes=%d dur=%s %s", timeout, ops, bytes, dur, time.Since(started)))
 				return
 			}
-			prevOpsPerSec = opsPerSec
+			prevOps = ops
+			prevBytes = bytes
 		}
 	}()
 	err := func() error {
