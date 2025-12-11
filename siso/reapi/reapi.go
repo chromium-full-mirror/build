@@ -92,6 +92,9 @@ func Envs(t string) map[string]string {
 	if v, ok := os.LookupEnv(fmt.Sprintf("SISO_%s_ADDRESS", t)); ok {
 		envs["SISO_REAPI_ADDRESS"] = v
 	}
+	if v, ok := os.LookupEnv(fmt.Sprintf("SISO_%s_CAS_ADDRESS", t)); ok {
+		envs["SISO_REAPI_CAS_ADDRESS"] = v
+	}
 	return envs
 }
 
@@ -108,7 +111,8 @@ func (o *Option) RegisterFlags(fs *flag.FlagSet, envs map[string]string) {
 		addr = "remotebuildexecution.googleapis.com:443"
 	}
 	fs.StringVar(&o.Address, o.Prefix+"_address", addr, "reapi address"+purpose)
-	fs.StringVar(&o.CASAddress, o.Prefix+"_cas_address", "", "reapi cas address"+purpose+" (if empty, share conn with "+o.Prefix+"_address)")
+	cas_addr := envs["SISO_REAPI_CAS_ADDRESS"]
+	fs.StringVar(&o.CASAddress, o.Prefix+"_cas_address", cas_addr, "reapi cas address"+purpose+" (if empty, share conn with "+o.Prefix+"_address)")
 	instance, ok := envs["SISO_REAPI_INSTANCE"]
 	if !ok {
 		instance = "default_instance"

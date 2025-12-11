@@ -24,6 +24,11 @@ RE API instance name.
 `SISO_REAPI_ADDRESS` sets the default value of `-reapi_address`, to specify
 RE API service address.
 
+### SISO_REAPI_CAS_ADDRESS
+
+`SISO_REAPI_CAS_ADDRESS` sets the default value of `-reapi_cas_address`, to
+specify RE API content addressable storage service address.
+
 ### RBE_service_no_security
 
 `RBE_service_no_security` sets the default value of `-reapi_insecure`,
