@@ -32,14 +32,16 @@ func (*CheckCommand) Synopsis() string {
 }
 
 func (*CheckCommand) Usage() string {
-	return "Prints current auth status."
+	return `Prints current auth status.
+`
 }
 
 // CheckCommand implements auth-check subcommands.
 type CheckCommand struct {
-	authOpts  cred.Options
-	projectID string
-	reopt     *reapi.Option
+	authOpts   cred.Options
+	projectID  string
+	reopt      *reapi.Option
+	checkREAPI bool
 }
 
 func (c *CheckCommand) SetFlags(flagSet *flag.FlagSet) {
@@ -47,6 +49,7 @@ func (c *CheckCommand) SetFlags(flagSet *flag.FlagSet) {
 
 	c.reopt = new(reapi.Option)
 	c.reopt.RegisterFlags(flagSet, reapi.Envs("REAPI"))
+	flagSet.BoolVar(&c.checkREAPI, "check_reapi", true, "check reapi call")
 }
 
 func (c *CheckCommand) Execute(ctx context.Context, flagSet *flag.FlagSet, _ ...any) subcommands.ExitStatus {
@@ -73,6 +76,10 @@ func (c *CheckCommand) Execute(ctx context.Context, flagSet *flag.FlagSet, _ ...
 		}
 	} else {
 		fmt.Fprintf(os.Stderr, "no credential required for reapi: %s\n", c.reopt)
+	}
+	if !c.checkREAPI {
+		fmt.Println("no reapi check")
+		return subcommands.ExitSuccess
 	}
 	client, err := reapi.New(ctx, credential, *c.reopt)
 	fmt.Printf("use %s\n", c.reopt)
