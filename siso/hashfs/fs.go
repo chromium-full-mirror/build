@@ -2070,14 +2070,7 @@ func (e *entry) flush(ctx context.Context, fname string, osfs *osfs.OSFS, timeou
 			ctx, cancel := digest.ContextWithTimeout(ctx, e.d)
 			defer cancel()
 			err := retry.Do(ctx, func() error {
-				ctx, cancel := context.WithTimeout(ctx, timeout)
-				defer cancel()
-				err := osfs.WriteDigestData(ctx, tmpname, e.src, e.mode)
-				if status.Code(err) == codes.DeadlineExceeded || errors.Is(err, context.DeadlineExceeded) {
-					// make it retriable error
-					return status.Errorf(codes.Aborted, "timed out in WriteDigestData %s %s: %v", e.d, time.Since(started), err)
-				}
-				return err
+				return osfs.WriteDigestData(ctx, tmpname, e.src, e.mode, timeout)
 			})
 			if err != nil {
 				return fmt.Errorf("flush tmp %s size=%d %s: %w", tmpname, d.SizeBytes, time.Since(started), err)

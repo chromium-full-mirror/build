@@ -15,9 +15,12 @@ import (
 	"io/fs"
 	"os"
 	"runtime"
+	"sync"
 	"time"
 
 	"github.com/pkg/xattr"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	"go.chromium.org/build/siso/o11y/clog"
 	"go.chromium.org/build/siso/o11y/iometrics"
@@ -199,7 +202,9 @@ func (ofs *OSFS) WriteFile(ctx context.Context, name string, data []byte, perm f
 }
 
 type measuringReader struct {
-	r     io.Reader
+	r io.Reader
+
+	mu    sync.Mutex
 	ops   int64
 	bytes int64
 	dur   time.Duration
@@ -208,6 +213,8 @@ type measuringReader struct {
 func (r *measuringReader) Read(buf []byte) (int, error) {
 	start := time.Now()
 	n, err := r.r.Read(buf)
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	r.ops++
 	r.bytes += int64(n)
 	r.dur += time.Since(start)
@@ -215,6 +222,8 @@ func (r *measuringReader) Read(buf []byte) (int, error) {
 }
 
 func (r *measuringReader) opsPerSec() float64 {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	if r.dur == 0 {
 		return 0
 	}
@@ -222,10 +231,18 @@ func (r *measuringReader) opsPerSec() float64 {
 }
 
 func (r *measuringReader) bytesPerSec() float64 {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	if r.dur == 0 {
 		return 0
 	}
 	return float64(r.bytes) / r.dur.Seconds()
+}
+
+func (r *measuringReader) stats() (int64, int64, time.Duration) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.ops, r.bytes, r.dur
 }
 
 type measuringWriter struct {
@@ -259,11 +276,32 @@ func (w *measuringWriter) bytesPerSec() float64 {
 }
 
 // WriteDigestData writes digest source into the named file.
-func (ofs *OSFS) WriteDigestData(ctx context.Context, name string, src digest.Source, perm fs.FileMode) error {
+func (ofs *OSFS) WriteDigestData(ctx context.Context, name string, src digest.Source, perm fs.FileMode, timeout time.Duration) error {
 	started := time.Now()
 	var n int64
 	var rd measuringReader
 	var wr measuringWriter
+	ctx, cancel := context.WithCancelCause(ctx)
+	defer cancel(context.Canceled)
+	go func() {
+		// watchdog for reader.
+		// if no operations in timeout, abort the operations.
+		prevOpsPerSec := rd.opsPerSec()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(timeout):
+			}
+			opsPerSec := rd.opsPerSec()
+			if prevOpsPerSec == opsPerSec {
+				ops, bytes, dur := rd.stats()
+				cancel(status.Errorf(codes.Aborted, "no ops in %s: ops=%d bytes=%d dur=%s %s", timeout, ops, bytes, dur, time.Since(started)))
+				return
+			}
+			prevOpsPerSec = opsPerSec
+		}
+	}()
 	err := func() error {
 		r, err := src.Open(ctx)
 		if err != nil {
