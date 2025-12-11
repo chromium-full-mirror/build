@@ -687,9 +687,6 @@ func (l *Logger) Close() error {
 	if l == nil {
 		return nil
 	}
-	if l.client == nil {
-		return nil
-	}
 	var lerr, aerr error
 	if l.logger != nil {
 		lerr = l.logger.Flush()
