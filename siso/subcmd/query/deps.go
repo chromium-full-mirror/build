@@ -8,9 +8,11 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"slices"
@@ -69,6 +71,36 @@ type depsCommand struct {
 	depsLogFile string
 	raw         bool
 	depfile     bool
+	format      string
+}
+
+type dependencies struct {
+	Target   string                  `json:"target"`
+	DepType  string                  `json:"dep_type"`
+	Deps     []string                `json:"deps"`
+	DepsTime time.Time               `json:"deps_time"`
+	DepState ninjabuild.DepsLogState `json:"dep_state"`
+}
+
+type marshaller interface{ Marshal(dependencies) error }
+
+type jsonMarshaller struct{ e *json.Encoder }
+
+func (m jsonMarshaller) Marshal(dep dependencies) error {
+	return m.e.Encode(dep)
+}
+
+type textMarshaller struct{ w io.Writer }
+
+func (m textMarshaller) Marshal(dep dependencies) error {
+	var buf bytes.Buffer
+	fmt.Fprintf(&buf, "%s: #%s %d, deps mtime %d (%s)\n",
+		dep.Target, dep.DepType, len(dep.Deps), dep.DepsTime.Nanosecond(), dep.DepState)
+	for _, d := range dep.Deps {
+		fmt.Fprintf(&buf, "    %s\n", d)
+	}
+	fmt.Fprintln(m.w, buf.String())
+	return nil
 }
 
 func (c *depsCommand) SetFlags(flagSet *flag.FlagSet) {
@@ -81,6 +113,7 @@ func (c *depsCommand) SetFlags(flagSet *flag.FlagSet) {
 	flagSet.StringVar(&c.depsLogFile, "deps_log", ".siso_deps", "deps log filename (relative to -C, -state_dir)")
 	flagSet.BoolVar(&c.raw, "raw", false, "just check deps log. (no build.ninja nor .siso_fs_state needed)")
 	flagSet.BoolVar(&c.depfile, "depfile", false, "check depfile too")
+	flagSet.StringVar(&c.format, "format", "text", "the format of dependencies (use text or json)")
 }
 
 func (c *depsCommand) Execute(ctx context.Context, flagSet *flag.FlagSet, _ ...any) subcommands.ExitStatus {
@@ -157,24 +190,32 @@ func (c *depsCommand) run(ctx context.Context, args []string) error {
 	if !c.depfile {
 		state = nil
 	}
-	w := bufio.NewWriter(os.Stdout)
+
 	bpath := build.NewPath(execRoot, c.dir)
+
+	var m marshaller
+	w := bufio.NewWriter(os.Stdout)
+	switch c.format {
+	case "json":
+		m = jsonMarshaller{e: json.NewEncoder(w)}
+	case "text":
+		m = textMarshaller{w: w}
+	default:
+		return fmt.Errorf("invalid format %q", c.format)
+	}
+
 	for _, target := range targets {
 		depType, deps, depsTime, depState, err := lookupDeps(ctx, state, hashFS, depsLog, bpath, target)
 		if err != nil {
 			if errors.Is(err, ninjautil.ErrNoDepsLog) {
 				continue
 			}
-			fmt.Fprintf(w, "%s: deps log error: %v\n", target, err)
+			fmt.Fprintf(os.Stderr, "%s: deps log error: %v\n", target, err)
 			continue
 		}
-		var buf bytes.Buffer
-		fmt.Fprintf(&buf, "%s: #%s %d, deps mtime %d (%s)\n",
-			target, depType, len(deps), depsTime.Nanosecond(), depState)
-		for _, d := range deps {
-			fmt.Fprintf(&buf, "    %s\n", d)
+		if err = m.Marshal(dependencies{Target: target, DepType: depType, Deps: deps, DepsTime: depsTime, DepState: depState}); err != nil {
+			return fmt.Errorf("failed to encode: %w for %q format", err, c.format)
 		}
-		fmt.Fprintln(w, buf.String())
 	}
 	return w.Flush()
 }

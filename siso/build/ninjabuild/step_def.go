@@ -464,6 +464,10 @@ func (s DepsLogState) String() string {
 	return fmt.Sprintf("DepsLogState[%d]", int(s))
 }
 
+func (s DepsLogState) MarshalJSON() ([]byte, error) {
+	return json.Marshal(s.String())
+}
+
 // CheckDepsLogState checks deps log state by its output file.
 func CheckDepsLogState(ctx context.Context, hashFS *hashfs.HashFS, bpath *build.Path, target string, depsTime time.Time) (DepsLogState, string) {
 	fi, err := hashFS.Stat(ctx, bpath.ExecRoot, bpath.MaybeFromWD(ctx, target))
