@@ -336,6 +336,9 @@ func (ofs *OSFS) WriteDigestData(ctx context.Context, name string, src digest.So
 		}
 		return err
 	}()
+	if ctx.Err() != nil {
+		err = context.Cause(ctx)
+	}
 	ofs.WriteDone(int(n), err)
 	if dur := time.Since(started); dur > 1*time.Minute {
 		name = fmt.Sprintf("%s r:%.02fop/s %.02fb/s w:%.02fop/s %.02fb/s", name, rd.opsPerSec(), rd.bytesPerSec(), wr.opsPerSec(), wr.bytesPerSec())
