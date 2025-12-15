@@ -16,6 +16,10 @@ import (
 // build config files.
 type Loader struct {
 	buildSettings *BuildSettings
+
+	// buildFileExtension is the additional extension for build files in this build.
+	// The resulting file name will be "BUILD.<extension>.gn".
+	buildFileExtension string
 }
 
 // MakeLoader creates a loader.
@@ -23,6 +27,10 @@ func MakeLoader(buildSettings *BuildSettings) Loader {
 	return Loader{
 		buildSettings: buildSettings,
 	}
+}
+
+func (l *Loader) buildFileForLabel(label Label) (fs.SourceFile, error) {
+	return fs.MakeSourceFile(label.dir + "BUILD" + l.buildFileExtension + ".gn")
 }
 
 // Load schedules a file load, noting down where the load came from.

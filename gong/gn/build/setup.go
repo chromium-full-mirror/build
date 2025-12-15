@@ -11,6 +11,7 @@ import (
 	"path"
 	"path/filepath"
 	"runtime"
+	"strings"
 
 	"go.chromium.org/build/gong/gn"
 	"go.chromium.org/build/gong/gn/build/fs"
@@ -42,6 +43,7 @@ func findDotFile(currentDir string) (string, error) {
 type Setup struct {
 	buildSettings BuildSettings
 	loader        Loader
+	rootBuildFile fs.SourceFile
 
 	// FillArguments sets whether the build arguments should be filled during setup from the
 	// command line/build argument file. This will be true by default. The use
@@ -274,10 +276,36 @@ func (s *Setup) fillOtherConfig() error {
 	// TODO: implement
 
 	// Build file names.
-	// TODO: implement
+	if value := s.dotfileScope.Value("build_file_extension", true); value != nil {
+		stringValue, err := resolve.AsValue[*resolve.StringValue](value)
+		if err != nil {
+			return err
+		}
+		extension := stringValue.String()
+		if strings.ContainsRune(extension, filepath.Separator) {
+			return makeError(
+				"Invalid build_file_extension",
+				fmt.Sprintf("Build file extension '%s' cannot contain a path separator", extension))
+		}
+		s.loader.buildFileExtension = "." + extension
+	}
 
 	// Ninja required version.
 	// TODO: implement
+
+	// Root build file.
+	// TODO: implement i.e. read the "root" value or cmdline flag if provided
+	// For now, just assume it's at //BUILD.gn
+	rootTargetLabel := Label{dir: "//"}
+
+	// Set the root build file here in order to take into account the values of
+	// "build_file_extension" and "root".
+	var err error
+	s.rootBuildFile, err = s.loader.buildFileForLabel(rootTargetLabel)
+	if err != nil {
+		return fmt.Errorf("failed to init root build.gn")
+	}
+	s.buildSettings.rootTargetLabel = rootTargetLabel
 
 	// Build config file.
 	buildConfigValue := s.dotfileScope.Value("buildconfig", true)
@@ -286,7 +314,7 @@ func (s *Setup) fillOtherConfig() error {
 			"No build config file.",
 			fmt.Sprintf(`Your .gn file ("%s") didn't specify a "buildconfig" value.`, s.dotfileName))
 	}
-	buildConfigFile, err := fs.MakeSourceFile(buildConfigValue.String())
+	buildConfigFile, err := fs.MakeSourceFile(buildConfigValue.RawGNString())
 	if err != nil {
 		return err
 	}
@@ -318,12 +346,7 @@ func (s *Setup) fillOtherConfig() error {
 
 // Run runs the load, returning nil on success. On failure, returns the error.
 func (s *Setup) Run() error {
-	// TODO: detect root build file correctly instead of hardcoding it like this.
-	rootBuildFile, err := fs.MakeSourceFile("//BUILD.gn")
-	if err != nil {
-		return err
-	}
-	err = s.loader.Load(rootBuildFile, syntax.LocationRange{})
+	err := s.loader.Load(s.rootBuildFile, syntax.LocationRange{})
 	if err != nil {
 		return err
 	}
