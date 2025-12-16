@@ -346,7 +346,7 @@ func (s *Setup) fillOtherConfig() error {
 
 // Run runs the load, returning nil on success. On failure, returns the error.
 func (s *Setup) Run() error {
-	err := s.loader.Load(s.rootBuildFile, syntax.LocationRange{})
+	err := s.loader.Load(s.rootBuildFile, syntax.LocationRange{}, Label{})
 	if err != nil {
 		return err
 	}
