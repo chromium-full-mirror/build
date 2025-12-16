@@ -571,7 +571,7 @@ func (c *Command) run(ctx context.Context) (stats build.Stats, err error) {
 			clog.Warningf(ctx, "lockfile is not supported")
 		case err != nil:
 			return stats, err
-		case err == nil:
+		default:
 			var owner string
 			spin := ui.Default.NewSpinner()
 			for {
