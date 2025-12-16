@@ -320,20 +320,33 @@ func (s *State) hatTarget(t string, seen map[string]bool) (*Node, bool) {
 // SpellcheckTarget returns the most similar target from given target.
 func (s *State) SpellcheckTarget(t string) (string, error) {
 	const maxEditDistance = 3
-	minDistance := maxEditDistance + 1
-	var similar string
+	var wg sync.WaitGroup
+	type similarTarget struct {
+		mu       sync.Mutex
+		distance int
+		path     string
+	}
+	similar := similarTarget{distance: maxEditDistance + 1}
 	for _, n := range s.nodes {
 		if n == nil {
 			continue
 		}
-		d := editDistance(t, n.Path(), maxEditDistance)
-		if d < minDistance {
-			minDistance = d
-			similar = n.Path()
-		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			d := editDistance(t, n.Path(), maxEditDistance)
+			similar.mu.Lock()
+			defer similar.mu.Unlock()
+			if d >= similar.distance {
+				return
+			}
+			similar.distance = d
+			similar.path = n.Path()
+		}()
 	}
-	if similar != "" {
-		return similar, nil
+	wg.Wait()
+	if similar.path != "" {
+		return similar.path, nil
 	}
 	return "", fmt.Errorf("no target similar to %q in edit distance %d, or contains %q as substring", t, maxEditDistance, t)
 }
