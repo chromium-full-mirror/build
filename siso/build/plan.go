@@ -931,10 +931,12 @@ func suggestTargets(ctx context.Context, sched *scheduler, graph Graph, args ...
 		t, err := graph.SpellcheckTarget(target)
 		if err == nil {
 			suggests = append(suggests, t)
+			continue
 		}
 		t, err = graph.SpellcheckTarget(filepath.Join(rel, target))
 		if err == nil {
 			suggests = append(suggests, t+"^")
+			continue
 		}
 	}
 	return suggests

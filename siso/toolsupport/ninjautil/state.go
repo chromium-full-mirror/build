@@ -321,7 +321,7 @@ func (s *State) hatTarget(t string, seen map[string]bool) (*Node, bool) {
 func (s *State) SpellcheckTarget(t string) (string, error) {
 	const maxEditDistance = 3
 	minDistance := maxEditDistance + 1
-	var similar, submatch string
+	var similar string
 	for _, n := range s.nodes {
 		if n == nil {
 			continue
@@ -331,15 +331,9 @@ func (s *State) SpellcheckTarget(t string) (string, error) {
 			minDistance = d
 			similar = n.Path()
 		}
-		if (submatch == "" || len(n.Path()) < len(submatch)) && strings.Contains(n.Path(), t) {
-			submatch = n.Path()
-		}
 	}
 	if similar != "" {
 		return similar, nil
-	}
-	if submatch != "" {
-		return submatch, nil
 	}
 	return "", fmt.Errorf("no target similar to %q in edit distance %d, or contains %q as substring", t, maxEditDistance, t)
 }
