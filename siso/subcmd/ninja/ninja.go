@@ -471,11 +471,7 @@ func (c *Command) run(ctx context.Context) (stats build.Stats, err error) {
 		spin := ui.Default.NewSpinner()
 		spin.Start("shutdown cloud logging/monitoring")
 		for _, cleanup := range pCleanups {
-			wg.Add(1)
-			go func(cl func()) {
-				defer wg.Done()
-				cl()
-			}(cleanup)
+			wg.Go(cleanup)
 		}
 		wg.Wait()
 		spin.Stop(nil)
