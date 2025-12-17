@@ -340,8 +340,6 @@ go.opentelemetry.io/collector/featuregate v1.46.0 h1:z3JlymFdWW6aDo9cYAJ6bCqT+OI
 go.opentelemetry.io/collector/featuregate v1.46.0/go.mod h1:d0tiRzVYrytB6LkcYgz2ESFTv7OktRPQe0QEQcPt1L4=
 go.opentelemetry.io/collector/internal/fanoutconsumer v0.140.0 h1:lBCDONcWnO7ww1x5NzMUArdP0ovZHJ51X2nlaHqaGbc=
 go.opentelemetry.io/collector/internal/fanoutconsumer v0.140.0/go.mod h1:5tfglqCeQ3UguG02VIrp38YCjthhyIGnpaIY85eFCYA=
-go.opentelemetry.io/collector/internal/memorylimiter v0.140.0 h1:AW5p72LHogLQUCnlNbV8kxha7rIh6DOKv6ZgmlYQeyQ=
-go.opentelemetry.io/collector/internal/memorylimiter v0.140.0/go.mod h1:MX50w0Bq/9kVmO26xoQXm3H8yuldKnl993Iapsa1nvY=
 go.opentelemetry.io/collector/internal/sharedcomponent v0.140.0 h1:mioB2WKvm0j94amawyRdANyrPkf9WT1eL0JkYLZTi2M=
 go.opentelemetry.io/collector/internal/sharedcomponent v0.140.0/go.mod h1:M9NBHZUWMKOmhnSoPPoagcxDaokOF5hP5gQjTpDPtXg=
 go.opentelemetry.io/collector/internal/telemetry v0.140.0 h1:z3vIHK+ZxhvvsqhUvfzVEhPIDt1oucqRbBHB1417rMk=
@@ -364,12 +362,6 @@ go.opentelemetry.io/collector/pipeline/xpipeline v0.140.0 h1:CFX1B6Zj4tVGSPVVxQY
 go.opentelemetry.io/collector/pipeline/xpipeline v0.140.0/go.mod h1:1WQEsQ/QxkXZW7QIR/c+afGIUYqyqb1bsZHyYlar15o=
 go.opentelemetry.io/collector/processor v1.46.0 h1:NN4jCwm4lqRUlmR6/pPWp5ccH685+/sUuGevUxuCRMA=
 go.opentelemetry.io/collector/processor v1.46.0/go.mod h1:0nNzkog8ctiXYQ6I7Qe+xzsQTQ/P4T4NVRCc3ZXiezg=
-go.opentelemetry.io/collector/processor/memorylimiterprocessor v0.140.0 h1:T3Co7DjKzXRGpHRV0vCZChj1xD2f12Hi+fhY3EIroSY=
-go.opentelemetry.io/collector/processor/memorylimiterprocessor v0.140.0/go.mod h1:o8qwqEyjGTfhUSnBVaNRNbzWt2l/VZRyR0Fm7OpmYjc=
-go.opentelemetry.io/collector/processor/processorhelper v0.140.0 h1:lS44K53oYJku0X8JLUeDxNBzn27PJGa4dOirMOSxUwA=
-go.opentelemetry.io/collector/processor/processorhelper v0.140.0/go.mod h1:yyD4nLKEFkuoJRY10G0ILt1KXYa4/R9XwynJbsaG0Kk=
-go.opentelemetry.io/collector/processor/processorhelper/xprocessorhelper v0.140.0 h1:uT5RVBKTAakk486OACQyFTsho4DwbLscX5PYOSpl694=
-go.opentelemetry.io/collector/processor/processorhelper/xprocessorhelper v0.140.0/go.mod h1:/dW7QnRFn824xM4ub4gQLG5VJFnpX3i/vVR6/uoV+RU=
 go.opentelemetry.io/collector/processor/processortest v0.140.0 h1:gqJ4lNT5V38vxnZ3OluEHLv/MyYEUZS1VtKXAct0NRg=
 go.opentelemetry.io/collector/processor/processortest v0.140.0/go.mod h1:oFuiCdEpWqYcTk/xUDg4Yeo5bHGT2RlUFEv4Q2/MJ4A=
 go.opentelemetry.io/collector/processor/xprocessor v0.140.0 h1:RXkf4MQ8+9fq9DFM/7jIOCK78PkwNJTsjY+wx0DFcNI=
