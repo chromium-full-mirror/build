@@ -6,8 +6,10 @@ package build
 
 import (
 	"fmt"
+	"runtime"
 
 	"go.chromium.org/build/gong/gn/build/fs"
+	"go.chromium.org/build/gong/gn/resolve"
 	"go.chromium.org/build/gong/gn/syntax"
 )
 
@@ -15,7 +17,8 @@ import (
 // requests when new references are found, and also manages loading the
 // build config files.
 type Loader struct {
-	buildSettings *BuildSettings
+	buildSettings    *BuildSettings
+	inputFileManager *fs.InputFileManager
 
 	// buildFileExtension is the additional extension for build files in this build.
 	// The resulting file name will be "BUILD.<extension>.gn".
@@ -53,11 +56,12 @@ func newToolchainRecord(loader *Loader) *toolchainRecord {
 }
 
 // MakeLoader creates a loader.
-func MakeLoader(buildSettings *BuildSettings) Loader {
+func MakeLoader(buildSettings *BuildSettings, inputFileManager *fs.InputFileManager) Loader {
 	return Loader{
-		buildSettings: buildSettings,
-		seen:          make(map[loadID]struct{}),
-		toolchains:    make(map[Label]*toolchainRecord),
+		buildSettings:    buildSettings,
+		inputFileManager: inputFileManager,
+		seen:             make(map[loadID]struct{}),
+		toolchains:       make(map[Label]*toolchainRecord),
 	}
 }
 
@@ -88,11 +92,53 @@ func (l *Loader) Load(file fs.SourceFile, origin syntax.LocationRange, intoToolc
 		l.toolchains[Label{}] = record
 
 		record.waitingForConfig = append(record.waitingForConfig, file)
+		if err := l.loadBuildConfig(record.settings); err != nil {
+			return err
+		}
 
-		// TODO: load the build config into this toolchain record.
-		return fmt.Errorf("loading a default toolchain not implemented yet")
+		return nil
 	}
 
 	// TODO: implement.
 	return fmt.Errorf("loading files after the first one not implemented yet. requested: %q", file.Filename())
+}
+
+func (l *Loader) loadBuildConfig(settings *Settings) error {
+	// TODO: run the load asynchronously in the background.
+	root, err := l.inputFileManager.LoadFile(syntax.LocationRange{}, l.buildSettings, l.buildSettings.BuildConfigFile)
+	if err != nil {
+		return fmt.Errorf("failed to load buildconfig: %w", err)
+	}
+
+	// Hack to populate os/arch until we properly implement build-level args.
+	// TODO: support os/arch overrides.
+	switch os := runtime.GOOS; os {
+	case "windows":
+		settings.baseConfig.SetValue("host_os", resolve.NewOriginlessStringValue("win"), nil)
+	case "linux":
+		settings.baseConfig.SetValue("host_os", resolve.NewOriginlessStringValue("linux"), nil)
+	case "darwin":
+		settings.baseConfig.SetValue("host_os", resolve.NewOriginlessStringValue("mac"), nil)
+	default:
+		return fmt.Errorf("OS not handled. (%q)", os)
+	}
+	settings.baseConfig.SetValue("target_os", resolve.NewOriginlessStringValue(""), nil)
+	settings.baseConfig.SetValue("current_os", resolve.NewOriginlessStringValue(""), nil)
+	switch arch := runtime.GOARCH; arch {
+	case "amd64":
+		settings.baseConfig.SetValue("host_cpu", resolve.NewOriginlessStringValue("x64"), nil)
+	case "arm64":
+		settings.baseConfig.SetValue("host_cpu", resolve.NewOriginlessStringValue("arm64"), nil)
+	default:
+		return fmt.Errorf("OS architecture not handled. (%q)", arch)
+	}
+	settings.baseConfig.SetValue("target_cpu", resolve.NewOriginlessStringValue(""), nil)
+	settings.baseConfig.SetValue("current_cpu", resolve.NewOriginlessStringValue(""), nil)
+
+	_, err = resolve.ExecuteNode(root, settings.baseConfig)
+	if err != nil {
+		return fmt.Errorf("failed to execute buildconfig: %w", err)
+	}
+
+	return nil
 }

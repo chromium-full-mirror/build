@@ -41,9 +41,10 @@ func findDotFile(currentDir string) (string, error) {
 // Setup is helper to set up the build settings and environment for the various
 // commands to run.
 type Setup struct {
-	buildSettings BuildSettings
-	loader        Loader
-	rootBuildFile fs.SourceFile
+	buildSettings    BuildSettings
+	loader           Loader
+	rootBuildFile    fs.SourceFile
+	inputFileManager fs.InputFileManager
 
 	// FillArguments sets whether the build arguments should be filled during setup from the
 	// command line/build argument file. This will be true by default. The use
@@ -67,7 +68,7 @@ func NewSetup() *Setup {
 	setup := &Setup{
 		FillArguments: true,
 	}
-	setup.loader = MakeLoader(&setup.buildSettings)
+	setup.loader = MakeLoader(&setup.buildSettings, &setup.inputFileManager)
 	setup.dotfileSettings = NewSettings(&setup.buildSettings)
 	setup.dotfileScope = resolve.NewScopeFromExecContext(setup.dotfileSettings)
 	return setup

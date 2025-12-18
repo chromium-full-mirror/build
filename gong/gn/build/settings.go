@@ -18,7 +18,10 @@ import (
 // TODO: rename this to something else, since build.BuildSettings would be better named build.Settings?
 type Settings struct {
 	buildSettings *BuildSettings
-	baseConfig    *resolve.Scope
+	// baseConfig is populated by the Loader when initializing the toolchain.
+	// We don't touch it afterwards, as it's used as the top-level exec context for scopes
+	// when executing buildfiles.
+	baseConfig *resolve.Scope
 }
 
 // NewSettings creates a new Settings.
@@ -32,6 +35,7 @@ func NewSettings(buildSettings *BuildSettings) *Settings {
 }
 
 // BaseConfig returns the base config scope for this toolchain invocation.
+// It implements resolve.ExecContext.
 func (s *Settings) BaseConfig() *resolve.Scope {
 	return s.baseConfig
 }
