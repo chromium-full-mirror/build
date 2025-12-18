@@ -83,6 +83,34 @@ func executeOr(opNode *parse.BinaryOpNode, scope *Scope) (Value, error) {
 	return &BooleanValue{origin: opNode, value: rightBool.value}, nil
 }
 
+func executeAnd(opNode *parse.BinaryOpNode, scope *Scope) (Value, error) {
+	leftValue, err := executeOpSide(opNode, sideLeft, scope)
+	if err != nil {
+		return nil, err
+	}
+	leftBool, err := AsValue[*BooleanValue](leftValue)
+	if err != nil {
+		return nil, parse.MakeErrFromNode(opNode, syntax.ErrTypeMismatch,
+			"Left side of && operator is not a boolean.",
+			fmt.Sprintf("Type is %q instead.", leftValue.valueType()))
+	}
+	if !leftBool.value {
+		return &BooleanValue{origin: opNode, value: false}, nil
+	}
+
+	rightValue, err := executeOpSide(opNode, sideRight, scope)
+	if err != nil {
+		return nil, err
+	}
+	rightBool, err := AsValue[*BooleanValue](rightValue)
+	if err != nil {
+		return nil, parse.MakeErrFromNode(opNode, syntax.ErrTypeMismatch,
+			"Right side of && operator is not a boolean.",
+			fmt.Sprintf("Type is %q instead.", rightValue.valueType()))
+	}
+	return &BooleanValue{origin: opNode, value: rightBool.value}, nil
+}
+
 // prepareAssignOp prepares lvalue and rvalue for =, +=, -= operations.
 func prepareAssignOp(opNode *parse.BinaryOpNode, scope *Scope) (lvalue valueDestination, rvalue Value, err error) {
 	// First prepare lvalue.
@@ -198,8 +226,7 @@ func executeBinaryOperator(opNode *parse.BinaryOpNode, scope *Scope) (Value, err
 	case syntax.TokenBooleanOr:
 		return executeOr(opNode, scope)
 	case syntax.TokenBooleanAnd:
-		return nil, parse.MakeErrFromNode(opNode, syntax.ErrNotImplemented,
-			"Not implemented", "&& isn't implemented yet.")
+		return executeAnd(opNode, scope)
 	}
 
 	// All other operators require pre-evaluation of both LHS/RHS.
