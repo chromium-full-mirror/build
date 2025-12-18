@@ -1486,21 +1486,6 @@ func (c *Command) initCloudMonitoring(ctx context.Context, credential cred.Cred,
 	return mp, nil
 }
 
-func (c *Command) initLogDir(ctx context.Context) error {
-	if !filepath.IsAbs(c.logDir) {
-		logDir, err := filepath.Abs(c.logDir)
-		if err != nil {
-			return fmt.Errorf("abspath for log dir: %w", err)
-		}
-		c.logDir = logDir
-	}
-	err := os.MkdirAll(c.logDir, 0755)
-	if err != nil {
-		return err
-	}
-	return c.logSymlink(ctx)
-}
-
 func (c *Command) initFlags(targets []string) map[string]string {
 	flags := make(map[string]string)
 	c.Flags.Visit(func(f *flag.Flag) {
@@ -1701,52 +1686,6 @@ func (c *Command) initBuildOpts(ctx context.Context, projectID string, buildPath
 	return bopts, func(err *error) {
 		for i := len(dones) - 1; i >= 0; i-- {
 			dones[i](err)
-		}
-	}, nil
-}
-
-// logFilename returns siso's log filename relative to startDir, or absolute path.
-func (c *Command) logFilename(fname, startDir string) string {
-	if fname == "" {
-		return ""
-	}
-	if !filepath.IsAbs(fname) {
-		fname = filepath.Join(c.logDir, fname)
-	}
-	if startDir == "" {
-		return fname
-	}
-	rel, err := filepath.Rel(startDir, fname)
-	if err != nil || !filepath.IsLocal(rel) {
-		return fname
-	}
-	return "." + string(os.PathSeparator) + rel
-}
-
-// glogFilename returns filename of glog logfile. i.e. siso.INFO.
-func (c *Command) glogFilename() string {
-	logFilename := "siso.INFO"
-	if runtime.GOOS == "windows" {
-		logFilename = "siso.exe.INFO"
-	}
-	return filepath.Join(c.logDir, logFilename)
-}
-
-func (c *Command) logWriter(ctx context.Context, fname string) (io.Writer, func(errp *error), error) {
-	fname = c.logFilename(fname, "")
-	if fname == "" {
-		return nil, func(*error) {}, nil
-	}
-	rotateFiles(ctx, fname)
-	f, err := os.Create(fname)
-	if err != nil {
-		return nil, func(*error) {}, err
-	}
-	return f, func(errp *error) {
-		clog.Infof(ctx, "close %s", fname)
-		cerr := f.Close()
-		if *errp == nil {
-			*errp = cerr
 		}
 	}, nil
 }
@@ -1999,33 +1938,6 @@ type semaTrace struct {
 	waitBuckets, servBuckets [7]int
 }
 
-func (c *Command) logSymlink(ctx context.Context) error {
-	logFilename := c.glogFilename()
-	rotateFiles(ctx, logFilename)
-	logfiles, err := log.Names("INFO")
-	if err != nil {
-		return fmt.Errorf("failed to get glog INFO level log files: %w", err)
-	}
-	if len(logfiles) == 0 {
-		return fmt.Errorf("no glog INFO level log files")
-	}
-	err = os.Symlink(logfiles[0], logFilename)
-	if err != nil {
-		clog.Warningf(ctx, "failed to create %s: %v", logFilename, err)
-		// On Windows, it failed to create symlink.
-		// just same filename in *.redirected file.
-		err = os.WriteFile(logFilename+".redirected", []byte(logfiles[0]), 0644)
-		if err != nil {
-			clog.Warningf(ctx, "failed to write %s.redirected: %v", logFilename, err)
-		}
-		c.sisoInfoLog = logfiles[0]
-		return nil
-	}
-	clog.Infof(ctx, "logfile: %q", logfiles)
-	c.sisoInfoLog = filepath.Base(logFilename)
-	return nil
-}
-
 type dataSource struct {
 	cache  cachestore.CacheStore
 	client *reapi.Client
@@ -2124,37 +2036,6 @@ func (s source) Open(ctx context.Context) (io.ReadCloser, error) {
 
 func (s source) String() string {
 	return fmt.Sprintf("dataSource:%s", s.fname)
-}
-
-func rotateFiles(ctx context.Context, fname string) {
-	ext := filepath.Ext(fname)
-	fnameBase := strings.TrimSuffix(fname, ext)
-
-	oldestFilename := fmt.Sprintf("%s.9%s", fnameBase, ext)
-	fi, err := os.Lstat(oldestFilename)
-	if err == nil && fi.Mode().Type() == fs.ModeSymlink {
-		target, err := os.Readlink(oldestFilename)
-		if err == nil {
-			if !filepath.IsAbs(target) {
-				target = filepath.Join(filepath.Dir(oldestFilename), target)
-			}
-			err = os.Remove(target)
-			clog.Infof(ctx, "remove oldest log %s: %v", target, err)
-		}
-	}
-	// oldestFilename itself will be replaced with <base>.8<ext>.
-	for i := 8; i >= 0; i-- {
-		err := os.Rename(
-			fmt.Sprintf("%s.%d%s", fnameBase, i, ext),
-			fmt.Sprintf("%s.%d%s", fnameBase, i+1, ext))
-		if err != nil && !errors.Is(err, fs.ErrNotExist) {
-			clog.Warningf(ctx, "rotate %s %d->%d failed: %v", fname, i, i+1, err)
-		}
-	}
-	err = os.Rename(fname, fmt.Sprintf("%s.0%s", fnameBase, ext))
-	if err != nil && !errors.Is(err, fs.ErrNotExist) {
-		clog.Warningf(ctx, "rotate %s ->0 failed: %v", fname, err)
-	}
 }
 
 func (c *Command) initOutputLocal() (func(context.Context, string) bool, error) {
@@ -2370,18 +2251,4 @@ func (c *Command) commandLines() []*rspb.CommandLine {
 	cmdline.Args = append(cmdline.Args, c.Flags.Args()...)
 	cmdlines = append(cmdlines, cmdline)
 	return cmdlines
-}
-
-func (c *Command) setupCrashOutput(ctx context.Context) (func(), error) {
-	fname := c.logFilename("siso_crash", "")
-	rotateFiles(ctx, fname)
-	crashFile, err := os.Create(fname)
-	if err != nil {
-		return nil, err
-	}
-	err = debug.SetCrashOutput(crashFile, debug.CrashOptions{})
-	if err != nil {
-		return nil, err
-	}
-	return func() { debug.SetCrashOutput(nil, debug.CrashOptions{}) }, crashFile.Close()
 }
