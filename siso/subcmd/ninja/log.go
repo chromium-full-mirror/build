@@ -18,8 +18,96 @@ import (
 
 	log "github.com/golang/glog"
 
+	"go.chromium.org/build/siso/build"
 	"go.chromium.org/build/siso/o11y/clog"
 )
+
+type logWriters struct {
+	failureSummaryWriter io.Writer
+	failedCommandsWriter io.Writer
+	outputLogWriter      io.Writer
+	explainWriter        io.Writer
+	localexecLogWriter   io.Writer
+	metricsJSONWriter    io.Writer
+}
+
+type cleanupFunc func(*error)
+
+func (c *Command) initLogWriters(ctx context.Context, buildPath *build.Path) (logWriters, cleanupFunc, error) {
+	var writers logWriters
+	var dones []cleanupFunc
+	var err error
+	var done cleanupFunc
+
+	writers.failureSummaryWriter, done, err = c.logWriter(ctx, c.failureSummaryFile)
+	if err != nil {
+		return writers, nil, err
+	}
+	dones = append(dones, done)
+	dones = append(dones, func(errp *error) {
+		if writers.failureSummaryWriter != nil && *errp != nil {
+			fmt.Fprintf(writers.failureSummaryWriter, "error: %v\n", *errp)
+		}
+	})
+
+	writers.failedCommandsWriter, done, err = c.logWriter(ctx, c.failedCommandsFile)
+	if err != nil {
+		return writers, nil, err
+	}
+	dones = append(dones, done)
+	newline := "\n"
+	if runtime.GOOS != "windows" {
+		if f, ok := writers.failedCommandsWriter.(*os.File); ok {
+			err = f.Chmod(0755)
+			if err != nil {
+				return writers, nil, err
+			}
+		}
+		fmt.Fprintf(writers.failedCommandsWriter, "#!/bin/sh\n")
+		fmt.Fprintf(writers.failedCommandsWriter, "set -ve\n")
+	} else {
+		newline = "\r\n"
+	}
+	fmt.Fprintf(writers.failedCommandsWriter, "cd %s%s", filepath.Join(buildPath.ExecRoot, buildPath.Dir), newline)
+	// TODO: for reproxy mode, may need to run reproxy for rewrapper commands.
+
+	writers.outputLogWriter, done, err = c.logWriter(ctx, c.outputLogFile)
+	if err != nil {
+		return writers, nil, err
+	}
+	dones = append(dones, done)
+
+	writers.explainWriter, done, err = c.logWriter(ctx, c.explainFile)
+	if err != nil {
+		return writers, nil, err
+	}
+	dones = append(dones, done)
+	if c.debugMode.Explain {
+		if writers.explainWriter == nil {
+			writers.explainWriter = newExplainWriter(os.Stderr, "")
+		} else {
+			writers.explainWriter = io.MultiWriter(newExplainWriter(os.Stderr, filepath.Join(c.dir, c.explainFile)), writers.explainWriter)
+		}
+	}
+
+	writers.localexecLogWriter, done, err = c.logWriter(ctx, c.localexecLogFile)
+	if err != nil {
+		return writers, nil, err
+	}
+	dones = append(dones, done)
+
+	writers.metricsJSONWriter, done, err = c.logWriter(ctx, c.metricsJSON)
+	if err != nil {
+		return writers, nil, err
+	}
+	dones = append(dones, done)
+
+	return writers, func(err *error) {
+		for i := len(dones) - 1; i >= 0; i-- {
+			dones[i](err)
+		}
+	}, nil
+}
 
 func (c *Command) initLogDir(ctx context.Context) error {
 	if !filepath.IsAbs(c.logDir) {

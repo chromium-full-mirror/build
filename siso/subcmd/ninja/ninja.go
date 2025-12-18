@@ -981,8 +981,12 @@ func (c *Command) run(ctx context.Context) (stats build.Stats, err error) {
 			spin.Stop(uerr)
 		}()
 	}
-
-	bopts, done, err := c.initBuildOpts(ctx, projectID, buildPath, config, ds, hashFS, limits, traceExporter)
+	logWriters, done, err := c.initLogWriters(ctx, buildPath)
+	if err != nil {
+		return stats, err
+	}
+	defer done(&err)
+	bopts, done, err := c.initBuildOpts(ctx, projectID, buildPath, config, ds, hashFS, limits, traceExporter, logWriters)
 	if err != nil {
 		return stats, err
 	}
@@ -1550,7 +1554,7 @@ func (c *Command) initDepsLog(ctx context.Context) (*ninjautil.DepsLog, error) {
 	return depsLog, nil
 }
 
-func (c *Command) initBuildOpts(ctx context.Context, projectID string, buildPath *build.Path, config *buildconfig.Config, ds dataSource, hashFS *hashfs.HashFS, limits build.Limits, traceExporter *trace.Exporter) (bopts build.Options, done func(*error), err error) {
+func (c *Command) initBuildOpts(ctx context.Context, projectID string, buildPath *build.Path, config *buildconfig.Config, ds dataSource, hashFS *hashfs.HashFS, limits build.Limits, traceExporter *trace.Exporter, logWriters logWriters) (bopts build.Options, done func(*error), err error) {
 	var dones []func(*error)
 	defer func() {
 		if err != nil {
@@ -1560,68 +1564,6 @@ func (c *Command) initBuildOpts(ctx context.Context, projectID string, buildPath
 			dones = nil
 		}
 	}()
-
-	failureSummaryWriter, done, err := c.logWriter(ctx, c.failureSummaryFile)
-	if err != nil {
-		return bopts, nil, err
-	}
-	dones = append(dones, done)
-	dones = append(dones, func(errp *error) {
-		if failureSummaryWriter != nil && *errp != nil {
-			fmt.Fprintf(failureSummaryWriter, "error: %v\n", *errp)
-		}
-	})
-	failedCommandsWriter, done, err := c.logWriter(ctx, c.failedCommandsFile)
-	if err != nil {
-		return bopts, nil, err
-	}
-	dones = append(dones, done)
-	newline := "\n"
-	if runtime.GOOS != "windows" {
-		if f, ok := failedCommandsWriter.(*os.File); ok {
-			err = f.Chmod(0755)
-			if err != nil {
-				return bopts, nil, err
-			}
-		}
-		fmt.Fprintf(failedCommandsWriter, "#!/bin/sh\n")
-		fmt.Fprintf(failedCommandsWriter, "set -ve\n")
-	} else {
-		newline = "\r\n"
-	}
-	fmt.Fprintf(failedCommandsWriter, "cd %s%s", filepath.Join(buildPath.ExecRoot, buildPath.Dir), newline)
-	// TODO: for reproxy mode, may need to run reproxy for rewrapper commands.
-
-	outputLogWriter, done, err := c.logWriter(ctx, c.outputLogFile)
-	if err != nil {
-		return bopts, nil, err
-	}
-	dones = append(dones, done)
-	explainWriter, done, err := c.logWriter(ctx, c.explainFile)
-	if err != nil {
-		return bopts, nil, err
-	}
-	dones = append(dones, done)
-	if c.debugMode.Explain {
-		if explainWriter == nil {
-			explainWriter = newExplainWriter(os.Stderr, "")
-		} else {
-			explainWriter = io.MultiWriter(newExplainWriter(os.Stderr, filepath.Join(c.dir, c.explainFile)), explainWriter)
-		}
-	}
-
-	localexecLogWriter, done, err := c.logWriter(ctx, c.localexecLogFile)
-	if err != nil {
-		return bopts, nil, err
-	}
-	dones = append(dones, done)
-
-	metricsJSONWriter, done, err := c.logWriter(ctx, c.metricsJSON)
-	if err != nil {
-		return bopts, nil, err
-	}
-	dones = append(dones, done)
-
 	if !filepath.IsAbs(c.traceJSON) {
 		c.traceJSON = filepath.Join(c.logDir, c.traceJSON)
 	}
@@ -1660,12 +1602,12 @@ func (c *Command) initBuildOpts(ctx context.Context, projectID string, buildPath
 		ActionSalt:            actionSaltBytes,
 		OutputLocal:           build.OutputLocalFunc(c.fsopt.OutputLocal),
 		Cache:                 cache,
-		FailureSummaryWriter:  failureSummaryWriter,
-		FailedCommandsWriter:  failedCommandsWriter,
-		OutputLogWriter:       outputLogWriter,
-		ExplainWriter:         explainWriter,
-		LocalexecLogWriter:    localexecLogWriter,
-		MetricsJSONWriter:     metricsJSONWriter,
+		FailureSummaryWriter:  logWriters.failureSummaryWriter,
+		FailedCommandsWriter:  logWriters.failedCommandsWriter,
+		OutputLogWriter:       logWriters.outputLogWriter,
+		ExplainWriter:         logWriters.explainWriter,
+		LocalexecLogWriter:    logWriters.localexecLogWriter,
+		MetricsJSONWriter:     logWriters.metricsJSONWriter,
 		TraceExporter:         traceExporter,
 		TraceJSON:             c.traceJSON,
 		Pprof:                 c.buildPprof,
