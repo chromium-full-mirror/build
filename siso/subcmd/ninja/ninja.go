@@ -934,13 +934,6 @@ func (c *Command) run(ctx context.Context) (stats build.Stats, err error) {
 	})
 }
 
-type semaTrace struct {
-	name                     string
-	n, nerr                  int
-	waitAvg, servAvg         time.Duration
-	waitBuckets, servBuckets [7]int
-}
-
 type dataSource struct {
 	cache  cachestore.CacheStore
 	client *reapi.Client

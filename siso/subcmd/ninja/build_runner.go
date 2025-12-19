@@ -154,6 +154,13 @@ func rebuildManifest(ctx context.Context, graph *ninjabuild.Graph, bopts build.O
 	return err
 }
 
+type semaTrace struct {
+	name                     string
+	n, nerr                  int
+	waitAvg, servAvg         time.Duration
+	waitBuckets, servBuckets [7]int
+}
+
 func dumpResourceUsageTable(semaTraces map[string]semaTrace) string {
 	var semaNames []string
 	for key := range semaTraces {
