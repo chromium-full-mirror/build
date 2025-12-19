@@ -97,9 +97,7 @@ type NinjaFlags struct {
 	localJobs  int
 	fname      string
 
-	cacheDir         string
-	localCacheEnable bool
-	cacheEnableRead  bool
+	cacheEnableRead bool
 
 	configRepoDir  string
 	configFilename string
@@ -198,8 +196,7 @@ func (c *Command) SetFlags(flagSet *flag.FlagSet) {
 	flagSet.IntVar(&c.remoteJobs, "remote_jobs", 0, "run N remote jobs in parallel. when the value is no positive, the default will be computed based on # of CPUs.")
 	flagSet.StringVar(&c.fname, "f", "build.ninja", "input build manifest filename (relative to -C)")
 
-	flagSet.StringVar(&c.cacheDir, "cache_dir", defaultCacheDir(), "cache directory")
-	flagSet.BoolVar(&c.localCacheEnable, "local_cache_enable", false, "local cache enable")
+	c.setLocalCacheFlags(flagSet)
 	flagSet.BoolVar(&c.cacheEnableRead, "cache_enable_read", true, "cache enable read")
 
 	flagSet.StringVar(&c.configRepoDir, "config_repo_dir", "build/config/siso", "config repo directory (relative to exec root)")
