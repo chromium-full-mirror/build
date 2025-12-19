@@ -25,7 +25,6 @@ import (
 	"sort"
 	"strings"
 	"sync"
-	"text/tabwriter"
 	"time"
 
 	log "github.com/golang/glog"
@@ -933,59 +932,6 @@ func (c *Command) run(ctx context.Context) (stats build.Stats, err error) {
 		subtool:       c.subtool,
 		enableStatusz: true,
 	})
-}
-
-func dumpResourceUsageTable(semaTraces map[string]semaTrace) string {
-	var semaNames []string
-	for key := range semaTraces {
-		semaNames = append(semaNames, key)
-	}
-	sort.Strings(semaNames)
-	var lsb, usb strings.Builder
-	var needToShow bool
-	ltw := tabwriter.NewWriter(&lsb, 10, 8, 1, ' ', tabwriter.AlignRight)
-	utw := tabwriter.NewWriter(&usb, 10, 8, 1, ' ', tabwriter.AlignRight)
-	fmt.Fprintf(ltw, "resource/capa\tused(err)\twait-avg\t|   s m |\tserv-avg\t|   s m |\t\n")
-	fmt.Fprintf(utw, "resource/capa\tused(err)\twait-avg\t|   s m |\tserv-avg\t|   s m |\t\n")
-	for _, key := range semaNames {
-		t := semaTraces[key]
-		fmt.Fprintf(ltw, "%s\t%d(%d)\t%s\t%s\t%s\t%s\t\n", t.name, t.n, t.nerr, t.waitAvg.Round(time.Millisecond), histogram(t.waitBuckets), t.servAvg.Round(time.Millisecond), histogram(t.servBuckets))
-		// bucket 5 = [1m,10m)
-		// bucket 6 = [10m,*)
-		if t.waitBuckets[5] > 0 || t.waitBuckets[6] > 0 || t.servBuckets[5] > 0 || t.servBuckets[6] > 0 {
-			needToShow = true
-			fmt.Fprintf(utw, "%s\t%d(%d)\t%s\t%s\t%s\t%s\t\n", t.name, t.n, t.nerr, ui.FormatDuration(t.waitAvg), histogram(t.waitBuckets), ui.FormatDuration(t.servAvg), histogram(t.servBuckets))
-		}
-	}
-	ltw.Flush()
-	utw.Flush()
-	if needToShow {
-		ui.Default.Infof("%s", usb.String())
-	}
-	return lsb.String()
-}
-
-var histchar = [...]string{"▂", "▃", "▄", "▅", "▆", "▇", "█"}
-
-func histogram(b [7]int) string {
-	max := 0
-	for _, n := range b {
-		if max < n {
-			max = n
-		}
-	}
-	var sb strings.Builder
-	sb.WriteRune('|')
-	for _, n := range b {
-		if n <= 0 {
-			sb.WriteRune(' ')
-			continue
-		}
-		i := len(histchar) * n / (max + 1)
-		sb.WriteString(histchar[i])
-	}
-	sb.WriteRune('|')
-	return sb.String()
 }
 
 type semaTrace struct {
