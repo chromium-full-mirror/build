@@ -30,25 +30,14 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"cloud.google.com/go/compute/metadata"
-	"cloud.google.com/go/logging"
-	"cloud.google.com/go/profiler"
-	cloudmetric "github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/metric"
 	log "github.com/golang/glog"
 	"github.com/google/subcommands"
 	"github.com/google/uuid"
 	"github.com/klauspost/cpuid/v2"
 	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc"
-	smetric "go.opentelemetry.io/otel/sdk/metric"
-	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 	"golang.org/x/sync/errgroup"
-	mrpb "google.golang.org/genproto/googleapis/api/monitoredres"
 	rspb "google.golang.org/genproto/googleapis/devtools/resultstore/v2"
-	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/credentials/insecure"
-	"google.golang.org/grpc/grpclog"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
@@ -1246,144 +1235,6 @@ func (c *Command) initWorkdirs(ctx context.Context) (string, error) {
 	return execRoot, err
 }
 
-func (c *Command) initCloudLogging(ctx context.Context, projectID, execRoot string, credential cred.Cred) (context.Context, string, func(), error) {
-	log.Infof("enable cloud logging project=%s id=%s", projectID, c.buildID)
-
-	// log_id: "siso.log" and "siso.step"
-	// use generic_task resource
-	// https://cloud.google.com/logging/docs/api/v2/resource-list
-	// https://cloud.google.com/monitoring/api/resources#tag_generic_task
-	// Use a switchable logger to avoid data race.
-	// The race happens between `logging.NewClient()` which may start using
-	// the logger in background goroutines, and `grpclog.SetLoggerV2()`
-	// which sets the logger.
-	// `grpclog.SetLoggerV2` is not thread-safe and should only be called once at init time.
-	slogger := clog.NewSwitchableGRPCLogger()
-	grpclog.SetLoggerV2(slogger)
-	client, err := logging.NewClient(ctx, projectID, credential.ClientOptions()...)
-	if err != nil {
-		return ctx, "", func() {}, err
-	}
-	hostname, err := os.Hostname()
-	if err != nil {
-		return ctx, "", func() {}, err
-	}
-	logger, err := clog.New(ctx, client, "siso.log", "siso.step", &mrpb.MonitoredResource{
-		Type: "generic_task",
-		// should set labels for generic_task.
-		// see https://cloud.google.com/logging/docs/api/v2/resource-list
-		Labels: map[string]string{
-			"project_id": projectID,
-			"job":        c.jobID,
-			"task_id":    c.buildID,
-			"location":   hostname,
-			"namespace":  execRoot,
-		},
-	}, c.enableCollector, c.collectorAddress)
-	if err != nil {
-		return ctx, "", func() {}, err
-	}
-	ctx = clog.NewContext(ctx, logger)
-	slogger.SetLogger(logger)
-	return ctx, logger.URL(), func() {
-		errch := make(chan error, 1)
-		closeStart := time.Now()
-		go func() {
-			errch <- logger.Close()
-		}()
-		timeout := 1 * time.Second
-		if !c.fastExit {
-			timeout = 10 * time.Second
-		}
-		// Don't use clog as it's closing Cloud logging client.
-		select {
-		case <-time.After(timeout):
-			log.Warningf("close not finished in %s", timeout)
-		case err := <-errch:
-			if err != nil {
-				log.Warningf("falied to close Cloud logger: %v", err)
-			} else {
-				log.Infof("cloud logging shutdown took: %s", time.Since(closeStart))
-			}
-		}
-	}, nil
-}
-
-func (c *Command) initCloudProfiler(ctx context.Context, projectID string, credential cred.Cred) {
-	clog.Infof(ctx, "enable cloud profiler %q in %s", c.cloudProfilerServiceName, projectID)
-	config := profiler.Config{
-		Service:        c.cloudProfilerServiceName,
-		ServiceVersion: fmt.Sprintf("%s/%s", c.version, runtime.GOOS),
-		MutexProfiling: true,
-		ProjectID:      projectID,
-	}
-	if metadata.OnGCE() {
-		// need to set zone,instance if it seems to run on GCE
-		// but metadata failed to reply them. b/376372151
-		var err error
-		config.Zone, err = metadata.ZoneWithContext(ctx)
-		if err != nil {
-			clog.Warningf(ctx, "failed to get zone from metadata: %v", err)
-			config.Zone = "us-central1-a"
-		}
-		config.Instance, err = metadata.InstanceNameWithContext(ctx)
-		if err != nil {
-			clog.Warningf(ctx, "failed to get instnace from metadata: %v", err)
-			config.Instance = "non-gce-instance"
-		}
-	}
-	err := profiler.Start(config, credential.ClientOptions()...)
-	if err != nil {
-		clog.Errorf(ctx, "failed to start cloud profiler: %v", err)
-	}
-}
-
-func (c *Command) initCloudTrace(ctx context.Context, projectID string, credential cred.Cred) *trace.Exporter {
-	clog.Infof(ctx, "enable trace in %s [trace > %s]", projectID, c.traceThreshold)
-	traceExporter, err := trace.NewExporter(ctx, trace.Options{
-		ProjectID:     projectID,
-		ServiceName:   fmt.Sprintf("siso/%s/%s", c.version, runtime.GOOS),
-		StepThreshold: c.traceThreshold,
-		SpanThreshold: c.traceSpanThreshold,
-		ClientOptions: slices.Clone(credential.ClientOptions()),
-	})
-	if err != nil {
-		clog.Errorf(ctx, "failed to start trace exporter: %v", err)
-	}
-	return traceExporter
-}
-
-func (c *Command) initCloudMonitoring(ctx context.Context, credential cred.Cred, metricsProject, rbeProjectID string, labels map[string]string) (*smetric.MeterProvider, error) {
-	clog.Infof(ctx, "enable cloud monitoring in %s", metricsProject)
-	views, err := monitoring.SetupViews(ctx, c.version, rbeProjectID, labels)
-	if err != nil {
-		return nil, err
-	}
-	var exporter smetric.Exporter
-	if c.enableCollector {
-		exporter = c.newOTELMetricsExporter(ctx)
-	}
-	if exporter == nil {
-		exporter, err = cloudmetric.New(
-			cloudmetric.WithProjectID(metricsProject),
-			cloudmetric.WithMonitoringClientOptions(credential.ClientOptions()...),
-			cloudmetric.WithMetricDescriptorTypeFormatter(func(metrics metricdata.Metrics) string {
-				return fmt.Sprintf("workload.googleapis.com/siso/%s", metrics.Name)
-			}),
-		)
-		if err != nil {
-			return nil, err
-		}
-	}
-	mp, err := monitoring.NewMetricProvider(ctx, metricsProject, rbeProjectID, exporter, views)
-	if err != nil {
-		return nil, err
-	}
-	otel.SetMeterProvider(mp)
-	clog.Infof(ctx, "OpenTelemetry exporter has started in %q for RBE project %q", metricsProject, rbeProjectID)
-	return mp, nil
-}
-
 func (c *Command) initFlags(targets []string) map[string]string {
 	flags := make(map[string]string)
 	c.Flags.Visit(func(f *flag.Flag) {
@@ -1724,23 +1575,6 @@ func (c *Command) initOutputLocal() (func(context.Context, string) bool, error) 
 	default:
 		return nil, fmt.Errorf("unknown output local strategy: %q. should be full/greedy/minimum", c.outputLocalStrategy)
 	}
-}
-
-func (c *Command) newOTELMetricsExporter(ctx context.Context) *otlpmetricgrpc.Exporter {
-	collectorAddr := c.collectorAddress
-	conn, err := grpc.NewClient(collectorAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
-	if err != nil {
-		clog.Warningf(ctx, "failed to create connection to OTLP collector: %v", err)
-		return nil
-	}
-
-	exporter, err := otlpmetricgrpc.New(ctx, otlpmetricgrpc.WithGRPCConn(conn))
-	if err != nil {
-		clog.Warningf(ctx, "failed to create OTLP metric exporter: %v", err)
-		return nil
-	}
-	clog.Infof(ctx, "OTEL metrics exporter to %s", collectorAddr)
-	return exporter
 }
 
 type lastTargets struct {
