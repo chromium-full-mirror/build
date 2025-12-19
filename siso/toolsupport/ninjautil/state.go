@@ -331,9 +331,7 @@ func (s *State) SpellcheckTarget(t string) (string, error) {
 		if n == nil {
 			continue
 		}
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			d := editDistance(t, n.Path(), maxEditDistance)
 			similar.mu.Lock()
 			defer similar.mu.Unlock()
@@ -342,7 +340,7 @@ func (s *State) SpellcheckTarget(t string) (string, error) {
 			}
 			similar.distance = d
 			similar.path = n.Path()
-		}()
+		})
 	}
 	wg.Wait()
 	if similar.path != "" {

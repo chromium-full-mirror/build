@@ -37,27 +37,23 @@ func Test(t *testing.T) {
 	l.Formatter = testFormater
 
 	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		cctx := clog.NewSpan(ctx, "trace1", "span1", map[string]string{
 			"id": "id1"})
 
 		clog.Infof(cctx, "Child Info")
 		clog.Warningf(cctx, "Child Warning")
 		clog.Errorf(cctx, "Child Error")
-	}()
+	})
 
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		cctx := clog.NewSpan(ctx, "trace2", "span2", map[string]string{
 			"id": "id2"})
 
 		clog.Infof(cctx, "Child Info")
 		clog.Warningf(cctx, "Child Warning")
 		clog.Errorf(cctx, "Child Error")
-	}()
+	})
 	wg.Wait()
 
 	// TODO(b/267409605): Add assertions to check for the generated log contents.

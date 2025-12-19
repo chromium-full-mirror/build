@@ -92,11 +92,9 @@ func (d *digester) start(ctx context.Context) {
 	}
 	var wg sync.WaitGroup
 	for range n {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			d.worker(ctx)
-		}()
+		})
 	}
 	wg.Wait()
 }

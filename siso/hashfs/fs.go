@@ -1833,15 +1833,13 @@ func (e *entry) updateDir(ctx context.Context, hfs *HashFS, dname string) []stri
 			if hfs.opt.Ignore(ctx, filepath.Join(dname, name)) {
 				continue
 			}
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
+			wg.Go(func() {
 				// update entry in e.directory.
 				_, err := hfs.stat(ctx, dname, name, false)
 				if err != nil {
 					clog.Warningf(ctx, "updateDir stat %s: %v", name, err)
 				}
-			}()
+			})
 		}
 		wg.Wait()
 	} else {

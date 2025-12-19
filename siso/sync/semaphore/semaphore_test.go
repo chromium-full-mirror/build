@@ -201,9 +201,7 @@ func TestDo(t *testing.T) {
 	const count = 50
 	var wg sync.WaitGroup
 	for i := range count {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			err := sema.Do(ctx, func(context.Context) error {
 				called.Add(1)
 				return nil
@@ -211,7 +209,7 @@ func TestDo(t *testing.T) {
 			if err != nil {
 				t.Errorf("Do %d: %v", i, err)
 			}
-		}()
+		})
 	}
 	wg.Wait()
 	if n := sema.NumServs(); n != 0 {
@@ -271,14 +269,12 @@ func TestDo_timeout(t *testing.T) {
 	}
 	var wg sync.WaitGroup
 	for i := range count {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			err := sema.Do(ctx, f)
 			if err != nil {
 				t.Logf("%s Do %d: %v", time.Since(started), i, err)
 			}
-		}()
+		})
 	}
 
 	if n := sema.Capacity(); n != count {

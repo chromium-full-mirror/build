@@ -63,9 +63,7 @@ func NewExporter(ctx context.Context, opts Options) (*Exporter, error) {
 	if err != nil {
 		return nil, err
 	}
-	e.wg.Add(1)
-	go func() {
-		defer e.wg.Done()
+	e.wg.Go(func() {
 		for {
 			select {
 			case batch, ok := <-e.q:
@@ -88,7 +86,7 @@ func NewExporter(ctx context.Context, opts Options) (*Exporter, error) {
 				return
 			}
 		}
-	}()
+	})
 	return e, nil
 }
 
