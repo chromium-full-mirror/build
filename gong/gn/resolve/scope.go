@@ -14,6 +14,16 @@ import (
 	"go.chromium.org/build/gong/gn/syntax"
 )
 
+// isPrivateVar returns true if this variable name should be considered private.
+// Private values start with an underscore, and are not imported from "gni" files
+// when processing an import.
+//
+// Note that empty identifiers are not valid, however for purposes of matching
+// C++ GN behavior at time of writing, passing an empty string will return true.
+func isPrivateVar(name string) bool {
+	return len(name) == 0 || name[0] == '_'
+}
+
 // ExecContext is the execution context for a scope, and may also hold a
 // scope of its own to be used as a top-level read-only value source.
 //
@@ -50,6 +60,33 @@ type Scope struct {
 	functions map[string]FunctionInfo
 
 	values map[string]record
+}
+
+// ScopeMergeOptions configures merges from one scope into another.
+type ScopeMergeOptions struct {
+	// SourceNode will be presented as the source location of the merge for error reporting.
+	SourceNode parse.Node
+	// SourceFriendlyName will be presented as the source name of the merge for error reporting.
+	SourceFriendlyName string
+	// DestinationMarkUsed will mark values copied to the destination scope as used
+	// so won't trigger an unused variable warning. You want this when doing an
+	// import, for example, or files that don't need a variable from the .gni
+	// file will throw an error.
+	DestinationMarkUsed bool
+	// DestinationClobber will overwrite values in the destination scope if they
+	// already exist.
+	//
+	// When false, it will be an error to merge a variable into another scope
+	// where a variable with the same name is already set. The exception is
+	// if both of the variables have the same value (which happens if you
+	// somehow multiply import the same file, for example). This case will be
+	// ignored since there is nothing getting lost.
+	DestinationClobber bool
+	// SkipPrivateVars will skip private variables (names beginning with an underscore)
+	// when copying to the destination scope.
+	SkipPrivateVars bool
+	// ExcludedValues will exclude the given values when copying to the destination scope.
+	ExcludedValues map[string]struct{}
 }
 
 type record struct {
@@ -259,4 +296,38 @@ func (s *Scope) checkCurrentScopeValuesEqual(other *Scope) bool {
 		}
 	}
 	return true
+}
+
+// NonRecursiveMergeTo copies this scope's values into the destination.
+// Values from the containing scope(s) (normally shadowed into the current one)
+// will not be copied, neither will the reference to the containing scope (this
+// is why it's "non-recursive").
+func (s *Scope) NonRecursiveMergeTo(dest *Scope, options ScopeMergeOptions) error {
+	for currentName, rec := range s.values {
+		if options.SkipPrivateVars && isPrivateVar(currentName) {
+			continue // Skip this private var.
+		}
+		if _, ok := options.ExcludedValues[currentName]; ok {
+			continue // Skip this excluded value.
+		}
+
+		newValue := rec.value
+		if !options.DestinationClobber {
+			existingValue := dest.Value(currentName, false)
+			if existingValue != nil && !newValue.Equal(existingValue) {
+				// Value present in both the source and the dest.
+				// TODO: add extra help text that points to what's being clobbered.
+				return parse.MakeErrFromNode(options.SourceNode, syntax.ErrInvalidOperation,
+					"Value collision.",
+					fmt.Sprintf("This %s contains %q", options.SourceFriendlyName, currentName))
+			}
+		}
+
+		dest.values[currentName] = record{
+			used:  options.DestinationMarkUsed,
+			value: newValue,
+		}
+	}
+
+	return nil
 }
