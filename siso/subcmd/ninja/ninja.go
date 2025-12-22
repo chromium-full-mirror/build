@@ -14,7 +14,6 @@ import (
 	"io/fs"
 	"math"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -43,27 +42,8 @@ import (
 	"go.chromium.org/build/siso/toolsupport/cogutil"
 	"go.chromium.org/build/siso/toolsupport/ninjautil"
 	"go.chromium.org/build/siso/toolsupport/soongutil"
-	"go.chromium.org/build/siso/toolsupport/watchmanutil"
 	"go.chromium.org/build/siso/ui"
 )
-
-// File name of siso metadata file.
-// This file is read by ninjalog_uploader.py, in order to populate metadata.
-const sisoMetadataFilename = "siso_metadata.json"
-
-// SisoMetadata contains metadata that is populated directly by siso.
-type SisoMetadata struct {
-	// SisoVersion is the SemVer of siso.
-	SisoVersion string `json:"siso_version"`
-	// StartTime is the time that the ninja build started.
-	StartTime time.Time `json:"start_time"`
-	// BuildID is the Ninja build ID used for analytics and identification.
-	BuildID string `json:"build_id"`
-	// Targets of the build.
-	Targets []string `json:"targets,omitempty"`
-	// MetricsLabels are arbitrary labels for the build.
-	MetricsLabels map[string]string `json:"metrics_labels,omitempty"`
-}
 
 const ninjaUsage = `build the requested targets as ninja.
 
@@ -298,38 +278,9 @@ func (c *Command) run(ctx context.Context) (stats build.Stats, err error) {
 	if err != nil {
 		return stats, flagError{err: err}
 	}
-	switch c.subtool {
-	case "":
-	case "list":
-		return stats, flagError{
-			err: errors.New(`ninja subtools:
-  commands   Use "siso query commands" instead
-  deps       Use "siso query deps" instead
-  inputs     Use "siso query inputs" instead
-  targets    Use "siso query targets" instead
-  cleandead  clean built files that are no longer produced by the manifest`),
-		}
-	case "commands":
-		return stats, flagError{
-			err: errors.New("use `siso query commands` instead"),
-		}
-	case "deps":
-		return stats, flagError{
-			err: errors.New("use `siso query deps` instead"),
-		}
-	case "inputs":
-		return stats, flagError{
-			err: errors.New("use `siso query inputs` instead"),
-		}
-	case "targets":
-		return stats, flagError{
-			err: errors.New("use `siso query targets` instead"),
-		}
-
-	case "cleandead":
-		c.cleandead = true
-	default:
-		return stats, flagError{err: fmt.Errorf("unknown tool %q", c.subtool)}
+	c.cleandead, err = checkSubtool(c.subtool)
+	if err != nil {
+		return stats, err
 	}
 
 	if c.ninjaJobs >= 0 {
@@ -372,55 +323,11 @@ func (c *Command) run(ctx context.Context) (stats build.Stats, err error) {
 	if c.stateDir != "." && c.fsopt.StateFile != "" {
 		c.fsopt.StateFile = filepath.Join(c.stateDir, c.fsopt.StateFile)
 	}
-	lockFilename := filepath.Join(c.stateDir, ".siso_lock")
-	if !c.dryRun {
-		lock, err := newLockFile(ctx, lockFilename)
-		switch {
-		case errors.Is(err, errors.ErrUnsupported):
-			clog.Warningf(ctx, "lockfile is not supported")
-		case err != nil:
-			return stats, err
-		default:
-			var owner string
-			spin := ui.Default.NewSpinner()
-			for {
-				err = lock.Lock()
-				alreadyLocked := &errAlreadyLocked{}
-				if errors.As(err, &alreadyLocked) {
-					if owner != alreadyLocked.owner {
-						if owner != "" {
-							spin.Done("lock holder %s completed", owner)
-						}
-						owner = alreadyLocked.owner
-						spin.Start("waiting for lock holder %s..", owner)
-					}
-					select {
-					case <-ctx.Done():
-						return stats, context.Cause(ctx)
-					case <-time.After(500 * time.Millisecond):
-						continue
-					}
-				} else if err != nil {
-					spin.Stop(err)
-					return stats, err
-				}
-				if owner != "" {
-					spin.Done("lock holder %s completed", owner)
-				}
-				break
-			}
-			defer func() {
-				err := lock.Unlock()
-				if err != nil {
-					ui.Default.Errorf("failed to unlock %s: %v\n", lockFilename, err)
-				}
-				err = lock.Close()
-				if err != nil {
-					ui.Default.Errorf("failed to close %s: %v\n", lockFilename, err)
-				}
-			}()
-		}
+	doneLock, err := initLock(ctx, c.dryRun, c.stateDir)
+	if err != nil {
+		return stats, err
 	}
+	defer doneLock()
 
 	err = c.initLogDir(ctx)
 	if err != nil {
@@ -671,34 +578,7 @@ func (c *Command) run(ctx context.Context) (stats build.Stats, err error) {
 		c.fsopt.ArtFS = artfs
 	}
 
-	if fsmonitor := os.Getenv("SISO_FSMONITOR"); fsmonitor != "" {
-		var fsmonitorPath string
-		if !filepath.IsAbs(fsmonitor) {
-			fsmonitorPath, err = exec.LookPath(fsmonitor)
-			if err != nil {
-				clog.Warningf(ctx, "failed to find fsmonitor %q: %v", fsmonitor, err)
-				ui.Default.Warningf(ui.SGR(ui.BackgroundRed, fmt.Sprintf("SISO_FSMONITOR=%q: failed %v\n", fsmonitor, err)))
-			}
-		} else {
-			fsmonitorPath = fsmonitor
-		}
-		if fsmonitorPath != "" {
-			fsm := strings.TrimSuffix(filepath.Base(fsmonitor), filepath.Ext(fsmonitor))
-			switch fsm {
-			case "watchman":
-				fsm, err := watchmanutil.New(ctx, fsmonitorPath, execRoot)
-				if err != nil {
-					clog.Warningf(ctx, "failed to initialize watchman: %v", err)
-					ui.Default.Errorf(ui.SGR(ui.BackgroundRed, fmt.Sprintf("SISO_FSMONITOR=watchman: failed %v\n", err)))
-				} else {
-					ui.Default.Infof(ui.SGR(ui.Yellow, fmt.Sprintf("use watchman as fsmonitor: %s\n", fsmonitorPath)))
-					c.fsopt.FSMonitor = fsm
-				}
-			default:
-				ui.Default.Errorf(ui.SGR(ui.BackgroundRed, fmt.Sprintf("unknown SISO_FSMONITOR=%q (%q)\n", fsmonitor, fsm)))
-			}
-		}
-	}
+	c.fsopt.FSMonitor = initFSMonitor(ctx, execRoot)
 
 	spin.Start("loading fs state")
 
@@ -835,18 +715,8 @@ func (c *Command) run(ctx context.Context) (stats build.Stats, err error) {
 		clog.Warningf(ctx, "failed to remove %s: %v", failedTargetsFilename, err)
 	}
 
-	sisoMetadata := SisoMetadata{
-		SisoVersion:   c.version,
-		StartTime:     c.started,
-		BuildID:       c.buildID,
-		Targets:       targets,
-		MetricsLabels: metricsLabels,
-	}
-	j, err := json.Marshal(sisoMetadata)
+	err = c.writeSisoMetadata(metricsLabels, targets)
 	if err != nil {
-		return stats, err
-	}
-	if err := os.WriteFile(filepath.Join(c.logDir, sisoMetadataFilename), j, 0644); err != nil {
 		return stats, err
 	}
 

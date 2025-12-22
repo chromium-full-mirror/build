@@ -6,6 +6,7 @@ package ninja
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -15,6 +16,7 @@ import (
 	"runtime"
 	"runtime/debug"
 	"strings"
+	"time"
 
 	log "github.com/golang/glog"
 
@@ -29,6 +31,24 @@ type logWriters struct {
 	explainWriter        io.Writer
 	localexecLogWriter   io.Writer
 	metricsJSONWriter    io.Writer
+}
+
+// File name of siso metadata file.
+// This file is read by ninjalog_uploader.py, in order to populate metadata.
+const sisoMetadataFilename = "siso_metadata.json"
+
+// SisoMetadata contains metadata that is populated directly by siso.
+type SisoMetadata struct {
+	// SisoVersion is the SemVer of siso.
+	SisoVersion string `json:"siso_version"`
+	// StartTime is the time that the ninja build started.
+	StartTime time.Time `json:"start_time"`
+	// BuildID is the Ninja build ID used for analytics and identification.
+	BuildID string `json:"build_id"`
+	// Targets of the build.
+	Targets []string `json:"targets,omitempty"`
+	// MetricsLabels are arbitrary labels for the build.
+	MetricsLabels map[string]string `json:"metrics_labels,omitempty"`
 }
 
 type cleanupFunc func(*error)
@@ -240,4 +260,19 @@ func (c *Command) setupCrashOutput(ctx context.Context) (func(), error) {
 		return nil, err
 	}
 	return func() { debug.SetCrashOutput(nil, debug.CrashOptions{}) }, crashFile.Close()
+}
+
+func (c *Command) writeSisoMetadata(metricsLabels map[string]string, targets []string) error {
+	sisoMetadata := SisoMetadata{
+		SisoVersion:   c.version,
+		StartTime:     c.started,
+		BuildID:       c.buildID,
+		Targets:       targets,
+		MetricsLabels: metricsLabels,
+	}
+	j, err := json.Marshal(sisoMetadata)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(c.logDir, sisoMetadataFilename), j, 0644)
 }

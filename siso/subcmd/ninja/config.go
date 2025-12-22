@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strconv"
@@ -27,6 +28,7 @@ import (
 	"go.chromium.org/build/siso/o11y/trace"
 	"go.chromium.org/build/siso/reapi"
 	"go.chromium.org/build/siso/toolsupport/ninjautil"
+	"go.chromium.org/build/siso/toolsupport/watchmanutil"
 	"go.chromium.org/build/siso/ui"
 )
 
@@ -510,4 +512,130 @@ func initOutputLocal(outputLocalStrategy string) (func(context.Context, string) 
 	default:
 		return nil, fmt.Errorf("unknown output local strategy: %q. should be full/greedy/minimum", outputLocalStrategy)
 	}
+}
+
+func checkSubtool(subtool string) (bool, error) {
+	cleandead := false
+	switch subtool {
+	case "":
+	case "list":
+		return false, flagError{
+			err: errors.New(`ninja subtools:
+  commands   Use "siso query commands" instead
+  deps       Use "siso query deps" instead
+  inputs     Use "siso query inputs" instead
+  targets    Use "siso query targets" instead
+  cleandead  clean built files that are no longer produced by the manifest`),
+		}
+	case "commands":
+		return false, flagError{
+			err: errors.New("use `siso query commands` instead"),
+		}
+	case "deps":
+		return false, flagError{
+			err: errors.New("use `siso query deps` instead"),
+		}
+	case "inputs":
+		return false, flagError{
+			err: errors.New("use `siso query inputs` instead"),
+		}
+	case "targets":
+		return false, flagError{
+			err: errors.New("use `siso query targets` instead"),
+		}
+
+	case "cleandead":
+		cleandead = true
+	default:
+		return false, flagError{err: fmt.Errorf("unknown tool %q", subtool)}
+	}
+	return cleandead, nil
+}
+
+func initLock(ctx context.Context, dryRun bool, stateDir string) (func(), error) {
+	if dryRun {
+		return func() {}, nil
+	}
+	lockFilename := filepath.Join(stateDir, ".siso_lock")
+	lock, err := newLockFile(ctx, lockFilename)
+	switch {
+	case errors.Is(err, errors.ErrUnsupported):
+		clog.Warningf(ctx, "lockfile is not supported")
+		return func() {}, nil
+	case err != nil:
+		return nil, err
+	default:
+		var owner string
+		spin := ui.Default.NewSpinner()
+		for {
+			err = lock.Lock()
+			alreadyLocked := &errAlreadyLocked{}
+			if errors.As(err, &alreadyLocked) {
+				if owner != alreadyLocked.owner {
+					if owner != "" {
+						spin.Done("lock holder %s completed", owner)
+					}
+					owner = alreadyLocked.owner
+					spin.Start("waiting for lock holder %s..", owner)
+				}
+				select {
+				case <-ctx.Done():
+					return nil, context.Cause(ctx)
+				case <-time.After(500 * time.Millisecond):
+					continue
+				}
+			} else if err != nil {
+				spin.Stop(err)
+				return nil, err
+			}
+			if owner != "" {
+				spin.Done("lock holder %s completed", owner)
+			}
+			break
+		}
+		return func() {
+			err := lock.Unlock()
+			if err != nil {
+				ui.Default.Errorf("failed to unlock %s: %v\n", lockFilename, err)
+			}
+			err = lock.Close()
+			if err != nil {
+				ui.Default.Errorf("failed to close %s: %v\n", lockFilename, err)
+			}
+		}, nil
+	}
+}
+
+func initFSMonitor(ctx context.Context, execRoot string) hashfs.FSMonitor {
+	fsmonitor := os.Getenv("SISO_FSMONITOR")
+	if fsmonitor == "" {
+		return nil
+	}
+	var fsmonitorPath string
+	var err error
+	if !filepath.IsAbs(fsmonitor) {
+		fsmonitorPath, err = exec.LookPath(fsmonitor)
+		if err != nil {
+			clog.Warningf(ctx, "failed to find fsmonitor %q: %v", fsmonitor, err)
+			ui.Default.Warningf(ui.SGR(ui.BackgroundRed, fmt.Sprintf("SISO_FSMONITOR=%q: failed %v\n", fsmonitor, err)))
+			return nil
+		}
+	} else {
+		fsmonitorPath = fsmonitor
+	}
+	fsm := strings.TrimSuffix(filepath.Base(fsmonitor), filepath.Ext(fsmonitor))
+	switch fsm {
+	case "watchman":
+		wm, err := watchmanutil.New(ctx, fsmonitorPath, execRoot)
+		if err != nil {
+			clog.Warningf(ctx, "failed to initialize watchman: %v", err)
+			ui.Default.Errorf(ui.SGR(ui.BackgroundRed, fmt.Sprintf("SISO_FSMONITOR=watchman: failed %v\n", err)))
+			return nil
+		}
+		ui.Default.Infof(ui.SGR(ui.Yellow, fmt.Sprintf("use watchman as fsmonitor: %s\n", fsmonitorPath)))
+		return wm
+	default:
+		ui.Default.Errorf(ui.SGR(ui.BackgroundRed, fmt.Sprintf("unknown SISO_FSMONITOR=%q (%q)\n", fsmonitor, fsm)))
+	}
+	return nil
 }
