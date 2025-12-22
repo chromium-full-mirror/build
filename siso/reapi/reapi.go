@@ -63,6 +63,9 @@ type Option struct {
 	CompressedBlob int64
 	// compressor for ByteStream Read/Write APIs.
 	compressor rpb.Compressor_Value
+	// Threshold that decides whether to use ByteStream API (compression-aware)
+	// instead of BatchReadBlobs if blob size is bigger than this.
+	ByteStreamReadThreshold int64
 
 	// Enables GRPC compression. If enabled, blob-level compression will be
 	// forcibly disabled.
@@ -127,6 +130,8 @@ func (o *Option) RegisterFlags(fs *flag.FlagSet, envs map[string]string) {
 	fs.StringVar(&o.TLSCACert, o.Prefix+"_tls_ca_cert", os.Getenv("RBE_tls_ca_cert"), "Load TLS CA certificates from this file to connect to the RE api service. default can be set by $RBE_tls_ca_cert")
 
 	fs.Int64Var(&o.CompressedBlob, o.Prefix+"_compress_blob", 1024, "use compressed blobs if server supports compressed blobs and size is bigger than this. specify 0 to disable blob-level compression."+purpose)
+
+	fs.Int64Var(&o.ByteStreamReadThreshold, o.Prefix+"_byte_stream_read_threshold", 2*1024*1024, "if blob size >= threshold, use ByteStream API (compression-aware)"+purpose)
 
 	fs.BoolVar(&o.EnableGRPCCompression, o.Prefix+"_enable_grpc_compression", false, "enable grpc compression.  if enabled, blob-level compression will be forcibly disabled."+purpose)
 
@@ -470,6 +475,7 @@ func NewFromConn(ctx context.Context, opt Option, conn, casConn grpcClientConn) 
 			clog.Infof(ctx, "compressed-blobs is not supported")
 		}
 	}
+	clog.Infof(ctx, "byte stream read threshold: %d", opt.ByteStreamReadThreshold)
 	var apiVersion *semverpb.SemVer
 	if opt.REAPIVersion != "" {
 		var major, minor int32

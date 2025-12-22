@@ -43,9 +43,6 @@ var (
 )
 
 const (
-	// bytestreamReadThreshold is the threshold that decides whether to use BatchReadBlobs or ByteStream API.
-	bytestreamReadThreshold = 2 * 1024 * 1024
-
 	// defaultBatchUpdateByteLimit is bytes limit for cas BatchUpdateBlobs.
 	defaultBatchUpdateByteLimit = 4 * 1024 * 1024
 
@@ -163,7 +160,7 @@ func (c *Client) Get(ctx context.Context, d digest.Digest, name string) ([]byte,
 	defer span.Close(nil)
 	span.SetAttr("sizebytes", d.SizeBytes)
 
-	if d.SizeBytes < bytestreamReadThreshold {
+	if d.SizeBytes < c.opt.ByteStreamReadThreshold {
 		return c.getWithBatchReadBlobs(ctx, d, name)
 	}
 	return c.getWithByteStream(ctx, d, name)
@@ -172,6 +169,9 @@ func (c *Client) Get(ctx context.Context, d digest.Digest, name string) ([]byte,
 // getWithBatchReadBlobs fetches the content of blob using BatchReadBlobs rpc of CAS.
 func (c *Client) getWithBatchReadBlobs(ctx context.Context, d digest.Digest, name string) ([]byte, error) {
 	started := time.Now()
+	if log.V(1) {
+		clog.Infof(ctx, "getWithBatchReadBlobs %s", d)
+	}
 	casClient := rpb.NewContentAddressableStorageClient(c.casConn)
 	var resp *rpb.BatchReadBlobsResponse
 	err := retry.Do(ctx, func() error {
@@ -202,7 +202,7 @@ func (c *Client) getWithByteStream(ctx context.Context, d digest.Digest, name st
 	started := time.Now()
 	resourceName := c.resourceName(d)
 	if log.V(1) {
-		clog.Infof(ctx, "get %s", resourceName)
+		clog.Infof(ctx, "getWithByteStream %s resourceName=%s", d, resourceName)
 	}
 	var buf []byte
 	err := retry.Do(ctx, func() error {
