@@ -12,14 +12,10 @@ import (
 	"flag"
 	"fmt"
 	"io/fs"
-	"maps"
 	"math"
 	"os"
 	"os/exec"
-	"os/user"
 	"path/filepath"
-	"runtime/debug"
-	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -28,13 +24,10 @@ import (
 	log "github.com/golang/glog"
 	"github.com/google/subcommands"
 	"github.com/google/uuid"
-	"github.com/klauspost/cpuid/v2"
 	"go.opentelemetry.io/otel"
 	"golang.org/x/sync/errgroup"
-	rspb "google.golang.org/genproto/googleapis/devtools/resultstore/v2"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"go.chromium.org/build/siso/auth/cred"
 	"go.chromium.org/build/siso/build"
@@ -45,7 +38,6 @@ import (
 	"go.chromium.org/build/siso/o11y/resultstore"
 	"go.chromium.org/build/siso/o11y/trace"
 	"go.chromium.org/build/siso/reapi"
-	"go.chromium.org/build/siso/reapi/merkletree"
 	"go.chromium.org/build/siso/signals"
 	"go.chromium.org/build/siso/toolsupport/artfsutil"
 	"go.chromium.org/build/siso/toolsupport/cogutil"
@@ -53,7 +45,6 @@ import (
 	"go.chromium.org/build/siso/toolsupport/soongutil"
 	"go.chromium.org/build/siso/toolsupport/watchmanutil"
 	"go.chromium.org/build/siso/ui"
-	"go.chromium.org/build/siso/version"
 )
 
 // File name of siso metadata file.
@@ -498,43 +489,13 @@ func (c *Command) run(ctx context.Context) (stats build.Stats, err error) {
 			ctx = logCtx
 		}
 	}
-	// logging is ready.
-	var properties resultstore.Properties
-	properties.Add("dir", c.dir)
-	info := cpuinfo()
-	clog.Infof(ctx, "%s", info)
-	properties.Add("cpu", info)
-	info = gcinfo()
-	clog.Infof(ctx, "%s", info)
-	properties.Add("memgc", info)
-
 	clog.Infof(ctx, "siso version %s", c.version)
-
-	ver, err := version.Current()
-	if err != nil {
-		clog.Warningf(ctx, "version err: %v", err)
-	} else if ver.IsProdCIPD() {
-		clog.Infof(ctx, "CIPD package name: %s", ver.CIPD.PackageName)
-		clog.Infof(ctx, "CIPD instance ID: %s", ver.CIPD.InstanceID)
-		properties.Add("cipd_package_name", ver.CIPD.PackageName)
-		properties.Add("cipd_instance_id", ver.CIPD.InstanceID)
-	} else if ver.Build != nil {
-		clog.Infof(ctx, "Go version: %s", ver.Build.GoVersion)
-		properties.Add("go_version", ver.Build.GoVersion)
-		clog.Infof(ctx, "module %s %s %s", ver.Build.Main.Path, ver.Build.Main.Version, ver.Build.Main.Sum)
-		properties.Add("go_module_path", ver.Build.Main.Path)
-		properties.Add("go_module_version", ver.Build.Main.Version)
-		properties.Add("go_module_sum", ver.Build.Main.Sum)
-		bs := ver.BuildSettings()
-		for _, k := range slices.Sorted(maps.Keys(bs)) {
-			v := bs[k]
-			clog.Infof(ctx, "%s=%s", k, v)
-			properties.Add(k, v)
-		}
+	// logging is ready.
+	properties := c.initBuildProperties(ctx, limits)
+	// log build properties
+	for _, p := range properties {
+		clog.Infof(ctx, "%s: %q", p.Key, p.Value)
 	}
-	c.checkResourceLimits(ctx, limits)
-
-	properties.Add("job_id", c.jobID)
 	clog.Infof(ctx, "job id: %q", c.jobID)
 	clog.Infof(ctx, "build id: %q", c.buildID)
 	clog.Infof(ctx, "project id: %q", projectID)
@@ -553,18 +514,7 @@ func (c *Command) run(ctx context.Context) (stats build.Stats, err error) {
 			return stats, err
 		}
 		ui.Default.Warningf("https://btx.cloud.google.com/invocations/%s\n", c.buildID)
-		defer func() {
-			spin.Start("finishing upload to resultstore")
-			exitCode := 0
-			if err != nil {
-				exitCode = 1
-			}
-			cerr := c.resultstoreUploader.Close(ctx, exitCode)
-			if cerr != nil {
-				clog.Warningf(ctx, "failed to close resultstore: %v", cerr)
-			}
-			spin.Stop(cerr)
-		}()
+		pCleanups = append(pCleanups, c.finishResultstore(ctx, &err))
 	}
 	if c.enableCloudProfiler {
 		c.initCloudProfiler(ctx, projectID, credential)
@@ -824,34 +774,7 @@ func (c *Command) run(ctx context.Context) (stats build.Stats, err error) {
 		return stats, errNothingToDo
 	}
 
-	if c.resultstoreUploader != nil {
-		defer func() {
-			var ents []merkletree.Entry
-
-			var files []string
-			if c.metricsJSON != "" {
-				files = append(files, c.metricsJSON)
-			}
-			// TODO(b/329564182): add other files? e.g. siso_output, siso_trace.json etc.
-			if len(files) != 0 {
-				var err error
-				ents, err = hashFS.Entries(ctx, filepath.Join(execRoot, c.dir), files)
-				if err != nil {
-					clog.Warningf(ctx, "failed to get entries for %q: %v", files, err)
-				}
-			}
-			ents = append(ents, merkletree.Entry{
-				Name: "build.log",
-				Data: c.resultstoreUploader.BuildLogData(),
-			})
-			spin.Start("uploading to resultstore")
-			uerr := c.resultstoreUploader.UploadFiles(ctx, ents)
-			if uerr != nil {
-				clog.Warningf(ctx, "failed to upload results: %v", uerr)
-			}
-			spin.Stop(uerr)
-		}()
-	}
+	pCleanups = append(pCleanups, c.uploadResultstoreFiles(ctx, hashFS, execRoot))
 	logWriters, done, err := c.initLogWriters(ctx, buildPath)
 	if err != nil {
 		return stats, err
@@ -1009,94 +932,4 @@ func argsGN(args, key string) string {
 		return strings.TrimSpace(value)
 	}
 	return ""
-}
-
-func cpuinfo() string {
-	var sb strings.Builder
-	fmt.Fprintf(&sb, "cpu family=%d model=%d stepping=%d ", cpuid.CPU.Family, cpuid.CPU.Model, cpuid.CPU.Stepping)
-	fmt.Fprintf(&sb, "brand=%q vendor=%q ", cpuid.CPU.BrandName, cpuid.CPU.VendorString)
-	fmt.Fprintf(&sb, "physicalCores=%d threadsPerCore=%d logicalCores=%d ", cpuid.CPU.PhysicalCores, cpuid.CPU.ThreadsPerCore, cpuid.CPU.LogicalCores)
-	fmt.Fprintf(&sb, "vm=%t features=%s", cpuid.CPU.VM(), cpuid.CPU.FeatureSet())
-	return sb.String()
-}
-
-func gcinfo() string {
-	var sb strings.Builder
-	memoryLimit := debug.SetMemoryLimit(-1) // not adjust the limit, but retrieve current limit
-	if memoryLimit == math.MaxInt64 {
-		// initial settings
-		fmt.Fprintf(&sb, "memory_limit=unlimited ")
-	} else {
-		fmt.Fprintf(&sb, "memory_limit=%d (GOMEMLIMIT=%s) ", memoryLimit, os.Getenv("GOMEMLIMIT"))
-	}
-
-	gcPercent := debug.SetGCPercent(100) // 100 is default
-	if gcPercent < 0 {
-		ui.Default.PrintLines(ui.SGR(ui.BackgroundRed, fmt.Sprintf("Garbage collection is disabled. GOGC=%s\n", os.Getenv("GOGC"))))
-		fmt.Fprintf(&sb, "gc=off")
-	} else {
-		fmt.Fprintf(&sb, "gc=%d", gcPercent)
-	}
-	debug.SetGCPercent(gcPercent) // restore original setting
-	if v := os.Getenv("GOGC"); v != "" {
-		fmt.Fprintf(&sb, " (GOGC=%s)", v)
-	}
-	return sb.String()
-}
-
-func (c *Command) invocation(ctx context.Context, buildID, projectID, execRoot string, properties resultstore.Properties) *rspb.Invocation {
-	var username string
-	currentUser, err := user.Current()
-	if err != nil {
-		clog.Warningf(ctx, "failed to get current user: %v", err)
-		username = "unknownuser"
-	} else {
-		username = currentUser.Username
-	}
-	hostname, err := os.Hostname()
-	if err != nil {
-		clog.Warningf(ctx, "failed to get hostname: %v", err)
-		hostname = "unknownhost"
-	}
-
-	return &rspb.Invocation{
-		Timing: &rspb.Timing{
-			StartTime: timestamppb.New(c.started),
-		},
-		InvocationAttributes: &rspb.InvocationAttributes{
-			ProjectId:   projectID,
-			Users:       []string{username},
-			Labels:      []string{"siso", "build"},
-			Description: fmt.Sprintf("Invocation ID %s", buildID),
-		},
-		WorkspaceInfo: &rspb.WorkspaceInfo{
-			Hostname:         hostname,
-			WorkingDirectory: execRoot,
-			ToolTag:          "siso",
-			CommandLines:     c.commandLines(),
-		},
-		Properties: properties,
-	}
-}
-
-func (c *Command) commandLines() []*rspb.CommandLine {
-	var cmdlines []*rspb.CommandLine
-	cmdlines = append(cmdlines, &rspb.CommandLine{
-		Label:   "original",
-		Tool:    os.Args[0],
-		Args:    os.Args[1:],
-		Command: "ninja",
-	})
-	cmdline := &rspb.CommandLine{
-		Label:   "canonical",
-		Tool:    os.Args[0],
-		Args:    []string{"ninja"},
-		Command: "ninja",
-	}
-	c.Flags.VisitAll(func(f *flag.Flag) {
-		cmdline.Args = append(cmdline.Args, fmt.Sprintf("-%s=%s", f.Name, f.Value.String()))
-	})
-	cmdline.Args = append(cmdline.Args, c.Flags.Args()...)
-	cmdlines = append(cmdlines, cmdline)
-	return cmdlines
 }
