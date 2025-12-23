@@ -249,6 +249,43 @@ const (
 	failedTargetsFile = ".siso_failed_targets"
 )
 
+func (c *Command) setup(ctx context.Context) (execRoot string, doneLock func(), resetCrashOutput func(), err error) {
+	err = c.resolveFlags()
+	if err != nil {
+		return "", nil, nil, err
+	}
+	if c.offline {
+		c.enableOfflineMode(ctx)
+	}
+
+	execRoot, err = c.initWorkdirs(ctx)
+	if err != nil {
+		return "", nil, nil, err
+	}
+
+	if c.stateDir != "." && c.fsopt.StateFile != "" {
+		c.fsopt.StateFile = filepath.Join(c.stateDir, c.fsopt.StateFile)
+	}
+	doneLock, err = initLock(ctx, c.dryRun, c.stateDir)
+	if err != nil {
+		return "", nil, nil, err
+	}
+
+	err = c.initLogDir(ctx)
+	if err != nil {
+		doneLock()
+		return "", nil, nil, err
+	}
+	clog.Infof(ctx, "siso log dir=%s", c.logDir)
+
+	resetCrashOutput, err = c.setupCrashOutput(ctx)
+	if err != nil {
+		doneLock()
+		return "", nil, nil, err
+	}
+	return execRoot, doneLock, resetCrashOutput, nil
+}
+
 func (c *Command) run(ctx context.Context) (stats build.Stats, err error) {
 	// Cleanup functions to run after serial cleanups in parallel.
 	// This mostly exists for logger and metrics functions cleanup.
@@ -272,38 +309,11 @@ func (c *Command) run(ctx context.Context) (stats build.Stats, err error) {
 		cancel(errInterrupted{})
 	})()
 
-	err = c.resolveFlags()
-	if err != nil {
-		return stats, err
-	}
-	if c.offline {
-		c.enableOfflineMode(ctx)
-	}
-
-	execRoot, err := c.initWorkdirs(ctx)
-	if err != nil {
-		return stats, err
-	}
-
-	if c.stateDir != "." && c.fsopt.StateFile != "" {
-		c.fsopt.StateFile = filepath.Join(c.stateDir, c.fsopt.StateFile)
-	}
-	doneLock, err := initLock(ctx, c.dryRun, c.stateDir)
+	execRoot, doneLock, resetCrashOutput, err := c.setup(ctx)
 	if err != nil {
 		return stats, err
 	}
 	defer doneLock()
-
-	err = c.initLogDir(ctx)
-	if err != nil {
-		return stats, err
-	}
-	clog.Infof(ctx, "siso log dir=%s", c.logDir)
-
-	resetCrashOutput, err := c.setupCrashOutput(ctx)
-	if err != nil {
-		return stats, err
-	}
 	defer resetCrashOutput()
 
 	buildPath := build.NewPath(execRoot, c.dir)
