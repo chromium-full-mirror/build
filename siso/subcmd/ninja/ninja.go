@@ -286,6 +286,42 @@ func (c *Command) setup(ctx context.Context) (execRoot string, doneLock func(), 
 	return execRoot, doneLock, resetCrashOutput, nil
 }
 
+func (c *Command) computeLimits(ctx context.Context) build.Limits {
+	// compute default limits based on fstype of work dir (e.g. artfs),
+	// not of exec root.
+	limits := build.DefaultLimits(ctx)
+	if c.localJobs > 0 {
+		limits.Local = c.localJobs
+	}
+	if c.remoteJobs > 0 {
+		limits.Remote = c.remoteJobs
+		limits.REWrap = c.remoteJobs
+	}
+	if !c.fastLocal {
+		limits.FastLocal = 0
+		limits.StartLocal = 0
+	}
+	return limits
+}
+
+func (c *Command) initCredentials(ctx context.Context) (cred.Cred, error) {
+	needsCreds := !c.offline && (c.reopt.NeedCred() || c.enableCloudLogging || c.enableResultstore || c.enableCloudProfiler || c.enableCloudTrace || c.enableCloudMonitoring)
+	if !needsCreds {
+		return cred.Cred{}, nil
+	}
+
+	// TODO: can be async until cred is needed?
+	spin := ui.Default.NewSpinner()
+	spin.Start("init credentials by %q", c.authOpts.Type)
+	credential, err := cred.New(ctx, c.reopt.ServiceURI(), c.authOpts)
+	if err != nil {
+		spin.Stop(errors.New(""))
+		return cred.Cred{}, err
+	}
+	spin.Stop(nil)
+	return credential, nil
+}
+
 func (c *Command) run(ctx context.Context) (stats build.Stats, err error) {
 	// Cleanup functions to run after serial cleanups in parallel.
 	// This mostly exists for logger and metrics functions cleanup.
@@ -318,34 +354,12 @@ func (c *Command) run(ctx context.Context) (stats build.Stats, err error) {
 
 	buildPath := build.NewPath(execRoot, c.dir)
 
-	// compute default limits based on fstype of work dir (e.g. artfs),
-	// not of exec root.
-	limits := build.DefaultLimits(ctx)
-	if c.localJobs > 0 {
-		limits.Local = c.localJobs
-	}
-	if c.remoteJobs > 0 {
-		limits.Remote = c.remoteJobs
-		limits.REWrap = c.remoteJobs
-	}
-	if !c.fastLocal {
-		limits.FastLocal = 0
-		limits.StartLocal = 0
-	}
-
+	limits := c.computeLimits(ctx)
 	projectID := c.reopt.UpdateProjectID(c.projectID)
 
-	var credential cred.Cred
-	if !c.offline && (c.reopt.NeedCred() || c.enableCloudLogging || c.enableResultstore || c.enableCloudProfiler || c.enableCloudTrace || c.enableCloudMonitoring) {
-		// TODO: can be async until cred is needed?
-		spin := ui.Default.NewSpinner()
-		spin.Start("init credentials by %q", c.authOpts.Type)
-		credential, err = cred.New(ctx, c.reopt.ServiceURI(), c.authOpts)
-		if err != nil {
-			spin.Stop(errors.New(""))
-			return stats, err
-		}
-		spin.Stop(nil)
+	credential, err := c.initCredentials(ctx)
+	if err != nil {
+		return stats, err
 	}
 	if c.enableCloudLogging {
 		spin := ui.Default.NewSpinner()
