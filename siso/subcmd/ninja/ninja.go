@@ -12,7 +12,6 @@ import (
 	"flag"
 	"fmt"
 	"io/fs"
-	"math"
 	"os"
 	"path/filepath"
 	"sort"
@@ -22,7 +21,6 @@ import (
 
 	log "github.com/golang/glog"
 	"github.com/google/subcommands"
-	"github.com/google/uuid"
 	"go.opentelemetry.io/otel"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc/codes"
@@ -36,7 +34,6 @@ import (
 	"go.chromium.org/build/siso/o11y/monitoring"
 	"go.chromium.org/build/siso/o11y/resultstore"
 	"go.chromium.org/build/siso/o11y/trace"
-	"go.chromium.org/build/siso/reapi"
 	"go.chromium.org/build/siso/signals"
 	"go.chromium.org/build/siso/toolsupport/artfsutil"
 	"go.chromium.org/build/siso/toolsupport/cogutil"
@@ -274,45 +271,13 @@ func (c *Command) run(ctx context.Context) (stats build.Stats, err error) {
 	defer signals.HandleInterrupt(ctx, func() {
 		cancel(errInterrupted{})
 	})()
-	err = c.debugMode.check()
-	if err != nil {
-		return stats, flagError{err: err}
-	}
-	c.cleandead, err = checkSubtool(c.subtool)
+
+	err = c.resolveFlags()
 	if err != nil {
 		return stats, err
 	}
-
-	if c.ninjaJobs >= 0 {
-		ui.Default.Warningf("-j is not supported. use -remote_jobs and -local_jobs instead\n")
-	}
-	if c.ninjaLoadLimit >= 0 {
-		ui.Default.Warningf("-l is not supported.\n")
-	}
-	if c.failuresAllowed <= 0 {
-		c.failuresAllowed = math.MaxInt
-	}
-	if c.failuresAllowed > 1 {
-		c.fastLastFailure = false
-	}
-
-	if c.adjustWarn != "" {
-		ui.Default.Warningf("-w is specified. but not supported. b/288807840\n")
-	}
-
 	if c.offline {
-		ui.Default.Warningf(ui.SGR(ui.Red, "offline mode\n"))
-		clog.Warningf(ctx, "offline mode")
-		c.reopt = new(reapi.Option)
-		c.reopt.Insecure = true
-		c.projectID = ""
-		c.enableCollector = false
-		c.enableCloudLogging = false
-		c.enableResultstore = false
-		c.enableCloudProfiler = false
-		c.enableCloudTrace = false
-		c.enableCloudMonitoring = false
-		c.reproxyAddr = ""
+		c.enableOfflineMode(ctx)
 	}
 
 	execRoot, err := c.initWorkdirs(ctx)
@@ -356,13 +321,6 @@ func (c *Command) run(ctx context.Context) (stats build.Stats, err error) {
 	if !c.fastLocal {
 		limits.FastLocal = 0
 		limits.StartLocal = 0
-	}
-
-	if err = uuid.Validate(c.buildID); err != nil {
-		return stats, flagError{err: fmt.Errorf("%q is an invalid build ID. -build_id must be a UUID", c.buildID)}
-	}
-	if len(c.jobID) > 1024 {
-		return stats, flagError{err: fmt.Errorf("-job_id length must be less than 1024")}
 	}
 
 	projectID := c.reopt.UpdateProjectID(c.projectID)

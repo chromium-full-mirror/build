@@ -10,6 +10,7 @@ import (
 	"flag"
 	"fmt"
 	"io/fs"
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -371,6 +372,57 @@ func (c *Command) initWorkdirs(ctx context.Context) (string, error) {
 		return "", fmt.Errorf("%s not found in %s. need `-C <dir>`?", c.fname, cwd)
 	}
 	return execRoot, err
+}
+
+func (c *Command) resolveFlags() error {
+	err := c.debugMode.check()
+	if err != nil {
+		return flagError{err: err}
+	}
+	c.cleandead, err = checkSubtool(c.subtool)
+	if err != nil {
+		return err
+	}
+
+	if c.ninjaJobs >= 0 {
+		ui.Default.Warningf("-j is not supported. use -remote_jobs and -local_jobs instead\n")
+	}
+	if c.ninjaLoadLimit >= 0 {
+		ui.Default.Warningf("-l is not supported.\n")
+	}
+	if c.failuresAllowed <= 0 {
+		c.failuresAllowed = math.MaxInt
+	}
+	if c.failuresAllowed > 1 {
+		c.fastLastFailure = false
+	}
+
+	if c.adjustWarn != "" {
+		ui.Default.Warningf("-w is specified. but not supported. b/288807840\n")
+	}
+
+	if err = uuid.Validate(c.buildID); err != nil {
+		return flagError{err: fmt.Errorf("%q is an invalid build ID. -build_id must be a UUID", c.buildID)}
+	}
+	if len(c.jobID) > 1024 {
+		return flagError{err: fmt.Errorf("-job_id length must be less than 1024")}
+	}
+	return nil
+}
+
+func (c *Command) enableOfflineMode(ctx context.Context) {
+	ui.Default.Warningf(ui.SGR(ui.Red, "offline mode\n"))
+	clog.Warningf(ctx, "offline mode")
+	c.reopt = new(reapi.Option)
+	c.reopt.Insecure = true
+	c.projectID = ""
+	c.enableCollector = false
+	c.enableCloudLogging = false
+	c.enableResultstore = false
+	c.enableCloudProfiler = false
+	c.enableCloudTrace = false
+	c.enableCloudMonitoring = false
+	c.reproxyAddr = ""
 }
 
 func initDepsLog(ctx context.Context, stateDir string, depsLogFile string) (*ninjautil.DepsLog, error) {
