@@ -37,7 +37,6 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"go.chromium.org/build/siso/auth/cred"
-	"go.chromium.org/build/siso/build"
 	"go.chromium.org/build/siso/hashfs"
 	"go.chromium.org/build/siso/o11y/clog"
 	"go.chromium.org/build/siso/o11y/monitoring"
@@ -202,7 +201,7 @@ func newOTELMetricsExporter(ctx context.Context, collectorAddr string) *otlpmetr
 	return exporter
 }
 
-func (c *Command) initBuildProperties(ctx context.Context, limits build.Limits) resultstore.Properties {
+func (c *Command) buildProperties(ctx context.Context) resultstore.Properties {
 	properties := resultstore.Properties{}
 	properties.Add("dir", c.dir)
 	info := cpuinfo()
@@ -227,7 +226,6 @@ func (c *Command) initBuildProperties(ctx context.Context, limits build.Limits) 
 			properties.Add(k, v)
 		}
 	}
-	c.checkResourceLimits(ctx, limits)
 	properties.Add("job_id", c.jobID)
 
 	return properties

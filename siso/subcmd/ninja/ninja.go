@@ -301,6 +301,7 @@ func (c *Command) computeLimits(ctx context.Context) build.Limits {
 		limits.FastLocal = 0
 		limits.StartLocal = 0
 	}
+	c.checkResourceLimits(ctx, limits)
 	return limits
 }
 
@@ -380,7 +381,7 @@ func (c *Command) run(ctx context.Context) (stats build.Stats, err error) {
 	}
 	clog.Infof(ctx, "siso version %s", c.version)
 	// logging is ready.
-	properties := c.initBuildProperties(ctx, limits)
+	properties := c.buildProperties(ctx)
 	// log build properties
 	for _, p := range properties {
 		clog.Infof(ctx, "%s: %q", p.Key, p.Value)
