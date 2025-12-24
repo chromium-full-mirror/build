@@ -19,6 +19,26 @@ assert_failure("Incompatible types for binary operator.", "You can't do <boolean
     invalid = true + "1"
 }
 
+# str += str
+s = "foo"
+s += "bar"
+assert(s == "foobar")
+
+# str += int
+s += 1
+assert(s == "foobar1")
+
+# str += invalid
+assert_failure("Incompatible types for binary operator.", "You can't do <string> += <boolean>.") {
+    s += true
+}
+
+# int + str is okay, but int += str is not
+assert_failure("Incompatible types for binary operator.", "You can't do <integer> += <string>.") {
+    i = 1
+    i += "1"
+}
+
 # hex
 assert("$0x41" == "A")
 

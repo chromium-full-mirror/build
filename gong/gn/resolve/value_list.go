@@ -48,7 +48,7 @@ func (v *ListValue) access(index int64, origin parse.Node) (valueDestination, er
 	}, nil
 }
 
-// listValue represents a lvalue access of a scope's values.
+// listValue represents a lvalue access of a list's values.
 type listValue struct {
 	list  *ListValue
 	index int64
@@ -62,9 +62,30 @@ func (a listValue) assign(newValue Value, _ parse.Node) Value {
 	return newValue
 }
 
+// ensureValue implements valueDestination.
+func (a listValue) ensureValue() error {
+	// Because a listValue isn't returned by `func (v *ListValue) access` unless the
+	// subscript is valid, we can assume something's gone wrong if the value is out
+	// of bounds.
+	if a.list == nil {
+		return fmt.Errorf("internal error: listValue pointing at nil value")
+	}
+	if a.index < 0 || a.index >= int64(len(a.list.list)) {
+		return fmt.Errorf("internal error: listValue pointing at invalid index")
+	}
+	return nil
+}
+
 // valueForValidation returns the current Value this list access `a[b]` represents,
 // such that operations can check whether an assignment operation `a[b] = c` is legal.
 func (a listValue) valueForValidation() Value {
+	return a.list.list[a.index]
+}
+
+// valueForMutation returns the current Value this list access `a[b]` represents,
+// such that operations can perform a mutation on it.
+func (a listValue) valueForMutation(origin parse.Node) Value {
+	// C++ GN does not use the origin, so we also ignore it.
 	return a.list.list[a.index]
 }
 

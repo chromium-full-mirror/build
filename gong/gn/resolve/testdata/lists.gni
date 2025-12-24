@@ -47,6 +47,16 @@ assert_failure("Incompatible types for binary operator.", "You can't do <list> +
     invalid = [1, 2, 3] + true
 }
 
+# list += list
+l = [1, 2, 3]
+l += [4, 5, 6]
+assert(l == [1, 2, 3, 4, 5, 6])
+
+# list += invalid
+assert_failure("Incompatible types to add.", "To append a single item to a list do \"foo += [ bar ]\".") {
+    l += true
+}
+
 # mutate existing list value
 foo[0] = 3
 assert(foo[0] == 3)

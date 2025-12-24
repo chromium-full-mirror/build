@@ -97,20 +97,28 @@ type record struct {
 func (s *Scope) access(name syntax.Token) valueDestination {
 	return scopeAccess{
 		scope: s,
-		ident: name.Value(),
+		name:  name,
 	}
 }
 
 // scopeAccess represents a lvalue access of a scope's values.
 type scopeAccess struct {
 	scope *Scope
-	ident string
+	name  syntax.Token
+}
+
+// ensureValue implements valueDestination.
+func (a scopeAccess) ensureValue() error {
+	if a.scope.Value(a.name.Value(), false) != nil {
+		return nil
+	}
+	return a.name.MakeError(syntax.ErrUndefinedIdentifier, "Undefined identifier.")
 }
 
 // assign performs the action of mutating a scope's value.
 // It implements valueDestination.
 func (a scopeAccess) assign(newValue Value, origin parse.Node) Value {
-	a.scope.values[a.ident] = record{
+	a.scope.values[a.name.Value()] = record{
 		used:  false,
 		value: newValue.CopyWithOrigin(origin),
 	}
@@ -120,7 +128,22 @@ func (a scopeAccess) assign(newValue Value, origin parse.Node) Value {
 // valueForValidation returns the current Value this scope access `a.b` represents,
 // such that operations can check whether an assignment operation `a.b = c` is legal.
 func (a scopeAccess) valueForValidation() Value {
-	return a.scope.Value(a.ident, true)
+	return a.scope.Value(a.name.Value(), true)
+}
+
+// valueForMutation returns the current Value this scope access `a.b` represents,
+// such that operations can perform a mutation on it.
+func (a scopeAccess) valueForMutation(origin parse.Node) Value {
+	if r, found := a.scope.values[a.name.Value()]; found {
+		// The value will be written to, reset its tracking information.
+		newValue := r.value.CopyWithOrigin(origin)
+		a.scope.values[a.name.Value()] = record{
+			used:  false,
+			value: newValue,
+		}
+		return newValue
+	}
+	return nil
 }
 
 // isolate makes this scope isolated when resolving variables, in other words

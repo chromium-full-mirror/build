@@ -6,6 +6,7 @@ package resolve
 
 import (
 	"fmt"
+	"strconv"
 
 	"go.chromium.org/build/gong/gn/parse"
 	"go.chromium.org/build/gong/gn/syntax"
@@ -22,12 +23,31 @@ const (
 // e.g. `a = 42`, or the results of evaluating an AccessorNode e.g. `a.b = 42` or `a[b] = 42`.
 type valueDestination interface {
 	assign(newValue Value, origin parse.Node) Value
+	// ensureValue returns an error corresponding to this valueDestination if the
+	// represented value is nil.
+	//
+	// Corresponds to C++ GN's ValueDestination::MakeUndefinedIdentifierForModifyError.
+	ensureValue() error
 	// valueForValidation returns the underlying Value if it already exists,
 	// such that operations can check whether an assignment operation is legal.
 	// Callers are expected not to modify the returned Value.
 	// TODO: maybe this can be enforced by moving Value into a separate package?
 	// alternatively handle check in assign, or new method in Value?
+	//
+	// Corresponds to C++ GN's ValueDestination::GetExistingValue.
 	valueForValidation() Value
+	// valueForMutation returns the underlying Value if it can be modified. This
+	// will not search nested scopes since writes only go into the current scope.
+	// Returns nil if the value does not exist, or is not in the current scope
+	// (meaning assignments won't go to this value and it's not mutable). This
+	// is for implementing += and -=.
+	//
+	// If it exists, this will mark the origin of the value to be the passed-in
+	// node, and the value will be also marked unused (if possible) under the
+	// assumption that it will be modified in-place.
+	//
+	// Corresponds to C++ GN's ValueDestination::GetExistingMutableValueIfExists.
+	valueForMutation(parse.Node) Value
 }
 
 func makeIncompatibleTypeError(opNode *parse.BinaryOpNode, left, right Value) error {
@@ -128,6 +148,74 @@ func executeAnd(opNode *parse.BinaryOpNode, scope *Scope) (Value, error) {
 	return &BooleanValue{origin: opNode, value: rightBool.value}, nil
 }
 
+func executePlusEquals(opNode *parse.BinaryOpNode, scope *Scope) error {
+	lvalue, rvalue, err := prepareAssignOp(opNode, scope)
+	if err != nil {
+		return err
+	}
+
+	// We need to prepare the destination for mutation.
+	// First, check if the lvalue is mutable.
+	dest := lvalue.valueForMutation(opNode)
+	if dest == nil {
+		// Looks like the lvalue isn't mutable.
+		// Is it because what it points to doesn't exist at all?
+		err := lvalue.ensureValue()
+		if err != nil {
+			return err
+		}
+
+		// No, it does exist.
+		// Let's prepare the alternative destination to mutate then.
+		existingValue := lvalue.valueForValidation()
+		switch existingValue.valueType() {
+		case ValueTypeString, ValueTypeList:
+			// The lvalue is a list or string.
+			// We'll create the mutable destination by copying it into the current scope.
+			dest = lvalue.assign(existingValue, opNode)
+		default:
+			// The lvalue is something else.
+			// In that case we'll always treat it as `foo = foo + bar` i.e. call executePlus,
+			// then forcibly create a mutable `foo` in the current scope.
+			// So use the immutable value as the "destination", and executePlus will handle the rest.
+			dest = existingValue
+		}
+	}
+
+	// Now that we're here, the destination to mutate has been prepared.
+	if destString, ok := dest.(*StringValue); ok {
+		// String + string -> string concat.
+		if appendString, ok := rvalue.(*StringValue); ok {
+			destString.value += appendString.value
+			return nil
+		}
+		// String + int -> string concat.
+		if appendInteger, ok := rvalue.(*IntegerValue); ok {
+			destString.value += strconv.FormatInt(appendInteger.value, 10)
+			return nil
+		}
+		return makeIncompatibleTypeError(opNode, dest, rvalue)
+	} else if destList, ok := dest.(*ListValue); ok {
+		// List concat. The RHS can only be a list.
+		if appendList, ok := rvalue.(*ListValue); ok {
+			destList.list = append(destList.list, appendList.list...)
+			return nil
+		}
+		// This matches C++ GN's separate error message for list += invalid.
+		return opNode.Op.MakeErrorWithHelp(syntax.ErrTypeMismatch,
+			"Incompatible types to add.",
+			`To append a single item to a list do "foo += [ bar ]".`)
+	}
+
+	// Everything else is semantically `foo = foo + bar`.
+	value, err := executePlus(opNode, dest, rvalue, false)
+	if err != nil {
+		return err
+	}
+	lvalue.assign(value, opNode)
+	return nil
+}
+
 // prepareAssignOp prepares lvalue and rvalue for =, +=, -= operations.
 func prepareAssignOp(opNode *parse.BinaryOpNode, scope *Scope) (lvalue valueDestination, rvalue Value, err error) {
 	// First prepare lvalue.
@@ -199,7 +287,7 @@ func prepareAssignOp(opNode *parse.BinaryOpNode, scope *Scope) (lvalue valueDest
 	return lvalue, rvalue, nil
 }
 
-func executePlus(opNode *parse.BinaryOpNode, left, right Value) (Value, error) {
+func executePlus(opNode *parse.BinaryOpNode, left, right Value, allowLeftTypeConversion bool) (Value, error) {
 	// Left-hand-side integer.
 	if lvalue, ok := left.(*IntegerValue); ok {
 		if rvalue, ok := right.(*IntegerValue); ok {
@@ -208,7 +296,7 @@ func executePlus(opNode *parse.BinaryOpNode, left, right Value) (Value, error) {
 				origin: opNode,
 				value:  lvalue.value + rvalue.value,
 			}, nil
-		} else if rvalue, ok := right.(*StringValue); ok {
+		} else if rvalue, ok := right.(*StringValue); ok && allowLeftTypeConversion {
 			// Int + string -> string concat.
 			return &StringValue{
 				origin: opNode,
@@ -282,10 +370,12 @@ func executeBinaryOperator(opNode *parse.BinaryOpNode, scope *Scope) (Value, err
 		// Validation passed, perform the assignment.
 		return lvalue.assign(rvalue, opNode.Right), nil
 
-	case syntax.TokenPlusEquals,
-		syntax.TokenMinusEquals:
+	case syntax.TokenPlusEquals:
+		return nil, executePlusEquals(opNode, scope)
+
+	case syntax.TokenMinusEquals:
 		return nil, parse.MakeErrFromNode(opNode, syntax.ErrNotImplemented,
-			"Not implemented", "+= and -= aren't implemented yet.")
+			"Not implemented", "-= isn't implemented yet.")
 
 	// ||, &&.
 	case syntax.TokenBooleanOr:
@@ -310,7 +400,7 @@ func executeBinaryOperator(opNode *parse.BinaryOpNode, scope *Scope) (Value, err
 		return nil, parse.MakeErrFromNode(opNode, syntax.ErrNotImplemented,
 			"Not implemented", "- isn't implemented yet.")
 	case syntax.TokenPlus:
-		return executePlus(opNode, leftValue, rightValue)
+		return executePlus(opNode, leftValue, rightValue, true)
 
 	// ==, !=.
 	case syntax.TokenEqualEqual:
