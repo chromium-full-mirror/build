@@ -30,6 +30,23 @@ type valueDestination interface {
 	valueForValidation() Value
 }
 
+func makeIncompatibleTypeError(opNode *parse.BinaryOpNode, left, right Value) error {
+	msg := fmt.Sprintf("You can't do <%s> %s <%s>.",
+		left.valueType().String(), opNode.Op.Value(), right.valueType().String())
+	// Extra hint for lists.
+	if left.valueType() == ValueTypeList {
+		msg += `
+
+Hint: If you're attempting to add or remove a single item from a list, use "foo + [ bar ]".`
+	}
+	return syntax.MakeErrorAt(
+		opNode.LocationRange().Begin(),
+		[]syntax.LocationRange{opNode.LocationRange()},
+		syntax.ErrTypeMismatch,
+		"Incompatible types for binary operator.",
+		msg)
+}
+
 func executeOpSide(opNode *parse.BinaryOpNode, side side, scope *Scope) (Value, error) {
 	var node parse.Node
 	switch side {
@@ -182,6 +199,54 @@ func prepareAssignOp(opNode *parse.BinaryOpNode, scope *Scope) (lvalue valueDest
 	return lvalue, rvalue, nil
 }
 
+func executePlus(opNode *parse.BinaryOpNode, left, right Value) (Value, error) {
+	// Left-hand-side integer.
+	if lvalue, ok := left.(*IntegerValue); ok {
+		if rvalue, ok := right.(*IntegerValue); ok {
+			// Int + int -> addition.
+			return &IntegerValue{
+				origin: opNode,
+				value:  lvalue.value + rvalue.value,
+			}, nil
+		} else if rvalue, ok := right.(*StringValue); ok {
+			// Int + string -> string concat.
+			return &StringValue{
+				origin: opNode,
+				value:  fmt.Sprintf("%d%s", lvalue.value, rvalue.value),
+			}, nil
+		}
+		return nil, makeIncompatibleTypeError(opNode, left, right)
+	}
+
+	// Left-hand-side string.
+	if lvalue, ok := left.(*StringValue); ok {
+		if rvalue, ok := right.(*IntegerValue); ok {
+			// String + int -> string concat.
+			return &StringValue{
+				origin: opNode,
+				value:  lvalue.value + fmt.Sprintf("%d", rvalue.value),
+			}, nil
+		} else if rvalue, ok := right.(*StringValue); ok {
+			// String + string -> string concat. Since the left is passed by copy
+			// we can avoid realloc if there is enough buffer by appending to left
+			// and assigning.
+			lvalue.value += rvalue.value
+			return lvalue, nil
+		}
+		return nil, makeIncompatibleTypeError(opNode, left, right)
+	}
+
+	// Left-hand-side list. The only valid thing is to add another list.
+	if lvalue, ok := left.(*ListValue); ok {
+		if rvalue, ok := right.(*ListValue); ok {
+			lvalue.list = append(lvalue.list, rvalue.list...)
+			return lvalue, nil
+		}
+	}
+
+	return nil, makeIncompatibleTypeError(opNode, left, right)
+}
+
 func executeBinaryOperator(opNode *parse.BinaryOpNode, scope *Scope) (Value, error) {
 	// Operators that do not require pre-evaluation of both LHS/RHS.
 	switch opNode.Op.TokenType() {
@@ -245,8 +310,7 @@ func executeBinaryOperator(opNode *parse.BinaryOpNode, scope *Scope) (Value, err
 		return nil, parse.MakeErrFromNode(opNode, syntax.ErrNotImplemented,
 			"Not implemented", "- isn't implemented yet.")
 	case syntax.TokenPlus:
-		return nil, parse.MakeErrFromNode(opNode, syntax.ErrNotImplemented,
-			"Not implemented", "+ isn't implemented yet.")
+		return executePlus(opNode, leftValue, rightValue)
 
 	// ==, !=.
 	case syntax.TokenEqualEqual:

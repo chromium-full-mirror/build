@@ -2,6 +2,13 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+# basic arithmetic
+# TODO: operators other than +
+assert(0 + 1 == 1)
+assert(1 + 1 == 2)
+assert(5 + 7 == 12)
+
+# comparisons
 assert(1 > 0)
 
 assert_failure("Negative zero doesn't make sense") {

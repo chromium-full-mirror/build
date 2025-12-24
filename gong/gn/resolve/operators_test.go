@@ -101,13 +101,14 @@ func TestBinaryOps_NoSideEffects(t *testing.T) {
 			wantErrKind: syntax.ErrTypeMismatch,
 		},
 		{
-			name: "not_implemented_plus",
+			name: "integers_addition",
 			node: &parse.BinaryOpNode{
 				Op:    syntax.MakeToken(syntax.TokenPlus, "+"),
 				Left:  &parse.LiteralNode{Token: syntax.MakeToken(syntax.TokenInteger, "1")},
 				Right: &parse.LiteralNode{Token: syntax.MakeToken(syntax.TokenInteger, "2")},
 			},
-			wantErrKind: syntax.ErrNotImplemented,
+			want:        &IntegerValue{value: 3},
+			wantErrKind: syntax.ErrNone,
 		},
 		{
 			name: "or_true_true",

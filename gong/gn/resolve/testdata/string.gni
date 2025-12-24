@@ -2,6 +2,24 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+
+# str + str
+assert("a" + "b" == "ab")
+assert("a" + "b" + "c" == "abc")
+
+# str + int,  int + str
+assert("1" + 1 == "11")
+assert(1 + "1" == "11")
+
+# str + invalid,  invalid + str
+assert_failure("Incompatible types for binary operator.", "You can't do <string> + <boolean>.") {
+    invalid = "1" + true
+}
+assert_failure("Incompatible types for binary operator.", "You can't do <boolean> + <string>.") {
+    invalid = true + "1"
+}
+
+# hex
 assert("$0x41" == "A")
 
 assert_failure("\$ at end of string.") {

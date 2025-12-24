@@ -34,6 +34,19 @@ assert_failure("Array subscript out of range.", "You gave me 3 but I was expecti
     foo[foo[i]] = 1
 }
 
+# list + list
+assert([1, 2, 3] + [3, 4, 5] == [1, 2, 3, 3, 4, 5])
+
+# cannot add list to other types
+assert_failure("Incompatible types for binary operator.", "You can't do <boolean> + <list>.") {
+    invalid = true + [1, 2, 3]
+}
+
+# cannot add other types to list
+assert_failure("Incompatible types for binary operator.", "You can't do <list> + <boolean>.$0x0A$0x0AHint: If you're attempting to add or remove a single item from a list, use \"foo + [ bar ]\".") {
+    invalid = [1, 2, 3] + true
+}
+
 # mutate existing list value
 foo[0] = 3
 assert(foo[0] == 3)
