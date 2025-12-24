@@ -453,8 +453,6 @@ func (c *Command) run(ctx context.Context) (stats build.Stats, err error) {
 		return stats, err
 	}
 
-	failedTargetsFilename := filepath.Join(c.stateDir, failedTargetsFile)
-
 	var eg errgroup.Group
 	var localDepsLog *ninjautil.DepsLog
 	eg.Go(func() error {
@@ -493,48 +491,7 @@ func (c *Command) run(ctx context.Context) (stats build.Stats, err error) {
 	if err != nil {
 		return stats, err
 	}
-	defer func() {
-		if c.dryRun {
-			return
-		}
-		if c.subtool != "" {
-			// don't modify .siso_failed_targets by subtool
-			return
-		}
-		if c.prepare {
-			// don't modify .siso_failed_targets for prepare (ide query).
-			return
-		}
-		if err != nil {
-			// Even when batch mode, it records failed targets.
-			// It will be read by Chromium recipe.
-			var errBuild buildError
-			if !errors.As(err, &errBuild) {
-				return
-			}
-			var stepError build.StepError
-			if !errors.As(errBuild.err, &stepError) {
-				rerr := os.Remove(c.logFilename(c.failedCommandsFile, ""))
-				if rerr != nil {
-					clog.Warningf(ctx, "failed to remove failed command file: %v", rerr)
-				}
-				return
-			}
-			// store failed targets only when build steps failed.
-			// i.e., don't store with error like context canceled, etc.
-			clog.Infof(ctx, "record failed targets: %q", stepError.Target)
-			serr := saveTargets(failedTargetsFilename, targets, []string{stepError.Target})
-			if serr != nil {
-				clog.Warningf(ctx, "failed to save failed targets: %v", serr)
-				return
-			}
-		} else {
-			rerr := os.Remove(c.logFilename(c.failedCommandsFile, ""))
-			if rerr != nil {
-				clog.Warningf(ctx, "failed to remove failed command file: %v", rerr)
-			}
-		}
-	}()
+	defer c.saveFailedTargetsAndCommand(ctx, &err, &targets)
 	defer func() {
 		hashFS.SetBuildTargets(ctx, targets, !c.dryRun && c.subtool == "" && !c.prepare && err == nil)
 		err := hashFS.Close(ctx)
@@ -547,7 +504,7 @@ func (c *Command) run(ctx context.Context) (stats build.Stats, err error) {
 		ui.Default.Errorf(ui.SGR(ui.BackgroundRed, fmt.Sprintf("unable to do incremental build as fs state is corrupted: %v\n", hashFSErr)))
 	}
 
-	_, err = os.Stat(failedTargetsFilename)
+	_, err = os.Stat(c.failedTargetsFilePath())
 	lastFailed := err == nil
 	isClean := hashFS.IsClean(targets)
 	clog.Infof(ctx, "hashfs loaderr: %v clean: %t (%q) last failed: %t", hashFSErr, isClean, targets, lastFailed)
@@ -613,15 +570,15 @@ func (c *Command) run(ctx context.Context) (stats build.Stats, err error) {
 
 	var lastFailedTargets []string
 	if c.fastLastFailure && !c.clobber {
-		lastFailedTargets, _ = checkTargets(ctx, failedTargetsFilename, targets)
+		lastFailedTargets, _ = checkTargets(ctx, c.failedTargetsFilePath(), targets)
 		if len(lastFailedTargets) > 0 {
 			bopts.LastFailureTargets = lastFailedTargets
 			ui.Default.PrintLines(fmt.Sprintf(ui.SGR(ui.Yellow, "Prioritizing last failed targets: %s\n"), lastFailedTargets))
 		}
 	}
-	err = os.Remove(failedTargetsFilename)
+	err = os.Remove(c.failedTargetsFilePath())
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
-		clog.Warningf(ctx, "failed to remove %s: %v", failedTargetsFilename, err)
+		clog.Warningf(ctx, "failed to remove %s: %v", c.failedTargetsFilePath(), err)
 	}
 
 	err = c.writeSisoMetadata(metricsLabels, targets)
@@ -634,6 +591,53 @@ func (c *Command) run(ctx context.Context) (stats build.Stats, err error) {
 		subtool:       c.subtool,
 		enableStatusz: true,
 	})
+}
+
+func (c *Command) saveFailedTargetsAndCommand(ctx context.Context, errPtr *error, targetsPtr *[]string) {
+	if c.dryRun {
+		return
+	}
+	if c.subtool != "" {
+		// don't modify .siso_failed_targets by subtool
+		return
+	}
+	if c.prepare {
+		// don't modify .siso_failed_targets for prepare (ide query).
+		return
+	}
+	if *errPtr != nil {
+		// Even when batch mode, it records failed targets.
+		// It will be read by Chromium recipe.
+		var errBuild buildError
+		if !errors.As(*errPtr, &errBuild) {
+			return
+		}
+		var stepError build.StepError
+		if !errors.As(errBuild.err, &stepError) {
+			rerr := os.Remove(c.logFilename(c.failedCommandsFile, ""))
+			if rerr != nil {
+				clog.Warningf(ctx, "failed to remove failed command file: %v", rerr)
+			}
+			return
+		}
+		// store failed targets only when build steps failed.
+		// i.e., don't store with error like context canceled, etc.
+		clog.Infof(ctx, "record failed targets: %q", stepError.Target)
+		serr := saveTargets(c.failedTargetsFilePath(), *targetsPtr, []string{stepError.Target})
+		if serr != nil {
+			clog.Warningf(ctx, "failed to save failed targets: %v", serr)
+			return
+		}
+	} else {
+		rerr := os.Remove(c.logFilename(c.failedCommandsFile, ""))
+		if rerr != nil {
+			clog.Warningf(ctx, "failed to remove failed command file: %v", rerr)
+		}
+	}
+}
+
+func (c *Command) failedTargetsFilePath() string {
+	return filepath.Join(c.stateDir, failedTargetsFile)
 }
 
 func (c *Command) setupHashFS(ctx context.Context, execRoot string, ds dataSource) (*hashfs.HashFS, error) {
