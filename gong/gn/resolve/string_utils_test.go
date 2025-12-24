@@ -64,9 +64,49 @@ func TestExpandStringLiteral(t *testing.T) {
 			wantErrKind: syntax.ErrInvalidAST,
 		},
 		{
-			name:        "unimplemented_hex",
-			token:       syntax.MakeToken(syntax.TokenString, `"$0xFF"`),
-			wantErrKind: syntax.ErrNotImplemented,
+			name:  "hex_literal",
+			token: syntax.MakeToken(syntax.TokenString, `"$0xFF"`),
+			want:  &StringValue{value: "\xFF"},
+		},
+		{
+			name:  "hex_literal_mixed",
+			token: syntax.MakeToken(syntax.TokenString, `"$0x0AA"`),
+			want:  &StringValue{value: "\x0AA"},
+		},
+		{
+			name:  "hex_literal_multiple",
+			token: syntax.MakeToken(syntax.TokenString, `"$0x0a$0xfF"`),
+			want:  &StringValue{value: "\x0A\xFF"},
+		},
+		{
+			name:        "hex_truncated_0",
+			token:       syntax.MakeToken(syntax.TokenString, `"$0"`),
+			wantErrKind: syntax.ErrInvalidToken,
+		},
+		{
+			name:        "hex_truncated_0x",
+			token:       syntax.MakeToken(syntax.TokenString, `"$0x"`),
+			wantErrKind: syntax.ErrInvalidToken,
+		},
+		{
+			name:        "hex_truncated_0x0",
+			token:       syntax.MakeToken(syntax.TokenString, `"$0x0"`),
+			wantErrKind: syntax.ErrInvalidToken,
+		},
+		{
+			name:        "hex_bad_char_0a",
+			token:       syntax.MakeToken(syntax.TokenString, `"$0a"`),
+			wantErrKind: syntax.ErrInvalidToken,
+		},
+		{
+			name:        "hex_bad_char_0x1z",
+			token:       syntax.MakeToken(syntax.TokenString, `"$0x1z"`),
+			wantErrKind: syntax.ErrInvalidToken,
+		},
+		{
+			name:        "hex_bad_char_0xz1",
+			token:       syntax.MakeToken(syntax.TokenString, `"$0xz1"`),
+			wantErrKind: syntax.ErrInvalidToken,
 		},
 		{
 			name:        "unimplemented_identifier",

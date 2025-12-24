@@ -4,10 +4,34 @@
 package resolve
 
 import (
+	"strconv"
 	"strings"
 
 	"go.chromium.org/build/gong/gn/syntax"
 )
+
+func isHex(c byte) bool {
+	return (c >= '0' && c <= '9') || (c >= 'A' && c <= 'F') || (c >= 'a' && c <= 'f')
+}
+
+// appendHexByte handles a hex literal: $0xFF
+//
+// i is the index into input after the $.
+//
+// On failure, returns error. On success, appends the char with the given
+// hex value to output and returns the index pointing to the last character consumed.
+func appendHexByte(token syntax.Token, input string, i int, output *strings.Builder) (int, error) {
+	// "$0" is already known to exist.
+	if i+4 > len(input) || input[i+1] != 'x' || !isHex(input[i+2]) || !isHex(input[i+3]) {
+		return 0, token.MakeError(syntax.ErrInvalidToken, "Invalid hex character. Hex values must look like 0xFF.")
+	}
+	val, err := strconv.ParseUint(input[i+2:i+4], 16, 8)
+	if err != nil {
+		return 0, token.MakeError(syntax.ErrInvalidToken, "Could not convert hex value.")
+	}
+	output.WriteByte(byte(val))
+	return i + 3, nil
+}
 
 func expandStringLiteral(token syntax.Token) (Value, error) {
 	if token.TokenType() != syntax.TokenString {
@@ -43,13 +67,18 @@ func expandStringLiteral(token syntax.Token) (Value, error) {
 			// Everything else has no meaning: pass the literal.
 			output.WriteByte(rawInput[i])
 		case '$':
-			if i+1 == finalSize {
+			i++
+			if i == finalSize {
 				return nil, token.MakeErrorWithHelp(syntax.ErrInvalidAST, "$ at end of string.", "I was expecting an identifier, 0xFF, or {...} after the $.")
 			}
-			// TODO(b/388723392): Implement interpolation.
-			if rawInput[i+1] == '0' {
-				return nil, token.MakeError(syntax.ErrNotImplemented, "appendHexByte not implemented")
+			if rawInput[i] == '0' {
+				var err error
+				i, err = appendHexByte(token, rawInput, i, &output)
+				if err != nil {
+					return nil, err
+				}
 			} else {
+				// TODO(b/388723392): Implement interpolation.
 				return nil, token.MakeError(syntax.ErrNotImplemented, "$identifier interpolation not implemented")
 			}
 		default:
