@@ -522,7 +522,7 @@ func (c *Command) run(ctx context.Context) (stats build.Stats, err error) {
 		if err != nil {
 			return stats, err
 		}
-		pCleanups = append(pCleanups, cleanup)
+		defer cleanup()
 	}
 
 	logWriters, done, err := c.initLogWriters(ctx, buildPath)
