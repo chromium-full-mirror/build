@@ -489,68 +489,7 @@ func (c *Command) run(ctx context.Context) (stats build.Stats, err error) {
 			clog.Errorf(ctx, "close datasource: %v", err)
 		}
 	}()
-	c.fsopt.DataSource = ds
-	c.fsopt.OutputLocal, err = initOutputLocal(c.outputLocalStrategy)
-	if err != nil {
-		return stats, err
-	}
-	if c.logDir == "." || c.logDir == filepath.Join(execRoot, c.dir) {
-		cwd := filepath.Join(execRoot, c.dir)
-		// ignore siso files not to be captured by ReadDir
-		// (i.g. scandeps for -I.)
-		clog.Infof(ctx, "ignore siso files in %s", cwd)
-		c.fsopt.Ignore = func(ctx context.Context, fname string) bool {
-			dir, base := filepath.Split(fname)
-			// allow siso prefix in other dir.
-			// e.g. siso.gni exists in build/config/siso.
-			if filepath.Clean(dir) != cwd {
-				return false
-			}
-			if strings.HasPrefix(base, ".siso_") {
-				return true
-			}
-			if strings.HasPrefix(base, "siso.") {
-				return true
-			}
-			if strings.HasPrefix(base, "siso_") {
-				return true
-			}
-			if base == ".ninja_log" {
-				return true
-			}
-			return false
-		}
-	} else {
-		// expect logDir is out of exec root.
-		clog.Infof(ctx, "ignore .ninja_log")
-		ninjaLogFname := filepath.Join(execRoot, c.dir, ".ninja_log")
-		c.fsopt.Ignore = func(ctx context.Context, fname string) bool {
-			return fname == ninjaLogFname
-		}
-	}
-	cogfs, err := cogutil.New(ctx, execRoot)
-	if err != nil && !errors.Is(err, errors.ErrUnsupported) {
-		clog.Warningf(ctx, "unable to use cog? %v", err)
-	}
-	if cogfs != nil {
-		ui.Default.PrintLines(ui.SGR(ui.Yellow, fmt.Sprintf("build in cog: %s\n", cogfs.Info())))
-		c.fsopt.CogFS = cogfs
-	}
-	if c.artfsDir != "" && c.artfsEndpoint != "" {
-		artfs, err := artfsutil.New(ctx, c.artfsDir, c.artfsEndpoint)
-		if err != nil {
-			return stats, err
-		}
-		ui.Default.PrintLines(ui.SGR(ui.Yellow, "build on artfs\n"))
-		c.fsopt.ArtFS = artfs
-	}
-
-	c.fsopt.FSMonitor = initFSMonitor(ctx, execRoot)
-
-	spin.Start("loading fs state")
-
-	hashFS, err := hashfs.New(ctx, *c.fsopt)
-	spin.Stop(err)
+	hashFS, err := c.setupHashFS(ctx, execRoot, ds)
 	if err != nil {
 		return stats, err
 	}
@@ -695,6 +634,77 @@ func (c *Command) run(ctx context.Context) (stats build.Stats, err error) {
 		subtool:       c.subtool,
 		enableStatusz: true,
 	})
+}
+
+func (c *Command) setupHashFS(ctx context.Context, execRoot string, ds dataSource) (*hashfs.HashFS, error) {
+	c.fsopt.DataSource = ds
+	var err error
+	c.fsopt.OutputLocal, err = initOutputLocal(c.outputLocalStrategy)
+	if err != nil {
+		return nil, err
+	}
+	if c.logDir == "." || c.logDir == filepath.Join(execRoot, c.dir) {
+		cwd := filepath.Join(execRoot, c.dir)
+		// ignore siso files not to be captured by ReadDir
+		// (i.g. scandeps for -I.)
+		clog.Infof(ctx, "ignore siso files in %s", cwd)
+		c.fsopt.Ignore = func(ctx context.Context, fname string) bool {
+			dir, base := filepath.Split(fname)
+			// allow siso prefix in other dir.
+			// e.g. siso.gni exists in build/config/siso.
+			if filepath.Clean(dir) != cwd {
+				return false
+			}
+			if strings.HasPrefix(base, ".siso_") {
+				return true
+			}
+			if strings.HasPrefix(base, "siso.") {
+				return true
+			}
+			if strings.HasPrefix(base, "siso_") {
+				return true
+			}
+			if base == ".ninja_log" {
+				return true
+			}
+			return false
+		}
+	} else {
+		// expect logDir is out of exec root.
+		clog.Infof(ctx, "ignore .ninja_log")
+		ninjaLogFname := filepath.Join(execRoot, c.dir, ".ninja_log")
+		c.fsopt.Ignore = func(ctx context.Context, fname string) bool {
+			return fname == ninjaLogFname
+		}
+	}
+	cogfs, err := cogutil.New(ctx, execRoot)
+	if err != nil && !errors.Is(err, errors.ErrUnsupported) {
+		clog.Warningf(ctx, "unable to use cog? %v", err)
+	}
+	if cogfs != nil {
+		ui.Default.PrintLines(ui.SGR(ui.Yellow, fmt.Sprintf("build in cog: %s\n", cogfs.Info())))
+		c.fsopt.CogFS = cogfs
+	}
+	if c.artfsDir != "" && c.artfsEndpoint != "" {
+		artfs, err := artfsutil.New(ctx, c.artfsDir, c.artfsEndpoint)
+		if err != nil {
+			return nil, err
+		}
+		ui.Default.PrintLines(ui.SGR(ui.Yellow, "build on artfs\n"))
+		c.fsopt.ArtFS = artfs
+	}
+
+	c.fsopt.FSMonitor = initFSMonitor(ctx, execRoot)
+
+	spin := ui.Default.NewSpinner()
+	spin.Start("loading fs state")
+
+	hashFS, err := hashfs.New(ctx, *c.fsopt)
+	spin.Stop(err)
+	if err != nil {
+		return nil, err
+	}
+	return hashFS, nil
 }
 
 type lastTargets struct {
