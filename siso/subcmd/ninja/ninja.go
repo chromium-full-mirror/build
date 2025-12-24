@@ -643,11 +643,7 @@ func (c *Command) run(ctx context.Context) (stats build.Stats, err error) {
 		return stats, err
 	}
 	defer done(&err)
-	bopts, done, err := c.initBuildOpts(ctx, projectID, buildPath, config, ds, hashFS, limits, traceExporter, logWriters)
-	if err != nil {
-		return stats, err
-	}
-	defer done(&err)
+	bopts := c.initBuildOpts(ctx, projectID, buildPath, config, ds, hashFS, limits, traceExporter, logWriters)
 	spin.Start("loading/recompacting deps log")
 	err = eg.Wait()
 	spin.Stop(err)

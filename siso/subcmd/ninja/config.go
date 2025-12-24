@@ -448,16 +448,7 @@ func initDepsLog(ctx context.Context, stateDir string, depsLogFile string) (*nin
 	return depsLog, nil
 }
 
-func (c *Command) initBuildOpts(ctx context.Context, projectID string, buildPath *build.Path, config *buildconfig.Config, ds dataSource, hashFS *hashfs.HashFS, limits build.Limits, traceExporter *trace.Exporter, logWriters logWriters) (bopts build.Options, done func(*error), err error) {
-	var dones []func(*error)
-	defer func() {
-		if err != nil {
-			for i := len(dones) - 1; i >= 0; i++ {
-				dones[i](&err)
-			}
-			dones = nil
-		}
-	}()
+func (c *Command) initBuildOpts(ctx context.Context, projectID string, buildPath *build.Path, config *buildconfig.Config, ds dataSource, hashFS *hashfs.HashFS, limits build.Limits, traceExporter *trace.Exporter, logWriters logWriters) build.Options {
 	if !filepath.IsAbs(c.traceJSON) {
 		c.traceJSON = filepath.Join(c.logDir, c.traceJSON)
 	}
@@ -480,7 +471,7 @@ func (c *Command) initBuildOpts(ctx context.Context, projectID string, buildPath
 	if err != nil {
 		clog.Warningf(ctx, "no cache enabled: %v", err)
 	}
-	bopts = build.Options{
+	return build.Options{
 		JobID:                 c.jobID,
 		ID:                    c.buildID,
 		StartTime:             c.started,
@@ -519,11 +510,6 @@ func (c *Command) initBuildOpts(ctx context.Context, projectID string, buildPath
 		Limits:                limits,
 		UploadBuildNinjaFiles: c.enableBuildNinjaFilesUpload,
 	}
-	return bopts, func(err *error) {
-		for i := len(dones) - 1; i >= 0; i-- {
-			dones[i](err)
-		}
-	}, nil
 }
 
 func defaultCacheDir() string {
