@@ -231,29 +231,36 @@ func (c *Command) buildProperties(ctx context.Context) resultstore.Properties {
 	return properties
 }
 
-func (c *Command) resultStoreCallbackFunc(ctx context.Context, hashFS *hashfs.HashFS, execRoot string, resultstoreUploader *resultstore.Uploader) func() {
-	if resultstoreUploader == nil {
-		return func() {}
+func (c *Command) setupResultStore(ctx context.Context, projectID string, execRoot string, properties resultstore.Properties, credential cred.Cred, hashFS *hashfs.HashFS, buildErr *error) (func(), error) {
+	resultstoreUploader, err := resultstore.New(ctx, resultstore.Options{
+		InvocationID:  c.buildID,
+		Invocation:    c.invocation(ctx, c.buildID, projectID, execRoot, properties),
+		ClientOptions: credential.ClientOptions(),
+	})
+	if err != nil {
+		return nil, err
 	}
-	return func() {
-		var ents []merkletree.Entry
+	ui.Default.Warningf("https://btx.cloud.google.com/invocations/%s\n", c.buildID)
 
+	cleanup := func() {
+		var ents []merkletree.Entry
 		var files []string
 		if c.metricsJSON != "" {
 			files = append(files, c.metricsJSON)
 		}
 		// TODO(b/329564182): add other files? e.g. siso_output, siso_trace.json etc.
-		if len(files) != 0 {
-			var err error
-			ents, err = hashFS.Entries(ctx, filepath.Join(execRoot, c.dir), files)
-			if err != nil {
-				clog.Warningf(ctx, "failed to get entries for %q: %v", files, err)
+		if len(files) > 0 {
+			var entsErr error
+			ents, entsErr = hashFS.Entries(ctx, filepath.Join(execRoot, c.dir), files)
+			if entsErr != nil {
+				clog.Warningf(ctx, "failed to get entries for %q: %v", files, entsErr)
 			}
 		}
 		ents = append(ents, merkletree.Entry{
 			Name: "build.log",
 			Data: resultstoreUploader.BuildLogData(),
 		})
+
 		spin := ui.Default.NewSpinner()
 		spin.Start("uploading to resultstore")
 		uerr := resultstoreUploader.UploadFiles(ctx, ents)
@@ -261,15 +268,10 @@ func (c *Command) resultStoreCallbackFunc(ctx context.Context, hashFS *hashfs.Ha
 			clog.Warningf(ctx, "failed to upload results: %v", uerr)
 		}
 		spin.Stop(uerr)
-	}
-}
 
-func (c *Command) finishResultstore(ctx context.Context, resultstoreUploader *resultstore.Uploader, err *error) func() {
-	return func() {
-		spin := ui.Default.NewSpinner()
 		spin.Start("finishing upload to resultstore")
 		exitCode := 0
-		if *err != nil {
+		if *buildErr != nil {
 			exitCode = 1
 		}
 		cerr := resultstoreUploader.Close(ctx, exitCode)
@@ -278,6 +280,8 @@ func (c *Command) finishResultstore(ctx context.Context, resultstoreUploader *re
 		}
 		spin.Stop(cerr)
 	}
+
+	return cleanup, nil
 }
 
 func cpuinfo() string {

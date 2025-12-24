@@ -32,7 +32,6 @@ import (
 	"go.chromium.org/build/siso/hashfs"
 	"go.chromium.org/build/siso/o11y/clog"
 	"go.chromium.org/build/siso/o11y/monitoring"
-	"go.chromium.org/build/siso/o11y/resultstore"
 	"go.chromium.org/build/siso/o11y/trace"
 	"go.chromium.org/build/siso/signals"
 	"go.chromium.org/build/siso/toolsupport/artfsutil"
@@ -391,20 +390,6 @@ func (c *Command) run(ctx context.Context) (stats build.Stats, err error) {
 	clog.Infof(ctx, "is_terminal=%t fast_nop=%t fast_local=%t fast_last_failure=%t fast_exit=%t", ui.IsTerminal(), c.fastNop, c.fastLocal, c.fastLastFailure, c.fastExit)
 
 	spin := ui.Default.NewSpinner()
-	var resultstoreUploader *resultstore.Uploader
-
-	if c.enableResultstore {
-		resultstoreUploader, err = resultstore.New(ctx, resultstore.Options{
-			InvocationID:  c.buildID,
-			Invocation:    c.invocation(ctx, c.buildID, projectID, execRoot, properties),
-			ClientOptions: credential.ClientOptions(),
-		})
-		if err != nil {
-			return stats, err
-		}
-		ui.Default.Warningf("https://btx.cloud.google.com/invocations/%s\n", c.buildID)
-		pCleanups = append(pCleanups, c.finishResultstore(ctx, resultstoreUploader, &err))
-	}
 	if c.enableCloudProfiler {
 		c.initCloudProfiler(ctx, projectID, credential)
 	}
@@ -636,7 +621,14 @@ func (c *Command) run(ctx context.Context) (stats build.Stats, err error) {
 		return stats, errNothingToDo
 	}
 
-	pCleanups = append(pCleanups, c.resultStoreCallbackFunc(ctx, hashFS, execRoot, resultstoreUploader))
+	if c.enableResultstore {
+		cleanup, err := c.setupResultStore(ctx, projectID, execRoot, properties, credential, hashFS, &err)
+		if err != nil {
+			return stats, err
+		}
+		pCleanups = append(pCleanups, cleanup)
+	}
+
 	logWriters, done, err := c.initLogWriters(ctx, buildPath)
 	if err != nil {
 		return stats, err
