@@ -496,7 +496,6 @@ func (c *Command) initBuildOpts(ctx context.Context, projectID string, buildPath
 		TraceExporter:         traceExporter,
 		TraceJSON:             c.traceJSON,
 		Pprof:                 c.buildPprof,
-		ResultstoreUploader:   c.resultstoreUploader,
 		Clobber:               c.clobber,
 		FastExit:              c.fastExit,
 		Prepare:               c.prepare,

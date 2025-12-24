@@ -69,8 +69,6 @@ type Command struct {
 
 	sisoInfoLog string // abs or relative to logDir
 	startDir    string
-
-	resultstoreUploader *resultstore.Uploader
 }
 
 func (*Command) Name() string {
@@ -393,9 +391,10 @@ func (c *Command) run(ctx context.Context) (stats build.Stats, err error) {
 	clog.Infof(ctx, "is_terminal=%t fast_nop=%t fast_local=%t fast_last_failure=%t fast_exit=%t", ui.IsTerminal(), c.fastNop, c.fastLocal, c.fastLastFailure, c.fastExit)
 
 	spin := ui.Default.NewSpinner()
+	var resultstoreUploader *resultstore.Uploader
 
 	if c.enableResultstore {
-		c.resultstoreUploader, err = resultstore.New(ctx, resultstore.Options{
+		resultstoreUploader, err = resultstore.New(ctx, resultstore.Options{
 			InvocationID:  c.buildID,
 			Invocation:    c.invocation(ctx, c.buildID, projectID, execRoot, properties),
 			ClientOptions: credential.ClientOptions(),
@@ -404,7 +403,7 @@ func (c *Command) run(ctx context.Context) (stats build.Stats, err error) {
 			return stats, err
 		}
 		ui.Default.Warningf("https://btx.cloud.google.com/invocations/%s\n", c.buildID)
-		pCleanups = append(pCleanups, c.finishResultstore(ctx, &err))
+		pCleanups = append(pCleanups, c.finishResultstore(ctx, resultstoreUploader, &err))
 	}
 	if c.enableCloudProfiler {
 		c.initCloudProfiler(ctx, projectID, credential)
@@ -637,7 +636,7 @@ func (c *Command) run(ctx context.Context) (stats build.Stats, err error) {
 		return stats, errNothingToDo
 	}
 
-	pCleanups = append(pCleanups, c.resultStoreCallbackFunc(ctx, hashFS, execRoot))
+	pCleanups = append(pCleanups, c.resultStoreCallbackFunc(ctx, hashFS, execRoot, resultstoreUploader))
 	logWriters, done, err := c.initLogWriters(ctx, buildPath)
 	if err != nil {
 		return stats, err
