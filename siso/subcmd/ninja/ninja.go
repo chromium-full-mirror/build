@@ -487,18 +487,12 @@ func (c *Command) run(ctx context.Context) (stats build.Stats, err error) {
 			clog.Errorf(ctx, "close datasource: %v", err)
 		}
 	}()
-	hashFS, err := c.setupHashFS(ctx, execRoot, ds)
+	hashFS, closeHashFS, err := c.setupHashFS(ctx, execRoot, ds)
 	if err != nil {
 		return stats, err
 	}
 	defer c.saveFailedTargetsAndCommand(ctx, &err, &targets)
-	defer func() {
-		hashFS.SetBuildTargets(ctx, targets, !c.dryRun && c.subtool == "" && !c.prepare && err == nil)
-		err := hashFS.Close(ctx)
-		if err != nil {
-			clog.Errorf(ctx, "close hashfs: %v", err)
-		}
-	}()
+	defer closeHashFS(&targets, &err)
 	hashFSErr := hashFS.LoadErr()
 	if hashFSErr != nil {
 		ui.Default.Errorf(ui.SGR(ui.BackgroundRed, fmt.Sprintf("unable to do incremental build as fs state is corrupted: %v\n", hashFSErr)))
@@ -640,12 +634,12 @@ func (c *Command) failedTargetsFilePath() string {
 	return filepath.Join(c.stateDir, failedTargetsFile)
 }
 
-func (c *Command) setupHashFS(ctx context.Context, execRoot string, ds dataSource) (*hashfs.HashFS, error) {
+func (c *Command) setupHashFS(ctx context.Context, execRoot string, ds dataSource) (*hashfs.HashFS, func(*[]string, *error), error) {
 	c.fsopt.DataSource = ds
 	var err error
 	c.fsopt.OutputLocal, err = initOutputLocal(c.outputLocalStrategy)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if c.logDir == "." || c.logDir == filepath.Join(execRoot, c.dir) {
 		cwd := filepath.Join(execRoot, c.dir)
@@ -692,7 +686,7 @@ func (c *Command) setupHashFS(ctx context.Context, execRoot string, ds dataSourc
 	if c.artfsDir != "" && c.artfsEndpoint != "" {
 		artfs, err := artfsutil.New(ctx, c.artfsDir, c.artfsEndpoint)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		ui.Default.PrintLines(ui.SGR(ui.Yellow, "build on artfs\n"))
 		c.fsopt.ArtFS = artfs
@@ -706,9 +700,17 @@ func (c *Command) setupHashFS(ctx context.Context, execRoot string, ds dataSourc
 	hashFS, err := hashfs.New(ctx, *c.fsopt)
 	spin.Stop(err)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return hashFS, nil
+	close := func(targetsPtr *[]string, errPtr *error) {
+		shouldSetTargets := !c.dryRun && c.subtool == "" && !c.prepare && *errPtr == nil
+		hashFS.SetBuildTargets(ctx, *targetsPtr, shouldSetTargets)
+		err := hashFS.Close(ctx)
+		if err != nil {
+			clog.Errorf(ctx, "close hashfs: %v", err)
+		}
+	}
+	return hashFS, close, nil
 }
 
 type lastTargets struct {
