@@ -231,7 +231,7 @@ func (c *Command) buildProperties(ctx context.Context) resultstore.Properties {
 	return properties
 }
 
-func (c *Command) uploadResultstoreFiles(ctx context.Context, hashFS *hashfs.HashFS, execRoot string) func() {
+func (c *Command) resultStoreCallbackFunc(ctx context.Context, hashFS *hashfs.HashFS, execRoot string) func() {
 	if c.resultstoreUploader == nil {
 		return func() {}
 	}

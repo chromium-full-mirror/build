@@ -637,7 +637,7 @@ func (c *Command) run(ctx context.Context) (stats build.Stats, err error) {
 		return stats, errNothingToDo
 	}
 
-	pCleanups = append(pCleanups, c.uploadResultstoreFiles(ctx, hashFS, execRoot))
+	pCleanups = append(pCleanups, c.resultStoreCallbackFunc(ctx, hashFS, execRoot))
 	logWriters, done, err := c.initLogWriters(ctx, buildPath)
 	if err != nil {
 		return stats, err
