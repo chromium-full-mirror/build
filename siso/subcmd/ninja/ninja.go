@@ -104,7 +104,7 @@ func (c *Command) Execute(ctx context.Context, flagSet *flag.FlagSet, _ ...any) 
 			f, err = os.OpenFile(c.frontendFile, os.O_WRONLY|os.O_APPEND, 0644)
 			if err != nil {
 				ui.Default.Errorf("failed to open frontend file: %v\n", err)
-				return 1
+				return subcommands.ExitFailure
 			}
 			defer func() {
 				err = f.Close()
@@ -134,7 +134,7 @@ func (c *Command) Execute(ctx context.Context, flagSet *flag.FlagSet, _ ...any) 
 				msgPrefix = ui.SGR(ui.Green, msgPrefix)
 			}
 			ui.Default.Warningf("%s Nothing to do.\n", msgPrefix)
-			return 0
+			return subcommands.ExitSuccess
 
 		case errors.As(err, &errFlag):
 			ui.Default.Errorf("%v\n", err)
@@ -157,7 +157,7 @@ func (c *Command) Execute(ctx context.Context, flagSet *flag.FlagSet, _ ...any) 
 					fmt.Fprintln(&sb, " ?")
 					ui.Default.Warningf("%s\n", sb.String())
 				}
-				return 1
+				return subcommands.ExitFailure
 			}
 			var errMissingSource build.MissingSourceError
 			if errors.As(errBuild.err, &errMissingSource) {
@@ -167,7 +167,7 @@ func (c *Command) Execute(ctx context.Context, flagSet *flag.FlagSet, _ ...any) 
 					msgPrefix = ui.SGR(ui.BackgroundRed, msgPrefix)
 				}
 				ui.Default.Errorf("\n%6s %s: %v\n", dur, msgPrefix, errMissingSource)
-				return 1
+				return subcommands.ExitFailure
 			}
 			msgPrefix := "Build Failure"
 			if ui.IsTerminal() {
