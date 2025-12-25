@@ -47,6 +47,8 @@ import (
 	"go.chromium.org/build/siso/version"
 )
 
+// initCloudLogging initializes cloud logging.
+// It returns a new context with a logger, the logger's URL, a function to close the logger, and any error that occurred.
 func (c *Command) initCloudLogging(ctx context.Context, projectID, execRoot string, credential cred.Cred) (context.Context, string, func(), error) {
 	log.Infof("enable cloud logging project=%s id=%s", projectID, c.buildID)
 
@@ -154,6 +156,8 @@ func (c *Command) initCloudTrace(ctx context.Context, projectID string, credenti
 	return traceExporter
 }
 
+// initCloudMonitoring initializes cloud monitoring.
+// It returns a meter provider and any error that occurred.
 func (c *Command) initCloudMonitoring(ctx context.Context, credential cred.Cred, metricsProject, rbeProjectID string, labels map[string]string) (*smetric.MeterProvider, error) {
 	clog.Infof(ctx, "enable cloud monitoring in %s", metricsProject)
 	views, err := monitoring.SetupViews(ctx, c.version, rbeProjectID, labels)
@@ -201,6 +205,8 @@ func newOTELMetricsExporter(ctx context.Context, collectorAddr string) *otlpmetr
 	return exporter
 }
 
+// buildProperties builds properties for the invocation that will be uploaded to ResultStore.
+// It returns the properties.
 func (c *Command) buildProperties(ctx context.Context) resultstore.Properties {
 	properties := resultstore.Properties{}
 	properties.Add("dir", c.dir)
@@ -231,6 +237,8 @@ func (c *Command) buildProperties(ctx context.Context) resultstore.Properties {
 	return properties
 }
 
+// setupResultStore sets up ResultStore for uploading build results.
+// It returns a cleanup function that should be called at the end of the build, and any error that occurred.
 func (c *Command) setupResultStore(ctx context.Context, projectID string, execRoot string, properties resultstore.Properties, credential cred.Cred, hashFS *hashfs.HashFS, buildErr *error) (func(), error) {
 	resultstoreUploader, err := resultstore.New(ctx, resultstore.Options{
 		InvocationID:  c.buildID,
@@ -284,6 +292,7 @@ func (c *Command) setupResultStore(ctx context.Context, projectID string, execRo
 	return cleanup, nil
 }
 
+// cpuinfo returns a string containing CPU information.
 func cpuinfo() string {
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "cpu family=%d model=%d stepping=%d ", cpuid.CPU.Family, cpuid.CPU.Model, cpuid.CPU.Stepping)
@@ -293,6 +302,7 @@ func cpuinfo() string {
 	return sb.String()
 }
 
+// gcinfo returns a string containing Go garbage collector information.
 func gcinfo() string {
 	var sb strings.Builder
 	memoryLimit := debug.SetMemoryLimit(-1) // not adjust the limit, but retrieve current limit
@@ -317,6 +327,8 @@ func gcinfo() string {
 	return sb.String()
 }
 
+// invocation creates the ResultStore invocation proto.
+// It returns the invocation.
 func (c *Command) invocation(ctx context.Context, buildID, projectID, execRoot string, properties resultstore.Properties) *rspb.Invocation {
 	var username string
 	currentUser, err := user.Current()
@@ -352,6 +364,7 @@ func (c *Command) invocation(ctx context.Context, buildID, projectID, execRoot s
 	}
 }
 
+// commandLines returns the command lines of the invocation for ResultStore.
 func (c *Command) commandLines() []*rspb.CommandLine {
 	var cmdlines []*rspb.CommandLine
 	cmdlines = append(cmdlines, &rspb.CommandLine{
