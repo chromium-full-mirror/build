@@ -31,7 +31,7 @@ func (c *Command) setLocalCacheFlags(flagSet *flag.FlagSet) {
 	flagSet.StringVar(&c.cacheDir, "cache_dir", defaultCacheDir(), "cache directory")
 }
 
-func initDataSource(ctx context.Context, credential cred.Cred, localCacheOpts localCacheOptions, reopt *reapi.Option) (dataSource, error) {
+func initDataSource(ctx context.Context, credential cred.Cred, localCacheOpts localCacheOptions, reopt *reapi.Option) (DataSource, error) {
 	layeredCache := build.NewLayeredCache()
 	if localCacheOpts.localCacheEnable {
 		cache, err := build.NewLocalCache(localCacheOpts.cacheDir)
@@ -42,36 +42,37 @@ func initDataSource(ctx context.Context, credential cred.Cred, localCacheOpts lo
 			cache.GarbageCollectIfRequired(ctx)
 		}
 	}
-	var ds dataSource
+	var ds DataSource
 	err := reopt.CheckValid()
 	if err == nil {
-		ds.client, err = reapi.New(ctx, credential, *reopt)
+		ds.Client, err = reapi.New(ctx, credential, *reopt)
 		if err != nil {
 			return ds, err
 		}
-		layeredCache.AddLayer(ds.client.CacheStore())
+		layeredCache.AddLayer(ds.Client.CacheStore())
 	}
-	ds.cache = layeredCache
+	ds.Cache = layeredCache
 	return ds, nil
 }
 
-type dataSource struct {
-	cache  cachestore.CacheStore
-	client *reapi.Client
+// Exposed for e2e testing.
+type DataSource struct {
+	Cache  cachestore.CacheStore
+	Client *reapi.Client
 }
 
-func (ds dataSource) Close(ctx context.Context) error {
-	if ds.client == nil {
+func (ds DataSource) Close(ctx context.Context) error {
+	if ds.Client == nil {
 		return nil
 	}
-	return ds.client.Close()
+	return ds.Client.Close()
 }
 
-func (ds dataSource) DigestData(ctx context.Context, d digest.Digest, fname string) digest.Data {
+func (ds DataSource) DigestData(ctx context.Context, d digest.Digest, fname string) digest.Data {
 	return digest.NewData(ds.Source(ctx, d, fname), d)
 }
 
-func (ds dataSource) Source(_ context.Context, d digest.Digest, fname string) digest.Source {
+func (ds DataSource) Source(_ context.Context, d digest.Digest, fname string) digest.Source {
 	return source{
 		dataSource: ds,
 		d:          d,
@@ -80,7 +81,7 @@ func (ds dataSource) Source(_ context.Context, d digest.Digest, fname string) di
 }
 
 type source struct {
-	dataSource dataSource
+	dataSource DataSource
 	d          digest.Digest
 	fname      string
 }
@@ -88,8 +89,8 @@ type source struct {
 func (s source) Open(ctx context.Context) (io.ReadCloser, error) {
 	var r io.ReadCloser
 	var err error
-	if s.dataSource.cache != nil {
-		src := s.dataSource.cache.Source(ctx, s.d, s.fname)
+	if s.dataSource.Cache != nil {
+		src := s.dataSource.Cache.Source(ctx, s.d, s.fname)
 		if src != nil {
 			r, err = src.Open(ctx)
 			if err == nil {
@@ -98,9 +99,9 @@ func (s source) Open(ctx context.Context) (io.ReadCloser, error) {
 		}
 		// fallback
 	}
-	if s.dataSource.client != nil {
+	if s.dataSource.Client != nil {
 		var buf []byte
-		buf, err = s.dataSource.client.Get(ctx, s.d, s.fname)
+		buf, err = s.dataSource.Client.Get(ctx, s.d, s.fname)
 		if err == nil {
 			return io.NopCloser(bytes.NewReader(buf)), nil
 		}

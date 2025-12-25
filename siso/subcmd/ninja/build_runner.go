@@ -24,13 +24,14 @@ import (
 	"go.chromium.org/build/siso/ui"
 )
 
-type runNinjaOpts struct {
+// Exposed for e2e testing. To be reevaluated.
+type RunNinjaOpts struct {
 	// whether to perform cleandead or not.
-	cleandead bool
+	Cleandead bool
 
 	// subtool name.
 	// if "cleandead", it returns after cleandead performed.
-	subtool string
+	Subtool string
 
 	// enable statusz (for `siso ps`)
 	enableStatusz bool
@@ -79,7 +80,7 @@ func checkBuildNinja(ctx context.Context, filename string, buildPath *build.Path
 	}
 }
 
-func runNinja(ctx context.Context, fname string, graph *ninjabuild.Graph, bopts build.Options, targets []string, nopts runNinjaOpts) (build.Stats, error) {
+func RunNinja(ctx context.Context, fname string, graph *ninjabuild.Graph, bopts build.Options, targets []string, nopts RunNinjaOpts) (build.Stats, error) {
 	spin := ui.Default.NewSpinner()
 
 	builddir := graph.Binding("builddir")
@@ -214,7 +215,7 @@ func histogram(b [7]int) string {
 	return sb.String()
 }
 
-func doBuild(ctx context.Context, graph *ninjabuild.Graph, bopts build.Options, nopts runNinjaOpts, args ...string) (stats build.Stats, err error) {
+func doBuild(ctx context.Context, graph *ninjabuild.Graph, bopts build.Options, nopts RunNinjaOpts, args ...string) (stats build.Stats, err error) {
 	err = rebuildManifest(ctx, graph, bopts)
 	if err != nil {
 		return stats, err
@@ -238,7 +239,7 @@ func doBuild(ctx context.Context, graph *ninjabuild.Graph, bopts build.Options, 
 		}
 	}
 
-	if !bopts.DryRun && nopts.cleandead {
+	if !bopts.DryRun && nopts.Cleandead {
 		spin := ui.Default.NewSpinner()
 		spin.Start("cleaning deadfiles")
 		n, total, err := graph.CleanDead(ctx)
@@ -246,7 +247,7 @@ func doBuild(ctx context.Context, graph *ninjabuild.Graph, bopts build.Options, 
 			spin.Stop(err)
 			return stats, err
 		}
-		if nopts.subtool == "cleandead" {
+		if nopts.Subtool == "cleandead" {
 			spin.Done("%d/%d generated files", n, total)
 			return stats, nil
 		}

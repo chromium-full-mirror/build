@@ -462,7 +462,7 @@ func initDepsLog(ctx context.Context, stateDir string, depsLogFile string) (*nin
 
 // initBuildOpts initializes the `build.Options` struct by collecting
 // various configuration settings and parameters.
-func (c *Command) initBuildOpts(ctx context.Context, projectID string, buildPath *build.Path, config *buildconfig.Config, ds dataSource, hashFS *hashfs.HashFS, limits build.Limits, traceExporter *trace.Exporter, logWriters logWriters) build.Options {
+func (c *Command) initBuildOpts(ctx context.Context, projectID string, buildPath *build.Path, config *buildconfig.Config, ds DataSource, hashFS *hashfs.HashFS, limits build.Limits, traceExporter *trace.Exporter, logWriters logWriters) build.Options {
 	if !filepath.IsAbs(c.traceJSON) {
 		c.traceJSON = filepath.Join(c.logDir, c.traceJSON)
 	}
@@ -479,7 +479,7 @@ func (c *Command) initBuildOpts(ctx context.Context, projectID string, buildPath
 	}
 
 	cache, err := build.NewCache(ctx, build.CacheOptions{
-		Store:      ds.cache,
+		Store:      ds.Cache,
 		EnableRead: c.cacheEnableRead,
 	})
 	if err != nil {
@@ -493,7 +493,7 @@ func (c *Command) initBuildOpts(ctx context.Context, projectID string, buildPath
 		Metadata:              config.Metadata,
 		Path:                  buildPath,
 		HashFS:                hashFS,
-		REAPIClient:           ds.client,
+		REAPIClient:           ds.Client,
 		REExecEnable:          c.reExecEnable,
 		RECacheEnableRead:     c.reCacheEnableRead,
 		RECacheEnableWrite:    c.reCacheEnableWrite,

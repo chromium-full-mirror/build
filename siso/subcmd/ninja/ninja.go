@@ -120,7 +120,7 @@ func (c *Command) Execute(ctx context.Context, flagSet *flag.FlagSet, _ ...any) 
 		defer frontend.Close()
 	}
 
-	stats, err := c.run(ctx)
+	stats, err := c.Run(ctx)
 	d := time.Since(c.started)
 	sps := float64(stats.Done-stats.Skipped) / d.Seconds()
 	dur := ui.FormatDuration(d)
@@ -320,7 +320,8 @@ func (c *Command) initCredentials(ctx context.Context) (cred.Cred, error) {
 	return credential, nil
 }
 
-func (c *Command) run(ctx context.Context) (stats build.Stats, err error) {
+// Exposed for e2e testing. To be reevaluated.
+func (c *Command) Run(ctx context.Context) (stats build.Stats, err error) {
 	// Cleanup functions to run after serial cleanups in parallel.
 	// This mostly exists for logger and metrics functions cleanup.
 	// Each of these functions take about 1 second on no-op builds to finish,
@@ -580,9 +581,9 @@ func (c *Command) run(ctx context.Context) (stats build.Stats, err error) {
 		return stats, err
 	}
 
-	return runNinja(ctx, c.fname, graph, bopts, targets, runNinjaOpts{
-		cleandead:     c.cleandead,
-		subtool:       c.subtool,
+	return RunNinja(ctx, c.fname, graph, bopts, targets, RunNinjaOpts{
+		Cleandead:     c.cleandead,
+		Subtool:       c.subtool,
 		enableStatusz: true,
 	})
 }
@@ -634,7 +635,7 @@ func (c *Command) failedTargetsFilePath() string {
 	return filepath.Join(c.stateDir, failedTargetsFile)
 }
 
-func (c *Command) setupHashFS(ctx context.Context, execRoot string, ds dataSource) (*hashfs.HashFS, func(*[]string, *error), error) {
+func (c *Command) setupHashFS(ctx context.Context, execRoot string, ds DataSource) (*hashfs.HashFS, func(*[]string, *error), error) {
 	c.fsopt.DataSource = ds
 	var err error
 	c.fsopt.OutputLocal, err = initOutputLocal(c.outputLocalStrategy)

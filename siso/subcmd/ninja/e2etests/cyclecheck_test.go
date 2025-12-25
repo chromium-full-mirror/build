@@ -1,0 +1,49 @@
+// Copyright 2024 The Chromium Authors
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
+package e2etests
+
+import (
+	"errors"
+	"testing"
+
+	"github.com/google/go-cmp/cmp"
+
+	"go.chromium.org/build/siso/build"
+	"go.chromium.org/build/siso/hashfs"
+	"go.chromium.org/build/siso/subcmd/ninja"
+)
+
+func TestBuild_CycleCheck(t *testing.T) {
+	ctx := t.Context()
+	dir := tempDir(t)
+
+	runNinjaTest := func(t *testing.T) (build.Stats, error) {
+		t.Helper()
+
+		opt, graph, cleanup := setupBuild(ctx, t, dir, hashfs.Option{
+			StateFile: ".siso_fs_state",
+		})
+		defer cleanup()
+		return ninja.RunNinja(ctx, "build.ninja", graph, opt, nil, ninja.RunNinjaOpts{})
+	}
+
+	setupFiles(t, dir, t.Name(), nil)
+
+	_, err := runNinjaTest(t)
+	if err == nil {
+		t.Fatalf("ninja %v; want error", err)
+	}
+	t.Logf("ninja %v", err)
+	var cycleErr build.DependencyCycleError
+	if !errors.As(err, &cycleErr) {
+		t.Fatalf("err type %T; want %T", err, cycleErr)
+	}
+	want := build.DependencyCycleError{
+		Targets: []string{"gen/foo.txt", "gen/foo.txt"},
+	}
+	if diff := cmp.Diff(want, cycleErr); diff != "" {
+		t.Errorf("diff (-want +got):\n%s", diff)
+	}
+}
