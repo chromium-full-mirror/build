@@ -255,7 +255,7 @@ func (c *Command) setup(ctx context.Context) (execRoot string, doneLock func(), 
 		c.enableOfflineMode(ctx)
 	}
 
-	execRoot, err = c.initWorkdirs(ctx)
+	execRoot, err = c.changeToWorkdir(ctx)
 	if err != nil {
 		return "", nil, nil, err
 	}

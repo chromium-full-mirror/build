@@ -264,7 +264,8 @@ func (c *Command) SetFlags(flagSet *flag.FlagSet) {
 	flagSet.StringVar(&c.adjustWarn, "w", "", "adjust warnings. not supported b/288807840")
 }
 
-func (c *Command) initFlags(targets []string) map[string]string {
+// initConfigFlags initializes a map of flag values to be used in starlark configuration.
+func (c *Command) initConfigFlags(targets []string) map[string]string {
 	flags := make(map[string]string)
 	c.Flags.Visit(func(f *flag.Flag) {
 		name := f.Name
@@ -279,6 +280,8 @@ func (c *Command) initFlags(targets []string) map[string]string {
 	return flags
 }
 
+// initConfig initializes the build configuration by loading and parsing the main starlark file.
+// It also captures `args.gn` content if available.
 func (c *Command) initConfig(ctx context.Context, execRoot string, targets []string) (*buildconfig.Config, error) {
 	if c.configFilename == "" {
 		return nil, errors.New("no config filename")
@@ -287,7 +290,7 @@ func (c *Command) initConfig(ctx context.Context, execRoot string, targets []str
 		"config":           os.DirFS(c.configRepoDir),
 		"config_overrides": os.DirFS(filepath.Join(execRoot, ".siso_remote")),
 	}
-	flags := c.initFlags(targets)
+	flags := c.initConfigFlags(targets)
 	config, err := buildconfig.New(ctx, c.configFilename, flags, cfgrepos)
 	if err != nil {
 		return nil, err
@@ -305,7 +308,11 @@ func (c *Command) initConfig(ctx context.Context, execRoot string, targets []str
 	return config, nil
 }
 
-func (c *Command) initWorkdirs(ctx context.Context) (string, error) {
+// changeToWorkdir establishes the execution root and working directory.
+// It changes the current directory to working directory, detects the
+// execution root, and updates path configurations to be relative to the root.
+// It returns the absolute path of the execution root.
+func (c *Command) changeToWorkdir(ctx context.Context) (string, error) {
 	// don't use $PWD for current directory
 	// to avoid symlink issue. b/286779149
 	pwd := os.Getenv("PWD")
@@ -374,6 +381,9 @@ func (c *Command) initWorkdirs(ctx context.Context) (string, error) {
 	return execRoot, err
 }
 
+// resolveFlags validates and adjusts flag values after they have been parsed.
+// It checks for unsupported flags, sets defaults, and modifies flags
+// based on the values of others.
 func (c *Command) resolveFlags() error {
 	err := c.debugMode.check()
 	if err != nil {
@@ -425,6 +435,8 @@ func (c *Command) enableOfflineMode(ctx context.Context) {
 	c.reproxyAddr = ""
 }
 
+// initDepsLog loads the dependency log file (`.siso_deps`).
+// It will recompact the log if necessary.
 func initDepsLog(ctx context.Context, stateDir string, depsLogFile string) (*ninjautil.DepsLog, error) {
 	depsLogPath := filepath.Join(stateDir, depsLogFile)
 	err := os.MkdirAll(filepath.Dir(depsLogPath), 0755)
@@ -448,6 +460,8 @@ func initDepsLog(ctx context.Context, stateDir string, depsLogFile string) (*nin
 	return depsLog, nil
 }
 
+// initBuildOpts initializes the `build.Options` struct by collecting
+// various configuration settings and parameters.
 func (c *Command) initBuildOpts(ctx context.Context, projectID string, buildPath *build.Path, config *buildconfig.Config, ds dataSource, hashFS *hashfs.HashFS, limits build.Limits, traceExporter *trace.Exporter, logWriters logWriters) build.Options {
 	if !filepath.IsAbs(c.traceJSON) {
 		c.traceJSON = filepath.Join(c.logDir, c.traceJSON)
@@ -520,6 +534,9 @@ func defaultCacheDir() string {
 	return filepath.Join(d, "siso")
 }
 
+// initOutputLocal returns a function that determines whether a given file
+// should be outputted locally based on the chosen strategy. This is used to
+// control which files are downloaded from the remote cache.
 func initOutputLocal(outputLocalStrategy string) (func(context.Context, string) bool, error) {
 	switch outputLocalStrategy {
 	case "full":
@@ -551,6 +568,8 @@ func initOutputLocal(outputLocalStrategy string) (func(context.Context, string) 
 	}
 }
 
+// checkSubtool validates the subtool name.
+// It returns true if the subtool is 'cleandead'.
 func checkSubtool(subtool string) (bool, error) {
 	cleandead := false
 	switch subtool {
@@ -589,6 +608,8 @@ func checkSubtool(subtool string) (bool, error) {
 	return cleandead, nil
 }
 
+// initLock creates and acquires a lock on the `.siso_lock` file in the state directory.
+// It returns a function that will release the lock.
 func initLock(ctx context.Context, dryRun bool, stateDir string) (func(), error) {
 	if dryRun {
 		return func() {}, nil
@@ -643,6 +664,9 @@ func initLock(ctx context.Context, dryRun bool, stateDir string) (func(), error)
 	}
 }
 
+// initFSMonitor initializes a file system monitor like Watchman, based on
+// the `SISO_FSMONITOR` environment variable.
+// It returns an `fs.FSMonitor` implementation.
 func initFSMonitor(ctx context.Context, execRoot string) hashfs.FSMonitor {
 	fsmonitor := os.Getenv("SISO_FSMONITOR")
 	if fsmonitor == "" {
