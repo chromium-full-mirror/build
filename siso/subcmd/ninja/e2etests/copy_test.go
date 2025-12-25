@@ -32,7 +32,7 @@ func TestBuild_Copy(t *testing.T) {
 			OutputLocal: outputLocal,
 		})
 		defer cleanup()
-		stats, err := ninja.RunNinja(ctx, "build.ninja", graph, opt, nil, ninja.RunNinjaOpts{})
+		stats, err := ninja.RunNinja(ctx, graph, opt, nil, ninja.RunNinjaOpts{})
 		return stats, err
 	}
 
@@ -186,7 +186,7 @@ func TestBuild_CopyLocalOut(t *testing.T) {
 			OutputLocal: func(context.Context, string) bool { return true },
 		})
 		defer cleanup()
-		_, err := ninja.RunNinja(ctx, "build.ninja", graph, opt, nil, ninja.RunNinjaOpts{})
+		_, err := ninja.RunNinja(ctx, graph, opt, nil, ninja.RunNinjaOpts{})
 		return err
 	}
 
@@ -259,7 +259,7 @@ func TestBuild_CopyBundleDataRemovedFile(t *testing.T) {
 			OutputLocal: func(context.Context, string) bool { return true },
 		})
 		defer cleanup()
-		stats, err := ninja.RunNinja(ctx, "build.ninja", graph, opt, nil, ninja.RunNinjaOpts{})
+		stats, err := ninja.RunNinja(ctx, graph, opt, nil, ninja.RunNinjaOpts{})
 		return stats, err
 	}
 

@@ -99,7 +99,7 @@ func TestBuild_Deps_Incremental(t *testing.T) {
 		opt.RECacheEnableRead = true
 		opt.REAPIClient = ds.Client
 		opt.OutputLocal = func(context.Context, string) bool { return true }
-		return ninja.RunNinja(ctx, "build.ninja", graph, opt, nil, ninja.RunNinjaOpts{})
+		return ninja.RunNinja(ctx, graph, opt, nil, ninja.RunNinjaOpts{})
 	}
 	setupFiles(t, dir, t.Name(), nil)
 
@@ -273,7 +273,7 @@ func TestBuild_Deps_Stale(t *testing.T) {
 			KeepTainted: true, // avoid recontime mtime of foo.o
 		})
 		defer cleanup()
-		return ninja.RunNinja(ctx, "build.ninja", graph, opt, nil, ninja.RunNinjaOpts{})
+		return ninja.RunNinja(ctx, graph, opt, nil, ninja.RunNinjaOpts{})
 	}
 	setupFiles(t, dir, t.Name(), nil)
 

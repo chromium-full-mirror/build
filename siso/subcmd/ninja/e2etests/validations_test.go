@@ -24,7 +24,7 @@ func TestBuild_Validations(t *testing.T) {
 			StateFile: ".siso_fs_state",
 		})
 		defer cleanup()
-		return ninja.RunNinja(ctx, "build.ninja", graph, opt, []string{"out"}, ninja.RunNinjaOpts{})
+		return ninja.RunNinja(ctx, graph, opt, []string{"out"}, ninja.RunNinjaOpts{})
 	}
 
 	setupFiles(t, dir, t.Name(), nil)
@@ -113,7 +113,7 @@ func TestBuild_ValidationsDependsOnOutput(t *testing.T) {
 			StateFile: ".siso_fs_state",
 		})
 		defer cleanup()
-		return ninja.RunNinja(ctx, "build.ninja", graph, opt, []string{"out"}, ninja.RunNinjaOpts{})
+		return ninja.RunNinja(ctx, graph, opt, []string{"out"}, ninja.RunNinjaOpts{})
 	}
 
 	setupFiles(t, dir, t.Name(), nil)
@@ -202,7 +202,7 @@ func TestBuild_ValidationsNested(t *testing.T) {
 			StateFile: ".siso_fs_state",
 		})
 		defer cleanup()
-		return ninja.RunNinja(ctx, "build.ninja", graph, opt, []string{"out"}, ninja.RunNinjaOpts{})
+		return ninja.RunNinja(ctx, graph, opt, []string{"out"}, ninja.RunNinjaOpts{})
 	}
 
 	setupFiles(t, dir, t.Name(), nil)

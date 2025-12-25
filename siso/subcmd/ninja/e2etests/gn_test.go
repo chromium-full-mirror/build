@@ -177,7 +177,7 @@ func TestBuild_GNGen(t *testing.T) {
 			})
 			defer cleanup()
 			opt.LastFailureTargets = lastFailedTargets
-			return ninja.RunNinja(ctx, "build.ninja", graph, opt, nil, ninja.RunNinjaOpts{})
+			return ninja.RunNinja(ctx, graph, opt, nil, ninja.RunNinjaOpts{})
 		}
 		setupFiles(t, dir, testName, nil)
 		err := run("buildtools/gn.py", "gen", "out/siso")
@@ -216,7 +216,7 @@ func TestBuild_GNGen(t *testing.T) {
 			})
 			defer cleanup()
 			opt.LastFailureTargets = lastFailedTargets
-			return ninja.RunNinja(ctx, "build.ninja", graph, opt, nil, ninja.RunNinjaOpts{})
+			return ninja.RunNinja(ctx, graph, opt, nil, ninja.RunNinjaOpts{})
 		}
 		setupFiles(t, dir, testName, nil)
 		err := run("buildtools/gn.py", "gen", "out/siso")

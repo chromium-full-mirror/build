@@ -26,7 +26,7 @@ func TestBuild_CycleCheck(t *testing.T) {
 			StateFile: ".siso_fs_state",
 		})
 		defer cleanup()
-		return ninja.RunNinja(ctx, "build.ninja", graph, opt, nil, ninja.RunNinjaOpts{})
+		return ninja.RunNinja(ctx, graph, opt, nil, ninja.RunNinjaOpts{})
 	}
 
 	setupFiles(t, dir, t.Name(), nil)

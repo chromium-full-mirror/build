@@ -352,7 +352,7 @@ func TestBuild_DepsMSVC_InstallerRC(t *testing.T) {
 		})
 		defer cleanup()
 		opt.DryRun = dryRun
-		return ninja.RunNinja(ctx, "build.ninja", graph, opt, nil, ninja.RunNinjaOpts{})
+		return ninja.RunNinja(ctx, graph, opt, nil, ninja.RunNinjaOpts{})
 	}
 
 	deps := func(t *testing.T, output string) []string {

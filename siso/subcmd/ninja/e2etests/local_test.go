@@ -44,7 +44,7 @@ func TestBuild_Local_AbsPath(t *testing.T) {
 			StateFile: ".siso_fs_state",
 		})
 		defer cleanup()
-		return ninja.RunNinja(ctx, "build.ninja", graph, opt, nil, ninja.RunNinjaOpts{})
+		return ninja.RunNinja(ctx, graph, opt, nil, ninja.RunNinjaOpts{})
 	}
 
 	writeFile := func(t *testing.T, fname, content string) {
@@ -123,7 +123,7 @@ func TestBuild_Local_Inputs(t *testing.T) {
 			StateFile: ".siso_fs_state",
 		})
 		defer cleanup()
-		return ninja.RunNinja(ctx, "build.ninja", graph, opt, nil, ninja.RunNinjaOpts{})
+		return ninja.RunNinja(ctx, graph, opt, nil, ninja.RunNinjaOpts{})
 	}
 	fname := filepath.ToSlash(filepath.Join(dir, "test/input2"))
 	hashfs.SetNoLazyForTest(fname)

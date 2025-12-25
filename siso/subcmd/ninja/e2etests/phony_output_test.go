@@ -22,7 +22,7 @@ func TestBuild_PhonyOutput(t *testing.T) {
 			StateFile: ".siso_fs_state",
 		})
 		defer cleanup()
-		return ninja.RunNinja(ctx, "build.ninja", graph, opt, []string{"nothing"}, ninja.RunNinjaOpts{})
+		return ninja.RunNinja(ctx, graph, opt, []string{"nothing"}, ninja.RunNinjaOpts{})
 	}
 
 	setupFiles(t, dir, t.Name(), nil)
@@ -55,7 +55,7 @@ func TestBuild_PhonyOutputDepError(t *testing.T) {
 			StateFile: ".siso_fs_state",
 		})
 		defer cleanup()
-		return ninja.RunNinja(ctx, "build.ninja", graph, opt, []string{"bar"}, ninja.RunNinjaOpts{})
+		return ninja.RunNinja(ctx, graph, opt, []string{"bar"}, ninja.RunNinjaOpts{})
 	}
 
 	setupFiles(t, dir, t.Name(), nil)
@@ -76,7 +76,7 @@ func TestBuild_PhonyOutputOrderOnly(t *testing.T) {
 			StateFile: ".siso_fs_state",
 		})
 		defer cleanup()
-		return ninja.RunNinja(ctx, "build.ninja", graph, opt, []string{"bar"}, ninja.RunNinjaOpts{})
+		return ninja.RunNinja(ctx, graph, opt, []string{"bar"}, ninja.RunNinjaOpts{})
 	}
 
 	setupFiles(t, dir, t.Name(), nil)

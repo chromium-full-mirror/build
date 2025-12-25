@@ -31,7 +31,7 @@ func TestBuild_PrepareHeaderOnly(t *testing.T) {
 		})
 		defer cleanup()
 		opt.Prepare = true
-		return ninja.RunNinja(ctx, "build.ninja", graph, opt, targets, ninja.RunNinjaOpts{})
+		return ninja.RunNinja(ctx, graph, opt, targets, ninja.RunNinjaOpts{})
 	}
 
 	setupFiles(t, dir, t.Name(), nil)

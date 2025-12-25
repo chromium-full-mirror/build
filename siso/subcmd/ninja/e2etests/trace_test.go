@@ -47,7 +47,7 @@ func TestBuild_Trace_remote(t *testing.T) {
 		defer cleanup()
 		opt.REAPIClient = ds.Client
 		opt.TraceJSON = "siso_trace.json"
-		return ninja.RunNinja(ctx, "build.ninja", graph, opt, nil, ninja.RunNinjaOpts{})
+		return ninja.RunNinja(ctx, graph, opt, nil, ninja.RunNinjaOpts{})
 	}
 
 	setupFiles(t, dir, t.Name(), nil)
@@ -200,7 +200,7 @@ func TestBuild_Trace_reproxy(t *testing.T) {
 		defer cleanup()
 		opt.ReproxyAddr = s.Addr()
 		opt.TraceJSON = "siso_trace.json"
-		return ninja.RunNinja(ctx, "build.ninja", graph, opt, nil, ninja.RunNinjaOpts{})
+		return ninja.RunNinja(ctx, graph, opt, nil, ninja.RunNinjaOpts{})
 	}
 
 	setupFiles(t, dir, t.Name(), nil)

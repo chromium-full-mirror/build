@@ -40,7 +40,7 @@ func TestBuild_ScanDeps_ClangCL_FI(t *testing.T) {
 		})
 		defer cleanup()
 		opt.REAPIClient = ds.Client
-		return ninja.RunNinja(ctx, "build.ninja", graph, opt, nil, ninja.RunNinjaOpts{})
+		return ninja.RunNinja(ctx, graph, opt, nil, ninja.RunNinjaOpts{})
 	}
 
 	setupFiles(t, dir, t.Name(), nil)
@@ -100,7 +100,7 @@ func TestBuild_ScanDeps_Timeout(t *testing.T) {
 		})
 		defer cleanup()
 		opt.REAPIClient = ds.Client
-		return ninja.RunNinja(ctx, "build.ninja", graph, opt, nil, ninja.RunNinjaOpts{})
+		return ninja.RunNinja(ctx, graph, opt, nil, ninja.RunNinjaOpts{})
 	}
 	scandeps.SetErrForTest(errors.New("scandeps err"))
 	defer scandeps.SetErrForTest(nil)

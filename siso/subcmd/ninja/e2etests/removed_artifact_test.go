@@ -118,7 +118,7 @@ func TestBuild_RemovedArtifactOutputLocalMinimum(t *testing.T) {
 		})
 		defer cleanup()
 		opt.REAPIClient = ds.Client
-		return ninja.RunNinja(ctx, "out", graph, opt, nil, ninja.RunNinjaOpts{})
+		return ninja.RunNinja(ctx, graph, opt, nil, ninja.RunNinjaOpts{})
 	}
 	setupFiles(t, dir, t.Name(), nil)
 	fakere := &reapitest.Fake{

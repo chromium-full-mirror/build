@@ -26,7 +26,7 @@ func TestBuild_EdgeChange(t *testing.T) {
 			StateFile: ".siso_fs_state",
 		})
 		defer cleanup()
-		return ninja.RunNinja(ctx, "build.ninja", graph, opt, []string{"out"}, ninja.RunNinjaOpts{})
+		return ninja.RunNinja(ctx, graph, opt, []string{"out"}, ninja.RunNinjaOpts{})
 	}
 
 	setupFiles(t, dir, t.Name(), nil)

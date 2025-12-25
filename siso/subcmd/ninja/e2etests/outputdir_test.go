@@ -40,7 +40,7 @@ func TestBuild_OutputDir(t *testing.T) {
 		})
 		defer cleanup()
 		opt.ExplainWriter = w
-		return ninja.RunNinja(ctx, "build.ninja", graph, opt, nil, ninja.RunNinjaOpts{})
+		return ninja.RunNinja(ctx, graph, opt, nil, ninja.RunNinjaOpts{})
 	}
 
 	t.Logf("-- setup workspace")

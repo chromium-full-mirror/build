@@ -30,7 +30,7 @@ func TestBuild_InvalidatedFile(t *testing.T) {
 			OutputLocal: func(context.Context, string) bool { return true },
 		})
 		defer cleanup()
-		return ninja.RunNinja(ctx, "build.ninja", graph, opt, []string{"out"}, ninja.RunNinjaOpts{})
+		return ninja.RunNinja(ctx, graph, opt, []string{"out"}, ninja.RunNinjaOpts{})
 	}
 
 	setupFiles(t, dir, t.Name(), nil)

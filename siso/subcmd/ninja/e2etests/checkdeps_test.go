@@ -30,7 +30,7 @@ func TestBuild_CheckDeps(t *testing.T) {
 		})
 		defer cleanup()
 		opt.OutputLogWriter = w
-		return ninja.RunNinja(ctx, "build.ninja", graph, opt, []string{target}, ninja.RunNinjaOpts{})
+		return ninja.RunNinja(ctx, graph, opt, []string{target}, ninja.RunNinjaOpts{})
 	}
 
 	setupFiles(t, dir, t.Name(), nil)

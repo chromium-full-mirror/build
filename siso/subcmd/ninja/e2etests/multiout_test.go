@@ -65,7 +65,7 @@ func TestBuild_MultiOut_Remote(t *testing.T) {
 		})
 		defer cleanup()
 		opt.REAPIClient = ds.Client
-		return ninja.RunNinja(ctx, "build.ninja", graph, opt, nil, ninja.RunNinjaOpts{})
+		return ninja.RunNinja(ctx, graph, opt, nil, ninja.RunNinjaOpts{})
 	}
 	setupFiles(t, dir, t.Name(), nil)
 	var out1, out2 *rpb.Digest

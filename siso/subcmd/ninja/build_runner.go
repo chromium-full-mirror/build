@@ -80,7 +80,7 @@ func checkBuildNinja(ctx context.Context, filename string, buildPath *build.Path
 	}
 }
 
-func RunNinja(ctx context.Context, fname string, graph *ninjabuild.Graph, bopts build.Options, targets []string, nopts RunNinjaOpts) (build.Stats, error) {
+func RunNinja(ctx context.Context, graph *ninjabuild.Graph, bopts build.Options, targets []string, nopts RunNinjaOpts) (build.Stats, error) {
 	spin := ui.Default.NewSpinner()
 
 	builddir := graph.Binding("builddir")
@@ -108,7 +108,7 @@ func RunNinja(ctx context.Context, fname string, graph *ninjabuild.Graph, bopts 
 			if bopts.DryRun {
 				return stats, nil
 			}
-			clog.Infof(ctx, "%s modified", fname)
+			clog.Infof(ctx, "build manifest was modified")
 			spin.Start("reloading")
 			err := graph.Reload(ctx)
 			if err != nil {

@@ -581,7 +581,7 @@ func (c *Command) Run(ctx context.Context) (stats build.Stats, err error) {
 		return stats, err
 	}
 
-	return RunNinja(ctx, c.fname, graph, bopts, targets, RunNinjaOpts{
+	return RunNinja(ctx, graph, bopts, targets, RunNinjaOpts{
 		Cleandead:     c.cleandead,
 		Subtool:       c.subtool,
 		enableStatusz: true,

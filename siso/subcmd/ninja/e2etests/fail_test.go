@@ -38,7 +38,7 @@ func TestBuild_Fail_Reproxy(t *testing.T) {
 		})
 		defer cleanup()
 		opt.ReproxyAddr = s.Addr()
-		return ninja.RunNinja(ctx, "build.ninja", graph, opt, nil, ninja.RunNinjaOpts{})
+		return ninja.RunNinja(ctx, graph, opt, nil, ninja.RunNinjaOpts{})
 	}
 
 	t.Logf("first build")
@@ -150,7 +150,7 @@ func TestBuild_Fail_Remote(t *testing.T) {
 		opt.REAPIClient = ds.Client
 		opt.FailureSummaryWriter = failureSummary
 		opt.OutputLogWriter = outputLog
-		return ninja.RunNinja(ctx, "build.ninja", graph, opt, nil, ninja.RunNinjaOpts{})
+		return ninja.RunNinja(ctx, graph, opt, nil, ninja.RunNinjaOpts{})
 	}
 
 	t.Logf("first build")

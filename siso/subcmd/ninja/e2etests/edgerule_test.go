@@ -31,7 +31,7 @@ func TestBuild_EdgeRule(t *testing.T) {
 		})
 		defer cleanup()
 		opt.REAPIClient = ds.Client
-		return ninja.RunNinja(ctx, "build.ninja", graph, opt, nil, ninja.RunNinjaOpts{})
+		return ninja.RunNinja(ctx, graph, opt, nil, ninja.RunNinjaOpts{})
 	}
 
 	setupFiles(t, dir, t.Name(), nil)
@@ -245,7 +245,7 @@ func TestBuild_EdgeRule_solibs(t *testing.T) {
 		})
 		defer cleanup()
 		opt.REAPIClient = ds.Client
-		return ninja.RunNinja(ctx, "build.ninja", graph, opt, nil, ninja.RunNinjaOpts{})
+		return ninja.RunNinja(ctx, graph, opt, nil, ninja.RunNinjaOpts{})
 	}
 
 	setupFiles(t, dir, t.Name(), nil)
@@ -351,7 +351,7 @@ func TestBuild_EdgeRule_solibs_recursive(t *testing.T) {
 		})
 		defer cleanup()
 		opt.REAPIClient = ds.Client
-		return ninja.RunNinja(ctx, "build.ninja", graph, opt, nil, ninja.RunNinjaOpts{})
+		return ninja.RunNinja(ctx, graph, opt, nil, ninja.RunNinjaOpts{})
 	}
 
 	setupFiles(t, dir, t.Name(), nil)
@@ -458,7 +458,7 @@ func TestBuild_EdgeRule_stamp_solibs(t *testing.T) {
 		})
 		defer cleanup()
 		opt.REAPIClient = ds.Client
-		return ninja.RunNinja(ctx, "build.ninja", graph, opt, nil, ninja.RunNinjaOpts{})
+		return ninja.RunNinja(ctx, graph, opt, nil, ninja.RunNinjaOpts{})
 	}
 
 	setupFiles(t, dir, t.Name(), nil)

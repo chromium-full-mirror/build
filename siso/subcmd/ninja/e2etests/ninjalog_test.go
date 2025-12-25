@@ -25,7 +25,7 @@ func TestBuild_NinjaLog(t *testing.T) {
 			StateFile: ".siso_fs_state",
 		})
 		defer cleanup()
-		return ninja.RunNinja(ctx, "build.ninja", graph, opt, []string{"all"}, ninja.RunNinjaOpts{})
+		return ninja.RunNinja(ctx, graph, opt, []string{"all"}, ninja.RunNinjaOpts{})
 	}
 
 	setupFiles(t, dir, t.Name(), nil)

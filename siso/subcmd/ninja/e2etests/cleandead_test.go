@@ -42,7 +42,7 @@ func TestBuild_Cleandead(t *testing.T) {
 			StateFile: ".siso_fs_state",
 		})
 		defer cleanup()
-		_, err := ninja.RunNinja(ctx, "build.ninja", graph, opt, nil, ninja.RunNinjaOpts{
+		_, err := ninja.RunNinja(ctx, graph, opt, nil, ninja.RunNinjaOpts{
 			Cleandead: true,
 			Subtool:   subtool,
 		})
@@ -117,7 +117,7 @@ func TestBuild_CleandeadPreserveNonOut(t *testing.T) {
 			StateFile: ".siso_fs_state",
 		})
 		defer cleanup()
-		_, err := ninja.RunNinja(ctx, "build.ninja", graph, opt, nil, ninja.RunNinjaOpts{
+		_, err := ninja.RunNinja(ctx, graph, opt, nil, ninja.RunNinjaOpts{
 			Cleandead: true,
 			Subtool:   subtool,
 		})

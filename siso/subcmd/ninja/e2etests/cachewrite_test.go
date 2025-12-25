@@ -70,7 +70,7 @@ func TestBuild_CacheWrite(t *testing.T) {
 		opt.REExecEnable = isRemote
 		opt.FailuresAllowed = 0
 
-		stats, err := ninja.RunNinja(ctx, "build.ninja", graph, opt, nil, ninja.RunNinjaOpts{})
+		stats, err := ninja.RunNinja(ctx, graph, opt, nil, ninja.RunNinjaOpts{})
 
 		// Make sure that outputs are present locally after build
 		for _, outFile := range allOutputs {
