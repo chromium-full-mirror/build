@@ -700,3 +700,13 @@ func initFSMonitor(ctx context.Context, execRoot string) hashfs.FSMonitor {
 	}
 	return nil
 }
+
+type localCacheOptions struct {
+	localCacheEnable bool
+	cacheDir         string
+}
+
+func (c *Command) setLocalCacheFlags(flagSet *flag.FlagSet) {
+	flagSet.BoolVar(&c.localCacheEnable, "local_cache_enable", false, "local cache enable")
+	flagSet.StringVar(&c.cacheDir, "cache_dir", defaultCacheDir(), "cache directory")
+}

@@ -7,7 +7,6 @@ package ninja
 import (
 	"bytes"
 	"context"
-	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -20,16 +19,6 @@ import (
 	"go.chromium.org/build/siso/reapi"
 	"go.chromium.org/build/siso/reapi/digest"
 )
-
-type localCacheOptions struct {
-	localCacheEnable bool
-	cacheDir         string
-}
-
-func (c *Command) setLocalCacheFlags(flagSet *flag.FlagSet) {
-	flagSet.BoolVar(&c.localCacheEnable, "local_cache_enable", false, "local cache enable")
-	flagSet.StringVar(&c.cacheDir, "cache_dir", defaultCacheDir(), "cache directory")
-}
 
 func initDataSource(ctx context.Context, credential cred.Cred, localCacheOpts localCacheOptions, reopt *reapi.Option) (DataSource, error) {
 	layeredCache := build.NewLayeredCache()
