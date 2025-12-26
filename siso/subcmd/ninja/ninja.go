@@ -127,7 +127,7 @@ func (c *Command) Execute(ctx context.Context, flagSet *flag.FlagSet, _ ...any) 
 	dur := ui.FormatDuration(d)
 	if err != nil {
 		var errFlag flagError
-		var errBuild buildError
+		var errBuild ninjabuild.BuildError
 		switch {
 		case errors.Is(err, errNothingToDo):
 			msgPrefix := "Everything is up-to-date"
@@ -142,7 +142,7 @@ func (c *Command) Execute(ctx context.Context, flagSet *flag.FlagSet, _ ...any) 
 
 		case errors.As(err, &errBuild):
 			var errTarget build.TargetError
-			if errors.As(errBuild.err, &errTarget) {
+			if errors.As(errBuild.Err, &errTarget) {
 				msgPrefix := "Schedule Failure"
 				if ui.IsTerminal() {
 					dur = ui.SGR(ui.Bold, dur)
@@ -161,7 +161,7 @@ func (c *Command) Execute(ctx context.Context, flagSet *flag.FlagSet, _ ...any) 
 				return subcommands.ExitFailure
 			}
 			var errMissingSource build.MissingSourceError
-			if errors.As(errBuild.err, &errMissingSource) {
+			if errors.As(errBuild.Err, &errMissingSource) {
 				msgPrefix := "Schedule Failure"
 				if ui.IsTerminal() {
 					dur = ui.SGR(ui.Bold, dur)
@@ -175,7 +175,7 @@ func (c *Command) Execute(ctx context.Context, flagSet *flag.FlagSet, _ ...any) 
 				dur = ui.SGR(ui.Bold, dur)
 				msgPrefix = ui.SGR(ui.BackgroundRed, msgPrefix)
 			}
-			ui.Default.Errorf("\n%6s %s: %d done, %d failed, %d remaining - %.02f/s\n %v\n", dur, msgPrefix, stats.Done-stats.Skipped, stats.Fail, stats.Total-stats.Done, sps, errBuild.err)
+			ui.Default.Errorf("\n%6s %s: %d done, %d failed, %d remaining - %.02f/s\n %v\n", dur, msgPrefix, stats.Done-stats.Skipped, stats.Fail, stats.Total-stats.Done, sps, errBuild.Err)
 			suggest := fmt.Sprintf("see %s for full command line and output", c.logFilename(c.outputLogFile, c.startDir))
 			if c.sisoInfoLog != "" {
 				suggest += fmt.Sprintf("\n or %s", c.logFilename(c.sisoInfoLog, c.startDir))
@@ -550,7 +550,7 @@ func (c *Command) Run(ctx context.Context) (stats build.Stats, err error) {
 		}
 	}
 
-	checkBuildNinja(ctx, c.fname, buildPath, config, hashFS, localDepsLog, bopts)
+	ninjabuild.CheckManifest(ctx, c.fname, buildPath, config, hashFS, localDepsLog, bopts)
 
 	spin.Start("load siso config")
 	stepConfig, err := ninjabuild.NewStepConfig(ctx, config, buildPath, hashFS, c.fname, c.stateDir)
@@ -587,10 +587,10 @@ func (c *Command) Run(ctx context.Context) (stats build.Stats, err error) {
 		return stats, err
 	}
 
-	return RunNinja(ctx, graph, bopts, targets, RunNinjaOpts{
+	return ninjabuild.Run(ctx, graph, bopts, targets, ninjabuild.RunNinjaOpts{
 		Cleandead:     c.cleandead,
 		Subtool:       c.subtool,
-		enableStatusz: true,
+		EnableStatusz: true,
 	})
 }
 
@@ -609,12 +609,12 @@ func (c *Command) saveFailedTargetsAndCommand(ctx context.Context, errPtr *error
 	if *errPtr != nil {
 		// Even when batch mode, it records failed targets.
 		// It will be read by Chromium recipe.
-		var errBuild buildError
+		var errBuild ninjabuild.BuildError
 		if !errors.As(*errPtr, &errBuild) {
 			return
 		}
 		var stepError build.StepError
-		if !errors.As(errBuild.err, &stepError) {
+		if !errors.As(errBuild.Err, &stepError) {
 			rerr := os.Remove(c.logFilename(c.failedCommandsFile, ""))
 			if rerr != nil {
 				clog.Warningf(ctx, "failed to remove failed command file: %v", rerr)

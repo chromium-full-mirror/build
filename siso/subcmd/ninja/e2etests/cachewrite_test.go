@@ -11,9 +11,9 @@ import (
 	"testing"
 
 	"go.chromium.org/build/siso/build"
+	"go.chromium.org/build/siso/build/ninjabuild"
 	"go.chromium.org/build/siso/hashfs"
 	"go.chromium.org/build/siso/reapi/reapitest"
-	"go.chromium.org/build/siso/subcmd/ninja"
 )
 
 // This test simulates cache-write mode
@@ -70,7 +70,7 @@ func TestBuild_CacheWrite(t *testing.T) {
 		opt.REExecEnable = isRemote
 		opt.FailuresAllowed = 0
 
-		stats, err := ninja.RunNinja(ctx, graph, opt, nil, ninja.RunNinjaOpts{})
+		stats, err := ninjabuild.Run(ctx, graph, opt, nil, ninjabuild.RunNinjaOpts{})
 
 		// Make sure that outputs are present locally after build
 		for _, outFile := range allOutputs {

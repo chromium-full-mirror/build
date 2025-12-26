@@ -10,14 +10,6 @@ import (
 	"fmt"
 )
 
-type buildError struct {
-	err error
-}
-
-func (b buildError) Error() string {
-	return b.err.Error()
-}
-
 type flagError struct {
 	err error
 }

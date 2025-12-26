@@ -13,10 +13,10 @@ import (
 	"time"
 
 	"go.chromium.org/build/siso/build"
+	"go.chromium.org/build/siso/build/ninjabuild"
 	"go.chromium.org/build/siso/hashfs"
 	pb "go.chromium.org/build/siso/hashfs/proto"
 	"go.chromium.org/build/siso/reapi/digest"
-	"go.chromium.org/build/siso/subcmd/ninja"
 )
 
 func TestBuild_InvalidatedFile(t *testing.T) {
@@ -30,7 +30,7 @@ func TestBuild_InvalidatedFile(t *testing.T) {
 			OutputLocal: func(context.Context, string) bool { return true },
 		})
 		defer cleanup()
-		return ninja.RunNinja(ctx, graph, opt, []string{"out"}, ninja.RunNinjaOpts{})
+		return ninjabuild.Run(ctx, graph, opt, []string{"out"}, ninjabuild.RunNinjaOpts{})
 	}
 
 	setupFiles(t, dir, t.Name(), nil)

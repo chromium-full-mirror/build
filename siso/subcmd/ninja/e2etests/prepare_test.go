@@ -12,8 +12,8 @@ import (
 	"testing"
 
 	"go.chromium.org/build/siso/build"
+	"go.chromium.org/build/siso/build/ninjabuild"
 	"go.chromium.org/build/siso/hashfs"
-	"go.chromium.org/build/siso/subcmd/ninja"
 )
 
 func TestBuild_PrepareHeaderOnly(t *testing.T) {
@@ -31,7 +31,7 @@ func TestBuild_PrepareHeaderOnly(t *testing.T) {
 		})
 		defer cleanup()
 		opt.Prepare = true
-		return ninja.RunNinja(ctx, graph, opt, targets, ninja.RunNinjaOpts{})
+		return ninjabuild.Run(ctx, graph, opt, targets, ninjabuild.RunNinjaOpts{})
 	}
 
 	setupFiles(t, dir, t.Name(), nil)

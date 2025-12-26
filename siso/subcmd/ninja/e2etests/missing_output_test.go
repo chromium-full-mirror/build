@@ -8,8 +8,8 @@ import (
 	"testing"
 
 	"go.chromium.org/build/siso/build"
+	"go.chromium.org/build/siso/build/ninjabuild"
 	"go.chromium.org/build/siso/hashfs"
-	"go.chromium.org/build/siso/subcmd/ninja"
 )
 
 func TestBuild_MissingOutput(t *testing.T) {
@@ -24,7 +24,7 @@ func TestBuild_MissingOutput(t *testing.T) {
 			StateFile: ".siso_fs_state",
 		})
 		defer cleanup()
-		return ninja.RunNinja(ctx, graph, opt, []string{"b"}, ninja.RunNinjaOpts{})
+		return ninjabuild.Run(ctx, graph, opt, []string{"b"}, ninjabuild.RunNinjaOpts{})
 	}
 
 	setupFiles(t, dir, t.Name(), nil)

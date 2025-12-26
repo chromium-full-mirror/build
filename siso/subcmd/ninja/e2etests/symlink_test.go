@@ -13,8 +13,8 @@ import (
 	"time"
 
 	"go.chromium.org/build/siso/build"
+	"go.chromium.org/build/siso/build/ninjabuild"
 	"go.chromium.org/build/siso/hashfs"
-	"go.chromium.org/build/siso/subcmd/ninja"
 )
 
 // Test symlink won't modify mtime of symlink's target.
@@ -32,7 +32,7 @@ func TestBuild_Symlink(t *testing.T) {
 			StateFile: ".siso_fs_state",
 		})
 		defer cleanup()
-		return ninja.RunNinja(ctx, graph, opt, nil, ninja.RunNinjaOpts{})
+		return ninjabuild.Run(ctx, graph, opt, nil, ninjabuild.RunNinjaOpts{})
 	}
 	setupFiles(t, dir, t.Name(), nil)
 
@@ -110,7 +110,7 @@ func TestBuild_SymlinkSource(t *testing.T) {
 			StateFile: ".siso_fs_state",
 		})
 		defer cleanup()
-		return ninja.RunNinja(ctx, graph, opt, nil, ninja.RunNinjaOpts{})
+		return ninjabuild.Run(ctx, graph, opt, nil, ninjabuild.RunNinjaOpts{})
 	}
 	setupFiles(t, dir, t.Name(), nil)
 
@@ -243,7 +243,7 @@ func TestBuild_SymlinkSourceSymlinkDir(t *testing.T) {
 			StateFile: ".siso_fs_state",
 		})
 		defer cleanup()
-		return ninja.RunNinja(ctx, graph, opt, nil, ninja.RunNinjaOpts{})
+		return ninjabuild.Run(ctx, graph, opt, nil, ninjabuild.RunNinjaOpts{})
 	}
 	setupFiles(t, dir, t.Name(), nil)
 
@@ -290,7 +290,7 @@ func TestBuild_SymlinkGeneratedDangling(t *testing.T) {
 			StateFile: ".siso_fs_state",
 		})
 		defer cleanup()
-		return ninja.RunNinja(ctx, graph, opt, nil, ninja.RunNinjaOpts{})
+		return ninjabuild.Run(ctx, graph, opt, nil, ninjabuild.RunNinjaOpts{})
 	}
 	setupFiles(t, dir, t.Name(), nil)
 

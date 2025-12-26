@@ -17,11 +17,11 @@ import (
 	rpb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
 
 	"go.chromium.org/build/siso/build"
+	"go.chromium.org/build/siso/build/ninjabuild"
 	"go.chromium.org/build/siso/execute/reproxyexec/reproxytest"
 	"go.chromium.org/build/siso/hashfs"
 	"go.chromium.org/build/siso/reapi/digest"
 	"go.chromium.org/build/siso/reapi/reapitest"
-	"go.chromium.org/build/siso/subcmd/ninja"
 )
 
 func TestBuild_Fail_Reproxy(t *testing.T) {
@@ -38,7 +38,7 @@ func TestBuild_Fail_Reproxy(t *testing.T) {
 		})
 		defer cleanup()
 		opt.ReproxyAddr = s.Addr()
-		return ninja.RunNinja(ctx, graph, opt, nil, ninja.RunNinjaOpts{})
+		return ninjabuild.Run(ctx, graph, opt, nil, ninjabuild.RunNinjaOpts{})
 	}
 
 	t.Logf("first build")
@@ -150,7 +150,7 @@ func TestBuild_Fail_Remote(t *testing.T) {
 		opt.REAPIClient = ds.Client
 		opt.FailureSummaryWriter = failureSummary
 		opt.OutputLogWriter = outputLog
-		return ninja.RunNinja(ctx, graph, opt, nil, ninja.RunNinjaOpts{})
+		return ninjabuild.Run(ctx, graph, opt, nil, ninjabuild.RunNinjaOpts{})
 	}
 
 	t.Logf("first build")

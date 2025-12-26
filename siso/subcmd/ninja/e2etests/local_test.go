@@ -13,8 +13,8 @@ import (
 	"testing"
 
 	"go.chromium.org/build/siso/build"
+	"go.chromium.org/build/siso/build/ninjabuild"
 	"go.chromium.org/build/siso/hashfs"
-	"go.chromium.org/build/siso/subcmd/ninja"
 )
 
 // Test schedule for abs path correctly. b/354792946
@@ -44,7 +44,7 @@ func TestBuild_Local_AbsPath(t *testing.T) {
 			StateFile: ".siso_fs_state",
 		})
 		defer cleanup()
-		return ninja.RunNinja(ctx, graph, opt, nil, ninja.RunNinjaOpts{})
+		return ninjabuild.Run(ctx, graph, opt, nil, ninjabuild.RunNinjaOpts{})
 	}
 
 	writeFile := func(t *testing.T, fname, content string) {
@@ -123,7 +123,7 @@ func TestBuild_Local_Inputs(t *testing.T) {
 			StateFile: ".siso_fs_state",
 		})
 		defer cleanup()
-		return ninja.RunNinja(ctx, graph, opt, nil, ninja.RunNinjaOpts{})
+		return ninjabuild.Run(ctx, graph, opt, nil, ninjabuild.RunNinjaOpts{})
 	}
 	fname := filepath.ToSlash(filepath.Join(dir, "test/input2"))
 	hashfs.SetNoLazyForTest(fname)

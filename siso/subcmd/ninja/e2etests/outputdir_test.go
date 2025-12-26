@@ -14,8 +14,8 @@ import (
 	"testing"
 
 	"go.chromium.org/build/siso/build"
+	"go.chromium.org/build/siso/build/ninjabuild"
 	"go.chromium.org/build/siso/hashfs"
-	"go.chromium.org/build/siso/subcmd/ninja"
 )
 
 func TestBuild_OutputDir(t *testing.T) {
@@ -40,7 +40,7 @@ func TestBuild_OutputDir(t *testing.T) {
 		})
 		defer cleanup()
 		opt.ExplainWriter = w
-		return ninja.RunNinja(ctx, graph, opt, nil, ninja.RunNinjaOpts{})
+		return ninjabuild.Run(ctx, graph, opt, nil, ninjabuild.RunNinjaOpts{})
 	}
 
 	t.Logf("-- setup workspace")

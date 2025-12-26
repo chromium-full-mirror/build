@@ -17,9 +17,9 @@ import (
 	"time"
 
 	"go.chromium.org/build/siso/build"
+	"go.chromium.org/build/siso/build/ninjabuild"
 	"go.chromium.org/build/siso/hashfs"
 	pb "go.chromium.org/build/siso/hashfs/proto"
-	"go.chromium.org/build/siso/subcmd/ninja"
 )
 
 func TestBuild_Copy(t *testing.T) {
@@ -32,7 +32,7 @@ func TestBuild_Copy(t *testing.T) {
 			OutputLocal: outputLocal,
 		})
 		defer cleanup()
-		stats, err := ninja.RunNinja(ctx, graph, opt, nil, ninja.RunNinjaOpts{})
+		stats, err := ninjabuild.Run(ctx, graph, opt, nil, ninjabuild.RunNinjaOpts{})
 		return stats, err
 	}
 
@@ -186,7 +186,7 @@ func TestBuild_CopyLocalOut(t *testing.T) {
 			OutputLocal: func(context.Context, string) bool { return true },
 		})
 		defer cleanup()
-		_, err := ninja.RunNinja(ctx, graph, opt, nil, ninja.RunNinjaOpts{})
+		_, err := ninjabuild.Run(ctx, graph, opt, nil, ninjabuild.RunNinjaOpts{})
 		return err
 	}
 
@@ -259,7 +259,7 @@ func TestBuild_CopyBundleDataRemovedFile(t *testing.T) {
 			OutputLocal: func(context.Context, string) bool { return true },
 		})
 		defer cleanup()
-		stats, err := ninja.RunNinja(ctx, graph, opt, nil, ninja.RunNinjaOpts{})
+		stats, err := ninjabuild.Run(ctx, graph, opt, nil, ninjabuild.RunNinjaOpts{})
 		return stats, err
 	}
 

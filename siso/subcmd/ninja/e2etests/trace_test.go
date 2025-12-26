@@ -18,10 +18,10 @@ import (
 	"github.com/google/go-cmp/cmp"
 
 	"go.chromium.org/build/siso/build"
+	"go.chromium.org/build/siso/build/ninjabuild"
 	"go.chromium.org/build/siso/execute/reproxyexec/reproxytest"
 	"go.chromium.org/build/siso/hashfs"
 	"go.chromium.org/build/siso/reapi/reapitest"
-	"go.chromium.org/build/siso/subcmd/ninja"
 )
 
 func TestBuild_Trace_remote(t *testing.T) {
@@ -47,7 +47,7 @@ func TestBuild_Trace_remote(t *testing.T) {
 		defer cleanup()
 		opt.REAPIClient = ds.Client
 		opt.TraceJSON = "siso_trace.json"
-		return ninja.RunNinja(ctx, graph, opt, nil, ninja.RunNinjaOpts{})
+		return ninjabuild.Run(ctx, graph, opt, nil, ninjabuild.RunNinjaOpts{})
 	}
 
 	setupFiles(t, dir, t.Name(), nil)
@@ -200,7 +200,7 @@ func TestBuild_Trace_reproxy(t *testing.T) {
 		defer cleanup()
 		opt.ReproxyAddr = s.Addr()
 		opt.TraceJSON = "siso_trace.json"
-		return ninja.RunNinja(ctx, graph, opt, nil, ninja.RunNinjaOpts{})
+		return ninjabuild.Run(ctx, graph, opt, nil, ninjabuild.RunNinjaOpts{})
 	}
 
 	setupFiles(t, dir, t.Name(), nil)

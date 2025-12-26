@@ -17,10 +17,10 @@ import (
 	"github.com/google/go-cmp/cmp"
 
 	"go.chromium.org/build/siso/build"
+	"go.chromium.org/build/siso/build/ninjabuild"
 	"go.chromium.org/build/siso/execute/reproxyexec/reproxytest"
 	"go.chromium.org/build/siso/hashfs"
 	"go.chromium.org/build/siso/reapi"
-	"go.chromium.org/build/siso/subcmd/ninja"
 	"go.chromium.org/build/siso/toolsupport/ninjautil"
 )
 
@@ -352,7 +352,7 @@ func TestBuild_DepsMSVC_InstallerRC(t *testing.T) {
 		})
 		defer cleanup()
 		opt.DryRun = dryRun
-		return ninja.RunNinja(ctx, graph, opt, nil, ninja.RunNinjaOpts{})
+		return ninjabuild.Run(ctx, graph, opt, nil, ninjabuild.RunNinjaOpts{})
 	}
 
 	deps := func(t *testing.T, output string) []string {

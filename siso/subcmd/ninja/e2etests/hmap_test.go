@@ -12,9 +12,9 @@ import (
 	rpb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
 
 	"go.chromium.org/build/siso/build"
+	"go.chromium.org/build/siso/build/ninjabuild"
 	"go.chromium.org/build/siso/hashfs"
 	"go.chromium.org/build/siso/reapi/reapitest"
-	"go.chromium.org/build/siso/subcmd/ninja"
 )
 
 func TestBuild_Hmap(t *testing.T) {
@@ -39,7 +39,7 @@ func TestBuild_Hmap(t *testing.T) {
 		})
 		defer cleanup()
 		opt.REAPIClient = ds.Client
-		return ninja.RunNinja(ctx, graph, opt, nil, ninja.RunNinjaOpts{})
+		return ninjabuild.Run(ctx, graph, opt, nil, ninjabuild.RunNinjaOpts{})
 	}
 
 	setupFiles(t, dir, t.Name(), nil)

@@ -11,8 +11,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	"go.chromium.org/build/siso/build/ninjabuild"
 	"go.chromium.org/build/siso/hashfs"
-	"go.chromium.org/build/siso/subcmd/ninja"
 )
 
 func TestBuild_Cleandead(t *testing.T) {
@@ -42,7 +42,7 @@ func TestBuild_Cleandead(t *testing.T) {
 			StateFile: ".siso_fs_state",
 		})
 		defer cleanup()
-		_, err := ninja.RunNinja(ctx, graph, opt, nil, ninja.RunNinjaOpts{
+		_, err := ninjabuild.Run(ctx, graph, opt, nil, ninjabuild.RunNinjaOpts{
 			Cleandead: true,
 			Subtool:   subtool,
 		})
@@ -117,7 +117,7 @@ func TestBuild_CleandeadPreserveNonOut(t *testing.T) {
 			StateFile: ".siso_fs_state",
 		})
 		defer cleanup()
-		_, err := ninja.RunNinja(ctx, graph, opt, nil, ninja.RunNinjaOpts{
+		_, err := ninjabuild.Run(ctx, graph, opt, nil, ninjabuild.RunNinjaOpts{
 			Cleandead: true,
 			Subtool:   subtool,
 		})

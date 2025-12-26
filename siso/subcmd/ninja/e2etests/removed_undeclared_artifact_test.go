@@ -14,8 +14,8 @@ import (
 	"testing"
 
 	"go.chromium.org/build/siso/build"
+	"go.chromium.org/build/siso/build/ninjabuild"
 	"go.chromium.org/build/siso/hashfs"
-	"go.chromium.org/build/siso/subcmd/ninja"
 )
 
 func TestBuild_RemovedUndeclaredArtifact(t *testing.T) {
@@ -29,7 +29,7 @@ func TestBuild_RemovedUndeclaredArtifact(t *testing.T) {
 			OutputLocal: func(context.Context, string) bool { return true },
 		})
 		defer cleanup()
-		return ninja.RunNinja(ctx, graph, opt, nil, ninja.RunNinjaOpts{})
+		return ninjabuild.Run(ctx, graph, opt, nil, ninjabuild.RunNinjaOpts{})
 	}
 	setupFiles(t, dir, t.Name(), nil)
 

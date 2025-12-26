@@ -11,8 +11,8 @@ import (
 	"github.com/google/go-cmp/cmp"
 
 	"go.chromium.org/build/siso/build"
+	"go.chromium.org/build/siso/build/ninjabuild"
 	"go.chromium.org/build/siso/hashfs"
-	"go.chromium.org/build/siso/subcmd/ninja"
 )
 
 func TestBuild_CycleCheck(t *testing.T) {
@@ -26,7 +26,7 @@ func TestBuild_CycleCheck(t *testing.T) {
 			StateFile: ".siso_fs_state",
 		})
 		defer cleanup()
-		return ninja.RunNinja(ctx, graph, opt, nil, ninja.RunNinjaOpts{})
+		return ninjabuild.Run(ctx, graph, opt, nil, ninjabuild.RunNinjaOpts{})
 	}
 
 	setupFiles(t, dir, t.Name(), nil)
