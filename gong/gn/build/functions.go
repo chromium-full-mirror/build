@@ -9,9 +9,12 @@ import (
 )
 
 // FunctionMap returns a map of GN buildfile functions to their implementations.
-func FunctionMap(buildSettings *BuildSettings) map[string]resolve.FunctionInfo {
+// It requires the top-level BuildSettings object, and optionally the Settings object.
+func FunctionMap(buildSettings *BuildSettings, settings *Settings) map[string]resolve.FunctionInfo {
 	return map[string]resolve.FunctionInfo{
-		"assert":      resolve.AssertFunction{},
-		"rebase_path": &rebasePathFunction{buildSettings: buildSettings},
+		// All functions here that receive *Settings are expected to handle nil.
+		"assert":       resolve.AssertFunction{},
+		"rebase_path":  &rebasePathFunction{buildSettings: buildSettings},
+		"set_defaults": &setDefaultsFunction{settings: settings},
 	}
 }

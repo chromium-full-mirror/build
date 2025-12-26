@@ -22,16 +22,21 @@ type Settings struct {
 	// We don't touch it afterwards, as it's used as the top-level exec context for scopes
 	// when executing buildfiles.
 	baseConfig *resolve.Scope
+
+	// TODO: this needs to be scope-level, not toolchain top-level.
+	targetDefaults map[string]*resolve.Scope
 }
 
 // NewSettings creates a new Settings.
 func NewSettings(buildSettings *BuildSettings) *Settings {
-	return &Settings{
-		buildSettings: buildSettings,
-		baseConfig: resolve.NewScope(&builtinProvider{
-			buildSettings: buildSettings,
-		}, FunctionMap(buildSettings)),
+	s := &Settings{
+		buildSettings:  buildSettings,
+		targetDefaults: make(map[string]*resolve.Scope),
 	}
+	s.baseConfig = resolve.NewScope(&builtinProvider{
+		buildSettings: buildSettings,
+	}, FunctionMap(buildSettings, s))
+	return s
 }
 
 // BaseConfig returns the base config scope for this toolchain invocation.

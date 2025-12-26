@@ -37,6 +37,17 @@ type SimpleFunctionInfo interface {
 	Run(scope *Scope, call *parse.FunctionCallNode, args []Value) (Value, error)
 }
 
+// EnsureSingleStringArg is a helper to check for a single string arg,
+// and standardize the error message if this isn't the case.
+func EnsureSingleStringArg(function *parse.FunctionCallNode, args []Value) (*StringValue, error) {
+	if len(args) != 1 {
+		return nil, function.Function.MakeErrorWithHelp(syntax.ErrArgumentCount,
+			"Incorrect arguments.",
+			"This function requires a single string argument.")
+	}
+	return AsValue[*StringValue](args[0])
+}
+
 // AssertFunction is a function that asserts an expression is true.
 type AssertFunction struct{}
 
