@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-package ninja
+package build
 
 import (
 	"bytes"
@@ -13,17 +13,16 @@ import (
 	"path/filepath"
 
 	"go.chromium.org/build/siso/auth/cred"
-	"go.chromium.org/build/siso/build"
 	"go.chromium.org/build/siso/build/cachestore"
 	"go.chromium.org/build/siso/o11y/clog"
 	"go.chromium.org/build/siso/reapi"
 	"go.chromium.org/build/siso/reapi/digest"
 )
 
-func initDataSource(ctx context.Context, credential cred.Cred, localCacheOpts localCacheOptions, reopt *reapi.Option) (DataSource, error) {
-	layeredCache := build.NewLayeredCache()
-	if localCacheOpts.localCacheEnable {
-		cache, err := build.NewLocalCache(localCacheOpts.cacheDir)
+func NewDataSource(ctx context.Context, credential cred.Cred, localCacheEnable bool, cacheDir string, reapiClient *reapi.Client) DataSource {
+	layeredCache := NewLayeredCache()
+	if localCacheEnable {
+		cache, err := NewLocalCache(cacheDir)
 		if err != nil {
 			clog.Warningf(ctx, "failed to create local cache - no local cache enabled: %v", err)
 		} else {
@@ -31,25 +30,22 @@ func initDataSource(ctx context.Context, credential cred.Cred, localCacheOpts lo
 			cache.GarbageCollectIfRequired(ctx)
 		}
 	}
-	var ds DataSource
-	err := reopt.CheckValid()
-	if err == nil {
-		ds.Client, err = reapi.New(ctx, credential, *reopt)
-		if err != nil {
-			return ds, err
-		}
-		layeredCache.AddLayer(ds.Client.CacheStore())
+	if reapiClient != nil {
+		layeredCache.AddLayer(reapiClient.CacheStore())
 	}
+	var ds DataSource
+	ds.Client = reapiClient
 	ds.Cache = layeredCache
-	return ds, nil
+	return ds
 }
 
-// Exposed for e2e testing.
+// DataSource provides access to build data, potentially from a local cache or a remote reapi client.
 type DataSource struct {
 	Cache  cachestore.CacheStore
 	Client *reapi.Client
 }
 
+// Close closes the underlying reapi client, if it exists.
 func (ds DataSource) Close(ctx context.Context) error {
 	if ds.Client == nil {
 		return nil
@@ -57,10 +53,13 @@ func (ds DataSource) Close(ctx context.Context) error {
 	return ds.Client.Close()
 }
 
+// DigestData creates a new digest.Data from the given digest and filename,
+// using the DataSource to retrieve the actual data.
 func (ds DataSource) DigestData(ctx context.Context, d digest.Digest, fname string) digest.Data {
 	return digest.NewData(ds.Source(ctx, d, fname), d)
 }
 
+// Source returns a digest.Source for the given digest and filename.
 func (ds DataSource) Source(_ context.Context, d digest.Digest, fname string) digest.Source {
 	return source{
 		dataSource: ds,

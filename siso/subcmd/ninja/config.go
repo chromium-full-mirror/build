@@ -462,7 +462,7 @@ func initDepsLog(ctx context.Context, stateDir string, depsLogFile string) (*nin
 
 // initBuildOpts initializes the `build.Options` struct by collecting
 // various configuration settings and parameters.
-func (c *Command) initBuildOpts(ctx context.Context, projectID string, buildPath *build.Path, config *buildconfig.Config, ds DataSource, hashFS *hashfs.HashFS, limits build.Limits, traceExporter *trace.Exporter, logWriters logWriters) build.Options {
+func (c *Command) initBuildOpts(ctx context.Context, projectID string, buildPath *build.Path, config *buildconfig.Config, ds build.DataSource, hashFS *hashfs.HashFS, limits build.Limits, traceExporter *trace.Exporter, logWriters logWriters) build.Options {
 	if !filepath.IsAbs(c.traceJSON) {
 		c.traceJSON = filepath.Join(c.logDir, c.traceJSON)
 	}

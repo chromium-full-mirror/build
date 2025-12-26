@@ -24,7 +24,7 @@ func TestBuild_Depfile_OutputLocalMinimum(t *testing.T) {
 	ctx := t.Context()
 	dir := tempDir(t)
 
-	runNinja := func(t *testing.T, ds ninja.DataSource) (build.Stats, error) {
+	runNinja := func(t *testing.T, ds build.DataSource) (build.Stats, error) {
 		t.Helper()
 		opt, graph, cleanup := setupBuild(ctx, t, dir, hashfs.Option{
 			StateFile:   ".siso_fs_state",
@@ -74,7 +74,7 @@ func TestBuild_Depfile_OutputLocalMinimum(t *testing.T) {
 			}, nil
 		},
 	}
-	var ds ninja.DataSource
+	var ds build.DataSource
 	defer func() {
 		err := ds.Close(ctx)
 		if err != nil {

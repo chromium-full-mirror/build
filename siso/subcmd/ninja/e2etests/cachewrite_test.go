@@ -34,7 +34,7 @@ func TestBuild_CacheWrite(t *testing.T) {
 	// Keep a global mock RE for the lifetime of the test
 	fakere := &reapitest.Fake{}
 
-	var ds ninja.DataSource
+	var ds build.DataSource
 	defer func() {
 		err := ds.Close(ctx)
 		if err != nil {

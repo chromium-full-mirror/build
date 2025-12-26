@@ -33,6 +33,7 @@ import (
 	"go.chromium.org/build/siso/o11y/clog"
 	"go.chromium.org/build/siso/o11y/monitoring"
 	"go.chromium.org/build/siso/o11y/trace"
+	"go.chromium.org/build/siso/reapi"
 	"go.chromium.org/build/siso/signals"
 	"go.chromium.org/build/siso/toolsupport/artfsutil"
 	"go.chromium.org/build/siso/toolsupport/cogutil"
@@ -478,10 +479,15 @@ func (c *Command) Run(ctx context.Context) (stats build.Stats, err error) {
 	if !c.localCacheEnable {
 		c.cacheDir = ""
 	}
-	ds, err := initDataSource(ctx, credential, c.localCacheOptions, c.reopt)
-	if err != nil {
-		return stats, err
+	var reapiClient *reapi.Client
+	err = c.reopt.CheckValid()
+	if err == nil {
+		reapiClient, err = reapi.New(ctx, credential, *c.reopt)
+		if err != nil {
+			return stats, err
+		}
 	}
+	ds := build.NewDataSource(ctx, credential, c.localCacheEnable, c.cacheDir, reapiClient)
 	defer func() {
 		err := ds.Close(ctx)
 		if err != nil {
@@ -635,7 +641,7 @@ func (c *Command) failedTargetsFilePath() string {
 	return filepath.Join(c.stateDir, failedTargetsFile)
 }
 
-func (c *Command) setupHashFS(ctx context.Context, execRoot string, ds DataSource) (*hashfs.HashFS, func(*[]string, *error), error) {
+func (c *Command) setupHashFS(ctx context.Context, execRoot string, ds build.DataSource) (*hashfs.HashFS, func(*[]string, *error), error) {
 	c.fsopt.DataSource = ds
 	var err error
 	c.fsopt.OutputLocal, err = initOutputLocal(c.outputLocalStrategy)

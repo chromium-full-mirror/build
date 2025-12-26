@@ -26,7 +26,7 @@ func TestBuild_OutputLocal(t *testing.T) {
 
 	runNinjaTest := func(t *testing.T, outputLocal bool, fakere *reapitest.Fake) (build.Stats, error) {
 		t.Helper()
-		var ds ninja.DataSource
+		var ds build.DataSource
 		defer func() {
 			err := ds.Close(ctx)
 			if err != nil {

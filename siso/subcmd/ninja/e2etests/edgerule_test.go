@@ -23,7 +23,7 @@ func TestBuild_EdgeRule(t *testing.T) {
 	ctx := t.Context()
 	dir := tempDir(t)
 
-	runNinjaTest := func(t *testing.T, ds ninja.DataSource) (build.Stats, error) {
+	runNinjaTest := func(t *testing.T, ds build.DataSource) (build.Stats, error) {
 		t.Helper()
 		opt, graph, cleanup := setupBuild(ctx, t, dir, hashfs.Option{
 			StateFile:  ".siso_fs_state",
@@ -186,7 +186,7 @@ func TestBuild_EdgeRule(t *testing.T) {
 			}
 		},
 	}
-	var ds ninja.DataSource
+	var ds build.DataSource
 	defer func() {
 		err := ds.Close(ctx)
 		if err != nil {
@@ -237,7 +237,7 @@ func TestBuild_EdgeRule_solibs(t *testing.T) {
 	ctx := t.Context()
 	dir := tempDir(t)
 
-	runNinjaTest := func(t *testing.T, ds ninja.DataSource) (build.Stats, error) {
+	runNinjaTest := func(t *testing.T, ds build.DataSource) (build.Stats, error) {
 		t.Helper()
 		opt, graph, cleanup := setupBuild(ctx, t, dir, hashfs.Option{
 			StateFile:  ".siso_fs_state",
@@ -295,7 +295,7 @@ func TestBuild_EdgeRule_solibs(t *testing.T) {
 			}, nil
 		},
 	}
-	var ds ninja.DataSource
+	var ds build.DataSource
 	defer func() {
 		err := ds.Close(ctx)
 		if err != nil {
@@ -343,7 +343,7 @@ func TestBuild_EdgeRule_solibs_recursive(t *testing.T) {
 	ctx := t.Context()
 	dir := tempDir(t)
 
-	runNinjaTest := func(t *testing.T, ds ninja.DataSource) (build.Stats, error) {
+	runNinjaTest := func(t *testing.T, ds build.DataSource) (build.Stats, error) {
 		t.Helper()
 		opt, graph, cleanup := setupBuild(ctx, t, dir, hashfs.Option{
 			StateFile:  ".siso_fs_state",
@@ -402,7 +402,7 @@ func TestBuild_EdgeRule_solibs_recursive(t *testing.T) {
 			}, nil
 		},
 	}
-	var ds ninja.DataSource
+	var ds build.DataSource
 	defer func() {
 		err := ds.Close(ctx)
 		if err != nil {
@@ -450,7 +450,7 @@ func TestBuild_EdgeRule_stamp_solibs(t *testing.T) {
 	ctx := t.Context()
 	dir := tempDir(t)
 
-	runNinjaTest := func(t *testing.T, ds ninja.DataSource) (build.Stats, error) {
+	runNinjaTest := func(t *testing.T, ds build.DataSource) (build.Stats, error) {
 		t.Helper()
 		opt, graph, cleanup := setupBuild(ctx, t, dir, hashfs.Option{
 			StateFile:  ".siso_fs_state",
@@ -510,7 +510,7 @@ func TestBuild_EdgeRule_stamp_solibs(t *testing.T) {
 		},
 	}
 
-	var ds ninja.DataSource
+	var ds build.DataSource
 	defer func() {
 		err := ds.Close(ctx)
 		if err != nil {
