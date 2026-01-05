@@ -273,7 +273,7 @@ func doBuild(ctx context.Context, graph *Graph, bopts build.Options, nopts RunNi
 	defer cancel()
 	if nopts.EnableStatusz {
 		go func() {
-			err := newStatuszServer(hctx, b, stateDir)
+			err := build.NewStatuszServer(hctx, b, stateDir)
 			if err != nil {
 				clog.Warningf(ctx, "statusz: %v", err)
 			}

@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-package ninjabuild
+package build
 
 import (
 	"context"
@@ -13,11 +13,10 @@ import (
 	"os"
 	"path/filepath"
 
-	"go.chromium.org/build/siso/build"
 	"go.chromium.org/build/siso/o11y/clog"
 )
 
-func newStatuszServer(ctx context.Context, b *build.Builder, dir string) error {
+func NewStatuszServer(ctx context.Context, b *Builder, dir string) error {
 	mux := http.NewServeMux()
 
 	mux.Handle("/api/active_steps", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
