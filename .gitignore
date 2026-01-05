@@ -10,6 +10,7 @@
 # People with misconfigured global ignores:
 *.pyc
 *.sublime-*
+*.iml
 .DS_Store
 .coverage
 .expect_tests_coverage*
