@@ -8,6 +8,7 @@ import (
 	"container/heap"
 	"context"
 	"fmt"
+	"math"
 	"sort"
 	"strings"
 	"sync"
@@ -281,7 +282,8 @@ func (p *progress) step(b *Builder, step *Step, s string) {
 		}
 		var cacheHitRatio string
 		if stat.Remote+stat.CacheHit > 0 {
-			cacheHitRatio = fmt.Sprintf("cache:%5.02f%% ", float64(stat.CacheHit)/float64(stat.CacheHit+stat.Remote)*100.0)
+			// Use floor to avoid rounding up to 100% when there are cache misses.
+			cacheHitRatio = fmt.Sprintf("cache:%5.02f%% ", math.Floor(float64(stat.CacheHit)/float64(stat.CacheHit+stat.Remote)*10000)/100.0)
 		}
 		var fallback string
 		if stat.LocalFallback > 0 {
