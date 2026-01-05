@@ -569,17 +569,10 @@ func (c *Command) Run(ctx context.Context) (stats build.Stats, err error) {
 
 	graph := ninjabuild.NewGraph(ctx, c.fname, nstate, config, buildPath, hashFS, stepConfig, localDepsLog)
 
-	var lastFailedTargets []string
-	if c.fastLastFailure && !c.clobber {
-		lastFailedTargets, _ = checkTargets(ctx, c.failedTargetsFilePath(), targets)
-		if len(lastFailedTargets) > 0 {
-			bopts.LastFailureTargets = lastFailedTargets
-			ui.Default.PrintLines(fmt.Sprintf(ui.SGR(ui.Yellow, "Prioritizing last failed targets: %s\n"), lastFailedTargets))
-		}
-	}
-	err = os.Remove(c.failedTargetsFilePath())
-	if err != nil && !errors.Is(err, fs.ErrNotExist) {
-		clog.Warningf(ctx, "failed to remove %s: %v", c.failedTargetsFilePath(), err)
+	lastFailedTargets := c.loadLastFailedTargets(ctx, targets)
+	if len(lastFailedTargets) > 0 {
+		bopts.LastFailureTargets = lastFailedTargets
+		ui.Default.PrintLines(fmt.Sprintf(ui.SGR(ui.Yellow, "Prioritizing last failed targets: %s\n"), lastFailedTargets))
 	}
 
 	err = c.writeSisoMetadata(metricsLabels, targets)
@@ -624,7 +617,7 @@ func (c *Command) saveFailedTargetsAndCommand(ctx context.Context, errPtr *error
 		// store failed targets only when build steps failed.
 		// i.e., don't store with error like context canceled, etc.
 		clog.Infof(ctx, "record failed targets: %q", stepError.Target)
-		serr := saveTargets(c.failedTargetsFilePath(), *targetsPtr, []string{stepError.Target})
+		serr := c.saveLastFailedTargets(*targetsPtr, []string{stepError.Target})
 		if serr != nil {
 			clog.Warningf(ctx, "failed to save failed targets: %v", serr)
 			return
@@ -738,7 +731,7 @@ func loadTargets(targetsFile string) ([]string, []string, error) {
 	return last.Targets, last.Failed, nil
 }
 
-func saveTargets(targetsFile string, targets, failed []string) error {
+func (c *Command) saveLastFailedTargets(targets, failed []string) error {
 	v := lastTargets{
 		Targets: targets,
 		Failed:  failed,
@@ -747,30 +740,41 @@ func saveTargets(targetsFile string, targets, failed []string) error {
 	if err != nil {
 		return fmt.Errorf("marshal last targets: %w", err)
 	}
-	err = os.WriteFile(targetsFile, buf, 0644)
+	err = os.WriteFile(c.failedTargetsFilePath(), buf, 0644)
 	if err != nil {
 		return fmt.Errorf("save last targets: %w", err)
 	}
 	return nil
 }
 
-func checkTargets(ctx context.Context, lastTargetsFilename string, targets []string) ([]string, bool) {
-	lastTargets, failed, err := loadTargets(lastTargetsFilename)
+// loadLastFailedTargets loads .siso_failed_targets and return the last failed targets
+// if the last targets matches with the current targets.
+func (c *Command) loadLastFailedTargets(ctx context.Context, targets []string) []string {
+	defer func() {
+		err := os.Remove(c.failedTargetsFilePath())
+		if err != nil && !errors.Is(err, fs.ErrNotExist) {
+			clog.Warningf(ctx, "failed to remove %s: %v", c.failedTargetsFilePath(), err)
+		}
+	}()
+	if !c.fastLastFailure || c.clobber {
+		return nil
+	}
+	lastTargets, failedTargets, err := loadTargets(c.failedTargetsFilePath())
 	if err != nil {
 		clog.Warningf(ctx, "checkTargets: %v", err)
-		return nil, false
+		return nil
 	}
 	if len(targets) != len(lastTargets) {
-		return nil, false
+		return nil
 	}
 	sort.Strings(targets)
 	sort.Strings(lastTargets)
 	for i := range targets {
 		if targets[i] != lastTargets[i] {
-			return nil, false
+			return nil
 		}
 	}
-	return failed, true
+	return failedTargets
 }
 
 func argsGN(args, key string) string {
