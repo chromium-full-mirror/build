@@ -776,27 +776,3 @@ func (c *Command) loadLastFailedTargets(ctx context.Context, targets []string) [
 	}
 	return failedTargets
 }
-
-func argsGN(args, key string) string {
-	for line := range strings.SplitSeq(args, "\n") {
-		i := strings.Index(line, "#")
-		if i >= 0 {
-			line = line[:i]
-		}
-		line = strings.TrimSpace(line)
-		if line == "" {
-			continue
-		}
-		if !strings.HasPrefix(line, key) {
-			continue
-		}
-		value := strings.TrimPrefix(line, key)
-		value = strings.TrimSpace(value)
-		if !strings.HasPrefix(value, "=") {
-			continue
-		}
-		value = strings.TrimPrefix(value, "=")
-		return strings.TrimSpace(value)
-	}
-	return ""
-}
