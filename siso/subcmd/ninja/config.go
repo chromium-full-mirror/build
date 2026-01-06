@@ -246,8 +246,8 @@ func (c *Command) SetFlags(flagSet *flag.FlagSet) {
 	flagSet.DurationVar(&c.traceThreshold, "trace_threshold", 1*time.Minute, "threshold for trace record")
 	flagSet.DurationVar(&c.traceSpanThreshold, "trace_span_threshold", 100*time.Millisecond, "theshold for trace span record")
 
-	flagSet.BoolVar(&c.enableCollector, "enable_collector", false, "enable OTEL collector")
-	flagSet.StringVar(&c.collectorAddress, "collector_address", "127.0.0.1:4317", "address to dial the collector. Can be path for unix socket unix:///path/to/socket or host:port.")
+	flagSet.BoolVar(&c.enableCollector, "enable_collector", false, "enable OTEL collector. Effectively not active, will be removed later. TODO: b/455433899.")
+	flagSet.StringVar(&c.collectorAddress, "collector_address", os.Getenv("SISO_COLLECTOR_ADDRESS"), "address to dial the collector. Can be path for unix socket unix:///path/to/socket or host:port.")
 	flagSet.BoolVar(&c.enableCloudLogging, "enable_cloud_logging", false, "enable cloud logging")
 	flagSet.BoolVar(&c.enableResultstore, "enable_resultstore", false, "enable resultstore")
 	flagSet.BoolVar(&c.enableCloudProfiler, "enable_cloud_profiler", false, "enable cloud profiler")
@@ -426,7 +426,7 @@ func (c *Command) enableOfflineMode(ctx context.Context) {
 	c.reopt = new(reapi.Option)
 	c.reopt.Insecure = true
 	c.projectID = ""
-	c.enableCollector = false
+	c.collectorAddress = ""
 	c.enableCloudLogging = false
 	c.enableResultstore = false
 	c.enableCloudProfiler = false

@@ -198,13 +198,13 @@ var defaultFormatter = func(e logging.Entry) string {
 }
 
 // New creates a new Logger.
-func New(ctx context.Context, client *logging.Client, logID, accessLogID string, res *mrpb.MonitoredResource, enableCollector bool, collectorAddr string, opts ...logging.LoggerOption) (*Logger, error) {
+func New(ctx context.Context, client *logging.Client, logID, accessLogID string, res *mrpb.MonitoredResource, collectorAddr string, opts ...logging.LoggerOption) (*Logger, error) {
 	var otelLogger otelog.Logger
 	var otelProvider *sdklog.LoggerProvider
 	var otelGRPCConn *grpc.ClientConn
 	directClient := client
 
-	if enableCollector {
+	if collectorAddr != "" {
 		conn, provider, logger, err := newOtelCollectorClient(ctx, collectorAddr, res)
 		if err != nil {
 			glog.Warningf("OTEL collector init failed, falling back to cloud logging: %v", err)

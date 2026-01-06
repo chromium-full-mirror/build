@@ -54,7 +54,7 @@ func (*Command) Usage() string {
 
 func (c *Command) SetFlags(flagSet *flag.FlagSet) {
 	flagSet.StringVar(&c.projectID, "project", os.Getenv("SISO_PROJECT"), "cloud project ID. can be set by $SISO_PROJECT")
-	flagSet.StringVar(&c.collectorAddress, "collector_address", "127.0.0.1:4317", `address to listen on for collector. Can be path for unix socket unix:///path/to/socket or host:port.`)
+	flagSet.StringVar(&c.collectorAddress, "collector_address", os.Getenv("SISO_COLLECTOR_ADDRESS"), `address to listen on for collector. Can be path for unix socket unix:///path/to/socket or host:port.`)
 }
 
 func (c *Command) Execute(ctx context.Context, f *flag.FlagSet, args ...any) subcommands.ExitStatus {

@@ -82,7 +82,7 @@ func (c *Command) initCloudLogging(ctx context.Context, projectID, execRoot stri
 			"location":   hostname,
 			"namespace":  execRoot,
 		},
-	}, c.enableCollector, c.collectorAddress)
+	}, c.collectorAddress)
 	if err != nil {
 		return ctx, "", func() {}, err
 	}
@@ -165,7 +165,7 @@ func (c *Command) initCloudMonitoring(ctx context.Context, credential cred.Cred,
 		return nil, err
 	}
 	var exporter smetric.Exporter
-	if c.enableCollector {
+	if c.collectorAddress != "" {
 		exporter = newOTELMetricsExporter(ctx, c.collectorAddress)
 	}
 	if exporter == nil {
