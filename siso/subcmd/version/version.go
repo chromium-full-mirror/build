@@ -51,10 +51,12 @@ func (*Command) Usage() string {
 type Command struct {
 	version string
 	cipdURL string
+	online  bool
 }
 
 func (c *Command) SetFlags(flagSet *flag.FlagSet) {
 	flagSet.StringVar(&c.cipdURL, "cipd_url", "", "show version info for this cipd URL.")
+	flagSet.BoolVar(&c.online, "online", true, "get information from CIPD and Git repo.")
 }
 
 func (c *Command) Execute(ctx context.Context, flagSet *flag.FlagSet, _ ...any) subcommands.ExitStatus {
@@ -88,7 +90,7 @@ func (c *Command) Execute(ctx context.Context, flagSet *flag.FlagSet, _ ...any) 
 				fmt.Printf("build\t%s=%s\n", k, v)
 			}
 		}
-		if cipdURL == "" || !ver.IsProdCIPD() {
+		if cipdURL == "" || !ver.IsProdCIPD() || c.online {
 			// no need to check version from cipdURL.
 			return 0
 		}
