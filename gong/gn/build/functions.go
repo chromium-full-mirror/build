@@ -13,8 +13,9 @@ import (
 func FunctionMap(buildSettings *BuildSettings, settings *Settings) map[string]resolve.FunctionInfo {
 	return map[string]resolve.FunctionInfo{
 		// All functions here that receive *Settings are expected to handle nil.
-		"assert":       resolve.AssertFunction{},
-		"rebase_path":  &rebasePathFunction{buildSettings: buildSettings},
-		"set_defaults": &setDefaultsFunction{settings: settings},
+		"assert":                resolve.AssertFunction{},
+		"rebase_path":           &rebasePathFunction{buildSettings: buildSettings},
+		"set_defaults":          &setDefaultsFunction{settings: settings},
+		"set_default_toolchain": &setDefaultToolchainFunction{},
 	}
 }
