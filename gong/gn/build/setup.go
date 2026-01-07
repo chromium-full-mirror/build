@@ -297,11 +297,14 @@ func (s *Setup) fillOtherConfig() error {
 	// Root build file.
 	// TODO: implement i.e. read the "root" value or cmdline flag if provided
 	// For now, just assume it's at //BUILD.gn
-	rootTargetLabel := Label{dir: "//"}
+	rootDir, err := fs.MakeSourceDir("//")
+	if err != nil {
+		return fmt.Errorf("failed to init root build.gn")
+	}
+	rootTargetLabel := Label{dir: rootDir}
 
 	// Set the root build file here in order to take into account the values of
 	// "build_file_extension" and "root".
-	var err error
 	s.rootBuildFile, err = s.loader.buildFileForLabel(rootTargetLabel)
 	if err != nil {
 		return fmt.Errorf("failed to init root build.gn")

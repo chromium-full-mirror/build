@@ -19,6 +19,10 @@ import (
 // Two slashes at the beginning indicate a path relative to the source root.
 type SourceDir struct {
 	value unique.Handle[string]
+	// Unfortunately unique.Handle doesn't support checking initialization yet
+	// (see https://github.com/golang/go/issues/73266), so until it does use this
+	// flag to ensure methods don't cause nil panic.
+	hasValue bool
 }
 
 // MakeSourceDir creates a source dir representation from a path string.
@@ -36,11 +40,13 @@ func MakeSourceDir(value string) (SourceDir, error) {
 func makeSourceDirInternal(value string) SourceDir {
 	if !endsWithSlash(value) {
 		return SourceDir{
-			value: unique.Make(value + "/"),
+			value:    unique.Make(value + "/"),
+			hasValue: true,
 		}
 	}
 	return SourceDir{
-		value: unique.Make(value),
+		value:    unique.Make(value),
+		hasValue: true,
 	}
 }
 
@@ -48,6 +54,9 @@ func makeSourceDirInternal(value string) SourceDir {
 //
 // This is equivalent to C++ GN's SourceDir::value().
 func (d SourceDir) Path() string {
+	if !d.hasValue {
+		return ""
+	}
 	return d.value.Value()
 }
 
@@ -96,4 +105,23 @@ func (d SourceDir) ResolveRelativeDir(path string) (SourceDir, error) {
 	// Simple string concatenation is safe here because SourceDir always ends in /
 	// and we know path does not start with /, and NormalizePath will handle ".." resolution.
 	return MakeSourceDir(NormalizePath(d.value.Value() + path))
+}
+
+// Empty returns true if there is no directory.
+func (d SourceDir) Empty() bool {
+	return !d.hasValue || d.value.Value() == ""
+}
+
+// WithNoTrailingSlash returns a path that does not end with a slash.
+func (d SourceDir) WithNoTrailingSlash() string {
+	if !d.hasValue {
+		return ""
+	}
+	path := d.value.Value()
+	// Be careful not to trim if the input is just "/" or "//".
+	// Source dirs begin and end in slashes, so len <= 2 is always "/" or "//".
+	if len(path) > 2 {
+		return path[:len(path)-1]
+	}
+	return path
 }

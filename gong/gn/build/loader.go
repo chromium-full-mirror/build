@@ -66,7 +66,7 @@ func MakeLoader(buildSettings *BuildSettings, inputFileManager *fs.InputFileMana
 }
 
 func (l *Loader) buildFileForLabel(label Label) (fs.SourceFile, error) {
-	return fs.MakeSourceFile(label.dir + "BUILD" + l.buildFileExtension + ".gn")
+	return fs.MakeSourceFile(label.dir.Path() + "BUILD" + l.buildFileExtension + ".gn")
 }
 
 // Load schedules a file load, noting down where the load came from.
@@ -86,7 +86,7 @@ func (l *Loader) Load(file fs.SourceFile, origin syntax.LocationRange, intoToolc
 		// Nothing loaded, need to load the default build config. The initial load
 		// should not specify a toolchain.
 		if intoToolchain != (Label{}) {
-			return fmt.Errorf("can't load into toolchain %q before default build config is loaded", intoToolchain)
+			return fmt.Errorf("can't load into toolchain %q before default build config is loaded", intoToolchain.UserVisibleString(false))
 		}
 		record := newToolchainRecord(l)
 		l.toolchains[Label{}] = record
