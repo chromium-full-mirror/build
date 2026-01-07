@@ -85,12 +85,14 @@ func TestRebasePathFunction(t *testing.T) {
 			wantErrKind: syntax.ErrNotImplemented,
 		},
 		{
-			name: "relative input not implemented",
+			name: "relative input",
 			args: []resolve.Value{
 				resolve.NewOriginlessStringValue("foo/bar.txt"),
 				resolve.NewOriginlessStringValue("//foo/"),
 			},
-			wantErrKind: syntax.ErrNotImplemented,
+			// For prototype purposes, we assume Scope always has // as its current dir.
+			// Therefore we are resolving // + foo/bar.txt = //foo/bar.txt relative to //foo/.
+			want: "bar.txt",
 		},
 		{
 			name: "empty new_base not implemented",
@@ -101,12 +103,14 @@ func TestRebasePathFunction(t *testing.T) {
 			wantErrKind: syntax.ErrNotImplemented,
 		},
 		{
-			name: "relative new_base not implemented",
+			name: "relative new_base",
 			args: []resolve.Value{
 				resolve.NewOriginlessStringValue("//foo/bar.txt"),
-				resolve.NewOriginlessStringValue("foo/"),
+				resolve.NewOriginlessStringValue("baz/"),
 			},
-			wantErrKind: syntax.ErrNotImplemented,
+			// For prototype purposes, we assume Scope always has // as its current dir.
+			// Therefore we are resolving relative to // + baz/ = //baz/.
+			want: "../foo/bar.txt",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

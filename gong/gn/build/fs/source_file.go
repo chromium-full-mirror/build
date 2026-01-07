@@ -37,6 +37,15 @@ func (s SourceFile) Filename() string {
 	return s.value.Value()
 }
 
+// Dir returns the directory containing this file.
+func (s SourceFile) Dir() SourceDir {
+	// SourceFile guarantees value starts with / and does not end with /.
+	// Thus there is always at least one slash.
+	f := s.Filename()
+	lastSlash := strings.LastIndex(f, "/")
+	return makeSourceDirInternal(f[:lastSlash+1])
+}
+
 // Resolve resolves this source file relative to some given source root.
 // (This does not have to be the source root of the build tree.)
 func (s SourceFile) Resolve(sourceRoot string) string {

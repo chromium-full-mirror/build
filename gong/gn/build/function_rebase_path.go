@@ -5,7 +5,10 @@
 package build
 
 import (
+	"fmt"
+	"os"
 	"path/filepath"
+	"strings"
 
 	"go.chromium.org/build/gong/gn/build/fs"
 	"go.chromium.org/build/gong/gn/parse"
@@ -118,6 +121,10 @@ func (f *rebasePathFunction) Run(scope *resolve.Scope, call *parse.FunctionCallN
 		return nil, call.Function.MakeError(syntax.ErrArgumentCount, "Wrong # of arguments for rebase_path.")
 	}
 
+	// TODO: need Scope to know current path i.e. what BUILD.gn we are reading.
+	// For now, assume root.
+	currentDir, _ := fs.MakeSourceDir("//")
+
 	switch v := args[0].(type) {
 	case *resolve.ListValue:
 		return nil, call.Function.MakeError(syntax.ErrNotImplemented,
@@ -126,9 +133,22 @@ func (f *rebasePathFunction) Run(scope *resolve.Scope, call *parse.FunctionCallN
 	case *resolve.StringValue:
 		path := v.RawGNString()
 		if !fs.IsPathSourceAbsolute(path) && !filepath.IsAbs(path) {
-			// TODO: need Scope to know current path i.e. what BUILD.gn we are reading
-			return nil, call.Function.MakeErrorWithHelp(syntax.ErrNotImplemented,
-				"Relative input in rebase_path is not implemented yet.", "")
+			fmt.Fprintf(os.Stderr, "warn: relative path in rebase_path is not correctly implemented yet. this will be treated as relative to //.\n")
+			// TODO: this is a really rudimentary check. we probably need to switch to something like ValueLooksLikeDir.
+			// https://source.chromium.org/gn/gn/+/main:src/gn/function_rebase_path.cc;l=69;drc=ab32747ae7a399c57b04280f38e49b8fdf237a8a
+			if strings.HasSuffix(path, "/") {
+				sourceDir, err := currentDir.ResolveRelativeDir(path)
+				if err != nil {
+					return nil, err
+				}
+				path = sourceDir.Path()
+			} else {
+				sourceFile, err := currentDir.ResolveRelativeFile(path)
+				if err != nil {
+					return nil, err
+				}
+				path = sourceFile.Filename()
+			}
 		}
 
 		var newBase string
@@ -143,13 +163,17 @@ func (f *rebasePathFunction) Run(scope *resolve.Scope, call *parse.FunctionCallN
 			return nil, call.Function.MakeError(syntax.ErrNotImplemented,
 				"Empty new_base in rebase_path is not implemented yet.")
 		}
-		if !fs.IsPathSourceAbsolute(newBase) && !filepath.IsAbs(newBase) {
-			// TODO: need Scope to know current path i.e. what BUILD.gn we are reading
-			return nil, call.Function.MakeErrorWithHelp(syntax.ErrNotImplemented,
-				"Relative new_base in rebase_path is not implemented yet.", "")
+
+		destDir, err := currentDir.ResolveRelativeDir(newBase)
+		if err != nil {
+			return nil, err
 		}
 
-		rebased, err := fs.RebasePath(path, newBase)
+		if !fs.IsPathSourceAbsolute(newBase) && !filepath.IsAbs(newBase) {
+			// TODO: need Scope to know current path i.e. what BUILD.gn we are reading
+			fmt.Fprintf(os.Stderr, "warn: relative new_base in rebase_path is not correctly implemented yet. this will be treated as relative to //.\n")
+		}
+		rebased, err := fs.RebasePath(path, destDir.Path())
 		if err != nil {
 			return nil, err
 		}
