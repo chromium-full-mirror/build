@@ -9,6 +9,8 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+
+	"go.chromium.org/build/siso/toolsupport/scandepsparams"
 )
 
 func TestScanDepsParams(t *testing.T) {
@@ -17,7 +19,7 @@ func TestScanDepsParams(t *testing.T) {
 		name string
 		args []string
 		env  []string
-		want ScanDepsParams
+		want scandepsparams.ScanDepsParams
 	}{
 		{
 			name: "clang-cl.exe",
@@ -41,7 +43,7 @@ func TestScanDepsParams(t *testing.T) {
 				"/FIcompat/msvcrt/snprintf.h",
 				"/Fdobj/base/base64_cc.pdb",
 			},
-			want: ScanDepsParams{
+			want: scandepsparams.ScanDepsParams{
 				Sources: []string{
 					"../../base/base64.cc",
 				},
@@ -79,7 +81,7 @@ func TestScanDepsParams(t *testing.T) {
 				"/winsysroot../../third_party/depot_tools/win_toolchain/vs_files/27370823e7",
 				"-fsanitize-ignorelist=../../tools/cfi/ignores.txt",
 			},
-			want: ScanDepsParams{
+			want: scandepsparams.ScanDepsParams{
 				Sources: []string{
 					"../../base/base64.cc",
 				},
@@ -106,7 +108,7 @@ func TestScanDepsParams(t *testing.T) {
 				"/winsysroot../../third_party/depot_tools/win_toolchain/vs_files/27370823e7",
 				"-fprofile-use=../../chrome/build/pgo_profiles/chrome-win-main-1711928897-084d26c5015f903804b549b12d02ae8f183b9b65-b852f373c4dd312c572a9f1c95892c4a12f81e13.profdata",
 			},
-			want: ScanDepsParams{
+			want: scandepsparams.ScanDepsParams{
 				Sources: []string{
 					"../../base/base64.cc",
 				},
@@ -136,7 +138,7 @@ func TestScanDepsParams(t *testing.T) {
 				"-fmodule-file=obj/buildtools/third_party/libc++/_Builtin_stddef/module.pcm",
 				"-fmodule-file=std=obj/buildtools/third_party/libc++/std/module.pcm",
 			},
-			want: ScanDepsParams{
+			want: scandepsparams.ScanDepsParams{
 				Sources: []string{
 					"../../base/base64.cc",
 				},

@@ -23,6 +23,7 @@ import (
 	"go.chromium.org/build/siso/reapi/merkletree"
 	"go.chromium.org/build/siso/scandeps"
 	"go.chromium.org/build/siso/toolsupport/msvcutil"
+	"go.chromium.org/build/siso/toolsupport/scandepsparams"
 )
 
 type depsMSVC struct {
@@ -222,59 +223,20 @@ func (depsMSVC) scandeps(ctx context.Context, b *Builder, step *Step) ([]string,
 			return err
 		}
 		// externals stores non local paths.
-		var externals []string
 		if len(params.Sources) == 0 {
 			// If ExtractScanDepsParams doesn't return Sources, such action uses inputs from ninja build file directly, as the action doesn't need include scanning.
 			// e.g. clang modules, rust and etc.
 			return nil
 		}
 
-		for i := range params.Sources {
-			params.Sources[i] = b.path.MaybeFromWD(ctx, params.Sources[i])
-			if !filepath.IsLocal(params.Sources[i]) {
-				externals = append(externals, params.Sources[i])
-			}
-		}
-		// no need to canonicalize path for Includes.
-		// it should be used as is for `#include "pathname.h"`
-		for i := range params.Files {
-			params.Files[i] = b.path.MaybeFromWD(ctx, params.Files[i])
-			if !filepath.IsLocal(params.Files[i]) {
-				externals = append(externals, params.Files[i])
-			}
-		}
-		for i := range params.Dirs {
-			params.Dirs[i] = b.path.MaybeFromWD(ctx, params.Dirs[i])
-			if !filepath.IsLocal(params.Dirs[i]) {
-				externals = append(externals, params.Dirs[i])
-			}
-		}
-		for i := range params.QuoteDirs {
-			params.QuoteDirs[i] = b.path.MaybeFromWD(ctx, params.QuoteDirs[i])
-		}
-		for i := range params.Sysroots {
-			params.Sysroots[i] = b.path.MaybeFromWD(ctx, params.Sysroots[i])
-			if !filepath.IsLocal(params.Sysroots[i]) {
-				externals = append(externals, params.Sysroots[i])
-			}
-		}
-		if !step.cmd.UseSystemInput && len(externals) > 0 {
-			n := len(externals)
-			v := externals[:min(len(externals), 5)]
-			return fmt.Errorf("%w %d %q...: platform=%q", errNotUnderExecRoot, n, v, step.cmd.Platform)
-		}
-		req := scandeps.Request{
-			Defines:   params.Defines,
-			Sources:   params.Sources,
-			Includes:  params.Includes,
-			Dirs:      params.Dirs,
-			QuoteDirs: params.QuoteDirs,
-			Sysroots:  params.Sysroots,
-			Timeout:   step.cmd.Timeout,
-		}
+		timeout := step.cmd.Timeout
 		if !b.localFallbackEnabled() {
 			// no-fallback has longer timeout for scandeps
-			req.Timeout = 2 * req.Timeout
+			timeout = 2 * timeout
+		}
+		req, err := createScandepsRequestMSVC(ctx, b.path, params, step.cmd.Platform, step.cmd.UseSystemInput, timeout)
+		if err != nil {
+			return err
 		}
 		if log.V(1) {
 			clog.Infof(ctx, "scandeps req=%#v", req)
@@ -290,7 +252,7 @@ func (depsMSVC) scandeps(ctx context.Context, b *Builder, step *Step) ([]string,
 			return err
 		}
 		ins = append(ins, params.Files...)
-		return err
+		return nil
 	})
 	if err != nil {
 		return nil, err
@@ -420,4 +382,48 @@ func (depsMSVC) scandepsByClang(ctx context.Context, b *Builder, step *Step) ([]
 	}
 	return inputs, nil
 
+}
+
+func createScandepsRequestMSVC(ctx context.Context, p *Path, params scandepsparams.ScanDepsParams, platform map[string]string, allowExternals bool, timeout time.Duration) (scandeps.Request, error) {
+	// externals stores non local paths.
+	var externals []string
+	canonicalize := func(s string) string {
+		s = p.MaybeFromWD(ctx, s)
+		if !filepath.IsLocal(s) {
+			externals = append(externals, s)
+		}
+		return s
+	}
+	for i, s := range params.Sources {
+		params.Sources[i] = canonicalize(s)
+	}
+	// no need to canonicalize path for Includes.
+	// it should be used as is for `#include "pathname.h"`
+	for i, s := range params.Files {
+		params.Files[i] = canonicalize(s)
+	}
+	for i, s := range params.Dirs {
+		params.Dirs[i] = canonicalize(s)
+	}
+	for i, s := range params.QuoteDirs {
+		params.QuoteDirs[i] = canonicalize(s)
+	}
+	for i, s := range params.Sysroots {
+		params.Sysroots[i] = canonicalize(s)
+	}
+
+	if len(externals) > 0 && !allowExternals {
+		v := externals[:min(len(externals), 5)]
+		return scandeps.Request{}, fmt.Errorf("%w %d %q...: platform=%q", errNotUnderExecRoot, len(externals), v, platform)
+	}
+	req := scandeps.Request{
+		Defines:   params.Defines,
+		Sources:   params.Sources,
+		Includes:  params.Includes,
+		Dirs:      params.Dirs,
+		QuoteDirs: params.QuoteDirs,
+		Sysroots:  params.Sysroots,
+		Timeout:   timeout,
+	}
+	return req, nil
 }

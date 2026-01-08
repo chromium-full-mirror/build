@@ -13,35 +13,9 @@ import (
 	"slices"
 	"strings"
 
+	"go.chromium.org/build/siso/toolsupport/scandepsparams"
 	"go.chromium.org/build/siso/toolsupport/shutil"
 )
-
-// ScanDepsParams holds parameters used for scandeps.
-type ScanDepsParams struct {
-	// Sources are source files.
-	Sources []string
-
-	// Includes are include files by -include.
-	Includes []string
-
-	// Files are input files, such as sanitaizer ignore list.
-	Files []string
-
-	// Dirs are include directories.
-	Dirs []string
-
-	// QuoteDirs are include directories specified by -iquote.
-	QuoteDirs []string
-
-	// Frameworks are framework directories.
-	Frameworks []string
-
-	// Sysroots are sysroot directories and toolchain root directories.
-	Sysroots []string
-
-	// Defines are defined macros.
-	Defines map[string]string
-}
 
 // stepArgs in ninjabuild uses "/bin/sh -c $command" when
 // $command is not simple command line.
@@ -69,8 +43,8 @@ func normalizeArgs(args []string) ([]string, error) {
 // It reads @rspfile via fsys.
 // Full set of command line flags for include dirs can be found in
 // https://clang.llvm.org/docs/ClangCommandLineReference.html#include-path-management
-func ExtractScanDepsParams(ctx context.Context, args, env []string, fsys fs.FS) (ScanDepsParams, error) {
-	res := ScanDepsParams{
+func ExtractScanDepsParams(ctx context.Context, args, env []string, fsys fs.FS) (scandepsparams.ScanDepsParams, error) {
+	res := scandepsparams.ScanDepsParams{
 		Defines: make(map[string]string),
 	}
 	args, err := normalizeArgs(args)

@@ -10,6 +10,8 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+
+	"go.chromium.org/build/siso/toolsupport/scandepsparams"
 )
 
 func TestScanDepsParams(t *testing.T) {
@@ -18,7 +20,7 @@ func TestScanDepsParams(t *testing.T) {
 		name string
 		args []string
 		env  []string
-		want ScanDepsParams
+		want scandepsparams.ScanDepsParams
 	}{
 		{
 			name: "clang++",
@@ -42,7 +44,7 @@ func TestScanDepsParams(t *testing.T) {
 				"-o",
 				"obj/base/base/base64.o",
 			},
-			want: ScanDepsParams{
+			want: scandepsparams.ScanDepsParams{
 				Sources: []string{
 					"../../base/base64.cc",
 				},
@@ -81,7 +83,7 @@ func TestScanDepsParams(t *testing.T) {
 				"-o",
 				"obj/base/base/base64.o",
 			},
-			want: ScanDepsParams{
+			want: scandepsparams.ScanDepsParams{
 				Sources: []string{
 					"../../base/base64.cc",
 				},
@@ -115,7 +117,7 @@ func TestScanDepsParams(t *testing.T) {
 				"-o",
 				"obj/third_party/abseil-cpp/absl/strings/str_format_internal/arg.o",
 			},
-			want: ScanDepsParams{
+			want: scandepsparams.ScanDepsParams{
 				Sources: []string{
 					"../../third_party/abseil-cpp/absl/strings/internal/str_format/arg.cc",
 				},
@@ -155,7 +157,7 @@ func TestScanDepsParams(t *testing.T) {
 				"-o",
 				"obj/base/test/goolge_test_runner/goolge_test_runner.o",
 			},
-			want: ScanDepsParams{
+			want: scandepsparams.ScanDepsParams{
 				Sources: []string{
 					"../../base/test/ios/google_test_runner.mm",
 				},
@@ -190,7 +192,7 @@ func TestScanDepsParams(t *testing.T) {
 				"-o",
 				"obj/build/rust/tests/bindgen_static_fns_test/c_lib/lib.o",
 			},
-			want: ScanDepsParams{
+			want: scandepsparams.ScanDepsParams{
 				Sources: []string{
 					"../../build/rust/tests/bindgen_static_fns_test/lib.c",
 				},
@@ -218,7 +220,7 @@ func TestScanDepsParams(t *testing.T) {
 				"-o",
 				"obj/third_party/nasm/nasm/stdscan.o",
 			},
-			want: ScanDepsParams{
+			want: scandepsparams.ScanDepsParams{
 				Sources: []string{
 					"../../third_party/nasm/asm/stdscan.c",
 				},
@@ -245,7 +247,7 @@ func TestScanDepsParams(t *testing.T) {
 				"-o",
 				"android_clang_arm/obj/skia/skia_core_and_effects/SkRecords.o",
 			},
-			want: ScanDepsParams{
+			want: scandepsparams.ScanDepsParams{
 				Sources: []string{
 					"../../third_party/skia/src/core/SkRecords.cpp",
 				},
@@ -278,7 +280,7 @@ func TestScanDepsParams(t *testing.T) {
 				"-o",
 				"obj/third_party/boringssl/boringssl/a_object.o",
 			},
-			want: ScanDepsParams{
+			want: scandepsparams.ScanDepsParams{
 				Sources: []string{
 					"../../third_party/boringssl/src/crypto/asn1/a_object.cc",
 				},
@@ -303,7 +305,7 @@ func TestScanDepsParams(t *testing.T) {
 				"-c",
 				"PWD=/proc/self/cwd prebuilts/clang/host/linux-x86/clang-r563880/bin/clang -c -Wa,--noexecstack -fPIC --gcc-toolchain=prebuilts/gcc/linux-x86/host/x86_64-linux-glibc2.17-4.8 --sysroot prebuilts/gcc/linux-x86/host/x86_64-linux-glibc2.17-4.8/sysroot -O2 -Wall -no-canonical-prefixes -fdebug-prefix-map=/proc/self/cwd= -Iexternal/boringssl/src/include  --include=warning_override_overrider.h -fprofile-list=external/cronet/exclude_coverage.list -MD -MF out/soong/.intermediates/external/boringssl/libcrypto/linux_glibc_x86_static/obj/external/boringssl/src/gen/bcm/aesni-x86_64-linux.o.d -o out/soong/.intermediates/external/boringssl/libcrypto/linux_glibc_x86_static/obj/external/boringssl/src/gen/bcm/aesni-x86_64-linux.o external/boringssl/src/gen/bcm/aesni-x86_64-linux.S",
 			},
-			want: ScanDepsParams{
+			want: scandepsparams.ScanDepsParams{
 				Sources: []string{
 					"external/boringssl/src/gen/bcm/aesni-x86_64-linux.S",
 				},
@@ -354,7 +356,7 @@ func TestScanDepsParams_Rspfile(t *testing.T) {
 		"-c",
 		"PWD=/proc/self/cwd prebuilts/clang/host/linux-x86/clang-r563880/bin/clang++ -c -nostdlibinc  -Werror=implicit-function-declaration @out/soong/.intermediates/frameworks/native/services/surfaceflinger/CompositionEngine/libcompositionengine_mocks/android_x86_64_silvermont_static/flags.txt  -MD -MF out/soong/.intermediates/frameworks/native/services/surfaceflinger/CompositionEngine/libcompositionengine_mocks/android_x86_64_silvermont_static/obj/frameworks/native/services/surfaceflinger/CompositionEngine/mock/RenderSurface.o.d -o out/soong/.intermediates/frameworks/native/services/surfaceflinger/CompositionEngine/libcompositionengine_mocks/android_x86_64_silvermont_static/obj/frameworks/native/services/surfaceflinger/CompositionEngine/mock/RenderSurface.o frameworks/native/services/surfaceflinger/CompositionEngine/mock/RenderSurface.cpp",
 	}
-	want := ScanDepsParams{
+	want := scandepsparams.ScanDepsParams{
 		Sources: []string{
 			"frameworks/native/services/surfaceflinger/CompositionEngine/mock/RenderSurface.cpp",
 		},

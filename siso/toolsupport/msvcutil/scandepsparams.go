@@ -14,35 +14,9 @@ import (
 	"strings"
 
 	"go.chromium.org/build/siso/toolsupport/cmdutil"
+	"go.chromium.org/build/siso/toolsupport/scandepsparams"
 	"go.chromium.org/build/siso/toolsupport/shutil"
 )
-
-// ScanDepsParams holds parameters used for scandeps.
-type ScanDepsParams struct {
-	// Sources are source files.
-	Sources []string
-
-	// Includes are include file specified by -include or /FI.
-	Includes []string
-
-	// Files are input files, such as sanitizer ignore list.
-	Files []string
-
-	// Dirs are include directories.
-	Dirs []string
-
-	// QuoteDirs are include directories specified by -iquote.
-	QuoteDirs []string
-
-	// Frameworks are framework directories.
-	Frameworks []string
-
-	// Sysroots are sysroot directories and toolchain root directories.
-	Sysroots []string
-
-	// Defines are defined macros.
-	Defines map[string]string
-}
 
 // ExtractScanDepsParams parses args and returns files, dirs, sysroots and defines
 // for scandeps.
@@ -51,8 +25,8 @@ type ScanDepsParams struct {
 // Full set of command line flags for include dirs can be found in
 // https://learn.microsoft.com/en-us/cpp/build/reference/compiler-options-listed-by-category?view=msvc-170
 // https://clang.llvm.org/docs/ClangCommandLineReference.html#include-path-management
-func ExtractScanDepsParams(ctx context.Context, args, env []string, fsys fs.FS) (ScanDepsParams, error) {
-	res := ScanDepsParams{
+func ExtractScanDepsParams(ctx context.Context, args, env []string, fsys fs.FS) (scandepsparams.ScanDepsParams, error) {
+	res := scandepsparams.ScanDepsParams{
 		Defines: make(map[string]string),
 	}
 	for i := 0; i < len(args); i++ {

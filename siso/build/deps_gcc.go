@@ -24,6 +24,7 @@ import (
 	"go.chromium.org/build/siso/scandeps"
 	"go.chromium.org/build/siso/toolsupport/gccutil"
 	"go.chromium.org/build/siso/toolsupport/makeutil"
+	"go.chromium.org/build/siso/toolsupport/scandepsparams"
 )
 
 type depsGCC struct {
@@ -214,101 +215,14 @@ func (depsGCC) scandeps(ctx context.Context, b *Builder, step *Step) ([]string, 
 			return nil
 		}
 
-		// externals stores non local paths.
-		// usually error, but can be used for scandeps for cros chroot case.
-		var externals []string
-		for i := range params.Sources {
-			params.Sources[i] = b.path.MaybeFromWD(ctx, params.Sources[i])
-			if !filepath.IsLocal(params.Sources[i]) {
-				externals = append(externals, params.Sources[i])
-			}
-		}
-		for i := range params.Includes {
-			params.Includes[i] = b.path.MaybeFromWD(ctx, params.Includes[i])
-			if !filepath.IsLocal(params.Includes[i]) {
-				externals = append(externals, params.Includes[i])
-			}
-		}
-		for i := range params.Files {
-			params.Files[i] = b.path.MaybeFromWD(ctx, params.Files[i])
-			if !filepath.IsLocal(params.Files[i]) {
-				externals = append(externals, params.Files[i])
-			}
-		}
-		for i := range params.Dirs {
-			params.Dirs[i] = b.path.MaybeFromWD(ctx, params.Dirs[i])
-			if !filepath.IsLocal(params.Dirs[i]) {
-				externals = append(externals, params.Dirs[i])
-			}
-		}
-		for i := range params.QuoteDirs {
-			params.QuoteDirs[i] = b.path.MaybeFromWD(ctx, params.QuoteDirs[i])
-			if !filepath.IsLocal(params.QuoteDirs[i]) {
-				externals = append(externals, params.QuoteDirs[i])
-			}
-		}
-		for i := range params.Frameworks {
-			params.Frameworks[i] = b.path.MaybeFromWD(ctx, params.Frameworks[i])
-			if !filepath.IsLocal(params.Frameworks[i]) {
-				externals = append(externals, params.Frameworks[i])
-			}
-		}
-		for i := range params.Sysroots {
-			params.Sysroots[i] = b.path.MaybeFromWD(ctx, params.Sysroots[i])
-			if !filepath.IsLocal(params.Sysroots[i]) {
-				externals = append(externals, params.Sysroots[i])
-			}
-		}
-		execRoot := b.path.ExecRoot
-		if !step.cmd.UseSystemInput && len(externals) > 0 {
-			if !step.cmd.RemoteChroot() {
-				n := len(externals)
-				v := externals[:min(len(externals), 5)]
-				return fmt.Errorf("%w %d %q...: platform=%q", errNotUnderExecRoot, n, v, step.cmd.Platform)
-			}
-			// Convert paths from relative to exec root to relative to /
-			// e.g.
-			//  execRoot: /path/to/chromium/src
-			//     path:  ../../../../usr/include
-			// ->
-			//  execRoot: /
-			//     path:  usr/include
-			execRoot = "/"
-			for i := range params.Sources {
-				params.Sources[i] = filepath.Join(b.path.ExecRoot, params.Sources[i])[1:]
-			}
-			for i := range params.Includes {
-				params.Includes[i] = filepath.Join(b.path.ExecRoot, params.Includes[i])[1:]
-			}
-			for i := range params.Files {
-				params.Files[i] = filepath.Join(b.path.ExecRoot, params.Files[i])[1:]
-			}
-			for i := range params.Dirs {
-				params.Dirs[i] = filepath.Join(b.path.ExecRoot, params.Dirs[i])[1:]
-			}
-			for i := range params.QuoteDirs {
-				params.QuoteDirs[i] = filepath.Join(b.path.ExecRoot, params.QuoteDirs[i])[1:]
-			}
-			for i := range params.Frameworks {
-				params.Frameworks[i] = filepath.Join(b.path.ExecRoot, params.Frameworks[i])[1:]
-			}
-			for i := range params.Sysroots {
-				params.Sysroots[i] = filepath.Join(b.path.ExecRoot, params.Sysroots[i])[1:]
-			}
-		}
-		req := scandeps.Request{
-			Defines:    params.Defines,
-			Sources:    params.Sources,
-			Includes:   params.Includes,
-			Dirs:       params.Dirs,
-			QuoteDirs:  params.QuoteDirs,
-			Frameworks: params.Frameworks,
-			Sysroots:   params.Sysroots,
-			Timeout:    step.cmd.Timeout,
-		}
+		timeout := step.cmd.Timeout
 		if !b.localFallbackEnabled() {
 			// no-fallback has longer timeout for scandeps
-			req.Timeout = 2 * req.Timeout
+			timeout = 2 * timeout
+		}
+		req, execRoot, err := createScanDepsRequestGCC(ctx, b.path, params, step.cmd.Platform, step.cmd.UseSystemInput, timeout)
+		if err != nil {
+			return err
 		}
 		if bool(log.V(1)) || debug {
 			buf, berr := json.Marshal(req)
@@ -328,7 +242,7 @@ func (depsGCC) scandeps(ctx context.Context, b *Builder, step *Step) ([]string, 
 			return err
 		}
 		ins = append(ins, params.Files...)
-		if len(externals) > 0 {
+		if execRoot != b.path.ExecRoot {
 			// make ins[i] full absolute paths.
 			for i := range ins {
 				ins[i] = filepath.Join(execRoot, ins[i])
@@ -383,4 +297,99 @@ func (gcc depsGCC) scandepsByClang(ctx context.Context, b *Builder, step *Step) 
 func (depsGCC) expandSymlinkDirs(ctx context.Context, b *Builder, inpath string) []string {
 	fsys := b.hashFS.FileSystem(ctx, b.path.ExecRoot)
 	return fsys.ExpandSymlinks(inpath)
+}
+
+func createScanDepsRequestGCC(ctx context.Context, p *Path, params scandepsparams.ScanDepsParams, platform map[string]string, allowExternals bool, timeout time.Duration) (scandeps.Request, string, error) {
+	// externals stores non local paths.
+	// usually error, but can be used for scandeps for cros chroot case.
+	var externals []string
+	canonicalize := func(s string) string {
+		s = p.MaybeFromWD(ctx, s)
+		if !filepath.IsLocal(s) {
+			externals = append(externals, s)
+		}
+		return s
+	}
+	for i, s := range params.Sources {
+		params.Sources[i] = canonicalize(s)
+	}
+	for i, s := range params.Includes {
+		params.Includes[i] = canonicalize(s)
+	}
+	for i, s := range params.Files {
+		params.Files[i] = canonicalize(s)
+	}
+	for i, s := range params.Dirs {
+		params.Dirs[i] = canonicalize(s)
+	}
+	for i, s := range params.QuoteDirs {
+		params.QuoteDirs[i] = canonicalize(s)
+	}
+	for i, s := range params.Frameworks {
+		params.Frameworks[i] = canonicalize(s)
+	}
+	for i, s := range params.Sysroots {
+		params.Sysroots[i] = canonicalize(s)
+	}
+
+	execRoot := p.ExecRoot
+	if len(externals) > 0 && !allowExternals {
+		// If allowExternals is true, use execRoot as is.
+		// If checkRemoteChroot is true (e.g. gcc) and it is remote chroot (container image),
+		// use "/" as execRoot and convert paths to be relative to "/".
+		// Otherwise, return error.
+		isRemoteChroot := false
+		if _, ok := platform["dockerChrootPath"]; ok {
+			isRemoteChroot = true
+		}
+
+		if !isRemoteChroot {
+			v := externals[:min(len(externals), 5)]
+			return scandeps.Request{}, "", fmt.Errorf("%w %d %q...: platform=%q", errNotUnderExecRoot, len(externals), v, platform)
+		}
+		// Convert paths from relative to exec root to relative to /
+		// e.g.
+		//  execRoot: /path/to/chromium/src
+		//     path:  ../../../../usr/include
+		// ->
+		//  execRoot: /
+		//     path:  usr/include
+		execRoot = "/"
+		rebaseToSystemRoot := func(s string) string {
+			return filepath.Join(p.ExecRoot, s)[1:]
+		}
+		for i, s := range params.Sources {
+			params.Sources[i] = rebaseToSystemRoot(s)
+		}
+		for i, s := range params.Includes {
+			params.Includes[i] = rebaseToSystemRoot(s)
+		}
+		for i, s := range params.Files {
+			params.Files[i] = rebaseToSystemRoot(s)
+		}
+		for i, s := range params.Dirs {
+			params.Dirs[i] = rebaseToSystemRoot(s)
+		}
+		for i, s := range params.QuoteDirs {
+			params.QuoteDirs[i] = rebaseToSystemRoot(s)
+		}
+		for i, s := range params.Frameworks {
+			params.Frameworks[i] = rebaseToSystemRoot(s)
+		}
+		for i, s := range params.Sysroots {
+			params.Sysroots[i] = rebaseToSystemRoot(s)
+		}
+	}
+
+	req := scandeps.Request{
+		Defines:    params.Defines,
+		Sources:    params.Sources,
+		Includes:   params.Includes,
+		Dirs:       params.Dirs,
+		QuoteDirs:  params.QuoteDirs,
+		Frameworks: params.Frameworks,
+		Sysroots:   params.Sysroots,
+		Timeout:    timeout,
+	}
+	return req, execRoot, nil
 }
