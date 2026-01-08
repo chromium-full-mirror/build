@@ -11,12 +11,16 @@ import (
 )
 
 func TestBuiltinProvider(t *testing.T) {
-	scope := resolve.NewScope(&builtinProvider{
-		buildSettings: &BuildSettings{
-			BuildDir:   "//out/Debug/",
-			pythonPath: "python3",
+	scope := resolve.NewScope(
+		&scopeContext{},
+		&builtinProvider{
+			buildSettings: &BuildSettings{
+				BuildDir:   "//out/Debug/",
+				pythonPath: "python3",
+			},
 		},
-	}, map[string]resolve.FunctionInfo{})
+		map[string]resolve.FunctionInfo{},
+	)
 
 	for _, tc := range []struct {
 		name          string

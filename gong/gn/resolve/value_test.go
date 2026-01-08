@@ -136,7 +136,8 @@ bar"`,
 
 type fakeExecContext struct{}
 
-func (fakeExecContext) BaseConfig() *Scope { return &Scope{} }
+func (fakeExecContext) BaseConfig() *Scope         { return &Scope{} }
+func (fakeExecContext) NestedContext() ExecContext { return &fakeExecContext{} }
 
 func TestEqual(t *testing.T) {
 	for _, tc := range []struct {

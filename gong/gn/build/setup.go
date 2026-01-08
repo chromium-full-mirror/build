@@ -70,7 +70,7 @@ func NewSetup() *Setup {
 	}
 	setup.loader = MakeLoader(&setup.buildSettings, &setup.inputFileManager)
 	setup.dotfileSettings = NewSettings(&setup.buildSettings)
-	setup.dotfileScope = resolve.NewScopeFromExecContext(setup.dotfileSettings)
+	setup.dotfileScope = setup.dotfileSettings.NewScope()
 	return setup
 }
 
@@ -137,7 +137,7 @@ func (s *Setup) fillArguments(flags *gn.CommonFlags) error {
 		return fmt.Errorf("args parse failed: %w", err)
 	}
 
-	argScope := resolve.NewScopeFromExecContext(s.dotfileSettings)
+	argScope := s.dotfileSettings.NewScope()
 	_, err = resolve.ExecuteNode(argsRoot, argScope)
 	if err != nil {
 		return fmt.Errorf("args execute failed: %w", err)

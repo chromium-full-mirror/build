@@ -6,18 +6,12 @@ package build
 
 import (
 	"fmt"
-	"os"
 
 	"go.chromium.org/build/gong/gn/parse"
 	"go.chromium.org/build/gong/gn/resolve"
 )
 
 type setDefaultsFunction struct {
-	// As a hack, we hold a reference to a toolchain and set defaults globally on that toolchain.
-	// For set_defaults to work like C++ GN, it needs to store defaults at the Scope level.
-	// The problem is that Scope in this implementation right now is "language-only" and doesn't
-	// know of any GN build concepts. Hence this hack for the time being.
-	settings *Settings
 }
 
 func (setDefaultsFunction) IsTarget() bool { return false }
@@ -59,8 +53,9 @@ Example
 }
 
 func (f *setDefaultsFunction) Run(scope *resolve.Scope, call *parse.FunctionCallNode, args []resolve.Value, block *parse.BlockNode) (resolve.Value, error) {
-	if f.settings == nil {
-		return nil, fmt.Errorf("set_defaults() currently requires a toolchain to work, it does not support running with just a scope yet")
+	ctx, ok := scope.ExecContext().(*scopeContext)
+	if !ok {
+		return nil, fmt.Errorf("internal error: received a scope without a scopeContext")
 	}
 
 	targetTypeName, err := resolve.EnsureSingleStringArg(call, args)
@@ -77,7 +72,7 @@ func (f *setDefaultsFunction) Run(scope *resolve.Scope, call *parse.FunctionCall
 
 	// Now copy the values set on the scope we made into the free-floating one
 	// (with no containing scope) used to hold the target defaults.
-	dest := resolve.NewScopeFromExecContext(f.settings)
+	dest := ctx.settings.NewScope()
 	err = blockScope.NewNestedScope().NonRecursiveMergeTo(dest, resolve.ScopeMergeOptions{
 		SourceNode:         call,
 		SourceFriendlyName: "set_defaults()",
@@ -86,7 +81,6 @@ func (f *setDefaultsFunction) Run(scope *resolve.Scope, call *parse.FunctionCall
 		return nil, err
 	}
 
-	fmt.Fprintf(os.Stderr, "warn: set_defaults() is not correctly implemented and will apply defaults toolchain-wide instead of only in the current scope.\n")
-	f.settings.targetDefaults[targetTypeName.RawGNString()] = dest
+	ctx.targetDefaults[targetTypeName.RawGNString()] = dest
 	return nil, nil
 }

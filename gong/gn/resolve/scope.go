@@ -24,15 +24,22 @@ func isPrivateVar(name string) bool {
 	return len(name) == 0 || name[0] == '_'
 }
 
-// ExecContext is the execution context for a scope, and may also hold a
-// scope of its own to be used as a top-level read-only value source.
+// ExecContext is the execution context for a scope, and may also reference
+// a scope to be used as a top-level read-only value source.
 //
 // Implementations are expected to be safe for concurrent read access.
 type ExecContext interface {
+	// BaseConfig returns the top-level read-only scope.
+	// It is called as a read-only last resort when resolving variables.
 	BaseConfig() *Scope
+	// NestedContext creates a new nested context for the given scope.
+	// It is called when creating a nested scope.
+	NestedContext() ExecContext
 }
 
 // ProgrammaticProvider allows code to provide values for built-in variables.
+//
+// TODO: should this be merged with ExecContext?
 type ProgrammaticProvider interface {
 	// ProgrammaticBuiltin returns (Value, true) if the given value can be programmatically
 	// generated, or (nil, false) if there is none.
@@ -47,9 +54,9 @@ type ProgrammaticProvider interface {
 //
 // Unlike C++ GN, all scopes are considered "non-const scopes".
 // The closest analogue to a "const scope" is that a scope here may reference
-// an ExecContext object, like the `Settings` object that scopes in C++ GN
+// an ExecContext's BaseConfig(), like the `Settings` object that scopes in C++ GN
 // will reference.
-// When reading values, the *Scope returned by the ExecContext will be checked
+// When reading values, the ExecContext's BaseConfig() will then be checked
 // as a last-resort, and we avoid performing direct mutate operations on it.
 type Scope struct {
 	execContext          ExecContext
@@ -159,27 +166,26 @@ func (s *Scope) isolate() {
 }
 
 // NewScope creates a top-level scope.
-func NewScope(programmaticProvider ProgrammaticProvider, functions map[string]FunctionInfo) *Scope {
+func NewScope(c ExecContext, programmaticProvider ProgrammaticProvider, functions map[string]FunctionInfo) *Scope {
 	return &Scope{
+		execContext:          c,
 		programmaticProvider: programmaticProvider,
 		functions:            functions,
 		values:               make(map[string]record),
 	}
 }
 
-// NewScopeFromExecContext creates a dependent scope whose parent is an ExecContext.
-func NewScopeFromExecContext(c ExecContext) *Scope {
-	return &Scope{
-		execContext: c,
-		values:      make(map[string]record),
-	}
-}
-
 // NewNestedScope creates a dependent scope whose parent is this scope.
 func (s *Scope) NewNestedScope() *Scope {
+	if s.execContext == nil {
+		return &Scope{
+			parent: s,
+			values: make(map[string]record),
+		}
+	}
 	return &Scope{
 		parent:      s,
-		execContext: s.execContext,
+		execContext: s.execContext.NestedContext(),
 		values:      make(map[string]record),
 	}
 }
@@ -187,6 +193,11 @@ func (s *Scope) NewNestedScope() *Scope {
 // HasValues returns whether this scope has values set.
 func (s *Scope) HasValues() bool {
 	return len(s.values) > 0
+}
+
+// ExecContext returns the execution context for this scope.
+func (s *Scope) ExecContext() ExecContext {
+	return s.execContext
 }
 
 // Value gets the value with the ident in the current scope if found,
@@ -215,7 +226,10 @@ func (s *Scope) Value(ident string, markAsUsed bool) Value {
 
 	// If there is no containing scope, search the base config.
 	if !s.skipBaseConfig && s.execContext != nil {
-		return s.execContext.BaseConfig().Value(ident, false)
+		baseConfig := s.execContext.BaseConfig()
+		if baseConfig != s {
+			return baseConfig.Value(ident, false)
+		}
 	}
 
 	return nil

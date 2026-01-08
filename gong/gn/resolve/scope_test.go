@@ -108,7 +108,7 @@ func TestScope_NonRecursiveMergeTo(t *testing.T) {
 	}
 
 	t.Run("Copy private values", func(t *testing.T) {
-		dest := NewScope(nil, nil)
+		dest := NewScope(nil, nil, nil)
 		err := sourceScope.NonRecursiveMergeTo(dest, ScopeMergeOptions{})
 		if err != nil {
 			t.Fatalf("NonRecursiveMergeTo() failed: %v", err)
@@ -119,7 +119,7 @@ func TestScope_NonRecursiveMergeTo(t *testing.T) {
 	})
 
 	t.Run("Skip private values", func(t *testing.T) {
-		dest := NewScope(nil, nil)
+		dest := NewScope(nil, nil, nil)
 		err := sourceScope.NonRecursiveMergeTo(dest, ScopeMergeOptions{SkipPrivateVars: true})
 		if err != nil {
 			t.Fatalf("NonRecursiveMergeTo() failed: %v", err)
@@ -130,7 +130,7 @@ func TestScope_NonRecursiveMergeTo(t *testing.T) {
 	})
 
 	t.Run("Excluded values", func(t *testing.T) {
-		dest := NewScope(nil, nil)
+		dest := NewScope(nil, nil, nil)
 		err := sourceScope.NonRecursiveMergeTo(dest, ScopeMergeOptions{
 			ExcludedValues: map[string]struct{}{
 				"v": {},
@@ -148,7 +148,7 @@ func TestScope_NonRecursiveMergeTo(t *testing.T) {
 	})
 
 	t.Run("Don't mark used", func(t *testing.T) {
-		dest := NewScope(nil, nil)
+		dest := NewScope(nil, nil, nil)
 		err := sourceScope.NonRecursiveMergeTo(dest, ScopeMergeOptions{})
 		if err != nil {
 			t.Fatalf("NonRecursiveMergeTo() failed: %v", err)
@@ -159,7 +159,7 @@ func TestScope_NonRecursiveMergeTo(t *testing.T) {
 	})
 
 	t.Run("Mark dest used", func(t *testing.T) {
-		dest := NewScope(nil, nil)
+		dest := NewScope(nil, nil, nil)
 		err := sourceScope.NonRecursiveMergeTo(dest, ScopeMergeOptions{DestinationMarkUsed: true})
 		if err != nil {
 			t.Fatalf("NonRecursiveMergeTo() failed: %v", err)
