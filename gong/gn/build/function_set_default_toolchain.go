@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 
+	"go.chromium.org/build/gong/gn/build/fs"
 	"go.chromium.org/build/gong/gn/parse"
 	"go.chromium.org/build/gong/gn/resolve"
 )
@@ -70,6 +71,21 @@ func (setDefaultToolchainFunction) Run(scope *resolve.Scope, call *parse.Functio
 		return nil, err
 	}
 
-	fmt.Fprintf(os.Stderr, "warn: set_default_toolchain isn't implemented yet. requested: %q\n", input.RawGNString())
+	// TODO: Scope doesn't support current directory yet so pretend we're in the root.
+	fakeWd, err := fs.MakeSourceDir("//")
+	if err != nil {
+		return nil, err
+	}
+
+	// TODO: C++ GN retrieves the "default toolchain" from the Scope (this isn't implemented yet)
+	// and passes it to ResolveLabel. But we call set_default_toolchain when we don't know the default toolchain yet,
+	// so is that actually necessary? For now just pass an empty label as the "current toolchain".
+	// https://source.chromium.org/gn/gn/+/main:src/gn/function_set_default_toolchain.cc;l=80;drc=a899709c3b024eddade4cf7eab167b5962164fb0
+	toolchainLabel, err := ResolveLabel(fakeWd, Label{}, input)
+	if err != nil {
+		return nil, err
+	}
+
+	fmt.Fprintf(os.Stderr, "warn: set_default_toolchain isn't implemented yet. input label was parsed as: %q\n", toolchainLabel.UserVisibleString(false))
 	return nil, nil
 }
