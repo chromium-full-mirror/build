@@ -1029,10 +1029,14 @@ func (hfs *HashFS) Entries(ctx context.Context, root string, inputs []string) ([
 		if log.V(1) {
 			clog.Infof(ctx, "tree new entry %s", fname)
 		}
-		e, err := hfs.directory.store(ctx, fname, e)
+		ee, err := hfs.directory.store(ctx, fname, e)
 		if err != nil {
-			return nil, err
+			// store may fail for missing dir. b/468142748
+			clog.Warningf(ctx, "entry %s %v: %v", fname, e.err, err)
+			ents = append(ents, e)
+			continue
 		}
+		e = ee
 		ents = append(ents, e)
 		wg.Add(1)
 		nwait++
