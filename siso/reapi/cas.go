@@ -752,11 +752,10 @@ func (c *Client) uploadWithByteStream(ctx context.Context, digests []digest.Dige
 				wr.Close()
 				return err
 			}
-			var cserr bytestreamio.BadCommittedSizeError
 			err = wr.Close()
-			if errors.As(err, &cserr) {
+			if err != nil {
 				// Some REAPI backends may return non-standard
-				// committed size.
+				// committed size, or error in CloseAndRecv.
 				// Check it by FindMissingBlobs API to see if
 				// the blob is already uploaded or not.
 				ds, merr := c.Missing(ctx, []digest.Digest{d})
