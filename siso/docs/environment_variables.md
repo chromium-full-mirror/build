@@ -123,6 +123,17 @@ the build process.
 Used for `tool_invocation_id` of remote apis, and `build_id` label of
 Cloud logging resources.
 
+### SISO_COLLECTOR_ADDRESS
+
+`SISO_COLLECTOR_ADDRESS` sets the default value of `--collector_address`
+to have collector:
+
+1) start if the flag is set.
+2) use correct address or unix socket.
+
+User does not need to touch this flag as this flag is set by depot_tools's
+autoninja.
+
 ### RBE_metrics_project
 `RBE_metrics_project` sets the default value of `-metrics_project`,
 to specify Google Cloud Project for cloud monitoring.
