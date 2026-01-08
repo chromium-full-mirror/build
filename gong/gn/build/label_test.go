@@ -10,17 +10,112 @@ import (
 	"github.com/google/go-cmp/cmp"
 
 	"go.chromium.org/build/gong/gn/build/fs"
+	"go.chromium.org/build/gong/gn/resolve"
+	"go.chromium.org/build/gong/gn/syntax"
 )
 
-func TestLabel_UserVisibleString(t *testing.T) {
-	mustDir := func(s string) fs.SourceDir {
-		d, err := fs.MakeSourceDir(s)
-		if err != nil {
-			t.Fatalf("MakeSourceDir(%q) failed: %v", s, err)
-		}
-		return d
+// Helper to create a fs.SourceDir from a string we know should be valid, so fail the test if it fails.
+func mustDir(t *testing.T, path string) fs.SourceDir {
+	t.Helper()
+	d, err := fs.MakeSourceDir(path)
+	if err != nil {
+		t.Fatalf("setup error: failed to make source dir %q: %v", path, err)
+	}
+	return d
+}
+
+func TestResolveLabel(t *testing.T) {
+	cmpOpts := []cmp.Option{
+		cmp.AllowUnexported(Label{}),
+		cmp.Comparer(func(x, y fs.SourceDir) bool {
+			return x.Path() == y.Path()
+		}),
 	}
 
+	for _, tc := range []struct {
+		name        string
+		input       string
+		wd          string
+		toolchain   Label
+		want        Label
+		wantErrKind syntax.ErrKind
+	}{
+		{
+			name:      "absolute",
+			input:     "//foo/bar:baz",
+			wd:        "//chrome/browser/",
+			toolchain: Label{dir: mustDir(t, "//t/"), name: "d"},
+			want: Label{
+				dir:           mustDir(t, "//foo/bar/"),
+				name:          "baz",
+				toolchainDir:  mustDir(t, "//t/"),
+				toolchainName: "d",
+			},
+		},
+		{
+			name:        "implicit target name not yet supported",
+			input:       "//foo/bar",
+			wd:          "//chrome/browser/",
+			wantErrKind: syntax.ErrNotImplemented,
+		},
+		{
+			name:        "implicit target dir not yet supported",
+			input:       ":baz",
+			wd:          "//chrome/browser/",
+			toolchain:   Label{dir: mustDir(t, "//t/"), name: "d"},
+			wantErrKind: syntax.ErrNotImplemented,
+		},
+		{
+			name:      "explicit toolchain",
+			input:     "//foo:bar(//t:two)",
+			wd:        "//chrome/browser/",
+			toolchain: Label{dir: mustDir(t, "//t/"), name: "d"},
+			want: Label{
+				dir:           mustDir(t, "//foo/"),
+				name:          "bar",
+				toolchainDir:  mustDir(t, "//t/"),
+				toolchainName: "two",
+			},
+		},
+		{
+			name:        "invalid toolchain format",
+			input:       "//foo:bar(//t:two",
+			wd:          "//chrome/browser/",
+			toolchain:   Label{dir: mustDir(t, "//t/"), name: "d"},
+			wantErrKind: syntax.ErrInvalidFormat,
+		},
+		{
+			name:        "toolchain in toolchain",
+			input:       "//foo:bar(//t:two(//t2:t2))",
+			wd:          "//chrome/browser/",
+			toolchain:   Label{dir: mustDir(t, "//t/"), name: "d"},
+			wantErrKind: syntax.ErrInvalidFormat,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := ResolveLabel(mustDir(t, tc.wd), tc.toolchain, resolve.NewOriginlessStringValue(tc.input))
+			wantErr := tc.wantErrKind != ""
+			gotErr := err != nil
+
+			if gotErr != wantErr {
+				t.Fatalf("ResolveLabel(%q) got err=%v, wantErr=%v (kind %s)", tc.input, err, wantErr, tc.wantErrKind)
+			}
+
+			if gotErr {
+				if match, gotErrKind := syntax.AsErrKind(err, tc.wantErrKind); match == nil {
+					t.Fatalf("ResolveLabel(%q) got err=%v (kind %s), wantErrKind=%s", tc.input, err, gotErrKind, tc.wantErrKind)
+				}
+				return
+			}
+
+			if diff := cmp.Diff(tc.want, got, cmpOpts...); diff != "" {
+				t.Errorf("ResolveLabel(%q) mismatch (-want +got):\n%s", tc.input, diff)
+			}
+		})
+	}
+}
+
+func TestLabel_UserVisibleString(t *testing.T) {
 	for _, tc := range []struct {
 		name       string
 		label      Label
@@ -30,9 +125,9 @@ func TestLabel_UserVisibleString(t *testing.T) {
 		{
 			name: "label in root",
 			label: Label{
-				dir:           mustDir("//"),
+				dir:           mustDir(t, "//"),
 				name:          "name",
-				toolchainDir:  mustDir("//t"),
+				toolchainDir:  mustDir(t, "//t"),
 				toolchainName: "tn",
 			},
 			wantOmitTc: "//:name",
@@ -41,9 +136,9 @@ func TestLabel_UserVisibleString(t *testing.T) {
 		{
 			name: "label in subdir",
 			label: Label{
-				dir:           mustDir("//dir"),
+				dir:           mustDir(t, "//dir"),
 				name:          "name",
-				toolchainDir:  mustDir("//t"),
+				toolchainDir:  mustDir(t, "//t"),
 				toolchainName: "tn",
 			},
 			wantOmitTc: "//dir:name",
@@ -52,7 +147,7 @@ func TestLabel_UserVisibleString(t *testing.T) {
 		{
 			name: "toolchain dir is empty",
 			label: Label{
-				dir:           mustDir("//dir"),
+				dir:           mustDir(t, "//dir"),
 				name:          "name",
 				toolchainDir:  fs.SourceDir{},
 				toolchainName: "tn",

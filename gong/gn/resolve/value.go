@@ -121,6 +121,9 @@ func GNLiteralRvalue(v Value) string {
 
 // MakeErrFromValue makes an error at the provided value.
 func MakeErrFromValue(value Value, kind syntax.ErrKind, message, helpText string) error {
+	if value.OriginNode() == nil {
+		return syntax.MakeErrorAt(syntax.Location{}, []syntax.LocationRange{}, kind, message, helpText)
+	}
 	return syntax.MakeErrorAt(
 		value.OriginNode().LocationRange().Begin(),
 		[]syntax.LocationRange{value.OriginNode().LocationRange()},
