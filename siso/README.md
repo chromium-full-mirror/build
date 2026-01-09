@@ -3,18 +3,18 @@
 Siso is a build tool that aims to significantly speed up Chromium's build.
 
 * It is a drop-in replacement for Ninja, which means it can be easily used
-  instead of Ninja without requiring a migration or change in developer's
+  instead of Ninja without requiring a migration or change in developers'
   workflows.
 * It runs build actions on RBE natively.
 * It avoids stat, disk and network I/O as much as possible.
-* It reduces CPU usage and memory consumption by sharing in one process memory
-  space.
-* It collects performance metrics for each action during a build and allows to
+* It reduces CPU usage and memory consumption by sharing a single process
+  memory space.
+* It collects performance metrics for each action during a build and allows you to
   analyze them using cloud trace/cloud profiler.
 
 ## Where did the name "Siso" come from?
 
-Siso is named after shiso, a herb commonly used in Japan. It's a reference to basil and the Bazel build system. Siso is an alternative romanization of shiso and more typeable than shiso (but still pronounced shiso). Considering how often we type the name of a build tool every day, we decided to optimize for that. ;)
+Siso is named after shiso, a commonly-used herb in Japan. It's a reference to basil and the Bazel build system. Siso is an alternative romanization of shiso and more typeable than shiso (but still pronounced shiso). Considering how often we type the name of a build tool every day, we decided to optimize for that. ;)
 
 ## Documents
 
@@ -28,7 +28,7 @@ Siso is named after shiso, a herb commonly used in Japan. It's a reference to ba
   RE API platform properties used in Siso.
 - [Key difference from Ninja](./docs/ninja_diff.md) explains
   key differences from Ninja.
-- [Siso development](./docs/development.md) provides an information
+- [Siso development](./docs/development.md) provides information
   for Siso developers.
 
 ## Status
@@ -39,14 +39,14 @@ As of Aug 2025, Siso is moved to [go.chromium.org/build/siso](https://pkg.go.dev
 
 As of June 2025, Siso is used in all the projects that import Chromium's //build, and is used by default on non-Google environments.
 
-As of Apr 2025, Siso built-in remote exec client is used for Chromium and Chrome builders.
+As of Apr 2025, Siso's built-in remote execution client is used for Chromium and Chrome builders.
 
-As of Nov 2024, Siso is used by default for Chromium build on gLinux machine.
+As of Nov 2024, Siso is used by default for the Chromium build on gLinux machines.
 
 As of July 2024, Siso is used in all Chromium and Chrome builders, including official
 builds released to users.
 
-As of end of 2024 Q1, Siso is used in all CQ builders in Chromium.
+As of the end of 2024 Q1, Siso is used in all CQ builders in Chromium.
 
 As of April 2023, we are dogfooding Siso with invited Chrome developers.
 Please check [go/chrome-build-dogfood](http://go/chrome-build-dogfood) for more information.
