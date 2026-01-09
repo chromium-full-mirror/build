@@ -90,7 +90,7 @@ func (c *Command) Execute(ctx context.Context, flagSet *flag.FlagSet, _ ...any) 
 				fmt.Printf("build\t%s=%s\n", k, v)
 			}
 		}
-		if cipdURL == "" || !ver.IsProdCIPD() || c.online {
+		if cipdURL == "" || !ver.IsProdCIPD() || !c.online {
 			// no need to check version from cipdURL.
 			return 0
 		}
