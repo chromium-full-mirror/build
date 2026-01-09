@@ -119,7 +119,7 @@ func (s *Setup) fillArguments(flags *gn.CommonFlags) error {
 		return fmt.Errorf("don't know how to parse args from command line yet")
 	}
 
-	argsInputPath := path.Join(s.buildSettings.BuildDir, buildArgFileName)
+	argsInputPath := path.Join(s.buildSettings.BuildDir.Path(), buildArgFileName)
 	argsInputFile, err := fs.NewInputFile(argsInputPath, argsInputPath)
 	if err != nil {
 		return fmt.Errorf("could not load args file: %w", err)
@@ -203,7 +203,10 @@ func (s *Setup) fillBuildDir(buildDir string) error {
 	if err != nil {
 		return err
 	}
-	s.buildSettings.BuildDir = filepath.ToSlash(absBuildDir)
+	s.buildSettings.BuildDir, err = fs.MakeSourceDir(absBuildDir)
+	if err != nil {
+		return err
+	}
 	return nil
 }
 

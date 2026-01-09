@@ -7,15 +7,20 @@ package build
 import (
 	"testing"
 
+	"go.chromium.org/build/gong/gn/build/fs"
 	"go.chromium.org/build/gong/gn/resolve"
 )
 
 func TestBuiltinProvider(t *testing.T) {
+	buildDir, err := fs.MakeSourceDir("//out/Debug/")
+	if err != nil {
+		t.Fatalf("setup error: failed to make build dir: %v", err)
+	}
 	scope := resolve.NewScope(
 		&scopeContext{},
 		&builtinProvider{
 			buildSettings: &BuildSettings{
-				BuildDir:   "//out/Debug/",
+				BuildDir:   buildDir,
 				pythonPath: "python3",
 			},
 		},

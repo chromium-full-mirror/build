@@ -34,8 +34,10 @@ type BuildSettings struct {
 	rootTargetLabel Label
 	// Path of the python executable to run scripts with.
 	pythonPath string
-	// BuildDir is the absolute, slash-separated path to the build output directory.
-	BuildDir string
+	// BuildDir is the root of all output files. The default toolchain
+	// files go into here, and non-default toolchains will have separate
+	// toolchain-specific root directories inside this.
+	BuildDir fs.SourceDir
 	// BuildConfigFile is a reference to the build config file for this build.
 	// It is expected that the root .gn file defines a `buildconfig` variable
 	// that points to the location of the build config file.

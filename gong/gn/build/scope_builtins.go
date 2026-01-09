@@ -5,7 +5,6 @@
 package build
 
 import (
-	"go.chromium.org/build/gong/gn/build/fs"
 	"go.chromium.org/build/gong/gn/resolve"
 )
 
@@ -20,7 +19,7 @@ func (p *builtinProvider) ProgrammaticBuiltin(ident string) (resolve.Value, bool
 	case "python_path":
 		return resolve.NewOriginlessStringValue(p.buildSettings.pythonPath), true
 	case "root_build_dir":
-		return resolve.NewOriginlessStringValue(fs.DirectoryWithNoLastSlash(p.buildSettings.BuildDir)), true
+		return resolve.NewOriginlessStringValue(p.buildSettings.BuildDir.WithNoTrailingSlash()), true
 	}
 	return nil, false
 }
