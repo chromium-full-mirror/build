@@ -234,7 +234,7 @@ func (depsMSVC) scandeps(ctx context.Context, b *Builder, step *Step) ([]string,
 			// no-fallback has longer timeout for scandeps
 			timeout = 2 * timeout
 		}
-		req, err := createScandepsRequestMSVC(ctx, b.path, params, step.cmd.Platform, step.cmd.UseSystemInput, timeout)
+		req, err := CreateScanDepsRequestMSVC(ctx, b.path, params, step.cmd.Platform, step.cmd.UseSystemInput, timeout)
 		if err != nil {
 			return err
 		}
@@ -384,7 +384,7 @@ func (depsMSVC) scandepsByClang(ctx context.Context, b *Builder, step *Step) ([]
 
 }
 
-func createScandepsRequestMSVC(ctx context.Context, p *Path, params scandepsparams.ScanDepsParams, platform map[string]string, allowExternals bool, timeout time.Duration) (scandeps.Request, error) {
+func CreateScanDepsRequestMSVC(ctx context.Context, p *Path, params scandepsparams.ScanDepsParams, platform map[string]string, allowExternals bool, timeout time.Duration) (scandeps.Request, error) {
 	// externals stores non local paths.
 	var externals []string
 	canonicalize := func(s string) string {

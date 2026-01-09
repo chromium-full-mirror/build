@@ -190,6 +190,14 @@ func Load(ctx context.Context, fname string, buildPath *build.Path) (*ninjautil.
 	state.AddBinding("exec_root", buildPath.ExecRoot)
 	state.AddBinding("working_directory", buildPath.Dir)
 	p := ninjautil.NewManifestParser(state)
+	wd := filepath.Join(buildPath.ExecRoot, buildPath.Dir)
+	p.SetWd(wd)
+	if filepath.IsAbs(fname) {
+		rel, err := filepath.Rel(wd, fname)
+		if err == nil {
+			fname = rel
+		}
+	}
 	err := p.Load(ctx, fname)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load %s: %w", fname, err)

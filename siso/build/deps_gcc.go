@@ -220,7 +220,7 @@ func (depsGCC) scandeps(ctx context.Context, b *Builder, step *Step) ([]string, 
 			// no-fallback has longer timeout for scandeps
 			timeout = 2 * timeout
 		}
-		req, execRoot, err := createScanDepsRequestGCC(ctx, b.path, params, step.cmd.Platform, step.cmd.UseSystemInput, timeout)
+		req, execRoot, err := CreateScanDepsRequestGCC(ctx, b.path, params, step.cmd.Platform, step.cmd.UseSystemInput, timeout)
 		if err != nil {
 			return err
 		}
@@ -299,7 +299,7 @@ func (depsGCC) expandSymlinkDirs(ctx context.Context, b *Builder, inpath string)
 	return fsys.ExpandSymlinks(inpath)
 }
 
-func createScanDepsRequestGCC(ctx context.Context, p *Path, params scandepsparams.ScanDepsParams, platform map[string]string, allowExternals bool, timeout time.Duration) (scandeps.Request, string, error) {
+func CreateScanDepsRequestGCC(ctx context.Context, p *Path, params scandepsparams.ScanDepsParams, platform map[string]string, allowExternals bool, timeout time.Duration) (scandeps.Request, string, error) {
 	// externals stores non local paths.
 	// usually error, but can be used for scandeps for cros chroot case.
 	var externals []string
