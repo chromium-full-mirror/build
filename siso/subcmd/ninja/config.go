@@ -275,6 +275,8 @@ func (c *Command) initConfigFlags(targets []string) map[string]string {
 		flags[name] = f.Value.String()
 	})
 	flags["project"] = c.projectID
+	flags["reapi_address"] = c.reopt.Address
+	flags["reapi_instance"] = c.reopt.Instance
 	flags["is_terminal"] = strconv.FormatBool(ui.IsTerminal())
 	flags["targets"] = strings.Join(targets, " ")
 	return flags
