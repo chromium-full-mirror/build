@@ -104,6 +104,16 @@ func (l *Loader) Load(file fs.SourceFile, origin syntax.LocationRange, intoToolc
 }
 
 func (l *Loader) loadBuildConfig(settings *Settings) error {
+	baseContext, ok := settings.baseConfig.ExecContext().(*scopeContext)
+	if !ok {
+		return fmt.Errorf("internal error: received a scope without a scopeContext")
+	}
+
+	baseContext.processingBuildConfig = true
+	defer func() {
+		baseContext.processingBuildConfig = false
+	}()
+
 	// TODO: run the load asynchronously in the background.
 	root, err := l.inputFileManager.LoadFile(syntax.LocationRange{}, l.buildSettings, l.buildSettings.BuildConfigFile)
 	if err != nil {

@@ -11,6 +11,7 @@ import (
 	"go.chromium.org/build/gong/gn/build/fs"
 	"go.chromium.org/build/gong/gn/parse"
 	"go.chromium.org/build/gong/gn/resolve"
+	"go.chromium.org/build/gong/gn/syntax"
 )
 
 type setDefaultToolchainFunction struct {
@@ -59,11 +60,20 @@ Example
 }
 
 func (setDefaultToolchainFunction) Run(scope *resolve.Scope, call *parse.FunctionCallNode, args []resolve.Value) (resolve.Value, error) {
-	// TODO: ensure only called during the processing of the build configuration file.
-	// https://source.chromium.org/gn/gn/+/main:src/gn/function_set_default_toolchain.cc;l=58-64;drc=a899709c3b024eddade4cf7eab167b5962164fb0
+	ctx, ok := scope.ExecContext().(*scopeContext)
+	if !ok {
+		return nil, fmt.Errorf("internal error: received a scope without a scopeContext")
+	}
 
-	// TODO: if we're here, we're processing a buildconfig file.
-	// but we should be a noop if the loader isn't expecting a default toolchain to be set (because it's already been set)
+	if !ctx.isProcessingBuildConfig() {
+		return nil, call.Function.MakeErrorWithHelp(
+			syntax.ErrInvalidOperation,
+			"Must be called from build config.",
+			"set_default_toolchain can only be called from the build configuration file.",
+		)
+	}
+
+	// TODO: we should be a noop if the loader isn't expecting a default toolchain to be set (because it's already been set)
 	// https://source.chromium.org/gn/gn/+/main:src/gn/function_set_default_toolchain.cc;l=66-71;drc=a899709c3b024eddade4cf7eab167b5962164fb0
 
 	input, err := resolve.EnsureSingleStringArg(call, args)

@@ -12,6 +12,7 @@ import (
 // It requires the top-level BuildSettings object.
 func FunctionMap(buildSettings *BuildSettings) map[string]resolve.FunctionInfo {
 	return map[string]resolve.FunctionInfo{
+		"action":                actionFunction{},
 		"assert":                resolve.AssertFunction{},
 		"rebase_path":           &rebasePathFunction{buildSettings: buildSettings},
 		"set_defaults":          &setDefaultsFunction{},

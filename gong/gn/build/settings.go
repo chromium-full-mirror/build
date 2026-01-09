@@ -49,8 +49,14 @@ func (s *Settings) NewScope() *resolve.Scope {
 // This makes it possible to hold scope-local data such as target defaults that cannot be
 // represented as simple GN values inside the scope itself, or should not be exposed.
 type scopeContext struct {
+	parent *scopeContext
 	// The toolchain invocation this scope belongs to.
 	settings *Settings
+	// Flag to indicate that we're currently processing the build configuration file.
+	// TODO: is it safe to allow users to directly flip this bool?
+	// or do we need protection like C++ GN e.g.
+	// https://source.chromium.org/gn/gn/+/main:src/gn/scope.cc;l=507-508;drc=feafd1012a32c05ec6095f69ddc3850afb621f3a
+	processingBuildConfig bool
 	// The target defaults for this scope.
 	// Target defaults are scope-local, not toolchain-global.
 	targetDefaults map[string]*resolve.Scope
@@ -65,7 +71,24 @@ func (s *scopeContext) BaseConfig() *resolve.Scope {
 // create a new nested scope.
 func (s *scopeContext) NestedContext() resolve.ExecContext {
 	return &scopeContext{
+		parent:         s,
 		settings:       s.settings,
 		targetDefaults: make(map[string]*resolve.Scope),
 	}
+}
+
+// isProcessingBuildConfig indicates if we're currently processing the build
+// configuration file. This is true when processing the config file for any
+// toolchain.
+//
+// Note that querying the state of the flag recursively checks all containing
+// scopes until it reaches the top or finds the flag set.
+func (s *scopeContext) isProcessingBuildConfig() bool {
+	if s.processingBuildConfig {
+		return true
+	}
+	if s.parent != nil {
+		return s.parent.isProcessingBuildConfig()
+	}
+	return false
 }
