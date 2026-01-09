@@ -29,6 +29,9 @@ type Loader struct {
 
 	// Metadata for each toolchain.
 	toolchains map[Label]*toolchainRecord
+
+	// Label for the default toolchain.
+	defaultToolchain Label
 }
 
 // loadID represents a tuple of a file and toolchain label for tracking loaded files.
@@ -114,6 +117,15 @@ func (l *Loader) loadBuildConfig(settings *Settings) error {
 		baseContext.processingBuildConfig = false
 	}()
 
+	// If the default toolchain label is unknown, the default toolchain is being processed.
+	// Set the receiver to populate it.
+	// (It can be called an unlimited number of times, the last call wins.)
+	if l.defaultToolchain == (Label{}) {
+		baseContext.defaultToolchainReceiver = func(toolchainLabel Label) {
+			l.defaultToolchain = toolchainLabel
+		}
+	}
+
 	// TODO: run the load asynchronously in the background.
 	root, err := l.inputFileManager.LoadFile(syntax.LocationRange{}, l.buildSettings, l.buildSettings.BuildConfigFile)
 	if err != nil {
@@ -148,6 +160,14 @@ func (l *Loader) loadBuildConfig(settings *Settings) error {
 	_, err = resolve.ExecuteNode(root, settings.baseConfig)
 	if err != nil {
 		return fmt.Errorf("failed to execute buildconfig: %w", err)
+	}
+
+	// The default toolchain must have been set in the default build config file.
+	if baseContext.defaultToolchainReceiver != nil && l.defaultToolchain == (Label{}) {
+		return makeError(
+			"The default build config file did not call set_default_toolchain()",
+			`If you don't call this, I can't figure out what toolchain to use
+for all of this code.`)
 	}
 
 	return nil

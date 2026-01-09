@@ -16,6 +16,6 @@ func FunctionMap(buildSettings *BuildSettings) map[string]resolve.FunctionInfo {
 		"assert":                resolve.AssertFunction{},
 		"rebase_path":           &rebasePathFunction{buildSettings: buildSettings},
 		"set_defaults":          &setDefaultsFunction{},
-		"set_default_toolchain": &setDefaultToolchainFunction{},
+		"set_default_toolchain": setDefaultToolchainFunction{},
 	}
 }

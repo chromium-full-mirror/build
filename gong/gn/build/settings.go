@@ -57,6 +57,9 @@ type scopeContext struct {
 	// or do we need protection like C++ GN e.g.
 	// https://source.chromium.org/gn/gn/+/main:src/gn/scope.cc;l=507-508;drc=feafd1012a32c05ec6095f69ddc3850afb621f3a
 	processingBuildConfig bool
+	// Receiver for the default toolchain label.
+	// This is set by the Loader when initializing the default toolchain.
+	defaultToolchainReceiver func(toolchainLabel Label)
 	// The target defaults for this scope.
 	// Target defaults are scope-local, not toolchain-global.
 	targetDefaults map[string]*resolve.Scope

@@ -6,7 +6,6 @@ package build
 
 import (
 	"fmt"
-	"os"
 
 	"go.chromium.org/build/gong/gn/build/fs"
 	"go.chromium.org/build/gong/gn/parse"
@@ -96,6 +95,11 @@ func (setDefaultToolchainFunction) Run(scope *resolve.Scope, call *parse.Functio
 		return nil, err
 	}
 
-	fmt.Fprintf(os.Stderr, "warn: set_default_toolchain isn't implemented yet. input label was parsed as: %q\n", toolchainLabel.UserVisibleString(false))
+	// If the default toolchain receiver is set, call it.
+	// If it isn't set, it means we're not processing the default toolchain, therefore the label is already known.
+	// (Hence just no-op and continue processing the rest of the buildconfig file.)
+	if ctx.defaultToolchainReceiver != nil {
+		ctx.defaultToolchainReceiver(toolchainLabel)
+	}
 	return nil, nil
 }
