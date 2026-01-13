@@ -33,6 +33,7 @@ const usage = `run scandeps
 
  $ siso scandeps -C <dir> -req '<json scandeps request>'
  $ siso scandeps -C <dir> -target <build target name>
+ $ siso scandeps -C <dir> -- <command line>
 
 <json scandeps request> can be found in siso.INFO log
 for "scandeps failed Request". you can copy-and-paste
@@ -65,6 +66,7 @@ type Command struct {
 	stateDir      string
 	reqJSONString string
 	targetName    string
+	cmdline       []string
 }
 
 func (c *Command) SetFlags(flagSet *flag.FlagSet) {
@@ -95,6 +97,7 @@ func (c *Command) Execute(ctx context.Context, flagSet *flag.FlagSet, _ ...any) 
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		return subcommands.ExitFailure
 	}
+	c.cmdline = flagSet.Args()
 
 	err = c.run(ctx)
 	if err != nil {
@@ -127,7 +130,43 @@ func (c *Command) createRequest(ctx context.Context) (scandeps.Request, error) {
 	if c.targetName != "" {
 		return c.createRequestFromTarget(ctx)
 	}
-	return scandeps.Request{}, fmt.Errorf("missing req or target: %w", flag.ErrHelp)
+	if len(c.cmdline) > 0 {
+		return c.createRequestFromCmdLine(ctx)
+	}
+	return scandeps.Request{}, fmt.Errorf("missing req, target or command line: %w", flag.ErrHelp)
+}
+
+func (c *Command) createRequestFromCmdLine(ctx context.Context) (scandeps.Request, error) {
+	relBuildDir, err := filepath.Rel(c.execRoot, c.absBuildDir())
+	if err != nil {
+		return scandeps.Request{}, fmt.Errorf("failed to get relative build dir: %w", err)
+	}
+	buildPath := build.NewPath(c.execRoot, relBuildDir)
+
+	fsys := os.DirFS(c.absBuildDir())
+	// Heuristic to detect MSVC vs GCC
+	isMSVC := false
+	if len(c.cmdline) > 0 {
+		base := filepath.Base(c.cmdline[0])
+		if base == "cl.exe" || base == "clang-cl.exe" || base == "cl" || base == "clang-cl" {
+			isMSVC = true
+		}
+	}
+	if isMSVC {
+		params, err := msvcutil.ExtractScanDepsParams(ctx, c.cmdline, nil, fsys)
+		if err != nil {
+			return scandeps.Request{}, fmt.Errorf("failed to extract msvc scandeps params for cmdline %q: %w", c.cmdline, err)
+		}
+		req, err := build.CreateScanDepsRequestMSVC(ctx, buildPath, params, nil, false, 2*time.Minute)
+		return req, err
+	}
+
+	params, err := gccutil.ExtractScanDepsParams(ctx, c.cmdline, nil, fsys)
+	if err != nil {
+		return scandeps.Request{}, fmt.Errorf("failed to extract gcc scandeps params for cmdline %q: %w", c.cmdline, err)
+	}
+	req, _, err := build.CreateScanDepsRequestGCC(ctx, buildPath, params, nil, false, 2*time.Minute)
+	return req, err
 }
 
 func (c *Command) createRequestFromTarget(ctx context.Context) (scandeps.Request, error) {
@@ -136,9 +175,9 @@ func (c *Command) createRequestFromTarget(ctx context.Context) (scandeps.Request
 	if err != nil {
 		return scandeps.Request{}, fmt.Errorf("failed to get relative build dir: %w", err)
 	}
-	pathCtx := build.NewPath(c.execRoot, relBuildDir)
+	buildPath := build.NewPath(c.execRoot, relBuildDir)
 
-	nstate, err := ninjabuild.Load(ctx, buildNinjaPath, pathCtx)
+	nstate, err := ninjabuild.Load(ctx, buildNinjaPath, buildPath)
 	if err != nil {
 		return scandeps.Request{}, fmt.Errorf("failed to load %s: %w", buildNinjaPath, err)
 	}
@@ -174,7 +213,7 @@ func (c *Command) createRequestFromTarget(ctx context.Context) (scandeps.Request
 	if err != nil {
 		clog.Warningf(ctx, "failed to load step config: %v", err)
 	} else {
-		r, ok := stepConfig.Lookup(ctx, pathCtx, edge)
+		r, ok := stepConfig.Lookup(ctx, buildPath, edge)
 		if ok {
 			rule = r
 			if rule.Timeout != "" {
@@ -192,14 +231,14 @@ func (c *Command) createRequestFromTarget(ctx context.Context) (scandeps.Request
 		if err != nil {
 			return scandeps.Request{}, fmt.Errorf("failed to extract msvc scandeps params for target %q: %w", c.targetName, err)
 		}
-		req, err := build.CreateScanDepsRequestMSVC(ctx, pathCtx, params, rule.Platform, rule.UseSystemInput, timeout)
+		req, err := build.CreateScanDepsRequestMSVC(ctx, buildPath, params, rule.Platform, rule.UseSystemInput, timeout)
 		return req, err
 	case "gcc":
 		params, err := gccutil.ExtractScanDepsParams(ctx, cmdLine, nil, fsys)
 		if err != nil {
 			return scandeps.Request{}, fmt.Errorf("failed to extract gcc scandeps params for target %q: %w", c.targetName, err)
 		}
-		req, _, err := build.CreateScanDepsRequestGCC(ctx, pathCtx, params, rule.Platform, rule.UseSystemInput, timeout)
+		req, _, err := build.CreateScanDepsRequestGCC(ctx, buildPath, params, rule.Platform, rule.UseSystemInput, timeout)
 		return req, err
 	default:
 		return scandeps.Request{}, fmt.Errorf("unsupported deps %q for target %q", edge.Binding("deps"), c.targetName)

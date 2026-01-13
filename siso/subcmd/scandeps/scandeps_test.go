@@ -46,6 +46,22 @@ build obj/foo.o: cxx foo.cc
 			want: subcommands.ExitSuccess,
 		},
 		{
+			name: "command line invocation",
+			args: []string{"--", "clang++", "-c", "foo.cc", "-o", "obj/foo.o"},
+			setup: func(t *testing.T, dir string) {
+				writeFile := func(path, content string) {
+					t.Helper()
+					if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+						t.Fatalf("Failed to write %s: %v", path, err)
+					}
+				}
+				writeFile(filepath.Join(dir, "foo.cc"), dummySourceContent)
+				writeFile(filepath.Join(dir, ".siso_config"), "{}")
+				writeFile(filepath.Join(dir, ".siso_filegroups"), "{}")
+			},
+			want: subcommands.ExitSuccess,
+		},
+		{
 			name: "target not found -> unsupported compiler",
 			args: []string{"-target", "obj/bar.o"},
 			setup: func(t *testing.T, dir string) {
