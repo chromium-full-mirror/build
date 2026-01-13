@@ -249,6 +249,9 @@ func inputMtime(ctx context.Context, b *Builder, stepDef StepDef) (string, time.
 		} else {
 			fsys := b.hashFS.FileSystem(ctx, b.path.ExecRoot)
 			fi, err := fsys.Stat(in)
+			if log.V(1) {
+				clog.Infof(ctx, "input %q -> %v", in, err)
+			}
 			for _, fi := range fsys.Visited(fi) {
 				if mtime.Before(fi.ModTime()) {
 					mtime = fi.ModTime()

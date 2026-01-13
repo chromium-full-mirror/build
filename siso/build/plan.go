@@ -619,7 +619,12 @@ func (s *scheduler) mark(ctx context.Context, graph Graph, target Target, next S
 	if err != nil {
 		return err
 	}
-	_, err = s.hashFS.Stat(ctx, s.path.ExecRoot, fname)
+	fi, err := s.hashFS.Stat(ctx, s.path.ExecRoot, fname)
+	if err == nil && fi.Target() != "" {
+		// resolve symlink for source file.
+		fsys := s.hashFS.FileSystem(ctx, s.path.ExecRoot)
+		_, err = fsys.Stat(fname)
+	}
 	if err != nil {
 		var neededBy string
 		if next != nil && len(next.Outputs(ctx)) > 0 {

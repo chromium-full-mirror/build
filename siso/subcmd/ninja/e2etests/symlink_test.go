@@ -276,6 +276,34 @@ func TestBuild_SymlinkSourceSymlinkDir(t *testing.T) {
 	}
 }
 
+func TestBuild_SymlinkSourceDangling(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink not available on windows")
+		return
+	}
+	ctx := t.Context()
+	dir := tempDir(t)
+
+	runNinjaTest := func(t *testing.T) (build.Stats, error) {
+		t.Helper()
+		opt, graph, cleanup := setupBuild(ctx, t, dir, hashfs.Option{
+			StateFile: ".siso_fs_state",
+		})
+		defer cleanup()
+		return ninjabuild.Run(ctx, graph, opt, nil, ninjabuild.RunNinjaOpts{})
+	}
+	setupFiles(t, dir, t.Name(), nil)
+
+	err := os.Symlink("missing_file", filepath.Join(dir, "input_symlink"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = runNinjaTest(t)
+	if err == nil {
+		t.Errorf("ninja succeeded; want schedule error")
+	}
+}
+
 func TestBuild_SymlinkGeneratedDangling(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("symlink not available on windows")
