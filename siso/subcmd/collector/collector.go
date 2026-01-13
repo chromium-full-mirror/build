@@ -31,6 +31,7 @@ type Command struct {
 	version          string
 	projectID        string
 	collectorAddress string
+	insecure         bool
 }
 
 func Cmd(authOpts cred.Options, version string) *Command {
@@ -55,6 +56,7 @@ func (*Command) Usage() string {
 func (c *Command) SetFlags(flagSet *flag.FlagSet) {
 	flagSet.StringVar(&c.projectID, "project", os.Getenv("SISO_PROJECT"), "cloud project ID. can be set by $SISO_PROJECT")
 	flagSet.StringVar(&c.collectorAddress, "collector_address", os.Getenv("SISO_COLLECTOR_ADDRESS"), `address to listen on for collector. Can be path for unix socket unix:///path/to/socket or host:port.`)
+	flagSet.BoolVar(&c.insecure, "insecure", false, "if set will not use any auth with collector. To be used primarily by e2e tests.")
 }
 
 func (c *Command) Execute(ctx context.Context, f *flag.FlagSet, args ...any) subcommands.ExitStatus {
@@ -66,7 +68,7 @@ func (c *Command) Execute(ctx context.Context, f *flag.FlagSet, args ...any) sub
 
 	set := otelcol.CollectorSettings{
 		Factories: func() (otelcol.Factories, error) {
-			return components(credential, c.projectID, c.collectorAddress)
+			return components(credential, c.projectID, c.collectorAddress, c.insecure)
 		},
 		ConfigProviderSettings: otelcol.ConfigProviderSettings{
 			ResolverSettings: confmap.ResolverSettings{

@@ -15,11 +15,12 @@ import (
 	"go.opentelemetry.io/collector/receiver"
 	otlpreceiver "go.opentelemetry.io/collector/receiver/otlpreceiver"
 	"go.opentelemetry.io/collector/service/telemetry/otelconftelemetry"
+	"google.golang.org/api/option"
 
 	"go.chromium.org/build/siso/auth/cred"
 )
 
-func components(credential cred.Cred, projectID, collectorAddress string) (otelcol.Factories, error) {
+func components(credential cred.Cred, projectID, collectorAddress string, insecure bool) (otelcol.Factories, error) {
 	var err error
 	factories := otelcol.Factories{
 		Telemetry: otelconftelemetry.NewFactory(),
@@ -50,6 +51,7 @@ func components(credential cred.Cred, projectID, collectorAddress string) (otelc
 		Factory:    googlecloudexporter.NewFactory(),
 		credential: credential,
 		projectID:  projectID,
+		insecure:   insecure,
 	}
 	factories.Exporters, err = otelcol.MakeFactoryMap[exporter.Factory](
 		exporterFactory,
@@ -73,13 +75,22 @@ type gceFactory struct {
 	exporter.Factory
 	credential cred.Cred
 	projectID  string
+	insecure   bool
 }
 
 func (f gceFactory) CreateDefaultConfig() component.Config {
 	config := f.Factory.CreateDefaultConfig().(*googlecloudexporter.Config)
 	config.ProjectID = f.projectID
-	config.TraceConfig.ClientConfig.GetClientOptions = f.credential.ClientOptions
-	config.LogConfig.ClientConfig.GetClientOptions = f.credential.ClientOptions
-	config.MetricConfig.ClientConfig.GetClientOptions = f.credential.ClientOptions
+	config.TraceConfig.ClientConfig.GetClientOptions = f.clientOptions
+	config.LogConfig.ClientConfig.GetClientOptions = f.clientOptions
+	config.MetricConfig.ClientConfig.GetClientOptions = f.clientOptions
 	return config
+}
+
+func (f gceFactory) clientOptions() []option.ClientOption {
+	opts := f.credential.ClientOptions()
+	if f.insecure {
+		opts = append(opts, option.WithoutAuthentication())
+	}
+	return opts
 }
