@@ -36,7 +36,6 @@ type Frontend struct {
 	startTime time.Time
 
 	ch   chan *pb.Status
-	quit chan struct{}
 	done chan struct{}
 
 	mu       sync.Mutex
@@ -50,7 +49,6 @@ func NewFrontend(ctx context.Context, w io.Writer) *Frontend {
 		w:         w,
 		startTime: time.Now(),
 		ch:        make(chan *pb.Status, 10000),
-		quit:      make(chan struct{}),
 		done:      make(chan struct{}),
 	}
 	go f.run(ctx)
@@ -60,34 +58,29 @@ func NewFrontend(ctx context.Context, w io.Writer) *Frontend {
 func (f *Frontend) run(ctx context.Context) {
 	defer close(f.done)
 	var buf []byte
-	for {
-		select {
-		case <-f.quit:
+	for m := range f.ch {
+		// Send the proto as a length-delimited message.
+		// size as Varint without tag.
+		b, err := proto.Marshal(m)
+		if err != nil {
+			clog.Warningf(ctx, "failed to marshal: %v", err)
+			continue
+		}
+		n := uint64(len(b))
+		buf = buf[:0]
+		buf = protowire.AppendVarint(buf, n)
+		buf = append(buf, b...)
+		_, err = f.w.Write(buf)
+		if err != nil {
+			clog.Warningf(ctx, "failed to send status: %v", err)
 			return
-		case m := <-f.ch:
-			// Send the proto as a length-delimited message.
-			// size as Varint without tag.
-			b, err := proto.Marshal(m)
-			if err != nil {
-				clog.Warningf(ctx, "failed to marshal: %v", err)
-				continue
-			}
-			n := uint64(len(b))
-			buf = buf[:0]
-			buf = protowire.AppendVarint(buf, n)
-			buf = append(buf, b...)
-			_, err = f.w.Write(buf)
-			if err != nil {
-				clog.Warningf(ctx, "failed to send status: %v", err)
-				return
-			}
 		}
 	}
 }
 
 // Close closes the frontend and finishes writing.
 func (f *Frontend) Close() {
-	close(f.quit)
+	close(f.ch)
 	<-f.done
 }
 
