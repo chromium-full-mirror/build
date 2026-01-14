@@ -91,8 +91,14 @@ func (c *Command) absStateDir() string {
 }
 
 func (c *Command) Execute(ctx context.Context, flagSet *flag.FlagSet, _ ...any) subcommands.ExitStatus {
+	// TODO: use the same logic to find execroot/dir with subcmd ninja.
 	var err error
 	c.execRoot, err = os.Getwd()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		return subcommands.ExitFailure
+	}
+	err = os.Chdir(c.absBuildDir())
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		return subcommands.ExitFailure
