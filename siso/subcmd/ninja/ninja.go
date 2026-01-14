@@ -612,7 +612,7 @@ func (c *Command) saveFailedTargetsAndCommand(ctx context.Context, errPtr *error
 		// store failed targets only when build steps failed.
 		// i.e., don't store with error like context canceled, etc.
 		clog.Infof(ctx, "record failed targets: %q", stepError.Target)
-		serr := saveLastFailedTargets(c.startDir, *targetsPtr, []string{stepError.Target})
+		serr := saveLastFailedTargets(c.stateDir, *targetsPtr, []string{stepError.Target})
 		if serr != nil {
 			clog.Warningf(ctx, "failed to save failed targets: %v", serr)
 			return
