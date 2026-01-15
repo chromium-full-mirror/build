@@ -345,14 +345,17 @@ func (fv *fsview) setFile(fname string, sr *scanResult) {
 }
 
 func (fv *fsview) markVisited(visits ...string) {
-	for _, v := range visits {
-		if strings.Index(v, ":") > 0 {
-			// expand labels.
-			fv.markVisited(fv.inputDeps[v]...)
+	stack := slices.Clone(visits)
+	for len(stack) > 0 {
+		n := len(stack) - 1
+		v := stack[n]
+		stack = stack[:n]
+
+		if fv.visited[v] {
 			continue
 		}
 		fv.visited[v] = true
-		fv.markVisited(fv.inputDeps[v]...)
+		stack = append(stack, fv.inputDeps[v]...)
 	}
 }
 
