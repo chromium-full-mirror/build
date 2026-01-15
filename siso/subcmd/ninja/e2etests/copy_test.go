@@ -14,7 +14,6 @@ import (
 	"path/filepath"
 	"sort"
 	"testing"
-	"time"
 
 	"go.chromium.org/build/siso/build"
 	"go.chromium.org/build/siso/build/ninjabuild"
@@ -131,7 +130,6 @@ func TestBuild_Copy(t *testing.T) {
 				t.Error(err)
 			}
 			t.Logf("remove cache/info.txt and check copy remove info.txt in dst")
-			time.Sleep(300 * time.Millisecond)
 			err = os.Remove(filepath.Join(dir, "cache/info.txt"))
 			if err != nil {
 				t.Fatal(err)

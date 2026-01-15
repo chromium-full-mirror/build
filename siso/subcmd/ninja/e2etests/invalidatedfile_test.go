@@ -58,7 +58,10 @@ func TestBuild_InvalidatedFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("update in: %v", err)
 	}
-	time.Sleep(200 * time.Millisecond)
+	fi, err := os.Stat(filepath.Join(dir, "in"))
+	if err != nil {
+		t.Fatalf("stat in: %v", err)
+	}
 	state, err := hashfs.Load(ctx, hashfs.Option{
 		StateFile: filepath.Join(dir, "out/siso/.siso_fs_state"),
 	})
@@ -67,7 +70,9 @@ func TestBuild_InvalidatedFile(t *testing.T) {
 	}
 	stm := hashfs.StateMap(state)
 	var buf bytes.Buffer
-	now := time.Now()
+
+	// We don't need real now, just need a time newer than fi.ModTime().
+	now := fi.ModTime().Add(1 * time.Second)
 	d := digest.FromBytes("new-out", []byte("new input")).Digest()
 	fname := filepath.ToSlash(filepath.Join(dir, "out/siso/out"))
 	cmdhash := stm[fname].GetCmdHash()
