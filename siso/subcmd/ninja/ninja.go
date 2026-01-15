@@ -119,95 +119,7 @@ func (c *Command) Execute(ctx context.Context, flagSet *flag.FlagSet, _ ...any) 
 	}
 
 	stats, err := c.Run(ctx)
-	d := time.Since(c.started)
-	sps := float64(stats.Done-stats.Skipped) / d.Seconds()
-	dur := ui.FormatDuration(d)
-	if err != nil {
-		var errFlag flagError
-		var errBuild ninjabuild.BuildError
-		switch {
-		case errors.Is(err, errNothingToDo):
-			msgPrefix := "Everything is up-to-date"
-			if ui.IsTerminal() {
-				msgPrefix = ui.SGR(ui.Green, msgPrefix)
-			}
-			ui.Default.Warningf("%s Nothing to do.\n", msgPrefix)
-			return subcommands.ExitSuccess
-
-		case errors.As(err, &errFlag):
-			ui.Default.Errorf("%v\n", err)
-
-		case errors.As(err, &errBuild):
-			var errTarget build.TargetError
-			if errors.As(errBuild.Err, &errTarget) {
-				msgPrefix := "Schedule Failure"
-				if ui.IsTerminal() {
-					dur = ui.SGR(ui.Bold, dur)
-					msgPrefix = ui.SGR(ui.BackgroundRed, msgPrefix)
-				}
-				ui.Default.Errorf("\n%6s %s: %v\n", dur, msgPrefix, errTarget)
-				if len(errTarget.Suggests) > 0 {
-					var sb strings.Builder
-					fmt.Fprintf(&sb, "Did you mean:")
-					for _, s := range errTarget.Suggests {
-						fmt.Fprintf(&sb, " %q", s)
-					}
-					fmt.Fprintln(&sb, " ?")
-					ui.Default.Warningf("%s\n", sb.String())
-				}
-				return subcommands.ExitFailure
-			}
-			var errMissingSource build.MissingSourceError
-			if errors.As(errBuild.Err, &errMissingSource) {
-				msgPrefix := "Schedule Failure"
-				if ui.IsTerminal() {
-					dur = ui.SGR(ui.Bold, dur)
-					msgPrefix = ui.SGR(ui.BackgroundRed, msgPrefix)
-				}
-				ui.Default.Errorf("\n%6s %s: %v\n", dur, msgPrefix, errMissingSource)
-				return subcommands.ExitFailure
-			}
-			msgPrefix := "Build Failure"
-			if ui.IsTerminal() {
-				dur = ui.SGR(ui.Bold, dur)
-				msgPrefix = ui.SGR(ui.BackgroundRed, msgPrefix)
-			}
-			ui.Default.Errorf("\n%6s %s: %d done, %d failed, %d remaining - %.02f/s\n %v\n", dur, msgPrefix, stats.Done-stats.Skipped, stats.Fail, stats.Total-stats.Done, sps, errBuild.Err)
-			suggest := fmt.Sprintf("see %s for full command line and output", c.logFilename(c.outputLogFile, c.startDir))
-			if c.sisoInfoLog != "" {
-				suggest += fmt.Sprintf("\n or %s", c.logFilename(c.sisoInfoLog, c.startDir))
-			}
-			failedCommandsFile := c.logFilename(c.failedCommandsFile, "")
-			if failedCommandsFile != "" {
-				_, err := os.Stat(failedCommandsFile)
-				if err == nil {
-					suggest += fmt.Sprintf("\nuse %s to re-run failed commands", c.logFilename(c.failedCommandsFile, c.startDir))
-				}
-			}
-			if ui.IsTerminal() {
-				suggest = ui.SGR(ui.Bold, suggest)
-			}
-			ui.Default.Warningf("%s\n", suggest)
-		default:
-			msgPrefix := "Error"
-			if ui.IsTerminal() {
-				msgPrefix = ui.SGR(ui.BackgroundRed, msgPrefix)
-			}
-			if status.Code(err) == codes.Unavailable {
-				ui.Default.Errorf("\n%6s %s: could not connect to backend. If you want to build offline, pass `-o` or `--offline`\n %v\n", ui.FormatDuration(time.Since(c.started)), msgPrefix, err)
-			} else {
-				ui.Default.Errorf("\n%6s %s: %v\n", ui.FormatDuration(time.Since(c.started)), msgPrefix, err)
-			}
-		}
-		return subcommands.ExitFailure
-	}
-	msgPrefix := "Build Succeeded"
-	if ui.IsTerminal() {
-		dur = ui.SGR(ui.Bold, dur)
-		msgPrefix = ui.SGR(ui.Green, msgPrefix)
-	}
-	ui.Default.Warningf("%6s %s: %d steps - %.02f/s\n", dur, msgPrefix, stats.Done-stats.Skipped, sps)
-	return subcommands.ExitSuccess
+	return c.postRun(stats, err)
 }
 
 // parse flags without stopping at non flags.
@@ -580,6 +492,100 @@ func (c *Command) Run(ctx context.Context) (stats build.Stats, err error) {
 		Subtool:       c.subtool,
 		EnableStatusz: true,
 	})
+}
+
+// postRun prints build result messages and returns exit status based on the build stats and the error from Run().
+func (c *Command) postRun(stats build.Stats, runErr error) subcommands.ExitStatus {
+	d := time.Since(c.started)
+	sps := float64(stats.Done-stats.Skipped) / d.Seconds()
+	dur := ui.FormatDuration(d)
+	if runErr != nil {
+		var errFlag flagError
+		var errBuild ninjabuild.BuildError
+		switch {
+		case errors.Is(runErr, errNothingToDo):
+			msgPrefix := "Everything is up-to-date"
+			if ui.IsTerminal() {
+				msgPrefix = ui.SGR(ui.Green, msgPrefix)
+			}
+			ui.Default.Warningf("%s Nothing to do.\n", msgPrefix)
+			return subcommands.ExitSuccess
+
+		case errors.As(runErr, &errFlag):
+			ui.Default.Errorf("%v\n", runErr)
+
+		case errors.As(runErr, &errBuild):
+			var errTarget build.TargetError
+			if errors.As(errBuild.Err, &errTarget) {
+				msgPrefix := "Schedule Failure"
+				if ui.IsTerminal() {
+					dur = ui.SGR(ui.Bold, dur)
+					msgPrefix = ui.SGR(ui.BackgroundRed, msgPrefix)
+				}
+				ui.Default.Errorf("\n%6s %s: %v\n", dur, msgPrefix, errTarget)
+				if len(errTarget.Suggests) > 0 {
+					var sb strings.Builder
+					fmt.Fprintf(&sb, "Did you mean:")
+					for _, s := range errTarget.Suggests {
+						fmt.Fprintf(&sb, " %q", s)
+					}
+					fmt.Fprintln(&sb, " ?")
+					ui.Default.Warningf("%s\n", sb.String())
+				}
+				return subcommands.ExitFailure
+			}
+			var errMissingSource build.MissingSourceError
+			if errors.As(errBuild.Err, &errMissingSource) {
+				msgPrefix := "Schedule Failure"
+				if ui.IsTerminal() {
+					dur = ui.SGR(ui.Bold, dur)
+					msgPrefix = ui.SGR(ui.BackgroundRed, msgPrefix)
+				}
+				ui.Default.Errorf("\n%6s %s: %v\n", dur, msgPrefix, errMissingSource)
+				return subcommands.ExitFailure
+			}
+			msgPrefix := "Build Failure"
+			if ui.IsTerminal() {
+				dur = ui.SGR(ui.Bold, dur)
+				msgPrefix = ui.SGR(ui.BackgroundRed, msgPrefix)
+			}
+			ui.Default.Errorf("\n%6s %s: %d done, %d failed, %d remaining - %.02f/s\n %v\n", dur, msgPrefix, stats.Done-stats.Skipped, stats.Fail, stats.Total-stats.Done, sps, errBuild.Err)
+			suggest := fmt.Sprintf("see %s for full command line and output", c.logFilename(c.outputLogFile, c.startDir))
+			if c.sisoInfoLog != "" {
+				suggest += fmt.Sprintf("\n or %s", c.logFilename(c.sisoInfoLog, c.startDir))
+			}
+			failedCommandsFile := c.logFilename(c.failedCommandsFile, "")
+			if failedCommandsFile != "" {
+				_, err := os.Stat(failedCommandsFile)
+				if err == nil {
+					suggest += fmt.Sprintf("\nuse %s to re-run failed commands", c.logFilename(c.failedCommandsFile, c.startDir))
+				}
+			}
+			if ui.IsTerminal() {
+				suggest = ui.SGR(ui.Bold, suggest)
+			}
+			ui.Default.Warningf("%s\n", suggest)
+		default:
+			msgPrefix := "Error"
+			if ui.IsTerminal() {
+				msgPrefix = ui.SGR(ui.BackgroundRed, msgPrefix)
+			}
+			if status.Code(runErr) == codes.Unavailable {
+				ui.Default.Errorf("\n%6s %s: could not connect to backend. If you want to build offline, pass `-o` or `--offline`\n %v\n", ui.FormatDuration(time.Since(c.started)), msgPrefix, runErr)
+			} else {
+				ui.Default.Errorf("\n%6s %s: %v\n", ui.FormatDuration(time.Since(c.started)), msgPrefix, runErr)
+			}
+		}
+		return subcommands.ExitFailure
+	}
+	msgPrefix := "Build Succeeded"
+	if ui.IsTerminal() {
+		dur = ui.SGR(ui.Bold, dur)
+		msgPrefix = ui.SGR(ui.Green, msgPrefix)
+	}
+	ui.Default.Warningf("%6s %s: %d steps - %.02f/s\n", dur, msgPrefix, stats.Done-stats.Skipped, sps)
+	return subcommands.ExitSuccess
+
 }
 
 func (c *Command) saveFailedTargetsAndCommand(ctx context.Context, errPtr *error, targetsPtr *[]string) {
