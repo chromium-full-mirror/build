@@ -349,7 +349,7 @@ func (fv *fsview) markVisited(visits ...string) {
 		if strings.Index(v, ":") > 0 {
 			// expand labels.
 			fv.markVisited(fv.inputDeps[v]...)
-			return
+			continue
 		}
 		fv.visited[v] = true
 		fv.markVisited(fv.inputDeps[v]...)
