@@ -208,15 +208,10 @@ func (m *MerkleTree) Set(entry Entry) error {
 }
 
 func pathJoin(dir, base string) string {
-	var b strings.Builder
 	if dir == "." || dir == "" {
 		return base
 	}
-	b.Grow(len(dir) + 1 + len(base))
-	b.WriteString(dir)
-	b.WriteByte('/')
-	b.WriteString(base)
-	return b.String()
+	return dir + "/" + base
 }
 
 func (m *MerkleTree) setDir(cur dirstate, name string) (dirstate, error) {
