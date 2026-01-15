@@ -23,6 +23,9 @@ func (s *symtab) Lookup(v string) (string, bool) {
 }
 
 func (s *symtab) Intern(v string) string {
+	if vv, ok := s.m.Load(v); ok {
+		return vv.(string)
+	}
 	v = strings.Clone(v)
 	vv, _ := s.m.LoadOrStore(v, v)
 	return vv.(string)
