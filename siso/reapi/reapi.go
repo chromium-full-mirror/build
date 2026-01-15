@@ -36,6 +36,7 @@ import (
 	"go.chromium.org/build/siso/o11y/clog"
 	"go.chromium.org/build/siso/o11y/iometrics"
 	"go.chromium.org/build/siso/reapi/digest"
+	"go.chromium.org/build/siso/reapi/retry"
 	"go.chromium.org/build/siso/version"
 )
 
@@ -462,12 +463,18 @@ func newConn(ctx context.Context, addr string, cred cred.Cred, opt Option) (grpc
 // NewFromConn creates new remote exec API client from conn and casConn.
 func NewFromConn(ctx context.Context, opt Option, conn, casConn grpcClientConn) (*Client, error) {
 	cc := rpb.NewCapabilitiesClient(conn)
-	capa, err := cc.GetCapabilities(ctx, &rpb.GetCapabilitiesRequest{
-		InstanceName: opt.Instance,
+	var capa *rpb.ServerCapabilities
+	// TODO(b/328332495): grpc should retry by service config?
+	err := retry.Do(ctx, func() error {
+		var err error
+		capa, err = cc.GetCapabilities(ctx, &rpb.GetCapabilitiesRequest{
+			InstanceName: opt.Instance,
+		})
+		return err
 	})
 	if err != nil {
 		conn.Close()
-		return nil, err
+		return nil, fmt.Errorf("failed to get capabilities: %w", err)
 	}
 	clog.Infof(ctx, "capabilities of %s: %s", opt.Instance, capa)
 	if opt.CompressedBlob > 0 {
