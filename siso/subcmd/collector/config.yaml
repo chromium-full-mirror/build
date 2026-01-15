@@ -11,6 +11,14 @@ exporters:
       prefix: workload.googleapis.com/siso
 service:
   extensions: [healthcheckv2]
+  telemetry:
+    metrics:
+      readers:
+        - pull:
+            exporter:
+              prometheus:
+                host: "localhost"
+                port: 15154
   pipelines:
     traces:
       receivers: [otlp]

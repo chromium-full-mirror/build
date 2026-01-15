@@ -112,6 +112,7 @@ func startCollector(t *testing.T, sisoBin, collectorAddr string, extraPorts ...s
 	t.Helper()
 	healthPort := "13133"
 	killProcessOnPort(t, healthPort)
+	killProcessOnPort(t, "15154")
 	for _, p := range extraPorts {
 		killProcessOnPort(t, p)
 	}
