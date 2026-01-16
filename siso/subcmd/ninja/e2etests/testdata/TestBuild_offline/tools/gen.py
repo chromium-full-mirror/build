@@ -17,8 +17,6 @@ for arg in sys.argv:
     output = arg[len('--output='):]
     print('output=' + output)
 
-time.sleep(1)
-
 if not output:
   print('no output')
   sys.exit(1)
