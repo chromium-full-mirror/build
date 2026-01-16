@@ -62,9 +62,9 @@ func (t *Context) NewSpan(ctx context.Context, name string, parent *Span) *Span 
 
 // Spans returns span data in the trace context.
 func (t *Context) Spans() []SpanData {
-	var data []SpanData
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	data := make([]SpanData, 0, len(t.spans))
 	for _, s := range t.spans {
 		sd := s.data()
 		if sd.Name == "" {
@@ -235,7 +235,7 @@ func (s *Span) protoAttrs() *tracepb.Span_Attributes {
 	if s == nil {
 		return nil
 	}
-	m := make(map[string]*tracepb.AttributeValue)
+	m := make(map[string]*tracepb.AttributeValue, len(s.attrs))
 	for _, kv := range s.attrs {
 		av := attrValue(kv.value)
 		if av != nil {
@@ -257,7 +257,7 @@ func (s *Span) data() SpanData {
 	if end.IsZero() {
 		end = time.Now()
 	}
-	attrs := make(map[string]any)
+	attrs := make(map[string]any, len(s.attrs))
 	for _, a := range s.attrs {
 		attrs[a.key] = a.value
 	}
