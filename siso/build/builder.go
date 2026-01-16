@@ -1036,8 +1036,9 @@ func isCanceled(ctx context.Context, err error) bool {
 func dedupInputs(ctx context.Context, cmd *execute.Cmd) {
 	// need to dedup input with different case in intermediate dir on win and mac?
 	caseInsensitive := cmd.Platform["OSFamily"] == "Windows"
-	m := make(map[string]string)
-	inputs := make([]string, 0, len(cmd.Inputs))
+	m := make(map[string]string, len(cmd.Inputs))
+	lenBefore := len(cmd.Inputs)
+	inputs := cmd.Inputs[:0]
 	for _, input := range cmd.Inputs {
 		key := input
 		if caseInsensitive {
@@ -1052,8 +1053,12 @@ func dedupInputs(ctx context.Context, cmd *execute.Cmd) {
 		m[key] = input
 		inputs = append(inputs, input)
 	}
-	cmd.Inputs = make([]string, len(inputs))
-	copy(cmd.Inputs, inputs)
+	lenAfter := len(inputs)
+	if lenBefore != lenAfter {
+		cmd.Inputs = slices.Clone(inputs)
+	} else {
+		cmd.Inputs = inputs
+	}
 }
 
 // outputs processes step's outputs.
