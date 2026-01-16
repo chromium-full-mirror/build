@@ -297,7 +297,7 @@ func schedule(ctx context.Context, sched *scheduler, graph Graph, args ...string
 		}
 	}
 	sched.outDirs.init()
-	go sched.outDirs.run(ctx, sched.path, graph)
+	go sched.outDirs.run(ctx, sched.path)
 
 	// validationQueue collects validation targets found during scheduling.
 	var validationQueue []Target
@@ -568,7 +568,7 @@ func scheduleTarget(ctx context.Context, sched *scheduler, graph Graph, target T
 		clog.Infof(ctx, "sched: add target %s: %s", targetPath(ctx, graph, target), newStep)
 	}
 	step.outputs = newEdge.Outputs
-	sched.addStep(ctx, step, target)
+	sched.addStep(ctx, step, graph, target)
 	return validationQueue, nil
 }
 
@@ -704,7 +704,7 @@ func (s *scheduler) finish(ctx context.Context, started time.Time) error {
 
 // addStep adds a Step to the scheduler.
 // This is called before finish().
-func (s *scheduler) addStep(ctx context.Context, step *Step, target Target) {
+func (s *scheduler) addStep(ctx context.Context, step *Step, graph Graph, target Target) {
 	s.plan.mu.Lock()
 	defer s.plan.mu.Unlock()
 	defer func() {
@@ -726,7 +726,7 @@ func (s *scheduler) addStep(ctx context.Context, step *Step, target Target) {
 		// don't add output for phony targets. https://crbug.com/1517575
 		for _, output := range step.outputs {
 			s.plan.targets[output].output = true
-			s.outDirs.ensure(output)
+			s.outDirs.ensure(targetPath(ctx, graph, output))
 		}
 	}
 	if log.V(1) {
@@ -955,19 +955,19 @@ func suggestTargets(ctx context.Context, sched *scheduler, graph Graph, args ...
 // gn: https://crbug.com/gn/461698357
 // soong: b/461917619
 type ensureOutDirs struct {
-	req       chan Target
+	req       chan string
 	done      chan error
 	err       error
 	knownDirs map[string]struct{}
 }
 
 func (e *ensureOutDirs) init() {
-	e.req = make(chan Target, 1000)
+	e.req = make(chan string, 1000)
 	e.done = make(chan error)
 	e.knownDirs = make(map[string]struct{})
 }
 
-func (e *ensureOutDirs) run(ctx context.Context, path *Path, graph Graph) {
+func (e *ensureOutDirs) run(ctx context.Context, path *Path) {
 	defer func() {
 		e.done <- e.err
 	}()
@@ -976,11 +976,10 @@ func (e *ensureOutDirs) run(ctx context.Context, path *Path, graph Graph) {
 		case <-ctx.Done():
 			e.err = context.Cause(ctx)
 			return
-		case target, ok := <-e.req:
+		case fname, ok := <-e.req:
 			if !ok {
 				return
 			}
-			fname := targetPath(ctx, graph, target)
 			dir := filepath.ToSlash(filepath.Dir(fname))
 			if !filepath.IsAbs(dir) {
 				dir = filepath.ToSlash(filepath.Join(path.ExecRoot, dir))
@@ -1012,8 +1011,8 @@ func (e *ensureOutDirs) run(ctx context.Context, path *Path, graph Graph) {
 	}
 }
 
-func (e *ensureOutDirs) ensure(t Target) {
-	e.req <- t
+func (e *ensureOutDirs) ensure(fname string) {
+	e.req <- fname
 }
 
 func (e *ensureOutDirs) wait() error {
