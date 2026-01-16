@@ -15,6 +15,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"slices"
 	"time"
 
 	rpb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
@@ -35,8 +36,11 @@ type Digest struct {
 
 // ofBytes creates a Digest from bytes.
 func ofBytes(b []byte) Digest {
-	d, _ := fromReader(bytes.NewReader(b))
-	return d
+	h := sha256.Sum256(b)
+	return Digest{
+		Hash:      hex.EncodeToString(h[:]),
+		SizeBytes: int64(len(b)),
+	}
 }
 
 // fromReader creates a Digest from io.Reader.
@@ -154,6 +158,9 @@ func (d Data) String() string {
 // DataToBytes returns byte values from a Data.
 // Note that it reads all content. It should not be used for large blob.
 func DataToBytes(ctx context.Context, d Data) ([]byte, error) {
+	if bs, ok := d.source.(byteSource); ok {
+		return slices.Clone(bs.b), nil
+	}
 	var buf []byte
 	err := retry.Do(ctx, func() error {
 		f, err := d.Open(ctx)
