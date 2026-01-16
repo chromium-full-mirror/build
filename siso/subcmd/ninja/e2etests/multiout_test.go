@@ -14,6 +14,7 @@ import (
 	"go.chromium.org/build/siso/build"
 	"go.chromium.org/build/siso/build/ninjabuild"
 	"go.chromium.org/build/siso/hashfs"
+	"go.chromium.org/build/siso/reapi/digest"
 	"go.chromium.org/build/siso/reapi/reapitest"
 )
 
@@ -68,18 +69,18 @@ func TestBuild_MultiOut_Remote(t *testing.T) {
 		return ninjabuild.Run(ctx, graph, opt, nil, ninjabuild.RunNinjaOpts{})
 	}
 	setupFiles(t, dir, t.Name(), nil)
-	var out1, out2 *rpb.Digest
+	out1Data := []byte("out1")
+	out2Data := []byte("out2")
 	fakere := &reapitest.Fake{
 		ExecuteFunc: func(fakere *reapitest.Fake, action *rpb.Action) (*rpb.ActionResult, error) {
-			var err error
-			out1, err = fakere.Put(ctx, []byte("out1"))
+			out1Digest, err := fakere.Put(ctx, out1Data)
 			if err != nil {
 				return &rpb.ActionResult{
 					ExitCode:  1,
 					StderrRaw: fmt.Appendf(nil, "failed to write out1: %v", err),
 				}, nil
 			}
-			out2, err = fakere.Put(ctx, []byte("out2"))
+			out2Digest, err := fakere.Put(ctx, out2Data)
 			if err != nil {
 				return &rpb.ActionResult{
 					ExitCode:  1,
@@ -91,11 +92,11 @@ func TestBuild_MultiOut_Remote(t *testing.T) {
 				OutputFiles: []*rpb.OutputFile{
 					{
 						Path:   "out1",
-						Digest: out1,
+						Digest: out1Digest,
 					},
 					{
 						Path:   "out2",
-						Digest: out2,
+						Digest: out2Digest,
 					},
 				},
 			}, nil
@@ -113,14 +114,16 @@ func TestBuild_MultiOut_Remote(t *testing.T) {
 	if err != nil {
 		t.Errorf("hashfs.Load=%v; want nil err", err)
 	}
+	wantOut1Digest := digest.FromBytes("", out1Data).Digest()
+	wantOut2Digest := digest.FromBytes("", out2Data).Digest()
 	m := hashfs.StateMap(st)
 	e1, ok := m[filepath.ToSlash(filepath.Join(dir, "out/siso/out1"))]
 	if !ok {
 		t.Errorf("out1 not found: %v", m)
 	} else {
 		d1 := e1.Digest
-		if d1.Hash != out1.Hash || d1.SizeBytes != out1.SizeBytes {
-			t.Errorf("out1=%s; want=%s", d1, out1)
+		if d1.Hash != wantOut1Digest.Hash || d1.SizeBytes != wantOut1Digest.SizeBytes {
+			t.Errorf("out1Digest=%s; want=%s", d1, wantOut1Digest)
 		}
 	}
 	e2, ok := m[filepath.ToSlash(filepath.Join(dir, "out/siso/out2"))]
@@ -128,8 +131,8 @@ func TestBuild_MultiOut_Remote(t *testing.T) {
 		t.Errorf("out2 not found: %v", m)
 	} else {
 		d2 := e2.Digest
-		if d2.Hash != out2.Hash || d2.SizeBytes != out2.SizeBytes {
-			t.Errorf("out2=%s; want=%s", d2, out2)
+		if d2.Hash != wantOut2Digest.Hash || d2.SizeBytes != wantOut2Digest.SizeBytes {
+			t.Errorf("out2Digest=%s; want=%s", d2, wantOut2Digest)
 		}
 	}
 }
