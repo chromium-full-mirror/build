@@ -639,7 +639,7 @@ func blobsToUpload(ctx context.Context, blobs []digest.Digest, ds *digest.Store)
 			var b []byte
 			err := FileSemaphore.Do(ctx, func(ctx context.Context) error {
 				var err error
-				b, err = readAll(ctx, data)
+				b, err = digest.DataToBytes(ctx, data)
 				return err
 			})
 			if err != nil {
@@ -702,23 +702,6 @@ func createBatchUpdateBlobsRequests(instance string, blobReqs []*rpb.BatchUpdate
 		}
 	}
 	return batchReqs
-}
-
-func readAll(ctx context.Context, data digest.Data) ([]byte, error) {
-	var buf []byte
-	err := retry.Do(ctx, func() error {
-		r, err := data.Open(ctx)
-		if err != nil {
-			return err
-		}
-		defer r.Close()
-		buf, err = io.ReadAll(r)
-		return err
-	})
-	if err != nil {
-		return nil, err
-	}
-	return buf, nil
 }
 
 func (c *Client) uploadWithByteStream(ctx context.Context, digests []digest.Digest, uploads map[digest.Digest]*uploadOp, ds *digest.Store) []missingBlob {

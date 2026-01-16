@@ -615,7 +615,9 @@ func (hfs *HashFS) ReadFile(ctx context.Context, root, fname string) ([]byte, er
 		return nil, fmt.Errorf("readfile %s: %w", fname, err)
 	}
 	defer rd.Close()
-	buf, err := io.ReadAll(rd)
+	size := max(e.size, 0)
+	buf := make([]byte, size)
+	_, err = io.ReadFull(rd, buf)
 	if log.V(1) {
 		clog.Infof(ctx, "readfile(disk) %s: %v", fname, err)
 	}

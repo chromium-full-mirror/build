@@ -161,14 +161,17 @@ func DataToBytes(ctx context.Context, d Data) ([]byte, error) {
 	if bs, ok := d.source.(byteSource); ok {
 		return slices.Clone(bs.b), nil
 	}
-	var buf []byte
+	if d.Digest().SizeBytes <= 0 {
+		return nil, nil
+	}
+	buf := make([]byte, d.Digest().SizeBytes)
 	err := retry.Do(ctx, func() error {
 		f, err := d.Open(ctx)
 		if err != nil {
 			return err
 		}
 		defer f.Close()
-		buf, err = io.ReadAll(f)
+		_, err = io.ReadFull(f, buf)
 		return err
 	})
 	return buf, err
