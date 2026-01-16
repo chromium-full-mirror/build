@@ -83,6 +83,8 @@ type NinjaFlags struct {
 	fastExit        bool
 
 	quiet           bool
+	heartbeatPeriod time.Duration
+
 	verbose         bool
 	verboseFailures bool
 
@@ -183,6 +185,7 @@ func (c *Command) SetFlags(flagSet *flag.FlagSet) {
 	flagSet.Var(batch, "batch", "batch mode. prefer thoughput over low latency for build failures. disable -fast_nop, -fast_local -fast_last_failure -fast_exit")
 
 	flagSet.BoolVar(&c.quiet, "quiet", false, "don't show progress status, just command output")
+	flagSet.DurationVar(&c.heartbeatPeriod, "heartbeat_period", 0, "print a heartbeat with this frequency on the console when --quiet is set and this value is non zero.")
 	flagSet.BoolVar(&c.verbose, "verbose", false, "show all command lines while building")
 	flagSet.BoolVar(&c.verbose, "v", false, "show all command lines while building (alias of --verbose)")
 	flagSet.BoolVar(&c.verboseFailures, "verbose_failures", true, "show failed command lines")

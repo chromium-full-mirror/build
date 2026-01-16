@@ -95,7 +95,12 @@ func (c *Command) Execute(ctx context.Context, flagSet *flag.FlagSet, _ ...any) 
 		c.logDir = filepath.Dir(c.fname)
 	}
 	if c.quiet {
-		ui.Default = quietUI{}
+		ui.Default = quietUI{
+			heartbeatPeriod: c.heartbeatPeriod,
+		}
+		spin := ui.Default.NewSpinner()
+		spin.Start("")
+		defer spin.Stop(nil)
 	} else if c.frontendFile != "" {
 		f := os.Stdout
 		if c.frontendFile != "-" {
