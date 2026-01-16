@@ -328,6 +328,10 @@ func TestStat_Race(t *testing.T) {
 	for range runtimex.NumCPU() - 1 {
 		eg.Go(func() error {
 			for count.Load() < n {
+				// REQUIRED: In standard Go, async preemption handles this.
+				// However, with -race, preemption is cooperative. Without this yield, this tight
+				// loop will starve the writer goroutines and hang the test.
+				runtime.Gosched()
 			}
 			return nil
 		})
