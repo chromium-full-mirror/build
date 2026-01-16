@@ -157,7 +157,7 @@ type pooledDecoder struct {
 func (d *pooledDecoder) Close() error {
 	// Removes the reference on the io.Reader
 	if err := d.Reset(nil); err != nil {
-		return nil
+		return err
 	}
 	d.pool.Put(d)
 	return nil
