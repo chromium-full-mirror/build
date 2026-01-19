@@ -21,7 +21,6 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/reflection"
@@ -74,10 +73,6 @@ func main() {
 	if sb != localexec.Files && runtime.GOOS != "linux" {
 		log.Fatalf("sandbox strategy %q is only supported on Linux", *sandboxStrategy)
 	}
-
-	// Enable the internal randomness pool for UUID generation, which can improve
-	// performance when generating many UUIDs.
-	uuid.EnableRandPool()
 
 	// Reset the umask to a known value, so we know which permissions newly
 	// created files and directories will have.

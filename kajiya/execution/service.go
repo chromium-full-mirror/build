@@ -144,10 +144,7 @@ func (s *Service) execute(request *repb.ExecuteRequest, _ *repb.RequestMetadata,
 	}
 
 	// Generate a unique identifier for this operation.
-	opName, err := uuid.NewV7()
-	if err != nil {
-		return err
-	}
+	opName := uuidgen.NewV7()
 
 	// If we're not supposed to cache the result, just execute the action and return the result.
 	if action.DoNotCache {
