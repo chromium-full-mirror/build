@@ -98,6 +98,10 @@ type dirstate struct {
 	dir  *rpb.Directory
 }
 
+func splitElem(fname string) []string {
+	return strings.Split(fname, "/")
+}
+
 // Set sets an entry.
 // It may return ErrAbsPath/ErrAmbigFileSymlink/ErrBadPath as error.
 func (m *MerkleTree) Set(entry Entry) error {
@@ -114,16 +118,22 @@ func (m *MerkleTree) Set(entry Entry) error {
 			return nil
 		}
 	}
+	elems := splitElem(fname)
+	if len(elems) == 0 {
+		if !entry.Data.IsZero() {
+			return fmt.Errorf("set %s: %w", fname, ErrBadPath)
+		}
+		return nil
+	}
 	cur := dirstate{
 		name: ".",
 		dir:  m.RootDirectory(),
 	}
 	var dirstack []dirstate
-	rest := fname
 	for {
-		name, next, found := strings.Cut(rest, "/")
-		rest = next
-		if !found {
+		var name string
+		name, elems = elems[0], elems[1:]
+		if len(elems) == 0 {
 			// a leaf.
 			if entry.Data.IsZero() {
 				if name == "" {
@@ -164,7 +174,6 @@ func (m *MerkleTree) Set(entry Entry) error {
 			})
 			return nil
 		}
-
 		if name == "" {
 			continue
 		}
@@ -245,16 +254,22 @@ func (m *MerkleTree) SetTree(tentry TreeEntry) error {
 	if exists {
 		return fmt.Errorf("setTree %s: %w", dname, ErrPrecomputedSubTree)
 	}
+	elems := splitElem(dname)
+	if len(elems) == 0 {
+		if !tentry.Digest.IsZero() {
+			return fmt.Errorf("setTree %s: %w", dname, ErrBadPath)
+		}
+		return nil
+	}
 	cur := dirstate{
 		name: ".",
 		dir:  m.RootDirectory(),
 	}
 	var dirstack []dirstate
-	rest := dname
 	for {
-		name, next, found := strings.Cut(rest, "/")
-		rest = next
-		if !found {
+		var name string
+		name, elems = elems[0], elems[1:]
+		if len(elems) == 0 {
 			// a leaf.
 			if name == "" {
 				return fmt.Errorf("setTree %s: empty path element: %w", dname, ErrBadPath)
@@ -377,15 +392,15 @@ func (m *MerkleTree) resolveSymlinkDir(ctx context.Context, curdir *rpb.Director
 
 // mergeDir merges dir into dirname's directory.
 func (m *MerkleTree) mergeDir(ctx context.Context, dirname string, dir *rpb.Directory) error {
+	elems := splitElem(dirname)
 	cur := dirstate{
 		name: ".",
 		dir:  m.RootDirectory(),
 	}
-	rest := dirname
 	for {
-		name, next, found := strings.Cut(rest, "/")
-		rest = next
-		if !found {
+		var name string
+		name, elems = elems[0], elems[1:]
+		if len(elems) == 0 {
 			// leaf
 			cur, err := m.setDir(cur, name)
 			if err != nil {
@@ -401,7 +416,6 @@ func (m *MerkleTree) mergeDir(ctx context.Context, dirname string, dir *rpb.Dire
 			cur.dir.Directories = append(cur.dir.Directories, dir.Directories...)
 			return nil
 		}
-
 		var err error
 		cur, err = m.setDir(cur, name)
 		if err != nil {
