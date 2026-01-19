@@ -849,7 +849,7 @@ func (s *StepDef) ExpandedInputs(ctx context.Context) []string {
 		// replace phony inputs here before ExpandInput,
 		// since ExpandInputs removes non-exist inputs.
 		p := globals.targetPath(inEdge.Outputs()[0])
-		inputs = append(inputs, replacePhony(ctx, globals, seen, p, inEdge, s.rule.Debug)...)
+		inputs = replacePhony(ctx, globals, seen, p, inEdge, s.rule.Debug, inputs)
 	}
 
 	inputs = globals.stepConfig.ExpandInputs(ctx, globals.path, globals.hashFS, inputs)
@@ -948,8 +948,7 @@ func (s *StepDef) ExpandedInputs(ctx context.Context) []string {
 	return inputs
 }
 
-func replacePhony(ctx context.Context, globals *globals, seen map[string]bool, target string, edge *ninjautil.Edge, debug bool) []string {
-	var inputs []string
+func replacePhony(ctx context.Context, globals *globals, seen map[string]bool, target string, edge *ninjautil.Edge, debug bool, inputs []string) []string {
 	for _, in := range edge.Inputs() {
 		p := globals.targetPath(in)
 		if seen[p] {
@@ -960,7 +959,7 @@ func replacePhony(ctx context.Context, globals *globals, seen map[string]bool, t
 			clog.Infof(ctx, "input from ninja(phony): %s -> %s", target, p)
 		}
 		if inEdge, ok := in.InEdge(); ok && inEdge.IsPhony() {
-			inputs = append(inputs, replacePhony(ctx, globals, seen, p, inEdge, debug)...)
+			inputs = replacePhony(ctx, globals, seen, p, inEdge, debug, inputs)
 			continue
 		}
 		inputs = append(inputs, p)
