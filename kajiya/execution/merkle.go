@@ -29,14 +29,14 @@ func MaterializeDirectory(cas *blobstore.ContentAddressableStorage, path string,
 	for _, sl := range d.Symlinks {
 		slPath := filepath.Join(path, sl.Name)
 		if err := os.Symlink(sl.Target, slPath); err != nil {
-			return fmt.Errorf("failed to create symlink: %w", err)
+			return fmt.Errorf("failed to create input symlink: %w", err)
 		}
 	}
 
 	// Create all subdirectories.
 	for _, sd := range d.Dirs {
 		if err := os.Mkdir(filepath.Join(path, sd), 0755); err != nil {
-			return fmt.Errorf("failed to create directory: %w", err)
+			return fmt.Errorf("failed to create input directory: %w", err)
 		}
 	}
 
@@ -81,7 +81,7 @@ func CreateOutputDirectories(path string, d *model.KajiyaDirectory) error {
 				continue
 			}
 			if err := os.Mkdir(filepath.Join(path, dirName), 0755); err != nil {
-				return fmt.Errorf("failed to create directory: %w", err)
+				return fmt.Errorf("failed to create output directory: %w", err)
 			}
 			seen[dirName] = true
 		}
