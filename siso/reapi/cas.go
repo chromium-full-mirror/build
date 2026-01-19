@@ -37,8 +37,10 @@ import (
 	"go.chromium.org/build/siso/sync/semaphore"
 )
 
-// FileSemaphore limits concurrent file access to create BatchUpdateBlobgs to protect from runtime thread exhaustion.
-var FileSemaphore = semaphore.New("reapi-cas-file", runtimex.NumCPU())
+var (
+	// FileSemaphore limits concurrent file access to create BatchUpdateBlobgs to protect from runtime thread exhaustion.
+	FileSemaphore = semaphore.New("reapi-cas-file", runtimex.NumCPU())
+)
 
 const (
 	// defaultBatchUpdateByteLimit is bytes limit for cas BatchUpdateBlobs.
@@ -91,10 +93,8 @@ func (u *uploadOp) wait(ctx context.Context) error {
 	}
 }
 
-var (
-	errUploadNotFinished = errors.New("upload not finished")
-	errUploadNoResponse  = errors.New("upload no response")
-)
+var errUploadNotFinished = errors.New("upload not finished")
+var errUploadNoResponse = errors.New("upload no response")
 
 func (c *Client) useCompressedBlob(d digest.Digest) bool {
 	if c.opt.compressor == rpb.Compressor_IDENTITY {
@@ -134,12 +134,8 @@ func (c *Client) newDecoder(r io.Reader, d digest.Digest) (io.ReadCloser, error)
 	if c.useCompressedBlob(d) {
 		switch comp := c.getCompressor(); comp {
 		case rpb.Compressor_ZSTD:
-			dec := c.zstdDecoderPool.Get().(*pooledDecoder)
-			// Only errors if dec was closed.
-			if err := dec.Reset(r); err != nil {
-				return nil, err
-			}
-			return dec, nil
+			rd, err := zstd.NewReader(r)
+			return rd.IOReadCloser(), err
 		case rpb.Compressor_DEFLATE:
 			return flate.NewReader(r), nil
 		default:
@@ -147,20 +143,6 @@ func (c *Client) newDecoder(r io.Reader, d digest.Digest) (io.ReadCloser, error)
 		}
 	}
 	return io.NopCloser(r), nil
-}
-
-type pooledDecoder struct {
-	*zstd.Decoder
-	pool *sync.Pool
-}
-
-func (d *pooledDecoder) Close() error {
-	// Removes the reference on the io.Reader
-	if err := d.Reset(nil); err != nil {
-		return nil
-	}
-	d.pool.Put(d)
-	return nil
 }
 
 // Get fetches the content of blob from CAS by digest.
@@ -436,7 +418,9 @@ func (c *Client) UploadAll(ctx context.Context, ds *digest.Store) (numUploaded i
 	return numUploaded, err
 }
 
-var errBlobNotInReq = errors.New("blob not in request")
+var (
+	errBlobNotInReq = errors.New("blob not in request")
+)
 
 type missingBlob struct {
 	Digest digest.Digest
