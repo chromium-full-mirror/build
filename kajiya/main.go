@@ -30,6 +30,7 @@ import (
 	"go.chromium.org/build/kajiya/blobstore"
 	"go.chromium.org/build/kajiya/capabilities"
 	"go.chromium.org/build/kajiya/execution"
+	"go.chromium.org/build/kajiya/execution/localexec"
 
 	_ "net/http/pprof" // import to let pprof register its HTTP handlers
 )
@@ -45,7 +46,7 @@ var (
 	tlsKeyFile      = flag.String("tls_key_file", "", "TLS key file")
 	sandboxStrategy = flag.String("sandbox", "overlayfs", "sandbox strategy to use (one of: files, overlayfs, nested-overlayfs)")
 
-	sb execution.SandboxStrategy
+	sb localexec.SandboxStrategy
 )
 
 func getDefaultDataDir() string {
@@ -62,15 +63,15 @@ func main() {
 	// Validate the sandbox strategy flag.
 	switch *sandboxStrategy {
 	case "files":
-		sb = execution.Files
+		sb = localexec.Files
 	case "overlayfs":
-		sb = execution.OverlayFS
+		sb = localexec.OverlayFS
 	case "nested-overlayfs":
-		sb = execution.NestedOverlayFS
+		sb = localexec.NestedOverlayFS
 	default:
 		log.Fatalf("invalid sandbox strategy %q", *sandboxStrategy)
 	}
-	if sb != execution.Files && runtime.GOOS != "linux" {
+	if sb != localexec.Files && runtime.GOOS != "linux" {
 		log.Fatalf("sandbox strategy %q is only supported on Linux", *sandboxStrategy)
 	}
 
@@ -216,7 +217,7 @@ func createServer(dataDir string) (*grpc.Server, error) {
 	// Execution service.
 	if *enableExecution {
 		execDir := filepath.Join(dataDir, "exec")
-		executor, err := execution.New(execDir, cas, sb)
+		executor, err := localexec.New(execDir, cas, sb)
 		if err != nil {
 			return nil, err
 		}
