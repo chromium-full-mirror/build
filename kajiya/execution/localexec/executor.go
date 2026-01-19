@@ -51,18 +51,27 @@ func New(baseDir string, cas *blobstore.ContentAddressableStorage, sb SandboxStr
 	}
 
 	// Create the data directory if it doesn't exist.
-	if err := os.Mkdir(baseDir, 0755); err != nil && !errors.Is(err, fs.ErrExist) {
+	err := os.Mkdir(baseDir, 0755)
+	if err != nil && !errors.Is(err, fs.ErrExist) {
 		return nil, fmt.Errorf("failed to create directory %q: %w", baseDir, err)
 	}
 
+	// Create the image repository.
 	images, err := NewImageRepository(filepath.Join(baseDir, "images"))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create image repository: %w", err)
 	}
 
+	// Create the base directory for sandboxes.
 	sandboxBase := filepath.Join(baseDir, "tmp")
 	if err := os.Mkdir(sandboxBase, 0755); err != nil && !errors.Is(err, fs.ErrExist) {
 		return nil, fmt.Errorf("failed to create directory %q: %w", sandboxBase, err)
+	}
+
+	// Create the tree repository.
+	trees, err := newTreeRepository(filepath.Join(baseDir, "trees"), cas)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create tree repository: %w", err)
 	}
 
 	// Try to find nsjail in the PATH.
@@ -72,11 +81,6 @@ func New(baseDir string, cas *blobstore.ContentAddressableStorage, sb SandboxStr
 		if err != nil {
 			return nil, fmt.Errorf("🚨 required tool 'nsjail' not found in PATH")
 		}
-	}
-
-	trees, err := newTreeRepository(filepath.Join(baseDir, "trees"), cas)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create tree repository: %w", err)
 	}
 
 	return &Executor{
