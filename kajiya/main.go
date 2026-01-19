@@ -102,7 +102,9 @@ func main() {
 		// https://pkg.go.dev/net/http/pprof
 		log.Printf("⏱️ pprof is enabled, listening at http://%s/debug/pprof/\n", *pprofAddr)
 		go func() {
-			log.Printf("pprof http listener: %v", http.ListenAndServe(*pprofAddr, nil))
+			if err := http.ListenAndServe(*pprofAddr, nil); err != http.ErrServerClosed {
+				log.Fatalf("pprof http listener: %v", err)
+			}
 		}()
 		defer func() {
 			log.Printf("pprof is still listening at http://%s/debug/pprof/\n", *pprofAddr)
