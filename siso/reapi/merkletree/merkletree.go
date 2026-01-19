@@ -30,11 +30,6 @@ type MerkleTree struct {
 	// empty dirname is root.
 	m     map[string]*rpb.Directory
 	store *digest.Store
-
-	// Note: this cache showed a reduction of 7GB (4%) during a Chrome
-	// build. The assumption is that traversal is sequential. A measurement
-	// showed 161172 "cache hits" during a build of the `base` target.
-	lastDir dirstate
 }
 
 // New creates new merkle tree with digest store.
@@ -123,21 +118,8 @@ func (m *MerkleTree) Set(entry Entry) error {
 		name: ".",
 		dir:  m.RootDirectory(),
 	}
-	rest := fname
-	// Try to use the cached directory state if possible.
-	var found bool
-	if m.lastDir.dir != nil && !strings.Contains(fname, "..") {
-		var after string
-		after, found = strings.CutPrefix(fname, m.lastDir.name+"/")
-		if found {
-			cur = m.lastDir
-			rest = after
-		}
-	}
-	if !found {
-		m.lastDir = dirstate{}
-	}
 	var dirstack []dirstate
+	rest := fname
 	for {
 		name, next, found := strings.Cut(rest, "/")
 		rest = next
@@ -156,7 +138,6 @@ func (m *MerkleTree) Set(entry Entry) error {
 				if name == ".." {
 					return nil
 				}
-				m.lastDir = cur
 				if entry.IsSymlink() {
 					cur.dir.Symlinks = append(cur.dir.Symlinks, &rpb.SymlinkNode{
 						Name:   name,
@@ -181,7 +162,6 @@ func (m *MerkleTree) Set(entry Entry) error {
 				Digest:       entry.Data.Digest().Proto(),
 				IsExecutable: entry.IsExecutable,
 			})
-			m.lastDir = cur
 			return nil
 		}
 
@@ -332,9 +312,6 @@ func (m *MerkleTree) setTree(cur dirstate, name string, d digest.Digest, store *
 
 // Build builds merkle tree and returns root's digest.
 func (m *MerkleTree) Build(ctx context.Context) (digest.Digest, error) {
-	// invalidate lastDir cache since we are resolving symlinks and might modify the tree structure
-	m.lastDir = dirstate{}
-
 	err := m.resolveSymlinkDir(ctx, m.RootDirectory(), "")
 	if err != nil {
 		return digest.Digest{}, err
