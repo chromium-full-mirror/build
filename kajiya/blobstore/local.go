@@ -13,10 +13,10 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/bazelbuild/remote-apis-sdks/go/pkg/digest"
 	"golang.org/x/sync/singleflight"
 
 	"go.chromium.org/build/kajiya/atomicio"
+	"go.chromium.org/build/kajiya/digest"
 )
 
 // ContentAddressableStorage is a simple CAS implementation that stores files on the local disk.
@@ -167,7 +167,7 @@ func (c *ContentAddressableStorage) Get(d digest.Digest) ([]byte, error) {
 
 // Put stores the given data in the CAS and returns its digest.
 func (c *ContentAddressableStorage) Put(data []byte) (digest.Digest, error) {
-	d := digest.NewFromBlob(data)
+	d := digest.FromBlob(data)
 	_, err, _ := c.putSyncer.Do(d.Hash, func() (any, error) {
 		// If the file is already in the CAS, we're done.
 		if c.Has(d) {

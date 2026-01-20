@@ -12,12 +12,12 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/bazelbuild/remote-apis-sdks/go/pkg/digest"
 	repb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
 	"golang.org/x/sync/singleflight"
 	"google.golang.org/protobuf/proto"
 
 	"go.chromium.org/build/kajiya/atomicio"
+	"go.chromium.org/build/kajiya/digest"
 )
 
 // ActionCache is a simple action cache implementation that stores ActionResults on the local disk.

@@ -12,12 +12,12 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/bazelbuild/remote-apis-sdks/go/pkg/digest"
 	repb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
 	errpb "google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/protobuf/proto"
 
 	"go.chromium.org/build/kajiya/blobstore"
+	"go.chromium.org/build/kajiya/digest"
 	"go.chromium.org/build/kajiya/execution/model"
 )
 
@@ -182,7 +182,7 @@ func (sb *Sandbox) buildMerkleTree(path string) ([]*repb.Directory, error) {
 			if err != nil {
 				return nil, fmt.Errorf("failed to build merkle tree: %w", err)
 			}
-			d, err := digest.NewFromMessage(subDirs[0])
+			d, err := digest.FromMessage(subDirs[0])
 			if err != nil {
 				return nil, fmt.Errorf("failed to get digest: %w", err)
 			}
@@ -192,7 +192,7 @@ func (sb *Sandbox) buildMerkleTree(path string) ([]*repb.Directory, error) {
 			})
 			dirs = append(dirs, subDirs...)
 		} else {
-			d, err := digest.NewFromFile(filepath.Join(path, dirEntry.Name()))
+			d, err := digest.FromFile(filepath.Join(path, dirEntry.Name()))
 			if err != nil {
 				return nil, fmt.Errorf("failed to get digest: %w", err)
 			}
@@ -365,7 +365,7 @@ func (sb *Sandbox) UploadOutputs(action *model.Action, actionResult *repb.Action
 
 				// Upload the file to the CAS.
 				var d digest.Digest
-				d, err = digest.NewFromFile(fullPath)
+				d, err = digest.FromFile(fullPath)
 				if err != nil {
 					return true
 				}

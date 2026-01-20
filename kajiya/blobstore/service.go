@@ -20,7 +20,6 @@ import (
 	"strings"
 	"sync/atomic"
 
-	"github.com/bazelbuild/remote-apis-sdks/go/pkg/digest"
 	repb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
 	"github.com/google/uuid"
 	"github.com/klauspost/compress/zstd"
@@ -28,6 +27,8 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+
+	"go.chromium.org/build/kajiya/digest"
 )
 
 const (

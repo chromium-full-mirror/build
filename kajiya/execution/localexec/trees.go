@@ -12,10 +12,10 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/bazelbuild/remote-apis-sdks/go/pkg/digest"
 	"golang.org/x/sync/singleflight"
 
 	"go.chromium.org/build/kajiya/blobstore"
+	"go.chromium.org/build/kajiya/digest"
 	"go.chromium.org/build/kajiya/execution/model"
 )
 

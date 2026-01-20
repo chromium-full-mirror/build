@@ -5,7 +5,6 @@ go 1.25.6
 require (
 	cloud.google.com/go/longrunning v0.8.0
 	github.com/bazelbuild/remote-apis v0.0.0-20260113164227-016806f6b7a4
-	github.com/bazelbuild/remote-apis-sdks v0.0.0-20251202150838-a01d8dc79d0d
 	github.com/google/uuid v1.6.0
 	github.com/hashicorp/go-immutable-radix/v2 v2.1.0
 	github.com/klauspost/compress v1.18.3

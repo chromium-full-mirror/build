@@ -12,13 +12,13 @@ import (
 	"io/fs"
 	"log"
 
-	"github.com/bazelbuild/remote-apis-sdks/go/pkg/digest"
 	repb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
 	"go.chromium.org/build/kajiya/blobstore"
+	"go.chromium.org/build/kajiya/digest"
 )
 
 // Service implements the REAPI ActionCache service.

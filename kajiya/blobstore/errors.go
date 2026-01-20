@@ -7,7 +7,7 @@ package blobstore
 import (
 	"fmt"
 
-	"github.com/bazelbuild/remote-apis-sdks/go/pkg/digest"
+	"go.chromium.org/build/kajiya/digest"
 )
 
 // MissingBlobsError is an error type that indicates that one or more blobs are

@@ -7,9 +7,10 @@ package blobstore
 import (
 	"fmt"
 
-	"github.com/bazelbuild/remote-apis-sdks/go/pkg/digest"
 	repb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
 	"google.golang.org/protobuf/proto"
+
+	"go.chromium.org/build/kajiya/digest"
 )
 
 // proto reads a proto message with the given digest from the CAS and unmarshals it into m.
