@@ -21,12 +21,7 @@ type Service struct {
 
 // Register creates and registers a new Service with the given gRPC server.
 func Register(s *grpc.Server) {
-	repb.RegisterCapabilitiesServer(s, NewService())
-}
-
-// NewService creates a new Service.
-func NewService() *Service {
-	return &Service{}
+	repb.RegisterCapabilitiesServer(s, &Service{})
 }
 
 // GetCapabilities returns the capabilities of the server.

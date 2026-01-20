@@ -53,30 +53,23 @@ type ExecutorInterface interface {
 
 // Register creates and registers a new Service with the given gRPC server.
 func Register(s *grpc.Server, executor ExecutorInterface, ac *actioncache.ActionCache, cas *blobstore.ContentAddressableStorage) error {
-	service, err := NewService(executor, ac, cas)
-	if err != nil {
-		return err
-	}
-	repb.RegisterExecutionServer(s, service)
-	return nil
-}
-
-// NewService creates a new Service.
-func NewService(executor ExecutorInterface, ac *actioncache.ActionCache, cas *blobstore.ContentAddressableStorage) (*Service, error) {
 	if executor == nil {
-		return nil, fmt.Errorf("executor must be set")
+		return fmt.Errorf("executor must be set")
 	}
 
 	if cas == nil {
-		return nil, fmt.Errorf("cas must be set")
+		return fmt.Errorf("cas must be set")
 	}
 
-	return &Service{
+	service := &Service{
 		executor:    executor,
 		actionCache: ac,
 		cas:         cas,
 		sem:         semaphore.NewWeighted(int64(runtime.GOMAXPROCS(0))),
-	}, nil
+	}
+
+	repb.RegisterExecutionServer(s, service)
+	return nil
 }
 
 func Metadata(ctx context.Context) (*repb.RequestMetadata, error) {

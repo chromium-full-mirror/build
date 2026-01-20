@@ -11,6 +11,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"log"
@@ -46,32 +47,25 @@ type Service struct {
 }
 
 // Register creates and registers a new Service with the given gRPC server.
-// The dataDir is created if it does not exist.
-func Register(s *grpc.Server, cas *ContentAddressableStorage, dataDir string) error {
-	service, err := NewService(cas, dataDir)
-	if err != nil {
-		return err
-	}
-	bspb.RegisterByteStreamServer(s, service)
-	repb.RegisterContentAddressableStorageServer(s, service)
-	return nil
-}
-
-// NewService creates a new Service.
-func NewService(cas *ContentAddressableStorage, uploadDir string) (*Service, error) {
+// The uploadDir is created if it does not exist.
+func Register(s *grpc.Server, cas *ContentAddressableStorage, uploadDir string) error {
 	if uploadDir == "" {
-		return nil, errors.New("uploadDir must be set")
+		return fmt.Errorf("uploadDir must be set")
 	}
 
 	// Ensure that our temporary upload directory exists.
 	if err := os.Mkdir(uploadDir, 0755); err != nil && !errors.Is(err, fs.ErrExist) {
-		return nil, err
+		return err
 	}
 
-	return &Service{
+	service := &Service{
 		cas:       cas,
 		uploadDir: uploadDir,
-	}, nil
+	}
+
+	bspb.RegisterByteStreamServer(s, service)
+	repb.RegisterContentAddressableStorageServer(s, service)
+	return nil
 }
 
 // parseReadResource parses a ReadRequest.ResourceName and returns the validated Digest and the compressor.

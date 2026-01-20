@@ -34,32 +34,24 @@ type Service struct {
 
 // Register creates and registers a new Service with the given gRPC server.
 func Register(s *grpc.Server, ac *ActionCache, cas *blobstore.ContentAddressableStorage) error {
-	service, err := NewService(ac, cas)
-	if err != nil {
-		return err
+	if ac == nil {
+		return fmt.Errorf("ac must be set")
+	}
+
+	if cas == nil {
+		return fmt.Errorf("cas must be set")
+	}
+
+	service := &Service{
+		ac:  ac,
+		cas: cas,
 	}
 	repb.RegisterActionCacheServer(s, service)
 	return nil
 }
 
-// NewService creates a new Service.
-func NewService(ac *ActionCache, cas *blobstore.ContentAddressableStorage) (Service, error) {
-	if ac == nil {
-		return Service{}, fmt.Errorf("ac must be set")
-	}
-
-	if cas == nil {
-		return Service{}, fmt.Errorf("cas must be set")
-	}
-
-	return Service{
-		ac:  ac,
-		cas: cas,
-	}, nil
-}
-
 // GetActionResult returns the ActionResult for a given action digest.
-func (s Service) GetActionResult(ctx context.Context, request *repb.GetActionResultRequest) (*repb.ActionResult, error) {
+func (s *Service) GetActionResult(ctx context.Context, request *repb.GetActionResultRequest) (*repb.ActionResult, error) {
 	response, err := s.getActionResult(request)
 	if err != nil {
 		if status.Code(err) == codes.NotFound {
@@ -73,7 +65,7 @@ func (s Service) GetActionResult(ctx context.Context, request *repb.GetActionRes
 	return response, err
 }
 
-func (s Service) getActionResult(request *repb.GetActionResultRequest) (*repb.ActionResult, error) {
+func (s *Service) getActionResult(request *repb.GetActionResultRequest) (*repb.ActionResult, error) {
 	// If the client explicitly specifies a DigestFunction, ensure that it's SHA256.
 	if request.DigestFunction != repb.DigestFunction_UNKNOWN && request.DigestFunction != repb.DigestFunction_SHA256 {
 		return nil, status.Errorf(codes.InvalidArgument, "hash function %q is not supported", request.DigestFunction.String())
@@ -96,7 +88,7 @@ func (s Service) getActionResult(request *repb.GetActionResultRequest) (*repb.Ac
 }
 
 // UpdateActionResult stores an ActionResult for a given action digest on disk.
-func (s Service) UpdateActionResult(ctx context.Context, request *repb.UpdateActionResultRequest) (*repb.ActionResult, error) {
+func (s *Service) UpdateActionResult(ctx context.Context, request *repb.UpdateActionResultRequest) (*repb.ActionResult, error) {
 	response, err := s.updateActionResult(request)
 	if err != nil {
 		log.Printf("🚨 UpdateActionResult(%v) => Error: %v", request.ActionDigest, err)
@@ -106,7 +98,7 @@ func (s Service) UpdateActionResult(ctx context.Context, request *repb.UpdateAct
 	return response, err
 }
 
-func (s Service) updateActionResult(request *repb.UpdateActionResultRequest) (*repb.ActionResult, error) {
+func (s *Service) updateActionResult(request *repb.UpdateActionResultRequest) (*repb.ActionResult, error) {
 	// If the client explicitly specifies a DigestFunction, ensure that it's SHA256.
 	if request.DigestFunction != repb.DigestFunction_UNKNOWN && request.DigestFunction != repb.DigestFunction_SHA256 {
 		return nil, status.Errorf(codes.InvalidArgument, "hash function %q is not supported", request.DigestFunction.String())
