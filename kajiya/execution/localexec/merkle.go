@@ -66,7 +66,7 @@ func MaterializeDirectory(cas *blobstore.ContentAddressableStorage, path string,
 
 // CreateOutputDirectories creates the parent directories of all outputs under directory `d`.
 func CreateOutputDirectories(path string, d *model.KajiyaDirectory) error {
-	seen := make(map[string]bool)
+	seen := map[string]bool{".": true}
 	for _, output := range d.Outputs {
 		outputDir := filepath.Dir(output.Name)
 		if _, ok := seen[outputDir]; ok {
@@ -75,8 +75,8 @@ func CreateOutputDirectories(path string, d *model.KajiyaDirectory) error {
 		// Create all parent directories.
 		parts := strings.Split(outputDir, "/")
 		dirName := ""
-		for i := range parts {
-			dirName = filepath.Join(dirName, parts[i])
+		for _, part := range parts {
+			dirName = filepath.Join(dirName, part)
 			if _, ok := seen[dirName]; ok {
 				continue
 			}
