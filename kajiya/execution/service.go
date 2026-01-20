@@ -27,6 +27,7 @@ import (
 
 	"go.chromium.org/build/kajiya/actioncache"
 	"go.chromium.org/build/kajiya/blobstore"
+	"go.chromium.org/build/kajiya/digest"
 	"go.chromium.org/build/kajiya/execution/model"
 )
 
@@ -138,35 +139,12 @@ func (s *Service) execute(request *repb.ExecuteRequest, _ *repb.RequestMetadata,
 		return status.Errorf(codes.InvalidArgument, "hash function %q is not supported", request.DigestFunction.String())
 	}
 
-	action, err := model.LoadAction(request.ActionDigest, s.cas)
-	if err != nil {
-		return err
-	}
-
 	// Generate a unique identifier for this operation.
 	opName := uuidgen.NewV7()
 
-	// If we're not supposed to cache the result, just execute the action and return the result.
-	if action.DoNotCache {
-		// Tell the client that we're in EXECUTING stage now.
-		reply, err := executionStage(request.ActionDigest, opName, repb.ExecutionStage_EXECUTING)
-		if err != nil {
-			return err
-		}
-		if err = executeServer.Send(reply); err != nil {
-			return err
-		}
-
-		// Execute the action and send the result back.
-		ar, err := s.executor.Execute(action)
-		if err != nil {
-			return err
-		}
-		reply, err = executionComplete(request.ActionDigest, opName, ar, false)
-		if err != nil {
-			return err
-		}
-		return executeServer.Send(reply)
+	actionDigest, err := digest.NewFromProto(request.ActionDigest)
+	if err != nil {
+		return status.Error(codes.InvalidArgument, fmt.Sprintf("invalid action digest: %v", err.Error()))
 	}
 
 	// If we have an action cache, check if the action is already cached.
@@ -181,7 +159,7 @@ func (s *Service) execute(request *repb.ExecuteRequest, _ *repb.RequestMetadata,
 		}
 
 		// Check the action cache and if we get a hit, send the result back.
-		ar, err := s.actionCache.Get(action.ActionDigest)
+		ar, err := s.actionCache.Get(actionDigest)
 		if err != nil && !errors.Is(err, fs.ErrNotExist) {
 			return fmt.Errorf("failed to get action from cache: %w", err)
 		}
@@ -194,8 +172,14 @@ func (s *Service) execute(request *repb.ExecuteRequest, _ *repb.RequestMetadata,
 		}
 	}
 
-	// Tell the client that we're in EXECUTING stage now.
-	reply, err := executionStage(request.ActionDigest, opName, repb.ExecutionStage_EXECUTING)
+	// Cache miss, so we have to load & parse the action proto, then execute the action.
+	action, err := model.LoadAction(actionDigest, s.cas)
+	if err != nil {
+		return err
+	}
+
+	// Tell the client that we're in QUEUED stage now.
+	reply, err := executionStage(request.ActionDigest, opName, repb.ExecutionStage_QUEUED)
 	if err != nil {
 		return err
 	}
@@ -206,8 +190,21 @@ func (s *Service) execute(request *repb.ExecuteRequest, _ *repb.RequestMetadata,
 	// According to the REAPI specification, in-flight requests for the same `Action` may be
 	// merged unless the `DoNotCache` bit is set. This improves efficiency and performance by
 	// avoiding duplicate work.
-	ar, err, _ := s.actionDigestDeduper.Do(action.ActionDigest.String(), func() (any, error) {
-		// Cache miss, so we have to execute the action.
+	dedupKey := actionDigest.Hash
+	if action.DoNotCache {
+		dedupKey = opName.String()
+	}
+	ar, err, _ := s.actionDigestDeduper.Do(dedupKey, func() (any, error) {
+		// Tell the client that we're in EXECUTING stage now.
+		reply, err := executionStage(request.ActionDigest, opName, repb.ExecutionStage_EXECUTING)
+		if err != nil {
+			return nil, err
+		}
+		if err = executeServer.Send(reply); err != nil {
+			return nil, err
+		}
+
+		// Execute the action.
 		ar, err := s.executor.Execute(action)
 		if err != nil {
 			return nil, err
@@ -216,7 +213,7 @@ func (s *Service) execute(request *repb.ExecuteRequest, _ *repb.RequestMetadata,
 		// Store the result in the action cache if possible. We only cache successful
 		// results, as it's always possible that a failed action is due to a transient
 		// issue that will be resolved on the next execution.
-		if s.actionCache != nil && ar.ExitCode == 0 {
+		if !action.DoNotCache && s.actionCache != nil && ar.ExitCode == 0 {
 			if err = s.actionCache.Put(action.ActionDigest, ar); err != nil {
 				log.Printf("🚨 failed to put action into cache: %v", err)
 			}

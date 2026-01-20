@@ -99,12 +99,8 @@ type Action struct {
 }
 
 // LoadAction loads an Action from the CAS given its digest.
-func LoadAction(d *repb.Digest, cas *blobstore.ContentAddressableStorage) (ka *Action, err error) {
+func LoadAction(actionDigest digest.Digest, cas *blobstore.ContentAddressableStorage) (ka *Action, err error) {
 	// Fetch the Action from the CAS.
-	actionDigest, err := digest.NewFromProto(d)
-	if err != nil {
-		return nil, err
-	}
 	action, err := cas.Action(actionDigest)
 	if err != nil {
 		return nil, err
