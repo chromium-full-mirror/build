@@ -68,10 +68,18 @@ func New(baseDir string, cas *blobstore.ContentAddressableStorage, sb SandboxStr
 		return nil, fmt.Errorf("failed to create directory %q: %w", sandboxBase, err)
 	}
 
-	// Create the tree repository.
-	trees, err := newTreeRepository(filepath.Join(baseDir, "trees"), cas)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create tree repository: %w", err)
+	// Create the tree repository. It's only used for nested overlay filesystems.
+	var trees *TreeRepository
+	treeRoot := filepath.Join(baseDir, "trees")
+	if sb == NestedOverlayFS {
+		trees, err = newTreeRepository(treeRoot, cas)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create tree repository: %w", err)
+		}
+	} else {
+		if err := os.RemoveAll(treeRoot); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return nil, fmt.Errorf("failed to remove tree repository: %w", err)
+		}
 	}
 
 	// Try to find nsjail in the PATH.
