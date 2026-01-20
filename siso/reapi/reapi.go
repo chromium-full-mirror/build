@@ -21,6 +21,7 @@ import (
 
 	rpb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
 	semverpb "github.com/bazelbuild/remote-apis/build/bazel/semver"
+	"github.com/klauspost/compress/zstd"
 	"google.golang.org/api/option"
 	gtransport "google.golang.org/api/transport/grpc"
 	"google.golang.org/grpc"
@@ -256,6 +257,8 @@ type Client struct {
 	apiVersion   *semverpb.SemVer
 
 	knownDigests sync.Map // key:digest.Digest, value: *uploadOp or true
+
+	zstdDecoderPool *sync.Pool
 
 	m *iometrics.IOMetrics
 }
@@ -504,13 +507,27 @@ func NewFromConn(ctx context.Context, opt Option, conn, casConn grpcClientConn) 
 			}
 		}
 	}
+	zstdDecoderPool := &sync.Pool{}
+	zstdDecoderPool.New = func() any {
+		opts := zstd.WithDecoderConcurrency(1)
+		d, err := zstd.NewReader(nil, opts)
+		if err != nil {
+			clog.Fatalf(ctx, "failed to create zstd.Decoder with options: %v", opts)
+		}
+		pd := &pooledDecoder{
+			Decoder: d,
+			pool:    zstdDecoderPool,
+		}
+		return pd
+	}
 	c := &Client{
-		opt:          opt,
-		conn:         conn,
-		casConn:      casConn,
-		capabilities: capa,
-		apiVersion:   apiVersion,
-		m:            iometrics.New("reapi"),
+		opt:             opt,
+		conn:            conn,
+		casConn:         casConn,
+		capabilities:    capa,
+		apiVersion:      apiVersion,
+		zstdDecoderPool: zstdDecoderPool,
+		m:               iometrics.New("reapi"),
 	}
 	c.knownDigests.Store(digest.Empty, true)
 	return c, nil
