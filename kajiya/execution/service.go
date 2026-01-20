@@ -11,11 +11,13 @@ import (
 	"fmt"
 	"io/fs"
 	"log"
+	"runtime"
 	"time"
 
 	"cloud.google.com/go/longrunning/autogen/longrunningpb"
 	repb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
 	"github.com/google/uuid"
+	"golang.org/x/sync/semaphore"
 	"golang.org/x/sync/singleflight"
 	errpb "google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc"
@@ -38,6 +40,7 @@ type Service struct {
 	executor    ExecutorInterface
 	actionCache *actioncache.ActionCache
 	cas         *blobstore.ContentAddressableStorage
+	sem         *semaphore.Weighted
 
 	// actionDigestDeduper merges multiple parallel requests for the same action.
 	actionDigestDeduper singleflight.Group
@@ -72,6 +75,7 @@ func NewService(executor ExecutorInterface, ac *actioncache.ActionCache, cas *bl
 		executor:    executor,
 		actionCache: ac,
 		cas:         cas,
+		sem:         semaphore.NewWeighted(int64(runtime.GOMAXPROCS(0))),
 	}, nil
 }
 
@@ -195,6 +199,13 @@ func (s *Service) execute(request *repb.ExecuteRequest, _ *repb.RequestMetadata,
 		dedupKey = opName.String()
 	}
 	ar, err, _ := s.actionDigestDeduper.Do(dedupKey, func() (any, error) {
+		// Acquire a semaphore to limit the number of concurrent executions.
+		err = s.sem.Acquire(executeServer.Context(), 1)
+		if err != nil {
+			return nil, err
+		}
+		defer s.sem.Release(1)
+
 		// Tell the client that we're in EXECUTING stage now.
 		reply, err := executionStage(request.ActionDigest, opName, repb.ExecutionStage_EXECUTING)
 		if err != nil {
