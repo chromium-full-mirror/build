@@ -509,10 +509,9 @@ func NewFromConn(ctx context.Context, opt Option, conn, casConn grpcClientConn) 
 	}
 	zstdDecoderPool := &sync.Pool{}
 	zstdDecoderPool.New = func() any {
-		opts := zstd.WithDecoderConcurrency(1)
-		d, err := zstd.NewReader(nil, opts)
+		d, err := zstd.NewReader(nil)
 		if err != nil {
-			clog.Fatalf(ctx, "failed to create zstd.Decoder with options: %v", opts)
+			clog.Fatalf(ctx, "failed to create zstd.Decoder: %v", err)
 		}
 		pd := &pooledDecoder{
 			Decoder: d,
