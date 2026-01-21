@@ -35,6 +35,7 @@ import (
 	"go.chromium.org/build/siso/subcmd/query"
 	"go.chromium.org/build/siso/subcmd/recall"
 	"go.chromium.org/build/siso/subcmd/report"
+	"go.chromium.org/build/siso/subcmd/sandbox"
 	"go.chromium.org/build/siso/subcmd/scandeps"
 	"go.chromium.org/build/siso/subcmd/version"
 	"go.chromium.org/build/siso/subcmd/webui"
@@ -265,6 +266,7 @@ Use "siso flags" to display all flags.
 	subcommands.Register(auth.LogoutCmd(authOpts), "auth")
 
 	subcommands.Register(ninjafrontend.Cmd(), "debugging")
+	subcommands.Register(sandbox.Cmd(), "debugging")
 	subcommands.Register(scandeps.Cmd(), "debugging")
 
 	subcommands.Register(osfs.HelperCmd(), "internal-helper")
