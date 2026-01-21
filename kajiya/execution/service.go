@@ -99,38 +99,36 @@ func Metadata(ctx context.Context) (*repb.RequestMetadata, error) {
 }
 
 // Execute executes the given action and returns the result.
-func (s *Service) Execute(request *repb.ExecuteRequest, executeServer repb.Execution_ExecuteServer) error {
-	bmd, err := Metadata(executeServer.Context())
+func (s *Service) Execute(request *repb.ExecuteRequest, executeServer repb.Execution_ExecuteServer) (err error) {
+	// Just for fun, measure how long the execution takes and log it.
+	start := time.Now()
+
+	// Error post-processing & logging.
+	defer func() {
+		duration := time.Since(start)
+		if err != nil {
+			var mberr *blobstore.MissingBlobsError
+			if errors.As(err, &mberr) {
+				err = formatMissingBlobsError(mberr)
+			} else if _, ok := status.FromError(err); !ok {
+				// Any error that reaches this point and is not already a gRPC status is an
+				// unexpected internal error and not due to client input. We wrap it in a
+				// status error with the Internal code to ensure we signal this condition
+				// correctly to the client.
+				err = status.Errorf(codes.Internal, "failed to execute action: %v", err)
+			}
+			slog.Error("Execute", "action", request.ActionDigest, "duration", duration, "error", err)
+		} else {
+			slog.Info("Execute", "action", request.ActionDigest, "duration", duration)
+		}
+	}()
+
+	// TODO: use the metadata for something useful, for now we're just validating it.
+	_, err = Metadata(executeServer.Context())
 	if err != nil {
 		return status.Errorf(codes.InvalidArgument, "request contained invalid metadata: %v", err)
 	}
 
-	// Just for fun, measure how long the execution takes and log it.
-	start := time.Now()
-	err = s.execute(request, bmd, executeServer)
-	duration := time.Since(start)
-
-	if err != nil {
-		slog.Error("Execute", "action", request.ActionDigest, "error", err)
-
-		var mberr *blobstore.MissingBlobsError
-		if errors.As(err, &mberr) {
-			return formatMissingBlobsError(mberr)
-		} else if _, ok := status.FromError(err); !ok {
-			// Any error that reaches this point and is not already a gRPC status is an
-			// unexpected internal error and not due to client input. We wrap it in a
-			// status error with the Internal code to ensure we signal this condition
-			// correctly to the client.
-			return status.Errorf(codes.Internal, "failed to execute action: %v", err)
-		}
-		return err
-	}
-
-	slog.Info("Execute", "action", request.ActionDigest, "duration", duration)
-	return nil
-}
-
-func (s *Service) execute(request *repb.ExecuteRequest, _ *repb.RequestMetadata, executeServer repb.Execution_ExecuteServer) error {
 	// If the client explicitly specifies a DigestFunction, ensure that it's SHA256.
 	if request.DigestFunction != repb.DigestFunction_UNKNOWN && request.DigestFunction != repb.DigestFunction_SHA256 {
 		return status.Errorf(codes.InvalidArgument, "hash function %q is not supported", request.DigestFunction.String())
@@ -236,7 +234,6 @@ func (s *Service) execute(request *repb.ExecuteRequest, _ *repb.RequestMetadata,
 	if err = executeServer.Send(reply); err != nil {
 		return fmt.Errorf("failed to send result to client: %w", err)
 	}
-
 	return nil
 }
 

@@ -51,21 +51,19 @@ func Register(s *grpc.Server, ac *ActionCache, cas *blobstore.ContentAddressable
 }
 
 // GetActionResult returns the ActionResult for a given action digest.
-func (s *Service) GetActionResult(ctx context.Context, request *repb.GetActionResultRequest) (*repb.ActionResult, error) {
-	response, err := s.getActionResult(request)
-	if err != nil {
-		if status.Code(err) == codes.NotFound {
-			slog.Warn("GetActionResult", "action", request.ActionDigest, "result", "cache miss")
+func (s *Service) GetActionResult(ctx context.Context, request *repb.GetActionResultRequest) (resp *repb.ActionResult, err error) {
+	defer func() {
+		if err != nil {
+			if status.Code(err) == codes.NotFound {
+				slog.Warn("GetActionResult", "action", request.ActionDigest, "result", "cache miss")
+			} else {
+				slog.Error("GetActionResult", "action", request.ActionDigest, "error", err)
+			}
 		} else {
-			slog.Error("GetActionResult", "action", request.ActionDigest, "error", err)
+			slog.Info("GetActionResult", "action", request.ActionDigest, "result", "cache hit")
 		}
-	} else {
-		slog.Info("GetActionResult", "action", request.ActionDigest, "result", "cache hit")
-	}
-	return response, err
-}
+	}()
 
-func (s *Service) getActionResult(request *repb.GetActionResultRequest) (*repb.ActionResult, error) {
 	// If the client explicitly specifies a DigestFunction, ensure that it's SHA256.
 	if request.DigestFunction != repb.DigestFunction_UNKNOWN && request.DigestFunction != repb.DigestFunction_SHA256 {
 		return nil, status.Errorf(codes.InvalidArgument, "hash function %q is not supported", request.DigestFunction.String())
@@ -88,17 +86,15 @@ func (s *Service) getActionResult(request *repb.GetActionResultRequest) (*repb.A
 }
 
 // UpdateActionResult stores an ActionResult for a given action digest on disk.
-func (s *Service) UpdateActionResult(ctx context.Context, request *repb.UpdateActionResultRequest) (*repb.ActionResult, error) {
-	response, err := s.updateActionResult(request)
-	if err != nil {
-		slog.Error("UpdateActionResult", "action", request.ActionDigest, "error", err)
-	} else {
-		slog.Info("UpdateActionResult", "action", request.ActionDigest)
-	}
-	return response, err
-}
+func (s *Service) UpdateActionResult(ctx context.Context, request *repb.UpdateActionResultRequest) (resp *repb.ActionResult, err error) {
+	defer func() {
+		if err != nil {
+			slog.Error("UpdateActionResult", "action", request.ActionDigest, "error", err)
+		} else {
+			slog.Info("UpdateActionResult", "action", request.ActionDigest)
+		}
+	}()
 
-func (s *Service) updateActionResult(request *repb.UpdateActionResultRequest) (*repb.ActionResult, error) {
 	// If the client explicitly specifies a DigestFunction, ensure that it's SHA256.
 	if request.DigestFunction != repb.DigestFunction_UNKNOWN && request.DigestFunction != repb.DigestFunction_SHA256 {
 		return nil, status.Errorf(codes.InvalidArgument, "hash function %q is not supported", request.DigestFunction.String())

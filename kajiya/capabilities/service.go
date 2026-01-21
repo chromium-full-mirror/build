@@ -25,17 +25,15 @@ func Register(s *grpc.Server) {
 }
 
 // GetCapabilities returns the capabilities of the server.
-func (s *Service) GetCapabilities(ctx context.Context, request *repb.GetCapabilitiesRequest) (*repb.ServerCapabilities, error) {
-	response, err := s.getCapabilities(request)
-	if err != nil {
-		slog.Error("GetCapabilities", "request", request, "error", err)
-	} else {
-		slog.Info("GetCapabilities", "request", request)
-	}
-	return response, err
-}
+func (s *Service) GetCapabilities(ctx context.Context, request *repb.GetCapabilitiesRequest) (resp *repb.ServerCapabilities, err error) {
+	defer func() {
+		if err != nil {
+			slog.Error("GetCapabilities", "request", request, "error", err)
+		} else {
+			slog.Info("GetCapabilities", "request", request)
+		}
+	}()
 
-func (s *Service) getCapabilities(request *repb.GetCapabilitiesRequest) (*repb.ServerCapabilities, error) {
 	// Return the capabilities.
 	return &repb.ServerCapabilities{
 		CacheCapabilities: &repb.CacheCapabilities{

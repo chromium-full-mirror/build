@@ -459,17 +459,15 @@ func (s *Service) blobAlreadyExists(d digest.Digest, isCompressed bool) *bspb.Wr
 }
 
 // QueryWriteStatus implements the ByteStream.QueryWriteStatus RPC.
-func (s *Service) QueryWriteStatus(ctx context.Context, request *bspb.QueryWriteStatusRequest) (*bspb.QueryWriteStatusResponse, error) {
-	response, err := s.queryWriteStatus(request)
-	if err != nil {
-		slog.Error("QueryWriteStatus", "resource", request.ResourceName, "error", err)
-	} else {
-		slog.Info("QueryWriteStatus", "resource", request.ResourceName)
-	}
-	return response, err
-}
+func (s *Service) QueryWriteStatus(ctx context.Context, request *bspb.QueryWriteStatusRequest) (resp *bspb.QueryWriteStatusResponse, err error) {
+	defer func() {
+		if err != nil {
+			slog.Error("QueryWriteStatus", "resource", request.ResourceName, "error", err)
+		} else {
+			slog.Info("QueryWriteStatus", "resource", request.ResourceName)
+		}
+	}()
 
-func (s *Service) queryWriteStatus(request *bspb.QueryWriteStatusRequest) (*bspb.QueryWriteStatusResponse, error) {
 	d, _, _, err := parseWriteResource(request.ResourceName)
 	if err != nil {
 		return nil, err
@@ -491,17 +489,15 @@ func (s *Service) queryWriteStatus(request *bspb.QueryWriteStatusRequest) (*bspb
 }
 
 // FindMissingBlobs implements the ContentAddressableStorage.FindMissingBlobs RPC.
-func (s *Service) FindMissingBlobs(ctx context.Context, request *repb.FindMissingBlobsRequest) (*repb.FindMissingBlobsResponse, error) {
-	response, err := s.findMissingBlobs(request)
-	if err != nil {
-		slog.Error("FindMissingBlobs", "blobs", len(request.BlobDigests), "error", err)
-	} else {
-		slog.Info("FindMissingBlobs", "blobs", len(request.BlobDigests), "missing", len(response.MissingBlobDigests))
-	}
-	return response, err
-}
+func (s *Service) FindMissingBlobs(ctx context.Context, request *repb.FindMissingBlobsRequest) (resp *repb.FindMissingBlobsResponse, err error) {
+	defer func() {
+		if err != nil {
+			slog.Error("FindMissingBlobs", "blobs", len(request.BlobDigests), "error", err)
+		} else {
+			slog.Info("FindMissingBlobs", "blobs", len(request.BlobDigests), "missing", len(resp.MissingBlobDigests))
+		}
+	}()
 
-func (s *Service) findMissingBlobs(request *repb.FindMissingBlobsRequest) (*repb.FindMissingBlobsResponse, error) {
 	// If the client explicitly specifies a DigestFunction, ensure that it's SHA256.
 	if request.DigestFunction != repb.DigestFunction_UNKNOWN && request.DigestFunction != repb.DigestFunction_SHA256 {
 		return nil, status.Errorf(codes.InvalidArgument, "hash function %q is not supported", request.DigestFunction.String())
@@ -528,17 +524,15 @@ func (s *Service) findMissingBlobs(request *repb.FindMissingBlobsRequest) (*repb
 }
 
 // BatchUpdateBlobs implements the ContentAddressableStorage.BatchUpdateBlobs RPC.
-func (s *Service) BatchUpdateBlobs(ctx context.Context, request *repb.BatchUpdateBlobsRequest) (*repb.BatchUpdateBlobsResponse, error) {
-	response, err := s.batchUploadBlobs(request)
-	if err != nil {
-		slog.Error("BatchUpdateBlobs", "blobs", len(request.Requests), "error", err)
-	} else {
-		slog.Info("BatchUpdateBlobs", "blobs", len(request.Requests))
-	}
-	return response, err
-}
+func (s *Service) BatchUpdateBlobs(ctx context.Context, request *repb.BatchUpdateBlobsRequest) (resp *repb.BatchUpdateBlobsResponse, err error) {
+	defer func() {
+		if err != nil {
+			slog.Error("BatchUpdateBlobs", "blobs", len(request.Requests), "error", err)
+		} else {
+			slog.Info("BatchUpdateBlobs", "blobs", len(request.Requests))
+		}
+	}()
 
-func (s *Service) batchUploadBlobs(request *repb.BatchUpdateBlobsRequest) (*repb.BatchUpdateBlobsResponse, error) {
 	// If the client explicitly specifies a DigestFunction, ensure that it's SHA256.
 	if request.DigestFunction != repb.DigestFunction_UNKNOWN && request.DigestFunction != repb.DigestFunction_SHA256 {
 		return nil, status.Errorf(codes.InvalidArgument, "hash function %q is not supported", request.DigestFunction.String())
@@ -584,17 +578,15 @@ func (s *Service) batchUploadBlobs(request *repb.BatchUpdateBlobsRequest) (*repb
 	return response, nil
 }
 
-func (s *Service) BatchReadBlobs(ctx context.Context, request *repb.BatchReadBlobsRequest) (*repb.BatchReadBlobsResponse, error) {
-	response, err := s.batchReadBlobs(request)
-	if err != nil {
-		slog.Error("BatchReadBlobs", "blobs", len(request.Digests), "error", err)
-	} else {
-		slog.Info("BatchReadBlobs", "blobs", len(request.Digests))
-	}
-	return response, err
-}
+func (s *Service) BatchReadBlobs(ctx context.Context, request *repb.BatchReadBlobsRequest) (resp *repb.BatchReadBlobsResponse, err error) {
+	defer func() {
+		if err != nil {
+			slog.Error("BatchReadBlobs", "blobs", len(request.Digests), "error", err)
+		} else {
+			slog.Info("BatchReadBlobs", "blobs", len(request.Digests))
+		}
+	}()
 
-func (s *Service) batchReadBlobs(request *repb.BatchReadBlobsRequest) (*repb.BatchReadBlobsResponse, error) {
 	// If the client explicitly specifies a DigestFunction, ensure that it's SHA256.
 	if request.DigestFunction != repb.DigestFunction_UNKNOWN && request.DigestFunction != repb.DigestFunction_SHA256 {
 		return nil, status.Errorf(codes.InvalidArgument, "hash function %q is not supported", request.DigestFunction.String())
@@ -640,16 +632,15 @@ func (s *Service) batchReadBlobs(request *repb.BatchReadBlobsRequest) (*repb.Bat
 	return response, nil
 }
 
-func (s *Service) GetTree(request *repb.GetTreeRequest, treeServer repb.ContentAddressableStorage_GetTreeServer) error {
-	if err := s.getTree(request, treeServer); err != nil {
-		slog.Error("GetTree", "digest", request.RootDigest, "error", err)
-		return err
-	}
-	slog.Info("GetTree", "digest", request.RootDigest)
-	return nil
-}
+func (s *Service) GetTree(request *repb.GetTreeRequest, treeServer repb.ContentAddressableStorage_GetTreeServer) (err error) {
+	defer func() {
+		if err != nil {
+			slog.Error("GetTree", "digest", request.RootDigest, "error", err)
+		} else {
+			slog.Info("GetTree", "digest", request.RootDigest)
+		}
+	}()
 
-func (s *Service) getTree(request *repb.GetTreeRequest, treeServer repb.ContentAddressableStorage_GetTreeServer) error {
 	// If the client explicitly specifies a DigestFunction, ensure that it's SHA256.
 	if request.DigestFunction != repb.DigestFunction_UNKNOWN && request.DigestFunction != repb.DigestFunction_SHA256 {
 		return status.Errorf(codes.InvalidArgument, "hash function %q is not supported", request.DigestFunction.String())
