@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-package build
+package runtime
 
 import (
 	"testing"
@@ -44,9 +44,9 @@ func TestResolveLabel(t *testing.T) {
 			name:      "absolute",
 			input:     "//foo/bar:baz",
 			wd:        "//chrome/browser/",
-			toolchain: Label{dir: mustDir(t, "//t/"), name: "d"},
+			toolchain: Label{Dir: mustDir(t, "//t/"), name: "d"},
 			want: Label{
-				dir:           mustDir(t, "//foo/bar/"),
+				Dir:           mustDir(t, "//foo/bar/"),
 				name:          "baz",
 				toolchainDir:  mustDir(t, "//t/"),
 				toolchainName: "d",
@@ -62,16 +62,16 @@ func TestResolveLabel(t *testing.T) {
 			name:        "implicit target dir not yet supported",
 			input:       ":baz",
 			wd:          "//chrome/browser/",
-			toolchain:   Label{dir: mustDir(t, "//t/"), name: "d"},
+			toolchain:   Label{Dir: mustDir(t, "//t/"), name: "d"},
 			wantErrKind: syntax.ErrNotImplemented,
 		},
 		{
 			name:      "explicit toolchain",
 			input:     "//foo:bar(//t:two)",
 			wd:        "//chrome/browser/",
-			toolchain: Label{dir: mustDir(t, "//t/"), name: "d"},
+			toolchain: Label{Dir: mustDir(t, "//t/"), name: "d"},
 			want: Label{
-				dir:           mustDir(t, "//foo/"),
+				Dir:           mustDir(t, "//foo/"),
 				name:          "bar",
 				toolchainDir:  mustDir(t, "//t/"),
 				toolchainName: "two",
@@ -81,14 +81,14 @@ func TestResolveLabel(t *testing.T) {
 			name:        "invalid toolchain format",
 			input:       "//foo:bar(//t:two",
 			wd:          "//chrome/browser/",
-			toolchain:   Label{dir: mustDir(t, "//t/"), name: "d"},
+			toolchain:   Label{Dir: mustDir(t, "//t/"), name: "d"},
 			wantErrKind: syntax.ErrInvalidFormat,
 		},
 		{
 			name:        "toolchain in toolchain",
 			input:       "//foo:bar(//t:two(//t2:t2))",
 			wd:          "//chrome/browser/",
-			toolchain:   Label{dir: mustDir(t, "//t/"), name: "d"},
+			toolchain:   Label{Dir: mustDir(t, "//t/"), name: "d"},
 			wantErrKind: syntax.ErrInvalidFormat,
 		},
 	} {
@@ -125,7 +125,7 @@ func TestLabel_UserVisibleString(t *testing.T) {
 		{
 			name: "label in root",
 			label: Label{
-				dir:           mustDir(t, "//"),
+				Dir:           mustDir(t, "//"),
 				name:          "name",
 				toolchainDir:  mustDir(t, "//t"),
 				toolchainName: "tn",
@@ -136,7 +136,7 @@ func TestLabel_UserVisibleString(t *testing.T) {
 		{
 			name: "label in subdir",
 			label: Label{
-				dir:           mustDir(t, "//dir"),
+				Dir:           mustDir(t, "//dir"),
 				name:          "name",
 				toolchainDir:  mustDir(t, "//t"),
 				toolchainName: "tn",
@@ -147,7 +147,7 @@ func TestLabel_UserVisibleString(t *testing.T) {
 		{
 			name: "toolchain dir is empty",
 			label: Label{
-				dir:           mustDir(t, "//dir"),
+				Dir:           mustDir(t, "//dir"),
 				name:          "name",
 				toolchainDir:  fs.SourceDir{},
 				toolchainName: "tn",
@@ -158,7 +158,7 @@ func TestLabel_UserVisibleString(t *testing.T) {
 		{
 			name: "label dir is empty hence label is empty",
 			label: Label{
-				dir:           fs.SourceDir{},
+				Dir:           fs.SourceDir{},
 				name:          "name",
 				toolchainDir:  fs.SourceDir{},
 				toolchainName: "tn",

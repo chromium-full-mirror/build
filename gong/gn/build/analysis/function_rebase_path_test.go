@@ -2,18 +2,19 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-package build
+package analysis
 
 import (
 	"testing"
 
+	"go.chromium.org/build/gong/gn/build/runtime"
 	"go.chromium.org/build/gong/gn/parse"
 	"go.chromium.org/build/gong/gn/resolve"
 	"go.chromium.org/build/gong/gn/syntax"
 )
 
 func TestRebasePathFunction(t *testing.T) {
-	f := &rebasePathFunction{buildSettings: &BuildSettings{}}
+	f := &rebasePathFunction{buildSettings: &runtime.BuildSettings{}}
 	for _, tc := range []struct {
 		name        string
 		args        []resolve.Value

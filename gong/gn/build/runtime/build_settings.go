@@ -2,7 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-package build
+// Package runtime represents the runtime state of a build.
+package runtime
 
 import (
 	"path/filepath"
@@ -31,9 +32,9 @@ type BuildSettings struct {
 	// allows us to keep buildfiles in a separate tree during development.
 	secondarySourcePath string
 	// Root target label.
-	rootTargetLabel Label
+	RootTargetLabel Label
 	// Path of the python executable to run scripts with.
-	pythonPath string
+	PythonPath string
 	// BuildDir is the root of all output files. The default toolchain
 	// files go into here, and non-default toolchains will have separate
 	// toolchain-specific root directories inside this.

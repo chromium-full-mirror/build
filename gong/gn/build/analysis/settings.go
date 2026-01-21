@@ -2,9 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-package build
+package analysis
 
 import (
+	"go.chromium.org/build/gong/gn/build/runtime"
 	"go.chromium.org/build/gong/gn/resolve"
 )
 
@@ -17,7 +18,7 @@ import (
 // the file with the toolchain declaration in it.
 // TODO: rename this to something else, since build.BuildSettings would be better named build.Settings?
 type Settings struct {
-	buildSettings *BuildSettings
+	buildSettings *runtime.BuildSettings
 	// baseConfig is populated by the Loader when initializing the toolchain.
 	// We don't touch it afterwards, as it's used as the top-level exec context for scopes
 	// when executing buildfiles.
@@ -25,7 +26,7 @@ type Settings struct {
 }
 
 // NewSettings creates a new Settings.
-func NewSettings(buildSettings *BuildSettings) *Settings {
+func NewSettings(buildSettings *runtime.BuildSettings) *Settings {
 	s := &Settings{
 		buildSettings: buildSettings,
 	}
@@ -59,7 +60,7 @@ type scopeContext struct {
 	processingBuildConfig bool
 	// Receiver for the default toolchain label.
 	// This is set by the Loader when initializing the default toolchain.
-	defaultToolchainReceiver func(toolchainLabel Label)
+	defaultToolchainReceiver func(toolchainLabel runtime.Label)
 	// The target defaults for this scope.
 	// Target defaults are scope-local, not toolchain-global.
 	targetDefaults map[string]*resolve.Scope

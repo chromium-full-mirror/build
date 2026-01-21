@@ -2,12 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-package build
+package analysis
 
 import (
 	"testing"
 
 	"go.chromium.org/build/gong/gn/build/fs"
+	"go.chromium.org/build/gong/gn/build/runtime"
 	"go.chromium.org/build/gong/gn/resolve"
 )
 
@@ -19,9 +20,9 @@ func TestBuiltinProvider(t *testing.T) {
 	scope := resolve.NewScope(
 		&scopeContext{},
 		&builtinProvider{
-			buildSettings: &BuildSettings{
+			buildSettings: &runtime.BuildSettings{
 				BuildDir:   buildDir,
-				pythonPath: "python3",
+				PythonPath: "python3",
 			},
 		},
 		map[string]resolve.FunctionInfo{},
@@ -29,7 +30,7 @@ func TestBuiltinProvider(t *testing.T) {
 
 	for _, tc := range []struct {
 		name          string
-		buildSettings *BuildSettings
+		buildSettings *runtime.BuildSettings
 		ident         string
 		wantValue     string
 		wantOk        bool

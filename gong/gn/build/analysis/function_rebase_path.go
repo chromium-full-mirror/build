@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-package build
+package analysis
 
 import (
 	"fmt"
@@ -11,13 +11,14 @@ import (
 	"strings"
 
 	"go.chromium.org/build/gong/gn/build/fs"
+	"go.chromium.org/build/gong/gn/build/runtime"
 	"go.chromium.org/build/gong/gn/parse"
 	"go.chromium.org/build/gong/gn/resolve"
 	"go.chromium.org/build/gong/gn/syntax"
 )
 
 type rebasePathFunction struct {
-	buildSettings *BuildSettings
+	buildSettings *runtime.BuildSettings
 }
 
 func (rebasePathFunction) IsTarget() bool { return false }

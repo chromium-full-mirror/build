@@ -2,12 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-package build
+package analysis
 
 import (
 	"fmt"
 
 	"go.chromium.org/build/gong/gn/build/fs"
+	"go.chromium.org/build/gong/gn/build/runtime"
 	"go.chromium.org/build/gong/gn/parse"
 	"go.chromium.org/build/gong/gn/resolve"
 	"go.chromium.org/build/gong/gn/syntax"
@@ -90,7 +91,7 @@ func (setDefaultToolchainFunction) Run(scope *resolve.Scope, call *parse.Functio
 	// and passes it to ResolveLabel. But we call set_default_toolchain when we don't know the default toolchain yet,
 	// so is that actually necessary? For now just pass an empty label as the "current toolchain".
 	// https://source.chromium.org/gn/gn/+/main:src/gn/function_set_default_toolchain.cc;l=80;drc=a899709c3b024eddade4cf7eab167b5962164fb0
-	toolchainLabel, err := ResolveLabel(fakeWd, Label{}, input)
+	toolchainLabel, err := runtime.ResolveLabel(fakeWd, runtime.Label{}, input)
 	if err != nil {
 		return nil, err
 	}

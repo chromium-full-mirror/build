@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-package build
+package runtime
 
 import (
 	"strings"
@@ -16,7 +16,7 @@ import (
 // the source path. The label is always absolute and always includes a name
 // part, so it starts with a slash, and has one colon.
 type Label struct {
-	dir           fs.SourceDir
+	Dir           fs.SourceDir
 	name          string
 	toolchainDir  fs.SourceDir
 	toolchainName string
@@ -55,7 +55,7 @@ func ResolveLabel(currentDir fs.SourceDir, currentToolchain Label, input resolve
 
 	// Use the current toolchain unless the input explicitly overrides it.
 	toolchainName := currentToolchain.name
-	toolchainDir := currentToolchain.dir
+	toolchainDir := currentToolchain.Dir
 	if inputToolchain != "" {
 		loc, toolchainName, _, err = splitLabelComponents(inputToolchain, input, true)
 		if err != nil {
@@ -74,7 +74,7 @@ func ResolveLabel(currentDir fs.SourceDir, currentToolchain Label, input resolve
 	}
 
 	return Label{
-		dir:           labelDir,
+		Dir:           labelDir,
 		name:          labelName,
 		toolchainDir:  toolchainDir,
 		toolchainName: toolchainName,
@@ -157,11 +157,11 @@ toolchain. Don't do this.`)
 // printed. The toolchain is optionally included.
 func (l Label) UserVisibleString(includeToolchain bool) string {
 	var sb strings.Builder
-	sb.Grow(len(l.dir.Path()) + len(l.name) + 1)
-	if l.dir.Empty() {
+	sb.Grow(len(l.Dir.Path()) + len(l.name) + 1)
+	if l.Dir.Empty() {
 		return ""
 	}
-	sb.WriteString(l.dir.WithNoTrailingSlash())
+	sb.WriteString(l.Dir.WithNoTrailingSlash())
 	sb.WriteRune(':')
 	sb.WriteString(l.name)
 	if includeToolchain {

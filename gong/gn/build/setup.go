@@ -10,11 +10,13 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"runtime"
+	goruntime "runtime"
 	"strings"
 
 	"go.chromium.org/build/gong/gn"
+	"go.chromium.org/build/gong/gn/build/analysis"
 	"go.chromium.org/build/gong/gn/build/fs"
+	"go.chromium.org/build/gong/gn/build/runtime"
 	"go.chromium.org/build/gong/gn/parse"
 	"go.chromium.org/build/gong/gn/resolve"
 	"go.chromium.org/build/gong/gn/syntax"
@@ -41,8 +43,8 @@ func findDotFile(currentDir string) (string, error) {
 // Setup is helper to set up the build settings and environment for the various
 // commands to run.
 type Setup struct {
-	buildSettings    BuildSettings
-	loader           Loader
+	buildSettings    runtime.BuildSettings
+	loader           analysis.Loader
 	rootBuildFile    fs.SourceFile
 	inputFileManager fs.InputFileManager
 
@@ -54,7 +56,7 @@ type Setup struct {
 
 	// Settings object for interpreting the .gn config file, and build arguments
 	// from either the command line or build argument file.
-	dotfileSettings *Settings
+	dotfileSettings *analysis.Settings
 	// Scope object used to interpret the .gn config file.
 	// (This is separate from dotfileSettings because build arguments should not be
 	// able to reference variables defined in the root config file.)
@@ -68,8 +70,8 @@ func NewSetup() *Setup {
 	setup := &Setup{
 		FillArguments: true,
 	}
-	setup.loader = MakeLoader(&setup.buildSettings, &setup.inputFileManager)
-	setup.dotfileSettings = NewSettings(&setup.buildSettings)
+	setup.loader = analysis.MakeLoader(&setup.buildSettings, &setup.inputFileManager)
+	setup.dotfileSettings = analysis.NewSettings(&setup.buildSettings)
 	setup.dotfileScope = setup.dotfileSettings.NewScope()
 	return setup
 }
@@ -215,7 +217,7 @@ func (s *Setup) fillPythonPath(flags *gn.CommonFlags) error {
 	// https://source.chromium.org/gn/gn/+/main:src/gn/setup.cc;l=791-825;drc=81dab9f25cb2381400c237fdea7030d5068f9a73
 	// Maybe this can be resolved using exec.LookPath?
 	// https://pkg.go.dev/os/exec?GOOS=windows#LookPath
-	if runtime.GOOS == "windows" {
+	if goruntime.GOOS == "windows" {
 		fmt.Fprintf(os.Stderr, "WARNING: python path detection will not function as expected on windows\n")
 	}
 
@@ -227,7 +229,7 @@ func (s *Setup) fillPythonPath(flags *gn.CommonFlags) error {
 		// the flags are used rather than processing them all in advance.
 		// This raises the risk of behavioral incompatibility with C++ GN.
 		// May need to look into this issue further?
-		s.buildSettings.pythonPath = flags.ScriptExecutable
+		s.buildSettings.PythonPath = flags.ScriptExecutable
 		return nil
 	}
 
@@ -237,7 +239,7 @@ func (s *Setup) fillPythonPath(flags *gn.CommonFlags) error {
 		if err != nil {
 			return err
 		}
-		s.buildSettings.pythonPath = stringValue.String()
+		s.buildSettings.PythonPath = stringValue.String()
 		return nil
 	}
 
@@ -246,7 +248,7 @@ func (s *Setup) fillPythonPath(flags *gn.CommonFlags) error {
 	// what C++ GN does, and you're probably going to want to override that
 	// manually with `script_executable = "python3"` in your .gn file like these:
 	// https://source.chromium.org/search?q=script_executable)
-	s.buildSettings.pythonPath = "python"
+	s.buildSettings.PythonPath = "python"
 	return nil
 }
 
@@ -287,11 +289,11 @@ func (s *Setup) fillOtherConfig() error {
 		}
 		extension := stringValue.String()
 		if strings.ContainsRune(extension, filepath.Separator) {
-			return makeError(
+			return runtime.BuildError(
 				"Invalid build_file_extension",
 				fmt.Sprintf("Build file extension '%s' cannot contain a path separator", extension))
 		}
-		s.loader.buildFileExtension = "." + extension
+		s.loader.BuildFileExtension = "." + extension
 	}
 
 	// Ninja required version.
@@ -304,20 +306,20 @@ func (s *Setup) fillOtherConfig() error {
 	if err != nil {
 		return fmt.Errorf("failed to init root build.gn")
 	}
-	rootTargetLabel := Label{dir: rootDir}
+	rootTargetLabel := runtime.Label{Dir: rootDir}
 
 	// Set the root build file here in order to take into account the values of
 	// "build_file_extension" and "root".
-	s.rootBuildFile, err = s.loader.buildFileForLabel(rootTargetLabel)
+	s.rootBuildFile, err = s.loader.BuildFileForLabel(rootTargetLabel)
 	if err != nil {
 		return fmt.Errorf("failed to init root build.gn")
 	}
-	s.buildSettings.rootTargetLabel = rootTargetLabel
+	s.buildSettings.RootTargetLabel = rootTargetLabel
 
 	// Build config file.
 	buildConfigValue := s.dotfileScope.Value("buildconfig", true)
 	if buildConfigValue == nil {
-		return makeError(
+		return runtime.BuildError(
 			"No build config file.",
 			fmt.Sprintf(`Your .gn file ("%s") didn't specify a "buildconfig" value.`, s.dotfileName))
 	}
@@ -353,7 +355,7 @@ func (s *Setup) fillOtherConfig() error {
 
 // Run runs the load, returning nil on success. On failure, returns the error.
 func (s *Setup) Run() error {
-	err := s.loader.Load(s.rootBuildFile, syntax.LocationRange{}, Label{})
+	err := s.loader.Load(s.rootBuildFile, syntax.LocationRange{}, runtime.Label{})
 	if err != nil {
 		return err
 	}
