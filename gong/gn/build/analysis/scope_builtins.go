@@ -5,13 +5,13 @@
 package analysis
 
 import (
-	"go.chromium.org/build/gong/gn/build/runtime"
+	"go.chromium.org/build/gong/gn/build/environment"
 	"go.chromium.org/build/gong/gn/resolve"
 )
 
 // builtinProvider provides GN builtin variables.
 type builtinProvider struct {
-	buildSettings *runtime.BuildSettings
+	buildSettings *environment.BuildSettings
 }
 
 // ProgrammaticBuiltin implements resolve.ProgrammaticProvider.

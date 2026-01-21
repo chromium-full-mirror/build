@@ -7,14 +7,14 @@ package analysis
 import (
 	"testing"
 
-	"go.chromium.org/build/gong/gn/build/runtime"
+	"go.chromium.org/build/gong/gn/build/environment"
 	"go.chromium.org/build/gong/gn/parse"
 	"go.chromium.org/build/gong/gn/resolve"
 	"go.chromium.org/build/gong/gn/syntax"
 )
 
 func TestRebasePathFunction(t *testing.T) {
-	f := &rebasePathFunction{buildSettings: &runtime.BuildSettings{}}
+	f := &rebasePathFunction{buildSettings: &environment.BuildSettings{}}
 	for _, tc := range []struct {
 		name        string
 		args        []resolve.Value

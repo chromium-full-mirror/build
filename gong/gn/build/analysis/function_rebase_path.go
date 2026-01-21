@@ -10,15 +10,15 @@ import (
 	"path/filepath"
 	"strings"
 
+	"go.chromium.org/build/gong/gn/build/environment"
 	"go.chromium.org/build/gong/gn/build/fs"
-	"go.chromium.org/build/gong/gn/build/runtime"
 	"go.chromium.org/build/gong/gn/parse"
 	"go.chromium.org/build/gong/gn/resolve"
 	"go.chromium.org/build/gong/gn/syntax"
 )
 
 type rebasePathFunction struct {
-	buildSettings *runtime.BuildSettings
+	buildSettings *environment.BuildSettings
 }
 
 func (rebasePathFunction) IsTarget() bool { return false }

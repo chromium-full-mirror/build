@@ -7,8 +7,8 @@ package analysis
 import (
 	"testing"
 
+	"go.chromium.org/build/gong/gn/build/environment"
 	"go.chromium.org/build/gong/gn/build/fs"
-	"go.chromium.org/build/gong/gn/build/runtime"
 	"go.chromium.org/build/gong/gn/resolve"
 )
 
@@ -20,7 +20,7 @@ func TestBuiltinProvider(t *testing.T) {
 	scope := resolve.NewScope(
 		&scopeContext{},
 		&builtinProvider{
-			buildSettings: &runtime.BuildSettings{
+			buildSettings: &environment.BuildSettings{
 				BuildDir:   buildDir,
 				PythonPath: "python3",
 			},
@@ -30,7 +30,7 @@ func TestBuiltinProvider(t *testing.T) {
 
 	for _, tc := range []struct {
 		name          string
-		buildSettings *runtime.BuildSettings
+		buildSettings *environment.BuildSettings
 		ident         string
 		wantValue     string
 		wantOk        bool

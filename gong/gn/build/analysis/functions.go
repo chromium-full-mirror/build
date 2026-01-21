@@ -5,13 +5,13 @@
 package analysis
 
 import (
-	"go.chromium.org/build/gong/gn/build/runtime"
+	"go.chromium.org/build/gong/gn/build/environment"
 	"go.chromium.org/build/gong/gn/resolve"
 )
 
 // FunctionMap returns a map of GN buildfile functions to their implementations.
 // It requires the top-level BuildSettings object.
-func FunctionMap(buildSettings *runtime.BuildSettings) map[string]resolve.FunctionInfo {
+func FunctionMap(buildSettings *environment.BuildSettings) map[string]resolve.FunctionInfo {
 	return map[string]resolve.FunctionInfo{
 		"action":                actionFunction{},
 		"assert":                resolve.AssertFunction{},

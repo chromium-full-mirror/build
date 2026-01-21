@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Package runtime represents the runtime state of a build.
-package runtime
+// Package environment represents the runtime state of a build.
+package environment
 
 import (
 	"path/filepath"

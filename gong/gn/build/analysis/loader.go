@@ -6,10 +6,10 @@ package analysis
 
 import (
 	"fmt"
-	goruntime "runtime"
+	"runtime"
 
+	"go.chromium.org/build/gong/gn/build/environment"
 	"go.chromium.org/build/gong/gn/build/fs"
-	"go.chromium.org/build/gong/gn/build/runtime"
 	"go.chromium.org/build/gong/gn/resolve"
 	"go.chromium.org/build/gong/gn/syntax"
 )
@@ -18,7 +18,7 @@ import (
 // requests when new references are found, and also manages loading the
 // build config files.
 type Loader struct {
-	buildSettings    *runtime.BuildSettings
+	buildSettings    *environment.BuildSettings
 	inputFileManager *fs.InputFileManager
 
 	// BuildFileExtension is the additional extension for build files in this build.
@@ -29,16 +29,16 @@ type Loader struct {
 	seen map[loadID]struct{}
 
 	// Metadata for each toolchain.
-	toolchains map[runtime.Label]*toolchainRecord
+	toolchains map[environment.Label]*toolchainRecord
 
 	// Label for the default toolchain.
-	defaultToolchain runtime.Label
+	defaultToolchain environment.Label
 }
 
 // loadID represents a tuple of a file and toolchain label for tracking loaded files.
 type loadID struct {
 	file      fs.SourceFile
-	toolchain runtime.Label
+	toolchain environment.Label
 }
 
 type toolchainRecord struct {
@@ -60,23 +60,23 @@ func newToolchainRecord(loader *Loader) *toolchainRecord {
 }
 
 // MakeLoader creates a loader.
-func MakeLoader(buildSettings *runtime.BuildSettings, inputFileManager *fs.InputFileManager) Loader {
+func MakeLoader(buildSettings *environment.BuildSettings, inputFileManager *fs.InputFileManager) Loader {
 	return Loader{
 		buildSettings:    buildSettings,
 		inputFileManager: inputFileManager,
 		seen:             make(map[loadID]struct{}),
-		toolchains:       make(map[runtime.Label]*toolchainRecord),
+		toolchains:       make(map[environment.Label]*toolchainRecord),
 	}
 }
 
 // BuildFileForLabel returns the build file that the given label references.
-func (l *Loader) BuildFileForLabel(label runtime.Label) (fs.SourceFile, error) {
+func (l *Loader) BuildFileForLabel(label environment.Label) (fs.SourceFile, error) {
 	return fs.MakeSourceFile(label.Dir.Path() + "BUILD" + l.BuildFileExtension + ".gn")
 }
 
 // Load schedules a file load, noting down where the load came from.
 // If intoToolchain is the zero value, the default toolchain will be used.
-func (l *Loader) Load(file fs.SourceFile, origin syntax.LocationRange, intoToolchain runtime.Label) error {
+func (l *Loader) Load(file fs.SourceFile, origin syntax.LocationRange, intoToolchain environment.Label) error {
 	loadID := loadID{
 		file:      file,
 		toolchain: intoToolchain,
@@ -90,11 +90,11 @@ func (l *Loader) Load(file fs.SourceFile, origin syntax.LocationRange, intoToolc
 	if len(l.toolchains) == 0 {
 		// Nothing loaded, need to load the default build config. The initial load
 		// should not specify a toolchain.
-		if intoToolchain != (runtime.Label{}) {
+		if intoToolchain != (environment.Label{}) {
 			return fmt.Errorf("can't load into toolchain %q before default build config is loaded", intoToolchain.UserVisibleString(false))
 		}
 		record := newToolchainRecord(l)
-		l.toolchains[runtime.Label{}] = record
+		l.toolchains[environment.Label{}] = record
 
 		record.waitingForConfig = append(record.waitingForConfig, file)
 		if err := l.loadBuildConfig(record.settings); err != nil {
@@ -122,8 +122,8 @@ func (l *Loader) loadBuildConfig(settings *Settings) error {
 	// If the default toolchain label is unknown, the default toolchain is being processed.
 	// Set the receiver to populate it.
 	// (It can be called an unlimited number of times, the last call wins.)
-	if l.defaultToolchain == (runtime.Label{}) {
-		baseContext.defaultToolchainReceiver = func(toolchainLabel runtime.Label) {
+	if l.defaultToolchain == (environment.Label{}) {
+		baseContext.defaultToolchainReceiver = func(toolchainLabel environment.Label) {
 			l.defaultToolchain = toolchainLabel
 		}
 	}
@@ -136,7 +136,7 @@ func (l *Loader) loadBuildConfig(settings *Settings) error {
 
 	// Hack to populate os/arch until we properly implement build-level args.
 	// TODO: support os/arch overrides.
-	switch os := goruntime.GOOS; os {
+	switch os := runtime.GOOS; os {
 	case "windows":
 		settings.baseConfig.SetValue("host_os", resolve.NewOriginlessStringValue("win"), nil)
 	case "linux":
@@ -148,7 +148,7 @@ func (l *Loader) loadBuildConfig(settings *Settings) error {
 	}
 	settings.baseConfig.SetValue("target_os", resolve.NewOriginlessStringValue(""), nil)
 	settings.baseConfig.SetValue("current_os", resolve.NewOriginlessStringValue(""), nil)
-	switch arch := goruntime.GOARCH; arch {
+	switch arch := runtime.GOARCH; arch {
 	case "amd64":
 		settings.baseConfig.SetValue("host_cpu", resolve.NewOriginlessStringValue("x64"), nil)
 	case "arm64":
@@ -165,8 +165,8 @@ func (l *Loader) loadBuildConfig(settings *Settings) error {
 	}
 
 	// The default toolchain must have been set in the default build config file.
-	if baseContext.defaultToolchainReceiver != nil && l.defaultToolchain == (runtime.Label{}) {
-		return runtime.BuildError(
+	if baseContext.defaultToolchainReceiver != nil && l.defaultToolchain == (environment.Label{}) {
+		return environment.BuildError(
 			"The default build config file did not call set_default_toolchain()",
 			`If you don't call this, I can't figure out what toolchain to use
 for all of this code.`)

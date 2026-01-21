@@ -10,13 +10,13 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	goruntime "runtime"
+	"runtime"
 	"strings"
 
 	"go.chromium.org/build/gong/gn"
 	"go.chromium.org/build/gong/gn/build/analysis"
+	"go.chromium.org/build/gong/gn/build/environment"
 	"go.chromium.org/build/gong/gn/build/fs"
-	"go.chromium.org/build/gong/gn/build/runtime"
 	"go.chromium.org/build/gong/gn/parse"
 	"go.chromium.org/build/gong/gn/resolve"
 	"go.chromium.org/build/gong/gn/syntax"
@@ -43,7 +43,7 @@ func findDotFile(currentDir string) (string, error) {
 // Setup is helper to set up the build settings and environment for the various
 // commands to run.
 type Setup struct {
-	buildSettings    runtime.BuildSettings
+	buildSettings    environment.BuildSettings
 	loader           analysis.Loader
 	rootBuildFile    fs.SourceFile
 	inputFileManager fs.InputFileManager
@@ -217,7 +217,7 @@ func (s *Setup) fillPythonPath(flags *gn.CommonFlags) error {
 	// https://source.chromium.org/gn/gn/+/main:src/gn/setup.cc;l=791-825;drc=81dab9f25cb2381400c237fdea7030d5068f9a73
 	// Maybe this can be resolved using exec.LookPath?
 	// https://pkg.go.dev/os/exec?GOOS=windows#LookPath
-	if goruntime.GOOS == "windows" {
+	if runtime.GOOS == "windows" {
 		fmt.Fprintf(os.Stderr, "WARNING: python path detection will not function as expected on windows\n")
 	}
 
@@ -289,7 +289,7 @@ func (s *Setup) fillOtherConfig() error {
 		}
 		extension := stringValue.String()
 		if strings.ContainsRune(extension, filepath.Separator) {
-			return runtime.BuildError(
+			return environment.BuildError(
 				"Invalid build_file_extension",
 				fmt.Sprintf("Build file extension '%s' cannot contain a path separator", extension))
 		}
@@ -306,7 +306,7 @@ func (s *Setup) fillOtherConfig() error {
 	if err != nil {
 		return fmt.Errorf("failed to init root build.gn")
 	}
-	rootTargetLabel := runtime.Label{Dir: rootDir}
+	rootTargetLabel := environment.Label{Dir: rootDir}
 
 	// Set the root build file here in order to take into account the values of
 	// "build_file_extension" and "root".
@@ -319,7 +319,7 @@ func (s *Setup) fillOtherConfig() error {
 	// Build config file.
 	buildConfigValue := s.dotfileScope.Value("buildconfig", true)
 	if buildConfigValue == nil {
-		return runtime.BuildError(
+		return environment.BuildError(
 			"No build config file.",
 			fmt.Sprintf(`Your .gn file ("%s") didn't specify a "buildconfig" value.`, s.dotfileName))
 	}
@@ -355,7 +355,7 @@ func (s *Setup) fillOtherConfig() error {
 
 // Run runs the load, returning nil on success. On failure, returns the error.
 func (s *Setup) Run() error {
-	err := s.loader.Load(s.rootBuildFile, syntax.LocationRange{}, runtime.Label{})
+	err := s.loader.Load(s.rootBuildFile, syntax.LocationRange{}, environment.Label{})
 	if err != nil {
 		return err
 	}
