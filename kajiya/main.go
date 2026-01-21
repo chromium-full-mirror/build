@@ -32,6 +32,7 @@ import (
 	"go.chromium.org/build/kajiya/capabilities"
 	"go.chromium.org/build/kajiya/execution"
 	"go.chromium.org/build/kajiya/execution/localexec"
+	"go.chromium.org/build/kajiya/log"
 
 	_ "net/http/pprof" // import to let pprof register its HTTP handlers
 )
@@ -46,6 +47,7 @@ var (
 	tlsCertFile     = flag.String("tls_cert_file", "", "TLS certificate file")
 	tlsKeyFile      = flag.String("tls_key_file", "", "TLS key file")
 	sandboxStrategy = flag.String("sandbox", "overlayfs", "sandbox strategy to use (one of: files, overlayfs, nested-overlayfs)")
+	quiet           = flag.Bool("quiet", false, "if true, print only warnings and errors in log output")
 
 	sb localexec.SandboxStrategy
 )
@@ -64,6 +66,14 @@ func main() {
 
 func run() int {
 	flag.Parse()
+
+	level := slog.LevelInfo
+	if *quiet {
+		level = slog.LevelWarn
+	}
+	slog.SetDefault(slog.New(log.NewPrettyHandler(os.Stderr, &slog.HandlerOptions{
+		Level: level,
+	})))
 
 	// Validate the sandbox strategy flag.
 	if *sandboxStrategy == "files" {
