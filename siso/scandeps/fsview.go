@@ -78,7 +78,9 @@ func (fv *fsview) addDir(ctx context.Context, dir string, searchPath searchPathT
 	}
 	var sysinc string
 	for _, sysinc = range fv.precomputedTrees {
-		if dir == sysinc || strings.HasPrefix(dir, sysinc+"/") {
+		if dir == sysinc || (
+		// Avoid strings.HasPrefix(dir, sysinc+"/") to reduce allocation in string concat.
+		len(dir) > len(sysinc) && dir[len(sysinc)] == '/' && dir[:len(sysinc)] == sysinc) {
 			// use precomputed subtree (sysroot or framework)
 			// for this directory, so no need to handle this dir.
 			return
