@@ -50,20 +50,23 @@ func preprocCmd(ctx context.Context, b *Builder, step *Step) error {
 }
 
 func uniqueFiles(inputsList ...[]string) []string {
-	seen := make(map[string]struct{})
+	seen := make(map[string]bool)
+	var inputs []string
 	for _, ins := range inputsList {
 		for _, in := range ins {
 			if in == "" {
 				continue
 			}
-			seen[in] = struct{}{}
+			if seen[in] {
+				continue
+			}
+			seen[in] = true
+			inputs = append(inputs, in)
 		}
 	}
-	inputs := make([]string, 0, len(seen))
-	for in := range seen {
-		inputs = append(inputs, in)
-	}
-	return inputs
+	r := make([]string, len(inputs))
+	copy(r, inputs)
+	return r
 }
 
 func (b *Builder) expandInputs(ctx context.Context, inputs []string) []string {
