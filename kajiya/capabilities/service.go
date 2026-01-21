@@ -7,7 +7,7 @@ package capabilities
 
 import (
 	"context"
-	"log"
+	"log/slog"
 
 	repb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
 	semverpb "github.com/bazelbuild/remote-apis/build/bazel/semver"
@@ -28,9 +28,9 @@ func Register(s *grpc.Server) {
 func (s *Service) GetCapabilities(ctx context.Context, request *repb.GetCapabilitiesRequest) (*repb.ServerCapabilities, error) {
 	response, err := s.getCapabilities(request)
 	if err != nil {
-		log.Printf("⚠️ GetCapabilities(%v) => Error: %v", request, err)
+		slog.Error("GetCapabilities", "request", request, "error", err)
 	} else {
-		log.Printf("✅ GetCapabilities(%v) => OK", request)
+		slog.Info("GetCapabilities", "request", request)
 	}
 	return response, err
 }

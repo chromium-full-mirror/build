@@ -9,8 +9,10 @@
 package main
 
 import (
+	"errors"
 	"flag"
-	"log"
+	"fmt"
+	"log/slog"
 	"net"
 	"net/http"
 	"os"
@@ -57,21 +59,23 @@ func getDefaultDataDir() string {
 }
 
 func main() {
+	os.Exit(run())
+}
+
+func run() int {
 	flag.Parse()
 
 	// Validate the sandbox strategy flag.
-	switch *sandboxStrategy {
-	case "files":
+	if *sandboxStrategy == "files" {
 		sb = localexec.Files
-	case "overlayfs":
+	} else if *sandboxStrategy == "overlayfs" && runtime.GOOS == "linux" {
 		sb = localexec.OverlayFS
-	case "nested-overlayfs":
+	} else if *sandboxStrategy == "nested-overlayfs" && runtime.GOOS == "linux" {
 		sb = localexec.NestedOverlayFS
-	default:
-		log.Fatalf("invalid sandbox strategy %q", *sandboxStrategy)
-	}
-	if sb != localexec.Files && runtime.GOOS != "linux" {
-		log.Fatalf("sandbox strategy %q is only supported on Linux", *sandboxStrategy)
+	} else {
+		slog.Error("invalid sandbox strategy", "name", *sandboxStrategy)
+		flag.Usage()
+		return 2
 	}
 
 	// Reset the umask to a known value, so we know which permissions newly
@@ -80,30 +84,38 @@ func main() {
 
 	// Enable CPU profiling if requested.
 	if *cpuprofile != "" {
-		log.Printf("📈 CPU profiling enabled, writing to %v", *cpuprofile)
+		slog.Info("CPU profile logging to file", "path", *cpuprofile)
 		f, err := os.Create(*cpuprofile)
 		if err != nil {
-			log.Fatalf("failed to create file for CPU profile: %v", err)
+			slog.Error("failed to create file for CPU profile", "error", err)
+			return 1
 		}
 		err = pprof.StartCPUProfile(f)
 		if err != nil {
-			log.Fatalf("failed to start CPU profiler: %v", err)
+			_ = f.Close()
+			slog.Error("failed to start CPU profiler", "error", err)
+			return 1
 		}
-		defer pprof.StopCPUProfile()
+		defer func() {
+			pprof.StopCPUProfile()
+			if err := f.Close(); err != nil {
+				slog.Error("failed to close CPU profile file", "error", err)
+			}
+		}()
 	}
 
 	// Start an HTTP server that can be used to profile Kajiya during runtime if requested.
 	if *pprofAddr != "" {
 		// https://pkg.go.dev/net/http/pprof
-		log.Printf("⏱️ pprof is enabled, listening at http://%s/debug/pprof/\n", *pprofAddr)
+		slog.Info("pprof is enabled", "url", fmt.Sprintf("http://%s/debug/pprof/", *pprofAddr))
 		go func() {
-			if err := http.ListenAndServe(*pprofAddr, nil); err != http.ErrServerClosed {
-				log.Fatalf("pprof http listener: %v", err)
+			if err := http.ListenAndServe(*pprofAddr, nil); !errors.Is(err, http.ErrServerClosed) {
+				slog.Error("pprof server failed", "error", err)
 			}
 		}()
 		defer func() {
-			log.Printf("pprof is still listening at http://%s/debug/pprof/\n", *pprofAddr)
-			log.Printf("Press Ctrl-C to terminate the process")
+			slog.Info("pprof is still listening", "url", fmt.Sprintf("http://%s/debug/pprof/", *pprofAddr))
+			slog.Info("press Ctrl-C to terminate the process")
 			sigch := make(chan os.Signal, 1)
 			signal.Notify(sigch, os.Interrupt, syscall.SIGTERM)
 			<-sigch
@@ -112,25 +124,30 @@ func main() {
 
 	// Ensure our data directory exists.
 	if *dataDir == "" {
-		log.Fatalf("no data directory specified")
+		slog.Error("no data directory specified")
+		flag.Usage()
+		return 2
 	}
-	log.Printf("💾 using data directory: %v", *dataDir)
+	slog.Info("using data directory", "dir", *dataDir)
 	if err := os.MkdirAll(*dataDir, 0755); err != nil {
-		log.Fatalf("failed to create data directory: %v", err)
+		slog.Error("failed to create data directory", "error", err)
+		return 1
 	}
 
 	// Listen on the specified address.
 	network, addr := parseAddress(*listen)
 	listener, err := net.Listen(network, addr)
 	if err != nil {
-		log.Fatalf("failed to listen: %v", err)
+		slog.Error("failed to listen", "error", err)
+		return 1
 	}
-	log.Printf("🛜 listening on %v", listener.Addr())
+	slog.Info("gRPC listening", "address", listener.Addr())
 
 	// Create the gRPC server and register the services.
 	grpcServer, err := createServer(*dataDir)
 	if err != nil {
-		log.Fatalf("failed to create server: %v", err)
+		slog.Error("failed to create server", "error", err)
+		return 1
 	}
 
 	// Handle interrupts gracefully.
@@ -140,8 +157,11 @@ func main() {
 
 	// Start serving.
 	if err := grpcServer.Serve(listener); err != nil {
-		log.Fatalf("failed to serve: %v", err)
+		slog.Error("gRPC failed to serve", "error", err)
+		return 1
 	}
+
+	return 0
 }
 
 // parseAddress parses the listen address from the command line flag.
@@ -159,16 +179,16 @@ func parseAddress(addr string) (string, string) {
 func createServer(dataDir string) (*grpc.Server, error) {
 	// If either the cert or key file is specified, both must be.
 	if (*tlsCertFile == "") != (*tlsKeyFile == "") {
-		log.Fatalf("both --tls_cert_file and --tls_key_file must be specified")
+		return nil, fmt.Errorf("both --tls_cert_file and --tls_key_file must be specified")
 	}
 
 	// Create tls based credential.
 	var opts []grpc.ServerOption
 	if *tlsCertFile != "" {
-		log.Printf("🔒 using TLS certificate %v and key %v", filepath.Base(*tlsCertFile), filepath.Base(*tlsKeyFile))
+		slog.Info("using TLS", "cert", filepath.Base(*tlsCertFile), "key", filepath.Base(*tlsKeyFile))
 		creds, err := credentials.NewServerTLSFromFile(*tlsCertFile, *tlsKeyFile)
 		if err != nil {
-			log.Fatalf("failed to load TLS certificate and key: %v", err)
+			return nil, fmt.Errorf("failed to load TLS certificate and key: %v", err)
 		}
 		opts = append(opts, grpc.Creds(creds))
 	}
@@ -176,7 +196,7 @@ func createServer(dataDir string) (*grpc.Server, error) {
 	s := grpc.NewServer(opts...)
 
 	capabilities.Register(s)
-	log.Printf("✅ capabilities service")
+	slog.Info("capabilities service registered")
 
 	// Create a CAS backed by a local filesystem.
 	casDir := filepath.Join(dataDir, "cas")
@@ -191,7 +211,7 @@ func createServer(dataDir string) (*grpc.Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	log.Printf("✅ content-addressable storage service")
+	slog.Info("content-addressable storage service registered")
 
 	// Action cache service.
 	var ac *actioncache.ActionCache
@@ -206,9 +226,9 @@ func createServer(dataDir string) (*grpc.Server, error) {
 		if err != nil {
 			return nil, err
 		}
-		log.Printf("✅ action cache service")
+		slog.Info("action cache service registered")
 	} else {
-		log.Printf("⚠️ action cache service disabled")
+		slog.Warn("action cache service disabled")
 	}
 
 	// Execution service.
@@ -223,14 +243,14 @@ func createServer(dataDir string) (*grpc.Server, error) {
 		if err != nil {
 			return nil, err
 		}
-		log.Printf("✅ execution service")
+		slog.Info("execution service registered")
 	} else {
-		log.Printf("⚠️ execution service disabled")
+		slog.Warn("execution service disabled")
 	}
 
 	// Register the reflection service provided by gRPC.
 	reflection.Register(s)
-	log.Printf("✅ gRPC reflection service")
+	slog.Info("gRPC reflection service registered")
 
 	return s, nil
 }
@@ -248,10 +268,10 @@ func HandleInterrupt(fn func()) (stopper func()) {
 		handled := false
 		for range ch {
 			if handled {
-				log.Printf("🚨 received second interrupt signal, exiting now")
+				slog.Error("received second interrupt signal, exiting now")
 				os.Exit(1)
 			}
-			log.Printf("⚠️ received signal, attempting graceful shutdown")
+			slog.Warn("received signal, attempting graceful shutdown")
 			handled = true
 			go fn()
 		}

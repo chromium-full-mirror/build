@@ -10,7 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"log"
+	"log/slog"
 	"runtime"
 	"time"
 
@@ -111,7 +111,7 @@ func (s *Service) Execute(request *repb.ExecuteRequest, executeServer repb.Execu
 	duration := time.Since(start)
 
 	if err != nil {
-		log.Printf("🚨 Execute(%v) => Error: %v", request.ActionDigest, err)
+		slog.Error("Execute", "action", request.ActionDigest, "error", err)
 
 		var mberr *blobstore.MissingBlobsError
 		if errors.As(err, &mberr) {
@@ -126,7 +126,7 @@ func (s *Service) Execute(request *repb.ExecuteRequest, executeServer repb.Execu
 		return err
 	}
 
-	log.Printf("🎉 Execute(%v) => OK (%v)", request.ActionDigest, duration)
+	slog.Info("Execute", "action", request.ActionDigest, "duration", duration)
 	return nil
 }
 
@@ -219,7 +219,7 @@ func (s *Service) execute(request *repb.ExecuteRequest, _ *repb.RequestMetadata,
 		// issue that will be resolved on the next execution.
 		if !action.DoNotCache && s.actionCache != nil && ar.ExitCode == 0 {
 			if err = s.actionCache.Put(action.ActionDigest, ar); err != nil {
-				log.Printf("🚨 failed to put action into cache: %v", err)
+				slog.Error("failed to put action into cache", "error", err)
 			}
 		}
 

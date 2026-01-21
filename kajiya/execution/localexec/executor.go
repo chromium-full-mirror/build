@@ -9,7 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"log"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -324,20 +324,20 @@ func (e *Executor) deleteSandbox(dir string) {
 		if d.IsDir() {
 			fi, err := d.Info()
 			if err != nil {
-				log.Printf("🚨 failed to get file info for %q: %v", path, err)
+				slog.Error("failed to get file info", "path", path, "error", err)
 				return nil
 			}
 			mode := fi.Mode()
 			if mode&0200 == 0 {
 				err = os.Chmod(path, mode|0200)
 				if err != nil {
-					log.Printf("🚨 failed to chmod %q: %v", path, err)
+					slog.Error("failed to chmod", "path", path, "error", err)
 				}
 			}
 		}
 		return nil
 	})
 	if err := os.RemoveAll(dir); err != nil {
-		log.Printf("🚨 failed to remove sandbox: %v", err)
+		slog.Error("failed to remove sandbox", "path", dir, "error", err)
 	}
 }

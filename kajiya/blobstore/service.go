@@ -12,7 +12,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -212,9 +212,9 @@ func parseWriteResource(name string) (digest.Digest, uuid.UUID, repb.Compressor_
 func (s *Service) Read(request *bspb.ReadRequest, server bspb.ByteStream_ReadServer) (err error) {
 	defer func() {
 		if err != nil {
-			log.Printf("🚨 Read(%v) => Error: %v", request.ResourceName, err)
+			slog.Error("Read", "resource", request.ResourceName, "error", err)
 		} else {
-			log.Printf("✅ Read(%v) => OK", request.ResourceName)
+			slog.Info("Read", "resource", request.ResourceName)
 		}
 	}()
 
@@ -293,9 +293,9 @@ func (s *Service) Write(server bspb.ByteStream_WriteServer) (err error) {
 	var resName string
 	defer func() {
 		if err != nil {
-			log.Printf("🚨 Write(%v) => Error: %v", resName, err)
+			slog.Error("Write", "resource", resName, "error", err)
 		} else {
-			log.Printf("✅ Write(%v) => OK", resName)
+			slog.Info("Write", "resource", resName)
 		}
 	}()
 
@@ -337,10 +337,10 @@ func (s *Service) Write(server bspb.ByteStream_WriteServer) (err error) {
 	defer func() {
 		if tempFile != nil {
 			if err := tempFile.Close(); err != nil {
-				log.Printf("failed to close temporary file: %v", err)
+				slog.Error("failed to close temporary file", "error", err)
 			}
 			if err := tempFile.Delete(); err != nil {
-				log.Printf("failed to delete temporary file: %v", err)
+				slog.Error("failed to delete temporary file", "error", err)
 			}
 			tempFile = nil
 		}
@@ -355,7 +355,7 @@ func (s *Service) Write(server bspb.ByteStream_WriteServer) (err error) {
 		defer func() {
 			if dataSink != nil {
 				if err := dataSink.Close(); err != nil {
-					log.Printf("failed to close decompressor: %v", err)
+					slog.Error("failed to close decompressor", "error", err)
 				}
 				dataSink = nil
 			}
@@ -462,9 +462,9 @@ func (s *Service) blobAlreadyExists(d digest.Digest, isCompressed bool) *bspb.Wr
 func (s *Service) QueryWriteStatus(ctx context.Context, request *bspb.QueryWriteStatusRequest) (*bspb.QueryWriteStatusResponse, error) {
 	response, err := s.queryWriteStatus(request)
 	if err != nil {
-		log.Printf("🚨 QueryWriteStatus(%v) failed: %s", request.ResourceName, err)
+		slog.Error("QueryWriteStatus", "resource", request.ResourceName, "error", err)
 	} else {
-		log.Printf("✅ QueryWriteStatus(%v) succeeded", request.ResourceName)
+		slog.Info("QueryWriteStatus", "resource", request.ResourceName)
 	}
 	return response, err
 }
@@ -494,9 +494,9 @@ func (s *Service) queryWriteStatus(request *bspb.QueryWriteStatusRequest) (*bspb
 func (s *Service) FindMissingBlobs(ctx context.Context, request *repb.FindMissingBlobsRequest) (*repb.FindMissingBlobsResponse, error) {
 	response, err := s.findMissingBlobs(request)
 	if err != nil {
-		log.Printf("🚨 FindMissingBlobs(%d blobs) => Error: %v", len(request.BlobDigests), err)
+		slog.Error("FindMissingBlobs", "blobs", len(request.BlobDigests), "error", err)
 	} else {
-		log.Printf("✅ FindMissingBlobs(%d blobs) => OK (%d missing)", len(request.BlobDigests), len(response.MissingBlobDigests))
+		slog.Info("FindMissingBlobs", "blobs", len(request.BlobDigests), "missing", len(response.MissingBlobDigests))
 	}
 	return response, err
 }
@@ -531,9 +531,9 @@ func (s *Service) findMissingBlobs(request *repb.FindMissingBlobsRequest) (*repb
 func (s *Service) BatchUpdateBlobs(ctx context.Context, request *repb.BatchUpdateBlobsRequest) (*repb.BatchUpdateBlobsResponse, error) {
 	response, err := s.batchUploadBlobs(request)
 	if err != nil {
-		log.Printf("🚨 BatchUpdateBlobs(%v blobs) => Error: %v", len(request.Requests), err)
+		slog.Error("BatchUpdateBlobs", "blobs", len(request.Requests), "error", err)
 	} else {
-		log.Printf("✅ BatchUpdateBlobs(%v blobs) => OK", len(request.Requests))
+		slog.Info("BatchUpdateBlobs", "blobs", len(request.Requests))
 	}
 	return response, err
 }
@@ -587,9 +587,9 @@ func (s *Service) batchUploadBlobs(request *repb.BatchUpdateBlobsRequest) (*repb
 func (s *Service) BatchReadBlobs(ctx context.Context, request *repb.BatchReadBlobsRequest) (*repb.BatchReadBlobsResponse, error) {
 	response, err := s.batchReadBlobs(request)
 	if err != nil {
-		log.Printf("🚨 BatchReadBlobs(%v blobs) => Error: %v", len(request.Digests), err)
+		slog.Error("BatchReadBlobs", "blobs", len(request.Digests), "error", err)
 	} else {
-		log.Printf("✅ BatchReadBlobs(%v blobs) => OK", len(request.Digests))
+		slog.Info("BatchReadBlobs", "blobs", len(request.Digests))
 	}
 	return response, err
 }
@@ -642,11 +642,10 @@ func (s *Service) batchReadBlobs(request *repb.BatchReadBlobsRequest) (*repb.Bat
 
 func (s *Service) GetTree(request *repb.GetTreeRequest, treeServer repb.ContentAddressableStorage_GetTreeServer) error {
 	if err := s.getTree(request, treeServer); err != nil {
-		log.Printf("🚨 GetTree(%v) => Error: %v", request.RootDigest, err)
+		slog.Error("GetTree", "digest", request.RootDigest, "error", err)
 		return err
-	} else {
-		log.Printf("✅ GetTree(%v) => OK", request.RootDigest)
 	}
+	slog.Info("GetTree", "digest", request.RootDigest)
 	return nil
 }
 

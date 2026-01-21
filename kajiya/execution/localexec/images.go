@@ -11,7 +11,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"log"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -99,9 +99,9 @@ func (r *ImageRepository) FetchImage(containerImage string) (string, error) {
 			if _, err := c.Output(); err != nil {
 				var ee *exec.ExitError
 				if errors.As(err, &ee) {
-					log.Printf("🚨 failed to remove container: %v: %s", err, ee.Stderr)
+					slog.Error("failed to remove container", "error", err, "stderr", ee.Stderr)
 				} else {
-					log.Printf("🚨 failed to remove container: %v", err)
+					slog.Error("failed to remove container", "error", err)
 				}
 			}
 		}()
@@ -114,7 +114,7 @@ func (r *ImageRepository) FetchImage(containerImage string) (string, error) {
 		}
 		defer func() {
 			if err := os.RemoveAll(tmpImagePath); err != nil {
-				log.Printf("🚨 failed to remove temporary image directory: %v", err)
+				slog.Error("failed to remove temporary image directory", "path", tmpImagePath, "error", err)
 			}
 		}()
 

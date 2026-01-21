@@ -3,7 +3,7 @@ package zstdstream
 import (
 	"io"
 	"io/fs"
-	"log"
+	"log/slog"
 	"sync"
 
 	"github.com/klauspost/compress/zstd"
@@ -44,7 +44,7 @@ func NewDecompressingWriter(dst io.Writer) (*DecompressingWriter, error) {
 
 		// Reset decoder for reuse.
 		if err := decoder.Reset(nil); err != nil {
-			log.Printf("failed to reset decoder: %v", err)
+			slog.Error("failed to reset decoder", "error", err)
 		} else {
 			decoderPool.Put(decoder)
 		}

@@ -9,7 +9,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 
@@ -82,7 +82,7 @@ func (c *ContentAddressableStorage) Stat(d digest.Digest) (os.FileInfo, error) {
 	}
 
 	if fi.Size() != d.Size {
-		log.Printf("actual file size %d does not match requested size of digest %s", fi.Size(), d.String())
+		slog.Error("actual file size does not match digest", "size", fi.Size(), "digest", d)
 		return nil, &MissingBlobsError{Blobs: []digest.Digest{d}}
 	}
 
@@ -95,7 +95,7 @@ func (c *ContentAddressableStorage) Has(d digest.Digest) bool {
 		var mbe *MissingBlobsError
 		if !errors.As(err, &mbe) {
 			// That's unexpected, let's log it.
-			log.Printf("error checking for digest %s: %s", d.String(), err)
+			slog.Error("stat failed", "digest", d, "error", err)
 		}
 		return false
 	}
@@ -126,7 +126,7 @@ func (c *ContentAddressableStorage) Open(d digest.Digest, offset int64, limit in
 	}
 
 	if size != d.Size {
-		log.Printf("actual file size %d does not match requested size of digest %s", offset, d.String())
+		slog.Error("actual file size does not match requested size of digest", "size", offset, "digest", d)
 		_ = f.Close()
 		return nil, &MissingBlobsError{Blobs: []digest.Digest{d}}
 	}

@@ -8,7 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 
@@ -241,7 +241,7 @@ func (sb *Sandbox) UploadOutputs(action *model.Action, actionResult *repb.Action
 			}
 			pathFromWorkDir, err = filepath.Rel(action.WorkingDir, filepath.Join(string(k), outputPath.Name))
 			if err != nil {
-				log.Printf("🚨 failed to get relative path: %v", err)
+				slog.Error("failed to get relative path", "error", err)
 				return true
 			}
 
@@ -250,7 +250,7 @@ func (sb *Sandbox) UploadOutputs(action *model.Action, actionResult *repb.Action
 			if err != nil {
 				if errors.Is(err, fs.ErrNotExist) {
 					// Ignore non-existing output files.
-					log.Printf("🚨 output file %q does not exist, ignoring", fullPath)
+					slog.Warn("ignoring missing output", "path", fullPath)
 					continue
 				}
 				return true
@@ -261,7 +261,7 @@ func (sb *Sandbox) UploadOutputs(action *model.Action, actionResult *repb.Action
 				fi, err = os.Stat(fullPath)
 				if err != nil {
 					// Ignore dangling symlinks.
-					log.Printf("🚨 output file %q is a dangling symlink, ignoring", fullPath)
+					slog.Warn("ignoring dangling symlink output", "path", fullPath)
 					continue
 				}
 				if fi.Mode().IsDir() {

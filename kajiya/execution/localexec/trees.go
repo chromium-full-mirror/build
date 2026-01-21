@@ -8,7 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 
@@ -100,7 +100,7 @@ func (t *TreeRepository) EnsureDirectory(dirTrie *model.DirectoryTrie) (err erro
 		})
 		if err != nil && tmpPath != "" {
 			if err := os.RemoveAll(tmpPath); err != nil {
-				log.Printf("🚨 failed to remove temporary directory: %v", err)
+				slog.Error("failed to remove temporary directory", "path", tmpPath, "error", err)
 			}
 		}
 

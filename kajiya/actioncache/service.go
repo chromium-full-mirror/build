@@ -10,7 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"log"
+	"log/slog"
 
 	repb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
 	"google.golang.org/grpc"
@@ -55,12 +55,12 @@ func (s *Service) GetActionResult(ctx context.Context, request *repb.GetActionRe
 	response, err := s.getActionResult(request)
 	if err != nil {
 		if status.Code(err) == codes.NotFound {
-			log.Printf("⚠️ GetActionResult(%v) => Cache miss", request.ActionDigest)
+			slog.Warn("GetActionResult", "action", request.ActionDigest, "result", "cache miss")
 		} else {
-			log.Printf("🚨 GetActionResult(%v) => Error: %v", request.ActionDigest, err)
+			slog.Error("GetActionResult", "action", request.ActionDigest, "error", err)
 		}
 	} else {
-		log.Printf("🎉 GetActionResult(%v) => Cache hit", request.ActionDigest)
+		slog.Info("GetActionResult", "action", request.ActionDigest, "result", "cache hit")
 	}
 	return response, err
 }
@@ -91,9 +91,9 @@ func (s *Service) getActionResult(request *repb.GetActionResultRequest) (*repb.A
 func (s *Service) UpdateActionResult(ctx context.Context, request *repb.UpdateActionResultRequest) (*repb.ActionResult, error) {
 	response, err := s.updateActionResult(request)
 	if err != nil {
-		log.Printf("🚨 UpdateActionResult(%v) => Error: %v", request.ActionDigest, err)
+		slog.Error("UpdateActionResult", "action", request.ActionDigest, "error", err)
 	} else {
-		log.Printf("✅ UpdateActionResult(%v) => OK", request.ActionDigest)
+		slog.Info("UpdateActionResult", "action", request.ActionDigest)
 	}
 	return response, err
 }
