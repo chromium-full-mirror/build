@@ -9,6 +9,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"flag"
 	"fmt"
@@ -61,10 +62,10 @@ func getDefaultDataDir() string {
 }
 
 func main() {
-	os.Exit(run())
+	os.Exit(run(context.Background()))
 }
 
-func run() int {
+func run(ctx context.Context) int {
 	flag.Parse()
 
 	level := slog.LevelInfo
@@ -154,7 +155,7 @@ func run() int {
 	slog.Info("gRPC listening", "address", listener.Addr())
 
 	// Create the gRPC server and register the services.
-	grpcServer, err := createServer(*dataDir)
+	grpcServer, err := createServer(ctx, *dataDir)
 	if err != nil {
 		slog.Error("failed to create server", "error", err)
 		return 1
@@ -186,7 +187,7 @@ func parseAddress(addr string) (string, string) {
 }
 
 // createServer creates a new gRPC server and registers the services.
-func createServer(dataDir string) (*grpc.Server, error) {
+func createServer(ctx context.Context, dataDir string) (*grpc.Server, error) {
 	// If either the cert or key file is specified, both must be.
 	if (*tlsCertFile == "") != (*tlsKeyFile == "") {
 		return nil, fmt.Errorf("both --tls_cert_file and --tls_key_file must be specified")
@@ -210,7 +211,7 @@ func createServer(dataDir string) (*grpc.Server, error) {
 
 	// Create a CAS backed by a local filesystem.
 	casDir := filepath.Join(dataDir, "cas")
-	cas, err := blobstore.New(casDir)
+	cas, err := blobstore.New(ctx, casDir)
 	if err != nil {
 		return nil, err
 	}

@@ -5,6 +5,7 @@
 package blobstore
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -12,7 +13,11 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strings"
+	"time"
 
+	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/singleflight"
 
 	"go.chromium.org/build/kajiya/atomicio"
@@ -28,7 +33,7 @@ type ContentAddressableStorage struct {
 }
 
 // New creates a new local CAS. The data directory is created if it does not exist.
-func New(dataDir string) (*ContentAddressableStorage, error) {
+func New(ctx context.Context, dataDir string) (*ContentAddressableStorage, error) {
 	if dataDir == "" {
 		return nil, fmt.Errorf("data directory must be specified")
 	}
@@ -61,7 +66,104 @@ func New(dataDir string) (*ContentAddressableStorage, error) {
 		return nil, fmt.Errorf("empty blob did not have expected hash: got %s, wanted %s", d, digest.Empty)
 	}
 
-	return cas, nil
+	now := time.Now()
+	count, size, err := cas.validate(ctx)
+	dur := time.Since(now)
+	slog.Info("validated blobs in CAS",
+		"count", count,
+		"size", fmt.Sprintf("%d MiB", size/1024/1024),
+		"duration", dur,
+		"hash_speed", fmt.Sprintf("%.2f MiB/s", float64(size)/dur.Seconds()/1024/1024))
+
+	return cas, err
+}
+
+// isValidSubdir returns true if the given subdirectory name is valid inside the CAS data directory.
+// The provided path must be relative to the data directory.
+func isValidSubdir(s string) bool {
+	return s == "." || s == "tmp" ||
+		(len(s) == 2 && digest.IsHex(s[0]) && digest.IsHex(s[1]))
+}
+
+// validate checks that all files in the CAS are valid and returns the number of found blobs.
+func (c *ContentAddressableStorage) validate(ctx context.Context) (count int, size int64, err error) {
+	g, ctx := errgroup.WithContext(ctx)
+	g.SetLimit(runtime.GOMAXPROCS(0))
+
+	// Walk through all files in our data directory and verify that they have the
+	// correct hash and size.
+	err = filepath.WalkDir(c.dataDir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+
+		// Verify that there are no unexpected directories.
+		if d.IsDir() {
+			relPath, err := filepath.Rel(c.dataDir, path)
+			if err != nil {
+				return err
+			}
+			if isValidSubdir(relPath) {
+				return nil
+			}
+			return fmt.Errorf("unexpected subdirectory %s", path)
+		}
+
+		// Exit early if context is cancelled.
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
+		// Extract the expected digest from the filename.
+		if len(d.Name()) != 64 {
+			if strings.HasPrefix(d.Name(), "tmp_") {
+				// These might be leftover from a previous crash and are safe to delete.
+				slog.Warn("deleting leftover temporary file", "path", path)
+				if err = os.Remove(path); err != nil {
+					return err
+				}
+			} else {
+				// Out of caution, avoid deleting other unknown files automatically for now.
+				slog.Warn("ignoring file with unexpected name", "path", path)
+			}
+			return nil
+		}
+
+		// Keep stats about the found blobs.
+		fi, err := d.Info()
+		if err != nil {
+			return err
+		}
+		count++
+		size += fi.Size()
+
+		// Validate file digests in parallel.
+		g.Go(func() error {
+			// Read the file and verify its digest.
+			actualDigest, err := digest.FromFile(path)
+			if err != nil {
+				return fmt.Errorf("failed to read file %s: %w", path, err)
+			}
+			if actualDigest.Hash != d.Name() {
+				slog.Error("file hash mismatch", "path", path, "expected", d.Name(), "actual", actualDigest.Hash)
+				return fmt.Errorf("file %s has incorrect hash: expected %s, got %s", path, d.Name(), actualDigest.Hash)
+			}
+			return nil
+		})
+
+		return nil
+	})
+	if err != nil {
+		return count, size, err
+	}
+
+	// Wait for all goroutines to complete
+	if err = g.Wait(); err != nil {
+		return count, size, err
+	}
+	return count, size, nil
 }
 
 // path returns the path to the file with digest d in the CAS.
