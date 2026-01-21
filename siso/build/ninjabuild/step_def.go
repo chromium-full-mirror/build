@@ -14,6 +14,7 @@ import (
 	"flag"
 	"fmt"
 	"io/fs"
+	"iter"
 	"maps"
 	"path/filepath"
 	"runtime"
@@ -350,20 +351,22 @@ func (s *StepDef) Rspfile(ctx context.Context) string {
 	return s.globals.path.MaybeFromWD(ctx, rspfile)
 }
 
-func edgeSolibs(edge *ninjautil.Edge) []string {
-	solibsStr := edge.Binding("solibs")
-	if solibsStr == "" {
-		return nil
-	}
-	var solibs []string
-	for in := range strings.SplitSeq(solibsStr, " ") {
-		in = strings.TrimSpace(in)
-		if in == "" {
-			continue
+func edgeSolibs(edge *ninjautil.Edge) iter.Seq[string] {
+	return func(yield func(string) bool) {
+		solibsStr := edge.Binding("solibs")
+		if solibsStr == "" {
+			return
 		}
-		solibs = append(solibs, in)
+		for in := range strings.SplitSeq(solibsStr, " ") {
+			in = strings.TrimSpace(in)
+			if in == "" {
+				continue
+			}
+			if !yield(in) {
+				return
+			}
+		}
 	}
-	return solibs
 }
 
 // Inputs returns inputs of the step.
@@ -382,7 +385,7 @@ func (s *StepDef) Inputs(ctx context.Context) []string {
 		seen[p] = true
 		targets = append(targets, p)
 	}
-	for _, p := range edgeSolibs(s.edge) {
+	for p := range edgeSolibs(s.edge) {
 		if s.rule.Debug {
 			clog.Infof(ctx, "solib %s", p)
 		}
@@ -807,7 +810,7 @@ func (s *StepDef) ExpandedInputs(ctx context.Context) []string {
 		}
 		inputs = append(inputs, p)
 	}
-	for _, p := range edgeSolibs(s.edge) {
+	for p := range edgeSolibs(s.edge) {
 		p = globals.path.MaybeFromWD(ctx, p)
 		if seen[p] {
 			continue
@@ -870,7 +873,11 @@ func (s *StepDef) ExpandedInputs(ctx context.Context) []string {
 		// check siso rule if it was not checked when input's step was skipped
 		er.ensure(ctx, globals)
 		if s.rule.Debug {
-			clog.Infof(ctx, "check edgeRule for %s inputs=%d solibs=%d replace=%t accumulate=%t", inputs[i], len(er.edge.Inputs()), len(edgeSolibs(er.edge)), er.replace, er.accumulate)
+			solibs := 0
+			for range edgeSolibs(er.edge) {
+				solibs += 1
+			}
+			clog.Infof(ctx, "check edgeRule for %s inputs=%d solibs=%d replace=%t accumulate=%t", inputs[i], len(er.edge.Inputs()), solibs, er.replace, er.accumulate)
 		}
 		var ins []string
 		for _, in := range er.edge.Inputs() {
@@ -895,7 +902,7 @@ func (s *StepDef) ExpandedInputs(ctx context.Context) []string {
 		}
 		newInputs = append(newInputs, inputs[i])
 		var solibsIns []string
-		for _, in := range edgeSolibs(er.edge) {
+		for in := range edgeSolibs(er.edge) {
 			in = globals.path.MaybeFromWD(ctx, in)
 			if seen[in] {
 				continue
