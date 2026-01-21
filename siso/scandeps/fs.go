@@ -128,9 +128,15 @@ func (fsys *filesystem) markDirExists(dname string) bool {
 
 func (fsys *filesystem) ReadDir(ctx context.Context, execRoot, dname string) (*sync.Map, []string, error) {
 	fullpath := filepath.ToSlash(filepath.Join(execRoot, dname))
-	dv, loaded := fsys.dircache.LoadOrStore(fullpath, &dircache{
-		ready: make(chan struct{}),
-	})
+
+	// To avoid allocation of `dircache` in LoadOrStore, call Load first here.
+	dv, loaded := fsys.dircache.Load(fullpath)
+	if !loaded {
+		dv, loaded = fsys.dircache.LoadOrStore(fullpath, &dircache{
+			ready: make(chan struct{}),
+		})
+	}
+
 	dc := dv.(*dircache)
 	if !loaded {
 		go func() {
