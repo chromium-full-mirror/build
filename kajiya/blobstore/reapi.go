@@ -52,22 +52,18 @@ func (c *ContentAddressableStorage) Directory(dirDigest digest.Digest) (*repb.Di
 	return dir, nil
 }
 
-// FlattenDirectory reads a Directory message with the given digest from the CAS and returns a flat
-// list of it and all subdirectories.
-func (c *ContentAddressableStorage) FlattenDirectory(rootDigest digest.Digest) (dirs []*repb.Directory, err error) {
+// FlattenDirectory reads a Directory message with the given digest from the CAS and returns flat
+// lists with the digests as well as the messages of the root directory and all subdirectories.
+func (c *ContentAddressableStorage) FlattenDirectory(rootDigest digest.Digest) (dirDigests []digest.Digest, dirs []*repb.Directory, err error) {
 	// Create a queue of directories to process and add the root directory.
-	dirQueue := []digest.Digest{rootDigest}
+	dirDigests = []digest.Digest{rootDigest}
 
 	// Iteratively process the directories.
-	for len(dirQueue) > 0 {
-		// Take a directoryNode from the queue.
-		currentDigest := dirQueue[0]
-		dirQueue = dirQueue[1:]
-
+	for i := 0; i < len(dirDigests); i++ {
 		// Get the blob for the directory message from the CAS.
-		directory, err := c.Directory(currentDigest)
+		directory, err := c.Directory(dirDigests[i])
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 
 		// Add the directory to the response.
@@ -78,11 +74,11 @@ func (c *ContentAddressableStorage) FlattenDirectory(rootDigest digest.Digest) (
 			// Parse the digest.
 			subDigest, err := digest.NewFromProto(subDirNode.Digest)
 			if err != nil {
-				return nil, fmt.Errorf("invalid digest: %v", err)
+				return nil, nil, fmt.Errorf("invalid digest: %v", err)
 			}
-			dirQueue = append(dirQueue, subDigest)
+			dirDigests = append(dirDigests, subDigest)
 		}
 	}
 
-	return dirs, nil
+	return dirDigests, dirs, nil
 }

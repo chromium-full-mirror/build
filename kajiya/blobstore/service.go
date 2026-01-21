@@ -653,7 +653,7 @@ func (s *Service) GetTree(request *repb.GetTreeRequest, treeServer repb.ContentA
 	}
 
 	// Flatten the directory tree.
-	dirs, err := s.cas.FlattenDirectory(d)
+	_, dirs, err := s.cas.FlattenDirectory(d)
 	if err != nil {
 		return err
 	}

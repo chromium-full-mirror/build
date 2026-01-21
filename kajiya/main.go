@@ -228,7 +228,7 @@ func createServer(ctx context.Context, dataDir string) (*grpc.Server, error) {
 	var ac *actioncache.ActionCache
 	if *enableCache {
 		acDir := filepath.Join(dataDir, "ac")
-		ac, err = actioncache.New(acDir)
+		ac, err = actioncache.New(ctx, acDir, cas)
 		if err != nil {
 			return nil, err
 		}
