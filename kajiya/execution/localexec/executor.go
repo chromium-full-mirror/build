@@ -64,8 +64,19 @@ func New(baseDir string, cas *blobstore.ContentAddressableStorage, sb SandboxStr
 
 	// Create the base directory for sandboxes.
 	sandboxBase := filepath.Join(baseDir, "tmp")
+	// Remove any existing sandboxes that might have been left over from a previous run.
+	if dirs, err := os.ReadDir(sandboxBase); err == nil || errors.Is(err, fs.ErrNotExist) {
+		for _, d := range dirs {
+			deleteSandbox(filepath.Join(sandboxBase, d.Name()))
+		}
+		if len(dirs) > 0 {
+			slog.Info("removed leftover sandboxes", "count", len(dirs))
+		}
+	} else {
+		return nil, fmt.Errorf("failed to read sandbox base directory: %w", err)
+	}
 	if err := os.Mkdir(sandboxBase, 0755); err != nil && !errors.Is(err, fs.ErrExist) {
-		return nil, fmt.Errorf("failed to create directory %q: %w", sandboxBase, err)
+		return nil, fmt.Errorf("failed to create sandbox base %q: %w", sandboxBase, err)
 	}
 
 	// Create the tree repository. It's only used for nested overlay filesystems.
@@ -108,7 +119,7 @@ func (e *Executor) Execute(action *model.Action) (*repb.ActionResult, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to create sandbox directory: %w", err)
 	}
-	defer e.deleteSandbox(sandboxDir)
+	defer deleteSandbox(sandboxDir)
 
 	sb := &Sandbox{
 		cas:        e.cas,
@@ -298,19 +309,17 @@ func (e *Executor) executeCommand(sb *Sandbox, action *model.Action) (*repb.Acti
 	}, nil
 }
 
-func (e *Executor) deleteSandbox(dir string) {
+func deleteSandbox(dir string) {
 	// The "work" directory is a special case, because it is used by the kernel as a temporary
 	// scratch space for overlayfs. It will usually be empty or only contain very few
 	// directories or marker files without any permission bits set. We need to reset them so
 	// that os.RemoveAll() below can successfully delete this dir.
-	if e.sandboxStrategy == OverlayFS || e.sandboxStrategy == NestedOverlayFS {
-		_ = filepath.WalkDir(filepath.Join(dir, "work"), func(path string, d fs.DirEntry, err error) error {
-			if d.IsDir() {
-				_ = os.Chmod(path, 0700)
-			}
-			return nil
-		})
-	}
+	_ = filepath.WalkDir(filepath.Join(dir, "work"), func(path string, d fs.DirEntry, err error) error {
+		if d.IsDir() {
+			_ = os.Chmod(path, 0700)
+		}
+		return nil
+	})
 
 	// First, try to delete the sandbox via os.RemoveAll. This works in most cases and is the
 	// fastest way, using the least amount of CPU and syscalls.
