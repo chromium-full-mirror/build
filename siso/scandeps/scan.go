@@ -89,6 +89,49 @@ func (s *scanner) stats() string {
 		s.slowest, s.slowestDur)
 }
 
+func (s *scanner) reset(fsys *filesystem, execRoot string, inputDeps map[string][]string, precomputedTrees []string) {
+	s.pt.Reset()
+	s.fsview.reset(fsys, execRoot, inputDeps, precomputedTrees)
+	s.dirstack = s.dirstack[:0]
+	s.maxDirstack = 0
+	s.inputs = s.inputs[:0]
+	clear(s.macros)
+	clear(s.included)
+	clear(s.macroUsed)
+	clear(s.macroInclude)
+	clear(s.macroDirs)
+	clear(s.nameDirs)
+	clear(s.hmaps)
+	s.ds = s.ds[:0]
+	s.names = s.names[:0]
+	s.nextInputsCount = 0
+	s.findCount = 0
+	s.findDurs = [6]int{}
+	s.slowest = ""
+	s.slowestDur = 0
+}
+
+var scannerPool = sync.Pool{
+	New: func() any {
+		return &scanner{
+			pt: NewPathTable(),
+			fsview: &fsview{
+				visited: make(map[string]bool),
+				dirs:    make(map[string]bool),
+				files:   make(map[string]*scanResult),
+				topEnts: make(map[string]*sync.Map),
+			},
+			macros:       make(map[string][]string),
+			included:     make(map[string]*bitmap.Bitmap),
+			macroUsed:    make(map[string]map[string]bool),
+			macroInclude: make(map[string]bool),
+			macroDirs:    make(map[string][]string),
+			nameDirs:     make(map[string]int),
+			hmaps:        make(map[string][]string),
+		}
+	},
+}
+
 // scanResult contains includes, defines directives required for scandeps
 // for an include file.
 type scanResult struct {
@@ -107,30 +150,16 @@ type scanResult struct {
 }
 
 func (fsys *filesystem) scanner(ctx context.Context, execRoot string, inputDeps map[string][]string, precomputedTrees []string) *scanner {
-	s := &scanner{
-		pt: NewPathTable(),
-		fsview: &fsview{
-			fs:               fsys,
-			execRoot:         execRoot,
-			inputDeps:        inputDeps,
-			precomputedTrees: precomputedTrees,
-			visited:          make(map[string]bool),
-			dirs:             make(map[string]bool),
-			files:            make(map[string]*scanResult),
-			topEnts:          make(map[string]*sync.Map),
-		},
-		macros:       make(map[string][]string),
-		included:     make(map[string]*bitmap.Bitmap),
-		macroUsed:    make(map[string]map[string]bool),
-		macroInclude: make(map[string]bool),
-		macroDirs:    make(map[string][]string),
-		nameDirs:     make(map[string]int),
-		hmaps:        make(map[string][]string),
-	}
+	s := scannerPool.Get().(*scanner)
+	s.reset(fsys, execRoot, inputDeps, precomputedTrees)
 	for _, dir := range precomputedTrees {
 		s.fsview.addDir(ctx, dir, noSearchPath)
 	}
 	return s
+}
+
+func (s *scanner) Close() {
+	scannerPool.Put(s)
 }
 
 func (s *scanner) pushInputs(ins ...string) {

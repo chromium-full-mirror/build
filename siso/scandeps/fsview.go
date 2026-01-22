@@ -60,6 +60,21 @@ type fsview struct {
 	pathbuf bytes.Buffer
 }
 
+func (fv *fsview) reset(fs *filesystem, execRoot string, inputDeps map[string][]string, precomputedTrees []string) {
+	fv.fs = fs
+	fv.execRoot = execRoot
+	fv.inputDeps = inputDeps
+	fv.precomputedTrees = precomputedTrees
+	fv.searchPaths = fv.searchPaths[:0]
+	fv.quotePaths = fv.quotePaths[:0]
+	fv.frameworkPaths = fv.frameworkPaths[:0]
+	clear(fv.dirs)
+	clear(fv.files)
+	clear(fv.topEnts)
+	clear(fv.visited)
+	fv.pathbuf.Reset()
+}
+
 type searchPathType int
 
 const (

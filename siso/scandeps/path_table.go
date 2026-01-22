@@ -44,3 +44,9 @@ func (pt *PathTable) Path(idx uint32) (string, error) {
 	}
 	return pt.idxToPath[idx], nil
 }
+
+// Reset clears the PathTable for reuse.
+func (pt *PathTable) Reset() {
+	clear(pt.pathToIdx)
+	pt.idxToPath = pt.idxToPath[:0]
+}
