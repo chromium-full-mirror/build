@@ -139,7 +139,7 @@ func (s *Service) Execute(request *repb.ExecuteRequest, executeServer repb.Execu
 
 	actionDigest, err := digest.NewFromProto(request.ActionDigest)
 	if err != nil {
-		return status.Error(codes.InvalidArgument, fmt.Sprintf("invalid action digest: %v", err.Error()))
+		return status.Errorf(codes.InvalidArgument, "invalid action digest: %v", err)
 	}
 
 	// If we have an action cache, check if the action is already cached.
