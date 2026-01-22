@@ -49,7 +49,7 @@ type StepDef struct {
 	pure      bool
 
 	// from depfile/depslog
-	deps   func(yield func(string) bool) // exec root relative
+	deps   iter.Seq[string] // exec root relative
 	deperr error
 
 	envfile string // for ninja -t msvc -e <envfile> --
@@ -437,7 +437,7 @@ func (s *StepDef) TriggerInputs(ctx context.Context) []string {
 }
 
 // DepInputs returns inputs stored in depfile / depslog.
-func (s *StepDef) DepInputs(ctx context.Context) (func(yield func(string) bool), error) {
+func (s *StepDef) DepInputs(ctx context.Context) (iter.Seq[string], error) {
 	ctx, span := trace.NewSpan(ctx, "stepdef-dep-inputs")
 	defer span.Close(nil)
 	if s.deps == nil && s.deperr == nil {
@@ -489,7 +489,7 @@ type depsPath struct {
 }
 
 // depInputs returns deps inputs of the step.
-func depInputs(ctx context.Context, s *StepDef) (func(yield func(string) bool), error) {
+func depInputs(ctx context.Context, s *StepDef) (iter.Seq[string], error) {
 	var deps []string
 	var err error
 	switch s.edge.Binding("deps") {

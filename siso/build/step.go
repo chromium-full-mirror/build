@@ -9,6 +9,7 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"iter"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -69,8 +70,7 @@ type StepDef interface {
 	// DepInputs returns iterator for inputs via depfile of the step.
 	// if depfile is not set, returns emptyIter, nil
 	// if depfile or deplog is not found, returns wrapped ErrMissingDeps.
-	// TODO: use iter.Seq[string] in go 1.23
-	DepInputs(context.Context) (func(yield func(string) bool), error)
+	DepInputs(context.Context) (iter.Seq[string], error)
 
 	// ToolInputs returns tool inputs of the step.
 	// ToolInputs is added to deps inputs.

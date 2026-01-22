@@ -7,6 +7,7 @@ package build
 import (
 	"context"
 	"fmt"
+	"iter"
 	"strings"
 	"testing"
 	"time"
@@ -47,7 +48,7 @@ func (f fakeStepDef) Rspfile(context.Context) string { return "" }
 func (fakeStepDef) Inputs(context.Context) []string        { return nil }
 func (fakeStepDef) TriggerInputs(context.Context) []string { return nil }
 
-func (fakeStepDef) DepInputs(context.Context) (func(func(string) bool), error) {
+func (fakeStepDef) DepInputs(context.Context) (iter.Seq[string], error) {
 	return func(yield func(string) bool) {}, nil
 }
 
