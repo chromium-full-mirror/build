@@ -19,6 +19,7 @@ import (
 	log "github.com/golang/glog"
 	"github.com/google/subcommands"
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/sdk/metric"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -65,6 +66,7 @@ type Command struct {
 
 	NinjaFlags
 	localCacheOptions
+	mp *metric.MeterProvider
 
 	sisoInfoLog string // abs or relative to logDir
 	startDir    string
@@ -83,10 +85,6 @@ func (*Command) Usage() string {
 }
 
 func (c *Command) Execute(ctx context.Context, flagSet *flag.FlagSet, _ ...any) subcommands.ExitStatus {
-	// Cleanup functions to run after serial cleanups in parallel.
-	// This mostly exists for logger and metrics functions cleanup.
-	// Each of these functions take about 1 second on no-op builds to finish,
-	// so to speed things up these 2 cleanups run in parallel, reducing 1 second or above from the build times.
 	defer func() {
 		var wg sync.WaitGroup
 		spin := ui.Default.NewSpinner()
@@ -321,13 +319,14 @@ func (c *Command) Run(ctx context.Context) (build.Stats, error) {
 		if err != nil {
 			return build.Stats{}, err
 		}
+		c.mp = e
 		pCleanups = append(pCleanups, func() {
 			// Cloud logger is getting shut down in parallel, report locally.
 			otel.SetErrorHandler(otel.ErrorHandlerFunc(func(err error) {
 				log.Warningf("failed to export to OpenTelemetry: %v", err)
 			}))
 			shutdownStart := time.Now()
-			cerr := e.Shutdown(ctx)
+			cerr := c.mp.Shutdown(ctx)
 			shutdownDuration := time.Since(shutdownStart)
 			log.Infof("cloud monitoring shutdown took: %s", shutdownDuration)
 			if cerr != nil {
@@ -493,7 +492,7 @@ func (c *Command) postRun(ctx context.Context, stats build.Stats, runErr error) 
 	d := time.Since(c.started)
 	sps := float64(stats.Done-stats.Skipped) / d.Seconds()
 	dur := ui.FormatDuration(d)
-	if c.enableCloudMonitoring && c.reproxyAddr == "" {
+	if c.mp != nil {
 		var cacheHitRatio float64
 		if stats.CacheHit+stats.Remote > 0 {
 			cacheHitRatio = float64(stats.CacheHit) / float64(stats.CacheHit+stats.Remote)
