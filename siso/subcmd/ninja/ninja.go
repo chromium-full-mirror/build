@@ -19,7 +19,6 @@ import (
 	log "github.com/golang/glog"
 	"github.com/google/subcommands"
 	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/sdk/metric"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -46,8 +45,6 @@ const ninjaUsage = `build the requested targets as ninja.
 
 `
 
-var pCleanups []func()
-
 // Cmd returns the Command for the `ninja` subcommand provided by this package.
 func Cmd(authOpts cred.Options, version string) *Command {
 	return &Command{
@@ -66,7 +63,6 @@ type Command struct {
 
 	NinjaFlags
 	localCacheOptions
-	mp *metric.MeterProvider
 
 	sisoInfoLog string // abs or relative to logDir
 	startDir    string
@@ -85,16 +81,6 @@ func (*Command) Usage() string {
 }
 
 func (c *Command) Execute(ctx context.Context, flagSet *flag.FlagSet, _ ...any) subcommands.ExitStatus {
-	defer func() {
-		var wg sync.WaitGroup
-		spin := ui.Default.NewSpinner()
-		spin.Start("shutdown cloud logging/monitoring")
-		for _, cleanup := range pCleanups {
-			wg.Go(cleanup)
-		}
-		wg.Wait()
-		spin.Stop(nil)
-	}()
 	c.Flags = flagSet
 	c.started = time.Now()
 	err := parseFlagsFully(flagSet)
@@ -138,7 +124,7 @@ func (c *Command) Execute(ctx context.Context, flagSet *flag.FlagSet, _ ...any) 
 	}
 
 	stats, err := c.Run(ctx)
-	return c.postRun(ctx, stats, err)
+	return c.postRun(stats, err)
 }
 
 // parse flags without stopping at non flags.
@@ -245,7 +231,24 @@ func (c *Command) initCredentials(ctx context.Context) (cred.Cred, error) {
 }
 
 // Exposed for e2e testing. To be reevaluated.
-func (c *Command) Run(ctx context.Context) (build.Stats, error) {
+func (c *Command) Run(ctx context.Context) (stats build.Stats, err error) {
+	// Cleanup functions to run after serial cleanups in parallel.
+	// This mostly exists for logger and metrics functions cleanup.
+	// Each of these functions take about 1 second on no-op builds to finish,
+	// so to speed things up these 2 cleanups run in parallel, reducing 1 second or above from the build times.
+	var pCleanups []func()
+
+	defer func() {
+		var wg sync.WaitGroup
+		spin := ui.Default.NewSpinner()
+		spin.Start("shutdown cloud logging/monitoring")
+		for _, cleanup := range pCleanups {
+			wg.Go(cleanup)
+		}
+		wg.Wait()
+		spin.Stop(nil)
+	}()
+
 	ctx, cancel := context.WithCancelCause(ctx)
 	defer signals.HandleInterrupt(ctx, func() {
 		cancel(errInterrupted{})
@@ -253,7 +256,7 @@ func (c *Command) Run(ctx context.Context) (build.Stats, error) {
 
 	execRoot, doneLock, resetCrashOutput, err := c.setup(ctx)
 	if err != nil {
-		return build.Stats{}, err
+		return stats, err
 	}
 	defer doneLock()
 	defer resetCrashOutput()
@@ -265,7 +268,7 @@ func (c *Command) Run(ctx context.Context) (build.Stats, error) {
 
 	credential, err := c.initCredentials(ctx)
 	if err != nil {
-		return build.Stats{}, err
+		return stats, err
 	}
 	if c.enableCloudLogging {
 		spin := ui.Default.NewSpinner()
@@ -317,16 +320,25 @@ func (c *Command) Run(ctx context.Context) (build.Stats, error) {
 		}
 		e, err := c.initCloudMonitoring(ctx, credential, metricsProject, projectID, metricsLabels)
 		if err != nil {
-			return build.Stats{}, err
+			return stats, err
 		}
-		c.mp = e
+		// Export all the metrics before shutting down as we still need the cloud logger to be present.
+		defer func() {
+			// Report build metrics.
+			var cacheHitRatio float64
+			if stats.CacheHit+stats.Remote > 0 {
+				cacheHitRatio = float64(stats.CacheHit) / float64(stats.CacheHit+stats.Remote)
+			}
+			isErr := err != nil && !errors.Is(err, errNothingToDo)
+			monitoring.ExportBuildMetrics(ctx, time.Since(c.started), cacheHitRatio, isErr)
+		}()
 		pCleanups = append(pCleanups, func() {
 			// Cloud logger is getting shut down in parallel, report locally.
 			otel.SetErrorHandler(otel.ErrorHandlerFunc(func(err error) {
 				log.Warningf("failed to export to OpenTelemetry: %v", err)
 			}))
 			shutdownStart := time.Now()
-			cerr := c.mp.Shutdown(ctx)
+			cerr := e.Shutdown(ctx)
 			shutdownDuration := time.Since(shutdownStart)
 			log.Infof("cloud monitoring shutdown took: %s", shutdownDuration)
 			if cerr != nil {
@@ -349,7 +361,7 @@ func (c *Command) Run(ctx context.Context) (build.Stats, error) {
 	targets := c.Flags.Args()
 	config, err := c.initConfig(ctx, execRoot, targets)
 	if err != nil {
-		return build.Stats{}, err
+		return stats, err
 	}
 
 	var eg errgroup.Group
@@ -367,10 +379,10 @@ func (c *Command) Run(ctx context.Context) (build.Stats, error) {
 		ui.Default.Infof(fmt.Sprintf("use %s\n", c.reopt))
 	} else {
 		if c.strictRemote {
-			return build.Stats{}, flagError{err: fmt.Errorf("no reapi specified, but remote is requested as --strict_remote: %w", err)}
+			return stats, flagError{err: fmt.Errorf("no reapi specified, but remote is requested as --strict_remote: %w", err)}
 		}
 		if c.remoteJobs > 0 && c.reproxyAddr == "" {
-			return build.Stats{}, flagError{err: fmt.Errorf("no reapi specified, but remote is requested as --remote_jobs=%d: %w", c.remoteJobs, err)}
+			return stats, flagError{err: fmt.Errorf("no reapi specified, but remote is requested as --remote_jobs=%d: %w", c.remoteJobs, err)}
 		}
 	}
 	if !c.localCacheEnable {
@@ -381,7 +393,7 @@ func (c *Command) Run(ctx context.Context) (build.Stats, error) {
 	if err == nil {
 		reapiClient, err = reapi.New(ctx, credential, *c.reopt)
 		if err != nil {
-			return build.Stats{}, err
+			return stats, err
 		}
 	}
 	ds := build.NewDataSource(ctx, credential, c.localCacheEnable, c.cacheDir, reapiClient)
@@ -393,7 +405,7 @@ func (c *Command) Run(ctx context.Context) (build.Stats, error) {
 	}()
 	hashFS, closeHashFS, err := c.setupHashFS(ctx, execRoot, ds)
 	if err != nil {
-		return build.Stats{}, err
+		return stats, err
 	}
 	defer c.saveFailedTargetsAndCommand(ctx, &err, &targets)
 	defer closeHashFS(&targets, &err)
@@ -411,20 +423,20 @@ func (c *Command) Run(ctx context.Context) (build.Stats, error) {
 	// build graph again.
 	if !c.clobber && c.fastNop && !c.dryRun && !c.debugMode.Explain && c.subtool != "cleandead" && !c.prepare && hashFSErr == nil && isClean && !lastFailed {
 		// TODO: better to check digest of .siso_fs_state?
-		return build.Stats{}, errNothingToDo
+		return stats, errNothingToDo
 	}
 
 	if c.enableResultstore {
 		cleanup, err := c.setupResultStore(ctx, projectID, execRoot, properties, credential, hashFS, &err)
 		if err != nil {
-			return build.Stats{}, err
+			return stats, err
 		}
 		defer cleanup()
 	}
 
 	logWriters, done, err := c.initLogWriters(ctx, buildPath)
 	if err != nil {
-		return build.Stats{}, err
+		return stats, err
 	}
 	defer done(&err)
 	bopts := c.initBuildOpts(ctx, projectID, buildPath, config, ds, hashFS, limits, traceExporter, logWriters)
@@ -452,14 +464,14 @@ func (c *Command) Run(ctx context.Context) (build.Stats, error) {
 	stepConfig, err := ninjabuild.NewStepConfig(ctx, config, buildPath, hashFS, c.fname, c.stateDir)
 	if err != nil {
 		spin.Stop(err)
-		return build.Stats{}, err
+		return stats, err
 	}
 	spin.Stop(nil)
 	spin.Start(fmt.Sprintf("load %s", c.fname))
 	nstate, err := ninjabuild.Load(ctx, c.fname, buildPath)
 	if err != nil {
 		spin.Stop(errors.New(""))
-		return build.Stats{}, err
+		return stats, err
 	}
 	spin.Stop(nil)
 
@@ -477,7 +489,7 @@ func (c *Command) Run(ctx context.Context) (build.Stats, error) {
 
 	err = c.writeSisoMetadata(metricsLabels, targets)
 	if err != nil {
-		return build.Stats{}, err
+		return stats, err
 	}
 
 	return ninjabuild.Run(ctx, graph, bopts, targets, ninjabuild.RunNinjaOpts{
@@ -488,18 +500,10 @@ func (c *Command) Run(ctx context.Context) (build.Stats, error) {
 }
 
 // postRun prints build result messages and returns exit status based on the build stats and the error from Run().
-func (c *Command) postRun(ctx context.Context, stats build.Stats, runErr error) subcommands.ExitStatus {
+func (c *Command) postRun(stats build.Stats, runErr error) subcommands.ExitStatus {
 	d := time.Since(c.started)
 	sps := float64(stats.Done-stats.Skipped) / d.Seconds()
 	dur := ui.FormatDuration(d)
-	if c.mp != nil {
-		var cacheHitRatio float64
-		if stats.CacheHit+stats.Remote > 0 {
-			cacheHitRatio = float64(stats.CacheHit) / float64(stats.CacheHit+stats.Remote)
-		}
-		isErr := runErr != nil && !errors.Is(runErr, errNothingToDo)
-		monitoring.ExportBuildMetrics(ctx, time.Since(c.started), cacheHitRatio, isErr)
-	}
 	if runErr != nil {
 		var errFlag flagError
 		var errBuild ninjabuild.BuildError
