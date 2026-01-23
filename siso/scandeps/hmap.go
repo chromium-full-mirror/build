@@ -88,12 +88,12 @@ func (p *hmapParser) Str(fieldName string) string {
 		return ""
 	}
 	v := p.strs[i:]
-	e := bytes.IndexByte(v, 0)
-	if e < 0 {
+	before, _, ok := bytes.Cut(v, []byte{0})
+	if !ok {
 		p.err = fmt.Errorf("unterminated %s=%d", fieldName, i)
 		return ""
 	}
-	return string(v[:e])
+	return string(before)
 }
 
 // ParseHeaderMap parses *.hmap file.

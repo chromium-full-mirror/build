@@ -228,11 +228,11 @@ func scanStraceData(ctx context.Context, buf []byte) ([]string, []string) {
 }
 
 func nextLine(buf []byte) (line, remain []byte) {
-	i := bytes.IndexByte(buf, '\n')
-	if i < 0 {
+	before, after, ok := bytes.Cut(buf, []byte{'\n'})
+	if !ok {
 		return buf, nil
 	}
-	return buf[:i], buf[i+1:]
+	return before, after
 }
 
 func parseTraceLine(ctx context.Context, line []byte) (sycall string, fnames []string, wr bool) {
@@ -378,9 +378,9 @@ func extractPath(buf []byte, skipAt bool) (string, []byte) {
 	}
 	buf = buf[1:]
 	// need to support escaped " ?
-	i := bytes.IndexByte(buf, '"')
-	if i < 0 {
+	before, after, ok := bytes.Cut(buf, []byte{'"'})
+	if !ok {
 		return "", nil
 	}
-	return string(buf[:i]), buf[i+1:]
+	return string(before), after
 }
