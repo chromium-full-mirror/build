@@ -23,11 +23,11 @@ func isHex(c byte) bool {
 func appendHexByte(token syntax.Token, input string, i int, output *strings.Builder) (int, error) {
 	// "$0" is already known to exist.
 	if i+4 > len(input) || input[i+1] != 'x' || !isHex(input[i+2]) || !isHex(input[i+3]) {
-		return 0, token.MakeError(syntax.ErrInvalidToken, "Invalid hex character. Hex values must look like 0xFF.")
+		return 0, token.MakeError(syntax.ErrInvalidFormat, "Invalid hex character. Hex values must look like 0xFF.")
 	}
 	val, err := strconv.ParseUint(input[i+2:i+4], 16, 8)
 	if err != nil {
-		return 0, token.MakeError(syntax.ErrInvalidToken, "Could not convert hex value.")
+		return 0, token.MakeError(syntax.ErrInvalidFormat, "Could not convert hex value.")
 	}
 	output.WriteByte(byte(val))
 	return i + 3, nil

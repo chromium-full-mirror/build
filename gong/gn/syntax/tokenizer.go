@@ -277,16 +277,12 @@ func (s *tokenizer) advanceToEndOfToken(location Location, tokenType TokenType) 
 			// or operator.
 			c := s.curChar()
 			if !s.isCurrentWhitespace() && !couldBeOperator(c) && !isScoperChar(c) && c != ',' {
-				return Error{
-					location: s.getCurrentLocation(),
-					ranges: []LocationRange{
-						{
-							begin: location,
-							end:   s.getCurrentLocation(),
-						},
+				return NonNumericError{
+					err: err{
+						start:   location,
+						end:     s.getCurrentLocation(),
+						message: "This is not a valid number.",
 					},
-					message: "This is not a valid number.",
-					kind:    ErrNotNumeric,
 				}
 			}
 		}
@@ -296,33 +292,25 @@ func (s *tokenizer) advanceToEndOfToken(location Location, tokenType TokenType) 
 		s.advance() // Advance past initial "
 		for {
 			if s.atEnd() {
-				return Error{
-					location: location,
-					ranges: []LocationRange{
-						{
-							begin: location,
-							end:   s.getCurrentLocation(),
-						},
+				return UnterminatedStringError{
+					err: err{
+						start:    location,
+						end:      s.getCurrentLocation(),
+						message:  "Unterminated string literal.",
+						helpText: "Don't leave me hanging like this!",
 					},
-					message:  "Unterminated string literal.",
-					helpText: "Don't leave me hanging like this!",
-					kind:     ErrUnterminatedString,
 				}
 			}
 			if s.isCurrentStringTerminator(initial) {
 				s.advance() // Skip past last "
 				break
 			} else if s.isCurrentNewline() {
-				return Error{
-					location: location,
-					ranges: []LocationRange{
-						{
-							begin: location,
-							end:   s.getCurrentLocation(),
-						},
+				return NewlineInStringConstant{
+					err: err{
+						start:   location,
+						end:     s.getCurrentLocation(),
+						message: "Newline in string constant.",
 					},
-					message: "Newline in string constant.",
-					kind:    ErrNewlineInStringConstant,
 				}
 			}
 			s.advance()
@@ -358,11 +346,14 @@ func (s *tokenizer) advanceToEndOfToken(location Location, tokenType TokenType) 
 	case TokenInvalid:
 		fallthrough
 	default:
-		return Error{
-			location: location,
-			message:  "Everything is all messed up",
-			helpText: "Please insert system disk in drive A: and press any key.",
-			kind:     ErrUnknown,
+		// Should not occur. Non-exhaustive switch.
+		return IllegalStateError{
+			err: err{
+				start:    location,
+				end:      s.getCurrentLocation(),
+				message:  "Everything is all messed up",
+				helpText: "Please insert system disk in drive A: and press any key.",
+			},
 		}
 	}
 	return nil
@@ -427,9 +418,9 @@ func (s *tokenizer) advance() {
 
 func (s *tokenizer) getCurrentLocation() Location {
 	return Location{
-		s.inputSource,
-		s.lineNumber,
-		s.columnNumber,
+		file:         s.inputSource,
+		lineNumber:   s.lineNumber,
+		columnNumber: s.columnNumber,
 	}
 }
 
@@ -450,11 +441,12 @@ func (s *tokenizer) getErrorForInvalidToken(location Location) error {
 			help = "Comments should start with # instead"
 		}
 	}
-	return Error{
-		location: location,
-		message:  "Invalid token.",
-		helpText: help,
-		kind:     ErrInvalidToken,
+	return InvalidTokenError{
+		err: err{
+			start:    location,
+			message:  "Invalid token.",
+			helpText: help,
+		},
 	}
 }
 

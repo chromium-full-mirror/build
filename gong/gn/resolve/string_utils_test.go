@@ -81,32 +81,32 @@ func TestExpandStringLiteral(t *testing.T) {
 		{
 			name:        "hex_truncated_0",
 			token:       syntax.MakeToken(syntax.TokenString, `"$0"`),
-			wantErrKind: syntax.ErrInvalidToken,
+			wantErrKind: syntax.ErrInvalidFormat,
 		},
 		{
 			name:        "hex_truncated_0x",
 			token:       syntax.MakeToken(syntax.TokenString, `"$0x"`),
-			wantErrKind: syntax.ErrInvalidToken,
+			wantErrKind: syntax.ErrInvalidFormat,
 		},
 		{
 			name:        "hex_truncated_0x0",
 			token:       syntax.MakeToken(syntax.TokenString, `"$0x0"`),
-			wantErrKind: syntax.ErrInvalidToken,
+			wantErrKind: syntax.ErrInvalidFormat,
 		},
 		{
 			name:        "hex_bad_char_0a",
 			token:       syntax.MakeToken(syntax.TokenString, `"$0a"`),
-			wantErrKind: syntax.ErrInvalidToken,
+			wantErrKind: syntax.ErrInvalidFormat,
 		},
 		{
 			name:        "hex_bad_char_0x1z",
 			token:       syntax.MakeToken(syntax.TokenString, `"$0x1z"`),
-			wantErrKind: syntax.ErrInvalidToken,
+			wantErrKind: syntax.ErrInvalidFormat,
 		},
 		{
 			name:        "hex_bad_char_0xz1",
 			token:       syntax.MakeToken(syntax.TokenString, `"$0xz1"`),
-			wantErrKind: syntax.ErrInvalidToken,
+			wantErrKind: syntax.ErrInvalidFormat,
 		},
 		{
 			name:        "unimplemented_identifier",

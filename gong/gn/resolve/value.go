@@ -120,6 +120,8 @@ func GNLiteralRvalue(v Value) string {
 }
 
 // MakeErrFromValue makes an error at the provided value.
+//
+// Deprecated: Implement ui.PresentableError instead.
 func MakeErrFromValue(value Value, kind syntax.ErrKind, message, helpText string) error {
 	if value.OriginNode() == nil {
 		return syntax.MakeErrorAt(syntax.Location{}, []syntax.LocationRange{}, kind, message, helpText)

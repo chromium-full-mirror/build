@@ -9,7 +9,62 @@ import (
 	"fmt"
 )
 
+// IllegalStateError is returned when the tokenizer is in an illegal state.
+type IllegalStateError struct {
+	err
+}
+
+// InvalidTokenError is returned when the tokenizer encounters an invalid token.
+type InvalidTokenError struct {
+	err
+}
+
+// NewlineInStringConstant is returned when a newline is encountered in a string constant.
+type NewlineInStringConstant struct {
+	err
+}
+
+// NonNumericError is returned when a non-numeric value is encountered where a numeric value is expected.
+type NonNumericError struct {
+	err
+}
+
+// UnterminatedStringError is returned when a string constant is not terminated.
+type UnterminatedStringError struct {
+	err
+}
+
+// err is a base struct for syntax errors.
+type err struct {
+	start    Location
+	end      Location
+	message  string
+	helpText string
+}
+
+// Error implements PresentableError.
+func (e err) Error() string { return fmt.Sprintf("syntax error: %s", e.message) }
+
+// Message implements PresentableError.
+func (e err) Message() string { return e.message }
+
+// HelpText implements PresentableError.
+func (e err) HelpText() string { return e.helpText }
+
+// Location implements PresentableSourceError.
+func (e err) Location() Location { return e.start }
+
+// Ranges implements PresentableSourceError.
+func (e err) Ranges() []LocationRange {
+	if e.end == (Location{}) {
+		return []LocationRange{}
+	}
+	return []LocationRange{{begin: e.start, end: e.end}}
+}
+
 // Error represents a syntax error.
+//
+// Deprecated: Implement ui.PresentableError instead.
 type Error struct {
 	location  Location
 	ranges    []LocationRange
@@ -20,7 +75,8 @@ type Error struct {
 }
 
 // MakeErrorAt makes an error at the provided location and ranges.
-// TODO(b/388723392): just make the struct fields exported?
+//
+// Deprecated: Implement ui.PresentableError instead.
 func MakeErrorAt(location Location, ranges []LocationRange, kind ErrKind, message, helpText string) error {
 	return Error{
 		location: location,
@@ -82,6 +138,8 @@ func GetErrKind(err error) ErrKind {
 // IsErrKind returns whether the err matches error kind.
 // If err is not a syntax.Error, returns false.
 // Do not use for testing - prefer ExpectErrKind.
+//
+// Deprecated: Implement ui.PresentableError and use errors.Is?
 func IsErrKind(err error, kind ErrKind) bool {
 	if err == nil {
 		return false
@@ -95,6 +153,8 @@ func IsErrKind(err error, kind ErrKind) bool {
 
 // AsErrKind returns the error if it matches the error kind.
 // If it doesn't match, returns nil and the actual error kind.
+//
+// Deprecated: Implement ui.PresentableError and use errors.As?
 func AsErrKind(err error, kind ErrKind) (*Error, ErrKind) {
 	var syntaxErr Error
 	if errors.As(err, &syntaxErr) {

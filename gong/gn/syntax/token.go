@@ -141,6 +141,8 @@ func (t Token) Value() string {
 }
 
 // MakeError makes an error from this token and message.
+//
+// Deprecated: Implement ui.PresentableError instead.
 func (t Token) MakeError(kind ErrKind, message string) error {
 	return Error{
 		location: t.location,
@@ -151,6 +153,8 @@ func (t Token) MakeError(kind ErrKind, message string) error {
 }
 
 // MakeErrorWithHelp makes an error from this token and message and help.
+//
+// Deprecated: Implement ui.PresentableError instead.
 func (t Token) MakeErrorWithHelp(kind ErrKind, message, helpText string) error {
 	return Error{
 		location: t.location,

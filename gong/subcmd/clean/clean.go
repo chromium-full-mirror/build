@@ -16,7 +16,6 @@ import (
 
 	"go.chromium.org/build/gong/gn"
 	"go.chromium.org/build/gong/gn/build"
-	"go.chromium.org/build/gong/gn/syntax"
 	"go.chromium.org/build/gong/ui"
 )
 
@@ -46,7 +45,8 @@ func (h *Command) cleanOneDir(dir string) error {
 func (h *Command) Execute(ctx context.Context, f *flag.FlagSet, _ ...any) subcommands.ExitStatus {
 	for _, dir := range f.Args() {
 		if err := h.cleanOneDir(dir); err != nil {
-			var syntaxErr syntax.Error
+			// TODO: use errors.AsType once go1.26 releases?
+			var syntaxErr ui.PresentableError
 			if errors.As(err, &syntaxErr) {
 				fmt.Fprint(os.Stderr, ui.FormatError(syntaxErr))
 				return subcommands.ExitFailure

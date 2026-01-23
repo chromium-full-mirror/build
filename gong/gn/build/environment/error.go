@@ -9,6 +9,8 @@ import (
 )
 
 // BuildError creates a GN error without a location.
+//
+// Deprecated: Implement ui.PresentableError instead.
 func BuildError(message, helpText string) error {
 	return syntax.MakeErrorAt(syntax.Location{}, nil, syntax.ErrUnknown, message, helpText)
 }

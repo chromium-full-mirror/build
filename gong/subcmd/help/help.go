@@ -7,7 +7,6 @@ package help
 
 import (
 	"context"
-	"errors"
 	"flag"
 	"fmt"
 	"maps"
@@ -18,7 +17,6 @@ import (
 
 	"go.chromium.org/build/gong/gn/build/analysis"
 	"go.chromium.org/build/gong/gn/build/environment"
-	"go.chromium.org/build/gong/gn/syntax"
 	"go.chromium.org/build/gong/ui"
 )
 
@@ -82,19 +80,24 @@ func (h *Command) Execute(ctx context.Context, f *flag.FlagSet, _ ...any) subcom
 			return subcommands.ExitSuccess
 		}
 
-		// Otherwise, print an error.
-		// To match C++ GN, construct a GN-style error and then print it.
-		err := syntax.MakeErrorAt(syntax.Location{}, []syntax.LocationRange{},
-			syntax.ErrUnknown,
-			fmt.Sprintf("No help on %q.", what), "")
-		var gnErr syntax.Error
-		if errors.As(err, &gnErr) {
-			fmt.Fprint(os.Stdout, ui.FormatError(gnErr))
-		} else {
-			// Just in case we messed up, fallback to Go style error printing.
-			fmt.Fprint(os.Stdout, err)
-		}
+		// Otherwise, print a GN style error first.
+		fmt.Fprint(os.Stdout, ui.FormatError(err{fmt.Sprintf("No help on %q.", what)}))
+
+		// Then print help text for what to do.
 		fmt.Fprintf(os.Stdout, "Run `%s help` for a list of available topics.\n", subcommands.DefaultCommander.Name())
 		return subcommands.ExitUsageError
 	}
 }
+
+type err struct {
+	message string
+}
+
+// Error implements PresentableError.
+func (e err) Error() string { return fmt.Sprintf("help error: %s", e.message) }
+
+// Message implements PresentableError.
+func (e err) Message() string { return e.message }
+
+// HelpText implements PresentableError.
+func (e err) HelpText() string { return "" }

@@ -6,6 +6,8 @@ package syntax
 
 // ErrKind is an enum, with each entry corresponding to a category of errors.
 // We use strings rather than ints to make test results more readable.
+//
+// Deprecated: Implement ui.PresentableError instead.
 type ErrKind string
 
 const (
@@ -17,21 +19,17 @@ const (
 	ErrUnknown        ErrKind = "ErrUnknown"
 	ErrNotImplemented ErrKind = "ErrNotImplemented"
 	// go/keep-sorted start
-	ErrArgumentCount           ErrKind = "ErrArgumentCount"
-	ErrEOF                     ErrKind = "ErrEOF"
-	ErrFileLoadFail            ErrKind = "ErrFileLoadFail"
-	ErrInvalidAST              ErrKind = "ErrInvalidAST"
-	ErrInvalidFormat           ErrKind = "ErrInvalidFormat"
-	ErrInvalidOperation        ErrKind = "ErrInvalidOperation"
-	ErrInvalidToken            ErrKind = "ErrInvalidToken"
-	ErrMemberNotFound          ErrKind = "ErrKeyNotFound"
-	ErrNewlineInStringConstant ErrKind = "ErrNewlineInStringConstant"
-	ErrNotNumeric              ErrKind = "ErrNotNumeric"
-	ErrSubscriptOutOfRange     ErrKind = "ErrSubscriptOutOfRange"
-	ErrTypeMismatch            ErrKind = "ErrTypeMismatch"
-	ErrUndefinedIdentifier     ErrKind = "ErrUndefinedIdentifier"
-	ErrUnexpectedToken         ErrKind = "ErrUnexpectedToken"
-	ErrUnterminatedString      ErrKind = "ErrUnterminatedString"
-	ErrUselessAssignment       ErrKind = "ErrUselessAssignment"
+	ErrArgumentCount       ErrKind = "ErrArgumentCount"
+	ErrEOF                 ErrKind = "ErrEOF"
+	ErrFileLoadFail        ErrKind = "ErrFileLoadFail"
+	ErrInvalidAST          ErrKind = "ErrInvalidAST"
+	ErrInvalidFormat       ErrKind = "ErrInvalidFormat"
+	ErrInvalidOperation    ErrKind = "ErrInvalidOperation"
+	ErrMemberNotFound      ErrKind = "ErrKeyNotFound"
+	ErrSubscriptOutOfRange ErrKind = "ErrSubscriptOutOfRange"
+	ErrTypeMismatch        ErrKind = "ErrTypeMismatch"
+	ErrUndefinedIdentifier ErrKind = "ErrUndefinedIdentifier"
+	ErrUnexpectedToken     ErrKind = "ErrUnexpectedToken"
+	ErrUselessAssignment   ErrKind = "ErrUselessAssignment"
 	// go/keep-sorted end
 )

@@ -15,6 +15,8 @@ type Node interface {
 }
 
 // MakeErrFromNode makes an error at the provided parse node.
+//
+// Deprecated: Implement ui.PresentableError instead.
 func MakeErrFromNode(node Node, kind syntax.ErrKind, message, helpText string) error {
 	if node == nil {
 		return syntax.MakeErrorAt(syntax.Location{}, nil, kind, message, helpText)
