@@ -109,7 +109,10 @@ func (b *Builder) runRemote(ctx context.Context, step *Step) error {
 		if errors.Is(err, reapi.ErrBadPlatformContainerImage) {
 			return err
 		}
-		if status.Code(err) == codes.PermissionDenied {
+		switch status.Code(err) {
+		case codes.PermissionDenied,
+			codes.InvalidArgument,
+			codes.FailedPrecondition:
 			return err
 		}
 		if errors.Is(err, errNotRelocatable) {
