@@ -17,9 +17,9 @@ import (
 // part, so it starts with a slash, and has one colon.
 type Label struct {
 	Dir           fs.SourceDir
-	name          string
-	toolchainDir  fs.SourceDir
-	toolchainName string
+	Name          string
+	ToolchainDir  fs.SourceDir
+	ToolchainName string
 }
 
 // ResolveLabel computes a string from a build file that may be relative to the
@@ -54,7 +54,7 @@ func ResolveLabel(currentDir fs.SourceDir, currentToolchain Label, input resolve
 	}
 
 	// Use the current toolchain unless the input explicitly overrides it.
-	toolchainName := currentToolchain.name
+	toolchainName := currentToolchain.Name
 	toolchainDir := currentToolchain.Dir
 	if inputToolchain != "" {
 		loc, toolchainName, _, err = splitLabelComponents(inputToolchain, input, true)
@@ -75,9 +75,9 @@ func ResolveLabel(currentDir fs.SourceDir, currentToolchain Label, input resolve
 
 	return Label{
 		Dir:           labelDir,
-		name:          labelName,
-		toolchainDir:  toolchainDir,
-		toolchainName: toolchainName,
+		Name:          labelName,
+		ToolchainDir:  toolchainDir,
+		ToolchainName: toolchainName,
 	}, nil
 }
 
@@ -157,19 +157,19 @@ toolchain. Don't do this.`)
 // printed. The toolchain is optionally included.
 func (l Label) UserVisibleString(includeToolchain bool) string {
 	var sb strings.Builder
-	sb.Grow(len(l.Dir.Path()) + len(l.name) + 1)
+	sb.Grow(len(l.Dir.Path()) + len(l.Name) + 1)
 	if l.Dir.Empty() {
 		return ""
 	}
 	sb.WriteString(l.Dir.WithNoTrailingSlash())
 	sb.WriteRune(':')
-	sb.WriteString(l.name)
+	sb.WriteString(l.Name)
 	if includeToolchain {
 		sb.WriteRune('(')
-		if !l.toolchainDir.Empty() && l.toolchainName != "" {
-			sb.WriteString(l.toolchainDir.WithNoTrailingSlash())
+		if !l.ToolchainDir.Empty() && l.ToolchainName != "" {
+			sb.WriteString(l.ToolchainDir.WithNoTrailingSlash())
 			sb.WriteRune(':')
-			sb.WriteString(l.toolchainName)
+			sb.WriteString(l.ToolchainName)
 		}
 		sb.WriteRune(')')
 	}

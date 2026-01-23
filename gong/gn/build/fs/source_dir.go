@@ -60,6 +60,15 @@ func (d SourceDir) Path() string {
 	return d.value.Value()
 }
 
+// IsSourceAbsolute returns true if this path starts with a "//" which indicates a path
+// from the source root.
+func (d SourceDir) IsSourceAbsolute() bool {
+	if !d.hasValue {
+		return false
+	}
+	return IsPathSourceAbsolute(d.value.Value())
+}
+
 // ResolveRelativeFile resolves a user-supplied path relative to this directory.
 //
 // The input path can be:
