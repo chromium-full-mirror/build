@@ -231,7 +231,7 @@ func (c *Command) initCredentials(ctx context.Context) (cred.Cred, error) {
 }
 
 // Exposed for e2e testing. To be reevaluated.
-func (c *Command) Run(ctx context.Context) (stats build.Stats, err error) {
+func (c *Command) Run(ctx context.Context) (stats build.Stats, finalErr error) {
 	// Cleanup functions to run after serial cleanups in parallel.
 	// This mostly exists for logger and metrics functions cleanup.
 	// Each of these functions take about 1 second on no-op builds to finish,
@@ -329,7 +329,7 @@ func (c *Command) Run(ctx context.Context) (stats build.Stats, err error) {
 			if stats.CacheHit+stats.Remote > 0 {
 				cacheHitRatio = float64(stats.CacheHit) / float64(stats.CacheHit+stats.Remote)
 			}
-			isErr := err != nil && !errors.Is(err, errNothingToDo)
+			isErr := finalErr != nil && !errors.Is(finalErr, errNothingToDo)
 			monitoring.ExportBuildMetrics(ctx, time.Since(c.started), cacheHitRatio, isErr)
 		}()
 		pCleanups = append(pCleanups, func() {
