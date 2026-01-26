@@ -198,7 +198,7 @@ func dumpResourceUsageTable(semaTraces map[string]semaTrace) string {
 	ltw.Flush()
 	utw.Flush()
 	if needToShow {
-		ui.Default.Infof("%s", usb.String())
+		ui.Default.Printf("%s", usb.String())
 	}
 	return lsb.String()
 }

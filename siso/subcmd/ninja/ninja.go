@@ -282,7 +282,7 @@ func (c *Command) Run(ctx context.Context) (stats build.Stats, finalErr error) {
 			c.enableCloudLogging = false
 		} else {
 			// use stderr for confirm no-op step. b/288534744
-			ui.Default.Warningf("%s\n", loggerURL)
+			ui.Default.Infof("%s\n", loggerURL)
 			pCleanups = append(pCleanups, done)
 			ctx = logCtx
 		}
@@ -513,7 +513,7 @@ func (c *Command) postRun(stats build.Stats, runErr error) subcommands.ExitStatu
 			if ui.IsTerminal() {
 				msgPrefix = ui.SGR(ui.Green, msgPrefix)
 			}
-			ui.Default.Warningf("%s Nothing to do.\n", msgPrefix)
+			ui.Default.Infof("%s Nothing to do.\n", msgPrefix)
 			return subcommands.ExitSuccess
 
 		case errors.As(runErr, &errFlag):
@@ -588,7 +588,7 @@ func (c *Command) postRun(stats build.Stats, runErr error) subcommands.ExitStatu
 		dur = ui.SGR(ui.Bold, dur)
 		msgPrefix = ui.SGR(ui.Green, msgPrefix)
 	}
-	ui.Default.Warningf("%6s %s: %d steps - %.02f/s\n", dur, msgPrefix, stats.Done-stats.Skipped, sps)
+	ui.Default.Infof("%6s %s: %d steps - %.02f/s\n", dur, msgPrefix, stats.Done-stats.Skipped, sps)
 	return subcommands.ExitSuccess
 
 }

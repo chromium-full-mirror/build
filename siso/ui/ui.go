@@ -34,6 +34,11 @@ type UI interface {
 	// NewSpinner returns a new spinner.
 	NewSpinner() Spinner
 
+	// Printf prints message to stdout.
+	Printf(string, ...any)
+
+	// Followings will go to stderr when redirected.
+
 	// Infof reports info level.
 	Infof(string, ...any)
 

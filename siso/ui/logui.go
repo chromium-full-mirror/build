@@ -54,9 +54,14 @@ func (LogUI) NewSpinner() Spinner {
 	return &logSpinner{}
 }
 
-// Infof reports to stdout, stripping ansi escape sequence.
-func (LogUI) Infof(format string, args ...any) {
+// Printf prints to stdout, stripping ansi escape sequence.
+func (LogUI) Printf(format string, args ...any) {
 	fmt.Fprintf(os.Stdout, "%s", StripANSIEscapeCodes(fmt.Sprintf(format, args...)))
+}
+
+// Infof reports to stderr, stripping ansi escape sequence.
+func (LogUI) Infof(format string, args ...any) {
+	fmt.Fprintf(os.Stderr, "%s", StripANSIEscapeCodes(fmt.Sprintf(format, args...)))
 }
 
 // Warningf reports to stderr, stripping ansi escape sequence.

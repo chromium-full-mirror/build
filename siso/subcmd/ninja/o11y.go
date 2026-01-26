@@ -248,7 +248,7 @@ func (c *Command) setupResultStore(ctx context.Context, projectID string, execRo
 	if err != nil {
 		return nil, err
 	}
-	ui.Default.Warningf("https://btx.cloud.google.com/invocations/%s\n", c.buildID)
+	ui.Default.Infof("https://btx.cloud.google.com/invocations/%s\n", c.buildID)
 
 	cleanup := func() {
 		var ents []merkletree.Entry

@@ -43,6 +43,7 @@ func (ui quietUI) NewSpinner() ui.Spinner {
 		heartbeatPeriod: ui.heartbeatPeriod,
 	}
 }
+func (quietUI) Printf(string, ...any)   {}
 func (quietUI) Infof(string, ...any)    {}
 func (quietUI) Warningf(string, ...any) {}
 func (quietUI) Errorf(format string, args ...any) {

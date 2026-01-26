@@ -377,7 +377,7 @@ func (c *Command) changeToWorkdir(ctx context.Context) (string, error) {
 	c.dir = rdir
 	clog.Infof(ctx, "working_directory in exec_root: %s", c.dir)
 	if c.startDir != execRoot {
-		ui.Default.Infof("exec_root=%s dir=%s\n", execRoot, c.dir)
+		ui.Default.Printf("exec_root=%s dir=%s\n", execRoot, c.dir)
 	}
 	_, err = os.Stat(c.fname)
 	if errors.Is(err, fs.ErrNotExist) {

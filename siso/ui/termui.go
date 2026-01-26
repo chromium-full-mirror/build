@@ -144,7 +144,12 @@ func (t *TermUI) NewSpinner() Spinner {
 	return &termSpinner{}
 }
 
-// Infof reports to stdout.
+// Printf prints to stdout.
+func (t *TermUI) Printf(format string, args ...any) {
+	fmt.Fprintf(os.Stdout, "%s", t.msg(fmt.Sprintf(format, args...)))
+}
+
+// Infof reports to stderr.
 func (t *TermUI) Infof(format string, args ...any) {
 	fmt.Fprintf(os.Stdout, "%s", t.msg(fmt.Sprintf(format, args...)))
 }

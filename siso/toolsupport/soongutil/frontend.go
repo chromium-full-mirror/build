@@ -216,6 +216,11 @@ func (f *Frontend) NewSpinner() ui.Spinner {
 	return frontendSpinner{f: f}
 }
 
+// Prints reports debug level.
+func (f *Frontend) Printf(format string, args ...any) {
+	f.message(pb.Status_Message_DEBUG, fmt.Sprintf(format, args...))
+}
+
 // Infof reports info level.
 func (f *Frontend) Infof(format string, args ...any) {
 	f.message(pb.Status_Message_INFO, fmt.Sprintf(format, args...))

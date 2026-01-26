@@ -184,7 +184,7 @@ func run(ctx context.Context, cmd *execute.Cmd) (*rpb.ActionResult, error) {
 		consoleCancel()
 		consoleWG.Wait()
 		if ui.IsTerminal() && cmd.ConsoleOut.Load() {
-			ui.Default.Infof("\n\n\n\n") // preserve console output from progress report
+			ui.Default.Printf("\n\n\n\n") // preserve console output from progress report
 		}
 	}
 	e := time.Now()
