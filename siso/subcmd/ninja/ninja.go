@@ -405,8 +405,8 @@ func (c *Command) Run(ctx context.Context) (stats build.Stats, finalErr error) {
 	if err != nil {
 		return stats, err
 	}
-	defer c.saveFailedTargetsAndCommand(ctx, &err, &targets)
-	defer closeHashFS(&targets, &err)
+	defer func() { c.saveFailedTargetsAndCommand(ctx, finalErr, targets) }()
+	defer func() { closeHashFS(targets, finalErr) }()
 	hashFSErr := hashFS.LoadErr()
 	if hashFSErr != nil {
 		ui.Default.Errorf(ui.SGR(ui.BackgroundRed, fmt.Sprintf("unable to do incremental build as fs state is corrupted: %v\n", hashFSErr)))
@@ -425,18 +425,19 @@ func (c *Command) Run(ctx context.Context) (stats build.Stats, finalErr error) {
 	}
 
 	if c.enableResultstore {
-		cleanup, err := c.setupResultStore(ctx, projectID, buildPath, properties, credential, hashFS, &err)
+		cleanup, err := c.setupResultStore(ctx, projectID, buildPath, properties, credential, hashFS)
 		if err != nil {
 			return stats, err
 		}
-		defer cleanup()
+		defer func() { cleanup(finalErr) }()
 	}
 
 	logWriters, done, err := c.initLogWriters(ctx, buildPath)
 	if err != nil {
 		return stats, err
 	}
-	defer done(&err)
+	// It mutates finalErr, hence passing over pointer.
+	defer done(&finalErr)
 	bopts := c.initBuildOpts(ctx, projectID, buildPath, config, ds, hashFS, limits, traceExporter, logWriters)
 	spin.Start("loading/recompacting deps log")
 	err = eg.Wait()
@@ -591,7 +592,7 @@ func (c *Command) postRun(stats build.Stats, runErr error) subcommands.ExitStatu
 
 }
 
-func (c *Command) saveFailedTargetsAndCommand(ctx context.Context, errPtr *error, targetsPtr *[]string) {
+func (c *Command) saveFailedTargetsAndCommand(ctx context.Context, err error, targets []string) {
 	if c.dryRun {
 		return
 	}
@@ -603,11 +604,11 @@ func (c *Command) saveFailedTargetsAndCommand(ctx context.Context, errPtr *error
 		// don't modify .siso_failed_targets for prepare (ide query).
 		return
 	}
-	if *errPtr != nil {
+	if err != nil {
 		// Even when batch mode, it records failed targets.
 		// It will be read by Chromium recipe.
 		var errBuild ninjabuild.BuildError
-		if !errors.As(*errPtr, &errBuild) {
+		if !errors.As(err, &errBuild) {
 			return
 		}
 		var stepError build.StepError
@@ -621,7 +622,7 @@ func (c *Command) saveFailedTargetsAndCommand(ctx context.Context, errPtr *error
 		// store failed targets only when build steps failed.
 		// i.e., don't store with error like context canceled, etc.
 		clog.Infof(ctx, "record failed targets: %q", stepError.Target)
-		serr := saveLastFailedTargets(c.stateDir, *targetsPtr, []string{stepError.Target})
+		serr := saveLastFailedTargets(c.stateDir, targets, []string{stepError.Target})
 		if serr != nil {
 			clog.Warningf(ctx, "failed to save failed targets: %v", serr)
 			return
@@ -634,7 +635,7 @@ func (c *Command) saveFailedTargetsAndCommand(ctx context.Context, errPtr *error
 	}
 }
 
-func (c *Command) setupHashFS(ctx context.Context, buildPath *build.Path, ds build.DataSource) (*hashfs.HashFS, func(*[]string, *error), error) {
+func (c *Command) setupHashFS(ctx context.Context, buildPath *build.Path, ds build.DataSource) (*hashfs.HashFS, func([]string, error), error) {
 	c.fsopt.DataSource = ds
 	var err error
 	c.fsopt.OutputLocal, err = initOutputLocal(c.outputLocalStrategy)
@@ -702,12 +703,12 @@ func (c *Command) setupHashFS(ctx context.Context, buildPath *build.Path, ds bui
 	if err != nil {
 		return nil, nil, err
 	}
-	close := func(targetsPtr *[]string, errPtr *error) {
-		shouldSetTargets := !c.dryRun && c.subtool == "" && !c.prepare && *errPtr == nil
-		hashFS.SetBuildTargets(ctx, *targetsPtr, shouldSetTargets)
-		err := hashFS.Close(ctx)
-		if err != nil {
-			clog.Errorf(ctx, "close hashfs: %v", err)
+	close := func(targets []string, err error) {
+		shouldSetTargets := !c.dryRun && c.subtool == "" && !c.prepare && err == nil
+		hashFS.SetBuildTargets(ctx, targets, shouldSetTargets)
+		cerr := hashFS.Close(ctx)
+		if cerr != nil {
+			clog.Errorf(ctx, "close hashfs: %v", cerr)
 		}
 	}
 	return hashFS, close, nil

@@ -240,7 +240,7 @@ func (c *Command) buildProperties(ctx context.Context, buildPath *build.Path) re
 
 // setupResultStore sets up ResultStore for uploading build results.
 // It returns a cleanup function that should be called at the end of the build, and any error that occurred.
-func (c *Command) setupResultStore(ctx context.Context, projectID string, buildPath *build.Path, properties resultstore.Properties, credential cred.Cred, hashFS *hashfs.HashFS, buildErr *error) (func(), error) {
+func (c *Command) setupResultStore(ctx context.Context, projectID string, buildPath *build.Path, properties resultstore.Properties, credential cred.Cred, hashFS *hashfs.HashFS) (func(error), error) {
 	resultstoreUploader, err := resultstore.New(ctx, resultstore.Options{
 		InvocationID:  c.buildID,
 		Invocation:    c.invocation(ctx, c.buildID, projectID, buildPath.ExecRoot, properties),
@@ -251,7 +251,7 @@ func (c *Command) setupResultStore(ctx context.Context, projectID string, buildP
 	}
 	ui.Default.Infof("https://btx.cloud.google.com/invocations/%s\n", c.buildID)
 
-	cleanup := func() {
+	cleanup := func(err error) {
 		var ents []merkletree.Entry
 		var files []string
 		if c.metricsJSON != "" {
@@ -280,7 +280,7 @@ func (c *Command) setupResultStore(ctx context.Context, projectID string, buildP
 
 		spin.Start("finishing upload to resultstore")
 		exitCode := 0
-		if *buildErr != nil {
+		if err != nil {
 			exitCode = 1
 		}
 		cerr := resultstoreUploader.Close(ctx, exitCode)
