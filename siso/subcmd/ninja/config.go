@@ -24,6 +24,7 @@ import (
 
 	"go.chromium.org/build/siso/build"
 	"go.chromium.org/build/siso/build/buildconfig"
+	"go.chromium.org/build/siso/build/ninjabuild"
 	"go.chromium.org/build/siso/hashfs"
 	"go.chromium.org/build/siso/o11y/clog"
 	"go.chromium.org/build/siso/o11y/trace"
@@ -69,7 +70,7 @@ func (f *batchFlag) Set(v string) error {
 
 // NinjaFlags holds all configuration flags for the ninja command.
 type NinjaFlags struct {
-	dir        string
+	ninjaDir   ninjabuild.DirFlag
 	configName string
 	projectID  string
 
@@ -104,7 +105,6 @@ type NinjaFlags struct {
 
 	cacheEnableRead bool
 
-	configRepoDir  string
 	configFilename string
 
 	outputLocalStrategy string
@@ -155,7 +155,7 @@ type NinjaFlags struct {
 }
 
 func (c *Command) SetFlags(flagSet *flag.FlagSet) {
-	flagSet.StringVar(&c.dir, "C", ".", "ninja running directory")
+	c.ninjaDir.RegisterFlags(flagSet)
 	flagSet.StringVar(&c.configName, "config", "", "config name passed to starlark")
 	flagSet.StringVar(&c.projectID, "project", os.Getenv("SISO_PROJECT"), "cloud project ID. can set by $SISO_PROJECT")
 
@@ -205,7 +205,6 @@ func (c *Command) SetFlags(flagSet *flag.FlagSet) {
 	c.setLocalCacheFlags(flagSet)
 	flagSet.BoolVar(&c.cacheEnableRead, "cache_enable_read", true, "cache enable read")
 
-	flagSet.StringVar(&c.configRepoDir, "config_repo_dir", "build/config/siso", "config repo directory (relative to exec root)")
 	flagSet.StringVar(&c.configFilename, "load", "@config//main.star", "config filename (@config// is --config_repo_dir)")
 	flagSet.StringVar(&c.outputLocalStrategy, "output_local_strategy", "full", `strategy for output_local. "full": download all outputs. "greedy": downloads most outputs except intermediate objs. "minimum": downloads as few as possible`)
 	flagSet.StringVar(&c.depsLogFile, "deps_log", ".siso_deps", "deps log filename (relative to -C, -state_dir)")
@@ -292,7 +291,7 @@ func (c *Command) initConfig(ctx context.Context, execRoot string, targets []str
 		return nil, errors.New("no config filename")
 	}
 	cfgrepos := map[string]fs.FS{
-		"config":           os.DirFS(c.configRepoDir),
+		"config":           os.DirFS(filepath.Join(execRoot, c.ninjaDir.ConfigRepoDir)),
 		"config_overrides": os.DirFS(filepath.Join(execRoot, ".siso_remote")),
 	}
 	flags := c.initConfigFlags(targets)
@@ -316,74 +315,30 @@ func (c *Command) initConfig(ctx context.Context, execRoot string, targets []str
 // changeToWorkdir establishes the execution root and working directory.
 // It changes the current directory to working directory, detects the
 // execution root, and updates path configurations to be relative to the root.
-// It returns the absolute path of the execution root.
-func (c *Command) changeToWorkdir(ctx context.Context) (string, error) {
-	// don't use $PWD for current directory
-	// to avoid symlink issue. b/286779149
-	pwd := os.Getenv("PWD")
-	_ = os.Unsetenv("PWD") // no error for safe env key name.
-
-	execRoot, err := os.Getwd()
-	if pwd != "" {
-		_ = os.Setenv("PWD", pwd) // no error to reset env with valid value.
-	}
-	if err != nil {
-		return "", err
-	}
-	c.startDir = execRoot
-	clog.Infof(ctx, "wd: %s", execRoot)
+// It returns build path (exec root and dir).
+func (c *Command) changeToWorkdir(ctx context.Context) (*build.Path, error) {
 	// The formatting of this string, complete with funny quotes, is
 	// so Emacs can properly identify that the cwd has changed for
 	// subsequent commands.
 	// Don't print this if a tool is being used, so that tool output
 	// can be piped into a file without this string showing up.
-	if c.subtool == "" && c.dir != "." {
-		ui.Default.PrintLines(fmt.Sprintf("ninja: Entering directory `%s'\n\n", c.dir))
+	if c.subtool == "" && c.ninjaDir.Dir != "." {
+		ui.Default.PrintLines(fmt.Sprintf("ninja: Entering directory `%s'\n\n", c.ninjaDir.Dir))
 	}
-	err = os.Chdir(c.dir)
+	startDir, execRoot, dir, err := ninjabuild.InitDir(ctx, c.ninjaDir)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	clog.Infof(ctx, "change dir to %s", c.dir)
-	cwd, err := os.Getwd()
-	if err != nil {
-		return "", err
-	}
-	realCWD, err := filepath.EvalSymlinks(cwd)
-	if err != nil {
-		clog.Warningf(ctx, "failed to eval symlinks %q: %v", cwd, err)
-	} else if cwd != realCWD {
-		clog.Infof(ctx, "cwd %s -> %s", cwd, realCWD)
-		cwd = realCWD
-	}
-	if !filepath.IsAbs(c.configRepoDir) {
-		execRoot, err = build.DetectExecRoot(cwd, c.configRepoDir)
-		if err != nil {
-			return "", err
-		}
-		c.configRepoDir = filepath.Join(execRoot, c.configRepoDir)
-	}
-	clog.Infof(ctx, "exec_root: %s", execRoot)
-
-	// recalculate dir as relative to exec_root.
-	// recipe may use absolute path for -C.
-	rdir, err := filepath.Rel(execRoot, cwd)
-	if err != nil {
-		return "", err
-	}
-	if !filepath.IsLocal(rdir) {
-		return "", fmt.Errorf("dir %q is out of exec root %q", cwd, execRoot)
-	}
-	c.dir = rdir
-	clog.Infof(ctx, "working_directory in exec_root: %s", c.dir)
+	c.startDir = startDir
+	clog.Infof(ctx, "working_directory in exec_root: %s", dir)
 	if c.startDir != execRoot {
-		ui.Default.Printf("exec_root=%s dir=%s\n", execRoot, c.dir)
+		ui.Default.Printf("exec_root=%s dir=%s\n", execRoot, dir)
 	}
 	_, err = os.Stat(c.fname)
 	if errors.Is(err, fs.ErrNotExist) {
-		return "", fmt.Errorf("%s not found in %s. need `-C <dir>`?", c.fname, cwd)
+		return nil, fmt.Errorf("%s not found in %s. need `-C <dir>`?", c.fname, filepath.Join(execRoot, dir))
 	}
-	return execRoot, err
+	return build.NewPath(execRoot, dir), err
 }
 
 // resolveFlags validates and adjusts flag values after they have been parsed.

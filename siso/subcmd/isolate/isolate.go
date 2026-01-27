@@ -27,6 +27,7 @@ import (
 	"google.golang.org/grpc/grpclog"
 
 	"go.chromium.org/build/siso/auth/cred"
+	"go.chromium.org/build/siso/build/ninjabuild"
 	"go.chromium.org/build/siso/hashfs"
 	"go.chromium.org/build/siso/o11y/clog"
 	"go.chromium.org/build/siso/reapi"
@@ -73,7 +74,7 @@ type Command struct {
 	reopt     *reapi.Option
 	casopt    *reapi.Option
 
-	dir string
+	ninjaDir ninjabuild.DirFlag
 
 	fsopt *hashfs.Option
 
@@ -91,7 +92,7 @@ func (c *Command) SetFlags(flagSet *flag.FlagSet) {
 	c.casopt.Prefix = "cas"
 	c.casopt.RegisterFlags(flagSet, reapi.Envs("DEST_CASS"))
 
-	flagSet.StringVar(&c.dir, "C", ".", "ninja running directory")
+	c.ninjaDir.RegisterFlags(flagSet)
 
 	c.fsopt = new(hashfs.Option)
 	c.fsopt.StateFile = ".siso_fs_state"
@@ -130,7 +131,7 @@ func (c *Command) run(ctx context.Context) error {
 		cancel(errInterrupted{})
 	})()
 	started := time.Now()
-	execRoot, err := c.initWorkdirs(ctx)
+	execRoot, dir, err := c.initWorkdirs(ctx)
 	if err != nil {
 		return err
 	}
@@ -227,7 +228,7 @@ func (c *Command) run(ctx context.Context) error {
 	for _, target := range c.Flags.Args() {
 		eg.Go(func() error {
 			targetStarted := time.Now()
-			d, err := upload(ectx, execRoot, c.dir, hashFS, casClient, target)
+			d, err := upload(ectx, execRoot, dir, hashFS, casClient, target)
 			duration := time.Since(targetStarted)
 			if err != nil {
 				return fmt.Errorf("failed for %s in %s: %w", target, duration, err)
@@ -258,43 +259,14 @@ func (c *Command) run(ctx context.Context) error {
 	return nil
 }
 
-func (c *Command) initWorkdirs(ctx context.Context) (string, error) {
-	// don't use $PWD for current directory
-	// to avoid symlink issue. b/286779149
-	pwd := os.Getenv("PWD")
-	_ = os.Unsetenv("PWD") // no error for safe env key name.
-
-	execRoot, err := os.Getwd()
-	if pwd != "" {
-		_ = os.Setenv("PWD", pwd) // no error to reset env with valid value.
-	}
+func (c *Command) initWorkdirs(ctx context.Context) (string, string, error) {
+	_, execRoot, dir, err := ninjabuild.InitDir(ctx, c.ninjaDir)
 	if err != nil {
-		return "", err
-	}
-	clog.Infof(ctx, "wd: %s", execRoot)
-	err = os.Chdir(c.dir)
-	if err != nil {
-		return "", err
-	}
-	clog.Infof(ctx, "change dir to %s", c.dir)
-	cwd, err := os.Getwd()
-	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	clog.Infof(ctx, "exec_root: %s", execRoot)
-
-	// recalculate dir as relative to exec_root.
-	// recipe may use absolute path for -C.
-	rdir, err := filepath.Rel(execRoot, cwd)
-	if err != nil {
-		return "", err
-	}
-	if !filepath.IsLocal(rdir) {
-		return "", fmt.Errorf("dir %q is out of exec root %q", cwd, execRoot)
-	}
-	c.dir = rdir
-	clog.Infof(ctx, "working_directory in exec_root: %s", c.dir)
-	return execRoot, err
+	clog.Infof(ctx, "working_directory in exec_root: %s", dir)
+	return execRoot, dir, err
 }
 
 func (c *Command) casCred(ctx context.Context) (cred.Cred, error) {

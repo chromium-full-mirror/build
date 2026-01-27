@@ -106,7 +106,7 @@ func (c *Command) initLogWriters(ctx context.Context, buildPath *build.Path) (lo
 		if writers.explainWriter == nil {
 			writers.explainWriter = newExplainWriter(os.Stderr, "")
 		} else {
-			writers.explainWriter = io.MultiWriter(newExplainWriter(os.Stderr, filepath.Join(c.dir, c.explainFile)), writers.explainWriter)
+			writers.explainWriter = io.MultiWriter(newExplainWriter(os.Stderr, c.logFilename(c.explainFile, c.startDir)), writers.explainWriter)
 		}
 	}
 

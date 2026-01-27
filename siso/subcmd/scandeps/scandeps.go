@@ -61,8 +61,7 @@ func (*Command) Usage() string {
 
 // Command implements scandeps subcommand.
 type Command struct {
-	execRoot      string
-	buildDir      string
+	ninjaDir      ninjabuild.DirFlag
 	stateDir      string
 	reqJSONString string
 	targetName    string
@@ -70,42 +69,16 @@ type Command struct {
 }
 
 func (c *Command) SetFlags(flagSet *flag.FlagSet) {
-	flagSet.StringVar(&c.buildDir, "C", ".", "ninja running directory to find .siso_config and .siso_filegroup for input_deps in state dir")
+	c.ninjaDir.RegisterFlags(flagSet)
 	flagSet.StringVar(&c.stateDir, "state_dir", ".", "state directory (relative to -C)")
 	flagSet.StringVar(&c.reqJSONString, "req", "", "json format of scandeps request")
 	flagSet.StringVar(&c.targetName, "target", "", "build target name")
 }
 
-func (c *Command) absBuildDir() string {
-	if filepath.IsAbs(c.buildDir) {
-		return c.buildDir
-	}
-	return filepath.Join(c.execRoot, c.buildDir)
-}
-
-func (c *Command) absStateDir() string {
-	if filepath.IsAbs(c.stateDir) {
-		return c.stateDir
-	}
-	return filepath.Join(c.absBuildDir(), c.stateDir)
-}
-
 func (c *Command) Execute(ctx context.Context, flagSet *flag.FlagSet, _ ...any) subcommands.ExitStatus {
-	// TODO: use the same logic to find execroot/dir with subcmd ninja.
-	var err error
-	c.execRoot, err = os.Getwd()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		return subcommands.ExitFailure
-	}
-	err = os.Chdir(c.absBuildDir())
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		return subcommands.ExitFailure
-	}
 	c.cmdline = flagSet.Args()
 
-	err = c.run(ctx)
+	err := c.run(ctx)
 	if err != nil {
 		switch {
 		case errors.Is(err, flag.ErrHelp):
@@ -120,36 +93,35 @@ func (c *Command) Execute(ctx context.Context, flagSet *flag.FlagSet, _ ...any) 
 }
 
 func (c *Command) run(ctx context.Context) error {
-	req, err := c.createRequest(ctx)
+	_, execRoot, dir, err := ninjabuild.InitDir(ctx, c.ninjaDir)
 	if err != nil {
 		return err
 	}
-	return c.scanWithRequest(ctx, req)
+	buildPath := build.NewPath(execRoot, dir)
+	req, err := c.createRequest(ctx, buildPath)
+	if err != nil {
+		return err
+	}
+	return c.scanWithRequest(ctx, buildPath, req)
 }
 
-func (c *Command) createRequest(ctx context.Context) (scandeps.Request, error) {
+func (c *Command) createRequest(ctx context.Context, buildPath *build.Path) (scandeps.Request, error) {
 	if c.reqJSONString != "" {
 		var req scandeps.Request
 		err := json.Unmarshal([]byte(c.reqJSONString), &req)
 		return req, err
 	}
 	if c.targetName != "" {
-		return c.createRequestFromTarget(ctx)
+		return c.createRequestFromTarget(ctx, buildPath)
 	}
 	if len(c.cmdline) > 0 {
-		return c.createRequestFromCmdLine(ctx)
+		return c.createRequestFromCmdLine(ctx, buildPath)
 	}
 	return scandeps.Request{}, fmt.Errorf("missing req, target or command line: %w", flag.ErrHelp)
 }
 
-func (c *Command) createRequestFromCmdLine(ctx context.Context) (scandeps.Request, error) {
-	relBuildDir, err := filepath.Rel(c.execRoot, c.absBuildDir())
-	if err != nil {
-		return scandeps.Request{}, fmt.Errorf("failed to get relative build dir: %w", err)
-	}
-	buildPath := build.NewPath(c.execRoot, relBuildDir)
-
-	fsys := os.DirFS(c.absBuildDir())
+func (c *Command) createRequestFromCmdLine(ctx context.Context, buildPath *build.Path) (scandeps.Request, error) {
+	fsys := os.DirFS(".")
 	// Heuristic to detect MSVC vs GCC
 	isMSVC := false
 	if len(c.cmdline) > 0 {
@@ -175,14 +147,8 @@ func (c *Command) createRequestFromCmdLine(ctx context.Context) (scandeps.Reques
 	return req, err
 }
 
-func (c *Command) createRequestFromTarget(ctx context.Context) (scandeps.Request, error) {
-	buildNinjaPath := filepath.Join(c.absBuildDir(), "build.ninja")
-	relBuildDir, err := filepath.Rel(c.execRoot, c.absBuildDir())
-	if err != nil {
-		return scandeps.Request{}, fmt.Errorf("failed to get relative build dir: %w", err)
-	}
-	buildPath := build.NewPath(c.execRoot, relBuildDir)
-
+func (c *Command) createRequestFromTarget(ctx context.Context, buildPath *build.Path) (scandeps.Request, error) {
+	buildNinjaPath := "build.ninja" // TODO: flag?
 	nstate, err := ninjabuild.Load(ctx, buildNinjaPath, buildPath)
 	if err != nil {
 		return scandeps.Request{}, fmt.Errorf("failed to load %s: %w", buildNinjaPath, err)
@@ -211,7 +177,7 @@ func (c *Command) createRequestFromTarget(ctx context.Context) (scandeps.Request
 		return scandeps.Request{}, fmt.Errorf("empty command line for target %q", c.targetName)
 	}
 
-	fsys := os.DirFS(c.absBuildDir())
+	fsys := os.DirFS(".")
 
 	var rule ninjabuild.StepRule
 	timeout := 2 * time.Minute
@@ -251,7 +217,7 @@ func (c *Command) createRequestFromTarget(ctx context.Context) (scandeps.Request
 	}
 }
 
-func (c *Command) scanWithRequest(ctx context.Context, req scandeps.Request) error {
+func (c *Command) scanWithRequest(ctx context.Context, buildPath *build.Path, req scandeps.Request) error {
 	buf, err := json.MarshalIndent(req, "", "  ")
 	if err != nil {
 		return err
@@ -270,7 +236,7 @@ func (c *Command) scanWithRequest(ctx context.Context, req scandeps.Request) err
 
 	s := scandeps.New(hashFS, inputDeps, nil)
 
-	result, err := s.Scan(ctx, c.execRoot, req)
+	result, err := s.Scan(ctx, buildPath.ExecRoot, req)
 	if err != nil {
 		return err
 	}
@@ -289,28 +255,29 @@ func (c *Command) loadInputDeps() (map[string][]string, error) {
 }
 
 func (c *Command) loadStepConfig() (*ninjabuild.StepConfig, error) {
-	stateDir := c.absStateDir()
-	buf, err := os.ReadFile(filepath.Join(stateDir, ".siso_config"))
+	configPath := filepath.Join(c.stateDir, ".siso_config")
+	buf, err := os.ReadFile(configPath)
 	if err != nil {
 		return nil, err
 	}
 	var stepConfig ninjabuild.StepConfig
 	err = json.Unmarshal(buf, &stepConfig)
 	if err != nil {
-		return nil, fmt.Errorf("load %s/.siso_config: %w", stateDir, err)
+		return nil, fmt.Errorf("load %s: %w", configPath, err)
 	}
 	if stepConfig.InputDeps == nil {
 		stepConfig.InputDeps = make(map[string][]string)
 	}
 
-	buf, err = os.ReadFile(filepath.Join(stateDir, ".siso_filegroups"))
+	filegroupsPath := filepath.Join(c.stateDir, ".siso_filegroups")
+	buf, err = os.ReadFile(filegroupsPath)
 	if err != nil {
-		return nil, fmt.Errorf("load %s/.filegroups: %w", stateDir, err)
+		return nil, fmt.Errorf("load %s: %w", filegroupsPath, err)
 	}
 	var filegroups buildconfig.Filegroups
 	err = json.Unmarshal(buf, &filegroups)
 	if err != nil {
-		return nil, fmt.Errorf("load %s/.filegroups: %w", stateDir, err)
+		return nil, fmt.Errorf("load %s: %w", filegroupsPath, err)
 	}
 	maps.Copy(stepConfig.InputDeps, filegroups.Filegroups)
 	return &stepConfig, nil

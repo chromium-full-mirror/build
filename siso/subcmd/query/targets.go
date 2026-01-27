@@ -16,6 +16,7 @@ import (
 
 	"github.com/google/subcommands"
 
+	"go.chromium.org/build/siso/build/ninjabuild"
 	"go.chromium.org/build/siso/toolsupport/ninjautil"
 )
 
@@ -41,8 +42,8 @@ func (*targetsCommand) Usage() string {
 type targetsCommand struct {
 	w io.Writer
 
-	dir   string
-	fname string
+	ninjaDir ninjabuild.DirFlag
+	fname    string
 
 	rule  targetRuleFlag
 	depth int
@@ -65,8 +66,8 @@ func (f *targetRuleFlag) Set(v string) error {
 }
 
 func (c *targetsCommand) SetFlags(flagSet *flag.FlagSet) {
+	c.ninjaDir.RegisterFlags(flagSet)
 	// TODO(b/340381100): extract common flags for ninja commands.
-	flagSet.StringVar(&c.dir, "C", ".", "ninja running directory to find build.ninja")
 	flagSet.StringVar(&c.fname, "f", "build.ninja", "input build filename (relative to -C)")
 
 	flagSet.Var(&c.rule, "rule", "rule name for the targets")
@@ -98,7 +99,7 @@ func (c *targetsCommand) run(ctx context.Context) error {
 	}
 	state := ninjautil.NewState()
 	p := ninjautil.NewManifestParser(state)
-	err := os.Chdir(c.dir)
+	_, _, _, err := ninjabuild.InitDir(ctx, c.ninjaDir)
 	if err != nil {
 		return err
 	}

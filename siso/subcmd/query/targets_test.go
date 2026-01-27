@@ -135,12 +135,24 @@ in3
 			dir := t.TempDir()
 			t.Chdir(dir)
 
-			os.WriteFile("build.ninja", []byte(tc.buildNinja), 0644)
+			err := os.MkdirAll("build/config/siso", 0755)
+			if err != nil {
+				t.Fatal(err)
+			}
+			err = os.MkdirAll("out/siso", 0755)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Chdir("out/siso")
+			err = os.WriteFile("build.ninja", []byte(tc.buildNinja), 0644)
+			if err != nil {
+				t.Fatal(err)
+			}
 			var buf bytes.Buffer
 			c := &targetsCommand{w: &buf}
 			flagSet := flag.NewFlagSet("targets", flag.ContinueOnError)
 			c.SetFlags(flagSet)
-			err := flagSet.Parse(tc.args)
+			err = flagSet.Parse(tc.args)
 			if err != nil {
 				t.Fatal(err)
 			}

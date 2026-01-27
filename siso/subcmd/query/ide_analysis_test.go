@@ -16,6 +16,7 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
 
+	"go.chromium.org/build/siso/build"
 	"go.chromium.org/build/siso/hashfs"
 	fspb "go.chromium.org/build/siso/hashfs/proto"
 	"go.chromium.org/build/siso/reapi/digest"
@@ -114,10 +115,8 @@ func TestIDEAnalysis(t *testing.T) {
 		c := &ideAnalysisCommand{}
 		flagSet := flag.NewFlagSet("ideanalysis", flag.ContinueOnError)
 		c.SetFlags(flagSet)
-		c.execRoot = topDir
-		c.dir = "out/siso"
-
-		got, err := c.analyze(ctx, []string{"../../foo/foo.cc^"})
+		t.Chdir(filepath.Join(topDir, "out/siso"))
+		got, err := c.analyze(ctx, build.NewPath(topDir, "out/siso"), []string{"../../foo/foo.cc^"})
 		if err != nil {
 			t.Errorf(`analyze(ctx, "../../foo/foo.cc^")=%v, %v; want nil err`, got, err)
 		}
@@ -237,10 +236,8 @@ func TestIDEAnalysis(t *testing.T) {
 		c := &ideAnalysisCommand{}
 		flagSet := flag.NewFlagSet("ideanalysis", flag.ContinueOnError)
 		c.SetFlags(flagSet)
-		c.execRoot = topDir
-		c.dir = "out/siso"
-
-		got, err := c.analyze(ctx, []string{"../../foo/foo.h^"})
+		t.Chdir(filepath.Join(topDir, "out/siso"))
+		got, err := c.analyze(ctx, build.NewPath(topDir, "out/siso"), []string{"../../foo/foo.h^"})
 		if err != nil {
 			t.Errorf(`analyze(ctx, "../../foo/foo.h^")=%v, %v; want nil err`, got, err)
 		}
@@ -360,10 +357,8 @@ func TestIDEAnalysis(t *testing.T) {
 		c := &ideAnalysisCommand{}
 		flagSet := flag.NewFlagSet("ideanalysis", flag.ContinueOnError)
 		c.SetFlags(flagSet)
-		c.execRoot = topDir
-		c.dir = "out/siso"
-
-		got, err := c.analyze(ctx, []string{"../../foo/baz.h^"})
+		t.Chdir(filepath.Join(topDir, "out/siso"))
+		got, err := c.analyze(ctx, build.NewPath(topDir, "out/siso"), []string{"../../foo/baz.h^"})
 		if err != nil {
 			t.Errorf(`analyze(ctx, "../../foo/baz.h^")=%v, %v; want nil err`, got, err)
 		}
@@ -483,10 +478,8 @@ func TestIDEAnalysis(t *testing.T) {
 		c := &ideAnalysisCommand{}
 		flagSet := flag.NewFlagSet("ideanalysis", flag.ContinueOnError)
 		c.SetFlags(flagSet)
-		c.execRoot = topDir
-		c.dir = "out/siso"
-
-		got, err := c.analyze(ctx, []string{"../../foo/bar.h^"})
+		t.Chdir(filepath.Join(topDir, "out/siso"))
+		got, err := c.analyze(ctx, build.NewPath(topDir, "out/siso"), []string{"../../foo/bar.h^"})
 		if err != nil {
 			t.Errorf(`analyze(ctx, "../../foo/bar.h^")=%v, %v; want nil err`, got, err)
 		}

@@ -6,6 +6,7 @@
 package webui
 
 import (
+	"context"
 	"embed"
 	"errors"
 	"fmt"
@@ -25,6 +26,7 @@ import (
 	"time"
 
 	"go.chromium.org/build/siso/build"
+	"go.chromium.org/build/siso/build/ninjabuild"
 	mwc "go.chromium.org/build/siso/third_party/material_web_components"
 )
 
@@ -307,13 +309,19 @@ func (s *WebuiServer) renderBuildViewError(status int, message string, w http.Re
 }
 
 // NewServer inits a webui server.
-func NewServer(version string, localDevelopment bool, port int, defaultOutdir, configRepoDir, manifestPath string) (*WebuiServer, error) {
+func NewServer(ctx context.Context, version string, localDevelopment bool, port int, ninjaDir ninjabuild.DirFlag, manifestPath string) (*WebuiServer, error) {
+
+	_, execRoot, dir, err := ninjabuild.InitDir(ctx, ninjaDir)
+	if err != nil {
+		return nil, &ErrExecrootNotExist{err}
+	}
 	s := WebuiServer{
 		sisoVersion:      version,
 		localDevelopment: localDevelopment,
 		staticFS:         fs.FS(content),
 		sseServer:        newSseServer(),
-		defaultOutdir:    defaultOutdir,
+		execRoot:         execRoot,
+		defaultOutdir:    dir,
 		outdirMetrics:    make(map[string]*outdirInfo),
 		port:             port,
 	}
@@ -321,19 +329,12 @@ func NewServer(version string, localDevelopment bool, port int, defaultOutdir, c
 		s.staticFS = os.DirFS("webui/")
 	}
 
-	// Get execroot.
-	var err error
-	s.execRoot, err = build.DetectExecRoot(defaultOutdir, configRepoDir)
-	if err != nil {
-		return nil, &ErrExecrootNotExist{err}
-	}
-
 	// Preload default outdir.
-	defaultOutdirInfo, err := loadOutdirInfo(s.execRoot, defaultOutdir, manifestPath)
+	defaultOutdirInfo, err := loadOutdirInfo(execRoot, dir, manifestPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to preload outdir: %w", err)
 	}
-	s.outdirMetrics[defaultOutdir] = defaultOutdirInfo
+	s.outdirMetrics[dir] = defaultOutdirInfo
 	s.defaultOutdirRoot = defaultOutdirInfo.outroot
 	s.defaultOutdirSub = defaultOutdirInfo.outsub
 

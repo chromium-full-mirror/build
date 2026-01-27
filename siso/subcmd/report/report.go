@@ -20,6 +20,7 @@ import (
 
 	"github.com/google/subcommands"
 
+	"go.chromium.org/build/siso/build/ninjabuild"
 	"go.chromium.org/build/siso/hashfs/osfs"
 	"go.chromium.org/build/siso/o11y/clog"
 	"go.chromium.org/build/siso/reapi/digest"
@@ -52,12 +53,12 @@ func (*Command) Usage() string {
 
 // Command implements report subcommand.
 type Command struct {
-	dir     string
-	osfsopt osfs.Option
+	ninjaDir ninjabuild.DirFlag
+	osfsopt  osfs.Option
 }
 
 func (c *Command) SetFlags(flagSet *flag.FlagSet) {
-	flagSet.StringVar(&c.dir, "C", ".", "ninja running directory")
+	c.ninjaDir.RegisterFlags(flagSet)
 	c.osfsopt.RegisterFlags(flagSet)
 }
 
@@ -80,8 +81,7 @@ func (c *Command) run(ctx context.Context) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer signals.HandleInterrupt(ctx, cancel)()
 
-	clog.Infof(ctx, "dir %s", c.dir)
-	err := os.Chdir(c.dir)
+	_, _, _, err := ninjabuild.InitDir(ctx, c.ninjaDir)
 	if err != nil {
 		return err
 	}

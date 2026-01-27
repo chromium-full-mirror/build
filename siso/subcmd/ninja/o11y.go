@@ -37,6 +37,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"go.chromium.org/build/siso/auth/cred"
+	"go.chromium.org/build/siso/build"
 	"go.chromium.org/build/siso/hashfs"
 	"go.chromium.org/build/siso/o11y/clog"
 	"go.chromium.org/build/siso/o11y/monitoring"
@@ -207,9 +208,9 @@ func newOTELMetricsExporter(ctx context.Context, collectorAddr string) *otlpmetr
 
 // buildProperties builds properties for the invocation that will be uploaded to ResultStore.
 // It returns the properties.
-func (c *Command) buildProperties(ctx context.Context) resultstore.Properties {
+func (c *Command) buildProperties(ctx context.Context, buildPath *build.Path) resultstore.Properties {
 	properties := resultstore.Properties{}
-	properties.Add("dir", c.dir)
+	properties.Add("dir", buildPath.Dir)
 	info := cpuinfo()
 	properties.Add("cpu", info)
 	info = gcinfo()
@@ -239,10 +240,10 @@ func (c *Command) buildProperties(ctx context.Context) resultstore.Properties {
 
 // setupResultStore sets up ResultStore for uploading build results.
 // It returns a cleanup function that should be called at the end of the build, and any error that occurred.
-func (c *Command) setupResultStore(ctx context.Context, projectID string, execRoot string, properties resultstore.Properties, credential cred.Cred, hashFS *hashfs.HashFS, buildErr *error) (func(), error) {
+func (c *Command) setupResultStore(ctx context.Context, projectID string, buildPath *build.Path, properties resultstore.Properties, credential cred.Cred, hashFS *hashfs.HashFS, buildErr *error) (func(), error) {
 	resultstoreUploader, err := resultstore.New(ctx, resultstore.Options{
 		InvocationID:  c.buildID,
-		Invocation:    c.invocation(ctx, c.buildID, projectID, execRoot, properties),
+		Invocation:    c.invocation(ctx, c.buildID, projectID, buildPath.ExecRoot, properties),
 		ClientOptions: credential.ClientOptions(),
 	})
 	if err != nil {
@@ -259,7 +260,7 @@ func (c *Command) setupResultStore(ctx context.Context, projectID string, execRo
 		// TODO(b/329564182): add other files? e.g. siso_output, siso_trace.json etc.
 		if len(files) > 0 {
 			var entsErr error
-			ents, entsErr = hashFS.Entries(ctx, filepath.Join(execRoot, c.dir), files)
+			ents, entsErr = hashFS.Entries(ctx, filepath.Join(buildPath.ExecRoot, buildPath.Dir), files)
 			if entsErr != nil {
 				clog.Warningf(ctx, "failed to get entries for %q: %v", files, entsErr)
 			}

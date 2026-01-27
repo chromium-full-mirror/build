@@ -17,6 +17,7 @@ import (
 	"strings"
 
 	"go.chromium.org/build/siso/build"
+	"go.chromium.org/build/siso/build/ninjabuild"
 	"go.chromium.org/build/siso/o11y/clog"
 )
 
@@ -25,15 +26,12 @@ type localSource struct {
 	stateDir string
 }
 
-func newLocalSource(dir, stateDir string) (*localSource, error) {
-	err := os.Chdir(dir)
+func newLocalSource(ctx context.Context, ninjaDir ninjabuild.DirFlag, stateDir string) (*localSource, error) {
+	_, execRoot, dir, err := ninjabuild.InitDir(ctx, ninjaDir)
 	if err != nil {
-		return nil, fmt.Errorf("failed to chdir %s: %w", dir, err)
+		return nil, fmt.Errorf("failed to init dir %s: %w", ninjaDir, err)
 	}
-	wd, err := os.Getwd()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get wd: %w", err)
-	}
+	wd := filepath.Join(execRoot, dir)
 	return &localSource{wd: wd, stateDir: stateDir}, nil
 }
 

@@ -20,6 +20,7 @@ import (
 	"github.com/google/subcommands"
 
 	"go.chromium.org/build/siso/build"
+	"go.chromium.org/build/siso/build/ninjabuild"
 )
 
 const summaryUsage = `summarize siso_metrics.json
@@ -47,7 +48,7 @@ func (*summaryCommand) Usage() string {
 }
 
 type summaryCommand struct {
-	dir                string
+	ninjaDir           ninjabuild.DirFlag
 	input              string
 	stepTypes          string
 	elapsedTime        string
@@ -55,7 +56,7 @@ type summaryCommand struct {
 }
 
 func (c *summaryCommand) SetFlags(flagSet *flag.FlagSet) {
-	flagSet.StringVar(&c.dir, "C", ".", "ninja running directory, where siso_metrics.json exists")
+	c.ninjaDir.RegisterFlags(flagSet)
 	flagSet.StringVar(&c.input, "input", "siso_metrics.json", "filename of siso_metrics.json to summarize")
 	flagSet.StringVar(&c.stepTypes, "step_types", "", "semicolon separated glob patterns (go filepath.Match) for build-step grouping")
 	flagSet.StringVar(&c.elapsedTime, "elapsed_time", "run", `metrics to use for elapsed time. "run" or "step". "run": time to run local command or call remote execution.  "step": full duration for the step, including preproc, waiting resource to run command etc.`)
@@ -63,7 +64,7 @@ func (c *summaryCommand) SetFlags(flagSet *flag.FlagSet) {
 }
 
 func (c *summaryCommand) Execute(ctx context.Context, flagSet *flag.FlagSet, _ ...any) subcommands.ExitStatus {
-	err := c.run()
+	err := c.run(ctx)
 	if err != nil {
 		switch {
 		case errors.Is(err, flag.ErrHelp):
@@ -77,14 +78,14 @@ func (c *summaryCommand) Execute(ctx context.Context, flagSet *flag.FlagSet, _ .
 	return subcommands.ExitSuccess
 }
 
-func (c *summaryCommand) run() error {
+func (c *summaryCommand) run(ctx context.Context) error {
 	switch c.elapsedTime {
 	case "run", "step":
 	default:
 		return fmt.Errorf(`wrong --elapsed_time=%s  "run" or "step". %w`, c.elapsedTime, flag.ErrHelp)
 	}
 
-	err := os.Chdir(c.dir)
+	_, _, _, err := ninjabuild.InitDir(ctx, c.ninjaDir)
 	if err != nil {
 		return err
 	}

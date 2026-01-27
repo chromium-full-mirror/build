@@ -14,6 +14,7 @@ import (
 
 	"github.com/google/subcommands"
 
+	"go.chromium.org/build/siso/build/ninjabuild"
 	"go.chromium.org/build/siso/webui"
 )
 
@@ -41,8 +42,7 @@ type Command struct {
 	version          string
 	localDevelopment bool
 	port             int
-	outdir           string
-	configRepoDir    string
+	ninjaDir         ninjabuild.DirFlag
 	fname            string
 	metricsFile      string
 }
@@ -50,14 +50,13 @@ type Command struct {
 func (c *Command) SetFlags(flagSet *flag.FlagSet) {
 	flagSet.BoolVar(&c.localDevelopment, "local_development", false, "whether to use local instead of embedded files")
 	flagSet.IntVar(&c.port, "port", 8080, "port to use (defaults to 8080)")
-	flagSet.StringVar(&c.outdir, "C", ".", "path to outdir")
-	flagSet.StringVar(&c.configRepoDir, "config_repo_dir", "build/config/siso", "config repo directory (relative to exec root)")
+	c.ninjaDir.RegisterFlags(flagSet)
 	flagSet.StringVar(&c.fname, "f", "build.ninja", "input build manifest filename (relative to -C)")
 	flagSet.StringVar(&c.metricsFile, "metrics_file", "", "optional path to siso_metrics.json to load (experimental, -C is still required for now)")
 }
 
 func (c *Command) Execute(ctx context.Context, flagSet *flag.FlagSet, _ ...any) subcommands.ExitStatus {
-	s, err := webui.NewServer(c.version, c.localDevelopment, c.port, c.outdir, c.configRepoDir, c.fname)
+	s, err := webui.NewServer(ctx, c.version, c.localDevelopment, c.port, c.ninjaDir, c.fname)
 	if err != nil {
 		var execrootNotExist *webui.ErrExecrootNotExist
 		var manifestNotExist *webui.ErrManifestNotExist

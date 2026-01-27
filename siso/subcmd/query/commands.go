@@ -13,6 +13,7 @@ import (
 
 	"github.com/google/subcommands"
 
+	"go.chromium.org/build/siso/build/ninjabuild"
 	"go.chromium.org/build/siso/toolsupport/ninjautil"
 )
 
@@ -36,12 +37,12 @@ func (*commandsCommand) Usage() string {
 }
 
 type commandsCommand struct {
-	dir   string
-	fname string
+	ninjaDir ninjabuild.DirFlag
+	fname    string
 }
 
 func (c *commandsCommand) SetFlags(flagSet *flag.FlagSet) {
-	flagSet.StringVar(&c.dir, "C", ".", "ninja running directory to find build.ninja")
+	c.ninjaDir.RegisterFlags(flagSet)
 	flagSet.StringVar(&c.fname, "f", "build.ninja", "input build filename (relative to -C)")
 }
 
@@ -63,7 +64,7 @@ func (c *commandsCommand) Execute(ctx context.Context, flagSet *flag.FlagSet, _ 
 func (c *commandsCommand) run(ctx context.Context, args []string) error {
 	state := ninjautil.NewState()
 	p := ninjautil.NewManifestParser(state)
-	err := os.Chdir(c.dir)
+	_, _, _, err := ninjabuild.InitDir(ctx, c.ninjaDir)
 	if err != nil {
 		return err
 	}

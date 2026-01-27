@@ -156,18 +156,18 @@ func parseFlagsFully(flagSet *flag.FlagSet) error {
 	return flagSet.Parse(targets)
 }
 
-func (c *Command) setup(ctx context.Context) (execRoot string, doneLock func(), resetCrashOutput func(), err error) {
+func (c *Command) setup(ctx context.Context) (buildPath *build.Path, doneLock func(), resetCrashOutput func(), err error) {
 	err = c.resolveFlags()
 	if err != nil {
-		return "", nil, nil, err
+		return nil, nil, nil, err
 	}
 	if c.offline {
 		c.enableOfflineMode(ctx)
 	}
 
-	execRoot, err = c.changeToWorkdir(ctx)
+	buildPath, err = c.changeToWorkdir(ctx)
 	if err != nil {
-		return "", nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	if c.stateDir != "." && c.fsopt.StateFile != "" {
@@ -175,22 +175,22 @@ func (c *Command) setup(ctx context.Context) (execRoot string, doneLock func(), 
 	}
 	doneLock, err = initLock(ctx, c.dryRun, c.stateDir)
 	if err != nil {
-		return "", nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	err = c.initLogDir(ctx)
 	if err != nil {
 		doneLock()
-		return "", nil, nil, err
+		return nil, nil, nil, err
 	}
 	clog.Infof(ctx, "siso log dir=%s", c.logDir)
 
 	resetCrashOutput, err = c.setupCrashOutput(ctx)
 	if err != nil {
 		doneLock()
-		return "", nil, nil, err
+		return nil, nil, nil, err
 	}
-	return execRoot, doneLock, resetCrashOutput, nil
+	return buildPath, doneLock, resetCrashOutput, nil
 }
 
 func (c *Command) computeLimits(ctx context.Context) build.Limits {
@@ -254,14 +254,12 @@ func (c *Command) Run(ctx context.Context) (stats build.Stats, finalErr error) {
 		cancel(errInterrupted{})
 	})()
 
-	execRoot, doneLock, resetCrashOutput, err := c.setup(ctx)
+	buildPath, doneLock, resetCrashOutput, err := c.setup(ctx)
 	if err != nil {
 		return stats, err
 	}
 	defer doneLock()
 	defer resetCrashOutput()
-
-	buildPath := build.NewPath(execRoot, c.dir)
 
 	limits := c.computeLimits(ctx)
 	projectID := c.reopt.UpdateProjectID(c.projectID)
@@ -273,7 +271,7 @@ func (c *Command) Run(ctx context.Context) (stats build.Stats, finalErr error) {
 	if c.enableCloudLogging {
 		spin := ui.Default.NewSpinner()
 		spin.Start("init cloud logging")
-		logCtx, loggerURL, done, err := c.initCloudLogging(ctx, projectID, execRoot, credential)
+		logCtx, loggerURL, done, err := c.initCloudLogging(ctx, projectID, buildPath.ExecRoot, credential)
 		spin.Stop(err)
 		if err != nil {
 			// b/335295396 Compile step hitting write requests quota
@@ -289,7 +287,7 @@ func (c *Command) Run(ctx context.Context) (stats build.Stats, finalErr error) {
 	}
 	clog.Infof(ctx, "siso version %s", c.version)
 	// logging is ready.
-	properties := c.buildProperties(ctx)
+	properties := c.buildProperties(ctx, buildPath)
 	// log build properties
 	for _, p := range properties {
 		clog.Infof(ctx, "%s: %q", p.Key, p.Value)
@@ -359,7 +357,7 @@ func (c *Command) Run(ctx context.Context) (stats build.Stats, finalErr error) {
 	// upload build pprof
 
 	targets := c.Flags.Args()
-	config, err := c.initConfig(ctx, execRoot, targets)
+	config, err := c.initConfig(ctx, buildPath.ExecRoot, targets)
 	if err != nil {
 		return stats, err
 	}
@@ -403,7 +401,7 @@ func (c *Command) Run(ctx context.Context) (stats build.Stats, finalErr error) {
 			clog.Errorf(ctx, "close datasource: %v", err)
 		}
 	}()
-	hashFS, closeHashFS, err := c.setupHashFS(ctx, execRoot, ds)
+	hashFS, closeHashFS, err := c.setupHashFS(ctx, buildPath, ds)
 	if err != nil {
 		return stats, err
 	}
@@ -427,7 +425,7 @@ func (c *Command) Run(ctx context.Context) (stats build.Stats, finalErr error) {
 	}
 
 	if c.enableResultstore {
-		cleanup, err := c.setupResultStore(ctx, projectID, execRoot, properties, credential, hashFS, &err)
+		cleanup, err := c.setupResultStore(ctx, projectID, buildPath, properties, credential, hashFS, &err)
 		if err != nil {
 			return stats, err
 		}
@@ -636,15 +634,15 @@ func (c *Command) saveFailedTargetsAndCommand(ctx context.Context, errPtr *error
 	}
 }
 
-func (c *Command) setupHashFS(ctx context.Context, execRoot string, ds build.DataSource) (*hashfs.HashFS, func(*[]string, *error), error) {
+func (c *Command) setupHashFS(ctx context.Context, buildPath *build.Path, ds build.DataSource) (*hashfs.HashFS, func(*[]string, *error), error) {
 	c.fsopt.DataSource = ds
 	var err error
 	c.fsopt.OutputLocal, err = initOutputLocal(c.outputLocalStrategy)
 	if err != nil {
 		return nil, nil, err
 	}
-	if c.logDir == "." || c.logDir == filepath.Join(execRoot, c.dir) {
-		cwd := filepath.Join(execRoot, c.dir)
+	if c.logDir == "." || c.logDir == filepath.Join(buildPath.ExecRoot, buildPath.Dir) {
+		cwd := filepath.Join(buildPath.ExecRoot, buildPath.Dir)
 		// ignore siso files not to be captured by ReadDir
 		// (i.g. scandeps for -I.)
 		clog.Infof(ctx, "ignore siso files in %s", cwd)
@@ -672,12 +670,12 @@ func (c *Command) setupHashFS(ctx context.Context, execRoot string, ds build.Dat
 	} else {
 		// expect logDir is out of exec root.
 		clog.Infof(ctx, "ignore .ninja_log")
-		ninjaLogFname := filepath.Join(execRoot, c.dir, ".ninja_log")
+		ninjaLogFname := filepath.Join(buildPath.ExecRoot, buildPath.Dir, ".ninja_log")
 		c.fsopt.Ignore = func(ctx context.Context, fname string) bool {
 			return fname == ninjaLogFname
 		}
 	}
-	cogfs, err := cogutil.New(ctx, execRoot)
+	cogfs, err := cogutil.New(ctx, buildPath.ExecRoot)
 	if err != nil && !errors.Is(err, errors.ErrUnsupported) {
 		clog.Warningf(ctx, "unable to use cog? %v", err)
 	}
@@ -694,7 +692,7 @@ func (c *Command) setupHashFS(ctx context.Context, execRoot string, ds build.Dat
 		c.fsopt.ArtFS = artfs
 	}
 
-	c.fsopt.FSMonitor = initFSMonitor(ctx, execRoot)
+	c.fsopt.FSMonitor = initFSMonitor(ctx, buildPath.ExecRoot)
 
 	spin := ui.Default.NewSpinner()
 	spin.Start("loading fs state")

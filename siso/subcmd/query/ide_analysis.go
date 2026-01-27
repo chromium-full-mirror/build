@@ -24,6 +24,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"go.chromium.org/build/siso/build"
+	"go.chromium.org/build/siso/build/ninjabuild"
 	"go.chromium.org/build/siso/hashfs"
 	fspb "go.chromium.org/build/siso/hashfs/proto"
 	"go.chromium.org/build/siso/o11y/clog"
@@ -39,8 +40,7 @@ import (
 // go/reqs-for-peep
 
 type ideAnalysisCommand struct {
-	execRoot string
-	dir      string
+	ninjaDir ninjabuild.DirFlag
 	stateDir string
 	fname    string
 	fsopt    *hashfs.Option
@@ -68,7 +68,7 @@ func (*ideAnalysisCommand) Usage() string {
 	return ideAnalysisUsage
 }
 func (c *ideAnalysisCommand) SetFlags(flagSet *flag.FlagSet) {
-	flagSet.StringVar(&c.dir, "C", ".", "ninja running directory to find build.ninja")
+	c.ninjaDir.RegisterFlags(flagSet)
 	flagSet.StringVar(&c.stateDir, "state_dir", ".", "state directory (relative to -C)")
 	flagSet.StringVar(&c.fname, "f", "build.ninja", "input build filename (relative to -C)")
 	c.fsopt = new(hashfs.Option)
@@ -105,22 +105,11 @@ func (c *ideAnalysisCommand) run(ctx context.Context, args []string) error {
 	if c.fsopt.StateFile != "" {
 		c.fsopt.StateFile = filepath.Join(c.stateDir, c.fsopt.StateFile)
 	}
-
-	// don't use $PWD for current directory
-	// to avoid symlink issue. b/286779149
-	pwd := os.Getenv("PWD")
-	_ = os.Unsetenv("PWD") // no error for safe env key name.
-
-	var err error
-	c.execRoot, err = os.Getwd()
-	if pwd != "" {
-		_ = os.Setenv("PWD", pwd) // no error to reset env with valid value.
-	}
+	_, execRoot, dir, err := ninjabuild.InitDir(ctx, c.ninjaDir)
 	if err != nil {
 		return err
 	}
-
-	analysis, err := c.analyze(ctx, args)
+	analysis, err := c.analyze(ctx, build.NewPath(execRoot, dir), args)
 	if err != nil {
 		analysis.Error = &pb.AnalysisError{
 			ErrorMessage: err.Error(),
@@ -153,25 +142,16 @@ func (c *ideAnalysisCommand) run(ctx context.Context, args []string) error {
 	return err
 }
 
-func (c *ideAnalysisCommand) analyze(ctx context.Context, args []string) (*pb.IdeAnalysis, error) {
+func (c *ideAnalysisCommand) analyze(ctx context.Context, buildPath *build.Path, args []string) (*pb.IdeAnalysis, error) {
 	analysis := &pb.IdeAnalysis{
-		BuildOutDir: c.dir,
-		WorkingDir:  c.dir,
+		BuildOutDir: buildPath.Dir,
+		WorkingDir:  buildPath.Dir,
 	}
 	if len(args) == 0 {
 		return analysis, errors.New("no target given")
 	}
-	wd, err := os.Getwd()
-	if err != nil {
-		return analysis, err
-	}
-	err = os.Chdir(c.dir)
-	if err != nil {
-		return analysis, err
-	}
-	defer os.Chdir(wd)
 	analyzer := &ideAnalyzer{
-		path: build.NewPath(c.execRoot, c.dir),
+		path: buildPath,
 	}
 	defer analyzer.Close(ctx)
 	hashFS, err := hashfs.New(ctx, hashfs.Option{})

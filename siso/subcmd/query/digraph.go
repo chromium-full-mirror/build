@@ -14,6 +14,7 @@ import (
 
 	"github.com/google/subcommands"
 
+	"go.chromium.org/build/siso/build/ninjabuild"
 	"go.chromium.org/build/siso/toolsupport/ninjautil"
 )
 
@@ -46,14 +47,14 @@ func (*digraphCommand) Usage() string {
 }
 
 type digraphCommand struct {
-	dir   string
-	fname string
+	ninjaDir ninjabuild.DirFlag
+	fname    string
 
 	orderOnly bool
 }
 
 func (c *digraphCommand) SetFlags(flagSet *flag.FlagSet) {
-	flagSet.StringVar(&c.dir, "C", ".", "ninja running directory to find build.ninja")
+	c.ninjaDir.RegisterFlags(flagSet)
 	flagSet.StringVar(&c.fname, "f", "build.ninja", "input build filename (relative to -C)")
 	flagSet.BoolVar(&c.orderOnly, "order_only", true, "includes order_only deps")
 }
@@ -76,7 +77,7 @@ func (c *digraphCommand) Execute(ctx context.Context, flagSet *flag.FlagSet, _ .
 func (c *digraphCommand) run(ctx context.Context, args []string) error {
 	state := ninjautil.NewState()
 	p := ninjautil.NewManifestParser(state)
-	err := os.Chdir(c.dir)
+	_, _, _, err := ninjabuild.InitDir(ctx, c.ninjaDir)
 	if err != nil {
 		return err
 	}

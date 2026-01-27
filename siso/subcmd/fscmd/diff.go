@@ -16,6 +16,7 @@ import (
 	"github.com/google/subcommands"
 	"google.golang.org/protobuf/proto"
 
+	"go.chromium.org/build/siso/build/ninjabuild"
 	"go.chromium.org/build/siso/hashfs"
 	pb "go.chromium.org/build/siso/hashfs/proto"
 )
@@ -39,22 +40,22 @@ and .siso_fs_state.0 (--fs_state_base).
 }
 
 type diffCommand struct {
-	dir           string
+	ninjaDir      ninjabuild.DirFlag
 	stateFile     string
 	stateFileBase string
 	// TODO: options to compare mtime
 }
 
 func (c *diffCommand) SetFlags(flagSet *flag.FlagSet) {
-	flagSet.StringVar(&c.dir, "C", ".", "ninja running directory")
+	c.ninjaDir.RegisterFlags(flagSet)
 	flagSet.StringVar(&c.stateFile, "fs_state", stateFile, "fs_state filename")
 	flagSet.StringVar(&c.stateFileBase, "fs_state_base", stateFile+".0", "fs_state filename for diff base")
 }
 
 func (c *diffCommand) Execute(ctx context.Context, flagSet *flag.FlagSet, _ ...any) subcommands.ExitStatus {
-	err := os.Chdir(c.dir)
+	_, _, _, err := ninjabuild.InitDir(ctx, c.ninjaDir)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "failed to chdir %s: %v\n", c.dir, err)
+		fmt.Fprintf(os.Stderr, "failed to init dir %s: %v\n", c.ninjaDir, err)
 		return 1
 	}
 

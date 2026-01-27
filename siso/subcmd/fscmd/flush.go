@@ -19,6 +19,7 @@ import (
 	"github.com/google/subcommands"
 
 	"go.chromium.org/build/siso/auth/cred"
+	"go.chromium.org/build/siso/build/ninjabuild"
 	"go.chromium.org/build/siso/hashfs"
 	pb "go.chromium.org/build/siso/hashfs/proto"
 	"go.chromium.org/build/siso/reapi"
@@ -49,7 +50,7 @@ func (*flushCommand) Usage() string {
 type flushCommand struct {
 	Flags        *flag.FlagSet
 	authOpts     cred.Options
-	dir          string
+	ninjaDir     ninjabuild.DirFlag
 	stateFile    string
 	projectID    string
 	reopt        *reapi.Option
@@ -59,7 +60,7 @@ type flushCommand struct {
 }
 
 func (c *flushCommand) SetFlags(flagSet *flag.FlagSet) {
-	flagSet.StringVar(&c.dir, "C", ".", "ninja running directory")
+	c.ninjaDir.RegisterFlags(flagSet)
 	flagSet.StringVar(&c.stateFile, "fs_state", stateFile, "fs_state filename")
 	flagSet.StringVar(&c.projectID, "project", os.Getenv("SISO_PROJECT"), "cloud project ID. can be set by $SISO_PROJECT")
 	c.reopt = new(reapi.Option)
@@ -125,18 +126,11 @@ func (c *flushCommand) run(ctx context.Context) error {
 	defer client.Close()
 	cacheStore := client.CacheStore()
 
-	err = os.Chdir(c.dir)
+	_, execRoot, dir, err := ninjabuild.InitDir(ctx, c.ninjaDir)
 	if err != nil {
-		return fmt.Errorf("failed to chdir %s: %w", c.dir, err)
+		return fmt.Errorf("failed to init dir %s: %w", c.ninjaDir, err)
 	}
-	wd, err := os.Getwd()
-	if err != nil {
-		return fmt.Errorf("failed to get wd: %w", err)
-	}
-	wd, err = filepath.EvalSymlinks(wd)
-	if err != nil {
-		return fmt.Errorf("failed to eval symlinks: %w", err)
-	}
+	wd := filepath.Join(execRoot, dir)
 	st, err := hashfs.Load(ctx, hashfs.Option{StateFile: c.stateFile})
 	if err != nil {
 		return fmt.Errorf("failed to load %s: %w", c.stateFile, err)

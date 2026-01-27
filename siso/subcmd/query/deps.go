@@ -64,7 +64,7 @@ func (*depsCommand) Usage() string {
 }
 
 type depsCommand struct {
-	dir         string
+	ninjaDir    ninjabuild.DirFlag
 	stateDir    string
 	fname       string
 	fsopt       *hashfs.Option
@@ -104,7 +104,7 @@ func (m textMarshaller) Marshal(dep dependencies) error {
 }
 
 func (c *depsCommand) SetFlags(flagSet *flag.FlagSet) {
-	flagSet.StringVar(&c.dir, "C", ".", "ninja running directory to find dpes log")
+	c.ninjaDir.RegisterFlags(flagSet)
 	flagSet.StringVar(&c.stateDir, "state_dir", ".", "state directory (relative to -C)")
 	flagSet.StringVar(&c.fname, "f", "build.ninja", "input build filename (relative to -C)")
 	c.fsopt = new(hashfs.Option)
@@ -132,19 +132,10 @@ func (c *depsCommand) Execute(ctx context.Context, flagSet *flag.FlagSet, _ ...a
 }
 
 func (c *depsCommand) run(ctx context.Context, args []string) error {
-	execRoot, err := os.Getwd()
+	_, execRoot, dir, err := ninjabuild.InitDir(ctx, c.ninjaDir)
 	if err != nil {
 		return err
 	}
-	execRoot, err = filepath.EvalSymlinks(execRoot)
-	if err != nil {
-		return err
-	}
-	err = os.Chdir(c.dir)
-	if err != nil {
-		return err
-	}
-
 	if c.fsopt.StateFile != "" {
 		c.fsopt.StateFile = filepath.Join(c.stateDir, c.fsopt.StateFile)
 	}
@@ -191,7 +182,7 @@ func (c *depsCommand) run(ctx context.Context, args []string) error {
 		state = nil
 	}
 
-	bpath := build.NewPath(execRoot, c.dir)
+	bpath := build.NewPath(execRoot, dir)
 
 	var m marshaller
 	w := bufio.NewWriter(os.Stdout)

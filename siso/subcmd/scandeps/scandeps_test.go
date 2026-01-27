@@ -80,8 +80,17 @@ build obj/foo.o: cxx foo.cc
 			if err != nil {
 				t.Fatalf("Failed to eval symlinks: %v", err)
 			}
+			err = os.MkdirAll(filepath.Join(tempDir, "build/config/siso"), 0755)
+			if err != nil {
+				t.Fatal(err)
+			}
+			dir := filepath.Join(tempDir, "out/siso")
+			err = os.MkdirAll(filepath.Join(tempDir, "out/siso"), 0755)
+			if err != nil {
+				t.Fatal(err)
+			}
 			if tc.setup != nil {
-				tc.setup(t, tempDir)
+				tc.setup(t, dir)
 			}
 
 			t.Chdir(tempDir)
@@ -90,7 +99,7 @@ build obj/foo.o: cxx foo.cc
 			flagSet := flag.NewFlagSet("test", flag.ContinueOnError)
 			c.SetFlags(flagSet)
 
-			if err := flagSet.Set("C", tempDir); err != nil {
+			if err := flagSet.Set("C", "out/siso"); err != nil {
 				t.Fatalf("Failed to set -C flag: %v", err)
 			}
 			if err := flagSet.Parse(tc.args); err != nil {

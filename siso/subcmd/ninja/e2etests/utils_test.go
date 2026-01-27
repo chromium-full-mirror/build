@@ -167,6 +167,9 @@ func setupBuild(ctx context.Context, t *testing.T, dir string, fsopt hashfs.Opti
 	if err != nil {
 		t.Fatal(err)
 	}
+
+	// not t.Chdir as it needs to restore current working directory
+	// by cleanup (i.e. build finished), not at the end of test.
 	wd, err := os.Getwd()
 	if err != nil {
 		t.Fatal(err)
@@ -185,6 +188,7 @@ func setupBuild(ctx context.Context, t *testing.T, dir string, fsopt hashfs.Opti
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	var hashfsSetStateLog syncBuffer
 	fsopt.SetStateLogger = &hashfsSetStateLog
 	hashFS, err := hashfs.New(ctx, fsopt)
@@ -264,6 +268,9 @@ func setupBuild(ctx context.Context, t *testing.T, dir string, fsopt hashfs.Opti
 func openDepsLog(ctx context.Context, t *testing.T, dir string) (*ninjautil.DepsLog, func()) {
 	t.Helper()
 	var cleanups []func()
+
+	// not t.Chdir as it needs to restore current working directory
+	// by cleanup (i.e. build finished), not at the end of test.
 	wd, err := os.Getwd()
 	if err != nil {
 		t.Fatal(err)
@@ -278,6 +285,7 @@ func openDepsLog(ctx context.Context, t *testing.T, dir string) (*ninjautil.Deps
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	depsLog, err := ninjautil.NewDepsLog(ctx, ".siso_deps")
 	if err != nil {
 		t.Fatal(err)

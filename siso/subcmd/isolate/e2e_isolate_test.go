@@ -48,35 +48,25 @@ func setupFiles(t *testing.T, dir, name string) {
 	}
 }
 
-func setupBuildDir(ctx context.Context, t *testing.T, dir string, buildDir string) (*hashfs.HashFS, func()) {
+func setupBuildDir(ctx context.Context, t *testing.T, dir string, buildDir string) *hashfs.HashFS {
 	t.Helper()
 
-	wd, err := os.Getwd()
+	err := os.MkdirAll(filepath.Join(dir, buildDir), 0755)
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = os.MkdirAll(filepath.Join(dir, buildDir), 0755)
-	if err != nil {
-		t.Fatal(err)
-	}
-	err = os.Chdir(filepath.Join(dir, buildDir))
-	if err != nil {
-		t.Fatal(err)
-	}
+	t.Chdir(filepath.Join(dir, buildDir))
 	hfs, err := hashfs.New(ctx, hashfs.Option{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	return hfs, func() {
-		err := os.Chdir(wd)
-		if err != nil {
-			t.Fatal(err)
-		}
+	t.Cleanup(func() {
 		err = hfs.Close(ctx)
 		if err != nil {
 			t.Fatal(err)
 		}
-	}
+	})
+	return hfs
 }
 
 func TestUpload(t *testing.T) {
@@ -85,8 +75,7 @@ func TestUpload(t *testing.T) {
 
 	setupFiles(t, dir, t.Name())
 	buildDir := "out/siso"
-	hfs, cleanup := setupBuildDir(ctx, t, dir, buildDir)
-	defer cleanup()
+	hfs := setupBuildDir(ctx, t, dir, buildDir)
 
 	// Create .git dir manually.
 	err := os.MkdirAll(filepath.Join(dir, "testing", "data", ".git"), 0755)

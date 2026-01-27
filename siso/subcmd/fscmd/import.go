@@ -15,6 +15,7 @@ import (
 	"github.com/google/subcommands"
 	"google.golang.org/protobuf/encoding/prototext"
 
+	"go.chromium.org/build/siso/build/ninjabuild"
 	"go.chromium.org/build/siso/hashfs"
 	pb "go.chromium.org/build/siso/hashfs/proto"
 )
@@ -32,19 +33,19 @@ func (*importCommand) Usage() string {
 }
 
 type importCommand struct {
-	dir    string
-	format string
+	ninjaDir ninjabuild.DirFlag
+	format   string
 }
 
 func (c *importCommand) SetFlags(flagSet *flag.FlagSet) {
-	flagSet.StringVar(&c.dir, "C", ".", "ninja running directory")
+	c.ninjaDir.RegisterFlags(flagSet)
 	flagSet.StringVar(&c.format, "format", "json", "input format. json or prototext")
 }
 
 func (c *importCommand) Execute(ctx context.Context, flagSet *flag.FlagSet, _ ...any) subcommands.ExitStatus {
-	err := os.Chdir(c.dir)
+	_, _, _, err := ninjabuild.InitDir(ctx, c.ninjaDir)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "failed to chdir %s: %v\n", c.dir, err)
+		fmt.Fprintf(os.Stderr, "failed to init dir %s: %v\n", c.ninjaDir, err)
 		return 1
 	}
 
