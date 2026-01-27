@@ -1914,6 +1914,9 @@ func (e *entry) flush(ctx context.Context, fname string, osfs *osfs.OSFS, timeou
 		err := osfs.Remove(ctx, fname)
 		digestLock.Unlock()
 		clog.Infof(ctx, "flush remove %s: %v", fname, err)
+		if errors.Is(err, fs.ErrNotExist) {
+			err = nil
+		}
 		return err
 	}
 	d := e.digest()
