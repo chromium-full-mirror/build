@@ -5,13 +5,16 @@ import (
 	"hash"
 	"io/fs"
 	"os"
+	"sync"
 )
 
 type HashingFileWriter struct {
 	file   *os.File
 	path   string
 	hasher hash.Hash
-	size   int64
+
+	mu   sync.Mutex
+	size int64
 }
 
 // NewHashingFileWriter creates a new file at the given path and returns a HashingFileWriter.
@@ -39,7 +42,10 @@ func (h *HashingFileWriter) Write(p []byte) (n int, err error) {
 	n, err = h.file.Write(p)
 	if n > 0 {
 		h.hasher.Write(p[:n])
+
+		h.mu.Lock()
 		h.size += int64(n)
+		h.mu.Unlock()
 	}
 	return n, err
 }
@@ -88,6 +94,8 @@ func (h *HashingFileWriter) Size() int64 {
 	if h == nil {
 		return 0
 	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
 	return h.size
 }
 
