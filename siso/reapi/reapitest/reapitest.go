@@ -15,7 +15,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/bazelbuild/remote-apis-sdks/go/pkg/digest"
 	rpb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -27,6 +26,7 @@ import (
 	"go.chromium.org/build/kajiya/actioncache"
 	"go.chromium.org/build/kajiya/blobstore"
 	"go.chromium.org/build/kajiya/capabilities"
+	"go.chromium.org/build/kajiya/digest"
 	"go.chromium.org/build/kajiya/execution"
 	"go.chromium.org/build/kajiya/execution/model"
 
@@ -58,7 +58,7 @@ type server struct {
 	closed   chan struct{}
 }
 
-func newServer(t *testing.T, fake *Fake) *server {
+func newServer(ctx context.Context, t *testing.T, fake *Fake) *server {
 	t.Helper()
 	s := &server{
 		closed: make(chan struct{}),
@@ -81,7 +81,7 @@ func newServer(t *testing.T, fake *Fake) *server {
 	capabilities.Register(serv)
 
 	casDir := filepath.Join(dir, "cas")
-	cas, err := blobstore.New(casDir)
+	cas, err := blobstore.New(ctx, casDir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -93,7 +93,7 @@ func newServer(t *testing.T, fake *Fake) *server {
 		t.Fatal(err)
 	}
 	acDir := filepath.Join(dir, "ac")
-	ac, err := actioncache.New(acDir)
+	ac, err := actioncache.New(ctx, acDir, cas)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -132,7 +132,7 @@ func New(ctx context.Context, t *testing.T, fake *Fake) *reapi.Client {
 // NewWithOption starts new fake reapi grpc server with reapi option and returns reapi client.
 func NewWithOption(ctx context.Context, t *testing.T, fake *Fake, opt reapi.Option) *reapi.Client {
 	t.Helper()
-	s := newServer(t, fake)
+	s := newServer(ctx, t, fake)
 	t.Cleanup(s.Close)
 	opt.Address = s.addr
 	if opt.Instance == "" {
