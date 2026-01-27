@@ -6,7 +6,6 @@
 package nsjailutil
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"io/fs"
@@ -201,15 +200,13 @@ func New(ctx context.Context, fsys fs.FS, req Request) (_ *NSJail, err error) {
 	return jail, nil
 }
 
-// RunResult holds run's result.
-type RunResult struct {
-	ExitCode int
-	Stdout   []byte
-	Stderr   []byte
+// Dir returns jail dir.
+func (j *NSJail) Dir() string {
+	return j.dir
 }
 
-// Run runs command in jail.
-func (j *NSJail) Run(ctx context.Context, args ...string) (RunResult, error) {
+// Args creates nsjail config to run args and returns command line to run args under nsjail.
+func (j *NSJail) Args(ctx context.Context, args ...string) ([]string, error) {
 	config := proto.CloneOf(j.config)
 	config.ExecBin = &pb.Exe{
 		Path: proto.String(args[0]),
@@ -217,29 +214,14 @@ func (j *NSJail) Run(ctx context.Context, args ...string) (RunResult, error) {
 	}
 	configData, err := prototext.Marshal(config)
 	if err != nil {
-		return RunResult{ExitCode: -1}, err
+		return nil, err
 	}
 	configPath := filepath.Join(j.dir, "nsjail.config")
 	err = os.WriteFile(configPath, configData, 0755)
 	if err != nil {
-		return RunResult{ExitCode: -1}, err
+		return nil, err
 	}
-	cmd := exec.CommandContext(ctx, j.exePath, "-C", configPath)
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	err = cmd.Run()
-	result := RunResult{
-		ExitCode: -1,
-		Stdout:   stdout.Bytes(),
-		Stderr:   stderr.Bytes(),
-	}
-	if cmd.ProcessState != nil {
-		result.ExitCode = cmd.ProcessState.ExitCode()
-	}
-	// TODO: capture output files on success (in separate method?)
-	return result, err
+	return []string{j.exePath, "-C", configPath}, nil
 }
 
 // Close closes the jail and cleans up jail dir.

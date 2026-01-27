@@ -14,7 +14,13 @@ import (
 	"os"
 
 	"github.com/google/subcommands"
+	"google.golang.org/protobuf/encoding/prototext"
 
+	"go.chromium.org/build/siso/build/ninjabuild"
+	"go.chromium.org/build/siso/execute"
+	"go.chromium.org/build/siso/execute/localexec"
+	"go.chromium.org/build/siso/hashfs"
+	"go.chromium.org/build/siso/o11y/clog"
 	"go.chromium.org/build/siso/toolsupport/nsjailutil"
 )
 
@@ -45,15 +51,20 @@ func (*Command) Usage() string {
 
 // Command implements sandbox subcommand.
 type Command struct {
+	ninjaDir            ninjabuild.DirFlag
+	fsopt               *hashfs.Option
 	nsjailReqJSONString string
 	cleanup             bool
 	cmdline             []string
 }
 
 func (c *Command) SetFlags(flagSet *flag.FlagSet) {
+	c.ninjaDir.RegisterFlags(flagSet)
+	c.fsopt = new(hashfs.Option)
+	c.fsopt.StateFile = ".siso_fs_state"
+	c.fsopt.RegisterFlags(flagSet)
 	flagSet.StringVar(&c.nsjailReqJSONString, "nsjail", "", "json format of nsjail request")
 	flagSet.BoolVar(&c.cleanup, "cleanup", true, "cleanup sandbox after execution")
-
 }
 
 func (c *Command) Execute(ctx context.Context, flagSet *flag.FlagSet, _ ...any) subcommands.ExitStatus {
@@ -73,16 +84,36 @@ func (c *Command) Execute(ctx context.Context, flagSet *flag.FlagSet, _ ...any) 
 }
 
 func (c *Command) run(ctx context.Context) error {
+	_, execRoot, dir, err := ninjabuild.InitDir(ctx, c.ninjaDir)
+	if err != nil {
+		return err
+	}
+	hashFS, err := hashfs.New(ctx, hashfs.Option{})
+	if err != nil {
+		return err
+	}
+	defer hashFS.Close(ctx)
+	fsstate, err := hashfs.Load(ctx, *c.fsopt)
+	if err != nil {
+		return err
+	}
+	err = hashFS.SetState(ctx, fsstate)
+	if err != nil {
+		return err
+	}
+
 	var req nsjailutil.Request
 	if c.nsjailReqJSONString == "" {
 		return fmt.Errorf("no nsjail request")
 	}
-	err := json.Unmarshal([]byte(c.nsjailReqJSONString), &req)
+	err = json.Unmarshal([]byte(c.nsjailReqJSONString), &req)
 	if err != nil {
 		return err
 	}
-	fsys := os.DirFS("/") // TODO: use hashfs?
-
+	req.ExecRoot = execRoot
+	req.Dir = dir
+	clog.Infof(ctx, "req: %#v", req)
+	fsys := hashFS.FileSystem(ctx, "/")
 	jail, err := nsjailutil.New(ctx, fsys, req)
 	if err != nil {
 		return err
@@ -91,9 +122,40 @@ func (c *Command) run(ctx context.Context) error {
 		defer jail.Close()
 	}
 
-	result, err := jail.Run(ctx, c.cmdline...)
-	fmt.Printf("exit=%d\n", result.ExitCode)
-	fmt.Printf("stdout:\n%s\n", result.Stdout)
-	fmt.Printf("stderr:\n%s\n", result.Stderr)
-	return err
+	cmd := &execute.Cmd{
+		ExecRoot: execRoot,
+		Dir:      dir,
+		Inputs:   req.Inputs,
+		Outputs:  req.Outputs,
+		HashFS:   hashFS,
+		JailDir:  jail.Dir(),
+	}
+	cmd.Args, err = jail.Args(ctx, c.cmdline...)
+	if err != nil {
+		return err
+	}
+	clog.Infof(ctx, "args=%q", cmd.Args)
+	cmd.InitOutputs()
+	fmt.Printf("run %q in jail %q\n", c.cmdline, jail.Dir())
+	err = localexec.Run(ctx, cmd)
+	if err != nil {
+		return err
+	}
+	result, _ := cmd.ActionResult()
+	outputEntries, err := hashFS.Entries(ctx, cmd.ExecRoot, cmd.AllOutputs())
+	if err != nil {
+		return err
+	}
+	// Set the outputs on the result
+	execute.ResultFromEntries(ctx, result, cmd.Dir, outputEntries)
+
+	buf, err := prototext.MarshalOptions{
+		Multiline: true,
+		Indent:    " ",
+	}.Marshal(result)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("%s\n", buf)
+	return nil
 }

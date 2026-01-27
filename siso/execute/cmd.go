@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"os"
 	"path/filepath"
 	"runtime"
 	"slices"
@@ -136,6 +137,10 @@ type Cmd struct {
 	// ReconcileOutputdirs are output directories where the cmd would
 	// modify files/dirs, invisible to build graph.
 	ReconcileOutputdirs []string
+
+	// JailDir is an absolute path of jail to capture outputs
+	// after sandbox execution.
+	JailDir string
 
 	// Deps specifies deps type of the cmd, "gcc", "msvc".
 	Deps string
@@ -1011,6 +1016,25 @@ func (c *Cmd) computeOutputEntries(entries []hashfs.UpdateEntry, updatedTime tim
 
 // RecordOutputsFromLocal records cmd's outputs from local disk in hashfs.
 func (c *Cmd) RecordOutputsFromLocal(ctx context.Context, now time.Time) error {
+	if c.JailDir != "" {
+		// TODO: reconcile output dirs?
+		outputs := slices.Clone(c.Outputs)
+		if c.Depfile != "" && !c.outfiles[c.Depfile] {
+			outputs = append(outputs, c.Depfile)
+		}
+		for _, output := range outputs {
+			outputInJail := filepath.Join(c.JailDir, c.ExecRoot, output)
+			outputAbs := filepath.Join(c.ExecRoot, output)
+			if log.V(1) {
+				clog.Infof(ctx, "capture output from jail %q -> %q", outputInJail, outputAbs)
+			}
+			err := os.Rename(outputInJail, outputAbs)
+			if err != nil {
+				return err
+			}
+		}
+
+	}
 	for _, dir := range c.ReconcileOutputdirs {
 		c.HashFS.ForgetMissingsInDir(ctx, c.ExecRoot, dir)
 	}
