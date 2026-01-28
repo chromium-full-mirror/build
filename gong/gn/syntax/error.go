@@ -9,6 +9,27 @@ import (
 	"fmt"
 )
 
+// OriginToken is an embeddable struct for errors to provide location data originating from a Token.
+type OriginToken struct {
+	Token Token
+}
+
+// Location implements PresentableSourceError.
+func (e OriginToken) Location() Location {
+	if e.Token == (Token{}) {
+		return Location{}
+	}
+	return e.Token.Range().Begin()
+}
+
+// Ranges implements PresentableSourceError.
+func (e OriginToken) Ranges() []LocationRange {
+	if e.Token == (Token{}) {
+		return nil
+	}
+	return []LocationRange{e.Token.Range()}
+}
+
 // IllegalStateError is returned when the tokenizer is in an illegal state.
 type IllegalStateError struct {
 	err

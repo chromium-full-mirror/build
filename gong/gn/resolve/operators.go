@@ -231,7 +231,7 @@ func prepareAssignOp(opNode *parse.BinaryOpNode, scope *Scope) (lvalue valueDest
 			// TODO(b/388723392): GN makes an error "Suspicious in-place modification" with a detailed
 			// help message if the value is found in a parent scope.
 			// But we don't support import() yet, so there's no point in doing this currently.
-			return nil, nil, left.Base.MakeError(syntax.ErrUndefinedIdentifier, "Undefined identifier.")
+			return nil, nil, UndefinedIdentifierError{OriginToken: syntax.OriginToken{Token: left.Base}}
 		}
 		if left.Subscript != nil {
 			// List access `a[b] = c`, where base = `a`.

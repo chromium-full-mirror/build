@@ -116,10 +116,10 @@ type scopeAccess struct {
 
 // ensureValue implements valueDestination.
 func (a scopeAccess) ensureValue() error {
-	if a.scope.Value(a.name.Value(), false) != nil {
-		return nil
+	if a.scope.Value(a.name.Value(), false) == nil {
+		return UndefinedIdentifierError{OriginToken: syntax.OriginToken{Token: a.name}}
 	}
-	return a.name.MakeError(syntax.ErrUndefinedIdentifier, "Undefined identifier.")
+	return nil
 }
 
 // assign performs the action of mutating a scope's value.

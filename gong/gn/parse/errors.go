@@ -49,7 +49,7 @@ func (e NodeError) HelpText() string { return e.helpText }
 
 // TokenError represents a parse error associated with a token.
 type TokenError struct {
-	token    syntax.Token
+	syntax.OriginToken
 	message  string
 	helpText string
 }
@@ -62,16 +62,6 @@ func (e TokenError) Message() string { return e.message }
 
 // HelpText implements PresentableError.
 func (e TokenError) HelpText() string { return e.helpText }
-
-// Location implements PresentableSourceError.
-func (e TokenError) Location() syntax.Location {
-	return e.token.Range().Begin()
-}
-
-// Ranges implements PresentableSourceError.
-func (e TokenError) Ranges() []syntax.LocationRange {
-	return []syntax.LocationRange{e.token.Range()}
-}
 
 // EOF represents an end of file error.
 type EOF struct {

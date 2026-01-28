@@ -117,7 +117,7 @@ statement or a target declaration.`)
 	case *parse.IdentifierNode:
 		value := s.Value(n.Value.Value(), true)
 		if value == nil {
-			return nil, n.Value.MakeError(syntax.ErrUndefinedIdentifier, "Undefined identifier.")
+			return nil, UndefinedIdentifierError{OriginToken: syntax.OriginToken{Token: n.Value}}
 		}
 		// TODO: EnsureNotReadingFromSameDeclareArgs
 		value.setOrigin(n)
@@ -225,7 +225,7 @@ statement or a target declaration.`)
 func executeSubscriptAccess(n *parse.AccessorNode, scope *Scope) (Value, error) {
 	baseValue := scope.Value(n.Base.Value(), false)
 	if baseValue == nil {
-		return nil, n.Base.MakeError(syntax.ErrUndefinedIdentifier, "Undefined identifier.")
+		return nil, UndefinedIdentifierError{OriginToken: syntax.OriginToken{Token: n.Base}}
 	}
 	switch baseValue.valueType() {
 	case ValueTypeList:

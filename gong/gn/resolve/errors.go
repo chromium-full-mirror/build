@@ -34,6 +34,24 @@ func (e ASTError) Message() string { return "Invalid AST" }
 // HelpText implements PresentableError.
 func (e ASTError) HelpText() string { return e.details }
 
+// UndefinedIdentifierError is returned when referencing an undefined identifier.
+type UndefinedIdentifierError struct {
+	syntax.OriginToken
+}
+
+// Error reports the undefined identifier.
+func (e UndefinedIdentifierError) Error() string {
+	return fmt.Sprintf("undefined identifier %q", e.Token.Value())
+}
+
+// Message returns the GN user-facing message.
+// The identifier name is not included because the UI will show the origin source snippet.
+func (e UndefinedIdentifierError) Message() string { return "Undefined identifier." }
+
+// HelpText implements PresentableError.
+// It returns an empty string because there is no detailed help text for this error.
+func (e UndefinedIdentifierError) HelpText() string { return "" }
+
 // UnimplementedNodeError is returned when attempting to resolve a node that we don't support yet.
 type UnimplementedNodeError struct {
 	parse.OriginNode

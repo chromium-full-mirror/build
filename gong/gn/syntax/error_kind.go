@@ -39,7 +39,5 @@ const (
 	// Deprecated: Implement ui.PresentableError instead.
 	ErrTypeMismatch ErrKind = "ErrTypeMismatch"
 	// Deprecated: Implement ui.PresentableError instead.
-	ErrUndefinedIdentifier ErrKind = "ErrUndefinedIdentifier"
-	// Deprecated: Implement ui.PresentableError instead.
 	ErrUselessAssignment ErrKind = "ErrUselessAssignment"
 )

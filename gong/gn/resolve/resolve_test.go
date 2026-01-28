@@ -6,6 +6,7 @@ package resolve
 
 import (
 	"bytes"
+	"errors"
 	"os"
 	"testing"
 
@@ -17,11 +18,14 @@ import (
 
 func TestExecuteNode(t *testing.T) {
 	for _, tc := range []struct {
-		name        string
-		scope       *Scope
-		node        parse.Node
-		want        Value
+		name  string
+		scope *Scope
+		node  parse.Node
+		want  Value
+		// TODO: this is a temporary hack to support errors being returned with
+		// the deprecated ErrKind type versus strongly-typed errors.
 		wantErrKind syntax.ErrKind
+		wantErr     any
 	}{
 		{
 			name: "access_undefined_base",
@@ -310,7 +314,7 @@ func TestExecuteNode(t *testing.T) {
 				Base:      syntax.MakeToken(syntax.TokenIdentifier, "a"),
 				Subscript: &parse.LiteralNode{Token: syntax.MakeToken(syntax.TokenInteger, "0")},
 			},
-			wantErrKind: syntax.ErrUndefinedIdentifier,
+			wantErr: &UndefinedIdentifierError{},
 		},
 		{
 			name:        "blockcomment_nothing",
@@ -537,7 +541,7 @@ func TestExecuteNode(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			got, err := ExecuteNode(tc.node, tc.scope)
-			wantErr := tc.wantErrKind != syntax.ErrNone
+			wantErr := tc.wantErr != nil || tc.wantErrKind != syntax.ErrNone
 			gotErr := err != nil
 
 			if gotErr != wantErr {
@@ -546,8 +550,15 @@ func TestExecuteNode(t *testing.T) {
 
 			// If error is expected, then check kind matches.
 			if gotErr {
-				if match, gotErrKind := syntax.AsErrKind(err, tc.wantErrKind); match == nil {
-					t.Fatalf("ExecuteNode(%T, %T): got err=%v (kind %s), wantErrKind=%s", tc.node, tc.scope, err, gotErrKind, tc.wantErrKind)
+				// TODO: temporary hack to support both wantErr and wantErrKind tests.
+				if tc.wantErr != nil {
+					if !errors.As(err, tc.wantErr) {
+						t.Errorf("ExecuteNode(%T, %T): got err=%v (%T), want %T", tc.node, tc.scope, err, err, tc.wantErr)
+					}
+				} else {
+					if match, gotErrKind := syntax.AsErrKind(err, tc.wantErrKind); match == nil {
+						t.Fatalf("ExecuteNode(%T, %T): got err=%v (kind %s), wantErrKind=%s", tc.node, tc.scope, err, gotErrKind, tc.wantErrKind)
+					}
 				}
 				return
 			}
