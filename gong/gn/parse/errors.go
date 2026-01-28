@@ -10,9 +10,30 @@ import (
 	"go.chromium.org/build/gong/gn/syntax"
 )
 
+// OriginNode is an embeddable struct for errors to provide location data originating from a Node.
+type OriginNode struct {
+	Node Node
+}
+
+// Location implements PresentableSourceError.
+func (e OriginNode) Location() syntax.Location {
+	if e.Node == nil {
+		return syntax.Location{}
+	}
+	return e.Node.LocationRange().Begin()
+}
+
+// Ranges implements PresentableSourceError.
+func (e OriginNode) Ranges() []syntax.LocationRange {
+	if e.Node == nil {
+		return nil
+	}
+	return []syntax.LocationRange{e.Node.LocationRange()}
+}
+
 // NodeError represents a parse error associated with a node.
 type NodeError struct {
-	node     Node
+	OriginNode
 	message  string
 	helpText string
 }
@@ -25,22 +46,6 @@ func (e NodeError) Message() string { return e.message }
 
 // HelpText implements PresentableError.
 func (e NodeError) HelpText() string { return e.helpText }
-
-// Location implements PresentableSourceError.
-func (e NodeError) Location() syntax.Location {
-	if e.node == nil {
-		return syntax.Location{}
-	}
-	return e.node.LocationRange().Begin()
-}
-
-// Ranges implements PresentableSourceError.
-func (e NodeError) Ranges() []syntax.LocationRange {
-	if e.node == nil {
-		return nil
-	}
-	return []syntax.LocationRange{e.node.LocationRange()}
-}
 
 // TokenError represents a parse error associated with a token.
 type TokenError struct {

@@ -25,7 +25,10 @@ func ExecuteNode(n parse.Node, s *Scope) (Value, error) {
 		if n.Member != nil {
 			return executeScopeAccess(n.Base, n.Member.Value.Value(), n.Member.LocationRange(), s)
 		}
-		return nil, parse.MakeErrFromNode(n, syntax.ErrInvalidAST, "Invalid AST", "Found an AccessorNode without a subscript or member defined.")
+		return nil, ASTError{
+			OriginNode: parse.OriginNode{Node: n},
+			details:    "Found an AccessorNode without a subscript or member defined.",
+		}
 
 	case *parse.BinaryOpNode:
 		return executeBinaryOperator(n, s)
@@ -167,7 +170,7 @@ statement or a target declaration.`)
 				value:  i,
 			}, nil
 		case syntax.TokenString:
-			str, err := expandStringLiteral(n.Token)
+			str, err := expandStringLiteral(n.Token, n)
 			if err != nil {
 				return nil, err
 			}
@@ -211,7 +214,10 @@ statement or a target declaration.`)
 		return nil, nil
 	}
 
-	return nil, parse.MakeErrFromNode(n, syntax.ErrNotImplemented, fmt.Sprintf("Unimplemented node found %T(%v)", n, n), "")
+	return nil, ASTError{
+		OriginNode: parse.OriginNode{Node: n},
+		details:    "Unknown node type.",
+	}
 }
 
 // executeSubscriptAccess executes a subscript e.g. `a[b]` access for the parse.AccessorNode in the given scope.

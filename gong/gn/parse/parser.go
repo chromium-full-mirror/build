@@ -190,8 +190,8 @@ func (p *parser) parseCondition() (Node, error) {
 	// https://gn.googlesource.com/gn/+/main/docs/reference.md#Grammar
 	if p.isAssignment(conditionNode.Condition) {
 		return nil, NodeError{
-			node:    conditionNode.Condition,
-			message: "Assignment not allowed in 'if'",
+			OriginNode: OriginNode{conditionNode.Condition},
+			message:    "Assignment not allowed in 'if'",
 		}
 	}
 
@@ -331,8 +331,8 @@ func (p *parser) parseInfix(left Node, token syntax.Token) (Node, error) {
 		_, isAccessor := left.(*AccessorNode)
 		if !isIdentifier && !isAccessor {
 			return nil, NodeError{
-				node:    left,
-				message: "The left-hand side of an assignment must be an identifier, scope access, or array access.",
+				OriginNode: OriginNode{left},
+				message:    "The left-hand side of an assignment must be an identifier, scope access, or array access.",
 			}
 		}
 		value, err := p.parseExpression(precedenceAssignment)
@@ -354,9 +354,9 @@ func (p *parser) parseInfix(left Node, token syntax.Token) (Node, error) {
 		leftIdentifier, isIdentifier := left.(*IdentifierNode)
 		if !isIdentifier {
 			return nil, NodeError{
-				node:     left,
-				message:  `May only use "." for identifiers.`,
-				helpText: "The thing on the left hand side of the dot must be an identifier\nand not an expression. If you need this, you'll have to assign the\nvalue to a temporary first. Sorry.",
+				OriginNode: OriginNode{left},
+				message:    `May only use "." for identifiers.`,
+				helpText:   "The thing on the left hand side of the dot must be an identifier\nand not an expression. If you need this, you'll have to assign the\nvalue to a temporary first. Sorry.",
 			}
 		}
 		right, err := p.parseExpression(precedenceDot)
@@ -379,9 +379,9 @@ func (p *parser) parseInfix(left Node, token syntax.Token) (Node, error) {
 		leftIdentifier, isIdentifier := left.(*IdentifierNode)
 		if !isIdentifier {
 			return nil, NodeError{
-				node:     left,
-				message:  "May only subscript identifiers.",
-				helpText: "The thing on the left hand side of the [] must be an identifier\nand not an expression. If you need this, you'll have to assign the\nvalue to a temporary before subscripting. Sorry.",
+				OriginNode: OriginNode{left},
+				message:    "May only subscript identifiers.",
+				helpText:   "The thing on the left hand side of the [] must be an identifier\nand not an expression. If you need this, you'll have to assign the\nvalue to a temporary before subscripting. Sorry.",
 			}
 		}
 		value, err := p.parseExpression(precedenceNone)

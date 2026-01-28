@@ -268,13 +268,17 @@ func prepareAssignOp(opNode *parse.BinaryOpNode, scope *Scope) (lvalue valueDest
 			// Finally we have concrete scope `a` and identifier `b`.
 			lvalue = scopeValue.scope.access(left.Member.Value)
 		} else {
-			return nil, nil, parse.MakeErrFromNode(opNode, syntax.ErrInvalidAST,
-				"Invalid AST", "Got an AccessorNode without a member or subscript.")
+			return nil, nil, ASTError{
+				OriginNode: parse.OriginNode{Node: opNode},
+				details:    "Got an AccessorNode without a member or subscript.",
+			}
 		}
 
 	default:
-		return nil, nil, parse.MakeErrFromNode(opNode, syntax.ErrTypeMismatch,
-			"Invalid AST", "Got a BinaryOpNode for assign operation where lvalue was not an ident, scope, list.")
+		return nil, nil, ASTError{
+			OriginNode: parse.OriginNode{Node: opNode},
+			details:    "Got a BinaryOpNode for assign operation where lvalue was not an ident, scope, list.",
+		}
 	}
 	// Then prepare rvalue.
 	rvalue, err = ExecuteNode(opNode.Right, scope)
@@ -374,8 +378,10 @@ func executeBinaryOperator(opNode *parse.BinaryOpNode, scope *Scope) (Value, err
 		return nil, executePlusEquals(opNode, scope)
 
 	case syntax.TokenMinusEquals:
-		return nil, parse.MakeErrFromNode(opNode, syntax.ErrNotImplemented,
-			"Not implemented", "-= isn't implemented yet.")
+		return nil, UnimplementedNodeError{
+			OriginNode: parse.OriginNode{Node: opNode},
+			details:    "-= isn't implemented yet.",
+		}
 
 	// ||, &&.
 	case syntax.TokenBooleanOr:
@@ -397,8 +403,10 @@ func executeBinaryOperator(opNode *parse.BinaryOpNode, scope *Scope) (Value, err
 	switch opNode.Op.TokenType() {
 	// +, -.
 	case syntax.TokenMinus:
-		return nil, parse.MakeErrFromNode(opNode, syntax.ErrNotImplemented,
-			"Not implemented", "- isn't implemented yet.")
+		return nil, UnimplementedNodeError{
+			OriginNode: parse.OriginNode{Node: opNode},
+			details:    "- isn't implemented yet.",
+		}
 	case syntax.TokenPlus:
 		return executePlus(opNode, leftValue, rightValue, true)
 
@@ -441,6 +449,8 @@ func executeBinaryOperator(opNode *parse.BinaryOpNode, scope *Scope) (Value, err
 		}
 	}
 
-	return nil, parse.MakeErrFromNode(opNode, syntax.ErrInvalidAST,
-		"Invalid AST", fmt.Sprintf("Unrecognized binary operation %q", opNode.Op.Value()))
+	return nil, ASTError{
+		OriginNode: parse.OriginNode{Node: opNode},
+		details:    fmt.Sprintf("Unrecognized binary operation %q", opNode.Op.Value()),
+	}
 }

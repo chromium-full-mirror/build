@@ -11,6 +11,46 @@ import (
 	"go.chromium.org/build/gong/gn/syntax"
 )
 
+// ASTError is returned when the resolver encounters a malformed AST.
+// This is an internal error that should not be thrown by consumer packages.
+//
+// C++ GN uses DCHECK to fail when it encounters a malformed AST, as it is an internal error
+// that should not be encountered if the parser is working correctly.
+//
+// We prefer to return a concrete type instead of panicking.
+type ASTError struct {
+	parse.OriginNode
+	details string
+}
+
+// Error implements PresentableError.
+func (e ASTError) Error() string {
+	return fmt.Sprintf("got invalid AST: %s", e.details)
+}
+
+// Message implements PresentableError.
+func (e ASTError) Message() string { return "Invalid AST" }
+
+// HelpText implements PresentableError.
+func (e ASTError) HelpText() string { return e.details }
+
+// UnimplementedNodeError is returned when attempting to resolve a node that we don't support yet.
+type UnimplementedNodeError struct {
+	parse.OriginNode
+	details string
+}
+
+// Error implements PresentableError.
+func (e UnimplementedNodeError) Error() string {
+	return fmt.Sprintf("unimplemented node %T(%v)", e.OriginNode, e.OriginNode)
+}
+
+// Message implements PresentableError.
+func (e UnimplementedNodeError) Message() string { return e.Error() }
+
+// HelpText implements PresentableError.
+func (e UnimplementedNodeError) HelpText() string { return e.details }
+
 // ArgumentCountError is returned when a function call has the wrong number of arguments.
 //
 // TODO: Maybe we can standardize GN argument count error messages by taking the expected and actual counts here?

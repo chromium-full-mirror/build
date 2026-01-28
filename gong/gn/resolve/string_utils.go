@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"go.chromium.org/build/gong/gn/parse"
 	"go.chromium.org/build/gong/gn/syntax"
 )
 
@@ -33,7 +34,7 @@ func appendHexByte(token syntax.Token, input string, i int, output *strings.Buil
 	return i + 3, nil
 }
 
-func expandStringLiteral(token syntax.Token) (Value, error) {
+func expandStringLiteral(token syntax.Token, originNode parse.Node) (Value, error) {
 	if token.TokenType() != syntax.TokenString {
 		return nil, token.MakeError(syntax.ErrInvalidOperation, "This is not a string")
 	}
@@ -41,10 +42,16 @@ func expandStringLiteral(token syntax.Token) (Value, error) {
 	// The parser should have kept the surrounding quotes.
 	str := token.Value()
 	if len(str) < 2 {
-		return nil, token.MakeErrorWithHelp(syntax.ErrInvalidAST, "Invalid AST", "Found a LiteralNode with an unquoted string")
+		return nil, ASTError{
+			OriginNode: parse.OriginNode{Node: originNode},
+			details:    "Received a LiteralNode with an unquoted string",
+		}
 	}
 	if str[0] != '"' || str[len(str)-1] != '"' {
-		return nil, token.MakeErrorWithHelp(syntax.ErrInvalidAST, "Invalid AST", "Found an incorrectly-quoted LiteralNode")
+		return nil, ASTError{
+			OriginNode: parse.OriginNode{Node: originNode},
+			details:    "Received an incorrectly-quoted LiteralNode",
+		}
 	}
 
 	// Because the token includes the surrounding quotes, strip those off.
@@ -69,7 +76,7 @@ func expandStringLiteral(token syntax.Token) (Value, error) {
 		case '$':
 			i++
 			if i == finalSize {
-				return nil, token.MakeErrorWithHelp(syntax.ErrInvalidAST, "$ at end of string.", "I was expecting an identifier, 0xFF, or {...} after the $.")
+				return nil, token.MakeErrorWithHelp(syntax.ErrInvalidFormat, "$ at end of string.", "I was expecting an identifier, 0xFF, or {...} after the $.")
 			}
 			if rawInput[i] == '0' {
 				var err error

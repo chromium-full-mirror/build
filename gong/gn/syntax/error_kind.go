@@ -29,8 +29,6 @@ const (
 	// Deprecated: Implement ui.PresentableError instead.
 	ErrFileLoadFail ErrKind = "ErrFileLoadFail"
 	// Deprecated: Implement ui.PresentableError instead.
-	ErrInvalidAST ErrKind = "ErrInvalidAST"
-	// Deprecated: Implement ui.PresentableError instead.
 	ErrInvalidFormat ErrKind = "ErrInvalidFormat"
 	// Deprecated: Implement ui.PresentableError instead.
 	ErrInvalidOperation ErrKind = "ErrInvalidOperation"

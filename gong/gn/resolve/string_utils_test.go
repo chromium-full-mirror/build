@@ -4,6 +4,7 @@
 package resolve
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -13,10 +14,13 @@ import (
 
 func TestExpandStringLiteral(t *testing.T) {
 	for _, tc := range []struct {
-		name        string
-		token       syntax.Token
-		want        Value
+		name  string
+		token syntax.Token
+		want  Value
+		// TODO: this is a temporary hack to support errors being returned with
+		// the deprecated ErrKind type versus strongly-typed errors.
 		wantErrKind syntax.ErrKind
+		wantErr     any
 	}{
 		{
 			name:  "simple",
@@ -49,19 +53,19 @@ func TestExpandStringLiteral(t *testing.T) {
 			wantErrKind: syntax.ErrInvalidOperation,
 		},
 		{
-			name:        "invalid_short_string",
-			token:       syntax.MakeToken(syntax.TokenString, `"`),
-			wantErrKind: syntax.ErrInvalidAST,
+			name:    "invalid_short_string",
+			token:   syntax.MakeToken(syntax.TokenString, `"`),
+			wantErr: &ASTError{},
 		},
 		{
-			name:        "invalid_wrong_quote",
-			token:       syntax.MakeToken(syntax.TokenString, `'foo'`),
-			wantErrKind: syntax.ErrInvalidAST,
+			name:    "invalid_wrong_quote",
+			token:   syntax.MakeToken(syntax.TokenString, `'foo'`),
+			wantErr: &ASTError{},
 		},
 		{
 			name:        "trailing_dollar",
 			token:       syntax.MakeToken(syntax.TokenString, `"foo$"`),
-			wantErrKind: syntax.ErrInvalidAST,
+			wantErrKind: syntax.ErrInvalidFormat,
 		},
 		{
 			name:  "hex_literal",
@@ -115,8 +119,8 @@ func TestExpandStringLiteral(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := expandStringLiteral(tc.token)
-			wantErr := tc.wantErrKind != ""
+			got, err := expandStringLiteral(tc.token, nil)
+			wantErr := tc.wantErr != nil || tc.wantErrKind != ""
 			gotErr := err != nil
 
 			if gotErr != wantErr {
@@ -124,8 +128,15 @@ func TestExpandStringLiteral(t *testing.T) {
 			}
 
 			if gotErr {
-				if match, gotErrKind := syntax.AsErrKind(err, tc.wantErrKind); match == nil {
-					t.Fatalf("expandStringLiteral(%v): got err=%v (kind %s), wantErrKind=%s", tc.token, err, gotErrKind, tc.wantErrKind)
+				// TODO: temporary hack to support both wantErr and wantErrKind tests.
+				if tc.wantErr != nil {
+					if !errors.As(err, tc.wantErr) {
+						t.Errorf("expandStringLiteral(%v) got err=%v (%T), want %T", tc.token, err, err, tc.wantErr)
+					}
+				} else {
+					if match, gotErrKind := syntax.AsErrKind(err, tc.wantErrKind); match == nil {
+						t.Errorf("expandStringLiteral(%v): got err=%v (kind %s), wantErrKind=%s", tc.token, err, gotErrKind, tc.wantErrKind)
+					}
 				}
 				return
 			}
