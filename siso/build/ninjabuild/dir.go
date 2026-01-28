@@ -68,7 +68,7 @@ func InitDir(ctx context.Context, f DirFlag) (startDir, execRoot, dir string, _ 
 		cwd = realCWD
 	}
 	if !filepath.IsAbs(f.ConfigRepoDir) {
-		execRoot, err = detectExecRoot(execRoot, f.ConfigRepoDir)
+		execRoot, err = detectExecRoot(cwd, f.ConfigRepoDir)
 		if err != nil {
 			return "", "", "", err
 		}
