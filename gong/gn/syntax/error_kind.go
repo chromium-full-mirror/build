@@ -20,7 +20,6 @@ const (
 	ErrNotImplemented ErrKind = "ErrNotImplemented"
 	// go/keep-sorted start
 	ErrArgumentCount       ErrKind = "ErrArgumentCount"
-	ErrEOF                 ErrKind = "ErrEOF"
 	ErrFileLoadFail        ErrKind = "ErrFileLoadFail"
 	ErrInvalidAST          ErrKind = "ErrInvalidAST"
 	ErrInvalidFormat       ErrKind = "ErrInvalidFormat"
@@ -29,7 +28,6 @@ const (
 	ErrSubscriptOutOfRange ErrKind = "ErrSubscriptOutOfRange"
 	ErrTypeMismatch        ErrKind = "ErrTypeMismatch"
 	ErrUndefinedIdentifier ErrKind = "ErrUndefinedIdentifier"
-	ErrUnexpectedToken     ErrKind = "ErrUnexpectedToken"
 	ErrUselessAssignment   ErrKind = "ErrUselessAssignment"
 	// go/keep-sorted end
 )

@@ -6,6 +6,7 @@ package parse
 
 import (
 	"bytes"
+	"errors"
 	"strings"
 	"testing"
 
@@ -13,6 +14,7 @@ import (
 	"github.com/google/go-cmp/cmp/cmpopts"
 
 	"go.chromium.org/build/gong/gn/syntax"
+	"go.chromium.org/build/gong/ui"
 )
 
 type mockInput struct {
@@ -353,102 +355,120 @@ func TestParse_Invalid(t *testing.T) {
 		input  string
 		line   int
 		column int
+		// TODO: also compare error token/node if available?
+		wantErr any
 	}{
 		{
-			name:   "plus_after_num",
-			input:  "123+",
-			line:   1,
-			column: 4,
+			name:    "plus_after_num",
+			input:   "123+",
+			line:    1,
+			column:  4,
+			wantErr: &EOF{},
 		},
 		{
-			name:   "minus_after_num",
-			input:  "123-",
-			line:   1,
-			column: 4,
+			name:    "minus_after_num",
+			input:   "123-",
+			line:    1,
+			column:  4,
+			wantErr: &EOF{},
 		},
 		{
-			name:   "hanging_eq",
-			input:  "123==",
-			line:   1,
-			column: 4,
+			name:    "hanging_eq",
+			input:   "123==",
+			line:    1,
+			column:  4,
+			wantErr: &EOF{},
 		},
 		{
-			name:   "hanging_le",
-			input:  "123<=",
-			line:   1,
-			column: 4,
+			name:    "hanging_le",
+			input:   "123<=",
+			line:    1,
+			column:  4,
+			wantErr: &EOF{},
 		},
 		{
-			name:   "hanging_ge",
-			input:  "123>=",
-			line:   1,
-			column: 4,
+			name:    "hanging_ge",
+			input:   "123>=",
+			line:    1,
+			column:  4,
+			wantErr: &EOF{},
 		},
 		{
-			name:   "hanging_and",
-			input:  "123&&",
-			line:   1,
-			column: 4,
+			name:    "hanging_and",
+			input:   "123&&",
+			line:    1,
+			column:  4,
+			wantErr: &EOF{},
 		},
 		{
-			name:   "hanging_or",
-			input:  "123||",
-			line:   1,
-			column: 4,
+			name:    "hanging_or",
+			input:   "123||",
+			line:    1,
+			column:  4,
+			wantErr: &EOF{},
 		},
 		{
-			name:   "hanging_if",
-			input:  "if",
-			line:   1,
-			column: 1,
+			name:    "hanging_if",
+			input:   "if",
+			line:    1,
+			column:  1,
+			wantErr: &TokenError{},
 		},
 		{
-			name:   "hanging_bracket",
-			input:  "[test",
-			line:   1,
-			column: 1,
+			name:    "hanging_bracket",
+			input:   "[test",
+			line:    1,
+			column:  1,
+			wantErr: &TokenError{},
 		},
 		{
-			name:   "member_accessor_invalid_lhs",
-			input:  "foo().1",
-			line:   1,
-			column: 1,
+			name:    "member_accessor_invalid_lhs",
+			input:   "foo().1",
+			line:    1,
+			column:  1,
+			wantErr: &NodeError{},
 		},
 		{
-			name:   "nested_member_accessor",
-			input:  "a.b.c",
-			line:   1,
-			column: 2,
+			name:    "nested_member_accessor",
+			input:   "a.b.c",
+			line:    1,
+			column:  2,
+			wantErr: &TokenError{},
 		},
 		{
-			name:   "numeric_member_accessor",
-			input:  "a.42",
-			line:   1,
-			column: 2,
+			name:    "numeric_member_accessor",
+			input:   "a.42",
+			line:    1,
+			column:  2,
+			wantErr: &TokenError{},
 		},
 		{
-			name:   "func_member_accessor",
-			input:  "a.cookies()",
-			line:   1,
-			column: 2,
+			name:    "func_member_accessor",
+			input:   "a.cookies()",
+			line:    1,
+			column:  2,
+			wantErr: &TokenError{},
 		},
 		{
-			name:   "assign_literal",
-			input:  "123 = a",
-			line:   1,
-			column: 1,
+			name:    "assign_literal",
+			input:   "123 = a",
+			line:    1,
+			column:  1,
+			wantErr: &NodeError{},
 		},
 		{
-			name:   "assign_func",
-			input:  "a() = b",
-			line:   1,
-			column: 1,
+			name:    "assign_func",
+			input:   "a() = b",
+			line:    1,
+			column:  1,
+			wantErr: &NodeError{},
 		},
 		{
-			name:   "condition_illegal_assign",
-			input:  "if (a=2) {}",
-			line:   1,
-			column: 5,
+			name:    "condition_illegal_assign",
+			input:   "if (a=2) {}",
+			line:    1,
+			column:  5,
+			wantErr: &NodeError{},
 		},
 		{
 			name: "condition_missing_braces_if",
@@ -457,8 +477,9 @@ func TestParse_Invalid(t *testing.T) {
 else {
   foreach(bar, []) {}
 }`,
-			line:   2,
-			column: 3,
+			line:    2,
+			column:  3,
+			wantErr: &TokenError{},
 		},
 		{
 			name: "condition_missing_braces_else",
@@ -467,8 +488,9 @@ else {
 } else
   foreach(bar, []) {}
 `,
-			line:   4,
-			column: 3,
+			line:    4,
+			column:  3,
+			wantErr: &TokenError{},
 		},
 		{
 			name: "condition_missing_braces_else_if",
@@ -477,8 +499,9 @@ else {
 } else if (true)
   foreach(bar, []) {}
 `,
-			line:   4,
-			column: 3,
+			line:    4,
+			column:  3,
+			wantErr: &TokenError{},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -492,16 +515,17 @@ else {
 
 			_, err = Parse(tokens)
 
-			wantErrKind := syntax.ErrUnknown
-			se, gotErrKind := syntax.AsErrKind(err, wantErrKind)
-			if se == nil {
-				t.Errorf("Parse(_) = %v (%v), want %v", err, gotErrKind, wantErrKind)
-			} else {
-				if se.Location().LineNumber() != tc.line || se.Location().ColumnNumber() != tc.column {
-					t.Errorf("syntax.Error at line = %d, column = %d; want line = %d, column = %d",
-						se.Location().LineNumber(), se.Location().ColumnNumber(),
-						tc.line, tc.column)
-				}
+			if !errors.As(err, tc.wantErr) {
+				t.Errorf("Parse(_) = %v (%T), want %T", err, err, tc.wantErr)
+			}
+			var sourceError ui.PresentableSourceError
+			if !errors.As(err, &sourceError) {
+				t.Errorf("Parse(_) = %v (%T), want ui.PresentableSourceError", err, err)
+			}
+			if sourceError.Location().LineNumber() != tc.line || sourceError.Location().ColumnNumber() != tc.column {
+				t.Errorf("source error at line = %d, column = %d; want line = %d, column = %d",
+					sourceError.Location().LineNumber(), sourceError.Location().ColumnNumber(),
+					tc.line, tc.column)
 			}
 		})
 	}
