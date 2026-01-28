@@ -91,6 +91,7 @@ type StepMetric struct {
 	NoExec        bool `json:"no_exec,omitempty"`         // whether the action didn't run any command (i.e. just use handler).
 	IsRemote      bool `json:"is_remote,omitempty"`       // whether the action uses remote result.
 	IsLocal       bool `json:"is_local,omitempty"`        // whether the action uses local result.
+	Sandbox       bool `json:"sandbox,omitempty"`         // whether the action uses sandbox.
 	FastLocal     bool `json:"fast_local,omitempty"`      // whether the action chooses local for fast build.
 	StartLocal    bool `json:"start_local,omitempty"`     // whether the action chooses local for start in incremental build.
 	CacheWrite    bool `json:"cache_write,omitempty"`     // whether the action used cache write feature from local results.

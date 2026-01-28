@@ -23,7 +23,7 @@ import (
 	"go.chromium.org/build/siso/reapi/digest"
 )
 
-func (b *Builder) execLocal(ctx context.Context, step *Step) error {
+func (b *Builder) execLocal(ctx context.Context, step *Step) (retErr error) {
 	ctx, span := trace.NewSpan(ctx, "exec-local")
 	defer span.Close(nil)
 	clog.Infof(ctx, "exec local %s", step.cmd.Desc)
@@ -36,6 +36,7 @@ func (b *Builder) execLocal(ctx context.Context, step *Step) error {
 	step.cmd.RecordPreOutputs(ctx)
 
 	stateMessage := "local exec"
+	var stateMessagePrefix string
 	sema := b.localSema
 	pool := step.def.Binding("pool")
 	step.cmd.Console = pool == "console"
@@ -46,31 +47,35 @@ func (b *Builder) execLocal(ctx context.Context, step *Step) error {
 	phase := stepLocalRun
 	var executor execute.Executor = b.localExec
 	logLocalExec := b.logLocalExec
-	switch sandbox := step.def.Binding("sandbox"); sandbox {
-	// TODO(crbug.com/420752996): add sandbox supports
-	case "":
-		enableTrace := experiments.Enabled("file-access-trace", "enable file-access-trace")
-		if enableTrace {
-			// check impure explicitly set in config,
-			// rather than step.cmd.Pure.
-			// step.cmd.Pure may be false when config is not set
-			// for the step too, but we want to disable
-			// file-access-trace only for the step with impure=true.
-			// http://b/261655377 errorprone_plugin_tests: too slow under strace?
-			impure := step.def.Binding("impure") == "true"
-			if impure {
-				clog.Warningf(ctx, "disable file-access-trace by impure")
-			} else {
-				traceExecutor, err := newFileTraceExecutor(ctx, b, executor)
-				if err != nil {
-					return fmt.Errorf("unable to perform file-access-trace: %w", err)
-				}
-				executor = traceExecutor
-				logLocalExec = traceExecutor.logLocalExec
-			}
-		} else if log.V(1) {
-			clog.Warningf(ctx, "unable to use file-access-trace")
+
+	switch sandbox, sandboxOption := selectSandbox(ctx, step); sandbox {
+	case "nsjail":
+		stateMessagePrefix = "nsjail "
+		nsjailExecutor, err := newNSJailExecutor(ctx, b, executor, sandboxOption)
+		if err != nil {
+			return fmt.Errorf("unable to perform nsjail: %w", err)
 		}
+		executor = nsjailExecutor
+		logLocalExec = nsjailExecutor.logLocalExec
+		defer func() {
+			if retErr != nil {
+				clog.Warningf(ctx, "failed to run nsjail: %v", retErr)
+				return
+			}
+			err := nsjailExecutor.Close()
+			if err != nil {
+				retErr = fmt.Errorf("failed to cleanup nsjail: %w", err)
+			}
+		}()
+		step.metrics.Sandbox = true
+
+	case "file-access-trace":
+		traceExecutor, err := newFileTraceExecutor(ctx, b, executor)
+		if err != nil {
+			return fmt.Errorf("unable to perform file-access-trace: %w", err)
+		}
+		executor = traceExecutor
+		logLocalExec = traceExecutor.logLocalExec
 	default:
 		clog.Warningf(ctx, "unsupported sandbox %q", sandbox)
 	}
@@ -91,7 +96,7 @@ func (b *Builder) execLocal(ctx context.Context, step *Step) error {
 	var dur time.Duration
 	step.setPhase(phase.wait())
 	err = sema.Do(ctx, step.weight, func(ctx context.Context) error {
-		clog.Infof(ctx, "step state: %s", stateMessage)
+		clog.Infof(ctx, "step state: %s", stateMessagePrefix+stateMessage)
 		step.setPhase(phase)
 		if step.cmd.Console {
 			b.progress.startConsoleCmd(step.cmd)
@@ -138,6 +143,32 @@ func (b *Builder) execLocal(ctx context.Context, step *Step) error {
 	return b.checkLocalOutputs(ctx, step)
 	// no need to call b.outputs, as all outputs are already on disk
 	// so no need to flush.
+}
+
+func selectSandbox(ctx context.Context, step *Step) (string, map[string]string) {
+	sandbox := step.def.Sandbox()
+	if sandbox["backend"] != "" {
+		return sandbox["backend"], sandbox
+	}
+	enableTrace := experiments.Enabled("file-access-trace", "enable file access-trace")
+	if !enableTrace {
+		if log.V(1) {
+			clog.Warningf(ctx, "unable to use file-access-trace")
+		}
+		return "", nil
+	}
+	// check impure explicitly set in config,
+	// rather than step.cmd.Pure.
+	// step.cmd.Pure may be false when config is not set
+	// for the step too, but we want to disable
+	// file-access-trace only for the step with impure=true.
+	// http://b/261655377 errorprone_plugin_tests: too slow under strace?
+	impure := step.def.Binding("impure") == "true"
+	if impure {
+		clog.Warningf(ctx, "disable file-access-trace by impure")
+		return "", nil
+	}
+	return "file-access-trace", nil
 }
 
 // Uploads and sets local execution result in RE if builder is trusted

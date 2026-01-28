@@ -108,6 +108,9 @@ type StepDef interface {
 	// Platform returns platform properties for remote execution.
 	Platform() map[string]string
 
+	// Sandbox returns properties for action sandboxing.
+	Sandbox() map[string]string
+
 	// RecordDeps records deps.
 	RecordDeps(context.Context, string, time.Time, []string) (bool, error)
 

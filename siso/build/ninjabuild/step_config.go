@@ -330,6 +330,9 @@ type StepConfig struct {
 	// Executables are files that need to have executable bit on Linux worker.
 	// This field is used to upload Linux executables from Windows host.
 	Executables []string `json:"executables,omitempty"`
+
+	// Sandbox is sandbox config
+	Sandbox map[string]string `json:"sandbox,omitempty"`
 }
 
 // Init initializes StepConfig.

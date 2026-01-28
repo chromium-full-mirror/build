@@ -102,7 +102,7 @@ func New(ctx context.Context, fsys fs.FS, req Request) (_ *NSJail, err error) {
 	jail.config.KeepEnv = proto.Bool(true)
 
 	if req.PublicDirs == nil {
-		req.PublicDirs = []string{"/bin", "/lib", "/lib64", "/usr"}
+		req.PublicDirs = []string{"/bin", "/lib", "/lib64", "/usr", "/dev"}
 	}
 	for _, dir := range req.PublicDirs {
 		jail.config.Mount = append(jail.config.Mount, &pb.MountPt{
@@ -112,6 +112,7 @@ func New(ctx context.Context, fsys fs.FS, req Request) (_ *NSJail, err error) {
 			IsDir:  proto.Bool(true),
 		})
 	}
+	jail.config.MountProc = proto.Bool(true)
 	// Add a temp directory. Using a directory in the working directory
 	// instead of a tmpfs mount so that we don't have to worry about how
 	// big of a tmpfs to make.
@@ -176,6 +177,9 @@ func New(ctx context.Context, fsys fs.FS, req Request) (_ *NSJail, err error) {
 		}
 		switch {
 		case fi.Mode()&fs.ModeType == fs.ModeSymlink:
+			// need to use symlink as symlink.
+			// android uses dangling symlink, and
+			// bind such dangling symlink will fail.
 			target, err := fs.ReadLink(fsys, input)
 			if err != nil {
 				return nil, err

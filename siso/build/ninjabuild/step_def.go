@@ -324,6 +324,7 @@ func (s *StepDef) Binding(name string) string {
 	case "pool":
 		pool := s.edge.Pool()
 		return pool.Name()
+
 	case "debug":
 		if s.rule.Debug {
 			return "true"
@@ -1185,6 +1186,24 @@ func (s *StepDef) Pure() bool {
 // Platform returns platform properties for remote execution.
 func (s *StepDef) Platform() map[string]string {
 	return s.rule.Platform
+}
+
+// Sandbox returns properties for action sandboxing.
+func (s *StepDef) Sandbox() map[string]string {
+	// disable sandbox for impure step, inputs/outputs are not fully specified.
+	if s.rule.Impure {
+		return nil
+	}
+	// disable sandbox for console step for stdout/stderr handling.
+	// TODO: support sandbox for pool=console
+	if s.edge.Pool().Name() == "console" {
+		return nil
+	}
+	// disable sandbox if "sandbox_disabled" binding is explicitly set.
+	if s.edge.Binding("sandbox_disabled") == "true" {
+		return nil
+	}
+	return s.globals.stepConfig.Sandbox
 }
 
 // RecordDeps records deps of the step.

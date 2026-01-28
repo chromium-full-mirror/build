@@ -42,6 +42,8 @@ func newFileTraceExecutor(ctx context.Context, b *Builder, executor execute.Exec
 
 func (f *fileTraceExecutor) Run(ctx context.Context, cmd *execute.Cmd) error {
 	st := straceutil.New(ctx, cmd.ID, cmd.Args, cmd.Dir)
+	cmd.StdoutWriter()
+	cmd.StderrWriter()
 	newCmd := &execute.Cmd{}
 	*newCmd = *cmd
 	newCmd.Args = st.Args(ctx)
@@ -49,6 +51,7 @@ func (f *fileTraceExecutor) Run(ctx context.Context, cmd *execute.Cmd) error {
 	if err != nil {
 		return err
 	}
+	cmd.SetActionResult(newCmd.ActionResult())
 	f.inputs, f.outputs, err = st.PostProcess(ctx)
 	return err
 }

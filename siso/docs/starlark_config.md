@@ -142,6 +142,12 @@ to register handlers and step configs.
      * `platforms`
        * key: platform reference name. "default" is used by default.
        * value: a dict of [platform properties](https://developers.google.com/remote-build-execution/docs/remote-execution-properties)
+     * `sandbox`
+       * a dict for sandbox. key "backend" specifies sandbox backend.
+       * `backend` = `nsjail`
+         * `nsjail_path`: a path to nsjail binary.
+         * `nsjail_workdir`: a top directory for nsjail work dir (on same device with `nsjail_outdir`)
+         * `nsjail_outdir`: a top directory of output directory (to make it writable)
      * `input_deps`
        * key: input path, or label (label contains ':').
          If the key is a path, it will be included in the expanded inputs.
