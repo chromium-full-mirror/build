@@ -10,6 +10,7 @@ import (
 
 	"go.chromium.org/build/gong/gn/parse"
 	"go.chromium.org/build/gong/gn/syntax"
+	"go.chromium.org/build/gong/ui"
 )
 
 // FunctionInfo represents common metadata for a function.
@@ -41,9 +42,11 @@ type SimpleFunctionInfo interface {
 // and standardize the error message if this isn't the case.
 func EnsureSingleStringArg(function *parse.FunctionCallNode, args []Value) (*StringValue, error) {
 	if len(args) != 1 {
-		return nil, function.Function.MakeErrorWithHelp(syntax.ErrArgumentCount,
-			"Incorrect arguments.",
-			"This function requires a single string argument.")
+		return nil, ArgumentCountError{
+			OriginFunction: OriginFunction{Call: function},
+			Msg:            "Incorrect arguments.",
+			Help:           "This function requires a single string argument.",
+		}
 	}
 	return AsValue[*StringValue](args[0])
 }
@@ -64,9 +67,11 @@ func (AssertFunction) Help() string {
 func (AssertFunction) IsTarget() bool { return false }
 func (AssertFunction) Run(scope *Scope, call *parse.FunctionCallNode, args []Value) (Value, error) {
 	if len(args) < 1 || len(args) > 2 {
-		return nil, call.Function.MakeErrorWithHelp(syntax.ErrArgumentCount,
-			"Wrong number of arguments for assert.",
-			"assert() takes one or two arguments, were you expecting something else?")
+		return nil, ArgumentCountError{
+			OriginFunction: OriginFunction{call},
+			Msg:            "Wrong number of arguments for assert.",
+			Help:           "assert() takes one or two arguments, were you expecting something else?",
+		}
 	}
 
 	assertValue, err := AsValue[*BooleanValue](args[0])
@@ -84,9 +89,10 @@ func (AssertFunction) Run(scope *Scope, call *parse.FunctionCallNode, args []Val
 
 	if !assertValue.value {
 		// TODO: use args[0].origin to add extra hint "this is where it was set"
-		return nil, call.Function.MakeErrorWithHelp(syntax.ErrInvalidOperation,
-			"Assertion failed.",
-			assertMessage)
+		return nil, AssertError{
+			OriginFunction: OriginFunction{Call: call},
+			Details:        assertMessage,
+		}
 	}
 	return nil, nil
 }
@@ -121,13 +127,14 @@ Examples
 func (assertFailureFunction) IsTarget() bool { return false }
 func (assertFailureFunction) Run(scope *Scope, call *parse.FunctionCallNode, args []Value, block *parse.BlockNode) (Value, error) {
 	if len(args) < 1 || len(args) > 2 {
-		return nil, call.Function.MakeErrorWithHelp(syntax.ErrArgumentCount,
-			"Wrong number of arguments for assert_failure.",
-			fmt.Sprintf("assert_failure() takes one or two arguments, but %d were given.", len(args)))
+		return nil, ArgumentCountError{
+			OriginFunction: OriginFunction{Call: call},
+			Msg:            "Wrong number of arguments for assert_failure.",
+			Help:           fmt.Sprintf("assert_failure() takes one or two arguments, but %d were given.", len(args))}
 	}
 
 	_, err := ExecuteNode(block, scope)
-	var gnErr syntax.Error
+	var gnErr ui.PresentableError
 	if errors.As(err, &gnErr) {
 		assertMessageValue, err := AsValue[*StringValue](args[0])
 		if err != nil {
@@ -169,7 +176,10 @@ func (mockFunction) Help() string      { return "A mock function for testing tha
 func (mockFunction) IsTarget() bool    { return false }
 func (f *mockFunction) Run(scope *Scope, call *parse.FunctionCallNode, args []Value) (Value, error) {
 	if len(args) != 1 {
-		return nil, call.Function.MakeError(syntax.ErrArgumentCount, "Expected 1 argument")
+		return nil, ArgumentCountError{
+			OriginFunction: OriginFunction{Call: call},
+			Msg:            "Expected 1 argument",
+		}
 	}
 	intVal, ok := args[0].(*IntegerValue)
 	if !ok {

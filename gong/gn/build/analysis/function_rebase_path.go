@@ -119,7 +119,10 @@ Example
 
 func (f *rebasePathFunction) Run(scope *resolve.Scope, call *parse.FunctionCallNode, args []resolve.Value) (resolve.Value, error) {
 	if len(args) < 1 || len(args) > 3 {
-		return nil, call.Function.MakeError(syntax.ErrArgumentCount, "Wrong # of arguments for rebase_path.")
+		return nil, resolve.ArgumentCountError{
+			OriginFunction: resolve.OriginFunction{Call: call},
+			Msg:            "Wrong # of arguments for rebase_path.",
+		}
 	}
 
 	// TODO: need Scope to know current path i.e. what BUILD.gn we are reading.

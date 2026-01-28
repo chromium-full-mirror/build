@@ -5,6 +5,7 @@
 package analysis
 
 import (
+	"errors"
 	"testing"
 
 	"go.chromium.org/build/gong/gn/build/environment"
@@ -16,10 +17,13 @@ import (
 func TestRebasePathFunction(t *testing.T) {
 	f := &rebasePathFunction{buildSettings: &environment.BuildSettings{}}
 	for _, tc := range []struct {
-		name        string
-		args        []resolve.Value
-		want        string
+		name string
+		args []resolve.Value
+		want string
+		// TODO: this is a temporary hack to support errors being returned with
+		// the deprecated ErrKind type versus strongly-typed errors.
 		wantErrKind syntax.ErrKind
+		wantErr     any
 	}{
 		{
 			name: "source-absolute paths",
@@ -58,14 +62,14 @@ func TestRebasePathFunction(t *testing.T) {
 			want: "../../foo/bar.txt",
 		},
 		{
-			name:        "too few args",
-			args:        []resolve.Value{},
-			wantErrKind: syntax.ErrArgumentCount,
+			name:    "too few args",
+			args:    []resolve.Value{},
+			wantErr: &resolve.ArgumentCountError{},
 		},
 		{
-			name:        "too many args",
-			args:        []resolve.Value{&resolve.StringValue{}, &resolve.StringValue{}, &resolve.StringValue{}, &resolve.StringValue{}},
-			wantErrKind: syntax.ErrArgumentCount,
+			name:    "too many args",
+			args:    []resolve.Value{&resolve.StringValue{}, &resolve.StringValue{}, &resolve.StringValue{}, &resolve.StringValue{}},
+			wantErr: &resolve.ArgumentCountError{},
 		},
 		{
 			name:        "invalid input type",
@@ -122,7 +126,7 @@ func TestRebasePathFunction(t *testing.T) {
 
 			got, err := f.Run(scope, callNode, tc.args)
 
-			wantErr := tc.wantErrKind != ""
+			wantErr := tc.wantErr != nil || tc.wantErrKind != ""
 			gotErr := err != nil
 
 			if gotErr != wantErr {
@@ -130,8 +134,15 @@ func TestRebasePathFunction(t *testing.T) {
 			}
 
 			if gotErr {
-				if match, gotErrKind := syntax.AsErrKind(err, tc.wantErrKind); match == nil {
-					t.Fatalf("Run(...) got err=%v (kind %s), wantErrKind=%s", err, gotErrKind, tc.wantErrKind)
+				// TODO: temporary hack to support both wantErr and wantErrKind tests.
+				if tc.wantErr != nil {
+					if !errors.As(err, tc.wantErr) {
+						t.Errorf("Run(...) got err=%v (%T), want %T", err, err, tc.wantErr)
+					}
+				} else {
+					if match, gotErrKind := syntax.AsErrKind(err, tc.wantErrKind); match == nil {
+						t.Errorf("Run(...) got err=%v (kind %s), wantErrKind=%s", err, gotErrKind, tc.wantErrKind)
+					}
 				}
 				return
 			}

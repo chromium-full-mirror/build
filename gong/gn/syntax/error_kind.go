@@ -18,16 +18,30 @@ const (
 	// TODO(b/388723392): Remove this once it's no longer used.
 	ErrUnknown        ErrKind = "ErrUnknown"
 	ErrNotImplemented ErrKind = "ErrNotImplemented"
-	// go/keep-sorted start
-	ErrArgumentCount       ErrKind = "ErrArgumentCount"
-	ErrFileLoadFail        ErrKind = "ErrFileLoadFail"
-	ErrInvalidAST          ErrKind = "ErrInvalidAST"
-	ErrInvalidFormat       ErrKind = "ErrInvalidFormat"
-	ErrInvalidOperation    ErrKind = "ErrInvalidOperation"
-	ErrMemberNotFound      ErrKind = "ErrKeyNotFound"
+	// ErrArgumentCount is deprecated and is kept to retain existing behavior
+	// for code that is incorrectly using this error type to represent
+	// argument type errors.
+	//
+	// These usages should be migrated to ErrTypeMismatch.
+	//
+	// Deprecated: Implement ui.PresentableError instead.
+	ErrArgumentCount ErrKind = "ErrArgumentCount"
+	// Deprecated: Implement ui.PresentableError instead.
+	ErrFileLoadFail ErrKind = "ErrFileLoadFail"
+	// Deprecated: Implement ui.PresentableError instead.
+	ErrInvalidAST ErrKind = "ErrInvalidAST"
+	// Deprecated: Implement ui.PresentableError instead.
+	ErrInvalidFormat ErrKind = "ErrInvalidFormat"
+	// Deprecated: Implement ui.PresentableError instead.
+	ErrInvalidOperation ErrKind = "ErrInvalidOperation"
+	// Deprecated: Implement ui.PresentableError instead.
+	ErrMemberNotFound ErrKind = "ErrKeyNotFound"
+	// Deprecated: Implement ui.PresentableError instead.
 	ErrSubscriptOutOfRange ErrKind = "ErrSubscriptOutOfRange"
-	ErrTypeMismatch        ErrKind = "ErrTypeMismatch"
+	// Deprecated: Implement ui.PresentableError instead.
+	ErrTypeMismatch ErrKind = "ErrTypeMismatch"
+	// Deprecated: Implement ui.PresentableError instead.
 	ErrUndefinedIdentifier ErrKind = "ErrUndefinedIdentifier"
-	ErrUselessAssignment   ErrKind = "ErrUselessAssignment"
-	// go/keep-sorted end
+	// Deprecated: Implement ui.PresentableError instead.
+	ErrUselessAssignment ErrKind = "ErrUselessAssignment"
 )
