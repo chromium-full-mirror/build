@@ -227,6 +227,9 @@ func New(ctx context.Context, client *logging.Client, logID, accessLogID string,
 		directClient.OnError = func(err error) {
 			glog.Warningf("logger: %v", err)
 		}
+
+		ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+		defer cancel()
 		err := directClient.Ping(ctx)
 		if err != nil {
 			directClient.Close()
