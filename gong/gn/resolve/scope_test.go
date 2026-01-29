@@ -20,8 +20,8 @@ func TestScope_NonRecursiveMergeTo(t *testing.T) {
 
 	sourceScope := &Scope{
 		values: map[string]record{
-			"v":        {false, &StringValue{value: "hello"}},
-			"_private": {false, &StringValue{value: "hello"}},
+			"v":        {false, &StringValue{value: "hello", origin: &parse.LiteralNode{}}},
+			"_private": {false, &StringValue{value: "hello", origin: &parse.LiteralNode{}}},
 		},
 	}
 

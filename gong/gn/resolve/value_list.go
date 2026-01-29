@@ -11,7 +11,6 @@ import (
 	"go.starlark.net/starlark"
 
 	"go.chromium.org/build/gong/gn/parse"
-	"go.chromium.org/build/gong/gn/syntax"
 )
 
 // ListValue represents a GN list.
@@ -21,26 +20,12 @@ type ListValue struct {
 }
 
 func (v *ListValue) access(index int64, origin parse.Node) (valueDestination, error) {
-	if index < 0 {
-		return nil, syntax.MakeErrorAt(
-			origin.LocationRange().Begin(), []syntax.LocationRange{origin.LocationRange()},
-			syntax.ErrSubscriptOutOfRange,
-			"Negative array subscript.",
-			fmt.Sprintf("You gave me %d.", index))
-	}
-	if len(v.list) == 0 {
-		return nil, syntax.MakeErrorAt(
-			origin.LocationRange().Begin(), []syntax.LocationRange{origin.LocationRange()},
-			syntax.ErrSubscriptOutOfRange,
-			"Array subscript out of range.",
-			fmt.Sprintf("You gave me %d but the array has no elements.", index))
-	}
-	if index >= int64(len(v.list)) {
-		return nil, syntax.MakeErrorAt(
-			origin.LocationRange().Begin(), []syntax.LocationRange{origin.LocationRange()},
-			syntax.ErrSubscriptOutOfRange,
-			"Array subscript out of range.",
-			fmt.Sprintf("You gave me %d but I was expecting something from 0 to %d, inclusive.", index, len(v.list)-1))
+	if len(v.list) == 0 || index < 0 || index >= int64(len(v.list)) {
+		return nil, SubscriptError{
+			OriginNode: parse.OriginNode{Node: origin},
+			index:      index,
+			len:        len(v.list),
+		}
 	}
 	return listValue{
 		list:  v,

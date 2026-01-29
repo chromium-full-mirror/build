@@ -24,10 +24,4 @@ const (
 	ErrInvalidFormat ErrKind = "ErrInvalidFormat"
 	// Deprecated: Implement ui.PresentableError instead.
 	ErrInvalidOperation ErrKind = "ErrInvalidOperation"
-	// Deprecated: Implement ui.PresentableError instead.
-	ErrMemberNotFound ErrKind = "ErrKeyNotFound"
-	// Deprecated: Implement ui.PresentableError instead.
-	ErrSubscriptOutOfRange ErrKind = "ErrSubscriptOutOfRange"
-	// Deprecated: Implement ui.PresentableError instead.
-	ErrUselessAssignment ErrKind = "ErrUselessAssignment"
 )

@@ -68,7 +68,7 @@ assert_failure("This is not a \"non_integer_index\". Instead I see a string = tr
     foo["non_integer_index"] = 1
 }
 
-assert_failure("Negative array subscript.", "You gave me -1") {
+assert_failure("Negative array subscript.", "You gave me -1.") {
     a = foo[-1]
 }
 

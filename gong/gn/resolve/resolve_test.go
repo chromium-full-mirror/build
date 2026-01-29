@@ -38,7 +38,7 @@ func TestExecuteNode(t *testing.T) {
 				Base:   syntax.MakeToken(syntax.TokenIdentifier, "a"),
 				Member: &parse.IdentifierNode{Value: syntax.MakeToken(syntax.TokenIdentifier, "b")},
 			},
-			wantErrKind: syntax.ErrMemberNotFound,
+			wantErr: &KeyError{},
 		},
 		{
 			name: "access_undefined_member",
@@ -58,7 +58,7 @@ func TestExecuteNode(t *testing.T) {
 				Base:   syntax.MakeToken(syntax.TokenIdentifier, "a"),
 				Member: &parse.IdentifierNode{Value: syntax.MakeToken(syntax.TokenIdentifier, "b")},
 			},
-			wantErrKind: syntax.ErrMemberNotFound,
+			wantErr: &KeyError{},
 		},
 		{
 			name: "access_scope_member",
@@ -122,7 +122,7 @@ func TestExecuteNode(t *testing.T) {
 					Token: syntax.MakeToken(syntax.TokenInteger, "-1"),
 				},
 			},
-			wantErrKind: syntax.ErrSubscriptOutOfRange,
+			wantErr: &SubscriptError{},
 		},
 		{
 			name: "access_list_by_subscript_out_of_bounds",
@@ -141,7 +141,7 @@ func TestExecuteNode(t *testing.T) {
 				Base:      syntax.MakeToken(syntax.TokenIdentifier, "a"),
 				Subscript: &parse.LiteralNode{Token: syntax.MakeToken(syntax.TokenInteger, "1")},
 			},
-			wantErrKind: syntax.ErrSubscriptOutOfRange,
+			wantErr: &SubscriptError{},
 		},
 		{
 			name: "access_list_by_subscript_empty_list",
@@ -158,7 +158,7 @@ func TestExecuteNode(t *testing.T) {
 				Base:      syntax.MakeToken(syntax.TokenIdentifier, "a"),
 				Subscript: &parse.LiteralNode{Token: syntax.MakeToken(syntax.TokenInteger, "0")},
 			},
-			wantErrKind: syntax.ErrSubscriptOutOfRange,
+			wantErr: &SubscriptError{},
 		},
 		{
 			name: "access_list_by_subscript_non_integer",
@@ -220,7 +220,7 @@ func TestExecuteNode(t *testing.T) {
 				Base:      syntax.MakeToken(syntax.TokenIdentifier, "a"),
 				Subscript: &parse.LiteralNode{Token: syntax.MakeToken(syntax.TokenString, `"c"`)},
 			},
-			wantErrKind: syntax.ErrMemberNotFound,
+			wantErr: &KeyError{},
 		},
 		{
 			name: "access_scope_by_subscript_non_string",
@@ -302,7 +302,7 @@ func TestExecuteNode(t *testing.T) {
 				},
 			},
 			// Error should reflect what was encountered evaluating the args.
-			wantErrKind: syntax.ErrMemberNotFound,
+			wantErr: &KeyError{},
 		},
 		{
 			name: "access_by_subscript_undefined_base",

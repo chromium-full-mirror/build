@@ -104,6 +104,112 @@ func (AssertError) Message() string { return "Assertion failed." }
 // HelpText returns the assertion details as the help text for the assert failure, if provided.
 func (e AssertError) HelpText() string { return e.Details }
 
+// KeyError is returned when a member access on a scope fails.
+type KeyError struct {
+	baseName string
+	member   string
+	// memberRange is the range of the member access.
+	// This struct doesn't take the member node itself because it may not be the desired range.
+	//
+	// For example:
+	//
+	//	ERROR at //BUILD.gn:8:9: No value named "example" in scope "foo"
+	//	print(foo["example"])
+	//	          ^--------
+	//	ERROR at //BUILD.gn:8:10: No value named "example" in scope "foo"
+	//	print(foo.example)
+	//	          ^------
+	//
+	// Notice how the error excludes the quotes in the former example.
+	memberRange syntax.LocationRange
+}
+
+// Error returns the error message.
+func (e KeyError) Error() string {
+	return fmt.Sprintf("key %q not found in %q", e.member, e.baseName)
+}
+
+// Message returns the user-facing error message.
+func (e KeyError) Message() string {
+	return fmt.Sprintf("No value named %q in scope %q", e.member, e.baseName)
+}
+
+// HelpText returns the user-facing error help text.
+// It returns an empty string because there is no detailed help text for this error.
+func (e KeyError) HelpText() string { return "" }
+
+// Location returns the location of the failed member access.
+func (e KeyError) Location() syntax.Location {
+	return e.memberRange.Begin()
+}
+
+// Range returns the range of the failed member access.
+func (e KeyError) Range() syntax.LocationRange {
+	return e.memberRange
+}
+
+// SubscriptError is returned when a subscript access is invalid.
+type SubscriptError struct {
+	parse.OriginNode
+	index int64 // GN numbers are int64
+	len   int   // lists are implemented as Go slices where len() is int
+}
+
+// Error returns the error message.
+func (e SubscriptError) Error() string {
+	if e.index < 0 {
+		return fmt.Sprintf("negative subscript %d", e.index)
+	}
+	return fmt.Sprintf("subscript %d out of range for len %d", e.index, e.len)
+}
+
+// Message returns the user-facing error message.
+func (e SubscriptError) Message() string {
+	if e.index < 0 {
+		return "Negative array subscript."
+	}
+	return "Array subscript out of range."
+}
+
+// HelpText returns the user-facing error help text.
+func (e SubscriptError) HelpText() string {
+	if e.index < 0 {
+		return fmt.Sprintf("You gave me %d.", e.index)
+	} else if e.len == 0 {
+		return fmt.Sprintf("You gave me %d but the array has no elements.", e.index)
+	}
+	return fmt.Sprintf("You gave me %d but I was expecting something from 0 to %d, inclusive.", e.index, e.len-1)
+}
+
+// UnusedVarError is returned when a variable is set but not used.
+type UnusedVarError struct {
+	ident        string
+	assignOrigin syntax.LocationRange
+}
+
+// Error returns the error message.
+func (e UnusedVarError) Error() string {
+	return fmt.Sprintf("unused variable: %s", e.ident)
+}
+
+// Message returns the user-facing error message.
+func (e UnusedVarError) Message() string { return "Assignment had no effect." }
+
+// HelpText returns the user-facing error help text.
+func (e UnusedVarError) HelpText() string {
+	return fmt.Sprintf("You set the variable %q here and it was unused before it went out of scope.", e.ident)
+}
+
+// Location returns the location of the failed member access.
+func (e UnusedVarError) Location() syntax.Location {
+	return e.assignOrigin.Begin()
+}
+
+// Range returns the range of the failed member access.
+func (e UnusedVarError) Range() syntax.LocationRange {
+	return e.assignOrigin
+}
+
 // TypeError is returned when an operation could not be performed due to a type mismatch.
 //
 // Examples include:

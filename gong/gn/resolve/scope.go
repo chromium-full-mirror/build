@@ -295,13 +295,18 @@ func (s *Scope) CheckForUnusedVars() error {
 	for _, ident := range slices.Sorted(maps.Keys(s.values)) {
 		record := s.values[ident]
 		if !record.used {
-			help := fmt.Sprintf("You set the variable %q here and it was unused before it went out of scope.", ident)
 			binary, ok := record.value.OriginNode().(*parse.BinaryOpNode)
 			if ok && binary.Op.TokenType() == syntax.TokenEqual {
-				// Make a nicer error message for normal var sets.
-				return syntax.MakeErrorAt(binary.Left.LocationRange().Begin(), nil, syntax.ErrUselessAssignment, "Assignment had no effect.", help)
+				return &UnusedVarError{
+					ident: ident,
+					// Make a nicer error message for normal var sets.
+					assignOrigin: binary.Left.LocationRange(),
+				}
 			}
-			return parse.MakeErrFromNode(record.value.OriginNode(), syntax.ErrUselessAssignment, "Assignment had no effect.", help)
+			return &UnusedVarError{
+				ident:        ident,
+				assignOrigin: record.value.OriginNode().LocationRange(),
+			}
 		}
 	}
 	return nil

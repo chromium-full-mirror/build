@@ -302,9 +302,11 @@ func executeScopeAccess(baseToken syntax.Token, member string, memberRange synta
 	// ERROR at //BUILD.gn:10:9: No value named "b" in scope "a"
 	// print(a.b)
 	//         ^
-	return nil, syntax.MakeErrorAt(memberRange.Begin(), []syntax.LocationRange{memberRange},
-		syntax.ErrMemberNotFound,
-		fmt.Sprintf("No value named %q in scope %q", member, baseToken.Value()), "")
+	return nil, KeyError{
+		baseName:    baseToken.Value(),
+		member:      member,
+		memberRange: memberRange,
+	}
 }
 
 func computeAndValidateListIndex(n *parse.AccessorNode, s *Scope, maxLen int) (int64, error) {
@@ -318,17 +320,12 @@ func computeAndValidateListIndex(n *parse.AccessorNode, s *Scope, maxLen int) (i
 	}
 
 	indexInt := integerValue.value
-	if indexInt < 0 {
-		return -1, parse.MakeErrFromNode(n.Subscript, syntax.ErrSubscriptOutOfRange, "Negative array subscript.",
-			fmt.Sprintf("You gave me %d", indexInt))
-	}
-	if maxLen == 0 {
-		return -1, parse.MakeErrFromNode(n.Subscript, syntax.ErrSubscriptOutOfRange, "Array subscript out of range.",
-			fmt.Sprintf("You gave me %d but the array has no elements.", indexInt))
-	}
-	if indexInt >= int64(maxLen) {
-		return -1, parse.MakeErrFromNode(n.Subscript, syntax.ErrSubscriptOutOfRange, "Array subscript out of range.",
-			fmt.Sprintf("You gave me %d but I was expecting something from 0 to %d, inclusive.", indexInt, maxLen-1))
+	if maxLen == 0 || indexInt < 0 || indexInt >= int64(maxLen) {
+		return -1, SubscriptError{
+			OriginNode: parse.OriginNode{Node: n.Subscript},
+			index:      indexInt,
+			len:        maxLen,
+		}
 	}
 	return indexInt, nil
 }
