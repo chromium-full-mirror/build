@@ -338,6 +338,22 @@ func (e ScopeMergeError) Ranges() []syntax.LocationRange {
 	return []syntax.LocationRange{e.mergeOptions.SourceNode.LocationRange()}
 }
 
+// StringLiteralError is returned when a string literal could not be expanded.
+type StringLiteralError struct {
+	parse.OriginNode
+	message  string
+	helpText string
+}
+
+// Error returns the error message.
+func (e StringLiteralError) Error() string { return fmt.Sprintf("string literal error: %s", e.message) }
+
+// Message returns the user-facing error message.
+func (e StringLiteralError) Message() string { return e.message }
+
+// HelpText returns the user-facing error help text.
+func (e StringLiteralError) HelpText() string { return e.helpText }
+
 // OriginFunction is an embeddable struct for errors to provide location data for a function call.
 type OriginFunction struct {
 	Call *parse.FunctionCallNode

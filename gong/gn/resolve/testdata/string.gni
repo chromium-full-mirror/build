@@ -46,6 +46,6 @@ assert_failure("\$ at end of string.") {
     invalid = "foo$"
 }
 
-assert_failure("\$identifier interpolation not implemented") {
+assert_failure("NOT IMPLEMENTED: \$identifier interpolation not yet supported.") {
     unimplemented = "$foo"
 }

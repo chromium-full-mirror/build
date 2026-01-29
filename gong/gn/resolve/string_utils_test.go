@@ -15,13 +15,10 @@ import (
 
 func TestExpandStringLiteral(t *testing.T) {
 	for _, tc := range []struct {
-		name  string
-		token syntax.Token
-		want  Value
-		// TODO: this is a temporary hack to support errors being returned with
-		// the deprecated ErrKind type versus strongly-typed errors.
-		wantErrKind syntax.ErrKind
-		wantErr     any
+		name    string
+		token   syntax.Token
+		want    Value
+		wantErr any
 	}{
 		{
 			name:  "simple",
@@ -64,9 +61,9 @@ func TestExpandStringLiteral(t *testing.T) {
 			wantErr: &ASTError{},
 		},
 		{
-			name:        "trailing_dollar",
-			token:       syntax.MakeToken(syntax.TokenString, `"foo$"`),
-			wantErrKind: syntax.ErrInvalidFormat,
+			name:    "trailing_dollar",
+			token:   syntax.MakeToken(syntax.TokenString, `"foo$"`),
+			wantErr: &StringLiteralError{},
 		},
 		{
 			name:  "hex_literal",
@@ -84,62 +81,55 @@ func TestExpandStringLiteral(t *testing.T) {
 			want:  &StringValue{value: "\x0A\xFF"},
 		},
 		{
-			name:        "hex_truncated_0",
-			token:       syntax.MakeToken(syntax.TokenString, `"$0"`),
-			wantErrKind: syntax.ErrInvalidFormat,
+			name:    "hex_truncated_0",
+			token:   syntax.MakeToken(syntax.TokenString, `"$0"`),
+			wantErr: &StringLiteralError{},
 		},
 		{
-			name:        "hex_truncated_0x",
-			token:       syntax.MakeToken(syntax.TokenString, `"$0x"`),
-			wantErrKind: syntax.ErrInvalidFormat,
+			name:    "hex_truncated_0x",
+			token:   syntax.MakeToken(syntax.TokenString, `"$0x"`),
+			wantErr: &StringLiteralError{},
 		},
 		{
-			name:        "hex_truncated_0x0",
-			token:       syntax.MakeToken(syntax.TokenString, `"$0x0"`),
-			wantErrKind: syntax.ErrInvalidFormat,
+			name:    "hex_truncated_0x0",
+			token:   syntax.MakeToken(syntax.TokenString, `"$0x0"`),
+			wantErr: &StringLiteralError{},
 		},
 		{
-			name:        "hex_bad_char_0a",
-			token:       syntax.MakeToken(syntax.TokenString, `"$0a"`),
-			wantErrKind: syntax.ErrInvalidFormat,
+			name:    "hex_bad_char_0a",
+			token:   syntax.MakeToken(syntax.TokenString, `"$0a"`),
+			wantErr: &StringLiteralError{},
 		},
 		{
-			name:        "hex_bad_char_0x1z",
-			token:       syntax.MakeToken(syntax.TokenString, `"$0x1z"`),
-			wantErrKind: syntax.ErrInvalidFormat,
+			name:    "hex_bad_char_0x1z",
+			token:   syntax.MakeToken(syntax.TokenString, `"$0x1z"`),
+			wantErr: &StringLiteralError{},
 		},
 		{
-			name:        "hex_bad_char_0xz1",
-			token:       syntax.MakeToken(syntax.TokenString, `"$0xz1"`),
-			wantErrKind: syntax.ErrInvalidFormat,
+			name:    "hex_bad_char_0xz1",
+			token:   syntax.MakeToken(syntax.TokenString, `"$0xz1"`),
+			wantErr: &StringLiteralError{},
 		},
 		{
-			name:        "unimplemented_identifier",
-			token:       syntax.MakeToken(syntax.TokenString, `"$foo"`),
-			wantErrKind: syntax.ErrNotImplemented,
+			name:    "unimplemented_identifier",
+			token:   syntax.MakeToken(syntax.TokenString, `"$foo"`),
+			wantErr: &StringLiteralError{},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			got, err := expandStringLiteral(tc.token, &parse.LiteralNode{
 				Token: syntax.MakeToken(syntax.TokenString, "origin"),
 			})
-			wantErr := tc.wantErr != nil || tc.wantErrKind != ""
+			wantErr := tc.wantErr != nil
 			gotErr := err != nil
 
 			if gotErr != wantErr {
-				t.Fatalf("expandStringLiteral(%v): got err=%v, wantErrKind=%v", tc.token, err, tc.wantErrKind)
+				t.Fatalf("expandStringLiteral(%v): got err=%v, wantErr %T", tc.token, err, tc.wantErr)
 			}
 
 			if gotErr {
-				// TODO: temporary hack to support both wantErr and wantErrKind tests.
-				if tc.wantErr != nil {
-					if !errors.As(err, tc.wantErr) {
-						t.Errorf("expandStringLiteral(%v) got err=%v (%T), want %T", tc.token, err, err, tc.wantErr)
-					}
-				} else {
-					if match, gotErrKind := syntax.AsErrKind(err, tc.wantErrKind); match == nil {
-						t.Errorf("expandStringLiteral(%v): got err=%v (kind %s), wantErrKind=%s", tc.token, err, gotErrKind, tc.wantErrKind)
-					}
+				if !errors.As(err, tc.wantErr) {
+					t.Errorf("expandStringLiteral(%v) got err=%v (%T), wantErr %T", tc.token, err, err, tc.wantErr)
 				}
 				return
 			}
