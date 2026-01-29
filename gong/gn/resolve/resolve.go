@@ -97,18 +97,24 @@ func ExecuteNode(n parse.Node, s *Scope) (Value, error) {
 		switch f := info.(type) {
 		case BlockFunctionInfo:
 			if n.Block == nil {
-				return nil, n.Function.MakeErrorWithHelp(syntax.ErrArgumentCount,
-					"This function call requires a block.",
-					`The block's "{" must be on the same line as the function call's ")".`)
+				return nil, TypeError{
+					Msg:              "This function call requires a block.",
+					Help:             `The block's "{" must be on the same line as the function call's ")".`,
+					locationOverride: n.Function.Range().Begin(),
+					rangesOverride:   []syntax.LocationRange{n.Function.Range()},
+				}
 			}
 			return f.Run(s, n, args.list, n.Block)
 		case SimpleFunctionInfo:
 			if n.Block != nil {
-				return nil, parse.MakeErrFromNode(n.Block, syntax.ErrArgumentCount,
-					"Unexpected '{'.",
-					`This function call doesn't take a {} block following it, and you
+				return nil, TypeError{
+					Msg: "Unexpected '{'.",
+					Help: `This function call doesn't take a {} block following it, and you
 can't have a {} block that's not connected to something like an if
-statement or a target declaration.`)
+statement or a target declaration.`,
+					locationOverride: n.Block.LocationRange().Begin(),
+					rangesOverride:   []syntax.LocationRange{n.Block.LocationRange()},
+				}
 			}
 			return f.Run(s, n, args.list)
 		}
@@ -134,8 +140,13 @@ statement or a target declaration.`)
 				return nil, err
 			}
 			if value == nil || value.valueType() == ValueTypeNone {
-				return nil, parse.MakeErrFromNode(cur, syntax.ErrTypeMismatch,
-					"This does not evaluate to a value.", "I can't do something with nothing.")
+				return nil, TypeError{
+					Value:            value,
+					Msg:              "This does not evaluate to a value.",
+					Help:             "I can't do something with nothing.",
+					locationOverride: cur.LocationRange().Begin(),
+					rangesOverride:   []syntax.LocationRange{cur.LocationRange()},
+				}
 			}
 			listValue.list = append(listValue.list, value)
 		}
@@ -188,17 +199,21 @@ statement or a target declaration.`)
 			return nil, err
 		}
 		if conditionResult.valueType() != ValueTypeBoolean {
-			return nil, syntax.MakeErrorAt(
-				n.Condition.LocationRange().Begin(),
-				[]syntax.LocationRange{n.Condition.LocationRange(), n.IfToken.Range()},
-				syntax.ErrTypeMismatch,
-				"Condition does not evaluate to a boolean value.",
-				fmt.Sprintf("This is a value of type %q instead.", conditionResult.valueType()))
+			return nil, TypeError{
+				Value:            conditionResult,
+				Msg:              "Condition does not evaluate to a boolean value.",
+				Help:             fmt.Sprintf("This is a value of type %q instead.", conditionResult.valueType()),
+				locationOverride: n.Condition.LocationRange().Begin(),
+				rangesOverride:   []syntax.LocationRange{n.Condition.LocationRange(), n.IfToken.Range()},
+			}
 		}
 		if b := conditionResult.(*BooleanValue); b.value {
 			// Additional check to what C++ GN does, it always assumes the true block exists.
 			if n.IfTrue == nil {
-				return nil, parse.MakeErrFromNode(n, syntax.ErrUnknown, "Invalid AST", "Found a ConditionNode without true block")
+				return nil, ASTError{
+					OriginNode: parse.OriginNode{Node: n},
+					details:    "Found a ConditionNode without true block",
+				}
 			}
 			// Execute the true block if the boolean evaluated to true.
 			if _, err = ExecuteNode(n.IfTrue, s); err != nil {
@@ -248,8 +263,12 @@ func executeSubscriptAccess(n *parse.AccessorNode, scope *Scope) (Value, error) 
 		}
 		return executeScopeAccess(n.Base, stringValue.value, keyValue.OriginNode().LocationRange(), scope)
 	}
-	return nil, n.Base.MakeError(syntax.ErrTypeMismatch,
-		fmt.Sprintf("Expecting either a list or a scope for subscript, got %s.", baseValue.valueType()))
+	return nil, TypeError{
+		Value:            baseValue,
+		Msg:              fmt.Sprintf("Expecting either a list or a scope for subscript, got %s.", baseValue.valueType()),
+		locationOverride: n.Base.Range().Begin(),
+		rangesOverride:   []syntax.LocationRange{n.Base.Range()},
+	}
 }
 
 // executeScopeAccess executes a scope access for the base and member in the given scope.

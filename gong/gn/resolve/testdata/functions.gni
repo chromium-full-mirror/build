@@ -2,13 +2,13 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-assert_failure("Block did not fail.") {
+assert_failure("Assertion failed.", "Block did not fail.") {
     assert_failure("") {
         assert(true)
     }
 }
 
-assert_failure("Unexpected '{'.") {
+assert_failure("Unexpected '{'.", "This function call doesn't take a {} block following it, and you$0x0Acan't have a {} block that's not connected to something like an if$0x0Astatement or a target declaration.") {
     assert(true) {
         assert(true)
     }
@@ -18,6 +18,6 @@ assert_failure("Unknown function.") {
     foo()
 }
 
-assert_failure("This function call requires a block.") {
+assert_failure("This function call requires a block.", "The block's \"{\" must be on the same line as the function call's \")\".") {
     assert_failure()
 }

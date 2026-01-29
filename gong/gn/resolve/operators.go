@@ -59,12 +59,13 @@ func makeIncompatibleTypeError(opNode *parse.BinaryOpNode, left, right Value) er
 
 Hint: If you're attempting to add or remove a single item from a list, use "foo + [ bar ]".`
 	}
-	return syntax.MakeErrorAt(
-		opNode.LocationRange().Begin(),
-		[]syntax.LocationRange{opNode.LocationRange()},
-		syntax.ErrTypeMismatch,
-		"Incompatible types for binary operator.",
-		msg)
+	return TypeError{
+		Value:            right,
+		Msg:              "Incompatible types for binary operator.",
+		Help:             msg,
+		locationOverride: opNode.LocationRange().Begin(),
+		rangesOverride:   []syntax.LocationRange{opNode.LocationRange()},
+	}
 }
 
 func executeOpSide(opNode *parse.BinaryOpNode, side side, scope *Scope) (Value, error) {
@@ -82,12 +83,13 @@ func executeOpSide(opNode *parse.BinaryOpNode, side side, scope *Scope) (Value, 
 		return nil, err
 	}
 	if value == nil || value.valueType() == ValueTypeNone {
-		return nil, syntax.MakeErrorAt(
-			opNode.LocationRange().Begin(),
-			[]syntax.LocationRange{opNode.LocationRange(), node.LocationRange()},
-			syntax.ErrTypeMismatch,
-			"Operator requires a value.",
-			fmt.Sprintf("This thing on the %s does not evaluate to a value.", side))
+		return nil, TypeError{
+			Value:            value,
+			Msg:              "Operator requires a value.",
+			Help:             fmt.Sprintf("This thing on the %s does not evaluate to a value.", side),
+			locationOverride: opNode.LocationRange().Begin(),
+			rangesOverride:   []syntax.LocationRange{opNode.LocationRange(), node.LocationRange()},
+		}
 	}
 	return value, nil
 }
@@ -99,9 +101,13 @@ func executeOr(opNode *parse.BinaryOpNode, scope *Scope) (Value, error) {
 	}
 	leftBool, err := AsValue[*BooleanValue](leftValue)
 	if err != nil {
-		return nil, parse.MakeErrFromNode(opNode, syntax.ErrTypeMismatch,
-			"Left side of || operator is not a boolean.",
-			fmt.Sprintf("Type is %q instead.", leftValue.valueType()))
+		return nil, TypeError{
+			Value:            leftValue,
+			Msg:              "Left side of || operator is not a boolean.",
+			Help:             fmt.Sprintf("Type is %q instead.", leftValue.valueType()),
+			locationOverride: opNode.LocationRange().Begin(),
+			rangesOverride:   []syntax.LocationRange{opNode.LocationRange(), leftValue.OriginNode().LocationRange()},
+		}
 	}
 	if leftBool.value {
 		return &BooleanValue{origin: opNode, value: true}, nil
@@ -113,9 +119,13 @@ func executeOr(opNode *parse.BinaryOpNode, scope *Scope) (Value, error) {
 	}
 	rightBool, err := AsValue[*BooleanValue](rightValue)
 	if err != nil {
-		return nil, parse.MakeErrFromNode(opNode, syntax.ErrTypeMismatch,
-			"Right side of || operator is not a boolean.",
-			fmt.Sprintf("Type is %q instead.", rightValue.valueType()))
+		return nil, TypeError{
+			Value:            rightValue,
+			Msg:              "Right side of || operator is not a boolean.",
+			Help:             fmt.Sprintf("Type is %q instead.", rightValue.valueType()),
+			locationOverride: opNode.LocationRange().Begin(),
+			rangesOverride:   []syntax.LocationRange{opNode.LocationRange(), rightValue.OriginNode().LocationRange()},
+		}
 	}
 	return &BooleanValue{origin: opNode, value: rightBool.value}, nil
 }
@@ -127,9 +137,13 @@ func executeAnd(opNode *parse.BinaryOpNode, scope *Scope) (Value, error) {
 	}
 	leftBool, err := AsValue[*BooleanValue](leftValue)
 	if err != nil {
-		return nil, parse.MakeErrFromNode(opNode, syntax.ErrTypeMismatch,
-			"Left side of && operator is not a boolean.",
-			fmt.Sprintf("Type is %q instead.", leftValue.valueType()))
+		return nil, TypeError{
+			Value:            leftValue,
+			Msg:              "Left side of && operator is not a boolean.",
+			Help:             fmt.Sprintf("Type is %q instead.", leftValue.valueType()),
+			locationOverride: opNode.LocationRange().Begin(),
+			rangesOverride:   []syntax.LocationRange{opNode.LocationRange(), leftValue.OriginNode().LocationRange()},
+		}
 	}
 	if !leftBool.value {
 		return &BooleanValue{origin: opNode, value: false}, nil
@@ -141,9 +155,13 @@ func executeAnd(opNode *parse.BinaryOpNode, scope *Scope) (Value, error) {
 	}
 	rightBool, err := AsValue[*BooleanValue](rightValue)
 	if err != nil {
-		return nil, parse.MakeErrFromNode(opNode, syntax.ErrTypeMismatch,
-			"Right side of && operator is not a boolean.",
-			fmt.Sprintf("Type is %q instead.", rightValue.valueType()))
+		return nil, TypeError{
+			Value:            rightValue,
+			Msg:              "Right side of && operator is not a boolean.",
+			Help:             fmt.Sprintf("Type is %q instead.", rightValue.valueType()),
+			locationOverride: opNode.LocationRange().Begin(),
+			rangesOverride:   []syntax.LocationRange{opNode.LocationRange(), rightValue.OriginNode().LocationRange()},
+		}
 	}
 	return &BooleanValue{origin: opNode, value: rightBool.value}, nil
 }
@@ -202,9 +220,13 @@ func executePlusEquals(opNode *parse.BinaryOpNode, scope *Scope) error {
 			return nil
 		}
 		// This matches C++ GN's separate error message for list += invalid.
-		return opNode.Op.MakeErrorWithHelp(syntax.ErrTypeMismatch,
-			"Incompatible types to add.",
-			`To append a single item to a list do "foo += [ bar ]".`)
+		return TypeError{
+			Value:            rvalue,
+			Msg:              "Incompatible types to add.",
+			Help:             `To append a single item to a list do "foo += [ bar ]".`,
+			locationOverride: opNode.LocationRange().Begin(),
+			rangesOverride:   []syntax.LocationRange{opNode.LocationRange()},
+		}
 	}
 
 	// Everything else is semantically `foo = foo + bar`.
@@ -421,19 +443,25 @@ func executeBinaryOperator(opNode *parse.BinaryOpNode, scope *Scope) (Value, err
 		syntax.TokenLessEqual,
 		syntax.TokenGreaterThan,
 		syntax.TokenLessThan:
-		lv, ok1 := leftValue.(*IntegerValue)
-		rv, ok2 := rightValue.(*IntegerValue)
-		if !ok1 || !ok2 {
-			return nil, syntax.MakeErrorAt(
-				opNode.LocationRange().Begin(),
-				[]syntax.LocationRange{
+		lv, okL := leftValue.(*IntegerValue)
+		rv, okR := rightValue.(*IntegerValue)
+		if !okL || !okR {
+			te := TypeError{
+				locationOverride: opNode.LocationRange().Begin(),
+				rangesOverride: []syntax.LocationRange{
 					opNode.LocationRange(),
 					leftValue.OriginNode().LocationRange(),
 					rightValue.OriginNode().LocationRange(),
 				},
-				syntax.ErrTypeMismatch,
-				"Comparison requires two integers.",
-				"This operator can only compare two integers.")
+				Msg:  "Comparison requires two integers.",
+				Help: "This operator can only compare two integers.",
+			}
+			if !okL {
+				te.Value = leftValue
+			} else if !okR {
+				te.Value = rightValue
+			}
+			return nil, te
 		}
 		switch opNode.Op.TokenType() {
 		case syntax.TokenGreaterEqual:

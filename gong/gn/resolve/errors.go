@@ -104,6 +104,98 @@ func (AssertError) Message() string { return "Assertion failed." }
 // HelpText returns the assertion details as the help text for the assert failure, if provided.
 func (e AssertError) HelpText() string { return e.Details }
 
+// TypeError is returned when an operation could not be performed due to a type mismatch.
+//
+// Examples include:
+//
+//   - Argument type to a function not matching the expected type
+//   - Operand type not matching expected type for an operator
+type TypeError struct {
+	// Value is the value that caused the error.
+	Value Value
+	// Msg is the user-facing error message.
+	Msg string
+	// Help is the help text for the error.
+	Help string
+	// locationOverride is for internal use, allowing override of the location of a type error
+	// when it would be more useful to depict the error at a different location.
+	//
+	// We don't expose this for use outside of this package, because it is only useful for
+	// implementing operators, which consumers of this package should not need to do.
+	//
+	// For example,
+	//
+	//	invalid = evaluates_to_int || true
+	//
+	// is a type error, but it would be more useful for the UI to depict the location of the
+	// error as:
+	//
+	//	invalid = evaluates_to_int || true
+	//	          ~~~~~~~~~~~~~~~~~^~
+	//
+	// instead of:
+	//
+	//	invalid = evaluates_to_int || true
+	//	          ^~~~~~~~~~~~~~~~~~~
+	locationOverride syntax.Location
+	// rangesOverride is for internal use, allowing override of the ranges of a type error
+	// when it would be more useful to depict the error at a different range.
+	//
+	// We don't expose this for use outside of this package, because it is only useful for
+	// implementing operators, which consumers of this package should not need to do.
+	//
+	// For example,
+	//
+	//	invalid_result = true ||
+	//	    evaluates_to_int
+	//
+	// is a type error, but it would be more useful for the UI to depict the range of the
+	// error as:
+	//
+	//	invalid_result = true ||
+	//	                      ^~
+	//	    evaluates_to_int
+	//	    ~~~~~~~~~~~~~~~~
+	//
+	// instead of:
+	//
+	//	invalid_result = true ||
+	//	    evaluates_to_int
+	//	    ^~~~~~~~~~~~~~~~
+	rangesOverride []syntax.LocationRange
+}
+
+// Error implements PresentableError.
+func (e TypeError) Error() string { return fmt.Sprintf("type error: %s", e.Msg) }
+
+// Message implements PresentableError.
+func (e TypeError) Message() string { return e.Msg }
+
+// HelpText implements PresentableError.
+func (e TypeError) HelpText() string { return e.Help }
+
+// Location implements PresentableSourceError.
+func (e TypeError) Location() syntax.Location {
+	if e.locationOverride != (syntax.Location{}) {
+		return e.locationOverride
+	}
+	if e.Value == nil {
+		return syntax.Location{}
+	}
+	return e.Value.OriginNode().LocationRange().Begin()
+}
+
+// Ranges implements PresentableSourceError.
+func (e TypeError) Ranges() []syntax.LocationRange {
+	if e.rangesOverride != nil {
+		return e.rangesOverride
+	}
+	if e.Value == nil {
+		return nil
+	}
+	return []syntax.LocationRange{e.Value.OriginNode().LocationRange()}
+}
+
 // OriginFunction is an embeddable struct for errors to provide location data for a function call.
 type OriginFunction struct {
 	Call *parse.FunctionCallNode

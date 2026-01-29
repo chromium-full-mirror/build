@@ -17,10 +17,13 @@ import (
 
 func TestBinaryOps_NoSideEffects(t *testing.T) {
 	for _, tc := range []struct {
-		name        string
-		node        *parse.BinaryOpNode
-		want        Value
+		name string
+		node *parse.BinaryOpNode
+		want Value
+		// TODO: this is a temporary hack to support errors being returned with
+		// the deprecated ErrKind type versus strongly-typed errors.
 		wantErrKind syntax.ErrKind
+		wantErr     any
 	}{
 		{
 			name: "integers_equal",
@@ -99,7 +102,7 @@ func TestBinaryOps_NoSideEffects(t *testing.T) {
 				Left:  &parse.LiteralNode{Token: syntax.MakeToken(syntax.TokenInteger, "1")},
 				Right: &parse.LiteralNode{Token: syntax.MakeToken(syntax.TokenString, `"2"`)},
 			},
-			wantErrKind: syntax.ErrTypeMismatch,
+			wantErr: &TypeError{},
 		},
 		{
 			name: "integers_addition",
@@ -173,7 +176,7 @@ func TestBinaryOps_NoSideEffects(t *testing.T) {
 				Left:  &parse.LiteralNode{Token: syntax.MakeToken(syntax.TokenInteger, "1")},
 				Right: &parse.LiteralNode{Token: syntax.MakeToken(syntax.TokenTrue, "true")},
 			},
-			wantErrKind: syntax.ErrTypeMismatch,
+			wantErr: &TypeError{},
 		},
 		{
 			name: "or_type_mismatch_right",
@@ -182,12 +185,12 @@ func TestBinaryOps_NoSideEffects(t *testing.T) {
 				Left:  &parse.LiteralNode{Token: syntax.MakeToken(syntax.TokenFalse, "false")},
 				Right: &parse.LiteralNode{Token: syntax.MakeToken(syntax.TokenInteger, "1")},
 			},
-			wantErrKind: syntax.ErrTypeMismatch,
+			wantErr: &TypeError{},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			got, err := executeBinaryOperator(tc.node, &Scope{values: map[string]record{}})
-			wantErr := tc.wantErrKind != syntax.ErrNone
+			wantErr := tc.wantErr != nil || tc.wantErrKind != syntax.ErrNone
 			gotErr := err != nil
 
 			if gotErr != wantErr {
@@ -195,8 +198,15 @@ func TestBinaryOps_NoSideEffects(t *testing.T) {
 			}
 
 			if gotErr {
-				if match, gotErrKind := syntax.AsErrKind(err, tc.wantErrKind); match == nil {
-					t.Fatalf("executeBinaryOperator(%T, _): got err=%v (kind %s), wantErrKind=%s", tc.node, err, gotErrKind, tc.wantErrKind)
+				// TODO: temporary hack to support both wantErr and wantErrKind tests.
+				if tc.wantErr != nil {
+					if !errors.As(err, tc.wantErr) {
+						t.Errorf("executeBinaryOperator(%T, _) got err=%v (%T), want %T", tc.node, err, err, tc.wantErr)
+					}
+				} else {
+					if match, gotErrKind := syntax.AsErrKind(err, tc.wantErrKind); match == nil {
+						t.Fatalf("executeBinaryOperator(%T, _): got err=%v (kind %s), wantErrKind=%s", tc.node, err, gotErrKind, tc.wantErrKind)
+					}
 				}
 				return
 			}
@@ -385,7 +395,7 @@ func TestBinaryOps_PlusEquals(t *testing.T) {
 				Left:  &parse.IdentifierNode{Value: syntax.MakeToken(syntax.TokenIdentifier, "dest")},
 				Right: &parse.LiteralNode{Token: syntax.MakeToken(syntax.TokenInteger, "1")},
 			},
-			wantErrKind: syntax.ErrTypeMismatch,
+			wantErr: &TypeError{},
 		},
 		{
 			name:  "undefined_variable",

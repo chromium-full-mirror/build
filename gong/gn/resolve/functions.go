@@ -76,13 +76,19 @@ func (AssertFunction) Run(scope *Scope, call *parse.FunctionCallNode, args []Val
 
 	assertValue, err := AsValue[*BooleanValue](args[0])
 	if err != nil {
-		return nil, call.Function.MakeError(syntax.ErrTypeMismatch, "Assertion value not a bool.")
+		return nil, TypeError{
+			Value: args[0],
+			Msg:   "Assertion value not a bool.",
+		}
 	}
 	assertMessage := ""
 	if len(args) == 2 {
 		assertMessageValue, err := AsValue[*StringValue](args[1])
 		if err != nil {
-			return nil, call.Function.MakeError(syntax.ErrTypeMismatch, "Assertion message is not a string.")
+			return nil, TypeError{
+				Value: args[1],
+				Msg:   "Assertion message is not a string.",
+			}
 		}
 		assertMessage = assertMessageValue.value
 	}
@@ -138,23 +144,33 @@ func (assertFailureFunction) Run(scope *Scope, call *parse.FunctionCallNode, arg
 	if errors.As(err, &gnErr) {
 		assertMessageValue, err := AsValue[*StringValue](args[0])
 		if err != nil {
-			return nil, MakeErrFromValue(args[0], syntax.ErrTypeMismatch, "Assertion message is not a string.", "")
+			return nil, TypeError{
+				Value: args[0],
+				Msg:   "Assertion message is not a string.",
+			}
 		}
 		assertMessage := assertMessageValue.value
 		if gnErr.Message() != assertMessage {
-			return nil, parse.MakeErrFromNode(block, syntax.ErrInvalidOperation,
-				fmt.Sprintf("Wanted %q, got %q", assertMessage, gnErr.Message()), "")
+			return nil, AssertError{
+				OriginFunction: OriginFunction{Call: call},
+				Details:        fmt.Sprintf("Wanted %q, got %q", assertMessage, gnErr.Message()),
+			}
 		}
 
 		if len(args) == 2 {
 			helpMessageValue, err := AsValue[*StringValue](args[1])
 			if err != nil {
-				return nil, MakeErrFromValue(args[1], syntax.ErrTypeMismatch, "Help message is not a string.", "")
+				return nil, TypeError{
+					Value: args[1],
+					Msg:   "Help message is not a string.",
+				}
 			}
 			helpMessage := helpMessageValue.value
 			if gnErr.HelpText() != helpMessage {
-				return nil, parse.MakeErrFromNode(block, syntax.ErrInvalidOperation,
-					fmt.Sprintf("Wanted %q, got %q", helpMessage, gnErr.HelpText()), "")
+				return nil, AssertError{
+					OriginFunction: OriginFunction{Call: call},
+					Details:        fmt.Sprintf("Wanted %q, got %q", helpMessage, gnErr.HelpText()),
+				}
 			}
 		}
 		return nil, nil
@@ -163,7 +179,10 @@ func (assertFailureFunction) Run(scope *Scope, call *parse.FunctionCallNode, arg
 		return nil, parse.MakeErrFromNode(block, syntax.ErrInvalidOperation,
 			"Internal error.", "Non-GN error encountered during execution of this block.")
 	}
-	return nil, call.Function.MakeError(syntax.ErrInvalidOperation, "Block did not fail.")
+	return nil, AssertError{
+		OriginFunction: OriginFunction{Call: call},
+		Details:        "Block did not fail.",
+	}
 }
 
 // mockFunction is a mock implementation of FunctionInfo for testing.
@@ -183,7 +202,11 @@ func (f *mockFunction) Run(scope *Scope, call *parse.FunctionCallNode, args []Va
 	}
 	intVal, ok := args[0].(*IntegerValue)
 	if !ok {
-		return nil, MakeErrFromValue(args[0], syntax.ErrTypeMismatch, "Expected an integer", "Please provide an integer argument")
+		return nil, TypeError{
+			Value: args[0],
+			Msg:   "Expected an integer",
+			Help:  "Please provide an integer argument",
+		}
 	}
 	return &IntegerValue{value: intVal.value + 42, origin: call}, nil
 }

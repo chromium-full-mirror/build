@@ -184,7 +184,9 @@ func (f *rebasePathFunction) Run(scope *resolve.Scope, call *parse.FunctionCallN
 		return resolve.NewOriginlessStringValue(rebased), nil
 
 	default:
-		return nil, call.Function.MakeError(syntax.ErrTypeMismatch,
-			"rebase_path requires a list or a string.")
+		return nil, resolve.TypeError{
+			Value: v,
+			Msg:   "rebase_path requires a list or a string.",
+		}
 	}
 }

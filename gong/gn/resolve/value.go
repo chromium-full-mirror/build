@@ -141,9 +141,10 @@ func AsValue[T Value](v Value) (T, error) {
 	if ok {
 		return t, nil
 	}
-	return t, parse.MakeErrFromNode(v.OriginNode(),
-		syntax.ErrTypeMismatch,
-		fmt.Sprintf("This is not a %s. Instead I see a %s = true",
+	return t, TypeError{
+		Value: v,
+		Msg: fmt.Sprintf("This is not a %s. Instead I see a %s = true",
 			v.String(),
-			v.valueType().String()), "")
+			v.valueType().String()),
+	}
 }

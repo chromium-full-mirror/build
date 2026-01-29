@@ -27,7 +27,10 @@ type Label struct {
 func ResolveLabel(currentDir fs.SourceDir, currentToolchain Label, input resolve.Value) (Label, error) {
 	stringValue, ok := input.(*resolve.StringValue)
 	if !ok {
-		return Label{}, resolve.MakeErrFromValue(input, syntax.ErrTypeMismatch, "Dependency is not a string.", "")
+		return Label{}, resolve.TypeError{
+			Value: input,
+			Msg:   "Dependency is not a string.",
+		}
 	}
 	str := stringValue.RawGNString()
 	if str == "" {

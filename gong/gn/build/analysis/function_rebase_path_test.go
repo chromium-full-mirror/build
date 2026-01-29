@@ -72,9 +72,9 @@ func TestRebasePathFunction(t *testing.T) {
 			wantErr: &resolve.ArgumentCountError{},
 		},
 		{
-			name:        "invalid input type",
-			args:        []resolve.Value{&resolve.IntegerValue{}},
-			wantErrKind: syntax.ErrTypeMismatch,
+			name:    "invalid input type",
+			args:    []resolve.Value{&resolve.IntegerValue{}},
+			wantErr: &resolve.TypeError{},
 		},
 		{
 			name: "invalid new_base type",
@@ -82,7 +82,7 @@ func TestRebasePathFunction(t *testing.T) {
 				resolve.NewOriginlessStringValue("//foo"),
 				&resolve.IntegerValue{},
 			},
-			wantErrKind: syntax.ErrTypeMismatch,
+			wantErr: &resolve.TypeError{},
 		},
 		{
 			name:        "list input not implemented",

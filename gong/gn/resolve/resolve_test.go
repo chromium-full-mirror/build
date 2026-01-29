@@ -177,7 +177,7 @@ func TestExecuteNode(t *testing.T) {
 				Base:      syntax.MakeToken(syntax.TokenIdentifier, "a"),
 				Subscript: &parse.LiteralNode{Token: syntax.MakeToken(syntax.TokenString, `"0"`)},
 			},
-			wantErrKind: syntax.ErrTypeMismatch,
+			wantErr: &TypeError{},
 		},
 		{
 			name: "access_scope_by_subscript",
@@ -241,7 +241,7 @@ func TestExecuteNode(t *testing.T) {
 				Base:      syntax.MakeToken(syntax.TokenIdentifier, "a"),
 				Subscript: &parse.LiteralNode{Token: syntax.MakeToken(syntax.TokenInteger, "0")},
 			},
-			wantErrKind: syntax.ErrTypeMismatch,
+			wantErr: &TypeError{},
 		},
 		{
 			name: "access_by_subscript_invalid_base",
@@ -256,7 +256,7 @@ func TestExecuteNode(t *testing.T) {
 				Base:      syntax.MakeToken(syntax.TokenIdentifier, "a"),
 				Subscript: &parse.LiteralNode{Token: syntax.MakeToken(syntax.TokenInteger, "0")},
 			},
-			wantErrKind: syntax.ErrTypeMismatch,
+			wantErr: &TypeError{},
 		},
 		{
 			name:  "function_call_success",
@@ -470,8 +470,8 @@ func TestExecuteNode(t *testing.T) {
 					Statements: []parse.Node{},
 				},
 			},
-			scope:       &Scope{},
-			wantErrKind: syntax.ErrTypeMismatch,
+			scope:   &Scope{},
+			wantErr: &TypeError{},
 		},
 		{
 			name:  "list_empty",
@@ -536,7 +536,7 @@ func TestExecuteNode(t *testing.T) {
 					},
 				},
 			},
-			wantErrKind: syntax.ErrTypeMismatch,
+			wantErr: &TypeError{},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

@@ -18,14 +18,6 @@ const (
 	// TODO(b/388723392): Remove this once it's no longer used.
 	ErrUnknown        ErrKind = "ErrUnknown"
 	ErrNotImplemented ErrKind = "ErrNotImplemented"
-	// ErrArgumentCount is deprecated and is kept to retain existing behavior
-	// for code that is incorrectly using this error type to represent
-	// argument type errors.
-	//
-	// These usages should be migrated to ErrTypeMismatch.
-	//
-	// Deprecated: Implement ui.PresentableError instead.
-	ErrArgumentCount ErrKind = "ErrArgumentCount"
 	// Deprecated: Implement ui.PresentableError instead.
 	ErrFileLoadFail ErrKind = "ErrFileLoadFail"
 	// Deprecated: Implement ui.PresentableError instead.
@@ -36,8 +28,6 @@ const (
 	ErrMemberNotFound ErrKind = "ErrKeyNotFound"
 	// Deprecated: Implement ui.PresentableError instead.
 	ErrSubscriptOutOfRange ErrKind = "ErrSubscriptOutOfRange"
-	// Deprecated: Implement ui.PresentableError instead.
-	ErrTypeMismatch ErrKind = "ErrTypeMismatch"
 	// Deprecated: Implement ui.PresentableError instead.
 	ErrUselessAssignment ErrKind = "ErrUselessAssignment"
 )
