@@ -9,7 +9,6 @@ import (
 	"fmt"
 
 	"go.chromium.org/build/gong/gn/parse"
-	"go.chromium.org/build/gong/gn/syntax"
 	"go.chromium.org/build/gong/ui"
 )
 
@@ -176,8 +175,10 @@ func (assertFailureFunction) Run(scope *Scope, call *parse.FunctionCallNode, arg
 		return nil, nil
 	}
 	if err != nil {
-		return nil, parse.MakeErrFromNode(block, syntax.ErrInvalidOperation,
-			"Internal error.", "Non-GN error encountered during execution of this block.")
+		return nil, AssertError{
+			OriginFunction: OriginFunction{Call: call},
+			Details:        fmt.Sprintf("Non-GN error encountered during execution of this block: %v", err),
+		}
 	}
 	return nil, AssertError{
 		OriginFunction: OriginFunction{Call: call},

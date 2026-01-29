@@ -302,6 +302,42 @@ func (e TypeError) Ranges() []syntax.LocationRange {
 	return []syntax.LocationRange{e.Value.OriginNode().LocationRange()}
 }
 
+// ScopeMergeError is returned when a scope merge fails due to a value collision.
+type ScopeMergeError struct {
+	mergeOptions  ScopeMergeOptions
+	existingIdent string
+}
+
+// Error returns the error message.
+func (e ScopeMergeError) Error() string {
+	return fmt.Sprintf("scope merge failed: %q exists in destination scope", e.existingIdent)
+}
+
+// Message returns the user-facing error message.
+func (e ScopeMergeError) Message() string { return "Value collision." }
+
+// HelpText returns the user-facing error help text.
+func (e ScopeMergeError) HelpText() string {
+	// TODO: add extra help text that points to what's being clobbered.
+	return fmt.Sprintf("This %s contains %q", e.mergeOptions.SourceFriendlyName, e.existingIdent)
+}
+
+// Location implements PresentableSourceError.
+func (e ScopeMergeError) Location() syntax.Location {
+	if e.mergeOptions.SourceNode == nil {
+		return syntax.Location{}
+	}
+	return e.mergeOptions.SourceNode.LocationRange().Begin()
+}
+
+// Ranges implements PresentableSourceError.
+func (e ScopeMergeError) Ranges() []syntax.LocationRange {
+	if e.mergeOptions.SourceNode == nil {
+		return nil
+	}
+	return []syntax.LocationRange{e.mergeOptions.SourceNode.LocationRange()}
+}
+
 // OriginFunction is an embeddable struct for errors to provide location data for a function call.
 type OriginFunction struct {
 	Call *parse.FunctionCallNode

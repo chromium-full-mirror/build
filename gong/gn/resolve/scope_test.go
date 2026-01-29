@@ -5,6 +5,7 @@
 package resolve
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -31,7 +32,7 @@ func TestScope_NonRecursiveMergeTo(t *testing.T) {
 		dest          *Scope
 		options       ScopeMergeOptions
 		wantDestValue Value
-		wantErrKind   syntax.ErrKind
+		wantErr       bool
 	}{
 		{
 			name:   "Detect value collision",
@@ -44,7 +45,7 @@ func TestScope_NonRecursiveMergeTo(t *testing.T) {
 			options: ScopeMergeOptions{
 				SourceNode: sourceNode,
 			},
-			wantErrKind: syntax.ErrInvalidOperation,
+			wantErr: true,
 		},
 		{
 			name:   "Clobber colliding values",
@@ -58,7 +59,6 @@ func TestScope_NonRecursiveMergeTo(t *testing.T) {
 				DestinationClobber: true,
 			},
 			wantDestValue: &StringValue{value: "hello"},
-			wantErrKind:   syntax.ErrNone,
 		},
 		{
 			name:   "No error on same value",
@@ -70,7 +70,6 @@ func TestScope_NonRecursiveMergeTo(t *testing.T) {
 			},
 			options:       ScopeMergeOptions{},
 			wantDestValue: &StringValue{value: "hello"},
-			wantErrKind:   syntax.ErrNone,
 		},
 		{
 			name:   "No error on empty source",
@@ -80,23 +79,22 @@ func TestScope_NonRecursiveMergeTo(t *testing.T) {
 					"v": {false, &StringValue{value: "hello"}},
 				},
 			},
-			options:     ScopeMergeOptions{},
-			wantErrKind: syntax.ErrNone,
+			options: ScopeMergeOptions{},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			err := tc.source.NonRecursiveMergeTo(tc.dest, tc.options)
 
-			wantErr := tc.wantErrKind != syntax.ErrNone
 			gotErr := err != nil
 
-			if gotErr != wantErr {
-				t.Fatalf("NonRecursiveMergeTo() error = %v, wantErrKind %s", err, tc.wantErrKind)
+			if gotErr != tc.wantErr {
+				t.Fatalf("NonRecursiveMergeTo() got err = %v (%T), want %T", err, err, tc.wantErr)
 			}
 
 			if gotErr {
-				if match, gotErrKind := syntax.AsErrKind(err, tc.wantErrKind); match == nil {
-					t.Fatalf("NonRecursiveMergeTo() error = %v (kind %s), wantErrKind %s", err, gotErrKind, tc.wantErrKind)
+				var wantErr *ScopeMergeError
+				if !errors.As(err, &wantErr) {
+					t.Errorf("NonRecursiveMergeTo() got err=%v (%T), want %T", err, err, wantErr)
 				}
 			} else if tc.wantDestValue != nil {
 				got := tc.dest.Value("v", false)

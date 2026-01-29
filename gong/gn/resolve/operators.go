@@ -388,10 +388,13 @@ func executeBinaryOperator(opNode *parse.BinaryOpNode, scope *Scope) (Value, err
 		if isClobber {
 			// TODO: to match GN precisely, need to also add a sub-error with hint about how to fix
 			// e.g. if you really wanted to do this then you must run `foo = []` first.
-			return nil, syntax.MakeErrorAt(opNode.LocationRange().Begin(), nil,
-				syntax.ErrInvalidOperation,
-				fmt.Sprintf("Replacing nonempty %s.", oldValue.valueType().String()),
-				fmt.Sprintf("This overwrites a previously-defined nonempty %s.", oldValue.valueType().String()))
+			return nil, TypeError{
+				Value:            rvalue,
+				Msg:              fmt.Sprintf("Replacing nonempty %s.", oldValue.valueType().String()),
+				Help:             fmt.Sprintf("This overwrites a previously-defined nonempty %s.", oldValue.valueType().String()),
+				locationOverride: opNode.LocationRange().Begin(),
+				rangesOverride:   []syntax.LocationRange{opNode.LocationRange()},
+			}
 		}
 		// Validation passed, perform the assignment.
 		return lvalue.assign(rvalue, opNode.Right), nil

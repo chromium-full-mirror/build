@@ -220,12 +220,12 @@ func TestBinaryOps_NoSideEffects(t *testing.T) {
 
 func TestBinaryOps_Assignment(t *testing.T) {
 	for _, tc := range []struct {
-		name        string
-		scope       *Scope
-		node        *parse.BinaryOpNode
-		ident       string
-		want        Value
-		wantErrKind syntax.ErrKind
+		name    string
+		scope   *Scope
+		node    *parse.BinaryOpNode
+		ident   string
+		want    Value
+		wantErr any
 	}{
 		{
 			name:  "assign_integer",
@@ -235,9 +235,8 @@ func TestBinaryOps_Assignment(t *testing.T) {
 				Left:  &parse.IdentifierNode{Value: syntax.MakeToken(syntax.TokenIdentifier, "a")},
 				Right: &parse.LiteralNode{Token: syntax.MakeToken(syntax.TokenInteger, "123")},
 			},
-			ident:       "a",
-			want:        &IntegerValue{value: 123},
-			wantErrKind: syntax.ErrNone,
+			ident: "a",
+			want:  &IntegerValue{value: 123},
 		},
 		{
 			name:  "assign_string",
@@ -247,9 +246,8 @@ func TestBinaryOps_Assignment(t *testing.T) {
 				Left:  &parse.IdentifierNode{Value: syntax.MakeToken(syntax.TokenIdentifier, "a")},
 				Right: &parse.LiteralNode{Token: syntax.MakeToken(syntax.TokenString, `"b"`)},
 			},
-			ident:       "a",
-			want:        &StringValue{value: "b"},
-			wantErrKind: syntax.ErrNone,
+			ident: "a",
+			want:  &StringValue{value: "b"},
 		},
 		{
 			name:  "assign_list",
@@ -259,9 +257,8 @@ func TestBinaryOps_Assignment(t *testing.T) {
 				Left:  &parse.IdentifierNode{Value: syntax.MakeToken(syntax.TokenIdentifier, "a")},
 				Right: &parse.ListNode{Contents: []parse.Node{&parse.LiteralNode{Token: syntax.MakeToken(syntax.TokenInteger, "1")}}},
 			},
-			ident:       "a",
-			want:        &ListValue{list: []Value{&IntegerValue{value: 1}}},
-			wantErrKind: syntax.ErrNone,
+			ident: "a",
+			want:  &ListValue{list: []Value{&IntegerValue{value: 1}}},
 		},
 		{
 			name: "assign_list_clobber",
@@ -273,7 +270,7 @@ func TestBinaryOps_Assignment(t *testing.T) {
 				Left:  &parse.IdentifierNode{Value: syntax.MakeToken(syntax.TokenIdentifier, "a")},
 				Right: &parse.ListNode{Contents: []parse.Node{&parse.LiteralNode{Token: syntax.MakeToken(syntax.TokenInteger, "1")}}},
 			},
-			wantErrKind: syntax.ErrInvalidOperation,
+			wantErr: &TypeError{},
 		},
 		{
 			name: "assign_accessor",
@@ -288,23 +285,22 @@ func TestBinaryOps_Assignment(t *testing.T) {
 				},
 				Right: &parse.LiteralNode{Token: syntax.MakeToken(syntax.TokenInteger, "123")},
 			},
-			ident:       "a.b",
-			want:        &IntegerValue{value: 123},
-			wantErrKind: syntax.ErrNone,
+			ident: "a.b",
+			want:  &IntegerValue{value: 123},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			got, err := executeBinaryOperator(tc.node, tc.scope)
-			wantErr := tc.wantErrKind != syntax.ErrNone
+			wantErr := tc.wantErr != nil
 			gotErr := err != nil
 
 			if gotErr != wantErr {
-				t.Fatalf("executeBinaryOperator(%T, _): got err=%v, wantErrKind=%v", tc.node, err, tc.wantErrKind)
+				t.Fatalf("executeBinaryOperator(%T, _): got err=%v (%T), want %T", tc.node, err, err, tc.wantErr)
 			}
 
 			if gotErr {
-				if match, gotErrKind := syntax.AsErrKind(err, tc.wantErrKind); match == nil {
-					t.Fatalf("executeBinaryOperator(%T, _): got err=%v (kind %s), wantErrKind=%s", tc.node, err, gotErrKind, tc.wantErrKind)
+				if !errors.As(err, tc.wantErr) {
+					t.Fatalf("executeBinaryOperator(%T, _): got err=%v (%T), want %T", tc.node, err, err, tc.wantErr)
 				}
 				return
 			}

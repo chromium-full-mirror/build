@@ -5,7 +5,6 @@
 package resolve
 
 import (
-	"fmt"
 	"iter"
 	"maps"
 	"slices"
@@ -358,10 +357,10 @@ func (s *Scope) NonRecursiveMergeTo(dest *Scope, options ScopeMergeOptions) erro
 			existingValue := dest.Value(currentName, false)
 			if existingValue != nil && !newValue.Equal(existingValue) {
 				// Value present in both the source and the dest.
-				// TODO: add extra help text that points to what's being clobbered.
-				return parse.MakeErrFromNode(options.SourceNode, syntax.ErrInvalidOperation,
-					"Value collision.",
-					fmt.Sprintf("This %s contains %q", options.SourceFriendlyName, currentName))
+				return &ScopeMergeError{
+					mergeOptions:  options,
+					existingIdent: currentName,
+				}
 			}
 		}
 

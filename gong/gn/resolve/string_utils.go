@@ -36,7 +36,11 @@ func appendHexByte(token syntax.Token, input string, i int, output *strings.Buil
 
 func expandStringLiteral(token syntax.Token, originNode parse.Node) (Value, error) {
 	if token.TokenType() != syntax.TokenString {
-		return nil, token.MakeError(syntax.ErrInvalidOperation, "This is not a string")
+		return nil, TypeError{
+			Msg:              "This is not a string",
+			locationOverride: originNode.LocationRange().Begin(),
+			rangesOverride:   []syntax.LocationRange{originNode.LocationRange()},
+		}
 	}
 
 	// The parser should have kept the surrounding quotes.

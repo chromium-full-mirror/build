@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 
+	"go.chromium.org/build/gong/gn/parse"
 	"go.chromium.org/build/gong/gn/syntax"
 )
 
@@ -48,9 +49,9 @@ func TestExpandStringLiteral(t *testing.T) {
 			want:  &StringValue{value: "a$b"},
 		},
 		{
-			name:        "not_a_string_token",
-			token:       syntax.MakeToken(syntax.TokenInteger, `123`),
-			wantErrKind: syntax.ErrInvalidOperation,
+			name:    "not_a_string_token",
+			token:   syntax.MakeToken(syntax.TokenInteger, `123`),
+			wantErr: &TypeError{},
 		},
 		{
 			name:    "invalid_short_string",
@@ -119,7 +120,9 @@ func TestExpandStringLiteral(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := expandStringLiteral(tc.token, nil)
+			got, err := expandStringLiteral(tc.token, &parse.LiteralNode{
+				Token: syntax.MakeToken(syntax.TokenString, "origin"),
+			})
 			wantErr := tc.wantErr != nil || tc.wantErrKind != ""
 			gotErr := err != nil
 
