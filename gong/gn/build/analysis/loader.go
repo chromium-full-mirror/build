@@ -109,9 +109,9 @@ func (l *Loader) Load(file fs.SourceFile, origin syntax.LocationRange, intoToolc
 }
 
 func (l *Loader) loadBuildConfig(settings *Settings) error {
-	baseContext, ok := settings.baseConfig.ExecContext().(*scopeContext)
-	if !ok {
-		return fmt.Errorf("internal error: received a scope without a scopeContext")
+	baseContext, err := contextFromScope(settings.baseConfig)
+	if err != nil {
+		return err
 	}
 
 	baseContext.processingBuildConfig = true
@@ -166,10 +166,11 @@ func (l *Loader) loadBuildConfig(settings *Settings) error {
 
 	// The default toolchain must have been set in the default build config file.
 	if baseContext.defaultToolchainReceiver != nil && l.defaultToolchain == (environment.Label{}) {
-		return environment.BuildError(
-			"The default build config file did not call set_default_toolchain()",
-			`If you don't call this, I can't figure out what toolchain to use
-for all of this code.`)
+		return environment.BuildConfigError{
+			Msg: "The default build config file did not call set_default_toolchain()",
+			Help: `If you don't call this, I can't figure out what toolchain to use
+for all of this code.`,
+		}
 	}
 
 	return nil

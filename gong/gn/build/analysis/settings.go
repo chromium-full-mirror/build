@@ -66,6 +66,16 @@ type scopeContext struct {
 	targetDefaults map[string]*resolve.Scope
 }
 
+func contextFromScope(scope *resolve.Scope) (*scopeContext, error) {
+	ctx, ok := scope.ExecContext().(*scopeContext)
+	if !ok {
+		return nil, environment.IllegalStateError{
+			Reason: "Builder received a Scope without expected context",
+		}
+	}
+	return ctx, nil
+}
+
 // BaseConfig returns the base config for the scope.
 func (s *scopeContext) BaseConfig() *resolve.Scope {
 	return s.settings.baseConfig

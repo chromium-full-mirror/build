@@ -5,8 +5,6 @@
 package analysis
 
 import (
-	"fmt"
-
 	"go.chromium.org/build/gong/gn/parse"
 	"go.chromium.org/build/gong/gn/resolve"
 	"go.chromium.org/build/gong/gn/syntax"
@@ -27,9 +25,9 @@ func (actionFunction) Help() string {
 }
 
 func (actionFunction) Run(scope *resolve.Scope, call *parse.FunctionCallNode, _ []resolve.Value) (resolve.Value, error) {
-	ctx, ok := scope.ExecContext().(*scopeContext)
-	if !ok {
-		return nil, fmt.Errorf("internal error: received a scope without a scopeContext")
+	ctx, err := contextFromScope(scope)
+	if err != nil {
+		return nil, err
 	}
 
 	if ctx.isProcessingBuildConfig() {

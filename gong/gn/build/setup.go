@@ -289,9 +289,10 @@ func (s *Setup) fillOtherConfig() error {
 		}
 		extension := stringValue.String()
 		if strings.ContainsRune(extension, filepath.Separator) {
-			return environment.BuildError(
-				"Invalid build_file_extension",
-				fmt.Sprintf("Build file extension '%s' cannot contain a path separator", extension))
+			return environment.BuildConfigError{
+				Msg:  "Invalid build_file_extension",
+				Help: fmt.Sprintf("Build file extension '%s' cannot contain a path separator", extension),
+			}
 		}
 		s.loader.BuildFileExtension = "." + extension
 	}
@@ -319,9 +320,10 @@ func (s *Setup) fillOtherConfig() error {
 	// Build config file.
 	buildConfigValue := s.dotfileScope.Value("buildconfig", true)
 	if buildConfigValue == nil {
-		return environment.BuildError(
-			"No build config file.",
-			fmt.Sprintf(`Your .gn file ("%s") didn't specify a "buildconfig" value.`, s.dotfileName))
+		return environment.BuildConfigError{
+			Msg:  "No build config file.",
+			Help: fmt.Sprintf(`Your .gn file ("%s") didn't specify a "buildconfig" value.`, s.dotfileName),
+		}
 	}
 	buildConfigFile, err := fs.MakeSourceFile(buildConfigValue.RawGNString())
 	if err != nil {
