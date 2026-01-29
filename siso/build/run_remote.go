@@ -107,21 +107,21 @@ func (b *Builder) runRemote(ctx context.Context, step *Step) error {
 			return err
 		}
 		if errors.Is(err, reapi.ErrBadPlatformContainerImage) {
-			return err
+			return fmt.Errorf("remote-exec %s failed: %w", step.cmd.ActionDigest(), err)
 		}
 		switch status.Code(err) {
 		case codes.PermissionDenied,
 			codes.InvalidArgument,
 			codes.FailedPrecondition:
-			return err
+			return fmt.Errorf("remote-exec %s failed: %w", step.cmd.ActionDigest(), err)
 		}
 		if errors.Is(err, errNotRelocatable) {
 			clog.Errorf(ctx, "not relocatable: %v", err)
-			return err
+			return fmt.Errorf("remote-exec %s failed: %w", step.cmd.ActionDigest(), err)
 		}
 		if errors.Is(err, errNotUnderExecRoot) {
 			clog.Errorf(ctx, "not remote executable: %v\nUse `use_system_inputs` or put them under exec_root", err)
-			return err
+			return fmt.Errorf("remote-exec %s failed: %w", step.cmd.ActionDigest(), err)
 		}
 		var eerr execute.ExitError
 		if errors.As(err, &eerr) && len(step.cmd.Stdout())+len(step.cmd.Stderr()) > 0 && b.failures.allowed == 1 {
