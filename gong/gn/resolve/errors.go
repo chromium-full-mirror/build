@@ -358,3 +358,24 @@ func (e OriginFunction) Ranges() []syntax.LocationRange {
 	}
 	return []syntax.LocationRange{e.Call.LocationRange()}
 }
+
+// OriginValue is an embeddable struct for errors to provide location data for a value.
+type OriginValue struct {
+	Value Value
+}
+
+// Location implements PresentableSourceError.
+func (e OriginValue) Location() syntax.Location {
+	if e.Value == nil {
+		return syntax.Location{}
+	}
+	return e.Value.OriginNode().LocationRange().Begin()
+}
+
+// Ranges implements PresentableSourceError.
+func (e OriginValue) Ranges() []syntax.LocationRange {
+	if e.Value == nil {
+		return nil
+	}
+	return []syntax.LocationRange{e.Value.OriginNode().LocationRange()}
+}

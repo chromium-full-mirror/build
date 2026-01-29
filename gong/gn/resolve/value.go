@@ -11,7 +11,6 @@ import (
 	"go.starlark.net/starlark"
 
 	"go.chromium.org/build/gong/gn/parse"
-	"go.chromium.org/build/gong/gn/syntax"
 )
 
 type ValueType int
@@ -117,21 +116,6 @@ func GNLiteralRvalue(v Value) string {
 		return result.String()
 	}
 	return v.RawGNString()
-}
-
-// MakeErrFromValue makes an error at the provided value.
-//
-// Deprecated: Implement ui.PresentableError instead.
-func MakeErrFromValue(value Value, kind syntax.ErrKind, message, helpText string) error {
-	if value.OriginNode() == nil {
-		return syntax.MakeErrorAt(syntax.Location{}, []syntax.LocationRange{}, kind, message, helpText)
-	}
-	return syntax.MakeErrorAt(
-		value.OriginNode().LocationRange().Begin(),
-		[]syntax.LocationRange{value.OriginNode().LocationRange()},
-		kind,
-		message,
-		helpText)
 }
 
 // AsValue returns a user-facing error that references the parse node

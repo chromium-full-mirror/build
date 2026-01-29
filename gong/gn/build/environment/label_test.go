@@ -5,13 +5,13 @@
 package environment
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
 
 	"go.chromium.org/build/gong/gn/build/fs"
 	"go.chromium.org/build/gong/gn/resolve"
-	"go.chromium.org/build/gong/gn/syntax"
 )
 
 // Helper to create a fs.SourceDir from a string we know should be valid, so fail the test if it fails.
@@ -33,12 +33,12 @@ func TestResolveLabel(t *testing.T) {
 	}
 
 	for _, tc := range []struct {
-		name        string
-		input       string
-		wd          string
-		toolchain   Label
-		want        Label
-		wantErrKind syntax.ErrKind
+		name      string
+		input     string
+		wd        string
+		toolchain Label
+		want      Label
+		wantErr   any
 	}{
 		{
 			name:      "absolute",
@@ -53,17 +53,17 @@ func TestResolveLabel(t *testing.T) {
 			},
 		},
 		{
-			name:        "implicit target name not yet supported",
-			input:       "//foo/bar",
-			wd:          "//chrome/browser/",
-			wantErrKind: syntax.ErrNotImplemented,
+			name:    "implicit target name not yet supported",
+			input:   "//foo/bar",
+			wd:      "//chrome/browser/",
+			wantErr: &LabelFormatError{},
 		},
 		{
-			name:        "implicit target dir not yet supported",
-			input:       ":baz",
-			wd:          "//chrome/browser/",
-			toolchain:   Label{Dir: mustDir(t, "//t/"), Name: "d"},
-			wantErrKind: syntax.ErrNotImplemented,
+			name:      "implicit target dir not yet supported",
+			input:     ":baz",
+			wd:        "//chrome/browser/",
+			toolchain: Label{Dir: mustDir(t, "//t/"), Name: "d"},
+			wantErr:   &LabelFormatError{},
 		},
 		{
 			name:      "explicit toolchain",
@@ -78,32 +78,32 @@ func TestResolveLabel(t *testing.T) {
 			},
 		},
 		{
-			name:        "invalid toolchain format",
-			input:       "//foo:bar(//t:two",
-			wd:          "//chrome/browser/",
-			toolchain:   Label{Dir: mustDir(t, "//t/"), Name: "d"},
-			wantErrKind: syntax.ErrInvalidFormat,
+			name:      "invalid toolchain format",
+			input:     "//foo:bar(//t:two",
+			wd:        "//chrome/browser/",
+			toolchain: Label{Dir: mustDir(t, "//t/"), Name: "d"},
+			wantErr:   &LabelFormatError{},
 		},
 		{
-			name:        "toolchain in toolchain",
-			input:       "//foo:bar(//t:two(//t2:t2))",
-			wd:          "//chrome/browser/",
-			toolchain:   Label{Dir: mustDir(t, "//t/"), Name: "d"},
-			wantErrKind: syntax.ErrInvalidFormat,
+			name:      "toolchain in toolchain",
+			input:     "//foo:bar(//t:two(//t2:t2))",
+			wd:        "//chrome/browser/",
+			toolchain: Label{Dir: mustDir(t, "//t/"), Name: "d"},
+			wantErr:   &LabelFormatError{},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			got, err := ResolveLabel(mustDir(t, tc.wd), tc.toolchain, resolve.NewOriginlessStringValue(tc.input))
-			wantErr := tc.wantErrKind != ""
+			wantErr := tc.wantErr != nil
 			gotErr := err != nil
 
 			if gotErr != wantErr {
-				t.Fatalf("ResolveLabel(%q) got err=%v, wantErr=%v (kind %s)", tc.input, err, wantErr, tc.wantErrKind)
+				t.Errorf("ResolveLabel(%q) got err=%v (%T), want %T", tc.input, err, err, tc.wantErr)
 			}
 
 			if gotErr {
-				if match, gotErrKind := syntax.AsErrKind(err, tc.wantErrKind); match == nil {
-					t.Fatalf("ResolveLabel(%q) got err=%v (kind %s), wantErrKind=%s", tc.input, err, gotErrKind, tc.wantErrKind)
+				if !errors.As(err, &tc.wantErr) {
+					t.Errorf("ResolveLabel(%q) got err=%v (%T), want %T", tc.input, err, err, tc.wantErr)
 				}
 				return
 			}

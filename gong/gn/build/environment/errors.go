@@ -6,6 +6,8 @@ package environment
 
 import (
 	"fmt"
+
+	"go.chromium.org/build/gong/gn/resolve"
 )
 
 // BuildConfigError is returned if the build configuration is invalid.
@@ -48,3 +50,19 @@ func (e IllegalStateError) Message() string { return "Builder in illegal state."
 
 // HelpText returns the user-facing help text.
 func (e IllegalStateError) HelpText() string { return e.Reason }
+
+// LabelFormatError is returned if a label is invalid.
+type LabelFormatError struct {
+	resolve.OriginValue
+	message  string
+	helpText string
+}
+
+// Error returns the golang error string.
+func (e LabelFormatError) Error() string { return fmt.Sprintf("label format error: %s", e.message) }
+
+// Message returns the user-facing error.
+func (e LabelFormatError) Message() string { return e.message }
+
+// HelpText returns the user-facing help text.
+func (e LabelFormatError) HelpText() string { return e.helpText }
