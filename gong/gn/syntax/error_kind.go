@@ -19,8 +19,6 @@ const (
 	ErrUnknown        ErrKind = "ErrUnknown"
 	ErrNotImplemented ErrKind = "ErrNotImplemented"
 	// Deprecated: Implement ui.PresentableError instead.
-	ErrFileLoadFail ErrKind = "ErrFileLoadFail"
-	// Deprecated: Implement ui.PresentableError instead.
 	ErrInvalidFormat ErrKind = "ErrInvalidFormat"
 	// Deprecated: Implement ui.PresentableError instead.
 	ErrInvalidOperation ErrKind = "ErrInvalidOperation"

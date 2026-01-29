@@ -5,7 +5,6 @@
 package fs
 
 import (
-	"fmt"
 	"sync"
 
 	"go.chromium.org/build/gong/gn/parse"
@@ -92,23 +91,19 @@ func doLoadFile(origin syntax.LocationRange, inputFileResolver InputFileResolver
 	// Read.
 	primaryPath := inputFileResolver.FullPath(name)
 	if err := file.load(primaryPath); err != nil {
+		wrappedErr := LoadError{
+			origin: origin,
+			path:   primaryPath,
+			err:    err,
+		}
 		if inputFileResolver.HasSecondarySourcePath() {
 			secondaryPath := inputFileResolver.FullPathSecondary(name)
 			if err = file.load(secondaryPath); err != nil {
-				return nil, nil, syntax.MakeErrorAt(origin.Begin(), []syntax.LocationRange{origin},
-					syntax.ErrFileLoadFail,
-					"Can't load input file.",
-					// NOTE: Yes, the quoting behavior is inconsistent between this
-					// error message below, this is intentional to be consistent
-					// with C++ GN. See:
-					// https://source.chromium.org/gn/gn/+/main:src/gn/input_file_manager.cc;l=58-75;drc=8bd36a27c0764c869d40ac4102a24720b781b389
-					fmt.Sprintf("Unable to load:\n  %s\nI also checked in the secondary tree for:\n  %s",
-						primaryPath, secondaryPath))
+				wrappedErr.secondaryPath = secondaryPath
+				wrappedErr.secondaryErr = err
 			}
-		} else {
-			return nil, nil, syntax.MakeErrorAt(origin.Begin(), []syntax.LocationRange{origin},
-				syntax.ErrFileLoadFail, fmt.Sprintf("Unable to load %q.", primaryPath), "")
 		}
+		return nil, nil, wrappedErr
 	}
 
 	// Tokenize.
