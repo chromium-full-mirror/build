@@ -22,24 +22,29 @@ type stepManifest struct {
 	inputs []string
 	// outputs of the step.
 	outputs []string
-	// hash of inputs/outputs.
+	// hash of inputs/outputs/extra
+	// extra: sandbox
 	edgeHash []byte
 }
 
 func newStepManifest(ctx context.Context, stepDef StepDef) *stepManifest {
 	inputs := stepDef.TriggerInputs(ctx)
 	outputs := stepDef.Outputs(ctx)
+	var extra []string
+	if sandbox := stepDef.Sandbox(); len(sandbox) > 0 {
+		extra = append(extra, "sandbox")
+	}
 	return &stepManifest{
 		cmdHash:  stepDef.CmdHash(),
 		inputs:   inputs,
 		outputs:  outputs,
-		edgeHash: calculateEdgeHash(inputs, outputs),
+		edgeHash: calculateEdgeHash(inputs, outputs, extra),
 	}
 }
 
 const unitSeparator = "\x1f"
 
-func calculateEdgeHash(inputs, outputs []string) []byte {
+func calculateEdgeHash(inputs, outputs, extra []string) []byte {
 	h := sha256.New()
 	for _, fname := range inputs {
 		io.WriteString(h, fname)
@@ -49,6 +54,13 @@ func calculateEdgeHash(inputs, outputs []string) []byte {
 	for _, fname := range outputs {
 		io.WriteString(h, fname)
 		io.WriteString(h, unitSeparator)
+	}
+	if len(extra) > 0 {
+		io.WriteString(h, unitSeparator)
+		for _, name := range extra {
+			io.WriteString(h, name)
+			io.WriteString(h, unitSeparator)
+		}
 	}
 	return h.Sum(nil)
 }

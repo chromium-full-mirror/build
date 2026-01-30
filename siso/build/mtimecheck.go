@@ -106,8 +106,25 @@ func (b *Builder) checkUpToDate(ctx context.Context, stepDef StepDef, stepManife
 		// TODO: remove this condition?
 		clog.Warningf(ctx, "missing edgehash in output")
 	} else if !bytes.Equal(edgehash, stepManifest.edgeHash) {
-		clog.Infof(ctx, "need: edgehash differ %q -> %q", base64.StdEncoding.EncodeToString(edgehash), base64.StdEncoding.EncodeToString(stepManifest.edgeHash))
-		fmt.Fprintf(b.explainWriter, "edge changed for %s\n", outname)
+		reasonLog := fmt.Sprintf("edgehash differ %q -> %q", base64.StdEncoding.EncodeToString(edgehash), base64.StdEncoding.EncodeToString(stepManifest.edgeHash))
+		reasonExplain := "edge changed"
+		if sandbox := stepDef.Sandbox(); len(sandbox) > 0 {
+			// we might just toggle sandboxing on?
+			edgehashNoSandbox := calculateEdgeHash(stepManifest.inputs, stepManifest.outputs, nil)
+			if bytes.Equal(edgehash, edgehashNoSandbox) {
+				reasonLog = "toggle sandbox on: " + reasonLog
+				reasonExplain = "toggle sandbox on"
+			}
+		} else {
+			// we might just toggle sandboxing off?
+			edgehashWithSandbox := calculateEdgeHash(stepManifest.inputs, stepManifest.outputs, []string{"sandbox"})
+			if bytes.Equal(edgehash, edgehashWithSandbox) {
+				reasonLog = "toggle sandbox off: " + reasonLog
+				reasonExplain = "toggle sandbox off"
+			}
+		}
+		clog.Infof(ctx, "need: %s", reasonLog)
+		fmt.Fprintf(b.explainWriter, "%s for %s\n", reasonExplain, outname)
 		return false
 	}
 	if b.clobber {
