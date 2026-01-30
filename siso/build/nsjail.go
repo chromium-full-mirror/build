@@ -89,7 +89,7 @@ func (n *nsjailExecutor) Run(ctx context.Context, cmd *execute.Cmd) (err error) 
 	if err != nil {
 		return fmt.Errorf("failed to setup nsjail: %w", err)
 	}
-	newCmd.JailDir = jail.Dir()
+	newCmd.ExecRootInJailDir = jail.ExecRoot()
 	clog.Infof(ctx, "run %q", newCmd.Args)
 	err = n.executor.Run(ctx, newCmd)
 	cmd.SetActionResult(newCmd.ActionResult())

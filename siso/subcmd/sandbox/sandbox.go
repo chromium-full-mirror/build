@@ -123,12 +123,12 @@ func (c *Command) run(ctx context.Context) error {
 	}
 
 	cmd := &execute.Cmd{
-		ExecRoot: execRoot,
-		Dir:      dir,
-		Inputs:   req.Inputs,
-		Outputs:  req.Outputs,
-		HashFS:   hashFS,
-		JailDir:  jail.Dir(),
+		ExecRoot:          execRoot,
+		Dir:               dir,
+		Inputs:            req.Inputs,
+		Outputs:           req.Outputs,
+		HashFS:            hashFS,
+		ExecRootInJailDir: jail.ExecRoot(),
 	}
 	cmd.Args, err = jail.Args(ctx, c.cmdline...)
 	if err != nil {

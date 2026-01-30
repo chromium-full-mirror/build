@@ -51,6 +51,14 @@ type Request struct {
 	Outputs []string `json:"outputs"`
 }
 
+const (
+	// always uses execRootInSandbox for exec root
+	// to detect unexpected usage of the absolute path
+	// in the action.
+	// TODO: no need to support input_root_absolute_path case?
+	execRootInSandbox = "/src"
+)
+
 // New creates nsjail environment with req from fsys at root dir.
 func New(ctx context.Context, fsys fs.FS, req Request) (_ *NSJail, err error) {
 	jail := &NSJail{
@@ -83,10 +91,10 @@ func New(ctx context.Context, fsys fs.FS, req Request) (_ *NSJail, err error) {
 		return nil, err
 	}
 	for _, output := range req.Outputs {
-		outputPathInSandbox := output
-		if !filepath.IsAbs(outputPathInSandbox) {
-			outputPathInSandbox = filepath.Join(req.ExecRoot, output)
+		if filepath.IsAbs(output) {
+			return nil, fmt.Errorf("output is absolute path: %q", output)
 		}
+		outputPathInSandbox := filepath.Join(execRootInSandbox, output)
 		err := os.MkdirAll(filepath.Dir(filepath.Join(jail.dir, outputPathInSandbox)), 0755)
 		if err != nil {
 			return nil, err
@@ -97,7 +105,7 @@ func New(ctx context.Context, fsys fs.FS, req Request) (_ *NSJail, err error) {
 	// disable all rlimits, default to limits set by parent.
 	jail.config.DisableRl = proto.Bool(true)
 
-	jail.config.Cwd = proto.String(filepath.Join(req.ExecRoot, req.Dir))
+	jail.config.Cwd = proto.String(filepath.Join(execRootInSandbox, req.Dir))
 	// TODO: better environment variable sandboxing
 	jail.config.KeepEnv = proto.Bool(true)
 
@@ -135,7 +143,7 @@ func New(ctx context.Context, fsys fs.FS, req Request) (_ *NSJail, err error) {
 	// or all the inputs are from an absolute out/ directory,
 	// it won't be created by nsjail automatically and the --cwd /src
 	// flag will fail.
-	srcDir := filepath.Join(jail.dir, req.ExecRoot)
+	srcDir := filepath.Join(jail.dir, execRootInSandbox)
 	err = os.MkdirAll(srcDir, 0755)
 	if err != nil {
 		return nil, err
@@ -147,15 +155,13 @@ func New(ctx context.Context, fsys fs.FS, req Request) (_ *NSJail, err error) {
 		IsDir:  proto.Bool(true),
 	})
 
-	// Add the out directory. It needs to be in a location that still
-	// matches all the output paths in the ninja file, so that we don't
-	// need to rewrite those paths. So if the out directory is at an
-	// absolute path, keep it in the same locaton. If it's at a
-	// relative path, move it to the relative to /src/.
-	outDirInSandbox := req.OutDir
-	if !filepath.IsAbs(outDirInSandbox) {
-		outDirInSandbox = filepath.Join(req.ExecRoot, outDirInSandbox)
+	// Add the out directory.
+	// We don't want to encode the absolute path into output files,
+	// so use /src/$OUT_DIR as output dir. b/479926946
+	if filepath.IsAbs(req.OutDir) {
+		return nil, fmt.Errorf("outdir is absolute path: %q", req.OutDir)
 	}
+	outDirInSandbox := filepath.Join(execRootInSandbox, req.OutDir)
 	absOutDir := filepath.Join(jail.dir, outDirInSandbox)
 	err = os.MkdirAll(absOutDir, 0755)
 	if err != nil {
@@ -170,7 +176,8 @@ func New(ctx context.Context, fsys fs.FS, req Request) (_ *NSJail, err error) {
 	})
 
 	for _, input := range req.Inputs {
-		inputPath := filepath.Join(req.ExecRoot, input)
+		absInputPath := filepath.Join(req.ExecRoot, input)
+		inputPathInSandbox := filepath.Join(execRootInSandbox, input)
 		fi, err := fs.Lstat(fsys, input)
 		if err != nil {
 			return nil, err
@@ -186,14 +193,14 @@ func New(ctx context.Context, fsys fs.FS, req Request) (_ *NSJail, err error) {
 			}
 			jail.config.Mount = append(jail.config.Mount, &pb.MountPt{
 				Src:       proto.String(target),
-				Dst:       proto.String(inputPath),
+				Dst:       proto.String(inputPathInSandbox),
 				IsSymlink: proto.Bool(true),
 				IsDir:     proto.Bool(false),
 			})
 		case fi.Mode().IsRegular():
 			jail.config.Mount = append(jail.config.Mount, &pb.MountPt{
-				Src:    proto.String(inputPath),
-				Dst:    proto.String(inputPath),
+				Src:    proto.String(absInputPath),
+				Dst:    proto.String(inputPathInSandbox),
 				IsBind: proto.Bool(true),
 				IsDir:  proto.Bool(false),
 			})
@@ -207,6 +214,11 @@ func New(ctx context.Context, fsys fs.FS, req Request) (_ *NSJail, err error) {
 // Dir returns jail dir.
 func (j *NSJail) Dir() string {
 	return j.dir
+}
+
+// ExecRoot returns exec root dir in jail.
+func (j *NSJail) ExecRoot() string {
+	return filepath.Join(j.dir, execRootInSandbox)
 }
 
 // Args creates nsjail config to run args and returns command line to run args under nsjail.
