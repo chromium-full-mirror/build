@@ -216,7 +216,10 @@ func (j *NSJail) Args(ctx context.Context, args ...string) ([]string, error) {
 		Path: proto.String(args[0]),
 		Arg:  args[1:],
 	}
-	configData, err := prototext.Marshal(config)
+	configData, err := prototext.MarshalOptions{
+		Multiline: true,
+		Indent:    " ",
+	}.Marshal(config)
 	if err != nil {
 		return nil, err
 	}
