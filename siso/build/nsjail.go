@@ -94,7 +94,7 @@ func (n *nsjailExecutor) Run(ctx context.Context, cmd *execute.Cmd) (err error) 
 	err = n.executor.Run(ctx, newCmd)
 	cmd.SetActionResult(newCmd.ActionResult())
 	if err != nil {
-		return fmt.Errorf("failed to run nsjail: %w", err)
+		return fmt.Errorf("failed to run nsjail in %s: %w", jail.Dir(), err)
 	}
 	n.jail = jail
 	return nil
