@@ -164,14 +164,26 @@ func (l *Loader) loadBuildConfig(settings *Settings) error {
 		return fmt.Errorf("failed to execute buildconfig: %w", err)
 	}
 
-	// The default toolchain must have been set in the default build config file.
-	if baseContext.defaultToolchainReceiver != nil && l.defaultToolchain == (environment.Label{}) {
-		return environment.BuildConfigError{
-			Msg: "The default build config file did not call set_default_toolchain()",
-			Help: `If you don't call this, I can't figure out what toolchain to use
+	if baseContext.defaultToolchainReceiver != nil {
+		// The default toolchain must have been set in the default build config file.
+		if l.defaultToolchain == (environment.Label{}) {
+			return environment.BuildConfigError{
+				Msg: "The default build config file did not call set_default_toolchain()",
+				Help: `If you don't call this, I can't figure out what toolchain to use
 for all of this code.`,
+			}
 		}
+
+		// When loading the default build config, we'll insert it into the record
+		// map with an empty label since we don't yet know what to call it.
+		// In this case, we should have exactly one entry in the map with an empty
+		// label. We now need to fix up the naming so it refers to the "real" one.
+		record := l.toolchains[environment.Label{}]
+		delete(l.toolchains, environment.Label{})
+		l.toolchains[l.defaultToolchain] = record
 	}
+
+	// TODO: now we can schedule loads for all buildfiles waiting for this build config.
 
 	return nil
 }
