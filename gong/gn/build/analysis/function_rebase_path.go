@@ -14,7 +14,6 @@ import (
 	"go.chromium.org/build/gong/gn/build/fs"
 	"go.chromium.org/build/gong/gn/parse"
 	"go.chromium.org/build/gong/gn/resolve"
-	"go.chromium.org/build/gong/gn/syntax"
 )
 
 type rebasePathFunction struct {
@@ -131,8 +130,7 @@ func (f *rebasePathFunction) Run(scope *resolve.Scope, call *parse.FunctionCallN
 
 	switch v := args[0].(type) {
 	case *resolve.ListValue:
-		return nil, call.Function.MakeError(syntax.ErrNotImplemented,
-			"List input in rebase_path is not implemented yet.")
+		return nil, NotImplementedError{OriginFunction: resolve.OriginFunction{Call: call}, what: "list input in rebase_path is not implemented yet."}
 
 	case *resolve.StringValue:
 		path := v.RawGNString()
@@ -164,8 +162,7 @@ func (f *rebasePathFunction) Run(scope *resolve.Scope, call *parse.FunctionCallN
 			newBase = val.RawGNString()
 		}
 		if newBase == "" {
-			return nil, call.Function.MakeError(syntax.ErrNotImplemented,
-				"Empty new_base in rebase_path is not implemented yet.")
+			return nil, NotImplementedError{OriginFunction: resolve.OriginFunction{Call: call}, what: "empty new_base in rebase_path"}
 		}
 
 		destDir, err := currentDir.ResolveRelativeDir(newBase)

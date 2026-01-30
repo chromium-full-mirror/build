@@ -11,13 +11,10 @@ package syntax
 type ErrKind string
 
 const (
-	// Never set this. This is returned by e.Kind() on nil.
-	ErrNone ErrKind = "nil"
-	// Never set this. This is returned by e.Kind() on a non-syntax-error
-	ErrNotSyntaxError ErrKind = "non-syntax-error"
-	// TODO(b/388723392): Remove this once it's no longer used.
-	ErrUnknown        ErrKind = "ErrUnknown"
-	ErrNotImplemented ErrKind = "ErrNotImplemented"
 	// Deprecated: Implement ui.PresentableError instead.
-	ErrInvalidOperation ErrKind = "ErrInvalidOperation"
+	ErrNone ErrKind = "nil"
+	// Deprecated: Implement ui.PresentableError instead.
+	ErrNotSyntaxError ErrKind = "non-syntax-error"
+	// Deprecated: Implement ui.PresentableError instead.
+	ErrUnknown ErrKind = "ErrUnknown"
 )

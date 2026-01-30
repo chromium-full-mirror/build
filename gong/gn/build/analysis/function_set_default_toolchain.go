@@ -11,7 +11,6 @@ import (
 	"go.chromium.org/build/gong/gn/build/fs"
 	"go.chromium.org/build/gong/gn/parse"
 	"go.chromium.org/build/gong/gn/resolve"
-	"go.chromium.org/build/gong/gn/syntax"
 )
 
 type setDefaultToolchainFunction struct {
@@ -66,11 +65,7 @@ func (setDefaultToolchainFunction) Run(scope *resolve.Scope, call *parse.Functio
 	}
 
 	if !ctx.isProcessingBuildConfig() {
-		return nil, call.Function.MakeErrorWithHelp(
-			syntax.ErrInvalidOperation,
-			"Must be called from build config.",
-			"set_default_toolchain can only be called from the build configuration file.",
-		)
+		return nil, OutsideBuildConfigError{OriginFunction: resolve.OriginFunction{Call: call}}
 	}
 
 	// TODO: we should be a noop if the loader isn't expecting a default toolchain to be set (because it's already been set)

@@ -17,13 +17,10 @@ import (
 func TestRebasePathFunction(t *testing.T) {
 	f := &rebasePathFunction{buildSettings: &environment.BuildSettings{}}
 	for _, tc := range []struct {
-		name string
-		args []resolve.Value
-		want string
-		// TODO: this is a temporary hack to support errors being returned with
-		// the deprecated ErrKind type versus strongly-typed errors.
-		wantErrKind syntax.ErrKind
-		wantErr     any
+		name    string
+		args    []resolve.Value
+		want    string
+		wantErr any
 	}{
 		{
 			name: "source-absolute paths",
@@ -85,9 +82,9 @@ func TestRebasePathFunction(t *testing.T) {
 			wantErr: &resolve.TypeError{},
 		},
 		{
-			name:        "list input not implemented",
-			args:        []resolve.Value{&resolve.ListValue{}},
-			wantErrKind: syntax.ErrNotImplemented,
+			name:    "list input not implemented",
+			args:    []resolve.Value{&resolve.ListValue{}},
+			wantErr: &NotImplementedError{},
 		},
 		{
 			name: "relative input",
@@ -105,7 +102,7 @@ func TestRebasePathFunction(t *testing.T) {
 				resolve.NewOriginlessStringValue("//foo/bar.txt"),
 				resolve.NewOriginlessStringValue(""),
 			},
-			wantErrKind: syntax.ErrNotImplemented,
+			wantErr: &NotImplementedError{},
 		},
 		{
 			name: "relative new_base",
@@ -126,23 +123,16 @@ func TestRebasePathFunction(t *testing.T) {
 
 			got, err := f.Run(scope, callNode, tc.args)
 
-			wantErr := tc.wantErr != nil || tc.wantErrKind != ""
+			wantErr := tc.wantErr != nil
 			gotErr := err != nil
 
 			if gotErr != wantErr {
-				t.Fatalf("Run(...) got err=%v, wantErr=%v (kind %s)", err, wantErr, tc.wantErrKind)
+				t.Fatalf("Run(...) got err=%v (%T), wantErr %T", err, err, tc.wantErr)
 			}
 
-			if gotErr {
-				// TODO: temporary hack to support both wantErr and wantErrKind tests.
-				if tc.wantErr != nil {
-					if !errors.As(err, tc.wantErr) {
-						t.Errorf("Run(...) got err=%v (%T), want %T", err, err, tc.wantErr)
-					}
-				} else {
-					if match, gotErrKind := syntax.AsErrKind(err, tc.wantErrKind); match == nil {
-						t.Errorf("Run(...) got err=%v (kind %s), wantErrKind=%s", err, gotErrKind, tc.wantErrKind)
-					}
+			if tc.wantErr != nil {
+				if !errors.As(err, tc.wantErr) {
+					t.Errorf("Run(...) got err=%v (%T), wantErr %T", err, err, tc.wantErr)
 				}
 				return
 			}

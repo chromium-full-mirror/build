@@ -7,7 +7,6 @@ package analysis
 import (
 	"go.chromium.org/build/gong/gn/parse"
 	"go.chromium.org/build/gong/gn/resolve"
-	"go.chromium.org/build/gong/gn/syntax"
 )
 
 type actionFunction struct {
@@ -31,14 +30,8 @@ func (actionFunction) Run(scope *resolve.Scope, call *parse.FunctionCallNode, _ 
 	}
 
 	if ctx.isProcessingBuildConfig() {
-		// TODO: make a helper function for this - all targets should output this exact same error message if called from build config.
-		return nil, call.Function.MakeErrorWithHelp(
-			syntax.ErrInvalidOperation,
-			"Not valid from the build config.",
-			`You can't do this kind of thing from the build config script, silly!
-Put it in a regular BUILD file.`,
-		)
+		return nil, ItemInBuildConfigError{OriginFunction: resolve.OriginFunction{Call: call}}
 	}
 
-	return nil, call.Function.MakeError(syntax.ErrNotImplemented, "action not yet implemented")
+	return nil, NotImplementedError{OriginFunction: resolve.OriginFunction{Call: call}, what: "action target"}
 }

@@ -156,22 +156,6 @@ func GetErrKind(err error) ErrKind {
 	}
 }
 
-// IsErrKind returns whether the err matches error kind.
-// If err is not a syntax.Error, returns false.
-// Do not use for testing - prefer ExpectErrKind.
-//
-// Deprecated: Implement ui.PresentableError and use errors.Is?
-func IsErrKind(err error, kind ErrKind) bool {
-	if err == nil {
-		return false
-	}
-	var syntaxErr Error
-	if errors.As(err, &syntaxErr) {
-		return syntaxErr.kind == kind
-	}
-	return false
-}
-
 // AsErrKind returns the error if it matches the error kind.
 // If it doesn't match, returns nil and the actual error kind.
 //
