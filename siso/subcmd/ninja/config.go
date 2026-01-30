@@ -21,6 +21,7 @@ import (
 
 	log "github.com/golang/glog"
 	"github.com/google/uuid"
+	"golang.org/x/term"
 
 	"go.chromium.org/build/siso/build"
 	"go.chromium.org/build/siso/build/buildconfig"
@@ -177,10 +178,12 @@ func (c *Command) SetFlags(flagSet *flag.FlagSet) {
 		}
 	}
 
-	flagSet.BoolVar(&c.fastNop, "fast_nop", ui.IsTerminal(), "enable fast nop check")
-	flagSet.BoolVar(&c.fastLocal, "fast_local", ui.IsTerminal(), "enable fast local")
-	flagSet.BoolVar(&c.fastLastFailure, "fast_last_failure", ui.IsTerminal(), "enable fast last failure check")
-	flagSet.BoolVar(&c.fastExit, "fast_exit", ui.IsTerminal(), "enable fast exit")
+	isTerminal := term.IsTerminal(int(os.Stdout.Fd()))
+
+	flagSet.BoolVar(&c.fastNop, "fast_nop", isTerminal, "enable fast nop check")
+	flagSet.BoolVar(&c.fastLocal, "fast_local", isTerminal, "enable fast local")
+	flagSet.BoolVar(&c.fastLastFailure, "fast_last_failure", isTerminal, "enable fast last failure check")
+	flagSet.BoolVar(&c.fastExit, "fast_exit", isTerminal, "enable fast exit")
 	batch := &batchFlag{c: c}
 	flagSet.Var(batch, "batch", "batch mode. prefer thoughput over low latency for build failures. disable -fast_nop, -fast_local -fast_last_failure -fast_exit")
 
@@ -279,7 +282,8 @@ func (c *Command) initConfigFlags(targets []string) map[string]string {
 	flags["project"] = c.projectID
 	flags["reapi_address"] = c.reopt.Address
 	flags["reapi_instance"] = c.reopt.Instance
-	flags["is_terminal"] = strconv.FormatBool(ui.IsTerminal())
+	flags["is_terminal"] = strconv.FormatBool(term.IsTerminal(int(os.Stdout.Fd())))
+	flags["is_smart_terminal"] = strconv.FormatBool(ui.IsTerminal())
 	flags["targets"] = strings.Join(targets, " ")
 	return flags
 }
