@@ -53,7 +53,7 @@ func (s *termSpinner) Stop(err error) {
 	<-s.done
 	d := time.Since(s.started)
 	if err != nil {
-		fmt.Printf("\r\033[K%6s %s failed %v\n", FormatDuration(d), s.msg, err)
+		fmt.Printf("\r\033[K%6s %s failed: %v\n", FormatDuration(d), s.msg, err)
 		return
 	}
 	if d < DurationThreshold {
