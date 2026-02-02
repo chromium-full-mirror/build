@@ -204,7 +204,25 @@ func (c *Command) computeLimits(ctx context.Context) build.Limits {
 		limits.Remote = c.remoteJobs
 		limits.REWrap = c.remoteJobs
 	}
-	if !c.fastLocal {
+	if !c.fastLocal && (limits.FastLocal != 0 || limits.StartLocal != 0) {
+		var explicit bool
+		c.Flags.Visit(func(f *flag.Flag) {
+			if f.Name == "fast_local" {
+				explicit = true
+			}
+		})
+		if !explicit {
+			var changes []string
+			if limits.FastLocal != 0 {
+				changes = append(changes, fmt.Sprintf("fastlocal=%d->0", limits.FastLocal))
+			}
+			if limits.StartLocal != 0 {
+				changes = append(changes, fmt.Sprintf("startlocal=%d->0", limits.StartLocal))
+			}
+			ui.Default.Warningf(ui.SGR(ui.Yellow, fmt.Sprintf("disable fast local for non-interactive: %s\n use `--fast_local` to enable fast local with non-interactive mode\n",
+				strings.Join(changes, " "))))
+		}
+		clog.Infof(ctx, "disable fastlocal, startlocal")
 		limits.FastLocal = 0
 		limits.StartLocal = 0
 	}
