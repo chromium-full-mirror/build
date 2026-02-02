@@ -168,6 +168,14 @@ func collectInDir(ctx context.Context, fsys fs.FS, osfs *osfs.OSFS, dname string
 			clog.Infof(ctx, "skip dir %s", fname)
 			return nil
 		}
+		fi, err := os.Stat(fname)
+		if err != nil {
+			return err
+		}
+		if fi.IsDir() {
+			clog.Infof(ctx, "symlink to dir %s", fname)
+			return collectInDir(ctx, fsys, osfs, fname, report)
+		}
 		ui.Default.PrintLines(fmt.Sprintf("reading %s", fname))
 		src := osfs.FileSource(fname, -1)
 		data, err := digest.FromLocalFile(ctx, src)
