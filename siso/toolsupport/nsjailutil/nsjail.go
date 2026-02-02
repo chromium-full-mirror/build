@@ -109,6 +109,14 @@ func New(ctx context.Context, fsys fs.FS, req Request) (_ *NSJail, err error) {
 	// TODO: better environment variable sandboxing
 	jail.config.KeepEnv = proto.Bool(true)
 
+	// Some build systems (android) set TMPDIR to a folder in their
+	// output directory to avoid memory costs of using /tmp. The absolute
+	// path to that folder won't work when in the jail due to the remounting
+	// to /src. Since we mount a dedicated folder to /tmp anyways, rewrite
+	// TMPDIR to point to it.
+	// TODO: Consider adding customizable env vars in the ninja file.
+	jail.config.Envar = append(jail.config.Envar, "TMPDIR=/tmp")
+
 	if req.PublicDirs == nil {
 		req.PublicDirs = []string{"/bin", "/lib", "/lib64", "/usr", "/dev"}
 	}
