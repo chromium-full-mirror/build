@@ -20,10 +20,30 @@ type DirFlag struct {
 	ConfigRepoDir string
 }
 
+// AndroidOutDir returns out directory in android build.
+func AndroidOutDir() string {
+	outDir := os.Getenv("OUT_DIR")
+	if outDir != "" {
+		return outDir
+	}
+	return "out"
+}
+
+func defaultConfigRepoDir() string {
+	_, err := os.Stat("build/soong/siso_config")
+	if err == nil {
+		// android build has build/soong/siso_config
+		// and prepares siso config in $OUT_DIR/siso_config.
+		return filepath.Join(AndroidOutDir(), "siso_config")
+	}
+	// default is "build/config/siso.
+	return "build/config/siso"
+}
+
 // RegisterFlags registers dir flags in fs.
 func (f *DirFlag) RegisterFlags(fs *flag.FlagSet) {
 	fs.StringVar(&f.Dir, "C", ".", "ninja running directory (chdir before run)")
-	fs.StringVar(&f.ConfigRepoDir, "config_repo_dir", "build/config/siso", "config repo directory (relative to exec root)")
+	fs.StringVar(&f.ConfigRepoDir, "config_repo_dir", defaultConfigRepoDir(), "config repo directory (relative to exec root)")
 }
 
 // InitDir prepares the environment for a build by resolving the exec root.

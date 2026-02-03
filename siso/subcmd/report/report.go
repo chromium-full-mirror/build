@@ -81,9 +81,17 @@ func (c *Command) run(ctx context.Context) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer signals.HandleInterrupt(ctx, cancel)()
 
-	_, _, _, err := ninjabuild.InitDir(ctx, c.ninjaDir)
+	_, _, dir, err := ninjabuild.InitDir(ctx, c.ninjaDir)
 	if err != nil {
 		return err
+	}
+	if dir == "." && c.ninjaDir.ConfigRepoDir != "build/config/siso" {
+		dir = ninjabuild.AndroidOutDir()
+		ui.Default.Infof("collecting logs in %s\n", dir)
+		err = os.Chdir(dir)
+		if err != nil {
+			return err
+		}
 	}
 	// TODO: upload report to make it easy to share.
 	return c.archive(ctx)
