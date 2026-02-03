@@ -201,7 +201,7 @@ func (b *Builder) runStep(ctx context.Context, step *Step) (err error) {
 			step.cmd.SetOutputResult(b.logOutput(msgs, step.cmd.Console))
 		}
 		return StepError{
-			Target: b.path.MaybeToWD(ctx, step.cmd.Outputs[0]),
+			Target: step.outputPaths[0],
 			Cause:  err,
 		}
 	}
@@ -214,7 +214,7 @@ func (b *Builder) runStep(ctx context.Context, step *Step) (err error) {
 		}
 	}
 	if len(b.lastFailureTargets) > 0 {
-		out := b.path.MaybeToWD(ctx, step.cmd.Outputs[0])
+		out := step.outputPaths[0]
 		if _, ok := b.lastFailureTargets[out]; ok {
 			ui.Default.PrintLines(fmt.Sprintf(ui.SGR(ui.Green, "last failed target fixed: %s\n\n"), out))
 		}

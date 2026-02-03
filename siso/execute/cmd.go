@@ -979,12 +979,16 @@ func (c *Cmd) computeOutputEntries(entries []hashfs.UpdateEntry, updatedTime tim
 		}
 	}
 
+	var output string
+	if len(c.Outputs) > 0 {
+		output = c.Outputs[0]
+	}
 	ret := make([]hashfs.UpdateEntry, 0, len(entries))
 	// Set cmdhash, updatedTime.
 	// also isChanged=true if entry has been changed.
 	for i, ent := range entries {
 		ent.CmdHash = cmdhash
-		if i == 0 || ent.Name == c.Outputs[0] {
+		if i == 0 || ent.Name == output {
 			ent.EdgeHash = c.EdgeHash
 		}
 		ent.UpdatedTime = updatedTime

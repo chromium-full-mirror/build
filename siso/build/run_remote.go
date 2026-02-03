@@ -125,10 +125,7 @@ func (b *Builder) runRemote(ctx context.Context, step *Step) error {
 		}
 		var eerr execute.ExitError
 		if errors.As(err, &eerr) && len(step.cmd.Stdout())+len(step.cmd.Stderr()) > 0 && b.failures.allowed == 1 {
-			var output string
-			if len(step.cmd.Outputs) > 0 {
-				output = step.cmd.Outputs[0]
-			}
+			output := step.outputPaths[0]
 			switch {
 			case eerr.ExitCode == 137:
 				clog.Warningf(ctx, "Fallback due to potential SIGKILL by docker: remote exec %s failed: output=%q siso_config=%q, gn_target=%q: %v", step.cmd.ActionDigest(), output, step.def.RuleName(), step.def.Binding("gn_target"), err)

@@ -515,6 +515,10 @@ func newCmd(ctx context.Context, b *Builder, stepDef StepDef, stepManifest *step
 		ExecTimeout:     execTimeout(ctx, stepDef.Binding("exec_timeout")),
 		ActionSalt:      b.actionSalt,
 	}
+	if stepDef.Binding("phony_outputs") != "" {
+		clog.Infof(ctx, "phony_outputs: no outputs by cmd")
+		cmd.Outputs = nil
+	}
 	if envfile := stepDef.Binding("envfile"); envfile != "" {
 		cmd.Env = b.loadEnvfile(ctx, envfile)
 	}

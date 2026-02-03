@@ -53,7 +53,7 @@ func (b *Builder) execRemote(ctx context.Context, step *Step) error {
 				ToolInvocationId:        b.id,
 				CorrelatedInvocationsId: b.jobID,
 				ActionMnemonic:          step.def.ActionName(),
-				TargetId:                step.cmd.Outputs[0],
+				TargetId:                step.outputPaths[0],
 			})
 			clog.Infof(ctx, "step state: remote exec [%s]", phase)
 			phase = stepRetryRun

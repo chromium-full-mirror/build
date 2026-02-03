@@ -53,6 +53,9 @@ func TestDescMSVCDepsAfterRun(t *testing.T) {
 				"base/bar.h",
 				"v1/foo.h",
 			},
+			Outputs: []string{
+				"foo.obj",
+			},
 			Deps: "msvc",
 		},
 	}

@@ -50,7 +50,7 @@ func (b *Builder) execReproxy(ctx context.Context, step *Step) error {
 			ToolInvocationId:        b.id,
 			CorrelatedInvocationsId: b.jobID,
 			ActionMnemonic:          step.def.ActionName(),
-			TargetId:                step.cmd.Outputs[0],
+			TargetId:                step.outputPaths[0],
 		})
 		clog.Infof(ctx, "step state: remote exec (via reproxy)")
 		maybeDisableLocalFallback(ctx, b, step)

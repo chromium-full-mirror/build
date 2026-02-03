@@ -89,7 +89,10 @@ func (n *nsjailExecutor) Run(ctx context.Context, cmd *execute.Cmd) (err error) 
 	if err != nil {
 		return fmt.Errorf("failed to setup nsjail: %w", err)
 	}
-	newCmd.ExecRootInJailDir = jail.ExecRoot()
+	// phony_output would have no cmd.Outputs, so no need to capture outputs in jail.
+	if len(cmd.Outputs) > 0 {
+		newCmd.ExecRootInJailDir = jail.ExecRoot()
+	}
 	clog.Infof(ctx, "run %q", newCmd.Args)
 	err = n.executor.Run(ctx, newCmd)
 	cmd.SetActionResult(newCmd.ActionResult())

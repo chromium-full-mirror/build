@@ -297,6 +297,9 @@ func checkDepfile(ctx context.Context, b *Builder, step *Step) error {
 func checkDeps(ctx context.Context, b *Builder, step *Step, deps []string) error {
 	// TODO: implement check that deps output (target in depfile "<target>: <dependencyList>") matches build graph's output.
 
+	if len(step.cmd.Outputs) == 0 {
+		return fmt.Errorf("check deps: no cmd outputs")
+	}
 	var checkInputs []string
 
 	platform := step.cmd.Platform
