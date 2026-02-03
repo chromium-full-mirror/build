@@ -204,14 +204,17 @@ func (c *Command) computeLimits(ctx context.Context) build.Limits {
 		limits.Remote = c.remoteJobs
 		limits.REWrap = c.remoteJobs
 	}
-	if !c.fastLocal && (limits.FastLocal != 0 || limits.StartLocal != 0) {
-		var explicit bool
+	if !c.fastLocal && (limits.FastLocal != 0 || limits.StartLocal != 0) && (limits.Remote > 0 || limits.REWrap > 0) {
+		needWarn := true
 		c.Flags.Visit(func(f *flag.Flag) {
 			if f.Name == "fast_local" {
-				explicit = true
+				needWarn = false
+			}
+			if f.Name == "frontend_file" {
+				needWarn = false
 			}
 		})
-		if !explicit {
+		if needWarn {
 			var changes []string
 			if limits.FastLocal != 0 {
 				changes = append(changes, fmt.Sprintf("fastlocal=%d->0", limits.FastLocal))
