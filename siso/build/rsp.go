@@ -30,6 +30,17 @@ func (b *Builder) setupRSP(ctx context.Context, step *Step) error {
 	if log.V(1) {
 		clog.Infof(ctx, "create rsp %q=%q", rsp, content)
 	}
+	if experiments.Enabled("allow-unexpected-rsp-remove", "") {
+		// remove before write to make sure write content to the disk
+		// to avoid chtimes error with "no such file or directory"
+		// when rsp was removed by some other action. b/479933778
+		_, herr := b.hashFS.Stat(ctx, step.cmd.ExecRoot, rsp)
+		_, lerr := b.hashFS.OS.Lstat(ctx, filepath.Join(step.cmd.ExecRoot, rsp))
+		if herr == nil && errors.Is(lerr, fs.ErrNotExist) {
+			clog.Errorf(ctx, "unexpected rsp remove detected %q", rsp)
+			b.hashFS.Forget(ctx, step.cmd.ExecRoot, []string{rsp})
+		}
+	}
 	err := b.hashFS.WriteFile(ctx, step.cmd.ExecRoot, rsp, content, false, time.Now(), nil, nil)
 	if err != nil {
 		return fmt.Errorf("failed to create rsp %s: %w", rsp, err)
