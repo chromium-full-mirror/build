@@ -15,8 +15,12 @@ func FunctionMap(buildSettings *environment.BuildSettings) map[string]resolve.Fu
 	return map[string]resolve.FunctionInfo{
 		"action":                actionFunction{},
 		"assert":                resolve.AssertFunction{},
+		"copy":                  copyFunction{},
+		"executable":            executableFunction{},
 		"rebase_path":           &rebasePathFunction{buildSettings: buildSettings},
 		"set_defaults":          &setDefaultsFunction{},
 		"set_default_toolchain": setDefaultToolchainFunction{},
+		"shared_library":        sharedLibraryFunction{},
+		"static_library":        staticLibraryFunction{},
 	}
 }

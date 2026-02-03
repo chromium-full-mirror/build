@@ -20,6 +20,14 @@ type Pool struct {
 	depth int64
 }
 
+func (Pool) compatibleWith(item Item) bool {
+	switch item.(type) {
+	case *Pool:
+		return true
+	}
+	return false
+}
+
 // NinjaName returns the pool name in generated ninja files.
 func (p Pool) NinjaName(includeToolchain bool) (string, error) {
 	var sb strings.Builder

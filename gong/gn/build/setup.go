@@ -45,6 +45,7 @@ func findDotFile(currentDir string) (string, error) {
 type Setup struct {
 	buildSettings    environment.BuildSettings
 	loader           analysis.Loader
+	builder          analysis.Builder
 	rootBuildFile    fs.SourceFile
 	inputFileManager fs.InputFileManager
 
@@ -71,6 +72,7 @@ func NewSetup() *Setup {
 		FillArguments: true,
 	}
 	setup.loader = analysis.MakeLoader(&setup.buildSettings, &setup.inputFileManager)
+	setup.builder = analysis.MakeBuilder(&setup.loader)
 	setup.dotfileSettings = analysis.NewSettings(&setup.buildSettings)
 	setup.dotfileScope = setup.dotfileSettings.NewScope()
 	return setup
@@ -357,12 +359,19 @@ func (s *Setup) fillOtherConfig() error {
 
 // Run runs the load, returning nil on success. On failure, returns the error.
 func (s *Setup) Run() error {
-	err := s.loader.Load(s.rootBuildFile, syntax.LocationRange{}, environment.Label{})
+	items, err := s.loader.Load(s.rootBuildFile, syntax.LocationRange{}, environment.Label{})
 	if err != nil {
 		return err
 	}
 
-	// TODO: watch load/execute tasks, verify results once done.
+	// TODO: run these in parallel on errgroup.
+	// make sure both Builder and Loader are thread-safe for this to work.
+	for _, item := range items {
+		err := s.builder.RecordDefinedItem(item)
+		if err != nil {
+			return err
+		}
+	}
 
 	return nil
 }

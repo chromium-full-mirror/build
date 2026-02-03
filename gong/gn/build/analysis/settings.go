@@ -6,6 +6,7 @@ package analysis
 
 import (
 	"go.chromium.org/build/gong/gn/build/environment"
+	"go.chromium.org/build/gong/gn/build/fs"
 	"go.chromium.org/build/gong/gn/resolve"
 )
 
@@ -50,7 +51,14 @@ func (s *Settings) NewScope() *resolve.Scope {
 // This makes it possible to hold scope-local data such as target defaults that cannot be
 // represented as simple GN values inside the scope itself, or should not be exposed.
 type scopeContext struct {
-	parent *scopeContext
+	parent    *scopeContext
+	sourceDir fs.SourceDir
+	// A scope may be set up as an item collector.
+	// There are two use cases for this:
+	//	- Primarily, the top-level scope for executing a buildfile needs to collect items defined in it.
+	//	- Secondarily, a template() needs to collect items defined in it.
+	// Child scopes will inherit the parent scope's item collector.
+	itemCollector func(Item)
 	// The toolchain invocation this scope belongs to.
 	settings *Settings
 	// Flag to indicate that we're currently processing the build configuration file.
@@ -87,6 +95,7 @@ func (s *scopeContext) NestedContext() resolve.ExecContext {
 	return &scopeContext{
 		parent:         s,
 		settings:       s.settings,
+		itemCollector:  s.itemCollector,
 		targetDefaults: make(map[string]*resolve.Scope),
 	}
 }

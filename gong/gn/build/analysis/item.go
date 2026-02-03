@@ -11,6 +11,9 @@ import (
 
 // An Item is a named node in the GN dependency graph.
 type Item interface {
+	// compatibleWith checks whether the other item has the same type.
+	// Only checks pointer types.
+	compatibleWith(Item) bool
 	// Label returns the label of the item.
 	Label() environment.Label
 	// DefinedFrom returns the node that defined the item.

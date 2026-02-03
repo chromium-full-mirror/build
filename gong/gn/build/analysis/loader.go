@@ -5,6 +5,7 @@
 package analysis
 
 import (
+	"errors"
 	"fmt"
 	"runtime"
 
@@ -13,6 +14,9 @@ import (
 	"go.chromium.org/build/gong/gn/resolve"
 	"go.chromium.org/build/gong/gn/syntax"
 )
+
+// ErrToolchainNotReady is returned when attempted load into non-ready toolchain.
+var ErrToolchainNotReady = errors.New("toolchain not ready")
 
 // Loader manages execution of the different build files. It receives
 // requests when new references are found, and also manages loading the
@@ -45,8 +49,7 @@ type toolchainRecord struct {
 	settings *Settings
 	// Whether the global build config has been loaded for this toolchain instance.
 	// Once the build config is loaded, we can start loading other files.
-	configLoaded     bool
-	waitingForConfig []fs.SourceFile
+	configLoaded bool
 }
 
 func newToolchainRecord(loader *Loader) *toolchainRecord {
@@ -74,40 +77,52 @@ func (l *Loader) BuildFileForLabel(label environment.Label) (fs.SourceFile, erro
 	return fs.MakeSourceFile(label.Dir.Path() + "BUILD" + l.BuildFileExtension + ".gn")
 }
 
-// Load schedules a file load, noting down where the load came from.
+// Load attempts to load and execute a buildfile, noting down where the load came from.
 // If intoToolchain is the zero value, the default toolchain will be used.
-func (l *Loader) Load(file fs.SourceFile, origin syntax.LocationRange, intoToolchain environment.Label) error {
+//
+// For initial prototyping purposes, this will run synchronously and will not be threadsafe.
+func (l *Loader) Load(file fs.SourceFile, origin syntax.LocationRange, intoToolchain environment.Label) ([]Item, error) {
 	loadID := loadID{
 		file:      file,
 		toolchain: intoToolchain,
 	}
 	if _, ok := l.seen[loadID]; ok {
 		// Already seen, so this file was already loaded or scheduled for load.
-		return nil
+		return nil, nil
 	}
 	l.seen[loadID] = struct{}{}
 
-	if len(l.toolchains) == 0 {
-		// Nothing loaded, need to load the default build config. The initial load
-		// should not specify a toolchain.
-		if intoToolchain != (environment.Label{}) {
-			return fmt.Errorf("can't load into toolchain %q before default build config is loaded", intoToolchain.UserVisibleString(false))
-		}
-		record := newToolchainRecord(l)
-		l.toolchains[environment.Label{}] = record
-
-		record.waitingForConfig = append(record.waitingForConfig, file)
-		if err := l.loadBuildConfig(record.settings); err != nil {
-			return err
-		}
-
-		return nil
+	if intoToolchain == (environment.Label{}) {
+		intoToolchain = l.defaultToolchain
 	}
 
-	// TODO: implement.
-	return fmt.Errorf("loading files after the first one not implemented yet. requested: %q", file.Filename())
+	record, ok := l.toolchains[intoToolchain]
+	if !ok {
+		record = newToolchainRecord(l)
+		if len(l.toolchains) == 0 {
+			if intoToolchain != (environment.Label{}) {
+				return nil, fmt.Errorf("can't load into toolchain %q before default build config is loaded", intoToolchain.UserVisibleString(false))
+			}
+			if err := l.loadBuildConfig(record.settings); err != nil {
+				return nil, err
+			}
+			intoToolchain = l.defaultToolchain
+		} else {
+			if err := l.loadBuildConfig(record.settings); err != nil {
+				return nil, err
+			}
+		}
+		record.configLoaded = true
+		l.toolchains[intoToolchain] = record
+	}
+
+	if !record.configLoaded {
+		return nil, ErrToolchainNotReady
+	}
+	return l.loadFile(file, record.settings)
 }
 
+// loadBuildConfig loads the build config for the provided toolchain settings object.
 func (l *Loader) loadBuildConfig(settings *Settings) error {
 	baseContext, err := contextFromScope(settings.baseConfig)
 	if err != nil {
@@ -173,17 +188,30 @@ func (l *Loader) loadBuildConfig(settings *Settings) error {
 for all of this code.`,
 			}
 		}
-
-		// When loading the default build config, we'll insert it into the record
-		// map with an empty label since we don't yet know what to call it.
-		// In this case, we should have exactly one entry in the map with an empty
-		// label. We now need to fix up the naming so it refers to the "real" one.
-		record := l.toolchains[environment.Label{}]
-		delete(l.toolchains, environment.Label{})
-		l.toolchains[l.defaultToolchain] = record
 	}
 
-	// TODO: now we can schedule loads for all buildfiles waiting for this build config.
-
 	return nil
+}
+
+// loadBuildConfig loads the buildfile into the provided toolchain settings object.
+func (l *Loader) loadFile(file fs.SourceFile, settings *Settings) ([]Item, error) {
+	root, err := l.inputFileManager.LoadFile(syntax.LocationRange{}, l.buildSettings, file)
+	if err != nil {
+		return nil, err
+	}
+
+	var items []Item
+	scope := settings.NewScope()
+	ctx := scope.ExecContext().(*scopeContext)
+	ctx.sourceDir = file.Dir()
+	ctx.itemCollector = func(item Item) {
+		items = append(items, item)
+	}
+
+	_, err = resolve.ExecuteNode(root, scope)
+	if err != nil {
+		return nil, err
+	}
+
+	return items, nil
 }

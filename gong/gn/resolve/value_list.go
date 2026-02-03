@@ -6,6 +6,8 @@ package resolve
 
 import (
 	"fmt"
+	"iter"
+	"slices"
 	"strings"
 
 	"go.starlark.net/starlark"
@@ -111,6 +113,11 @@ func (v *ListValue) RawGNString() string {
 	}
 	result.WriteString("]")
 	return result.String()
+}
+
+// Values returns an iterator over the list's values.
+func (v *ListValue) Values() iter.Seq[Value] {
+	return slices.Values(v.list)
 }
 
 // starlark.Value interface.

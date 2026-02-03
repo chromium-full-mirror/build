@@ -12,5 +12,13 @@ package analysis
 // means we can avoid doing a recursive config walk for every target to compute
 // flags.
 type Config struct {
-	itemInfo //nolint:unused
+	itemInfo
+}
+
+func (Config) compatibleWith(item Item) bool {
+	switch item.(type) {
+	case *Config:
+		return true
+	}
+	return false
 }

@@ -259,7 +259,7 @@ func (s *Scope) function(name string) (FunctionInfo, bool) {
 	}
 
 	// If there is no containing scope, search the base config.
-	if !s.skipBaseConfig && s.execContext != nil {
+	if !s.skipBaseConfig && s.execContext != nil && s.execContext.BaseConfig() != s {
 		return s.execContext.BaseConfig().function(name)
 	}
 

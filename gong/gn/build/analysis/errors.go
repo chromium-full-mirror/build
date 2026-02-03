@@ -7,6 +7,8 @@ package analysis
 import (
 	"fmt"
 
+	"go.chromium.org/build/gong/gn/build/environment"
+	"go.chromium.org/build/gong/gn/parse"
 	"go.chromium.org/build/gong/gn/resolve"
 )
 
@@ -71,4 +73,90 @@ func (ItemInBuildConfigError) Message() string {
 func (e ItemInBuildConfigError) HelpText() string {
 	return `You can't do this kind of thing from the build config script, silly!
 Put it in a regular BUILD file.`
+}
+
+// ItemRedefinedError is returned when encountering a second attempt to define
+// the same item.
+type ItemRedefinedError struct {
+	previousOrigin parse.Node
+	duplicateItem  Item
+}
+
+// Error returns the error string.
+func (e ItemRedefinedError) Error() string {
+	return fmt.Sprintf("redefined item: %s", e.duplicateItem.Label().UserVisibleString(true))
+}
+
+// Message returns the user-facing error message.
+func (ItemRedefinedError) Message() string { return "Duplicate definition." }
+
+// HelpText returns the user-facing error help text.
+func (e ItemRedefinedError) HelpText() string {
+	// TODO: need to implement ShouldShowToolchain for parity with C++ GN
+	// (i.e. don't need to always show the toolchain)
+	return fmt.Sprintf(
+		`The item
+  %s
+was already defined.`,
+		e.duplicateItem.Label().UserVisibleString(true))
+}
+
+type itemRedefinedSuberror struct {
+	parse.OriginNode
+}
+
+func (e itemRedefinedSuberror) Error() string  { return fmt.Sprintf("previously saw item: %v", e.Node) }
+func (itemRedefinedSuberror) Title() string    { return "Previous definition:" }
+func (itemRedefinedSuberror) HelpText() string { return "" }
+
+// Unwrap returns a single suberror to indicate where the previous definition of the item was seen.
+func (e ItemRedefinedError) Unwrap() error {
+	return itemRedefinedSuberror{OriginNode: parse.OriginNode{Node: e.previousOrigin}}
+}
+
+// ItemTypeMismatchError is returned when encountering a reference to an item that
+// doesn't match the type it was defined as.
+//
+// For example, a config() object being referenced from deps of a target or
+// vice-versa.
+type ItemTypeMismatchError struct {
+	parse.OriginNode
+	label             environment.Label
+	itemOrPlaceholder Item
+	existingRecord    *builderRecord
+}
+
+// Error returns the error string.
+func (e ItemTypeMismatchError) Error() string {
+	return fmt.Sprintf("tried to reference item as a %T, but was previously seen as a %T",
+		e.itemOrPlaceholder, e.existingRecord.item)
+}
+
+// Message returns the user-facing error message.
+func (ItemTypeMismatchError) Message() string { return "Item type does not match." }
+
+// HelpText returns the user-facing error help text.
+func (e ItemTypeMismatchError) HelpText() string {
+	return fmt.Sprintf(
+		`The type of %s here is a %s type but was previously seen as a %s type.
+
+The most common cause is that the label of a config was put
+in the deps section of a target (or vice-versa).`,
+		e.label.UserVisibleString(true),
+		itemTypeName(e.itemOrPlaceholder),
+		itemTypeName(e.existingRecord.item))
+}
+
+func itemTypeName(item Item) string {
+	switch item.(type) {
+	case *Target:
+		return "target"
+	case *Config:
+		return "config"
+	case *Toolchain:
+		return "toolchain"
+	case *Pool:
+		return "pool"
+	}
+	return "unknown"
 }

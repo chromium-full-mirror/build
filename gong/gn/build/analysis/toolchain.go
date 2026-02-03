@@ -30,3 +30,11 @@ type Toolchain struct {
 	// refer to scopeContext for how this is determined.
 	settings *Settings
 }
+
+func (Toolchain) compatibleWith(item Item) bool {
+	switch item.(type) {
+	case *Toolchain:
+		return true
+	}
+	return false
+}
