@@ -53,7 +53,7 @@ func (b BuildError) Error() string {
 // for build.ninja in main build.ninja file.
 // Even if this assumption failed e.g. soong doesn't have such build rule,
 // Run will rebuild manifest after reading all build.ninja files.
-func CheckManifest(ctx context.Context, filename string, buildPath *build.Path, config *buildconfig.Config, hashFS *hashfs.HashFS, localDepsLog *ninjautil.DepsLog, bopts build.Options) {
+func CheckManifest(ctx context.Context, filename string, buildPath *build.Path, config *buildconfig.Config, hashFS *hashfs.HashFS, localDepsLog *ninjautil.DepsLog, bopts build.Options) error {
 	started := time.Now()
 	defer func() {
 		ui.Default.PrintLines("")
@@ -64,7 +64,8 @@ func CheckManifest(ctx context.Context, filename string, buildPath *build.Path, 
 	err := p.LoadSingle(ctx, filename)
 	if err != nil {
 		clog.Warningf(ctx, "check build ninja: load %v", err)
-		return
+		// will check later with full build ninja in Run.
+		return nil
 	}
 	clog.Infof(ctx, "check build ninja: load file in %s", time.Since(started))
 	// zero step config. no remote exec for gn gen?
@@ -77,16 +78,24 @@ func CheckManifest(ctx context.Context, filename string, buildPath *build.Path, 
 		err := hashFS.Refresh(ctx, buildPath.ExecRoot)
 		if err != nil {
 			clog.Warningf(ctx, "%s modified. failed to refresh hashfs %s: %v", filename, time.Since(started), err)
-			return
+			return err
 		}
-		clog.Infof(ctx, "%s modifnied. refresh hashfs %s", filename, time.Since(started))
-		return
+		clog.Infof(ctx, "%s modified. refresh hashfs %s", filename, time.Since(started))
+		return nil
+	}
+	if errors.Is(err, build.ErrNoTarget) {
+		// android soong doesn't have build target for ninja files.
+		// ignore no target error.
+		clog.Infof(ctx, "no target for %q", filename)
+		return nil
 	}
 	if err != nil {
-		// ignore failure: e.g. build.ninja target not defined
+		// failed to build ninja files.
+		// e.g. failed to run `gn gen` b/481012408
 		clog.Warningf(ctx, "check build ninja: rebuild manifest %v", err)
-		return
+		return err
 	}
+	return nil
 }
 
 // Run runs a ninja build.
