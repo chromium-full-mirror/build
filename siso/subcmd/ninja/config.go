@@ -506,7 +506,7 @@ func initOutputLocal(outputLocalStrategy string) (func(context.Context, string) 
 			// Note: d. wil be downloaded to get deps anyway,
 			// but will not be written to disk.
 			switch filepath.Ext(fname) {
-			case ".o", ".obj", ".a", ".d", ".stamp":
+			case ".o", ".obj", ".a", ".d", ".stamp", ".pcm":
 				return false
 			}
 			return true
