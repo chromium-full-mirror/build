@@ -4,6 +4,8 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
+
 	"go.chromium.org/build/gong/gn/build/environment"
 	"go.chromium.org/build/gong/gn/parse"
 	"go.chromium.org/build/gong/gn/syntax"
@@ -30,12 +32,26 @@ func TestBuilder_RecordDefinedItem_CreatesRecordsForDeps(t *testing.T) {
 			},
 		},
 	}
-
-	builder := MakeBuilder(nil)
-	if err := builder.RecordDefinedItem(target); err != nil {
-		t.Fatalf("RecordDefinedItem(_)=%v; want nil err", err)
+	wantUnresolvedDeps := []environment.LabelWithOrigin{
+		{
+			Label:  dep1Label,
+			Origin: target.privateDeps[0].Origin,
+		},
+		{
+			Label:  dep2Label,
+			Origin: target.privateDeps[1].Origin,
+		},
 	}
 
+	builder := MakeBuilder(nil)
+	unresolvedDeps, err := builder.RecordDefinedItem(target)
+	if err != nil {
+		t.Fatalf("RecordDefinedItem(_)=_, %v; want nil err", err)
+	}
+
+	if diff := cmp.Diff(wantUnresolvedDeps, unresolvedDeps); diff != "" {
+		t.Errorf("RecordDefinedItem(_); diff (-want +got):\n%s", diff)
+	}
 	targetRec, ok := builder.records[targetLabel]
 	if !ok {
 		t.Fatal("no record for //:main_target created")
@@ -90,16 +106,16 @@ func TestBuilder_ItemTypeMismatch(t *testing.T) {
 		},
 	}
 
-	if err := builder.RecordDefinedItem(cfgItem); err != nil {
+	if _, err := builder.RecordDefinedItem(cfgItem); err != nil {
 		t.Fatalf("Failed to define config: %v", err)
 	}
-	err := builder.RecordDefinedItem(targetItem)
+	_, err := builder.RecordDefinedItem(targetItem)
 
 	if err == nil {
-		t.Errorf("RecordDefinedItem(_) ok; want err")
+		t.Errorf("RecordDefinedItem(_)=_, ok; want err")
 	}
 	var typeErr ItemTypeMismatchError
 	if !errors.As(err, &typeErr) {
-		t.Errorf("RecordDefinedItem(_) err type %T; want %T", err, typeErr)
+		t.Errorf("RecordDefinedItem(_)=_, err type %T; want %T", err, typeErr)
 	}
 }

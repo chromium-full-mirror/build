@@ -15,6 +15,11 @@ type Location struct {
 	columnNumber int // 0 when unset. 1-based.
 }
 
+// Equal returns if the two locations are equal.
+func (l Location) Equal(other Location) bool {
+	return l.file.Equal(other.file) && l.lineNumber == other.lineNumber && l.columnNumber == other.columnNumber
+}
+
 func (l Location) min(other Location) Location {
 	if l.file != other.file {
 		return Location{}
@@ -61,6 +66,11 @@ func (l Location) Describe(includeColumnNumber bool) string {
 type LocationRange struct {
 	begin Location
 	end   Location
+}
+
+// Equal returns if the two location ranges are equal.
+func (l LocationRange) Equal(other LocationRange) bool {
+	return l.begin.Equal(other.begin) && l.end.Equal(other.end)
 }
 
 // Union returns a location range combined with the current location range.

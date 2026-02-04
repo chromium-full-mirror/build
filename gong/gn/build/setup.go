@@ -357,19 +357,39 @@ func (s *Setup) fillOtherConfig() error {
 	return nil
 }
 
+type pendingLoad struct {
+	file   fs.SourceFile
+	origin syntax.LocationRange
+}
+
 // Run runs the load, returning nil on success. On failure, returns the error.
 func (s *Setup) Run() error {
-	items, err := s.loader.Load(s.rootBuildFile, syntax.LocationRange{}, environment.Label{})
-	if err != nil {
-		return err
-	}
-
-	// TODO: run these in parallel on errgroup.
-	// make sure both Builder and Loader are thread-safe for this to work.
-	for _, item := range items {
-		err := s.builder.RecordDefinedItem(item)
+	// TODO: run in parallel on errgroup.
+	// make sure both Builder and Loader are thread-safe to convert to async.
+	pending := []pendingLoad{{s.rootBuildFile, syntax.LocationRange{}}}
+	for len(pending) > 0 {
+		// TODO: support loads for other toolchains.
+		items, err := s.loader.Load(pending[0].file, pending[0].origin, environment.Label{})
 		if err != nil {
 			return err
+		}
+		pending = pending[1:]
+		for _, item := range items {
+			unresolvedDeps, err := s.builder.RecordDefinedItem(item)
+			if err != nil {
+				return err
+			}
+			// Add all buildfiles from deps to queue.
+			// NOTE: This is maybe inefficient since we don't check if multiple deps are
+			// from the same buildfile. But the Loader will ignore seen buildfiles, so
+			// it might be okay?
+			for _, dep := range unresolvedDeps {
+				depFile, err := s.loader.BuildFileForLabel(dep.Label)
+				if err != nil {
+					return err
+				}
+				pending = append(pending, pendingLoad{depFile, dep.Origin.LocationRange()})
+			}
 		}
 	}
 

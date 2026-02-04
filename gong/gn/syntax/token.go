@@ -100,7 +100,7 @@ type fakeInputSource struct {
 
 func (m fakeInputSource) DisplayName() string          { return m.displayName }
 func (m fakeInputSource) Contents() []byte             { return []byte(m.contents) }
-func (m fakeInputSource) Equal(other InputSource) bool { return false }
+func (m fakeInputSource) Equal(other InputSource) bool { return m == other }
 
 // MakeToken returns a token for testing purposes.
 // TODO: this should not be necessary for testing if it's possible to serialize an AST.
@@ -111,6 +111,7 @@ func MakeToken(tokenType TokenType, value string) Token {
 		location: Location{
 			file: fakeInputSource{
 				displayName: "<input>",
+				contents:    value,
 			},
 		},
 	}

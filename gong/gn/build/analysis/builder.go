@@ -34,12 +34,18 @@ func MakeBuilder(loader *Loader) Builder {
 }
 
 // RecordDefinedItem receives an item definition, normally created by loading buildfiles.
-// The builder will record the item in its internal state.
+// The builder will record the item in an "unresolved" state.
+// Returns a list of labels of dependencies the item needs but the builder hasn't seen yet,
+// along with the location where the dep was defined.
 // Returns an error if there was an issue updating the builder's records.
 //
-// The item starts in an unresolved state.
-// Not yet implemented: The builder will try to move the item into a resolved state if possible.
-func (b *Builder) RecordDefinedItem(item Item) error {
+// NOT IMPLEMENTED YET: If there are no unresolved deps, the builder will attempt to move this
+// item into a resolved state, and recursively attempt to move any dependents that were waiting
+// for this item to a resolved state as well.
+//
+// Callers of this function are responsible for loading the buildfile(s) containing the deps
+// requested.
+func (b *Builder) RecordDefinedItem(item Item) ([]environment.LabelWithOrigin, error) {
 	// If there were items waiting for this one to be defined, a record already exists.
 	// Try to get the existing record, else create a new record.
 	label := item.Label()
@@ -47,7 +53,7 @@ func (b *Builder) RecordDefinedItem(item Item) error {
 	if ok {
 		// Check types, if the record was not just created.
 		if !record.item.compatibleWith(item) {
-			return ItemTypeMismatchError{
+			return nil, ItemTypeMismatchError{
 				OriginNode:        parse.OriginNode{Node: item.DefinedFrom()},
 				label:             label,
 				itemOrPlaceholder: item,
@@ -56,12 +62,15 @@ func (b *Builder) RecordDefinedItem(item Item) error {
 		}
 		// Check that it's not been already defined.
 		if record.state != itemStateUndefined {
-			return ItemRedefinedError{
+			return nil, ItemRedefinedError{
 				previousOrigin: record.item.DefinedFrom(),
 				duplicateItem:  item,
 			}
 		}
+		// Verified undefined item of same type, therefore safe to record.
+		record.item = item
 	} else {
+		// No record yet, need to create with this item.
 		b.records[label] = newBuilderRecord(item, item.DefinedFrom())
 		record = b.records[label]
 	}
@@ -74,9 +83,7 @@ func (b *Builder) RecordDefinedItem(item Item) error {
 	case *Target:
 		fmt.Fprintf(os.Stderr, "got target %q but placeholder! need to parse this target's configs, non-private deps etc.\n",
 			record.item.Label().UserVisibleString(false))
-		if err := b.targetDefined(i, record); err != nil {
-			return err
-		}
+		return b.targetDefined(i, record)
 	case *Config:
 		fmt.Fprintf(os.Stderr, "got config %q but will do nothing yet! need to parse this config's deps.\n",
 			record.item.Label().UserVisibleString(false))
@@ -88,12 +95,13 @@ func (b *Builder) RecordDefinedItem(item Item) error {
 	// TODO: return to caller the dependencies that need to be load
 	// before this item will be resolved.
 
-	return nil
+	return nil, nil
 }
 
-func (b *Builder) targetDefined(target *Target, record *builderRecord) error {
+func (b *Builder) targetDefined(target *Target, record *builderRecord) ([]environment.LabelWithOrigin, error) {
+	var unresolvedDeps []environment.LabelWithOrigin
+
 	// Iterate all deps.
-	// TODO: Return the list of dependencies that are undefined or unresolved, they need to be resolved before this target can be.
 	for _, dep := range target.privateDeps {
 		// We might've seen the dep itself or another target request the same dep.
 		// Try to get the existing record, else create a new record.
@@ -101,7 +109,7 @@ func (b *Builder) targetDefined(target *Target, record *builderRecord) error {
 		if ok {
 			// Ensure dep is a target, if the record was already created.
 			if !depRecord.item.compatibleWith(&Target{}) {
-				return ItemTypeMismatchError{
+				return nil, ItemTypeMismatchError{
 					OriginNode:        parse.OriginNode{Node: dep.Origin},
 					label:             dep.Label,
 					itemOrPlaceholder: &Target{},
@@ -113,6 +121,13 @@ func (b *Builder) targetDefined(target *Target, record *builderRecord) error {
 			depRecord = b.records[dep.Label]
 		}
 		record.addDep(depRecord)
+		if depRecord.state != itemStateResolved {
+			unresolvedDeps = append(unresolvedDeps, environment.LabelWithOrigin{
+				Label:  dep.Label,
+				Origin: dep.Origin,
+			})
+		}
 	}
-	return nil
+
+	return unresolvedDeps, nil
 }

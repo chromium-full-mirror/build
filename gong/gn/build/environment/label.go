@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"go.chromium.org/build/gong/gn/build/fs"
+	"go.chromium.org/build/gong/gn/parse"
 	"go.chromium.org/build/gong/gn/resolve"
 )
 
@@ -19,6 +20,18 @@ type Label struct {
 	Name          string
 	ToolchainDir  fs.SourceDir
 	ToolchainName string
+}
+
+// LabelWithOrigin is a convenience wrapper for passing a label with
+// the buildfile origin.
+type LabelWithOrigin struct {
+	Label  Label
+	Origin parse.Node
+}
+
+// Equal returns if the two labels and origins are equal.
+func (l LabelWithOrigin) Equal(other LabelWithOrigin) bool {
+	return l.Label == other.Label && l.Origin.LocationRange().Equal(other.Origin.LocationRange())
 }
 
 // ResolveLabel computes a string from a build file that may be relative to the
