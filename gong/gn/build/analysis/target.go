@@ -8,6 +8,7 @@ import (
 	"go.chromium.org/build/gong/gn/build/environment"
 	"go.chromium.org/build/gong/gn/build/fs"
 	"go.chromium.org/build/gong/gn/parse"
+	"go.chromium.org/build/gong/gn/resolve"
 )
 
 // Target is an item in the GN dependency graph that represents either an unresolved
@@ -23,9 +24,9 @@ import (
 //nolint:unused
 type Target struct {
 	itemInfo
-	settings    *Settings
-	targetType  string
-	privateDeps []LabelTargetPair
+	settings *Settings
+	schema   *Schema
+	values   map[string]resolve.Value
 	// TODO: if targets own "actions", then outputs should live under the "action graph".
 	outputs []fs.OutputFile
 }

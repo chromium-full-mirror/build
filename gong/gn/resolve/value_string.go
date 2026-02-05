@@ -17,6 +17,12 @@ type StringValue struct {
 	value  string
 }
 
+// NewStringValueAt creates a string value at the provided origin.
+func NewStringValueAt(origin parse.Node, value string) *StringValue {
+	return &StringValue{origin, value}
+}
+
+// NewOriginlessStringValue creates a string value without an origin.
 func NewOriginlessStringValue(value string) *StringValue {
 	return &StringValue{value: value}
 }

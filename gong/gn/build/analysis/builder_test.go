@@ -8,38 +8,37 @@ import (
 
 	"go.chromium.org/build/gong/gn/build/environment"
 	"go.chromium.org/build/gong/gn/parse"
+	"go.chromium.org/build/gong/gn/resolve"
 	"go.chromium.org/build/gong/gn/syntax"
 )
 
 func TestBuilder_RecordDefinedItem_CreatesRecordsForDeps(t *testing.T) {
 	targetLabel := environment.Label{Dir: mustDir(t, "//"), Name: "main_target"}
-	dep1Label := environment.Label{Dir: mustDir(t, "//"), Name: "dep_one"}
-	dep2Label := environment.Label{Dir: mustDir(t, "//"), Name: "dep_two"}
+	dep1Label := environment.Label{Dir: mustDir(t, "//bar"), Name: "baz"}
+	dep2Label := environment.Label{Dir: mustDir(t, "//bar"), Name: "qux"}
+	dep1Origin := &parse.IdentifierNode{Value: syntax.MakeToken(syntax.TokenString, "//bar:baz")}
+	dep2Origin := &parse.IdentifierNode{Value: syntax.MakeToken(syntax.TokenString, "//bar:qux")}
 	target := &Target{
 		itemInfo: itemInfo{
 			label:       targetLabel,
 			definedFrom: &parse.IdentifierNode{Value: syntax.MakeToken(syntax.TokenIdentifier, "main_target")},
 		},
-		targetType: "executable",
-		privateDeps: []LabelTargetPair{
-			{
-				Label:  dep1Label,
-				Origin: &parse.IdentifierNode{Value: syntax.MakeToken(syntax.TokenString, ":dep_one")},
-			},
-			{
-				Label:  dep2Label,
-				Origin: &parse.IdentifierNode{Value: syntax.MakeToken(syntax.TokenString, ":dep_two")},
-			},
+		schema: &executableSchema,
+		values: map[string]resolve.Value{
+			"deps": resolve.NewOriginlessListValue([]resolve.Value{
+				resolve.NewStringValueAt(dep1Origin, "//bar:baz"),
+				resolve.NewStringValueAt(dep2Origin, "//bar:qux"),
+			}),
 		},
 	}
 	wantUnresolvedDeps := []environment.LabelWithOrigin{
 		{
 			Label:  dep1Label,
-			Origin: target.privateDeps[0].Origin,
+			Origin: dep1Origin,
 		},
 		{
 			Label:  dep2Label,
-			Origin: target.privateDeps[1].Origin,
+			Origin: dep2Origin,
 		},
 	}
 
@@ -61,21 +60,21 @@ func TestBuilder_RecordDefinedItem_CreatesRecordsForDeps(t *testing.T) {
 	}
 	dep1Rec, ok := builder.records[dep1Label]
 	if !ok {
-		t.Error("no record for //:dep_one created")
+		t.Error("no record for //bar:baz created")
 	} else if dep1Rec.state != itemStateUndefined {
-		t.Errorf("record //:dep_one state=%v; want itemStateUndefined as Target not seen", dep1Rec.state)
+		t.Errorf("record //bar:baz state=%v; want itemStateUndefined as Target not seen", dep1Rec.state)
 	}
 	dep2Rec, ok := builder.records[dep2Label]
 	if !ok {
-		t.Error("no record for //:dep_two created")
+		t.Error("no record for //bar:qux created")
 	} else if dep2Rec.state != itemStateUndefined {
-		t.Errorf("record //:dep_two state=%v; want itemStateUndefined as Target not seen", dep2Rec.state)
+		t.Errorf("record //bar:qux state=%v; want itemStateUndefined as Target not seen", dep2Rec.state)
 	}
 	if _, isDep := targetRec.dependencies[dep1Rec]; !isDep {
-		t.Error("record //:main_target missing edge to //:dep_one")
+		t.Error("record //:main_target missing edge to //bar:baz")
 	}
 	if _, isDep := targetRec.dependencies[dep2Rec]; !isDep {
-		t.Error("record //:main_target missing edge to //:dep_two")
+		t.Error("record //:main_target missing edge to //bar:qux")
 	}
 	if targetRec.unresolvedDeps != 2 {
 		t.Errorf("record //:main_target unresolvedDeps=%d; want 2", targetRec.unresolvedDeps)
@@ -85,37 +84,66 @@ func TestBuilder_RecordDefinedItem_CreatesRecordsForDeps(t *testing.T) {
 func TestBuilder_ItemTypeMismatch(t *testing.T) {
 	configLabel := environment.Label{Dir: mustDir(t, "//"), Name: "foo_config"}
 	targetLabel := environment.Label{Dir: mustDir(t, "//"), Name: "foo_target"}
-	builder := MakeBuilder(nil)
+	depLabel := environment.Label{Dir: mustDir(t, "//bar"), Name: "baz_target"}
 	cfgItem := &Config{
 		itemInfo: itemInfo{
 			label:       configLabel,
 			definedFrom: &parse.IdentifierNode{Value: syntax.MakeToken(syntax.TokenIdentifier, "foo_config")},
 		},
 	}
-	targetItem := &Target{
+	depItem := &Target{
 		itemInfo: itemInfo{
-			label:       targetLabel,
-			definedFrom: &parse.IdentifierNode{Value: syntax.MakeToken(syntax.TokenIdentifier, "foo_target")},
+			label:       depLabel,
+			definedFrom: &parse.IdentifierNode{Value: syntax.MakeToken(syntax.TokenIdentifier, "baz_target")},
 		},
-		targetType: "executable",
-		privateDeps: []LabelTargetPair{
-			{
-				Label:  configLabel,
-				Origin: &parse.IdentifierNode{Value: syntax.MakeToken(syntax.TokenString, ":foo_config")},
+		schema: &sharedLibrarySchema,
+	}
+
+	for _, tc := range []struct {
+		name         string
+		targetValues map[string]resolve.Value
+	}{
+		{
+			name: "config in deps",
+			targetValues: map[string]resolve.Value{
+				"deps": resolve.NewOriginlessListValue([]resolve.Value{
+					resolve.NewStringValueAt(cfgItem.definedFrom, "//:foo_config"),
+				}),
 			},
 		},
-	}
+		{
+			name: "target in configs",
+			targetValues: map[string]resolve.Value{
+				"configs": resolve.NewOriginlessListValue([]resolve.Value{
+					resolve.NewStringValueAt(depItem.definedFrom, "//bar:baz_target"),
+				}),
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			builder := MakeBuilder(nil)
+			if _, err := builder.RecordDefinedItem(cfgItem); err != nil {
+				t.Fatalf("Failed to define config: %v", err)
+			}
+			if _, err := builder.RecordDefinedItem(depItem); err != nil {
+				t.Fatalf("Failed to define config: %v", err)
+			}
+			_, err := builder.RecordDefinedItem(&Target{
+				itemInfo: itemInfo{
+					label:       targetLabel,
+					definedFrom: &parse.IdentifierNode{Value: syntax.MakeToken(syntax.TokenIdentifier, "foo_target")},
+				},
+				schema: &executableSchema,
+				values: tc.targetValues,
+			})
 
-	if _, err := builder.RecordDefinedItem(cfgItem); err != nil {
-		t.Fatalf("Failed to define config: %v", err)
-	}
-	_, err := builder.RecordDefinedItem(targetItem)
-
-	if err == nil {
-		t.Errorf("RecordDefinedItem(_)=_, ok; want err")
-	}
-	var typeErr ItemTypeMismatchError
-	if !errors.As(err, &typeErr) {
-		t.Errorf("RecordDefinedItem(_)=_, err type %T; want %T", err, typeErr)
+			if err == nil {
+				t.Errorf("RecordDefinedItem(_)=_, ok; want err")
+			}
+			var typeErr ItemTypeMismatchError
+			if !errors.As(err, &typeErr) {
+				t.Errorf("RecordDefinedItem(_)=_, err type %T; want %T", err, typeErr)
+			}
+		})
 	}
 }

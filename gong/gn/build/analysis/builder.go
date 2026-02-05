@@ -7,10 +7,13 @@ package analysis
 
 import (
 	"fmt"
+	"maps"
 	"os"
+	"slices"
 
 	"go.chromium.org/build/gong/gn/build/environment"
 	"go.chromium.org/build/gong/gn/parse"
+	"go.chromium.org/build/gong/gn/resolve"
 )
 
 // Builder assembles the GN dependency graph.
@@ -101,33 +104,75 @@ func (b *Builder) RecordDefinedItem(item Item) ([]environment.LabelWithOrigin, e
 func (b *Builder) targetDefined(target *Target, record *builderRecord) ([]environment.LabelWithOrigin, error) {
 	var unresolvedDeps []environment.LabelWithOrigin
 
-	// Iterate all deps.
-	for _, dep := range target.privateDeps {
-		// We might've seen the dep itself or another target request the same dep.
-		// Try to get the existing record, else create a new record.
-		depRecord, ok := b.records[dep.Label]
-		if ok {
-			// Ensure dep is a target, if the record was already created.
-			if !depRecord.item.compatibleWith(&Target{}) {
-				return nil, ItemTypeMismatchError{
-					OriginNode:        parse.OriginNode{Node: dep.Origin},
-					label:             dep.Label,
-					itemOrPlaceholder: &Target{},
-					existingRecord:    depRecord,
-				}
-			}
-		} else {
-			b.records[dep.Label] = newBuilderRecord(&Target{}, dep.Origin)
-			depRecord = b.records[dep.Label]
+	// Find all variables in this target that references labels.
+	for _, varName := range slices.Sorted(maps.Keys(target.schema.vars)) {
+		varType := target.schema.vars[varName]
+		// Determine the type of label expected.
+		// TODO: only supports lists of labels right now, need to support single labels too?
+		var expectedPlaceholder Item
+		switch varType {
+		case targetLabelListType:
+			expectedPlaceholder = &Target{}
+		case configLabelListType:
+			expectedPlaceholder = &Config{}
+		default:
+			continue
 		}
-		record.addDep(depRecord)
-		if depRecord.state != itemStateResolved {
-			unresolvedDeps = append(unresolvedDeps, environment.LabelWithOrigin{
-				Label:  dep.Label,
-				Origin: dep.Origin,
-			})
+
+		// Get the list.
+		// TODO: only supports lists of labels right now, need to support single labels too?
+		val, ok := target.values[varName]
+		if !ok {
+			continue
+		}
+		listValue, err := resolve.AsValue[*resolve.ListValue](val)
+		if err != nil {
+			return nil, err
+		}
+
+		// For each label, ensure the record exists.
+		// Collect deps that aren't yet resolved.
+		for rawLabel := range listValue.Values() {
+			dep, err := environment.ResolveLabel(target.label.Dir, environment.Label{}, rawLabel)
+			if err != nil {
+				return nil, err
+			}
+			depRecord, err := b.recordFor(dep, rawLabel.OriginNode(), expectedPlaceholder)
+			if err != nil {
+				return nil, err
+			}
+			if depRecord.state != itemStateResolved {
+				unresolvedDeps = append(unresolvedDeps, environment.LabelWithOrigin{
+					Label:  dep,
+					Origin: rawLabel.OriginNode(),
+				})
+			}
+			record.addDep(depRecord)
 		}
 	}
 
 	return unresolvedDeps, nil
+}
+
+// recordFor returns the record associated with the given label. Checks
+// that if we already have references for it, the type matches. If no record
+// exists yet, a new one will be created.
+//
+// If any of the conditions fail, the return value will be nil and the error
+// will be set. requestFrom is used as the source of the error.
+func (b *Builder) recordFor(label environment.Label, requestFrom parse.Node, itemOrPlaceholder Item) (*builderRecord, error) {
+	if record, ok := b.records[label]; ok {
+		// Check types, if the record was not just created.
+		if !record.item.compatibleWith(itemOrPlaceholder) {
+			return nil, ItemTypeMismatchError{
+				OriginNode:        parse.OriginNode{Node: requestFrom},
+				label:             label,
+				itemOrPlaceholder: itemOrPlaceholder,
+				existingRecord:    record,
+			}
+		}
+		return record, nil
+	}
+	b.records[label] = newBuilderRecord(itemOrPlaceholder, requestFrom)
+	return b.records[label], nil
 }

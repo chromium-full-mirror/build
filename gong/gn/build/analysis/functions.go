@@ -13,14 +13,14 @@ import (
 // It requires the top-level BuildSettings object.
 func FunctionMap(buildSettings *environment.BuildSettings) map[string]resolve.FunctionInfo {
 	return map[string]resolve.FunctionInfo{
-		"action":                actionFunction{},
+		"action":                &actionSchema,
 		"assert":                resolve.AssertFunction{},
-		"copy":                  copyFunction{},
-		"executable":            executableFunction{},
+		"copy":                  &copySchema,
+		"executable":            &executableSchema,
 		"rebase_path":           &rebasePathFunction{buildSettings: buildSettings},
 		"set_defaults":          &setDefaultsFunction{},
 		"set_default_toolchain": setDefaultToolchainFunction{},
-		"shared_library":        sharedLibraryFunction{},
-		"static_library":        staticLibraryFunction{},
+		"shared_library":        &sharedLibrarySchema,
+		"static_library":        &staticLibrarySchema,
 	}
 }

@@ -21,6 +21,11 @@ type ListValue struct {
 	list   []Value
 }
 
+// NewOriginlessListValue creates a list value without an origin.
+func NewOriginlessListValue(list []Value) *ListValue {
+	return &ListValue{list: list}
+}
+
 func (v *ListValue) access(index int64, origin parse.Node) (valueDestination, error) {
 	if len(v.list) == 0 || index < 0 || index >= int64(len(v.list)) {
 		return nil, SubscriptError{

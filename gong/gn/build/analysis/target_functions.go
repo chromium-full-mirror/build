@@ -8,53 +8,107 @@ import (
 	"fmt"
 
 	"go.chromium.org/build/gong/gn/build/environment"
-	"go.chromium.org/build/gong/gn/build/fs"
 	"go.chromium.org/build/gong/gn/parse"
 	"go.chromium.org/build/gong/gn/resolve"
 )
 
-type executableFunction struct{}
+// varType is the type of a target's variable.
+type varType uint8
 
-func (executableFunction) HelpShort() string { return "executable: Declare an executable target." }
-func (executableFunction) Help() string      { return "" }
-func (executableFunction) IsTarget() bool    { return true }
-func (executableFunction) Run(scope *resolve.Scope, call *parse.FunctionCallNode, args []resolve.Value, block *parse.BlockNode) (resolve.Value, error) {
-	return executeGenericTarget("executable", scope, call, args, block)
+const (
+	stringType = iota
+	stringListType
+	targetLabelListType
+	configLabelListType
+	fileType
+	fileListType
+)
+
+// A Schema is the type definition of a GN target.
+//
+// The word "schema" is an implementation detail; we're calling them "schemas" to avoid
+// overloading the word "type" across both GN and Go contexts.
+//
+// User-facing documentation should still refer to GN target "types".
+//
+// The schema of a target specifies a name (e.g. "shared_library"), the types of variables
+// it accepts (e.g. "sources", "deps").
+type Schema struct {
+	name    string
+	summary string
+	vars    map[string]varType // TODO: Implement concept of required?
 }
 
-type sharedLibraryFunction struct{}
+var (
+	actionSchema = Schema{
+		name:    "action",
+		summary: "Declare a target that runs a script a single time.",
+		vars: map[string]varType{
+			// TODO: support more variables.
+			"script":  fileType,
+			"sources": fileListType,
+			"outputs": fileListType,
+			"args":    stringListType,
+			"depfile": stringType,
+		},
+	}
+	executableSchema = Schema{
+		name:    "executable",
+		summary: "Declare an executable target.",
+		vars: map[string]varType{
+			// TODO: support more variables.
+			"sources": fileListType,
+			"deps":    targetLabelListType,
+			"configs": configLabelListType,
+			"outputs": fileListType,
+		},
+	}
+	sharedLibrarySchema = Schema{
+		name:    "shared_library",
+		summary: "Declare a shared library target.",
+		vars: map[string]varType{
+			// TODO: support more variables.
+			"sources": fileListType,
+			"deps":    targetLabelListType,
+			"configs": configLabelListType,
+			"defines": stringListType,
+		},
+	}
+	sourceSetSchema = Schema{
+		name:    "source_set",
+		summary: "Declare a source set target.",
+		vars: map[string]varType{
+			// TODO: support more variables.
+			"sources": fileListType,
+			"deps":    targetLabelListType,
+		},
+	}
+	staticLibrarySchema = Schema{
+		name:    "static_library",
+		summary: "Declare a shared library target.",
+		vars: map[string]varType{
+			// TODO: support more variables.
+			"sources": fileListType,
+			"deps":    targetLabelListType,
+			"configs": configLabelListType,
+			"defines": stringListType,
+		},
+	}
+	copySchema = Schema{
+		name:    "copy",
+		summary: "Declare a target that copies files.",
+		vars: map[string]varType{
+			// TODO: support more variables.
+			"sources": fileListType,
+			"outputs": fileListType,
+		},
+	}
+)
 
-func (sharedLibraryFunction) HelpShort() string {
-	return "shared_library: Declare a shared_library target."
-}
-func (sharedLibraryFunction) Help() string   { return "" }
-func (sharedLibraryFunction) IsTarget() bool { return true }
-func (sharedLibraryFunction) Run(scope *resolve.Scope, call *parse.FunctionCallNode, args []resolve.Value, block *parse.BlockNode) (resolve.Value, error) {
-	return executeGenericTarget("shared_library", scope, call, args, block)
-}
-
-type staticLibraryFunction struct{}
-
-func (staticLibraryFunction) HelpShort() string {
-	return "static_library: Declare a static_library target."
-}
-func (staticLibraryFunction) Help() string   { return "" }
-func (staticLibraryFunction) IsTarget() bool { return true }
-func (staticLibraryFunction) Run(scope *resolve.Scope, call *parse.FunctionCallNode, args []resolve.Value, block *parse.BlockNode) (resolve.Value, error) {
-	return executeGenericTarget("static_library", scope, call, args, block)
-}
-
-type copyFunction struct{}
-
-func (copyFunction) HelpShort() string { return "copy: Declare a copy target." }
-func (copyFunction) Help() string      { return "" }
-func (copyFunction) IsTarget() bool    { return true }
-func (copyFunction) Run(scope *resolve.Scope, call *parse.FunctionCallNode, args []resolve.Value, block *parse.BlockNode) (resolve.Value, error) {
-	return executeGenericTarget("copy", scope, call, args, block)
-}
-
-// Placeholder function to demonstrate that GN graph item collection works.
-func executeGenericTarget(targetType string, scope *resolve.Scope, call *parse.FunctionCallNode, args []resolve.Value, block *parse.BlockNode) (resolve.Value, error) {
+func (Schema) IsTarget() bool       { return true }
+func (s *Schema) HelpShort() string { return fmt.Sprintf("%s: %s", s.name, s.summary) }
+func (s *Schema) Help() string      { return s.HelpShort() } // TODO: support full description
+func (s *Schema) Run(scope *resolve.Scope, call *parse.FunctionCallNode, args []resolve.Value, block *parse.BlockNode) (resolve.Value, error) {
 	ctx, err := contextFromScope(scope)
 	if err != nil {
 		return nil, err
@@ -82,8 +136,6 @@ func executeGenericTarget(targetType string, scope *resolve.Scope, call *parse.F
 		return nil, err
 	}
 
-	blockScope.SetValue("target_name", nameValue, call)
-
 	if _, err := resolve.ExecuteNode(block, blockScope); err != nil {
 		return nil, err
 	}
@@ -99,43 +151,41 @@ func executeGenericTarget(targetType string, scope *resolve.Scope, call *parse.F
 			label:       label,
 			definedFrom: call,
 		},
-		targetType: targetType,
+		schema: s,
+		values: map[string]resolve.Value{
+			"name": nameValue,
+		},
 	}
 
-	// Fill dependencies here, then the builder will check to know what deps need to be loaded.
-	if err := fillDependencies(target, ctx.sourceDir, blockScope); err != nil {
-		return nil, err
+	// Check all variables passed to the target are of the expected type.
+	for acceptedVar, expectedType := range s.vars {
+		value := blockScope.Value(acceptedVar, true)
+		if value == nil {
+			continue
+		}
+		switch expectedType {
+		case stringType,
+			fileType:
+			if _, err := resolve.AsValue[*resolve.StringValue](value); err != nil {
+				return nil, err
+			}
+		case stringListType,
+			fileListType,
+			// The Builder is responsible for reading label lists to find dependencies
+			// and validating the labels are correctly formatted.
+			targetLabelListType,
+			configLabelListType:
+			if _, err := resolve.AsValue[*resolve.ListValue](value); err != nil {
+				return nil, err
+			}
+		default:
+			return nil, environment.IllegalStateError{
+				Reason: "non-exhaustive switch over target variable types",
+			}
+		}
+		target.values[acceptedVar] = value
 	}
-
-	// TODO: fill other data.
 
 	ctx.itemCollector(target)
-
-	return nil, nil
-}
-
-// fillDependencies populates the target's dependencies from the "deps" variable in the scope.
-func fillDependencies(target *Target, sourceDir fs.SourceDir, scope *resolve.Scope) error {
-	depsValue := scope.Value("deps", true)
-	if depsValue == nil {
-		return nil
-	}
-
-	listValue, err := resolve.AsValue[*resolve.ListValue](depsValue)
-	if err != nil {
-		return err
-	}
-
-	for value := range listValue.Values() {
-		resolvedLabel, err := environment.ResolveLabel(sourceDir, environment.Label{}, value)
-		if err != nil {
-			return err
-		}
-
-		target.privateDeps = append(target.privateDeps, LabelTargetPair{
-			Label:  resolvedLabel,
-			Origin: value.OriginNode(),
-		})
-	}
-	return nil
+	return nil, blockScope.CheckForUnusedVars()
 }
