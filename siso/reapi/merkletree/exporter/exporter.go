@@ -9,6 +9,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 
@@ -18,6 +19,7 @@ import (
 
 	"go.chromium.org/build/siso/o11y/clog"
 	"go.chromium.org/build/siso/reapi/digest"
+	"go.chromium.org/build/siso/reapi/merkletree"
 	"go.chromium.org/build/siso/runtimex"
 	"go.chromium.org/build/siso/sync/semaphore"
 )
@@ -25,6 +27,7 @@ import (
 // Client is an interface to access CAS.
 type Client interface {
 	Get(context.Context, digest.Digest, string) ([]byte, error)
+	FetchTree(context.Context, string, digest.Digest, *digest.Store) (*rpb.Directory, error)
 }
 
 // Exporter is an exporter.
@@ -125,4 +128,67 @@ func (e *Exporter) exportFile(ctx context.Context, fname string, d digest.Digest
 		return err
 	}
 	return os.Chmod(fname, mode)
+}
+
+// ExportTree exports tree identified by the digest to the dir recursively.
+// If w is given, it will show the directory entries without extracting
+// into dir.
+func (e *Exporter) ExportTree(ctx context.Context, dir string, d digest.Digest, w io.Writer) error {
+	ds := digest.NewStore()
+	root, err := e.client.FetchTree(ctx, dir, d, ds)
+	if err != nil {
+		return err
+	}
+	files, symlinks, dirs := merkletree.Traverse(ctx, dir, root, ds)
+	if w == nil {
+		for _, file := range files {
+			err := os.MkdirAll(filepath.Dir(file.GetPath()), 0755)
+			if err != nil {
+				return err
+			}
+			mode := fs.FileMode(0644)
+			if file.GetIsExecutable() {
+				mode = fs.FileMode(0755)
+			}
+			b, err := e.client.Get(ctx, digest.FromProto(file.GetDigest()), file.GetPath())
+			if err != nil {
+				return fmt.Errorf("error from client.Get for %s: %w", file.GetPath(), err)
+			}
+			err = os.WriteFile(file.GetPath(), b, mode)
+			if err != nil {
+				return err
+			}
+		}
+		for _, symlink := range symlinks {
+			err := os.MkdirAll(filepath.Dir(symlink.GetPath()), 0755)
+			if err != nil {
+				return err
+			}
+			err = os.Symlink(symlink.GetTarget(), symlink.GetPath())
+			if err != nil {
+				return err
+			}
+		}
+		for _, dir := range dirs {
+			err := os.MkdirAll(dir.GetPath(), 0755)
+			if err != nil {
+				return err
+			}
+		}
+	} else {
+		for _, file := range files {
+			if file.GetIsExecutable() {
+				fmt.Fprintf(w, "%s\t%s\texecutable\n", file.GetPath(), digest.FromProto(file.GetDigest()))
+			} else {
+				fmt.Fprintf(w, "%s\t%s\tfile\n", file.GetPath(), digest.FromProto(file.GetDigest()))
+			}
+		}
+		for _, symlink := range symlinks {
+			fmt.Fprintf(w, "%s\t-> %s\n", symlink.GetPath(), symlink.GetTarget())
+		}
+		for _, dir := range dirs {
+			fmt.Fprintf(w, "%s\t%s\tdirectory\n", dir.GetPath(), digest.FromProto(dir.GetTreeDigest()))
+		}
+	}
+	return nil
 }
