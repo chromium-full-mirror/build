@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"go.chromium.org/build/siso/execute"
+	"go.chromium.org/build/siso/reapi/digest"
 	"go.chromium.org/build/siso/ui"
 )
 
@@ -25,6 +26,7 @@ func TestCmdOutput(t *testing.T) {
 		name           string
 		result         cmdOutputResult
 		stdout, stderr []byte
+		auxiliary      map[string]digest.Digest
 		rule           string
 		err            error
 		want           string
@@ -105,11 +107,27 @@ build step: cxx "./foo.o"
 ../../third_party/llvm-build/Release+Asserts/bin/clang++ -c ../../base/base.cc
 `,
 		},
+		{
+			name:   "auxiliaryOutputs",
+			result: cmdOutputResultSUCCESS,
+			rule:   "clang/cxx",
+			auxiliary: map[string]digest.Digest{
+				"foo.d": {Hash: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", SizeBytes: 0},
+			},
+			want: `SUCCESS:  "./foo.o" CXX foo.o
+build step: cxx "./foo.o"
+siso_rule: clang/cxx
+../../third_party/llvm-build/Release+Asserts/bin/clang++ -c ../../base/base.cc
+auxiliary outputs:
+foo.d=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855/0
+`,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx := t.Context()
 			cmd := &execute.Cmd{}
 			*cmd = *execcmd
+			cmd.AuxiliaryOutputDigests = tc.auxiliary
 			if len(tc.stdout) > 0 {
 				w := cmd.StdoutWriter()
 				w.Write(tc.stdout)

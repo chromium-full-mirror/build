@@ -148,6 +148,17 @@ type Cmd struct {
 	// Depfile specifies a filename for dep info, relative to ExecRoot.
 	Depfile string
 
+	// AuxiliaryOutputDigests holds digests of auxiliary outputs.
+	AuxiliaryOutputDigests map[string]digest.Digest
+
+	// AuxiliaryLogOutputFiles are output files that siso explicitly logs digest of
+	// but doesn't download to disk or record in hashfs time.
+	AuxiliaryLogOutputFiles []string
+
+	// AuxiliaryLogOutputDirs are output directories that siso explicitly logs digest of
+	// but doesn't download to disk or record in hashfs time.
+	AuxiliaryLogOutputDirs []string
+
 	// If Restat is true,
 	// output files may be used only for inputs. i.e.
 	// output files would not be produced if they would be the same
@@ -723,17 +734,27 @@ func (c *Cmd) remoteExecutionPlatform() *rpb.Platform {
 
 // commandDigest constructs the digest of the command line.
 func (c *Cmd) commandDigest(ctx context.Context, ds *digest.Store) (digest.Digest, error) {
-	outputs := c.AllOutputs()
-	outs := make([]string, 0, len(outputs))
-	for _, out := range outputs {
-		rout, err := filepath.Rel(c.Dir, out)
-		if err != nil {
-			clog.Warningf(ctx, "failed to get rel %s,%s: %v", c.Dir, out, err)
-			rout = out
+	var outFiles, outDirs []string
+	process := func(res []string, paths ...string) []string {
+		for _, out := range paths {
+			rout, err := filepath.Rel(c.Dir, out)
+			if err != nil {
+				clog.Warningf(ctx, "failed to get rel %s,%s: %v", c.Dir, out, err)
+				rout = out
+			}
+			res = append(res, filepath.ToSlash(rout))
 		}
-		outs = append(outs, filepath.ToSlash(rout))
+		return res
 	}
-	sort.Strings(outs)
+
+	outFiles = make([]string, 0, len(c.Outputs)+1+len(c.AuxiliaryLogOutputFiles))
+	outFiles = process(outFiles, c.AllOutputs()...)
+	outFiles = process(outFiles, c.AuxiliaryLogOutputFiles...)
+	sort.Strings(outFiles)
+
+	outDirs = make([]string, 0, len(c.AuxiliaryLogOutputDirs))
+	outDirs = process(outDirs, c.AuxiliaryLogOutputDirs...)
+	sort.Strings(outDirs)
 	args, err := c.remoteArgsWithWrapper()
 	if err != nil {
 		return digest.Digest{}, err
@@ -759,9 +780,13 @@ func (c *Cmd) commandDigest(ctx context.Context, ds *digest.Store) (digest.Diges
 	// `OutputFiles` is deprecated. should use `OutputPaths` instead.
 	// https://github.com/bazelbuild/remote-apis/blob/main/build/bazel/remote/execution/v2/remote_execution.proto#L592
 	if reapi.UseOutputPaths(c.REAPIVersion) {
-		command.OutputPaths = outs
+		command.OutputPaths = make([]string, 0, len(outFiles)+len(outDirs))
+		command.OutputPaths = append(command.OutputPaths, outFiles...)
+		command.OutputPaths = append(command.OutputPaths, outDirs...)
+		sort.Strings(command.OutputPaths)
 	} else {
-		command.OutputFiles = outs
+		command.OutputFiles = outFiles      //nolint:staticcheck // existing deprecation
+		command.OutputDirectories = outDirs //nolint:staticcheck // existing deprecation
 	}
 	for _, env := range c.Env {
 		k, v, ok := strings.Cut(env, "=")
@@ -808,6 +833,18 @@ func (c *Cmd) RemoteFallbackResult() (*rpb.ActionResult, error) {
 	return c.remoteFallbackResult, c.remoteFallbackError
 }
 
+// IsAuxiliary checks if the name is an auxiliary output.
+// name and AuxiliaryLogOutputFiles/Dirs are exec-root relative paths.
+func (c *Cmd) IsAuxiliary(name string) bool {
+	if slices.Contains(c.AuxiliaryLogOutputFiles, name) {
+		return true
+	}
+	if slices.Contains(c.AuxiliaryLogOutputDirs, name) {
+		return true
+	}
+	return false
+}
+
 // entriesFromResult returns output file entries and additional entries for the cmd and result.
 // output file entries will be recorded with cmdhash.
 // additional output file entries will be recorded without cmdhash.
@@ -817,6 +854,10 @@ func (c *Cmd) entriesFromResult(ctx context.Context, ds hashfs.DataSource, updat
 			continue
 		}
 		fname := filepath.ToSlash(filepath.Join(c.Dir, f.Path))
+		if c.IsAuxiliary(fname) {
+			continue
+		}
+
 		d := digest.FromProto(f.Digest)
 		mode := fs.FileMode(0644)
 		if f.IsExecutable {
@@ -848,6 +889,10 @@ func (c *Cmd) entriesFromResult(ctx context.Context, ds hashfs.DataSource, updat
 			continue
 		}
 		fname := filepath.ToSlash(filepath.Join(c.Dir, s.Path))
+		if c.IsAuxiliary(fname) {
+			continue
+		}
+
 		mode := fs.FileMode(0644) | fs.ModeSymlink
 		entries = append(entries, hashfs.UpdateEntry{
 			Name: fname,
@@ -866,6 +911,10 @@ func (c *Cmd) entriesFromResult(ctx context.Context, ds hashfs.DataSource, updat
 	for _, d := range c.actionResult.GetOutputDirectories() {
 		// It just needs to add the directories here because it assumes that they have already been expanded by ninja State.
 		dname := filepath.ToSlash(filepath.Join(c.Dir, d.Path))
+		if c.IsAuxiliary(dname) {
+			continue
+		}
+
 		mode := fs.FileMode(0755) | fs.ModeDir
 		entries = append(entries, hashfs.UpdateEntry{
 			Name: dname,
@@ -910,6 +959,32 @@ func (c *Cmd) RecordOutputs(ctx context.Context, ds hashfs.DataSource, now time.
 		return fmt.Errorf("failed to update hashfs from remote[additional]: %w", err)
 	}
 	return nil
+}
+
+// RecordAuxiliaryOutputDigests computes and records auxiliary logs.
+func (c *Cmd) RecordAuxiliaryOutputDigests(ctx context.Context, result *rpb.ActionResult) {
+	if len(c.AuxiliaryLogOutputFiles) == 0 && len(c.AuxiliaryLogOutputDirs) == 0 {
+		return
+	}
+	if result == nil {
+		return
+	}
+	if c.AuxiliaryOutputDigests == nil {
+		c.AuxiliaryOutputDigests = make(map[string]digest.Digest)
+	}
+
+	for _, file := range result.OutputFiles {
+		fname := filepath.ToSlash(filepath.Join(c.Dir, file.Path))
+		if c.IsAuxiliary(fname) {
+			c.AuxiliaryOutputDigests[fname] = digest.FromProto(file.Digest)
+		}
+	}
+	for _, dir := range result.OutputDirectories {
+		dname := filepath.ToSlash(filepath.Join(c.Dir, dir.Path))
+		if c.IsAuxiliary(dname) {
+			c.AuxiliaryOutputDigests[dname+"/"] = digest.FromProto(dir.TreeDigest)
+		}
+	}
 }
 
 func retrieveLocalOutputEntries(ctx context.Context, hfs *hashfs.HashFS, root string, inputs []string) []hashfs.UpdateEntry {

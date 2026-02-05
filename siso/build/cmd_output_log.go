@@ -7,6 +7,7 @@ package build
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 
 	"go.chromium.org/build/siso/execute"
@@ -43,13 +44,14 @@ type cmdOutputLog struct {
 	// phase is when it finished cmd handling.
 	phase string
 
-	cmd      *execute.Cmd
-	cmdline  string
-	sisoRule string
-	output   string
-	err      error
-	stdout   []byte
-	stderr   []byte
+	cmd              *execute.Cmd
+	cmdline          string
+	sisoRule         string
+	output           string
+	err              error
+	stdout           []byte
+	stderr           []byte
+	auxiliaryOutputs []string
 }
 
 func (c *cmdOutputLog) phaseText() string {
@@ -96,6 +98,12 @@ func (c *cmdOutputLog) String() string {
 			fmt.Fprintf(&sb, "\n")
 		}
 	}
+	if len(c.auxiliaryOutputs) > 0 {
+		fmt.Fprintf(&sb, "auxiliary outputs:\n")
+		for _, aux := range c.auxiliaryOutputs {
+			fmt.Fprintf(&sb, "%s\n", aux)
+		}
+	}
 	return sb.String()
 }
 
@@ -119,6 +127,12 @@ func (c *cmdOutputLog) Msg(width int, console, verboseFailure bool) string {
 			fmt.Fprintf(&sb, "stderr:\n%s", string(c.stderr))
 			if c.stderr[len(c.stderr)-1] != '\n' {
 				fmt.Fprintf(&sb, "\n")
+			}
+		}
+		if len(c.auxiliaryOutputs) > 0 {
+			fmt.Fprintf(&sb, "auxiliary outputs:\n")
+			for _, aux := range c.auxiliaryOutputs {
+				fmt.Fprintf(&sb, "%s\n", aux)
 			}
 		}
 	}
@@ -178,7 +192,7 @@ func cmdOutput(ctx context.Context, result cmdOutputResult, cmd *execute.Cmd, cm
 		_, stdout = msvcutil.ParseShowIncludes(stdout)
 		_, stderr = msvcutil.ParseShowIncludes(stderr)
 	}
-	if err == nil && len(stdout) == 0 && len(stderr) == 0 {
+	if err == nil && len(stdout) == 0 && len(stderr) == 0 && len(cmd.AuxiliaryOutputDigests) == 0 {
 		return nil
 	}
 	res := &cmdOutputLog{
@@ -190,12 +204,23 @@ func cmdOutput(ctx context.Context, result cmdOutputResult, cmd *execute.Cmd, cm
 		stdout:   stdout,
 		stderr:   stderr,
 	}
+	var output string
 	if len(cmd.Outputs) > 0 {
-		output := cmd.Outputs[0]
-		if after, ok := strings.CutPrefix(output, cmd.Dir+"/"); ok {
-			output = "./" + after
+		output = cmd.Outputs[0]
+	}
+	if after, ok := strings.CutPrefix(output, cmd.Dir+"/"); ok {
+		output = "./" + after
+	}
+	res.output = output
+	if len(cmd.AuxiliaryOutputDigests) > 0 {
+		var names []string
+		for name := range cmd.AuxiliaryOutputDigests {
+			names = append(names, name)
 		}
-		res.output = output
+		sort.Strings(names)
+		for _, name := range names {
+			res.auxiliaryOutputs = append(res.auxiliaryOutputs, fmt.Sprintf("%s=%s", name, cmd.AuxiliaryOutputDigests[name]))
+		}
 	}
 	return res
 }

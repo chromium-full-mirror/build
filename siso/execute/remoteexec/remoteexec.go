@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"time"
 
 	rpb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
@@ -171,10 +172,21 @@ func (re *RemoteExec) processResult(ctx context.Context, cmd *execute.Cmd, resul
 		return errors.New("no result")
 	}
 	now := time.Now()
+
+	// Record auxiliary outputs logs (e.g. crash reports) for debugging.
+	cmd.RecordAuxiliaryOutputDigests(ctx, result)
+
 	files := result.GetOutputFiles()
 	symlinks := result.GetOutputSymlinks()
 	var dirs []*rpb.OutputDirectory
 	for _, d := range result.GetOutputDirectories() {
+		dname := filepath.ToSlash(filepath.Join(cmd.Dir, d.GetPath()))
+		// Auxiliary directories don't need to be expanded/flattened.
+		// We only need the Tree digest for logging, and they are not used as inputs for other steps.
+		if cmd.IsAuxiliary(dname) {
+			dirs = append(dirs, d)
+			continue
+		}
 		ds := digest.NewStore()
 		outdir, derr := re.client.FetchTree(ctx, d.GetPath(), digest.FromProto(d.GetTreeDigest()), ds)
 		if derr != nil {
