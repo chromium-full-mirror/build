@@ -506,7 +506,7 @@ func newCmd(ctx context.Context, b *Builder, stepDef StepDef, stepManifest *step
 		RemoteInputs:  stepDef.RemoteInputs(),
 		// always copy REProxyConfig, allows safe mutation via cmd.action.fix.
 		REProxyConfig:   stepDef.REProxyConfig().Copy(),
-		CanonicalizeDir: stepDef.Binding("canonicalize_dir") != "",
+		CanonicalizeDir: stepDef.Binding("canonicalize_dir") != "false",
 
 		// TODO(b/266518906): enable DoNotCache for read-only client
 		// DoNotCache: !b.reCacheEnableWrite,
@@ -514,6 +514,10 @@ func newCmd(ctx context.Context, b *Builder, stepDef StepDef, stepManifest *step
 		Timeout:         stepTimeout(ctx, stepDef.Binding("timeout")),
 		ExecTimeout:     execTimeout(ctx, stepDef.Binding("exec_timeout")),
 		ActionSalt:      b.actionSalt,
+	}
+	if _, ok := cmd.Platform["InputRootAbsolutePath"]; ok {
+		// non relocatable request. disable canonicalize dir.
+		cmd.CanonicalizeDir = false
 	}
 	if stepDef.Binding("phony_outputs") != "" {
 		clog.Infof(ctx, "phony_outputs: no outputs by cmd")

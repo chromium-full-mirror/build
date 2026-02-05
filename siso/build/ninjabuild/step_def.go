@@ -279,10 +279,13 @@ func (s *StepDef) Binding(name string) string {
 	case "remote_command":
 		return s.rule.RemoteCommand
 	case "canonicalize_dir":
-		if s.rule.CanonicalizeDir {
+		if s.rule.CanonicalizeDir == nil {
+			return ""
+		}
+		if *s.rule.CanonicalizeDir {
 			return "true"
 		}
-		return ""
+		return "false"
 	case "envfile":
 		return s.envfile
 	case "gn_target":

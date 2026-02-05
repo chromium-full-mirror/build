@@ -459,7 +459,7 @@ func TestBuild_PhonyIndirectInputs(t *testing.T) {
 					StderrRaw: fmt.Appendf(nil, "../../mojom_parser.py: File not found: %v", err),
 				}, nil
 			}
-			_, err = tree.LookupFileNode(ctx, "out/siso/gen/base.build_metadata")
+			_, err = tree.LookupFileNode(ctx, "out/x/gen/base.build_metadata")
 			if err != nil {
 				t.Logf("missing out/siso/gen/build_metadata.py: %v", err)
 				return &rpb.ActionResult{

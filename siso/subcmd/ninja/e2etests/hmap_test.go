@@ -53,7 +53,7 @@ func TestBuild_Hmap(t *testing.T) {
 				"../../ios/AppFramework/Action.h",
 				"../../ios/AppFramework/App.h",
 			} {
-				fn, err := tree.LookupFileNode(ctx, path.Join("out/siso", fname))
+				fn, err := tree.LookupFileNode(ctx, path.Join("out/x", fname))
 				if err != nil {
 					t.Logf("missing %s in input", fname)
 					return &rpb.ActionResult{

@@ -221,6 +221,7 @@ to register handlers and step configs.
              * value: path of file (local) for the key path.
           * `input_root_absolute_path`: need `InputRootAbsolutePath` or not.
           * `canonicalize_dir`: ok to canonicalize work dir or not.
+             enable by default, but disable if input_root_absolute_path is set.
           * `use_system_input`: ok to use input outside of exec root
              as it assumes those are platform container image.
           * `use_remote_exec_wrapper`: true if gomacc/rewrapper is used,

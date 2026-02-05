@@ -56,7 +56,7 @@ func TestBuild_EdgeRule(t *testing.T) {
 						StderrRaw: fmt.Appendf(nil, "../../foo.cc: File not found: %v", err),
 					}, nil
 				}
-				_, err = tree.LookupFileNode(ctx, "out/siso/gen/bar.h")
+				_, err = tree.LookupFileNode(ctx, "out/x/gen/bar.h")
 				if err != nil {
 					t.Logf("gen/bar.h not found for foo.cc")
 					return &rpb.ActionResult{
@@ -76,7 +76,7 @@ func TestBuild_EdgeRule(t *testing.T) {
 
 			case cmp.Equal(cmd.Arguments, []string{"python3", "../../tools/clang.py", "-c", "gen/bar.cc", "-o", "obj/bar.o"}):
 				tree := reapitest.InputTree{CAS: fakere.CAS, Root: action.InputRootDigest}
-				fn, err := tree.LookupFileNode(ctx, "out/siso/gen/bar.cc")
+				fn, err := tree.LookupFileNode(ctx, "out/x/gen/bar.cc")
 				if err != nil {
 					t.Logf("gen/bar.cc not found by gen/bar.cc: %v", err)
 					return &rpb.ActionResult{
@@ -84,7 +84,7 @@ func TestBuild_EdgeRule(t *testing.T) {
 						StderrRaw: fmt.Appendf(nil, "gen/bar.cc: File not found: %v", err),
 					}, nil
 				}
-				_, err = tree.LookupFileNode(ctx, "out/siso/gen/bar.h")
+				_, err = tree.LookupFileNode(ctx, "out/x/gen/bar.h")
 				if err != nil {
 					t.Logf("gen/bar.h not found for gen/bar.cc")
 					return &rpb.ActionResult{
@@ -104,7 +104,7 @@ func TestBuild_EdgeRule(t *testing.T) {
 
 			case cmp.Equal(cmd.Arguments, []string{"python3", "../../tools/ar.py", "-c", "obj/bar.a", "obj/bar.o"}):
 				tree := reapitest.InputTree{CAS: fakere.CAS, Root: action.InputRootDigest}
-				_, err := tree.LookupFileNode(ctx, "out/siso/obj/bar.o")
+				_, err := tree.LookupFileNode(ctx, "out/x/obj/bar.o")
 				if err != nil {
 					t.Logf("missing obj/bar.o: %v", err)
 					return &rpb.ActionResult{
@@ -135,7 +135,7 @@ func TestBuild_EdgeRule(t *testing.T) {
 				var buf bytes.Buffer
 				tree := reapitest.InputTree{CAS: fakere.CAS, Root: action.InputRootDigest}
 				for _, input := range []string{"obj/foo.o", "obj/bar.a"} {
-					fn, err := tree.LookupFileNode(ctx, path.Join("out/siso", input))
+					fn, err := tree.LookupFileNode(ctx, path.Join("out/x", input))
 					if err != nil {
 						t.Logf("missing %s: %v", input, err)
 						return &rpb.ActionResult{
@@ -154,7 +154,7 @@ func TestBuild_EdgeRule(t *testing.T) {
 					buf.Write(data)
 				}
 				// obj/bar.a is thin archive, so it needs obj/bar.o too
-				_, err := tree.LookupFileNode(ctx, "out/siso/obj/bar.o")
+				_, err := tree.LookupFileNode(ctx, "out/x/obj/bar.o")
 				if err != nil {
 					t.Logf("obj/bar.o not found for obj/bar.a")
 					return &rpb.ActionResult{
@@ -261,7 +261,7 @@ func TestBuild_EdgeRule_solibs(t *testing.T) {
 				"libc++.so",
 				"../../protobuf/foo.proto",
 			} {
-				_, err := tree.LookupFileNode(ctx, path.Join("out/siso", input))
+				_, err := tree.LookupFileNode(ctx, path.Join("out/x", input))
 				t.Logf("input %s: %v", input, err)
 				if err != nil {
 					return &rpb.ActionResult{
@@ -369,7 +369,7 @@ func TestBuild_EdgeRule_solibs_recursive(t *testing.T) {
 				"libthird_party_freetype_harfbuzz.so",
 				"../../test_fonts.ttf",
 			} {
-				_, err := tree.LookupFileNode(ctx, path.Join("out/siso", input))
+				_, err := tree.LookupFileNode(ctx, path.Join("out/x", input))
 				t.Logf("input %s: %v", input, err)
 				if err != nil {
 					return &rpb.ActionResult{
@@ -475,7 +475,7 @@ func TestBuild_EdgeRule_stamp_solibs(t *testing.T) {
 				"libc++.so",
 				"../../include.fbs",
 			} {
-				_, err := tree.LookupFileNode(ctx, path.Join("out/siso", input))
+				_, err := tree.LookupFileNode(ctx, path.Join("out/x", input))
 				if err != nil {
 					t.Logf("err for %s: %v", input, err)
 					return &rpb.ActionResult{

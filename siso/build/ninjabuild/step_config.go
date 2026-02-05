@@ -189,7 +189,8 @@ type StepRule struct {
 	// InputRootAbsolutePath indicates the step requires absolute path for the input root, i.e. not relocatable.
 	InputRootAbsolutePath bool `json:"input_root_absolute_path,omitempty"`
 	// CanonicalizeDir indicates the step can canonicalize the working dir.
-	CanonicalizeDir bool `json:"canonicalize_dir,omitempty"`
+	// true, false or not-set(when nil), and treated as true when not set.
+	CanonicalizeDir *bool `json:"canonicalize_dir,omitempty"`
 
 	// UseSystemInput indicates to allow extra inputs outside exec root.
 	UseSystemInput bool `json:"use_system_input,omitempty"`

@@ -54,7 +54,7 @@ func TestBuild_ObjcxxFrameworks(t *testing.T) {
 				"sdk/xcode_links/iPhoneSimulator.sdk/Developer/Library/Frameworks/Foo.frameworks/Headers/Foo.h",
 				"sdk/xcode_links/iPhoneSimulator.platform/Developer/Library/Frameworks/Bar.frameworks/Headers/Bar.h",
 			} {
-				fn, err := tree.LookupFileNode(ctx, path.Join("out/siso", fname))
+				fn, err := tree.LookupFileNode(ctx, path.Join("out/x", fname))
 				if err != nil {
 					t.Logf("missing %s in input", fname)
 					return &rpb.ActionResult{
