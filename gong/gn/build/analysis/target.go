@@ -5,30 +5,25 @@
 package analysis
 
 import (
+	"fmt"
+	"iter"
+	"os"
+
 	"go.chromium.org/build/gong/gn/build/environment"
 	"go.chromium.org/build/gong/gn/build/fs"
 	"go.chromium.org/build/gong/gn/parse"
 	"go.chromium.org/build/gong/gn/resolve"
 )
 
-// Target is an item in the GN dependency graph that represents either an unresolved
-// or resolved build target.
+// Target is an item in the GN dependency graph that represents a build target.
 //
-// A target starts in an unresolved state, and is resolved by the Builder.
-//
-// In Bazel terms, a resolved target can be thought of as a node in the
-// "configured target graph".
-//
-// Unlike Bazel, GN does not build an "unconfigured" target graph.
-//
-//nolint:unused
+// Using their [Schema], targets are moved into a resolved state by the [Builder].
 type Target struct {
 	itemInfo
-	settings *Settings
-	schema   *Schema
-	values   map[string]resolve.Value
-	// TODO: if targets own "actions", then outputs should live under the "action graph".
-	outputs []fs.OutputFile
+	settings   *Settings
+	schema     *Schema
+	values     map[string]resolve.Value
+	resolution resolution
 }
 
 func (Target) compatibleWith(item Item) bool {
@@ -37,6 +32,155 @@ func (Target) compatibleWith(item Item) bool {
 		return true
 	}
 	return false
+}
+
+// A resolverFn tries to resolve a target.
+// It returns an error instead if processing fails.
+type resolverFn = func(*Target, *Builder) (fs.SourceFile, error)
+
+// A resolution of a target records the actions that a target performs, and any metadata that
+// may be relevant to targets waiting for this target to be resolved.
+//
+// For now, the only metadata supported is a [fs.SourceFile] so deps can use it as input.
+type resolution struct {
+	actions []runToolAction
+	output  fs.SourceFile
+}
+
+type runToolAction struct {
+	tool   string
+	inputs []fs.SourceFile
+	output fs.SourceFile
+}
+
+func (t *Target) resolve(b *Builder) (fs.SourceFile, error) {
+	if t.schema == nil {
+		return fs.SourceFile{}, environment.IllegalStateError{
+			Reason: "Attempted to resolve target without schema",
+		}
+	}
+	if t.schema.resolver == nil {
+		fmt.Fprintf(os.Stderr, "ignoring target %v for now since no resolver...\n", t.label.UserVisibleString(false))
+		return fs.SourceFile{}, nil
+	}
+	return t.schema.resolver(t, b)
+}
+
+func (t *Target) stringFor(varName string) (string, error) {
+	v, ok := t.values[varName]
+	if !ok {
+		return "", fmt.Errorf("%s not declared", varName)
+	}
+	sv, err := resolve.AsValue[*resolve.StringValue](v)
+	if err != nil {
+		return "", err
+	}
+	return sv.RawGNString(), nil
+}
+
+func (t *Target) sourceFilesFor(varName string) iter.Seq2[fs.SourceFile, error] {
+	return func(yield func(fs.SourceFile, error) bool) {
+		v, ok := t.values[varName]
+		if !ok {
+			return
+		}
+		lv, err := resolve.AsValue[*resolve.ListValue](v)
+		if err != nil {
+			yield(fs.SourceFile{}, err)
+			return
+		}
+		for v := range lv.Values() {
+			sv, err := resolve.AsValue[*resolve.StringValue](v)
+			// TODO: "ERROR Items must be strings (filenames)."
+			if err != nil {
+				yield(fs.SourceFile{}, err)
+				return
+			}
+			path := sv.RawGNString()
+			if !yield(t.label.Dir.ResolveRelativeFile(path)) {
+				return
+			}
+		}
+	}
+}
+
+func (t *Target) resolvedTargetsFor(varName string, b *Builder) iter.Seq2[resolution, error] {
+	v, ok := t.values[varName]
+	if !ok {
+		return nil
+	}
+	return func(yield func(resolution, error) bool) {
+		lv, err := resolve.AsValue[*resolve.ListValue](v)
+		if err != nil {
+			yield(resolution{}, err)
+			return
+		}
+		for v := range lv.Values() {
+			// TODO: it's not great this has to duplicate the same work as Builder to
+			// resolve strings into labels and then labels into records.
+			// Should we try to resolve targets, fs.SourceFile, etc and save them on
+			// the *Target when it's defined instead of now?
+			sv, err := resolve.AsValue[*resolve.StringValue](v)
+			if err != nil {
+				yield(resolution{}, err)
+				return
+			}
+			dep, err := environment.ResolveLabel(t.label.Dir, environment.Label{}, sv)
+			if err != nil {
+				yield(resolution{}, err)
+				return
+			}
+			depRecord, err := b.recordFor(dep, sv.OriginNode(), &Target{})
+			if err != nil {
+				yield(resolution{}, err)
+				return
+			}
+			if depRecord.state != itemStateResolved {
+				yield(resolution{}, environment.IllegalStateError{Reason: "unresolved dep found"})
+				return
+			}
+			switch t := depRecord.item.(type) {
+			case *Target:
+				if !yield(t.resolution, nil) {
+					return
+				}
+			default:
+				yield(resolution{}, ItemTypeMismatchError{
+					OriginNode:        parse.OriginNode{Node: v.OriginNode()},
+					label:             t.Label(),
+					itemOrPlaceholder: &Target{},
+					existingRecord:    depRecord,
+				})
+				return
+			}
+		}
+	}
+}
+
+func (t *Target) declareTool(tool string, inputs []fs.SourceFile, outputName string) (fs.SourceFile, error) {
+	outDir, err := t.buildDirAsSourceDir()
+	if err != nil {
+		return fs.SourceFile{}, err
+	}
+	outFile, err := outDir.ResolveRelativeFile(outputName)
+	if err != nil {
+		return fs.SourceFile{}, err
+	}
+	t.resolution.actions = append(t.resolution.actions, runToolAction{
+		tool:   tool,
+		inputs: inputs,
+		output: outFile,
+	})
+	return outFile, nil
+}
+
+// buildDirAsSourceDir returns the output or generated file directory corresponding to the given
+// target.
+//
+// TODO: This is a placeholder implementation that always assumes obj/.
+// To be correct, we need to also support absolute paths, support gen/, support phony/, etc.
+func (t *Target) buildDirAsSourceDir() (fs.SourceDir, error) {
+	return t.settings.buildSettings.BuildDir.ResolveRelativeDir("obj/" + t.label.Dir.Path())
 }
 
 // LabelTargetPair represents a label, and a pointer to its target if that

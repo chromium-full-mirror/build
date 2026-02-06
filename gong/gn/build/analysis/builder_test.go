@@ -25,6 +25,7 @@ func TestBuilder_RecordDefinedItem_CreatesRecordsForDeps(t *testing.T) {
 		},
 		schema: &executableSchema,
 		values: map[string]resolve.Value{
+			"name": resolve.NewOriginlessStringValue("main_target"),
 			"deps": resolve.NewOriginlessListValue([]resolve.Value{
 				resolve.NewStringValueAt(dep1Origin, "//bar:baz"),
 				resolve.NewStringValueAt(dep2Origin, "//bar:qux"),
@@ -97,6 +98,14 @@ func TestBuilder_ItemTypeMismatch(t *testing.T) {
 			definedFrom: &parse.IdentifierNode{Value: syntax.MakeToken(syntax.TokenIdentifier, "baz_target")},
 		},
 		schema: &sharedLibrarySchema,
+		settings: &Settings{
+			buildSettings: &environment.BuildSettings{
+				BuildDir: mustDir(t, "/"),
+			},
+		},
+		values: map[string]resolve.Value{
+			"name": resolve.NewOriginlessStringValue("baz_target"),
+		},
 	}
 
 	for _, tc := range []struct {

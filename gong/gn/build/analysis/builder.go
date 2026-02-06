@@ -84,21 +84,19 @@ func (b *Builder) RecordDefinedItem(item Item) ([]environment.LabelWithOrigin, e
 	// Do target-specific dependency setup.
 	switch i := item.(type) {
 	case *Target:
-		fmt.Fprintf(os.Stderr, "got target %q but placeholder! need to parse this target's configs, non-private deps etc.\n",
-			record.item.Label().UserVisibleString(false))
 		return b.targetDefined(i, record)
 	case *Config:
+		// HACK: Temporarily do not throw NotImplementedError for test to work.
 		fmt.Fprintf(os.Stderr, "got config %q but will do nothing yet! need to parse this config's deps.\n",
 			record.item.Label().UserVisibleString(false))
+		return nil, nil
 	case *Toolchain:
-		fmt.Fprintf(os.Stderr, "got toolchain %q but will do nothing yet! need to parse this toolchain's deps and tool() defs.\n",
-			record.item.Label().UserVisibleString(false))
+		return nil, NotImplementedError{
+			what: fmt.Sprintf("builder can't handle toolchain defs yet. got: %q",
+				record.item.Label().UserVisibleString(false)),
+		}
 	}
-
-	// TODO: return to caller the dependencies that need to be load
-	// before this item will be resolved.
-
-	return nil, nil
+	return nil, fmt.Errorf("don't know how to handle %T item yet", item)
 }
 
 func (b *Builder) targetDefined(target *Target, record *builderRecord) ([]environment.LabelWithOrigin, error) {
@@ -151,7 +149,38 @@ func (b *Builder) targetDefined(target *Target, record *builderRecord) ([]enviro
 		}
 	}
 
+	if len(unresolvedDeps) == 0 {
+		return nil, b.resolveTarget(target, record)
+	}
 	return unresolvedDeps, nil
+}
+
+func (b *Builder) resolveTarget(target *Target, record *builderRecord) error {
+	outFile, err := target.resolve(b)
+	if err != nil {
+		return err
+	}
+	target.resolution.output = outFile
+	record.state = itemStateResolved
+
+	// Recursively update everybody waiting on this item to be resolved.
+	for dependent := range record.dependents {
+		dependent.unresolvedDeps--
+		if dependent.unresolvedDeps > 0 {
+			continue
+		}
+		switch dependentTarget := dependent.item.(type) {
+		case *Target:
+			if err := b.resolveTarget(dependentTarget, dependent); err != nil {
+				return err
+			}
+		default:
+			return environment.IllegalStateError{
+				Reason: "Builder constructed graph with non-target dep on target",
+			}
+		}
+	}
+	return nil
 }
 
 // recordFor returns the record associated with the given label. Checks

@@ -6,8 +6,10 @@ package analysis
 
 import (
 	"fmt"
+	"path/filepath"
 
 	"go.chromium.org/build/gong/gn/build/environment"
+	"go.chromium.org/build/gong/gn/build/fs"
 	"go.chromium.org/build/gong/gn/parse"
 	"go.chromium.org/build/gong/gn/resolve"
 )
@@ -32,13 +34,16 @@ const (
 // User-facing documentation should still refer to GN target "types".
 //
 // The schema of a target specifies a name (e.g. "shared_library"), the types of variables
-// it accepts (e.g. "sources", "deps").
+// it accepts (e.g. "sources", "deps"), and how it resolves a target definition.
 type Schema struct {
-	name    string
-	summary string
-	vars    map[string]varType // TODO: Implement concept of required?
+	name     string
+	summary  string
+	vars     map[string]varType // TODO: Implement concept of required?
+	resolver resolverFn
 }
 
+// TODO: add helper functions re file extensions like below
+// https://source.chromium.org/gn/gn/+/main:src/gn/source_file.cc?q=SourceFile::SOURCE_H&ss=gn%2Fgn
 var (
 	actionSchema = Schema{
 		name:    "action",
@@ -62,6 +67,48 @@ var (
 			"configs": configLabelListType,
 			"outputs": fileListType,
 		},
+		resolver: func(t *Target, b *Builder) (fs.SourceFile, error) {
+			name, err := t.stringFor("name")
+			if err != nil {
+				return fs.SourceFile{}, err
+			}
+			var linkInputs []fs.SourceFile
+			for source := range t.sourceFilesFor("sources") {
+				sourceName := source.Filename()
+				sourceBase := filepath.Base(sourceName)
+				if filepath.Ext(sourceBase) == ".h" {
+					continue
+				}
+				objFile, err := t.declareTool(
+					"cxx",
+					[]fs.SourceFile{source},
+					fmt.Sprintf("%s.%s.o", name, sourceBase),
+				)
+				if err != nil {
+					return fs.SourceFile{}, err
+				}
+				linkInputs = append(linkInputs, objFile)
+			}
+			for dep, err := range t.resolvedTargetsFor("deps", b) {
+				if err != nil {
+					return fs.SourceFile{}, err
+				}
+				switch filepath.Ext(dep.output.Filename()) {
+				case ".a":
+				case ".so":
+					linkInputs = append(linkInputs, dep.output)
+				default:
+					return fs.SourceFile{}, NotImplementedError{
+						what: fmt.Sprintf("%q dep not implemented yet", dep.output.Filename()),
+					}
+				}
+			}
+			return t.declareTool(
+				"link",
+				linkInputs,
+				name,
+			)
+		},
 	}
 	sharedLibrarySchema = Schema{
 		name:    "shared_library",
@@ -72,6 +119,35 @@ var (
 			"deps":    targetLabelListType,
 			"configs": configLabelListType,
 			"defines": stringListType,
+		},
+		resolver: func(t *Target, b *Builder) (fs.SourceFile, error) {
+			name, err := t.stringFor("name")
+			if err != nil {
+				return fs.SourceFile{}, err
+			}
+			var linkInputs []fs.SourceFile
+			outPrefix := fmt.Sprintf("lib%s", name)
+			for source := range t.sourceFilesFor("sources") {
+				sourceName := source.Filename()
+				sourceBase := filepath.Base(sourceName)
+				if filepath.Ext(sourceBase) == ".h" {
+					continue
+				}
+				objFile, err := t.declareTool(
+					"cxx",
+					[]fs.SourceFile{source},
+					fmt.Sprintf("%s.%s.o", outPrefix, sourceBase),
+				)
+				if err != nil {
+					return fs.SourceFile{}, err
+				}
+				linkInputs = append(linkInputs, objFile)
+			}
+			return t.declareTool(
+				"alink",
+				linkInputs,
+				fmt.Sprintf("%s.a", outPrefix),
+			)
 		},
 	}
 	sourceSetSchema = Schema{
@@ -92,6 +168,35 @@ var (
 			"deps":    targetLabelListType,
 			"configs": configLabelListType,
 			"defines": stringListType,
+		},
+		resolver: func(t *Target, b *Builder) (fs.SourceFile, error) {
+			name, err := t.stringFor("name")
+			if err != nil {
+				return fs.SourceFile{}, err
+			}
+			var linkInputs []fs.SourceFile
+			outPrefix := fmt.Sprintf("lib%s", name)
+			for source := range t.sourceFilesFor("sources") {
+				sourceName := source.Filename()
+				sourceBase := filepath.Base(sourceName)
+				if filepath.Ext(sourceBase) == ".h" {
+					continue
+				}
+				objFile, err := t.declareTool(
+					"cxx",
+					[]fs.SourceFile{source},
+					fmt.Sprintf("%s.%s.o", outPrefix, sourceBase),
+				)
+				if err != nil {
+					return fs.SourceFile{}, err
+				}
+				linkInputs = append(linkInputs, objFile)
+			}
+			return t.declareTool(
+				"solink",
+				linkInputs,
+				fmt.Sprintf("%s.so", outPrefix),
+			)
 		},
 	}
 	copySchema = Schema{
@@ -151,13 +256,20 @@ func (s *Schema) Run(scope *resolve.Scope, call *parse.FunctionCallNode, args []
 			label:       label,
 			definedFrom: call,
 		},
-		schema: s,
+		schema:   s,
+		settings: ctx.settings,
 		values: map[string]resolve.Value{
 			"name": nameValue,
 		},
 	}
 
 	// Check all variables passed to the target are of the expected type.
+	// TODO: If we only validate but don't try to convert into Label, fs.SourceFile etc.
+	// then it's not great that later these values need to be checked and converted from
+	// string values into concrete references twice - once by the Builder to find deps,
+	// then by the resolve function *again* when it needs to read deps.
+	// Should we try to resolve targets, fs.SourceFile, etc and save them on
+	// the *Target here?
 	for acceptedVar, expectedType := range s.vars {
 		value := blockScope.Value(acceptedVar, true)
 		if value == nil {
