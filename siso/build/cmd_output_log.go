@@ -7,7 +7,8 @@ package build
 import (
 	"context"
 	"fmt"
-	"sort"
+	"maps"
+	"slices"
 	"strings"
 
 	"go.chromium.org/build/siso/execute"
@@ -216,12 +217,7 @@ func cmdOutput(ctx context.Context, result cmdOutputResult, cmd *execute.Cmd, cm
 	}
 	res.output = output
 	if len(cmd.AuxiliaryOutputDigests) > 0 {
-		var names []string
-		for name := range cmd.AuxiliaryOutputDigests {
-			names = append(names, name)
-		}
-		sort.Strings(names)
-		for _, name := range names {
+		for _, name := range slices.Sorted(maps.Keys(cmd.AuxiliaryOutputDigests)) {
 			res.auxiliaryOutputs = append(res.auxiliaryOutputs, fmt.Sprintf("%s=%s", name, cmd.AuxiliaryOutputDigests[name]))
 		}
 	}
