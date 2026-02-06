@@ -129,6 +129,8 @@ func (c *cmdOutputLog) Msg(width int, console, verboseFailure bool) string {
 				fmt.Fprintf(&sb, "\n")
 			}
 		}
+	}
+	cmdAuxiliary := func() {
 		if len(c.auxiliaryOutputs) > 0 {
 			fmt.Fprintf(&sb, "auxiliary outputs:\n")
 			for _, aux := range c.auxiliaryOutputs {
@@ -138,8 +140,8 @@ func (c *cmdOutputLog) Msg(width int, console, verboseFailure bool) string {
 	}
 
 	if c.result == cmdOutputResultSUCCESS {
-		// just print stdout/stderr for success result
 		cmdStdoutStderr()
+		cmdAuxiliary()
 		return sb.String()
 	}
 
@@ -175,6 +177,7 @@ func (c *cmdOutputLog) Msg(width int, console, verboseFailure bool) string {
 		fmt.Fprintf(&sb, "siso_rule: %s\n", c.sisoRule)
 	}
 	cmdStdoutStderr()
+	cmdAuxiliary()
 	return sb.String()
 }
 
