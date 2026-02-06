@@ -76,6 +76,8 @@ func (b *Builder) execLocal(ctx context.Context, step *Step) (retErr error) {
 		}
 		executor = traceExecutor
 		logLocalExec = traceExecutor.logLocalExec
+	case "":
+		// no sandbox. ignore
 	default:
 		clog.Warningf(ctx, "unsupported sandbox %q", sandbox)
 	}
