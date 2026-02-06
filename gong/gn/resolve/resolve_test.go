@@ -281,7 +281,7 @@ func TestExecuteNode(t *testing.T) {
 					Contents: []parse.Node{},
 				},
 			},
-			wantErrKind: syntax.ErrUnknown,
+			wantErr: &UnknownFunctionError{},
 		},
 		{
 			name: "function_call_fails_if_args_cannot_evaluate",
@@ -389,10 +389,10 @@ func TestExecuteNode(t *testing.T) {
 			wantErrKind: syntax.ErrNone,
 		},
 		{
-			name:        "literal_unhandled_token",
-			node:        &parse.LiteralNode{Token: syntax.MakeToken(syntax.TokenPlus, "+")},
-			scope:       &Scope{},
-			wantErrKind: syntax.ErrUnknown,
+			name:    "literal_invalid_token",
+			node:    &parse.LiteralNode{Token: syntax.MakeToken(syntax.TokenPlus, "+")},
+			scope:   &Scope{},
+			wantErr: &ASTError{},
 		},
 		{
 			// TODO(b/388723392): this is just a smoke test right now because

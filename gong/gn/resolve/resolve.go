@@ -55,10 +55,9 @@ func ExecuteNode(n parse.Node, s *Scope) (Value, error) {
 			cur := n.Statements[i]
 			switch cur.(type) {
 			case *parse.ListNode, *parse.LiteralNode, *parse.UnaryOpNode, *parse.IdentifierNode, *parse.BlockNode:
-				return nil, parse.MakeErrFromNode(cur,
-					syntax.ErrUnknown,
-					"This statement has no effect.",
-					"Either delete it or do something with the result.")
+				return nil, FloatingScopeError{
+					OriginNode: parse.OriginNode{Node: cur},
+				}
 			}
 			_, err = ExecuteNode(cur, execScope)
 			if err != nil {
@@ -84,7 +83,9 @@ func ExecuteNode(n parse.Node, s *Scope) (Value, error) {
 		name := n.Function
 		info, ok := s.function(name.Value())
 		if !ok {
-			return nil, name.MakeError(syntax.ErrUnknown, "Unknown function.")
+			return nil, UnknownFunctionError{
+				OriginToken: syntax.OriginToken{Token: name},
+			}
 		}
 		argsValue, err := ExecuteNode(n.Args, s)
 		if err != nil {
@@ -188,7 +189,10 @@ statement or a target declaration.`,
 			str.setOrigin(n)
 			return str, nil
 		}
-		return nil, parse.MakeErrFromNode(n, syntax.ErrUnknown, "Invalid AST", "Found a LiteralNode that wasn't a boolean, integer, or string")
+		return nil, ASTError{
+			OriginNode: parse.OriginNode{Node: n},
+			details:    "Found a LiteralNode that wasn't a boolean, integer, or string",
+		}
 
 	case *parse.BlockCommentNode:
 		return nil, nil

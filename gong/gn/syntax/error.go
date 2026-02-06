@@ -144,16 +144,16 @@ func (e Error) Kind() ErrKind {
 }
 
 // GetErrKind returns the kind of error err corresponds to.
+//
+// Deprecated: Implement ui.PresentableError and use errors.As?
 func GetErrKind(err error) ErrKind {
 	if err != nil {
 		var syntaxErr Error
 		if errors.As(err, &syntaxErr) {
 			return syntaxErr.kind
 		}
-		return ErrNotSyntaxError
-	} else {
-		return ErrNone
 	}
+	return ErrUnknown
 }
 
 // AsErrKind returns the error if it matches the error kind.

@@ -14,7 +14,5 @@ const (
 	// Deprecated: Implement ui.PresentableError instead.
 	ErrNone ErrKind = "nil"
 	// Deprecated: Implement ui.PresentableError instead.
-	ErrNotSyntaxError ErrKind = "non-syntax-error"
-	// Deprecated: Implement ui.PresentableError instead.
 	ErrUnknown ErrKind = "ErrUnknown"
 )

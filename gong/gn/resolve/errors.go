@@ -52,6 +52,24 @@ func (e UndefinedIdentifierError) Message() string { return "Undefined identifie
 // It returns an empty string because there is no detailed help text for this error.
 func (e UndefinedIdentifierError) HelpText() string { return "" }
 
+// UnknownFunctionError is returned when referencing an unknown function.
+type UnknownFunctionError struct {
+	syntax.OriginToken
+}
+
+// Error returns the error message.
+func (e UnknownFunctionError) Error() string {
+	return fmt.Sprintf("unknown function %q", e.Token.Value())
+}
+
+// Message returns the user-facing error message.
+// The function name is not included because the UI will show the origin source snippet.
+func (e UnknownFunctionError) Message() string { return "Unknown function." }
+
+// HelpText returns the user-facing error help text.
+// It returns an empty string because there is no detailed help text for this error.
+func (e UnknownFunctionError) HelpText() string { return "" }
+
 // UnimplementedNodeError is returned when attempting to resolve a node that we don't support yet.
 type UnimplementedNodeError struct {
 	parse.OriginNode
@@ -208,6 +226,22 @@ func (e UnusedVarError) Location() syntax.Location {
 // Range returns the range of the failed member access.
 func (e UnusedVarError) Range() syntax.LocationRange {
 	return e.assignOrigin
+}
+
+// FloatingScopeError is returned when a free-floating scope is found.
+type FloatingScopeError struct {
+	parse.OriginNode
+}
+
+// Error returns the error message.
+func (e FloatingScopeError) Error() string { return "free-floating scopes not permitted" }
+
+// Message returns the user-facing error message.
+func (e FloatingScopeError) Message() string { return "This statement has no effect." }
+
+// HelpText returns the user-facing error help text.
+func (e FloatingScopeError) HelpText() string {
+	return "Either delete it or do something with the result."
 }
 
 // TypeError is returned when an operation could not be performed due to a type mismatch.
