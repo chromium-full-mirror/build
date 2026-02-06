@@ -1268,6 +1268,16 @@ func uniqueFiles(files []string) []string {
 	return ret
 }
 
+// AuxiliaryLogOutputFiles returns output files that siso explicitly logs digest of.
+func (s *StepDef) AuxiliaryLogOutputFiles(ctx context.Context) []string {
+	return s.rule.AuxiliaryLogOutputFiles
+}
+
+// AuxiliaryLogOutputDirs returns output directories that siso explicitly logs digest of.
+func (s *StepDef) AuxiliaryLogOutputDirs(ctx context.Context) []string {
+	return s.rule.AuxiliaryLogOutputDirs
+}
+
 // REProxyConfig returns configuration options for using reproxy.
 func (s *StepDef) REProxyConfig() *execute.REProxyConfig {
 	return s.rule.REProxyConfig

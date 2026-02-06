@@ -102,6 +102,14 @@ type StepDef interface {
 	// LocalOutputs returns outputs of the step that should be written to the local disk.
 	LocalOutputs(context.Context) []string
 
+	// AuxiliaryLogOutputFiles returns output files that siso explicitly logs digest of
+	// but doesn't download to disk.
+	AuxiliaryLogOutputFiles(context.Context) []string
+
+	// AuxiliaryLogOutputDirs returns output directories that siso explicitly logs digest of
+	// but doesn't download to disk.
+	AuxiliaryLogOutputDirs(context.Context) []string
+
 	// Pure indicates the step is pure or not.
 	Pure() bool
 
@@ -475,22 +483,24 @@ func newCmd(ctx context.Context, b *Builder, stepDef StepDef, stepManifest *step
 	}
 
 	cmd := &execute.Cmd{
-		ID:             stepDef.String(),
-		Desc:           stepDescription(stepDef),
-		ActionName:     stepDef.ActionName(),
-		Args:           b.argTab.InternSlice(stepDef.Args(ctx)),
-		RSPFile:        stepDef.Rspfile(ctx),
-		RSPFileContent: []byte(stepDef.Binding("rspfile_content")),
-		CmdHash:        stepManifest.cmdHash,
-		ExecRoot:       b.path.ExecRoot, // use step binding?
-		Dir:            b.path.Dir,
-		Inputs:         stepInputs(ctx, stepDef),
-		ToolInputs:     stepDef.ToolInputs(ctx),
-		Outputs:        stepManifest.outputs,
-		EdgeHash:       stepManifest.edgeHash,
-		UseSystemInput: stepDef.Binding("use_system_input") != "",
-		Deps:           stepDef.Binding("deps"),
-		Depfile:        stepDef.Depfile(ctx),
+		ID:                      stepDef.String(),
+		Desc:                    stepDescription(stepDef),
+		ActionName:              stepDef.ActionName(),
+		Args:                    b.argTab.InternSlice(stepDef.Args(ctx)),
+		RSPFile:                 stepDef.Rspfile(ctx),
+		RSPFileContent:          []byte(stepDef.Binding("rspfile_content")),
+		CmdHash:                 stepManifest.cmdHash,
+		ExecRoot:                b.path.ExecRoot, // use step binding?
+		Dir:                     b.path.Dir,
+		Inputs:                  stepInputs(ctx, stepDef),
+		ToolInputs:              stepDef.ToolInputs(ctx),
+		Outputs:                 stepManifest.outputs,
+		EdgeHash:                stepManifest.edgeHash,
+		UseSystemInput:          stepDef.Binding("use_system_input") != "",
+		Deps:                    stepDef.Binding("deps"),
+		Depfile:                 stepDef.Depfile(ctx),
+		AuxiliaryLogOutputFiles: stepDef.AuxiliaryLogOutputFiles(ctx),
+		AuxiliaryLogOutputDirs:  stepDef.AuxiliaryLogOutputDirs(ctx),
 
 		Restat:        stepDef.Binding("restat") != "",
 		RestatContent: stepDef.Binding("restat_content") != "",

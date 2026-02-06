@@ -159,6 +159,14 @@ type StepRule struct {
 	// OutputsMap is a map to fix inputs/outputs per outputs.
 	OutputsMap map[string]StepDeps `json:"outputs_map,omitempty"`
 
+	// AuxiliaryLogOutputFiles are output files that siso explicitly logs digest of
+	// but doesn't download to disk.
+	AuxiliaryLogOutputFiles []string `json:"auxiliary_log_output_files,omitempty"`
+
+	// AuxiliaryLogOutputDirs are output directories that siso explicitly logs digest of
+	// but doesn't download to disk.
+	AuxiliaryLogOutputDirs []string `json:"auxiliary_log_output_dirs,omitempty"`
+
 	// Restat means the step command will read its output
 	// and may not write output when no update needed.
 	// Output will be considered as clean if output mtime
@@ -484,6 +492,13 @@ loop:
 			outputs[i] = fromConfigPath(ctx, bpath, outputs[i])
 		}
 		rule.Outputs = outputs
+
+		for i := range rule.AuxiliaryLogOutputFiles {
+			rule.AuxiliaryLogOutputFiles[i] = fromConfigPath(ctx, bpath, rule.AuxiliaryLogOutputFiles[i])
+		}
+		for i := range rule.AuxiliaryLogOutputDirs {
+			rule.AuxiliaryLogOutputDirs[i] = fromConfigPath(ctx, bpath, rule.AuxiliaryLogOutputDirs[i])
+		}
 
 		if len(opt.Platform) > 0 {
 			if len(rule.Platform) == 0 {

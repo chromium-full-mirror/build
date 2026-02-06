@@ -74,6 +74,9 @@ func (f fakeStepDef) Outputs(context.Context) []string {
 	return f.outputs
 }
 
+func (fakeStepDef) AuxiliaryLogOutputFiles(context.Context) []string { return nil }
+func (fakeStepDef) AuxiliaryLogOutputDirs(context.Context) []string  { return nil }
+
 func (fakeStepDef) LocalOutputs(context.Context) []string { return nil }
 func (fakeStepDef) Pure() bool                            { return false }
 func (fakeStepDef) Platform() map[string]string           { return nil }

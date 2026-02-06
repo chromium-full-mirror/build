@@ -76,6 +76,8 @@ func starActionsFix(thread *starlark.Thread, fn *starlark.Builtin, args starlark
 	var rspfileContentValue starlark.Value
 	var reproxyConfigValue starlark.Value
 	var reconcileOutputdirsValue starlark.Value
+	var auxiliaryLogOutputFilesValue starlark.Value
+	var auxiliaryLogOutputDirsValue starlark.Value
 	err := starlark.UnpackArgs("fix", args, kwargs,
 		"inputs?", &inputsValue,
 		"tool_inputs?", &toolInputsValue,
@@ -83,7 +85,9 @@ func starActionsFix(thread *starlark.Thread, fn *starlark.Builtin, args starlark
 		"args?", &cmdArgsValue,
 		"rspfile_content?", &rspfileContentValue,
 		"reproxy_config?", &reproxyConfigValue,
-		"reconcile_outputdirs?", &reconcileOutputdirsValue)
+		"reconcile_outputdirs?", &reconcileOutputdirsValue,
+		"auxiliary_log_output_files?", &auxiliaryLogOutputFilesValue,
+		"auxiliary_log_output_dirs?", &auxiliaryLogOutputDirsValue)
 	if err != nil {
 		return starlark.None, err
 	}
@@ -106,6 +110,20 @@ func starActionsFix(thread *starlark.Thread, fn *starlark.Builtin, args starlark
 			return starlark.None, err
 		}
 	}
+	var auxiliaryLogOutputFiles, auxiliaryLogOutputDirs []string
+	if auxiliaryLogOutputFilesValue != nil {
+		auxiliaryLogOutputFiles, err = unpackList(auxiliaryLogOutputFilesValue)
+		if err != nil {
+			return starlark.None, err
+		}
+	}
+	if auxiliaryLogOutputDirsValue != nil {
+		auxiliaryLogOutputDirs, err = unpackList(auxiliaryLogOutputDirsValue)
+		if err != nil {
+			return starlark.None, err
+		}
+	}
+
 	var cmdArgs []string
 	if cmdArgsValue != nil && cmdArgsValue != starlark.None {
 		cmdArgs, err = unpackList(cmdArgsValue)
@@ -146,6 +164,12 @@ func starActionsFix(thread *starlark.Thread, fn *starlark.Builtin, args starlark
 	}
 	if outputsValue != nil {
 		c.cmd.Outputs = uniqueList(outputs)
+	}
+	if auxiliaryLogOutputFilesValue != nil {
+		c.cmd.AuxiliaryLogOutputFiles = uniqueList(auxiliaryLogOutputFiles)
+	}
+	if auxiliaryLogOutputDirsValue != nil {
+		c.cmd.AuxiliaryLogOutputDirs = uniqueList(auxiliaryLogOutputDirs)
 	}
 	if cmdArgsValue != nil {
 		c.cmd.Args = cmdArgs

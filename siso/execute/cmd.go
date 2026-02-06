@@ -153,10 +153,12 @@ type Cmd struct {
 
 	// AuxiliaryLogOutputFiles are output files that siso explicitly logs digest of
 	// but doesn't download to disk or record in hashfs time.
+	// They are relative to ExecRoot.
 	AuxiliaryLogOutputFiles []string
 
 	// AuxiliaryLogOutputDirs are output directories that siso explicitly logs digest of
 	// but doesn't download to disk or record in hashfs time.
+	// They are relative to ExecRoot.
 	AuxiliaryLogOutputDirs []string
 
 	// If Restat is true,
@@ -854,7 +856,7 @@ func (c *Cmd) entriesFromResult(ctx context.Context, ds hashfs.DataSource, updat
 			continue
 		}
 		fname := filepath.ToSlash(filepath.Join(c.Dir, f.Path))
-		if c.IsAuxiliary(fname) {
+		if c.IsAuxiliary(fname) && !c.outfiles[fname] {
 			continue
 		}
 
@@ -889,7 +891,7 @@ func (c *Cmd) entriesFromResult(ctx context.Context, ds hashfs.DataSource, updat
 			continue
 		}
 		fname := filepath.ToSlash(filepath.Join(c.Dir, s.Path))
-		if c.IsAuxiliary(fname) {
+		if c.IsAuxiliary(fname) && !c.outfiles[fname] {
 			continue
 		}
 
@@ -911,7 +913,7 @@ func (c *Cmd) entriesFromResult(ctx context.Context, ds hashfs.DataSource, updat
 	for _, d := range c.actionResult.GetOutputDirectories() {
 		// It just needs to add the directories here because it assumes that they have already been expanded by ninja State.
 		dname := filepath.ToSlash(filepath.Join(c.Dir, d.Path))
-		if c.IsAuxiliary(dname) {
+		if c.IsAuxiliary(dname) && !c.outfiles[dname] {
 			continue
 		}
 
