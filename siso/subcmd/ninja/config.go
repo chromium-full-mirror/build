@@ -575,7 +575,7 @@ func initLock(ctx context.Context, dryRun bool, stateDir string) (func(), error)
 		return func() {}, nil
 	}
 	lockFilename := filepath.Join(stateDir, ".siso_lock")
-	lock, err := newLockFile(ctx, lockFilename)
+	lock, err := newLockFile(lockFilename)
 	switch {
 	case errors.Is(err, errors.ErrUnsupported):
 		clog.Warningf(ctx, "lockfile is not supported")
