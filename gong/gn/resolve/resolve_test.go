@@ -18,14 +18,11 @@ import (
 
 func TestExecuteNode(t *testing.T) {
 	for _, tc := range []struct {
-		name  string
-		scope *Scope
-		node  parse.Node
-		want  Value
-		// TODO: this is a temporary hack to support errors being returned with
-		// the deprecated ErrKind type versus strongly-typed errors.
-		wantErrKind syntax.ErrKind
-		wantErr     any
+		name    string
+		scope   *Scope
+		node    parse.Node
+		want    Value
+		wantErr any
 	}{
 		{
 			name: "access_undefined_base",
@@ -80,8 +77,7 @@ func TestExecuteNode(t *testing.T) {
 				Base:   syntax.MakeToken(syntax.TokenIdentifier, "a"),
 				Member: &parse.IdentifierNode{Value: syntax.MakeToken(syntax.TokenIdentifier, "b")},
 			},
-			want:        &IntegerValue{value: 42},
-			wantErrKind: syntax.ErrNone,
+			want: &IntegerValue{value: 42},
 		},
 		{
 			name: "access_list_by_subscript",
@@ -100,8 +96,7 @@ func TestExecuteNode(t *testing.T) {
 				Base:      syntax.MakeToken(syntax.TokenIdentifier, "a"),
 				Subscript: &parse.LiteralNode{Token: syntax.MakeToken(syntax.TokenInteger, "0")},
 			},
-			want:        &IntegerValue{value: 42},
-			wantErrKind: syntax.ErrNone,
+			want: &IntegerValue{value: 42},
 		},
 		{
 			name: "access_list_by_subscript_negative_index",
@@ -198,8 +193,7 @@ func TestExecuteNode(t *testing.T) {
 				Base:      syntax.MakeToken(syntax.TokenIdentifier, "a"),
 				Subscript: &parse.LiteralNode{Token: syntax.MakeToken(syntax.TokenString, `"b"`)},
 			},
-			want:        &IntegerValue{value: 42},
-			wantErrKind: syntax.ErrNone,
+			want: &IntegerValue{value: 42},
 		},
 		{
 			name: "access_scope_by_subscript_undefined_member",
@@ -269,8 +263,7 @@ func TestExecuteNode(t *testing.T) {
 					},
 				},
 			},
-			want:        &IntegerValue{value: 52},
-			wantErrKind: syntax.ErrNone,
+			want: &IntegerValue{value: 52},
 		},
 		{
 			name:  "function_call_undefined",
@@ -317,76 +310,69 @@ func TestExecuteNode(t *testing.T) {
 			wantErr: &UndefinedIdentifierError{},
 		},
 		{
-			name:        "blockcomment_nothing",
-			node:        &parse.BlockCommentNode{},
-			scope:       &Scope{},
-			wantErrKind: syntax.ErrNone,
+			name:  "blockcomment_nothing",
+			node:  &parse.BlockCommentNode{},
+			scope: &Scope{},
 		},
 		{
-			name:        "literal_true",
-			node:        &parse.LiteralNode{Token: syntax.MakeToken(syntax.TokenTrue, "true")},
-			scope:       &Scope{},
-			want:        &BooleanValue{value: true},
-			wantErrKind: syntax.ErrNone,
+			name:  "literal_true",
+			node:  &parse.LiteralNode{Token: syntax.MakeToken(syntax.TokenTrue, "true")},
+			scope: &Scope{},
+			want:  &BooleanValue{value: true},
 		},
 		{
-			name:        "literal_false",
-			node:        &parse.LiteralNode{Token: syntax.MakeToken(syntax.TokenFalse, "false")},
-			scope:       &Scope{},
-			want:        &BooleanValue{value: false},
-			wantErrKind: syntax.ErrNone,
+			name:  "literal_false",
+			node:  &parse.LiteralNode{Token: syntax.MakeToken(syntax.TokenFalse, "false")},
+			scope: &Scope{},
+			want:  &BooleanValue{value: false},
 		},
 		{
-			name:        "literal_integer",
-			node:        &parse.LiteralNode{Token: syntax.MakeToken(syntax.TokenInteger, "123")},
-			scope:       &Scope{},
-			want:        &IntegerValue{value: 123},
-			wantErrKind: syntax.ErrNone,
+			name:  "literal_integer",
+			node:  &parse.LiteralNode{Token: syntax.MakeToken(syntax.TokenInteger, "123")},
+			scope: &Scope{},
+			want:  &IntegerValue{value: 123},
 		},
 		{
-			name:        "literal_integer_negative",
-			node:        &parse.LiteralNode{Token: syntax.MakeToken(syntax.TokenInteger, "-1")},
-			scope:       &Scope{},
-			want:        &IntegerValue{value: -1},
-			wantErrKind: syntax.ErrNone,
+			name:  "literal_integer_negative",
+			node:  &parse.LiteralNode{Token: syntax.MakeToken(syntax.TokenInteger, "-1")},
+			scope: &Scope{},
+			want:  &IntegerValue{value: -1},
 		},
 		{
-			name:        "literal_integer_negative_zero",
-			node:        &parse.LiteralNode{Token: syntax.MakeToken(syntax.TokenInteger, "-0")},
-			scope:       &Scope{},
-			wantErrKind: syntax.ErrUnknown,
+			name:    "literal_integer_negative_zero",
+			node:    &parse.LiteralNode{Token: syntax.MakeToken(syntax.TokenInteger, "-0")},
+			scope:   &Scope{},
+			wantErr: &IntegerLiteralError{},
 		},
 		{
-			name:        "literal_integer_leading_zeroes",
-			node:        &parse.LiteralNode{Token: syntax.MakeToken(syntax.TokenInteger, "01")},
-			scope:       &Scope{},
-			wantErrKind: syntax.ErrUnknown,
+			name:    "literal_integer_leading_zeroes",
+			node:    &parse.LiteralNode{Token: syntax.MakeToken(syntax.TokenInteger, "01")},
+			scope:   &Scope{},
+			wantErr: &IntegerLiteralError{},
 		},
 		{
-			name:        "literal_integer_negative_leading_zeroes",
-			node:        &parse.LiteralNode{Token: syntax.MakeToken(syntax.TokenInteger, "-01")},
-			scope:       &Scope{},
-			wantErrKind: syntax.ErrUnknown,
+			name:    "literal_integer_negative_leading_zeroes",
+			node:    &parse.LiteralNode{Token: syntax.MakeToken(syntax.TokenInteger, "-01")},
+			scope:   &Scope{},
+			wantErr: &IntegerLiteralError{},
 		},
 		{
-			name:        "literal_integer_invalid",
-			node:        &parse.LiteralNode{Token: syntax.MakeToken(syntax.TokenInteger, "123123612836217863781263781263786128371278637821678362817")},
-			scope:       &Scope{},
-			wantErrKind: syntax.ErrUnknown,
+			name:    "literal_integer_invalid",
+			node:    &parse.LiteralNode{Token: syntax.MakeToken(syntax.TokenInteger, "123123612836217863781263781263786128371278637821678362817")},
+			scope:   &Scope{},
+			wantErr: &IntegerLiteralError{},
 		},
 		{
-			name:        "literal_string",
-			node:        &parse.LiteralNode{Token: syntax.MakeToken(syntax.TokenString, `"hello"`)},
-			scope:       &Scope{},
-			want:        &StringValue{value: "hello"},
-			wantErrKind: syntax.ErrNone,
+			name:  "literal_string",
+			node:  &parse.LiteralNode{Token: syntax.MakeToken(syntax.TokenString, `"hello"`)},
+			scope: &Scope{},
+			want:  &StringValue{value: "hello"},
 		},
 		{
-			name:        "literal_string_empty",
-			node:        &parse.LiteralNode{Token: syntax.MakeToken(syntax.TokenString, `""`)},
-			scope:       &Scope{},
-			want:        &StringValue{value: ""},
-			wantErrKind: syntax.ErrNone,
+			name:  "literal_string_empty",
+			node:  &parse.LiteralNode{Token: syntax.MakeToken(syntax.TokenString, `""`)},
+			scope: &Scope{},
+			want:  &StringValue{value: ""},
 		},
 		{
 			name:    "literal_invalid_token",
@@ -409,8 +395,7 @@ func TestExecuteNode(t *testing.T) {
 					Statements: []parse.Node{},
 				},
 			},
-			scope:       &Scope{},
-			wantErrKind: syntax.ErrNone,
+			scope: &Scope{},
 		},
 		{
 			// TODO(b/388723392): this is just a smoke test right now because
@@ -427,8 +412,7 @@ func TestExecuteNode(t *testing.T) {
 					Statements: []parse.Node{},
 				},
 			},
-			scope:       &Scope{},
-			wantErrKind: syntax.ErrNone,
+			scope: &Scope{},
 		},
 		{
 			// TODO(b/388723392): this is just a smoke test right now because
@@ -442,8 +426,7 @@ func TestExecuteNode(t *testing.T) {
 					Statements: []parse.Node{},
 				},
 			},
-			scope:       &Scope{},
-			wantErrKind: syntax.ErrNone,
+			scope: &Scope{},
 		},
 		{
 			// TODO(b/388723392): this is just a smoke test right now because
@@ -457,8 +440,7 @@ func TestExecuteNode(t *testing.T) {
 					Statements: []parse.Node{},
 				},
 			},
-			scope:       &Scope{},
-			wantErrKind: syntax.ErrNone,
+			scope: &Scope{},
 		},
 		{
 			name: "condition_non_boolean",
@@ -479,8 +461,7 @@ func TestExecuteNode(t *testing.T) {
 			node: &parse.ListNode{
 				Contents: []parse.Node{},
 			},
-			want:        &ListValue{list: []Value{}},
-			wantErrKind: syntax.ErrNone,
+			want: &ListValue{list: []Value{}},
 		},
 		{
 			name:  "list_simple",
@@ -499,7 +480,6 @@ func TestExecuteNode(t *testing.T) {
 					&StringValue{value: "a"},
 				},
 			},
-			wantErrKind: syntax.ErrNone,
 		},
 		{
 			name:  "list_with_comment",
@@ -517,7 +497,6 @@ func TestExecuteNode(t *testing.T) {
 					&BooleanValue{value: true},
 				},
 			},
-			wantErrKind: syntax.ErrNone,
 		},
 		{
 			name:  "list_non_value",
@@ -541,24 +520,16 @@ func TestExecuteNode(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			got, err := ExecuteNode(tc.node, tc.scope)
-			wantErr := tc.wantErr != nil || tc.wantErrKind != syntax.ErrNone
+			wantErr := tc.wantErr != nil
 			gotErr := err != nil
 
 			if gotErr != wantErr {
-				t.Fatalf("ExecuteNode(%T, %T): got err=%v, wantErrKind=%v", tc.node, tc.scope, err, tc.wantErrKind)
+				t.Fatalf("ExecuteNode(%T, %T): got err=%v, wantErr %T", tc.node, tc.scope, err, tc.wantErr)
 			}
 
-			// If error is expected, then check kind matches.
 			if gotErr {
-				// TODO: temporary hack to support both wantErr and wantErrKind tests.
-				if tc.wantErr != nil {
-					if !errors.As(err, tc.wantErr) {
-						t.Errorf("ExecuteNode(%T, %T): got err=%v (%T), want %T", tc.node, tc.scope, err, err, tc.wantErr)
-					}
-				} else {
-					if match, gotErrKind := syntax.AsErrKind(err, tc.wantErrKind); match == nil {
-						t.Fatalf("ExecuteNode(%T, %T): got err=%v (kind %s), wantErrKind=%s", tc.node, tc.scope, err, gotErrKind, tc.wantErrKind)
-					}
+				if !errors.As(err, tc.wantErr) {
+					t.Errorf("ExecuteNode(%T, %T): got err=%v (%T), want %T", tc.node, tc.scope, err, err, tc.wantErr)
 				}
 				return
 			}

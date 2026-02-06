@@ -169,13 +169,22 @@ statement or a target declaration.`,
 			s := n.Token.Value()
 			if (strings.HasPrefix(s, "0") && len(s) > 1) || strings.HasPrefix(s, "-0") {
 				if s == "-0" {
-					return nil, parse.MakeErrFromNode(n, syntax.ErrUnknown, "Negative zero doesn't make sense", "")
+					return nil, IntegerLiteralError{
+						OriginNode: parse.OriginNode{Node: n},
+						message:    "Negative zero doesn't make sense",
+					}
 				}
-				return nil, parse.MakeErrFromNode(n, syntax.ErrUnknown, "Leading zeros not allowed", "")
+				return nil, IntegerLiteralError{
+					OriginNode: parse.OriginNode{Node: n},
+					message:    "Leading zeros not allowed",
+				}
 			}
 			i, err := strconv.ParseInt(s, 10, 64)
 			if err != nil {
-				return nil, parse.MakeErrFromNode(n, syntax.ErrUnknown, "This does not look like an integer", "")
+				return nil, IntegerLiteralError{
+					OriginNode: parse.OriginNode{Node: n},
+					message:    "This does not look like an integer",
+				}
 			}
 			return &IntegerValue{
 				origin: n,

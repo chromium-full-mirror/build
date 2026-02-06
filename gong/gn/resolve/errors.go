@@ -372,6 +372,21 @@ func (e ScopeMergeError) Ranges() []syntax.LocationRange {
 	return []syntax.LocationRange{e.mergeOptions.SourceNode.LocationRange()}
 }
 
+// IntegerLiteralError is returned when an integer literal is invalid.
+type IntegerLiteralError struct {
+	parse.OriginNode
+	message string
+}
+
+// Error returns the error message.
+func (e IntegerLiteralError) Error() string { return fmt.Sprintf("integer literal err: %s", e.message) }
+
+// Message returns the user-facing error message.
+func (e IntegerLiteralError) Message() string { return e.message }
+
+// HelpText returns the user-facing error help text.
+func (e IntegerLiteralError) HelpText() string { return "" }
+
 // StringLiteralError is returned when a string literal could not be expanded.
 type StringLiteralError struct {
 	parse.OriginNode
@@ -380,7 +395,7 @@ type StringLiteralError struct {
 }
 
 // Error returns the error message.
-func (e StringLiteralError) Error() string { return fmt.Sprintf("string literal error: %s", e.message) }
+func (e StringLiteralError) Error() string { return fmt.Sprintf("string literal err: %s", e.message) }
 
 // Message returns the user-facing error message.
 func (e StringLiteralError) Message() string { return e.message }

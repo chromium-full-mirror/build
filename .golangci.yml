@@ -58,9 +58,6 @@ linters:
           siso/subcmd/recall/recall.go|\
           )$"
         text: "(OutputFiles|Platform) is deprecated: Marked as deprecated in build/bazel/remote/execution/v2/remote_execution.proto"
-      # TODO: Migrate gong to strongly-typed errors.
-      - path: "^gong/gn/.*"
-        text: "SA1019:(.*?)is deprecated(.*?)Implement ui.PresentableError"
     paths:
       # Ignore files under third_party dir.
       - ^third_party/.*\.go$

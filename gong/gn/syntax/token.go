@@ -140,28 +140,3 @@ func (t Token) Value() string {
 	// (and compute line/col when needed) so this is lazy calculated?
 	return t.value
 }
-
-// MakeError makes an error from this token and message.
-//
-// Deprecated: Implement ui.PresentableError instead.
-func (t Token) MakeError(kind ErrKind, message string) error {
-	return Error{
-		location: t.location,
-		ranges:   []LocationRange{t.Range()},
-		message:  message,
-		kind:     kind,
-	}
-}
-
-// MakeErrorWithHelp makes an error from this token and message and help.
-//
-// Deprecated: Implement ui.PresentableError instead.
-func (t Token) MakeErrorWithHelp(kind ErrKind, message, helpText string) error {
-	return Error{
-		location: t.location,
-		ranges:   []LocationRange{t.Range()},
-		message:  message,
-		helpText: helpText,
-		kind:     kind,
-	}
-}

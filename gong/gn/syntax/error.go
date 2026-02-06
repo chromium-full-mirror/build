@@ -5,7 +5,6 @@
 package syntax
 
 import (
-	"errors"
 	"fmt"
 )
 
@@ -81,93 +80,4 @@ func (e err) Ranges() []LocationRange {
 		return []LocationRange{}
 	}
 	return []LocationRange{{begin: e.start, end: e.end}}
-}
-
-// Error represents a syntax error.
-//
-// Deprecated: Implement ui.PresentableError instead.
-type Error struct {
-	location  Location
-	ranges    []LocationRange
-	message   string
-	helpText  string
-	subErrors []error
-	kind      ErrKind
-}
-
-// MakeErrorAt makes an error at the provided location and ranges.
-//
-// Deprecated: Implement ui.PresentableError instead.
-func MakeErrorAt(location Location, ranges []LocationRange, kind ErrKind, message, helpText string) error {
-	return Error{
-		location: location,
-		ranges:   ranges,
-		message:  message,
-		helpText: helpText,
-		kind:     kind,
-	}
-}
-
-// Error returns formatted message for this error.
-func (e Error) Error() string {
-	return fmt.Sprintf("syntax error at %s: %q", e.location.Describe(true), e.message)
-}
-
-// Unwrap returns wrapped errors.
-func (e Error) Unwrap() []error {
-	return e.subErrors
-}
-
-// Location returns location this error occurred.
-func (e Error) Location() Location {
-	return e.location
-}
-
-// Ranges returns location ranges this error occurred.
-func (e Error) Ranges() []LocationRange {
-	return e.ranges
-}
-
-// Message returns message for this error.
-func (e Error) Message() string {
-	return e.message
-}
-
-// HelpText returns help text for this error, if available.
-func (e Error) HelpText() string {
-	return e.helpText
-}
-
-// Kind returns error kind for this error
-func (e Error) Kind() ErrKind {
-	return e.kind
-}
-
-// GetErrKind returns the kind of error err corresponds to.
-//
-// Deprecated: Implement ui.PresentableError and use errors.As?
-func GetErrKind(err error) ErrKind {
-	if err != nil {
-		var syntaxErr Error
-		if errors.As(err, &syntaxErr) {
-			return syntaxErr.kind
-		}
-	}
-	return ErrUnknown
-}
-
-// AsErrKind returns the error if it matches the error kind.
-// If it doesn't match, returns nil and the actual error kind.
-//
-// Deprecated: Implement ui.PresentableError and use errors.As?
-func AsErrKind(err error, kind ErrKind) (*Error, ErrKind) {
-	var syntaxErr Error
-	if errors.As(err, &syntaxErr) {
-		if syntaxErr.kind == kind {
-			return &syntaxErr, syntaxErr.kind
-		} else {
-			return nil, syntaxErr.kind
-		}
-	}
-	return nil, GetErrKind(err)
 }
