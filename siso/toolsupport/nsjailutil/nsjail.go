@@ -104,6 +104,8 @@ func New(ctx context.Context, fsys fs.FS, req Request) (_ *NSJail, err error) {
 	jail.config.LogLevel = pb.LogLevel_WARNING.Enum()
 	// disable all rlimits, default to limits set by parent.
 	jail.config.DisableRl = proto.Bool(true)
+	// nsjail has a 10 minute time limit by default, disable it.
+	jail.config.TimeLimit = proto.Uint32(0)
 
 	jail.config.Cwd = proto.String(filepath.Join(execRootInSandbox, req.Dir))
 	// TODO: better environment variable sandboxing
