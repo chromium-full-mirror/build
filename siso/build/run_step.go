@@ -9,7 +9,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"runtime"
+	"slices"
 	"strings"
 	"time"
 
@@ -309,6 +311,12 @@ func (b *Builder) outputFailureSummary(ctx context.Context, step *Step, err erro
 	}
 	if len(stdout) > 0 {
 		fmt.Fprint(&buf, ui.StripANSIEscapeCodes(string(stdout)))
+	}
+	if len(step.cmd.AuxiliaryOutputDigests) > 0 {
+		fmt.Fprintf(&buf, "auxiliary outputs:\n")
+		for _, name := range slices.Sorted(maps.Keys(step.cmd.AuxiliaryOutputDigests)) {
+			fmt.Fprintf(&buf, "%s=%s\n", name, step.cmd.AuxiliaryOutputDigests[name])
+		}
 	}
 	fmt.Fprintf(&buf, "%v\n", err)
 	_, err = b.failureSummaryWriter.Write(buf.Bytes())

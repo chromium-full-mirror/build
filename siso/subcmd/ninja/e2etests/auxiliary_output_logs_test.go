@@ -45,7 +45,7 @@ func TestBuild_Auxiliary_Remote(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := tempDir(t)
-			runNinjaTest := func(t *testing.T, refake *reapitest.Fake, outputLog *bytes.Buffer) (build.Stats, error) {
+			runNinjaTest := func(t *testing.T, refake *reapitest.Fake, outputLog, failureSummaryLog *bytes.Buffer) (build.Stats, error) {
 				t.Helper()
 				var ds build.DataSource
 				defer func() {
@@ -64,6 +64,7 @@ func TestBuild_Auxiliary_Remote(t *testing.T) {
 				opt.StrictRemote = true
 				opt.REAPIClient = ds.Client
 				opt.OutputLogWriter = outputLog
+				opt.FailureSummaryWriter = failureSummaryLog
 				stats, err := ninjabuild.Run(ctx, graph, opt, nil, ninjabuild.RunNinjaOpts{})
 				return stats, err
 			}
@@ -117,7 +118,8 @@ func TestBuild_Auxiliary_Remote(t *testing.T) {
 			}
 
 			var outputLog bytes.Buffer
-			stats, err := runNinjaTest(t, fakere, &outputLog)
+			var failureSummaryLog bytes.Buffer
+			stats, err := runNinjaTest(t, fakere, &outputLog, &failureSummaryLog)
 			if gotErr := err != nil; gotErr != tc.wantErr {
 				t.Errorf("ninja err=%v; wantErr=%t", err, tc.wantErr)
 			}
@@ -125,22 +127,19 @@ func TestBuild_Auxiliary_Remote(t *testing.T) {
 				t.Errorf("stats.Remote=%d; want 1", stats.Remote)
 			}
 
-			logStr := outputLog.String()
-			idx := strings.Index(logStr, "auxiliary outputs:\n")
-			if idx < 0 {
-				t.Fatalf("logStr doesn't contain auxiliary outputs:\n%s", logStr)
-			}
-			gotAux := logStr[idx:]
-			if i := strings.Index(gotAux, "\f"); i >= 0 {
-				gotAux = gotAux[:i]
-			}
-
 			wantAux := fmt.Sprintf(`auxiliary outputs:
 out/siso/aux.out=%s
 out/siso/aux_dir/=%s
 `, auxDigest.Digest(), auxTreeDigest.Digest())
-			if gotAux != wantAux {
-				t.Errorf("auxiliary outputs mismatch: got %q, want %q", gotAux, wantAux)
+			if !strings.Contains(outputLog.String(), wantAux) {
+				t.Errorf("output log missing expected auxiliary outputs:\n%s\n\ngot:\n%s", wantAux, outputLog.String())
+			}
+
+			if tc.wantErr {
+				failSummary := failureSummaryLog.String()
+				if !strings.Contains(failSummary, wantAux) {
+					t.Errorf("failure summary missing expected auxiliary outputs:\n%s\n\ngot:\n%s", wantAux, failSummary)
+				}
 			}
 		})
 	}
