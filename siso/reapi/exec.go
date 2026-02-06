@@ -40,6 +40,10 @@ func (c *Client) ExecuteAndWait(ctx context.Context, req *rpb.ExecuteRequest, op
 			Priority: int32(c.opt.ExecutionPriority),
 		}
 	}
+	var lastStage rpb.ExecutionStage_Value
+	start := time.Now()
+	execStart := time.Now() // exec should not have started earlier than this
+	var preexecDuration time.Duration
 
 	var opName string
 	var waitReq *rpb.WaitExecutionRequest
@@ -94,7 +98,13 @@ retryLoop:
 					if err != nil {
 						clog.Warningf(ctx, "failed to unmarshal metadata: %v", err)
 					} else {
-						clog.Infof(ctx, "operation stage: %v %s", metadata.GetStage(), ongoingDetails(metadata.GetPartialExecutionMetadata()))
+						stage := metadata.GetStage()
+						clog.Infof(ctx, "operation stage: %v -> %v %s", lastStage, stage, ongoingDetails(metadata.GetPartialExecutionMetadata()))
+						if stage == rpb.ExecutionStage_EXECUTING && lastStage != rpb.ExecutionStage_EXECUTING {
+							preexecDuration = time.Since(start)
+							execStart = time.Now()
+						}
+						lastStage = stage
 						if log.V(1) {
 							clog.Infof(ctx, "operation metadata: %v", metadata)
 						}
@@ -177,6 +187,14 @@ retryLoop:
 			// platform container image are not available
 			// on RBE worker.
 			err = fmt.Errorf("%w: %w", ErrBadPlatformContainerImage, err)
+		}
+	}
+	if status.Code(err) == codes.DeadlineExceeded || errors.Is(err, context.DeadlineExceeded) {
+		switch lastStage {
+		case rpb.ExecutionStage_EXECUTING, rpb.ExecutionStage_COMPLETED:
+			err = fmt.Errorf("stage=%v (pre=%s exec=%s): %w", lastStage, preexecDuration, time.Since(execStart), err)
+		default:
+			err = fmt.Errorf("stage=%v (pre=%s): %w", lastStage, time.Since(start), err)
 		}
 	}
 	return opName, resp, err
