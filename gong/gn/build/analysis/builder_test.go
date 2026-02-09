@@ -8,7 +8,6 @@ import (
 
 	"go.chromium.org/build/gong/gn/build/environment"
 	"go.chromium.org/build/gong/gn/parse"
-	"go.chromium.org/build/gong/gn/resolve"
 	"go.chromium.org/build/gong/gn/syntax"
 )
 
@@ -18,21 +17,7 @@ func TestBuilder_RecordDefinedItem_CreatesRecordsForDeps(t *testing.T) {
 	dep2Label := environment.Label{Dir: mustDir(t, "//bar"), Name: "qux"}
 	dep1Origin := &parse.IdentifierNode{Value: syntax.MakeToken(syntax.TokenString, "//bar:baz")}
 	dep2Origin := &parse.IdentifierNode{Value: syntax.MakeToken(syntax.TokenString, "//bar:qux")}
-	target := &Target{
-		itemInfo: itemInfo{
-			label:       targetLabel,
-			definedFrom: &parse.IdentifierNode{Value: syntax.MakeToken(syntax.TokenIdentifier, "main_target")},
-		},
-		schema: &executableSchema,
-		values: map[string]resolve.Value{
-			"name": resolve.NewOriginlessStringValue("main_target"),
-			"deps": resolve.NewOriginlessListValue([]resolve.Value{
-				resolve.NewStringValueAt(dep1Origin, "//bar:baz"),
-				resolve.NewStringValueAt(dep2Origin, "//bar:qux"),
-			}),
-		},
-	}
-	wantUnresolvedDeps := []environment.LabelWithOrigin{
+	targetDeps := []environment.LabelWithOrigin{
 		{
 			Label:  dep1Label,
 			Origin: dep1Origin,
@@ -42,6 +27,17 @@ func TestBuilder_RecordDefinedItem_CreatesRecordsForDeps(t *testing.T) {
 			Origin: dep2Origin,
 		},
 	}
+	target := &Target{
+		itemInfo: itemInfo{
+			label:       targetLabel,
+			definedFrom: &parse.IdentifierNode{Value: syntax.MakeToken(syntax.TokenIdentifier, "main_target")},
+		},
+		schema: &executableSchema,
+		values: map[string]processedValue{
+			"name": stringValue{str: "main_target"},
+			"deps": labelListValue{list: targetDeps},
+		},
+	}
 
 	builder := MakeBuilder(nil)
 	unresolvedDeps, err := builder.RecordDefinedItem(target)
@@ -49,7 +45,7 @@ func TestBuilder_RecordDefinedItem_CreatesRecordsForDeps(t *testing.T) {
 		t.Fatalf("RecordDefinedItem(_)=_, %v; want nil err", err)
 	}
 
-	if diff := cmp.Diff(wantUnresolvedDeps, unresolvedDeps); diff != "" {
+	if diff := cmp.Diff(targetDeps, unresolvedDeps); diff != "" {
 		t.Errorf("RecordDefinedItem(_); diff (-want +got):\n%s", diff)
 	}
 	targetRec, ok := builder.records[targetLabel]
@@ -103,29 +99,29 @@ func TestBuilder_ItemTypeMismatch(t *testing.T) {
 				BuildDir: mustDir(t, "/"),
 			},
 		},
-		values: map[string]resolve.Value{
-			"name": resolve.NewOriginlessStringValue("baz_target"),
+		values: map[string]processedValue{
+			"name": stringValue{str: "baz_target"},
 		},
 	}
 
 	for _, tc := range []struct {
 		name         string
-		targetValues map[string]resolve.Value
+		targetValues map[string]processedValue
 	}{
 		{
-			name: "config in deps",
-			targetValues: map[string]resolve.Value{
-				"deps": resolve.NewOriginlessListValue([]resolve.Value{
-					resolve.NewStringValueAt(cfgItem.definedFrom, "//:foo_config"),
-				}),
+			name: "configindeps",
+			targetValues: map[string]processedValue{
+				"deps": labelListValue{list: []environment.LabelWithOrigin{
+					{Label: configLabel, Origin: cfgItem.definedFrom},
+				}},
 			},
 		},
 		{
-			name: "target in configs",
-			targetValues: map[string]resolve.Value{
-				"configs": resolve.NewOriginlessListValue([]resolve.Value{
-					resolve.NewStringValueAt(depItem.definedFrom, "//bar:baz_target"),
-				}),
+			name: "targetinconfigs",
+			targetValues: map[string]processedValue{
+				"configs": labelListValue{list: []environment.LabelWithOrigin{
+					{Label: depLabel, Origin: depItem.definedFrom},
+				}},
 			},
 		},
 	} {

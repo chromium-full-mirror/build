@@ -72,6 +72,7 @@ func TestSchema_Run(t *testing.T) {
 			_, err = resolve.ExecuteNode(root, resolve.NewScope(
 				&scopeContext{
 					settings:      NewSettings(&environment.BuildSettings{}),
+					sourceDir:     mustDir(t, "//"),
 					itemCollector: func(i Item) {},
 				},
 				nil,

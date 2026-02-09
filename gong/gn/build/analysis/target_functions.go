@@ -14,18 +14,6 @@ import (
 	"go.chromium.org/build/gong/gn/resolve"
 )
 
-// varType is the type of a target's variable.
-type varType uint8
-
-const (
-	stringType = iota
-	stringListType
-	targetLabelListType
-	configLabelListType
-	fileType
-	fileListType
-)
-
 // A Schema is the type definition of a GN target.
 //
 // The word "schema" is an implementation detail; we're calling them "schemas" to avoid
@@ -240,6 +228,7 @@ func (s *Schema) Run(scope *resolve.Scope, call *parse.FunctionCallNode, args []
 	if err != nil {
 		return nil, err
 	}
+	name := nameValue.RawGNString()
 
 	if _, err := resolve.ExecuteNode(block, blockScope); err != nil {
 		return nil, err
@@ -247,7 +236,7 @@ func (s *Schema) Run(scope *resolve.Scope, call *parse.FunctionCallNode, args []
 
 	label := environment.Label{
 		Dir:  ctx.sourceDir,
-		Name: nameValue.RawGNString(),
+		Name: name,
 		// TODO: Toolchain
 	}
 
@@ -258,44 +247,25 @@ func (s *Schema) Run(scope *resolve.Scope, call *parse.FunctionCallNode, args []
 		},
 		schema:   s,
 		settings: ctx.settings,
-		values: map[string]resolve.Value{
-			"name": nameValue,
+		values: map[string]processedValue{
+			"name": stringValue{
+				origin: nameValue,
+				str:    name,
+			},
 		},
 	}
 
-	// Check all variables passed to the target are of the expected type.
-	// TODO: If we only validate but don't try to convert into Label, fs.SourceFile etc.
-	// then it's not great that later these values need to be checked and converted from
-	// string values into concrete references twice - once by the Builder to find deps,
-	// then by the resolve function *again* when it needs to read deps.
-	// Should we try to resolve targets, fs.SourceFile, etc and save them on
-	// the *Target here?
+	// Validate all of the target's values and perform initial processing.
 	for acceptedVar, expectedType := range s.vars {
 		value := blockScope.Value(acceptedVar, true)
 		if value == nil {
 			continue
 		}
-		switch expectedType {
-		case stringType,
-			fileType:
-			if _, err := resolve.AsValue[*resolve.StringValue](value); err != nil {
-				return nil, err
-			}
-		case stringListType,
-			fileListType,
-			// The Builder is responsible for reading label lists to find dependencies
-			// and validating the labels are correctly formatted.
-			targetLabelListType,
-			configLabelListType:
-			if _, err := resolve.AsValue[*resolve.ListValue](value); err != nil {
-				return nil, err
-			}
-		default:
-			return nil, environment.IllegalStateError{
-				Reason: "non-exhaustive switch over target variable types",
-			}
+		processedValue, err := target.processValue(value, expectedType)
+		if err != nil {
+			return nil, err
 		}
-		target.values[acceptedVar] = value
+		target.values[acceptedVar] = processedValue
 	}
 
 	ctx.itemCollector(target)

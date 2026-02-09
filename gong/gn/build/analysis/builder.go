@@ -13,7 +13,6 @@ import (
 
 	"go.chromium.org/build/gong/gn/build/environment"
 	"go.chromium.org/build/gong/gn/parse"
-	"go.chromium.org/build/gong/gn/resolve"
 )
 
 // Builder assembles the GN dependency graph.
@@ -123,27 +122,20 @@ func (b *Builder) targetDefined(target *Target, record *builderRecord) ([]enviro
 		if !ok {
 			continue
 		}
-		listValue, err := resolve.AsValue[*resolve.ListValue](val)
+		listValue, err := processedValueAs[labelListValue](val)
 		if err != nil {
 			return nil, err
 		}
 
 		// For each label, ensure the record exists.
 		// Collect deps that aren't yet resolved.
-		for rawLabel := range listValue.Values() {
-			dep, err := environment.ResolveLabel(target.label.Dir, environment.Label{}, rawLabel)
-			if err != nil {
-				return nil, err
-			}
-			depRecord, err := b.recordFor(dep, rawLabel.OriginNode(), expectedPlaceholder)
+		for _, dep := range listValue.list {
+			depRecord, err := b.recordFor(dep.Label, dep.Origin, expectedPlaceholder)
 			if err != nil {
 				return nil, err
 			}
 			if depRecord.state != itemStateResolved {
-				unresolvedDeps = append(unresolvedDeps, environment.LabelWithOrigin{
-					Label:  dep,
-					Origin: rawLabel.OriginNode(),
-				})
+				unresolvedDeps = append(unresolvedDeps, dep)
 			}
 			record.addDep(depRecord)
 		}

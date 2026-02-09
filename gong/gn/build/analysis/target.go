@@ -12,7 +12,6 @@ import (
 	"go.chromium.org/build/gong/gn/build/environment"
 	"go.chromium.org/build/gong/gn/build/fs"
 	"go.chromium.org/build/gong/gn/parse"
-	"go.chromium.org/build/gong/gn/resolve"
 )
 
 // Target is an item in the GN dependency graph that represents a build target.
@@ -22,7 +21,7 @@ type Target struct {
 	itemInfo
 	settings   *Settings
 	schema     *Schema
-	values     map[string]resolve.Value
+	values     map[string]processedValue
 	resolution resolution
 }
 
@@ -71,11 +70,11 @@ func (t *Target) stringFor(varName string) (string, error) {
 	if !ok {
 		return "", fmt.Errorf("%s not declared", varName)
 	}
-	sv, err := resolve.AsValue[*resolve.StringValue](v)
+	sv, err := processedValueAs[stringValue](v)
 	if err != nil {
 		return "", err
 	}
-	return sv.RawGNString(), nil
+	return sv.str, nil
 }
 
 func (t *Target) sourceFilesFor(varName string) iter.Seq2[fs.SourceFile, error] {
@@ -84,20 +83,13 @@ func (t *Target) sourceFilesFor(varName string) iter.Seq2[fs.SourceFile, error] 
 		if !ok {
 			return
 		}
-		lv, err := resolve.AsValue[*resolve.ListValue](v)
+		lv, err := processedValueAs[fileListValue](v)
 		if err != nil {
 			yield(fs.SourceFile{}, err)
 			return
 		}
-		for v := range lv.Values() {
-			sv, err := resolve.AsValue[*resolve.StringValue](v)
-			// TODO: "ERROR Items must be strings (filenames)."
-			if err != nil {
-				yield(fs.SourceFile{}, err)
-				return
-			}
-			path := sv.RawGNString()
-			if !yield(t.label.Dir.ResolveRelativeFile(path)) {
+		for _, sourceFile := range lv.list {
+			if !yield(sourceFile, nil) {
 				return
 			}
 		}
@@ -110,27 +102,13 @@ func (t *Target) resolvedTargetsFor(varName string, b *Builder) iter.Seq2[resolu
 		return nil
 	}
 	return func(yield func(resolution, error) bool) {
-		lv, err := resolve.AsValue[*resolve.ListValue](v)
+		lv, err := processedValueAs[labelListValue](v)
 		if err != nil {
 			yield(resolution{}, err)
 			return
 		}
-		for v := range lv.Values() {
-			// TODO: it's not great this has to duplicate the same work as Builder to
-			// resolve strings into labels and then labels into records.
-			// Should we try to resolve targets, fs.SourceFile, etc and save them on
-			// the *Target when it's defined instead of now?
-			sv, err := resolve.AsValue[*resolve.StringValue](v)
-			if err != nil {
-				yield(resolution{}, err)
-				return
-			}
-			dep, err := environment.ResolveLabel(t.label.Dir, environment.Label{}, sv)
-			if err != nil {
-				yield(resolution{}, err)
-				return
-			}
-			depRecord, err := b.recordFor(dep, sv.OriginNode(), &Target{})
+		for _, dep := range lv.list {
+			depRecord, err := b.recordFor(dep.Label, dep.Origin, &Target{})
 			if err != nil {
 				yield(resolution{}, err)
 				return
@@ -146,7 +124,7 @@ func (t *Target) resolvedTargetsFor(varName string, b *Builder) iter.Seq2[resolu
 				}
 			default:
 				yield(resolution{}, ItemTypeMismatchError{
-					OriginNode:        parse.OriginNode{Node: v.OriginNode()},
+					OriginNode:        parse.OriginNode{Node: dep.Origin},
 					label:             t.Label(),
 					itemOrPlaceholder: &Target{},
 					existingRecord:    depRecord,
