@@ -208,13 +208,12 @@ func (d *digester) lazyCompute(ctx context.Context, fname string, e *entry) {
 }
 
 func (d *digester) compute(ctx context.Context, fname string, e *entry) {
-	if e.err != nil || e.src == nil {
-		return
-	}
 	e.mu.Lock()
+	eErr := e.err
+	src := e.src
 	ed := e.d
 	e.mu.Unlock()
-	if !ed.IsZero() {
+	if eErr != nil || src == nil || !ed.IsZero() {
 		return
 	}
 	err := DigestSemaphore.Do(ctx, func(ctx context.Context) error {
