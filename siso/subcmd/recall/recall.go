@@ -91,6 +91,7 @@ type Command struct {
 	projectID         string
 	reopt             *reapi.Option
 	executeRequestStr string
+	execTimeout       time.Duration
 	reCacheEnableRead bool
 	cpuLimit          string
 	memLimit          string
@@ -110,6 +111,7 @@ func (c *Command) SetFlags(flagSet *flag.FlagSet) {
 	c.reopt = new(reapi.Option)
 	c.reopt.RegisterFlags(flagSet, reapi.Envs("REAPI"))
 	flagSet.StringVar(&c.executeRequestStr, "execute_request", "", "execute request proto")
+	flagSet.DurationVar(&c.execTimeout, "exec_timeout", 0, "set exec call timeout")
 }
 
 func (c *Command) Execute(ctx context.Context, flagSet *flag.FlagSet, _ ...any) subcommands.ExitStatus {
@@ -323,6 +325,12 @@ func (c *Command) call(ctx context.Context, reopt reapi.Option, credential cred.
 	log.Infof("upload %d/%d", n, len(ds.List()))
 	executeReq.ActionDigest = actionDigest.Proto()
 	log.Infof("execute req: %s", executeReq)
+	if c.execTimeout > 0 {
+		var cancel func()
+		ctx, cancel = context.WithTimeout(ctx, c.execTimeout)
+		defer cancel()
+		fmt.Printf("exec_timeout: %s\n", c.execTimeout)
+	}
 	opName, resp, err := client.ExecuteAndWait(ctx, executeReq)
 	log.Infof("operation: %s", opName)
 	log.Infof("response: %s", resp)

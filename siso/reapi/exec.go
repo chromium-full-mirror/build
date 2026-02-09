@@ -40,12 +40,8 @@ func (c *Client) ExecuteAndWait(ctx context.Context, req *rpb.ExecuteRequest, op
 			Priority: int32(c.opt.ExecutionPriority),
 		}
 	}
-	var lastStage rpb.ExecutionStage_Value
-	start := time.Now()
-	execStart := time.Now() // exec should not have started earlier than this
-	var preexecDuration time.Duration
-
 	var opName string
+	var lastExecOpMetadata *rpb.ExecuteOperationMetadata
 	var waitReq *rpb.WaitExecutionRequest
 	resp := &rpb.ExecuteResponse{}
 	type responseStream interface {
@@ -98,13 +94,10 @@ retryLoop:
 					if err != nil {
 						clog.Warningf(ctx, "failed to unmarshal metadata: %v", err)
 					} else {
+						lastStage := lastExecOpMetadata.GetStage()
 						stage := metadata.GetStage()
 						clog.Infof(ctx, "operation stage: %v -> %v %s", lastStage, stage, ongoingDetails(metadata.GetPartialExecutionMetadata()))
-						if stage == rpb.ExecutionStage_EXECUTING && lastStage != rpb.ExecutionStage_EXECUTING {
-							preexecDuration = time.Since(start)
-							execStart = time.Now()
-						}
-						lastStage = stage
+						lastExecOpMetadata = metadata
 						if log.V(1) {
 							clog.Infof(ctx, "operation metadata: %v", metadata)
 						}
@@ -190,11 +183,11 @@ retryLoop:
 		}
 	}
 	if status.Code(err) == codes.DeadlineExceeded || errors.Is(err, context.DeadlineExceeded) {
-		switch lastStage {
-		case rpb.ExecutionStage_EXECUTING, rpb.ExecutionStage_COMPLETED:
-			err = fmt.Errorf("stage=%v (pre=%s exec=%s): %w", lastStage, preexecDuration, time.Since(execStart), err)
-		default:
-			err = fmt.Errorf("stage=%v (pre=%s): %w", lastStage, time.Since(start), err)
+		metadata, operr := c.executeOperation(ctx, opName, opts...)
+		if operr != nil {
+			err = fmt.Errorf("failed to get op %v: last operation stage: %v %s: %w", operr, lastExecOpMetadata.GetStage(), ongoingDetails(lastExecOpMetadata.GetPartialExecutionMetadata()), err)
+		} else {
+			err = fmt.Errorf("operation stage: %v %s: %w", metadata.GetStage(), ongoingDetails(metadata.GetPartialExecutionMetadata()), err)
 		}
 	}
 	return opName, resp, err
@@ -265,6 +258,27 @@ func erespErr(ctx context.Context, eresp *rpb.ExecuteResponse) error {
 		return status.FromProto(st).Err()
 	}
 	return nil
+}
+
+func (c *Client) executeOperation(ctx context.Context, opName string, opts ...grpc.CallOption) (*rpb.ExecuteOperationMetadata, error) {
+	lroClient := longrunningpb.NewOperationsClient(c.conn)
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancel()
+	op, err := lroClient.GetOperation(ctx, &longrunningpb.GetOperationRequest{
+		Name: opName,
+	}, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("get operation: %w", err)
+	}
+	if op.GetDone() {
+		return nil, nil
+	}
+	metadata := &rpb.ExecuteOperationMetadata{}
+	err = op.GetMetadata().UnmarshalTo(metadata)
+	if err != nil {
+		return nil, fmt.Errorf("get operation unmarshal: %w", err)
+	}
+	return metadata, nil
 }
 
 func ongoingDetails(md *rpb.ExecutedActionMetadata) string {
