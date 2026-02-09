@@ -42,6 +42,7 @@ type CheckCommand struct {
 	projectID  string
 	reopt      *reapi.Option
 	checkREAPI bool
+	readOnly   bool
 }
 
 func (c *CheckCommand) SetFlags(flagSet *flag.FlagSet) {
@@ -50,6 +51,7 @@ func (c *CheckCommand) SetFlags(flagSet *flag.FlagSet) {
 	c.reopt = new(reapi.Option)
 	c.reopt.RegisterFlags(flagSet, reapi.Envs("REAPI"))
 	flagSet.BoolVar(&c.checkREAPI, "check_reapi", true, "check reapi call")
+	flagSet.BoolVar(&c.readOnly, "read_only", false, "check for read only access")
 }
 
 func (c *CheckCommand) Execute(ctx context.Context, flagSet *flag.FlagSet, _ ...any) subcommands.ExitStatus {
@@ -87,6 +89,13 @@ func (c *CheckCommand) Execute(ctx context.Context, flagSet *flag.FlagSet, _ ...
 		fmt.Printf("access error: %v\n", err)
 		return subcommands.ExitFailure
 	}
-	client.Close()
+	defer client.Close()
+	if !c.readOnly {
+		err = client.CheckWritable(ctx)
+		if err != nil {
+			fmt.Printf("not writable: %v\n", err)
+			return subcommands.ExitFailure
+		}
+	}
 	return subcommands.ExitSuccess
 }
