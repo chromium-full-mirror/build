@@ -7,7 +7,6 @@ package analysis
 import (
 	"fmt"
 	"iter"
-	"os"
 
 	"go.chromium.org/build/gong/gn/build/environment"
 	"go.chromium.org/build/gong/gn/build/fs"
@@ -33,9 +32,17 @@ func (Target) compatibleWith(item Item) bool {
 	return false
 }
 
+// resolverContext provides context to a [resolverFn], allowing only indirect access to underlying target data.
+type resolverContext struct {
+	declareTool        func(tool string, inputs []fs.SourceFile, outputName string) (fs.SourceFile, error)
+	stringFor          func(varName string) (string, error)
+	sourceFilesFor     func(varName string) iter.Seq2[fs.SourceFile, error]
+	resolvedTargetsFor func(varName string) iter.Seq2[resolution, error]
+}
+
 // A resolverFn tries to resolve a target.
 // It returns an error instead if processing fails.
-type resolverFn = func(*Target, *Builder) (fs.SourceFile, error)
+type resolverFn = func(resolverContext) (fs.SourceFile, error)
 
 // A resolution of a target records the actions that a target performs, and any metadata that
 // may be relevant to targets waiting for this target to be resolved.
@@ -50,19 +57,6 @@ type runToolAction struct {
 	tool   string
 	inputs []fs.SourceFile
 	output fs.SourceFile
-}
-
-func (t *Target) resolve(b *Builder) (fs.SourceFile, error) {
-	if t.schema == nil {
-		return fs.SourceFile{}, environment.IllegalStateError{
-			Reason: "Attempted to resolve target without schema",
-		}
-	}
-	if t.schema.resolver == nil {
-		fmt.Fprintf(os.Stderr, "ignoring target %v for now since no resolver...\n", t.label.UserVisibleString(false))
-		return fs.SourceFile{}, nil
-	}
-	return t.schema.resolver(t, b)
 }
 
 func (t *Target) stringFor(varName string) (string, error) {
@@ -96,43 +90,16 @@ func (t *Target) sourceFilesFor(varName string) iter.Seq2[fs.SourceFile, error] 
 	}
 }
 
-func (t *Target) resolvedTargetsFor(varName string, b *Builder) iter.Seq2[resolution, error] {
+func (t *Target) labelsFor(varName string) ([]environment.LabelWithOrigin, error) {
 	v, ok := t.values[varName]
 	if !ok {
-		return nil
+		return nil, nil
 	}
-	return func(yield func(resolution, error) bool) {
-		lv, err := processedValueAs[labelListValue](v)
-		if err != nil {
-			yield(resolution{}, err)
-			return
-		}
-		for _, dep := range lv.list {
-			depRecord, err := b.recordFor(dep.Label, dep.Origin, &Target{})
-			if err != nil {
-				yield(resolution{}, err)
-				return
-			}
-			if depRecord.state != itemStateResolved {
-				yield(resolution{}, environment.IllegalStateError{Reason: "unresolved dep found"})
-				return
-			}
-			switch t := depRecord.item.(type) {
-			case *Target:
-				if !yield(t.resolution, nil) {
-					return
-				}
-			default:
-				yield(resolution{}, ItemTypeMismatchError{
-					OriginNode:        parse.OriginNode{Node: dep.Origin},
-					label:             t.Label(),
-					itemOrPlaceholder: &Target{},
-					existingRecord:    depRecord,
-				})
-				return
-			}
-		}
+	llv, err := processedValueAs[labelListValue](v)
+	if err != nil {
+		return nil, err
 	}
+	return llv.list, nil
 }
 
 func (t *Target) declareTool(tool string, inputs []fs.SourceFile, outputName string) (fs.SourceFile, error) {

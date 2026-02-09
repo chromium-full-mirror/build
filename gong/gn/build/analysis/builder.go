@@ -7,6 +7,7 @@ package analysis
 
 import (
 	"fmt"
+	"iter"
 	"maps"
 	"os"
 	"slices"
@@ -148,7 +149,54 @@ func (b *Builder) targetDefined(target *Target, record *builderRecord) ([]enviro
 }
 
 func (b *Builder) resolveTarget(target *Target, record *builderRecord) error {
-	outFile, err := target.resolve(b)
+	if target.schema == nil {
+		return environment.IllegalStateError{
+			Reason: "Attempted to resolve target without schema",
+		}
+	}
+	if target.schema.resolver == nil {
+		fmt.Fprintf(os.Stderr, "ignoring target %v for now since no resolver...\n", target.label.UserVisibleString(false))
+		return nil
+	}
+	outFile, err := target.schema.resolver(resolverContext{
+		declareTool:    target.declareTool,
+		stringFor:      target.stringFor,
+		sourceFilesFor: target.sourceFilesFor,
+		resolvedTargetsFor: func(varName string) iter.Seq2[resolution, error] {
+			return func(yield func(resolution, error) bool) {
+				deps, err := target.labelsFor(varName)
+				if err != nil {
+					yield(resolution{}, err)
+					return
+				}
+				for _, dep := range deps {
+					depRecord, err := b.recordFor(dep.Label, dep.Origin, &Target{})
+					if err != nil {
+						yield(resolution{}, err)
+						return
+					}
+					if depRecord.state != itemStateResolved {
+						yield(resolution{}, environment.IllegalStateError{Reason: "unresolved dep found"})
+						return
+					}
+					switch t := depRecord.item.(type) {
+					case *Target:
+						if !yield(t.resolution, nil) {
+							return
+						}
+					default:
+						yield(resolution{}, ItemTypeMismatchError{
+							OriginNode:        parse.OriginNode{Node: dep.Origin},
+							label:             t.Label(),
+							itemOrPlaceholder: &Target{},
+							existingRecord:    depRecord,
+						})
+						return
+					}
+				}
+			}
+		},
+	})
 	if err != nil {
 		return err
 	}

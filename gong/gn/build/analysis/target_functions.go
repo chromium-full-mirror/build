@@ -55,19 +55,19 @@ var (
 			"configs": configLabelListType,
 			"outputs": fileListType,
 		},
-		resolver: func(t *Target, b *Builder) (fs.SourceFile, error) {
-			name, err := t.stringFor("name")
+		resolver: func(ctx resolverContext) (fs.SourceFile, error) {
+			name, err := ctx.stringFor("name")
 			if err != nil {
 				return fs.SourceFile{}, err
 			}
 			var linkInputs []fs.SourceFile
-			for source := range t.sourceFilesFor("sources") {
+			for source := range ctx.sourceFilesFor("sources") {
 				sourceName := source.Filename()
 				sourceBase := filepath.Base(sourceName)
 				if filepath.Ext(sourceBase) == ".h" {
 					continue
 				}
-				objFile, err := t.declareTool(
+				objFile, err := ctx.declareTool(
 					"cxx",
 					[]fs.SourceFile{source},
 					fmt.Sprintf("%s.%s.o", name, sourceBase),
@@ -77,7 +77,7 @@ var (
 				}
 				linkInputs = append(linkInputs, objFile)
 			}
-			for dep, err := range t.resolvedTargetsFor("deps", b) {
+			for dep, err := range ctx.resolvedTargetsFor("deps") {
 				if err != nil {
 					return fs.SourceFile{}, err
 				}
@@ -91,7 +91,7 @@ var (
 					}
 				}
 			}
-			return t.declareTool(
+			return ctx.declareTool(
 				"link",
 				linkInputs,
 				name,
@@ -108,20 +108,20 @@ var (
 			"configs": configLabelListType,
 			"defines": stringListType,
 		},
-		resolver: func(t *Target, b *Builder) (fs.SourceFile, error) {
-			name, err := t.stringFor("name")
+		resolver: func(ctx resolverContext) (fs.SourceFile, error) {
+			name, err := ctx.stringFor("name")
 			if err != nil {
 				return fs.SourceFile{}, err
 			}
 			var linkInputs []fs.SourceFile
 			outPrefix := fmt.Sprintf("lib%s", name)
-			for source := range t.sourceFilesFor("sources") {
+			for source := range ctx.sourceFilesFor("sources") {
 				sourceName := source.Filename()
 				sourceBase := filepath.Base(sourceName)
 				if filepath.Ext(sourceBase) == ".h" {
 					continue
 				}
-				objFile, err := t.declareTool(
+				objFile, err := ctx.declareTool(
 					"cxx",
 					[]fs.SourceFile{source},
 					fmt.Sprintf("%s.%s.o", outPrefix, sourceBase),
@@ -131,7 +131,7 @@ var (
 				}
 				linkInputs = append(linkInputs, objFile)
 			}
-			return t.declareTool(
+			return ctx.declareTool(
 				"alink",
 				linkInputs,
 				fmt.Sprintf("%s.a", outPrefix),
@@ -157,20 +157,20 @@ var (
 			"configs": configLabelListType,
 			"defines": stringListType,
 		},
-		resolver: func(t *Target, b *Builder) (fs.SourceFile, error) {
-			name, err := t.stringFor("name")
+		resolver: func(ctx resolverContext) (fs.SourceFile, error) {
+			name, err := ctx.stringFor("name")
 			if err != nil {
 				return fs.SourceFile{}, err
 			}
 			var linkInputs []fs.SourceFile
 			outPrefix := fmt.Sprintf("lib%s", name)
-			for source := range t.sourceFilesFor("sources") {
+			for source := range ctx.sourceFilesFor("sources") {
 				sourceName := source.Filename()
 				sourceBase := filepath.Base(sourceName)
 				if filepath.Ext(sourceBase) == ".h" {
 					continue
 				}
-				objFile, err := t.declareTool(
+				objFile, err := ctx.declareTool(
 					"cxx",
 					[]fs.SourceFile{source},
 					fmt.Sprintf("%s.%s.o", outPrefix, sourceBase),
@@ -180,7 +180,7 @@ var (
 				}
 				linkInputs = append(linkInputs, objFile)
 			}
-			return t.declareTool(
+			return ctx.declareTool(
 				"solink",
 				linkInputs,
 				fmt.Sprintf("%s.so", outPrefix),
