@@ -437,6 +437,25 @@ func (c *Client) UploadAll(ctx context.Context, ds *digest.Store) (numUploaded i
 	return numUploaded, err
 }
 
+// CheckWritable checks reapi instance writable permission.
+func (c *Client) CheckWritable(ctx context.Context) error {
+	if c.casConn == nil {
+		return status.Error(codes.FailedPrecondition, "conn is not configured")
+	}
+	data := digest.FromBytes("empty", nil)
+	ds := digest.NewStore()
+	ds.Set(data)
+	blobs := []digest.Digest{data.Digest()}
+	uploads := map[digest.Digest]*uploadOp{
+		data.Digest(): newUploadOp(),
+	}
+	_, err := c.upload(ctx, ds, blobs, uploads)
+	if err != nil {
+		return fmt.Errorf("failed to check writable: %w", err)
+	}
+	return nil
+}
+
 var errBlobNotInReq = errors.New("blob not in request")
 
 type missingBlob struct {

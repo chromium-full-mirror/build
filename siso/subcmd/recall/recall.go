@@ -239,6 +239,10 @@ func (c *Command) call(ctx context.Context, reopt reapi.Option, credential cred.
 		return err
 	}
 	defer client.Close()
+	err = client.CheckWritable(ctx)
+	if err != nil {
+		return err
+	}
 	toolInvocationID := uuid.New().String()
 	actionID := uuid.New().String()
 	ctx = reapi.NewContext(ctx, &rpb.RequestMetadata{

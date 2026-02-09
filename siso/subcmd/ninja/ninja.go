@@ -414,6 +414,12 @@ func (c *Command) Run(ctx context.Context) (stats build.Stats, finalErr error) {
 		if err != nil {
 			return stats, err
 		}
+		if c.reExecEnable {
+			err = reapiClient.CheckWritable(ctx)
+			if err != nil {
+				return stats, err
+			}
+		}
 	}
 	ds := build.NewDataSource(ctx, credential, c.localCacheEnable, c.cacheDir, reapiClient)
 	defer func() {
