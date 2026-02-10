@@ -188,6 +188,7 @@ func (l *Loader) loadBuildConfig(settings *Settings) error {
 for all of this code.`,
 			}
 		}
+		settings.toolchainLabel = l.defaultToolchain
 	}
 
 	return nil

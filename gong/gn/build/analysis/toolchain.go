@@ -4,6 +4,11 @@
 
 package analysis
 
+import (
+	"go.chromium.org/build/gong/gn/build/environment"
+	"go.chromium.org/build/gong/gn/parse"
+)
+
 // Toolchain is an item in the GN dependency graph that represents information
 // on a specific toolchain. This data is filled in when we encounter a toolchain
 // definition.
@@ -12,8 +17,6 @@ package analysis
 // particular, when a target uses a toolchain, it should have a dependency on
 // that toolchain's object so that we can be sure we loaded the toolchain
 // before generating the build for that target.
-//
-//nolint:unused
 type Toolchain struct {
 	itemInfo
 	// The Settings of an Item is always the context in which the Item was
@@ -29,6 +32,19 @@ type Toolchain struct {
 	// We also track the set of build files that may affect this target, please
 	// refer to scopeContext for how this is determined.
 	settings *Settings
+	// The tools defined in this toolchain.
+	tools map[string]*Tool
+}
+
+// NewToolchain creates a new toolchain() item struct.
+func NewToolchain(label environment.Label, settings *Settings) *Toolchain {
+	return &Toolchain{
+		itemInfo: itemInfo{
+			label: label,
+		},
+		settings: settings,
+		tools:    make(map[string]*Tool),
+	}
 }
 
 func (Toolchain) compatibleWith(item Item) bool {
@@ -37,4 +53,20 @@ func (Toolchain) compatibleWith(item Item) bool {
 		return true
 	}
 	return false
+}
+
+// Tool represents arguments to a toolchain tool.
+type Tool struct {
+	name        string
+	command     string
+	outputs     []string // Simplified: List of output pattern strings
+	description string
+	definedFrom parse.Node
+}
+
+// NewTool creates a new tool struct with the given name.
+func NewTool(name string) *Tool {
+	return &Tool{
+		name: name,
+	}
 }

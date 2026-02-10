@@ -15,9 +15,31 @@ func TestBuilder_RecordDefinedItem_CreatesRecordsForDeps(t *testing.T) {
 	targetLabel := environment.Label{Dir: mustDir(t, "//"), Name: "main_target"}
 	dep1Label := environment.Label{Dir: mustDir(t, "//bar"), Name: "baz"}
 	dep2Label := environment.Label{Dir: mustDir(t, "//bar"), Name: "qux"}
+	toolchainLabel := environment.Label{Dir: mustDir(t, "//build"), Name: "tc"}
 	dep1Origin := &parse.IdentifierNode{Value: syntax.MakeToken(syntax.TokenString, "//bar:baz")}
 	dep2Origin := &parse.IdentifierNode{Value: syntax.MakeToken(syntax.TokenString, "//bar:qux")}
-	targetDeps := []environment.LabelWithOrigin{
+	target := &Target{
+		itemInfo: itemInfo{
+			label:       targetLabel,
+			definedFrom: &parse.IdentifierNode{Value: syntax.MakeToken(syntax.TokenIdentifier, "main_target")},
+		},
+		schema:   &executableSchema,
+		settings: &Settings{toolchainLabel: toolchainLabel},
+		values: map[string]processedValue{
+			"name": stringValue{str: "main_target"},
+			"deps": labelListValue{list: []environment.LabelWithOrigin{
+				{
+					Label:  dep1Label,
+					Origin: dep1Origin,
+				},
+				{
+					Label:  dep2Label,
+					Origin: dep2Origin,
+				},
+			}},
+		},
+	}
+	wantUnresolved := []environment.LabelWithOrigin{
 		{
 			Label:  dep1Label,
 			Origin: dep1Origin,
@@ -26,16 +48,9 @@ func TestBuilder_RecordDefinedItem_CreatesRecordsForDeps(t *testing.T) {
 			Label:  dep2Label,
 			Origin: dep2Origin,
 		},
-	}
-	target := &Target{
-		itemInfo: itemInfo{
-			label:       targetLabel,
-			definedFrom: &parse.IdentifierNode{Value: syntax.MakeToken(syntax.TokenIdentifier, "main_target")},
-		},
-		schema: &executableSchema,
-		values: map[string]processedValue{
-			"name": stringValue{str: "main_target"},
-			"deps": labelListValue{list: targetDeps},
+		{
+			Label:  toolchainLabel,
+			Origin: target.definedFrom,
 		},
 	}
 
@@ -45,7 +60,7 @@ func TestBuilder_RecordDefinedItem_CreatesRecordsForDeps(t *testing.T) {
 		t.Fatalf("RecordDefinedItem(_)=_, %v; want nil err", err)
 	}
 
-	if diff := cmp.Diff(targetDeps, unresolvedDeps); diff != "" {
+	if diff := cmp.Diff(wantUnresolved, unresolvedDeps); diff != "" {
 		t.Errorf("RecordDefinedItem(_); diff (-want +got):\n%s", diff)
 	}
 	targetRec, ok := builder.records[targetLabel]
@@ -73,8 +88,8 @@ func TestBuilder_RecordDefinedItem_CreatesRecordsForDeps(t *testing.T) {
 	if _, isDep := targetRec.dependencies[dep2Rec]; !isDep {
 		t.Error("record //:main_target missing edge to //bar:qux")
 	}
-	if targetRec.unresolvedDeps != 2 {
-		t.Errorf("record //:main_target unresolvedDeps=%d; want 2", targetRec.unresolvedDeps)
+	if targetRec.unresolvedDeps != 3 {
+		t.Errorf("record //:main_target unresolvedDeps=%d; want 3", targetRec.unresolvedDeps)
 	}
 }
 

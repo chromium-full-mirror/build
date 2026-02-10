@@ -1,0 +1,167 @@
+// Copyright 2026 The Chromium Authors
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
+package analysis
+
+import (
+	"go.chromium.org/build/gong/gn/build/environment"
+	"go.chromium.org/build/gong/gn/parse"
+	"go.chromium.org/build/gong/gn/resolve"
+)
+
+type toolchainFunction struct{}
+
+func (toolchainFunction) HelpShort() string { return "toolchain: Defines a toolchain." }
+func (toolchainFunction) Help() string      { return "" }
+func (toolchainFunction) IsTarget() bool    { return false }
+
+func (toolchainFunction) Run(scope *resolve.Scope, call *parse.FunctionCallNode, args []resolve.Value, block *parse.BlockNode) (resolve.Value, error) {
+	ctx, err := contextFromScope(scope)
+	if err != nil {
+		return nil, err
+	}
+	if ctx.isProcessingBuildConfig() {
+		return nil, ItemInBuildConfigError{OriginFunction: resolve.OriginFunction{Call: call}}
+	}
+
+	if len(args) != 1 {
+		return nil, resolve.ArgumentCountError{
+			OriginFunction: resolve.OriginFunction{Call: call},
+			Msg:            "Incorrect arguments.",
+			Help:           "This function requires a single string argument.",
+		}
+	}
+	nameValue, err := resolve.AsValue[*resolve.StringValue](args[0])
+	if err != nil {
+		return nil, err
+	}
+	name := nameValue.RawGNString()
+
+	label := environment.Label{Dir: ctx.sourceDir, Name: name}
+
+	// Create the new toolchain object
+	// TODO: buildDependencyFiles needs to be collected from the scope.
+	toolchain := NewToolchain(label, ctx.settings)
+	toolchain.definedFrom = call
+
+	// Scope for executing the toolchain's block
+	blockScope := scope.NewNestedScope()
+	blockScope.ExecContext().(*scopeContext).toolCollector = func(t *Tool) {
+		toolchain.tools[t.name] = t
+	}
+
+	if _, err := resolve.ExecuteNode(block, blockScope); err != nil {
+		return nil, err
+	}
+
+	ctx.itemCollector(toolchain)
+	return nil, blockScope.CheckForUnusedVars()
+}
+
+type toolFunction struct{}
+
+func (toolFunction) HelpShort() string { return "tool: Specify arguments to a toolchain tool." }
+func (toolFunction) Help() string      { return "" }
+func (toolFunction) IsTarget() bool    { return false }
+
+func (toolFunction) Run(scope *resolve.Scope, call *parse.FunctionCallNode, args []resolve.Value, block *parse.BlockNode) (resolve.Value, error) {
+	ctx, err := contextFromScope(scope)
+	if err != nil {
+		return nil, err
+	}
+	if ctx.isProcessingBuildConfig() {
+		return nil, ItemInBuildConfigError{OriginFunction: resolve.OriginFunction{Call: call}}
+	}
+
+	// Find the toolchain definition we're executing inside of.
+	collector := scope.ExecContext().(*scopeContext).toolCollector
+	if collector == nil {
+		return nil, ToolOutsideToolchain{}
+	}
+
+	if len(args) != 1 {
+		return nil, resolve.ArgumentCountError{
+			OriginFunction: resolve.OriginFunction{Call: call},
+			Msg:            "Incorrect arguments.",
+			Help:           "This function requires a single string argument.",
+		}
+	}
+	nameValue, err := resolve.AsValue[*resolve.StringValue](args[0])
+	if err != nil {
+		return nil, err
+	}
+	name := nameValue.RawGNString()
+
+	blockScope := scope.NewNestedScope()
+	if _, err := resolve.ExecuteNode(block, blockScope); err != nil {
+		return nil, err
+	}
+
+	// TODO: verify tool name is valid for this toolchain.
+	tool := NewTool(name)
+	tool.definedFrom = call
+
+	// Command required unless 'action' tool.
+	v := blockScope.Value("command", true)
+	wantCommand := name != "action"
+	gotCommand := v != nil
+	if gotCommand != wantCommand {
+		err := ToolError{
+			OriginNode: parse.OriginNode{Node: tool.definedFrom},
+			message:    "This tool's command is bad.",
+		}
+		if !wantCommand {
+			err.helpText = `This tool doesn't support "command".`
+		} else {
+			err.helpText = `This tool requires "command" to be defined.`
+		}
+		return nil, err
+	}
+	if gotCommand {
+		sv, err := resolve.AsValue[*resolve.StringValue](v)
+		if err != nil {
+			return nil, err
+		}
+		// TODO: need to parse the substitution pattern here.
+		tool.command = sv.RawGNString()
+	}
+
+	// Outputs.
+	// For now, just assume simple list.
+	if v := blockScope.Value("outputs", true); v != nil {
+		lv, err := resolve.AsValue[*resolve.ListValue](v)
+		if err != nil {
+			return nil, err
+		}
+		for item := range lv.Values() {
+			sv, err := resolve.AsValue[*resolve.StringValue](item)
+			if err != nil {
+				return nil, err
+			}
+			tool.outputs = append(tool.outputs, sv.RawGNString())
+		}
+	}
+
+	// Description (optional).
+	if v := blockScope.Value("description", true); v != nil {
+		sv, err := resolve.AsValue[*resolve.StringValue](v)
+		if err != nil {
+			return nil, err
+		}
+		tool.description = sv.RawGNString()
+	}
+
+	// Values that haven't been implemented yet.
+	// TODO: Use these values.
+	blockScope.Value("default_output_dir", true)
+	blockScope.Value("default_output_extension", true)
+	blockScope.Value("depend_output", true)
+	blockScope.Value("depsformat", true)
+	blockScope.Value("link_output", true)
+	blockScope.Value("output_prefix", true)
+	blockScope.Value("rspfile_content", true)
+
+	ctx.toolCollector(tool)
+	return nil, blockScope.CheckForUnusedVars()
+}

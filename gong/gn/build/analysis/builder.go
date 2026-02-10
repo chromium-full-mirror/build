@@ -26,6 +26,8 @@ type Builder struct {
 	loader *Loader
 	// All items, resolved or unresolved, are tracked here.
 	records map[environment.Label]*builderRecord
+	// Temporarily only support one toolchain.
+	seenDefaultToolchain bool
 }
 
 // MakeBuilder constructs a new builder.
@@ -41,10 +43,6 @@ func MakeBuilder(loader *Loader) Builder {
 // Returns a list of labels of dependencies the item needs but the builder hasn't seen yet,
 // along with the location where the dep was defined.
 // Returns an error if there was an issue updating the builder's records.
-//
-// NOT IMPLEMENTED YET: If there are no unresolved deps, the builder will attempt to move this
-// item into a resolved state, and recursively attempt to move any dependents that were waiting
-// for this item to a resolved state as well.
 //
 // Callers of this function are responsible for loading the buildfile(s) containing the deps
 // requested.
@@ -91,10 +89,15 @@ func (b *Builder) RecordDefinedItem(item Item) ([]environment.LabelWithOrigin, e
 			record.item.Label().UserVisibleString(false))
 		return nil, nil
 	case *Toolchain:
-		return nil, NotImplementedError{
-			what: fmt.Sprintf("builder can't handle toolchain defs yet. got: %q",
-				record.item.Label().UserVisibleString(false)),
+		if b.seenDefaultToolchain {
+			return nil, NotImplementedError{
+				what: "Support for multiple toolchains is not implemented yet.",
+			}
 		}
+		// Don't need to do anything for first toolchain yet, Loader has already seen it.
+		// Also don't support parsing pool(), deps, etc yet so nothing to do right now.
+		b.seenDefaultToolchain = true
+		return nil, nil
 	}
 	return nil, fmt.Errorf("don't know how to handle %T item yet", item)
 }
@@ -141,6 +144,20 @@ func (b *Builder) targetDefined(target *Target, record *builderRecord) ([]enviro
 			record.addDep(depRecord)
 		}
 	}
+
+	// If this target's toolchain hasn't been resolved, add it to the requested deps.
+	toolchainDep := environment.LabelWithOrigin{
+		Label:  target.settings.toolchainLabel,
+		Origin: target.definedFrom,
+	}
+	toolchainRec, err := b.recordFor(toolchainDep.Label, toolchainDep.Origin, &Toolchain{})
+	if err != nil {
+		return nil, err
+	}
+	if toolchainRec.state != itemStateResolved {
+		unresolvedDeps = append(unresolvedDeps, toolchainDep)
+	}
+	record.addDep(toolchainRec)
 
 	if len(unresolvedDeps) == 0 {
 		return nil, b.resolveTarget(target, record)
