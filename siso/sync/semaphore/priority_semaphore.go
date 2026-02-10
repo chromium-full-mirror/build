@@ -71,9 +71,10 @@ type Prioritized struct {
 	name     string
 	capacity int
 
-	mu   sync.Mutex
-	used int
-	pq   priorityQueue
+	mu       sync.Mutex
+	used     int
+	freeTIDs []int
+	pq       priorityQueue
 
 	waitSpanName string
 	servSpanName string
@@ -84,9 +85,15 @@ type Prioritized struct {
 
 // NewPrioritized creates a new priority semaphore with a name and capacity.
 func NewPrioritized(name string, n int) *Prioritized {
+	startTID := int(tidCounter.Add(int64(n))) - n
+	tids := make([]int, 0, n)
+	for i := range n {
+		tids = append(tids, startTID+i)
+	}
 	s := &Prioritized{
 		name:         fmt.Sprintf("%s/%d", name, n),
 		capacity:     n,
+		freeTIDs:     tids,
 		waitSpanName: fmt.Sprintf("wait:%s/%d", name, n),
 		servSpanName: fmt.Sprintf("serv:%s/%d", name, n),
 	}
@@ -107,7 +114,8 @@ func (s *Prioritized) WaitAcquire(ctx context.Context, weight int) (context.Cont
 	s.mu.Lock()
 	// If there's capacity, acquire immediately.
 	if s.used < s.capacity {
-		tid := s.used
+		tid := s.freeTIDs[len(s.freeTIDs)-1]
+		s.freeTIDs = s.freeTIDs[:len(s.freeTIDs)-1]
 		s.used++
 		s.mu.Unlock()
 		s.reqs.Add(1)
@@ -188,6 +196,7 @@ func (s *Prioritized) privateRelease(tid int) {
 		// The request was canceled, try the next one.
 	}
 	// No other requests were waiting. Decrement `used` counter.
+	s.freeTIDs = append(s.freeTIDs, tid)
 	s.used--
 }
 

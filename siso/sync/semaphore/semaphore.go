@@ -18,6 +18,13 @@ import (
 	"go.chromium.org/build/siso/o11y/trace"
 )
 
+var tidCounter atomic.Int64
+
+func init() {
+	// Perfetto does not show a row for thread id 0.
+	tidCounter.Store(1)
+}
+
 // Monitorable is an interface for semaphore monitoring.
 type Monitorable interface {
 	Name() string
@@ -42,8 +49,9 @@ type Semaphore struct {
 // New creates a new semaphore with name and capacity.
 func New(name string, n int) *Semaphore {
 	ch := make(chan int, n)
+	startTID := int(tidCounter.Add(int64(n))) - n
 	for i := range n {
-		ch <- i + 1 // tid
+		ch <- startTID + i // tid
 	}
 	s := &Semaphore{
 		name:         fmt.Sprintf("%s/%d", name, n),
