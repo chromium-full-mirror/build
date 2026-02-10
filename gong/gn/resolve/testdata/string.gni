@@ -46,6 +46,28 @@ assert_failure("\$ at end of string.") {
     invalid = "foo$"
 }
 
-assert_failure("NOT IMPLEMENTED: \$identifier interpolation not yet supported.") {
-    unimplemented = "$foo"
+# str $interpolation
+foo = "bar"
+scope = { val = 123 }
+list = ["a", "b"]
+assert("a $foo b" == "a bar b")
+assert("a ${foo} b" == "a bar b")
+assert("val is ${scope.val}" == "val is 123")
+assert("item is ${list[1]}" == "item is b")
+
+assert_failure("Undefined identifier in string expansion.") {
+    invalid = "$undefined"
 }
+assert_failure("Invalid string interpolation.", "The thing inside the \${} must be an identifier \${foo},$0x0Aa scope access \${foo.bar}, or a list access \${foo[0]}.") {
+    invalid = "${1 + 2}"
+}
+assert_failure("Trailing garbage") {
+    invalid = "${1 2}"
+}
+assert_failure("Invalid token.") {
+    invalid = "${;}"
+}
+
+# \$ to escape $
+assert("\$foo" == "$0x24foo")
+assert("\$$foo" == "$0x24bar")

@@ -191,7 +191,7 @@ statement or a target declaration.`,
 				value:  i,
 			}, nil
 		case syntax.TokenString:
-			str, err := expandStringLiteral(n.Token, n)
+			str, err := expandStringLiteral(n.Token, n, s)
 			if err != nil {
 				return nil, err
 			}

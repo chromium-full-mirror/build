@@ -5,10 +5,12 @@
 package resolve
 
 import (
+	"errors"
 	"fmt"
 
 	"go.chromium.org/build/gong/gn/parse"
 	"go.chromium.org/build/gong/gn/syntax"
+	"go.chromium.org/build/gong/ui"
 )
 
 // ASTError is returned when the resolver encounters a malformed AST.
@@ -402,6 +404,55 @@ func (e StringLiteralError) Message() string { return e.message }
 
 // HelpText returns the user-facing error help text.
 func (e StringLiteralError) HelpText() string { return e.helpText }
+
+// StringLiteralExpressionError is returned when a string literal could not be expanded
+// because it contained an expression interpolation, which failed to be parsed.
+type StringLiteralExpressionError struct {
+	syntax.OriginToken
+	err error
+}
+
+// Error returns the error message.
+func (e StringLiteralExpressionError) Error() string {
+	return fmt.Sprintf("expr in string literal failed to parse: %v", e.err)
+}
+
+// Message returns the user-facing error message.
+func (e StringLiteralExpressionError) Message() string {
+	// Generally string interpolations aren't complex. So the user should just be presented with
+	// a single error in the UI that points at the origin syntax token and the error message.
+	var gnErr ui.PresentableError
+	if errors.As(e.err, &gnErr) {
+		return gnErr.Message()
+	}
+	// However, if the underlying error was an external Go error, we'll expose it in Unwrap.
+	// So just show a simple title, then let the UI handle how to render the external error.
+	return "String interpolation failed."
+}
+
+// HelpText returns the user-facing error help text.
+func (e StringLiteralExpressionError) HelpText() string {
+	// See the Message function for why we do this.
+	var gnErr ui.PresentableError
+	if errors.As(e.err, &gnErr) {
+		return gnErr.HelpText()
+	}
+	// If the underlying error was an external Go error, we'll expose it in Unwrap.
+	// So don't show any help text in this error, then let the UI handle the unwrapped error.
+	return ""
+}
+
+// Unwrap returns an underlying error if applicable.
+func (e StringLiteralExpressionError) Unwrap() error {
+	// Generally string interpolations aren't complex, so the user should not be presented with
+	// the underlying GN error, instead we directly consume the error.
+	var gnErr ui.PresentableError
+	if errors.As(e.err, &gnErr) {
+		return nil
+	}
+	// However if it was an external Go error, then it should be exposed.
+	return e.err
+}
 
 // OriginFunction is an embeddable struct for errors to provide location data for a function call.
 type OriginFunction struct {

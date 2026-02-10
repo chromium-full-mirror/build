@@ -43,6 +43,28 @@ const (
 
 // Parse converts a series of tokens into an AST.
 func Parse(tokens []syntax.Token) (Node, error) {
+	p := makeParser(tokens)
+	return p.parseFile()
+}
+
+// ParseExpression parses a list of tokens as an expression.
+// This is used primarily for string interpolation e.g. ${...}.
+func ParseExpression(tokens []syntax.Token) (Node, error) {
+	p := makeParser(tokens)
+	expr, err := p.parseExpression(precedenceNone)
+	if err != nil {
+		return nil, err
+	}
+	if !p.atEnd() {
+		return nil, TokenError{
+			OriginToken: syntax.OriginToken{Token: p.curOrLastToken()},
+			message:     "Trailing garbage",
+		}
+	}
+	return expr, nil
+}
+
+func makeParser(tokens []syntax.Token) parser {
 	p := parser{}
 	// Collect line and suffix comments now so that they can be attached to the
 	// nearest appropriate node after building the AST.
@@ -58,7 +80,7 @@ func Parse(tokens []syntax.Token) (Node, error) {
 			p.tokens = append(p.tokens, token)
 		}
 	}
-	return p.parseFile()
+	return p
 }
 
 func (p *parser) curToken() syntax.Token {

@@ -4,6 +4,7 @@
 package resolve
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
 
@@ -13,6 +14,14 @@ import (
 
 func isHex(c byte) bool {
 	return (c >= '0' && c <= '9') || (c >= 'A' && c <= 'F') || (c >= 'a' && c <= 'f')
+}
+
+func isIdentifierFirstChar(c byte) bool {
+	return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || c == '_'
+}
+
+func isIdentifierContinuingChar(c byte) bool {
+	return isIdentifierFirstChar(c) || (c >= '0' && c <= '9')
 }
 
 // appendHexByte handles a hex literal: $0xFF
@@ -40,7 +49,7 @@ func appendHexByte(originNode parse.Node, input string, i int, output *strings.B
 	return i + 3, nil
 }
 
-func expandStringLiteral(token syntax.Token, originNode parse.Node) (Value, error) {
+func expandStringLiteral(token syntax.Token, originNode parse.Node, scope *Scope) (Value, error) {
 	if token.TokenType() != syntax.TokenString {
 		return nil, TypeError{
 			Msg:              "This is not a string",
@@ -92,18 +101,59 @@ func expandStringLiteral(token syntax.Token, originNode parse.Node) (Value, erro
 					helpText:   "I was expecting an identifier, 0xFF, or {...} after the $.",
 				}
 			}
-			if rawInput[i] == '0' {
-				var err error
+			var err error
+			switch rawInput[i] {
+			case '0': // $0...
 				i, err = appendHexByte(originNode, rawInput, i, &output)
 				if err != nil {
 					return nil, err
 				}
-			} else {
-				// TODO(b/388723392): Implement interpolation.
-				return nil, StringLiteralError{
-					OriginNode: parse.OriginNode{Node: originNode},
-					message:    "NOT IMPLEMENTED: $identifier interpolation not yet supported.",
+			case '{': // ${...
+				i++
+				interpStart := i
+				hasNonIdentChars := false
+				for i < finalSize && rawInput[i] != '}' {
+					if !isIdentifierContinuingChar(rawInput[i]) {
+						hasNonIdentChars = true
+					}
+					i++
 				}
+				if i == len(rawInput) {
+					return nil, StringLiteralError{
+						OriginNode: parse.OriginNode{Node: originNode},
+						message:    "Unterminated ${...",
+					}
+				}
+				if !hasNonIdentChars {
+					// Prefer to treat as $foo where possible, so don't need to execute parser.
+					err = appendInterpolatedIdentifier(scope, originNode, rawInput[interpStart:i], &output)
+				} else {
+					// Can't treat as simple identifier, must execute parser.
+					err = appendInterpolatedExpression(scope, token, originNode, rawInput[interpStart:i], &output)
+				}
+				if err != nil {
+					return nil, err
+				}
+			default: // $foo...
+				if !isIdentifierFirstChar(rawInput[i]) {
+					return nil, StringLiteralError{
+						OriginNode: parse.OriginNode{Node: originNode},
+						message:    "$ not followed by an identifier char.",
+						helpText:   `If you want a literal $ use "\$".`,
+					}
+				}
+				// Find the first non-identifier char following the string.
+				interpStart := i
+				i++
+				for i < len(rawInput) && isIdentifierContinuingChar(rawInput[i]) {
+					i++
+				}
+				interpEnd := i
+				err = appendInterpolatedIdentifier(scope, originNode, rawInput[interpStart:interpEnd], &output)
+				if err != nil {
+					return nil, err
+				}
+				i-- // At end of interpolation, go back one char for next loop to iterate i++.
 			}
 		default:
 			output.WriteByte(rawInput[i])
@@ -112,4 +162,63 @@ func expandStringLiteral(token syntax.Token, originNode parse.Node) (Value, erro
 	return &StringValue{
 		value: output.String(),
 	}, nil
+}
+
+func appendInterpolatedIdentifier(scope *Scope, originNode parse.Node, identifier string, output *strings.Builder) error {
+	val := scope.Value(identifier, true)
+	if val == nil {
+		return StringLiteralError{
+			OriginNode: parse.OriginNode{Node: originNode},
+			message:    "Undefined identifier in string expansion.",
+			helpText:   fmt.Sprintf("%q is not currently in scope.", identifier),
+		}
+	}
+	output.WriteString(val.RawGNString())
+	return nil
+}
+
+type literalInputSource struct {
+	contents string
+}
+
+func (l literalInputSource) DisplayName() string                 { return "<string literal>" }
+func (l literalInputSource) Contents() []byte                    { return []byte(l.contents) }
+func (l literalInputSource) Equal(other syntax.InputSource) bool { return false }
+
+func appendInterpolatedExpression(scope *Scope, token syntax.Token, originNode parse.Node, exprStr string, output *strings.Builder) error {
+	tokens, err := syntax.Tokenize(literalInputSource{exprStr})
+	if err != nil {
+		return StringLiteralExpressionError{
+			OriginToken: syntax.OriginToken{Token: token},
+			err:         err,
+		}
+	}
+	node, err := parse.ParseExpression(tokens)
+	if err != nil {
+		return StringLiteralExpressionError{
+			OriginToken: syntax.OriginToken{Token: token},
+			err:         err,
+		}
+	}
+
+	// Interpolated expression only allows identifiers and accessors (e.g., a.b, a[0])
+	switch node.(type) {
+	case *parse.IdentifierNode, *parse.AccessorNode:
+		// OK
+	default:
+		return StringLiteralError{
+			OriginNode: parse.OriginNode{Node: originNode},
+			message:    "Invalid string interpolation.",
+			helpText: `The thing inside the ${} must be an identifier ${foo},
+a scope access ${foo.bar}, or a list access ${foo[0]}.`,
+		}
+	}
+
+	result, err := ExecuteNode(node, scope)
+	if err != nil {
+		return err
+	}
+
+	output.WriteString(result.RawGNString())
+	return nil
 }

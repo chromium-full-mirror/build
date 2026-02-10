@@ -17,6 +17,7 @@ func TestExpandStringLiteral(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
 		token   syntax.Token
+		scope   *Scope
 		want    Value
 		wantErr any
 	}{
@@ -111,15 +112,76 @@ func TestExpandStringLiteral(t *testing.T) {
 			wantErr: &StringLiteralError{},
 		},
 		{
-			name:    "unimplemented_identifier",
+			name:  "interpolation_identifier",
+			token: syntax.MakeToken(syntax.TokenString, `"$foo"`),
+			scope: &Scope{values: map[string]record{
+				"foo": {value: &StringValue{value: "bar"}},
+			}},
+			want: &StringValue{value: "bar"},
+		},
+		{
+			name:  "interpolation_braces",
+			token: syntax.MakeToken(syntax.TokenString, `"${foo}"`),
+			scope: &Scope{values: map[string]record{
+				"foo": {value: &StringValue{value: "bar"}},
+			}},
+			want: &StringValue{value: "bar"},
+		},
+		{
+			name:  "interpolation_mixed",
+			token: syntax.MakeToken(syntax.TokenString, `"a ${foo} b $bar"`),
+			scope: &Scope{values: map[string]record{
+				"foo": {value: &IntegerValue{value: 1}},
+				"bar": {value: &StringValue{value: "2"}},
+			}},
+			want: &StringValue{value: "a 1 b 2"},
+		},
+		{
+			name:  "interpolation_scope_access",
+			token: syntax.MakeToken(syntax.TokenString, `"${obj.key}"`),
+			scope: &Scope{values: map[string]record{
+				"obj": {value: &ScopeValue{scope: &Scope{values: map[string]record{
+					"key": {value: &StringValue{value: "val"}},
+				}}}},
+			}},
+			want: &StringValue{value: "val"},
+		},
+		{
+			name:  "interpolation_list_access",
+			token: syntax.MakeToken(syntax.TokenString, `"${list[0]}"`),
+			scope: &Scope{values: map[string]record{
+				"list": {value: &ListValue{list: []Value{
+					&StringValue{value: "item"},
+				}}},
+			}},
+			want: &StringValue{value: "item"},
+		},
+		{
+			name:    "unterminated_brace",
+			token:   syntax.MakeToken(syntax.TokenString, `"${foo"`),
+			wantErr: &StringLiteralError{},
+		},
+		{
+			name:    "invalid_identifier",
+			token:   syntax.MakeToken(syntax.TokenString, `"$1"`),
+			wantErr: &StringLiteralError{},
+		},
+		{
+			name:    "invalid_expression",
+			token:   syntax.MakeToken(syntax.TokenString, `"${;}"`),
+			wantErr: &StringLiteralExpressionError{},
+		},
+		{
+			name:    "undefined_identifier",
 			token:   syntax.MakeToken(syntax.TokenString, `"$foo"`),
+			scope:   &Scope{values: map[string]record{}},
 			wantErr: &StringLiteralError{},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			got, err := expandStringLiteral(tc.token, &parse.LiteralNode{
 				Token: syntax.MakeToken(syntax.TokenString, "origin"),
-			})
+			}, tc.scope)
 			wantErr := tc.wantErr != nil
 			gotErr := err != nil
 
