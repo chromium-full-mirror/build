@@ -74,7 +74,7 @@ func (c *ContentAddressableStorage) FlattenDirectory(rootDigest digest.Digest) (
 			// Parse the digest.
 			subDigest, err := digest.NewFromProto(subDirNode.Digest)
 			if err != nil {
-				return nil, nil, fmt.Errorf("invalid digest: %v", err)
+				return nil, nil, fmt.Errorf("invalid digest: %w", err)
 			}
 			dirDigests = append(dirDigests, subDigest)
 		}

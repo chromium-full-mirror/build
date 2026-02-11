@@ -89,7 +89,7 @@ func Create(ctx context.Context, c pb.ByteStreamClient, resourceName, name strin
 	sizeStr := path.Base(resourceName)
 	size, err := strconv.ParseInt(sizeStr, 10, 64)
 	if err != nil {
-		return nil, fmt.Errorf("bad size in resource name %q: %v", resourceName, err)
+		return nil, fmt.Errorf("bad size in resource name %q: %w", resourceName, err)
 	}
 	wr, err := c.Write(ctx)
 	if err != nil {

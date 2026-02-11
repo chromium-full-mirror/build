@@ -22,10 +22,6 @@ linters:
     # There are also many unchecked errors.
     - errcheck
   settings:
-    # TODO(gregorynisbet): Use default config here.
-    errorlint:
-      # Moving %v or %s to %w is a breaking API change.
-      errorf: false
     staticcheck:
       checks:
         - all

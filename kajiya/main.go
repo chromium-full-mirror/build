@@ -199,7 +199,7 @@ func createServer(ctx context.Context, dataDir string) (*grpc.Server, error) {
 		slog.Info("using TLS", "cert", filepath.Base(*tlsCertFile), "key", filepath.Base(*tlsKeyFile))
 		creds, err := credentials.NewServerTLSFromFile(*tlsCertFile, *tlsKeyFile)
 		if err != nil {
-			return nil, fmt.Errorf("failed to load TLS certificate and key: %v", err)
+			return nil, fmt.Errorf("failed to load TLS certificate and key: %w", err)
 		}
 		opts = append(opts, grpc.Creds(creds))
 	}

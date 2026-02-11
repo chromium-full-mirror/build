@@ -185,7 +185,7 @@ retryLoop:
 	if status.Code(err) == codes.DeadlineExceeded || errors.Is(err, context.DeadlineExceeded) {
 		metadata, operr := c.executeOperation(ctx, opName, opts...)
 		if operr != nil {
-			err = fmt.Errorf("failed to get op %v: last operation stage: %v %s: %w", operr, lastExecOpMetadata.GetStage(), ongoingDetails(lastExecOpMetadata.GetPartialExecutionMetadata()), err)
+			err = fmt.Errorf("failed to get op %w: last operation stage: %v %s: %w", operr, lastExecOpMetadata.GetStage(), ongoingDetails(lastExecOpMetadata.GetPartialExecutionMetadata()), err)
 		} else {
 			err = fmt.Errorf("operation stage: %v %s: %w", metadata.GetStage(), ongoingDetails(metadata.GetPartialExecutionMetadata()), err)
 		}

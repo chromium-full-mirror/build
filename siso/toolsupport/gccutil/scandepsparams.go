@@ -31,7 +31,7 @@ func normalizeArgs(args []string) ([]string, error) {
 		// TODO: b/432374760 - need to strip ${postCmd} part?
 		cmdArgs, err := shutil.Split(strings.TrimPrefix(args[2], "PWD=/proc/self/cwd "))
 		if err != nil {
-			return nil, fmt.Errorf("failed to split %q: %v", args[2], err)
+			return nil, fmt.Errorf("failed to split %q: %w", args[2], err)
 		}
 		return cmdArgs, nil
 	}
