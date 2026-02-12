@@ -25,7 +25,7 @@ var Semaphore = semaphore.New("deps-gcc", runtime.NumCPU()*2)
 func DepsArgs(args []string) ([]string, error) {
 	args, err := normalizeArgs(args)
 	if err != nil {
-		return nil, fmt.Errorf("failed to normalize args: %w", err)
+		return nil, fmt.Errorf("failed to normalize args: %v", err)
 	}
 	var dargs []string
 	skip := false

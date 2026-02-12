@@ -105,7 +105,7 @@ func runInteractive(params otelcol.CollectorSettings, args []string) error {
 	cmd := otelcol.NewCommand(params)
 	cmd.SetArgs(args)
 	if err := cmd.Execute(); err != nil {
-		return fmt.Errorf("collector server run finished with error: %w", err)
+		return fmt.Errorf("collector server run finished with error: %v", err)
 	}
 
 	return nil

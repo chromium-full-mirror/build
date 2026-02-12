@@ -116,7 +116,7 @@ func (h *credHelper) get(ctx context.Context, endpoint string) (credHelperPerRPC
 		if resp.Expires != "" {
 			expires, err = time.Parse(time.RFC3339, resp.Expires)
 			if err != nil {
-				return cce.cred, fmt.Errorf("failed to parse credhelper expires %q: %w", resp.Expires, err)
+				return cce.cred, fmt.Errorf("failed to parse credhelper expires %q: %v", resp.Expires, err)
 			}
 		}
 		cce.cred.headers = make(map[string]string)
