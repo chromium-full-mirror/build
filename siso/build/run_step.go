@@ -142,7 +142,7 @@ func (b *Builder) runStep(ctx context.Context, step *Step) (err error) {
 	exited, err := b.handleStep(ctx, step)
 	if err != nil {
 		if !experiments.Enabled("keep-going-handle-error", "handle %s failed: %v", step, err) {
-			res := cmdOutput(ctx, cmdOutputResultFAILED, step.cmd, step.def.Binding("command"), step.def.RuleName(), err)
+			res := cmdOutput(ctx, cmdOutputResultFAILED, step.cmd, b.reapiclient.Instance(), step.def.Binding("command"), step.def.RuleName(), err)
 			step.cmd.SetOutputResult(b.logOutput(res, step.cmd.Console))
 			clog.Warningf(ctx, "Failed to exec(handle): %v", err)
 			return fmt.Errorf("failed to run handler for %s: %w", step, err)
@@ -160,7 +160,7 @@ func (b *Builder) runStep(ctx context.Context, step *Step) (err error) {
 	}
 	err = b.setupRSP(ctx, step)
 	if err != nil {
-		res := cmdOutput(ctx, cmdOutputResultFAILED, step.cmd, step.def.Binding("command"), step.def.RuleName(), err)
+		res := cmdOutput(ctx, cmdOutputResultFAILED, step.cmd, b.reapiclient.Instance(), step.def.Binding("command"), step.def.RuleName(), err)
 		step.cmd.SetOutputResult(b.logOutput(res, step.cmd.Console))
 		return fmt.Errorf("failed to setup rsp: %s: %w", step, err)
 	}
@@ -196,10 +196,10 @@ func (b *Builder) runStep(ctx context.Context, step *Step) (err error) {
 			// RBE returns permission denied when
 			// platform container image are not available
 			// on RBE worker.
-			res := cmdOutput(ctx, cmdOutputResultFAILED, step.cmd, step.def.Binding("command"), step.def.RuleName(), err)
+			res := cmdOutput(ctx, cmdOutputResultFAILED, step.cmd, b.reapiclient.Instance(), step.def.Binding("command"), step.def.RuleName(), err)
 			step.cmd.SetOutputResult(b.logOutput(res, step.cmd.Console))
 		default:
-			msgs := cmdOutput(ctx, cmdOutputResultFAILED, step.cmd, step.def.Binding("command"), step.def.RuleName(), err)
+			msgs := cmdOutput(ctx, cmdOutputResultFAILED, step.cmd, b.reapiclient.Instance(), step.def.Binding("command"), step.def.RuleName(), err)
 			step.cmd.SetOutputResult(b.logOutput(msgs, step.cmd.Console))
 		}
 		return StepError{
@@ -207,8 +207,7 @@ func (b *Builder) runStep(ctx context.Context, step *Step) (err error) {
 			Cause:  err,
 		}
 	}
-
-	res := cmdOutput(ctx, cmdOutputResultSUCCESS, step.cmd, step.def.Binding("command"), step.def.RuleName(), nil)
+	res := cmdOutput(ctx, cmdOutputResultSUCCESS, step.cmd, b.reapiclient.Instance(), step.def.Binding("command"), step.def.RuleName(), nil)
 	if res != nil {
 		step.cmd.SetOutputResult(b.logOutput(res, step.cmd.Console))
 		if experiments.Enabled("fail-on-stdouterr", "step %s emit stdout/stderr", step) {
@@ -315,7 +314,8 @@ func (b *Builder) outputFailureSummary(ctx context.Context, step *Step, err erro
 	if len(step.cmd.AuxiliaryOutputDigests) > 0 {
 		fmt.Fprintf(&buf, "auxiliary outputs:\n")
 		for _, name := range slices.Sorted(maps.Keys(step.cmd.AuxiliaryOutputDigests)) {
-			fmt.Fprintf(&buf, "%s=%s\n", name, step.cmd.AuxiliaryOutputDigests[name])
+			digest := step.cmd.AuxiliaryOutputDigests[name]
+			fmt.Fprintf(&buf, "%s\n", formatAuxiliaryOutput(name, digest, b.reapiclient.Instance()))
 		}
 	}
 	fmt.Fprintf(&buf, "%v\n", err)

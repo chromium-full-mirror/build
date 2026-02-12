@@ -588,6 +588,14 @@ func (c *Client) APIVersion() *semverpb.SemVer {
 	return c.capabilities.GetHighApiVersion()
 }
 
+// Instance returns the instance name.
+func (c *Client) Instance() string {
+	if c == nil {
+		return ""
+	}
+	return c.opt.Instance
+}
+
 // UseActionForPlatformProperties returns true
 // when set Platform properties in Action message, as well as Command.
 //

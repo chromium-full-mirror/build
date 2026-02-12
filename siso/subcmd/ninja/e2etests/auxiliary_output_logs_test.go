@@ -16,6 +16,7 @@ import (
 	"go.chromium.org/build/siso/build"
 	"go.chromium.org/build/siso/build/ninjabuild"
 	"go.chromium.org/build/siso/hashfs"
+	"go.chromium.org/build/siso/reapi"
 	"go.chromium.org/build/siso/reapi/digest"
 	"go.chromium.org/build/siso/reapi/reapitest"
 )
@@ -54,7 +55,9 @@ func TestBuild_Auxiliary_Remote(t *testing.T) {
 						t.Error(err)
 					}
 				}()
-				ds.Client = reapitest.New(ctx, t, refake)
+				ds.Client = reapitest.NewWithOption(ctx, t, refake, reapi.Option{
+					Instance: "testinstance",
+				})
 				opt, graph, cleanup := setupBuild(ctx, t, dir, hashfs.Option{
 					StateFile:  ".siso_fs_state",
 					DataSource: ds,
@@ -63,6 +66,7 @@ func TestBuild_Auxiliary_Remote(t *testing.T) {
 				opt.REExecEnable = true
 				opt.StrictRemote = true
 				opt.REAPIClient = ds.Client
+				opt.ProjectID = "testproject"
 				opt.OutputLogWriter = outputLog
 				opt.FailureSummaryWriter = failureSummaryLog
 				stats, err := ninjabuild.Run(ctx, graph, opt, nil, ninjabuild.RunNinjaOpts{})
@@ -128,9 +132,9 @@ func TestBuild_Auxiliary_Remote(t *testing.T) {
 			}
 
 			wantAux := fmt.Sprintf(`auxiliary outputs:
-out/siso/aux.out=%s
-out/siso/aux_dir/=%s
-`, auxDigest.Digest(), auxTreeDigest.Digest())
+out/siso/aux.out	%s	siso fetch -reapi_instance testinstance %s out/siso/aux.out
+out/siso/aux_dir/	%s	siso fetch -reapi_instance testinstance -type=tree-extract %s out/siso/aux_dir/
+`, auxDigest.Digest(), auxDigest.Digest(), auxTreeDigest.Digest(), auxTreeDigest.Digest())
 			if !strings.Contains(outputLog.String(), wantAux) {
 				t.Errorf("output log missing expected auxiliary outputs:\n%s\n\ngot:\n%s", wantAux, outputLog.String())
 			}

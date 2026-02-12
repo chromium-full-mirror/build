@@ -78,7 +78,7 @@ func (b *Builder) execReproxy(ctx context.Context, step *Step) error {
 			if e := fallbackResult.GetExitCode(); e != 0 {
 				exitCode = int(e)
 			}
-			res := cmdOutput(ctx, cmdOutputResultFALLBACK, step.cmd, step.def.Binding("command"), step.def.RuleName(), fmt.Errorf("fallback in reproxy exit=%d", exitCode))
+			res := cmdOutput(ctx, cmdOutputResultFALLBACK, step.cmd, b.reapiclient.Instance(), step.def.Binding("command"), step.def.RuleName(), fmt.Errorf("fallback in reproxy exit=%d", exitCode))
 			if stdout := fallbackResult.GetStdoutRaw(); len(stdout) > 0 {
 				res.stdout = stdout
 			}

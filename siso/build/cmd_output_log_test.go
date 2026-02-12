@@ -119,7 +119,7 @@ build step: cxx "./foo.o"
 siso_rule: clang/cxx
 ../../third_party/llvm-build/Release+Asserts/bin/clang++ -c ../../base/base.cc
 auxiliary outputs:
-foo.d=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855/0
+foo.d	e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855/0	siso fetch -reapi_instance instance e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855/0 foo.d
 `,
 		},
 	} {
@@ -136,7 +136,7 @@ foo.d=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855/0
 				w := cmd.StderrWriter()
 				w.Write(tc.stderr)
 			}
-			res := cmdOutput(ctx, tc.result, cmd, command, tc.rule, tc.err)
+			res := cmdOutput(ctx, tc.result, cmd, "instance", command, tc.rule, tc.err)
 			if got := res.String(); got != tc.want {
 				t.Errorf("cmdOutput got:\n%s\nwant:\n%s", got, tc.want)
 			}
@@ -248,7 +248,7 @@ build step: cxx "./foo.o"
 			ctx := t.Context()
 			cmd := &execute.Cmd{}
 			*cmd = *execcmd
-			res := cmdOutput(ctx, cmdOutputResultFAILED, cmd, tc.command, "", errors.New("exit=1"))
+			res := cmdOutput(ctx, cmdOutputResultFAILED, cmd, "instance", tc.command, "", errors.New("exit=1"))
 			if res == nil {
 				t.Fatalf("res=nil; want non-nil")
 			}

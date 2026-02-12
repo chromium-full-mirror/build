@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"go.chromium.org/build/siso/execute"
+	"go.chromium.org/build/siso/reapi/digest"
 	"go.chromium.org/build/siso/toolsupport/msvcutil"
 	"go.chromium.org/build/siso/ui"
 )
@@ -184,7 +185,7 @@ func (c *cmdOutputLog) Msg(width int, console, verboseFailure bool) string {
 
 // cmdOutput returns cmd output log (result, id, desc, err, action, output, args, stdout, stderr).
 // it will return nil if ctx is canceled or success with no stdout/stderr.
-func cmdOutput(ctx context.Context, result cmdOutputResult, cmd *execute.Cmd, cmdline, rule string, err error) *cmdOutputLog {
+func cmdOutput(ctx context.Context, result cmdOutputResult, cmd *execute.Cmd, instance, cmdline, rule string, err error) *cmdOutputLog {
 	if ctx.Err() != nil {
 		return nil
 	}
@@ -218,10 +219,25 @@ func cmdOutput(ctx context.Context, result cmdOutputResult, cmd *execute.Cmd, cm
 	res.output = output
 	if len(cmd.AuxiliaryOutputDigests) > 0 {
 		for _, name := range slices.Sorted(maps.Keys(cmd.AuxiliaryOutputDigests)) {
-			res.auxiliaryOutputs = append(res.auxiliaryOutputs, fmt.Sprintf("%s=%s", name, cmd.AuxiliaryOutputDigests[name]))
+			digest := cmd.AuxiliaryOutputDigests[name]
+			msg := formatAuxiliaryOutput(name, digest, instance)
+			res.auxiliaryOutputs = append(res.auxiliaryOutputs, msg)
 		}
 	}
 	return res
+}
+
+func formatAuxiliaryOutput(name string, d digest.Digest, instance string) string {
+	var cmdArgs []string
+	cmdArgs = append(cmdArgs, "siso", "fetch")
+	if instance != "" {
+		cmdArgs = append(cmdArgs, "-reapi_instance", instance)
+	}
+	if strings.HasSuffix(name, "/") {
+		cmdArgs = append(cmdArgs, "-type=tree-extract")
+	}
+	cmdArgs = append(cmdArgs, d.String(), name)
+	return fmt.Sprintf("%s\t%s\t%s", name, d, strings.Join(cmdArgs, " "))
 }
 
 func (b *Builder) logOutput(cmdOutput *cmdOutputLog, console bool) string {
