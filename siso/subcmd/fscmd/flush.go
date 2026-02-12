@@ -29,8 +29,8 @@ import (
 
 const flushUsage = `flush recorded files to the disk.
 
- $ siso fs flush -project <projectID> -C <dir> [<files>...]
- $ siso fs flush -project <projectID> -C <dir> -file_list <file>
+ $ siso fs flush [-project <projectID>] [-reapi_instance <instance>] -C <dir> [<files>...]
+ $ siso fs flush [-project <projectID>] [-reapi_instance <instance>] -C <dir> -file_list <file>
 
 It will fetch the specified files recorded in .siso_fs_state.
 `

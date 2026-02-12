@@ -30,23 +30,11 @@ import (
 const usage = `fetch contents from CAS.
 Print contents to stdout, or extract in <dir> for -type dir-extract.
 
- $ siso fetch -project <project> -reapi_instnace <instnace> \
+ $ siso fetch [-project <project>] [-reapi_instance <instance>] \
           [-type <type>] \
           <digest> [<dir>]
-
  $ siso fetch [-type <type>] \
   bytesteam://<endpoint>/projects/<project>/instances/<instance>/blobs/<digest>
-
-<type> is
-  raw: raw content
-  command: command message in text proto format
-  action: action message in text proto format
-  dir: directory message in text proto format
-  tree: tree message in text proto format
-  dir-extract: directory message extract to <dir> (if <dir> is specified)
-               or list (if <dir> is not specified)
-  tree-extract: tree message extract to <dir> (if <dir> is specified)
-               or list (if <dir> is not specified)
 `
 
 // Cmd returns the Command for the `fetch` subcommand provided by this package.
@@ -81,7 +69,17 @@ func (c *Command) SetFlags(flagSet *flag.FlagSet) {
 	flagSet.StringVar(&c.projectID, "project", os.Getenv("SISO_PROJECT"), "cloud project ID. can be set by $SISO_PROJECT")
 	c.reopt = new(reapi.Option)
 	c.reopt.RegisterFlags(flagSet, reapi.Envs("REAPI"))
-	flagSet.StringVar(&c.dataType, "type", "raw", `data type. "raw", "command", "action", "dir", "tree", "dir-extract", "tree-extract"`)
+	flagSet.StringVar(&c.dataType, "type", "raw", `data type.
+  raw: raw content
+  command: command message in text proto format
+  action: action message in text proto format
+  dir: directory message in text proto format
+  tree: tree message in text proto format
+  dir-extract: directory message extract to <dir> (if <dir> is specified)
+               or list (if <dir> is not specified)
+  tree-extract: tree message extract to <dir> (if <dir> is specified)
+               or list (if <dir> is not specified)
+`)
 }
 
 func (c *Command) Execute(ctx context.Context, flagSet *flag.FlagSet, _ ...any) subcommands.ExitStatus {

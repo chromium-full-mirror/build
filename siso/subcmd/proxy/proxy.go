@@ -21,7 +21,7 @@ import (
 
 const usage = `proxy RE API service.
 
- $ siso proxy -reapi_address <addr> -reapi_instance <instance> \
+ $ siso proxy [-project <project>] [-reapi_address <addr>] [-reapi_instance <instance>] \
     -addr unix:///<path>
 
  $ siso ninja -reapi_address unix:///<path> --reapi_insecure=true ...

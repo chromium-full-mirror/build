@@ -39,7 +39,7 @@ import (
 
 const usage = `isolate uploads and computes tree digest for each targets.
 
- $ siso isolate -project <project> -reapi_instance <instance> \
+ $ siso isolate [-project <project>] [-reapi_instance <instance>] \
     -C <dir> \
     -cas_instance projects/<cas project>/instances/<instance> \
     -dump_json <output json path> \

@@ -42,7 +42,7 @@ const usage = `recall action by digest, or remote exec call to run.
 
 To recall action identified by <digest> in <dir>.
 
- $ siso recall -project <project> -reapi_instance <instance> \
+ $ siso recall [-project <project>] [-reapi_instance <instance>] \
 	    <dir> <digest>
 
 In <dir>, you'll get "action.txt", "command.txt" and "root/".
@@ -54,11 +54,11 @@ You can omit <dir> if it is current directory ".".
 
  - To issue remote exec call to run the command.
 
- $ siso recall -project <project> -reapi_instance <instance> <dir>
+ $ siso recall [-project <project>] [-reapi_instance <instance>] <dir>
 
  - To re-run the command on a remote worker without fetching cache.
 
- $ siso recall -project <project> -reapi_instance <instance> -re_cache_enable_read=false <dir>
+ $ siso recall [-project <project>] [-reapi_instance <instance>] -re_cache_enable_read=false <dir>
 
  - To use local docker to run the command.
 

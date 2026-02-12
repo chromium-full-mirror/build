@@ -122,7 +122,11 @@ func (o *Option) RegisterFlags(fs *flag.FlagSet, envs map[string]string) {
 	if !ok {
 		instance = "default_instance"
 	}
-	fs.StringVar(&o.Instance, o.Prefix+"_instance", instance, "reapi instance name"+purpose)
+	usage := "reapi instance name" + purpose
+	if o.Prefix == "reapi" {
+		usage += ". (for Google RBE: if instance is fully qualified (starts with projects/), project ID is inferred from it. Otherwise, project ID from -project (or $SISO_PROJECT) is used to construct the instance name. If both are provided, -project is used for other cloud services)"
+	}
+	fs.StringVar(&o.Instance, o.Prefix+"_instance", instance, usage)
 
 	fs.BoolVar(&o.Insecure, o.Prefix+"_insecure", os.Getenv("RBE_service_no_security") == "true", "reapi insecure mode. default can be set by $RBE_service_no_security")
 
