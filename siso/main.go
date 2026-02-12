@@ -100,12 +100,7 @@ Use "siso flags" to display all flags.
 	flag.IntVar(&mutexprofFrac, "mutexprof_frac", 0, "mutex profile fraction")
 	flag.StringVar(&traceFile, "trace", "", `go trace output for "go tool trace"`)
 
-	var credHelper string
-	if h, ok := os.LookupEnv("SISO_CREDENTIAL_HELPER"); ok {
-		credHelper = h
-	} else {
-		credHelper = cred.DefaultCredentialHelper()
-	}
+	credHelper := cred.DefaultCredentialHelper()
 	flag.StringVar(&credHelper, "credential_helper", credHelper, `path to a credential helper.
     see https://github.com/EngFlow/credential-helper-spec/blob/main/spec.md
     "luci-auth" uses luci-auth.

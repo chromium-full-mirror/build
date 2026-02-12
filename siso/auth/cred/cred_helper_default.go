@@ -13,6 +13,9 @@ import (
 
 // DefaultCredentialHelper returns default credential helper's path.
 func DefaultCredentialHelper() string {
+	if h, ok := os.LookupEnv("SISO_CREDENTIAL_HELPER"); ok {
+		return h
+	}
 	if os.Getenv("RBE_tls_client_auth_cert") != "" && os.Getenv("RBE_tls_client_auth_key") != "" {
 		return "mTLS"
 	}
