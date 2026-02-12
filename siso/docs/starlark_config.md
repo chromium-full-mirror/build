@@ -206,6 +206,12 @@ to register handlers and step configs.
                * `outputs`: additional outputs. note: ignored in `cleandead`.
                * `platform`: additional platform properties
                * `platform_ref`: overrides reference to platform properties
+           * `auxiliary_log_output_files`: additional output files, that siso explicitly logs digest of.
+             e.g. crash reports when RBE is used.
+             siso logs the digest of the file for debugging (console or `siso_output` file), but doesn't download the file.
+           * `auxiliary_log_output_dirs`: additional output dirs, that siso explicitly logs digest of.
+             e.g. crash reports when RBE is used.
+             siso logs the digest of the directory for debugging (console or `siso_output` file), but doesn't download files in the directory.
           * `restat`: true if step cmd reads output file and not write it
             (when no update needed), and considers output is clean if
              mtime is not changed (same as ninja's restat).
