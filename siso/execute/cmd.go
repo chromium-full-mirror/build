@@ -1234,7 +1234,7 @@ type ExitError struct {
 }
 
 func (e ExitError) Error() string {
-	return fmt.Sprintf("exit=%d", e.ExitCode)
+	return fmt.Sprintf("exit=%d%s", e.ExitCode, exitCodeExplain(e.ExitCode))
 }
 
 // SetOutputResult sets output result.
