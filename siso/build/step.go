@@ -529,8 +529,8 @@ func newCmd(ctx context.Context, b *Builder, stepDef StepDef, stepManifest *step
 		// non relocatable request. disable canonicalize dir.
 		cmd.CanonicalizeDir = false
 	}
-	if stepDef.Binding("phony_outputs") != "" {
-		clog.Infof(ctx, "phony_outputs: no outputs by cmd")
+	if stepDef.Binding("phony_output") != "" {
+		clog.Infof(ctx, "phony_output: no outputs by cmd")
 		cmd.Outputs = nil
 	}
 	if envfile := stepDef.Binding("envfile"); envfile != "" {

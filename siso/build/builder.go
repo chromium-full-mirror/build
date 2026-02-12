@@ -1071,8 +1071,8 @@ func (b *Builder) outputs(ctx context.Context, step *Step) error {
 	defer span.Close(nil)
 
 	outputs := step.cmd.Outputs
-	if step.def.Binding("phony_outputs") != "" {
-		clog.Infof(ctx, "phony_outputs. no check output files %q", outputs)
+	if step.def.Binding("phony_output") != "" {
+		clog.Infof(ctx, "phony_output. no check output files %q", outputs)
 		return nil
 	}
 
