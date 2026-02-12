@@ -244,7 +244,6 @@ Use "siso flags" to display all flags.
 
 	authOpts := cred.AuthOpts(credHelper)
 	subcommands.Register(ninja.Cmd(authOpts, versionID), "")
-	subcommands.Register(collector.Cmd(authOpts, versionID), "")
 
 	subcommands.Register(recall.Cmd(authOpts), "reapi")
 	subcommands.Register(fetch.Cmd(authOpts), "reapi")
@@ -266,6 +265,7 @@ Use "siso flags" to display all flags.
 	subcommands.Register(sandbox.Cmd(), "debugging")
 	subcommands.Register(scandeps.Cmd(), "debugging")
 
+	subcommands.Register(collector.Cmd(authOpts, versionID), "internal-helper")
 	subcommands.Register(osfs.HelperCmd(), "internal-helper")
 
 	subcommands.Register(subcommands.FlagsCommand(), "command-help")
