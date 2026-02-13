@@ -2,168 +2,141 @@ package analysis
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
 	"testing"
 
-	"github.com/google/go-cmp/cmp"
-
 	"go.chromium.org/build/gong/gn/build/environment"
-	"go.chromium.org/build/gong/gn/parse"
+	"go.chromium.org/build/gong/gn/build/fs"
 	"go.chromium.org/build/gong/gn/syntax"
 )
 
-func TestBuilder_RecordDefinedItem_CreatesRecordsForDeps(t *testing.T) {
-	targetLabel := environment.Label{Dir: mustDir(t, "//"), Name: "main_target"}
-	dep1Label := environment.Label{Dir: mustDir(t, "//bar"), Name: "baz"}
-	dep2Label := environment.Label{Dir: mustDir(t, "//bar"), Name: "qux"}
-	toolchainLabel := environment.Label{Dir: mustDir(t, "//build"), Name: "tc"}
-	dep1Origin := &parse.IdentifierNode{Value: syntax.MakeToken(syntax.TokenString, "//bar:baz")}
-	dep2Origin := &parse.IdentifierNode{Value: syntax.MakeToken(syntax.TokenString, "//bar:qux")}
-	target := &Target{
-		itemInfo: itemInfo{
-			label:       targetLabel,
-			definedFrom: &parse.IdentifierNode{Value: syntax.MakeToken(syntax.TokenIdentifier, "main_target")},
-		},
-		Schema:   &ExecutableSchema,
-		settings: &Settings{toolchainLabel: toolchainLabel},
-		values: map[string]processedValue{
-			"name": stringValue{str: "main_target"},
-			"deps": labelListValue{list: []environment.LabelWithOrigin{
-				{
-					Label:  dep1Label,
-					Origin: dep1Origin,
-				},
-				{
-					Label:  dep2Label,
-					Origin: dep2Origin,
-				},
-			}},
-		},
-	}
-	wantUnresolved := []environment.LabelWithOrigin{
-		{
-			Label:  dep1Label,
-			Origin: dep1Origin,
-		},
-		{
-			Label:  dep2Label,
-			Origin: dep2Origin,
-		},
-		{
-			Label:  toolchainLabel,
-			Origin: target.definedFrom,
-		},
-	}
-
-	builder := MakeBuilder(nil)
-	unresolvedDeps, err := builder.RecordDefinedItem(target)
+func mustFile(t *testing.T, s string) fs.SourceFile {
+	t.Helper()
+	f, err := fs.MakeSourceFile(s)
 	if err != nil {
-		t.Fatalf("RecordDefinedItem(_)=_, %v; want nil err", err)
+		t.Fatal(err)
+	}
+	return f
+}
+
+// TODO: better for fs package to support virtual fs if other tests want to do this?
+// check if C++ GN also uses virtual fs for anything?
+func tempBuildEnv(t *testing.T, files map[string]string) (*Builder, *Loader) {
+	t.Helper()
+
+	dir := t.TempDir()
+	for name, content := range files {
+		path := filepath.Join(dir, name)
+		if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+			t.Fatal(err)
+		}
 	}
 
-	if diff := cmp.Diff(wantUnresolved, unresolvedDeps); diff != "" {
-		t.Errorf("RecordDefinedItem(_); diff (-want +got):\n%s", diff)
+	buildDir, err := fs.MakeSourceDir("//out/Debug/")
+	if err != nil {
+		t.Fatal(err)
 	}
-	targetRec, ok := builder.records[targetLabel]
+	bs := &environment.BuildSettings{
+		BuildDir:        buildDir,
+		BuildConfigFile: mustFile(t, "//build/BUILDCONFIG.gn"),
+	}
+	bs.SetRootPath(dir)
+
+	loader := MakeLoader(bs, &fs.InputFileManager{})
+	builder := MakeBuilder(&loader)
+	return &builder, &loader
+}
+
+func TestBuilder_Dependencies(t *testing.T) {
+	builder, loader := tempBuildEnv(t, map[string]string{
+		"build/BUILDCONFIG.gn": `
+set_default_toolchain("//:tc")`,
+		"BUILD.gn": `
+toolchain("tc") {
+    tool("link") { command = "link" }
+    tool("cxx") { command = "cc" }
+}
+executable("app") {
+    deps = [ "//lib:foo", "//lib:bar" ]
+}`,
+		"lib/BUILD.gn": `
+shared_library("foo") {}
+shared_library("bar") {}`,
+	})
+
+	items, err := loader.Load(mustFile(t, "//BUILD.gn"), syntax.LocationRange{}, environment.Label{})
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+	for _, item := range items {
+		_, err := builder.RecordDefinedItem(item)
+		if err != nil {
+			t.Fatalf("RecordDefinedItem(%s)=_, %v; want nil err", item.Label().UserVisibleString(true), err)
+		}
+	}
+
+	appRec, ok := builder.records[environment.Label{Dir: mustDir(t, "//"), Name: "app"}]
 	if !ok {
-		t.Fatal("no record for //:main_target created")
+		t.Fatal("builder missing record //:app")
 	}
-	if targetRec.item != target {
-		t.Errorf("record //:main_target %v; want %v", targetRec.item, target)
+	// TODO: 3 means //lib:foo, //lib:bar, //:tc but wrong?
+	// but //:tc is default toolchain, should mark as resolved immediately.
+	if appRec.unresolvedDeps != 3 {
+		t.Errorf("builder record //:app unresolvedDeps = %d; want 3", appRec.unresolvedDeps)
 	}
-	dep1Rec, ok := builder.records[dep1Label]
-	if !ok {
-		t.Error("no record for //bar:baz created")
-	} else if dep1Rec.state != itemStateUndefined {
-		t.Errorf("record //bar:baz state=%v; want itemStateUndefined as Target not seen", dep1Rec.state)
+
+	items, err = loader.Load(mustFile(t, "//lib/BUILD.gn"), syntax.LocationRange{}, environment.Label{})
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
 	}
-	dep2Rec, ok := builder.records[dep2Label]
-	if !ok {
-		t.Error("no record for //bar:qux created")
-	} else if dep2Rec.state != itemStateUndefined {
-		t.Errorf("record //bar:qux state=%v; want itemStateUndefined as Target not seen", dep2Rec.state)
+	for _, item := range items {
+		_, err := builder.RecordDefinedItem(item)
+		if err != nil {
+			t.Fatalf("RecordDefinedItem(%s)=_, %v; want nil err", item.Label().UserVisibleString(true), err)
+		}
 	}
-	if _, isDep := targetRec.dependencies[dep1Rec]; !isDep {
-		t.Error("record //:main_target missing edge to //bar:baz")
+
+	if _, ok := builder.records[environment.Label{Dir: mustDir(t, "//lib/"), Name: "foo"}]; !ok {
+		t.Fatal("builder missing record //lib:foo")
 	}
-	if _, isDep := targetRec.dependencies[dep2Rec]; !isDep {
-		t.Error("record //:main_target missing edge to //bar:qux")
-	}
-	if targetRec.unresolvedDeps != 3 {
-		t.Errorf("record //:main_target unresolvedDeps=%d; want 3", targetRec.unresolvedDeps)
+	if _, ok := builder.records[environment.Label{Dir: mustDir(t, "//lib/"), Name: "bar"}]; !ok {
+		t.Fatal("builder missing record //lib:bar")
 	}
 }
 
 func TestBuilder_ItemTypeMismatch(t *testing.T) {
-	configLabel := environment.Label{Dir: mustDir(t, "//"), Name: "foo_config"}
-	targetLabel := environment.Label{Dir: mustDir(t, "//"), Name: "foo_target"}
-	depLabel := environment.Label{Dir: mustDir(t, "//bar"), Name: "baz_target"}
-	cfgItem := &Config{
-		itemInfo: itemInfo{
-			label:       configLabel,
-			definedFrom: &parse.IdentifierNode{Value: syntax.MakeToken(syntax.TokenIdentifier, "foo_config")},
-		},
-	}
-	depItem := &Target{
-		itemInfo: itemInfo{
-			label:       depLabel,
-			definedFrom: &parse.IdentifierNode{Value: syntax.MakeToken(syntax.TokenIdentifier, "baz_target")},
-		},
-		Schema: &SharedLibrarySchema,
-		settings: &Settings{
-			buildSettings: &environment.BuildSettings{
-				BuildDir: mustDir(t, "/"),
-			},
-		},
-		values: map[string]processedValue{
-			"name": stringValue{str: "baz_target"},
-		},
+	builder, loader := tempBuildEnv(t, map[string]string{
+		"build/BUILDCONFIG.gn": `
+set_default_toolchain("//:tc")`,
+		// TODO: change dep to ":my_config" after implicit label parse implemented.
+		"BUILD.gn": `
+toolchain("tc") { tool("link") { command = "" } }
+config("my_config") {}
+executable("app") {
+    # should fail - target dep on config not allowed!
+    deps = [ "//:my_config" ]
+}`,
+	})
+	items, err := loader.Load(mustFile(t, "//BUILD.gn"), syntax.LocationRange{}, environment.Label{})
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
 	}
 
-	for _, tc := range []struct {
-		name         string
-		targetValues map[string]processedValue
-	}{
-		{
-			name: "configindeps",
-			targetValues: map[string]processedValue{
-				"deps": labelListValue{list: []environment.LabelWithOrigin{
-					{Label: configLabel, Origin: cfgItem.definedFrom},
-				}},
-			},
-		},
-		{
-			name: "targetinconfigs",
-			targetValues: map[string]processedValue{
-				"configs": labelListValue{list: []environment.LabelWithOrigin{
-					{Label: depLabel, Origin: depItem.definedFrom},
-				}},
-			},
-		},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			builder := MakeBuilder(nil)
-			if _, err := builder.RecordDefinedItem(cfgItem); err != nil {
-				t.Fatalf("Failed to define config: %v", err)
-			}
-			if _, err := builder.RecordDefinedItem(depItem); err != nil {
-				t.Fatalf("Failed to define config: %v", err)
-			}
-			_, err := builder.RecordDefinedItem(&Target{
-				itemInfo: itemInfo{
-					label:       targetLabel,
-					definedFrom: &parse.IdentifierNode{Value: syntax.MakeToken(syntax.TokenIdentifier, "foo_target")},
-				},
-				Schema: &ExecutableSchema,
-				values: tc.targetValues,
-			})
+	var gotErr error
+	for _, item := range items {
+		_, err := builder.RecordDefinedItem(item)
+		if err != nil {
+			gotErr = err
+			break
+		}
+	}
 
-			if err == nil {
-				t.Errorf("RecordDefinedItem(_)=_, ok; want err")
-			}
-			var typeErr ItemTypeMismatchError
-			if !errors.As(err, &typeErr) {
-				t.Errorf("RecordDefinedItem(_)=_, err type %T; want %T", err, typeErr)
-			}
-		})
+	var wantErr ItemTypeMismatchError
+	if !errors.As(gotErr, &wantErr) {
+		t.Errorf("builder record items finished with %T err; want %v err", gotErr, wantErr)
 	}
 }

@@ -15,6 +15,7 @@ func FunctionMap(buildSettings *environment.BuildSettings) map[string]resolve.Fu
 	return map[string]resolve.FunctionInfo{
 		"action":                &ActionSchema,
 		"assert":                resolve.AssertFunction{},
+		"config":                &configFunction{},
 		"copy":                  &CopySchema,
 		"executable":            &ExecutableSchema,
 		"rebase_path":           &rebasePathFunction{buildSettings: buildSettings},

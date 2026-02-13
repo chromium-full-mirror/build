@@ -97,6 +97,7 @@ func (b *Builder) RecordDefinedItem(item Item) ([]environment.LabelWithOrigin, e
 		// Don't need to do anything for first toolchain yet, Loader has already seen it.
 		// Also don't support parsing pool(), deps, etc yet so nothing to do right now.
 		b.seenDefaultToolchain = true
+		// TODO: Mark this toolchain record resolved since there's nothing else to do.
 		return nil, nil
 	}
 	return nil, fmt.Errorf("don't know how to handle %T item yet", item)
