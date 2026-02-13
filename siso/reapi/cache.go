@@ -87,9 +87,10 @@ func (c CacheStore) Source(_ context.Context, d digest.Digest, fname string) dig
 }
 
 type digestSourceReader struct {
-	r io.ReadCloser
-	n int
-	c *Client
+	r      io.ReadCloser
+	n      int
+	c      *Client
+	cancel context.CancelFunc
 }
 
 func (r *digestSourceReader) Read(buf []byte) (int, error) {
@@ -101,6 +102,9 @@ func (r *digestSourceReader) Read(buf []byte) (int, error) {
 func (r *digestSourceReader) Close() error {
 	err := r.r.Close()
 	r.c.m.ReadDone(r.n, err)
+	if r.cancel != nil {
+		r.cancel()
+	}
 	return err
 }
 
@@ -111,17 +115,24 @@ type digestSource struct {
 }
 
 func (s digestSource) Open(ctx context.Context) (io.ReadCloser, error) {
+	// The context passed to bytestreamio.Open is used for the gRPC stream.
+	// We need to cancel this context to close the stream when we are done reading
+	// or if an error occurs during setup, otherwise we leak the stream until the
+	// parent context (step context) is canceled.
+	ctx, cancel := context.WithCancel(ctx)
 	r, err := bytestreamio.Open(ctx, bpb.NewByteStreamClient(s.c.casConn), s.c.resourceName(s.d))
 	if err != nil {
+		cancel()
 		s.c.m.ReadDone(0, err)
 		return nil, err
 	}
 	rd, err := s.c.newDecoder(r, s.d)
 	if err != nil {
+		cancel()
 		s.c.m.ReadDone(0, err)
 		return nil, err
 	}
-	return &digestSourceReader{r: rd, c: s.c}, err
+	return &digestSourceReader{r: rd, c: s.c, cancel: cancel}, err
 }
 
 func (s digestSource) String() string {
