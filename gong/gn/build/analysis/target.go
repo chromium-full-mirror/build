@@ -19,7 +19,7 @@ import (
 type Target struct {
 	itemInfo
 	settings   *Settings
-	schema     *Schema
+	Schema     *Schema
 	values     map[string]processedValue
 	Resolution Resolution
 }
@@ -32,17 +32,17 @@ func (Target) compatibleWith(item Item) bool {
 	return false
 }
 
-// resolverContext provides context to a [resolverFn], allowing only indirect access to underlying target data.
-type resolverContext struct {
+// ResolverContext provides context to a [ResolverFn], allowing only indirect access to underlying target data.
+type ResolverContext struct {
 	declareTool        func(tool string, inputs []fs.SourceFile, outputName string) (fs.SourceFile, error)
 	stringFor          func(varName string) (string, error)
 	sourceFilesFor     func(varName string) iter.Seq2[fs.SourceFile, error]
 	resolvedTargetsFor func(varName string) iter.Seq2[Resolution, error]
 }
 
-// A resolverFn tries to resolve a target.
+// A ResolverFn tries to resolve a target.
 // It returns an error instead if processing fails.
-type resolverFn = func(resolverContext) (fs.SourceFile, error)
+type ResolverFn = func(ResolverContext) (fs.SourceFile, error)
 
 // A Resolution of a target records the actions that a target performs, and any metadata that
 // may be relevant to targets waiting for this target to be resolved.

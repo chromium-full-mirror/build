@@ -106,8 +106,8 @@ func (b *Builder) targetDefined(target *Target, record *builderRecord) ([]enviro
 	var unresolvedDeps []environment.LabelWithOrigin
 
 	// Find all variables in this target that references labels.
-	for _, varName := range slices.Sorted(maps.Keys(target.schema.vars)) {
-		varType := target.schema.vars[varName]
+	for _, varName := range slices.Sorted(maps.Keys(target.Schema.Vars)) {
+		varType := target.Schema.Vars[varName]
 		// Determine the type of label expected.
 		// TODO: only supports lists of labels right now, need to support single labels too?
 		var expectedPlaceholder Item
@@ -166,16 +166,16 @@ func (b *Builder) targetDefined(target *Target, record *builderRecord) ([]enviro
 }
 
 func (b *Builder) resolveTarget(target *Target, record *builderRecord) error {
-	if target.schema == nil {
+	if target.Schema == nil {
 		return environment.IllegalStateError{
 			Reason: "Attempted to resolve target without schema",
 		}
 	}
-	if target.schema.resolver == nil {
+	if target.Schema.Resolver == nil {
 		fmt.Fprintf(os.Stderr, "ignoring target %v for now since no resolver...\n", target.label.UserVisibleString(false))
 		return nil
 	}
-	outFile, err := target.schema.resolver(resolverContext{
+	outFile, err := target.Schema.Resolver(ResolverContext{
 		declareTool:    target.declareTool,
 		stringFor:      target.stringFor,
 		sourceFilesFor: target.sourceFilesFor,

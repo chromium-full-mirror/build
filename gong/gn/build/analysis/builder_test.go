@@ -23,7 +23,7 @@ func TestBuilder_RecordDefinedItem_CreatesRecordsForDeps(t *testing.T) {
 			label:       targetLabel,
 			definedFrom: &parse.IdentifierNode{Value: syntax.MakeToken(syntax.TokenIdentifier, "main_target")},
 		},
-		schema:   &executableSchema,
+		Schema:   &ExecutableSchema,
 		settings: &Settings{toolchainLabel: toolchainLabel},
 		values: map[string]processedValue{
 			"name": stringValue{str: "main_target"},
@@ -108,7 +108,7 @@ func TestBuilder_ItemTypeMismatch(t *testing.T) {
 			label:       depLabel,
 			definedFrom: &parse.IdentifierNode{Value: syntax.MakeToken(syntax.TokenIdentifier, "baz_target")},
 		},
-		schema: &sharedLibrarySchema,
+		Schema: &SharedLibrarySchema,
 		settings: &Settings{
 			buildSettings: &environment.BuildSettings{
 				BuildDir: mustDir(t, "/"),
@@ -153,7 +153,7 @@ func TestBuilder_ItemTypeMismatch(t *testing.T) {
 					label:       targetLabel,
 					definedFrom: &parse.IdentifierNode{Value: syntax.MakeToken(syntax.TokenIdentifier, "foo_target")},
 				},
-				schema: &executableSchema,
+				Schema: &ExecutableSchema,
 				values: tc.targetValues,
 			})
 

@@ -77,7 +77,7 @@ func TestSchema_Run(t *testing.T) {
 				},
 				nil,
 				map[string]resolve.FunctionInfo{
-					"source_set": &sourceSetSchema,
+					"source_set": &SourceSetSchema,
 				},
 			))
 

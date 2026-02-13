@@ -24,19 +24,19 @@ import (
 // The schema of a target specifies a name (e.g. "shared_library"), the types of variables
 // it accepts (e.g. "sources", "deps"), and how it resolves a target definition.
 type Schema struct {
-	name     string
-	summary  string
-	vars     map[string]varType // TODO: Implement concept of required?
-	resolver resolverFn
+	Name     string
+	Summary  string
+	Vars     map[string]varType // TODO: Implement concept of required?
+	Resolver ResolverFn
 }
 
 // TODO: add helper functions re file extensions like below
 // https://source.chromium.org/gn/gn/+/main:src/gn/source_file.cc?q=SourceFile::SOURCE_H&ss=gn%2Fgn
 var (
-	actionSchema = Schema{
-		name:    "action",
-		summary: "Declare a target that runs a script a single time.",
-		vars: map[string]varType{
+	ActionSchema = Schema{
+		Name:    "action",
+		Summary: "Declare a target that runs a script a single time.",
+		Vars: map[string]varType{
 			// TODO: support more variables.
 			"script":  fileType,
 			"sources": fileListType,
@@ -45,17 +45,17 @@ var (
 			"depfile": stringType,
 		},
 	}
-	executableSchema = Schema{
-		name:    "executable",
-		summary: "Declare an executable target.",
-		vars: map[string]varType{
+	ExecutableSchema = Schema{
+		Name:    "executable",
+		Summary: "Declare an executable target.",
+		Vars: map[string]varType{
 			// TODO: support more variables.
 			"sources": fileListType,
 			"deps":    targetLabelListType,
 			"configs": configLabelListType,
 			"outputs": fileListType,
 		},
-		resolver: func(ctx resolverContext) (fs.SourceFile, error) {
+		Resolver: func(ctx ResolverContext) (fs.SourceFile, error) {
 			name, err := ctx.stringFor("name")
 			if err != nil {
 				return fs.SourceFile{}, err
@@ -98,17 +98,17 @@ var (
 			)
 		},
 	}
-	sharedLibrarySchema = Schema{
-		name:    "shared_library",
-		summary: "Declare a shared library target.",
-		vars: map[string]varType{
+	SharedLibrarySchema = Schema{
+		Name:    "shared_library",
+		Summary: "Declare a shared library target.",
+		Vars: map[string]varType{
 			// TODO: support more variables.
 			"sources": fileListType,
 			"deps":    targetLabelListType,
 			"configs": configLabelListType,
 			"defines": stringListType,
 		},
-		resolver: func(ctx resolverContext) (fs.SourceFile, error) {
+		Resolver: func(ctx ResolverContext) (fs.SourceFile, error) {
 			name, err := ctx.stringFor("name")
 			if err != nil {
 				return fs.SourceFile{}, err
@@ -138,26 +138,26 @@ var (
 			)
 		},
 	}
-	sourceSetSchema = Schema{
-		name:    "source_set",
-		summary: "Declare a source set target.",
-		vars: map[string]varType{
+	SourceSetSchema = Schema{
+		Name:    "source_set",
+		Summary: "Declare a source set target.",
+		Vars: map[string]varType{
 			// TODO: support more variables.
 			"sources": fileListType,
 			"deps":    targetLabelListType,
 		},
 	}
-	staticLibrarySchema = Schema{
-		name:    "static_library",
-		summary: "Declare a shared library target.",
-		vars: map[string]varType{
+	StaticLibrarySchema = Schema{
+		Name:    "static_library",
+		Summary: "Declare a shared library target.",
+		Vars: map[string]varType{
 			// TODO: support more variables.
 			"sources": fileListType,
 			"deps":    targetLabelListType,
 			"configs": configLabelListType,
 			"defines": stringListType,
 		},
-		resolver: func(ctx resolverContext) (fs.SourceFile, error) {
+		Resolver: func(ctx ResolverContext) (fs.SourceFile, error) {
 			name, err := ctx.stringFor("name")
 			if err != nil {
 				return fs.SourceFile{}, err
@@ -187,10 +187,10 @@ var (
 			)
 		},
 	}
-	copySchema = Schema{
-		name:    "copy",
-		summary: "Declare a target that copies files.",
-		vars: map[string]varType{
+	CopySchema = Schema{
+		Name:    "copy",
+		Summary: "Declare a target that copies files.",
+		Vars: map[string]varType{
 			// TODO: support more variables.
 			"sources": fileListType,
 			"outputs": fileListType,
@@ -199,7 +199,7 @@ var (
 )
 
 func (Schema) IsTarget() bool       { return true }
-func (s *Schema) HelpShort() string { return fmt.Sprintf("%s: %s", s.name, s.summary) }
+func (s *Schema) HelpShort() string { return fmt.Sprintf("%s: %s", s.Name, s.Summary) }
 func (s *Schema) Help() string      { return s.HelpShort() } // TODO: support full description
 func (s *Schema) Run(scope *resolve.Scope, call *parse.FunctionCallNode, args []resolve.Value, block *parse.BlockNode) (resolve.Value, error) {
 	ctx, err := contextFromScope(scope)
@@ -245,7 +245,7 @@ func (s *Schema) Run(scope *resolve.Scope, call *parse.FunctionCallNode, args []
 			label:       label,
 			definedFrom: call,
 		},
-		schema:   s,
+		Schema:   s,
 		settings: ctx.settings,
 		values: map[string]processedValue{
 			"name": stringValue{
@@ -256,7 +256,7 @@ func (s *Schema) Run(scope *resolve.Scope, call *parse.FunctionCallNode, args []
 	}
 
 	// Validate all of the target's values and perform initial processing.
-	for acceptedVar, expectedType := range s.vars {
+	for acceptedVar, expectedType := range s.Vars {
 		value := blockScope.Value(acceptedVar, true)
 		if value == nil {
 			continue
