@@ -37,6 +37,7 @@ type repoLoader struct {
 	ctx         context.Context
 	repos       map[string]fs.FS
 	predeclared starlark.StringDict
+	cache       map[string]starlark.StringDict
 }
 
 // Load loads a Starlark module.
@@ -72,6 +73,9 @@ func (r *repoLoader) Load(thread *starlark.Thread, module string) (starlark.Stri
 	} else {
 		fullname = fname
 	}
+	if m, ok := r.cache[fullname]; ok {
+		return m, nil
+	}
 	log.V(1).Infof("module=%q fname=%q fullname=%q", moduleName, fname, fullname)
 	var buf []byte
 	var err error
@@ -102,5 +106,13 @@ func (r *repoLoader) Load(thread *starlark.Thread, module string) (starlark.Stri
 		Load: r.Load,
 	}
 	t.SetLocal("modulename", fullname)
-	return starlark.ExecFileOptions(&syntax.FileOptions{Recursion: true}, t, fullname, buf, r.predeclared)
+	ret, err := starlark.ExecFileOptions(&syntax.FileOptions{Recursion: true}, t, fullname, buf, r.predeclared)
+	if err != nil {
+		return nil, err
+	}
+	if r.cache == nil {
+		r.cache = make(map[string]starlark.StringDict)
+	}
+	r.cache[fullname] = ret
+	return ret, nil
 }
