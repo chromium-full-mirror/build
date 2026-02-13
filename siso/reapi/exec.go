@@ -198,6 +198,13 @@ func erespErr(ctx context.Context, eresp *rpb.ExecuteResponse) error {
 	if codes.Code(st.GetCode()) != codes.OK && len(st.GetDetails()) > 0 {
 		clog.Warningf(ctx, "error details for %v: %v", codes.Code(st.GetCode()), st.GetDetails())
 	}
+	if rmsg := eresp.GetMessage(); rmsg != "" {
+		if codes.Code(st.GetCode()) != codes.OK && st.GetMessage() == "" {
+			st.Message = rmsg
+		} else {
+			clog.Warningf(ctx, "response message: %s", rmsg)
+		}
+	}
 	switch codes.Code(st.GetCode()) {
 	case codes.OK:
 	case codes.ResourceExhausted, codes.FailedPrecondition, codes.DeadlineExceeded:
