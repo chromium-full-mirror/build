@@ -2,9 +2,9 @@ package analysis
 
 import (
 	"errors"
-	"os"
-	"path/filepath"
+	iofs "io/fs"
 	"testing"
+	"testing/fstest"
 
 	"go.chromium.org/build/gong/gn/build/environment"
 	"go.chromium.org/build/gong/gn/build/fs"
@@ -20,52 +20,41 @@ func mustFile(t *testing.T, s string) fs.SourceFile {
 	return f
 }
 
-// TODO: better for fs package to support virtual fs if other tests want to do this?
-// check if C++ GN also uses virtual fs for anything?
-func tempBuildEnv(t *testing.T, files map[string]string) (*Builder, *Loader) {
+func tempBuildEnv(t *testing.T, testFS iofs.FS) (*Builder, *Loader) {
 	t.Helper()
-
-	dir := t.TempDir()
-	for name, content := range files {
-		path := filepath.Join(dir, name)
-		if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(path, []byte(content), 0644); err != nil {
-			t.Fatal(err)
-		}
-	}
-
 	buildDir, err := fs.MakeSourceDir("//out/Debug/")
 	if err != nil {
 		t.Fatal(err)
 	}
-	bs := &environment.BuildSettings{
+	loader := MakeLoader(&environment.BuildSettings{
 		BuildDir:        buildDir,
 		BuildConfigFile: mustFile(t, "//build/BUILDCONFIG.gn"),
-	}
-	bs.SetRootPath(dir)
-
-	loader := MakeLoader(bs, &fs.InputFileManager{})
+	}, &fs.InputFileManager{FS: testFS})
 	builder := MakeBuilder(&loader)
 	return &builder, &loader
 }
 
 func TestBuilder_Dependencies(t *testing.T) {
-	builder, loader := tempBuildEnv(t, map[string]string{
-		"build/BUILDCONFIG.gn": `
-set_default_toolchain("//:tc")`,
-		"BUILD.gn": `
+	builder, loader := tempBuildEnv(t, &fstest.MapFS{
+		"build/BUILDCONFIG.gn": {
+			Data: []byte(`
+set_default_toolchain("//:tc")`),
+		},
+		"BUILD.gn": {
+			Data: []byte(`
 toolchain("tc") {
     tool("link") { command = "link" }
     tool("cxx") { command = "cc" }
 }
 executable("app") {
     deps = [ "//lib:foo", "//lib:bar" ]
-}`,
-		"lib/BUILD.gn": `
+}`),
+		},
+		"lib/BUILD.gn": {
+			Data: []byte(`
 shared_library("foo") {}
-shared_library("bar") {}`,
+shared_library("bar") {}`),
+		},
 	})
 
 	items, err := loader.Load(mustFile(t, "//BUILD.gn"), syntax.LocationRange{}, environment.Label{})
@@ -109,17 +98,21 @@ shared_library("bar") {}`,
 }
 
 func TestBuilder_ItemTypeMismatch(t *testing.T) {
-	builder, loader := tempBuildEnv(t, map[string]string{
-		"build/BUILDCONFIG.gn": `
-set_default_toolchain("//:tc")`,
+	builder, loader := tempBuildEnv(t, &fstest.MapFS{
+		"build/BUILDCONFIG.gn": {
+			Data: []byte(`
+set_default_toolchain("//:tc")`),
+		},
 		// TODO: change dep to ":my_config" after implicit label parse implemented.
-		"BUILD.gn": `
+		"BUILD.gn": {
+			Data: []byte(`
 toolchain("tc") { tool("link") { command = "" } }
 config("my_config") {}
 executable("app") {
     # should fail - target dep on config not allowed!
     deps = [ "//:my_config" ]
-}`,
+}`),
+		},
 	})
 	items, err := loader.Load(mustFile(t, "//BUILD.gn"), syntax.LocationRange{}, environment.Label{})
 	if err != nil {

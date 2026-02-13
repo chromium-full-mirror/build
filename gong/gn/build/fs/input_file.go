@@ -7,6 +7,7 @@ package fs
 
 import (
 	"fmt"
+	"io/fs"
 	"os"
 
 	"go.chromium.org/build/gong/gn/syntax"
@@ -29,7 +30,7 @@ func NewInputFile(name, path string) (*InputFile, error) {
 		return nil, err
 	}
 	inputFile := &InputFile{name: source}
-	err = inputFile.load(path)
+	err = inputFile.load(nil, path)
 	if err != nil {
 		return nil, err
 	}
@@ -37,12 +38,20 @@ func NewInputFile(name, path string) (*InputFile, error) {
 }
 
 // Load loads the given file synchronously.
-func (f *InputFile) load(systemPath string) error {
-	b, err := os.ReadFile(systemPath)
+// If fs is nil, uses [os.Readfile].
+func (f *InputFile) load(filesystem fs.FS, fsPath string) error {
+	// Why not always require fs.FS and use os.DirFS("/") as default in InputFileManager?
+	// On Windows if absolute dir on different drive letter then can't assume os.DirFS
+	// See https://github.com/golang/go/issues/44279
+	var err error
+	if filesystem != nil {
+		f.contents, err = fs.ReadFile(filesystem, fsPath)
+	} else {
+		f.contents, err = os.ReadFile(fsPath)
+	}
 	if err != nil {
 		return fmt.Errorf("failed to load path: %w", err)
 	}
-	f.contents = b
 	return nil
 }
 

@@ -5,6 +5,7 @@
 package fs
 
 import (
+	"io/fs"
 	"sync"
 
 	"go.chromium.org/build/gong/gn/parse"
@@ -27,6 +28,12 @@ import (
 // one or more `import()` i.e. sync loads occur, at best those thread(s) must spin until the queue
 // clears, and at worst may deadlock.)
 type InputFileManager struct {
+	// FS used for reading files, defaults to OS filesystem.
+	//
+	// TODO: maybe can use FS root at builddir? but this will break absolute file references.
+	// e.g. "/C:/Program Files/Windows Kits/Include"
+	// may need to redesign InputFileResolver etc.
+	FS fs.FS
 	// use sync.Map as it's expected reads significantly dominate writes
 	// e.g. multiple targets with dep to same build file
 	// e.g. multiple .gn importing same .gni file
@@ -71,7 +78,7 @@ func (m *InputFileManager) LoadFile(origin syntax.LocationRange, inputFileResolv
 	data = v.(*inputFileData)
 
 	data.once.Do(func() {
-		root, tokens, err := doLoadFile(origin, inputFileResolver, fileName, &data.file)
+		root, tokens, err := doLoadFile(origin, m.FS, inputFileResolver, fileName, &data.file)
 		if err != nil {
 			data.parseError = err
 			return
@@ -87,10 +94,10 @@ func (m *InputFileManager) LoadFile(origin syntax.LocationRange, inputFileResolv
 }
 
 // doLoadFile performs the actual load.
-func doLoadFile(origin syntax.LocationRange, inputFileResolver InputFileResolver, name SourceFile, file *InputFile) (parse.Node, []syntax.Token, error) {
+func doLoadFile(origin syntax.LocationRange, fs fs.FS, inputFileResolver InputFileResolver, name SourceFile, file *InputFile) (parse.Node, []syntax.Token, error) {
 	// Read.
 	primaryPath := inputFileResolver.FullPath(name)
-	if err := file.load(primaryPath); err != nil {
+	if err := file.load(fs, primaryPath); err != nil {
 		wrappedErr := LoadError{
 			origin: origin,
 			path:   primaryPath,
@@ -98,7 +105,7 @@ func doLoadFile(origin syntax.LocationRange, inputFileResolver InputFileResolver
 		}
 		if inputFileResolver.HasSecondarySourcePath() {
 			secondaryPath := inputFileResolver.FullPathSecondary(name)
-			if err = file.load(secondaryPath); err != nil {
+			if err = file.load(fs, secondaryPath); err != nil {
 				wrappedErr.secondaryPath = secondaryPath
 				wrappedErr.secondaryErr = err
 			}
