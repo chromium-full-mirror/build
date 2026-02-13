@@ -20,9 +20,9 @@ import (
 func execToolchain(t *testing.T, input string) (*Toolchain, error) {
 	t.Helper()
 
-	tokens, err := syntax.Tokenize(mockInput{
-		displayName: t.Name(),
-		contents:    input,
+	tokens, err := syntax.Tokenize(syntax.LiteralInput{
+		CustomName: t.Name(),
+		Bytes:      []byte(input),
 	})
 	if err != nil {
 		t.Fatalf("failed to tokenize: %v", err)

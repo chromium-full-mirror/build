@@ -4,6 +4,8 @@
 
 package syntax
 
+import "bytes"
+
 // InputSource abstracts input sources, which may be a file, or other virtual
 // source like a string.
 //
@@ -23,4 +25,27 @@ type InputSource interface {
 	// return true if a reasonable method to check for equality passes.
 	// If this is not practical, false should be returned.
 	Equal(other InputSource) bool
+}
+
+// LiteralInput is a literal input source.
+type LiteralInput struct {
+	CustomName string
+	Bytes      []byte
+}
+
+func (l LiteralInput) DisplayName() string {
+	if l.CustomName == "" {
+		return "<literal>"
+	}
+	return l.CustomName
+}
+func (l LiteralInput) Contents() []byte { return l.Bytes }
+
+// Equal returns whether two literal inputs have equal contents.
+// Any other input source is considered non-equal.
+func (m LiteralInput) Equal(other InputSource) bool {
+	if o, ok := other.(LiteralInput); ok {
+		return bytes.Equal(m.Bytes, o.Bytes)
+	}
+	return false
 }

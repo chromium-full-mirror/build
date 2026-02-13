@@ -5,7 +5,6 @@
 package resolve
 
 import (
-	"bytes"
 	"errors"
 	"os"
 	"testing"
@@ -542,17 +541,6 @@ func TestExecuteNode(t *testing.T) {
 	}
 }
 
-type mockInput struct {
-	displayName string
-	contents    string
-}
-
-func (m mockInput) DisplayName() string { return m.displayName }
-func (m mockInput) Contents() []byte    { return []byte(m.contents) }
-func (m mockInput) Equal(other syntax.InputSource) bool {
-	return bytes.Equal(m.Contents(), other.Contents())
-}
-
 func TestExecFile(t *testing.T) {
 	for _, file := range []string{
 		"testdata/bool.gni",
@@ -567,9 +555,9 @@ func TestExecFile(t *testing.T) {
 		if err != nil {
 			t.Fatalf("failed to read %q: %v", file, err)
 		}
-		tokens, err := syntax.Tokenize(mockInput{
-			displayName: file,
-			contents:    string(content),
+		tokens, err := syntax.Tokenize(syntax.LiteralInput{
+			CustomName: file,
+			Bytes:      content,
 		})
 		if err != nil {
 			t.Fatalf("failed to tokenize %q: %v", file, err)

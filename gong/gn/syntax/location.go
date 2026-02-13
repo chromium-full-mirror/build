@@ -21,7 +21,7 @@ func (l Location) Equal(other Location) bool {
 }
 
 func (l Location) min(other Location) Location {
-	if l.file != other.file {
+	if l.file != nil && !l.file.Equal(other.file) {
 		return Location{}
 	}
 	if l.lineNumber < other.lineNumber || (l.lineNumber == other.lineNumber && l.columnNumber < other.columnNumber) {
@@ -31,7 +31,7 @@ func (l Location) min(other Location) Location {
 }
 
 func (l Location) max(other Location) Location {
-	if l.file != other.file {
+	if l.file != nil && !l.file.Equal(other.file) {
 		return Location{}
 	}
 	if l.lineNumber > other.lineNumber || (l.lineNumber == other.lineNumber && l.columnNumber > other.columnNumber) {

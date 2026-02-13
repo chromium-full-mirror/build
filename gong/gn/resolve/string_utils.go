@@ -177,16 +177,8 @@ func appendInterpolatedIdentifier(scope *Scope, originNode parse.Node, identifie
 	return nil
 }
 
-type literalInputSource struct {
-	contents string
-}
-
-func (l literalInputSource) DisplayName() string                 { return "<string literal>" }
-func (l literalInputSource) Contents() []byte                    { return []byte(l.contents) }
-func (l literalInputSource) Equal(other syntax.InputSource) bool { return false }
-
 func appendInterpolatedExpression(scope *Scope, token syntax.Token, originNode parse.Node, exprStr string, output *strings.Builder) error {
-	tokens, err := syntax.Tokenize(literalInputSource{exprStr})
+	tokens, err := syntax.Tokenize(syntax.LiteralInput{Bytes: []byte(exprStr)})
 	if err != nil {
 		return StringLiteralExpressionError{
 			OriginToken: syntax.OriginToken{Token: token},

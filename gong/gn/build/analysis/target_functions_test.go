@@ -5,7 +5,6 @@
 package analysis
 
 import (
-	"bytes"
 	"errors"
 	"testing"
 
@@ -14,17 +13,6 @@ import (
 	"go.chromium.org/build/gong/gn/resolve"
 	"go.chromium.org/build/gong/gn/syntax"
 )
-
-type mockInput struct {
-	displayName string
-	contents    string
-}
-
-func (m mockInput) DisplayName() string { return m.displayName }
-func (m mockInput) Contents() []byte    { return []byte(m.contents) }
-func (m mockInput) Equal(other syntax.InputSource) bool {
-	return bytes.Equal(m.Contents(), other.Contents())
-}
 
 func TestSchema_Run(t *testing.T) {
 	for _, tc := range []struct {
@@ -57,10 +45,7 @@ func TestSchema_Run(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			tokens, err := syntax.Tokenize(mockInput{
-				displayName: tc.name,
-				contents:    tc.input,
-			})
+			tokens, err := syntax.Tokenize(syntax.LiteralInput{Bytes: []byte(tc.input)})
 			if err != nil {
 				t.Fatalf("failed to tokenize: %v", err)
 			}

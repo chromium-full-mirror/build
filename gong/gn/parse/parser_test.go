@@ -5,7 +5,6 @@
 package parse
 
 import (
-	"bytes"
 	"errors"
 	"strings"
 	"testing"
@@ -16,17 +15,6 @@ import (
 	"go.chromium.org/build/gong/gn/syntax"
 	"go.chromium.org/build/gong/ui"
 )
-
-type mockInput struct {
-	displayName string
-	contents    string
-}
-
-func (m mockInput) DisplayName() string { return m.displayName }
-func (m mockInput) Contents() []byte    { return []byte(m.contents) }
-func (m mockInput) Equal(other syntax.InputSource) bool {
-	return bytes.Equal(m.Contents(), other.Contents())
-}
 
 func TestParse_Simple(t *testing.T) {
 	// Directly compare with expected Node output for smaller test cases.
@@ -64,17 +52,13 @@ func TestParse_Simple(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			tokens, err := syntax.Tokenize(mockInput{
-				displayName: "test.gni",
-				contents:    tc.input,
-			})
+			tokens, err := syntax.Tokenize(syntax.LiteralInput{Bytes: []byte(tc.input)})
 			if err != nil {
-				t.Errorf("Tokenize(_) = nil, %v; want nil error", err)
+				t.Fatalf("failed to tokenize: %v", err)
 			}
-
 			got, err := Parse(tokens)
 			if err != nil {
-				t.Fatal(err)
+				t.Fatalf("failed to parse: %v", err)
 			}
 
 			if diff := cmp.Diff(tc.expected, got, cmpOpts...); diff != "" {
@@ -324,17 +308,13 @@ func TestParse_Large(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			tokens, err := syntax.Tokenize(mockInput{
-				displayName: "test.gni",
-				contents:    tc.input,
-			})
+			tokens, err := syntax.Tokenize(syntax.LiteralInput{Bytes: []byte(tc.input)})
 			if err != nil {
-				t.Errorf("Tokenize(_) = nil, %v; want nil error", err)
+				t.Fatalf("failed to tokenize: %v", err)
 			}
-
 			parsed, err := Parse(tokens)
 			if err != nil {
-				t.Fatal(err)
+				t.Fatalf("failed to parse: %v", err)
 			}
 
 			var buf strings.Builder
@@ -505,14 +485,10 @@ else {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			tokens, err := syntax.Tokenize(mockInput{
-				displayName: "test.gni",
-				contents:    tc.input,
-			})
+			tokens, err := syntax.Tokenize(syntax.LiteralInput{Bytes: []byte(tc.input)})
 			if err != nil {
-				t.Errorf("Tokenize(_) = nil, %v; want nil error", err)
+				t.Fatalf("failed to tokenize: %v", err)
 			}
-
 			_, err = Parse(tokens)
 
 			if !errors.As(err, tc.wantErr) {
