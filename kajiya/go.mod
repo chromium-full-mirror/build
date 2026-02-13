@@ -12,7 +12,7 @@ require (
 	golang.org/x/sys v0.40.0
 	google.golang.org/genproto/googleapis/bytestream v0.0.0-20260114163908-3f89685c29c3
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260114163908-3f89685c29c3
-	google.golang.org/grpc v1.79.0
+	google.golang.org/grpc v1.79.1
 	google.golang.org/protobuf v1.36.11
 )
 
