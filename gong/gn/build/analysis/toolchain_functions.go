@@ -10,6 +10,22 @@ import (
 	"go.chromium.org/build/gong/gn/resolve"
 )
 
+// toolExecContext is used for execution inside a tool() call.
+type toolExecContext struct {
+	baseContext resolve.ExecContext
+	toolchain   *Toolchain
+}
+
+func (t toolExecContext) BaseConfig() *resolve.Scope {
+	return t.baseContext.BaseConfig()
+}
+func (t toolExecContext) NestedContext() resolve.ExecContext {
+	return toolExecContext{
+		baseContext: t,
+		toolchain:   t.toolchain,
+	}
+}
+
 type toolchainFunction struct{}
 
 func (toolchainFunction) HelpShort() string { return "toolchain: Defines a toolchain." }
@@ -46,10 +62,10 @@ func (toolchainFunction) Run(scope *resolve.Scope, call *parse.FunctionCallNode,
 	toolchain.definedFrom = call
 
 	// Scope for executing the toolchain's block
-	blockScope := scope.NewNestedScope()
-	blockScope.ExecContext().(*scopeContext).toolCollector = func(t *Tool) {
-		toolchain.tools[t.name] = t
-	}
+	blockScope := scope.NewNestedScopeWithContext(toolExecContext{
+		baseContext: scope.ExecContext().NestedContext(),
+		toolchain:   toolchain,
+	})
 
 	if _, err := resolve.ExecuteNode(block, blockScope); err != nil {
 		return nil, err
@@ -66,17 +82,9 @@ func (toolFunction) Help() string      { return "" }
 func (toolFunction) IsTarget() bool    { return false }
 
 func (toolFunction) Run(scope *resolve.Scope, call *parse.FunctionCallNode, args []resolve.Value, block *parse.BlockNode) (resolve.Value, error) {
-	ctx, err := contextFromScope(scope)
-	if err != nil {
-		return nil, err
-	}
-	if ctx.isProcessingBuildConfig() {
-		return nil, ItemInBuildConfigError{OriginFunction: resolve.OriginFunction{Call: call}}
-	}
-
 	// Find the toolchain definition we're executing inside of.
-	collector := scope.ExecContext().(*scopeContext).toolCollector
-	if collector == nil {
+	ctx, ok := scope.ExecContext().(toolExecContext)
+	if !ok {
 		return nil, ToolOutsideToolchain{}
 	}
 
@@ -162,6 +170,6 @@ func (toolFunction) Run(scope *resolve.Scope, call *parse.FunctionCallNode, args
 	blockScope.Value("output_prefix", true)
 	blockScope.Value("rspfile_content", true)
 
-	ctx.toolCollector(tool)
+	ctx.toolchain.tools[name] = tool
 	return nil, blockScope.CheckForUnusedVars()
 }

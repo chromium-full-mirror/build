@@ -61,16 +61,9 @@ type scopeContext struct {
 	//	- Secondarily, a template() needs to collect items defined in it.
 	// Child scopes will inherit the parent scope's item collector.
 	//
-	// TODO: maybe itemCollector and toolCollector scopes should use a different type?
+	// TODO: maybe itemCollector scopes should use a different scopeContext, like tool() scopeContext?
 	// then inside function impl can use typecast rather than check for whether this var is nil.
 	itemCollector func(Item)
-	// When executing a toolchain() definition, it needs to collect the tool definitions in it.
-	// Tools are not items, they do not participate in the GN dependency graph.
-	// Hence we can't reuse itemCollector.
-	//
-	// TODO: maybe itemCollector and toolCollector scopes should use a different type?
-	// then inside function impl can use typecast rather than check for whether this var is nil.
-	toolCollector func(*Tool)
 	// The toolchain invocation this scope belongs to.
 	settings *Settings
 	// Flag to indicate that we're currently processing the build configuration file.

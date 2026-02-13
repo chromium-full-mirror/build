@@ -189,6 +189,16 @@ func (s *Scope) NewNestedScope() *Scope {
 	}
 }
 
+// NewNestedScopeWithContext creates a dependent scope whose parent is this scope,
+// using the provided exec context.
+func (s *Scope) NewNestedScopeWithContext(c ExecContext) *Scope {
+	return &Scope{
+		parent:      s,
+		execContext: c,
+		values:      make(map[string]record),
+	}
+}
+
 // HasValues returns whether this scope has values set.
 func (s *Scope) HasValues() bool {
 	return len(s.values) > 0
