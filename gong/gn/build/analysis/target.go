@@ -21,7 +21,7 @@ type Target struct {
 	settings   *Settings
 	schema     *Schema
 	values     map[string]processedValue
-	resolution resolution
+	Resolution Resolution
 }
 
 func (Target) compatibleWith(item Item) bool {
@@ -37,26 +37,27 @@ type resolverContext struct {
 	declareTool        func(tool string, inputs []fs.SourceFile, outputName string) (fs.SourceFile, error)
 	stringFor          func(varName string) (string, error)
 	sourceFilesFor     func(varName string) iter.Seq2[fs.SourceFile, error]
-	resolvedTargetsFor func(varName string) iter.Seq2[resolution, error]
+	resolvedTargetsFor func(varName string) iter.Seq2[Resolution, error]
 }
 
 // A resolverFn tries to resolve a target.
 // It returns an error instead if processing fails.
 type resolverFn = func(resolverContext) (fs.SourceFile, error)
 
-// A resolution of a target records the actions that a target performs, and any metadata that
+// A Resolution of a target records the actions that a target performs, and any metadata that
 // may be relevant to targets waiting for this target to be resolved.
 //
 // For now, the only metadata supported is a [fs.SourceFile] so deps can use it as input.
-type resolution struct {
-	actions []runToolAction
-	output  fs.SourceFile
+type Resolution struct {
+	Actions []RunToolAction
+	Output  fs.SourceFile
 }
 
-type runToolAction struct {
-	tool   string
-	inputs []fs.SourceFile
-	output fs.SourceFile
+// A RunToolAction represents a call to a tool inside the current toolchain.
+type RunToolAction struct {
+	Tool   string
+	Inputs []fs.SourceFile
+	Output fs.SourceFile
 }
 
 func (t *Target) stringFor(varName string) (string, error) {
@@ -111,10 +112,10 @@ func (t *Target) declareTool(tool string, inputs []fs.SourceFile, outputName str
 	if err != nil {
 		return fs.SourceFile{}, err
 	}
-	t.resolution.actions = append(t.resolution.actions, runToolAction{
-		tool:   tool,
-		inputs: inputs,
-		output: outFile,
+	t.Resolution.Actions = append(t.Resolution.Actions, RunToolAction{
+		Tool:   tool,
+		Inputs: inputs,
+		Output: outFile,
 	})
 	return outFile, nil
 }

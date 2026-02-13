@@ -65,10 +65,10 @@ toolchain("gcc") {
 }`
 	wantTools := map[string]*Tool{
 		"cc": {
-			name:        "cc",
-			command:     "gcc {{source}} -o {{output}}",
+			Name:        "cc",
+			Command:     "gcc {{source}} -o {{output}}",
 			outputs:     []string{"{{output}}.o"},
-			description: "CC {{source}}",
+			Description: "CC {{source}}",
 		},
 	}
 
@@ -83,7 +83,7 @@ toolchain("gcc") {
 	if tc.label.Name != "gcc" {
 		t.Errorf("tc.label.Name = %q, want gcc", tc.label.Name)
 	}
-	if diff := cmp.Diff(wantTools, tc.tools, cmp.AllowUnexported(Tool{}), cmpopts.IgnoreFields(Tool{}, "definedFrom")); diff != "" {
+	if diff := cmp.Diff(wantTools, tc.Tools, cmp.AllowUnexported(Tool{}), cmpopts.IgnoreFields(Tool{}, "definedFrom")); diff != "" {
 		t.Errorf("tc.tools; diff (-want +got):\n%s", diff)
 	}
 }
@@ -122,7 +122,7 @@ toolchain("gcc") {
 }`
 	wantTools := map[string]*Tool{
 		"action": {
-			name:    "action",
+			Name:    "action",
 			outputs: []string{"foo"},
 		},
 	}
@@ -135,7 +135,7 @@ toolchain("gcc") {
 	if tc == nil {
 		t.Fatal("execToolchain()=nil, _; want non-nil")
 	}
-	if diff := cmp.Diff(wantTools, tc.tools, cmp.AllowUnexported(Tool{}), cmpopts.IgnoreFields(Tool{}, "definedFrom")); diff != "" {
+	if diff := cmp.Diff(wantTools, tc.Tools, cmp.AllowUnexported(Tool{}), cmpopts.IgnoreFields(Tool{}, "definedFrom")); diff != "" {
 		t.Errorf("tc.tools; diff (-want +got):\n%s", diff)
 	}
 }

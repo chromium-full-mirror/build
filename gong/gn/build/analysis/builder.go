@@ -179,30 +179,30 @@ func (b *Builder) resolveTarget(target *Target, record *builderRecord) error {
 		declareTool:    target.declareTool,
 		stringFor:      target.stringFor,
 		sourceFilesFor: target.sourceFilesFor,
-		resolvedTargetsFor: func(varName string) iter.Seq2[resolution, error] {
-			return func(yield func(resolution, error) bool) {
+		resolvedTargetsFor: func(varName string) iter.Seq2[Resolution, error] {
+			return func(yield func(Resolution, error) bool) {
 				deps, err := target.labelsFor(varName)
 				if err != nil {
-					yield(resolution{}, err)
+					yield(Resolution{}, err)
 					return
 				}
 				for _, dep := range deps {
 					depRecord, err := b.recordFor(dep.Label, dep.Origin, &Target{})
 					if err != nil {
-						yield(resolution{}, err)
+						yield(Resolution{}, err)
 						return
 					}
 					if depRecord.state != itemStateResolved {
-						yield(resolution{}, environment.IllegalStateError{Reason: "unresolved dep found"})
+						yield(Resolution{}, environment.IllegalStateError{Reason: "unresolved dep found"})
 						return
 					}
 					switch t := depRecord.item.(type) {
 					case *Target:
-						if !yield(t.resolution, nil) {
+						if !yield(t.Resolution, nil) {
 							return
 						}
 					default:
-						yield(resolution{}, ItemTypeMismatchError{
+						yield(Resolution{}, ItemTypeMismatchError{
 							OriginNode:        parse.OriginNode{Node: dep.Origin},
 							label:             t.Label(),
 							itemOrPlaceholder: &Target{},
@@ -217,7 +217,7 @@ func (b *Builder) resolveTarget(target *Target, record *builderRecord) error {
 	if err != nil {
 		return err
 	}
-	target.resolution.output = outFile
+	target.Resolution.Output = outFile
 	record.state = itemStateResolved
 
 	// Recursively update everybody waiting on this item to be resolved.

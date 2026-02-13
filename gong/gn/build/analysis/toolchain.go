@@ -32,8 +32,8 @@ type Toolchain struct {
 	// We also track the set of build files that may affect this target, please
 	// refer to scopeContext for how this is determined.
 	settings *Settings
-	// The tools defined in this toolchain.
-	tools map[string]*Tool
+	// Tools defined in this toolchain.
+	Tools map[string]*Tool
 }
 
 // NewToolchain creates a new toolchain() item struct.
@@ -43,7 +43,7 @@ func NewToolchain(label environment.Label, settings *Settings) *Toolchain {
 			label: label,
 		},
 		settings: settings,
-		tools:    make(map[string]*Tool),
+		Tools:    make(map[string]*Tool),
 	}
 }
 
@@ -57,16 +57,16 @@ func (Toolchain) compatibleWith(item Item) bool {
 
 // Tool represents arguments to a toolchain tool.
 type Tool struct {
-	name        string
-	command     string
+	Name        string
+	Command     string
 	outputs     []string // Simplified: List of output pattern strings
-	description string
+	Description string
 	definedFrom parse.Node
 }
 
 // NewTool creates a new tool struct with the given name.
 func NewTool(name string) *Tool {
 	return &Tool{
-		name: name,
+		Name: name,
 	}
 }

@@ -81,13 +81,13 @@ var (
 				if err != nil {
 					return fs.SourceFile{}, err
 				}
-				switch filepath.Ext(dep.output.Filename()) {
+				switch filepath.Ext(dep.Output.Filename()) {
 				case ".a":
 				case ".so":
-					linkInputs = append(linkInputs, dep.output)
+					linkInputs = append(linkInputs, dep.Output)
 				default:
 					return fs.SourceFile{}, NotImplementedError{
-						what: fmt.Sprintf("%q dep not implemented yet", dep.output.Filename()),
+						what: fmt.Sprintf("%q dep not implemented yet", dep.Output.Filename()),
 					}
 				}
 			}

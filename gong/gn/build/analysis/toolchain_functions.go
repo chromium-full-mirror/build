@@ -132,7 +132,7 @@ func (toolFunction) Run(scope *resolve.Scope, call *parse.FunctionCallNode, args
 			return nil, err
 		}
 		// TODO: need to parse the substitution pattern here.
-		tool.command = sv.RawGNString()
+		tool.Command = sv.RawGNString()
 	}
 
 	// Outputs.
@@ -157,7 +157,7 @@ func (toolFunction) Run(scope *resolve.Scope, call *parse.FunctionCallNode, args
 		if err != nil {
 			return nil, err
 		}
-		tool.description = sv.RawGNString()
+		tool.Description = sv.RawGNString()
 	}
 
 	// Values that haven't been implemented yet.
@@ -170,6 +170,6 @@ func (toolFunction) Run(scope *resolve.Scope, call *parse.FunctionCallNode, args
 	blockScope.Value("output_prefix", true)
 	blockScope.Value("rspfile_content", true)
 
-	ctx.toolchain.tools[name] = tool
+	ctx.toolchain.Tools[name] = tool
 	return nil, blockScope.CheckForUnusedVars()
 }
