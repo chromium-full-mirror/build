@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"go.chromium.org/build/siso/execute"
+	"go.chromium.org/build/siso/hashfs"
 	"go.chromium.org/build/siso/o11y/resultstore"
 	"go.chromium.org/build/siso/ui"
 )
@@ -276,6 +277,10 @@ func (p *progress) step(b *Builder, step *Step, s string) {
 		remoteServs += b.rewrapSema.NumServs()
 		remoteProgress := runProgress(remoteWaits, remoteServs)
 
+		flushWaits := hashfs.FlushSemaphore.NumWaits()
+		flushServs := hashfs.FlushSemaphore.NumServs()
+		flushProgress := runProgress(flushWaits, flushServs)
+
 		var stepsPerSec string
 		if stat.Done-stat.Skipped > 0 {
 			stepsPerSec = fmt.Sprintf("%.1f/s ", float64(stat.Done-stat.Skipped)/time.Since(p.started).Seconds())
@@ -298,10 +303,11 @@ func (p *progress) step(b *Builder, step *Step, s string) {
 			retry = "retry:" + ui.SGR(ui.BackgroundRed, fmt.Sprintf("%d", stat.RemoteRetry)) + " "
 		}
 		if outputResult == "" {
-			lines = append(lines, fmt.Sprintf("pre:%s local:%s remote:%s %s%s%s%s%s",
+			lines = append(lines, fmt.Sprintf("pre:%s local:%s remote:%s fetch:%s %s%s%s%s%s",
 				preprocProgress,
 				localProgress,
 				remoteProgress,
+				flushProgress,
 				stepsPerSec,
 				cacheHitRatio,
 				CacheWrite,
