@@ -26,7 +26,7 @@ import (
 type Schema struct {
 	Name     string
 	Summary  string
-	Vars     map[string]varType // TODO: Implement concept of required?
+	Vars     map[string]VarType // TODO: Implement concept of required?
 	Resolver ResolverFn
 }
 
@@ -36,38 +36,38 @@ var (
 	ActionSchema = Schema{
 		Name:    "action",
 		Summary: "Declare a target that runs a script a single time.",
-		Vars: map[string]varType{
+		Vars: map[string]VarType{
 			// TODO: support more variables.
-			"script":  fileType,
-			"sources": fileListType,
-			"outputs": fileListType,
-			"args":    stringListType,
-			"depfile": stringType,
+			"script":  FileType,
+			"sources": FileListType,
+			"outputs": FileListType,
+			"args":    StringListType,
+			"depfile": StringType,
 		},
 	}
 	ExecutableSchema = Schema{
 		Name:    "executable",
 		Summary: "Declare an executable target.",
-		Vars: map[string]varType{
+		Vars: map[string]VarType{
 			// TODO: support more variables.
-			"sources": fileListType,
-			"deps":    targetLabelListType,
-			"configs": configLabelListType,
-			"outputs": fileListType,
+			"sources": FileListType,
+			"deps":    TargetLabelListType,
+			"configs": ConfigLabelListType,
+			"outputs": FileListType,
 		},
 		Resolver: func(ctx ResolverContext) (fs.SourceFile, error) {
-			name, err := ctx.stringFor("name")
+			name, err := ctx.StringFor("name")
 			if err != nil {
 				return fs.SourceFile{}, err
 			}
 			var linkInputs []fs.SourceFile
-			for source := range ctx.sourceFilesFor("sources") {
+			for source := range ctx.SourceFilesFor("sources") {
 				sourceName := source.Filename()
 				sourceBase := filepath.Base(sourceName)
 				if filepath.Ext(sourceBase) == ".h" {
 					continue
 				}
-				objFile, err := ctx.declareTool(
+				objFile, err := ctx.DeclareTool(
 					"cxx",
 					[]fs.SourceFile{source},
 					fmt.Sprintf("%s.%s.o", name, sourceBase),
@@ -77,7 +77,7 @@ var (
 				}
 				linkInputs = append(linkInputs, objFile)
 			}
-			for dep, err := range ctx.resolvedTargetsFor("deps") {
+			for dep, err := range ctx.ResolvedTargetsFor("deps") {
 				if err != nil {
 					return fs.SourceFile{}, err
 				}
@@ -91,7 +91,7 @@ var (
 					}
 				}
 			}
-			return ctx.declareTool(
+			return ctx.DeclareTool(
 				"link",
 				linkInputs,
 				name,
@@ -101,27 +101,27 @@ var (
 	SharedLibrarySchema = Schema{
 		Name:    "shared_library",
 		Summary: "Declare a shared library target.",
-		Vars: map[string]varType{
+		Vars: map[string]VarType{
 			// TODO: support more variables.
-			"sources": fileListType,
-			"deps":    targetLabelListType,
-			"configs": configLabelListType,
-			"defines": stringListType,
+			"sources": FileListType,
+			"deps":    TargetLabelListType,
+			"configs": ConfigLabelListType,
+			"defines": StringListType,
 		},
 		Resolver: func(ctx ResolverContext) (fs.SourceFile, error) {
-			name, err := ctx.stringFor("name")
+			name, err := ctx.StringFor("name")
 			if err != nil {
 				return fs.SourceFile{}, err
 			}
 			var linkInputs []fs.SourceFile
 			outPrefix := fmt.Sprintf("lib%s", name)
-			for source := range ctx.sourceFilesFor("sources") {
+			for source := range ctx.SourceFilesFor("sources") {
 				sourceName := source.Filename()
 				sourceBase := filepath.Base(sourceName)
 				if filepath.Ext(sourceBase) == ".h" {
 					continue
 				}
-				objFile, err := ctx.declareTool(
+				objFile, err := ctx.DeclareTool(
 					"cxx",
 					[]fs.SourceFile{source},
 					fmt.Sprintf("%s.%s.o", outPrefix, sourceBase),
@@ -131,7 +131,7 @@ var (
 				}
 				linkInputs = append(linkInputs, objFile)
 			}
-			return ctx.declareTool(
+			return ctx.DeclareTool(
 				"alink",
 				linkInputs,
 				fmt.Sprintf("%s.a", outPrefix),
@@ -141,36 +141,36 @@ var (
 	SourceSetSchema = Schema{
 		Name:    "source_set",
 		Summary: "Declare a source set target.",
-		Vars: map[string]varType{
+		Vars: map[string]VarType{
 			// TODO: support more variables.
-			"sources": fileListType,
-			"deps":    targetLabelListType,
+			"sources": FileListType,
+			"deps":    TargetLabelListType,
 		},
 	}
 	StaticLibrarySchema = Schema{
 		Name:    "static_library",
 		Summary: "Declare a shared library target.",
-		Vars: map[string]varType{
+		Vars: map[string]VarType{
 			// TODO: support more variables.
-			"sources": fileListType,
-			"deps":    targetLabelListType,
-			"configs": configLabelListType,
-			"defines": stringListType,
+			"sources": FileListType,
+			"deps":    TargetLabelListType,
+			"configs": ConfigLabelListType,
+			"defines": StringListType,
 		},
 		Resolver: func(ctx ResolverContext) (fs.SourceFile, error) {
-			name, err := ctx.stringFor("name")
+			name, err := ctx.StringFor("name")
 			if err != nil {
 				return fs.SourceFile{}, err
 			}
 			var linkInputs []fs.SourceFile
 			outPrefix := fmt.Sprintf("lib%s", name)
-			for source := range ctx.sourceFilesFor("sources") {
+			for source := range ctx.SourceFilesFor("sources") {
 				sourceName := source.Filename()
 				sourceBase := filepath.Base(sourceName)
 				if filepath.Ext(sourceBase) == ".h" {
 					continue
 				}
-				objFile, err := ctx.declareTool(
+				objFile, err := ctx.DeclareTool(
 					"cxx",
 					[]fs.SourceFile{source},
 					fmt.Sprintf("%s.%s.o", outPrefix, sourceBase),
@@ -180,7 +180,7 @@ var (
 				}
 				linkInputs = append(linkInputs, objFile)
 			}
-			return ctx.declareTool(
+			return ctx.DeclareTool(
 				"solink",
 				linkInputs,
 				fmt.Sprintf("%s.so", outPrefix),
@@ -190,10 +190,10 @@ var (
 	CopySchema = Schema{
 		Name:    "copy",
 		Summary: "Declare a target that copies files.",
-		Vars: map[string]varType{
+		Vars: map[string]VarType{
 			// TODO: support more variables.
-			"sources": fileListType,
-			"outputs": fileListType,
+			"sources": FileListType,
+			"outputs": FileListType,
 		},
 	}
 )

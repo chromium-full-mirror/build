@@ -33,10 +33,14 @@ func (Target) compatibleWith(item Item) bool {
 
 // ResolverContext provides context to a [ResolverFn], allowing only indirect access to underlying target data.
 type ResolverContext struct {
-	declareTool        func(tool string, inputs []fs.SourceFile, outputName string) (fs.SourceFile, error)
-	stringFor          func(varName string) (string, error)
-	sourceFilesFor     func(varName string) iter.Seq2[fs.SourceFile, error]
-	resolvedTargetsFor func(varName string) iter.Seq2[Resolution, error]
+	// DeclareTool declares a tool call.
+	DeclareTool func(tool string, inputs []fs.SourceFile, outputName string) (fs.SourceFile, error)
+	// StringFor returns the string for the variable, if it accepts strings.
+	StringFor func(varName string) (string, error)
+	// SourceFilesFor returns an iterator over source files for the variable, if it accepts file lists.
+	SourceFilesFor func(varName string) iter.Seq2[fs.SourceFile, error]
+	// ResolvedTargetsFor returns an iterator over resolutions for the variable, if it accepts target lists.
+	ResolvedTargetsFor func(varName string) iter.Seq2[Resolution, error]
 }
 
 // A ResolverFn tries to resolve a target.

@@ -12,16 +12,29 @@ import (
 	"go.chromium.org/build/gong/gn/resolve"
 )
 
-// varType is the type of a target's variable, prior to processing.
-type varType uint8
+// VarType is the type of a target's variable, prior to processing.
+// TODO: better to define type for varType and use method instead of switch by value?
+type VarType uint8
 
-const ( //                           Internal [processedValue] type
-	stringType          varType = iota // [stringValue]
-	stringListType                     // [stringListValue]
-	targetLabelListType                // [labelListValue]
-	configLabelListType                // [labelListValue]
-	fileType                           // [fileValue]
-	fileListType                       // [fileListValue]
+const ( //                                 Internal [processedValue] type
+	// A StringType variable accepts single strings e.g.
+	//	depfile = "$target_gen_dir/$target_name.d"
+	StringType VarType = iota // ------------------- [stringValue]
+	// A StringListType variable accepts lists of strings e.g.
+	//	cflags = [ "-fvisibility=default" ]
+	StringListType // ------------------------------ [stringListValue]
+	// A TargetLabelListType variable accepts lists of targets e.g.
+	//	deps = [ ":foo", "//bar:baz" ]
+	TargetLabelListType // ------------------------- [labelListValue]
+	// A ConfigLabelListType variable accepts lists of configs e.g.
+	//	configs = [ ":foo", "//bar:baz" ]
+	ConfigLabelListType // ------------------------- [labelListValue]
+	// A FileType variable accepts single files e.g.
+	//	script = "domything.py"
+	FileType // ------------------------------------ [fileValue]
+	// A FileListType variable accepts lists of files e.g.
+	//	inputs = [ "helper_library.py" ]
+	FileListType // -------------------------------- [fileListValue]
 )
 
 // A processedValue represents a target's variable, after we've converted values such as labels
@@ -89,9 +102,9 @@ func processedValueAs[T processedValue](v processedValue) (T, error) {
 }
 
 // processValue takes a raw buildfile declaration and processes it into the internal representation.
-func (t *Target) processValue(value resolve.Value, expectedType varType) (processedValue, error) {
+func (t *Target) processValue(value resolve.Value, expectedType VarType) (processedValue, error) {
 	switch expectedType {
-	case stringType:
+	case StringType:
 		sv, err := resolve.AsValue[*resolve.StringValue](value)
 		if err != nil {
 			return nil, err
@@ -100,7 +113,7 @@ func (t *Target) processValue(value resolve.Value, expectedType varType) (proces
 			origin: sv,
 			str:    sv.RawGNString(),
 		}, nil
-	case fileType:
+	case FileType:
 		sv, err := resolve.AsValue[*resolve.StringValue](value)
 		if err != nil {
 			return nil, err
@@ -113,7 +126,7 @@ func (t *Target) processValue(value resolve.Value, expectedType varType) (proces
 			origin: sv,
 			file:   sourceFile,
 		}, nil
-	case stringListType:
+	case StringListType:
 		lv, err := resolve.AsValue[*resolve.ListValue](value)
 		if err != nil {
 			return nil, err
@@ -130,7 +143,7 @@ func (t *Target) processValue(value resolve.Value, expectedType varType) (proces
 			origin: lv,
 			list:   list,
 		}, nil
-	case fileListType:
+	case FileListType:
 		lv, err := resolve.AsValue[*resolve.ListValue](value)
 		if err != nil {
 			return nil, err
@@ -152,8 +165,8 @@ func (t *Target) processValue(value resolve.Value, expectedType varType) (proces
 			origin: lv,
 			list:   list,
 		}, nil
-	case targetLabelListType,
-		configLabelListType:
+	case TargetLabelListType,
+		ConfigLabelListType:
 		// Both label list types collapse into [labelListValue], since [Builder] will check deps for validity.
 		lv, err := resolve.AsValue[*resolve.ListValue](value)
 		if err != nil {

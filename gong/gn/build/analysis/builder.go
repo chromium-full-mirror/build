@@ -114,9 +114,9 @@ func (b *Builder) targetDefined(target *Target, record *builderRecord) ([]enviro
 		// TODO: only supports lists of labels right now, need to support single labels too?
 		var expectedPlaceholder Item
 		switch varType {
-		case targetLabelListType:
+		case TargetLabelListType:
 			expectedPlaceholder = &Target{}
-		case configLabelListType:
+		case ConfigLabelListType:
 			expectedPlaceholder = &Config{}
 		default:
 			continue
@@ -187,12 +187,12 @@ func (b *Builder) resolveTarget(target *Target, record *builderRecord) error {
 	}
 
 	outFile, err := target.Schema.Resolver(ResolverContext{
-		declareTool: func(tool string, inputs []fs.SourceFile, outputName string) (fs.SourceFile, error) {
+		DeclareTool: func(tool string, inputs []fs.SourceFile, outputName string) (fs.SourceFile, error) {
 			return target.declareTool(outDir, tool, inputs, outputName)
 		},
-		stringFor:      target.stringFor,
-		sourceFilesFor: target.sourceFilesFor,
-		resolvedTargetsFor: func(varName string) iter.Seq2[Resolution, error] {
+		StringFor:      target.stringFor,
+		SourceFilesFor: target.sourceFilesFor,
+		ResolvedTargetsFor: func(varName string) iter.Seq2[Resolution, error] {
 			return func(yield func(Resolution, error) bool) {
 				deps, err := target.labelsFor(varName)
 				if err != nil {
