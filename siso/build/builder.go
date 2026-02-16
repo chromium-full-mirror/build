@@ -917,7 +917,7 @@ func (b *Builder) recordCloudMonitoringActionMetrics(ctx context.Context, step *
 		remoteAr, remoteErr = step.cmd.RemoteFallbackResult()
 	}
 	monitoring.ExportActionMetrics(
-		ctx, time.Duration(step.metrics.Duration), ar, remoteAr, actionErr, remoteErr, cached)
+		ctx, time.Duration(step.metrics.Duration), ar, remoteAr, actionErr, remoteErr, cached, step.metrics.Fallback)
 }
 
 func (b *Builder) recordNinjaLogs(ctx context.Context, s *Step) {

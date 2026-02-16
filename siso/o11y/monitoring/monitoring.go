@@ -30,6 +30,7 @@ var (
 	versionKey        = "siso_version"
 	statusKey         = "status"
 	remoteStatusKey   = "remote_status"
+	isFallbackKey     = "is_fallback"
 	exitCodeKey       = "exit_code"
 	remoteExitCodeKey = "remote_exit_code"
 
@@ -177,7 +178,7 @@ func NewMetricProvider(ctx context.Context, metricsProject, rbeProject string, e
 }
 
 // ExportActionMetrics exports metrics for one log record to OpenTelemetry.
-func ExportActionMetrics(ctx context.Context, latency time.Duration, ar, remoteAr *rpb.ActionResult, actionErr, remoteErr error, cached bool) {
+func ExportActionMetrics(ctx context.Context, latency time.Duration, ar, remoteAr *rpb.ActionResult, actionErr, remoteErr error, cached, isFallback bool) {
 	if !enabled() {
 		return
 	}
@@ -214,6 +215,7 @@ func ExportActionMetrics(ctx context.Context, latency time.Duration, ar, remoteA
 		attribute.String(statusKey, st),
 		attribute.Int64(exitCodeKey, int64(exitCode)),
 		attribute.String(remoteStatusKey, remoteStatus),
+		attribute.Bool(isFallbackKey, isFallback),
 		attribute.Int64(remoteExitCodeKey, int64(remoteExitCode)),
 	}...)
 	actionCount.Add(ctx, 1, metric.WithAttributes(attributes...))
