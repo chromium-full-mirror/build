@@ -37,7 +37,12 @@ func (configFunction) Run(scope *resolve.Scope, call *parse.FunctionCallNode, ar
 	}
 	name := nameValue.RawGNString()
 
-	label := environment.Label{Dir: ctx.sourceDir, Name: name}
+	label := environment.Label{
+		Dir:           ctx.sourceDir,
+		Name:          name,
+		ToolchainDir:  ctx.settings.toolchainLabel.Dir,
+		ToolchainName: ctx.settings.toolchainLabel.Name,
+	}
 
 	blockScope := scope.NewNestedScope()
 	if _, err := resolve.ExecuteNode(block, blockScope); err != nil {

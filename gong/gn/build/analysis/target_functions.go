@@ -235,9 +235,10 @@ func (s *Schema) Run(scope *resolve.Scope, call *parse.FunctionCallNode, args []
 	}
 
 	label := environment.Label{
-		Dir:  ctx.sourceDir,
-		Name: name,
-		// TODO: Toolchain
+		Dir:           ctx.sourceDir,
+		Name:          name,
+		ToolchainDir:  ctx.settings.toolchainLabel.Dir,
+		ToolchainName: ctx.settings.toolchainLabel.Name,
 	}
 
 	target := &Target{
@@ -245,8 +246,7 @@ func (s *Schema) Run(scope *resolve.Scope, call *parse.FunctionCallNode, args []
 			label:       label,
 			definedFrom: call,
 		},
-		Schema:   s,
-		settings: ctx.settings,
+		Schema: s,
 		values: map[string]processedValue{
 			"name": stringValue{
 				origin: nameValue,

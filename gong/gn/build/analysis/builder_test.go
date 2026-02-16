@@ -6,6 +6,9 @@ import (
 	"testing"
 	"testing/fstest"
 
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
+
 	"go.chromium.org/build/gong/gn/build/environment"
 	"go.chromium.org/build/gong/gn/build/fs"
 	"go.chromium.org/build/gong/gn/syntax"
@@ -46,6 +49,7 @@ toolchain("tc") {
     tool("link") { command = "link" }
     tool("cxx") { command = "cc" }
 }
+config("my_config") {}
 executable("app") {
     deps = [ "//lib:foo", "//lib:bar" ]
 }`),
@@ -68,14 +72,19 @@ shared_library("bar") {}`),
 		}
 	}
 
-	appRec, ok := builder.records[environment.Label{Dir: mustDir(t, "//"), Name: "app"}]
+	appRec, ok := builder.records[environment.Label{
+		Dir:           mustDir(t, "//"),
+		Name:          "app",
+		ToolchainDir:  mustDir(t, "//"),
+		ToolchainName: "tc",
+	}]
 	if !ok {
-		t.Fatal("builder missing record //:app")
+		t.Fatal("builder missing record //:app(//:tc)")
 	}
 	// TODO: 3 means //lib:foo, //lib:bar, //:tc but wrong?
 	// but //:tc is default toolchain, should mark as resolved immediately.
 	if appRec.unresolvedDeps != 3 {
-		t.Errorf("builder record //:app unresolvedDeps = %d; want 3", appRec.unresolvedDeps)
+		t.Errorf("builder record //:app(//:tc) unresolvedDeps = %d; want 3", appRec.unresolvedDeps)
 	}
 
 	items, err = loader.Load(mustFile(t, "//lib/BUILD.gn"), syntax.LocationRange{}, environment.Label{})
@@ -89,11 +98,21 @@ shared_library("bar") {}`),
 		}
 	}
 
-	if _, ok := builder.records[environment.Label{Dir: mustDir(t, "//lib/"), Name: "foo"}]; !ok {
-		t.Fatal("builder missing record //lib:foo")
+	wantRecords := []string{
+		// Toolchain labels do not have a toolchain themselves.
+		"//:tc()",
+		// All other items should have a toolchain.
+		"//:app(//:tc)",
+		"//:my_config(//:tc)",
+		"//lib:bar(//:tc)",
+		"//lib:foo(//:tc)",
 	}
-	if _, ok := builder.records[environment.Label{Dir: mustDir(t, "//lib/"), Name: "bar"}]; !ok {
-		t.Fatal("builder missing record //lib:bar")
+	var gotRecords []string
+	for label := range builder.records {
+		gotRecords = append(gotRecords, label.UserVisibleString(true))
+	}
+	if diff := cmp.Diff(wantRecords, gotRecords, cmpopts.SortSlices(func(a, b string) bool { return a < b })); diff != "" {
+		t.Errorf("builder.records diff (-want +got):\n%s", diff)
 	}
 }
 
@@ -130,6 +149,6 @@ executable("app") {
 
 	var wantErr ItemTypeMismatchError
 	if !errors.As(gotErr, &wantErr) {
-		t.Errorf("builder record items finished with %T err; want %v err", gotErr, wantErr)
+		t.Errorf("builder record items finished with %T err; want %T err", gotErr, wantErr)
 	}
 }

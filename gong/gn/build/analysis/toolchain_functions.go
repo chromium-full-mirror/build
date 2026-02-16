@@ -54,6 +54,8 @@ func (toolchainFunction) Run(scope *resolve.Scope, call *parse.FunctionCallNode,
 	}
 	name := nameValue.RawGNString()
 
+	// Note that we don't want to make a label that includes the toolchain name
+	// in the label, since toolchain labels don't themselves have toolchain names.
 	label := environment.Label{Dir: ctx.sourceDir, Name: name}
 
 	// Create the new toolchain object

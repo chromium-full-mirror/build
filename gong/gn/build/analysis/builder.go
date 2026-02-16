@@ -13,6 +13,7 @@ import (
 	"slices"
 
 	"go.chromium.org/build/gong/gn/build/environment"
+	"go.chromium.org/build/gong/gn/build/fs"
 	"go.chromium.org/build/gong/gn/parse"
 )
 
@@ -148,7 +149,7 @@ func (b *Builder) targetDefined(target *Target, record *builderRecord) ([]enviro
 
 	// If this target's toolchain hasn't been resolved, add it to the requested deps.
 	toolchainDep := environment.LabelWithOrigin{
-		Label:  target.settings.toolchainLabel,
+		Label:  target.label.ToolchainLabel(),
 		Origin: target.definedFrom,
 	}
 	toolchainRec, err := b.recordFor(toolchainDep.Label, toolchainDep.Origin, &Toolchain{})
@@ -176,8 +177,19 @@ func (b *Builder) resolveTarget(target *Target, record *builderRecord) error {
 		fmt.Fprintf(os.Stderr, "ignoring target %v for now since no resolver...\n", target.label.UserVisibleString(false))
 		return nil
 	}
+
+	// Determine the outdir for the target.
+	// TODO: Placeholder implementation that always assumes obj/.
+	// To be correct, we need to also support absolute paths, support gen/, support phony/, etc.
+	outDir, err := b.loader.buildSettings.BuildDir.ResolveRelativeDir("obj/" + target.Label().Dir.Path())
+	if err != nil {
+		return err
+	}
+
 	outFile, err := target.Schema.Resolver(ResolverContext{
-		declareTool:    target.declareTool,
+		declareTool: func(tool string, inputs []fs.SourceFile, outputName string) (fs.SourceFile, error) {
+			return target.declareTool(outDir, tool, inputs, outputName)
+		},
 		stringFor:      target.stringFor,
 		sourceFilesFor: target.sourceFilesFor,
 		resolvedTargetsFor: func(varName string) iter.Seq2[Resolution, error] {

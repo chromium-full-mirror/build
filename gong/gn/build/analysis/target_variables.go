@@ -165,7 +165,7 @@ func (t *Target) processValue(value resolve.Value, expectedType varType) (proces
 			if err != nil {
 				return nil, err
 			}
-			resolvedLabel, err := environment.ResolveLabel(t.label.Dir, environment.Label{}, sv)
+			resolvedLabel, err := environment.ResolveLabel(t.label.Dir, t.label.ToolchainLabel(), sv)
 			if err != nil {
 				return nil, err
 			}

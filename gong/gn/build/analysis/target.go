@@ -18,7 +18,6 @@ import (
 // Using their [Schema], targets are moved into a resolved state by the [Builder].
 type Target struct {
 	itemInfo
-	settings   *Settings
 	Schema     *Schema
 	values     map[string]processedValue
 	Resolution Resolution
@@ -103,11 +102,7 @@ func (t *Target) labelsFor(varName string) ([]environment.LabelWithOrigin, error
 	return llv.list, nil
 }
 
-func (t *Target) declareTool(tool string, inputs []fs.SourceFile, outputName string) (fs.SourceFile, error) {
-	outDir, err := t.buildDirAsSourceDir()
-	if err != nil {
-		return fs.SourceFile{}, err
-	}
+func (t *Target) declareTool(outDir fs.SourceDir, tool string, inputs []fs.SourceFile, outputName string) (fs.SourceFile, error) {
 	outFile, err := outDir.ResolveRelativeFile(outputName)
 	if err != nil {
 		return fs.SourceFile{}, err
@@ -118,15 +113,6 @@ func (t *Target) declareTool(tool string, inputs []fs.SourceFile, outputName str
 		Output: outFile,
 	})
 	return outFile, nil
-}
-
-// buildDirAsSourceDir returns the output or generated file directory corresponding to the given
-// target.
-//
-// TODO: This is a placeholder implementation that always assumes obj/.
-// To be correct, we need to also support absolute paths, support gen/, support phony/, etc.
-func (t *Target) buildDirAsSourceDir() (fs.SourceDir, error) {
-	return t.settings.buildSettings.BuildDir.ResolveRelativeDir("obj/" + t.label.Dir.Path())
 }
 
 // LabelTargetPair represents a label, and a pointer to its target if that

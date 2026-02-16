@@ -108,6 +108,11 @@ func ResolveLabel(currentDir fs.SourceDir, currentToolchain Label, input resolve
 	}, nil
 }
 
+// ToolchainLabel returns the current label's toolchain as its own Label.
+func (l Label) ToolchainLabel() Label {
+	return Label{Dir: l.ToolchainDir, Name: l.ToolchainName}
+}
+
 // splitLabelComponents splits input into "location", "name", and "toolchain".
 // It performs basic validation and returns the parts.
 //
