@@ -3,10 +3,11 @@
 # found in the LICENSE file.
 
 # basic arithmetic
-# TODO: operators other than +
+assert(0 - 1 == -1)
 assert(0 + 1 == 1)
 assert(1 + 1 == 2)
 assert(5 + 7 == 12)
+assert(5 - 7 == -2)
 
 # compound assignment
 x = 1
