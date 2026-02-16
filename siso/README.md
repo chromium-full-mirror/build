@@ -1,6 +1,7 @@
 # Siso
 
-Siso is a build tool that aims to significantly speed up Chromium's build.
+Siso is a build tool that aims to significantly speed up Chromium and Android
+build.
 
 * It is a drop-in replacement for Ninja, which means it can be easily used
   instead of Ninja without requiring a migration or change in developers'
@@ -34,6 +35,8 @@ Siso is named after shiso, a commonly-used herb in Japan. It's a reference to ba
 ## Status
 
 Siso is the primary build system for Chromium and the projects that import //build from Chromium.
+
+As of Feb 2026, we start migrating to Siso for the Android build.
 
 As of Aug 2025, Siso is moved to [go.chromium.org/build/siso](https://pkg.go.dev/go.chromium.org/build/siso).
 
