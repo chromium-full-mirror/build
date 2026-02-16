@@ -222,7 +222,7 @@ func (c *Command) computeLimits(ctx context.Context) build.Limits {
 			if limits.StartLocal != 0 {
 				changes = append(changes, fmt.Sprintf("startlocal=%d->0", limits.StartLocal))
 			}
-			ui.Default.Warningf(ui.SGR(ui.Yellow, fmt.Sprintf("disable fast local for non-interactive: %s\n use `--fast_local` to enable fast local with non-interactive mode\n",
+			ui.Default.Warningf("%s", ui.SGR(ui.Yellow, fmt.Sprintf("disable fast local for non-interactive: %s\n use `--fast_local` to enable fast local with non-interactive mode\n",
 				strings.Join(changes, " "))))
 		}
 		clog.Infof(ctx, "disable fastlocal, startlocal")
@@ -395,7 +395,7 @@ func (c *Command) Run(ctx context.Context) (stats build.Stats, finalErr error) {
 	})
 
 	if err := c.reopt.CheckValid(); err == nil {
-		ui.Default.Infof(fmt.Sprintf("use %s\n", c.reopt))
+		ui.Default.Infof("use %s\n", c.reopt)
 	} else {
 		if c.strictRemote {
 			return stats, flagError{err: fmt.Errorf("no reapi specified, but remote is requested as --strict_remote: %w", err)}
@@ -436,7 +436,7 @@ func (c *Command) Run(ctx context.Context) (stats build.Stats, finalErr error) {
 	defer func() { closeHashFS(targets, finalErr) }()
 	hashFSErr := hashFS.LoadErr()
 	if hashFSErr != nil {
-		ui.Default.Errorf(ui.SGR(ui.BackgroundRed, fmt.Sprintf("unable to do incremental build as fs state is corrupted: %v\n", hashFSErr)))
+		ui.Default.Errorf("%s", ui.SGR(ui.BackgroundRed, fmt.Sprintf("unable to do incremental build as fs state is corrupted: %v\n", hashFSErr)))
 	}
 
 	lastFailed := hasLastFailedTargets(c.stateDir)
@@ -476,11 +476,11 @@ func (c *Command) Run(ctx context.Context) (stats build.Stats, finalErr error) {
 	if c.fsopt.KeepTainted {
 		tainted := hashFS.TaintedFiles()
 		if len(tainted) == 0 {
-			ui.Default.Warningf(ui.SGR(ui.Yellow, "no tainted generated files:\n"))
+			ui.Default.Warningf("%s", ui.SGR(ui.Yellow, "no tainted generated files:\n"))
 		} else if len(tainted) < 5 {
-			ui.Default.Warningf(ui.SGR(ui.Yellow, fmt.Sprintf("keep %d tainted files:\n %s\n", len(tainted), strings.Join(tainted, "\n "))))
+			ui.Default.Warningf("%s", ui.SGR(ui.Yellow, fmt.Sprintf("keep %d tainted files:\n %s\n", len(tainted), strings.Join(tainted, "\n "))))
 		} else {
-			ui.Default.Warningf(ui.SGR(ui.Yellow, fmt.Sprintf("keep %d tainted files:\n %s\n ...more\n", len(tainted), strings.Join(tainted, "\n "))))
+			ui.Default.Warningf("%s", ui.SGR(ui.Yellow, fmt.Sprintf("keep %d tainted files:\n %s\n ...more\n", len(tainted), strings.Join(tainted, "\n "))))
 		}
 	}
 
@@ -496,7 +496,7 @@ func (c *Command) Run(ctx context.Context) (stats build.Stats, finalErr error) {
 		return stats, err
 	}
 	spin.Stop(nil)
-	spin.Start(fmt.Sprintf("load %s", c.fname))
+	spin.Start("load %s", c.fname)
 	nstate, err := ninjabuild.Load(ctx, c.fname, buildPath)
 	if err != nil {
 		spin.Stop(errors.New(""))

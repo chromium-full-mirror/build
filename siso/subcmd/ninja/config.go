@@ -381,7 +381,7 @@ func (c *Command) resolveFlags() error {
 }
 
 func (c *Command) enableOfflineMode(ctx context.Context) {
-	ui.Default.Warningf(ui.SGR(ui.Red, "offline mode\n"))
+	ui.Default.Warningf("%s", ui.SGR(ui.Red, "offline mode\n"))
 	clog.Warningf(ctx, "offline mode")
 	c.reopt = new(reapi.Option)
 	c.reopt.Insecure = true
@@ -638,7 +638,7 @@ func initFSMonitor(ctx context.Context, execRoot string) hashfs.FSMonitor {
 		fsmonitorPath, err = exec.LookPath(fsmonitor)
 		if err != nil {
 			clog.Warningf(ctx, "failed to find fsmonitor %q: %v", fsmonitor, err)
-			ui.Default.Warningf(ui.SGR(ui.BackgroundRed, fmt.Sprintf("SISO_FSMONITOR=%q: failed %v\n", fsmonitor, err)))
+			ui.Default.Warningf("%s", ui.SGR(ui.BackgroundRed, fmt.Sprintf("SISO_FSMONITOR=%q: failed %v\n", fsmonitor, err)))
 			return nil
 		}
 	} else {
@@ -650,13 +650,13 @@ func initFSMonitor(ctx context.Context, execRoot string) hashfs.FSMonitor {
 		wm, err := watchmanutil.New(ctx, fsmonitorPath, execRoot)
 		if err != nil {
 			clog.Warningf(ctx, "failed to initialize watchman: %v", err)
-			ui.Default.Errorf(ui.SGR(ui.BackgroundRed, fmt.Sprintf("SISO_FSMONITOR=watchman: failed %v\n", err)))
+			ui.Default.Errorf("%s", ui.SGR(ui.BackgroundRed, fmt.Sprintf("SISO_FSMONITOR=watchman: failed %v\n", err)))
 			return nil
 		}
-		ui.Default.Infof(ui.SGR(ui.Yellow, fmt.Sprintf("use watchman as fsmonitor: %s\n", fsmonitorPath)))
+		ui.Default.Infof("%s", ui.SGR(ui.Yellow, fmt.Sprintf("use watchman as fsmonitor: %s\n", fsmonitorPath)))
 		return wm
 	default:
-		ui.Default.Errorf(ui.SGR(ui.BackgroundRed, fmt.Sprintf("unknown SISO_FSMONITOR=%q (%q)\n", fsmonitor, fsm)))
+		ui.Default.Errorf("%s", ui.SGR(ui.BackgroundRed, fmt.Sprintf("unknown SISO_FSMONITOR=%q (%q)\n", fsmonitor, fsm)))
 	}
 	return nil
 }

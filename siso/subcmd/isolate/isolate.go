@@ -169,7 +169,7 @@ func (c *Command) run(ctx context.Context) error {
 		}
 	}
 
-	ui.Default.Printf(fmt.Sprintf("use %s\n", c.reopt))
+	ui.Default.Printf("use %s\n", c.reopt)
 	client, err := reapi.New(ctx, credential, *c.reopt)
 	if err != nil {
 		return fmt.Errorf("failed to initialize reapi client: %w", err)
