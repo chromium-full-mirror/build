@@ -56,8 +56,13 @@ THIRD_PARTY_DIRS = [
 
 
 def CheckChange(input_api, output_api):
-  files_to_skip = lambda path: input_api.FilterSourceFile(
+  # Default source file filter doesn't include Go.
+  # e.g. CheckChangeHasNoTabs would conflict since gofmt enforces tabs.
+  source_file_filter_incl_go = lambda path: input_api.FilterSourceFile(
       path,
+      files_to_check=list(input_api.DEFAULT_FILES_TO_CHECK) + [
+          r'.+\.go$',
+      ],
       files_to_skip=[
           r'.*pb[^/]*\.go$',
       ] + [rf'{d}/.*' for d in THIRD_PARTY_DIRS])
@@ -65,15 +70,15 @@ def CheckChange(input_api, output_api):
   results = []
   results += input_api.canned_checks.CheckDoNotSubmit(input_api, output_api)
   results += input_api.canned_checks.CheckChangeHasNoTabs(
-      input_api, output_api, source_file_filter=files_to_skip)
+      input_api, output_api)
   results += input_api.canned_checks.CheckPatchFormatted(
       input_api, output_api, check_clang_format=False)
   results += input_api.canned_checks.CheckChangeHasNoStrayWhitespace(
-      input_api, output_api, source_file_filter=files_to_skip)
+      input_api, output_api, source_file_filter=source_file_filter_incl_go)
   results += input_api.canned_checks.CheckInclusiveLanguage(
       input_api, output_api)
   results += input_api.canned_checks.CheckLicense(
-      input_api, output_api, source_file_filter=files_to_skip)
+      input_api, output_api, source_file_filter=source_file_filter_incl_go)
 
   return results
 

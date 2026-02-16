@@ -1,3 +1,7 @@
+// Copyright 2026 The Chromium Authors
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
 // Package digest contains functions to simplify handling content digests.
 package digest
 
