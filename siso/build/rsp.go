@@ -37,7 +37,7 @@ func (b *Builder) setupRSP(ctx context.Context, step *Step) error {
 		_, herr := b.hashFS.Stat(ctx, step.cmd.ExecRoot, rsp)
 		_, lerr := b.hashFS.OS.Lstat(ctx, filepath.Join(step.cmd.ExecRoot, rsp))
 		if herr == nil && errors.Is(lerr, fs.ErrNotExist) {
-			clog.Errorf(ctx, "unexpected rsp remove detected %q", rsp)
+			clog.Warningf(ctx, "unexpected rsp remove detected %q", rsp)
 			b.hashFS.Forget(ctx, step.cmd.ExecRoot, []string{rsp})
 		}
 	}
