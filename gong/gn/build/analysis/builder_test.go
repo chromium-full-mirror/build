@@ -122,14 +122,13 @@ func TestBuilder_ItemTypeMismatch(t *testing.T) {
 			Data: []byte(`
 set_default_toolchain("//:tc")`),
 		},
-		// TODO: change dep to ":my_config" after implicit label parse implemented.
 		"BUILD.gn": {
 			Data: []byte(`
 toolchain("tc") { tool("link") { command = "" } }
 config("my_config") {}
 executable("app") {
     # should fail - target dep on config not allowed!
-    deps = [ "//:my_config" ]
+    deps = [ ":my_config" ]
 }`),
 		},
 	})

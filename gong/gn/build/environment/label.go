@@ -56,25 +56,22 @@ func ResolveLabel(currentDir fs.SourceDir, currentToolchain Label, input resolve
 	if err != nil {
 		return Label{}, err
 	}
+
+	var labelDir fs.SourceDir
 	if loc == "" {
-		return Label{}, &LabelFormatError{
-			OriginValue: resolve.OriginValue{Value: input},
-			message:     "NOT YET IMPLEMENTED: Implicit target location not yet supported.",
+		labelDir = currentDir
+	} else {
+		labelDir, err = fs.MakeSourceDir(loc)
+		if err != nil {
+			return Label{}, err
 		}
 	}
+
 	if labelName == "" {
 		return Label{}, &LabelFormatError{
 			OriginValue: resolve.OriginValue{Value: input},
 			message:     "NOT YET IMPLEMENTED: Implicit target name not yet supported.",
 		}
-	}
-
-	// For now, naively derive the label directory from the location.
-	// This means implicit location isn't supported.
-	// TODO: support implicit locations.
-	labelDir, err := fs.MakeSourceDir(loc)
-	if err != nil {
-		return Label{}, err
 	}
 
 	// Use the current toolchain unless the input explicitly overrides it.

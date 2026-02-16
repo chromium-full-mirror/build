@@ -59,11 +59,16 @@ func TestResolveLabel(t *testing.T) {
 			wantErr: &LabelFormatError{},
 		},
 		{
-			name:      "implicit target dir not yet supported",
+			name:      "implicit target dir",
 			input:     ":baz",
 			wd:        "//chrome/browser/",
 			toolchain: Label{Dir: mustDir(t, "//t/"), Name: "d"},
-			wantErr:   &LabelFormatError{},
+			want: Label{
+				Dir:           mustDir(t, "//chrome/browser/"),
+				Name:          "baz",
+				ToolchainDir:  mustDir(t, "//t/"),
+				ToolchainName: "d",
+			},
 		},
 		{
 			name:      "explicit toolchain",
