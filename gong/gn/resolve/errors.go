@@ -72,6 +72,25 @@ func (e UnknownFunctionError) Message() string { return "Unknown function." }
 // It returns an empty string because there is no detailed help text for this error.
 func (e UnknownFunctionError) HelpText() string { return "" }
 
+// ListRemoveNotFoundError is returned when attempting to remove an item that is not in the list.
+type ListRemoveNotFoundError struct {
+	OriginValue
+}
+
+// Error returns the error message.
+func (e ListRemoveNotFoundError) Error() string {
+	return fmt.Sprintf("item %v not found in list", e.Value)
+}
+
+// Message returns the user-facing error message.
+func (e ListRemoveNotFoundError) Message() string { return "Item not found" }
+
+// HelpText returns the user-facing error help text.
+func (e ListRemoveNotFoundError) HelpText() string {
+	return fmt.Sprintf(`You were trying to remove %s
+from the list but it wasn't there.`, GNLiteralRvalue(e.Value))
+}
+
 // UnimplementedNodeError is returned when attempting to resolve a node that we don't support yet.
 type UnimplementedNodeError struct {
 	parse.OriginNode

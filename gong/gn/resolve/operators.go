@@ -6,6 +6,7 @@ package resolve
 
 import (
 	"fmt"
+	"slices"
 	"strconv"
 
 	"go.chromium.org/build/gong/gn/parse"
@@ -66,6 +67,35 @@ Hint: If you're attempting to add or remove a single item from a list, use "foo 
 		locationOverride: opNode.LocationRange().Begin(),
 		rangesOverride:   []syntax.LocationRange{opNode.LocationRange()},
 	}
+}
+
+func removeMatchesFromList(list *ListValue, toRemove Value) error {
+	beforeLen := len(list.list)
+	if beforeLen == 0 {
+		return ListRemoveNotFoundError{OriginValue: OriginValue{toRemove}}
+	}
+	switch toRemove := toRemove.(type) {
+	case *BooleanValue,
+		*IntegerValue,
+		*StringValue,
+		*ScopeValue:
+		list.list = slices.DeleteFunc(list.list, func(v Value) bool {
+			return v.Equal(toRemove)
+		})
+		if beforeLen == len(list.list) {
+			return ListRemoveNotFoundError{OriginValue: OriginValue{toRemove}}
+		}
+	case *ListValue:
+		// Filter out each individual thing.
+		// This is aggressive and will fail if any item is not found,
+		// which matches C++ GN behavior.
+		for _, item := range toRemove.list {
+			if err := removeMatchesFromList(list, item); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 func executeOpSide(opNode *parse.BinaryOpNode, side side, scope *Scope) (Value, error) {
@@ -361,6 +391,32 @@ func executePlus(opNode *parse.BinaryOpNode, left, right Value, allowLeftTypeCon
 	return nil, makeIncompatibleTypeError(opNode, left, right)
 }
 
+func executeMinus(opNode *parse.BinaryOpNode, left, right Value) (Value, error) {
+	// Left-hand-side int. The only thing to do is subtract another int.
+	if lvalue, ok := left.(*IntegerValue); ok {
+		if rvalue, ok := right.(*IntegerValue); ok {
+			// Int - int -> subtraction.
+			return &IntegerValue{
+				origin: opNode,
+				value:  lvalue.value - rvalue.value,
+			}, nil
+		}
+	}
+
+	// Left-hand-side list. The only thing to do is subtract another list.
+	if lvalue, ok := left.(*ListValue); ok {
+		if rvalue, ok := right.(*ListValue); ok {
+			// In-place modify left and return it.
+			if err := removeMatchesFromList(lvalue, rvalue); err != nil {
+				return nil, err
+			}
+			return lvalue, nil
+		}
+	}
+
+	return nil, makeIncompatibleTypeError(opNode, left, right)
+}
+
 func executeBinaryOperator(opNode *parse.BinaryOpNode, scope *Scope) (Value, error) {
 	// Operators that do not require pre-evaluation of both LHS/RHS.
 	switch opNode.Op.TokenType() {
@@ -427,13 +483,10 @@ func executeBinaryOperator(opNode *parse.BinaryOpNode, scope *Scope) (Value, err
 
 	switch opNode.Op.TokenType() {
 	// +, -.
-	case syntax.TokenMinus:
-		return nil, UnimplementedNodeError{
-			OriginNode: parse.OriginNode{Node: opNode},
-			details:    "- isn't implemented yet.",
-		}
 	case syntax.TokenPlus:
 		return executePlus(opNode, leftValue, rightValue, true)
+	case syntax.TokenMinus:
+		return executeMinus(opNode, leftValue, rightValue)
 
 	// ==, !=.
 	case syntax.TokenEqualEqual:

@@ -104,6 +104,15 @@ func TestBinaryOps_NoSideEffects(t *testing.T) {
 			want: &IntegerValue{value: 3},
 		},
 		{
+			name: "integers_subtraction",
+			node: &parse.BinaryOpNode{
+				Op:    syntax.MakeToken(syntax.TokenMinus, "-"),
+				Left:  &parse.LiteralNode{Token: syntax.MakeToken(syntax.TokenInteger, "123")},
+				Right: &parse.LiteralNode{Token: syntax.MakeToken(syntax.TokenInteger, "456")},
+			},
+			want: &IntegerValue{value: -333},
+		},
+		{
 			name: "or_true_true",
 			node: &parse.BinaryOpNode{
 				Op:    syntax.MakeToken(syntax.TokenBooleanOr, "||"),
@@ -423,4 +432,138 @@ func TestBinaryOps_PlusEquals(t *testing.T) {
 			t.Errorf("parent scope value mismatch (-want +got):\n%s", diff)
 		}
 	})
+}
+
+func TestBinaryOps_ListSubtraction(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		node    *parse.BinaryOpNode
+		want    Value
+		wantErr any
+	}{
+		{
+			name: "basic",
+			node: &parse.BinaryOpNode{
+				Op: syntax.MakeToken(syntax.TokenMinus, "-"),
+				Left: &parse.ListNode{Contents: []parse.Node{
+					&parse.LiteralNode{Token: syntax.MakeToken(syntax.TokenInteger, "1")},
+					&parse.LiteralNode{Token: syntax.MakeToken(syntax.TokenInteger, "2")},
+					&parse.LiteralNode{Token: syntax.MakeToken(syntax.TokenInteger, "3")},
+				}},
+				Right: &parse.ListNode{Contents: []parse.Node{
+					&parse.LiteralNode{Token: syntax.MakeToken(syntax.TokenInteger, "2")},
+				}},
+			},
+			want: &ListValue{list: []Value{
+				&IntegerValue{value: 1},
+				&IntegerValue{value: 3},
+			}},
+		},
+		{
+			name: "multiple",
+			node: &parse.BinaryOpNode{
+				Op: syntax.MakeToken(syntax.TokenMinus, "-"),
+				Left: &parse.ListNode{Contents: []parse.Node{
+					&parse.LiteralNode{Token: syntax.MakeToken(syntax.TokenInteger, "1")},
+					&parse.LiteralNode{Token: syntax.MakeToken(syntax.TokenInteger, "2")},
+					&parse.LiteralNode{Token: syntax.MakeToken(syntax.TokenInteger, "3")},
+					&parse.LiteralNode{Token: syntax.MakeToken(syntax.TokenInteger, "4")},
+				}},
+				Right: &parse.ListNode{Contents: []parse.Node{
+					&parse.LiteralNode{Token: syntax.MakeToken(syntax.TokenInteger, "2")},
+					&parse.LiteralNode{Token: syntax.MakeToken(syntax.TokenInteger, "4")},
+				}},
+			},
+			want: &ListValue{list: []Value{
+				&IntegerValue{value: 1},
+				&IntegerValue{value: 3},
+			}},
+		},
+		{
+			name: "alloccurrences",
+			node: &parse.BinaryOpNode{
+				Op: syntax.MakeToken(syntax.TokenMinus, "-"),
+				Left: &parse.ListNode{Contents: []parse.Node{
+					&parse.LiteralNode{Token: syntax.MakeToken(syntax.TokenInteger, "1")},
+					&parse.LiteralNode{Token: syntax.MakeToken(syntax.TokenInteger, "2")},
+					&parse.LiteralNode{Token: syntax.MakeToken(syntax.TokenInteger, "2")},
+					&parse.LiteralNode{Token: syntax.MakeToken(syntax.TokenInteger, "3")},
+				}},
+				Right: &parse.ListNode{Contents: []parse.Node{
+					&parse.LiteralNode{Token: syntax.MakeToken(syntax.TokenInteger, "2")},
+				}},
+			},
+			want: &ListValue{list: []Value{
+				&IntegerValue{value: 1},
+				&IntegerValue{value: 3},
+			}},
+		},
+		{
+			name: "notfound",
+			node: &parse.BinaryOpNode{
+				Op: syntax.MakeToken(syntax.TokenMinus, "-"),
+				Left: &parse.ListNode{Contents: []parse.Node{
+					&parse.LiteralNode{Token: syntax.MakeToken(syntax.TokenInteger, "1")},
+					&parse.LiteralNode{Token: syntax.MakeToken(syntax.TokenInteger, "2")},
+				}},
+				Right: &parse.ListNode{Contents: []parse.Node{
+					&parse.LiteralNode{Token: syntax.MakeToken(syntax.TokenInteger, "3")},
+				}},
+			},
+			wantErr: &ListRemoveNotFoundError{},
+		},
+		{
+			name: "duplicaterhs",
+			node: &parse.BinaryOpNode{
+				Op: syntax.MakeToken(syntax.TokenMinus, "-"),
+				Left: &parse.ListNode{Contents: []parse.Node{
+					&parse.LiteralNode{Token: syntax.MakeToken(syntax.TokenInteger, "1")},
+					&parse.LiteralNode{Token: syntax.MakeToken(syntax.TokenInteger, "2")},
+					&parse.LiteralNode{Token: syntax.MakeToken(syntax.TokenInteger, "3")},
+				}},
+				Right: &parse.ListNode{Contents: []parse.Node{
+					&parse.LiteralNode{Token: syntax.MakeToken(syntax.TokenInteger, "2")},
+					&parse.LiteralNode{Token: syntax.MakeToken(syntax.TokenInteger, "2")},
+				}},
+			},
+			wantErr: &ListRemoveNotFoundError{},
+		},
+		{
+			name: "strings",
+			node: &parse.BinaryOpNode{
+				Op: syntax.MakeToken(syntax.TokenMinus, "-"),
+				Left: &parse.ListNode{Contents: []parse.Node{
+					&parse.LiteralNode{Token: syntax.MakeToken(syntax.TokenString, `"foo"`)},
+					&parse.LiteralNode{Token: syntax.MakeToken(syntax.TokenString, `"bar"`)},
+				}},
+				Right: &parse.ListNode{Contents: []parse.Node{
+					&parse.LiteralNode{Token: syntax.MakeToken(syntax.TokenString, `"bar"`)},
+				}},
+			},
+			want: &ListValue{list: []Value{
+				&StringValue{value: "foo"},
+			}},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := executeBinaryOperator(tc.node, &Scope{values: map[string]record{}})
+			wantErr := tc.wantErr != nil
+			gotErr := err != nil
+
+			if gotErr != wantErr {
+				t.Fatalf("executeBinaryOperator(%T, _): got err=%v, want %T", tc.node, err, tc.wantErr)
+			}
+
+			if gotErr {
+				if !errors.As(err, tc.wantErr) {
+					t.Errorf("executeBinaryOperator(%T, _) got err=%v (%T), want %T", tc.node, err, err, tc.wantErr)
+				}
+				return
+			}
+
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Errorf("executeBinaryOperator(%T, _); diff -want +got:\n%s", tc.node, diff)
+			}
+		})
+	}
 }
