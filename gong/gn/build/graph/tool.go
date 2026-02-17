@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-package analysis
+package graph
 
 import (
 	"go.chromium.org/build/gong/gn/parse"
@@ -25,42 +25,6 @@ func (t toolExecContext) NestedContext() resolve.ExecContext {
 	}
 }
 
-type toolchainFunction struct{}
-
-func (toolchainFunction) HelpShort() string { return "toolchain: Defines a toolchain." }
-func (toolchainFunction) Help() string      { return "" }
-func (toolchainFunction) IsTarget() bool    { return false }
-
-func (toolchainFunction) Run(scope *resolve.Scope, call *parse.FunctionCallNode, args []resolve.Value, block *parse.BlockNode) (resolve.Value, error) {
-	ctx, err := contextFromScope(scope)
-	if err != nil {
-		return nil, err
-	}
-	if ctx.isProcessingBuildConfig() {
-		return nil, ItemInBuildConfigError{OriginFunction: resolve.OriginFunction{Call: call}}
-	}
-
-	if len(args) != 1 {
-		return nil, resolve.ArgumentCountError{
-			OriginFunction: resolve.OriginFunction{Call: call},
-			Msg:            "Incorrect arguments.",
-			Help:           "This function requires a single string argument.",
-		}
-	}
-	nameValue, err := resolve.AsValue[*resolve.StringValue](args[0])
-	if err != nil {
-		return nil, err
-	}
-
-	toolchain, err := GenerateToolchain(ctx.sourceDir, scope, call, nameValue, block)
-	if err != nil {
-		return nil, err
-	}
-
-	ctx.itemCollector(toolchain)
-	return nil, nil
-}
-
 // ToolFunction defines the tool() function.
 // It is for exclusive use inside the toolchain() function, and will return
 // an error if it is executed anywhere else.
@@ -72,10 +36,11 @@ func (ToolFunction) IsTarget() bool    { return false }
 
 func (ToolFunction) Run(scope *resolve.Scope, call *parse.FunctionCallNode, args []resolve.Value, block *parse.BlockNode) (resolve.Value, error) {
 	// Find the toolchain definition we're executing inside of.
-	ctx, ok := scope.ExecContext().(toolExecContext)
+	toolchainContext, ok := scope.ExecContext().(toolExecContext)
 	if !ok {
 		return nil, ToolOutsideToolchain{}
 	}
+	toolchain := toolchainContext.toolchain
 
 	if len(args) != 1 {
 		return nil, resolve.ArgumentCountError{
@@ -90,7 +55,7 @@ func (ToolFunction) Run(scope *resolve.Scope, call *parse.FunctionCallNode, args
 	}
 	name := nameValue.RawGNString()
 
-	blockScope := scope.NewNestedScope()
+	blockScope := scope.NewNestedScopeWithContext(scope.ExecContext().NestedContext())
 	if _, err := resolve.ExecuteNode(block, blockScope); err != nil {
 		return nil, err
 	}
@@ -159,6 +124,6 @@ func (ToolFunction) Run(scope *resolve.Scope, call *parse.FunctionCallNode, args
 	blockScope.Value("output_prefix", true)
 	blockScope.Value("rspfile_content", true)
 
-	ctx.toolchain.Tools[name] = tool
+	toolchain.Tools[name] = tool
 	return nil, blockScope.CheckForUnusedVars()
 }

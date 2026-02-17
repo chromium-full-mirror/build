@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-package analysis
+package graph
 
 import (
 	"testing"
@@ -31,7 +31,7 @@ func TestPool_NinjaName(t *testing.T) {
 		{
 			name: "simple",
 			pool: Pool{
-				itemInfo: itemInfo{
+				ItemInfo: ItemInfo{
 					label: environment.Label{
 						Dir:  mustDir(t, "//foo/bar/"),
 						Name: "baz",
@@ -44,7 +44,7 @@ func TestPool_NinjaName(t *testing.T) {
 		{
 			name: "root",
 			pool: Pool{
-				itemInfo: itemInfo{
+				ItemInfo: ItemInfo{
 					label: environment.Label{
 						Dir:  mustDir(t, "//"),
 						Name: "baz",
@@ -57,7 +57,7 @@ func TestPool_NinjaName(t *testing.T) {
 		{
 			name: "with toolchain",
 			pool: Pool{
-				itemInfo: itemInfo{
+				ItemInfo: ItemInfo{
 					label: environment.Label{
 						Dir:           mustDir(t, "//foo/"),
 						Name:          "bar",
@@ -72,7 +72,7 @@ func TestPool_NinjaName(t *testing.T) {
 		{
 			name: "with toolchain at root",
 			pool: Pool{
-				itemInfo: itemInfo{
+				ItemInfo: ItemInfo{
 					label: environment.Label{
 						Dir:           mustDir(t, "//"),
 						Name:          "bar",
@@ -87,7 +87,7 @@ func TestPool_NinjaName(t *testing.T) {
 		{
 			name: "error label dir system absolute",
 			pool: Pool{
-				itemInfo: itemInfo{
+				ItemInfo: ItemInfo{
 					label: environment.Label{
 						Dir:  mustDir(t, "/abs/"),
 						Name: "foo",
@@ -100,7 +100,7 @@ func TestPool_NinjaName(t *testing.T) {
 		{
 			name: "error toolchain dir system absolute",
 			pool: Pool{
-				itemInfo: itemInfo{
+				ItemInfo: ItemInfo{
 					label: environment.Label{
 						Dir:           mustDir(t, "//foo/"),
 						Name:          "bar",

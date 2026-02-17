@@ -14,6 +14,7 @@ import (
 
 	"go.chromium.org/build/gong/gn/build/environment"
 	"go.chromium.org/build/gong/gn/build/fs"
+	"go.chromium.org/build/gong/gn/build/graph"
 	"go.chromium.org/build/gong/gn/parse"
 )
 
@@ -47,14 +48,14 @@ func MakeBuilder(loader *Loader) Builder {
 //
 // Callers of this function are responsible for loading the buildfile(s) containing the deps
 // requested.
-func (b *Builder) RecordDefinedItem(item Item) ([]environment.LabelWithOrigin, error) {
+func (b *Builder) RecordDefinedItem(item graph.Item) ([]environment.LabelWithOrigin, error) {
 	// If there were items waiting for this one to be defined, a record already exists.
 	// Try to get the existing record, else create a new record.
 	label := item.Label()
 	record, ok := b.records[label]
 	if ok {
 		// Check types, if the record was not just created.
-		if !record.item.compatibleWith(item) {
+		if !record.item.CompatibleWith(item) {
 			return nil, ItemTypeMismatchError{
 				OriginNode:        parse.OriginNode{Node: item.DefinedFrom()},
 				label:             label,
@@ -82,14 +83,14 @@ func (b *Builder) RecordDefinedItem(item Item) ([]environment.LabelWithOrigin, e
 
 	// Do target-specific dependency setup.
 	switch i := item.(type) {
-	case *Target:
+	case *graph.Target:
 		return b.targetDefined(i, record)
-	case *Config:
+	case *graph.Config:
 		// HACK: Temporarily do not throw NotImplementedError for test to work.
 		fmt.Fprintf(os.Stderr, "got config %q but will do nothing yet! need to parse this config's deps.\n",
 			record.item.Label().UserVisibleString(false))
 		return nil, nil
-	case *Toolchain:
+	case *graph.Toolchain:
 		if b.seenDefaultToolchain {
 			return nil, NotImplementedError{
 				what: "Support for multiple toolchains is not implemented yet.",
@@ -104,7 +105,7 @@ func (b *Builder) RecordDefinedItem(item Item) ([]environment.LabelWithOrigin, e
 	return nil, fmt.Errorf("don't know how to handle %T item yet", item)
 }
 
-func (b *Builder) targetDefined(target *Target, record *builderRecord) ([]environment.LabelWithOrigin, error) {
+func (b *Builder) targetDefined(target *graph.Target, record *builderRecord) ([]environment.LabelWithOrigin, error) {
 	var unresolvedDeps []environment.LabelWithOrigin
 
 	// Find all variables in this target that references labels.
@@ -112,30 +113,30 @@ func (b *Builder) targetDefined(target *Target, record *builderRecord) ([]enviro
 		varType := target.Schema.Vars[varName]
 		// Determine the type of label expected.
 		// TODO: only supports lists of labels right now, need to support single labels too?
-		var expectedPlaceholder Item
+		var expectedPlaceholder graph.Item
 		switch varType {
-		case TargetLabelListType:
-			expectedPlaceholder = &Target{}
-		case ConfigLabelListType:
-			expectedPlaceholder = &Config{}
+		case graph.TargetLabelListType:
+			expectedPlaceholder = &graph.Target{}
+		case graph.ConfigLabelListType:
+			expectedPlaceholder = &graph.Config{}
 		default:
 			continue
 		}
 
 		// Get the list.
 		// TODO: only supports lists of labels right now, need to support single labels too?
-		val, ok := target.values[varName]
+		val, ok := target.Values[varName]
 		if !ok {
 			continue
 		}
-		listValue, err := processedValueAs[labelListValue](val)
+		listValue, err := graph.ProcessedValueAs[graph.LabelListValue](val)
 		if err != nil {
 			return nil, err
 		}
 
 		// For each label, ensure the record exists.
 		// Collect deps that aren't yet resolved.
-		for _, dep := range listValue.list {
+		for _, dep := range listValue.List {
 			depRecord, err := b.recordFor(dep.Label, dep.Origin, expectedPlaceholder)
 			if err != nil {
 				return nil, err
@@ -149,10 +150,10 @@ func (b *Builder) targetDefined(target *Target, record *builderRecord) ([]enviro
 
 	// If this target's toolchain hasn't been resolved, add it to the requested deps.
 	toolchainDep := environment.LabelWithOrigin{
-		Label:  target.label.ToolchainLabel(),
-		Origin: target.definedFrom,
+		Label:  target.Label().ToolchainLabel(),
+		Origin: target.DefinedFrom(),
 	}
-	toolchainRec, err := b.recordFor(toolchainDep.Label, toolchainDep.Origin, &Toolchain{})
+	toolchainRec, err := b.recordFor(toolchainDep.Label, toolchainDep.Origin, &graph.Toolchain{})
 	if err != nil {
 		return nil, err
 	}
@@ -167,14 +168,14 @@ func (b *Builder) targetDefined(target *Target, record *builderRecord) ([]enviro
 	return unresolvedDeps, nil
 }
 
-func (b *Builder) resolveTarget(target *Target, record *builderRecord) error {
+func (b *Builder) resolveTarget(target *graph.Target, record *builderRecord) error {
 	if target.Schema == nil {
 		return environment.IllegalStateError{
 			Reason: "Attempted to resolve target without schema",
 		}
 	}
 	if target.Schema.Resolver == nil {
-		fmt.Fprintf(os.Stderr, "ignoring target %v for now since no resolver...\n", target.label.UserVisibleString(false))
+		fmt.Fprintf(os.Stderr, "ignoring target %v for now since no resolver...\n", target.Label().UserVisibleString(false))
 		return nil
 	}
 
@@ -186,39 +187,39 @@ func (b *Builder) resolveTarget(target *Target, record *builderRecord) error {
 		return err
 	}
 
-	outFile, err := target.Schema.Resolver(ResolverContext{
+	outFile, err := target.Schema.Resolver(graph.ResolverContext{
 		DeclareTool: func(tool string, inputs []fs.SourceFile, outputName string) (fs.SourceFile, error) {
-			return target.declareTool(outDir, tool, inputs, outputName)
+			return target.DeclareTool(outDir, tool, inputs, outputName)
 		},
-		StringFor:      target.stringFor,
-		SourceFilesFor: target.sourceFilesFor,
-		ResolvedTargetsFor: func(varName string) iter.Seq2[Resolution, error] {
-			return func(yield func(Resolution, error) bool) {
-				deps, err := target.labelsFor(varName)
+		StringFor:      target.StringFor,
+		SourceFilesFor: target.SourceFilesFor,
+		ResolvedTargetsFor: func(varName string) iter.Seq2[graph.Resolution, error] {
+			return func(yield func(graph.Resolution, error) bool) {
+				deps, err := target.LabelsFor(varName)
 				if err != nil {
-					yield(Resolution{}, err)
+					yield(graph.Resolution{}, err)
 					return
 				}
 				for _, dep := range deps {
-					depRecord, err := b.recordFor(dep.Label, dep.Origin, &Target{})
+					depRecord, err := b.recordFor(dep.Label, dep.Origin, &graph.Target{})
 					if err != nil {
-						yield(Resolution{}, err)
+						yield(graph.Resolution{}, err)
 						return
 					}
 					if depRecord.state != itemStateResolved {
-						yield(Resolution{}, environment.IllegalStateError{Reason: "unresolved dep found"})
+						yield(graph.Resolution{}, environment.IllegalStateError{Reason: "unresolved dep found"})
 						return
 					}
 					switch t := depRecord.item.(type) {
-					case *Target:
+					case *graph.Target:
 						if !yield(t.Resolution, nil) {
 							return
 						}
 					default:
-						yield(Resolution{}, ItemTypeMismatchError{
+						yield(graph.Resolution{}, ItemTypeMismatchError{
 							OriginNode:        parse.OriginNode{Node: dep.Origin},
 							label:             t.Label(),
-							itemOrPlaceholder: &Target{},
+							itemOrPlaceholder: &graph.Target{},
 							existingRecord:    depRecord,
 						})
 						return
@@ -240,7 +241,7 @@ func (b *Builder) resolveTarget(target *Target, record *builderRecord) error {
 			continue
 		}
 		switch dependentTarget := dependent.item.(type) {
-		case *Target:
+		case *graph.Target:
 			if err := b.resolveTarget(dependentTarget, dependent); err != nil {
 				return err
 			}
@@ -259,10 +260,10 @@ func (b *Builder) resolveTarget(target *Target, record *builderRecord) error {
 //
 // If any of the conditions fail, the return value will be nil and the error
 // will be set. requestFrom is used as the source of the error.
-func (b *Builder) recordFor(label environment.Label, requestFrom parse.Node, itemOrPlaceholder Item) (*builderRecord, error) {
+func (b *Builder) recordFor(label environment.Label, requestFrom parse.Node, itemOrPlaceholder graph.Item) (*builderRecord, error) {
 	if record, ok := b.records[label]; ok {
 		// Check types, if the record was not just created.
-		if !record.item.compatibleWith(itemOrPlaceholder) {
+		if !record.item.CompatibleWith(itemOrPlaceholder) {
 			return nil, ItemTypeMismatchError{
 				OriginNode:        parse.OriginNode{Node: requestFrom},
 				label:             label,

@@ -10,8 +10,8 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 
-	"go.chromium.org/build/gong/gn/build/analysis"
 	"go.chromium.org/build/gong/gn/build/fs"
+	"go.chromium.org/build/gong/gn/build/graph"
 )
 
 func mustFile(t *testing.T, s string) fs.SourceFile {
@@ -23,9 +23,9 @@ func mustFile(t *testing.T, s string) fs.SourceFile {
 }
 
 func TestWriteTarget(t *testing.T) {
-	target := &analysis.Target{
-		Resolution: analysis.Resolution{
-			Actions: []analysis.RunToolAction{
+	target := &graph.Target{
+		Resolution: graph.Resolution{
+			Actions: []graph.RunToolAction{
 				{
 					Tool:   "cxx",
 					Inputs: []fs.SourceFile{mustFile(t, "//src/main.cc")},

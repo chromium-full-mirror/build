@@ -10,8 +10,8 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 
-	"go.chromium.org/build/gong/gn/build/analysis"
 	"go.chromium.org/build/gong/gn/build/fs"
+	"go.chromium.org/build/gong/gn/build/graph"
 	"go.chromium.org/build/gong/gn/parse"
 	"go.chromium.org/build/gong/gn/resolve"
 	"go.chromium.org/build/gong/gn/syntax"
@@ -62,10 +62,10 @@ rule cc
 	if err != nil {
 		t.Fatalf("failed to parse: %v", err)
 	}
-	tc, err := analysis.GenerateToolchain(
+	tc, err := graph.NewToolchain(
 		mustDir(t, "//"),
 		resolve.NewScope(&fakeExecContext{}, nil, map[string]resolve.FunctionInfo{
-			"tool": analysis.ToolFunction{},
+			"tool": graph.ToolFunction{},
 		}),
 		nil,
 		resolve.NewOriginlessStringValue(tcName),

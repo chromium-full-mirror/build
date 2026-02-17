@@ -11,6 +11,7 @@ import (
 
 	"go.chromium.org/build/gong/gn/build/environment"
 	"go.chromium.org/build/gong/gn/build/fs"
+	"go.chromium.org/build/gong/gn/build/graph"
 	"go.chromium.org/build/gong/gn/resolve"
 	"go.chromium.org/build/gong/gn/syntax"
 )
@@ -81,7 +82,7 @@ func (l *Loader) BuildFileForLabel(label environment.Label) (fs.SourceFile, erro
 // If intoToolchain is the zero value, the default toolchain will be used.
 //
 // For initial prototyping purposes, this will run synchronously and will not be threadsafe.
-func (l *Loader) Load(file fs.SourceFile, origin syntax.LocationRange, intoToolchain environment.Label) ([]Item, error) {
+func (l *Loader) Load(file fs.SourceFile, origin syntax.LocationRange, intoToolchain environment.Label) ([]graph.Item, error) {
 	loadID := loadID{
 		file:      file,
 		toolchain: intoToolchain,
@@ -195,17 +196,17 @@ for all of this code.`,
 }
 
 // loadBuildConfig loads the buildfile into the provided toolchain settings object.
-func (l *Loader) loadFile(file fs.SourceFile, settings *Settings) ([]Item, error) {
+func (l *Loader) loadFile(file fs.SourceFile, settings *Settings) ([]graph.Item, error) {
 	root, err := l.inputFileManager.LoadFile(syntax.LocationRange{}, l.buildSettings, file)
 	if err != nil {
 		return nil, err
 	}
 
-	var items []Item
+	var items []graph.Item
 	scope := settings.NewScope()
 	ctx := scope.ExecContext().(*scopeContext)
 	ctx.sourceDir = file.Dir()
-	ctx.itemCollector = func(item Item) {
+	ctx.itemCollector = func(item graph.Item) {
 		items = append(items, item)
 	}
 

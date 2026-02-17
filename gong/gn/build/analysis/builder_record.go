@@ -4,7 +4,10 @@
 
 package analysis
 
-import "go.chromium.org/build/gong/gn/parse"
+import (
+	"go.chromium.org/build/gong/gn/build/graph"
+	"go.chromium.org/build/gong/gn/parse"
+)
 
 type itemState int
 
@@ -26,7 +29,7 @@ const (
 // The item will get filled in when we encounter the declaration for the item
 // (or when we're done and realize there are undefined items).
 type builderRecord struct {
-	item  Item
+	item  graph.Item
 	state itemState
 	// The node that referenced this item.
 	referencedFrom parse.Node
@@ -43,7 +46,7 @@ type builderRecord struct {
 //
 // The item can be the zero value for a concrete item, see the [builderRecord] docs
 // for how this is used.
-func newBuilderRecord(item Item, referencedFrom parse.Node) *builderRecord {
+func newBuilderRecord(item graph.Item, referencedFrom parse.Node) *builderRecord {
 	return &builderRecord{
 		item:           item,
 		state:          itemStateUndefined,

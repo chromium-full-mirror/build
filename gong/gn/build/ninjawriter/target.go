@@ -9,11 +9,11 @@ import (
 	"io"
 	"strings"
 
-	"go.chromium.org/build/gong/gn/build/analysis"
+	"go.chromium.org/build/gong/gn/build/graph"
 )
 
 // WriteTarget is a rudimentary stub implementation of writing a ninja build target out.
-func WriteTarget(w io.Writer, t *analysis.Target) error {
+func WriteTarget(w io.Writer, t *graph.Target) error {
 	for _, action := range t.Resolution.Actions {
 		var inputPaths []string
 		for _, in := range action.Inputs {

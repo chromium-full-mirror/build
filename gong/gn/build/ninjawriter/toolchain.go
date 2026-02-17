@@ -10,11 +10,11 @@ import (
 	"io"
 	"slices"
 
-	"go.chromium.org/build/gong/gn/build/analysis"
+	"go.chromium.org/build/gong/gn/build/graph"
 )
 
 // WriteToolchain is a rudimentary stub implementation of writing a ninja toolchain out.
-func WriteToolchain(w io.Writer, tc *analysis.Toolchain) error {
+func WriteToolchain(w io.Writer, tc *graph.Toolchain) error {
 	var names []string
 	for name := range tc.Tools {
 		names = append(names, name)

@@ -2,17 +2,38 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-package analysis
+package graph
 
 import (
 	"errors"
 	"testing"
 
 	"go.chromium.org/build/gong/gn/build/environment"
+	"go.chromium.org/build/gong/gn/build/fs"
 	"go.chromium.org/build/gong/gn/parse"
 	"go.chromium.org/build/gong/gn/resolve"
 	"go.chromium.org/build/gong/gn/syntax"
 )
+
+type schemaRunner struct {
+	schema Schema
+	dir    fs.SourceDir
+}
+
+func (schemaRunner) IsTarget() bool      { return true }
+func (f schemaRunner) HelpShort() string { return "" }
+func (f schemaRunner) Help() string      { return "" }
+func (f schemaRunner) Run(scope *resolve.Scope, call *parse.FunctionCallNode, args []resolve.Value, block *parse.BlockNode) (resolve.Value, error) {
+	nameValue, err := resolve.AsValue[*resolve.StringValue](args[0])
+	if err != nil {
+		return nil, err
+	}
+	_, err = f.schema.Generate(f.dir, scope, environment.Label{}, call, nameValue, block)
+	if err != nil {
+		return nil, err
+	}
+	return nil, nil
+}
 
 func TestSchema_Run(t *testing.T) {
 	for _, tc := range []struct {
@@ -21,20 +42,11 @@ func TestSchema_Run(t *testing.T) {
 		wantErr any
 	}{
 		{
-			name:  "empty",
-			input: `source_set("foo") {}`,
-		},
-		{
 			name: "normal",
 			input: `source_set("foo") {
   sources = [ "foo.cc" ]
   deps = [ "//bar:baz", "//bar:qux" ]
 }`,
-		},
-		{
-			name:    "no name",
-			input:   `source_set() {}`,
-			wantErr: &resolve.ArgumentCountError{},
 		},
 		{
 			name: "unused",
@@ -55,14 +67,10 @@ func TestSchema_Run(t *testing.T) {
 			}
 
 			_, err = resolve.ExecuteNode(root, resolve.NewScope(
-				&scopeContext{
-					settings:      NewSettings(&environment.BuildSettings{}),
-					sourceDir:     mustDir(t, "//"),
-					itemCollector: func(i Item) {},
-				},
+				nil,
 				nil,
 				map[string]resolve.FunctionInfo{
-					"source_set": &SourceSetSchema,
+					"source_set": schemaRunner{schema: SourceSetSchema, dir: mustDir(t, "//")},
 				},
 			))
 

@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-package analysis
+package graph
 
 import (
 	"fmt"
@@ -198,57 +198,33 @@ var (
 	}
 )
 
-func (Schema) IsTarget() bool       { return true }
-func (s *Schema) HelpShort() string { return fmt.Sprintf("%s: %s", s.Name, s.Summary) }
-func (s *Schema) Help() string      { return s.HelpShort() } // TODO: support full description
-func (s *Schema) Run(scope *resolve.Scope, call *parse.FunctionCallNode, args []resolve.Value, block *parse.BlockNode) (resolve.Value, error) {
-	ctx, err := contextFromScope(scope)
-	if err != nil {
-		return nil, err
-	}
-
-	if ctx.isProcessingBuildConfig() {
-		return nil, ItemInBuildConfigError{OriginFunction: resolve.OriginFunction{Call: call}}
-	}
-
+// Generate creates a target from this schema.
+func (s *Schema) Generate(dir fs.SourceDir, scope *resolve.Scope, toolchain environment.Label, call *parse.FunctionCallNode, nameValue *resolve.StringValue, block *parse.BlockNode) (*Target, error) {
 	if block == nil {
 		return nil, fmt.Errorf("target definition missing block?")
 	}
 
 	blockScope := scope.NewNestedScope()
-
-	// Set target_name.
-	if len(args) == 0 {
-		return nil, resolve.ArgumentCountError{
-			OriginFunction: resolve.OriginFunction{Call: call},
-			Msg:            "Target name is missing.",
-		}
-	}
-	nameValue, err := resolve.AsValue[*resolve.StringValue](args[0])
-	if err != nil {
-		return nil, err
-	}
-	name := nameValue.RawGNString()
-
 	if _, err := resolve.ExecuteNode(block, blockScope); err != nil {
 		return nil, err
 	}
 
+	name := nameValue.RawGNString()
 	label := environment.Label{
-		Dir:           ctx.sourceDir,
+		Dir:           dir,
 		Name:          name,
-		ToolchainDir:  ctx.settings.toolchainLabel.Dir,
-		ToolchainName: ctx.settings.toolchainLabel.Name,
+		ToolchainDir:  toolchain.Dir,
+		ToolchainName: toolchain.Name,
 	}
 
 	target := &Target{
-		itemInfo: itemInfo{
+		ItemInfo: ItemInfo{
 			label:       label,
 			definedFrom: call,
 		},
 		Schema: s,
-		values: map[string]processedValue{
-			"name": stringValue{
+		Values: map[string]ProcessedValue{
+			"name": StringValue{
 				origin: nameValue,
 				str:    name,
 			},
@@ -265,9 +241,12 @@ func (s *Schema) Run(scope *resolve.Scope, call *parse.FunctionCallNode, args []
 		if err != nil {
 			return nil, err
 		}
-		target.values[acceptedVar] = processedValue
+		target.Values[acceptedVar] = processedValue
 	}
 
-	ctx.itemCollector(target)
-	return nil, blockScope.CheckForUnusedVars()
+	err := blockScope.CheckForUnusedVars()
+	if err != nil {
+		return nil, err
+	}
+	return target, nil
 }

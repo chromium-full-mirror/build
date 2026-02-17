@@ -8,6 +8,7 @@ import (
 	"fmt"
 
 	"go.chromium.org/build/gong/gn/build/environment"
+	"go.chromium.org/build/gong/gn/build/graph"
 	"go.chromium.org/build/gong/gn/parse"
 	"go.chromium.org/build/gong/gn/resolve"
 )
@@ -79,7 +80,7 @@ Put it in a regular BUILD file.`
 // the same item.
 type ItemRedefinedError struct {
 	previousOrigin parse.Node
-	duplicateItem  Item
+	duplicateItem  graph.Item
 }
 
 // Error returns the error string.
@@ -122,7 +123,7 @@ func (e ItemRedefinedError) Unwrap() error {
 type ItemTypeMismatchError struct {
 	parse.OriginNode
 	label             environment.Label
-	itemOrPlaceholder Item
+	itemOrPlaceholder graph.Item
 	existingRecord    *builderRecord
 }
 
@@ -147,50 +148,17 @@ in the deps section of a target (or vice-versa).`,
 		itemTypeName(e.existingRecord.item))
 }
 
-func itemTypeName(item Item) string {
+// TODO: make this a function on graph.Item rather than this package?
+func itemTypeName(item graph.Item) string {
 	switch item.(type) {
-	case *Target:
+	case *graph.Target:
 		return "target"
-	case *Config:
+	case *graph.Config:
 		return "config"
-	case *Toolchain:
+	case *graph.Toolchain:
 		return "toolchain"
-	case *Pool:
+	case *graph.Pool:
 		return "pool"
 	}
 	return "unknown"
-}
-
-// ToolError is returned when there is an error in a tool definition.
-type ToolError struct {
-	parse.OriginNode
-	message  string
-	helpText string
-}
-
-// Error returns the error string.
-func (e ToolError) Error() string {
-	return fmt.Sprintf("error defining tool: %s", e.message)
-}
-
-// Message returns the user-facing error message.
-func (e ToolError) Message() string { return e.message }
-
-// HelpText returns the user-facing error help text.
-func (e ToolError) HelpText() string { return e.helpText }
-
-// ToolOutsideToolchain is returned when attempting to define a tool outside of a toolchain.
-type ToolOutsideToolchain struct {
-	resolve.OriginFunction
-}
-
-// Error returns the error string.
-func (ToolOutsideToolchain) Error() string { return "called tool outside of toolchain" }
-
-// Message returns the user-facing error message.
-func (ToolOutsideToolchain) Message() string { return "tool() called outside of toolchain()." }
-
-// HelpText returns the user-facing error help text.
-func (ToolOutsideToolchain) HelpText() string {
-	return "The tool() function can only be used inside a toolchain() definition."
 }

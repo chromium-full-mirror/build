@@ -7,6 +7,7 @@ package analysis
 import (
 	"go.chromium.org/build/gong/gn/build/environment"
 	"go.chromium.org/build/gong/gn/build/fs"
+	"go.chromium.org/build/gong/gn/build/graph"
 	"go.chromium.org/build/gong/gn/resolve"
 )
 
@@ -63,7 +64,7 @@ type scopeContext struct {
 	//
 	// TODO: maybe itemCollector scopes should use a different scopeContext, like tool() scopeContext?
 	// then inside function impl can use typecast rather than check for whether this var is nil.
-	itemCollector func(Item)
+	itemCollector func(graph.Item)
 	// The toolchain invocation this scope belongs to.
 	settings *Settings
 	// Flag to indicate that we're currently processing the build configuration file.

@@ -5,7 +5,7 @@
 package analysis
 
 import (
-	"go.chromium.org/build/gong/gn/build/environment"
+	"go.chromium.org/build/gong/gn/build/graph"
 	"go.chromium.org/build/gong/gn/parse"
 	"go.chromium.org/build/gong/gn/resolve"
 )
@@ -29,34 +29,19 @@ func (configFunction) Run(scope *resolve.Scope, call *parse.FunctionCallNode, ar
 		return nil, resolve.ArgumentCountError{
 			OriginFunction: resolve.OriginFunction{Call: call},
 			Msg:            "Incorrect arguments.",
+			Help:           "This function requires a single string argument.",
 		}
 	}
 	nameValue, err := resolve.AsValue[*resolve.StringValue](args[0])
 	if err != nil {
 		return nil, err
 	}
-	name := nameValue.RawGNString()
 
-	label := environment.Label{
-		Dir:           ctx.sourceDir,
-		Name:          name,
-		ToolchainDir:  ctx.settings.toolchainLabel.Dir,
-		ToolchainName: ctx.settings.toolchainLabel.Name,
-	}
-
-	blockScope := scope.NewNestedScope()
-	if _, err := resolve.ExecuteNode(block, blockScope); err != nil {
+	config, err := graph.NewConfig(ctx.sourceDir, scope, ctx.settings.toolchainLabel, call, nameValue, block)
+	if err != nil {
 		return nil, err
 	}
 
-	// TODO: stub impl, need to store the values (cflags, etc)
-	cfg := &Config{
-		itemInfo: itemInfo{
-			label:       label,
-			definedFrom: call,
-		},
-	}
-
-	ctx.itemCollector(cfg)
-	return nil, blockScope.CheckForUnusedVars()
+	ctx.itemCollector(config)
+	return nil, nil
 }

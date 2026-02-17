@@ -18,6 +18,15 @@ import (
 	"go.chromium.org/build/gong/gn/syntax"
 )
 
+func mustDir(t *testing.T, path string) fs.SourceDir {
+	t.Helper()
+	d, err := fs.MakeSourceDir(path)
+	if err != nil {
+		t.Fatalf("failed to make source dir %q: %v", path, err)
+	}
+	return d
+}
+
 func mustFile(t *testing.T, s string) fs.SourceFile {
 	t.Helper()
 	f, err := fs.MakeSourceFile(s)

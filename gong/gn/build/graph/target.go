@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-package analysis
+package graph
 
 import (
 	"fmt"
@@ -17,13 +17,14 @@ import (
 //
 // Using their [Schema], targets are moved into a resolved state by the [Builder].
 type Target struct {
-	itemInfo
+	ItemInfo
 	Schema     *Schema
-	values     map[string]processedValue
+	Values     map[string]ProcessedValue
 	Resolution Resolution
 }
 
-func (Target) compatibleWith(item Item) bool {
+// CompatibleWith checks whether the other item is also a *Target.
+func (Target) CompatibleWith(item Item) bool {
 	switch item.(type) {
 	case *Target:
 		return true
@@ -63,25 +64,27 @@ type RunToolAction struct {
 	Output fs.SourceFile
 }
 
-func (t *Target) stringFor(varName string) (string, error) {
-	v, ok := t.values[varName]
+// StringFor returns the string for the variable, if it accepts strings.
+func (t *Target) StringFor(varName string) (string, error) {
+	v, ok := t.Values[varName]
 	if !ok {
 		return "", fmt.Errorf("%s not declared", varName)
 	}
-	sv, err := processedValueAs[stringValue](v)
+	sv, err := ProcessedValueAs[StringValue](v)
 	if err != nil {
 		return "", err
 	}
 	return sv.str, nil
 }
 
-func (t *Target) sourceFilesFor(varName string) iter.Seq2[fs.SourceFile, error] {
+// SourceFilesFor returns an iterator over source files for the variable, if it accepts file lists.
+func (t *Target) SourceFilesFor(varName string) iter.Seq2[fs.SourceFile, error] {
 	return func(yield func(fs.SourceFile, error) bool) {
-		v, ok := t.values[varName]
+		v, ok := t.Values[varName]
 		if !ok {
 			return
 		}
-		lv, err := processedValueAs[fileListValue](v)
+		lv, err := ProcessedValueAs[FileListValue](v)
 		if err != nil {
 			yield(fs.SourceFile{}, err)
 			return
@@ -94,19 +97,21 @@ func (t *Target) sourceFilesFor(varName string) iter.Seq2[fs.SourceFile, error] 
 	}
 }
 
-func (t *Target) labelsFor(varName string) ([]environment.LabelWithOrigin, error) {
-	v, ok := t.values[varName]
+// LabelsFor returns an iterator over labels for the variable, if it accepts item (target, config, etc.) lists.
+func (t *Target) LabelsFor(varName string) ([]environment.LabelWithOrigin, error) {
+	v, ok := t.Values[varName]
 	if !ok {
 		return nil, nil
 	}
-	llv, err := processedValueAs[labelListValue](v)
+	llv, err := ProcessedValueAs[LabelListValue](v)
 	if err != nil {
 		return nil, err
 	}
-	return llv.list, nil
+	return llv.List, nil
 }
 
-func (t *Target) declareTool(outDir fs.SourceDir, tool string, inputs []fs.SourceFile, outputName string) (fs.SourceFile, error) {
+// DeclareTool declares a tool call.
+func (t *Target) DeclareTool(outDir fs.SourceDir, tool string, inputs []fs.SourceFile, outputName string) (fs.SourceFile, error) {
 	outFile, err := outDir.ResolveRelativeFile(outputName)
 	if err != nil {
 		return fs.SourceFile{}, err

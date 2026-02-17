@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-package analysis
+package graph
 
 import (
 	"go.chromium.org/build/gong/gn/build/environment"
@@ -20,22 +20,22 @@ import (
 // that toolchain's object so that we can be sure we loaded the toolchain
 // before generating the build for that target.
 type Toolchain struct {
-	itemInfo
+	ItemInfo
 	// Tools defined in this toolchain.
 	Tools map[string]*Tool
 }
 
-// GenerateToolchain creates a new toolchain from a toolchain definition.
+// NewToolchain creates a new toolchain from a toolchain definition.
 // It executes the toolchain's block in a nested scope and collects the tools defined in it.
-func GenerateToolchain(sourceDir fs.SourceDir, scope *resolve.Scope, call *parse.FunctionCallNode, nameValue *resolve.StringValue, block *parse.BlockNode) (*Toolchain, error) {
+func NewToolchain(dir fs.SourceDir, scope *resolve.Scope, call *parse.FunctionCallNode, nameValue *resolve.StringValue, block *parse.BlockNode) (*Toolchain, error) {
 	name := nameValue.RawGNString()
 
 	// Note that we don't want to make a label that includes the toolchain name
 	// in the label, since toolchain labels don't themselves have toolchain names.
-	label := environment.Label{Dir: sourceDir, Name: name}
+	label := environment.Label{Dir: dir, Name: name}
 
 	toolchain := &Toolchain{
-		itemInfo: itemInfo{
+		ItemInfo: ItemInfo{
 			label: label,
 		},
 		Tools: make(map[string]*Tool),
@@ -60,7 +60,7 @@ func GenerateToolchain(sourceDir fs.SourceDir, scope *resolve.Scope, call *parse
 	return toolchain, nil
 }
 
-func (Toolchain) compatibleWith(item Item) bool {
+func (Toolchain) CompatibleWith(item Item) bool {
 	switch item.(type) {
 	case *Toolchain:
 		return true
