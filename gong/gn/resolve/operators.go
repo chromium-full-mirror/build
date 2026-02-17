@@ -70,15 +70,12 @@ Hint: If you're attempting to add or remove a single item from a list, use "foo 
 }
 
 func removeMatchesFromList(list *ListValue, toRemove Value) error {
-	beforeLen := len(list.list)
-	if beforeLen == 0 {
-		return ListRemoveNotFoundError{OriginValue: OriginValue{toRemove}}
-	}
 	switch toRemove := toRemove.(type) {
 	case *BooleanValue,
 		*IntegerValue,
 		*StringValue,
 		*ScopeValue:
+		beforeLen := len(list.list)
 		list.list = slices.DeleteFunc(list.list, func(v Value) bool {
 			return v.Equal(toRemove)
 		})
@@ -261,6 +258,41 @@ func executePlusEquals(opNode *parse.BinaryOpNode, scope *Scope) error {
 
 	// Everything else is semantically `foo = foo + bar`.
 	value, err := executePlus(opNode, dest, rvalue, false)
+	if err != nil {
+		return err
+	}
+	lvalue.assign(value, opNode)
+	return nil
+}
+
+func executeMinusEquals(opNode *parse.BinaryOpNode, scope *Scope) error {
+	lvalue, rvalue, err := prepareAssignOp(opNode, scope)
+	if err != nil {
+		return err
+	}
+
+	dest := lvalue.valueForMutation(opNode)
+	if listDest, ok := dest.(*ListValue); ok {
+		// The lvalue is a mutable list.
+		// If the rvalue is also a list then we can optimize by in-place mutation.
+		if rlist, ok := rvalue.(*ListValue); ok {
+			if err := removeMatchesFromList(listDest, rlist); err != nil {
+				return err
+			}
+			return nil
+		}
+	}
+
+	// If we can't optimize above then convert `foo -= bar` to `foo = foo - bar`.
+	// First make sure the lvalue exists in the first place.
+	err = lvalue.ensureValue()
+	if err != nil {
+		return err
+	}
+
+	// It exists, so we can perform `foo = foo - bar`.
+	existingValue := lvalue.valueForValidation()
+	value, err := executeMinus(opNode, existingValue, rvalue)
 	if err != nil {
 		return err
 	}
@@ -459,10 +491,7 @@ func executeBinaryOperator(opNode *parse.BinaryOpNode, scope *Scope) (Value, err
 		return nil, executePlusEquals(opNode, scope)
 
 	case syntax.TokenMinusEquals:
-		return nil, UnimplementedNodeError{
-			OriginNode: parse.OriginNode{Node: opNode},
-			details:    "-= isn't implemented yet.",
-		}
+		return nil, executeMinusEquals(opNode, scope)
 
 	// ||, &&.
 	case syntax.TokenBooleanOr:

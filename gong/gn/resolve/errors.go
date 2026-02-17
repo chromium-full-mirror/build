@@ -91,23 +91,6 @@ func (e ListRemoveNotFoundError) HelpText() string {
 from the list but it wasn't there.`, GNLiteralRvalue(e.Value))
 }
 
-// UnimplementedNodeError is returned when attempting to resolve a node that we don't support yet.
-type UnimplementedNodeError struct {
-	parse.OriginNode
-	details string
-}
-
-// Error implements PresentableError.
-func (e UnimplementedNodeError) Error() string {
-	return fmt.Sprintf("unimplemented node %T(%v)", e.OriginNode, e.OriginNode)
-}
-
-// Message implements PresentableError.
-func (e UnimplementedNodeError) Message() string { return e.Error() }
-
-// HelpText implements PresentableError.
-func (e UnimplementedNodeError) HelpText() string { return e.details }
-
 // ArgumentCountError is returned when a function call has the wrong number of arguments.
 //
 // TODO: Maybe we can standardize GN argument count error messages by taking the expected and actual counts here?
