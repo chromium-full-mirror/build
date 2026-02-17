@@ -24,6 +24,6 @@ func FunctionMap(buildSettings *environment.BuildSettings) map[string]resolve.Fu
 		"shared_library":        &SharedLibrarySchema,
 		"static_library":        &StaticLibrarySchema,
 		"toolchain":             toolchainFunction{},
-		"tool":                  toolFunction{},
+		"tool":                  ToolFunction{},
 	}
 }

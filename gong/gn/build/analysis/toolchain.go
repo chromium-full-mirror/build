@@ -6,7 +6,9 @@ package analysis
 
 import (
 	"go.chromium.org/build/gong/gn/build/environment"
+	"go.chromium.org/build/gong/gn/build/fs"
 	"go.chromium.org/build/gong/gn/parse"
+	"go.chromium.org/build/gong/gn/resolve"
 )
 
 // Toolchain is an item in the GN dependency graph that represents information
@@ -19,32 +21,43 @@ import (
 // before generating the build for that target.
 type Toolchain struct {
 	itemInfo
-	// The Settings of an Item is always the context in which the Item was
-	// defined. For a toolchain this is confusing because this is NOT the
-	// settings object that applies to the things in the toolchain.
-	//
-	// To get the Settings object corresponding to objects loaded in the context
-	// of this toolchain (probably what you want instead), see
-	// Loader.GetToolchainSettings(). Many toolchain objects may be created in a
-	// given build, but only a few might be used, and the Loader is in charge of
-	// this process.
-	//
-	// We also track the set of build files that may affect this target, please
-	// refer to scopeContext for how this is determined.
-	settings *Settings
 	// Tools defined in this toolchain.
 	Tools map[string]*Tool
 }
 
-// NewToolchain creates a new toolchain() item struct.
-func NewToolchain(label environment.Label, settings *Settings) *Toolchain {
-	return &Toolchain{
+// GenerateToolchain creates a new toolchain from a toolchain definition.
+// It executes the toolchain's block in a nested scope and collects the tools defined in it.
+func GenerateToolchain(sourceDir fs.SourceDir, scope *resolve.Scope, call *parse.FunctionCallNode, nameValue *resolve.StringValue, block *parse.BlockNode) (*Toolchain, error) {
+	name := nameValue.RawGNString()
+
+	// Note that we don't want to make a label that includes the toolchain name
+	// in the label, since toolchain labels don't themselves have toolchain names.
+	label := environment.Label{Dir: sourceDir, Name: name}
+
+	toolchain := &Toolchain{
 		itemInfo: itemInfo{
 			label: label,
 		},
-		settings: settings,
-		Tools:    make(map[string]*Tool),
+		Tools: make(map[string]*Tool),
 	}
+	toolchain.definedFrom = call
+
+	// Scope for executing the toolchain's block.
+	blockScope := scope.NewNestedScopeWithContext(toolExecContext{
+		baseContext: scope.ExecContext().NestedContext(),
+		toolchain:   toolchain,
+	})
+
+	// TODO: buildDependencyFiles needs to be collected from the scope.
+	if _, err := resolve.ExecuteNode(block, blockScope); err != nil {
+		return nil, err
+	}
+
+	err := blockScope.CheckForUnusedVars()
+	if err != nil {
+		return nil, err
+	}
+	return toolchain, nil
 }
 
 func (Toolchain) compatibleWith(item Item) bool {

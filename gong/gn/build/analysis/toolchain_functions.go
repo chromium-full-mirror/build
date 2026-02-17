@@ -5,7 +5,6 @@
 package analysis
 
 import (
-	"go.chromium.org/build/gong/gn/build/environment"
 	"go.chromium.org/build/gong/gn/parse"
 	"go.chromium.org/build/gong/gn/resolve"
 )
@@ -52,38 +51,26 @@ func (toolchainFunction) Run(scope *resolve.Scope, call *parse.FunctionCallNode,
 	if err != nil {
 		return nil, err
 	}
-	name := nameValue.RawGNString()
 
-	// Note that we don't want to make a label that includes the toolchain name
-	// in the label, since toolchain labels don't themselves have toolchain names.
-	label := environment.Label{Dir: ctx.sourceDir, Name: name}
-
-	// Create the new toolchain object
-	// TODO: buildDependencyFiles needs to be collected from the scope.
-	toolchain := NewToolchain(label, ctx.settings)
-	toolchain.definedFrom = call
-
-	// Scope for executing the toolchain's block
-	blockScope := scope.NewNestedScopeWithContext(toolExecContext{
-		baseContext: scope.ExecContext().NestedContext(),
-		toolchain:   toolchain,
-	})
-
-	if _, err := resolve.ExecuteNode(block, blockScope); err != nil {
+	toolchain, err := GenerateToolchain(ctx.sourceDir, scope, call, nameValue, block)
+	if err != nil {
 		return nil, err
 	}
 
 	ctx.itemCollector(toolchain)
-	return nil, blockScope.CheckForUnusedVars()
+	return nil, nil
 }
 
-type toolFunction struct{}
+// ToolFunction defines the tool() function.
+// It is for exclusive use inside the toolchain() function, and will return
+// an error if it is executed anywhere else.
+type ToolFunction struct{}
 
-func (toolFunction) HelpShort() string { return "tool: Specify arguments to a toolchain tool." }
-func (toolFunction) Help() string      { return "" }
-func (toolFunction) IsTarget() bool    { return false }
+func (ToolFunction) HelpShort() string { return "tool: Specify arguments to a toolchain tool." }
+func (ToolFunction) Help() string      { return "" }
+func (ToolFunction) IsTarget() bool    { return false }
 
-func (toolFunction) Run(scope *resolve.Scope, call *parse.FunctionCallNode, args []resolve.Value, block *parse.BlockNode) (resolve.Value, error) {
+func (ToolFunction) Run(scope *resolve.Scope, call *parse.FunctionCallNode, args []resolve.Value, block *parse.BlockNode) (resolve.Value, error) {
 	// Find the toolchain definition we're executing inside of.
 	ctx, ok := scope.ExecContext().(toolExecContext)
 	if !ok {
