@@ -148,10 +148,7 @@ func (p *parser) parseFile() (Node, error) {
 	}
 	for !p.atEnd() {
 		statement, err := p.parseStatement()
-		// TODO: use go1.26 errors.AsType once available
-		// https://go.dev/doc/go1.26#errorspkgerrors
-		var e *EOF
-		if errors.As(err, &e) {
+		if _, ok := errors.AsType[*EOF](err); ok {
 			break
 		}
 		if err != nil {
@@ -432,10 +429,7 @@ func (p *parser) parseInfix(left Node, token syntax.Token) (Node, error) {
 		syntax.TokenBooleanOr:
 		right, err := p.parseExpression(p.infixPrecedence(token) + 1)
 		if err != nil {
-			// TODO: use go1.26 errors.AsType once available
-			// https://go.dev/doc/go1.26#errorspkgerrors
-			var e *EOF
-			if errors.As(err, &e) {
+			if _, ok := errors.AsType[*EOF](err); ok {
 				return nil, TokenError{
 					OriginToken: syntax.OriginToken{Token: token},
 					// Error with single quotes to match GN, rather than using %q.

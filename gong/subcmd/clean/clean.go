@@ -45,10 +45,8 @@ func (h *Command) cleanOneDir(dir string) error {
 func (h *Command) Execute(ctx context.Context, f *flag.FlagSet, _ ...any) subcommands.ExitStatus {
 	for _, dir := range f.Args() {
 		if err := h.cleanOneDir(dir); err != nil {
-			// TODO: use errors.AsType once go1.26 releases?
-			var syntaxErr ui.PresentableError
-			if errors.As(err, &syntaxErr) {
-				fmt.Fprint(os.Stderr, ui.FormatError(syntaxErr))
+			if e, ok := errors.AsType[ui.PresentableError](err); ok {
+				fmt.Fprint(os.Stderr, ui.FormatError(e))
 				return subcommands.ExitFailure
 			}
 			fmt.Fprintf(os.Stderr, "clean failed with error: %v\n", err)
