@@ -187,7 +187,7 @@ func (b *Builder) resolveTarget(target *graph.Target, record *builderRecord) err
 		return err
 	}
 
-	outFile, err := target.Schema.Resolver(graph.ResolverContext{
+	result, err := target.Schema.Resolver(graph.ResolverContext{
 		DeclareTool: func(tool string, inputs []fs.SourceFile, outputName string) (fs.SourceFile, error) {
 			return target.DeclareTool(outDir, tool, inputs, outputName)
 		},
@@ -231,7 +231,7 @@ func (b *Builder) resolveTarget(target *graph.Target, record *builderRecord) err
 	if err != nil {
 		return err
 	}
-	target.Resolution.Output = outFile
+	target.Resolution.Metadata = result
 	record.state = itemStateResolved
 
 	// Recursively update everybody waiting on this item to be resolved.

@@ -12,6 +12,7 @@ import (
 
 	"go.chromium.org/build/gong/gn/build/fs"
 	"go.chromium.org/build/gong/gn/build/graph"
+	"go.chromium.org/build/gong/gn/build/graph/schemas"
 )
 
 func mustFile(t *testing.T, s string) fs.SourceFile {
@@ -37,7 +38,7 @@ func TestWriteTarget(t *testing.T) {
 					Output: mustFile(t, "//bin/app"),
 				},
 			},
-			Output: mustFile(t, "//bin/app"),
+			Metadata: schemas.DefaultMetadata{OutputFiles: []fs.SourceFile{mustFile(t, "//bin/app")}},
 		},
 	}
 	want := `build FAKEPATH//obj/src/main.o: cxx FAKEPATH//src/main.cc

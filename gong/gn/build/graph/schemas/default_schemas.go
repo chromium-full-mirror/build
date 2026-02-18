@@ -14,6 +14,17 @@ import (
 	"go.chromium.org/build/gong/gn/build/graph"
 )
 
+// DefaultMetadata is a minimal implementation of resolution metadata
+// that only provides outputs of the target.
+type DefaultMetadata struct {
+	OutputFiles []fs.SourceFile
+}
+
+// Outputs returns the output(s) from this target.
+func (m DefaultMetadata) Outputs() []fs.SourceFile {
+	return m.OutputFiles
+}
+
 // TODO: add helper functions re file extensions like below
 // https://source.chromium.org/gn/gn/+/main:src/gn/source_file.cc?q=SourceFile::SOURCE_H&ss=gn%2Fgn
 var (
@@ -39,10 +50,10 @@ var (
 			"configs": graph.ConfigLabelListType,
 			"outputs": graph.FileListType,
 		},
-		Resolver: func(ctx graph.ResolverContext) (fs.SourceFile, error) {
+		Resolver: func(ctx graph.ResolverContext) (graph.ResolutionMetadata, error) {
 			name, err := ctx.StringFor("name")
 			if err != nil {
-				return fs.SourceFile{}, err
+				return nil, err
 			}
 			var linkInputs []fs.SourceFile
 			for source := range ctx.SourceFilesFor("sources") {
@@ -57,29 +68,31 @@ var (
 					fmt.Sprintf("%s.%s.o", name, sourceBase),
 				)
 				if err != nil {
-					return fs.SourceFile{}, err
+					return nil, err
 				}
 				linkInputs = append(linkInputs, objFile)
 			}
 			for dep, err := range ctx.ResolvedTargetsFor("deps") {
 				if err != nil {
-					return fs.SourceFile{}, err
+					return nil, err
 				}
-				switch filepath.Ext(dep.Output.Filename()) {
-				case ".a":
-				case ".so":
-					linkInputs = append(linkInputs, dep.Output)
-				default:
-					return fs.SourceFile{}, NotImplementedError{
-						what: fmt.Sprintf("%q dep not implemented yet", dep.Output.Filename()),
+				for _, depOutput := range dep.Metadata.Outputs() {
+					switch filepath.Ext(depOutput.Filename()) {
+					case ".a":
+					case ".so":
+						linkInputs = append(linkInputs, depOutput)
+					default:
+						return nil, NotImplementedError{
+							what: fmt.Sprintf("%q dep not implemented yet", depOutput.Filename()),
+						}
 					}
 				}
 			}
-			return ctx.DeclareTool(
-				"link",
-				linkInputs,
-				name,
-			)
+			out, err := ctx.DeclareTool("link", linkInputs, name)
+			if err != nil {
+				return nil, err
+			}
+			return DefaultMetadata{[]fs.SourceFile{out}}, nil
 		},
 	}
 	SharedLibrarySchema = graph.Schema{
@@ -92,10 +105,10 @@ var (
 			"configs": graph.ConfigLabelListType,
 			"defines": graph.StringListType,
 		},
-		Resolver: func(ctx graph.ResolverContext) (fs.SourceFile, error) {
+		Resolver: func(ctx graph.ResolverContext) (graph.ResolutionMetadata, error) {
 			name, err := ctx.StringFor("name")
 			if err != nil {
-				return fs.SourceFile{}, err
+				return nil, err
 			}
 			var linkInputs []fs.SourceFile
 			outPrefix := fmt.Sprintf("lib%s", name)
@@ -111,15 +124,19 @@ var (
 					fmt.Sprintf("%s.%s.o", outPrefix, sourceBase),
 				)
 				if err != nil {
-					return fs.SourceFile{}, err
+					return nil, err
 				}
 				linkInputs = append(linkInputs, objFile)
 			}
-			return ctx.DeclareTool(
+			out, err := ctx.DeclareTool(
 				"solink",
 				linkInputs,
 				fmt.Sprintf("%s.so", outPrefix),
 			)
+			if err != nil {
+				return nil, err
+			}
+			return DefaultMetadata{[]fs.SourceFile{out}}, nil
 		},
 	}
 	SourceSetSchema = graph.Schema{
@@ -141,10 +158,10 @@ var (
 			"configs": graph.ConfigLabelListType,
 			"defines": graph.StringListType,
 		},
-		Resolver: func(ctx graph.ResolverContext) (fs.SourceFile, error) {
+		Resolver: func(ctx graph.ResolverContext) (graph.ResolutionMetadata, error) {
 			name, err := ctx.StringFor("name")
 			if err != nil {
-				return fs.SourceFile{}, err
+				return nil, err
 			}
 			var linkInputs []fs.SourceFile
 			outPrefix := fmt.Sprintf("lib%s", name)
@@ -160,15 +177,19 @@ var (
 					fmt.Sprintf("%s.%s.o", outPrefix, sourceBase),
 				)
 				if err != nil {
-					return fs.SourceFile{}, err
+					return nil, err
 				}
 				linkInputs = append(linkInputs, objFile)
 			}
-			return ctx.DeclareTool(
+			out, err := ctx.DeclareTool(
 				"alink",
 				linkInputs,
 				fmt.Sprintf("%s.a", outPrefix),
 			)
+			if err != nil {
+				return nil, err
+			}
+			return DefaultMetadata{[]fs.SourceFile{out}}, nil
 		},
 	}
 	CopySchema = graph.Schema{
