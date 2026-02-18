@@ -43,14 +43,14 @@ func TestSchema_Run(t *testing.T) {
 	}{
 		{
 			name: "normal",
-			input: `source_set("foo") {
+			input: `example("foo") {
   sources = [ "foo.cc" ]
   deps = [ "//bar:baz", "//bar:qux" ]
 }`,
 		},
 		{
 			name: "unused",
-			input: `source_set("foo") {
+			input: `example("foo") {
   unused = 5
 }`,
 			wantErr: &resolve.UnusedVarError{},
@@ -70,7 +70,17 @@ func TestSchema_Run(t *testing.T) {
 				nil,
 				nil,
 				map[string]resolve.FunctionInfo{
-					"source_set": schemaRunner{schema: SourceSetSchema, dir: mustDir(t, "//")},
+					"example": schemaRunner{
+						schema: Schema{
+							Name:    "example",
+							Summary: "Declare an example target.",
+							Vars: map[string]VarType{
+								"sources": FileListType,
+								"deps":    TargetLabelListType,
+							},
+						},
+						dir: mustDir(t, "//"),
+					},
 				},
 			))
 

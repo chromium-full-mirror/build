@@ -11,28 +11,6 @@ import (
 	"go.chromium.org/build/gong/gn/resolve"
 )
 
-// NotImplementedError is returned by functions that are missing functionality
-// compared to GN.
-type NotImplementedError struct {
-	resolve.OriginFunction
-	what string
-}
-
-// Error returns the error string.
-func (e NotImplementedError) Error() string {
-	return fmt.Sprintf("not implemented: %s", e.what)
-}
-
-// Message returns the user-facing error message.
-func (NotImplementedError) Message() string {
-	return "Not implemented."
-}
-
-// HelpText returns the user-facing error help text.
-func (e NotImplementedError) HelpText() string {
-	return fmt.Sprintf("%s is not implemented.", e.what)
-}
-
 // ToolError is returned when there is an error in a tool definition.
 type ToolError struct {
 	parse.OriginNode

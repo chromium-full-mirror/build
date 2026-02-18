@@ -2,60 +2,44 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-package graph
+// Package schemas defines target implementations.
+// The word "schema" is an implementation detail specific to gong.
+package schemas
 
 import (
 	"fmt"
 	"path/filepath"
 
-	"go.chromium.org/build/gong/gn/build/environment"
 	"go.chromium.org/build/gong/gn/build/fs"
-	"go.chromium.org/build/gong/gn/parse"
-	"go.chromium.org/build/gong/gn/resolve"
+	"go.chromium.org/build/gong/gn/build/graph"
 )
-
-// A Schema is the type definition of a GN target.
-//
-// The word "schema" is an implementation detail; we're calling them "schemas" to avoid
-// overloading the word "type" across both GN and Go contexts.
-//
-// User-facing documentation should still refer to GN target "types".
-//
-// The schema of a target specifies a name (e.g. "shared_library"), the types of variables
-// it accepts (e.g. "sources", "deps"), and how it resolves a target definition.
-type Schema struct {
-	Name     string
-	Summary  string
-	Vars     map[string]VarType // TODO: Implement concept of required?
-	Resolver ResolverFn
-}
 
 // TODO: add helper functions re file extensions like below
 // https://source.chromium.org/gn/gn/+/main:src/gn/source_file.cc?q=SourceFile::SOURCE_H&ss=gn%2Fgn
 var (
-	ActionSchema = Schema{
+	ActionSchema = graph.Schema{
 		Name:    "action",
 		Summary: "Declare a target that runs a script a single time.",
-		Vars: map[string]VarType{
+		Vars: map[string]graph.VarType{
 			// TODO: support more variables.
-			"script":  FileType,
-			"sources": FileListType,
-			"outputs": FileListType,
-			"args":    StringListType,
-			"depfile": StringType,
+			"script":  graph.FileType,
+			"sources": graph.FileListType,
+			"outputs": graph.FileListType,
+			"args":    graph.StringListType,
+			"depfile": graph.StringType,
 		},
 	}
-	ExecutableSchema = Schema{
+	ExecutableSchema = graph.Schema{
 		Name:    "executable",
 		Summary: "Declare an executable target.",
-		Vars: map[string]VarType{
+		Vars: map[string]graph.VarType{
 			// TODO: support more variables.
-			"sources": FileListType,
-			"deps":    TargetLabelListType,
-			"configs": ConfigLabelListType,
-			"outputs": FileListType,
+			"sources": graph.FileListType,
+			"deps":    graph.TargetLabelListType,
+			"configs": graph.ConfigLabelListType,
+			"outputs": graph.FileListType,
 		},
-		Resolver: func(ctx ResolverContext) (fs.SourceFile, error) {
+		Resolver: func(ctx graph.ResolverContext) (fs.SourceFile, error) {
 			name, err := ctx.StringFor("name")
 			if err != nil {
 				return fs.SourceFile{}, err
@@ -98,66 +82,17 @@ var (
 			)
 		},
 	}
-	SharedLibrarySchema = Schema{
+	SharedLibrarySchema = graph.Schema{
 		Name:    "shared_library",
 		Summary: "Declare a shared library target.",
-		Vars: map[string]VarType{
+		Vars: map[string]graph.VarType{
 			// TODO: support more variables.
-			"sources": FileListType,
-			"deps":    TargetLabelListType,
-			"configs": ConfigLabelListType,
-			"defines": StringListType,
+			"sources": graph.FileListType,
+			"deps":    graph.TargetLabelListType,
+			"configs": graph.ConfigLabelListType,
+			"defines": graph.StringListType,
 		},
-		Resolver: func(ctx ResolverContext) (fs.SourceFile, error) {
-			name, err := ctx.StringFor("name")
-			if err != nil {
-				return fs.SourceFile{}, err
-			}
-			var linkInputs []fs.SourceFile
-			outPrefix := fmt.Sprintf("lib%s", name)
-			for source := range ctx.SourceFilesFor("sources") {
-				sourceName := source.Filename()
-				sourceBase := filepath.Base(sourceName)
-				if filepath.Ext(sourceBase) == ".h" {
-					continue
-				}
-				objFile, err := ctx.DeclareTool(
-					"cxx",
-					[]fs.SourceFile{source},
-					fmt.Sprintf("%s.%s.o", outPrefix, sourceBase),
-				)
-				if err != nil {
-					return fs.SourceFile{}, err
-				}
-				linkInputs = append(linkInputs, objFile)
-			}
-			return ctx.DeclareTool(
-				"alink",
-				linkInputs,
-				fmt.Sprintf("%s.a", outPrefix),
-			)
-		},
-	}
-	SourceSetSchema = Schema{
-		Name:    "source_set",
-		Summary: "Declare a source set target.",
-		Vars: map[string]VarType{
-			// TODO: support more variables.
-			"sources": FileListType,
-			"deps":    TargetLabelListType,
-		},
-	}
-	StaticLibrarySchema = Schema{
-		Name:    "static_library",
-		Summary: "Declare a shared library target.",
-		Vars: map[string]VarType{
-			// TODO: support more variables.
-			"sources": FileListType,
-			"deps":    TargetLabelListType,
-			"configs": ConfigLabelListType,
-			"defines": StringListType,
-		},
-		Resolver: func(ctx ResolverContext) (fs.SourceFile, error) {
+		Resolver: func(ctx graph.ResolverContext) (fs.SourceFile, error) {
 			name, err := ctx.StringFor("name")
 			if err != nil {
 				return fs.SourceFile{}, err
@@ -187,66 +122,62 @@ var (
 			)
 		},
 	}
-	CopySchema = Schema{
+	SourceSetSchema = graph.Schema{
+		Name:    "source_set",
+		Summary: "Declare a source set target.",
+		Vars: map[string]graph.VarType{
+			// TODO: support more variables.
+			"sources": graph.FileListType,
+			"deps":    graph.TargetLabelListType,
+		},
+	}
+	StaticLibrarySchema = graph.Schema{
+		Name:    "static_library",
+		Summary: "Declare a shared library target.",
+		Vars: map[string]graph.VarType{
+			// TODO: support more variables.
+			"sources": graph.FileListType,
+			"deps":    graph.TargetLabelListType,
+			"configs": graph.ConfigLabelListType,
+			"defines": graph.StringListType,
+		},
+		Resolver: func(ctx graph.ResolverContext) (fs.SourceFile, error) {
+			name, err := ctx.StringFor("name")
+			if err != nil {
+				return fs.SourceFile{}, err
+			}
+			var linkInputs []fs.SourceFile
+			outPrefix := fmt.Sprintf("lib%s", name)
+			for source := range ctx.SourceFilesFor("sources") {
+				sourceName := source.Filename()
+				sourceBase := filepath.Base(sourceName)
+				if filepath.Ext(sourceBase) == ".h" {
+					continue
+				}
+				objFile, err := ctx.DeclareTool(
+					"cxx",
+					[]fs.SourceFile{source},
+					fmt.Sprintf("%s.%s.o", outPrefix, sourceBase),
+				)
+				if err != nil {
+					return fs.SourceFile{}, err
+				}
+				linkInputs = append(linkInputs, objFile)
+			}
+			return ctx.DeclareTool(
+				"alink",
+				linkInputs,
+				fmt.Sprintf("%s.a", outPrefix),
+			)
+		},
+	}
+	CopySchema = graph.Schema{
 		Name:    "copy",
 		Summary: "Declare a target that copies files.",
-		Vars: map[string]VarType{
+		Vars: map[string]graph.VarType{
 			// TODO: support more variables.
-			"sources": FileListType,
-			"outputs": FileListType,
+			"sources": graph.FileListType,
+			"outputs": graph.FileListType,
 		},
 	}
 )
-
-// Generate creates a target from this schema.
-func (s *Schema) Generate(dir fs.SourceDir, scope *resolve.Scope, toolchain environment.Label, call *parse.FunctionCallNode, nameValue *resolve.StringValue, block *parse.BlockNode) (*Target, error) {
-	if block == nil {
-		return nil, fmt.Errorf("target definition missing block?")
-	}
-
-	blockScope := scope.NewNestedScope()
-	if _, err := resolve.ExecuteNode(block, blockScope); err != nil {
-		return nil, err
-	}
-
-	name := nameValue.RawGNString()
-	label := environment.Label{
-		Dir:           dir,
-		Name:          name,
-		ToolchainDir:  toolchain.Dir,
-		ToolchainName: toolchain.Name,
-	}
-
-	target := &Target{
-		ItemInfo: ItemInfo{
-			label:       label,
-			definedFrom: call,
-		},
-		Schema: s,
-		Values: map[string]ProcessedValue{
-			"name": StringValue{
-				origin: nameValue,
-				str:    name,
-			},
-		},
-	}
-
-	// Validate all of the target's values and perform initial processing.
-	for acceptedVar, expectedType := range s.Vars {
-		value := blockScope.Value(acceptedVar, true)
-		if value == nil {
-			continue
-		}
-		processedValue, err := target.processValue(value, expectedType)
-		if err != nil {
-			return nil, err
-		}
-		target.Values[acceptedVar] = processedValue
-	}
-
-	err := blockScope.CheckForUnusedVars()
-	if err != nil {
-		return nil, err
-	}
-	return target, nil
-}

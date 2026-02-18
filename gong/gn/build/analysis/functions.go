@@ -7,6 +7,7 @@ package analysis
 import (
 	"go.chromium.org/build/gong/gn/build/environment"
 	"go.chromium.org/build/gong/gn/build/graph"
+	"go.chromium.org/build/gong/gn/build/graph/schemas"
 	"go.chromium.org/build/gong/gn/resolve"
 )
 
@@ -14,16 +15,16 @@ import (
 // It requires the top-level BuildSettings object.
 func FunctionMap(buildSettings *environment.BuildSettings) map[string]resolve.FunctionInfo {
 	return map[string]resolve.FunctionInfo{
-		"action":                targetFunction{schema: &graph.ActionSchema},
+		"action":                targetFunction{schema: &schemas.ActionSchema},
 		"assert":                resolve.AssertFunction{},
 		"config":                configFunction{},
-		"copy":                  targetFunction{schema: &graph.CopySchema},
-		"executable":            targetFunction{schema: &graph.ExecutableSchema},
+		"copy":                  targetFunction{schema: &schemas.CopySchema},
+		"executable":            targetFunction{schema: &schemas.ExecutableSchema},
 		"rebase_path":           &rebasePathFunction{buildSettings: buildSettings},
 		"set_defaults":          &setDefaultsFunction{},
 		"set_default_toolchain": setDefaultToolchainFunction{},
-		"shared_library":        targetFunction{schema: &graph.SharedLibrarySchema},
-		"static_library":        targetFunction{schema: &graph.StaticLibrarySchema},
+		"shared_library":        targetFunction{schema: &schemas.SharedLibrarySchema},
+		"static_library":        targetFunction{schema: &schemas.StaticLibrarySchema},
 		"toolchain":             toolchainFunction{},
 		"tool":                  graph.ToolFunction{},
 	}
