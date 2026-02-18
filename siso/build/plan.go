@@ -81,6 +81,9 @@ type Graph interface {
 	// clang scandeps.
 	InputsRequiringClangScandeps(context.Context) []string
 
+	// ClangScandeps returns clang scandeps mode.
+	ClangScandeps(context.Context) string
+
 	// StepLimits returns a map of maximum number of concurrent
 	// steps by pool name.
 	StepLimits(context.Context) map[string]int

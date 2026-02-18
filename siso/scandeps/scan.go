@@ -189,7 +189,7 @@ func (s *scanner) popInput() string {
 	return in
 }
 
-func (s *scanner) nextInputs(ctx context.Context) []string {
+func (s *scanner) nextInputs(ctx context.Context) ([]string, error) {
 	s.nextInputsCount++
 	for s.hasInputs() {
 		incname := s.popInput()
@@ -198,10 +198,11 @@ func (s *scanner) nextInputs(ctx context.Context) []string {
 			continue
 		}
 		s.names = s.names[:0]
-		s.names = cppExpandMacros(ctx, s.names, incname, s.macros)
-		return s.names
+		var err error
+		s.names, err = cppExpandMacros(ctx, s.names, incname, s.macros)
+		return s.names, err
 	}
-	return nil
+	return nil, nil
 }
 
 func (s *scanner) addInputs(ins ...string) {
