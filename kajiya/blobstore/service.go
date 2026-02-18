@@ -244,7 +244,7 @@ func (s *Service) Read(request *bspb.ReadRequest, server bspb.ByteStream_ReadSer
 	f, err := s.cas.Open(d, request.ReadOffset, request.ReadLimit)
 	if err != nil {
 		var mbe *MissingBlobsError
-		if !errors.As(err, &mbe) {
+		if errors.As(err, &mbe) {
 			return status.Errorf(codes.NotFound, "blob not found: %v", err)
 		}
 		return status.Errorf(codes.Internal, "failed to open file: %v", err)
@@ -605,27 +605,26 @@ func (s *Service) BatchReadBlobs(ctx context.Context, request *repb.BatchReadBlo
 			return nil, status.Errorf(codes.InvalidArgument, "invalid digest: %v", err)
 		}
 
+		// Prepare the response proto for this blob.
+		r := &repb.BatchReadBlobsResponse_Response{
+			Digest: d,
+		}
+
 		// Read the blob from the CAS.
 		data, err := s.cas.Get(dg)
 		if err != nil {
-			var mbe *MissingBlobsError
-			if !errors.As(err, &mbe) {
-				// The blob doesn't exist. Add a response with an appropriate status code.
-				response.Responses = append(response.Responses, &repb.BatchReadBlobsResponse_Response{
-					Digest: d,
-					Status: status.New(codes.NotFound, "").Proto(),
-				})
-				continue
+			if mbe := (&MissingBlobsError{}); errors.As(err, &mbe) {
+				r.Status = status.New(codes.NotFound, "").Proto()
+			} else {
+				slog.Warn("failed to read blob", "digest", dg, "error", err)
+				r.Status = status.New(codes.Internal, err.Error()).Proto()
 			}
-			return nil, status.Errorf(codes.Internal, "failed to read blob: %v", err)
+		} else {
+			r.Data = data
+			r.Status = status.New(codes.OK, "").Proto()
 		}
 
-		// The blob exists. Add a response with the data.
-		response.Responses = append(response.Responses, &repb.BatchReadBlobsResponse_Response{
-			Digest: d,
-			Data:   data,
-			Status: status.New(codes.OK, "").Proto(),
-		})
+		response.Responses = append(response.Responses, r)
 	}
 
 	// Return the response to the client.
@@ -655,6 +654,10 @@ func (s *Service) GetTree(request *repb.GetTreeRequest, treeServer repb.ContentA
 	// Flatten the directory tree.
 	_, dirs, err := s.cas.FlattenDirectory(d)
 	if err != nil {
+		var mbe *MissingBlobsError
+		if errors.As(err, &mbe) {
+			return status.Errorf(codes.NotFound, "root directory not found: %v", err)
+		}
 		return err
 	}
 
