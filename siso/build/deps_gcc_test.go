@@ -45,8 +45,6 @@ func (g fakeGraph) InputDeps(ctx context.Context) map[string][]string {
 
 func (fakeGraph) InputsRequiringClangScandeps(ctx context.Context) []string { return nil }
 
-func (fakeGraph) ClangScandeps(ctx context.Context) string { return "" }
-
 func (g fakeGraph) StepLimits(ctx context.Context) map[string]int {
 	return map[string]int{}
 }

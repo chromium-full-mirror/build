@@ -21,7 +21,6 @@ import (
 	"go.chromium.org/build/siso/execute"
 	"go.chromium.org/build/siso/o11y/clog"
 	"go.chromium.org/build/siso/o11y/trace"
-	"go.chromium.org/build/siso/scandeps"
 	"go.chromium.org/build/siso/toolsupport/gccutil"
 	"go.chromium.org/build/siso/toolsupport/makeutil"
 	"go.chromium.org/build/siso/toolsupport/msvcutil"
@@ -364,21 +363,4 @@ func checkDeps(ctx context.Context, b *Builder, step *Step, deps []string) error
 		}
 	}
 	return nil
-}
-
-func (b *Builder) useClangScandeps(ctx context.Context, err error) bool {
-	if err == nil {
-		return false
-	}
-	clangScandeps := b.graph.ClangScandeps(ctx)
-	switch {
-	case errors.Is(err, scandeps.ErrRequireClangScandeps):
-		return true
-	case clangScandeps == "unsupported-macro" && errors.Is(err, scandeps.ErrUnsupportedMacro):
-		return true
-	case clangScandeps == "scandeps-err":
-		return true
-	}
-	clog.Warningf(ctx, "scandeps failed: %v", err)
-	return false
 }

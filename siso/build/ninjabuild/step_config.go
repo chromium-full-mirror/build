@@ -323,12 +323,6 @@ type StepConfig struct {
 	// scan deps.
 	InputsRequiringClangScandeps []string `json:"inputs_requiring_clang_scandeps,omitempty"`
 
-	// ClangScandeps specifies clang scandeps mode.
-	//  - "" - no clang scandeps
-	//  - "unsupported-macro" - if unsupported macro is detected.
-	//  - "scandeps-err" - if scandeps failed.
-	ClangScandeps string `json:"clang_scandeps,omitempty"`
-
 	// Rules lists step rules.
 	Rules []*StepRule `json:"rules,omitempty"`
 

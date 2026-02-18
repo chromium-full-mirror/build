@@ -152,14 +152,10 @@ func (s *ScanDeps) Scan(ctx context.Context, execRoot string, req Request) ([]st
 			}
 			lastCtxCheck = time.Now()
 		}
-		names, err := scanner.nextInputs(ctx)
+		names := scanner.nextInputs(ctx)
 		if log.V(1) {
 			logNames := names
-			clog.Infof(ctx, "try include %q: %v", logNames, err)
-		}
-		if err != nil {
-			clog.Warningf(ctx, "nextInputs: %v", err)
-			return nil, err
+			clog.Infof(ctx, "try include %q", logNames)
 		}
 		for _, name := range names {
 			incpath, err := scanner.find(ctx, name)

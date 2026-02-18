@@ -330,7 +330,6 @@ func TestExpandMacros(t *testing.T) {
 		incname string
 		macros  map[string][]string
 		want    []string
-		wantErr bool
 	}{
 		{
 			name: "empty",
@@ -370,29 +369,10 @@ func TestExpandMacros(t *testing.T) {
 			},
 			want: []string{`"bar.h"`},
 		},
-		{
-			name:    "func-macros",
-			incname: "PATH(foo.h)",
-			macros: map[string][]string{
-				"PATH(x)": {"<dir/ ## x>"},
-			},
-			wantErr: true,
-		},
-		{
-			name:    "expand-func-macro",
-			incname: "INCNAME",
-			macros: map[string][]string{
-				"INCNAME": {"PATH(x)"},
-				"PATH(x)": {"<dir/ ## x>"},
-			},
-			wantErr: true,
-		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := cppExpandMacros(ctx, nil, tc.incname, tc.macros)
-			if gotErr := err != nil; gotErr != tc.wantErr {
-				t.Errorf("expandMacros(ctx, %q, macros)=%q, %v; want _, err=%t", tc.incname, got, err, tc.wantErr)
-			}
+			var got []string
+			got = cppExpandMacros(ctx, got, tc.incname, tc.macros)
 			if diff := cmp.Diff(tc.want, got); diff != "" {
 				t.Errorf("expandMacros(ctx, %q, macros): diff -want +got:\n%s", tc.incname, diff)
 			}

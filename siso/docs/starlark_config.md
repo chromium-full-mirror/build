@@ -171,11 +171,6 @@ to register handlers and step configs.
          used as input, "A.txt" will be added as input too.
      * `inputs_requiring_clang_scandeps`
         a list of filename that requires clang scandeps.
-     * `clang_scandeps`
-        clang scandeps mode
-        * "": don't use clang scandeps
-        * "unsupported-macro": use clang scandeps when unsupported macro detected.
-        * "scandeps-err": use clang scandeps when builtin scandeps failed.
      * `bad_deps`
        * key: output target known to have bad deps
        * value: annotation (usually bug link)
