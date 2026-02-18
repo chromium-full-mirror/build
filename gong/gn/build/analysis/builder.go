@@ -91,16 +91,7 @@ func (b *Builder) RecordDefinedItem(item graph.Item) ([]environment.LabelWithOri
 			record.item.Label().UserVisibleString(false))
 		return nil, nil
 	case *graph.Toolchain:
-		if b.seenDefaultToolchain {
-			return nil, NotImplementedError{
-				what: "Support for multiple toolchains is not implemented yet.",
-			}
-		}
-		// Don't need to do anything for first toolchain yet, Loader has already seen it.
-		// Also don't support parsing pool(), deps, etc yet so nothing to do right now.
-		b.seenDefaultToolchain = true
-		// TODO: Mark this toolchain record resolved since there's nothing else to do.
-		return nil, nil
+		return b.toolchainDefined(i, record)
 	}
 	return nil, fmt.Errorf("don't know how to handle %T item yet", item)
 }
@@ -161,11 +152,38 @@ func (b *Builder) targetDefined(target *graph.Target, record *builderRecord) ([]
 		unresolvedDeps = append(unresolvedDeps, toolchainDep)
 	}
 	record.addDep(toolchainRec)
-
-	if len(unresolvedDeps) == 0 {
-		return nil, b.resolveTarget(target, record)
-	}
 	return unresolvedDeps, nil
+}
+
+// TODO: Support more than one toolchain.
+func (b *Builder) toolchainDefined(_ *graph.Toolchain, record *builderRecord) ([]environment.LabelWithOrigin, error) {
+	if b.seenDefaultToolchain {
+		return nil, NotImplementedError{
+			what: "Support for multiple toolchains is not implemented yet.",
+		}
+	}
+
+	// Don't need to do anything for first toolchain yet, Loader has already seen it.
+	// Also don't support parsing pool(), deps, etc yet so nothing to do right now.
+	b.seenDefaultToolchain = true
+	record.state = itemStateResolved
+
+	// Recursively update everybody waiting on this item to be resolved.
+	for dependent := range record.dependents {
+		dependent.unresolvedDeps--
+		if dependent.unresolvedDeps > 0 {
+			continue
+		}
+		switch dependentItem := dependent.item.(type) {
+		case *graph.Target:
+			if err := b.resolveTarget(dependentItem, dependent); err != nil {
+				return nil, err
+			}
+		default:
+			fmt.Fprintf(os.Stderr, "don't know how to resolve %T items yet, skipping\n", dependentItem)
+		}
+	}
+	return nil, nil
 }
 
 func (b *Builder) resolveTarget(target *graph.Target, record *builderRecord) error {

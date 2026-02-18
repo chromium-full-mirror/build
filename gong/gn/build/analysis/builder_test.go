@@ -94,10 +94,8 @@ shared_library("bar") {}`),
 	if !ok {
 		t.Fatal("builder missing record //:app(//:tc)")
 	}
-	// TODO: 3 means //lib:foo, //lib:bar, //:tc but wrong?
-	// but //:tc is default toolchain, should mark as resolved immediately.
-	if appRec.unresolvedDeps != 3 {
-		t.Errorf("builder record //:app(//:tc) unresolvedDeps = %d; want 3", appRec.unresolvedDeps)
+	if appRec.unresolvedDeps != 2 {
+		t.Errorf("builder record //:app(//:tc) unresolvedDeps = %d; want 2", appRec.unresolvedDeps)
 	}
 
 	items, err = loader.Load(mustFile(t, "//lib/BUILD.gn"), syntax.LocationRange{}, environment.Label{})
