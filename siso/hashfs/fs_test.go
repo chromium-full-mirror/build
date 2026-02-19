@@ -2475,3 +2475,94 @@ func TestEntries_NonExistentIntermediateDirectory(t *testing.T) {
 		t.Fatalf("len(ent)=%d; want 1", len(ents))
 	}
 }
+
+func TestForget_UnexpectedRemoveRspFileUnderSymlinkDir(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skipf("no symlink on windows")
+		return
+	}
+	ctx := t.Context()
+
+	t.Logf("-- setup")
+	diskDir := t.TempDir()
+	androidOut := filepath.Join(diskDir, "android_out")
+	err := os.MkdirAll(androidOut, 0755)
+	if err != nil {
+		t.Fatal(err)
+	}
+	srcDir := t.TempDir()
+	t.Chdir(srcDir)
+	err = os.Symlink(androidOut, "out")
+	if err != nil {
+		t.Fatal(err)
+	}
+	rspFile := "out/soong/.intermediate/module/stubs.jar.rsp"
+	t.Logf("-- first build. create rsp file")
+	func() {
+		hfs, err := hashfs.New(ctx, hashfs.Option{
+			StateFile: "out/.siso_fs_state",
+		})
+		if err != nil {
+			t.Fatalf("hashfs.New(...)=_, %v; want nil err", err)
+		}
+		defer func() {
+			if err := hfs.Close(ctx); err != nil {
+				t.Fatalf("hfs.Close=%v", err)
+			}
+		}()
+		err = hfs.WriteFile(ctx, srcDir, rspFile, nil, false, time.Now(), nil, nil)
+		if err != nil {
+			t.Errorf("hfs.Write %q: %v", rspFile, err)
+		}
+		err = hfs.Flush(ctx, srcDir, []string{rspFile})
+		if err != nil {
+			t.Errorf("hfs.Flush %q: %v", rspFile, err)
+		}
+	}()
+	_, err = os.Lstat(filepath.Join(srcDir, rspFile))
+	if err != nil {
+		t.Errorf("lstat %q: %v", rspFile, err)
+	}
+	t.Logf("-- next build. unexpected remove rsp file during build")
+	func() {
+		hfs, err := hashfs.New(ctx, hashfs.Option{
+			StateFile: "out/.siso_fs_state",
+		})
+		if err != nil {
+			t.Fatalf("hashfs.New(...)=_, %v; want nil err", err)
+		}
+		defer func() {
+			if err := hfs.Close(ctx); err != nil {
+				t.Fatalf("hfs.Close=%v", err)
+			}
+		}()
+		_, err = hfs.Stat(ctx, srcDir, rspFile)
+		if err != nil {
+			t.Errorf("Stat %q: %v", rspFile, err)
+		}
+		t.Logf("-- unexpected remove %q", rspFile)
+		err = os.Remove(filepath.Join(srcDir, rspFile))
+		if err != nil {
+			t.Errorf("remove %q: %v", rspFile, err)
+		}
+
+		_, err = hfs.Stat(ctx, srcDir, rspFile)
+		if err != nil {
+			t.Errorf("Stat %q: %v", rspFile, err)
+		}
+		_, err = hfs.OS.Lstat(ctx, filepath.Join(srcDir, rspFile))
+		if !errors.Is(err, fs.ErrNotExist) {
+			t.Errorf("os.Lstat %q: %v", rspFile, err)
+		}
+		hfs.Forget(ctx, srcDir, []string{rspFile})
+		err = hfs.WriteFile(ctx, srcDir, rspFile, nil, false, time.Now(), nil, nil)
+		if err != nil {
+			t.Errorf("hfs.Write %q: %v", rspFile, err)
+		}
+		err = hfs.Flush(ctx, srcDir, []string{rspFile})
+		if err != nil {
+			t.Errorf("hfs.Flush %q: %v", rspFile, err)
+		}
+	}()
+
+}
