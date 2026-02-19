@@ -13,7 +13,6 @@ import (
 	"log/slog"
 	"net"
 	"os"
-	"path/filepath"
 	"testing"
 
 	"github.com/google/uuid"
@@ -28,16 +27,15 @@ import (
 func setupBenchmark(ctx context.Context, t testing.TB) (bspb.ByteStreamClient, *ContentAddressableStorage) {
 	t.Helper()
 
-	// Setup CAS and upload directory
+	// Setup CAS.
 	dataDir := t.TempDir()
-	uploadDir := filepath.Join(dataDir, "tmp")
 	cas, err := New(ctx, dataDir)
 	if err != nil {
 		t.Fatalf("Failed to create CAS: %v", err)
 	}
 
 	// Start the server
-	lis := startTestServer(t, cas, uploadDir)
+	lis := startTestServer(t, cas)
 
 	// Create a client that dials the in-memory listener
 	conn, err := grpc.NewClient("passthrough://bufnet",
@@ -64,11 +62,11 @@ func BenchmarkUpload(b *testing.B) {
 		name string
 		size int64
 	}{
-		//{"4KB", 4 * 1024},
-		//{"128KB", 128 * 1024},
+		{"4KB", 4 * 1024},
+		{"128KB", 128 * 1024},
 		{"1MB", 1 * 1024 * 1024},
-		//{"10MB", 10 * 1024 * 1024},
-		//{"100MB", 100 * 1024 * 1024},
+		{"10MB", 10 * 1024 * 1024},
+		{"100MB", 100 * 1024 * 1024},
 	}
 
 	for _, sz := range sizes {
@@ -111,11 +109,11 @@ func BenchmarkDownload(b *testing.B) {
 		name string
 		size int64
 	}{
-		//{"4KB", 4 * 1024},
-		//{"128KB", 128 * 1024},
+		{"4KB", 4 * 1024},
+		{"128KB", 128 * 1024},
 		{"1MB", 1 * 1024 * 1024},
-		//{"10MB", 10 * 1024 * 1024},
-		//{"100MB", 100 * 1024 * 1024},
+		{"10MB", 10 * 1024 * 1024},
+		{"100MB", 100 * 1024 * 1024},
 	}
 
 	for _, sz := range sizes {

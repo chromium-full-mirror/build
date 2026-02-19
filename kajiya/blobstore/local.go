@@ -27,6 +27,7 @@ import (
 // ContentAddressableStorage is a simple CAS implementation that stores files on the local disk.
 type ContentAddressableStorage struct {
 	dataDir string
+	tmpDir  string
 
 	// Synchronization mechanism to prevent concurrent puts of the same blob.
 	putSyncer singleflight.Group
@@ -50,8 +51,14 @@ func New(ctx context.Context, dataDir string) (*ContentAddressableStorage, error
 		}
 	}
 
+	tmpDir := filepath.Join(dataDir, "tmp")
+	if err := os.Mkdir(tmpDir, 0755); err != nil && !errors.Is(err, fs.ErrExist) {
+		return nil, err
+	}
+
 	cas := &ContentAddressableStorage{
 		dataDir: dataDir,
+		tmpDir:  tmpDir,
 	}
 
 	// Ensure that we have the "empty blob" present in the CAS.

@@ -18,11 +18,11 @@ import (
 )
 
 var (
-	// hashFn is the digest function used.
-	hashFn = crypto.SHA256
+	// HashFn is the digest function used.
+	HashFn = crypto.SHA256
 
 	// hashHexLen is the length of the hex-encoded hash.
-	hashHexLen = hex.EncodedLen(hashFn.Size())
+	hashHexLen = hex.EncodedLen(HashFn.Size())
 
 	// Empty is the digest of the empty blob.
 	Empty = FromBlob([]byte{})
@@ -91,7 +91,7 @@ func NewFromProto(d *repb.Digest) (Digest, error) {
 
 // FromBlob computes the digest of a blob.
 func FromBlob(blob []byte) Digest {
-	h := hashFn.New()
+	h := HashFn.New()
 	h.Write(blob)
 	return Digest{
 		Hash: hex.EncodeToString(h.Sum(nil)),
@@ -101,7 +101,7 @@ func FromBlob(blob []byte) Digest {
 
 // FromFile computes the digest of a file.
 func FromFile(path string) (Digest, error) {
-	h := hashFn.New()
+	h := HashFn.New()
 
 	f, err := os.Open(path)
 	if err != nil {

@@ -217,11 +217,7 @@ func createServer(ctx context.Context, dataDir string) (*grpc.Server, error) {
 	}
 
 	// CAS service.
-	uploadDir := filepath.Join(casDir, "tmp")
-	err = blobstore.Register(s, cas, uploadDir)
-	if err != nil {
-		return nil, err
-	}
+	blobstore.Register(s, cas)
 	slog.Info("content-addressable storage service registered")
 
 	// Action cache service.

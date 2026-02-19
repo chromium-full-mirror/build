@@ -12,7 +12,6 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"path/filepath"
 	"testing"
 
 	repb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
@@ -33,7 +32,7 @@ const bufferSize = 1024 * 1024
 
 // startTestServer sets up a gRPC server listening on a bufconn listener.
 // It returns the listener (to dial to) and a cleanup function.
-func startTestServer(t testing.TB, cas *ContentAddressableStorage, uploadDir string) *bufconn.Listener {
+func startTestServer(t testing.TB, cas *ContentAddressableStorage) *bufconn.Listener {
 	t.Helper()
 
 	// Create an in-memory listener
@@ -43,9 +42,7 @@ func startTestServer(t testing.TB, cas *ContentAddressableStorage, uploadDir str
 	s := grpc.NewServer()
 
 	// Register the service implementation
-	if err := Register(s, cas, uploadDir); err != nil {
-		t.Fatalf("Failed to register service: %v", err)
-	}
+	Register(s, cas)
 
 	// Start serving in a background goroutine
 	go func() {
@@ -67,16 +64,15 @@ func startTestServer(t testing.TB, cas *ContentAddressableStorage, uploadDir str
 func setupTest(ctx context.Context, t testing.TB) (bspb.ByteStreamClient, repb.ContentAddressableStorageClient) {
 	t.Helper()
 
-	// Setup CAS and upload directory
+	// Setup CAS.
 	dataDir := t.TempDir()
-	uploadDir := filepath.Join(dataDir, "tmp")
 	cas, err := New(ctx, dataDir)
 	if err != nil {
 		t.Fatalf("Failed to create CAS: %v", err)
 	}
 
 	// Start the server
-	lis := startTestServer(t, cas, uploadDir)
+	lis := startTestServer(t, cas)
 
 	// Create a client that dials the in-memory listener
 	conn, err := grpc.NewClient("passthrough://bufnet",
@@ -292,8 +288,8 @@ func TestReadWriteZstd(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to CloseAndRecv: %v", err)
 	}
-	// CommittedSize should be the size of the uncompressed data (or -1 if blob already exists)
-	if got, want := resp.CommittedSize, d.Size; got != want {
+	// CommittedSize should be the size of the uncompressed data (or -1 if blob already exists).
+	if got, want := resp.CommittedSize, blobSize; got != want {
 		t.Errorf("CommittedSize = %d, want %d", got, want)
 	}
 

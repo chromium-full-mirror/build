@@ -9,12 +9,9 @@ import (
 	"bufio"
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"io/fs"
 	"log/slog"
-	"os"
-	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -41,30 +38,17 @@ type Service struct {
 	repb.UnimplementedContentAddressableStorageServer
 	bspb.UnimplementedByteStreamServer
 
-	cas       *ContentAddressableStorage
-	uploadDir string
+	cas *ContentAddressableStorage
 
 	encoderPool   sync.Pool
 	decoderPool   sync.Pool
 	bufWriterPool sync.Pool
-	bufPool       sync.Pool
 }
 
 // Register creates and registers a new Service with the given gRPC server.
-// The uploadDir is created if it does not exist.
-func Register(s *grpc.Server, cas *ContentAddressableStorage, uploadDir string) error {
-	if uploadDir == "" {
-		return fmt.Errorf("uploadDir must be set")
-	}
-
-	// Ensure that our temporary upload directory exists.
-	if err := os.Mkdir(uploadDir, 0755); err != nil && !errors.Is(err, fs.ErrExist) {
-		return err
-	}
-
+func Register(s *grpc.Server, cas *ContentAddressableStorage) {
 	service := &Service{
-		cas:       cas,
-		uploadDir: uploadDir,
+		cas: cas,
 		encoderPool: sync.Pool{
 			New: func() any {
 				e, err := zstd.NewWriter(nil)
@@ -88,17 +72,10 @@ func Register(s *grpc.Server, cas *ContentAddressableStorage, uploadDir string) 
 				return bufio.NewWriterSize(nil, maxChunkSize)
 			},
 		},
-		bufPool: sync.Pool{
-			New: func() any {
-				buf := make([]byte, maxChunkSize)
-				return &buf
-			},
-		},
 	}
 
 	bspb.RegisterByteStreamServer(s, service)
 	repb.RegisterContentAddressableStorageServer(s, service)
-	return nil
 }
 
 // parseReadResource parses a ReadRequest.ResourceName and returns the validated Digest and the
@@ -176,6 +153,10 @@ func parseWriteResource(name string) (digest.Digest, uuid.UUID, repb.Compressor_
 	var d digest.Digest
 	var u uuid.UUID
 	var c repb.Compressor_Value
+
+	if name == "" {
+		return d, u, c, status.Error(codes.InvalidArgument, "resource name is empty")
+	}
 
 	fields := strings.Split(name, "/")
 
@@ -340,13 +321,75 @@ func (s *Service) Read(request *bspb.ReadRequest, server bspb.ByteStream_ReadSer
 type writeRequestReader struct {
 	ws bspb.ByteStream_WriteServer
 
-	buf             []byte
-	resName         string
-	expectedDigest  digest.Digest
-	uploadID        uuid.UUID
-	isCompressed    bool
-	finishedWriting bool
-	receivedBytes   int64
+	buf            []byte
+	resName        string
+	expectedDigest digest.Digest
+	uploadID       uuid.UUID
+	compressor     repb.Compressor_Value
+	writeOffset    int64
+	finishWrite    bool
+}
+
+func (s *Service) newWriteRequestReader(ws bspb.ByteStream_WriteServer) (*writeRequestReader, error) {
+	req, err := ws.Recv()
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to receive initial request from client: %v", err)
+	}
+
+	r := writeRequestReader{
+		ws:          ws,
+		buf:         req.Data,
+		resName:     req.ResourceName,
+		writeOffset: req.WriteOffset,
+		finishWrite: req.FinishWrite,
+	}
+
+	r.expectedDigest, r.uploadID, r.compressor, err = parseWriteResource(r.resName)
+	if err != nil {
+		return nil, err
+	}
+	if r.writeOffset < 0 {
+		return nil, status.Error(codes.InvalidArgument, "write_offset must be non-negative")
+	} else if r.writeOffset > 0 {
+		return nil, status.Error(codes.Unimplemented, "initial write_offset > 0 is not supported")
+	}
+	if r.compressor != repb.Compressor_IDENTITY && r.compressor != repb.Compressor_ZSTD {
+		return nil, status.Error(codes.InvalidArgument, "unsupported compression algorithm")
+	}
+
+	r.writeOffset += int64(len(req.Data))
+
+	return &r, nil
+}
+
+func (r *writeRequestReader) recv() ([]byte, error) {
+	// Receive the next request from the client.
+	req, err := r.ws.Recv()
+	if err != nil {
+		if errors.Is(err, io.EOF) {
+			if r.finishWrite {
+				return nil, io.EOF
+			}
+			return nil, io.ErrUnexpectedEOF
+		}
+		return nil, status.Errorf(codes.Internal, "failed to receive request from client: %v", err)
+	}
+
+	if req.ResourceName != "" && req.ResourceName != r.resName {
+		return nil, status.Errorf(codes.InvalidArgument, "cannot change resource name during upload (%v => %v)", r.resName, req.ResourceName)
+	}
+
+	if r.finishWrite {
+		return nil, status.Error(codes.InvalidArgument, "cannot write more data, last request already set finish_write=true")
+	}
+	r.finishWrite = req.FinishWrite
+
+	if req.WriteOffset != r.writeOffset {
+		return nil, status.Errorf(codes.InvalidArgument, "wrong write_offset: got %d, expected %d", req.WriteOffset, r.writeOffset)
+	}
+	r.writeOffset += int64(len(req.Data))
+
+	return req.Data, nil
 }
 
 // Read reads bytes uploaded by the client during the ByteStream.Write RPC.
@@ -361,57 +404,42 @@ func (r *writeRequestReader) Read(p []byte) (n int, err error) {
 	}
 
 	// Receive the next request from the client.
-	wr, err := r.ws.Recv()
-	if err != nil {
-		if errors.Is(err, io.EOF) {
-			if r.finishedWriting {
-				return 0, io.EOF
-			}
-			return 0, io.ErrUnexpectedEOF
-		}
-		return 0, status.Errorf(codes.Internal, "failed to receive request from client: %v", err)
+	if r.buf, err = r.recv(); err != nil {
+		return 0, err
 	}
-
-	// If this is the first request from the client, we need to parse the resource name and compression algorithm.
-	if r.resName == "" {
-		if wr.ResourceName == "" {
-			return 0, status.Error(codes.InvalidArgument, "no resource name specified")
-		}
-		r.resName = wr.ResourceName
-
-		var comp repb.Compressor_Value
-		r.expectedDigest, r.uploadID, comp, err = parseWriteResource(r.resName)
-		if err != nil {
-			return 0, err
-		}
-		if comp != repb.Compressor_IDENTITY && comp != repb.Compressor_ZSTD {
-			return 0, status.Error(codes.InvalidArgument, "unsupported compression algorithm")
-		}
-		r.isCompressed = comp == repb.Compressor_ZSTD
-	}
-
-	// Validate a few things about the request.
-	if wr.ResourceName != "" && wr.ResourceName != r.resName {
-		return 0, status.Errorf(codes.InvalidArgument, "cannot change resource name during upload (%v => %v)", r.resName, wr.ResourceName)
-	}
-	if r.finishedWriting {
-		return 0, status.Error(codes.InvalidArgument, "cannot write more data, last request already set finish_write=true")
-	}
-	if wr.WriteOffset != r.receivedBytes {
-		return 0, status.Errorf(codes.InvalidArgument, "write_offset %d does not match total bytes received so far %d", wr.WriteOffset, r.receivedBytes)
-	}
-
-	r.buf = wr.Data
-	r.receivedBytes += int64(len(wr.Data))
-	r.finishedWriting = wr.FinishWrite
-
 	return r.Read(p)
+}
+
+func (r *writeRequestReader) WriteTo(w io.Writer) (n int64, err error) {
+	for {
+		if len(r.buf) > 0 {
+			nw, err := w.Write(r.buf)
+			n += int64(nw)
+			if err != nil {
+				if errors.Is(err, ErrBlobExists) {
+					return n, ErrBlobExists
+				}
+				return n, status.Errorf(codes.Internal, "failed to write data: %v", err)
+			}
+		}
+
+		r.buf, err = r.recv()
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				return n, nil
+			}
+			return n, err
+		}
+	}
 }
 
 // Write implements the ByteStream.Write RPC.
 func (s *Service) Write(server bspb.ByteStream_WriteServer) (err error) {
-	req := &writeRequestReader{ws: server}
-
+	req, err := s.newWriteRequestReader(server)
+	if err != nil {
+		slog.Error("Write", "error", err)
+		return err
+	}
 	defer func() {
 		if err != nil {
 			slog.Error("Write", "resource", req.resName, "error", err)
@@ -420,20 +448,20 @@ func (s *Service) Write(server bspb.ByteStream_WriteServer) (err error) {
 		}
 	}()
 
-	// Receive the first request from the client so that we have access to the resource name etc.
-	_, err = req.Read(nil)
+	// Create an UploadWriter for the blob that will store it in the CAS.
+	uw, err := s.cas.NewUploadWriter(req.expectedDigest, req.uploadID)
 	if err != nil {
-		return err
-	}
-
-	// If the blob already exists in our CAS, tell the client and close the stream.
-	if s.cas.Has(req.expectedDigest) {
-		return server.SendAndClose(s.blobAlreadyExists(req.expectedDigest, req.isCompressed))
+		if errors.Is(err, ErrBlobExists) {
+			return server.SendAndClose(blobAlreadyExists(req.expectedDigest, req.compressor))
+		} else if errors.Is(err, fs.ErrExist) {
+			return status.Error(codes.InvalidArgument, "upload with same uuid already in progress")
+		}
+		return status.Errorf(codes.Internal, "could not create temporary file for upload: %v", err)
 	}
 
 	// Read the data through a zstd.Decoder if it's compressed.
-	var r io.Reader = req
-	if req.isCompressed {
+	var r io.WriterTo = req
+	if req.compressor == repb.Compressor_ZSTD {
 		decoder := s.decoderPool.Get().(*zstd.Decoder)
 		if err := decoder.Reset(req); err != nil {
 			return status.Errorf(codes.Internal, "failed to reset decoder: %v", err)
@@ -445,83 +473,37 @@ func (s *Service) Write(server bspb.ByteStream_WriteServer) (err error) {
 		r = decoder
 	}
 
-	// Create a temporary file to receive the data.
-	tempFile, err := digest.NewHashingFileWriter(filepath.Join(s.uploadDir, req.uploadID.String()))
-	if err != nil {
-		if errors.Is(err, fs.ErrExist) {
-			return status.Error(codes.InvalidArgument, "upload with same uuid already in progress")
+	// We don't need to check the number of written bytes vs. the expected count,
+	// because `uw.Close()` does this during verification of the digest already.
+	if _, err = r.WriteTo(uw); err != nil {
+		if errors.Is(err, ErrBlobExists) {
+			return server.SendAndClose(blobAlreadyExists(req.expectedDigest, req.compressor))
 		}
-		return status.Errorf(codes.Internal, "could not create temporary file for upload: %v", err)
-	}
-	defer func() {
-		if tempFile != nil {
-			if err := tempFile.Close(); err != nil {
-				slog.Error("failed to close temporary file", "error", err)
-			}
-			if err := tempFile.Delete(); err != nil {
-				slog.Error("failed to delete temporary file", "error", err)
-			}
-			tempFile = nil
-		}
-	}()
-
-	buf := *(s.bufPool.Get().(*[]byte))
-	defer s.bufPool.Put(&buf)
-	for {
-		n, err := r.Read(buf)
-		if n > 0 {
-			_, werr := tempFile.Write(buf[:n])
-			if werr != nil {
-				return status.Errorf(codes.Internal, "failed to write to temporary file: %v", werr)
-			}
-		}
-		if err != nil {
-			if errors.Is(err, io.EOF) {
-				break
-			}
-			return err
-		}
-
-		// Check again if the blob already exists in our CAS, in case multiple clients are uploading the same file.
-		if s.cas.Has(req.expectedDigest) {
-			return server.SendAndClose(s.blobAlreadyExists(req.expectedDigest, req.isCompressed))
-		}
-
-		// If the file is already larger than the expected size, something is wrong - return an error.
-		if tempFile.Size() > req.expectedDigest.Size {
-			return status.Errorf(codes.InvalidArgument, "received %d bytes, more than expected %d", req.receivedBytes, req.expectedDigest.Size)
-		}
+		return status.Errorf(codes.Internal, "write during upload failed: %v", err)
 	}
 
-	if err := tempFile.Close(); err != nil {
-		return status.Errorf(codes.Internal, "failed to close temporary file: %v", err)
+	if err := uw.Close(); err != nil {
+		var dme *DigestMismatchError
+		if errors.As(err, &dme) {
+			return status.Error(codes.InvalidArgument, err.Error())
+		}
+		return status.Errorf(codes.Internal, "upload failed: %v", err)
 	}
-
-	// Check that the digests (= hash and size) match.
-	d := tempFile.Digest()
-	if d != req.expectedDigest {
-		return status.Errorf(codes.InvalidArgument, "computed digest %v did not match expected digest %v", d, req.expectedDigest)
-	}
-
-	// Move the temporary file to the CAS.
-	if err := s.cas.Adopt(req.expectedDigest, tempFile.Path()); err != nil {
-		return status.Errorf(codes.Internal, "failed to move file into CAS: %v", err)
-	}
-	tempFile = nil
+	uw = nil
 
 	// Send the response to the client.
 	return server.SendAndClose(&bspb.WriteResponse{
-		CommittedSize: d.Size,
+		CommittedSize: req.expectedDigest.Size,
 	})
 }
 
-func (s *Service) blobAlreadyExists(d digest.Digest, isCompressed bool) *bspb.WriteResponse {
+func blobAlreadyExists(d digest.Digest, compressor repb.Compressor_Value) *bspb.WriteResponse {
 	// "The request will terminate immediately without error, and with a response whose `committed_size` is the
 	// value `-1` if this is a compressed upload, or with the full size of the uploaded file if this is an
 	// uncompressed upload (regardless of how much data was transmitted by the client)"
 	// https://github.com/bazelbuild/remote-apis/blob/v2.3.0/build/bazel/remote/execution/v2/remote_execution.proto#L256-L265
 	size := d.Size
-	if isCompressed {
+	if compressor != repb.Compressor_IDENTITY {
 		size = -1
 	}
 	return &bspb.WriteResponse{
