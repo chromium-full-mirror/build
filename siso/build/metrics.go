@@ -11,6 +11,8 @@ import (
 	"strconv"
 	"time"
 
+	log "github.com/golang/glog"
+
 	epb "go.chromium.org/build/siso/execute/proto"
 	"go.chromium.org/build/siso/o11y/clog"
 )
@@ -178,7 +180,9 @@ func (m *StepMetric) done(ctx context.Context, step *Step, buildStart time.Time)
 
 	result, cached := step.cmd.ActionResult()
 	m.Cached = cached
-	clog.Infof(ctx, "cached=%t", cached)
+	if log.V(1) {
+		clog.Infof(ctx, "cached=%t", cached)
+	}
 	md := result.GetExecutionMetadata()
 	if !m.Cached {
 		m.QueueTime = IntervalMetric(md.GetWorkerStartTimestamp().AsTime().Sub(md.GetQueuedTimestamp().AsTime()))
