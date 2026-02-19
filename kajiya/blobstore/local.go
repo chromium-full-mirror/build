@@ -219,38 +219,26 @@ func (c *ContentAddressableStorage) Open(d digest.Digest, offset int64, limit in
 		return nil, err
 	}
 
-	// Ensure that the file has the expected size.
-	size, err := f.Seek(0, io.SeekEnd)
-	if err != nil {
-		// Error is safe to ignore, because we're just reading.
-		_ = f.Close()
-		return nil, err
-	}
-
-	if size != d.Size {
-		slog.Error("actual file size does not match requested size of digest", "size", offset, "digest", d)
-		_ = f.Close()
-		return nil, &MissingBlobsError{Blobs: []digest.Digest{d}}
-	}
-
-	// Ensure that the offset is not negative and not larger than the file size.
-	if offset < 0 || offset > size {
+	// Ensure that the offset and limit are not negative and not larger than the file size.
+	if offset < 0 || offset > d.Size || limit < 0 || limit > d.Size-offset {
 		_ = f.Close()
 		return nil, fs.ErrInvalid
 	}
 
-	// Seek to the requested offset.
-	if _, err := f.Seek(offset, io.SeekStart); err != nil {
-		_ = f.Close()
-		return nil, err
+	// Seek to the requested offset if necessary.
+	if offset > 0 {
+		if _, err := f.Seek(offset, io.SeekStart); err != nil {
+			_ = f.Close()
+			return nil, err
+		}
 	}
 
-	// Cap the limit to the file size, taking the offset into account.
-	if limit == 0 || limit > size-offset {
-		limit = size - offset
+	// Limit the returned reader to the requested size if necessary.
+	if limit > 0 {
+		return LimitReadCloser(f, limit), nil
 	}
 
-	return LimitReadCloser(f, limit), nil
+	return f, nil
 }
 
 // Get reads a file for the given digest from disk and returns its contents.
