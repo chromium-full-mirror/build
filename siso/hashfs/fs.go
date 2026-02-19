@@ -1992,7 +1992,9 @@ func (e *entry) flush(ctx context.Context, fname string, osfs *osfs.OSFS, timeou
 			if err == nil {
 				fileDigest = ld.Digest()
 				if fileDigest == d {
-					clog.Infof(ctx, "flush %s: already exist - hash match", fname)
+					if log.V(1) {
+						clog.Infof(ctx, "flush %s: already exist - hash match", fname)
+					}
 					if !fi.ModTime().Equal(mtime) {
 						err = osfs.Chtimes(ctx, fname, time.Time{}, mtime)
 					}
