@@ -334,6 +334,82 @@ func TestReadWriteZstd(t *testing.T) {
 	}
 }
 
+func TestBatchOperationsZstd(t *testing.T) {
+	ctx := t.Context()
+	_, casClient := setupTest(ctx, t)
+
+	// Create some blobs
+	blobs := [][]byte{
+		[]byte("blob1-zstd"),
+		[]byte("blob2-zstd"),
+	}
+	digests := make([]*repb.Digest, len(blobs))
+	for i, b := range blobs {
+		digests[i] = digest.FromBlob(b).ToProto()
+	}
+
+	encoder, _ := zstd.NewWriter(nil)
+
+	// 1. Test BatchUpdateBlobs with Zstd
+	updateReqs := []*repb.BatchUpdateBlobsRequest_Request{
+		{
+			Digest:     digests[0],
+			Data:       encoder.EncodeAll(blobs[0], nil),
+			Compressor: repb.Compressor_ZSTD,
+		},
+		{
+			Digest:     digests[1],
+			Data:       encoder.EncodeAll(blobs[1], nil),
+			Compressor: repb.Compressor_ZSTD,
+		},
+	}
+	updateResp, err := casClient.BatchUpdateBlobs(ctx, &repb.BatchUpdateBlobsRequest{
+		Requests: updateReqs,
+	})
+	if err != nil {
+		t.Fatalf("BatchUpdateBlobs failed: %v", err)
+	}
+	for _, r := range updateResp.Responses {
+		if r.Status.Code != 0 {
+			t.Errorf("BatchUpdateBlobs response error for %s: %v", r.Digest.Hash, r.Status)
+		}
+	}
+
+	// 2. Test BatchReadBlobs with Zstd requested
+	readResp, err := casClient.BatchReadBlobs(ctx, &repb.BatchReadBlobsRequest{
+		Digests:               digests,
+		AcceptableCompressors: []repb.Compressor_Value{repb.Compressor_ZSTD},
+	})
+	if err != nil {
+		t.Fatalf("BatchReadBlobs failed: %v", err)
+	}
+	if len(readResp.Responses) != 2 {
+		t.Fatalf("Expected 2 responses, got %d", len(readResp.Responses))
+	}
+
+	decoder, _ := zstd.NewReader(nil)
+
+	for i, r := range readResp.Responses {
+		if got, want := codes.Code(r.Status.Code), codes.OK; got != want {
+			t.Errorf("Response code for blob %d got %v, want %v", i, got, want)
+		}
+
+		// Check compressor field
+		if got, want := r.Compressor, repb.Compressor_ZSTD; got != want {
+			t.Errorf("Compressor for blob %d got %v, want %v", i, got, want)
+		}
+
+		// Decompress and verify data
+		decompressed, err := decoder.DecodeAll(r.Data, nil)
+		if err != nil {
+			t.Errorf("Failed to decompress blob %d: %v", i, err)
+		}
+		if got, want := decompressed, blobs[i]; !bytes.Equal(got, want) {
+			t.Errorf("Data for blob %d got %v, want %v", i, got, want)
+		}
+	}
+}
+
 func TestWriteAlreadyExistingBlob(t *testing.T) {
 	ctx := t.Context()
 	client, _ := setupTest(ctx, t)

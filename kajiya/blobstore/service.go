@@ -15,6 +15,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -615,9 +616,20 @@ func (s *Service) BatchUpdateBlobs(ctx context.Context, request *repb.BatchUpdat
 
 	// For each blob in the list, check if it exists in the CAS. If not, write it to the CAS.
 	for _, blob := range request.Requests {
-		// Ensure that the client didn't send compressed data.
-		if blob.Compressor != repb.Compressor_IDENTITY {
-			return nil, status.Error(codes.InvalidArgument, "compressed data is not supported")
+		var data []byte
+
+		switch blob.Compressor {
+		case repb.Compressor_IDENTITY:
+			data = blob.Data
+		case repb.Compressor_ZSTD:
+			decoder := s.decoderPool.Get().(*zstd.Decoder)
+			data, err = decoder.DecodeAll(blob.Data, nil)
+			s.decoderPool.Put(decoder)
+			if err != nil {
+				return nil, status.Errorf(codes.InvalidArgument, "failed to decompress blob: %v", err)
+			}
+		default:
+			return nil, status.Error(codes.InvalidArgument, "unsupported compression algorithm")
 		}
 
 		// Parse the digest.
@@ -627,7 +639,7 @@ func (s *Service) BatchUpdateBlobs(ctx context.Context, request *repb.BatchUpdat
 		}
 
 		// Store the blob in our CAS.
-		actualDigest, err := s.cas.Put(blob.Data)
+		actualDigest, err := s.cas.Put(data)
 		if err != nil {
 			return nil, status.Errorf(codes.Internal, "could not store blob in CAS: %v", err)
 		}
@@ -648,6 +660,7 @@ func (s *Service) BatchUpdateBlobs(ctx context.Context, request *repb.BatchUpdat
 	return response, nil
 }
 
+// BatchReadBlobs implements the ContentAddressableStorage.BatchReadBlobs RPC.
 func (s *Service) BatchReadBlobs(ctx context.Context, request *repb.BatchReadBlobsRequest) (resp *repb.BatchReadBlobsResponse, err error) {
 	defer func() {
 		if err != nil {
@@ -661,6 +674,8 @@ func (s *Service) BatchReadBlobs(ctx context.Context, request *repb.BatchReadBlo
 	if request.DigestFunction != repb.DigestFunction_UNKNOWN && request.DigestFunction != repb.DigestFunction_SHA256 {
 		return nil, status.Errorf(codes.InvalidArgument, "hash function %q is not supported", request.DigestFunction.String())
 	}
+
+	shouldCompress := slices.Contains(request.AcceptableCompressors, repb.Compressor_ZSTD)
 
 	// Prepare a response that we can fill in.
 	response := &repb.BatchReadBlobsResponse{
@@ -690,8 +705,16 @@ func (s *Service) BatchReadBlobs(ctx context.Context, request *repb.BatchReadBlo
 				r.Status = status.New(codes.Internal, err.Error()).Proto()
 			}
 		} else {
-			r.Data = data
 			r.Status = status.New(codes.OK, "").Proto()
+			if shouldCompress {
+				r.Compressor = repb.Compressor_ZSTD
+				encoder := s.encoderPool.Get().(*zstd.Encoder)
+				r.Data = encoder.EncodeAll(data, nil)
+				s.encoderPool.Put(encoder)
+			} else {
+				r.Compressor = repb.Compressor_IDENTITY
+				r.Data = data
+			}
 		}
 
 		response.Responses = append(response.Responses, r)
@@ -701,6 +724,7 @@ func (s *Service) BatchReadBlobs(ctx context.Context, request *repb.BatchReadBlo
 	return response, nil
 }
 
+// GetTree implements the ContentAddressableStorage.GetTree RPC.
 func (s *Service) GetTree(request *repb.GetTreeRequest, treeServer repb.ContentAddressableStorage_GetTreeServer) (err error) {
 	defer func() {
 		if err != nil {
