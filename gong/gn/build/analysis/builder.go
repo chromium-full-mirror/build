@@ -96,6 +96,22 @@ func (b *Builder) RecordDefinedItem(item graph.Item) ([]environment.LabelWithOri
 	return nil, fmt.Errorf("don't know how to handle %T item yet", item)
 }
 
+// ResolvedTargets returns targets that have been resolved.
+func (b *Builder) ResolvedTargets() []*graph.Target {
+	var targets []*graph.Target
+	for _, record := range b.records {
+		if record.state == itemStateResolved {
+			if target, ok := record.item.(*graph.Target); ok {
+				targets = append(targets, target)
+			}
+		}
+	}
+	slices.SortFunc(targets, func(a, b *graph.Target) int {
+		return a.Label().Compare(b.Label())
+	})
+	return targets
+}
+
 func (b *Builder) targetDefined(target *graph.Target, record *builderRecord) ([]environment.LabelWithOrigin, error) {
 	var unresolvedDeps []environment.LabelWithOrigin
 

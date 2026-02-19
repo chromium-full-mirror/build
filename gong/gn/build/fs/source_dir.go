@@ -25,6 +25,17 @@ type SourceDir struct {
 	hasValue bool
 }
 
+// Compare returns the result of comparing the two SourceDir paths lexographically.
+func (d SourceDir) Compare(other SourceDir) int {
+	if d.hasValue && other.hasValue {
+		return strings.Compare(d.value.Value(), other.value.Value())
+	}
+	if d.hasValue {
+		return 1
+	}
+	return -1
+}
+
 // MakeSourceDir creates a source dir representation from a path string.
 // The provided path string must start with a slash. If the path does not end
 // with a slash, it will be added.

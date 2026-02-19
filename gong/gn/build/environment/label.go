@@ -34,6 +34,20 @@ func (l LabelWithOrigin) Equal(other LabelWithOrigin) bool {
 	return l.Label == other.Label && l.Origin.LocationRange().Equal(other.Origin.LocationRange())
 }
 
+// Compare returns the result of comparing the two label paths lexographically.
+func (l Label) Compare(other Label) int {
+	if l.Dir != other.Dir {
+		return l.Dir.Compare(other.Dir)
+	}
+	if l.Name != other.Name {
+		return strings.Compare(l.Name, other.Name)
+	}
+	if l.ToolchainDir != other.ToolchainDir {
+		return l.ToolchainDir.Compare(other.ToolchainDir)
+	}
+	return strings.Compare(l.ToolchainName, other.ToolchainName)
+}
+
 // ResolveLabel computes a string from a build file that may be relative to the
 // current directory into a fully qualified label.
 func ResolveLabel(currentDir fs.SourceDir, currentToolchain Label, input resolve.Value) (Label, error) {

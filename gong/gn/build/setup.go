@@ -45,7 +45,7 @@ func findDotFile(currentDir string) (string, error) {
 type Setup struct {
 	buildSettings    environment.BuildSettings
 	loader           analysis.Loader
-	builder          analysis.Builder
+	Builder          analysis.Builder
 	rootBuildFile    fs.SourceFile
 	inputFileManager fs.InputFileManager
 
@@ -72,7 +72,7 @@ func NewSetup() *Setup {
 		FillArguments: true,
 	}
 	setup.loader = analysis.MakeLoader(&setup.buildSettings, &setup.inputFileManager)
-	setup.builder = analysis.MakeBuilder(&setup.loader)
+	setup.Builder = analysis.MakeBuilder(&setup.loader)
 	setup.dotfileSettings = analysis.NewSettings(&setup.buildSettings)
 	setup.dotfileScope = setup.dotfileSettings.NewScope()
 	return setup
@@ -375,7 +375,7 @@ func (s *Setup) Run() error {
 		}
 		pending = pending[1:]
 		for _, item := range items {
-			unresolvedDeps, err := s.builder.RecordDefinedItem(item)
+			unresolvedDeps, err := s.Builder.RecordDefinedItem(item)
 			if err != nil {
 				return err
 			}
