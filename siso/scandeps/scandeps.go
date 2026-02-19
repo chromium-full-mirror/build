@@ -26,6 +26,37 @@ type ScanDeps struct {
 	inputDeps map[string][]string
 
 	inputsRequiringClangScandeps map[string]bool
+
+	clangScandeps clangMode
+}
+
+// clangMode specifies when fallback to clang scandeps.
+type clangMode int
+
+const (
+	// default clang mode. don't use clang scandeps.
+	clangModeUnspecified clangMode = iota
+
+	// use clang scandeps if it detects unsupported macro, e.g. func-type macro.
+	clangModeUnsupportedMacro
+
+	// use clang scandeps if scandeps failed.
+	clangModeErr
+)
+
+// clangModeFromString converts string to ClangMode.
+func clangModeFromString(ctx context.Context, s string) clangMode {
+	switch s {
+	case "":
+		return clangModeUnspecified
+	case "unsupported-macro":
+		return clangModeUnsupportedMacro
+	case "scandeps-err":
+		return clangModeErr
+	default:
+		clog.Warningf(ctx, "unknown clangscandeps mode=%q", s)
+		return clangModeUnspecified
+	}
 }
 
 var ErrRequireClangScandeps = errors.New("scandeps: require clang scandeps")
@@ -37,17 +68,27 @@ func SetErrForTest(err error) {
 	errForTest = err
 }
 
+// Options is scandeps options
+type Options struct {
+	InputDeps map[string][]string
+
+	InputsRequiringClangScandeps []string
+
+	ClangMode string
+}
+
 // New creates new ScanDeps.
-func New(hashfs *hashfs.HashFS, inputDeps map[string][]string, inputsRequiringClangScandeps []string) *ScanDeps {
+func New(ctx context.Context, hashfs *hashfs.HashFS, opts Options) *ScanDeps {
 	s := &ScanDeps{
 		fs: &filesystem{
 			hashfs: hashfs,
 			seed:   maphash.MakeSeed(),
 		},
-		inputDeps:                    inputDeps,
+		inputDeps:                    opts.InputDeps,
 		inputsRequiringClangScandeps: make(map[string]bool),
+		clangScandeps:                clangModeFromString(ctx, opts.ClangMode),
 	}
-	for _, i := range inputsRequiringClangScandeps {
+	for _, i := range opts.InputsRequiringClangScandeps {
 		s.inputsRequiringClangScandeps[i] = true
 	}
 	hashfs.Notify(s.fs.update)
@@ -85,7 +126,12 @@ type Request struct {
 }
 
 // Scan scans C/C++ source/header files for req to get C/C++ dependencies.
-func (s *ScanDeps) Scan(ctx context.Context, execRoot string, req Request) ([]string, error) {
+func (s *ScanDeps) Scan(ctx context.Context, execRoot string, req Request) (_ []string, retErr error) {
+	defer func() {
+		if retErr != nil && s.clangScandeps == clangModeErr && !errors.Is(retErr, ErrRequireClangScandeps) {
+			retErr = fmt.Errorf("%w: %v", ErrRequireClangScandeps, retErr)
+		}
+	}()
 	if errForTest != nil {
 		return nil, errForTest
 	}
@@ -152,10 +198,27 @@ func (s *ScanDeps) Scan(ctx context.Context, execRoot string, req Request) ([]st
 			}
 			lastCtxCheck = time.Now()
 		}
-		names := scanner.nextInputs(ctx)
+		names, err := scanner.nextInputs(ctx)
 		if log.V(1) {
 			logNames := names
-			clog.Infof(ctx, "try include %q", logNames)
+			clog.Infof(ctx, "try include %q: %v", logNames, err)
+		}
+		if err != nil {
+			if log.V(1) {
+				clog.Infof(ctx, "nextInputs %v", err)
+			}
+			switch s.clangScandeps {
+			case clangModeUnspecified:
+				// ignore error
+			case clangModeUnsupportedMacro:
+				if errors.Is(err, errUnsupportedMacro) {
+					return nil, fmt.Errorf("%w: %v", ErrRequireClangScandeps, err)
+				}
+				return nil, err
+			case clangModeErr:
+				// will wrap ErrRequireClangScandeps in defer
+				return nil, err
+			}
 		}
 		for _, name := range names {
 			incpath, err := scanner.find(ctx, name)

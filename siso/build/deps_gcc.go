@@ -182,6 +182,7 @@ func (gcc depsGCC) DepsCmd(ctx context.Context, b *Builder, step *Step) ([]strin
 func (gcc depsGCC) depsInputs(ctx context.Context, b *Builder, step *Step) ([]string, error) {
 	ins, err := gcc.scandeps(ctx, b, step)
 	if errors.Is(err, scandeps.ErrRequireClangScandeps) {
+		clog.Warningf(ctx, "use clang scandeps: %v", err)
 		step.metrics.ClangScandeps = true
 		ins, err = gcc.scandepsByClang(ctx, b, step)
 	}

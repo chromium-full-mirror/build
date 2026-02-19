@@ -7,6 +7,8 @@ package scandeps
 import (
 	"bytes"
 	"context"
+	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -152,24 +154,40 @@ func CPPScan(ctx context.Context, fname string, buf []byte) ([]string, map[strin
 	return includes, defines, nil
 }
 
-func cppExpandMacros(ctx context.Context, paths []string, incname string, macros map[string][]string) []string {
+// errUnsupportedMacro is error when it detects unsupported macro, such as func macro.
+var errUnsupportedMacro = errors.New("unsupported macro")
+
+func cppExpandMacros(ctx context.Context, paths []string, incname string, macros map[string][]string) ([]string, error) {
 	if incname == "" {
-		return nil
+		return nil, nil
+	}
+	if strings.Contains(incname, "(") {
+		return nil, fmt.Errorf("func macro %q: %w", incname, errUnsupportedMacro)
 	}
 	if !isMacro(incname) {
-		return append(paths, incname)
+		// literal includes
+		return append(paths, incname), nil
 	}
 	values, ok := macros[incname]
 	if !ok {
-		return nil
+		clog.Infof(ctx, "missing macro %q", incname)
+		return paths, nil
 	}
+	// TODO: it would be ok to fail to expand some variant,
+	// e.g. TestScanDeps_SelfIncludeInCommentAndMacroInclude
+	// but error if it fail to expand all variants.
+	var retErr error
 	for _, v := range values {
-		paths = cppExpandMacros(ctx, paths, v, macros)
+		var err error
+		paths, err = cppExpandMacros(ctx, paths, v, macros)
+		if err != nil {
+			retErr = err
+		}
 	}
 	if log.V(1) {
 		clog.Infof(ctx, "expand %q -> %q", incname, paths)
 	}
-	return paths
+	return paths, retErr
 }
 
 func addInclude(ctx context.Context, paths []string, incpath []byte) []string {
@@ -272,6 +290,7 @@ func addDefine(ctx context.Context, defines map[string][]string, line []byte) {
 		value := line
 		i = bytes.IndexAny(value, " \t")
 		if i >= 0 {
+			// TODO: if "FOO (x)", it would be func macro.
 			value = value[:i]
 		}
 		if len(value) == 0 {
@@ -289,6 +308,10 @@ func addDefine(ctx context.Context, defines map[string][]string, line []byte) {
 				}{macro: macro, value: value}
 				clog.Infof(ctx, "ignore func maro: %q=%q", lv.macro, lv.value)
 			}
+			// TODO: record func macro for
+			//  #define FOO BAR(x, foo.h)
+			//  #define BAR(x, y) ...
+			//  #include FOO
 			return
 		}
 		if value[0] >= 'A' && value[0] <= 'Z' {

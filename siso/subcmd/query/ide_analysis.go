@@ -189,7 +189,7 @@ func (c *ideAnalysisCommand) analyze(ctx context.Context, buildPath *build.Path,
 	if err != nil {
 		return analysis, err
 	}
-	analyzer.scanDeps = scandeps.New(hashFS, nil, nil)
+	analyzer.scanDeps = scandeps.New(ctx, hashFS, scandeps.Options{})
 	buildableUnits := make(map[string]*pb.BuildableUnit)
 	for _, arg := range args {
 		result, bus := analyzer.analyzeTarget(ctx, arg)

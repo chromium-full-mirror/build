@@ -234,7 +234,9 @@ func (c *Command) scanWithRequest(ctx context.Context, buildPath *build.Path, re
 		return err
 	}
 
-	s := scandeps.New(hashFS, inputDeps, nil)
+	s := scandeps.New(ctx, hashFS, scandeps.Options{
+		InputDeps: inputDeps,
+	})
 
 	result, err := s.Scan(ctx, buildPath.ExecRoot, req)
 	if err != nil {

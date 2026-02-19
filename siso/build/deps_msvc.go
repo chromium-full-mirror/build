@@ -199,6 +199,7 @@ func (msvc depsMSVC) DepsCmd(ctx context.Context, b *Builder, step *Step) ([]str
 func (msvc depsMSVC) depsInputs(ctx context.Context, b *Builder, step *Step) ([]string, error) {
 	ins, err := msvc.scandeps(ctx, b, step)
 	if errors.Is(err, scandeps.ErrRequireClangScandeps) {
+		clog.Warningf(ctx, "use clang scandeps: %v", err)
 		step.metrics.ClangScandeps = true
 		ins, err = msvc.scandepsByClang(ctx, b, step)
 	}
