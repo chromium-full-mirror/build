@@ -6,7 +6,6 @@ package build
 
 import (
 	"bytes"
-	"compress/gzip"
 	"context"
 	"errors"
 	"fmt"
@@ -17,6 +16,7 @@ import (
 	"time"
 
 	rpb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
+	"github.com/klauspost/compress/zstd"
 	"golang.org/x/sync/singleflight"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -70,7 +70,7 @@ func (c *LocalCache) actionCacheFilename(d digest.Digest) string {
 }
 
 func (c *LocalCache) contentCacheFilename(d digest.Digest) string {
-	name := fmt.Sprintf("%s-%d.gz", d.Hash, d.SizeBytes)
+	name := fmt.Sprintf("%s-%d.zst", d.Hash, d.SizeBytes)
 	return filepath.Join(c.dir, "contents", name[:2], name[2:])
 }
 
@@ -150,13 +150,13 @@ func (c *LocalCache) GetContent(ctx context.Context, d digest.Digest, _ string) 
 		return nil, err
 	}
 	defer r.Close()
-	gr, err := gzip.NewReader(r)
+	zr, err := zstd.NewReader(r)
 	if err != nil {
 		c.m.ReadDone(0, err)
 		return nil, err
 	}
-	defer gr.Close()
-	buf, err := io.ReadAll(gr)
+	defer zr.Close()
+	buf, err := io.ReadAll(zr)
 	// TODO(b/274060507): local cache metric: iometrics uses compressed size or uncompressed size?
 	c.m.ReadDone(len(buf), err)
 	if err == nil {
@@ -189,15 +189,22 @@ func (c *LocalCache) SetContent(ctx context.Context, d digest.Digest, fname stri
 			c.m.WriteDone(0, err)
 			return nil, err
 		}
-		gw := gzip.NewWriter(w)
-		_, err = gw.Write(buf)
+		zw, err := zstd.NewWriter(w)
 		if err != nil {
 			c.m.WriteDone(0, err)
 			w.Close()
 			os.Remove(tmp)
 			return nil, err
 		}
-		err = gw.Close()
+		_, err = zw.Write(buf)
+		if err != nil {
+			c.m.WriteDone(0, err)
+			zw.Close()
+			w.Close()
+			os.Remove(tmp)
+			return nil, err
+		}
+		err = zw.Close()
 		if err != nil {
 			c.m.WriteDone(0, err)
 			w.Close()
@@ -287,8 +294,13 @@ func (c *LocalCache) ContentSink(ctx context.Context, d digest.Digest, fname str
 		return nil, err
 	}
 	clog.Infof(ctx, "write cache content %s for %s", d, fname)
-	gw := gzip.NewWriter(f)
-	return &dataWriteCloser{wc: gw, f: f, cname: cname, m: c.m, d: d}, nil
+	zw, err := zstd.NewWriter(f)
+	if err != nil {
+		f.Close()
+		os.Remove(f.Name())
+		return nil, err
+	}
+	return &dataWriteCloser{wc: zw, f: f, cname: cname, m: c.m, d: d}, nil
 }
 
 // HasContent checks whether content of the digest exists in the local cache.
@@ -426,7 +438,7 @@ func (s dataSource) Open(ctx context.Context) (io.ReadCloser, error) {
 	if s.c == nil || s.c.dir == "" {
 		return nil, errors.New("cache is not configured")
 	}
-	name := fmt.Sprintf("%s-%d.gz", s.d.Hash, s.d.SizeBytes)
+	name := fmt.Sprintf("%s-%d.zst", s.d.Hash, s.d.SizeBytes)
 	cname := filepath.Join(s.c.dir, "contents", name[:2], name[2:])
 	r, err := os.Open(cname)
 	if err != nil {
@@ -440,14 +452,14 @@ func (s dataSource) Open(ctx context.Context) (io.ReadCloser, error) {
 		clog.Infof(ctx, "use %s (failed to open cached-digest data %s: %v)", s.fname, s.d, err)
 		return &dataReadCloser{ReadCloser: r, m: s.m}, nil
 	}
-	gr, err := gzip.NewReader(r)
+	zr, err := zstd.NewReader(r)
 	if err != nil {
 		r.Close()
-		clog.Warningf(ctx, "failed to gunzip cached-digest data %s for %s: %v", s.d, s.fname, err)
+		clog.Warningf(ctx, "failed to decompress cached-digest data %s for %s: %v", s.d, s.fname, err)
 		s.m.ReadDone(0, err)
 		return nil, err
 	}
-	return &dataReadCloser{ReadCloser: gr, f: r, m: s.m}, nil
+	return &dataReadCloser{ReadCloser: zr.IOReadCloser(), f: r, m: s.m}, nil
 }
 
 func (s dataSource) String() string {
