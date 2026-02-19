@@ -440,7 +440,7 @@ func (s *Service) Write(server bspb.ByteStream_WriteServer) (err error) {
 
 	// Send the response to the client.
 	return server.SendAndClose(&bspb.WriteResponse{
-		CommittedSize: receivedBytes,
+		CommittedSize: d.Size,
 	})
 }
 

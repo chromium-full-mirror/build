@@ -17,6 +17,7 @@ import (
 
 	repb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
 	"github.com/google/uuid"
+	"github.com/klauspost/compress/zstd"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -248,11 +249,101 @@ func TestBatchOperations(t *testing.T) {
 	}
 }
 
+func TestReadWriteZstd(t *testing.T) {
+	ctx := t.Context()
+	client, _ := setupTest(ctx, t)
+
+	// Generate random data
+	blobSize := int64(1 * 1024 * 1024)
+	blobData := make([]byte, blobSize)
+	if _, err := rand.Read(blobData); err != nil {
+		t.Fatalf("Failed to generate random data: %v", err)
+	}
+	d := digest.FromBlob(blobData)
+
+	// Compress the data manually
+	encoder, err := zstd.NewWriter(nil)
+	if err != nil {
+		t.Fatalf("Failed to create zstd writer: %v", err)
+	}
+	compressedData := encoder.EncodeAll(blobData, nil)
+
+	// --- Test Write (Compressed) ---
+	uploadID := uuid.New()
+	// Resource name format: {instance_name}/uploads/{uuid}/compressed-blobs/zstd/{uncompressed_hash}/{uncompressed_size}
+	writeResourceName := fmt.Sprintf("test-instance/uploads/%s/compressed-blobs/zstd/%s/%d", uploadID, d.Hash, d.Size)
+
+	stream, err := client.Write(ctx)
+	if err != nil {
+		t.Fatalf("Failed to create Write stream: %v", err)
+	}
+
+	// Send compressed data
+	if err := stream.Send(&bspb.WriteRequest{
+		ResourceName: writeResourceName,
+		WriteOffset:  0,
+		FinishWrite:  true,
+		Data:         compressedData,
+	}); err != nil {
+		t.Fatalf("Failed to send compressed data: %v", err)
+	}
+
+	resp, err := stream.CloseAndRecv()
+	if err != nil {
+		t.Fatalf("Failed to CloseAndRecv: %v", err)
+	}
+	// CommittedSize should be the size of the uncompressed data (or -1 if blob already exists)
+	if got, want := resp.CommittedSize, d.Size; got != want {
+		t.Errorf("CommittedSize = %d, want %d", got, want)
+	}
+
+	// --- Test Read (Compressed) ---
+	// Resource name format: {instance_name}/compressed-blobs/zstd/{uncompressed_hash}/{uncompressed_size}
+	readResourceName := fmt.Sprintf("test-instance/compressed-blobs/zstd/%s/%d", d.Hash, d.Size)
+	readStream, err := client.Read(ctx, &bspb.ReadRequest{
+		ResourceName: readResourceName,
+	})
+	if err != nil {
+		t.Fatalf("Failed to create Read stream: %v", err)
+	}
+
+	var readBuf bytes.Buffer
+	for {
+		chunk, err := readStream.Recv()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			t.Fatalf("Failed to Recv read chunk: %v", err)
+		}
+		readBuf.Write(chunk.Data)
+	}
+
+	// Verify we got compressed data back
+	decoder, err := zstd.NewReader(nil)
+	if err != nil {
+		t.Fatalf("Failed to create zstd reader: %v", err)
+	}
+	decompressedData, err := decoder.DecodeAll(readBuf.Bytes(), nil)
+	if err != nil {
+		t.Fatalf("Failed to decompress read data: %v", err)
+	}
+
+	if !bytes.Equal(decompressedData, blobData) {
+		t.Errorf("Read data mismatch after decompression")
+	}
+}
+
 func TestWriteAlreadyExistingBlob(t *testing.T) {
 	ctx := t.Context()
 	client, _ := setupTest(ctx, t)
 
-	blobData := []byte("hello world, this is a test for uploading an already existing blob")
+	// Generate a 20MB random blob.
+	blobSize := int64(20 * 1024 * 1024)
+	blobData := make([]byte, blobSize)
+	if _, err := rand.Read(blobData); err != nil {
+		t.Fatalf("Failed to generate random data: %v", err)
+	}
 	d := digest.FromBlob(blobData)
 
 	// Upload the blob for the first time.
@@ -262,45 +353,116 @@ func TestWriteAlreadyExistingBlob(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create Write stream: %v", err)
 	}
-	if err := stream.Send(&bspb.WriteRequest{
-		ResourceName: resourceName,
-		WriteOffset:  0,
-		FinishWrite:  true,
-		Data:         blobData,
-	}); err != nil {
-		t.Fatalf("Failed to send data: %v", err)
+	chunkSize := int64(4096)
+	for offset := int64(0); offset < blobSize; offset += chunkSize {
+		end := min(offset+chunkSize, blobSize)
+		if err := stream.Send(&bspb.WriteRequest{
+			ResourceName: resourceName,
+			WriteOffset:  offset,
+			FinishWrite:  end == blobSize,
+			Data:         blobData[offset:end],
+		}); err != nil {
+			t.Fatalf("Failed to send data: %v", err)
+		}
 	}
 	resp, err := stream.CloseAndRecv()
 	if err != nil {
 		t.Fatalf("First upload failed: %v", err)
 	}
-	if got, want := resp.CommittedSize, d.Size; got != want {
+	if got, want := resp.CommittedSize, blobSize; got != want {
 		t.Errorf("First upload: CommittedSize = %d, want %d", got, want)
 	}
 
-	// Upload the same blob again. Per the REAPI spec, the request should terminate
-	// immediately without error, with committed_size equal to the full blob size
-	// (for an uncompressed upload).
-	uploadID2 := uuid.New()
-	resourceName2 := fmt.Sprintf("test-instance/uploads/%s/blobs/%s/%d", uploadID2, d.Hash, d.Size)
-	stream2, err := client.Write(ctx)
+	// Upload the same blob again in 4KB chunks. Per the REAPI spec, the server
+	// should close the stream immediately when the blob already exists. Due to
+	// transport buffering and Go routine scheduling, we will not immediately get
+	// notified that the server closed the stream, so gRPC will allow us to send
+	// a few more messages afterwards that will simply be discarded on the server
+	// side. However, with a 20MB blob, we expect Send to fail with io.EOF well
+	// before all chunks are sent, proving that the server did not consume the
+	// entire upload. In practice, we're able to send around ~50 chunks out of
+	// total ~5000 before our stream.Send() fails with io.EOF.
+	uploadID = uuid.New()
+	resourceName = fmt.Sprintf("test-instance/uploads/%s/blobs/%s/%d", uploadID, d.Hash, d.Size)
+	stream, err = client.Write(ctx)
 	if err != nil {
 		t.Fatalf("Failed to create second Write stream: %v", err)
 	}
-	if err := stream2.Send(&bspb.WriteRequest{
-		ResourceName: resourceName2,
-		WriteOffset:  0,
-		FinishWrite:  true,
-		Data:         blobData,
-	}); err != nil {
-		t.Fatalf("Failed to send data on second upload: %v", err)
+	totalChunks := (blobSize + chunkSize - 1) / chunkSize
+	sentChunks := int64(0)
+	for offset := int64(0); offset < blobSize; offset += chunkSize {
+		end := min(offset+chunkSize, blobSize)
+		if err := stream.Send(&bspb.WriteRequest{
+			ResourceName: resourceName,
+			WriteOffset:  offset,
+			FinishWrite:  end == blobSize,
+			Data:         blobData[offset:end],
+		}); err != nil {
+			if !errors.Is(err, io.EOF) {
+				t.Fatalf("Second upload failed (expected io.EOF): %v", err)
+			}
+			break
+		}
+		sentChunks++
 	}
-	resp2, err := stream2.CloseAndRecv()
+	t.Logf("Sent %d out of %d chunks", sentChunks, totalChunks)
+	if sentChunks == totalChunks {
+		t.Errorf("Server did not close stream early: all %d chunks were sent", totalChunks)
+	}
+	resp, err = stream.CloseAndRecv()
 	if err != nil {
 		t.Fatalf("Second upload failed (expected success): %v", err)
 	}
-	if got, want := resp2.CommittedSize, d.Size; got != want {
+	if got, want := resp.CommittedSize, blobSize; got != want {
 		t.Errorf("Second upload: CommittedSize = %d, want %d", got, want)
+	}
+
+	// Compress the data for the third upload.
+	encoder, err := zstd.NewWriter(nil)
+	if err != nil {
+		t.Fatalf("Failed to create zstd writer: %v", err)
+	}
+	compressedData := encoder.EncodeAll(blobData, nil)
+	compressedSize := int64(len(compressedData))
+
+	// Upload the same blob again using compression in 4KB chunks. Per the REAPI
+	// spec, the server should close the stream immediately when the blob already
+	// exists. With a 20MB blob, we expect Send to fail with io.EOF well before
+	// all chunks are sent, proving that the server did not consume the entire
+	// upload. The committed_size should be -1 for compressed uploads.
+	uploadID = uuid.New()
+	resourceName = fmt.Sprintf("test-instance/uploads/%s/compressed-blobs/zstd/%s/%d", uploadID, d.Hash, d.Size)
+	stream, err = client.Write(ctx)
+	if err != nil {
+		t.Fatalf("Failed to create second Write stream: %v", err)
+	}
+	totalChunks = (compressedSize + chunkSize - 1) / chunkSize
+	sentChunks = int64(0)
+	for offset := int64(0); offset < compressedSize; offset += chunkSize {
+		end := min(offset+chunkSize, compressedSize)
+		if err := stream.Send(&bspb.WriteRequest{
+			ResourceName: resourceName,
+			WriteOffset:  offset,
+			FinishWrite:  end == compressedSize,
+			Data:         compressedData[offset:end],
+		}); err != nil {
+			if !errors.Is(err, io.EOF) {
+				t.Fatalf("Second upload failed (expected io.EOF): %v", err)
+			}
+			break
+		}
+		sentChunks++
+	}
+	t.Logf("Sent %d out of %d chunks", sentChunks, totalChunks)
+	if sentChunks == totalChunks {
+		t.Errorf("Server did not close stream early: all %d chunks were sent", totalChunks)
+	}
+	resp, err = stream.CloseAndRecv()
+	if err != nil {
+		t.Fatalf("Third upload failed: %v", err)
+	}
+	if got, want := resp.CommittedSize, int64(-1); got != want {
+		t.Errorf("Third upload: CommittedSize = %d, want %d", got, want)
 	}
 }
 
