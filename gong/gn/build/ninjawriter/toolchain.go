@@ -6,7 +6,6 @@
 package ninjawriter
 
 import (
-	"fmt"
 	"io"
 	"slices"
 
@@ -22,26 +21,7 @@ func WriteToolchain(w io.Writer, tc *graph.Toolchain) error {
 	slices.Sort(names)
 
 	for _, name := range names {
-		tool := tc.Tools[name]
-
-		_, err := fmt.Fprintf(w, "rule %s\n", tool.Name)
-		if err != nil {
-			return err
-		}
-
-		_, err = fmt.Fprintf(w, "  command = %s\n", tool.Command)
-		if err != nil {
-			return err
-		}
-
-		if tool.Description != "" {
-			_, err = fmt.Fprintf(w, "  description = %s\n", tool.Description)
-			if err != nil {
-				return err
-			}
-		}
-
-		_, err = fmt.Fprintln(w)
+		err := tc.Tools[name].WriteNinjaRule(w)
 		if err != nil {
 			return err
 		}

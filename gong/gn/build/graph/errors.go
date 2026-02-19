@@ -44,3 +44,21 @@ func (ToolOutsideToolchain) Message() string { return "tool() called outside of 
 func (ToolOutsideToolchain) HelpText() string {
 	return "The tool() function can only be used inside a toolchain() definition."
 }
+
+// SubstitutionFormatError is returned when a substitution pattern is malformed.
+type SubstitutionFormatError struct {
+	invalidPart string
+}
+
+// Error returns the error string.
+func (e SubstitutionFormatError) Error() string {
+	return fmt.Sprintf("unknown substitution type: %s", e.invalidPart)
+}
+
+// Message returns the user-facing error message.
+func (e SubstitutionFormatError) Message() string { return "Invalid substitution type." }
+
+// HelpText returns the user-facing error help text.
+func (e SubstitutionFormatError) HelpText() string {
+	return fmt.Sprintf("Don't recognize the substitution pattern starting with %q.", e.invalidPart)
+}

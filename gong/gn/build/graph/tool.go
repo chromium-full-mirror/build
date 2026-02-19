@@ -5,9 +5,75 @@
 package graph
 
 import (
+	"fmt"
+	"io"
+
 	"go.chromium.org/build/gong/gn/parse"
 	"go.chromium.org/build/gong/gn/resolve"
 )
+
+// Tool represents arguments to a toolchain tool.
+type Tool struct {
+	Name        string
+	Command     substitutionPattern
+	outputs     []string // Simplified: List of output pattern strings
+	Description substitutionPattern
+	definedFrom parse.Node
+}
+
+// NewTool creates a new tool struct with the given name.
+func NewTool(name string) *Tool {
+	return &Tool{
+		Name: name,
+	}
+}
+
+// WriteNinjaRule writes the tool rule to the given writer.
+// This is a rudimentary implementation.
+// TODO: Use text/template? Need to escape ninja meta characters?
+func (t *Tool) WriteNinjaRule(w io.Writer) error {
+	_, err := fmt.Fprintf(w, "rule %s\n", t.Name)
+	if err != nil {
+		return err
+	}
+	_, err = fmt.Fprintf(w, "  command = ")
+	if err != nil {
+		return err
+	}
+	for _, sub := range t.Command.Pattern {
+		_, err = w.Write([]byte(sub.NinjaString()))
+		if err != nil {
+			return err
+		}
+	}
+	_, err = fmt.Fprintln(w)
+	if err != nil {
+		return err
+	}
+
+	if len(t.Description.Pattern) > 0 {
+		_, err = fmt.Fprintf(w, "  description = ")
+		if err != nil {
+			return err
+		}
+		for _, sub := range t.Description.Pattern {
+			_, err = w.Write([]byte(sub.NinjaString()))
+			if err != nil {
+				return err
+			}
+		}
+		_, err = fmt.Fprintln(w)
+		if err != nil {
+			return err
+		}
+	}
+
+	_, err = fmt.Fprintln(w)
+	if err != nil {
+		return err
+	}
+	return nil
+}
 
 // toolExecContext is used for execution inside a tool() call.
 type toolExecContext struct {
@@ -85,8 +151,10 @@ func (ToolFunction) Run(scope *resolve.Scope, call *parse.FunctionCallNode, args
 		if err != nil {
 			return nil, err
 		}
-		// TODO: need to parse the substitution pattern here.
-		tool.Command = sv.RawGNString()
+		tool.Command, err = makeSubstitutionPattern(sv.RawGNString())
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	// Outputs.
@@ -111,7 +179,10 @@ func (ToolFunction) Run(scope *resolve.Scope, call *parse.FunctionCallNode, args
 		if err != nil {
 			return nil, err
 		}
-		tool.Description = sv.RawGNString()
+		tool.Description, err = makeSubstitutionPattern(sv.RawGNString())
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	// Values that haven't been implemented yet.

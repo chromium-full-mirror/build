@@ -32,10 +32,22 @@ func TestToolchain_Run_Valid(t *testing.T) {
 }`
 	wantTools := map[string]*Tool{
 		"cc": {
-			Name:        "cc",
-			Command:     "gcc {{source}} -o {{output}}",
-			outputs:     []string{"{{output}}.o"},
-			Description: "CC {{source}}",
+			Name: "cc",
+			Command: substitutionPattern{
+				[]substitutionPart{
+					substitutionLiteral{"gcc "},
+					substitutionSource,
+					substitutionLiteral{" -o "},
+					substitutionOutput,
+				},
+			},
+			outputs: []string{"{{output}}.o"},
+			Description: substitutionPattern{
+				[]substitutionPart{
+					substitutionLiteral{"CC "},
+					substitutionSource,
+				},
+			},
 		},
 	}
 

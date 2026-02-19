@@ -35,14 +35,13 @@ func TestWriteToolchain(t *testing.T) {
 	tcName := "gcc"
 	tcBlock := `
 {
-  # TODO: Using ${foo} for now until {{foo}} substitution implemented.
   tool("cc") {
-    command = "gcc -c \${in} -o \${out}"
-    description = "CC \${out}"
+    command = "gcc -c {{source}} -o {{output}}"
+    description = "CC {{output}}"
   }
   tool("alink") {
-    command = "ar rcs \${out} \${in}"
-    description = "AR \${out}"
+    command = "ar rcs {{output}} {{source}}"
+    description = "AR {{output}}"
   }
 }`
 	want := `rule alink

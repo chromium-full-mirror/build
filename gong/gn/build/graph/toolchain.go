@@ -67,19 +67,3 @@ func (Toolchain) CompatibleWith(item Item) bool {
 	}
 	return false
 }
-
-// Tool represents arguments to a toolchain tool.
-type Tool struct {
-	Name        string
-	Command     string
-	outputs     []string // Simplified: List of output pattern strings
-	Description string
-	definedFrom parse.Node
-}
-
-// NewTool creates a new tool struct with the given name.
-func NewTool(name string) *Tool {
-	return &Tool{
-		Name: name,
-	}
-}
