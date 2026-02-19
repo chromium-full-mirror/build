@@ -6,7 +6,7 @@
 package blobstore
 
 import (
-	"bytes"
+	"bufio"
 	"context"
 	"errors"
 	"fmt"
@@ -21,18 +21,18 @@ import (
 
 	repb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
 	"github.com/google/uuid"
+	"github.com/klauspost/compress/zstd"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
 	"go.chromium.org/build/kajiya/digest"
-	"go.chromium.org/build/kajiya/zstdstream"
 )
 
 const (
 	// The maximum chunk size to write back to the client in Send calls.
-	maxChunkSize int64 = 2 * 1024 * 1024
+	maxChunkSize int = 2 * 1024 * 1024
 )
 
 // Service implements the REAPI ContentAddressableStorage and ByteStream services.
@@ -43,7 +43,10 @@ type Service struct {
 	cas       *ContentAddressableStorage
 	uploadDir string
 
-	bufPool sync.Pool
+	encoderPool   sync.Pool
+	decoderPool   sync.Pool
+	bufWriterPool sync.Pool
+	bufPool       sync.Pool
 }
 
 // Register creates and registers a new Service with the given gRPC server.
@@ -61,9 +64,33 @@ func Register(s *grpc.Server, cas *ContentAddressableStorage, uploadDir string) 
 	service := &Service{
 		cas:       cas,
 		uploadDir: uploadDir,
+		encoderPool: sync.Pool{
+			New: func() any {
+				e, err := zstd.NewWriter(nil)
+				if err != nil {
+					panic(err)
+				}
+				return e
+			},
+		},
+		decoderPool: sync.Pool{
+			New: func() any {
+				d, err := zstd.NewReader(nil)
+				if err != nil {
+					panic(err)
+				}
+				return d
+			},
+		},
+		bufWriterPool: sync.Pool{
+			New: func() any {
+				return bufio.NewWriterSize(nil, maxChunkSize)
+			},
+		},
 		bufPool: sync.Pool{
 			New: func() any {
-				return bytes.NewBuffer(make([]byte, maxChunkSize))
+				buf := make([]byte, maxChunkSize)
+				return &buf
 			},
 		},
 	}
@@ -208,6 +235,26 @@ func parseWriteResource(name string) (digest.Digest, uuid.UUID, repb.Compressor_
 	return d, u, c, nil
 }
 
+// readResponseWriter sends bytes written to it to the client by wrapping them in ByteStream.ReadResponse messages.
+type readResponseWriter struct {
+	rs bspb.ByteStream_ReadServer
+}
+
+// Write sends the provided byte slice to the client wrapped in one or more ByteStream.ReadResponse messages.
+func (r *readResponseWriter) Write(p []byte) (n int, err error) {
+	for len(p) > 0 {
+		chunkSize := min(len(p), maxChunkSize)
+		if err := r.rs.Send(&bspb.ReadResponse{
+			Data: p[:chunkSize],
+		}); err != nil {
+			return n, status.Errorf(codes.Internal, "failed to send data to client: %v", err)
+		}
+		n += chunkSize
+		p = p[chunkSize:]
+	}
+	return n, nil
+}
+
 // Read implements the ByteStream.Read RPC.
 func (s *Service) Read(request *bspb.ReadRequest, server bspb.ByteStream_ReadServer) (err error) {
 	defer func() {
@@ -226,7 +273,7 @@ func (s *Service) Read(request *bspb.ReadRequest, server bspb.ByteStream_ReadSer
 	if c != repb.Compressor_IDENTITY && c != repb.Compressor_ZSTD {
 		return status.Error(codes.InvalidArgument, "unsupported compression algorithm")
 	}
-	isCompressed := c == repb.Compressor_ZSTD
+	shouldCompress := c == repb.Compressor_ZSTD
 
 	// A `read_offset` that is negative or greater than the size of the resource
 	// will cause an `OUT_OF_RANGE` error.
@@ -236,7 +283,7 @@ func (s *Service) Read(request *bspb.ReadRequest, server bspb.ByteStream_ReadSer
 	if request.ReadOffset > d.Size {
 		return status.Error(codes.OutOfRange, "offset is greater than the size of the file")
 	}
-	if isCompressed && request.ReadLimit != 0 {
+	if shouldCompress && request.ReadLimit != 0 {
 		return status.Error(codes.OutOfRange, "limit must be zero when reading compressed blob")
 	}
 
@@ -255,79 +302,150 @@ func (s *Service) Read(request *bspb.ReadRequest, server bspb.ByteStream_ReadSer
 		}
 	}()
 
-	dataReader := f
-	if isCompressed {
-		dataReader = zstdstream.NewCompressingReader(f)
+	rrw := &readResponseWriter{rs: server}
+
+	bufw := s.bufWriterPool.Get().(*bufio.Writer)
+	bufw.Reset(rrw)
+	defer func() {
+		if e := bufw.Flush(); e != nil && err == nil {
+			err = status.Errorf(codes.Internal, "failed to flush buffer: %v", err)
+		}
+		bufw.Reset(nil)
+		s.bufWriterPool.Put(bufw)
+	}()
+
+	var dst io.Writer = bufw
+	if shouldCompress {
+		encoder := s.encoderPool.Get().(*zstd.Encoder)
+		encoder.Reset(bufw)
 		defer func() {
-			if e := dataReader.Close(); e != nil && err == nil {
-				err = status.Errorf(codes.Internal, "failed to close compressor: %v", err)
+			if e := encoder.Close(); e != nil && err == nil {
+				err = status.Errorf(codes.Internal, "failed to close encoder: %v", err)
 			}
+			s.encoderPool.Put(encoder)
 		}()
+		dst = encoder
 	}
 
-	// Send the requested data to the client in chunks.
-	buf := s.bufPool.Get().(*bytes.Buffer)
-	defer s.bufPool.Put(buf)
-	for {
-		buf.Reset()
-		n, err := io.CopyN(buf, dataReader, maxChunkSize)
-		if n > 0 {
-			if err := server.Send(&bspb.ReadResponse{
-				Data: buf.Bytes(),
-			}); err != nil {
-				return status.Errorf(codes.Internal, "failed to send data to client: %v", err)
-			}
-		}
-		if errors.Is(err, io.EOF) {
-			break
-		}
-		if err != nil {
-			return status.Errorf(codes.Internal, "failed to read data from file: %v", err)
-		}
+	if _, err := io.Copy(dst, f); err != nil {
+		return status.Errorf(codes.Internal, "failed to copy data: %v", err)
 	}
+
 	return nil
+}
+
+// writeRequestReader reads the bytes uploaded by a client over multiple WriteRequest messages during a ByteStream.Write
+// RPC as a continuous stream.
+type writeRequestReader struct {
+	ws bspb.ByteStream_WriteServer
+
+	buf             []byte
+	resName         string
+	expectedDigest  digest.Digest
+	uploadID        uuid.UUID
+	isCompressed    bool
+	finishedWriting bool
+	receivedBytes   int64
+}
+
+// Read reads bytes uploaded by the client during the ByteStream.Write RPC.
+// Returns the number of bytes read and any error encountered, io.EOF if the upload is complete or io.ErrUnexpectedEOF
+// if the client disconnected before the upload was complete.
+func (r *writeRequestReader) Read(p []byte) (n int, err error) {
+	// If we still have data from a previous request, use it up first.
+	if len(r.buf) > 0 {
+		n = copy(p, r.buf)
+		r.buf = r.buf[n:]
+		return n, nil
+	}
+
+	// Receive the next request from the client.
+	wr, err := r.ws.Recv()
+	if err != nil {
+		if errors.Is(err, io.EOF) {
+			if r.finishedWriting {
+				return 0, io.EOF
+			}
+			return 0, io.ErrUnexpectedEOF
+		}
+		return 0, status.Errorf(codes.Internal, "failed to receive request from client: %v", err)
+	}
+
+	// If this is the first request from the client, we need to parse the resource name and compression algorithm.
+	if r.resName == "" {
+		if wr.ResourceName == "" {
+			return 0, status.Error(codes.InvalidArgument, "no resource name specified")
+		}
+		r.resName = wr.ResourceName
+
+		var comp repb.Compressor_Value
+		r.expectedDigest, r.uploadID, comp, err = parseWriteResource(r.resName)
+		if err != nil {
+			return 0, err
+		}
+		if comp != repb.Compressor_IDENTITY && comp != repb.Compressor_ZSTD {
+			return 0, status.Error(codes.InvalidArgument, "unsupported compression algorithm")
+		}
+		r.isCompressed = comp == repb.Compressor_ZSTD
+	}
+
+	// Validate a few things about the request.
+	if wr.ResourceName != "" && wr.ResourceName != r.resName {
+		return 0, status.Errorf(codes.InvalidArgument, "cannot change resource name during upload (%v => %v)", r.resName, wr.ResourceName)
+	}
+	if r.finishedWriting {
+		return 0, status.Error(codes.InvalidArgument, "cannot write more data, last request already set finish_write=true")
+	}
+	if wr.WriteOffset != r.receivedBytes {
+		return 0, status.Errorf(codes.InvalidArgument, "write_offset %d does not match total bytes received so far %d", wr.WriteOffset, r.receivedBytes)
+	}
+
+	r.buf = wr.Data
+	r.receivedBytes += int64(len(wr.Data))
+	r.finishedWriting = wr.FinishWrite
+
+	return r.Read(p)
 }
 
 // Write implements the ByteStream.Write RPC.
 func (s *Service) Write(server bspb.ByteStream_WriteServer) (err error) {
-	var resName string
+	req := &writeRequestReader{ws: server}
+
 	defer func() {
 		if err != nil {
-			slog.Error("Write", "resource", resName, "error", err)
+			slog.Error("Write", "resource", req.resName, "error", err)
 		} else {
-			slog.Info("Write", "resource", resName)
+			slog.Info("Write", "resource", req.resName)
 		}
 	}()
 
-	// The first request is special, so we'll handle it separately to simplify the receive loop below.
-	request, err := server.Recv()
-	if err != nil {
-		return status.Errorf(codes.Internal, "failed to receive first request from client: %v", err)
-	}
-
-	// Parse & validate the resource name and the optional compressor.
-	resName = request.ResourceName
-	if resName == "" {
-		return status.Error(codes.InvalidArgument, "no resource name specified")
-	}
-	expectedDigest, uploadID, comp, err := parseWriteResource(resName)
+	// Receive the first request from the client so that we have access to the resource name etc.
+	_, err = req.Read(nil)
 	if err != nil {
 		return err
 	}
-	if comp != repb.Compressor_IDENTITY && comp != repb.Compressor_ZSTD {
-		return status.Error(codes.InvalidArgument, "unsupported compression algorithm")
-	}
-	isCompressed := comp == repb.Compressor_ZSTD
-	if request.WriteOffset != 0 {
-		return status.Error(codes.InvalidArgument, "write_offset must be zero for the first request")
-	}
 
 	// If the blob already exists in our CAS, tell the client and close the stream.
-	if s.cas.Has(expectedDigest) {
-		return server.SendAndClose(s.blobAlreadyExists(expectedDigest, isCompressed))
+	if s.cas.Has(req.expectedDigest) {
+		return server.SendAndClose(s.blobAlreadyExists(req.expectedDigest, req.isCompressed))
 	}
 
-	tempFile, err := digest.NewHashingFileWriter(filepath.Join(s.uploadDir, uploadID.String()))
+	// Read the data through a zstd.Decoder if it's compressed.
+	var r io.Reader = req
+	if req.isCompressed {
+		decoder := s.decoderPool.Get().(*zstd.Decoder)
+		if err := decoder.Reset(req); err != nil {
+			return status.Errorf(codes.Internal, "failed to reset decoder: %v", err)
+		}
+		defer func() {
+			_ = decoder.Reset(nil)
+			s.decoderPool.Put(decoder)
+		}()
+		r = decoder
+	}
+
+	// Create a temporary file to receive the data.
+	tempFile, err := digest.NewHashingFileWriter(filepath.Join(s.uploadDir, req.uploadID.String()))
 	if err != nil {
 		if errors.Is(err, fs.ErrExist) {
 			return status.Error(codes.InvalidArgument, "upload with same uuid already in progress")
@@ -346,34 +464,16 @@ func (s *Service) Write(server bspb.ByteStream_WriteServer) (err error) {
 		}
 	}()
 
-	var dataSink io.WriteCloser = tempFile
-	if isCompressed {
-		dataSink, err = zstdstream.NewDecompressingWriter(tempFile)
-		if err != nil {
-			return status.Errorf(codes.Internal, "failed to create decompressor: %v", err)
-		}
-		defer func() {
-			if dataSink != nil {
-				if err := dataSink.Close(); err != nil {
-					slog.Error("failed to close decompressor", "error", err)
-				}
-				dataSink = nil
-			}
-		}()
-	}
-
-	// Append the received data to the destination.
-	n, err := dataSink.Write(request.Data)
-	if err != nil {
-		return status.Errorf(codes.Internal, "failed to write data: %v", err)
-	}
-
-	// Enter the receive loop to process all following chunks.
-	receivedBytes := int64(n)
-	finishedWriting := request.FinishWrite
+	buf := *(s.bufPool.Get().(*[]byte))
+	defer s.bufPool.Put(&buf)
 	for {
-		// Receive a request from the client.
-		request, err = server.Recv()
+		n, err := r.Read(buf)
+		if n > 0 {
+			_, werr := tempFile.Write(buf[:n])
+			if werr != nil {
+				return status.Errorf(codes.Internal, "failed to write to temporary file: %v", werr)
+			}
+		}
 		if err != nil {
 			if errors.Is(err, io.EOF) {
 				break
@@ -381,59 +481,29 @@ func (s *Service) Write(server bspb.ByteStream_WriteServer) (err error) {
 			return err
 		}
 
-		// Validate a few things about the request.
-		if request.ResourceName != "" && request.ResourceName != resName {
-			return status.Errorf(codes.InvalidArgument, "cannot change resource name during upload (%v => %v)", resName, request.ResourceName)
+		// Check again if the blob already exists in our CAS, in case multiple clients are uploading the same file.
+		if s.cas.Has(req.expectedDigest) {
+			return server.SendAndClose(s.blobAlreadyExists(req.expectedDigest, req.isCompressed))
 		}
-		if finishedWriting {
-			return status.Error(codes.InvalidArgument, "cannot write more data, last request already set finish_write=true")
-		}
-		if s.cas.Has(expectedDigest) {
-			return server.SendAndClose(s.blobAlreadyExists(expectedDigest, isCompressed))
-		}
-
-		// Verify that the client set the write_offset correctly.
-		if request.WriteOffset != receivedBytes {
-			return status.Errorf(codes.InvalidArgument, "write_offset %d does not match total bytes received so far %d", request.WriteOffset, receivedBytes)
-		}
-
-		// Append the received data to the destination.
-		n, err = dataSink.Write(request.Data)
-		if err != nil {
-			return status.Errorf(codes.Internal, "failed to write data: %v", err)
-		}
-		receivedBytes += int64(n)
-		finishedWriting = request.FinishWrite
 
 		// If the file is already larger than the expected size, something is wrong - return an error.
-		if tempFile.Size() > expectedDigest.Size {
-			return status.Errorf(codes.InvalidArgument, "received %d bytes, more than expected %d", receivedBytes, expectedDigest.Size)
+		if tempFile.Size() > req.expectedDigest.Size {
+			return status.Errorf(codes.InvalidArgument, "received %d bytes, more than expected %d", req.receivedBytes, req.expectedDigest.Size)
 		}
 	}
 
-	// Check that the client set "finish_write" to true on the final request.
-	if !finishedWriting {
-		return status.Error(codes.InvalidArgument, "upload finished without finish_write set")
-	}
-
-	if isCompressed {
-		if err = dataSink.Close(); err != nil {
-			return status.Errorf(codes.Internal, "failed to close decoder: %v", err)
-		}
-		dataSink = nil
-	}
-	if err = tempFile.Close(); err != nil {
+	if err := tempFile.Close(); err != nil {
 		return status.Errorf(codes.Internal, "failed to close temporary file: %v", err)
 	}
 
 	// Check that the digests (= hash and size) match.
 	d := tempFile.Digest()
-	if d != expectedDigest {
-		return status.Errorf(codes.InvalidArgument, "computed digest %v did not match expected digest %v", d, expectedDigest)
+	if d != req.expectedDigest {
+		return status.Errorf(codes.InvalidArgument, "computed digest %v did not match expected digest %v", d, req.expectedDigest)
 	}
 
 	// Move the temporary file to the CAS.
-	if err = s.cas.Adopt(expectedDigest, tempFile.Path()); err != nil {
+	if err := s.cas.Adopt(req.expectedDigest, tempFile.Path()); err != nil {
 		return status.Errorf(codes.Internal, "failed to move file into CAS: %v", err)
 	}
 	tempFile = nil
