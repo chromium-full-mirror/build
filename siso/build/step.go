@@ -16,6 +16,7 @@ import (
 	"time"
 
 	rpb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
+	log "github.com/golang/glog"
 
 	"go.chromium.org/build/siso/execute"
 	"go.chromium.org/build/siso/execute/reproxyexec"
@@ -460,7 +461,9 @@ func (s *Step) init(ctx context.Context, b *Builder, stepManifest *stepManifest)
 		s.outputPaths = append(s.outputPaths, b.path.MaybeToWD(ctx, out))
 	}
 	s.cmd = newCmd(ctx, b, s.def, stepManifest)
-	clog.Infof(ctx, "cmdhash:%s", base64.StdEncoding.EncodeToString(s.cmd.CmdHash))
+	if log.V(1) {
+		clog.Infof(ctx, "cmdhash:%s", base64.StdEncoding.EncodeToString(s.cmd.CmdHash))
+	}
 }
 
 func newCmd(ctx context.Context, b *Builder, stepDef StepDef, stepManifest *stepManifest) *execute.Cmd {
