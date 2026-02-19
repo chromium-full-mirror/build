@@ -33,7 +33,7 @@ const bufferSize = 1024 * 1024
 
 // startTestServer sets up a gRPC server listening on a bufconn listener.
 // It returns the listener (to dial to) and a cleanup function.
-func startTestServer(t *testing.T, cas *ContentAddressableStorage, uploadDir string) *bufconn.Listener {
+func startTestServer(t testing.TB, cas *ContentAddressableStorage, uploadDir string) *bufconn.Listener {
 	t.Helper()
 
 	// Create an in-memory listener
@@ -64,7 +64,7 @@ func startTestServer(t *testing.T, cas *ContentAddressableStorage, uploadDir str
 	return lis
 }
 
-func setupTest(ctx context.Context, t *testing.T) (bspb.ByteStreamClient, repb.ContentAddressableStorageClient) {
+func setupTest(ctx context.Context, t testing.TB) (bspb.ByteStreamClient, repb.ContentAddressableStorageClient) {
 	t.Helper()
 
 	// Setup CAS and upload directory

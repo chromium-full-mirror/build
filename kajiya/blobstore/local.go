@@ -318,3 +318,13 @@ func (c *ContentAddressableStorage) LinkTo(d digest.Digest, path string) error {
 	}
 	return nil
 }
+
+// Delete removes a file with digest d from the CAS.
+func (c *ContentAddressableStorage) Delete(d digest.Digest) error {
+	p := c.path(d)
+	err := os.Remove(p)
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	return nil
+}
