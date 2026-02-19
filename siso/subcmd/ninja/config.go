@@ -30,6 +30,7 @@ import (
 	"go.chromium.org/build/siso/o11y/clog"
 	"go.chromium.org/build/siso/o11y/trace"
 	"go.chromium.org/build/siso/reapi"
+	"go.chromium.org/build/siso/sync/lockfile"
 	"go.chromium.org/build/siso/toolsupport/ninjautil"
 	"go.chromium.org/build/siso/toolsupport/watchmanutil"
 	"go.chromium.org/build/siso/ui"
@@ -575,7 +576,7 @@ func initLock(ctx context.Context, dryRun bool, stateDir string) (func(), error)
 		return func() {}, nil
 	}
 	lockFilename := filepath.Join(stateDir, ".siso_lock")
-	lock, err := newLockFile(lockFilename)
+	lock, err := lockfile.New(lockFilename)
 	switch {
 	case errors.Is(err, errors.ErrUnsupported):
 		clog.Warningf(ctx, "lockfile is not supported")
@@ -587,13 +588,13 @@ func initLock(ctx context.Context, dryRun bool, stateDir string) (func(), error)
 		spin := ui.Default.NewSpinner()
 		for {
 			err = lock.Lock()
-			alreadyLocked := &errAlreadyLocked{}
+			alreadyLocked := &lockfile.ErrAlreadyLocked{}
 			if errors.As(err, &alreadyLocked) {
-				if owner != alreadyLocked.owner {
+				if owner != alreadyLocked.Owner {
 					if owner != "" {
 						spin.Done("lock holder %s completed", owner)
 					}
-					owner = alreadyLocked.owner
+					owner = alreadyLocked.Owner
 					spin.Start("waiting for lock holder %s..", owner)
 				}
 				select {

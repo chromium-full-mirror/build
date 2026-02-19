@@ -1,10 +1,10 @@
-// Copyright 2024 The Chromium Authors
+// Copyright 2026 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 //go:build windows
 
-package ninja
+package lockfile
 
 import (
 	"errors"
@@ -15,24 +15,29 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-type lockFile struct {
+// LockFile represents an active lock on a file.
+type LockFile struct {
 	f       *os.File
 	pidfile string
 }
 
-func newLockFile(fname string) (*lockFile, error) {
+// New creates a new LockFile.
+func New(fname string) (*LockFile, error) {
 	f, err := os.OpenFile(fname, os.O_RDWR|os.O_CREATE, 0644)
 	if err != nil {
 		return nil, err
 	}
-	return &lockFile{f: f, pidfile: fname + ".pid"}, nil
+	return &LockFile{f: f, pidfile: fname + ".pid"}, nil
 }
 
-func (l *lockFile) Close() error {
+// Close releases the lock file.
+func (l *LockFile) Close() error {
 	return l.f.Close()
 }
 
-func (l *lockFile) Lock() error {
+// Lock attempts to acquire an exclusive lock on the file.
+// It returns ErrAlreadyLocked if the lock is already held.
+func (l *LockFile) Lock() error {
 	const reserved = 0
 	const lowByteRange = math.MaxUint32
 	const highByteRange = math.MaxUint32
@@ -48,12 +53,12 @@ func (l *lockFile) Lock() error {
 			if bufErr != nil {
 				err = bufErr
 			}
-			return &errAlreadyLocked{
+			return &ErrAlreadyLocked{
 				err:     err,
 				bufErr:  bufErr,
 				fname:   l.f.Name(),
 				pidfile: l.pidfile,
-				owner:   string(buf),
+				Owner:   string(buf),
 			}
 		}
 		return err
@@ -61,7 +66,8 @@ func (l *lockFile) Lock() error {
 	return os.WriteFile(l.pidfile, []byte(fmt.Sprintf("pid=%d", os.Getpid())), 0644)
 }
 
-func (l *lockFile) Unlock() error {
+// Unlock releases the lock.
+func (l *LockFile) Unlock() error {
 	const reserved = 0
 	const lowByteRange = math.MaxUint32
 	const highByteRange = math.MaxUint32
