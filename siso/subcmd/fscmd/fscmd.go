@@ -52,6 +52,7 @@ func (c *Command) Execute(ctx context.Context, flagSet *flag.FlagSet, _ ...any) 
 	commander.Register(&exportCommand{}, "")
 	commander.Register(&flushCommand{authOpts: c.authOpts}, "")
 	commander.Register(&importCommand{}, "")
+	commander.Register(&statusCommand{}, "")
 	commander.Register(commander.HelpCommand(), "command-help")
 	return commander.Execute(ctx)
 }

@@ -713,8 +713,11 @@ func (hfs *HashFS) SetState(ctx context.Context, state *pb.State) error {
 	octx := ctx // preserve original ctx
 	logw := hfs.opt.SetStateLogger
 	if logw != nil {
-		fmt.Fprintf(logw, "hashfs.SetState\n")
-		defer fmt.Fprintf(logw, "hashfs.SetState done\n")
+		// not show this for `siso fs state`, but for e2etest
+		if logw != os.Stdout {
+			fmt.Fprintf(logw, "hashfs.SetState\n")
+			defer fmt.Fprintf(logw, "hashfs.SetState done\n")
+		}
 		ctx = clog.NewContext(ctx, clog.FromContext(ctx).WithWriter(logw))
 	}
 
