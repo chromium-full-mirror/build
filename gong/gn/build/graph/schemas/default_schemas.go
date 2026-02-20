@@ -31,24 +31,24 @@ var (
 	ActionSchema = graph.Schema{
 		Name:    "action",
 		Summary: "Declare a target that runs a script a single time.",
-		Vars: map[string]graph.VarType{
+		Vars: map[string]graph.TargetVar{
 			// TODO: support more variables.
-			"script":  graph.FileType,
-			"sources": graph.FileListType,
-			"outputs": graph.FileListType,
-			"args":    graph.StringListType,
-			"depfile": graph.StringType,
+			"script":  graph.FileVar{},
+			"sources": graph.FileListVar{},
+			"outputs": graph.FileListVar{},
+			"args":    graph.StringListVar{},
+			"depfile": graph.StringVar{},
 		},
 	}
 	ExecutableSchema = graph.Schema{
 		Name:    "executable",
 		Summary: "Declare an executable target.",
-		Vars: map[string]graph.VarType{
+		Vars: map[string]graph.TargetVar{
 			// TODO: support more variables.
-			"sources": graph.FileListType,
-			"deps":    graph.TargetLabelListType,
-			"configs": graph.ConfigLabelListType,
-			"outputs": graph.FileListType,
+			"sources": graph.FileListVar{},
+			"deps":    graph.LabelListVar{Expected: &graph.Target{}},
+			"configs": graph.LabelListVar{Expected: &graph.Config{}},
+			"outputs": graph.FileListVar{},
 		},
 		Resolver: func(ctx graph.ResolverContext) (graph.ResolutionMetadata, error) {
 			name, err := ctx.StringFor("name")
@@ -98,12 +98,12 @@ var (
 	SharedLibrarySchema = graph.Schema{
 		Name:    "shared_library",
 		Summary: "Declare a shared library target.",
-		Vars: map[string]graph.VarType{
+		Vars: map[string]graph.TargetVar{
 			// TODO: support more variables.
-			"sources": graph.FileListType,
-			"deps":    graph.TargetLabelListType,
-			"configs": graph.ConfigLabelListType,
-			"defines": graph.StringListType,
+			"sources": graph.FileListVar{},
+			"deps":    graph.LabelListVar{Expected: &graph.Target{}},
+			"configs": graph.LabelListVar{Expected: &graph.Config{}},
+			"defines": graph.StringListVar{},
 		},
 		Resolver: func(ctx graph.ResolverContext) (graph.ResolutionMetadata, error) {
 			name, err := ctx.StringFor("name")
@@ -142,21 +142,21 @@ var (
 	SourceSetSchema = graph.Schema{
 		Name:    "source_set",
 		Summary: "Declare a source set target.",
-		Vars: map[string]graph.VarType{
+		Vars: map[string]graph.TargetVar{
 			// TODO: support more variables.
-			"sources": graph.FileListType,
-			"deps":    graph.TargetLabelListType,
+			"sources": graph.FileListVar{},
+			"deps":    graph.LabelListVar{Expected: &graph.Target{}},
 		},
 	}
 	StaticLibrarySchema = graph.Schema{
 		Name:    "static_library",
 		Summary: "Declare a shared library target.",
-		Vars: map[string]graph.VarType{
+		Vars: map[string]graph.TargetVar{
 			// TODO: support more variables.
-			"sources": graph.FileListType,
-			"deps":    graph.TargetLabelListType,
-			"configs": graph.ConfigLabelListType,
-			"defines": graph.StringListType,
+			"sources": graph.FileListVar{},
+			"deps":    graph.LabelListVar{Expected: &graph.Target{}},
+			"configs": graph.LabelListVar{Expected: &graph.Config{}},
+			"defines": graph.StringListVar{},
 		},
 		Resolver: func(ctx graph.ResolverContext) (graph.ResolutionMetadata, error) {
 			name, err := ctx.StringFor("name")
@@ -195,10 +195,10 @@ var (
 	CopySchema = graph.Schema{
 		Name:    "copy",
 		Summary: "Declare a target that copies files.",
-		Vars: map[string]graph.VarType{
+		Vars: map[string]graph.TargetVar{
 			// TODO: support more variables.
-			"sources": graph.FileListType,
-			"outputs": graph.FileListType,
+			"sources": graph.FileListVar{},
+			"outputs": graph.FileListVar{},
 		},
 	}
 )

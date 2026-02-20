@@ -25,7 +25,7 @@ import (
 type Schema struct {
 	Name     string
 	Summary  string
-	Vars     map[string]VarType // TODO: Implement concept of required?
+	Vars     map[string]TargetVar // TODO: Implement concept of required?
 	Resolver ResolverFn
 }
 
@@ -68,7 +68,7 @@ func (s *Schema) Generate(dir fs.SourceDir, scope *resolve.Scope, toolchain envi
 		if value == nil {
 			continue
 		}
-		processedValue, err := target.processValue(value, expectedType)
+		processedValue, err := expectedType.Process(target, value)
 		if err != nil {
 			return nil, err
 		}

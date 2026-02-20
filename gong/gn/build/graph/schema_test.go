@@ -74,9 +74,10 @@ func TestSchema_Run(t *testing.T) {
 						schema: Schema{
 							Name:    "example",
 							Summary: "Declare an example target.",
-							Vars: map[string]VarType{
-								"sources": FileListType,
-								"deps":    TargetLabelListType,
+							Vars: map[string]TargetVar{
+								"name":    StringVar{},
+								"sources": FileListVar{},
+								"deps":    LabelListVar{&Target{}},
 							},
 						},
 						dir: mustDir(t, "//"),

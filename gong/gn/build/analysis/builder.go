@@ -118,32 +118,15 @@ func (b *Builder) targetDefined(target *graph.Target, record *builderRecord) ([]
 	// Find all variables in this target that references labels.
 	for _, varName := range slices.Sorted(maps.Keys(target.Schema.Vars)) {
 		varType := target.Schema.Vars[varName]
-		// Determine the type of label expected.
-		// TODO: only supports lists of labels right now, need to support single labels too?
-		var expectedPlaceholder graph.Item
-		switch varType {
-		case graph.TargetLabelListType:
-			expectedPlaceholder = &graph.Target{}
-		case graph.ConfigLabelListType:
-			expectedPlaceholder = &graph.Config{}
-		default:
+		expectedPlaceholder := varType.ExpectedItems()
+		if expectedPlaceholder == nil {
 			continue
 		}
-
-		// Get the list.
-		// TODO: only supports lists of labels right now, need to support single labels too?
 		val, ok := target.Values[varName]
 		if !ok {
 			continue
 		}
-		listValue, err := graph.ProcessedValueAs[graph.LabelListValue](val)
-		if err != nil {
-			return nil, err
-		}
-
-		// For each label, ensure the record exists.
-		// Collect deps that aren't yet resolved.
-		for _, dep := range listValue.List {
+		for dep := range val.Labels() {
 			depRecord, err := b.recordFor(dep.Label, dep.Origin, expectedPlaceholder)
 			if err != nil {
 				return nil, err
