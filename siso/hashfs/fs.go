@@ -403,8 +403,11 @@ func (hfs *HashFS) stat(ctx context.Context, root, fname string, needCompute boo
 		clog.Infof(ctx, "stat @%s -> %s", root, fname)
 	}
 	if ok {
-		if e.err != nil {
-			return FileInfo{}, e.err
+		e.mu.Lock()
+		err := e.err
+		e.mu.Unlock()
+		if err != nil {
+			return FileInfo{}, err
 		}
 		if e.directory != nil {
 			// directory's mtime has been updated locally
@@ -509,7 +512,9 @@ func (hfs *HashFS) ReadDir(ctx context.Context, root, name string) (dents []DirE
 		}
 		clog.Infof(ctx, "stat new dir entry %s %s", dname, e)
 	}
+	e.mu.Lock()
 	err = e.err
+	e.mu.Unlock()
 	if err != nil {
 		return nil, fmt.Errorf("read dir %s: %w", dname, err)
 	}
@@ -572,7 +577,9 @@ func (hfs *HashFS) ReadFile(ctx context.Context, root, fname string) ([]byte, er
 		}
 		clog.Infof(ctx, "stat new entry %s %s", fname, e)
 	}
+	e.mu.Lock()
 	err := e.err
+	e.mu.Unlock()
 	if err != nil {
 		return nil, fmt.Errorf("read file %s: %w", fname, err)
 	}
@@ -720,7 +727,10 @@ func (hfs *HashFS) Copy(ctx context.Context, root, src, dst string, mtime time.T
 		}
 		clog.Infof(ctx, "copy src new entry %s %s", srcfname, e)
 	}
-	if err := e.err; err != nil {
+	e.mu.Lock()
+	err := e.err
+	e.mu.Unlock()
+	if err != nil {
 		return err
 	}
 	subdir := e.getDir()
@@ -754,7 +764,7 @@ func (hfs *HashFS) Copy(ctx context.Context, root, src, dst string, mtime time.T
 		updatedTime: time.Now(),
 		isChanged:   true,
 	}
-	err := hfs.dirStoreAndNotify(ctx, dstfname, newEnt)
+	err = hfs.dirStoreAndNotify(ctx, dstfname, newEnt)
 	if err != nil {
 		return err
 	}
@@ -861,7 +871,10 @@ func (hfs *HashFS) RemoveAll(ctx context.Context, root, name string) error {
 		err:    err,
 	}
 	_, err = hfs.directory.store(ctx, name, e)
-	clog.Infof(ctx, "removeAll %s [%v]: %v", name, e.err, err)
+	e.mu.Lock()
+	eErr := e.err
+	e.mu.Unlock()
+	clog.Infof(ctx, "removeAll %s [%v]: %v", name, eErr, err)
 	return err
 }
 
@@ -1529,8 +1542,8 @@ func (hfs *HashFS) Flush(ctx context.Context, execRoot string, files []string) e
 						e.mtimeUpdated = false
 					}
 				}
-				e.mu.Unlock()
 				err := e.err
+				e.mu.Unlock()
 				if errors.Is(err, fs.ErrNotExist) || errors.Is(err, errNotRegular) {
 					clog.Warningf(ctx, "flush %s local-ready: %v", fname, err)
 					continue
@@ -1643,8 +1656,11 @@ func newLocalEntry() *entry {
 }
 
 func (e *entry) String() string {
-	if e.err != nil {
-		return fmt.Sprintf("err:%v", e.err)
+	e.mu.Lock()
+	err := e.err
+	e.mu.Unlock()
+	if err != nil {
+		return fmt.Sprintf("err:%v", err)
 	}
 	return fmt.Sprintf("size:%d mode:%s mtime:%s", e.size, e.mode, e.getMtime())
 }
@@ -1900,7 +1916,10 @@ func (e *entry) flush(ctx context.Context, fname string, osfs *osfs.OSFS, timeou
 	}()
 	started := time.Now()
 
-	if errors.Is(e.err, fs.ErrNotExist) {
+	e.mu.Lock()
+	err := e.err
+	e.mu.Unlock()
+	if errors.Is(err, fs.ErrNotExist) {
 		// to protect concurrent digest calculation and removal
 		// on Windows.
 		digestLock.Lock()
