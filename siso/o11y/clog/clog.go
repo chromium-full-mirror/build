@@ -448,8 +448,10 @@ func (l *Logger) log(e logging.Entry) {
 		m, err := logging.ToLogEntry(e, "log-entry-project-name")
 		if err != nil {
 			glog.Warningf("toLogEntry: %v\n%v", err, m)
+			return
 		} else if s := proto.Size(m); s > logEntrySizeLimit {
 			glog.Warningf("exceed size: %d\n%v", s, m)
+			return
 		}
 	}
 	if e.HTTPRequest != nil {
