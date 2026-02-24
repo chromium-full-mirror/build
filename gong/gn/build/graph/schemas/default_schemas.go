@@ -25,8 +25,67 @@ func (m DefaultMetadata) Outputs() []fs.SourceFile {
 	return m.OutputFiles
 }
 
-// TODO: add helper functions re file extensions like below
-// https://source.chromium.org/gn/gn/+/main:src/gn/source_file.cc?q=SourceFile::SOURCE_H&ss=gn%2Fgn
+type sourceFileType int
+
+const (
+	sourceUnknown sourceFileType = iota
+	sourceAsm
+	sourceC
+	sourceCpp
+	sourceH
+	sourceM
+	sourceMm
+	sourceModuleMap
+	sourceS
+	sourceRc
+	sourceO
+	sourceDef
+	sourceRs
+	sourceGo
+	sourceSwift
+	sourceSwiftModule
+)
+
+// Naive port of SourceFile::GetSourceFileType that can very likely be optimized.
+// That's not really a priority to look into right now, though.
+// https://source.chromium.org/gn/gn/+/main:src/gn/source_file.cc;l=32;drc=487f8353f15456474437df32bb186187b0940b45
+func fileType(file string) sourceFileType {
+	switch filepath.Ext(file) {
+	case ".c":
+		return sourceC
+	case ".h":
+		return sourceH
+	case ".m":
+		return sourceM
+	case ".o", ".obj":
+		return sourceO
+	case ".S", ".s", ".asm":
+		return sourceS
+	case ".cc", ".cxx", ".cpp", ".c++":
+		return sourceCpp
+	case ".go":
+		return sourceGo
+	case ".hh", ".hpp", ".hpp11", ".hxx", ".inc", ".ipp", ".inl":
+		return sourceH
+	case ".mm":
+		return sourceMm
+	case ".rc":
+		return sourceRc
+	case ".rs":
+		return sourceRs
+	case ".def":
+		return sourceDef
+	case ".swift":
+		return sourceSwift
+	case ".swiftmodule":
+		return sourceSwiftModule
+	case ".modulemap":
+		return sourceModuleMap
+	default:
+		return sourceUnknown
+	}
+}
+
 var (
 	ActionSchema = graph.Schema{
 		Name:    "action",
@@ -59,7 +118,7 @@ var (
 			for source := range ctx.SourceFilesFor("sources") {
 				sourceName := source.Filename()
 				sourceBase := filepath.Base(sourceName)
-				if filepath.Ext(sourceBase) == ".h" {
+				if fileType(sourceBase) == sourceH {
 					continue
 				}
 				objFile, err := ctx.DeclareTool(
@@ -116,7 +175,7 @@ var (
 			for source := range ctx.SourceFilesFor("sources") {
 				sourceName := source.Filename()
 				sourceBase := filepath.Base(sourceName)
-				if filepath.Ext(sourceBase) == ".h" {
+				if fileType(sourceBase) == sourceH {
 					continue
 				}
 				objFile, err := ctx.DeclareTool(
@@ -171,7 +230,7 @@ var (
 			for source := range ctx.SourceFilesFor("sources") {
 				sourceName := source.Filename()
 				sourceBase := filepath.Base(sourceName)
-				if filepath.Ext(sourceBase) == ".h" {
+				if fileType(sourceBase) == sourceH {
 					continue
 				}
 				objFile, err := ctx.DeclareTool(
