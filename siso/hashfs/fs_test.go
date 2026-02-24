@@ -2540,6 +2540,11 @@ func TestForget_UnexpectedRemoveRspFileUnderSymlinkDir(t *testing.T) {
 		if err != nil {
 			t.Errorf("Stat %q: %v", rspFile, err)
 		}
+		// force compute digest.
+		_, err = hfs.Entries(ctx, srcDir, []string{rspFile})
+		if err != nil {
+			t.Errorf("Entries %q: %v", rspFile, err)
+		}
 		t.Logf("-- unexpected remove %q", rspFile)
 		err = os.Remove(filepath.Join(srcDir, rspFile))
 		if err != nil {
@@ -2550,6 +2555,7 @@ func TestForget_UnexpectedRemoveRspFileUnderSymlinkDir(t *testing.T) {
 		if err != nil {
 			t.Errorf("Stat %q: %v", rspFile, err)
 		}
+
 		_, err = hfs.OS.Lstat(ctx, filepath.Join(srcDir, rspFile))
 		if !errors.Is(err, fs.ErrNotExist) {
 			t.Errorf("os.Lstat %q: %v", rspFile, err)
