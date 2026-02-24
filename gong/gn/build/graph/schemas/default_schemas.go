@@ -64,6 +64,7 @@ var (
 				}
 				objFile, err := ctx.DeclareTool(
 					"cxx",
+					source,
 					[]fs.SourceFile{source},
 					fmt.Sprintf("%s.%s.o", name, sourceBase),
 				)
@@ -88,7 +89,7 @@ var (
 					}
 				}
 			}
-			out, err := ctx.DeclareTool("link", linkInputs, name)
+			out, err := ctx.DeclareTool("link", fs.SourceFile{}, linkInputs, name)
 			if err != nil {
 				return nil, err
 			}
@@ -120,6 +121,7 @@ var (
 				}
 				objFile, err := ctx.DeclareTool(
 					"cxx",
+					source,
 					[]fs.SourceFile{source},
 					fmt.Sprintf("%s.%s.o", outPrefix, sourceBase),
 				)
@@ -130,6 +132,7 @@ var (
 			}
 			out, err := ctx.DeclareTool(
 				"solink",
+				fs.SourceFile{},
 				linkInputs,
 				fmt.Sprintf("%s.so", outPrefix),
 			)
@@ -173,6 +176,7 @@ var (
 				}
 				objFile, err := ctx.DeclareTool(
 					"cxx",
+					source,
 					[]fs.SourceFile{source},
 					fmt.Sprintf("%s.%s.o", outPrefix, sourceBase),
 				)
@@ -183,6 +187,7 @@ var (
 			}
 			out, err := ctx.DeclareTool(
 				"alink",
+				fs.SourceFile{},
 				linkInputs,
 				fmt.Sprintf("%s.a", outPrefix),
 			)

@@ -21,6 +21,7 @@ func FunctionMap(buildSettings *environment.BuildSettings) map[string]resolve.Fu
 		"copy":                  targetFunction{schema: &schemas.CopySchema},
 		"executable":            targetFunction{schema: &schemas.ExecutableSchema},
 		"rebase_path":           &rebasePathFunction{buildSettings: buildSettings},
+		"rust_library":          targetFunction{schema: &schemas.RustLibrarySchema},
 		"set_defaults":          &setDefaultsFunction{},
 		"set_default_toolchain": setDefaultToolchainFunction{},
 		"shared_library":        targetFunction{schema: &schemas.SharedLibrarySchema},

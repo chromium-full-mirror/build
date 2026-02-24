@@ -31,3 +31,22 @@ func (NotImplementedError) Message() string {
 func (e NotImplementedError) HelpText() string {
 	return fmt.Sprintf("%s is not implemented.", e.what)
 }
+
+// CrateRootNotFoundError is returned when the crate root is not found.
+type CrateRootNotFoundError struct {
+	expected string
+}
+
+// Error returns the error string.
+func (CrateRootNotFoundError) Error() string {
+	return "crate root not found"
+}
+
+// Message returns the user-facing error message.
+func (e CrateRootNotFoundError) Message() string {
+	return fmt.Sprintf(`Missing "crate_root" and missing %q in sources.`, e.expected)
+}
+
+// HelpText returns the user-facing error help text.
+// It returns an empty string because there is no detailed help text for this error.
+func (CrateRootNotFoundError) HelpText() string { return "" }

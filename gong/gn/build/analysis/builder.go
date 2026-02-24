@@ -205,10 +205,11 @@ func (b *Builder) resolveTarget(target *graph.Target, record *builderRecord) err
 	}
 
 	result, err := target.Schema.Resolver(graph.ResolverContext{
-		DeclareTool: func(tool string, inputs []fs.SourceFile, outputName string) (fs.SourceFile, error) {
-			return target.DeclareTool(outDir, tool, inputs, outputName)
+		DeclareTool: func(tool string, source fs.SourceFile, inputs []fs.SourceFile, outputName string) (fs.SourceFile, error) {
+			return target.DeclareTool(outDir, tool, source, inputs, outputName)
 		},
 		StringFor:      target.StringFor,
+		SourceFileFor:  target.SourceFileFor,
 		SourceFilesFor: target.SourceFilesFor,
 		ResolvedTargetsFor: func(varName string) iter.Seq2[graph.Resolution, error] {
 			return func(yield func(graph.Resolution, error) bool) {

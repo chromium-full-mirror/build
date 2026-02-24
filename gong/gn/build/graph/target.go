@@ -45,6 +45,19 @@ func (t *Target) StringFor(varName string) (string, error) {
 	return sv.str, nil
 }
 
+// SourceFileFor returns the source file for the variable, if it accepts a file.
+func (t *Target) SourceFileFor(varName string) (fs.SourceFile, error) {
+	v, ok := t.Values[varName]
+	if !ok {
+		return fs.SourceFile{}, fmt.Errorf("%s not declared", varName)
+	}
+	fv, err := ProcessedValueAs[FileValue](v)
+	if err != nil {
+		return fs.SourceFile{}, err
+	}
+	return fv.file, nil
+}
+
 // SourceFilesFor returns an iterator over source files for the variable, if it accepts file lists.
 func (t *Target) SourceFilesFor(varName string) iter.Seq2[fs.SourceFile, error] {
 	return func(yield func(fs.SourceFile, error) bool) {
@@ -79,13 +92,14 @@ func (t *Target) LabelsFor(varName string) ([]environment.LabelWithOrigin, error
 }
 
 // DeclareTool declares a tool call.
-func (t *Target) DeclareTool(outDir fs.SourceDir, tool string, inputs []fs.SourceFile, outputName string) (fs.SourceFile, error) {
+func (t *Target) DeclareTool(outDir fs.SourceDir, tool string, source fs.SourceFile, inputs []fs.SourceFile, outputName string) (fs.SourceFile, error) {
 	outFile, err := outDir.ResolveRelativeFile(outputName)
 	if err != nil {
 		return fs.SourceFile{}, err
 	}
 	t.Resolution.Actions = append(t.Resolution.Actions, RunToolAction{
 		Tool:   tool,
+		Source: source,
 		Inputs: inputs,
 		Output: outFile,
 	})

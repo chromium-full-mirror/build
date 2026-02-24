@@ -13,9 +13,11 @@ import (
 // ResolverContext provides context to a [ResolverFn], allowing only indirect access to underlying target data.
 type ResolverContext struct {
 	// DeclareTool declares a tool call.
-	DeclareTool func(tool string, inputs []fs.SourceFile, outputName string) (fs.SourceFile, error)
+	DeclareTool func(tool string, source fs.SourceFile, inputs []fs.SourceFile, outputName string) (fs.SourceFile, error)
 	// StringFor returns the string for the variable, if it accepts strings.
 	StringFor func(varName string) (string, error)
+	// SourceFileFor returns the source file for the variable, if it accepts a file.
+	SourceFileFor func(varName string) (fs.SourceFile, error)
 	// SourceFilesFor returns an iterator over source files for the variable, if it accepts file lists.
 	SourceFilesFor func(varName string) iter.Seq2[fs.SourceFile, error]
 	// ResolvedTargetsFor returns an iterator over resolutions for the variable, if it accepts target lists.
@@ -36,6 +38,7 @@ type Resolution struct {
 // A RunToolAction represents a call to a tool inside the current toolchain.
 type RunToolAction struct {
 	Tool   string
+	Source fs.SourceFile
 	Inputs []fs.SourceFile
 	Output fs.SourceFile
 }
