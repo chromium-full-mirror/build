@@ -84,12 +84,6 @@ func mustSourceFile(t *testing.T, path string) fs.SourceFile {
 }
 
 func TestRustLibrarySchema_Resolver(t *testing.T) {
-	cmpOpts := []cmp.Option{
-		cmp.Comparer(func(x, y fs.SourceFile) bool {
-			return x.Filename() == y.Filename()
-		}),
-	}
-
 	for _, tc := range []struct {
 		name      string
 		ctx       graph.ResolverContext
@@ -239,10 +233,10 @@ func TestRustLibrarySchema_Resolver(t *testing.T) {
 				return
 			}
 
-			if diff := cmp.Diff(tc.want, got, cmpOpts...); diff != "" {
+			if diff := cmp.Diff(tc.want, got); diff != "" {
 				t.Errorf("Resolver(); diff (-want +got):\n%s", diff)
 			}
-			if diff := cmp.Diff(tc.wantTools, gotTools, cmpOpts...); diff != "" {
+			if diff := cmp.Diff(tc.wantTools, gotTools); diff != "" {
 				t.Errorf("Resolver() DeclareTool calls mismatch; diff (-want +got):\n%s", diff)
 			}
 		})

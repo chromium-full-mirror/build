@@ -32,6 +32,14 @@ func MakeSourceFile(value string) (SourceFile, error) {
 	}, nil
 }
 
+// Equal returns whether the source files are equal i.e. refer to the same file.
+func (s SourceFile) Equal(other SourceFile) bool {
+	if s == (SourceFile{}) || other == (SourceFile{}) {
+		return s == other
+	}
+	return s.Filename() == other.Filename()
+}
+
 // Filename returns the source file name.
 func (s SourceFile) Filename() string {
 	return s.value.Value()

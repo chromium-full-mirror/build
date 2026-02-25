@@ -21,15 +21,6 @@ import (
 // Major issue is that rust does not return DefaultMetadata, but can be indirectly tested through
 // checking result of dep on rust?
 func TestExecutableSchema_Resolver(t *testing.T) {
-	cmpOpts := []cmp.Option{
-		cmp.Comparer(func(x, y fs.SourceFile) bool {
-			if x == (fs.SourceFile{}) || y == (fs.SourceFile{}) {
-				return x == y
-			}
-			return x.Filename() == y.Filename()
-		}),
-	}
-
 	for _, tc := range []struct {
 		name      string
 		ctx       graph.ResolverContext
@@ -142,10 +133,10 @@ func TestExecutableSchema_Resolver(t *testing.T) {
 				return
 			}
 
-			if diff := cmp.Diff(tc.want, got, cmpOpts...); diff != "" {
+			if diff := cmp.Diff(tc.want, got); diff != "" {
 				t.Errorf("Resolver() metadata diff (-want +got):\n%s", diff)
 			}
-			if diff := cmp.Diff(tc.wantTools, gotTools, cmpOpts...); diff != "" {
+			if diff := cmp.Diff(tc.wantTools, gotTools); diff != "" {
 				t.Errorf("Resolver() DeclareTool calls mismatch; diff (-want +got):\n%s", diff)
 			}
 		})
@@ -153,15 +144,6 @@ func TestExecutableSchema_Resolver(t *testing.T) {
 }
 
 func TestStaticLibrarySchema_Resolver(t *testing.T) {
-	cmpOpts := []cmp.Option{
-		cmp.Comparer(func(x, y fs.SourceFile) bool {
-			if x == (fs.SourceFile{}) || y == (fs.SourceFile{}) {
-				return x == y
-			}
-			return x.Filename() == y.Filename()
-		}),
-	}
-
 	for _, tc := range []struct {
 		name      string
 		ctx       graph.ResolverContext
@@ -232,10 +214,10 @@ func TestStaticLibrarySchema_Resolver(t *testing.T) {
 				return
 			}
 
-			if diff := cmp.Diff(tc.want, got, cmpOpts...); diff != "" {
+			if diff := cmp.Diff(tc.want, got); diff != "" {
 				t.Errorf("Resolver() metadata diff (-want +got):\n%s", diff)
 			}
-			if diff := cmp.Diff(tc.wantTools, gotTools, cmpOpts...); diff != "" {
+			if diff := cmp.Diff(tc.wantTools, gotTools); diff != "" {
 				t.Errorf("Resolver() DeclareTool calls mismatch; diff (-want +got):\n%s", diff)
 			}
 		})
