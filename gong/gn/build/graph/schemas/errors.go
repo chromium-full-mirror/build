@@ -32,6 +32,42 @@ func (e NotImplementedError) HelpText() string {
 	return fmt.Sprintf("%s is not implemented.", e.what)
 }
 
+// BinaryMixedSourcesError is returned when a binary target has mixed source types.
+type BinaryMixedSourcesError struct{}
+
+// Error returns the error string.
+func (BinaryMixedSourcesError) Error() string { return "target has mixed languages" }
+
+// Message returns the user-facing error message.
+func (BinaryMixedSourcesError) Message() string {
+	return "More than one language used in target sources."
+}
+
+// HelpText returns the user-facing error help text.
+func (BinaryMixedSourcesError) HelpText() string {
+	return "Mixed sources are not allowed, unless they are compilation-compatible (e.g. Objective C and C++)."
+}
+
+// BinaryInvalidSourceError is returned when a binary target has an invalid source type.
+type BinaryInvalidSourceError struct {
+	targetName string
+	sourceName string
+}
+
+// Error returns the error string.
+func (e BinaryInvalidSourceError) Error() string {
+	return fmt.Sprintf("%s is not a valid source for %s", e.sourceName, e.targetName)
+}
+
+// Message returns the user-facing error message.
+func (e BinaryInvalidSourceError) Message() string {
+	return fmt.Sprintf("Only source, header, and object files belong in the sources of a %s. %s is not one of the valid types.", e.targetName, e.sourceName)
+}
+
+// HelpText returns the user-facing error help text.
+// It returns an empty string because there is no detailed help text for this error.
+func (BinaryInvalidSourceError) HelpText() string { return "" }
+
 // CrateRootNotFoundError is returned when the crate root is not found.
 type CrateRootNotFoundError struct {
 	expected string

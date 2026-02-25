@@ -81,6 +81,38 @@ func TestExecutableSchema_Resolver(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "mixederror",
+			ctx: fakeResolverContext(fakeResolverData{
+				strings: map[string]string{
+					"name": "foo",
+				},
+				sourceFileLists: map[string][]fs.SourceFile{
+					"sources": {
+						mustSourceFile(t, "//src/main.cc"),
+						mustSourceFile(t, "//src/lib.rs"),
+					},
+				},
+			}),
+			wantErr: &BinaryMixedSourcesError{},
+		},
+		{
+			name: "invaliderror",
+			ctx: fakeResolverContext(fakeResolverData{
+				strings: map[string]string{
+					"name": "foo",
+				},
+				sourceFileLists: map[string][]fs.SourceFile{
+					"sources": {
+						mustSourceFile(t, "//src/readme.txt"),
+					},
+				},
+			}),
+			wantErr: &BinaryInvalidSourceError{
+				targetName: "executable",
+				sourceName: "//src/readme.txt",
+			},
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var gotTools []gotToolCall
