@@ -8,7 +8,7 @@ package schemas
 
 import (
 	"fmt"
-	"path/filepath"
+	"path"
 
 	"go.chromium.org/build/gong/gn/build/fs"
 	"go.chromium.org/build/gong/gn/build/graph"
@@ -50,7 +50,7 @@ const (
 // That's not really a priority to look into right now, though.
 // https://source.chromium.org/gn/gn/+/main:src/gn/source_file.cc;l=32;drc=487f8353f15456474437df32bb186187b0940b45
 func fileType(file string) sourceFileType {
-	switch filepath.Ext(file) {
+	switch path.Ext(file) {
 	case ".c":
 		return sourceC
 	case ".h":
@@ -117,7 +117,7 @@ var (
 			var linkInputs []fs.SourceFile
 			for source := range ctx.SourceFilesFor("sources") {
 				sourceName := source.Filename()
-				sourceBase := filepath.Base(sourceName)
+				sourceBase := path.Base(sourceName)
 				if fileType(sourceBase) == sourceH {
 					continue
 				}
@@ -137,7 +137,7 @@ var (
 					return nil, err
 				}
 				for _, depOutput := range dep.Metadata.Outputs() {
-					switch filepath.Ext(depOutput.Filename()) {
+					switch path.Ext(depOutput.Filename()) {
 					case ".a":
 					case ".so":
 						linkInputs = append(linkInputs, depOutput)
@@ -174,7 +174,7 @@ var (
 			outPrefix := fmt.Sprintf("lib%s", name)
 			for source := range ctx.SourceFilesFor("sources") {
 				sourceName := source.Filename()
-				sourceBase := filepath.Base(sourceName)
+				sourceBase := path.Base(sourceName)
 				if fileType(sourceBase) == sourceH {
 					continue
 				}
@@ -229,7 +229,7 @@ var (
 			outPrefix := fmt.Sprintf("lib%s", name)
 			for source := range ctx.SourceFilesFor("sources") {
 				sourceName := source.Filename()
-				sourceBase := filepath.Base(sourceName)
+				sourceBase := path.Base(sourceName)
 				if fileType(sourceBase) == sourceH {
 					continue
 				}
