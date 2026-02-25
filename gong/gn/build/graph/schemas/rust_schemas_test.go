@@ -16,6 +16,13 @@ import (
 	"go.chromium.org/build/gong/gn/build/graph"
 )
 
+type gotToolCall struct {
+	Tool       string
+	Source     fs.SourceFile
+	Inputs     []fs.SourceFile
+	OutputName string
+}
+
 type fakeResolverData struct {
 	strings         map[string]string
 	sourceFiles     map[string]fs.SourceFile
@@ -77,12 +84,6 @@ func mustSourceFile(t *testing.T, path string) fs.SourceFile {
 }
 
 func TestRustLibrarySchema_Resolver(t *testing.T) {
-	type gotToolCall struct {
-		Tool       string
-		Source     fs.SourceFile
-		Inputs     []fs.SourceFile
-		OutputName string
-	}
 	cmpOpts := []cmp.Option{
 		cmp.Comparer(func(x, y fs.SourceFile) bool {
 			return x.Filename() == y.Filename()
