@@ -56,6 +56,9 @@ Siso supports the [gcloud](https://cloud.google.com/sdk/gcloud) command line
 tool by `SISO_CREDENTIAL_HELPER=gcloud`.  need to [install gcloud
 sdk](https://cloud.google.com/sdk/gcloud#download_and_install_the).
 
+Note: `gcloud` may not be available for Googlers.
+See [go/siso-auth](http://go/siso-auth).
+
 ### Google Application Default Credentials
 
 Siso supports [Google Application Default Credentials](https://cloud.google.com/docs/authentication/application-default-credentials)
