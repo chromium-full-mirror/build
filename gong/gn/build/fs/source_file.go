@@ -45,6 +45,11 @@ func (s SourceFile) Filename() string {
 	return s.value.Value()
 }
 
+// IsZero returns true if the path is empty.
+func (s SourceFile) IsZero() bool {
+	return s.value == unique.Handle[string]{}
+}
+
 // Base returns the last element of the path.
 func (s SourceFile) Base() string {
 	return path.Base(s.value.Value())
