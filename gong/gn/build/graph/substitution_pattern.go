@@ -37,7 +37,7 @@ func makeSubstitutionPattern(str string) (substitutionPattern, error) {
 
 		// Find the matching substitution type.
 		found := false
-		for _, sub := range generalSubstitutions {
+		for _, sub := range allSubstitutions {
 			if strings.HasPrefix(str[next:], sub.String()) {
 				p.Pattern = append(p.Pattern, sub)
 				cur = next + len(sub.String())

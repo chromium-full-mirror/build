@@ -31,7 +31,30 @@ func (s substitutionVar) NinjaString() string { return s.Ninja }
 var substitutionSource = substitutionVar{"{{source}}", "${in}"}
 var substitutionOutput = substitutionVar{"{{output}}", "${out}"}
 
+var substitutionTargetOutDir = substitutionVar{"{{target_out_dir}}", "${target_out_dir}"}
+
+var substitutionCrateName = substitutionVar{"{{crate_name}}", "${crate_name}"}
+var substitutionCrateType = substitutionVar{"{{crate_type}}", "${crate_type}"}
+var substitutionRustExterns = substitutionVar{"{{externs}}", "${externs}"}
+var substitutionRustDeps = substitutionVar{"{{rustdeps}}", "${rustdeps}"}
+var substitutionRustEnv = substitutionVar{"{{rustenv}}", "${rustenv}"}
+var substitutionRustFlags = substitutionVar{"{{rustflags}}", "${rustflags}"}
+var substitutionRustSources = substitutionVar{"{{sources}}", "${sources}"}
+
 var generalSubstitutions = []substitutionPart{
 	substitutionSource,
 	substitutionOutput,
+	substitutionTargetOutDir,
 }
+
+var rustSubstitutions = []substitutionPart{
+	substitutionCrateName,
+	substitutionCrateType,
+	substitutionRustExterns,
+	substitutionRustDeps,
+	substitutionRustEnv,
+	substitutionRustFlags,
+	substitutionRustSources,
+}
+
+var allSubstitutions = append(generalSubstitutions, rustSubstitutions...)
