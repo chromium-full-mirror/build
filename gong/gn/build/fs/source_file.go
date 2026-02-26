@@ -47,7 +47,7 @@ func (s SourceFile) Filename() string {
 
 // Base returns the last element of the path.
 func (s SourceFile) Base() string {
-	return filepath.Base(s.value.Value())
+	return path.Base(s.value.Value())
 }
 
 // Dir returns the directory containing this file.
