@@ -136,7 +136,7 @@ type StepRule struct {
 	// ActionOuts matches  with outputs of the step.
 	ActionOuts []string `json:"action_outs,omitempty"`
 
-	// CommandPreifx matches with command prefix of the step.
+	// CommandPrefix matches the command prefix of the step.
 	// If argv[0] is absolute path outside of execroot,
 	// it is compared with basename of argv[0].
 	// Note: it doesn't support space in argv[0] for such case.

@@ -66,7 +66,7 @@ func (c *Cache) GetActionResult(ctx context.Context, cmd *execute.Cmd) error {
 		return status.Error(codes.NotFound, "cache is not configured")
 	}
 	if !c.enableRead {
-		return status.Error(codes.NotFound, "cache disable raed")
+		return status.Error(codes.NotFound, "cache read disabled")
 	}
 	ctx, span := trace.NewSpan(ctx, "cache-get")
 	defer span.Close(nil)

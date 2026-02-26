@@ -235,7 +235,7 @@ func (fsys FileSystem) ReadFile(name string) ([]byte, error) {
 	}
 }
 
-// ReadLink retrurns the destination of the named symbolink link.
+// ReadLink returns the destination of the named symbolic link.
 func (fsys FileSystem) ReadLink(name string) (string, error) {
 	fi, err := fsys.hashFS.Stat(fsys.ctx, fsys.dir, name)
 	if err != nil {

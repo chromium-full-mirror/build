@@ -290,7 +290,7 @@ func inputMtime(ctx context.Context, b *Builder, stepDef StepDef) (string, time.
 				b.targets.Store(in, targetState{
 					dirtyErr: err,
 				})
-				retErr = fmt.Errorf("inupt %s: %w", in, err)
+				retErr = fmt.Errorf("input %s: %w", in, err)
 				return false
 			}
 			b.targets.Store(in, targetState{

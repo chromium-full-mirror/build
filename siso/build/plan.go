@@ -50,7 +50,7 @@ type Target int
 
 // Graph provides a build graph, i.e. step definitions.
 type Graph interface {
-	// NumTargets returns number of valid taraget id.
+	// NumTargets returns the number of valid target IDs.
 	NumTargets() int
 
 	// Targets returns target paths for given args.
@@ -66,7 +66,7 @@ type Graph interface {
 	// Edge creates new Edge for the target.
 	// if err is ErrTargetIsSource, target is source and no step to
 	// generate the target.
-	// if err is ErrDuplicateStep, a step that geneartes the target
+	// if err is ErrDuplicateStep, a step that generates the target
 	// is already processed.
 	Edge(context.Context, Target, StepDef) (*Edge, error)
 
@@ -219,7 +219,7 @@ func (pq *priorityQueue) Push(x any) {
 	*pq = append(*pq, s)
 }
 
-// Push pops the last step.
+// Pop removes and returns the last step from the priority queue.
 func (pq *priorityQueue) Pop() any {
 	old := *pq
 	n := len(old)
@@ -410,7 +410,7 @@ func scheduleTarget(ctx context.Context, sched *scheduler, graph Graph, target T
 		if scanState == scanStateIgnored {
 			// need to check again.
 			// It was ignored, but now required to generate *.h
-			clog.Infof(ctx, "need to sched dupliate step for %s", targetPath(ctx, graph, target))
+			clog.Infof(ctx, "need to sched duplicate step for %s", targetPath(ctx, graph, target))
 			break
 		}
 		// this step is already processed.

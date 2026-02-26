@@ -101,7 +101,7 @@ func TestBuild_Trace_remote(t *testing.T) {
 		t.Fatalf("traceEvents is not array: %v", v)
 	}
 	names := make(map[string]int)
-	var localPID, remotePID, rbePID int
+	var localPID, preprocPID, remotePID, rbePID int
 	for i, v := range events {
 		ev, ok := v.(map[string]any)
 		if !ok {
@@ -145,6 +145,8 @@ func TestBuild_Trace_remote(t *testing.T) {
 			}
 			t.Logf("-- process_name:%s = %d", pname, int(pid))
 			switch pname {
+			case "preproc":
+				preprocPID = int(pid)
 			case "local-exec":
 				localPID = int(pid)
 			case "remote-exec":
@@ -159,8 +161,8 @@ func TestBuild_Trace_remote(t *testing.T) {
 				t.Errorf("no pid in traceEvents[%d] %v", i, v)
 				continue
 			}
-			if int(pid) != remotePID && int(pid) != rbePID {
-				t.Errorf("pid of %s: %d; want %d or %d", name, int(pid), remotePID, rbePID)
+			if int(pid) != preprocPID && int(pid) != remotePID && int(pid) != rbePID {
+				t.Errorf("pid of %s: %d; want %d or %d or %d", name, int(pid), preprocPID, remotePID, rbePID)
 			}
 
 		case "out/siso/gen/local/foo.out":
@@ -176,7 +178,7 @@ func TestBuild_Trace_remote(t *testing.T) {
 	}
 	want := map[string]int{
 		"process_name":                9,
-		"out/siso/gen/remote/foo.out": 2, // remote-exec and rbe
+		"out/siso/gen/remote/foo.out": 3, // preproc, remote-exec and rbe
 		"out/siso/gen/local/foo.out":  1,
 	}
 	if diff := cmp.Diff(want, names); diff != "" {

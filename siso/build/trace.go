@@ -395,7 +395,7 @@ func (te *traceEvents) Add(ctx context.Context, tc *trace.Context) {
 	for _, span := range spans[1:] {
 		var obj traceEventObject
 		switch span.NameKind() {
-		case "serv:prepcoc":
+		case "serv:preproc":
 			obj = te.runPreprocSpanEvent(span, attr)
 		case "serv:localexec":
 			obj = te.runLocalSpanEvent(span, attr)
@@ -536,7 +536,7 @@ func (te *traceEvents) rbeWorkerSpanEvent(span trace.SpanData, attr spanEventAtt
 		Dur:  span.Duration().Microseconds(),
 		Args: map[string]any{
 			"id":          attr.id,
-			"descroption": attr.description,
+			"description": attr.description,
 			"action":      attr.action,
 			"command":     attr.command,
 			"backtrace":   attr.backtrace,
