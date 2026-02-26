@@ -40,6 +40,7 @@ var RustLibrarySchema = graph.Schema{
 		"configs":    graph.LabelListVar{Expected: &graph.Config{}},
 		"defines":    graph.StringListVar{},
 	},
+	// TODO: can this be merged with rustExecutableResolver?
 	Resolver: func(ctx graph.ResolverContext) (graph.ResolutionMetadata, error) {
 		name, err := ctx.StringFor("name")
 		if err != nil {

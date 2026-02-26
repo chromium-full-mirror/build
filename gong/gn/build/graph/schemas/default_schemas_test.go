@@ -73,6 +73,49 @@ func TestExecutableSchema_Resolver(t *testing.T) {
 			},
 		},
 		{
+			name: "rust",
+			ctx: fakeResolverContext(fakeResolverData{
+				strings: map[string]string{
+					"name":       "foo_app",
+					"crate_name": "foo_crate",
+				},
+				sourceFileLists: map[string][]fs.SourceFile{
+					"sources": {
+						mustSourceFile(t, "//src/main.rs"),
+						mustSourceFile(t, "//src/util.rs"),
+					},
+				},
+				resolvedDeps: []graph.Resolution{
+					{
+						Metadata: RustLibraryMetadata{
+							OutputRlib: mustSourceFile(t, "//out/obj/libbar.rlib"),
+							TransitiveRlibs: []fs.SourceFile{
+								mustSourceFile(t, "//out/obj/libbaz.rlib"),
+							},
+						},
+					},
+				},
+			}),
+			want: DefaultMetadata{
+				OutputFiles: []fs.SourceFile{
+					mustSourceFile(t, "//out/obj/foo_crate"),
+				},
+			},
+			wantTools: []gotToolCall{
+				{
+					Tool:   "rust_bin",
+					Source: mustSourceFile(t, "//src/main.rs"),
+					Inputs: []fs.SourceFile{
+						mustSourceFile(t, "//src/main.rs"),
+						mustSourceFile(t, "//src/util.rs"),
+						mustSourceFile(t, "//out/obj/libbar.rlib"),
+						mustSourceFile(t, "//out/obj/libbaz.rlib"),
+					},
+					OutputName: "foo_crate",
+				},
+			},
+		},
+		{
 			name: "mixederror",
 			ctx: fakeResolverContext(fakeResolverData{
 				strings: map[string]string{

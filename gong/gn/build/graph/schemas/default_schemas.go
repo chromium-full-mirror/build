@@ -133,7 +133,7 @@ var (
 				return nil, err
 			}
 			targetCategory := binaryUncategorized
-			var linkInputs []fs.SourceFile
+			var inputs []fs.SourceFile
 			for source := range ctx.SourceFilesFor("sources") {
 				sourceName := source.Filename()
 				sourceType, category := fileTypeCategory(source.Filename())
@@ -148,45 +148,17 @@ var (
 						sourceName: sourceName,
 					}
 				}
-
-				// TODO: move below into e.g. new file "c_schemas.go"?
-				// (Hence don't bother merging with above if into a switch.)
-				if sourceType == sourceH {
-					continue
-				}
-				sourceBase := path.Base(sourceName)
-				objFile, err := ctx.DeclareTool(
-					"cxx",
-					source,
-					[]fs.SourceFile{source},
-					fmt.Sprintf("%s.%s.o", name, sourceBase),
-				)
-				if err != nil {
-					return nil, err
-				}
-				linkInputs = append(linkInputs, objFile)
+				inputs = append(inputs, source)
 			}
-			for dep, err := range ctx.ResolvedTargetsFor("deps") {
-				if err != nil {
-					return nil, err
-				}
-				for _, depOutput := range dep.Metadata.Outputs() {
-					switch path.Ext(depOutput.Filename()) {
-					case ".a":
-					case ".so":
-						linkInputs = append(linkInputs, depOutput)
-					default:
-						return nil, NotImplementedError{
-							what: fmt.Sprintf("%q dep not implemented yet", depOutput.Filename()),
-						}
-					}
-				}
+			switch targetCategory {
+			case binaryC:
+				return cExecutableResolver(name, inputs, ctx)
+			case binaryRust:
+				return rustExecutableResolver(name, inputs, ctx)
 			}
-			out, err := ctx.DeclareTool("link", fs.SourceFile{}, linkInputs, name)
-			if err != nil {
-				return nil, err
+			return nil, NotImplementedError{
+				what: "support for executables other than c and rust",
 			}
-			return DefaultMetadata{[]fs.SourceFile{out}}, nil
 		},
 	}
 	SharedLibrarySchema = graph.Schema{
@@ -222,8 +194,7 @@ var (
 					}
 				}
 
-				// TODO: move below into e.g. new file "c_schemas.go"?
-				// (Hence don't bother merging with above if into a switch.)
+				// TODO: mergeable with cExecutableResolver?
 				if sourceType == sourceH {
 					continue
 				}
@@ -293,8 +264,7 @@ var (
 					}
 				}
 
-				// TODO: move below into e.g. new file "c_schemas.go"?
-				// (Hence don't bother merging with above if into a switch.)
+				// TODO: mergeable with cExecutableResolver?
 				if sourceType == sourceH {
 					continue
 				}
