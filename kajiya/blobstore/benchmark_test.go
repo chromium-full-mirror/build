@@ -22,6 +22,7 @@ import (
 
 	"go.chromium.org/build/kajiya/digest"
 	"go.chromium.org/build/kajiya/log"
+	"go.chromium.org/build/kajiya/server"
 )
 
 func setupBenchmark(ctx context.Context, t testing.TB) (bspb.ByteStreamClient, *ContentAddressableStorage) {
@@ -35,7 +36,7 @@ func setupBenchmark(ctx context.Context, t testing.TB) (bspb.ByteStreamClient, *
 	}
 
 	// Start the server
-	lis := startTestServer(t, cas)
+	lis := startTestServer(t, cas, server.Config{})
 
 	// Create a client that dials the in-memory listener
 	conn, err := grpc.NewClient("passthrough://bufnet",
@@ -119,7 +120,7 @@ func BenchmarkDownload(b *testing.B) {
 	for _, sz := range sizes {
 		b.Run(sz.name, func(b *testing.B) {
 			ctx := b.Context()
-			client, _ := setupTest(ctx, b)
+			client, _ := setupTest(ctx, b, server.Config{})
 
 			// Generate random data once
 			blobData := make([]byte, sz.size)

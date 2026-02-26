@@ -16,6 +16,8 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/test/bufconn"
 	"google.golang.org/protobuf/testing/protocmp"
+
+	"go.chromium.org/build/kajiya/server"
 )
 
 // bufferSize is the size of the in-memory buffer.
@@ -30,10 +32,11 @@ func startTestServer(t *testing.T) *bufconn.Listener {
 	lis := bufconn.Listen(bufferSize)
 
 	// Create a standard gRPC server
-	s := grpc.NewServer()
+	cfg := server.Config{MaxBatchTotalSizeBytes: 1048576}
+	s := grpc.NewServer(grpc.MaxRecvMsgSize(cfg.RecommendedMaxRecvMsgSize()))
 
 	// Register the service implementation
-	Register(s)
+	Register(s, cfg)
 
 	// Start serving in a background goroutine
 	go func() {
@@ -105,6 +108,7 @@ func TestGetCapabilities(t *testing.T) {
 					},
 				},
 			},
+			MaxBatchTotalSizeBytes:      1048576,
 			SymlinkAbsolutePathStrategy: repb.SymlinkAbsolutePathStrategy_DISALLOWED,
 			SupportedCompressors:        []repb.Compressor_Value{repb.Compressor_IDENTITY, repb.Compressor_ZSTD},
 		},

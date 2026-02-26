@@ -34,21 +34,24 @@ import (
 	"go.chromium.org/build/kajiya/execution"
 	"go.chromium.org/build/kajiya/execution/localexec"
 	"go.chromium.org/build/kajiya/log"
+	"go.chromium.org/build/kajiya/server"
 
 	_ "net/http/pprof" // import to let pprof register its HTTP handlers
 )
 
 var (
-	dataDir         = flag.String("dir", getDefaultDataDir(), "the directory to store our data in")
-	listen          = flag.String("listen", "localhost:50051", "the address to listen on (e.g. localhost:50051 or unix:///tmp/kajiya.sock)")
-	enableCache     = flag.Bool("cache", true, "whether to enable the action cache service")
-	enableExecution = flag.Bool("execution", true, "whether to enable the execution service")
-	pprofAddr       = flag.String("pprof_addr", "", `listen address for "go tool pprof". e.g. "localhost:6060"`)
-	cpuprofile      = flag.String("cpuprofile", "", "write cpu profile to file")
-	tlsCertFile     = flag.String("tls_cert_file", "", "TLS certificate file")
-	tlsKeyFile      = flag.String("tls_key_file", "", "TLS key file")
-	sandboxStrategy = flag.String("sandbox", "overlayfs", "sandbox strategy to use (one of: files, overlayfs, nested-overlayfs)")
-	quiet           = flag.Bool("quiet", false, "if true, print only warnings and errors in log output")
+	dataDir                = flag.String("dir", getDefaultDataDir(), "the directory to store our data in")
+	listen                 = flag.String("listen", "localhost:50051", "the address to listen on (e.g. localhost:50051 or unix:///tmp/kajiya.sock)")
+	enableCache            = flag.Bool("cache", true, "whether to enable the action cache service")
+	enableExecution        = flag.Bool("execution", true, "whether to enable the execution service")
+	pprofAddr              = flag.String("pprof_addr", "", `listen address for "go tool pprof". e.g. "localhost:6060"`)
+	cpuprofile             = flag.String("cpuprofile", "", "write cpu profile to file")
+	tlsCertFile            = flag.String("tls_cert_file", "", "TLS certificate file")
+	tlsKeyFile             = flag.String("tls_key_file", "", "TLS key file")
+	sandboxStrategy        = flag.String("sandbox", "overlayfs", "sandbox strategy to use (one of: files, overlayfs, nested-overlayfs)")
+	quiet                  = flag.Bool("quiet", false, "if true, print only warnings and errors in log output")
+	maxRecvMsgSize         = flag.Int("max_recv_msg_size", 0, "maximum size of a single gRPC message that can be received")
+	maxBatchTotalSizeBytes = flag.Int64("max_batch_total_size_bytes", 0, "maximum combined total size of blobs in batch requests (0 means unlimited)")
 
 	sb localexec.SandboxStrategy
 )
@@ -193,6 +196,18 @@ func createServer(ctx context.Context, dataDir string) (*grpc.Server, error) {
 		return nil, fmt.Errorf("both --tls_cert_file and --tls_key_file must be specified")
 	}
 
+	cfg := server.Config{
+		MaxBatchTotalSizeBytes: *maxBatchTotalSizeBytes,
+		MaxRecvMsgSize:         *maxRecvMsgSize,
+	}
+	if cfg.MaxRecvMsgSize == 0 {
+		cfg.MaxRecvMsgSize = cfg.RecommendedMaxRecvMsgSize()
+		slog.Info("using gRPC max receive message size", "size", cfg.MaxRecvMsgSize)
+	} else if cfg.MaxRecvMsgSize < cfg.RecommendedMaxRecvMsgSize() {
+		slog.Warn("gRPC max receive message size is too small, consider increasing your -max_recv_msg_size",
+			"got", cfg.MaxRecvMsgSize, "want", cfg.RecommendedMaxRecvMsgSize())
+	}
+
 	// Create tls based credential.
 	var opts []grpc.ServerOption
 	if *tlsCertFile != "" {
@@ -203,10 +218,11 @@ func createServer(ctx context.Context, dataDir string) (*grpc.Server, error) {
 		}
 		opts = append(opts, grpc.Creds(creds))
 	}
+	opts = append(opts, grpc.MaxRecvMsgSize(cfg.MaxRecvMsgSize))
 
 	s := grpc.NewServer(opts...)
 
-	capabilities.Register(s)
+	capabilities.Register(s, cfg)
 	slog.Info("capabilities service registered")
 
 	// Create a CAS backed by a local filesystem.
@@ -217,7 +233,7 @@ func createServer(ctx context.Context, dataDir string) (*grpc.Server, error) {
 	}
 
 	// CAS service.
-	blobstore.Register(s, cas)
+	blobstore.Register(s, cas, cfg)
 	slog.Info("content-addressable storage service registered")
 
 	// Action cache service.

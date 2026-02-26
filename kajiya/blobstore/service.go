@@ -26,6 +26,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	"go.chromium.org/build/kajiya/digest"
+	"go.chromium.org/build/kajiya/server"
 )
 
 const (
@@ -40,15 +41,18 @@ type Service struct {
 
 	cas *ContentAddressableStorage
 
+	config server.Config
+
 	encoderPool   sync.Pool
 	decoderPool   sync.Pool
 	bufWriterPool sync.Pool
 }
 
 // Register creates and registers a new Service with the given gRPC server.
-func Register(s *grpc.Server, cas *ContentAddressableStorage) {
+func Register(s *grpc.Server, cas *ContentAddressableStorage, cfg server.Config) {
 	service := &Service{
-		cas: cas,
+		cas:    cas,
+		config: cfg,
 		encoderPool: sync.Pool{
 			New: func() any {
 				e, err := zstd.NewWriter(nil)
@@ -591,6 +595,17 @@ func (s *Service) BatchUpdateBlobs(ctx context.Context, request *repb.BatchUpdat
 		return nil, status.Errorf(codes.InvalidArgument, "hash function %q is not supported", request.DigestFunction.String())
 	}
 
+	// Enforce the max batch total size limit.
+	if s.config.MaxBatchTotalSizeBytes > 0 {
+		var totalSize int64
+		for _, blob := range request.Requests {
+			totalSize += blob.Digest.SizeBytes
+		}
+		if totalSize > s.config.MaxBatchTotalSizeBytes {
+			return nil, status.Errorf(codes.InvalidArgument, "total batch size %d exceeds the maximum allowed %d bytes", totalSize, s.config.MaxBatchTotalSizeBytes)
+		}
+	}
+
 	// Prepare a response that we can fill in.
 	response := &repb.BatchUpdateBlobsResponse{
 		Responses: make([]*repb.BatchUpdateBlobsResponse_Response, 0, len(request.Requests)),
@@ -655,6 +670,17 @@ func (s *Service) BatchReadBlobs(ctx context.Context, request *repb.BatchReadBlo
 	// If the client explicitly specifies a DigestFunction, ensure that it's SHA256.
 	if request.DigestFunction != repb.DigestFunction_UNKNOWN && request.DigestFunction != repb.DigestFunction_SHA256 {
 		return nil, status.Errorf(codes.InvalidArgument, "hash function %q is not supported", request.DigestFunction.String())
+	}
+
+	// Enforce the max batch total size limit.
+	if s.config.MaxBatchTotalSizeBytes > 0 {
+		var totalSize int64
+		for _, d := range request.Digests {
+			totalSize += d.SizeBytes
+		}
+		if totalSize > s.config.MaxBatchTotalSizeBytes {
+			return nil, status.Errorf(codes.InvalidArgument, "total batch size %d exceeds the maximum allowed %d bytes", totalSize, s.config.MaxBatchTotalSizeBytes)
+		}
 	}
 
 	shouldCompress := slices.Contains(request.AcceptableCompressors, repb.Compressor_ZSTD)

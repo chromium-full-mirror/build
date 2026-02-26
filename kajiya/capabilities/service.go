@@ -12,16 +12,22 @@ import (
 	repb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
 	semverpb "github.com/bazelbuild/remote-apis/build/bazel/semver"
 	"google.golang.org/grpc"
+
+	"go.chromium.org/build/kajiya/server"
 )
 
 // Service implements the REAPI Capabilities service.
 type Service struct {
 	repb.UnimplementedCapabilitiesServer
+
+	config server.Config
 }
 
 // Register creates and registers a new Service with the given gRPC server.
-func Register(s *grpc.Server) {
-	repb.RegisterCapabilitiesServer(s, &Service{})
+func Register(s *grpc.Server, cfg server.Config) {
+	repb.RegisterCapabilitiesServer(s, &Service{
+		config: cfg,
+	})
 }
 
 // GetCapabilities returns the capabilities of the server.
@@ -51,7 +57,7 @@ func (s *Service) GetCapabilities(ctx context.Context, request *repb.GetCapabili
 					},
 				},
 			},
-			MaxBatchTotalSizeBytes:      0,                                           // no limit.
+			MaxBatchTotalSizeBytes:      s.config.MaxBatchTotalSizeBytes,
 			SymlinkAbsolutePathStrategy: repb.SymlinkAbsolutePathStrategy_DISALLOWED, // Same as RBE.
 			SupportedCompressors: []repb.Compressor_Value{
 				repb.Compressor_IDENTITY,
