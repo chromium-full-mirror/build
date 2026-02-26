@@ -9,16 +9,18 @@ import (
 	"testing"
 
 	"go.chromium.org/build/gong/gn/build/environment"
+	"go.chromium.org/build/gong/gn/build/fs"
 	"go.chromium.org/build/gong/gn/parse"
 	"go.chromium.org/build/gong/gn/resolve"
 	"go.chromium.org/build/gong/gn/syntax"
 )
 
 func TestRebasePathFunction(t *testing.T) {
-	f := &rebasePathFunction{buildSettings: &environment.BuildSettings{}}
+	f := rebasePathFunction{}
 	for _, tc := range []struct {
 		name    string
 		args    []resolve.Value
+		curDir  fs.SourceDir
 		want    string
 		wantErr any
 	}{
@@ -92,9 +94,17 @@ func TestRebasePathFunction(t *testing.T) {
 				resolve.NewOriginlessStringValue("foo/bar.txt"),
 				resolve.NewOriginlessStringValue("//foo/"),
 			},
-			// For prototype purposes, we assume Scope always has // as its current dir.
-			// Therefore we are resolving // + foo/bar.txt = //foo/bar.txt relative to //foo/.
-			want: "bar.txt",
+			curDir: mustDir(t, "//"),
+			want:   "bar.txt",
+		},
+		{
+			name: "relative input with non-root curDir",
+			args: []resolve.Value{
+				resolve.NewOriginlessStringValue("bar.txt"),
+				resolve.NewOriginlessStringValue("//"),
+			},
+			curDir: mustDir(t, "//foo/"),
+			want:   "foo/bar.txt",
 		},
 		{
 			name: "empty new_base not implemented",
@@ -110,13 +120,46 @@ func TestRebasePathFunction(t *testing.T) {
 				resolve.NewOriginlessStringValue("//foo/bar.txt"),
 				resolve.NewOriginlessStringValue("baz/"),
 			},
-			// For prototype purposes, we assume Scope always has // as its current dir.
-			// Therefore we are resolving relative to // + baz/ = //baz/.
-			want: "../foo/bar.txt",
+			curDir: mustDir(t, "//"),
+			want:   "../foo/bar.txt",
+		},
+		{
+			name: "relative new_base with non-root curDir",
+			args: []resolve.Value{
+				resolve.NewOriginlessStringValue("//foo/bar.txt"),
+				resolve.NewOriginlessStringValue("."),
+			},
+			curDir: mustDir(t, "//baz/"),
+			want:   "../foo/bar.txt",
+		},
+		{
+			name: "relative input and new_base with non-root curDir",
+			args: []resolve.Value{
+				resolve.NewOriginlessStringValue("sub/file.txt"),
+				resolve.NewOriginlessStringValue("."),
+			},
+			curDir: mustDir(t, "//foo/bar/"),
+			want:   "sub/file.txt",
+		},
+		{
+			name: "directory path with non-root curDir",
+			args: []resolve.Value{
+				resolve.NewOriginlessStringValue("sub/dir/"),
+				resolve.NewOriginlessStringValue("//"),
+			},
+			curDir: mustDir(t, "//foo/"),
+			want:   "foo/sub/dir",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			scope := &resolve.Scope{}
+			scope := resolve.NewScope(
+				&scopeContext{
+					settings:  NewSettings(&environment.BuildSettings{}),
+					sourceDir: tc.curDir,
+				},
+				nil,
+				nil,
+			)
 			callNode := &parse.FunctionCallNode{
 				Function: syntax.MakeToken(syntax.TokenIdentifier, "rebase_path"),
 			}

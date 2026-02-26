@@ -10,15 +10,12 @@ import (
 	"path/filepath"
 	"strings"
 
-	"go.chromium.org/build/gong/gn/build/environment"
 	"go.chromium.org/build/gong/gn/build/fs"
 	"go.chromium.org/build/gong/gn/parse"
 	"go.chromium.org/build/gong/gn/resolve"
 )
 
-type rebasePathFunction struct {
-	buildSettings *environment.BuildSettings
-}
+type rebasePathFunction struct{}
 
 func (rebasePathFunction) IsTarget() bool { return false }
 func (rebasePathFunction) HelpShort() string {
@@ -116,17 +113,18 @@ Example
 `
 }
 
-func (f *rebasePathFunction) Run(scope *resolve.Scope, call *parse.FunctionCallNode, args []resolve.Value) (resolve.Value, error) {
+func (rebasePathFunction) Run(scope *resolve.Scope, call *parse.FunctionCallNode, args []resolve.Value) (resolve.Value, error) {
+	ctx, err := contextFromScope(scope)
+	if err != nil {
+		return nil, err
+	}
+
 	if len(args) < 1 || len(args) > 3 {
 		return nil, resolve.ArgumentCountError{
 			OriginFunction: resolve.OriginFunction{Call: call},
 			Msg:            "Wrong # of arguments for rebase_path.",
 		}
 	}
-
-	// TODO: need Scope to know current path i.e. what BUILD.gn we are reading.
-	// For now, assume root.
-	currentDir, _ := fs.MakeSourceDir("//")
 
 	switch v := args[0].(type) {
 	case *resolve.ListValue:
@@ -135,17 +133,16 @@ func (f *rebasePathFunction) Run(scope *resolve.Scope, call *parse.FunctionCallN
 	case *resolve.StringValue:
 		path := v.RawGNString()
 		if !fs.IsPathSourceAbsolute(path) && !filepath.IsAbs(path) {
-			fmt.Fprintf(os.Stderr, "warn: relative path in rebase_path is not correctly implemented yet. this will be treated as relative to //.\n")
 			// TODO: this is a really rudimentary check. we probably need to switch to something like ValueLooksLikeDir.
 			// https://source.chromium.org/gn/gn/+/main:src/gn/function_rebase_path.cc;l=69;drc=ab32747ae7a399c57b04280f38e49b8fdf237a8a
 			if strings.HasSuffix(path, "/") {
-				sourceDir, err := currentDir.ResolveRelativeDir(path)
+				sourceDir, err := ctx.sourceDir.ResolveRelativeDir(path)
 				if err != nil {
 					return nil, err
 				}
 				path = sourceDir.Path()
 			} else {
-				sourceFile, err := currentDir.ResolveRelativeFile(path)
+				sourceFile, err := ctx.sourceDir.ResolveRelativeFile(path)
 				if err != nil {
 					return nil, err
 				}
@@ -165,13 +162,13 @@ func (f *rebasePathFunction) Run(scope *resolve.Scope, call *parse.FunctionCallN
 			return nil, NotImplementedError{OriginFunction: resolve.OriginFunction{Call: call}, what: "empty new_base in rebase_path"}
 		}
 
-		destDir, err := currentDir.ResolveRelativeDir(newBase)
+		destDir, err := ctx.sourceDir.ResolveRelativeDir(newBase)
 		if err != nil {
 			return nil, err
 		}
 
 		if !fs.IsPathSourceAbsolute(newBase) && !filepath.IsAbs(newBase) {
-			// TODO: need Scope to know current path i.e. what BUILD.gn we are reading
+			// TODO: scope knows curDir now, need to implement support for using it in this param.
 			fmt.Fprintf(os.Stderr, "warn: relative new_base in rebase_path is not correctly implemented yet. this will be treated as relative to //.\n")
 		}
 		rebased, err := fs.RebasePath(path, destDir.Path())
