@@ -32,6 +32,20 @@ func (Target) CompatibleWith(item Item) bool {
 	return false
 }
 
+// LabelKeyedStringMapFor returns the map of labels to strings for the variable, if it accepts a variable
+// that is processed into a map of labels to strings.
+func (t *Target) LabelKeyedStringMapFor(varName string) (map[environment.Label]string, error) {
+	v, ok := t.Values[varName]
+	if !ok {
+		return nil, fmt.Errorf("%s not declared", varName)
+	}
+	mv, err := ProcessedValueAs[LabelKeyedStringMapValue](v)
+	if err != nil {
+		return nil, err
+	}
+	return mv.data, nil
+}
+
 // StringFor returns the string for the variable, if it accepts strings.
 func (t *Target) StringFor(varName string) (string, error) {
 	v, ok := t.Values[varName]

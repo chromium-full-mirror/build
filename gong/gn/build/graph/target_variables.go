@@ -151,6 +151,52 @@ func (LabelListVar) Process(t *Target, value resolve.Value) (ProcessedValue, err
 	}, nil
 }
 
+// A ScopeOfLabelsVar variable accepts a scope whose values are labels e.g.
+//
+//	aliased_deps = {
+//		bar_renamed = ":bar",
+//	}
+type ScopeOfLabelsVar struct {
+	// Invert specifies whether the value should be processed into a map
+	// where the keys are the labels.
+	Invert bool
+}
+
+func (ScopeOfLabelsVar) ExpectedItems() Item { return nil }
+func (s ScopeOfLabelsVar) Process(t *Target, value resolve.Value) (ProcessedValue, error) {
+	sv, err := resolve.AsValue[*resolve.ScopeValue](value)
+	if err != nil {
+		return nil, err
+	}
+	if !s.Invert {
+		// TODO: "ERROR ... not supported."
+		return nil, fmt.Errorf("ScopeOfLabelsVar with invert=false is not supported")
+	}
+
+	res := LabelKeyedStringMapValue{
+		origin: sv,
+		data:   make(map[environment.Label]string),
+	}
+
+	// For now, only support labels as keys.
+	for ident, val := range sv.Values() {
+		svVal, err := resolve.AsValue[*resolve.StringValue](val)
+		if err != nil {
+			return nil, err
+		}
+		resolvedLabel, err := environment.ResolveLabel(t.label.Dir, t.label.ToolchainLabel(), svVal)
+		if err != nil {
+			return nil, err
+		}
+		res.data[resolvedLabel] = ident
+		res.labelWithOrigins = append(res.labelWithOrigins, environment.LabelWithOrigin{
+			Label:  resolvedLabel,
+			Origin: svVal.OriginNode(),
+		})
+	}
+	return res, nil
+}
+
 // A ProcessedValue represents a target's variable, after we've converted values such as labels
 // into concrete underlying types.
 type ProcessedValue interface {
@@ -216,6 +262,27 @@ func (f FileListValue) value() resolve.Value {
 	return f.origin
 }
 func (FileListValue) Labels() iter.Seq[environment.LabelWithOrigin] { return nil }
+
+// LabelKeyedStringMapValue represents a value processed into a map,
+// where the keys are labels and the values are strings.
+//
+// This can be thought of as similar to a label_keyed_string_dict in Bazel.
+type LabelKeyedStringMapValue struct {
+	origin *resolve.ScopeValue
+	data   map[environment.Label]string
+	// Required to implement the ProcessedValue interface, so that
+	// the builder can later add deps on all labels referenced by
+	// the target.
+	labelWithOrigins []environment.LabelWithOrigin
+}
+
+func (f LabelKeyedStringMapValue) value() resolve.Value {
+	return f.origin
+}
+
+func (f LabelKeyedStringMapValue) Labels() iter.Seq[environment.LabelWithOrigin] {
+	return slices.Values(f.labelWithOrigins)
+}
 
 // ProcessedValueAs attempts to cast the value as the specified type, and returns an error if it fails.
 func ProcessedValueAs[T ProcessedValue](v ProcessedValue) (T, error) {

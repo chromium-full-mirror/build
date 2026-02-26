@@ -208,9 +208,10 @@ func (b *Builder) resolveTarget(target *graph.Target, record *builderRecord) err
 		DeclareTool: func(tool string, source fs.SourceFile, inputs []fs.SourceFile, outputName string) (fs.SourceFile, error) {
 			return target.DeclareTool(outDir, tool, source, inputs, outputName)
 		},
-		StringFor:      target.StringFor,
-		SourceFileFor:  target.SourceFileFor,
-		SourceFilesFor: target.SourceFilesFor,
+		LabelKeyedStringMapFor: target.LabelKeyedStringMapFor,
+		StringFor:              target.StringFor,
+		SourceFileFor:          target.SourceFileFor,
+		SourceFilesFor:         target.SourceFilesFor,
 		ResolvedTargetsFor: func(varName string) iter.Seq2[graph.Resolution, error] {
 			return func(yield func(graph.Resolution, error) bool) {
 				deps, err := target.LabelsFor(varName)
@@ -249,6 +250,7 @@ func (b *Builder) resolveTarget(target *graph.Target, record *builderRecord) err
 	if err != nil {
 		return err
 	}
+	target.Resolution.Label = target.Label()
 	target.Resolution.Metadata = result
 	record.state = itemStateResolved
 

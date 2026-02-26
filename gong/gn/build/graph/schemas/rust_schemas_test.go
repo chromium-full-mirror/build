@@ -12,6 +12,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 
+	"go.chromium.org/build/gong/gn/build/environment"
 	"go.chromium.org/build/gong/gn/build/fs"
 	"go.chromium.org/build/gong/gn/build/graph"
 )
@@ -24,14 +25,21 @@ type gotToolCall struct {
 }
 
 type fakeResolverData struct {
-	strings         map[string]string
-	sourceFiles     map[string]fs.SourceFile
-	sourceFileLists map[string][]fs.SourceFile
-	resolvedDeps    []graph.Resolution
+	strings             map[string]string
+	labelKeyedStringMap map[string]map[environment.Label]string
+	sourceFiles         map[string]fs.SourceFile
+	sourceFileLists     map[string][]fs.SourceFile
+	resolvedDeps        []graph.Resolution
 }
 
 func fakeResolverContext(data fakeResolverData) graph.ResolverContext {
 	return graph.ResolverContext{
+		LabelKeyedStringMapFor: func(varName string) (map[environment.Label]string, error) {
+			if v, ok := data.labelKeyedStringMap[varName]; ok {
+				return v, nil
+			}
+			return nil, fmt.Errorf("unknown var %q", varName)
+		},
 		StringFor: func(varName string) (string, error) {
 			if v, ok := data.strings[varName]; ok {
 				return v, nil

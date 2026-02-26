@@ -6,6 +6,7 @@ package schemas
 
 import (
 	"fmt"
+	"os"
 	"path"
 
 	"go.chromium.org/build/gong/gn/build/fs"
@@ -94,6 +95,9 @@ func rustExecutableResolver(name string, rsInputs []fs.SourceFile, ctx graph.Res
 		}
 	}
 
+	// Fetch aliased_deps if it exists, but ignore if it doesn't.
+	aliasedDeps, _ := ctx.LabelKeyedStringMapFor("aliased_deps")
+
 	var transitiveRlibs []fs.SourceFile
 	for dep, err := range ctx.ResolvedTargetsFor("deps") {
 		if err != nil {
@@ -102,6 +106,9 @@ func rustExecutableResolver(name string, rsInputs []fs.SourceFile, ctx graph.Res
 		if rustLib, ok := dep.Metadata.(RustLibraryMetadata); ok {
 			transitiveRlibs = append(transitiveRlibs, rustLib.OutputRlib)
 			transitiveRlibs = append(transitiveRlibs, rustLib.TransitiveRlibs...)
+		}
+		if alias, ok := aliasedDeps[dep.Label]; ok {
+			fmt.Fprintf(os.Stderr, "warning: alias not implemented yet. wanted to alias %s to %s\n", dep.Label.UserVisibleString(true), alias)
 		}
 	}
 

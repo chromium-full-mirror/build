@@ -7,13 +7,19 @@ package graph
 import (
 	"iter"
 
+	"go.chromium.org/build/gong/gn/build/environment"
 	"go.chromium.org/build/gong/gn/build/fs"
 )
 
 // ResolverContext provides context to a [ResolverFn], allowing only indirect access to underlying target data.
+//
+// TODO: this list of functions one for each type of variable is starting to look a bit silly.
 type ResolverContext struct {
 	// DeclareTool declares a tool call.
 	DeclareTool func(tool string, source fs.SourceFile, inputs []fs.SourceFile, outputName string) (fs.SourceFile, error)
+	// LabelKeyedStringMapFor returns the map of labels to strings for the variable, if it accepts
+	// a variable that is processed into a map of labels to strings.
+	LabelKeyedStringMapFor func(varName string) (map[environment.Label]string, error)
 	// StringFor returns the string for the variable, if it accepts strings.
 	StringFor func(varName string) (string, error)
 	// SourceFileFor returns the source file for the variable, if it accepts a file.
@@ -32,6 +38,7 @@ type ResolverFn = func(ResolverContext) (ResolutionMetadata, error)
 // may be relevant to targets waiting for this target to be resolved.
 type Resolution struct {
 	Actions  []RunToolAction
+	Label    environment.Label
 	Metadata ResolutionMetadata
 }
 

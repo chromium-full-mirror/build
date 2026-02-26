@@ -6,6 +6,7 @@ package resolve
 
 import (
 	"fmt"
+	"iter"
 	"strings"
 
 	"go.starlark.net/starlark"
@@ -60,6 +61,11 @@ func (v *ScopeValue) RawGNString() string {
 	}
 	sb.WriteString("}")
 	return sb.String()
+}
+
+// Values returns an iterator over the values in the current scope.
+func (v *ScopeValue) Values() iter.Seq2[string, Value] {
+	return v.scope.valuesInCurrentScope()
 }
 
 // starlark.Value interface.

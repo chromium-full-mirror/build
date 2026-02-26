@@ -122,10 +122,11 @@ var (
 		Summary: "Declare an executable target.",
 		Vars: map[string]graph.TargetVar{
 			// TODO: support more variables.
-			"sources": graph.FileListVar{},
-			"deps":    graph.LabelListVar{Expected: &graph.Target{}},
-			"configs": graph.LabelListVar{Expected: &graph.Config{}},
-			"outputs": graph.FileListVar{},
+			"sources":      graph.FileListVar{},
+			"deps":         graph.LabelListVar{Expected: &graph.Target{}},
+			"aliased_deps": graph.ScopeOfLabelsVar{Invert: true},
+			"configs":      graph.LabelListVar{Expected: &graph.Config{}},
+			"outputs":      graph.FileListVar{},
 		},
 		Resolver: func(ctx graph.ResolverContext) (graph.ResolutionMetadata, error) {
 			name, err := ctx.StringFor("name")
