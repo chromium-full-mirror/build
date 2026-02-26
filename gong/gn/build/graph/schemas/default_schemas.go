@@ -301,4 +301,22 @@ var (
 			"outputs": graph.FileListVar{},
 		},
 	}
+	GroupSchema = graph.Schema{
+		Name:    "group",
+		Summary: "Declare a named group of targets.",
+		Vars: map[string]graph.TargetVar{
+			// TODO: support more variables.
+			"deps": graph.LabelListVar{Expected: &graph.Target{}},
+		},
+		Resolver: func(ctx graph.ResolverContext) (graph.ResolutionMetadata, error) {
+			var outputs []fs.SourceFile
+			for dep, err := range ctx.ResolvedTargetsFor("deps") {
+				if err != nil {
+					return nil, err
+				}
+				outputs = append(outputs, dep.Metadata.Outputs()...)
+			}
+			return DefaultMetadata{OutputFiles: outputs}, nil
+		},
+	}
 )
