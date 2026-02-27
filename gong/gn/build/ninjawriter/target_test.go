@@ -15,6 +15,7 @@ import (
 )
 
 func mustFile(t *testing.T, s string) fs.SourceFile {
+	t.Helper()
 	f, err := fs.MakeSourceFile(s)
 	if err != nil {
 		t.Fatal(err)
@@ -33,20 +34,21 @@ func TestWriteTarget(t *testing.T) {
 			actions: []graph.RunToolAction{
 				{
 					Tool:   "cxx",
-					Inputs: []fs.SourceFile{mustFile(t, "//src/main.cc")},
-					Output: mustFile(t, "//obj/src/main.o"),
+					Source: mustFile(t, "//base/main.cc"),
+					Inputs: []fs.SourceFile{mustFile(t, "//base/main.cc")},
+					Output: mustFile(t, "//out/Default/obj/base/main.o"),
 				},
 				{
 					Tool: "link",
 					Inputs: []fs.SourceFile{
-						mustFile(t, "//obj/src/main.o"),
-						mustFile(t, "//obj/src/libfoo.o"),
+						mustFile(t, "//out/Default/obj/base/main.o"),
+						mustFile(t, "//out/Default/obj/foo/libfoo.o"),
 					},
-					Output: mustFile(t, "//bin/app"),
+					Output: mustFile(t, "//out/Default/obj/base/app"),
 				},
 			},
-			want: `build FAKEPATH//obj/src/main.o: cxx FAKEPATH//src/main.cc
-build FAKEPATH//bin/app: link FAKEPATH//obj/src/main.o FAKEPATH//obj/src/libfoo.o
+			want: `build obj/base/main.o: cxx ../../base/main.cc
+build obj/base/app: link obj/base/main.o obj/foo/libfoo.o
 `,
 		},
 		{
@@ -57,13 +59,12 @@ build FAKEPATH//bin/app: link FAKEPATH//obj/src/main.o FAKEPATH//obj/src/libfoo.
 					Source: mustFile(t, "//src/lib.rs"),
 					Inputs: []fs.SourceFile{
 						mustFile(t, "//src/lib.rs"),
-						mustFile(t, "//obj/other_dep.rlib"),
-						mustFile(t, "//obj/transitive_dep.rlib"),
+						mustFile(t, "//out/Default/obj/other_dep.rlib"),
 					},
-					Output: mustFile(t, "//obj/libfoo.rlib"),
+					Output: mustFile(t, "//out/Default/obj/libfoo.rlib"),
 				},
 			},
-			want: `build FAKEPATH//obj/libfoo.rlib: rust_rlib FAKEPATH//src/lib.rs | FAKEPATH//obj/other_dep.rlib FAKEPATH//obj/transitive_dep.rlib
+			want: `build obj/libfoo.rlib: rust_rlib ../../src/lib.rs | obj/other_dep.rlib
 `,
 		},
 	}
@@ -77,7 +78,7 @@ build FAKEPATH//bin/app: link FAKEPATH//obj/src/main.o FAKEPATH//obj/src/libfoo.
 			}
 
 			var sb strings.Builder
-			if err := WriteTarget(&sb, target); err != nil {
+			if err := WriteTarget(&sb, target, mustDir(t, "//out/Default/")); err != nil {
 				t.Fatalf("WriteTarget()=%v; want nil err", err)
 			}
 
