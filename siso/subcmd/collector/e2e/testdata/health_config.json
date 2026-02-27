@@ -44,7 +44,6 @@
       "sending_queue": {
         "batch": null,
         "block_on_overflow": false,
-        "enabled": true,
         "num_consumers": 10,
         "queue_size": 1000,
         "sizer": {},
@@ -90,6 +89,7 @@
           "path": "/health/status"
         },
         "tls": null,
+        "transport": "tcp",
         "write_timeout": 0
       },
       "idle_timeout": 0,
@@ -97,6 +97,7 @@
       "read_header_timeout": 0,
       "response_body": null,
       "tls": null,
+      "transport": "tcp",
       "use_v2": true,
       "write_timeout": 0
     }
