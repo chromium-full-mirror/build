@@ -140,7 +140,7 @@ func (c *depsCommand) run(ctx context.Context, args []string) error {
 		c.fsopt.StateFile = filepath.Join(c.stateDir, c.fsopt.StateFile)
 	}
 	depsLogFile := filepath.Join(c.stateDir, c.depsLogFile)
-	depsLog, err := ninjautil.NewDepsLog(ctx, depsLogFile)
+	depsLog, err := ninjabuild.NewDepsLog(ctx, depsLogFile)
 	if err != nil {
 		return err
 	}
@@ -211,7 +211,7 @@ func (c *depsCommand) run(ctx context.Context, args []string) error {
 	return w.Flush()
 }
 
-func lookupDeps(ctx context.Context, state *ninjautil.State, hashFS *hashfs.HashFS, depsLog *ninjautil.DepsLog, bpath *build.Path, target string) (string, []string, time.Time, ninjabuild.DepsLogState, error) {
+func lookupDeps(ctx context.Context, state *ninjautil.State, hashFS *hashfs.HashFS, depsLog *ninjabuild.DepsLog, bpath *build.Path, target string) (string, []string, time.Time, ninjabuild.DepsLogState, error) {
 	var depState ninjabuild.DepsLogState
 	deps, depsTime, err := depsLog.RetrievePaths(ctx, target)
 	if err == nil {

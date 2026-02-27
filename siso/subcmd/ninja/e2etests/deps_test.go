@@ -32,7 +32,7 @@ func TestBuild_Deps_Incremental(t *testing.T) {
 	depfileDeps := []string{"../../base/foo.cc", "../../base/foo.h"}
 
 	checkDeps := func() (err error) {
-		depsLog, err := ninjautil.NewDepsLog(ctx, filepath.Join(dir, "out/siso/.siso_deps"))
+		depsLog, err := ninjabuild.NewDepsLog(ctx, filepath.Join(dir, "out/siso/.siso_deps"))
 		if err != nil {
 			return fmt.Errorf("NewDepsLog: %w", err)
 		}
@@ -238,7 +238,7 @@ func TestBuild_Deps_Stale(t *testing.T) {
 	gccDeps := []string{"../../base/foo.cc", "../../base/foo.h"}
 
 	checkDeps := func() (err error) {
-		depsLog, err := ninjautil.NewDepsLog(ctx, filepath.Join(dir, "out/siso/.siso_deps"))
+		depsLog, err := ninjabuild.NewDepsLog(ctx, filepath.Join(dir, "out/siso/.siso_deps"))
 		if err != nil {
 			return fmt.Errorf("NewDepsLog: %w", err)
 		}

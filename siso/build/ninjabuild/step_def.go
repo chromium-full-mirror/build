@@ -29,7 +29,6 @@ import (
 
 	"go.chromium.org/build/siso/build"
 	"go.chromium.org/build/siso/execute"
-	"go.chromium.org/build/siso/hashfs"
 	"go.chromium.org/build/siso/o11y/clog"
 	"go.chromium.org/build/siso/o11y/trace"
 	"go.chromium.org/build/siso/toolsupport/cmdutil"
@@ -448,43 +447,6 @@ func (s *StepDef) DepInputs(ctx context.Context) (iter.Seq[string], error) {
 		s.deps, s.deperr = depInputs(ctx, s)
 	}
 	return s.deps, s.deperr
-}
-
-// DepsLogState is a state of deps log entry.
-type DepsLogState int
-
-const (
-	DepsLogUnknown DepsLogState = iota
-	DepsLogStale
-	DepsLogValid
-)
-
-func (s DepsLogState) String() string {
-	switch s {
-	case DepsLogUnknown:
-		return "UNKNOWN"
-	case DepsLogStale:
-		return "STALE"
-	case DepsLogValid:
-		return "VALID"
-	}
-	return fmt.Sprintf("DepsLogState[%d]", int(s))
-}
-
-func (s DepsLogState) MarshalJSON() ([]byte, error) {
-	return json.Marshal(s.String())
-}
-
-// CheckDepsLogState checks deps log state by its output file.
-func CheckDepsLogState(ctx context.Context, hashFS *hashfs.HashFS, bpath *build.Path, target string, depsTime time.Time) (DepsLogState, string) {
-	fi, err := hashFS.Stat(ctx, bpath.ExecRoot, bpath.MaybeFromWD(ctx, target))
-	if err != nil {
-		return DepsLogStale, fmt.Sprintf("not found deps output %q: %v", target, err)
-	}
-	if fi.ModTime().After(depsTime) {
-		return DepsLogStale, fmt.Sprintf("output mtime %q: fs=%v depslog=%v", target, fi.ModTime(), depsTime)
-	}
-	return DepsLogValid, ""
 }
 
 type depsPath struct {

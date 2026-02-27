@@ -15,7 +15,6 @@ import (
 	"go.chromium.org/build/siso/build"
 	"go.chromium.org/build/siso/build/buildconfig"
 	"go.chromium.org/build/siso/hashfs"
-	"go.chromium.org/build/siso/toolsupport/ninjautil"
 )
 
 func TestTargets(t *testing.T) {
@@ -78,7 +77,7 @@ build all: phony exe
 	if err != nil {
 		t.Fatal(err)
 	}
-	depsLog, err := ninjautil.NewDepsLog(ctx, ".siso_deps")
+	depsLog, err := NewDepsLog(ctx, ".siso_deps")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -53,7 +53,7 @@ func (b BuildError) Error() string {
 // for build.ninja in main build.ninja file.
 // Even if this assumption failed e.g. soong doesn't have such build rule,
 // Run will rebuild manifest after reading all build.ninja files.
-func CheckManifest(ctx context.Context, filename string, buildPath *build.Path, config *buildconfig.Config, hashFS *hashfs.HashFS, localDepsLog *ninjautil.DepsLog, bopts build.Options) error {
+func CheckManifest(ctx context.Context, filename string, buildPath *build.Path, config *buildconfig.Config, hashFS *hashfs.HashFS, localDepsLog *DepsLog, bopts build.Options) error {
 	started := time.Now()
 	defer func() {
 		ui.Default.PrintLines("")

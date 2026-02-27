@@ -40,7 +40,7 @@ type globals struct {
 
 	path    *build.Path
 	hashFS  *hashfs.HashFS
-	depsLog *ninjautil.DepsLog
+	depsLog *DepsLog
 
 	buildConfig *buildconfig.Config
 	stepConfig  *StepConfig
@@ -199,7 +199,7 @@ func Load(ctx context.Context, fname string, buildPath *build.Path) (*ninjautil.
 }
 
 // NewGraph creates new Graph from fname (usually "build.ninja") with stepConfig.
-func NewGraph(ctx context.Context, fname string, nstate *ninjautil.State, config *buildconfig.Config, p *build.Path, hashFS *hashfs.HashFS, stepConfig *StepConfig, depsLog *ninjautil.DepsLog) *Graph {
+func NewGraph(ctx context.Context, fname string, nstate *ninjautil.State, config *buildconfig.Config, p *build.Path, hashFS *hashfs.HashFS, stepConfig *StepConfig, depsLog *DepsLog) *Graph {
 	graph := &Graph{
 		fname: fname,
 

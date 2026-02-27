@@ -31,7 +31,6 @@ import (
 	"go.chromium.org/build/siso/o11y/trace"
 	"go.chromium.org/build/siso/reapi"
 	"go.chromium.org/build/siso/sync/lockfile"
-	"go.chromium.org/build/siso/toolsupport/ninjautil"
 	"go.chromium.org/build/siso/toolsupport/watchmanutil"
 	"go.chromium.org/build/siso/ui"
 )
@@ -398,24 +397,16 @@ func (c *Command) enableOfflineMode(ctx context.Context) {
 
 // initDepsLog loads the dependency log file (`.siso_deps`).
 // It will recompact the log if necessary.
-func initDepsLog(ctx context.Context, stateDir string, depsLogFile string) (*ninjautil.DepsLog, error) {
+func initDepsLog(ctx context.Context, stateDir string, depsLogFile string) (*ninjabuild.DepsLog, error) {
 	depsLogPath := filepath.Join(stateDir, depsLogFile)
 	err := os.MkdirAll(filepath.Dir(depsLogPath), 0755)
 	if err != nil {
 		clog.Warningf(ctx, "failed to mkdir for deps log: %v", err)
 		return nil, err
 	}
-	depsLog, err := ninjautil.NewDepsLog(ctx, depsLogPath)
+	depsLog, err := ninjabuild.NewDepsLog(ctx, depsLogPath)
 	if err != nil {
 		clog.Warningf(ctx, "failed to load deps log: %v", err)
-		return nil, err
-	}
-	if !depsLog.NeedsRecompact() {
-		return depsLog, nil
-	}
-	err = depsLog.Recompact(ctx)
-	if err != nil {
-		clog.Warningf(ctx, "failed to recompact deps log: %v", err)
 		return nil, err
 	}
 	return depsLog, nil

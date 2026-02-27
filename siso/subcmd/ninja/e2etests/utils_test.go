@@ -19,7 +19,6 @@ import (
 	"go.chromium.org/build/siso/build/buildconfig"
 	"go.chromium.org/build/siso/build/ninjabuild"
 	"go.chromium.org/build/siso/hashfs"
-	"go.chromium.org/build/siso/toolsupport/ninjautil"
 )
 
 // tempDir returns real path of temp dir.
@@ -212,7 +211,7 @@ func setupBuild(ctx context.Context, t *testing.T, dir string, fsopt hashfs.Opti
 		t.Fatal(err)
 	}
 	path := build.NewPath(dir, "out/siso")
-	depsLog, err := ninjautil.NewDepsLog(ctx, ".siso_deps")
+	depsLog, err := ninjabuild.NewDepsLog(ctx, ".siso_deps")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -265,7 +264,7 @@ func setupBuild(ctx context.Context, t *testing.T, dir string, fsopt hashfs.Opti
 	}
 }
 
-func openDepsLog(ctx context.Context, t *testing.T, dir string) (*ninjautil.DepsLog, func()) {
+func openDepsLog(ctx context.Context, t *testing.T, dir string) (*ninjabuild.DepsLog, func()) {
 	t.Helper()
 	var cleanups []func()
 
@@ -286,7 +285,7 @@ func openDepsLog(ctx context.Context, t *testing.T, dir string) (*ninjautil.Deps
 		t.Fatal(err)
 	}
 
-	depsLog, err := ninjautil.NewDepsLog(ctx, ".siso_deps")
+	depsLog, err := ninjabuild.NewDepsLog(ctx, ".siso_deps")
 	if err != nil {
 		t.Fatal(err)
 	}

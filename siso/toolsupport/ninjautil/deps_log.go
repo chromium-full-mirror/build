@@ -289,7 +289,7 @@ readLoop:
 	return depsLog, nil
 }
 
-// Reset resets deps log, so recorded entries is available for Get.
+// Reset resets deps log, so recorded entries is available for RetrievePaths/IDs.
 func (d *DepsLog) Reset() {
 	d.mu.Lock()
 	d.rPaths = d.paths

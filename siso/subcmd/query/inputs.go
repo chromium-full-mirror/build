@@ -82,10 +82,10 @@ func (c *inputsCommand) run(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	var depsLog *ninjautil.DepsLog
+	var depsLog *ninjabuild.DepsLog
 	if c.includeDeps {
 		depsLogFile := filepath.Join(c.stateDir, c.depsLogFile)
-		depsLog, err = ninjautil.NewDepsLog(ctx, depsLogFile)
+		depsLog, err = ninjabuild.NewDepsLog(ctx, depsLogFile)
 		if err != nil {
 			return fmt.Errorf("failed to load deps log: %w\nYou would need to build once?", err)
 		}
@@ -127,7 +127,7 @@ func (c *inputsCommand) run(ctx context.Context, args []string) error {
 
 type inputsGraph struct {
 	state   *ninjautil.State
-	depsLog *ninjautil.DepsLog
+	depsLog *ninjabuild.DepsLog
 	seen    map[string]bool
 }
 

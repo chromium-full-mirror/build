@@ -34,7 +34,6 @@ import (
 	"go.chromium.org/build/siso/signals"
 	"go.chromium.org/build/siso/toolsupport/artfsutil"
 	"go.chromium.org/build/siso/toolsupport/cogutil"
-	"go.chromium.org/build/siso/toolsupport/ninjautil"
 	"go.chromium.org/build/siso/toolsupport/soongutil"
 	"go.chromium.org/build/siso/ui"
 )
@@ -384,7 +383,7 @@ func (c *Command) Run(ctx context.Context) (stats build.Stats, finalErr error) {
 	}
 
 	var eg errgroup.Group
-	var localDepsLog *ninjautil.DepsLog
+	var localDepsLog *ninjabuild.DepsLog
 	eg.Go(func() error {
 		depsLog, err := initDepsLog(ctx, c.stateDir, c.depsLogFile)
 		if err != nil {

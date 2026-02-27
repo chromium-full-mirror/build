@@ -21,7 +21,6 @@ import (
 	"go.chromium.org/build/siso/execute/reproxyexec/reproxytest"
 	"go.chromium.org/build/siso/hashfs"
 	"go.chromium.org/build/siso/reapi"
-	"go.chromium.org/build/siso/toolsupport/ninjautil"
 )
 
 func TestBuild_DepsMSVC(t *testing.T) {
@@ -357,7 +356,7 @@ func TestBuild_DepsMSVC_InstallerRC(t *testing.T) {
 
 	deps := func(t *testing.T, output string) []string {
 		t.Helper()
-		depsLog, err := ninjautil.NewDepsLog(ctx, filepath.Join(dir, "out/siso/.siso_deps"))
+		depsLog, err := ninjabuild.NewDepsLog(ctx, filepath.Join(dir, "out/siso/.siso_deps"))
 		if err != nil {
 			t.Fatal(err)
 		}
