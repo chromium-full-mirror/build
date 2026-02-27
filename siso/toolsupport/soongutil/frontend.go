@@ -5,6 +5,7 @@
 package soongutil
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -118,12 +119,28 @@ func (f *Frontend) BuildActionStarted(step *build.Step) {
 
 // BuildActionFinished is called when build action finished.
 func (f *Frontend) BuildActionFinished(step *build.Step) {
+	// use stdout/stderr instead of OutputResult for Output,
+	// since soong also outputs command line, exit code etc.
+	// b/487012218
+	var sb strings.Builder
+	if stdout := step.Stdout(); len(stdout) > 0 {
+		fmt.Fprintf(&sb, "stdout:\n%s", stdout)
+		if !bytes.HasSuffix(stdout, []byte{'\n'}) {
+			sb.WriteByte('\n')
+		}
+	}
+	if stderr := step.Stderr(); len(stderr) > 0 {
+		fmt.Fprintf(&sb, "stderr:\n%s", stderr)
+		if !bytes.HasSuffix(stderr, []byte{'\n'}) {
+			sb.WriteByte('\n')
+		}
+	}
 	m := &pb.Status{
 		EdgeFinished: &pb.Status_EdgeFinished{
 			Id:      proto.Uint32(uint32(step.IDNum())),
 			EndTime: proto.Uint32(uint32(time.Since(f.startTime).Milliseconds())),
 			Status:  proto.Int32(step.ExitCode()),
-			Output:  proto.String(step.OutputResult()),
+			Output:  proto.String(sb.String()),
 			// TODO: pass more info?
 		},
 	}
