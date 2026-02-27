@@ -1242,7 +1242,7 @@ func (c *Cmd) SetOutputResult(msg string) {
 	c.outputResult = msg
 }
 
-// SetOutputResult sets output result.
+// OutputResult gets output result.
 func (c *Cmd) OutputResult() string {
 	return c.outputResult
 }
