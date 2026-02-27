@@ -42,8 +42,7 @@ func cExecutableResolver(name string, cInputs []fs.SourceFile, ctx graph.Resolve
 		}
 		for _, depOutput := range dep.Metadata.Outputs() {
 			switch path.Ext(depOutput.Filename()) {
-			case ".a":
-			case ".so":
+			case ".a", ".so":
 				linkInputs = append(linkInputs, depOutput)
 			default:
 				// TODO: check for other dep input types.

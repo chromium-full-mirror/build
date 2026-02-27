@@ -29,7 +29,7 @@ func TestExecutableSchema_Resolver(t *testing.T) {
 		wantErr   any
 	}{
 		{
-			name: "simple",
+			name: "cxxsimple",
 			ctx: fakeResolverContext(fakeResolverData{
 				strings: map[string]string{
 					"name": "foo",
@@ -67,13 +67,48 @@ func TestExecutableSchema_Resolver(t *testing.T) {
 					Source: fs.SourceFile{},
 					Inputs: []fs.SourceFile{
 						mustSourceFile(t, "//out/obj/foo.main.cc.o"),
+						mustSourceFile(t, "//out/obj/libbar.a"),
 					},
 					OutputName: "foo",
 				},
 			},
 		},
 		{
-			name: "rust",
+			name: "cxxnosources",
+			ctx: fakeResolverContext(fakeResolverData{
+				strings: map[string]string{
+					"name": "foo",
+				},
+				resolvedDeps: []graph.Resolution{
+					{
+						Metadata: DefaultMetadata{
+							OutputFiles: []fs.SourceFile{
+								mustSourceFile(t, "//out/obj/libbar.a"),
+								mustSourceFile(t, "//out/obj/libbaz.a"),
+							},
+						},
+					},
+				},
+			}),
+			want: DefaultMetadata{
+				OutputFiles: []fs.SourceFile{
+					mustSourceFile(t, "//out/obj/foo"),
+				},
+			},
+			wantTools: []gotToolCall{
+				{
+					Tool:   "link",
+					Source: fs.SourceFile{},
+					Inputs: []fs.SourceFile{
+						mustSourceFile(t, "//out/obj/libbar.a"),
+						mustSourceFile(t, "//out/obj/libbaz.a"),
+					},
+					OutputName: "foo",
+				},
+			},
+		},
+		{
+			name: "rustsimple",
 			ctx: fakeResolverContext(fakeResolverData{
 				strings: map[string]string{
 					"name":       "foo_app",
@@ -108,6 +143,44 @@ func TestExecutableSchema_Resolver(t *testing.T) {
 					Inputs: []fs.SourceFile{
 						mustSourceFile(t, "//src/main.rs"),
 						mustSourceFile(t, "//src/util.rs"),
+						mustSourceFile(t, "//out/obj/libbar.rlib"),
+						mustSourceFile(t, "//out/obj/libbaz.rlib"),
+					},
+					OutputName: "foo_crate",
+				},
+			},
+		},
+		{
+			name: "rustnosource",
+			ctx: fakeResolverContext(fakeResolverData{
+				strings: map[string]string{
+					"name":       "foo_app",
+					"crate_name": "foo_crate",
+				},
+				sourceFiles: map[string]fs.SourceFile{
+					"crate_root": mustSourceFile(t, "//src/foo_root.rs"),
+				},
+				resolvedDeps: []graph.Resolution{
+					{
+						Metadata: RustLibraryMetadata{
+							OutputRlib: mustSourceFile(t, "//out/obj/libbar.rlib"),
+							TransitiveRlibs: []fs.SourceFile{
+								mustSourceFile(t, "//out/obj/libbaz.rlib"),
+							},
+						},
+					},
+				},
+			}),
+			want: DefaultMetadata{
+				OutputFiles: []fs.SourceFile{
+					mustSourceFile(t, "//out/obj/foo_crate"),
+				},
+			},
+			wantTools: []gotToolCall{
+				{
+					Tool:   "rust_bin",
+					Source: mustSourceFile(t, "//src/foo_root.rs"),
+					Inputs: []fs.SourceFile{
 						mustSourceFile(t, "//out/obj/libbar.rlib"),
 						mustSourceFile(t, "//out/obj/libbaz.rlib"),
 					},

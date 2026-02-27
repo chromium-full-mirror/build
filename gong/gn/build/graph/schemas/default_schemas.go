@@ -135,19 +135,26 @@ var (
 			}
 			targetCategory := binaryUncategorized
 			var inputs []fs.SourceFile
-			for source := range ctx.SourceFilesFor("sources") {
+			for source, err := range ctx.SourceFilesFor("sources") {
+				if err != nil {
+					// TODO: ctx.SourceFilesFor might need to be (iter.Seq2[fs.SourceFile, error], error)
+					// or just return nil iterator if "sources" doesn't exist.
+					// Otherwise, can't easily distinguish between failure iterating next sourcefile and
+					// error because "sources" doesn't exist.
+					break
+				}
 				sourceName := source.Filename()
 				sourceType, category := fileTypeCategory(source.Filename())
-				if targetCategory == binaryUncategorized {
-					targetCategory = category
-				} else if targetCategory != category {
-					return nil, BinaryMixedSourcesError{}
-				}
 				if sourceType == sourceUnknown {
 					return nil, BinaryInvalidSourceError{
 						targetName: "executable",
 						sourceName: sourceName,
 					}
+				}
+				if targetCategory == binaryUncategorized {
+					targetCategory = category
+				} else if targetCategory != category {
+					return nil, BinaryMixedSourcesError{}
 				}
 				inputs = append(inputs, source)
 			}
@@ -156,6 +163,14 @@ var (
 				return cExecutableResolver(name, inputs, ctx)
 			case binaryRust:
 				return rustExecutableResolver(name, inputs, ctx)
+			case binaryUncategorized:
+				if _, err := ctx.SourceFileFor("crate_root"); err == nil {
+					// For Rust targets, if the only source file is the root `sources` can be
+					// omitted/empty.
+					return rustExecutableResolver(name, inputs, ctx)
+				}
+				// Targets without sources are otherwise treated as C/C++.
+				return cExecutableResolver(name, inputs, ctx)
 			}
 			return nil, NotImplementedError{
 				what: "support for executables other than c and rust",

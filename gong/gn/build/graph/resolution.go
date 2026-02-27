@@ -25,6 +25,10 @@ type ResolverContext struct {
 	// SourceFileFor returns the source file for the variable, if it accepts a file.
 	SourceFileFor func(varName string) (fs.SourceFile, error)
 	// SourceFilesFor returns an iterator over source files for the variable, if it accepts file lists.
+	// TODO: maybe should be (iter.Seq2[fs.SourceFile, error], error)
+	// or just return nil iterator if varName doesn't exist?
+	// Otherwise, can't easily distinguish between failure iterating next sourcefile and
+	// error because varName doesn't exist.
 	SourceFilesFor func(varName string) iter.Seq2[fs.SourceFile, error]
 	// ResolvedTargetsFor returns an iterator over resolutions for the variable, if it accepts target lists.
 	ResolvedTargetsFor func(varName string) iter.Seq2[Resolution, error]
