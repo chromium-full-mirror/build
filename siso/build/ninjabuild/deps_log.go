@@ -50,7 +50,9 @@ func CheckDepsLogState(ctx context.Context, hashFS *hashfs.HashFS, bpath *build.
 		return DepsLogStale, fmt.Sprintf("not found deps output %q: %v", target, err)
 	}
 	if fi.ModTime().After(depsTime) {
-		return DepsLogStale, fmt.Sprintf("output mtime %q: fs=%v depslog=%v", target, fi.ModTime(), depsTime)
+		return DepsLogStale, fmt.Sprintf("output mtime %q newer than log: fs=%v depslog=%v", target, fi.ModTime(), depsTime)
+	} else if fi.ModTime().Before(depsTime) {
+		return DepsLogStale, fmt.Sprintf("output mtime %q older than log: fs=%v depslog=%v", target, fi.ModTime(), depsTime)
 	}
 	return DepsLogValid, ""
 }
