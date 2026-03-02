@@ -308,29 +308,38 @@ func (s *WebuiServer) renderBuildViewError(status int, message string, w http.Re
 	}
 }
 
-// NewServer inits a webui server.
-func NewServer(ctx context.Context, version string, localDevelopment bool, port int, ninjaDir ninjabuild.DirFlag, manifestPath string) (*WebuiServer, error) {
+// ServerConfig holds configuration for NewServer.
+type ServerConfig struct {
+	Version          string
+	LocalDevelopment bool
+	Port             int
+	NinjaDir         ninjabuild.DirFlag
+	ManifestPath     string
+}
 
-	_, execRoot, dir, err := ninjabuild.InitDir(ctx, ninjaDir)
+// NewServer inits a webui server.
+func NewServer(ctx context.Context, cfg ServerConfig) (*WebuiServer, error) {
+
+	_, execRoot, dir, err := ninjabuild.InitDir(ctx, cfg.NinjaDir)
 	if err != nil {
 		return nil, &ErrExecrootNotExist{err}
 	}
 	s := WebuiServer{
-		sisoVersion:      version,
-		localDevelopment: localDevelopment,
+		sisoVersion:      cfg.Version,
+		localDevelopment: cfg.LocalDevelopment,
 		staticFS:         fs.FS(content),
 		sseServer:        newSseServer(),
 		execRoot:         execRoot,
 		defaultOutdir:    dir,
 		outdirMetrics:    make(map[string]*outdirInfo),
-		port:             port,
+		port:             cfg.Port,
 	}
-	if localDevelopment {
+	if cfg.LocalDevelopment {
 		s.staticFS = os.DirFS("webui/")
 	}
 
 	// Preload default outdir.
-	defaultOutdirInfo, err := loadOutdirInfo(execRoot, dir, manifestPath)
+	defaultOutdirInfo, err := loadOutdirInfo(execRoot, dir, cfg.ManifestPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to preload outdir: %w", err)
 	}

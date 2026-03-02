@@ -56,7 +56,13 @@ func (c *Command) SetFlags(flagSet *flag.FlagSet) {
 }
 
 func (c *Command) Execute(ctx context.Context, flagSet *flag.FlagSet, _ ...any) subcommands.ExitStatus {
-	s, err := webui.NewServer(ctx, c.version, c.localDevelopment, c.port, c.ninjaDir, c.fname)
+	s, err := webui.NewServer(ctx, webui.ServerConfig{
+		Version:          c.version,
+		LocalDevelopment: c.localDevelopment,
+		Port:             c.port,
+		NinjaDir:         c.ninjaDir,
+		ManifestPath:     c.fname,
+	})
 	if err != nil {
 		var execrootNotExist *webui.ErrExecrootNotExist
 		var manifestNotExist *webui.ErrManifestNotExist
