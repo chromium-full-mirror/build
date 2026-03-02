@@ -193,3 +193,9 @@ func (d SourceDir) WithNoTrailingSlash() string {
 	}
 	return path
 }
+
+// Resolve resolves this source file relative to some given source root.
+// (This does not have to be the source root of the build tree.)
+func (s SourceDir) Resolve(sourceRoot string) string {
+	return ResolvePath(s.Path(), sourceRoot)
+}

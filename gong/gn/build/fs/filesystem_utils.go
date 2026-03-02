@@ -6,6 +6,7 @@ package fs
 
 import (
 	"fmt"
+	"path"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -165,6 +166,16 @@ func RebasePath(input string, destDir SourceDir, sourceRoot string) (string, err
 		ret += "/"
 	}
 	return ret, nil
+}
+
+// ResolvePath resolves source file or directory relative to some given source root.
+// (This does not have to be the source root of the build tree.)
+func ResolvePath(input, sourceRoot string) string {
+	if !IsPathSourceAbsolute(input) {
+		// TODO: handle windows properly like ResolvePath in filesystem_utils.cc does
+		return input
+	}
+	return filepath.ToSlash(path.Join(sourceRoot, strings.TrimPrefix(input, "//")))
 }
 
 // DirectoryWithNoLastSlash prepares a directory path string with its last

@@ -202,8 +202,6 @@ func (s *Setup) FillSourceDir(flags *gn.CommonFlags) error {
 }
 
 func (s *Setup) fillBuildDir(buildDir string) error {
-	// TODO: finish this port i.e. need to actually create the builddir
-
 	// Figure out where the user is right now, relative to the source root.
 	var currentContext fs.SourceDir
 	wd, err := os.Getwd()
@@ -217,9 +215,28 @@ func (s *Setup) fillBuildDir(buildDir string) error {
 
 	// This lets us resolve the build dir they specify relative to their wd.
 	// e.g. if they're in //foo/bar then we can resolve ../../out/Default correctly.
+	// However, at this point symlinks have not been evaluated.
 	resolved, err := currentContext.ResolveRelativeDir(buildDir)
 	if err != nil {
 		return fmt.Errorf("failed to resolve build dir from wd: %w", err)
+	}
+
+	// Create the build dir.
+	buildDirAbs := resolved.Resolve(s.buildSettings.RootPath)
+	if err := os.MkdirAll(buildDirAbs, 0755); err != nil {
+		return fmt.Errorf("failed to create build directory: %w", err)
+	}
+
+	// Now that it's created, evaluate symlinks to get the real path.
+	buildDirReal, err := filepath.EvalSymlinks(buildDirAbs)
+	if err != nil {
+		return fmt.Errorf("failed to get real build dir path: %w", err)
+	}
+
+	// Reevaluate the SourceDir from the real path.
+	resolved, err = fs.MakeSourceDirFromPath(s.buildSettings.RootPath, buildDirReal)
+	if err != nil {
+		return fmt.Errorf("failed to make SourceDir from real build dir path: %w", err)
 	}
 
 	s.buildSettings.BuildDir = resolved

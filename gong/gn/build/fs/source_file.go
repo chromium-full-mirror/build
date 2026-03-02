@@ -7,7 +7,6 @@ package fs
 import (
 	"fmt"
 	"path"
-	"path/filepath"
 	"strings"
 	"unique"
 )
@@ -67,9 +66,5 @@ func (s SourceFile) Dir() SourceDir {
 // Resolve resolves this source file relative to some given source root.
 // (This does not have to be the source root of the build tree.)
 func (s SourceFile) Resolve(sourceRoot string) string {
-	if !IsPathSourceAbsolute(s.Filename()) {
-		// TODO: handle windows properly like ResolvePath in filesystem_utils.cc does
-		return s.Filename()
-	}
-	return filepath.ToSlash(path.Join(sourceRoot, strings.TrimPrefix(s.Filename(), "//")))
+	return ResolvePath(s.Filename(), sourceRoot)
 }
