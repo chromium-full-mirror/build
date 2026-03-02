@@ -5,8 +5,10 @@
 package e2e
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"go/version"
 	"io"
 	"net/http"
 	"os"
@@ -44,6 +46,11 @@ func buildSiso(t *testing.T) string {
 	}
 
 	buildCmd := exec.Command("go", "build", "-o", sisoBin, "go.chromium.org/build/siso")
+	if runtime.GOOS == "darwin" && version.Compare(runtime.Version(), "go1.26") >= 0 {
+		// Disable greenteagc to pass check in siso binary on mac.
+		// See https://github.com/golang/go/issues/77824
+		buildCmd.Env = append(os.Environ(), "GOEXPERIMENT=nogreenteagc")
+	}
 
 	out, err := buildCmd.CombinedOutput()
 	if err != nil {
@@ -124,6 +131,10 @@ func startCollector(t *testing.T, sisoBin, collectorAddr string, extraPorts ...s
 	)
 	cmd.Env = append(os.Environ(), "SISO_CREDENTIAL_HELPER=mTLS")
 
+	var buf bytes.Buffer
+	cmd.Stdout = &buf
+	cmd.Stderr = &buf
+
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("failed to start collector: %v", err)
 	}
@@ -131,6 +142,9 @@ func startCollector(t *testing.T, sisoBin, collectorAddr string, extraPorts ...s
 	t.Cleanup(func() {
 		_ = cmd.Process.Kill()
 		_ = cmd.Wait()
+		if t.Failed() {
+			t.Logf("collector output:\n%s", buf.String())
+		}
 	})
 
 	baseURL := "http://localhost:" + healthPort

@@ -9,10 +9,12 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	goversion "go/version"
 	"net/http"
 	"os"
 	"os/signal"
 	"runtime"
+	"runtime/debug"
 	"runtime/pprof"
 	"runtime/trace"
 	"syscall"
@@ -59,6 +61,28 @@ const versionID = "v1.5.4"
 const versionStr = "siso " + versionID
 
 func main() {
+	if runtime.GOOS == "darwin" && goversion.Compare(runtime.Version(), "go1.26") >= 0 {
+		// If go1.26.0+ is used, check greenteagc is disabled.
+		// See https://github.com/golang/go/issues/77824
+		enableGreenTeaGC := true
+
+		if info, ok := debug.ReadBuildInfo(); ok {
+			for _, setting := range info.Settings {
+				if setting.Key == "GOEXPERIMENT" && setting.Value == "nogreenteagc" {
+					enableGreenTeaGC = false
+				}
+			}
+		} else {
+			fmt.Fprintf(os.Stderr, "failed to read build info\n")
+			os.Exit(1)
+		}
+
+		if enableGreenTeaGC {
+			fmt.Fprintf(os.Stderr, "siso must be built with GOEXPERIMENT=nogreenteagc on darwin when using go1.26.0 or later.\n")
+			os.Exit(1)
+		}
+	}
+
 	// Wraps sisoMain() because os.Exit() doesn't wait defers.
 	os.Exit(sisoMain())
 }
