@@ -9,6 +9,7 @@ import (
 	"io"
 	"strings"
 
+	"go.chromium.org/build/gong/gn/build/environment"
 	"go.chromium.org/build/gong/gn/build/fs"
 	"go.chromium.org/build/gong/gn/build/graph"
 )
@@ -21,12 +22,12 @@ import (
 // (To resolve this, one thing we need is for Builder to stop hardcoding target outdirs.
 // Instead some of that logic will likely need to move to this package. After all, where
 // outputs should go can be thought of as an implementation detail of ninjawriter.)
-func WriteTarget(w io.Writer, t *graph.Target, buildDir fs.SourceDir) error {
+func WriteTarget(w io.Writer, t *graph.Target, buildSettings *environment.BuildSettings) error {
 	for _, action := range t.Resolution.Actions {
 		var inputPaths []string
 		var implicitDeps []string
 		if !action.Source.IsZero() {
-			rebasedSource, err := fs.RebasePath(action.Source.Filename(), buildDir.Path())
+			rebasedSource, err := fs.RebasePath(action.Source.Filename(), buildSettings.BuildDir, buildSettings.RootPath)
 			if err != nil {
 				return err
 			}
@@ -35,7 +36,7 @@ func WriteTarget(w io.Writer, t *graph.Target, buildDir fs.SourceDir) error {
 				if in == action.Source {
 					continue
 				}
-				rebasedIn, err := fs.RebasePath(in.Filename(), buildDir.Path())
+				rebasedIn, err := fs.RebasePath(in.Filename(), buildSettings.BuildDir, buildSettings.RootPath)
 				if err != nil {
 					return err
 				}
@@ -43,7 +44,7 @@ func WriteTarget(w io.Writer, t *graph.Target, buildDir fs.SourceDir) error {
 			}
 		} else {
 			for _, in := range action.Inputs {
-				rebasedIn, err := fs.RebasePath(in.Filename(), buildDir.Path())
+				rebasedIn, err := fs.RebasePath(in.Filename(), buildSettings.BuildDir, buildSettings.RootPath)
 				if err != nil {
 					return err
 				}
@@ -51,7 +52,7 @@ func WriteTarget(w io.Writer, t *graph.Target, buildDir fs.SourceDir) error {
 			}
 		}
 
-		rebasedOutput, err := fs.RebasePath(action.Output.Filename(), buildDir.Path())
+		rebasedOutput, err := fs.RebasePath(action.Output.Filename(), buildSettings.BuildDir, buildSettings.RootPath)
 		if err != nil {
 			return err
 		}

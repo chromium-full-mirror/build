@@ -46,7 +46,7 @@ func TestRebasePathFunction(t *testing.T) {
 				resolve.NewOriginlessStringValue("//foo/bar/"),
 				resolve.NewOriginlessStringValue("//baz/"),
 			},
-			want: "../foo/bar",
+			want: "../foo/bar/",
 		},
 		{
 			name: "new_base is a file",
@@ -148,7 +148,7 @@ func TestRebasePathFunction(t *testing.T) {
 				resolve.NewOriginlessStringValue("//"),
 			},
 			curDir: mustDir(t, "//foo/"),
-			want:   "foo/sub/dir",
+			want:   "foo/sub/dir/",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

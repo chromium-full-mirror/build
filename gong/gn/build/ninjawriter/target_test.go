@@ -10,6 +10,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 
+	"go.chromium.org/build/gong/gn/build/environment"
 	"go.chromium.org/build/gong/gn/build/fs"
 	"go.chromium.org/build/gong/gn/build/graph"
 )
@@ -77,8 +78,14 @@ build obj/base/app: link obj/base/main.o obj/foo/libfoo.o
 				},
 			}
 
+			buildDir, _ := fs.MakeSourceDir("/my/builddir/out/Default")
+			bs := &environment.BuildSettings{
+				RootPath: "/my/builddir/",
+				BuildDir: buildDir,
+			}
+
 			var sb strings.Builder
-			if err := WriteTarget(&sb, target, mustDir(t, "//out/Default/")); err != nil {
+			if err := WriteTarget(&sb, target, bs); err != nil {
 				t.Fatalf("WriteTarget()=%v; want nil err", err)
 			}
 

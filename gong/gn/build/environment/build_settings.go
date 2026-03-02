@@ -17,7 +17,7 @@ import (
 type BuildSettings struct {
 	// DotfileName refers to the dotfile for this build.
 	DotfileName string
-	// rootPath is absolute path of the source root on the local system. Everything is
+	// RootPath is absolute path of the source root on the local system. Everything is
 	// relative to this. Does not end in a [back]slash.
 	//
 	// WARNING: Unlike C++ GN we assume UTF-8 can safely handle file paths.
@@ -26,7 +26,7 @@ type BuildSettings struct {
 	// because C++ GN attempts to use UTF-16 (char16_t) on Windows.
 	//
 	// TODO: Investigate if this causes problems?
-	rootPath string
+	RootPath string
 	// When nonempty, specifies a parallel directory higherarchy in which to
 	// search for buildfiles if they're not found in the root higherarchy. This
 	// allows us to keep buildfiles in a separate tree during development.
@@ -45,15 +45,10 @@ type BuildSettings struct {
 	BuildConfigFile fs.SourceFile
 }
 
-// SetRootPath sets the absolute path of the source root on the local system.
-func (bs *BuildSettings) SetRootPath(path string) {
-	bs.rootPath = filepath.ToSlash(path)
-}
-
 // FullPath returns the full absolute OS path corresponding to the given
 // file in the root source tree.
 func (bs *BuildSettings) FullPath(file fs.SourceFile) string {
-	return filepath.ToSlash(file.Resolve(bs.rootPath))
+	return filepath.ToSlash(file.Resolve(bs.RootPath))
 }
 
 // FullPathSecondary returns the absolute OS path inside the secondary

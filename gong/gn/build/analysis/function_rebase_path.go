@@ -171,7 +171,7 @@ func (rebasePathFunction) Run(scope *resolve.Scope, call *parse.FunctionCallNode
 			// TODO: scope knows curDir now, need to implement support for using it in this param.
 			fmt.Fprintf(os.Stderr, "warn: relative new_base in rebase_path is not correctly implemented yet. this will be treated as relative to //.\n")
 		}
-		rebased, err := fs.RebasePath(path, destDir.Path())
+		rebased, err := fs.RebasePath(path, destDir, ctx.settings.buildSettings.RootPath)
 		if err != nil {
 			return nil, err
 		}

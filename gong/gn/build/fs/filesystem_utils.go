@@ -105,23 +105,66 @@ func normalizePathWithSourceRoot(path, sourceRoot string, isWindows bool) string
 	return path
 }
 
-// RebasePath performs a subset of C++ GN's RebasePath utility function,
-// calculating the relative path from destDir to input only if both
-// paths are source-absolute (start with "//").
+// RebasePath takes a path, input, and makes it relative to the given
+// directory destDir. Both inputs may be source-relative (e.g. begins
+// with "//") or may be absolute.
 //
-// TODO: Add support for relative paths and system-absolute paths.
-func RebasePath(input, destDir string) (string, error) {
-	if IsPathSourceAbsolute(input) && IsPathSourceAbsolute(destDir) {
-		// Strip "//" prefix so we can use filepath.Rel.
-		inputRel := strings.TrimPrefix(input, "//")
-		destRel := strings.TrimPrefix(destDir, "//")
-		relPath, err := filepath.Rel(destRel, inputRel)
-		if err != nil {
-			return "", err
+// If supplied, the sourceRoot parameter is the absolute path to
+// the source root and not end in a slash. Unless you know that the
+// inputs are always source relative, this should be supplied.
+func RebasePath(input string, destDir SourceDir, sourceRoot string) (string, error) {
+	// Keep track of whether the input ends with a slash.
+	// This implementation defers to the inbuilt filepath.Clean to perform most of the
+	// work of cleaning paths, but it also strips trailing slashes which are used in GN
+	// to indicate something is a directory.
+	restoreTrailingSlash := endsWithSlash(input)
+	dest := destDir.Path()
+
+	if IsPathSourceAbsolute(input) && IsPathSourceAbsolute(dest) {
+		// If both paths are source-relative, we can just trim "//" and use filepath.Rel
+		// without needing to consider sourceRoot.
+		// (Especially needed on Windows as "//" may be interpreted as UNC network share.)
+		input = strings.TrimPrefix(input, "//")
+		dest = strings.TrimPrefix(dest, "//")
+	} else {
+		// Otherwise, one or both paths are absolute.
+		// To perform a relative comparison, if there's a source-relative path,
+		// make it absolute using sourceRoot.
+		if IsPathSourceAbsolute(input) {
+			if sourceRoot == "" {
+				return "", fmt.Errorf("can't rebase source-relative to absolute path without sourceRoot")
+			}
+			input = filepath.Join(sourceRoot, strings.TrimPrefix(input, "//"))
 		}
-		return filepath.ToSlash(filepath.Clean(relPath)), nil
+		if IsPathSourceAbsolute(dest) {
+			if sourceRoot == "" {
+				return "", fmt.Errorf("can't rebase absolute to source-relative path without sourceRoot")
+			}
+			dest = filepath.Join(sourceRoot, strings.TrimPrefix(dest, "//"))
+		}
 	}
-	return "", fmt.Errorf("got unsupported path combination for RebasePath: %q, %q", input, destDir)
+
+	// On Windows, SourceDir system-absolute paths start with /, e.g. "/C:/foo/bar".
+	if runtime.GOOS == "windows" {
+		if len(input) > 2 && input[2] == ':' {
+			input = input[1:]
+		}
+		if len(dest) > 2 && dest[2] == ':' {
+			dest = dest[1:]
+		}
+	}
+
+	relPath, err := filepath.Rel(dest, input)
+	if err != nil {
+		// TODO: Handle cross-drive relative paths on windows.
+		return "", err
+	}
+
+	ret := filepath.ToSlash(filepath.Clean(relPath))
+	if restoreTrailingSlash && ret != "." && !endsWithSlash(ret) {
+		ret += "/"
+	}
+	return ret, nil
 }
 
 // DirectoryWithNoLastSlash prepares a directory path string with its last

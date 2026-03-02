@@ -196,7 +196,7 @@ func (s *Setup) FillSourceDir(flags *gn.CommonFlags) error {
 	if err != nil {
 		return fmt.Errorf("can't get the real root path of %s: %w", rootPath, err)
 	}
-	s.buildSettings.SetRootPath(rootRealpath)
+	s.buildSettings.RootPath = rootRealpath
 
 	return nil
 }

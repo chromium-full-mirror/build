@@ -4,7 +4,11 @@
 
 package fs
 
-import "testing"
+import (
+	"fmt"
+	"runtime"
+	"testing"
+)
 
 func TestNormalizePath(t *testing.T) {
 	for _, tc := range []struct {
@@ -289,121 +293,151 @@ func TestNormalizePathWithSourceRoot_Windows(t *testing.T) {
 }
 
 func TestRebasePath(t *testing.T) {
+	sourceRoot := "/source/root"
+
 	for _, tc := range []struct {
-		name    string
-		input   string
-		destDir string
-		want    string
-		wantErr bool
+		input      string
+		destDir    string
+		sourceRoot string
+		want       string
+		wantErr    bool
 	}{
-		{
-			name:    "simple subdirectory",
-			input:   "//foo/bar/baz.txt",
-			destDir: "//foo/",
-			want:    "bar/baz.txt",
-			wantErr: false,
-		},
-		{
-			name:  "simple subdirectory with no slash",
-			input: "//foo/bar/baz.txt",
-			// in case destDir is from DirectoryWithNoLastSlash
-			destDir: "//foo",
-			want:    "bar/baz.txt",
-			wantErr: false,
-		},
-		{
-			name:    "peer directories",
-			input:   "//foo/bar/baz.txt",
-			destDir: "//foo/qux/",
-			want:    "../bar/baz.txt",
-			wantErr: false,
-		},
-		{
-			name:  "peer directories with no slash",
-			input: "//foo/bar/baz.txt",
-			// in case destDir is from DirectoryWithNoLastSlash
-			destDir: "//foo/qux",
-			want:    "../bar/baz.txt",
-			wantErr: false,
-		},
-		{
-			name:    "parent directory",
-			input:   "//foo/",
-			destDir: "//foo/bar/baz/",
-			want:    "../..",
-			wantErr: false,
-		},
-		{
-			name:    "identical paths",
-			input:   "//foo/bar.txt",
-			destDir: "//foo/bar.txt",
-			want:    ".",
-			wantErr: false,
-		},
-		{
-			name:    "to root",
-			input:   "//foo/bar.txt",
-			destDir: "//",
-			want:    "foo/bar.txt",
-			wantErr: false,
-		},
-		{
-			name:  "to root with no slash",
-			input: "//foo/bar.txt",
-			// in case destDir is from DirectoryWithNoLastSlash
-			destDir: "//.",
-			want:    "foo/bar.txt",
-			wantErr: false,
-		},
-		{
-			name:    "from root",
-			input:   "//",
-			destDir: "//foo/bar/",
-			want:    "../..",
-			wantErr: false,
-		},
-		{
-			name:    "error relative input not yet supported",
-			input:   "foo/bar.txt",
-			destDir: "//foo/",
-			wantErr: true,
-		},
-		{
-			name:    "error relative destDir not yet supported",
-			input:   "//foo/bar.txt",
-			destDir: "foo/",
-			wantErr: true,
-		},
-		{
-			name:    "error system absolute input not yet supported",
-			input:   "/foo/bar.txt",
-			destDir: "//foo/",
-			wantErr: true,
-		},
-		{
-			name:    "error system absolute destDir not yet supported",
-			input:   "//foo/bar.txt",
-			destDir: "/foo/",
-			wantErr: true,
-		},
+		// Degenerate case.
+		{"//", "//", sourceRoot, ".", false},
+		{"//foo/bar/", "//foo/bar/", sourceRoot, ".", false},
+
+		// Going up the tree.
+		{"//foo", "//bar/", sourceRoot, "../foo", false},
+		{"//foo/", "//bar/", sourceRoot, "../foo/", false},
+		{"//foo", "//bar/moo", sourceRoot, "../../foo", false},
+		{"//foo/", "//bar/moo", sourceRoot, "../../foo/", false},
+
+		// Going down the tree.
+		{"//foo/bar", "//", sourceRoot, "foo/bar", false},
+		{"//foo/bar/", "//", sourceRoot, "foo/bar/", false},
+
+		// Going up and down the tree.
+		{"//foo/bar", "//a/b/", sourceRoot, "../../foo/bar", false},
+		{"//foo/bar/", "//a/b/", sourceRoot, "../../foo/bar/", false},
+
+		// Sharing prefix.
+		{"//a/foo", "//a/", sourceRoot, "foo", false},
+		{"//a/foo", "//a", sourceRoot, "foo", false},
+		{"//a/foo/", "//a/", sourceRoot, "foo/", false},
+		{"//a/b/foo", "//a/b/", sourceRoot, "foo", false},
+		{"//a/b/foo/", "//a/b/", sourceRoot, "foo/", false},
+		{"//a/b/foo/bar", "//a/b/", sourceRoot, "foo/bar", false},
+		{"//a/b/foo/bar/", "//a/b/", sourceRoot, "foo/bar/", false},
+		{"//foo/bar", "//foo/bar/", sourceRoot, ".", false},
+		{"//foo", "//foo/bar/", sourceRoot, "..", false},
+		{"//foo/", "//foo/bar/", sourceRoot, "../", false},
+
+		// Check when only input is system-absolute.
+		{"/source/root/foo", "//", "/source/root", "foo", false},
+		{"/source/root/foo/", "//", "/source/root", "foo/", false},
+		{"/builddir/Out/Debug", "//", "/source/root", "../../builddir/Out/Debug", false},
+		{"/builddir/Out/Debug", "//", "/source/root/foo", "../../../builddir/Out/Debug", false},
+		{"/builddir/Out/Debug/", "//", "/source/root/foo", "../../../builddir/Out/Debug/", false},
+		{"/path/to/foo", "//", "/source/root", "../../path/to/foo", false},
+		{"/path/to/foo", "//a", "/source/root", "../../../path/to/foo", false},
+		{"/path/to/foo", "//a/b", "/source/root", "../../../../path/to/foo", false},
+
+		// Check when only destDir is system-absolute.
+		{"//", "/source/root", "/source/root", ".", false},
+		{"//foo", "/source/root", "/source/root", "foo", false},
+		{"//foo", "/source/root/bar", "/source/root", "../foo", false},
+		{"//foo", "/other/source/root", "/source/root", "../../../source/root/foo", false},
+		{"//foo", "/other/source/root/bar", "/source/root", "../../../../source/root/foo", false},
+
+		// Check when input and destDir are both system-absolute. Also,
+		// in this case sourceRoot is never used so set it to a dummy
+		// value.
+		{"/source/root/foo", "/source/root", "/x/y/z", "foo", false},
+		{"/source/root/foo/", "/source/root", "/x/y/z", "foo/", false},
+		{"/builddir/Out/Debug", "/source/root", "/x/y/z", "../../builddir/Out/Debug", false},
+		{"/builddir/Out/Debug", "/source/root/foo", "/source/root/foo", "../../../builddir/Out/Debug", false},
+		{"/builddir/Out/Debug/", "/source/root/foo", "/source/root/foo", "../../../builddir/Out/Debug/", false},
+		{"/path/to/foo", "/source/root", "/x/y/z", "../../path/to/foo", false},
+		{"/path/to/foo", "/source/root/a", "/x/y/z", "../../../path/to/foo", false},
+		{"/path/to/foo", "/source/root/a/b", "/x/y/z", "../../../../path/to/foo", false},
+
+		// Should error if sourceRoot empty and mixing source-relative and absolute paths.
+		{"foo/bar.txt", "//foo/", "", "", true},
+		{"//foo/bar.txt", "/foo/", "", "", true},
 	} {
-		t.Run(tc.name, func(t *testing.T) {
-			got, err := RebasePath(tc.input, tc.destDir)
+		t.Run(fmt.Sprintf("%s_%s", tc.input, tc.destDir), func(t *testing.T) {
+			destDir, err := MakeSourceDir(tc.destDir)
+			if err != nil {
+				t.Fatalf("MakeSourceDir(%q) failed: %v", tc.destDir, err)
+			}
+
+			got, err := RebasePath(tc.input, destDir, tc.sourceRoot)
 
 			if tc.wantErr {
 				if err == nil {
-					t.Errorf("RebasePath(%q, %q) succeeded with %q, want error", tc.input, tc.destDir, got)
+					t.Errorf("RebasePath(%q, %q, %q)=%q,nil; want error", tc.input, tc.destDir, tc.sourceRoot, got)
 				}
 				return
 			}
 
 			if err != nil {
-				t.Errorf("RebasePath(%q, %q) returned error %v, want success", tc.input, tc.destDir, err)
-				return
+				t.Errorf("RebasePath(%q, %q, %q) returned error %v, want success", tc.input, tc.destDir, tc.sourceRoot, err)
 			}
 
 			if got != tc.want {
-				t.Errorf("RebasePath(%q, %q) = %q; want %q", tc.input, tc.destDir, got, tc.want)
+				t.Errorf("RebasePath(%q, %q, %q)=%q; want %q", tc.input, tc.destDir, tc.sourceRoot, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestRebasePath_Windows(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("These tests are Windows only")
+	}
+
+	for _, tc := range []struct {
+		input      string
+		destDir    string
+		sourceRoot string
+		want       string
+		wantErr    bool
+	}{
+		// Test corrections while rebasing Windows-style absolute paths.
+		{"C:/path/to/foo", "//a/b", "/C:/source/root", "../../../../path/to/foo", false},
+		{"/C:/path/to/foo", "//a/b", "C:/source/root", "../../../../path/to/foo", false},
+		{"/C:/path/to/foo", "//a/b", "/c:/source/root", "../../../../path/to/foo", false},
+		{"/c:/path/to/foo", "//a/b", "c:/source/root", "../../../../path/to/foo", false},
+		{"/c:/path/to/foo", "//a/b", "C:/source/root", "../../../../path/to/foo", false},
+
+		// Different drive letters not yet supported.
+		{"C:/path/to/foo", "//a/b", "D:/source/root", "C:/path/to/foo", true},
+		{"D:/path/to/foo", "//a/b", "C:/source/root", "D:/path/to/foo", true},
+		{"/E:/path/to/foo", "//a/b", "/c:/source/root", "E:/path/to/foo", true},
+		{"/e:/path/to/foo", "//a/b", "c:/source/root", "E:/path/to/foo", true},
+		{"/c:/path/to/foo", "//a/b", "D:/source/root", "C:/path/to/foo", true},
+	} {
+		t.Run(fmt.Sprintf("%s_%s", tc.input, tc.destDir), func(t *testing.T) {
+			destDir, err := MakeSourceDir(tc.destDir)
+			if err != nil {
+				t.Fatalf("MakeSourceDir(%q) failed: %v", tc.destDir, err)
+			}
+
+			got, err := RebasePath(tc.input, destDir, tc.sourceRoot)
+
+			if tc.wantErr {
+				if err == nil {
+					t.Errorf("RebasePath(%q, %q, %q)=%q,nil; want error", tc.input, tc.destDir, tc.sourceRoot, got)
+				}
+				return
+			}
+
+			if err != nil {
+				t.Errorf("RebasePath(%q, %q, %q) returned error %v, want success", tc.input, tc.destDir, tc.sourceRoot, err)
+			}
+
+			if got != tc.want {
+				t.Errorf("RebasePath(%q, %q, %q)=%q; want %q", tc.input, tc.destDir, tc.sourceRoot, got, tc.want)
 			}
 		})
 	}
