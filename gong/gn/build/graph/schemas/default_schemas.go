@@ -123,6 +123,8 @@ var (
 		Vars: map[string]graph.TargetVar{
 			// TODO: support more variables.
 			"sources":      graph.FileListVar{},
+			"crate_name":   graph.StringVar{},
+			"crate_root":   graph.FileVar{},
 			"deps":         graph.LabelListVar{Expected: &graph.Target{}},
 			"aliased_deps": graph.ScopeOfLabelsVar{Invert: true},
 			"configs":      graph.LabelListVar{Expected: &graph.Config{}},
@@ -162,12 +164,12 @@ var (
 			case binaryC:
 				return cExecutableResolver(name, inputs, ctx)
 			case binaryRust:
-				return rustExecutableResolver(name, inputs, ctx)
+				return rustBinaryResolver(name, false, inputs, ctx)
 			case binaryUncategorized:
 				if _, err := ctx.SourceFileFor("crate_root"); err == nil {
 					// For Rust targets, if the only source file is the root `sources` can be
 					// omitted/empty.
-					return rustExecutableResolver(name, inputs, ctx)
+					return rustBinaryResolver(name, false, inputs, ctx)
 				}
 				// Targets without sources are otherwise treated as C/C++.
 				return cExecutableResolver(name, inputs, ctx)

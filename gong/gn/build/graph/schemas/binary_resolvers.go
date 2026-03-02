@@ -61,8 +61,12 @@ func cExecutableResolver(name string, cInputs []fs.SourceFile, ctx graph.Resolve
 	return DefaultMetadata{[]fs.SourceFile{out}}, nil
 }
 
-// TODO: can this be merged with rust_library?
-func rustExecutableResolver(name string, rsInputs []fs.SourceFile, ctx graph.ResolverContext) (graph.ResolutionMetadata, error) {
+func rustBinaryResolver(name string, isLibrary bool, rsInputs []fs.SourceFile, ctx graph.ResolverContext) (graph.ResolutionMetadata, error) {
+	defaultCrateRoot := "main.rs"
+	if isLibrary {
+		defaultCrateRoot = "lib.rs"
+	}
+
 	crateName, err := ctx.StringFor("crate_name")
 	if err != nil {
 		// Fall back to target name.
@@ -75,7 +79,7 @@ func rustExecutableResolver(name string, rsInputs []fs.SourceFile, ctx graph.Res
 		foundCrateRoot = true
 	} else {
 		for _, source := range rsInputs {
-			if source.Base() == "main.rs" {
+			if source.Base() == defaultCrateRoot {
 				crateRoot = source
 				foundCrateRoot = true
 			}
@@ -90,7 +94,7 @@ func rustExecutableResolver(name string, rsInputs []fs.SourceFile, ctx graph.Res
 
 	if !foundCrateRoot {
 		return nil, CrateRootNotFoundError{
-			expected: "main.rs",
+			expected: defaultCrateRoot,
 		}
 	}
 
@@ -112,15 +116,28 @@ func rustExecutableResolver(name string, rsInputs []fs.SourceFile, ctx graph.Res
 	}
 
 	allInputs := append(rsInputs, transitiveRlibs...)
+	tool := "rust_bin"
+	outputName := crateName
+	if isLibrary {
+		tool = "rust_rlib"
+		outputName = fmt.Sprintf("lib%s.rlib", outputName)
+	}
 	out, err := ctx.DeclareTool(
-		"rust_bin",
+		tool,
 		crateRoot,
 		allInputs,
-		crateName,
+		outputName,
 	)
 	if err != nil {
 		return nil, err
 	}
 
+	if isLibrary {
+		return RustLibraryMetadata{
+			CrateName:       crateName,
+			OutputRlib:      out,
+			TransitiveRlibs: transitiveRlibs,
+		}, nil
+	}
 	return DefaultMetadata{[]fs.SourceFile{out}}, nil
 }
