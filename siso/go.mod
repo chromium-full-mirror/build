@@ -5,8 +5,7 @@ module go.chromium.org/build/siso
 //
 // Go release history: https://go.dev/doc/devel/release
 // Some siso user OS version is listed in http://shortn/_R9N9PLz4sg
-// TODO(http://b/485402463): Updating this to 1.26 caused performance regression.
-go 1.25.7
+go 1.26.0
 
 require (
 	cloud.google.com/go/compute/metadata v0.9.0
