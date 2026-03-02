@@ -6,6 +6,7 @@ package fs
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 	"unique"
 )
@@ -44,6 +45,53 @@ func MakeSourceDir(value string) (SourceDir, error) {
 		return SourceDir{}, fmt.Errorf("path must start with a slash: %q", value)
 	}
 	return makeSourceDirInternal(value), nil
+}
+
+// MakeSourceDirFromPath the "best" [SourceDir] representing the given path. If it's
+// inside the given sourceRoot, a source-relative directory will be returned (e.g.
+// "//foo/bar.cc". If it's outside of the source root or the source root is
+// empty, a system-absolute directory will be returned.
+//
+// Note that symlinks are not handled.
+// This is equivalent to C++ GN's SourceDirForPath(const base::FilePath& source_root, const base::FilePath& path).
+func MakeSourceDirFromPath(sourceRoot, path string) (SourceDir, error) {
+	// If no source root, then treat as system absolute.
+	if sourceRoot == "" {
+		return makeAbsoluteSourceDir(path), nil
+	}
+
+	// Determine if path is inside sourceRoot.
+	// filepath.Rel returns an error if the paths can't be made relative (e.g.
+	// different drives on Windows). If it succeeds, we still need to check if
+	// it had to step outside the root to get there (starts with "..").
+	cleanSourceRoot := cleanInputPath(sourceRoot)
+	cleanPath := cleanInputPath(path)
+	rel, err := filepath.Rel(cleanSourceRoot, cleanPath)
+	if err != nil || !filepath.IsLocal(rel) {
+		return makeAbsoluteSourceDir(cleanPath), nil
+	}
+
+	// Path is inside source root.
+	// Ensure normalize slashes to GN-internal, always use "/".
+	if rel == "." {
+		// If same dir then just return "//".
+		return makeSourceDirInternal("//"), nil
+	}
+	slashRel := filepath.ToSlash(rel)
+	return makeSourceDirInternal("//" + slashRel), nil
+}
+
+// makeAbsoluteSourceDir converts an OS-level absolute path into a GN system-absolute SourceDir.
+func makeAbsoluteSourceDir(path string) SourceDir {
+	slashPath := filepath.ToSlash(path)
+
+	// On Windows, an absolute path might look like "C:/foo".
+	// GN requires all system-absolute paths to start with a slash, e.g., "/C:/foo".
+	if !strings.HasPrefix(slashPath, "/") {
+		slashPath = "/" + slashPath
+	}
+
+	return makeSourceDirInternal(slashPath)
 }
 
 // makeSourceDirInternal creates a source dir representation from a path string.

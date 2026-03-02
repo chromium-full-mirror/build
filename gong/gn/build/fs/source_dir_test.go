@@ -4,7 +4,10 @@
 
 package fs
 
-import "testing"
+import (
+	"runtime"
+	"testing"
+)
 
 func TestMakeSourceDir(t *testing.T) {
 	for _, tc := range []struct {
@@ -151,6 +154,75 @@ func TestResolveRelativeDir(t *testing.T) {
 			}
 			if got := f.Path(); got != tc.want {
 				t.Errorf("ResolveRelativeDir(%q) = %q; want %q", tc.input, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestMakeSourceDirFromPath(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("See TestMakeSourceDirFromPath_Windows instead")
+	}
+
+	for _, tc := range []struct {
+		name string
+		root string
+		path string
+		want string
+	}{
+		{name: "outside", root: "/source/foo/", path: "/foo/bar/", want: "/foo/bar/"},
+		{name: "systemroot", root: "/source/foo/", path: "/", want: "/"},
+		{name: "buildroot", root: "/source/foo/", path: "/source/foo/", want: "//"},
+		{name: "buildrootnoslash", root: "/source/foo/", path: "/source/foo", want: "//"},
+		{name: "subdir", root: "/source/foo/", path: "/source/foo/bar/", want: "//bar/"},
+		{name: "subdirnested", root: "/source/foo/", path: "/source/foo/bar/baz/", want: "//bar/baz/"},
+		{name: "casesensitive", root: "/source/foo/", path: "/SOURCE/foo/bar/", want: "/SOURCE/foo/bar/"},
+		{name: "noroot", root: "", path: "/source/foo", want: "/source/foo/"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := MakeSourceDirFromPath(tc.root, tc.path)
+			if err != nil {
+				t.Fatalf("MakeSourceDirFromPath(%q, %q) failed: %v", tc.root, tc.path, err)
+			}
+			if got.Path() != tc.want {
+				t.Errorf("MakeSourceDirFromPath(%q, %q) = %q; want %q", tc.root, tc.path, got.Path(), tc.want)
+			}
+		})
+	}
+}
+
+func TestMakeSourceDirFromPath_Windows(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("See TestMakeSourceDirFromPath instead")
+	}
+
+	for _, tc := range []struct {
+		name string
+		root string
+		path string
+		want string
+	}{
+		{name: "outside", root: `C:\source\foo\`, path: `C:\foo\bar`, want: `/C:/foo/bar/`},
+		{name: "normalize", root: `C:\source\foo\`, path: `C:foo/bar/`, want: `/C:/foo/bar/`},
+		{name: "ignoreunix", root: `C:\source\foo\`, path: `/`, want: `/`},
+		{name: "ignoreunix2", root: `C:\source\foo\`, path: `/foo/bar/`, want: `/foo/bar/`},
+		{name: "buildroot", root: `C:\source\foo\`, path: `C:\source\foo\`, want: `//`},
+		{name: "buildrootnoslash", root: `C:\source\foo\`, path: `C:\source\foo`, want: `//`},
+		{name: "subdir", root: `C:\source\foo\`, path: `C:\source\foo\bar\`, want: `//bar/`},
+		{name: "subdirnested", root: `C:\source\foo\`, path: `C:\source\foo\bar\baz`, want: `//bar/baz/`},
+		{name: "caseinsensitive", root: `C:\source\foo\`, path: `c:/SOURCE\Foo/baR/`, want: `//baR/`},
+		{name: "noroot", root: "", path: `C:\source\foo`, want: `/C:/source/foo/`},
+		// Also allow absolute GN-style Windows paths.
+		{name: "outside-gnstyle", root: `C:\source\foo\`, path: `/C:/foo/bar`, want: `/C:/foo/bar/`},
+		{name: "subdir-gnstyle", root: `C:\source\foo\`, path: `/C:/source/foo/bar`, want: `//bar/`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := MakeSourceDirFromPath(tc.root, tc.path)
+			if err != nil {
+				t.Fatalf("MakeSourceDirFromPath(%q, %q) failed: %v", tc.root, tc.path, err)
+			}
+			if got.Path() != tc.want {
+				t.Errorf("MakeSourceDirFromPath(%q, %q) = %q; want %q", tc.root, tc.path, got.Path(), tc.want)
 			}
 		})
 	}

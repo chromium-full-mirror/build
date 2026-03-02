@@ -203,3 +203,21 @@ func DirectoryWithNoLastSlash(path string) string {
 	}
 	return path
 }
+
+// cleanInputPath cleans the path, accepting normal Unix paths,
+// or if on Windows, also handles Windows-style absolute paths "C:\foo", "C:foo", and GN-style "/C:/foo".
+func cleanInputPath(path string) string {
+	if runtime.GOOS == "windows" {
+		// If absolute GN-style path, need to strip "/" to use with filepath.
+		if len(path) > 3 && path[0] == '/' && path[2] == ':' {
+			path = path[1:]
+		}
+		// Need to accept weird paths like "C:foo\bar".
+		if len(path) >= 2 && path[1] == ':' {
+			if len(path) == 2 || (path[2] != '/' && path[2] != '\\') {
+				path = path[:2] + "/" + path[2:]
+			}
+		}
+	}
+	return filepath.Clean(path)
+}

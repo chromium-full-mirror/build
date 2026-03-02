@@ -202,15 +202,27 @@ func (s *Setup) FillSourceDir(flags *gn.CommonFlags) error {
 }
 
 func (s *Setup) fillBuildDir(buildDir string) error {
-	// TODO: implement properly
-	absBuildDir, err := filepath.Abs(buildDir)
+	// TODO: finish this port i.e. need to actually create the builddir
+
+	// Figure out where the user is right now, relative to the source root.
+	var currentContext fs.SourceDir
+	wd, err := os.Getwd()
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to get working directory: %w", err)
 	}
-	s.buildSettings.BuildDir, err = fs.MakeSourceDir(absBuildDir)
+	currentContext, err = fs.MakeSourceDirFromPath(s.buildSettings.RootPath, wd)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to make SourceDir from wd: %w", err)
 	}
+
+	// This lets us resolve the build dir they specify relative to their wd.
+	// e.g. if they're in //foo/bar then we can resolve ../../out/Default correctly.
+	resolved, err := currentContext.ResolveRelativeDir(buildDir)
+	if err != nil {
+		return fmt.Errorf("failed to resolve build dir from wd: %w", err)
+	}
+
+	s.buildSettings.BuildDir = resolved
 	return nil
 }
 
