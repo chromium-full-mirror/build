@@ -142,39 +142,43 @@ func (e *Exporter) ExportTree(ctx context.Context, dir string, d digest.Digest, 
 	files, symlinks, dirs := merkletree.Traverse(ctx, dir, root, ds)
 	if w == nil {
 		for _, file := range files {
-			err := os.MkdirAll(filepath.Dir(file.GetPath()), 0755)
-			if err != nil {
-				return err
-			}
-			mode := fs.FileMode(0644)
-			if file.GetIsExecutable() {
-				mode = fs.FileMode(0755)
-			}
-			b, err := e.client.Get(ctx, digest.FromProto(file.GetDigest()), file.GetPath())
-			if err != nil {
-				return fmt.Errorf("error from client.Get for %s: %w", file.GetPath(), err)
-			}
-			err = os.WriteFile(file.GetPath(), b, mode)
-			if err != nil {
-				return err
-			}
+			e.eg.Go(func() error {
+				return e.sema.Do(ctx, func(ctx context.Context) error {
+					err := os.MkdirAll(filepath.Dir(file.GetPath()), 0755)
+					if err != nil {
+						return err
+					}
+					mode := fs.FileMode(0644)
+					if file.GetIsExecutable() {
+						mode = fs.FileMode(0755)
+					}
+					b, err := e.client.Get(ctx, digest.FromProto(file.GetDigest()), file.GetPath())
+					if err != nil {
+						return fmt.Errorf("error from client.Get for %s: %w", file.GetPath(), err)
+					}
+					return os.WriteFile(file.GetPath(), b, mode)
+				})
+			})
 		}
 		for _, symlink := range symlinks {
-			err := os.MkdirAll(filepath.Dir(symlink.GetPath()), 0755)
-			if err != nil {
-				return err
-			}
-			err = os.Symlink(symlink.GetTarget(), symlink.GetPath())
-			if err != nil {
-				return err
-			}
+			e.eg.Go(func() error {
+				return e.sema.Do(ctx, func(ctx context.Context) error {
+					err := os.MkdirAll(filepath.Dir(symlink.GetPath()), 0755)
+					if err != nil {
+						return err
+					}
+					return os.Symlink(symlink.GetTarget(), symlink.GetPath())
+				})
+			})
 		}
 		for _, dir := range dirs {
-			err := os.MkdirAll(dir.GetPath(), 0755)
-			if err != nil {
-				return err
-			}
+			e.eg.Go(func() error {
+				return e.sema.Do(ctx, func(ctx context.Context) error {
+					return os.MkdirAll(dir.GetPath(), 0755)
+				})
+			})
 		}
+		return e.eg.Wait()
 	} else {
 		for _, file := range files {
 			if file.GetIsExecutable() {
