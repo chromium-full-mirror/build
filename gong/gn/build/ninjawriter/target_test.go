@@ -38,6 +38,10 @@ func TestWriteTarget(t *testing.T) {
 					Source: mustFile(t, "//base/main.cc"),
 					Inputs: []fs.SourceFile{mustFile(t, "//base/main.cc")},
 					Output: mustFile(t, "//out/Default/obj/base/main.o"),
+					Expansions: map[string]string{
+						"source_file_part": "main.cc",
+						"source_name_part": "main",
+					},
 				},
 				{
 					Tool: "link",
@@ -46,10 +50,22 @@ func TestWriteTarget(t *testing.T) {
 						mustFile(t, "//out/Default/obj/foo/libfoo.o"),
 					},
 					Output: mustFile(t, "//out/Default/obj/base/app"),
+					Expansions: map[string]string{
+						"ldflags":      "",
+						"libs":         "",
+						"frameworks":   "",
+						"swiftmodules": "",
+					},
 				},
 			},
 			want: `build obj/base/main.o: cxx ../../base/main.cc
+  source_file_part = main.cc
+  source_name_part = main
 build obj/base/app: link obj/base/main.o obj/foo/libfoo.o
+  frameworks =
+  ldflags =
+  libs =
+  swiftmodules =
 `,
 		},
 		{
@@ -60,12 +76,26 @@ build obj/base/app: link obj/base/main.o obj/foo/libfoo.o
 					Source: mustFile(t, "//src/lib.rs"),
 					Inputs: []fs.SourceFile{
 						mustFile(t, "//src/lib.rs"),
-						mustFile(t, "//out/Default/obj/other_dep.rlib"),
+						mustFile(t, "//out/Default/obj/bar/libbar.rlib"),
 					},
 					Output: mustFile(t, "//out/Default/obj/libfoo.rlib"),
+					Expansions: map[string]string{
+						"crate_name":     "foo",
+						"crate_type":     "rlib",
+						"target_out_dir": "obj/foo",
+						"rustflags":      "-Cdebuginfo=2",
+						"rustdeps":       "-Ldependency=obj/bar",
+						"externs":        "--extern bar=obj/bar/libbar.rlib",
+					},
 				},
 			},
-			want: `build obj/libfoo.rlib: rust_rlib ../../src/lib.rs | obj/other_dep.rlib
+			want: `build obj/libfoo.rlib: rust_rlib ../../src/lib.rs | obj/bar/libbar.rlib
+  crate_name = foo
+  crate_type = rlib
+  externs = --extern bar=obj/bar/libbar.rlib
+  rustdeps = -Ldependency=obj/bar
+  rustflags = -Cdebuginfo=2
+  target_out_dir = obj/foo
 `,
 		},
 	}

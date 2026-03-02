@@ -106,16 +106,17 @@ func (t *Target) LabelsFor(varName string) ([]environment.LabelWithOrigin, error
 }
 
 // DeclareTool declares a tool call.
-func (t *Target) DeclareTool(outDir fs.SourceDir, tool string, source fs.SourceFile, inputs []fs.SourceFile, outputName string) (fs.SourceFile, error) {
+func (t *Target) DeclareTool(outDir fs.SourceDir, tool string, source fs.SourceFile, inputs []fs.SourceFile, outputName string, expansions map[string]string) (fs.SourceFile, error) {
 	outFile, err := outDir.ResolveRelativeFile(outputName)
 	if err != nil {
 		return fs.SourceFile{}, err
 	}
 	t.Resolution.Actions = append(t.Resolution.Actions, RunToolAction{
-		Tool:   tool,
-		Source: source,
-		Inputs: inputs,
-		Output: outFile,
+		Tool:       tool,
+		Source:     source,
+		Inputs:     inputs,
+		Output:     outFile,
+		Expansions: expansions,
 	})
 	return outFile, nil
 }

@@ -7,6 +7,8 @@ package ninjawriter
 import (
 	"fmt"
 	"io"
+	"maps"
+	"slices"
 	"strings"
 
 	"go.chromium.org/build/gong/gn/build/environment"
@@ -75,9 +77,29 @@ func WriteTarget(w io.Writer, t *graph.Target, buildSettings *environment.BuildS
 			}
 		}
 
-		_, err = fmt.Fprint(w, "\n")
+		_, err = fmt.Fprintln(w)
 		if err != nil {
 			return err
+		}
+
+		for _, k := range slices.Sorted(maps.Keys(action.Expansions)) {
+			// TODO: likewise escape?
+			_, err := fmt.Fprintf(w, "  %s =", k)
+			if err != nil {
+				return err
+			}
+			v := action.Expansions[k]
+			if v != "" {
+				// TODO: likewise escape?
+				_, err = fmt.Fprintf(w, " %s", v)
+				if err != nil {
+					return err
+				}
+			}
+			_, err = fmt.Fprintln(w)
+			if err != nil {
+				return err
+			}
 		}
 	}
 	return nil

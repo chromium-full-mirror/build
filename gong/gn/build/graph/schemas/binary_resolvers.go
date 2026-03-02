@@ -6,8 +6,8 @@ package schemas
 
 import (
 	"fmt"
-	"os"
 	"path"
+	"strings"
 
 	"go.chromium.org/build/gong/gn/build/fs"
 	"go.chromium.org/build/gong/gn/build/graph"
@@ -29,6 +29,11 @@ func cExecutableResolver(name string, cInputs []fs.SourceFile, ctx graph.Resolve
 			source,
 			[]fs.SourceFile{source},
 			fmt.Sprintf("%s.%s.o", name, sourceBase),
+			map[string]string{
+				// TODO: fill these out.
+				"source_file_part": "",
+				"source_name_part": "",
+			},
 		)
 		if err != nil {
 			return nil, err
@@ -53,7 +58,19 @@ func cExecutableResolver(name string, cInputs []fs.SourceFile, ctx graph.Resolve
 		}
 	}
 
-	out, err := ctx.DeclareTool("link", fs.SourceFile{}, linkInputs, name)
+	out, err := ctx.DeclareTool(
+		"link",
+		fs.SourceFile{},
+		linkInputs,
+		name,
+		map[string]string{
+			// TODO: fill these out.
+			"ldflags":      "",
+			"libs":         "",
+			"frameworks":   "",
+			"swiftmodules": "",
+		},
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -101,6 +118,7 @@ func rustBinaryResolver(name string, isLibrary bool, rsInputs []fs.SourceFile, c
 	// Fetch aliased_deps if it exists, but ignore if it doesn't.
 	aliasedDeps, _ := ctx.LabelKeyedStringMapFor("aliased_deps")
 
+	var externs []string
 	var transitiveRlibs []fs.SourceFile
 	for dep, err := range ctx.ResolvedTargetsFor("deps") {
 		if err != nil {
@@ -109,17 +127,22 @@ func rustBinaryResolver(name string, isLibrary bool, rsInputs []fs.SourceFile, c
 		if rustLib, ok := dep.Metadata.(RustLibraryMetadata); ok {
 			transitiveRlibs = append(transitiveRlibs, rustLib.OutputRlib)
 			transitiveRlibs = append(transitiveRlibs, rustLib.TransitiveRlibs...)
-		}
-		if alias, ok := aliasedDeps[dep.Label]; ok {
-			fmt.Fprintf(os.Stderr, "warning: alias not implemented yet. wanted to alias %s to %s\n", dep.Label.UserVisibleString(true), alias)
+			depCrateName := rustLib.CrateName
+			if alias, ok := aliasedDeps[dep.Label]; ok {
+				depCrateName = alias
+			}
+			// TODO: maybe it's not filename? see test files for why this seems wrong.
+			externs = append(externs, fmt.Sprintf("--extern %s=%s", depCrateName, rustLib.OutputRlib.Filename()))
 		}
 	}
 
 	allInputs := append(rsInputs, transitiveRlibs...)
 	tool := "rust_bin"
+	crateType := "bin"
 	outputName := crateName
 	if isLibrary {
 		tool = "rust_rlib"
+		crateType = "rlib"
 		outputName = fmt.Sprintf("lib%s.rlib", outputName)
 	}
 	out, err := ctx.DeclareTool(
@@ -127,6 +150,11 @@ func rustBinaryResolver(name string, isLibrary bool, rsInputs []fs.SourceFile, c
 		crateRoot,
 		allInputs,
 		outputName,
+		map[string]string{
+			"crate_name": crateName,
+			"crate_type": crateType,
+			"externs":    strings.Join(externs, " "),
+		},
 	)
 	if err != nil {
 		return nil, err

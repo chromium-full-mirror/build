@@ -205,8 +205,8 @@ func (b *Builder) resolveTarget(target *graph.Target, record *builderRecord) err
 	}
 
 	result, err := target.Schema.Resolver(graph.ResolverContext{
-		DeclareTool: func(tool string, source fs.SourceFile, inputs []fs.SourceFile, outputName string) (fs.SourceFile, error) {
-			return target.DeclareTool(outDir, tool, source, inputs, outputName)
+		DeclareTool: func(tool string, source fs.SourceFile, inputs []fs.SourceFile, outputName string, expansions map[string]string) (fs.SourceFile, error) {
+			return target.DeclareTool(outDir, tool, source, inputs, outputName, expansions)
 		},
 		LabelKeyedStringMapFor: target.LabelKeyedStringMapFor,
 		StringFor:              target.StringFor,

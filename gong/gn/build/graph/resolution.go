@@ -16,7 +16,7 @@ import (
 // TODO: this list of functions one for each type of variable is starting to look a bit silly.
 type ResolverContext struct {
 	// DeclareTool declares a tool call.
-	DeclareTool func(tool string, source fs.SourceFile, inputs []fs.SourceFile, outputName string) (fs.SourceFile, error)
+	DeclareTool func(tool string, source fs.SourceFile, inputs []fs.SourceFile, outputName string, expansions map[string]string) (fs.SourceFile, error)
 	// LabelKeyedStringMapFor returns the map of labels to strings for the variable, if it accepts
 	// a variable that is processed into a map of labels to strings.
 	LabelKeyedStringMapFor func(varName string) (map[environment.Label]string, error)
@@ -48,10 +48,11 @@ type Resolution struct {
 
 // A RunToolAction represents a call to a tool inside the current toolchain.
 type RunToolAction struct {
-	Tool   string
-	Source fs.SourceFile
-	Inputs []fs.SourceFile
-	Output fs.SourceFile
+	Tool       string
+	Source     fs.SourceFile
+	Inputs     []fs.SourceFile
+	Output     fs.SourceFile
+	Expansions map[string]string
 }
 
 // ResolutionMetadata represents metadata provided by target resolvers,

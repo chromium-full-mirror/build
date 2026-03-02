@@ -222,6 +222,11 @@ var (
 					source,
 					[]fs.SourceFile{source},
 					fmt.Sprintf("%s.%s.o", outPrefix, sourceBase),
+					map[string]string{
+						// TODO: fill these out.
+						"source_file_part": "",
+						"source_name_part": "",
+					},
 				)
 				if err != nil {
 					return nil, err
@@ -233,6 +238,13 @@ var (
 				fs.SourceFile{},
 				linkInputs,
 				fmt.Sprintf("%s.so", outPrefix),
+				map[string]string{
+					// TODO: fill these out.
+					"ldflags":      "",
+					"libs":         "",
+					"frameworks":   "",
+					"swiftmodules": "",
+				},
 			)
 			if err != nil {
 				return nil, err
@@ -292,6 +304,11 @@ var (
 					source,
 					[]fs.SourceFile{source},
 					fmt.Sprintf("%s.%s.o", outPrefix, sourceBase),
+					map[string]string{
+						// TODO: fill these out.
+						"source_file_part": "",
+						"source_name_part": "",
+					},
 				)
 				if err != nil {
 					return nil, err
@@ -303,6 +320,10 @@ var (
 				fs.SourceFile{},
 				linkInputs,
 				fmt.Sprintf("%s.a", outPrefix),
+				map[string]string{
+					// TODO: fill these out.
+					"arflags": "",
+				},
 			)
 			if err != nil {
 				return nil, err

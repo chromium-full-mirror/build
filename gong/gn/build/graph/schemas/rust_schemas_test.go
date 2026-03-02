@@ -22,6 +22,7 @@ type gotToolCall struct {
 	Source     fs.SourceFile
 	Inputs     []fs.SourceFile
 	OutputName string
+	Expansions map[string]string
 }
 
 type fakeResolverData struct {
@@ -120,6 +121,11 @@ func TestRustLibrarySchema_Resolver(t *testing.T) {
 					Source:     mustSourceFile(t, "//src/lib.rs"),
 					Inputs:     []fs.SourceFile{mustSourceFile(t, "//src/lib.rs")},
 					OutputName: "libfoo.rlib",
+					Expansions: map[string]string{
+						"crate_name": "foo",
+						"crate_type": "rlib",
+						"externs":    "",
+					},
 				},
 			},
 		},
@@ -153,6 +159,11 @@ func TestRustLibrarySchema_Resolver(t *testing.T) {
 						mustSourceFile(t, "//src/other_file.rs"),
 					},
 					OutputName: "libfoo.rlib",
+					Expansions: map[string]string{
+						"crate_name": "foo",
+						"crate_type": "rlib",
+						"externs":    "",
+					},
 				},
 			},
 		},
@@ -168,6 +179,7 @@ func TestRustLibrarySchema_Resolver(t *testing.T) {
 				resolvedDeps: []graph.Resolution{
 					{
 						Metadata: RustLibraryMetadata{
+							CrateName:  "bar",
 							OutputRlib: mustSourceFile(t, "//out/obj/bar.rlib"),
 							TransitiveRlibs: []fs.SourceFile{
 								mustSourceFile(t, "//out/obj/baz.rlib"),
@@ -195,6 +207,11 @@ func TestRustLibrarySchema_Resolver(t *testing.T) {
 						mustSourceFile(t, "//out/obj/baz.rlib"),
 					},
 					OutputName: "libfoo.rlib",
+					Expansions: map[string]string{
+						"crate_name": "foo",
+						"crate_type": "rlib",
+						"externs":    "--extern bar=//out/obj/bar.rlib",
+					},
 				},
 			},
 		},
@@ -216,12 +233,13 @@ func TestRustLibrarySchema_Resolver(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var gotTools []gotToolCall
-			tc.ctx.DeclareTool = func(tool string, source fs.SourceFile, inputs []fs.SourceFile, outputName string) (fs.SourceFile, error) {
+			tc.ctx.DeclareTool = func(tool string, source fs.SourceFile, inputs []fs.SourceFile, outputName string, expansions map[string]string) (fs.SourceFile, error) {
 				gotTools = append(gotTools, gotToolCall{
 					Tool:       tool,
 					Source:     source,
 					Inputs:     inputs,
 					OutputName: outputName,
+					Expansions: expansions,
 				})
 				return mustSourceFile(t, "//out/obj/"+outputName), nil
 			}

@@ -61,6 +61,10 @@ func TestExecutableSchema_Resolver(t *testing.T) {
 					Source:     mustSourceFile(t, "//src/main.cc"),
 					Inputs:     []fs.SourceFile{mustSourceFile(t, "//src/main.cc")},
 					OutputName: "foo.main.cc.o",
+					Expansions: map[string]string{
+						"source_file_part": "",
+						"source_name_part": "",
+					},
 				},
 				{
 					Tool:   "link",
@@ -70,6 +74,12 @@ func TestExecutableSchema_Resolver(t *testing.T) {
 						mustSourceFile(t, "//out/obj/libbar.a"),
 					},
 					OutputName: "foo",
+					Expansions: map[string]string{
+						"ldflags":      "",
+						"libs":         "",
+						"frameworks":   "",
+						"swiftmodules": "",
+					},
 				},
 			},
 		},
@@ -104,6 +114,12 @@ func TestExecutableSchema_Resolver(t *testing.T) {
 						mustSourceFile(t, "//out/obj/libbaz.a"),
 					},
 					OutputName: "foo",
+					Expansions: map[string]string{
+						"ldflags":      "",
+						"libs":         "",
+						"frameworks":   "",
+						"swiftmodules": "",
+					},
 				},
 			},
 		},
@@ -123,6 +139,7 @@ func TestExecutableSchema_Resolver(t *testing.T) {
 				resolvedDeps: []graph.Resolution{
 					{
 						Metadata: RustLibraryMetadata{
+							CrateName:  "bar",
 							OutputRlib: mustSourceFile(t, "//out/obj/libbar.rlib"),
 							TransitiveRlibs: []fs.SourceFile{
 								mustSourceFile(t, "//out/obj/libbaz.rlib"),
@@ -147,6 +164,11 @@ func TestExecutableSchema_Resolver(t *testing.T) {
 						mustSourceFile(t, "//out/obj/libbaz.rlib"),
 					},
 					OutputName: "foo_crate",
+					Expansions: map[string]string{
+						"crate_name": "foo_crate",
+						"crate_type": "bin",
+						"externs":    "--extern bar=//out/obj/libbar.rlib",
+					},
 				},
 			},
 		},
@@ -163,6 +185,7 @@ func TestExecutableSchema_Resolver(t *testing.T) {
 				resolvedDeps: []graph.Resolution{
 					{
 						Metadata: RustLibraryMetadata{
+							CrateName:  "bar",
 							OutputRlib: mustSourceFile(t, "//out/obj/libbar.rlib"),
 							TransitiveRlibs: []fs.SourceFile{
 								mustSourceFile(t, "//out/obj/libbaz.rlib"),
@@ -185,6 +208,11 @@ func TestExecutableSchema_Resolver(t *testing.T) {
 						mustSourceFile(t, "//out/obj/libbaz.rlib"),
 					},
 					OutputName: "foo_crate",
+					Expansions: map[string]string{
+						"crate_name": "foo_crate",
+						"crate_type": "bin",
+						"externs":    "--extern bar=//out/obj/libbar.rlib",
+					},
 				},
 			},
 		},
@@ -223,12 +251,13 @@ func TestExecutableSchema_Resolver(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var gotTools []gotToolCall
-			tc.ctx.DeclareTool = func(tool string, source fs.SourceFile, inputs []fs.SourceFile, outputName string) (fs.SourceFile, error) {
+			tc.ctx.DeclareTool = func(tool string, source fs.SourceFile, inputs []fs.SourceFile, outputName string, expansions map[string]string) (fs.SourceFile, error) {
 				gotTools = append(gotTools, gotToolCall{
 					Tool:       tool,
 					Source:     source,
 					Inputs:     inputs,
 					OutputName: outputName,
+					Expansions: expansions,
 				})
 				return mustSourceFile(t, "//out/obj/"+outputName), nil
 			}
@@ -290,6 +319,10 @@ func TestStaticLibrarySchema_Resolver(t *testing.T) {
 					Source:     mustSourceFile(t, "//src/lib.cc"),
 					Inputs:     []fs.SourceFile{mustSourceFile(t, "//src/lib.cc")},
 					OutputName: "libbar.lib.cc.o",
+					Expansions: map[string]string{
+						"source_file_part": "",
+						"source_name_part": "",
+					},
 				},
 				{
 					Tool:   "alink",
@@ -298,18 +331,22 @@ func TestStaticLibrarySchema_Resolver(t *testing.T) {
 						mustSourceFile(t, "//out/obj/libbar.lib.cc.o"),
 					},
 					OutputName: "libbar.a",
+					Expansions: map[string]string{
+						"arflags": "",
+					},
 				},
 			},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var gotTools []gotToolCall
-			tc.ctx.DeclareTool = func(tool string, source fs.SourceFile, inputs []fs.SourceFile, outputName string) (fs.SourceFile, error) {
+			tc.ctx.DeclareTool = func(tool string, source fs.SourceFile, inputs []fs.SourceFile, outputName string, expansions map[string]string) (fs.SourceFile, error) {
 				gotTools = append(gotTools, gotToolCall{
 					Tool:       tool,
 					Source:     source,
 					Inputs:     inputs,
 					OutputName: outputName,
+					Expansions: expansions,
 				})
 				return mustSourceFile(t, "//out/obj/"+outputName), nil
 			}
