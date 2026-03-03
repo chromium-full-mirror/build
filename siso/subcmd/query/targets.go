@@ -119,7 +119,7 @@ func (c *targetsCommand) run(ctx context.Context) error {
 		ruleTargets: make(map[string]bool),
 	}
 	for _, n := range nodes {
-		err := g.Traverse(ctx, state, n, c.depth, 0)
+		err := g.Traverse(ctx, n, c.depth, 0)
 		if err != nil {
 			return err
 		}
@@ -145,7 +145,7 @@ type targetsGraph struct {
 	ruleTargets map[string]bool
 }
 
-func (g *targetsGraph) Traverse(ctx context.Context, state *ninjautil.State, node *ninjautil.Node, depth, indent int) error {
+func (g *targetsGraph) Traverse(ctx context.Context, node *ninjautil.Node, depth, indent int) error {
 	if g.seen[node] {
 		return nil
 	}
@@ -172,7 +172,7 @@ func (g *targetsGraph) Traverse(ctx context.Context, state *ninjautil.State, nod
 		return nil
 	}
 	for _, in := range edge.Inputs() {
-		err := g.Traverse(ctx, state, in, depth-1, indent+1)
+		err := g.Traverse(ctx, in, depth-1, indent+1)
 		if err != nil {
 			return err
 		}

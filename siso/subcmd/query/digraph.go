@@ -94,11 +94,12 @@ func (c *digraphCommand) run(ctx context.Context, args []string) error {
 		targets = append(targets, n.Path())
 	}
 	d := &digraph{
+		state:     state,
 		orderOnly: c.orderOnly,
 		seen:      make(map[string]bool),
 	}
 	for _, t := range targets {
-		err := d.Traverse(ctx, state, t)
+		err := d.Traverse(ctx, t)
 		if err != nil {
 			return err
 		}
@@ -107,16 +108,17 @@ func (c *digraphCommand) run(ctx context.Context, args []string) error {
 }
 
 type digraph struct {
+	state     *ninjautil.State
 	orderOnly bool
 	seen      map[string]bool
 }
 
-func (d *digraph) Traverse(ctx context.Context, state *ninjautil.State, target string) error {
+func (d *digraph) Traverse(ctx context.Context, target string) error {
 	if d.seen[target] {
 		return nil
 	}
 	d.seen[target] = true
-	n, ok := state.LookupNodeByPath(target)
+	n, ok := d.state.LookupNodeByPath(target)
 	if !ok {
 		return fmt.Errorf("target not found: %q", target)
 	}
@@ -134,7 +136,7 @@ func (d *digraph) Traverse(ctx context.Context, state *ninjautil.State, target s
 	}
 	for _, in := range edgeInputs {
 		p := in.Path()
-		err := d.Traverse(ctx, state, p)
+		err := d.Traverse(ctx, p)
 		if err != nil {
 			return err
 		}

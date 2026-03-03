@@ -81,10 +81,11 @@ func (c *commandsCommand) run(ctx context.Context, args []string) error {
 		targets = append(targets, n.Path())
 	}
 	g := &commandsGraph{
-		seen: make(map[string]bool),
+		state: state,
+		seen:  make(map[string]bool),
 	}
 	for _, t := range targets {
-		err := g.Traverse(ctx, state, t)
+		err := g.Traverse(ctx, t)
 		if err != nil {
 			return err
 		}
@@ -93,15 +94,16 @@ func (c *commandsCommand) run(ctx context.Context, args []string) error {
 }
 
 type commandsGraph struct {
-	seen map[string]bool
+	state *ninjautil.State
+	seen  map[string]bool
 }
 
-func (g *commandsGraph) Traverse(ctx context.Context, state *ninjautil.State, target string) error {
+func (g *commandsGraph) Traverse(ctx context.Context, target string) error {
 	if g.seen[target] {
 		return nil
 	}
 	g.seen[target] = true
-	n, ok := state.LookupNodeByPath(target)
+	n, ok := g.state.LookupNodeByPath(target)
 	if !ok {
 		return fmt.Errorf("target not found: %q", target)
 	}
@@ -111,7 +113,7 @@ func (g *commandsGraph) Traverse(ctx context.Context, state *ninjautil.State, ta
 	}
 	for _, in := range edge.Inputs() {
 		p := in.Path()
-		err := g.Traverse(ctx, state, p)
+		err := g.Traverse(ctx, p)
 		if err != nil {
 			return err
 		}
