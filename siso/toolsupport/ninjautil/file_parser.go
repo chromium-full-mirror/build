@@ -243,6 +243,8 @@ func (p *fileParser) alloc(ctx context.Context) {
 
 	for i := range p.chunks {
 		ch := &p.chunks[i]
+		ch.state = p.state
+		ch.scope = p.scope
 		ch.nodemap = p.state.nodeMap.localNodeMap(ch.nbuild) // estimates # of nodes
 
 		ch.ruleArena = p.ruleArena.chunk(ch.nrule)
@@ -270,7 +272,7 @@ func (p *fileParser) setup(ctx context.Context) error {
 			p.sema <- struct{}{}
 			defer func() { <-p.sema }()
 
-			return ch.setupInChunk(ctx, p.state, p.scope)
+			return ch.setupInChunk(ctx)
 		})
 		// adjust statement positions if there is any include in any chunk.
 		if p.full.ninclude > 0 {
@@ -297,7 +299,7 @@ func (p *fileParser) buildGraph(ctx context.Context) error {
 			p.sema <- struct{}{}
 			defer func() { <-p.sema }()
 
-			return ch.buildGraphInChunk(ctx, p.state, &p.fileState, p.scope)
+			return ch.buildGraphInChunk(ctx, &p.fileState)
 		})
 		for j := range ch.includes {
 			inc := ch.includes[j]
@@ -307,7 +309,7 @@ func (p *fileParser) buildGraph(ctx context.Context) error {
 					p.sema <- struct{}{}
 					defer func() { <-p.sema }()
 
-					return ich.buildGraphInChunk(ctx, p.state, &p.fileState, p.scope)
+					return ich.buildGraphInChunk(ctx, &p.fileState)
 				})
 			}
 		}

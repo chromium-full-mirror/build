@@ -46,6 +46,9 @@ type chunk struct {
 	statements []statement
 	includes   [][]chunk
 
+	state *State
+	scope *fileScope
+
 	nodemap *localNodeMap
 
 	ruleArena    arena[rule]
@@ -56,6 +59,9 @@ type chunk struct {
 
 	// temp env in parseBuild
 	env edgeEnv
+
+	// scratchBuf is a scratch buffer used during parsing.
+	scratchBuf bytes.Buffer
 
 	nvar              int
 	nrule, nrulevar   int
@@ -325,14 +331,13 @@ func (ch *chunk) countStatement(i int, t statementType) int {
 }
 
 // setupInChunk processes var declarations / pool / rule / include.
-func (ch *chunk) setupInChunk(ctx context.Context, state *State, scope *fileScope) error {
-	var buf bytes.Buffer
+func (ch *chunk) setupInChunk(ctx context.Context) error {
 	var err error
 	for i := 0; i < len(ch.statements); {
 		st := ch.statements[i]
 		switch st.t {
 		case statementVarDecl:
-			err = ch.parseVarBinding(i, scope)
+			err = ch.parseVarBinding(i, ch.scope)
 			if err != nil {
 				return err
 			}
@@ -340,14 +345,14 @@ func (ch *chunk) setupInChunk(ctx context.Context, state *State, scope *fileScop
 			continue
 
 		case statementPool:
-			i, err = ch.parsePool(i, &buf, state, scope, ch.poolArena.new())
+			i, err = ch.parsePool(i, ch.poolArena.new())
 			if err != nil {
 				return err
 			}
 			continue
 
 		case statementRule:
-			i, err = ch.parseRule(ctx, i, scope, ch.ruleArena.new())
+			i, err = ch.parseRule(ctx, i, ch.ruleArena.new())
 			if err != nil {
 				return err
 			}
@@ -362,16 +367,16 @@ func (ch *chunk) setupInChunk(ctx context.Context, state *State, scope *fileScop
 			i++
 			continue
 		case statementInclude:
-			include, err := ch.parseInclude(i, &buf, scope)
+			include, err := ch.parseInclude(i)
 			if err != nil {
 				return err
 			}
 			fp := &fileParser{
-				state: state,
-				scope: scope,
+				state: ch.state,
+				scope: ch.scope,
 				sema:  make(chan struct{}, 1),
 			}
-			state.filenames = append(state.filenames, include)
+			ch.state.filenames = append(ch.state.filenames, include)
 			fp.buf, err = fp.readFile(ctx, include)
 			if err != nil {
 				return err
@@ -419,12 +424,11 @@ func (ch *chunk) includeChunks(i int, chunks []chunk) {
 
 // buildGraphInChunk parses build / default / subninja,
 // which requires path (evalString) evaluation.
-func (ch *chunk) buildGraphInChunk(ctx context.Context, state *State, fileState *fileState, scope *fileScope) error {
+func (ch *chunk) buildGraphInChunk(ctx context.Context, fileState *fileState) error {
 	if log.V(2) {
 		clog.Infof(ctx, "buildGraphInChunk statements=%d", len(ch.statements))
 	}
-	var buf bytes.Buffer
-	buf.Grow(4096)
+	ch.scratchBuf.Grow(4096)
 	var err error
 	for i := 0; i < len(ch.statements); {
 		st := ch.statements[i]
@@ -441,7 +445,7 @@ func (ch *chunk) buildGraphInChunk(ctx context.Context, state *State, fileState 
 			continue
 
 		case statementBuild:
-			i, err = ch.parseBuild(i, &buf, state, scope)
+			i, err = ch.parseBuild(i)
 			if err != nil {
 				return fmt.Errorf("line:%d failed to parse edge: %q: %w", lineno(ch.buf, st.s), ch.buf[st.s:st.e], err)
 			}
@@ -449,7 +453,7 @@ func (ch *chunk) buildGraphInChunk(ctx context.Context, state *State, fileState 
 
 		case statementDefault:
 			// TODO: after build graph and fail if target not found?
-			nodes, err := ch.parseDefault(i, &buf, scope)
+			nodes, err := ch.parseDefault(i)
 			if err != nil {
 				return err
 			}
@@ -460,7 +464,7 @@ func (ch *chunk) buildGraphInChunk(ctx context.Context, state *State, fileState 
 			i++
 			continue
 		case statementSubninja:
-			subninja, err := ch.parseSubninja(i, &buf, scope)
+			subninja, err := ch.parseSubninja(i)
 			if err != nil {
 				return err
 			}
@@ -486,10 +490,10 @@ func (ch *chunk) parseName(s, e int) ([]byte, error) {
 }
 
 // parseBuild parses build statement at statements[i].
-func (ch *chunk) parseBuild(i int, buf *bytes.Buffer, state *State, scope *fileScope) (int, error) {
+func (ch *chunk) parseBuild(i int) (int, error) {
 	st := ch.statements[i]
 	edge := ch.edgeArena.new()
-	edge.scope = scope
+	edge.scope = ch.scope
 
 	outs := getEvalStrings()
 	defer putEvalStrings(outs)
@@ -510,7 +514,7 @@ func (ch *chunk) parseBuild(i int, buf *bytes.Buffer, state *State, scope *fileS
 	if err != nil {
 		return 0, fmt.Errorf("expect rule: %w", err)
 	}
-	rule, ok := scope.lookupRule(ruleName)
+	rule, ok := ch.scope.lookupRule(ruleName)
 	if !ok {
 		return 0, fmt.Errorf("unknown build rule %q", ruleName)
 	}
@@ -541,7 +545,7 @@ func (ch *chunk) parseBuild(i int, buf *bytes.Buffer, state *State, scope *fileS
 	edge.pos = ch.statements[i-1].pos + 1
 	poolName, ok := edge.rawBinding([]byte("pool"))
 	if ok && len(poolName) > 0 {
-		pool, ok := state.lookupPool(poolName)
+		pool, ok := ch.state.lookupPool(poolName)
 		if !ok {
 			return 0, fmt.Errorf("unknown pool name %q", poolName)
 		}
@@ -553,7 +557,7 @@ func (ch *chunk) parseBuild(i int, buf *bytes.Buffer, state *State, scope *fileS
 	// setup ch.env for this edge to evaluate paths
 	ch.env.edge = edge
 	for _, out := range *outs {
-		n, err := ch.targetNode(&ch.env, buf, out)
+		n, err := ch.targetNode(&ch.env, &ch.scratchBuf, out)
 		if err != nil {
 			return 0, err
 		}
@@ -565,7 +569,7 @@ func (ch *chunk) parseBuild(i int, buf *bytes.Buffer, state *State, scope *fileS
 	edge.implicitOuts = implicitOuts
 	edge.inputs = ch.edgePathSlab.slice(len(*ins))[:0]
 	for _, in := range *ins {
-		n, err := ch.targetNode(&ch.env, buf, in)
+		n, err := ch.targetNode(&ch.env, &ch.scratchBuf, in)
 		if err != nil {
 			return 0, err
 		}
@@ -577,7 +581,7 @@ func (ch *chunk) parseBuild(i int, buf *bytes.Buffer, state *State, scope *fileS
 	edge.orderOnlyDeps = orderOnly
 
 	for _, validation := range *validations {
-		n, err := ch.targetNode(&ch.env, buf, validation)
+		n, err := ch.targetNode(&ch.env, &ch.scratchBuf, validation)
 		if err != nil {
 			return 0, err
 		}
@@ -623,7 +627,7 @@ func (ch *chunk) parseVarBinding(i int, env evalSetEnv) error {
 }
 
 // parsePool parses pool statement at statements[i].
-func (ch *chunk) parsePool(i int, buf *bytes.Buffer, state *State, scope *fileScope, pool *Pool) (int, error) {
+func (ch *chunk) parsePool(i int, pool *Pool) (int, error) {
 	st := ch.statements[i]
 	name, err := ch.parseName(st.v, st.e)
 	if err != nil {
@@ -638,7 +642,7 @@ func (ch *chunk) parsePool(i int, buf *bytes.Buffer, state *State, scope *fileSc
 	if !ok {
 		return 0, fmt.Errorf("line:%d expect 'depth=' line", lineno(ch.buf, st.s))
 	}
-	value, err := evaluate(scope, buf, v)
+	value, err := evaluate(ch.scope, &ch.scratchBuf, v)
 	if err != nil {
 		return 0, fmt.Errorf("line:%d invalid pool depth %q: %w", lineno(ch.buf, st.s), v.v, err)
 	}
@@ -648,12 +652,12 @@ func (ch *chunk) parsePool(i int, buf *bytes.Buffer, state *State, scope *fileSc
 	}
 	pool.name = string(name)
 	pool.depth = depth
-	state.addPool(pool)
+	ch.state.addPool(pool)
 	return i, nil
 }
 
 // parseRule parses rules from statements[i:].
-func (ch *chunk) parseRule(ctx context.Context, i int, scope *fileScope, rule *rule) (int, error) {
+func (ch *chunk) parseRule(ctx context.Context, i int, rule *rule) (int, error) {
 	st := ch.statements[i]
 	s, err := ch.parseName(st.v, st.e)
 	if err != nil {
@@ -664,7 +668,7 @@ func (ch *chunk) parseRule(ctx context.Context, i int, scope *fileScope, rule *r
 		clog.Infof(ctx, "rule %q", name)
 	}
 	rule.name = name
-	err = scope.setRule(rule)
+	err = ch.scope.setRule(rule)
 	if err != nil {
 		return 0, fmt.Errorf("line:%d failed to set rule %q: %w", lineno(ch.buf, st.s), name, err)
 	}
@@ -692,13 +696,13 @@ func (ch *chunk) parseRuleBindings(i int, rule *rule) (int, error) {
 }
 
 // parseDefault parses default statement at statements[i].
-func (ch *chunk) parseDefault(i int, buf *bytes.Buffer, scope *fileScope) ([]*Node, error) {
+func (ch *chunk) parseDefault(i int) ([]*Node, error) {
 	st := ch.statements[i]
 	pp := newPathParser(ch.buf[st.v:st.e])
 	paths, _ := pp.pathList(nil)
 	var nodes []*Node
 	for i := range paths {
-		n, err := ch.targetNode(scope, buf, paths[i])
+		n, err := ch.targetNode(ch.scope, &ch.scratchBuf, paths[i])
 		if err != nil {
 			return nil, fmt.Errorf("line:%d bad default evaluate %q: %w", lineno(ch.buf, st.s), paths[i].v, err)
 		}
@@ -708,14 +712,14 @@ func (ch *chunk) parseDefault(i int, buf *bytes.Buffer, scope *fileScope) ([]*No
 }
 
 // parseInclude parses include statement at statements[i].
-func (ch *chunk) parseInclude(i int, buf *bytes.Buffer, scope *fileScope) (string, error) {
+func (ch *chunk) parseInclude(i int) (string, error) {
 	st := ch.statements[i]
 	pp := newPathParser(ch.buf[st.v:st.e])
 	paths, _ := pp.pathList(nil)
 	if len(paths) != 1 {
 		return "", fmt.Errorf("line:%d bad include paths=%d", lineno(ch.buf, st.s), len(paths))
 	}
-	include, err := ch.targetPath(scope, buf, paths[0])
+	include, err := ch.targetPath(ch.scope, &ch.scratchBuf, paths[0])
 	if err != nil {
 		return "", fmt.Errorf("line:%d bad include %q: %w", lineno(ch.buf, st.s), paths[0].v, err)
 	}
@@ -723,14 +727,14 @@ func (ch *chunk) parseInclude(i int, buf *bytes.Buffer, scope *fileScope) (strin
 }
 
 // parseSubninja parses subninja statement at statements[i].
-func (ch *chunk) parseSubninja(i int, buf *bytes.Buffer, scope *fileScope) (string, error) {
+func (ch *chunk) parseSubninja(i int) (string, error) {
 	st := ch.statements[i]
 	pp := newPathParser(ch.buf[st.v:st.e])
 	paths, _ := pp.pathList(nil)
 	if len(paths) != 1 {
 		return "", fmt.Errorf("line:%d bad subninja paths=%d", lineno(ch.buf, st.s), len(paths))
 	}
-	subninja, err := ch.targetPath(scope, buf, paths[0])
+	subninja, err := ch.targetPath(ch.scope, &ch.scratchBuf, paths[0])
 	if err != nil {
 		return "", fmt.Errorf("line:%d bad subninja %q: %w", lineno(ch.buf, st.s), paths[0].v, err)
 	}
