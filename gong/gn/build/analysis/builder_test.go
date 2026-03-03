@@ -15,6 +15,7 @@ import (
 
 	"go.chromium.org/build/gong/gn/build/environment"
 	"go.chromium.org/build/gong/gn/build/fs"
+	"go.chromium.org/build/gong/gn/build/graph"
 	"go.chromium.org/build/gong/gn/syntax"
 )
 
@@ -79,7 +80,7 @@ shared_library("bar") {}`),
 		t.Fatalf("Load failed: %v", err)
 	}
 	for _, item := range items {
-		_, err := builder.RecordDefinedItem(item)
+		_, _, err := builder.RecordDefinedItem(item)
 		if err != nil {
 			t.Fatalf("RecordDefinedItem(%s)=_, %v; want nil err", item.Label().UserVisibleString(true), err)
 		}
@@ -103,7 +104,7 @@ shared_library("bar") {}`),
 		t.Fatalf("Load failed: %v", err)
 	}
 	for _, item := range items {
-		_, err := builder.RecordDefinedItem(item)
+		_, _, err := builder.RecordDefinedItem(item)
 		if err != nil {
 			t.Fatalf("RecordDefinedItem(%s)=_, %v; want nil err", item.Label().UserVisibleString(true), err)
 		}
@@ -150,7 +151,7 @@ executable("app") {
 
 	var gotErr error
 	for _, item := range items {
-		_, err := builder.RecordDefinedItem(item)
+		_, _, err := builder.RecordDefinedItem(item)
 		if err != nil {
 			gotErr = err
 			break
@@ -174,24 +175,33 @@ toolchain("tc") { tool("link") { command = "" } }
 executable("app") {}`),
 		},
 	})
+	appLabel := environment.Label{
+		Dir:           mustDir(t, "//"),
+		Name:          "app",
+		ToolchainDir:  mustDir(t, "//"),
+		ToolchainName: "tc",
+	}
 	items, err := loader.Load(mustFile(t, "//BUILD.gn"), syntax.LocationRange{}, environment.Label{})
 	if err != nil {
 		t.Fatalf("Load failed: %v", err)
 	}
 
+	var resolvedTargets []*graph.Target
 	for _, item := range items {
-		_, err := builder.RecordDefinedItem(item)
+		_, resolved, err := builder.RecordDefinedItem(item)
 		if err != nil {
 			t.Fatalf("RecordDefinedItem failed: %v", err)
 		}
+		resolvedTargets = append(resolvedTargets, resolved...)
 	}
 
-	appRec, ok := builder.records[environment.Label{
-		Dir:           mustDir(t, "//"),
-		Name:          "app",
-		ToolchainDir:  mustDir(t, "//"),
-		ToolchainName: "tc",
-	}]
+	if len(resolvedTargets) != 1 {
+		t.Errorf("RecordDefinedItem resolvedTargets len = %d; want 1", len(resolvedTargets))
+	}
+	if resolvedTargets[0].Label() != appLabel {
+		t.Errorf("RecordDefinedItem resolvedTargets[0] = %s; want %s", resolvedTargets[0].Label().UserVisibleString(true), appLabel.UserVisibleString(true))
+	}
+	appRec, ok := builder.records[appLabel]
 	if !ok {
 		t.Fatalf("builder missing record for //:app(//:tc)")
 	}

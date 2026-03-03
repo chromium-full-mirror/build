@@ -7,6 +7,7 @@ package build
 
 import (
 	"fmt"
+	"iter"
 	"os"
 	"path"
 	"path/filepath"
@@ -17,6 +18,7 @@ import (
 	"go.chromium.org/build/gong/gn/build/analysis"
 	"go.chromium.org/build/gong/gn/build/environment"
 	"go.chromium.org/build/gong/gn/build/fs"
+	"go.chromium.org/build/gong/gn/build/graph"
 	"go.chromium.org/build/gong/gn/parse"
 	"go.chromium.org/build/gong/gn/resolve"
 	"go.chromium.org/build/gong/gn/syntax"
@@ -45,7 +47,7 @@ func findDotFile(currentDir string) (string, error) {
 type Setup struct {
 	buildSettings    environment.BuildSettings
 	loader           analysis.Loader
-	Builder          analysis.Builder
+	builder          analysis.Builder
 	rootBuildFile    fs.SourceFile
 	inputFileManager fs.InputFileManager
 
@@ -72,7 +74,7 @@ func NewSetup() *Setup {
 		FillArguments: true,
 	}
 	setup.loader = analysis.MakeLoader(&setup.buildSettings, &setup.inputFileManager)
-	setup.Builder = analysis.MakeBuilder(&setup.loader)
+	setup.builder = analysis.MakeBuilder(&setup.loader)
 	setup.dotfileSettings = analysis.NewSettings(&setup.buildSettings)
 	setup.dotfileScope = setup.dotfileSettings.NewScope()
 	return setup
@@ -391,36 +393,57 @@ type pendingLoad struct {
 	origin syntax.LocationRange
 }
 
-// Run runs the load, returning nil on success. On failure, returns the error.
-func (s *Setup) Run() error {
-	// TODO: run in parallel on errgroup.
-	// make sure both Builder and Loader are thread-safe to convert to async.
-	pending := []pendingLoad{{s.rootBuildFile, syntax.LocationRange{}}}
-	for len(pending) > 0 {
-		// TODO: support loads for other toolchains.
-		items, err := s.loader.Load(pending[0].file, pending[0].origin, environment.Label{})
+// Run runs the load, returning the resolved targets on success. On failure, returns the error.
+func (s *Setup) Run() ([]*graph.Target, error) {
+	var targets []*graph.Target
+	for target, err := range s.Targets() {
 		if err != nil {
-			return err
+			return nil, err
 		}
-		pending = pending[1:]
-		for _, item := range items {
-			unresolvedDeps, err := s.Builder.RecordDefinedItem(item)
+		targets = append(targets, target)
+	}
+	return targets, nil
+}
+
+// Targets returns a single-use iterator, running the build, and yielding successive targets
+// as the build progresses. Upon any failure, yields the error and halts the build.
+func (s *Setup) Targets() iter.Seq2[*graph.Target, error] {
+	return func(yield func(*graph.Target, error) bool) {
+		// TODO: run in parallel on errgroup.
+		// make sure both Builder and Loader are thread-safe to convert to async.
+		pending := []pendingLoad{{s.rootBuildFile, syntax.LocationRange{}}}
+		for len(pending) > 0 {
+			// TODO: support loads for other toolchains.
+			items, err := s.loader.Load(pending[0].file, pending[0].origin, environment.Label{})
 			if err != nil {
-				return err
+				yield(nil, err)
+				return
 			}
-			// Add all buildfiles from deps to queue.
-			// NOTE: This is maybe inefficient since we don't check if multiple deps are
-			// from the same buildfile. But the Loader will ignore seen buildfiles, so
-			// it might be okay?
-			for _, dep := range unresolvedDeps {
-				depFile, err := s.loader.BuildFileForLabel(dep.Label)
+			pending = pending[1:]
+			for _, item := range items {
+				unresolvedDeps, allResolved, err := s.builder.RecordDefinedItem(item)
 				if err != nil {
-					return err
+					yield(nil, err)
+					return
 				}
-				pending = append(pending, pendingLoad{depFile, dep.Origin.LocationRange()})
+				for _, resolved := range allResolved {
+					if !yield(resolved, nil) {
+						return
+					}
+				}
+				// Add all buildfiles from deps to queue.
+				// NOTE: This is maybe inefficient since we don't check if multiple deps are
+				// from the same buildfile. But the Loader will ignore seen buildfiles, so
+				// it might be okay?
+				for _, dep := range unresolvedDeps {
+					depFile, err := s.loader.BuildFileForLabel(dep.Label)
+					if err != nil {
+						yield(nil, err)
+						return
+					}
+					pending = append(pending, pendingLoad{depFile, dep.Origin.LocationRange()})
+				}
 			}
 		}
 	}
-
-	return nil
 }

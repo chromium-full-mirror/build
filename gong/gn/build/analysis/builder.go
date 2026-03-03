@@ -41,14 +41,20 @@ func MakeBuilder(loader *Loader) Builder {
 }
 
 // RecordDefinedItem receives an item definition, normally created by loading buildfiles.
-// The builder will record the item in an "unresolved" state.
-// Returns a list of labels of dependencies the item needs but the builder hasn't seen yet,
-// along with the location where the dep was defined.
-// Returns an error if there was an issue updating the builder's records.
+//
+// Returns ONE of the following:
+//   - If the item has newly-discovered dependencies that the builder hasn't seen yet,
+//     a slice of labels to these deps (and the origin of each dep for error-reporting
+//     purposes), OR
+//   - If the item's dependencies are fully resolved, a slice of target(s) that were
+//     successfully resolved (this allows callers to eagerly collect resolved targets,
+//     rather than waiting til the build graph is fully resolved), including the item
+//     itself if it is a target, OR
+//   - An error if there was an issue updating the builder's records.
 //
 // Callers of this function are responsible for loading the buildfile(s) containing the deps
 // requested.
-func (b *Builder) RecordDefinedItem(item graph.Item) ([]environment.LabelWithOrigin, error) {
+func (b *Builder) RecordDefinedItem(item graph.Item) ([]environment.LabelWithOrigin, []*graph.Target, error) {
 	// If there were items waiting for this one to be defined, a record already exists.
 	// Try to get the existing record, else create a new record.
 	label := item.Label()
@@ -56,7 +62,7 @@ func (b *Builder) RecordDefinedItem(item graph.Item) ([]environment.LabelWithOri
 	if ok {
 		// Check types, if the record was not just created.
 		if !record.item.CompatibleWith(item) {
-			return nil, ItemTypeMismatchError{
+			return nil, nil, ItemTypeMismatchError{
 				OriginNode:        parse.OriginNode{Node: item.DefinedFrom()},
 				label:             label,
 				itemOrPlaceholder: item,
@@ -65,7 +71,7 @@ func (b *Builder) RecordDefinedItem(item graph.Item) ([]environment.LabelWithOri
 		}
 		// Check that it's not been already defined.
 		if record.state != itemStateUndefined {
-			return nil, ItemRedefinedError{
+			return nil, nil, ItemRedefinedError{
 				previousOrigin: record.item.DefinedFrom(),
 				duplicateItem:  item,
 			}
@@ -89,30 +95,14 @@ func (b *Builder) RecordDefinedItem(item graph.Item) ([]environment.LabelWithOri
 		// HACK: Temporarily do not throw NotImplementedError for test to work.
 		fmt.Fprintf(os.Stderr, "got config %q but will do nothing yet! need to parse this config's deps.\n",
 			record.item.Label().UserVisibleString(false))
-		return nil, nil
+		return nil, nil, nil
 	case *graph.Toolchain:
 		return b.toolchainDefined(i, record)
 	}
-	return nil, fmt.Errorf("don't know how to handle %T item yet", item)
+	return nil, nil, fmt.Errorf("don't know how to handle %T item yet", item)
 }
 
-// ResolvedTargets returns targets that have been resolved.
-func (b *Builder) ResolvedTargets() []*graph.Target {
-	var targets []*graph.Target
-	for _, record := range b.records {
-		if record.state == itemStateResolved {
-			if target, ok := record.item.(*graph.Target); ok {
-				targets = append(targets, target)
-			}
-		}
-	}
-	slices.SortFunc(targets, func(a, b *graph.Target) int {
-		return a.Label().Compare(b.Label())
-	})
-	return targets
-}
-
-func (b *Builder) targetDefined(target *graph.Target, record *builderRecord) ([]environment.LabelWithOrigin, error) {
+func (b *Builder) targetDefined(target *graph.Target, record *builderRecord) ([]environment.LabelWithOrigin, []*graph.Target, error) {
 	var unresolvedDeps []environment.LabelWithOrigin
 
 	// Find all variables in this target that references labels.
@@ -129,7 +119,7 @@ func (b *Builder) targetDefined(target *graph.Target, record *builderRecord) ([]
 		for dep := range val.Labels() {
 			depRecord, err := b.recordFor(dep.Label, dep.Origin, expectedPlaceholder)
 			if err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 			if depRecord.state != itemStateResolved {
 				unresolvedDeps = append(unresolvedDeps, dep)
@@ -145,7 +135,7 @@ func (b *Builder) targetDefined(target *graph.Target, record *builderRecord) ([]
 	}
 	toolchainRec, err := b.recordFor(toolchainDep.Label, toolchainDep.Origin, &graph.Toolchain{})
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if toolchainRec.state != itemStateResolved {
 		unresolvedDeps = append(unresolvedDeps, toolchainDep)
@@ -154,17 +144,21 @@ func (b *Builder) targetDefined(target *graph.Target, record *builderRecord) ([]
 
 	// Return with the unresolved deps if we have any.
 	if record.unresolvedDeps > 0 {
-		return unresolvedDeps, nil
+		return unresolvedDeps, nil, nil
 	}
 
 	// Otherwise we can immediately try to resolve this target.
-	return nil, b.resolveTarget(target, record)
+	allResolved, err := b.resolveTarget(target, record)
+	if err != nil {
+		return nil, nil, err
+	}
+	return nil, allResolved, nil
 }
 
 // TODO: Support more than one toolchain.
-func (b *Builder) toolchainDefined(_ *graph.Toolchain, record *builderRecord) ([]environment.LabelWithOrigin, error) {
+func (b *Builder) toolchainDefined(_ *graph.Toolchain, record *builderRecord) ([]environment.LabelWithOrigin, []*graph.Target, error) {
 	if b.seenDefaultToolchain {
-		return nil, NotImplementedError{
+		return nil, nil, NotImplementedError{
 			what: "Support for multiple toolchains is not implemented yet.",
 		}
 	}
@@ -182,25 +176,29 @@ func (b *Builder) toolchainDefined(_ *graph.Toolchain, record *builderRecord) ([
 		}
 		switch dependentItem := dependent.item.(type) {
 		case *graph.Target:
-			if err := b.resolveTarget(dependentItem, dependent); err != nil {
-				return nil, err
+			allResolved, err := b.resolveTarget(dependentItem, dependent)
+			if err != nil {
+				return nil, nil, err
 			}
+			return nil, allResolved, nil
 		default:
 			fmt.Fprintf(os.Stderr, "don't know how to resolve %T items yet, skipping\n", dependentItem)
 		}
 	}
-	return nil, nil
+	return nil, nil, nil
 }
 
-func (b *Builder) resolveTarget(target *graph.Target, record *builderRecord) error {
+// resolveTarget attempts to resolve the target, recursively resolving dependents if found.
+// All resolved targets are returned.
+func (b *Builder) resolveTarget(target *graph.Target, record *builderRecord) ([]*graph.Target, error) {
 	if target.Schema == nil {
-		return environment.IllegalStateError{
+		return nil, environment.IllegalStateError{
 			Reason: "Attempted to resolve target without schema",
 		}
 	}
 	if target.Schema.Resolver == nil {
 		fmt.Fprintf(os.Stderr, "ignoring target %v for now since no resolver...\n", target.Label().UserVisibleString(false))
-		return nil
+		return nil, nil
 	}
 
 	// Determine the outdir for the target.
@@ -208,7 +206,7 @@ func (b *Builder) resolveTarget(target *graph.Target, record *builderRecord) err
 	// To be correct, we need to also support absolute paths, support gen/, support phony/, etc.
 	outDir, err := b.loader.buildSettings.BuildDir.ResolveRelativeDir("obj/" + target.Label().Dir.Path())
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	result, err := target.Schema.Resolver(graph.ResolverContext{
@@ -255,13 +253,14 @@ func (b *Builder) resolveTarget(target *graph.Target, record *builderRecord) err
 		},
 	})
 	if err != nil {
-		return err
+		return nil, err
 	}
 	target.Resolution.Label = target.Label()
 	target.Resolution.Metadata = result
 	record.state = itemStateResolved
 
 	// Recursively update everybody waiting on this item to be resolved.
+	allResolved := []*graph.Target{target}
 	for dependent := range record.dependents {
 		dependent.unresolvedDeps--
 		if dependent.unresolvedDeps > 0 {
@@ -269,16 +268,18 @@ func (b *Builder) resolveTarget(target *graph.Target, record *builderRecord) err
 		}
 		switch dependentTarget := dependent.item.(type) {
 		case *graph.Target:
-			if err := b.resolveTarget(dependentTarget, dependent); err != nil {
-				return err
+			resolved, err := b.resolveTarget(dependentTarget, dependent)
+			if err != nil {
+				return nil, err
 			}
+			allResolved = append(allResolved, resolved...)
 		default:
-			return environment.IllegalStateError{
+			return nil, environment.IllegalStateError{
 				Reason: "Builder constructed graph with non-target dep on target",
 			}
 		}
 	}
-	return nil
+	return allResolved, nil
 }
 
 // recordFor returns the record associated with the given label. Checks

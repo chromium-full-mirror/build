@@ -43,8 +43,11 @@ func (h *Command) genOneDir(dir string) error {
 	if err := setup.DoSetup(dir, true, &h.CommonFlags); err != nil {
 		return err
 	}
-	if err := setup.Run(); err != nil {
-		return fmt.Errorf("setup.Run failed: %w", err)
+	for target, err := range setup.Targets() {
+		if err != nil {
+			return fmt.Errorf("setup.Targets failed: %w", err)
+		}
+		fmt.Fprintf(os.Stderr, "DEBUG: collected target %s\n", target.Label().UserVisibleString(true))
 	}
 	return fmt.Errorf("genOneDir not implemented. setup: %v", setup)
 }

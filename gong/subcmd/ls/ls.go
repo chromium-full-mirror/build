@@ -11,6 +11,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"slices"
 
 	"github.com/google/subcommands"
 
@@ -43,10 +44,14 @@ func (h *Command) getTargets(dir string) ([]*graph.Target, error) {
 	if err := setup.DoSetup(dir, true, &h.CommonFlags); err != nil {
 		return nil, err
 	}
-	if err := setup.Run(); err != nil {
+	targets, err := setup.Run()
+	if err != nil {
 		return nil, err
 	}
-	return setup.Builder.ResolvedTargets(), nil
+	slices.SortFunc(targets, func(a, b *graph.Target) int {
+		return a.Label().Compare(b.Label())
+	})
+	return targets, nil
 }
 
 func (h *Command) Execute(ctx context.Context, f *flag.FlagSet, _ ...any) subcommands.ExitStatus {
