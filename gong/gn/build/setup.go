@@ -222,7 +222,7 @@ func (s *Setup) fillBuildDir(buildDir string) error {
 	}
 
 	// Create the build dir.
-	buildDirAbs := resolved.Resolve(s.buildSettings.RootPath)
+	buildDirAbs := s.buildSettings.FullDirPath(resolved)
 	if err := os.MkdirAll(buildDirAbs, 0755); err != nil {
 		return fmt.Errorf("failed to create build directory: %w", err)
 	}

@@ -47,8 +47,18 @@ type BuildSettings struct {
 
 // FullPath returns the full absolute OS path corresponding to the given
 // file in the root source tree.
+//
+// This is equivalent to C++ GN's BuildSettings::GetFullPath(const SourceFile& file).
 func (bs *BuildSettings) FullPath(file fs.SourceFile) string {
 	return filepath.ToSlash(file.Resolve(bs.RootPath))
+}
+
+// FullDirPath returns the full absolute OS path corresponding to the given
+// directory in the root source tree.
+//
+// This is equivalent to C++ GN's BuildSettings::GetFullPath(const SourceDir& dir).
+func (bs *BuildSettings) FullDirPath(dir fs.SourceDir) string {
+	return filepath.ToSlash(dir.Resolve(bs.RootPath))
 }
 
 // FullPathSecondary returns the absolute OS path inside the secondary
