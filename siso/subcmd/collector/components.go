@@ -20,7 +20,14 @@ import (
 	"go.chromium.org/build/siso/auth/cred"
 )
 
-func components(credential cred.Cred, projectID, collectorAddress string, insecure bool) (otelcol.Factories, error) {
+type componentsConfig struct {
+	credential       cred.Cred
+	projectID        string
+	collectorAddress string
+	insecure         bool
+}
+
+func components(cfg componentsConfig) (otelcol.Factories, error) {
 	var err error
 	factories := otelcol.Factories{
 		Telemetry: otelconftelemetry.NewFactory(),
@@ -37,7 +44,7 @@ func components(credential cred.Cred, projectID, collectorAddress string, insecu
 
 	receiverFactory := &otlpFactory{
 		Factory:          otlpreceiver.NewFactory(),
-		collectorAddress: collectorAddress,
+		collectorAddress: cfg.collectorAddress,
 	}
 	factories.Receivers, err = otelcol.MakeFactoryMap[receiver.Factory](
 		receiverFactory,
@@ -49,9 +56,9 @@ func components(credential cred.Cred, projectID, collectorAddress string, insecu
 	factories.ReceiverModules[otlpreceiver.NewFactory().Type()] = "go.opentelemetry.io/collector/receiver/otlpreceiver"
 	exporterFactory := &gceFactory{
 		Factory:    googlecloudexporter.NewFactory(),
-		credential: credential,
-		projectID:  projectID,
-		insecure:   insecure,
+		credential: cfg.credential,
+		projectID:  cfg.projectID,
+		insecure:   cfg.insecure,
 	}
 	factories.Exporters, err = otelcol.MakeFactoryMap[exporter.Factory](
 		exporterFactory,

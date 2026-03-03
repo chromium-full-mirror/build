@@ -68,7 +68,12 @@ func (c *Command) Execute(ctx context.Context, f *flag.FlagSet, args ...any) sub
 
 	set := otelcol.CollectorSettings{
 		Factories: func() (otelcol.Factories, error) {
-			return components(credential, c.projectID, c.collectorAddress, c.insecure)
+			return components(componentsConfig{
+				credential:       credential,
+				projectID:        c.projectID,
+				collectorAddress: c.collectorAddress,
+				insecure:         c.insecure,
+			})
 		},
 		ConfigProviderSettings: otelcol.ConfigProviderSettings{
 			ResolverSettings: confmap.ResolverSettings{
