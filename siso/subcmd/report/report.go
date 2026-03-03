@@ -105,6 +105,7 @@ func (c *Command) collect(ctx context.Context) (map[string]digest.Data, error) {
 		return nil, err
 	}
 	osfs := osfs.New(ctx, "fs", c.osfsopt)
+	rc := &reportCollector{fsys: fsys, osfs: osfs, report: report}
 
 	for _, pat := range []string{"siso*", ".siso*", "args.gn", "gn_logs.txt"} {
 		matches, err := fs.Glob(fsys, pat)
@@ -121,7 +122,7 @@ func (c *Command) collect(ctx context.Context) (map[string]digest.Data, error) {
 				continue
 			}
 			if fi.IsDir() {
-				err = collectInDir(ctx, fsys, osfs, fname, report)
+				err = rc.collectInDir(ctx, fname)
 				if err != nil {
 					clog.Errorf(ctx, "failed to collect in dir %s: %v", fname, err)
 				}
@@ -160,15 +161,22 @@ func (c *Command) collect(ctx context.Context) (map[string]digest.Data, error) {
 		clog.Infof(ctx, "no .reproxy_tmp/logs: %v", err)
 		return report, nil
 	}
-	err = collectInDir(ctx, fsys, osfs, ".reproxy_tmp/logs", report)
+	err = rc.collectInDir(ctx, ".reproxy_tmp/logs")
 	if err != nil {
 		clog.Errorf(ctx, "failed to collect in .reproxy_tmp/logs: %v", err)
 	}
 	return report, nil
 }
 
-func collectInDir(ctx context.Context, fsys fs.FS, osfs *osfs.OSFS, dname string, report map[string]digest.Data) error {
-	return fs.WalkDir(fsys, dname, func(fname string, d fs.DirEntry, err error) error {
+// reportCollector collects files for a report.
+type reportCollector struct {
+	fsys   fs.FS
+	osfs   *osfs.OSFS
+	report map[string]digest.Data
+}
+
+func (rc *reportCollector) collectInDir(ctx context.Context, dname string) error {
+	return fs.WalkDir(rc.fsys, dname, func(fname string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -182,17 +190,17 @@ func collectInDir(ctx context.Context, fsys fs.FS, osfs *osfs.OSFS, dname string
 		}
 		if fi.IsDir() {
 			clog.Infof(ctx, "symlink to dir %s", fname)
-			return collectInDir(ctx, fsys, osfs, fname, report)
+			return rc.collectInDir(ctx, fname)
 		}
 		ui.Default.PrintLines(fmt.Sprintf("reading %s", fname))
-		src := osfs.FileSource(fname, -1)
+		src := rc.osfs.FileSource(fname, -1)
 		data, err := digest.FromLocalFile(ctx, src)
 		if err != nil {
 			clog.Errorf(ctx, "Error to calculate digest %s: %v", fname, err)
 			return nil
 		}
 		clog.Infof(ctx, "add %s %s", fname, data.Digest())
-		report[fname] = data
+		rc.report[fname] = data
 		return nil
 	})
 }
