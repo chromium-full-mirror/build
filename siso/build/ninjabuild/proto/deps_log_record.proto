@@ -1,0 +1,43 @@
+// Copyright 2026 The Chromium Authors
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
+syntax = "proto3";
+
+package siso.build.ninjabuild;
+
+option go_package = "go.chromium.org/build/siso/build/ninjabuild/proto";
+
+message Digest {
+  string hash = 1;
+  int64 size_bytes = 2;
+}
+
+message PathRecord {
+  int64 id = 1;
+  string pathname = 2;
+}
+
+message OutputID {
+  int64 id = 1;
+  int64 mtime = 2;  // unix nano sec.
+  Digest digest = 3;
+}
+
+message InputID {
+  int64 id = 1;
+}
+
+message DepsRecord {
+  OutputID output = 1;
+  repeated InputID inputs = 2;
+}
+
+message DepsLogRecord {
+  // pathnames.
+  // assign path id from beginning of file.
+  repeated PathRecord paths = 1;
+
+  // deps record. i.e. output -> {inputs}
+  repeated DepsRecord deps = 2;
+}
