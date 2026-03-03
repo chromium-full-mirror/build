@@ -83,18 +83,25 @@ type DepsLog struct {
 // NewDepsLog reads or creates a new deps log.
 // If there are read errors, returns a truncated deps log.
 func NewDepsLog(ctx context.Context, fname string) (*DepsLog, error) {
+	started := time.Now()
 	d, err := newDepsLog(ctx, fname)
+	if errors.Is(err, errBrokenDepsLog) {
+		createNewDepsLogFile(ctx, fname)
+		d, err = newDepsLog(ctx, fname)
+	}
 	if err == nil {
 		err = d.recompactIfNeeded(ctx)
 		if err != nil {
 			clog.Warningf(ctx, "failed to recompact deps log: %v", err)
 			return nil, err
 		}
+		clog.Infof(ctx, "use new deps_log %s in %s", fname, time.Since(started))
 		return &DepsLog{
 			fname:   fname,
 			depsLog: d,
 		}, nil
 	}
+	clog.Infof(ctx, "fallback to legacy deps_log: %v", err)
 	// TODO: use new deps log if it doesn't exist.
 
 	// fallback to ninja compat deps log.
@@ -109,6 +116,7 @@ func NewDepsLog(ctx context.Context, fname string) (*DepsLog, error) {
 			return nil, err
 		}
 	}
+	clog.Infof(ctx, "use legacy deps_log %s in %s", fname, time.Since(started))
 	return &DepsLog{
 		fname:  fname,
 		legacy: legacy,
@@ -332,41 +340,30 @@ readLoop:
 		}
 	depsRecordLoop:
 		for _, deps := range m.Deps {
-			out := deps.Output
-			if out == nil {
-				clog.Warningf(ctx, "bad output")
+			if deps.OutId < 0 || deps.OutId >= int64(len(d.paths)) {
+				clog.Warningf(ctx, "bad path id=%d (d.paths=%d)", deps.OutId, len(d.paths))
 				broken = true
 				continue
 			}
-			if out.Id < 0 || out.Id >= int64(len(d.paths)) {
-				clog.Warningf(ctx, "bad path id=%d (d.paths=%d)", out.Id, len(d.paths))
-				broken = true
-				continue
-			}
-			inputs := make([]int, len(deps.Inputs))
-			for i, input := range deps.Inputs {
-				if input == nil {
-					clog.Warningf(ctx, "bad input#%d", i)
-					broken = true
-					break
-				}
-				if input.Id < 0 || input.Id >= int64(len(d.paths)) {
-					clog.Warningf(ctx, "bad path id=%d (d.paths=%d)", input.Id, len(d.paths))
+			inputs := make([]int, len(deps.InputIds))
+			for i, input := range deps.InputIds {
+				if input < 0 || input >= int64(len(d.paths)) {
+					clog.Warningf(ctx, "bad path id=%d (d.paths=%d)", input, len(d.paths))
 					broken = true
 					continue depsRecordLoop
 				}
-				inputs[i] = int(input.Id)
+				inputs[i] = int(input)
 			}
 			rec := &depsRecord{
-				mtime: out.Mtime,
+				mtime: deps.OutMtime,
 				digest: digest.Digest{
-					Hash:      out.Digest.GetHash(),
-					SizeBytes: out.Digest.GetSizeBytes(),
+					Hash:      deps.OutHash,
+					SizeBytes: deps.OutSizeBytes,
 				},
 				inputs: inputs,
 			}
 			totalRecords++
-			if !d.update(ctx, out.Id, rec) {
+			if !d.update(ctx, deps.OutId, rec) {
 				uniqueRecords++
 			}
 		}
@@ -398,7 +395,7 @@ func (*depsLog) verifySignature(ctx context.Context, f io.Reader) error {
 		return fmt.Errorf("failed to read file signature=%d: %w", n, err)
 	}
 	if !bytes.Equal(buf, []byte(depsLogFileSignature)) {
-		return fmt.Errorf("worng signature %q", buf)
+		return fmt.Errorf("wrong signature %q!=%q", buf, depsLogFileSignature)
 	}
 	return nil
 }
@@ -681,7 +678,7 @@ func (d *depsLog) Record(ctx context.Context, output string, mtime time.Time, dg
 			Pathname: output,
 		})
 	}
-	inputs := make([]*pb.InputID, 0, len(deps))
+	inputs := make([]int64, 0, len(deps))
 	depIDs := make([]int, 0, len(deps))
 	for i, dep := range deps {
 		dep = filepath.ToSlash(dep)
@@ -696,9 +693,7 @@ func (d *depsLog) Record(ctx context.Context, output string, mtime time.Time, dg
 				Pathname: dep,
 			})
 		}
-		inputs = append(inputs, &pb.InputID{
-			Id: int64(di),
-		})
+		inputs = append(inputs, int64(di))
 		depIDs = append(depIDs, di)
 	}
 	if rec == nil {
@@ -726,15 +721,11 @@ func (d *depsLog) Record(ctx context.Context, output string, mtime time.Time, dg
 		return false, nil
 	}
 	rec.Deps = append(rec.Deps, &pb.DepsRecord{
-		Output: &pb.OutputID{
-			Id:    int64(i),
-			Mtime: mtime.UnixNano(),
-			Digest: &pb.Digest{
-				Hash:      dg.Hash,
-				SizeBytes: dg.SizeBytes,
-			},
-		},
-		Inputs: inputs,
+		OutId:        int64(i),
+		OutMtime:     mtime.UnixNano(),
+		OutHash:      dg.Hash,
+		OutSizeBytes: dg.SizeBytes,
+		InputIds:     inputs,
 	})
 	d.update(ctx, int64(i), &depsRecord{
 		mtime:  mtime.UnixNano(),

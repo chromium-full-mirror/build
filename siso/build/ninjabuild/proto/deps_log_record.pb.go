@@ -25,58 +25,6 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-type Digest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Hash          string                 `protobuf:"bytes,1,opt,name=hash,proto3" json:"hash,omitempty"`
-	SizeBytes     int64                  `protobuf:"varint,2,opt,name=size_bytes,json=sizeBytes,proto3" json:"size_bytes,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *Digest) Reset() {
-	*x = Digest{}
-	mi := &file_deps_log_record_proto_msgTypes[0]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *Digest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*Digest) ProtoMessage() {}
-
-func (x *Digest) ProtoReflect() protoreflect.Message {
-	mi := &file_deps_log_record_proto_msgTypes[0]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use Digest.ProtoReflect.Descriptor instead.
-func (*Digest) Descriptor() ([]byte, []int) {
-	return file_deps_log_record_proto_rawDescGZIP(), []int{0}
-}
-
-func (x *Digest) GetHash() string {
-	if x != nil {
-		return x.Hash
-	}
-	return ""
-}
-
-func (x *Digest) GetSizeBytes() int64 {
-	if x != nil {
-		return x.SizeBytes
-	}
-	return 0
-}
-
 type PathRecord struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Id            int64                  `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
@@ -87,7 +35,7 @@ type PathRecord struct {
 
 func (x *PathRecord) Reset() {
 	*x = PathRecord{}
-	mi := &file_deps_log_record_proto_msgTypes[1]
+	mi := &file_deps_log_record_proto_msgTypes[0]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -99,7 +47,7 @@ func (x *PathRecord) String() string {
 func (*PathRecord) ProtoMessage() {}
 
 func (x *PathRecord) ProtoReflect() protoreflect.Message {
-	mi := &file_deps_log_record_proto_msgTypes[1]
+	mi := &file_deps_log_record_proto_msgTypes[0]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -112,7 +60,7 @@ func (x *PathRecord) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PathRecord.ProtoReflect.Descriptor instead.
 func (*PathRecord) Descriptor() ([]byte, []int) {
-	return file_deps_log_record_proto_rawDescGZIP(), []int{1}
+	return file_deps_log_record_proto_rawDescGZIP(), []int{0}
 }
 
 func (x *PathRecord) GetId() int64 {
@@ -129,121 +77,20 @@ func (x *PathRecord) GetPathname() string {
 	return ""
 }
 
-type OutputID struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            int64                  `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
-	Mtime         int64                  `protobuf:"varint,2,opt,name=mtime,proto3" json:"mtime,omitempty"` // unix nano sec.
-	Digest        *Digest                `protobuf:"bytes,3,opt,name=digest,proto3" json:"digest,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *OutputID) Reset() {
-	*x = OutputID{}
-	mi := &file_deps_log_record_proto_msgTypes[2]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *OutputID) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*OutputID) ProtoMessage() {}
-
-func (x *OutputID) ProtoReflect() protoreflect.Message {
-	mi := &file_deps_log_record_proto_msgTypes[2]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use OutputID.ProtoReflect.Descriptor instead.
-func (*OutputID) Descriptor() ([]byte, []int) {
-	return file_deps_log_record_proto_rawDescGZIP(), []int{2}
-}
-
-func (x *OutputID) GetId() int64 {
-	if x != nil {
-		return x.Id
-	}
-	return 0
-}
-
-func (x *OutputID) GetMtime() int64 {
-	if x != nil {
-		return x.Mtime
-	}
-	return 0
-}
-
-func (x *OutputID) GetDigest() *Digest {
-	if x != nil {
-		return x.Digest
-	}
-	return nil
-}
-
-type InputID struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            int64                  `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *InputID) Reset() {
-	*x = InputID{}
-	mi := &file_deps_log_record_proto_msgTypes[3]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *InputID) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*InputID) ProtoMessage() {}
-
-func (x *InputID) ProtoReflect() protoreflect.Message {
-	mi := &file_deps_log_record_proto_msgTypes[3]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use InputID.ProtoReflect.Descriptor instead.
-func (*InputID) Descriptor() ([]byte, []int) {
-	return file_deps_log_record_proto_rawDescGZIP(), []int{3}
-}
-
-func (x *InputID) GetId() int64 {
-	if x != nil {
-		return x.Id
-	}
-	return 0
-}
-
 type DepsRecord struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Output        *OutputID              `protobuf:"bytes,1,opt,name=output,proto3" json:"output,omitempty"`
-	Inputs        []*InputID             `protobuf:"bytes,2,rep,name=inputs,proto3" json:"inputs,omitempty"`
+	OutId         int64                  `protobuf:"varint,1,opt,name=out_id,json=outId,proto3" json:"out_id,omitempty"`
+	OutMtime      int64                  `protobuf:"varint,2,opt,name=out_mtime,json=outMtime,proto3" json:"out_mtime,omitempty"` // unix nano sec.
+	OutHash       string                 `protobuf:"bytes,3,opt,name=out_hash,json=outHash,proto3" json:"out_hash,omitempty"`
+	OutSizeBytes  int64                  `protobuf:"varint,4,opt,name=out_size_bytes,json=outSizeBytes,proto3" json:"out_size_bytes,omitempty"`
+	InputIds      []int64                `protobuf:"varint,5,rep,packed,name=input_ids,json=inputIds,proto3" json:"input_ids,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *DepsRecord) Reset() {
 	*x = DepsRecord{}
-	mi := &file_deps_log_record_proto_msgTypes[4]
+	mi := &file_deps_log_record_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -255,7 +102,7 @@ func (x *DepsRecord) String() string {
 func (*DepsRecord) ProtoMessage() {}
 
 func (x *DepsRecord) ProtoReflect() protoreflect.Message {
-	mi := &file_deps_log_record_proto_msgTypes[4]
+	mi := &file_deps_log_record_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -268,19 +115,40 @@ func (x *DepsRecord) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DepsRecord.ProtoReflect.Descriptor instead.
 func (*DepsRecord) Descriptor() ([]byte, []int) {
-	return file_deps_log_record_proto_rawDescGZIP(), []int{4}
+	return file_deps_log_record_proto_rawDescGZIP(), []int{1}
 }
 
-func (x *DepsRecord) GetOutput() *OutputID {
+func (x *DepsRecord) GetOutId() int64 {
 	if x != nil {
-		return x.Output
+		return x.OutId
 	}
-	return nil
+	return 0
 }
 
-func (x *DepsRecord) GetInputs() []*InputID {
+func (x *DepsRecord) GetOutMtime() int64 {
 	if x != nil {
-		return x.Inputs
+		return x.OutMtime
+	}
+	return 0
+}
+
+func (x *DepsRecord) GetOutHash() string {
+	if x != nil {
+		return x.OutHash
+	}
+	return ""
+}
+
+func (x *DepsRecord) GetOutSizeBytes() int64 {
+	if x != nil {
+		return x.OutSizeBytes
+	}
+	return 0
+}
+
+func (x *DepsRecord) GetInputIds() []int64 {
+	if x != nil {
+		return x.InputIds
 	}
 	return nil
 }
@@ -298,7 +166,7 @@ type DepsLogRecord struct {
 
 func (x *DepsLogRecord) Reset() {
 	*x = DepsLogRecord{}
-	mi := &file_deps_log_record_proto_msgTypes[5]
+	mi := &file_deps_log_record_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -310,7 +178,7 @@ func (x *DepsLogRecord) String() string {
 func (*DepsLogRecord) ProtoMessage() {}
 
 func (x *DepsLogRecord) ProtoReflect() protoreflect.Message {
-	mi := &file_deps_log_record_proto_msgTypes[5]
+	mi := &file_deps_log_record_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -323,7 +191,7 @@ func (x *DepsLogRecord) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DepsLogRecord.ProtoReflect.Descriptor instead.
 func (*DepsLogRecord) Descriptor() ([]byte, []int) {
-	return file_deps_log_record_proto_rawDescGZIP(), []int{5}
+	return file_deps_log_record_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *DepsLogRecord) GetPaths() []*PathRecord {
@@ -344,25 +212,18 @@ var File_deps_log_record_proto protoreflect.FileDescriptor
 
 const file_deps_log_record_proto_rawDesc = "" +
 	"\n" +
-	"\x15deps_log_record.proto\x12\x15siso.build.ninjabuild\";\n" +
-	"\x06Digest\x12\x12\n" +
-	"\x04hash\x18\x01 \x01(\tR\x04hash\x12\x1d\n" +
-	"\n" +
-	"size_bytes\x18\x02 \x01(\x03R\tsizeBytes\"8\n" +
+	"\x15deps_log_record.proto\x12\x15siso.build.ninjabuild\"8\n" +
 	"\n" +
 	"PathRecord\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x03R\x02id\x12\x1a\n" +
-	"\bpathname\x18\x02 \x01(\tR\bpathname\"g\n" +
-	"\bOutputID\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\x03R\x02id\x12\x14\n" +
-	"\x05mtime\x18\x02 \x01(\x03R\x05mtime\x125\n" +
-	"\x06digest\x18\x03 \x01(\v2\x1d.siso.build.ninjabuild.DigestR\x06digest\"\x19\n" +
-	"\aInputID\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\x03R\x02id\"}\n" +
+	"\bpathname\x18\x02 \x01(\tR\bpathname\"\x9e\x01\n" +
 	"\n" +
-	"DepsRecord\x127\n" +
-	"\x06output\x18\x01 \x01(\v2\x1f.siso.build.ninjabuild.OutputIDR\x06output\x126\n" +
-	"\x06inputs\x18\x02 \x03(\v2\x1e.siso.build.ninjabuild.InputIDR\x06inputs\"\x7f\n" +
+	"DepsRecord\x12\x15\n" +
+	"\x06out_id\x18\x01 \x01(\x03R\x05outId\x12\x1b\n" +
+	"\tout_mtime\x18\x02 \x01(\x03R\boutMtime\x12\x19\n" +
+	"\bout_hash\x18\x03 \x01(\tR\aoutHash\x12$\n" +
+	"\x0eout_size_bytes\x18\x04 \x01(\x03R\foutSizeBytes\x12\x1b\n" +
+	"\tinput_ids\x18\x05 \x03(\x03R\binputIds\"\x7f\n" +
 	"\rDepsLogRecord\x127\n" +
 	"\x05paths\x18\x01 \x03(\v2!.siso.build.ninjabuild.PathRecordR\x05paths\x125\n" +
 	"\x04deps\x18\x02 \x03(\v2!.siso.build.ninjabuild.DepsRecordR\x04depsB3Z1go.chromium.org/build/siso/build/ninjabuild/protob\x06proto3"
@@ -379,26 +240,20 @@ func file_deps_log_record_proto_rawDescGZIP() []byte {
 	return file_deps_log_record_proto_rawDescData
 }
 
-var file_deps_log_record_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
+var file_deps_log_record_proto_msgTypes = make([]protoimpl.MessageInfo, 3)
 var file_deps_log_record_proto_goTypes = []any{
-	(*Digest)(nil),        // 0: siso.build.ninjabuild.Digest
-	(*PathRecord)(nil),    // 1: siso.build.ninjabuild.PathRecord
-	(*OutputID)(nil),      // 2: siso.build.ninjabuild.OutputID
-	(*InputID)(nil),       // 3: siso.build.ninjabuild.InputID
-	(*DepsRecord)(nil),    // 4: siso.build.ninjabuild.DepsRecord
-	(*DepsLogRecord)(nil), // 5: siso.build.ninjabuild.DepsLogRecord
+	(*PathRecord)(nil),    // 0: siso.build.ninjabuild.PathRecord
+	(*DepsRecord)(nil),    // 1: siso.build.ninjabuild.DepsRecord
+	(*DepsLogRecord)(nil), // 2: siso.build.ninjabuild.DepsLogRecord
 }
 var file_deps_log_record_proto_depIdxs = []int32{
-	0, // 0: siso.build.ninjabuild.OutputID.digest:type_name -> siso.build.ninjabuild.Digest
-	2, // 1: siso.build.ninjabuild.DepsRecord.output:type_name -> siso.build.ninjabuild.OutputID
-	3, // 2: siso.build.ninjabuild.DepsRecord.inputs:type_name -> siso.build.ninjabuild.InputID
-	1, // 3: siso.build.ninjabuild.DepsLogRecord.paths:type_name -> siso.build.ninjabuild.PathRecord
-	4, // 4: siso.build.ninjabuild.DepsLogRecord.deps:type_name -> siso.build.ninjabuild.DepsRecord
-	5, // [5:5] is the sub-list for method output_type
-	5, // [5:5] is the sub-list for method input_type
-	5, // [5:5] is the sub-list for extension type_name
-	5, // [5:5] is the sub-list for extension extendee
-	0, // [0:5] is the sub-list for field type_name
+	0, // 0: siso.build.ninjabuild.DepsLogRecord.paths:type_name -> siso.build.ninjabuild.PathRecord
+	1, // 1: siso.build.ninjabuild.DepsLogRecord.deps:type_name -> siso.build.ninjabuild.DepsRecord
+	2, // [2:2] is the sub-list for method output_type
+	2, // [2:2] is the sub-list for method input_type
+	2, // [2:2] is the sub-list for extension type_name
+	2, // [2:2] is the sub-list for extension extendee
+	0, // [0:2] is the sub-list for field type_name
 }
 
 func init() { file_deps_log_record_proto_init() }
@@ -412,7 +267,7 @@ func file_deps_log_record_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_deps_log_record_proto_rawDesc), len(file_deps_log_record_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   6,
+			NumMessages:   3,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
