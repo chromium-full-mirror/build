@@ -16,6 +16,8 @@ import (
 
 	"go.chromium.org/build/gong/gn"
 	"go.chromium.org/build/gong/gn/build"
+	"go.chromium.org/build/gong/gn/build/environment"
+	"go.chromium.org/build/gong/gn/build/graph"
 	"go.chromium.org/build/gong/ui"
 )
 
@@ -43,12 +45,35 @@ func (h *Command) genOneDir(dir string) error {
 	if err := setup.DoSetup(dir, true, &h.CommonFlags); err != nil {
 		return err
 	}
-	for target, err := range setup.Targets() {
+
+	toolchains := make(map[environment.Label]*graph.Toolchain)
+	targetsByToolchain := make(map[environment.Label][]*graph.Target)
+	for item, err := range setup.Items() {
 		if err != nil {
-			return fmt.Errorf("setup.Targets failed: %w", err)
+			return fmt.Errorf("build failed: %w", err)
 		}
-		fmt.Fprintf(os.Stderr, "DEBUG: collected target %s\n", target.Label().UserVisibleString(true))
+		switch i := item.(type) {
+		case *graph.Target:
+			// TODO: write this target's subninja out.
+			fmt.Fprintf(os.Stderr, "DEBUG: collected target %s\n", i.Label().UserVisibleString(true))
+			// Bucket this target by toolchain, so that when we write toolchains we can reference the subninjas.
+			tcLabel := i.Label().ToolchainLabel()
+			targetsByToolchain[tcLabel] = append(targetsByToolchain[tcLabel], i)
+		case *graph.Toolchain:
+			toolchains[i.Label()] = i
+		}
 	}
+
+	for tcLabel, targets := range targetsByToolchain {
+		tc, ok := toolchains[tcLabel]
+		if !ok {
+			return fmt.Errorf("couldn't find toolchain %s", tcLabel.UserVisibleString(false))
+		}
+		// TODO: write this toolchain out.
+		fmt.Fprintf(os.Stderr, "DEBUG: need to write out toolchain %s and its %d targets\n",
+			tc.Label().UserVisibleString(false), len(targets))
+	}
+
 	return fmt.Errorf("genOneDir not implemented. setup: %v", setup)
 }
 

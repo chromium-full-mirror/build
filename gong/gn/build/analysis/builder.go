@@ -46,15 +46,15 @@ func MakeBuilder(loader *Loader) Builder {
 //   - If the item has newly-discovered dependencies that the builder hasn't seen yet,
 //     a slice of labels to these deps (and the origin of each dep for error-reporting
 //     purposes), OR
-//   - If the item's dependencies are fully resolved, a slice of target(s) that were
-//     successfully resolved (this allows callers to eagerly collect resolved targets,
+//   - If the item's dependencies are fully resolved, a slice of item(s) that were
+//     successfully resolved (this allows callers to eagerly collect resolved items,
 //     rather than waiting til the build graph is fully resolved), including the item
-//     itself if it is a target, OR
+//     itself, OR
 //   - An error if there was an issue updating the builder's records.
 //
 // Callers of this function are responsible for loading the buildfile(s) containing the deps
 // requested.
-func (b *Builder) RecordDefinedItem(item graph.Item) ([]environment.LabelWithOrigin, []*graph.Target, error) {
+func (b *Builder) RecordDefinedItem(item graph.Item) ([]environment.LabelWithOrigin, []graph.Item, error) {
 	// If there were items waiting for this one to be defined, a record already exists.
 	// Try to get the existing record, else create a new record.
 	label := item.Label()
@@ -102,7 +102,7 @@ func (b *Builder) RecordDefinedItem(item graph.Item) ([]environment.LabelWithOri
 	return nil, nil, fmt.Errorf("don't know how to handle %T item yet", item)
 }
 
-func (b *Builder) targetDefined(target *graph.Target, record *builderRecord) ([]environment.LabelWithOrigin, []*graph.Target, error) {
+func (b *Builder) targetDefined(target *graph.Target, record *builderRecord) ([]environment.LabelWithOrigin, []graph.Item, error) {
 	var unresolvedDeps []environment.LabelWithOrigin
 
 	// Find all variables in this target that references labels.
@@ -156,7 +156,7 @@ func (b *Builder) targetDefined(target *graph.Target, record *builderRecord) ([]
 }
 
 // TODO: Support more than one toolchain.
-func (b *Builder) toolchainDefined(_ *graph.Toolchain, record *builderRecord) ([]environment.LabelWithOrigin, []*graph.Target, error) {
+func (b *Builder) toolchainDefined(toolchain *graph.Toolchain, record *builderRecord) ([]environment.LabelWithOrigin, []graph.Item, error) {
 	if b.seenDefaultToolchain {
 		return nil, nil, NotImplementedError{
 			what: "Support for multiple toolchains is not implemented yet.",
@@ -169,6 +169,7 @@ func (b *Builder) toolchainDefined(_ *graph.Toolchain, record *builderRecord) ([
 	record.state = itemStateResolved
 
 	// Recursively update everybody waiting on this item to be resolved.
+	allResolved := []graph.Item{toolchain}
 	for dependent := range record.dependents {
 		dependent.unresolvedDeps--
 		if dependent.unresolvedDeps > 0 {
@@ -176,21 +177,21 @@ func (b *Builder) toolchainDefined(_ *graph.Toolchain, record *builderRecord) ([
 		}
 		switch dependentItem := dependent.item.(type) {
 		case *graph.Target:
-			allResolved, err := b.resolveTarget(dependentItem, dependent)
+			resolved, err := b.resolveTarget(dependentItem, dependent)
 			if err != nil {
 				return nil, nil, err
 			}
-			return nil, allResolved, nil
+			allResolved = append(allResolved, resolved...)
 		default:
 			fmt.Fprintf(os.Stderr, "don't know how to resolve %T items yet, skipping\n", dependentItem)
 		}
 	}
-	return nil, nil, nil
+	return nil, allResolved, nil
 }
 
 // resolveTarget attempts to resolve the target, recursively resolving dependents if found.
 // All resolved targets are returned.
-func (b *Builder) resolveTarget(target *graph.Target, record *builderRecord) ([]*graph.Target, error) {
+func (b *Builder) resolveTarget(target *graph.Target, record *builderRecord) ([]graph.Item, error) {
 	if target.Schema == nil {
 		return nil, environment.IllegalStateError{
 			Reason: "Attempted to resolve target without schema",
@@ -260,7 +261,7 @@ func (b *Builder) resolveTarget(target *graph.Target, record *builderRecord) ([]
 	record.state = itemStateResolved
 
 	// Recursively update everybody waiting on this item to be resolved.
-	allResolved := []*graph.Target{target}
+	allResolved := []graph.Item{target}
 	for dependent := range record.dependents {
 		dependent.unresolvedDeps--
 		if dependent.unresolvedDeps > 0 {

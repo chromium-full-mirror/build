@@ -186,20 +186,22 @@ executable("app") {}`),
 		t.Fatalf("Load failed: %v", err)
 	}
 
-	var resolvedTargets []*graph.Target
+	var resolvedItems []graph.Item
 	for _, item := range items {
 		_, resolved, err := builder.RecordDefinedItem(item)
 		if err != nil {
 			t.Fatalf("RecordDefinedItem failed: %v", err)
 		}
-		resolvedTargets = append(resolvedTargets, resolved...)
+		resolvedItems = append(resolvedItems, resolved...)
 	}
 
-	if len(resolvedTargets) != 1 {
-		t.Errorf("RecordDefinedItem resolvedTargets len = %d; want 1", len(resolvedTargets))
+	wantResolved := []string{"//:tc()", "//:app(//:tc)"}
+	var gotResolved []string
+	for _, item := range resolvedItems {
+		gotResolved = append(gotResolved, item.Label().UserVisibleString(true))
 	}
-	if resolvedTargets[0].Label() != appLabel {
-		t.Errorf("RecordDefinedItem resolvedTargets[0] = %s; want %s", resolvedTargets[0].Label().UserVisibleString(true), appLabel.UserVisibleString(true))
+	if diff := cmp.Diff(wantResolved, gotResolved, cmpopts.SortSlices(func(a, b string) bool { return a < b })); diff != "" {
+		t.Errorf("RecordDefinedItem resolvedItems diff (-want +got):\n%s", diff)
 	}
 	appRec, ok := builder.records[appLabel]
 	if !ok {

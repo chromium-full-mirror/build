@@ -44,9 +44,14 @@ func (h *Command) getTargets(dir string) ([]*graph.Target, error) {
 	if err := setup.DoSetup(dir, true, &h.CommonFlags); err != nil {
 		return nil, err
 	}
-	targets, err := setup.Run()
-	if err != nil {
-		return nil, err
+	var targets []*graph.Target
+	for item, err := range setup.Items() {
+		if err != nil {
+			return nil, err
+		}
+		if target, ok := item.(*graph.Target); ok {
+			targets = append(targets, target)
+		}
 	}
 	slices.SortFunc(targets, func(a, b *graph.Target) int {
 		return a.Label().Compare(b.Label())

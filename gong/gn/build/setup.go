@@ -393,22 +393,10 @@ type pendingLoad struct {
 	origin syntax.LocationRange
 }
 
-// Run runs the load, returning the resolved targets on success. On failure, returns the error.
-func (s *Setup) Run() ([]*graph.Target, error) {
-	var targets []*graph.Target
-	for target, err := range s.Targets() {
-		if err != nil {
-			return nil, err
-		}
-		targets = append(targets, target)
-	}
-	return targets, nil
-}
-
-// Targets returns a single-use iterator, running the build, and yielding successive targets
+// Items returns a single-use iterator, running the build, and yielding successive items
 // as the build progresses. Upon any failure, yields the error and halts the build.
-func (s *Setup) Targets() iter.Seq2[*graph.Target, error] {
-	return func(yield func(*graph.Target, error) bool) {
+func (s *Setup) Items() iter.Seq2[graph.Item, error] {
+	return func(yield func(graph.Item, error) bool) {
 		// TODO: run in parallel on errgroup.
 		// make sure both Builder and Loader are thread-safe to convert to async.
 		pending := []pendingLoad{{s.rootBuildFile, syntax.LocationRange{}}}
