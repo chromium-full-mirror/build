@@ -151,7 +151,14 @@ func (b *Builder) targetDefined(target *graph.Target, record *builderRecord) ([]
 		unresolvedDeps = append(unresolvedDeps, toolchainDep)
 	}
 	record.addDep(toolchainRec)
-	return unresolvedDeps, nil
+
+	// Return with the unresolved deps if we have any.
+	if record.unresolvedDeps > 0 {
+		return unresolvedDeps, nil
+	}
+
+	// Otherwise we can immediately try to resolve this target.
+	return nil, b.resolveTarget(target, record)
 }
 
 // TODO: Support more than one toolchain.

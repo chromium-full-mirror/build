@@ -162,3 +162,40 @@ executable("app") {
 		t.Errorf("builder record items finished with %T err; want %T err", gotErr, wantErr)
 	}
 }
+
+func TestBuilder_ResolvesTargetsImmediatelyIfPossible(t *testing.T) {
+	builder, loader := tempBuildEnv(t, &fstest.MapFS{
+		"build/BUILDCONFIG.gn": {
+			Data: []byte(`set_default_toolchain("//:tc")`),
+		},
+		"BUILD.gn": {
+			Data: []byte(`
+toolchain("tc") { tool("link") { command = "" } }
+executable("app") {}`),
+		},
+	})
+	items, err := loader.Load(mustFile(t, "//BUILD.gn"), syntax.LocationRange{}, environment.Label{})
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+
+	for _, item := range items {
+		_, err := builder.RecordDefinedItem(item)
+		if err != nil {
+			t.Fatalf("RecordDefinedItem failed: %v", err)
+		}
+	}
+
+	appRec, ok := builder.records[environment.Label{
+		Dir:           mustDir(t, "//"),
+		Name:          "app",
+		ToolchainDir:  mustDir(t, "//"),
+		ToolchainName: "tc",
+	}]
+	if !ok {
+		t.Fatalf("builder missing record for //:app(//:tc)")
+	}
+	if appRec.state != itemStateResolved {
+		t.Errorf("builder record //:app(//:tc) state = %v; want %v (itemStateResolved)", appRec.state, itemStateResolved)
+	}
+}
