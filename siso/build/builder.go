@@ -509,6 +509,16 @@ func (b *Builder) Build(ctx context.Context, name string, args ...string) (err e
 		clog.Infof(ctx, "build %v", err)
 	}()
 
+	if b.rebuildManifest == "" {
+		// record build files in hashfs. b/489164002
+		for _, fname := range b.graph.Filenames() {
+			_, err = b.hashFS.Stat(ctx, filepath.Join(b.path.ExecRoot, b.path.Dir), fname)
+			if err != nil {
+				clog.Warningf(ctx, "failed to stat build file %q: %v", fname, err)
+			}
+		}
+	}
+
 	if b.UploadBuildNinjaFiles && b.rebuildManifest == "" && b.reapiclient != nil {
 		// upload build.ninja in background.
 		// if build finished earilier, we'll cancel the uploading

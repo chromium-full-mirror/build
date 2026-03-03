@@ -105,3 +105,94 @@ func TestBuild_InvalidatedFile(t *testing.T) {
 		t.Errorf("done=%d total=%d skipped=%d; want done=1 total=1 skipped=0; %#v", stats.Done, stats.Total, stats.Skipped, stats)
 	}
 }
+
+func TestBuild_InvalidatedBuildNinja(t *testing.T) {
+	ctx := t.Context()
+	dir := tempDir(t)
+
+	runNinjaTest := func(t *testing.T) (build.Stats, error) {
+		t.Helper()
+		opt, graph, cleanup := setupBuild(ctx, t, dir, hashfs.Option{
+			StateFile: ".siso_fs_state",
+		})
+		defer cleanup()
+		stats, err := ninjabuild.Run(ctx, graph, opt, []string{"out"}, ninjabuild.RunNinjaOpts{})
+		if err == nil {
+			opt.HashFS.SetBuildTargets(ctx, []string{"out"}, true)
+		}
+		return stats, err
+	}
+
+	setupFiles(t, dir, t.Name(), nil)
+	t.Logf("-- first build")
+	stats, err := runNinjaTest(t)
+	if err != nil {
+		t.Fatalf("ninja %v", err)
+	}
+	if stats.Done != stats.Total || stats.Total != 1 {
+		t.Errorf("done=%d total=%d; want done=1 total=1; %#v", stats.Done, stats.Total, stats)
+	}
+
+	t.Logf("-- confirm no-op")
+	stats, err = runNinjaTest(t)
+	if err != nil {
+		t.Fatalf("ninja %v", err)
+	}
+	if stats.Done != stats.Total || stats.Skipped != stats.Total || stats.Total != 1 {
+		t.Errorf("done=%d total=%d skipped=%d; want done=1 total=1 skipped=1; %#v", stats.Done, stats.Total, stats.Skipped, stats)
+	}
+
+	t.Logf("-- modify build.ninja")
+	modifyFile(t, dir, "out/siso/build.ninja", func(buf []byte) []byte {
+		return bytes.Replace(buf,
+			[]byte("command = python3 ../../cp.py "),
+			[]byte("command = python3 ../../cp.py -r "),
+			1,
+		)
+	})
+
+	t.Logf("-- check hashfs is not clean")
+	func() {
+		var hashfsSetStateLog syncBuffer
+		hfs, err := hashfs.New(ctx, hashfs.Option{
+			SetStateLogger: &hashfsSetStateLog,
+		})
+		if err != nil {
+			t.Fatalf("hashfs.New %v", err)
+		}
+		defer func() {
+			err := hfs.Close(ctx)
+			if err != nil {
+				t.Fatalf("hfs.Close %v", err)
+			}
+			if s := hashfsSetStateLog.buf.String(); s != "" {
+				t.Log(s)
+			}
+		}()
+		st, err := hashfs.Load(ctx, hashfs.Option{
+			StateFile: filepath.Join(dir, "out/siso/.siso_fs_state"),
+		})
+		if err != nil {
+			t.Fatalf("hashfs.Load %v", err)
+		}
+		err = hfs.SetState(ctx, st)
+		if err != nil {
+			t.Fatalf("hfs.SetState %v", err)
+		}
+		err = hfs.WaitReady(ctx)
+		if err != nil {
+			t.Fatalf("hfs.WaitReady %v", err)
+		}
+		if hfs.IsClean([]string{"out"}) {
+			t.Errorf("hfs.IsClean=true; want false")
+		}
+	}()
+	t.Logf("-- third build")
+	stats, err = runNinjaTest(t)
+	if err != nil {
+		t.Fatalf("ninja %v", err)
+	}
+	if stats.Done != stats.Total || stats.Total != 1 || stats.Skipped != 0 {
+		t.Errorf("done=%d total=%d skipped=%d; want done=1 total=1 skipped=0; %#v", stats.Done, stats.Total, stats.Skipped, stats)
+	}
+}
