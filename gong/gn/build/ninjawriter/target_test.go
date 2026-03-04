@@ -24,7 +24,7 @@ func mustFile(t *testing.T, s string) fs.SourceFile {
 	return f
 }
 
-func TestWriteTarget(t *testing.T) {
+func TestWriteBinaryTarget(t *testing.T) {
 	tests := []struct {
 		name    string
 		actions []graph.RunToolAction
@@ -115,12 +115,12 @@ build obj/base/app: link obj/base/main.o obj/foo/libfoo.o
 			}
 
 			var sb strings.Builder
-			if err := WriteTarget(&sb, target, bs); err != nil {
-				t.Fatalf("WriteTarget()=%v; want nil err", err)
+			if err := writeBinaryTarget(&sb, target, bs); err != nil {
+				t.Fatalf("writeBinaryTarget()=%v; want nil err", err)
 			}
 
 			if diff := cmp.Diff(tc.want, sb.String()); diff != "" {
-				t.Errorf("WriteTarget() mismatch (-want +got):\n%s", diff)
+				t.Errorf("writeBinaryTarget() mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}

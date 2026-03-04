@@ -52,6 +52,8 @@ rule cc
   command = gcc -c ${in} -o ${out}
   description = CC ${out}
 
+build phony/default: phony obj/hello_world/src/hello_world
+subninja obj/hello_world/src/hello_world.ninja
 `
 	tokens, err := syntax.Tokenize(syntax.LiteralInput{Bytes: []byte(tcBlock)})
 	if err != nil {
@@ -75,7 +77,10 @@ rule cc
 	}
 
 	var buf bytes.Buffer
-	err = WriteToolchain(&buf, tc)
+	err = writeToolchain(&buf, tc, []string{
+		"build phony/default: phony obj/hello_world/src/hello_world",
+		"subninja obj/hello_world/src/hello_world.ninja",
+	})
 	if err != nil {
 		t.Fatalf("WriteToolchain()=%v; want nil err", err)
 	}

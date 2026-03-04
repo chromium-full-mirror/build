@@ -10,7 +10,9 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"maps"
 	"os"
+	"time"
 
 	"github.com/google/subcommands"
 
@@ -18,6 +20,7 @@ import (
 	"go.chromium.org/build/gong/gn/build"
 	"go.chromium.org/build/gong/gn/build/environment"
 	"go.chromium.org/build/gong/gn/build/graph"
+	"go.chromium.org/build/gong/gn/build/ninjawriter"
 	"go.chromium.org/build/gong/ui"
 )
 
@@ -41,6 +44,8 @@ func (h *Command) SetFlags(f *flag.FlagSet) {
 }
 
 func (h *Command) genOneDir(dir string) error {
+	start := time.Now()
+
 	setup := build.NewSetup()
 	if err := setup.DoSetup(dir, true, &h.CommonFlags); err != nil {
 		return err
@@ -48,15 +53,32 @@ func (h *Command) genOneDir(dir string) error {
 
 	toolchains := make(map[environment.Label]*graph.Toolchain)
 	targetsByToolchain := make(map[environment.Label][]*graph.Target)
+	// TODO: Because this is an iterator over the build as it progresses,
+	// we may be able to perform the same C++ GN optimization of async writing
+	// each target as the build progresses. This would look a bit different though,
+	// because unlike C++ GN we would use goroutines not callbacks.
+	//
+	// For example:
+	// - Writing targets
+	//   - Start errgroup.Group for each item to call ninjawriter.WriteTarget
+	// - Writing toolchain
+	//   - Have chan for each toolchain that receives graph.Item
+	//     then it can write the toolchain.ninja and ninja rules for each item
+	// Or some combination, e.g.
+	// - Should targets be written in a loop separate from toolchains like C++ GN?
+	// - Should targets be written by the toolchain chan?
+	//
+	// Regardless, implementing the above now is premature optimization.
+	// We don't know how much speed optimization we'll get out, especially because
+	// our async model is very different to C++ GN.
+	//
+	// So right now we'll just implement sync generation model.
 	for item, err := range setup.Items() {
 		if err != nil {
 			return fmt.Errorf("build failed: %w", err)
 		}
 		switch i := item.(type) {
 		case *graph.Target:
-			// TODO: write this target's subninja out.
-			fmt.Fprintf(os.Stderr, "DEBUG: collected target %s\n", i.Label().UserVisibleString(true))
-			// Bucket this target by toolchain, so that when we write toolchains we can reference the subninjas.
 			tcLabel := i.Label().ToolchainLabel()
 			targetsByToolchain[tcLabel] = append(targetsByToolchain[tcLabel], i)
 		case *graph.Toolchain:
@@ -64,17 +86,20 @@ func (h *Command) genOneDir(dir string) error {
 		}
 	}
 
-	for tcLabel, targets := range targetsByToolchain {
-		tc, ok := toolchains[tcLabel]
-		if !ok {
-			return fmt.Errorf("couldn't find toolchain %s", tcLabel.UserVisibleString(false))
-		}
-		// TODO: write this toolchain out.
-		fmt.Fprintf(os.Stderr, "DEBUG: need to write out toolchain %s and its %d targets\n",
-			tc.Label().UserVisibleString(false), len(targets))
+	if err := ninjawriter.Write(toolchains, targetsByToolchain, &setup.BuildSettings); err != nil {
+		return fmt.Errorf("write ninja files failed: %w", err)
 	}
 
-	return fmt.Errorf("genOneDir not implemented. setup: %v", setup)
+	elapsed := time.Since(start)
+	targetsCollected := 0
+	for ninjaRules := range maps.Values(targetsByToolchain) {
+		targetsCollected += len(ninjaRules)
+	}
+
+	// TODO: get count of loaded files from fs.InputFileManager somehow?
+	// TODO: color?
+	fmt.Printf("Done. Made %d targets from ?? files in %dms\n", targetsCollected, elapsed.Milliseconds())
+	return nil
 }
 
 func (h *Command) Execute(ctx context.Context, f *flag.FlagSet, _ ...any) subcommands.ExitStatus {

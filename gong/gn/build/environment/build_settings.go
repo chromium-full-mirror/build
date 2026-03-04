@@ -26,6 +26,8 @@ type BuildSettings struct {
 	// because C++ GN attempts to use UTF-16 (char16_t) on Windows.
 	//
 	// TODO: Investigate if this causes problems?
+	//
+	// TODO: Consider whether it would improve ergonomics to use io/fs?
 	RootPath string
 	// When nonempty, specifies a parallel directory higherarchy in which to
 	// search for buildfiles if they're not found in the root higherarchy. This
@@ -38,6 +40,8 @@ type BuildSettings struct {
 	// BuildDir is the root of all output files. The default toolchain
 	// files go into here, and non-default toolchains will have separate
 	// toolchain-specific root directories inside this.
+	//
+	// TODO: Consider whether it would improve ergonomics to use io/fs?
 	BuildDir fs.SourceDir
 	// BuildConfigFile is a reference to the build config file for this build.
 	// It is expected that the root .gn file defines a `buildconfig` variable

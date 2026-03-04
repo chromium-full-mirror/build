@@ -45,7 +45,7 @@ func findDotFile(currentDir string) (string, error) {
 // Setup is helper to set up the build settings and environment for the various
 // commands to run.
 type Setup struct {
-	buildSettings    environment.BuildSettings
+	BuildSettings    environment.BuildSettings
 	loader           analysis.Loader
 	builder          analysis.Builder
 	rootBuildFile    fs.SourceFile
@@ -73,9 +73,9 @@ func NewSetup() *Setup {
 	setup := &Setup{
 		FillArguments: true,
 	}
-	setup.loader = analysis.MakeLoader(&setup.buildSettings, &setup.inputFileManager)
+	setup.loader = analysis.MakeLoader(&setup.BuildSettings, &setup.inputFileManager)
 	setup.builder = analysis.MakeBuilder(&setup.loader)
-	setup.dotfileSettings = analysis.NewSettings(&setup.buildSettings)
+	setup.dotfileSettings = analysis.NewSettings(&setup.BuildSettings)
 	setup.dotfileScope = setup.dotfileSettings.NewScope()
 	return setup
 }
@@ -125,7 +125,7 @@ func (s *Setup) fillArguments(flags *gn.CommonFlags) error {
 		return fmt.Errorf("don't know how to parse args from command line yet")
 	}
 
-	argsInputPath := path.Join(s.buildSettings.BuildDir.Path(), buildArgFileName)
+	argsInputPath := path.Join(s.BuildSettings.BuildDir.Path(), buildArgFileName)
 	argsInputFile, err := fs.NewInputFile(argsInputPath, argsInputPath)
 	if err != nil {
 		return fmt.Errorf("could not load args file: %w", err)
@@ -178,7 +178,7 @@ func (s *Setup) FillSourceDir(flags *gn.CommonFlags) error {
 				return fmt.Errorf("could not find dotfile: %w", err)
 			}
 			// Only set DotfileName if it was passed explicitly.
-			s.buildSettings.DotfileName = s.dotfileName
+			s.BuildSettings.DotfileName = s.dotfileName
 		}
 	} else {
 		// In the default case, look for a dotfile and that also tells us where the
@@ -198,7 +198,7 @@ func (s *Setup) FillSourceDir(flags *gn.CommonFlags) error {
 	if err != nil {
 		return fmt.Errorf("can't get the real root path of %s: %w", rootPath, err)
 	}
-	s.buildSettings.RootPath = rootRealpath
+	s.BuildSettings.RootPath = rootRealpath
 
 	return nil
 }
@@ -210,7 +210,7 @@ func (s *Setup) fillBuildDir(buildDir string) error {
 	if err != nil {
 		return fmt.Errorf("failed to get working directory: %w", err)
 	}
-	currentContext, err = fs.MakeSourceDirFromPath(s.buildSettings.RootPath, wd)
+	currentContext, err = fs.MakeSourceDirFromPath(s.BuildSettings.RootPath, wd)
 	if err != nil {
 		return fmt.Errorf("failed to make SourceDir from wd: %w", err)
 	}
@@ -224,7 +224,7 @@ func (s *Setup) fillBuildDir(buildDir string) error {
 	}
 
 	// Create the build dir.
-	buildDirAbs := s.buildSettings.FullDirPath(resolved)
+	buildDirAbs := s.BuildSettings.FullDirPath(resolved)
 	if err := os.MkdirAll(buildDirAbs, 0755); err != nil {
 		return fmt.Errorf("failed to create build directory: %w", err)
 	}
@@ -236,12 +236,12 @@ func (s *Setup) fillBuildDir(buildDir string) error {
 	}
 
 	// Reevaluate the SourceDir from the real path.
-	resolved, err = fs.MakeSourceDirFromPath(s.buildSettings.RootPath, buildDirReal)
+	resolved, err = fs.MakeSourceDirFromPath(s.BuildSettings.RootPath, buildDirReal)
 	if err != nil {
 		return fmt.Errorf("failed to make SourceDir from real build dir path: %w", err)
 	}
 
-	s.buildSettings.BuildDir = resolved
+	s.BuildSettings.BuildDir = resolved
 	return nil
 }
 
@@ -262,7 +262,7 @@ func (s *Setup) fillPythonPath(flags *gn.CommonFlags) error {
 		// the flags are used rather than processing them all in advance.
 		// This raises the risk of behavioral incompatibility with C++ GN.
 		// May need to look into this issue further?
-		s.buildSettings.PythonPath = flags.ScriptExecutable
+		s.BuildSettings.PythonPath = flags.ScriptExecutable
 		return nil
 	}
 
@@ -272,7 +272,7 @@ func (s *Setup) fillPythonPath(flags *gn.CommonFlags) error {
 		if err != nil {
 			return err
 		}
-		s.buildSettings.PythonPath = stringValue.String()
+		s.BuildSettings.PythonPath = stringValue.String()
 		return nil
 	}
 
@@ -281,7 +281,7 @@ func (s *Setup) fillPythonPath(flags *gn.CommonFlags) error {
 	// what C++ GN does, and you're probably going to want to override that
 	// manually with `script_executable = "python3"` in your .gn file like these:
 	// https://source.chromium.org/search?q=script_executable)
-	s.buildSettings.PythonPath = "python"
+	s.BuildSettings.PythonPath = "python"
 	return nil
 }
 
@@ -348,7 +348,7 @@ func (s *Setup) fillOtherConfig() error {
 	if err != nil {
 		return fmt.Errorf("failed to init root build.gn")
 	}
-	s.buildSettings.RootTargetLabel = rootTargetLabel
+	s.BuildSettings.RootTargetLabel = rootTargetLabel
 
 	// Build config file.
 	buildConfigValue := s.dotfileScope.Value("buildconfig", true)
@@ -362,7 +362,7 @@ func (s *Setup) fillOtherConfig() error {
 	if err != nil {
 		return err
 	}
-	s.buildSettings.BuildConfigFile = buildConfigFile
+	s.BuildSettings.BuildConfigFile = buildConfigFile
 
 	// Targets to check.
 	// TODO: implement

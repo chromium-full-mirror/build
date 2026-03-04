@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"maps"
+	"os"
 	"slices"
 	"strings"
 
@@ -16,15 +17,83 @@ import (
 	"go.chromium.org/build/gong/gn/build/graph"
 )
 
-// WriteTarget is a rudimentary stub implementation of writing a ninja build target out.
+// writeTarget is a rudimentary stub implementation of writing a ninja build target out.
 //
 // It is nowhere near "correct" if the definition is "replicate C++ GN's outputs",
-// but is enough to help gong in its current incarnation write working Ninja files.
+// but is enough to help gong in its current incarnation write working Ninja for
+// very basic build repos.
 //
 // (To resolve this, one thing we need is for Builder to stop hardcoding target outdirs.
 // Instead some of that logic will likely need to move to this package. After all, where
 // outputs should go can be thought of as an implementation detail of ninjawriter.)
-func WriteTarget(w io.Writer, t *graph.Target, buildSettings *environment.BuildSettings) error {
+//
+// TODO: use io/fs to test expected file outputs?
+func writeTarget(w io.Writer, t *graph.Target, buildSettings *environment.BuildSettings) error {
+	targetLabel := t.Label()
+
+	// TODO: this is a hack that naively assumes all targets are either phony or binary.
+	// obviously this is not correct and is only going to work for very simple builds.
+	if len(t.Resolution.Actions) == 0 {
+		var outputPaths []string
+		for _, output := range t.Resolution.Metadata.Outputs() {
+			// TODO: need to port OutputFile so that output path can easily be obtained from SourceFile?
+			outputRel, err := fs.RebasePath(output.Filename(), buildSettings.BuildDir, buildSettings.RootPath)
+			if err != nil {
+				return fmt.Errorf("failed to determine input %s outpath: %w", targetLabel.UserVisibleString(true), err)
+			}
+			outputPaths = append(outputPaths, outputRel)
+		}
+		_, err := fmt.Fprintf(w, "build phony/%s: phony %s", targetLabel.Name, strings.Join(outputPaths, " "))
+		if err != nil {
+			return err
+		}
+	} else {
+		// TODO: reusing C++ GN's builddir resolution funcs is somewhat clumsy.
+		// can this be improved by adopting io/fs and its FS and SubFS interfaces?
+		targetDir, err := buildSettings.BuildDir.ResolveRelativeDir("obj/" + targetLabel.Dir.Path())
+		if err != nil {
+			return fmt.Errorf("failed to determine target %s outdir: %w", targetLabel.UserVisibleString(true), err)
+		}
+		targetNinjaFile, err := targetDir.ResolveRelativeFile(fmt.Sprintf("%s.ninja", targetLabel.Name))
+		if err != nil {
+			return fmt.Errorf("failed to determine target %s ninjafile: %w", targetLabel.UserVisibleString(true), err)
+		}
+
+		outDirAbs := buildSettings.FullDirPath(targetDir)
+		if err := os.MkdirAll(outDirAbs, 0755); err != nil {
+			return fmt.Errorf("failed to create target dir: %w", err)
+		}
+
+		targetNinjaAbs := buildSettings.FullPath(targetNinjaFile)
+		subninjaFile, err := os.Create(targetNinjaAbs)
+		if err != nil {
+			return fmt.Errorf("failed to create target %s: %w", targetNinjaAbs, err)
+		}
+		if err := writeBinaryTarget(subninjaFile, t, buildSettings); err != nil {
+			if err := subninjaFile.Close(); err != nil {
+				fmt.Fprintf(os.Stderr, "failed to close %s: %v", targetNinjaAbs, err)
+			}
+			return fmt.Errorf("failed to write target %s: %w", targetLabel.UserVisibleString(true), err)
+		}
+		if err := subninjaFile.Close(); err != nil {
+			return err
+		}
+
+		// TODO: need to port OutputFile so that output path can easily be obtained from SourceFile?
+		targetNinjaRel, err := fs.RebasePath(targetNinjaFile.Filename(), buildSettings.BuildDir, buildSettings.RootPath)
+		if err != nil {
+			return fmt.Errorf("failed to determine target %s relpath: %w", targetLabel.UserVisibleString(true), err)
+		}
+		_, err = fmt.Fprintf(w, "subninja %s", targetNinjaRel)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func writeBinaryTarget(w io.Writer, t *graph.Target, buildSettings *environment.BuildSettings) error {
 	for _, action := range t.Resolution.Actions {
 		var inputPaths []string
 		var implicitDeps []string
