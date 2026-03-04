@@ -70,6 +70,17 @@ func isStatement(buf []byte, i int, name []byte) (int, bool) {
 	switch ch {
 	case ' ', '\t':
 		return i + len(name) + 1, true
+	case '$':
+		// skip escape newline as space.
+		switch {
+		case bytes.HasPrefix(buf[i+len(name):], []byte("$\n")):
+			return i + len(name) + 2, true
+		case bytes.HasPrefix(buf[i+len(name):], []byte("$\r\n")):
+			return i + len(name) + 3, true
+		default:
+			// error for other escape.
+			return -1, false
+		}
 	}
 	return -1, false
 }

@@ -657,3 +657,120 @@ build out2: echo_space
 		t.Errorf("out2 command=%q; want=%q", command, want)
 	}
 }
+
+func TestParser_Rule_Escapes(t *testing.T) {
+	ctx := t.Context()
+	dir := t.TempDir()
+	ninjaContent := `
+rule $
+  rule_with_space
+  command = echo $in > $out
+rule$
+  rule_without_space
+  command = echo $in > $out
+rule $
+$
+ rule_with_double_continuation
+  command = echo $in > $out
+rule$
+$
+rule_with_double_continuation_no_space
+  command = echo $in > $out
+build out1: rule_with_space in
+build out2: rule_without_space in
+build out3: rule_with_double_continuation in
+build out4: rule_with_double_continuation_no_space in
+`
+	err := os.WriteFile(filepath.Join(dir, "input"), []byte(ninjaContent), 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = os.WriteFile(filepath.Join(dir, "in"), []byte("input"), 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	state := NewState()
+	p := NewManifestParser(state)
+	p.SetWd(dir)
+	err = p.Load(ctx, "input")
+	if err != nil {
+		t.Fatalf("Load %v", err)
+	}
+	for _, tc := range []struct {
+		target   string
+		wantRule string
+	}{
+		{
+			target:   "out1",
+			wantRule: "rule_with_space",
+		},
+		{
+			target:   "out2",
+			wantRule: "rule_without_space",
+		},
+		{
+			target:   "out3",
+			wantRule: "rule_with_double_continuation",
+		},
+		{
+			target:   "out4",
+			wantRule: "rule_with_double_continuation_no_space",
+		},
+	} {
+		node, ok := state.LookupNodeByPath(tc.target)
+		if !ok {
+			t.Fatalf("missing %s", tc.target)
+		}
+		edge, ok := node.InEdge()
+		if !ok {
+			t.Fatalf("no inEdge for %s", tc.target)
+		}
+		if edge.RuleName() != tc.wantRule {
+			t.Errorf("target %s RuleName=%q; want=%q", tc.target, edge.RuleName(), tc.wantRule)
+		}
+	}
+
+	// invalid syntax should fail to parse
+	for _, tc := range []struct {
+		ninjaContent string
+	}{
+		{
+			ninjaContent: "rule$ foo\n  command = echo $in > $out\n",
+		},
+		{
+			ninjaContent: "rule $ foo\n  command = echo $in > $out\n",
+		},
+		{
+			ninjaContent: "rule : \n  command = echo\n",
+		},
+		{
+			ninjaContent: "rule foo:bar\n  command = echo\n",
+		},
+		{
+			ninjaContent: "rule foo bar\n  command = echo\n",
+		},
+		{
+			ninjaContent: "rule$\tfoo\n  command = echo\n",
+		},
+		{
+			ninjaContent: "rule $\tfoo\n  command = echo\n",
+		},
+		// line continuation inside a name should fail if it is replaced by a space
+		{
+			ninjaContent: "rule my$\nrule\n  command = echo\n",
+		},
+	} {
+		dir := t.TempDir()
+		os.WriteFile(filepath.Join(dir, "input"), []byte(tc.ninjaContent), 0644)
+		os.WriteFile(filepath.Join(dir, "in"), []byte("input"), 0644)
+
+		state := NewState()
+		p := NewManifestParser(state)
+		p.SetWd(dir)
+		err = p.Load(ctx, "input")
+		if err == nil {
+			t.Errorf("Load %q nil; want error", tc.ninjaContent)
+		}
+	}
+}

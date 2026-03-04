@@ -486,6 +486,17 @@ func (ch *chunk) parseName(s, e int) ([]byte, error) {
 	if len(name) == 0 {
 		return nil, fmt.Errorf("missing name")
 	}
+	if bytes.ContainsAny(name, " \t:$") {
+		// name may start/end with escape newlines.
+		name = bytes.ReplaceAll(name, []byte("$\n"), []byte(" "))
+		name = bytes.ReplaceAll(name, []byte("$\r\n"), []byte(" "))
+		name = bytes.TrimSpace(name)
+		// name should not include space,
+		// and not expand variable for name?
+		if bytes.ContainsAny(name, " \t:$") {
+			return nil, fmt.Errorf("invalid name %q", name)
+		}
+	}
 	return name, nil
 }
 
