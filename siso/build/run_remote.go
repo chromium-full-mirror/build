@@ -152,6 +152,7 @@ func (b *Builder) runRemote(ctx context.Context, step *Step) error {
 		// Preserve remote action result and error.
 		ar, _ := step.cmd.ActionResult()
 		step.cmd.SetRemoteFallbackResult(ar, err)
+		step.cmd.AuxiliaryOutputDigests = nil
 		err = b.execLocal(ctx, step)
 		if err != nil {
 			return err
