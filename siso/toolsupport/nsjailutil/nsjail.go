@@ -160,7 +160,7 @@ func New(ctx context.Context, fsys fs.FS, req Request) (_ *NSJail, err error) {
 	}
 	jail.config.Mount = append(jail.config.Mount, &pb.MountPt{
 		Src:    proto.String(srcDir),
-		Dst:    proto.String(req.ExecRoot),
+		Dst:    proto.String(execRootInSandbox),
 		IsBind: proto.Bool(true),
 		IsDir:  proto.Bool(true),
 	})
