@@ -21,7 +21,7 @@ type TargetVar interface {
 	// if applicable. Otherwise, nil.
 	ExpectedItems() Item
 	// Process takes a raw buildfile declaration and processes it into the internal representation.
-	Process(*Target, resolve.Value) (ProcessedValue, error)
+	Process(environment.Label, resolve.Value) (ProcessedValue, error)
 }
 
 // A StringVar variable accepts single strings e.g.
@@ -30,7 +30,7 @@ type TargetVar interface {
 type StringVar struct{}
 
 func (StringVar) ExpectedItems() Item { return nil }
-func (StringVar) Process(_ *Target, value resolve.Value) (ProcessedValue, error) {
+func (StringVar) Process(_ environment.Label, value resolve.Value) (ProcessedValue, error) {
 	sv, err := resolve.AsValue[*resolve.StringValue](value)
 	if err != nil {
 		return nil, err
@@ -47,7 +47,7 @@ func (StringVar) Process(_ *Target, value resolve.Value) (ProcessedValue, error)
 type StringListVar struct{}
 
 func (StringListVar) ExpectedItems() Item { return nil }
-func (StringListVar) Process(_ *Target, value resolve.Value) (ProcessedValue, error) {
+func (StringListVar) Process(_ environment.Label, value resolve.Value) (ProcessedValue, error) {
 	lv, err := resolve.AsValue[*resolve.ListValue](value)
 	if err != nil {
 		return nil, err
@@ -72,12 +72,12 @@ func (StringListVar) Process(_ *Target, value resolve.Value) (ProcessedValue, er
 type FileVar struct{}
 
 func (FileVar) ExpectedItems() Item { return nil }
-func (FileVar) Process(t *Target, value resolve.Value) (ProcessedValue, error) {
+func (FileVar) Process(targetLabel environment.Label, value resolve.Value) (ProcessedValue, error) {
 	sv, err := resolve.AsValue[*resolve.StringValue](value)
 	if err != nil {
 		return nil, err
 	}
-	sourceFile, err := t.label.Dir.ResolveRelativeFile(sv.RawGNString())
+	sourceFile, err := targetLabel.Dir.ResolveRelativeFile(sv.RawGNString())
 	if err != nil {
 		return nil, err
 	}
@@ -93,7 +93,7 @@ func (FileVar) Process(t *Target, value resolve.Value) (ProcessedValue, error) {
 type FileListVar struct{}
 
 func (FileListVar) ExpectedItems() Item { return nil }
-func (FileListVar) Process(t *Target, value resolve.Value) (ProcessedValue, error) {
+func (FileListVar) Process(targetLabel environment.Label, value resolve.Value) (ProcessedValue, error) {
 	lv, err := resolve.AsValue[*resolve.ListValue](value)
 	if err != nil {
 		return nil, err
@@ -105,7 +105,7 @@ func (FileListVar) Process(t *Target, value resolve.Value) (ProcessedValue, erro
 			// TODO: "ERROR Items must be strings (filenames)."
 			return nil, err
 		}
-		sourceFile, err := t.label.Dir.ResolveRelativeFile(sv.RawGNString())
+		sourceFile, err := targetLabel.Dir.ResolveRelativeFile(sv.RawGNString())
 		if err != nil {
 			return nil, err
 		}
@@ -125,7 +125,7 @@ type LabelListVar struct {
 }
 
 func (l LabelListVar) ExpectedItems() Item { return l.Expected }
-func (LabelListVar) Process(t *Target, value resolve.Value) (ProcessedValue, error) {
+func (LabelListVar) Process(targetLabel environment.Label, value resolve.Value) (ProcessedValue, error) {
 	lv, err := resolve.AsValue[*resolve.ListValue](value)
 	if err != nil {
 		return nil, err
@@ -136,7 +136,7 @@ func (LabelListVar) Process(t *Target, value resolve.Value) (ProcessedValue, err
 		if err != nil {
 			return nil, err
 		}
-		resolvedLabel, err := environment.ResolveLabel(t.label.Dir, t.label.ToolchainLabel(), sv)
+		resolvedLabel, err := environment.ResolveLabel(targetLabel.Dir, targetLabel.ToolchainLabel(), sv)
 		if err != nil {
 			return nil, err
 		}
@@ -163,7 +163,7 @@ type ScopeOfLabelsVar struct {
 }
 
 func (ScopeOfLabelsVar) ExpectedItems() Item { return nil }
-func (s ScopeOfLabelsVar) Process(t *Target, value resolve.Value) (ProcessedValue, error) {
+func (s ScopeOfLabelsVar) Process(targetLabel environment.Label, value resolve.Value) (ProcessedValue, error) {
 	sv, err := resolve.AsValue[*resolve.ScopeValue](value)
 	if err != nil {
 		return nil, err
@@ -184,7 +184,7 @@ func (s ScopeOfLabelsVar) Process(t *Target, value resolve.Value) (ProcessedValu
 		if err != nil {
 			return nil, err
 		}
-		resolvedLabel, err := environment.ResolveLabel(t.label.Dir, t.label.ToolchainLabel(), svVal)
+		resolvedLabel, err := environment.ResolveLabel(targetLabel.Dir, targetLabel.ToolchainLabel(), svVal)
 		if err != nil {
 			return nil, err
 		}

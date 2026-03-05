@@ -68,7 +68,7 @@ func (s *Schema) Generate(dir fs.SourceDir, scope *resolve.Scope, toolchain envi
 		if value == nil {
 			continue
 		}
-		processedValue, err := expectedType.Process(target, value)
+		processedValue, err := expectedType.Process(target.Label(), value)
 		if err != nil {
 			return nil, err
 		}
