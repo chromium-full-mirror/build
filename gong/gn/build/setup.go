@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"iter"
 	"os"
-	"path"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -120,13 +119,17 @@ func (s *Setup) DoSetup(buildDir string, forceCreate bool, flags *gn.CommonFlags
 }
 
 func (s *Setup) fillArguments(flags *gn.CommonFlags) error {
-	// TODO: implement properly
 	if flags.Args != "" {
+		// TODO: implement
 		return fmt.Errorf("don't know how to parse args from command line yet")
 	}
 
-	argsInputPath := path.Join(s.BuildSettings.BuildDir.Path(), buildArgFileName)
-	argsInputFile, err := fs.NewInputFile(argsInputPath, argsInputPath)
+	argsSourceFile, err := s.BuildSettings.BuildDir.ResolveRelativeFile(buildArgFileName)
+	if err != nil {
+		return fmt.Errorf("could not resolve args file path: %w", err)
+	}
+	argsSourceRel := fs.NormalizePathWithSourceRoot(argsSourceFile.Filename(), s.BuildSettings.RootPath)
+	argsInputFile, err := fs.NewInputFile(argsSourceRel, s.BuildSettings.FullPath(argsSourceFile))
 	if err != nil {
 		return fmt.Errorf("could not load args file: %w", err)
 	}
@@ -150,6 +153,9 @@ func (s *Setup) fillArguments(flags *gn.CommonFlags) error {
 	}
 
 	// TODO: do something with the resulting scope
+	if argScope.HasValues() {
+		fmt.Fprintf(os.Stderr, "warn: you have set args! these are not used yet.\n")
+	}
 
 	return nil
 }
