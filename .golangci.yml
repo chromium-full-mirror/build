@@ -26,6 +26,10 @@ linters:
     errorlint:
       # Moving %v or %s to %w is a breaking API change.
       errorf: false
+    modernize:
+      disable:
+      # prefer proto.String etc over new expr for a while
+      - newexpr
     staticcheck:
       checks:
         - all
