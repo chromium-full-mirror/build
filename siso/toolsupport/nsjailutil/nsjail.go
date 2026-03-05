@@ -120,7 +120,16 @@ func New(ctx context.Context, fsys fs.FS, req Request) (_ *NSJail, err error) {
 	jail.config.Envar = append(jail.config.Envar, "TMPDIR=/tmp")
 
 	if req.PublicDirs == nil {
-		req.PublicDirs = []string{"/bin", "/lib", "/lib64", "/usr", "/dev"}
+		req.PublicDirs = []string{
+			"/bin",
+			"/lib",
+			"/lib64",
+			"/usr/bin",
+			"/usr/lib",
+			"/usr/lib32",
+			"/usr/lib64",
+			"/dev",
+		}
 	}
 	for _, dir := range req.PublicDirs {
 		jail.config.Mount = append(jail.config.Mount, &pb.MountPt{
