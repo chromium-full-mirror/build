@@ -31,6 +31,10 @@ func TestExecutableSchema_Resolver(t *testing.T) {
 		{
 			name: "cxxsimple",
 			ctx: fakeResolverContext(fakeResolverData{
+				configValues: graph.ConfigValues{
+					Cflags:  []string{"-O3", "-Wall"},
+					Ldflags: []string{"-static", "-lpthread"},
+				},
 				strings: map[string]string{
 					"name": "foo",
 				},
@@ -64,6 +68,7 @@ func TestExecutableSchema_Resolver(t *testing.T) {
 					Expansions: map[string]string{
 						"source_file_part": "",
 						"source_name_part": "",
+						"cflags":           "-O3 -Wall",
 					},
 				},
 				{
@@ -75,7 +80,7 @@ func TestExecutableSchema_Resolver(t *testing.T) {
 					},
 					OutputName: "foo",
 					Expansions: map[string]string{
-						"ldflags":      "",
+						"ldflags":      "-static -lpthread",
 						"libs":         "",
 						"frameworks":   "",
 						"swiftmodules": "",
@@ -126,6 +131,9 @@ func TestExecutableSchema_Resolver(t *testing.T) {
 		{
 			name: "rustsimple",
 			ctx: fakeResolverContext(fakeResolverData{
+				configValues: graph.ConfigValues{
+					Rustflags: []string{"-Cdebuginfo=2", "--edition=2021"},
+				},
 				strings: map[string]string{
 					"name":       "foo_app",
 					"crate_name": "foo_crate",
@@ -168,6 +176,8 @@ func TestExecutableSchema_Resolver(t *testing.T) {
 						"crate_name": "foo_crate",
 						"crate_type": "bin",
 						"externs":    "--extern bar=//out/obj/libbar.rlib",
+						"rustflags":  "-Cdebuginfo=2 --edition=2021",
+						"rustdeps":   "",
 					},
 				},
 			},
@@ -212,6 +222,8 @@ func TestExecutableSchema_Resolver(t *testing.T) {
 						"crate_name": "foo_crate",
 						"crate_type": "bin",
 						"externs":    "--extern bar=//out/obj/libbar.rlib",
+						"rustflags":  "",
+						"rustdeps":   "",
 					},
 				},
 			},
@@ -299,6 +311,10 @@ func TestStaticLibrarySchema_Resolver(t *testing.T) {
 		{
 			name: "simple",
 			ctx: fakeResolverContext(fakeResolverData{
+				configValues: graph.ConfigValues{
+					Cflags:  []string{"-fPIC", "-O2"},
+					Arflags: []string{"rcs"},
+				},
 				strings: map[string]string{
 					"name": "bar",
 				},
@@ -322,6 +338,7 @@ func TestStaticLibrarySchema_Resolver(t *testing.T) {
 					Expansions: map[string]string{
 						"source_file_part": "",
 						"source_name_part": "",
+						"cflags":           "-fPIC -O2",
 					},
 				},
 				{
@@ -332,7 +349,7 @@ func TestStaticLibrarySchema_Resolver(t *testing.T) {
 					},
 					OutputName: "libbar.a",
 					Expansions: map[string]string{
-						"arflags": "",
+						"arflags": "rcs",
 					},
 				},
 			},

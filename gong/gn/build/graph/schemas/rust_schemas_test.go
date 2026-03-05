@@ -31,6 +31,7 @@ type fakeResolverData struct {
 	sourceFiles         map[string]fs.SourceFile
 	sourceFileLists     map[string][]fs.SourceFile
 	resolvedDeps        []graph.Resolution
+	configValues        graph.ConfigValues
 }
 
 func fakeResolverContext(data fakeResolverData) graph.ResolverContext {
@@ -80,6 +81,7 @@ func fakeResolverContext(data fakeResolverData) graph.ResolverContext {
 				}
 			}
 		},
+		ConfigValues: data.configValues,
 	}
 }
 
@@ -103,6 +105,9 @@ func TestRustLibrarySchema_Resolver(t *testing.T) {
 		{
 			name: "simple",
 			ctx: fakeResolverContext(fakeResolverData{
+				configValues: graph.ConfigValues{
+					Rustflags: []string{"--edition=2021", "-Copt-level=3"},
+				},
 				strings: map[string]string{
 					"name": "foo",
 				},
@@ -125,6 +130,8 @@ func TestRustLibrarySchema_Resolver(t *testing.T) {
 						"crate_name": "foo",
 						"crate_type": "rlib",
 						"externs":    "",
+						"rustflags":  "--edition=2021 -Copt-level=3",
+						"rustdeps":   "",
 					},
 				},
 			},
@@ -163,6 +170,8 @@ func TestRustLibrarySchema_Resolver(t *testing.T) {
 						"crate_name": "foo",
 						"crate_type": "rlib",
 						"externs":    "",
+						"rustflags":  "",
+						"rustdeps":   "",
 					},
 				},
 			},
@@ -211,6 +220,8 @@ func TestRustLibrarySchema_Resolver(t *testing.T) {
 						"crate_name": "foo",
 						"crate_type": "rlib",
 						"externs":    "--extern bar=//out/obj/bar.rlib",
+						"rustflags":  "",
+						"rustdeps":   "",
 					},
 				},
 			},

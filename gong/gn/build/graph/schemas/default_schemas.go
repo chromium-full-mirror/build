@@ -8,7 +8,9 @@ package schemas
 
 import (
 	"fmt"
+	"maps"
 	"path"
+	"strings"
 
 	"go.chromium.org/build/gong/gn/build/fs"
 	"go.chromium.org/build/gong/gn/build/graph"
@@ -127,7 +129,6 @@ var (
 			"crate_root":   graph.FileVar{},
 			"deps":         graph.LabelListVar{Expected: &graph.Target{}},
 			"aliased_deps": graph.ScopeOfLabelsVar{Invert: true},
-			"configs":      graph.LabelListVar{Expected: &graph.Config{}},
 			"outputs":      graph.FileListVar{},
 		},
 		Resolver: func(ctx graph.ResolverContext) (graph.ResolutionMetadata, error) {
@@ -186,8 +187,6 @@ var (
 			// TODO: support more variables.
 			"sources": graph.FileListVar{},
 			"deps":    graph.LabelListVar{Expected: &graph.Target{}},
-			"configs": graph.LabelListVar{Expected: &graph.Config{}},
-			"defines": graph.StringListVar{},
 		},
 		Resolver: func(ctx graph.ResolverContext) (graph.ResolutionMetadata, error) {
 			name, err := ctx.StringFor("name")
@@ -226,6 +225,7 @@ var (
 						// TODO: fill these out.
 						"source_file_part": "",
 						"source_name_part": "",
+						"cflags":           strings.Join(ctx.ConfigValues.Cflags, " "),
 					},
 				)
 				if err != nil {
@@ -240,7 +240,7 @@ var (
 				fmt.Sprintf("%s.so", outPrefix),
 				map[string]string{
 					// TODO: fill these out.
-					"ldflags":      "",
+					"ldflags":      strings.Join(ctx.ConfigValues.Ldflags, " "),
 					"libs":         "",
 					"frameworks":   "",
 					"swiftmodules": "",
@@ -268,8 +268,6 @@ var (
 			// TODO: support more variables.
 			"sources": graph.FileListVar{},
 			"deps":    graph.LabelListVar{Expected: &graph.Target{}},
-			"configs": graph.LabelListVar{Expected: &graph.Config{}},
-			"defines": graph.StringListVar{},
 		},
 		Resolver: func(ctx graph.ResolverContext) (graph.ResolutionMetadata, error) {
 			name, err := ctx.StringFor("name")
@@ -308,6 +306,7 @@ var (
 						// TODO: fill these out.
 						"source_file_part": "",
 						"source_name_part": "",
+						"cflags":           strings.Join(ctx.ConfigValues.Cflags, " "),
 					},
 				)
 				if err != nil {
@@ -321,8 +320,8 @@ var (
 				linkInputs,
 				fmt.Sprintf("%s.a", outPrefix),
 				map[string]string{
-					// TODO: fill these out.
-					"arflags": "",
+					// TODO: add more.
+					"arflags": strings.Join(ctx.ConfigValues.Arflags, " "),
 				},
 			)
 			if err != nil {
@@ -359,3 +358,9 @@ var (
 		},
 	}
 )
+
+func init() {
+	maps.Copy(ExecutableSchema.Vars, graph.ConfigVars)
+	maps.Copy(SharedLibrarySchema.Vars, graph.ConfigVars)
+	maps.Copy(StaticLibrarySchema.Vars, graph.ConfigVars)
+}

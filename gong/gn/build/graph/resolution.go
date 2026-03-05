@@ -15,6 +15,8 @@ import (
 //
 // TODO: this list of functions one for each type of variable is starting to look a bit silly.
 type ResolverContext struct {
+	// ConfigValues returns the config values for this target.
+	ConfigValues ConfigValues
 	// DeclareTool declares a tool call.
 	DeclareTool func(tool string, source fs.SourceFile, inputs []fs.SourceFile, outputName string, expansions map[string]string) (fs.SourceFile, error)
 	// LabelKeyedStringMapFor returns the map of labels to strings for the variable, if it accepts

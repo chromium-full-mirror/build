@@ -33,6 +33,7 @@ func cExecutableResolver(name string, cInputs []fs.SourceFile, ctx graph.Resolve
 				// TODO: fill these out.
 				"source_file_part": "",
 				"source_name_part": "",
+				"cflags":           strings.Join(ctx.ConfigValues.Cflags, " "),
 			},
 		)
 		if err != nil {
@@ -65,7 +66,7 @@ func cExecutableResolver(name string, cInputs []fs.SourceFile, ctx graph.Resolve
 		name,
 		map[string]string{
 			// TODO: fill these out.
-			"ldflags":      "",
+			"ldflags":      strings.Join(ctx.ConfigValues.Ldflags, " "),
 			"libs":         "",
 			"frameworks":   "",
 			"swiftmodules": "",
@@ -154,6 +155,8 @@ func rustBinaryResolver(name string, isLibrary bool, rsInputs []fs.SourceFile, c
 			"crate_name": crateName,
 			"crate_type": crateType,
 			"externs":    strings.Join(externs, " "),
+			"rustflags":  strings.Join(ctx.ConfigValues.Rustflags, " "),
+			"rustdeps":   "",
 		},
 	)
 	if err != nil {

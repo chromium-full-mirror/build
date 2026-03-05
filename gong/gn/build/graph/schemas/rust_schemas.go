@@ -5,6 +5,8 @@
 package schemas
 
 import (
+	"maps"
+
 	"go.chromium.org/build/gong/gn/build/fs"
 	"go.chromium.org/build/gong/gn/build/graph"
 )
@@ -35,8 +37,6 @@ var RustLibrarySchema = graph.Schema{
 		"crate_name": graph.StringVar{},
 		"crate_root": graph.FileVar{},
 		"deps":       graph.LabelListVar{Expected: &graph.Target{}},
-		"configs":    graph.LabelListVar{Expected: &graph.Config{}},
-		"defines":    graph.StringListVar{},
 	},
 	Resolver: func(ctx graph.ResolverContext) (graph.ResolutionMetadata, error) {
 		name, err := ctx.StringFor("name")
@@ -52,4 +52,8 @@ var RustLibrarySchema = graph.Schema{
 		}
 		return rustBinaryResolver(name, true, inputs, ctx)
 	},
+}
+
+func init() {
+	maps.Copy(RustLibrarySchema.Vars, graph.ConfigVars)
 }

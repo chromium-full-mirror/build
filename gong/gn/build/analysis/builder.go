@@ -92,10 +92,7 @@ func (b *Builder) RecordDefinedItem(item graph.Item) ([]environment.LabelWithOri
 	case *graph.Target:
 		return b.targetDefined(i, record)
 	case *graph.Config:
-		// HACK: Temporarily do not throw NotImplementedError for test to work.
-		fmt.Fprintf(os.Stderr, "got config %q but will do nothing yet! need to parse this config's deps.\n",
-			record.item.Label().UserVisibleString(false))
-		return nil, nil, nil
+		return b.configDefined(i, record)
 	case *graph.Toolchain:
 		return b.toolchainDefined(i, record)
 	}
@@ -155,6 +152,104 @@ func (b *Builder) targetDefined(target *graph.Target, record *builderRecord) ([]
 	return nil, allResolved, nil
 }
 
+func (b *Builder) configDefined(config *graph.Config, record *builderRecord) ([]environment.LabelWithOrigin, []graph.Item, error) {
+	var unresolvedDeps []environment.LabelWithOrigin
+
+	// Find all configs referenced by this config.
+	if configsVal, ok := config.DefinedValues["configs"]; ok {
+		llv, err := graph.ProcessedValueAs[graph.LabelListValue](configsVal)
+		if err != nil {
+			return nil, nil, err
+		}
+		for _, dep := range llv.List {
+			depRecord, err := b.recordFor(dep.Label, dep.Origin, &graph.Config{})
+			if err != nil {
+				return nil, nil, err
+			}
+			if depRecord.state != itemStateResolved {
+				unresolvedDeps = append(unresolvedDeps, dep)
+			}
+			record.addDep(depRecord)
+		}
+	}
+
+	if record.unresolvedDeps > 0 {
+		return unresolvedDeps, nil, nil
+	}
+
+	allResolved, err := b.resolveConfig(config, record)
+	if err != nil {
+		return nil, nil, err
+	}
+	return nil, allResolved, nil
+}
+
+func (b *Builder) resolveConfig(config *graph.Config, record *builderRecord) ([]graph.Item, error) {
+	// TODO: can dedup with target since it needs to resolve configs too?
+	var configDeps []*graph.Config
+	if configsVal, ok := config.DefinedValues["configs"]; ok {
+		llv, err := graph.ProcessedValueAs[graph.LabelListValue](configsVal)
+		if err != nil {
+			return nil, err
+		}
+		for _, lbl := range llv.List {
+			rec, ok := b.records[lbl.Label]
+			if !ok {
+				return nil, environment.IllegalStateError{
+					Reason: fmt.Sprintf("Config has dep on unrecorded config %s", lbl.Label.UserVisibleString(true)),
+				}
+			}
+			if rec.state != itemStateResolved {
+				return nil, environment.IllegalStateError{
+					Reason: fmt.Sprintf("Config has dep on unresolved config %s", lbl.Label.UserVisibleString(true)),
+				}
+			}
+			switch i := rec.item.(type) {
+			case *graph.Config:
+				configDeps = append(configDeps, i)
+			default:
+				return nil, environment.IllegalStateError{
+					Reason: "Builder constructed graph with config dep pointing at non-config",
+				}
+			}
+		}
+	}
+
+	_, err := config.Resolve(configDeps)
+	if err != nil {
+		return nil, err
+	}
+	record.state = itemStateResolved
+
+	// Recursively update everybody waiting on this item to be resolved.
+	allResolved := []graph.Item{config}
+	for dependent := range record.dependents {
+		dependent.unresolvedDeps--
+		if dependent.unresolvedDeps > 0 {
+			continue
+		}
+		switch dependentItem := dependent.item.(type) {
+		case *graph.Target:
+			resolved, err := b.resolveTarget(dependentItem, dependent)
+			if err != nil {
+				return nil, err
+			}
+			allResolved = append(allResolved, resolved...)
+		case *graph.Config:
+			resolved, err := b.resolveConfig(dependentItem, dependent)
+			if err != nil {
+				return nil, err
+			}
+			allResolved = append(allResolved, resolved...)
+		default:
+			return nil, environment.IllegalStateError{
+				Reason: "Builder constructed graph with invalid dep on config",
+			}
+		}
+	}
+	return allResolved, nil
+}
+
 // TODO: Support more than one toolchain.
 func (b *Builder) toolchainDefined(toolchain *graph.Toolchain, record *builderRecord) ([]environment.LabelWithOrigin, []graph.Item, error) {
 	if b.seenDefaultToolchain {
@@ -210,7 +305,48 @@ func (b *Builder) resolveTarget(target *graph.Target, record *builderRecord) ([]
 		return nil, err
 	}
 
+	// Resolve the config values for this target.
+	// Note that configs apply after the values set on a target.
+	// TODO: can dedup with config resolver?
+	configValues, err := graph.MakeConfigValues(target.Values)
+	if err != nil {
+		return nil, err
+	}
+	var configDeps []*graph.Config
+	if configsVal, ok := target.Values["configs"]; ok {
+		llv, err := graph.ProcessedValueAs[graph.LabelListValue](configsVal)
+		if err != nil {
+			return nil, err
+		}
+		for _, lbl := range llv.List {
+			rec, ok := b.records[lbl.Label]
+			if !ok {
+				return nil, environment.IllegalStateError{
+					Reason: fmt.Sprintf("Target has dep on unrecorded config %s", lbl.Label.UserVisibleString(true)),
+				}
+			}
+			if rec.state != itemStateResolved {
+				return nil, environment.IllegalStateError{
+					Reason: fmt.Sprintf("Target has dep on unresolved config %s", lbl.Label.UserVisibleString(true)),
+				}
+			}
+			switch i := rec.item.(type) {
+			case *graph.Config:
+				configDeps = append(configDeps, i)
+			default:
+				return nil, environment.IllegalStateError{
+					Reason: "Builder constructed graph with config dep pointing at non-config",
+				}
+			}
+		}
+	}
+	if err := configValues.Append(configDeps...); err != nil {
+		return nil, err
+	}
+
+	// Finally, the target resolver can be called.
 	result, err := target.Schema.Resolver(graph.ResolverContext{
+		ConfigValues: configValues,
 		DeclareTool: func(tool string, source fs.SourceFile, inputs []fs.SourceFile, outputName string, expansions map[string]string) (fs.SourceFile, error) {
 			return target.DeclareTool(outDir, tool, source, inputs, outputName, expansions)
 		},
