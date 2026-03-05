@@ -121,6 +121,20 @@ func (t *Target) DeclareTool(outDir fs.SourceDir, tool string, source fs.SourceF
 	return outFile, nil
 }
 
+// OutDir returns the output directory for this target.
+func (t *Target) OutDir(buildSettings *environment.BuildSettings) (fs.SourceDir, error) {
+	// TODO: Placeholder implementation that always assumes obj/.
+	// To be correct, we need to also support absolute paths, support gen/, support phony/, etc.
+	//
+	// TODO: Alternatively, this path should be considered implementation detail of ninjawriter.
+	// Right now this is not possible because this outdir is then used to create fs.SourceFile
+	// so that we can use outputs as intermediate sources.
+	// Hence we would need to have some kind of "artifact" struct to be able to represent both
+	// sources and intermediate outputs without needing to have a hard dep on the output path.
+	// Then, ninjawriter can decide where to put intermediate outputs.
+	return buildSettings.BuildDir.ResolveRelativeDir("obj/" + t.Label().Dir.Path())
+}
+
 // LabelTargetPair represents a label, and a pointer to its target if that
 // dependency has been resolved.
 type LabelTargetPair struct {

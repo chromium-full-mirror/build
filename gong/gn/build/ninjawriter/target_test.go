@@ -58,7 +58,9 @@ func TestWriteBinaryTarget(t *testing.T) {
 					},
 				},
 			},
-			want: `build obj/base/main.o: cxx ../../base/main.cc
+			want: `target_out_dir = obj
+
+build obj/base/main.o: cxx ../../base/main.cc
   source_file_part = main.cc
   source_name_part = main
 build obj/base/app: link obj/base/main.o obj/foo/libfoo.o
@@ -80,22 +82,22 @@ build obj/base/app: link obj/base/main.o obj/foo/libfoo.o
 					},
 					Output: mustFile(t, "//out/Default/obj/libfoo.rlib"),
 					Expansions: map[string]string{
-						"crate_name":     "foo",
-						"crate_type":     "rlib",
-						"target_out_dir": "obj/foo",
-						"rustflags":      "-Cdebuginfo=2",
-						"rustdeps":       "-Ldependency=obj/bar",
-						"externs":        "--extern bar=obj/bar/libbar.rlib",
+						"crate_name": "foo",
+						"crate_type": "rlib",
+						"rustflags":  "-Cdebuginfo=2",
+						"rustdeps":   "-Ldependency=obj/bar",
+						"externs":    "--extern bar=obj/bar/libbar.rlib",
 					},
 				},
 			},
-			want: `build obj/libfoo.rlib: rust_rlib ../../src/lib.rs | obj/bar/libbar.rlib
+			want: `target_out_dir = obj
+
+build obj/libfoo.rlib: rust_rlib ../../src/lib.rs | obj/bar/libbar.rlib
   crate_name = foo
   crate_type = rlib
   externs = --extern bar=obj/bar/libbar.rlib
   rustdeps = -Ldependency=obj/bar
   rustflags = -Cdebuginfo=2
-  target_out_dir = obj/foo
 `,
 		},
 	}

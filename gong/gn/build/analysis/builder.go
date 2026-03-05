@@ -298,9 +298,7 @@ func (b *Builder) resolveTarget(target *graph.Target, record *builderRecord) ([]
 	}
 
 	// Determine the outdir for the target.
-	// TODO: Placeholder implementation that always assumes obj/.
-	// To be correct, we need to also support absolute paths, support gen/, support phony/, etc.
-	outDir, err := b.loader.buildSettings.BuildDir.ResolveRelativeDir("obj/" + target.Label().Dir.Path())
+	outDir, err := target.OutDir(b.loader.buildSettings)
 	if err != nil {
 		return nil, err
 	}

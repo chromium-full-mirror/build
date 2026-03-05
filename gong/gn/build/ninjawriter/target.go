@@ -50,7 +50,7 @@ func writeTarget(w io.Writer, t *graph.Target, buildSettings *environment.BuildS
 	} else {
 		// TODO: reusing C++ GN's builddir resolution funcs is somewhat clumsy.
 		// can this be improved by adopting io/fs and its FS and SubFS interfaces?
-		targetDir, err := buildSettings.BuildDir.ResolveRelativeDir("obj/" + targetLabel.Dir.Path())
+		targetDir, err := t.OutDir(buildSettings)
 		if err != nil {
 			return fmt.Errorf("failed to determine target %s outdir: %w", targetLabel.UserVisibleString(true), err)
 		}
@@ -94,6 +94,25 @@ func writeTarget(w io.Writer, t *graph.Target, buildSettings *environment.BuildS
 }
 
 func writeBinaryTarget(w io.Writer, t *graph.Target, buildSettings *environment.BuildSettings) error {
+	targetOutDir, err := t.OutDir(buildSettings)
+	if err != nil {
+		return err
+	}
+	targetOutBuildDirRel, err := fs.RebasePath(targetOutDir.WithNoTrailingSlash(), buildSettings.BuildDir, buildSettings.RootPath)
+	if err != nil {
+		return err
+	}
+	// TODO: escape special chars (e.g. space, $, : etc?)
+	_, err = fmt.Fprintf(w, "target_out_dir = %s\n", targetOutBuildDirRel)
+	if err != nil {
+		return err
+	}
+	// TODO: more top-level substitutions
+	_, err = fmt.Fprintln(w)
+	if err != nil {
+		return err
+	}
+
 	for _, action := range t.Resolution.Actions {
 		var inputPaths []string
 		var implicitDeps []string
