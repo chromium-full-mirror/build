@@ -58,7 +58,7 @@ func formatError(err error, isSubErr bool) string {
 			} else {
 				sb.WriteString("at ")
 			}
-			sb.WriteString(": " + locStr)
+			sb.WriteString(locStr + ": ")
 		}
 	}
 
