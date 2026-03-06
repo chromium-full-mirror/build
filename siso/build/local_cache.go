@@ -26,8 +26,14 @@ import (
 	"go.chromium.org/build/siso/o11y/iometrics"
 	"go.chromium.org/build/siso/o11y/trace"
 	"go.chromium.org/build/siso/reapi/digest"
+	"go.chromium.org/build/siso/runtimex"
+	"go.chromium.org/build/siso/sync/semaphore"
 	"go.chromium.org/build/siso/ui"
 )
+
+// localCacheSemaphore is a semaphore to control concurrent lstat,
+// to protect from thread exhaustion. b/490029722
+var localCacheSemaphore = semaphore.New("local-cache", runtimex.NumCPU()*2)
 
 // LocalCache implements CacheStore interface with local files.
 type LocalCache struct {
@@ -80,22 +86,25 @@ func (c *LocalCache) GetActionResult(ctx context.Context, d digest.Digest) (*rpb
 		return nil, status.Error(codes.NotFound, "cache is not configured")
 	}
 	fname := c.actionCacheFilename(d)
-	b, err := os.ReadFile(fname)
-	c.m.ReadDone(len(b), err)
-	if errors.Is(err, os.ErrNotExist) {
-		return nil, status.Errorf(codes.NotFound, "not found %s: %v", fname, err)
-	}
+	var result *rpb.ActionResult
+	err := localCacheSemaphore.Do(ctx, func(ctx context.Context) error {
+		b, err := os.ReadFile(fname)
+		c.m.ReadDone(len(b), err)
+		if errors.Is(err, os.ErrNotExist) {
+			return status.Errorf(codes.NotFound, "not found %s: %v", fname, err)
+		}
+		result = &rpb.ActionResult{}
+		err = proto.Unmarshal(b, result)
+		if err != nil {
+			return fmt.Errorf("failed to unmarshal %s: %w", fname, err)
+		}
+		if err := os.Chtimes(fname, c.timestamp, c.timestamp); err != nil {
+			clog.Warningf(ctx, "Failed to update mtime for %s: %v", fname, err)
+		}
+		return nil
+	})
 	if err != nil {
 		return nil, err
-	}
-	result := &rpb.ActionResult{}
-	err = proto.Unmarshal(b, result)
-	if err != nil {
-		return nil, fmt.Errorf("failed to unmarshal %s: %w", fname, err)
-	}
-
-	if err := os.Chtimes(fname, c.timestamp, c.timestamp); err != nil {
-		clog.Warningf(ctx, "Failed to update mtime for %s: %v", fname, err)
 	}
 	return result, nil
 }
@@ -114,27 +123,30 @@ func (c *LocalCache) SetActionResult(ctx context.Context, d digest.Digest, ar *r
 
 	fname := c.actionCacheFilename(d)
 	_, err, _ = c.singleflight.Do(fname, func() (any, error) {
-		err := os.MkdirAll(filepath.Dir(fname), 0755)
-		c.m.OpsDone(err)
-		if err != nil {
-			return nil, err
-		}
-		// Write to a temporary file first before renaming to perform an atomic
-		// write.
-		tmp := fname + ".tmp"
-		err = os.WriteFile(tmp, b, 0644)
-		c.m.WriteDone(len(b), err)
-		if err != nil {
-			c.m.OpsDone(os.Remove(tmp))
-			return nil, err
-		}
-		err = os.Rename(tmp, fname)
-		c.m.OpsDone(err)
-		if err != nil {
-			c.m.OpsDone(os.Remove(tmp))
-			return nil, err
-		}
-		return nil, nil
+		err := localCacheSemaphore.Do(ctx, func(ctx context.Context) error {
+			err := os.MkdirAll(filepath.Dir(fname), 0755)
+			c.m.OpsDone(err)
+			if err != nil {
+				return err
+			}
+			// Write to a temporary file first before renaming to perform an atomic
+			// write.
+			tmp := fname + ".tmp"
+			err = os.WriteFile(tmp, b, 0644)
+			c.m.WriteDone(len(b), err)
+			if err != nil {
+				c.m.OpsDone(os.Remove(tmp))
+				return err
+			}
+			err = os.Rename(tmp, fname)
+			c.m.OpsDone(err)
+			if err != nil {
+				c.m.OpsDone(os.Remove(tmp))
+				return err
+			}
+			return nil
+		})
+		return nil, err
 	})
 	return err
 }
@@ -144,87 +156,95 @@ func (c *LocalCache) GetContent(ctx context.Context, d digest.Digest, _ string) 
 	_, span := trace.NewSpan(ctx, "cache-get-content")
 	defer span.Close(nil)
 	cname := c.contentCacheFilename(d)
-	r, err := os.Open(cname)
-	if err != nil {
-		c.m.ReadDone(0, err)
-		return nil, err
-	}
-	defer r.Close()
-	zr, err := zstd.NewReader(r)
-	if err != nil {
-		c.m.ReadDone(0, err)
-		return nil, err
-	}
-	defer zr.Close()
-	buf, err := io.ReadAll(zr)
-	// TODO(b/274060507): local cache metric: iometrics uses compressed size or uncompressed size?
-	c.m.ReadDone(len(buf), err)
-	if err == nil {
+	var buf []byte
+	err := localCacheSemaphore.Do(ctx, func(ctx context.Context) error {
+		r, err := os.Open(cname)
+		if err != nil {
+			c.m.ReadDone(0, err)
+			return err
+		}
+		defer r.Close()
+		zr, err := zstd.NewReader(r)
+		if err != nil {
+			c.m.ReadDone(0, err)
+			return err
+		}
+		defer zr.Close()
+		buf, err = io.ReadAll(zr)
+		// TODO(b/274060507): local cache metric: iometrics uses compressed size or uncompressed size?
+		c.m.ReadDone(len(buf), err)
+		if err != nil {
+			return err
+		}
 		if err := os.Chtimes(cname, c.timestamp, c.timestamp); err != nil {
 			clog.Warningf(ctx, "Failed to update mtime for %s: %v", cname, err)
 		}
-	}
+		return nil
+	})
 	return buf, err
 }
 
 // SetContent sets content of fname identified by the digest.
 func (c *LocalCache) SetContent(ctx context.Context, d digest.Digest, fname string, buf []byte) error {
 	cname := c.contentCacheFilename(d)
-	_, err := os.Stat(cname)
-	c.m.OpsDone(err)
-	if err == nil {
-		return nil
-	}
 	_, err, shared := c.singleflight.Do(cname, func() (any, error) {
-		err = os.MkdirAll(filepath.Dir(cname), 0755)
-		c.m.OpsDone(err)
-		if err != nil {
-			return nil, err
-		}
-		// Write to a temporary file first before renaming to perform an atomic
-		// write.
-		tmp := cname + ".tmp"
-		w, err := os.Create(tmp)
-		if err != nil {
-			c.m.WriteDone(0, err)
-			return nil, err
-		}
-		zw, err := zstd.NewWriter(w)
-		if err != nil {
-			c.m.WriteDone(0, err)
-			w.Close()
-			os.Remove(tmp)
-			return nil, err
-		}
-		_, err = zw.Write(buf)
-		if err != nil {
-			c.m.WriteDone(0, err)
-			zw.Close()
-			w.Close()
-			os.Remove(tmp)
-			return nil, err
-		}
-		err = zw.Close()
-		if err != nil {
-			c.m.WriteDone(0, err)
-			w.Close()
-			os.Remove(tmp)
-			return nil, err
-		}
-		err = w.Close()
-		if err != nil {
-			c.m.WriteDone(0, err)
-			os.Remove(tmp)
-			return nil, err
-		}
-		err = os.Rename(tmp, cname)
-		if err != nil {
-			c.m.WriteDone(0, err)
-			os.Remove(tmp)
-			return nil, err
-		}
-		// TODO(b/274060507): local cache metric: iometrics uses compressed size or uncompressed size?
-		c.m.WriteDone(len(buf), err)
+		err := localCacheSemaphore.Do(ctx, func(ctx context.Context) error {
+			_, err := os.Stat(cname)
+			c.m.OpsDone(err)
+			if err == nil {
+				return nil
+			}
+			err = os.MkdirAll(filepath.Dir(cname), 0755)
+			c.m.OpsDone(err)
+			if err != nil {
+				return err
+			}
+			// Write to a temporary file first before renaming to perform an atomic
+			// write.
+			tmp := cname + ".tmp"
+			w, err := os.Create(tmp)
+			if err != nil {
+				c.m.WriteDone(0, err)
+				return err
+			}
+			zw, err := zstd.NewWriter(w)
+			if err != nil {
+				c.m.WriteDone(0, err)
+				w.Close()
+				os.Remove(tmp)
+				return err
+			}
+			_, err = zw.Write(buf)
+			if err != nil {
+				c.m.WriteDone(0, err)
+				zw.Close()
+				w.Close()
+				os.Remove(tmp)
+				return err
+			}
+			err = zw.Close()
+			if err != nil {
+				c.m.WriteDone(0, err)
+				w.Close()
+				os.Remove(tmp)
+				return err
+			}
+			err = w.Close()
+			if err != nil {
+				c.m.WriteDone(0, err)
+				os.Remove(tmp)
+				return err
+			}
+			err = os.Rename(tmp, cname)
+			if err != nil {
+				c.m.WriteDone(0, err)
+				os.Remove(tmp)
+				return err
+			}
+			// TODO(b/274060507): local cache metric: iometrics uses compressed size or uncompressed size?
+			c.m.WriteDone(len(buf), err)
+			return err
+		})
 		return nil, err
 	})
 	clog.Infof(ctx, "write cache content %s for %s shared:%t: %v", d, fname, shared, err)

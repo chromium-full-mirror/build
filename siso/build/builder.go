@@ -668,6 +668,7 @@ func (b *Builder) Build(ctx context.Context, name string, args ...string) (err e
 		hashfs.FlushSemaphore,
 		hashfs.ForgetMissingsSemaphore,
 		osfs.LstatSemaphore,
+		localCacheSemaphore,
 		reapi.FileSemaphore,
 		gccutil.Semaphore,
 		msvcutil.Semaphore,
