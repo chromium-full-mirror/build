@@ -440,3 +440,8 @@ func (s *Setup) Items() iter.Seq2[graph.Item, error] {
 		}
 	}
 }
+
+// InputFileCount returns the number of input files processed at this point in the build.
+func (s *Setup) InputFileCount() int32 {
+	return s.inputFileManager.Count()
+}

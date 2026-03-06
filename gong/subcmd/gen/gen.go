@@ -96,9 +96,8 @@ func (h *Command) genOneDir(dir string) error {
 		targetsCollected += len(ninjaRules)
 	}
 
-	// TODO: get count of loaded files from fs.InputFileManager somehow?
 	msgPrefix := ui.SGR(ui.Green, "Done.")
-	ui.Default.Printf("%s Made %d targets from ?? files in %dms\n", msgPrefix, targetsCollected, elapsed.Milliseconds())
+	ui.Default.Printf("%s Made %d targets from %d files in %dms\n", msgPrefix, targetsCollected, setup.InputFileCount(), elapsed.Milliseconds())
 	return nil
 }
 

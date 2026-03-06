@@ -7,6 +7,7 @@ package fs
 import (
 	"io/fs"
 	"sync"
+	"sync/atomic"
 
 	"go.chromium.org/build/gong/gn/parse"
 	"go.chromium.org/build/gong/gn/syntax"
@@ -38,6 +39,7 @@ type InputFileManager struct {
 	// e.g. multiple targets with dep to same build file
 	// e.g. multiple .gn importing same .gni file
 	inputFiles sync.Map
+	ninput     atomic.Int32
 }
 
 // InputFileResolver is the interface implemented by an object that can resolve
@@ -70,11 +72,14 @@ type inputFileData struct {
 // LoadFile loads and parses the given file, returning the root block corresponding to the parsed result.
 func (m *InputFileManager) LoadFile(origin syntax.LocationRange, inputFileResolver InputFileResolver, fileName SourceFile) (parse.Node, error) {
 	var data *inputFileData
-	v, _ := m.inputFiles.LoadOrStore(fileName, &inputFileData{
+	v, loaded := m.inputFiles.LoadOrStore(fileName, &inputFileData{
 		file: InputFile{
 			name: fileName,
 		},
 	})
+	if !loaded {
+		m.ninput.Add(1)
+	}
 	data = v.(*inputFileData)
 
 	data.once.Do(func() {
@@ -126,4 +131,9 @@ func doLoadFile(origin syntax.LocationRange, fs fs.FS, inputFileResolver InputFi
 	}
 
 	return root, tokens, nil
+}
+
+// Count returns the number of input files processed.
+func (m *InputFileManager) Count() int32 {
+	return m.ninput.Load()
 }
