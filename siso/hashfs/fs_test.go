@@ -2561,6 +2561,10 @@ func TestForget_UnexpectedRemoveRspFileUnderSymlinkDir(t *testing.T) {
 			t.Errorf("os.Lstat %q: %v", rspFile, err)
 		}
 		hfs.Forget(ctx, srcDir, []string{rspFile})
+		_, err = hfs.Stat(ctx, srcDir, rspFile)
+		if !errors.Is(err, fs.ErrNotExist) {
+			t.Errorf("Stat %q: %v; want fs.ErrNotExist", rspFile, err)
+		}
 		err = hfs.WriteFile(ctx, srcDir, rspFile, nil, false, time.Now(), nil, nil)
 		if err != nil {
 			t.Errorf("hfs.Write %q: %v", rspFile, err)

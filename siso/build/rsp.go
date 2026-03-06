@@ -39,6 +39,10 @@ func (b *Builder) setupRSP(ctx context.Context, step *Step) error {
 		if herr == nil && errors.Is(lerr, fs.ErrNotExist) {
 			clog.Warningf(ctx, "unexpected rsp remove detected %q", rsp)
 			b.hashFS.Forget(ctx, step.cmd.ExecRoot, []string{rsp})
+			_, herr := b.hashFS.Stat(ctx, step.cmd.ExecRoot, rsp)
+			if !errors.Is(herr, fs.ErrNotExist) {
+				clog.Warningf(ctx, "forget, but hashfs detect %q? %v", rsp, herr)
+			}
 		}
 	}
 	err := b.hashFS.WriteFile(ctx, step.cmd.ExecRoot, rsp, content, false, time.Now(), nil, nil)
