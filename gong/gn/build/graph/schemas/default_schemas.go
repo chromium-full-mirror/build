@@ -19,12 +19,12 @@ import (
 // DefaultMetadata is a minimal implementation of resolution metadata
 // that only provides outputs of the target.
 type DefaultMetadata struct {
-	OutputFiles []fs.SourceFile
+	OutputPaths []fs.OutputPath
 }
 
 // Outputs returns the output(s) from this target.
-func (m DefaultMetadata) Outputs() []fs.SourceFile {
-	return m.OutputFiles
+func (m DefaultMetadata) Outputs() []fs.OutputPath {
+	return m.OutputPaths
 }
 
 type sourceFileType int
@@ -231,7 +231,11 @@ var (
 				if err != nil {
 					return nil, err
 				}
-				linkInputs = append(linkInputs, objFile)
+				linkInput, err := objFile.AsSourceFile()
+				if err != nil {
+					return nil, err
+				}
+				linkInputs = append(linkInputs, linkInput)
 			}
 			out, err := ctx.DeclareTool(
 				"solink",
@@ -249,7 +253,7 @@ var (
 			if err != nil {
 				return nil, err
 			}
-			return DefaultMetadata{[]fs.SourceFile{out}}, nil
+			return DefaultMetadata{[]fs.OutputPath{out}}, nil
 		},
 	}
 	SourceSetSchema = graph.Schema{
@@ -312,7 +316,11 @@ var (
 				if err != nil {
 					return nil, err
 				}
-				linkInputs = append(linkInputs, objFile)
+				linkInput, err := objFile.AsSourceFile()
+				if err != nil {
+					return nil, err
+				}
+				linkInputs = append(linkInputs, linkInput)
 			}
 			out, err := ctx.DeclareTool(
 				"alink",
@@ -327,7 +335,7 @@ var (
 			if err != nil {
 				return nil, err
 			}
-			return DefaultMetadata{[]fs.SourceFile{out}}, nil
+			return DefaultMetadata{[]fs.OutputPath{out}}, nil
 		},
 	}
 	CopySchema = graph.Schema{
@@ -347,14 +355,14 @@ var (
 			"deps": graph.LabelListVar{Expected: &graph.Target{}},
 		},
 		Resolver: func(ctx graph.ResolverContext) (graph.ResolutionMetadata, error) {
-			var outputs []fs.SourceFile
+			var outputs []fs.OutputPath
 			for dep, err := range ctx.ResolvedTargetsFor("deps") {
 				if err != nil {
 					return nil, err
 				}
 				outputs = append(outputs, dep.Metadata.Outputs()...)
 			}
-			return DefaultMetadata{OutputFiles: outputs}, nil
+			return DefaultMetadata{OutputPaths: outputs}, nil
 		},
 	}
 )

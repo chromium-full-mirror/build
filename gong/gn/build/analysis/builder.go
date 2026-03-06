@@ -298,10 +298,7 @@ func (b *Builder) resolveTarget(target *graph.Target, record *builderRecord) ([]
 	}
 
 	// Determine the outdir for the target.
-	outDir, err := target.OutDir(b.loader.buildSettings)
-	if err != nil {
-		return nil, err
-	}
+	outDir := target.OutDir(b.loader.buildSettings)
 
 	// Resolve the config values for this target.
 	// Note that configs apply after the values set on a target.
@@ -345,7 +342,7 @@ func (b *Builder) resolveTarget(target *graph.Target, record *builderRecord) ([]
 	// Finally, the target resolver can be called.
 	result, err := target.Schema.Resolver(graph.ResolverContext{
 		ConfigValues: configValues,
-		DeclareTool: func(tool string, source fs.SourceFile, inputs []fs.SourceFile, outputName string, expansions map[string]string) (fs.SourceFile, error) {
+		DeclareTool: func(tool string, source fs.SourceFile, inputs []fs.SourceFile, outputName string, expansions map[string]string) (fs.OutputPath, error) {
 			return target.DeclareTool(outDir, tool, source, inputs, outputName, expansions)
 		},
 		LabelKeyedStringMapFor: target.LabelKeyedStringMapFor,

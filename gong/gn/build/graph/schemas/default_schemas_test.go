@@ -14,6 +14,29 @@ import (
 	"go.chromium.org/build/gong/gn/build/graph"
 )
 
+func mustOutputPath(t *testing.T, buildDir string, rel string) fs.OutputPath {
+	t.Helper()
+	return fs.MakeOutputPath(mustSourceDir(t, buildDir), rel)
+}
+
+func mustSourceDir(t *testing.T, path string) fs.SourceDir {
+	t.Helper()
+	d, err := fs.MakeSourceDir(path)
+	if err != nil {
+		t.Fatalf("failed to make source dir %q: %v", path, err)
+	}
+	return d
+}
+
+func mustSourceFile(t *testing.T, path string) fs.SourceFile {
+	t.Helper()
+	f, err := fs.MakeSourceFile(path)
+	if err != nil {
+		t.Fatalf("failed to make source file %q: %v", path, err)
+	}
+	return f
+}
+
 // TODO: possible to merge with TestStaticLibrarySchema_Resolver and TestRustLibrarySchema_Resolver?
 // too much boilerplate duplicated between all three tests.
 // Can combine into one table-based test because all resolvers implement metadata interface
@@ -47,16 +70,16 @@ func TestExecutableSchema_Resolver(t *testing.T) {
 				resolvedDeps: []graph.Resolution{
 					{
 						Metadata: DefaultMetadata{
-							OutputFiles: []fs.SourceFile{
-								mustSourceFile(t, "//out/obj/libbar.a"),
+							OutputPaths: []fs.OutputPath{
+								mustOutputPath(t, "//out/", "obj/libbar.a"),
 							},
 						},
 					},
 				},
 			}),
 			want: DefaultMetadata{
-				OutputFiles: []fs.SourceFile{
-					mustSourceFile(t, "//out/obj/foo"),
+				OutputPaths: []fs.OutputPath{
+					mustOutputPath(t, "//out/", "obj/foo"),
 				},
 			},
 			wantTools: []gotToolCall{
@@ -97,17 +120,17 @@ func TestExecutableSchema_Resolver(t *testing.T) {
 				resolvedDeps: []graph.Resolution{
 					{
 						Metadata: DefaultMetadata{
-							OutputFiles: []fs.SourceFile{
-								mustSourceFile(t, "//out/obj/libbar.a"),
-								mustSourceFile(t, "//out/obj/libbaz.a"),
+							OutputPaths: []fs.OutputPath{
+								mustOutputPath(t, "//out/", "obj/libbar.a"),
+								mustOutputPath(t, "//out/", "obj/libbaz.a"),
 							},
 						},
 					},
 				},
 			}),
 			want: DefaultMetadata{
-				OutputFiles: []fs.SourceFile{
-					mustSourceFile(t, "//out/obj/foo"),
+				OutputPaths: []fs.OutputPath{
+					mustOutputPath(t, "//out/", "obj/foo"),
 				},
 			},
 			wantTools: []gotToolCall{
@@ -148,7 +171,7 @@ func TestExecutableSchema_Resolver(t *testing.T) {
 					{
 						Metadata: RustLibraryMetadata{
 							CrateName:  "bar",
-							OutputRlib: mustSourceFile(t, "//out/obj/libbar.rlib"),
+							OutputRlib: mustOutputPath(t, "//out/", "obj/libbar.rlib"),
 							TransitiveRlibs: []fs.SourceFile{
 								mustSourceFile(t, "//out/obj/libbaz.rlib"),
 							},
@@ -157,8 +180,8 @@ func TestExecutableSchema_Resolver(t *testing.T) {
 				},
 			}),
 			want: DefaultMetadata{
-				OutputFiles: []fs.SourceFile{
-					mustSourceFile(t, "//out/obj/foo_crate"),
+				OutputPaths: []fs.OutputPath{
+					mustOutputPath(t, "//out/", "obj/foo_crate"),
 				},
 			},
 			wantTools: []gotToolCall{
@@ -175,7 +198,7 @@ func TestExecutableSchema_Resolver(t *testing.T) {
 					Expansions: map[string]string{
 						"crate_name": "foo_crate",
 						"crate_type": "bin",
-						"externs":    "--extern bar=//out/obj/libbar.rlib",
+						"externs":    "--extern bar=obj/libbar.rlib",
 						"rustflags":  "-Cdebuginfo=2 --edition=2021",
 						"rustdeps":   "",
 					},
@@ -196,7 +219,7 @@ func TestExecutableSchema_Resolver(t *testing.T) {
 					{
 						Metadata: RustLibraryMetadata{
 							CrateName:  "bar",
-							OutputRlib: mustSourceFile(t, "//out/obj/libbar.rlib"),
+							OutputRlib: mustOutputPath(t, "//out/", "obj/libbar.rlib"),
 							TransitiveRlibs: []fs.SourceFile{
 								mustSourceFile(t, "//out/obj/libbaz.rlib"),
 							},
@@ -205,8 +228,8 @@ func TestExecutableSchema_Resolver(t *testing.T) {
 				},
 			}),
 			want: DefaultMetadata{
-				OutputFiles: []fs.SourceFile{
-					mustSourceFile(t, "//out/obj/foo_crate"),
+				OutputPaths: []fs.OutputPath{
+					mustOutputPath(t, "//out/", "obj/foo_crate"),
 				},
 			},
 			wantTools: []gotToolCall{
@@ -221,7 +244,7 @@ func TestExecutableSchema_Resolver(t *testing.T) {
 					Expansions: map[string]string{
 						"crate_name": "foo_crate",
 						"crate_type": "bin",
-						"externs":    "--extern bar=//out/obj/libbar.rlib",
+						"externs":    "--extern bar=obj/libbar.rlib",
 						"rustflags":  "",
 						"rustdeps":   "",
 					},
@@ -263,7 +286,7 @@ func TestExecutableSchema_Resolver(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var gotTools []gotToolCall
-			tc.ctx.DeclareTool = func(tool string, source fs.SourceFile, inputs []fs.SourceFile, outputName string, expansions map[string]string) (fs.SourceFile, error) {
+			tc.ctx.DeclareTool = func(tool string, source fs.SourceFile, inputs []fs.SourceFile, outputName string, expansions map[string]string) (fs.OutputPath, error) {
 				gotTools = append(gotTools, gotToolCall{
 					Tool:       tool,
 					Source:     source,
@@ -271,7 +294,7 @@ func TestExecutableSchema_Resolver(t *testing.T) {
 					OutputName: outputName,
 					Expansions: expansions,
 				})
-				return mustSourceFile(t, "//out/obj/"+outputName), nil
+				return fs.MakeOutputPath(mustSourceDir(t, "//out/"), "obj/"+outputName), nil
 			}
 
 			got, err := ExecutableSchema.Resolver(tc.ctx)
@@ -325,8 +348,8 @@ func TestStaticLibrarySchema_Resolver(t *testing.T) {
 				},
 			}),
 			want: DefaultMetadata{
-				OutputFiles: []fs.SourceFile{
-					mustSourceFile(t, "//out/obj/libbar.a"),
+				OutputPaths: []fs.OutputPath{
+					mustOutputPath(t, "//out/Default/", "obj/libbar.a"),
 				},
 			},
 			wantTools: []gotToolCall{
@@ -345,7 +368,7 @@ func TestStaticLibrarySchema_Resolver(t *testing.T) {
 					Tool:   "alink",
 					Source: fs.SourceFile{},
 					Inputs: []fs.SourceFile{
-						mustSourceFile(t, "//out/obj/libbar.lib.cc.o"),
+						mustSourceFile(t, "//out/Default/obj/libbar.lib.cc.o"),
 					},
 					OutputName: "libbar.a",
 					Expansions: map[string]string{
@@ -357,7 +380,7 @@ func TestStaticLibrarySchema_Resolver(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var gotTools []gotToolCall
-			tc.ctx.DeclareTool = func(tool string, source fs.SourceFile, inputs []fs.SourceFile, outputName string, expansions map[string]string) (fs.SourceFile, error) {
+			tc.ctx.DeclareTool = func(tool string, source fs.SourceFile, inputs []fs.SourceFile, outputName string, expansions map[string]string) (fs.OutputPath, error) {
 				gotTools = append(gotTools, gotToolCall{
 					Tool:       tool,
 					Source:     source,
@@ -365,7 +388,7 @@ func TestStaticLibrarySchema_Resolver(t *testing.T) {
 					OutputName: outputName,
 					Expansions: expansions,
 				})
-				return mustSourceFile(t, "//out/obj/"+outputName), nil
+				return fs.MakeOutputPath(mustSourceDir(t, "//out/Default/"), "obj/"+outputName), nil
 			}
 
 			got, err := StaticLibrarySchema.Resolver(tc.ctx)

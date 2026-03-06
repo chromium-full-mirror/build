@@ -7,6 +7,8 @@ package graph
 import (
 	"fmt"
 	"iter"
+	"path"
+	"strings"
 
 	"go.chromium.org/build/gong/gn/build/environment"
 	"go.chromium.org/build/gong/gn/build/fs"
@@ -106,23 +108,23 @@ func (t *Target) LabelsFor(varName string) ([]environment.LabelWithOrigin, error
 }
 
 // DeclareTool declares a tool call.
-func (t *Target) DeclareTool(outDir fs.SourceDir, tool string, source fs.SourceFile, inputs []fs.SourceFile, outputName string, expansions map[string]string) (fs.SourceFile, error) {
-	outFile, err := outDir.ResolveRelativeFile(outputName)
-	if err != nil {
-		return fs.SourceFile{}, err
-	}
+func (t *Target) DeclareTool(outDir fs.OutputPath, tool string, source fs.SourceFile, inputs []fs.SourceFile, outputName string, expansions map[string]string) (fs.OutputPath, error) {
+	outPath := fs.MakeOutputPath(outDir.BuildDir(), path.Join(outDir.Path(), outputName))
 	t.Resolution.Actions = append(t.Resolution.Actions, RunToolAction{
 		Tool:       tool,
 		Source:     source,
 		Inputs:     inputs,
-		Output:     outFile,
+		Output:     outPath,
 		Expansions: expansions,
 	})
-	return outFile, nil
+	return outPath, nil
 }
 
 // OutDir returns the output directory for this target.
-func (t *Target) OutDir(buildSettings *environment.BuildSettings) (fs.SourceDir, error) {
+func (t *Target) OutDir(buildSettings *environment.BuildSettings) fs.OutputPath {
+	// The source dir is source-absolute, so we trim off the two leading
+	// slashes to append to the toolchain object directory.
+	targetAsPath := strings.TrimPrefix(t.Label().Dir.Path(), "//")
 	// TODO: Placeholder implementation that always assumes obj/.
 	// To be correct, we need to also support absolute paths, support gen/, support phony/, etc.
 	//
@@ -132,7 +134,7 @@ func (t *Target) OutDir(buildSettings *environment.BuildSettings) (fs.SourceDir,
 	// Hence we would need to have some kind of "artifact" struct to be able to represent both
 	// sources and intermediate outputs without needing to have a hard dep on the output path.
 	// Then, ninjawriter can decide where to put intermediate outputs.
-	return buildSettings.BuildDir.ResolveRelativeDir("obj/" + t.Label().Dir.Path())
+	return fs.MakeOutputPath(buildSettings.BuildDir, path.Join("obj", targetAsPath))
 }
 
 // LabelTargetPair represents a label, and a pointer to its target if that

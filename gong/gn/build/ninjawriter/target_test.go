@@ -24,6 +24,20 @@ func mustFile(t *testing.T, s string) fs.SourceFile {
 	return f
 }
 
+func mustOutputPath(t *testing.T, buildDir fs.SourceDir, rel string) fs.OutputPath {
+	t.Helper()
+	return fs.MakeOutputPath(buildDir, rel)
+}
+
+func mustSourceDir(t *testing.T, path string) fs.SourceDir {
+	t.Helper()
+	d, err := fs.MakeSourceDir(path)
+	if err != nil {
+		t.Fatalf("failed to make source dir %q: %v", path, err)
+	}
+	return d
+}
+
 func TestWriteBinaryTarget(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -37,7 +51,7 @@ func TestWriteBinaryTarget(t *testing.T) {
 					Tool:   "cxx",
 					Source: mustFile(t, "//base/main.cc"),
 					Inputs: []fs.SourceFile{mustFile(t, "//base/main.cc")},
-					Output: mustFile(t, "//out/Default/obj/base/main.o"),
+					Output: mustOutputPath(t, mustSourceDir(t, "//out/Default/"), "obj/base/main.o"),
 					Expansions: map[string]string{
 						"source_file_part": "main.cc",
 						"source_name_part": "main",
@@ -49,7 +63,7 @@ func TestWriteBinaryTarget(t *testing.T) {
 						mustFile(t, "//out/Default/obj/base/main.o"),
 						mustFile(t, "//out/Default/obj/foo/libfoo.o"),
 					},
-					Output: mustFile(t, "//out/Default/obj/base/app"),
+					Output: mustOutputPath(t, mustSourceDir(t, "//out/Default/"), "obj/base/app"),
 					Expansions: map[string]string{
 						"ldflags":      "",
 						"libs":         "",
@@ -80,7 +94,7 @@ build obj/base/app: link obj/base/main.o obj/foo/libfoo.o
 						mustFile(t, "//src/lib.rs"),
 						mustFile(t, "//out/Default/obj/bar/libbar.rlib"),
 					},
-					Output: mustFile(t, "//out/Default/obj/libfoo.rlib"),
+					Output: mustOutputPath(t, mustSourceDir(t, "//out/Default/"), "obj/libfoo.rlib"),
 					Expansions: map[string]string{
 						"crate_name": "foo",
 						"crate_type": "rlib",

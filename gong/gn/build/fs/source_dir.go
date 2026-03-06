@@ -26,6 +26,14 @@ type SourceDir struct {
 	hasValue bool
 }
 
+// Equal returns whether the source dirs are equal i.e. refer to the same dir.
+func (s SourceDir) Equal(other SourceDir) bool {
+	if !s.hasValue || !other.hasValue {
+		return s.hasValue == other.hasValue
+	}
+	return s.value.Value() == other.value.Value()
+}
+
 // Compare returns the result of comparing the two SourceDir paths lexographically.
 func (d SourceDir) Compare(other SourceDir) int {
 	if d.hasValue && other.hasValue {

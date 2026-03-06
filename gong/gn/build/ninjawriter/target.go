@@ -9,6 +9,7 @@ import (
 	"io"
 	"maps"
 	"os"
+	"path"
 	"slices"
 	"strings"
 
@@ -36,34 +37,35 @@ func writeTarget(w io.Writer, t *graph.Target, buildSettings *environment.BuildS
 	if len(t.Resolution.Actions) == 0 {
 		var outputPaths []string
 		for _, output := range t.Resolution.Metadata.Outputs() {
-			// TODO: need to port OutputFile so that output path can easily be obtained from SourceFile?
-			outputRel, err := fs.RebasePath(output.Filename(), buildSettings.BuildDir, buildSettings.RootPath)
-			if err != nil {
-				return fmt.Errorf("failed to determine input %s outpath: %w", targetLabel.UserVisibleString(true), err)
-			}
-			outputPaths = append(outputPaths, outputRel)
+			outputPaths = append(outputPaths, output.Path())
 		}
 		_, err := fmt.Fprintf(w, "build phony/%s: phony %s", targetLabel.Name, strings.Join(outputPaths, " "))
 		if err != nil {
 			return err
 		}
 	} else {
-		// TODO: reusing C++ GN's builddir resolution funcs is somewhat clumsy.
+		// TODO: reusing C++ GN's builddir resolution funcs is really clumsy.
 		// can this be improved by adopting io/fs and its FS and SubFS interfaces?
-		targetDir, err := t.OutDir(buildSettings)
+		// alternatively, look more carefully at how C++ GN uses the funcs
+		// for example do we want GetBuildDirForTargetAsSourceDir, etc?
+		// https://source.chromium.org/gn/gn/+/main:src/gn/filesystem_utils.cc;l=1097;drc=4526cdec9338674dfcc2a4b87cfe4b3231d046a9
+		targetDir := t.OutDir(buildSettings)
+		targetNinjaRel := path.Join(targetDir.Path(), fmt.Sprintf("%s.ninja", targetLabel.Name))
+		targetNinjaOutput := fs.MakeOutputPath(buildSettings.BuildDir, targetNinjaRel)
+
+		targetDirAsSource, err := targetDir.AsSourceDir()
 		if err != nil {
 			return fmt.Errorf("failed to determine target %s outdir: %w", targetLabel.UserVisibleString(true), err)
 		}
-		targetNinjaFile, err := targetDir.ResolveRelativeFile(fmt.Sprintf("%s.ninja", targetLabel.Name))
-		if err != nil {
-			return fmt.Errorf("failed to determine target %s ninjafile: %w", targetLabel.UserVisibleString(true), err)
-		}
-
-		outDirAbs := buildSettings.FullDirPath(targetDir)
-		if err := os.MkdirAll(outDirAbs, 0755); err != nil {
+		targetDirAbs := buildSettings.FullDirPath(targetDirAsSource)
+		if err := os.MkdirAll(targetDirAbs, 0755); err != nil {
 			return fmt.Errorf("failed to create target dir: %w", err)
 		}
 
+		targetNinjaFile, err := targetNinjaOutput.AsSourceFile()
+		if err != nil {
+			return fmt.Errorf("failed to determine target %s ninjafile: %w", targetLabel.UserVisibleString(true), err)
+		}
 		targetNinjaAbs := buildSettings.FullPath(targetNinjaFile)
 		subninjaFile, err := os.Create(targetNinjaAbs)
 		if err != nil {
@@ -79,11 +81,6 @@ func writeTarget(w io.Writer, t *graph.Target, buildSettings *environment.BuildS
 			return err
 		}
 
-		// TODO: need to port OutputFile so that output path can easily be obtained from SourceFile?
-		targetNinjaRel, err := fs.RebasePath(targetNinjaFile.Filename(), buildSettings.BuildDir, buildSettings.RootPath)
-		if err != nil {
-			return fmt.Errorf("failed to determine target %s relpath: %w", targetLabel.UserVisibleString(true), err)
-		}
 		_, err = fmt.Fprintf(w, "subninja %s", targetNinjaRel)
 		if err != nil {
 			return err
@@ -94,16 +91,10 @@ func writeTarget(w io.Writer, t *graph.Target, buildSettings *environment.BuildS
 }
 
 func writeBinaryTarget(w io.Writer, t *graph.Target, buildSettings *environment.BuildSettings) error {
-	targetOutDir, err := t.OutDir(buildSettings)
-	if err != nil {
-		return err
-	}
-	targetOutBuildDirRel, err := fs.RebasePath(targetOutDir.WithNoTrailingSlash(), buildSettings.BuildDir, buildSettings.RootPath)
-	if err != nil {
-		return err
-	}
+	targetOutDir := t.OutDir(buildSettings)
+	targetOutBuildDirRel := targetOutDir.Path()
 	// TODO: escape special chars (e.g. space, $, : etc?)
-	_, err = fmt.Fprintf(w, "target_out_dir = %s\n", targetOutBuildDirRel)
+	_, err := fmt.Fprintf(w, "target_out_dir = %s\n", targetOutBuildDirRel)
 	if err != nil {
 		return err
 	}
@@ -142,10 +133,7 @@ func writeBinaryTarget(w io.Writer, t *graph.Target, buildSettings *environment.
 			}
 		}
 
-		rebasedOutput, err := fs.RebasePath(action.Output.Filename(), buildSettings.BuildDir, buildSettings.RootPath)
-		if err != nil {
-			return err
-		}
+		rebasedOutput := action.Output.Path()
 
 		// TODO: escape special chars (e.g. space, $, : etc?)
 		_, err = fmt.Fprintf(w, "build %s: %s %s",

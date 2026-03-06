@@ -85,15 +85,6 @@ func fakeResolverContext(data fakeResolverData) graph.ResolverContext {
 	}
 }
 
-func mustSourceFile(t *testing.T, path string) fs.SourceFile {
-	t.Helper()
-	f, err := fs.MakeSourceFile(path)
-	if err != nil {
-		t.Fatalf("failed to make source file %q: %v", path, err)
-	}
-	return f
-}
-
 func TestRustLibrarySchema_Resolver(t *testing.T) {
 	for _, tc := range []struct {
 		name      string
@@ -117,7 +108,7 @@ func TestRustLibrarySchema_Resolver(t *testing.T) {
 			}),
 			want: RustLibraryMetadata{
 				CrateName:  "foo",
-				OutputRlib: mustSourceFile(t, "//out/obj/libfoo.rlib"),
+				OutputRlib: mustOutputPath(t, "//out/", "obj/libfoo.rlib"),
 			},
 			wantTools: []gotToolCall{
 				// build libfoo.rlib: rust_rlib lib.rs
@@ -154,7 +145,7 @@ func TestRustLibrarySchema_Resolver(t *testing.T) {
 			}),
 			want: RustLibraryMetadata{
 				CrateName:  "foo",
-				OutputRlib: mustSourceFile(t, "//out/obj/libfoo.rlib"),
+				OutputRlib: mustOutputPath(t, "//out/", "obj/libfoo.rlib"),
 			},
 			wantTools: []gotToolCall{
 				// build libfoo.rlib: rust_rlib custom_root.rs | custom_root.rs other_file.rs
@@ -189,7 +180,7 @@ func TestRustLibrarySchema_Resolver(t *testing.T) {
 					{
 						Metadata: RustLibraryMetadata{
 							CrateName:  "bar",
-							OutputRlib: mustSourceFile(t, "//out/obj/bar.rlib"),
+							OutputRlib: mustOutputPath(t, "//out/", "obj/bar.rlib"),
 							TransitiveRlibs: []fs.SourceFile{
 								mustSourceFile(t, "//out/obj/baz.rlib"),
 							},
@@ -199,7 +190,7 @@ func TestRustLibrarySchema_Resolver(t *testing.T) {
 			}),
 			want: RustLibraryMetadata{
 				CrateName:  "foo",
-				OutputRlib: mustSourceFile(t, "//out/obj/libfoo.rlib"),
+				OutputRlib: mustOutputPath(t, "//out/", "obj/libfoo.rlib"),
 				TransitiveRlibs: []fs.SourceFile{
 					mustSourceFile(t, "//out/obj/bar.rlib"),
 					mustSourceFile(t, "//out/obj/baz.rlib"),
@@ -219,7 +210,7 @@ func TestRustLibrarySchema_Resolver(t *testing.T) {
 					Expansions: map[string]string{
 						"crate_name": "foo",
 						"crate_type": "rlib",
-						"externs":    "--extern bar=//out/obj/bar.rlib",
+						"externs":    "--extern bar=obj/bar.rlib",
 						"rustflags":  "",
 						"rustdeps":   "",
 					},
@@ -244,7 +235,7 @@ func TestRustLibrarySchema_Resolver(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var gotTools []gotToolCall
-			tc.ctx.DeclareTool = func(tool string, source fs.SourceFile, inputs []fs.SourceFile, outputName string, expansions map[string]string) (fs.SourceFile, error) {
+			tc.ctx.DeclareTool = func(tool string, source fs.SourceFile, inputs []fs.SourceFile, outputName string, expansions map[string]string) (fs.OutputPath, error) {
 				gotTools = append(gotTools, gotToolCall{
 					Tool:       tool,
 					Source:     source,
@@ -252,7 +243,7 @@ func TestRustLibrarySchema_Resolver(t *testing.T) {
 					OutputName: outputName,
 					Expansions: expansions,
 				})
-				return mustSourceFile(t, "//out/obj/"+outputName), nil
+				return fs.MakeOutputPath(mustSourceDir(t, "//out/"), "obj/"+outputName), nil
 			}
 			got, err := RustLibrarySchema.Resolver(tc.ctx)
 
@@ -271,7 +262,7 @@ func TestRustLibrarySchema_Resolver(t *testing.T) {
 			}
 
 			if diff := cmp.Diff(tc.want, got); diff != "" {
-				t.Errorf("Resolver(); diff (-want +got):\n%s", diff)
+				t.Errorf("Resolver() diff (-want +got):\n%s", diff)
 			}
 			if diff := cmp.Diff(tc.wantTools, gotTools); diff != "" {
 				t.Errorf("Resolver() DeclareTool calls mismatch; diff (-want +got):\n%s", diff)

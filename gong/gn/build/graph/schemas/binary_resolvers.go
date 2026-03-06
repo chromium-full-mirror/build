@@ -39,7 +39,11 @@ func cExecutableResolver(name string, cInputs []fs.SourceFile, ctx graph.Resolve
 		if err != nil {
 			return nil, err
 		}
-		linkInputs = append(linkInputs, objFile)
+		linkInput, err := objFile.AsSourceFile()
+		if err != nil {
+			return nil, err
+		}
+		linkInputs = append(linkInputs, linkInput)
 	}
 
 	for dep, err := range ctx.ResolvedTargetsFor("deps") {
@@ -47,13 +51,17 @@ func cExecutableResolver(name string, cInputs []fs.SourceFile, ctx graph.Resolve
 			return nil, err
 		}
 		for _, depOutput := range dep.Metadata.Outputs() {
-			switch path.Ext(depOutput.Filename()) {
+			switch path.Ext(depOutput.Path()) {
 			case ".a", ".so":
-				linkInputs = append(linkInputs, depOutput)
+				linkInput, err := depOutput.AsSourceFile()
+				if err != nil {
+					return nil, err
+				}
+				linkInputs = append(linkInputs, linkInput)
 			default:
 				// TODO: check for other dep input types.
 				return nil, NotImplementedError{
-					what: fmt.Sprintf("%q dep not implemented yet", depOutput.Filename()),
+					what: fmt.Sprintf("%q dep not implemented yet", depOutput.Path()),
 				}
 			}
 		}
@@ -76,7 +84,7 @@ func cExecutableResolver(name string, cInputs []fs.SourceFile, ctx graph.Resolve
 		return nil, err
 	}
 
-	return DefaultMetadata{[]fs.SourceFile{out}}, nil
+	return DefaultMetadata{[]fs.OutputPath{out}}, nil
 }
 
 func rustBinaryResolver(name string, isLibrary bool, rsInputs []fs.SourceFile, ctx graph.ResolverContext) (graph.ResolutionMetadata, error) {
@@ -126,14 +134,18 @@ func rustBinaryResolver(name string, isLibrary bool, rsInputs []fs.SourceFile, c
 			return nil, err
 		}
 		if rustLib, ok := dep.Metadata.(RustLibraryMetadata); ok {
-			transitiveRlibs = append(transitiveRlibs, rustLib.OutputRlib)
+			src, err := rustLib.OutputRlib.AsSourceFile()
+			if err != nil {
+				return nil, err
+			}
+			transitiveRlibs = append(transitiveRlibs, src)
 			transitiveRlibs = append(transitiveRlibs, rustLib.TransitiveRlibs...)
 			depCrateName := rustLib.CrateName
 			if alias, ok := aliasedDeps[dep.Label]; ok {
 				depCrateName = alias
 			}
 			// TODO: maybe it's not filename? see test files for why this seems wrong.
-			externs = append(externs, fmt.Sprintf("--extern %s=%s", depCrateName, rustLib.OutputRlib.Filename()))
+			externs = append(externs, fmt.Sprintf("--extern %s=%s", depCrateName, rustLib.OutputRlib.Path()))
 		}
 	}
 
@@ -170,5 +182,5 @@ func rustBinaryResolver(name string, isLibrary bool, rsInputs []fs.SourceFile, c
 			TransitiveRlibs: transitiveRlibs,
 		}, nil
 	}
-	return DefaultMetadata{[]fs.SourceFile{out}}, nil
+	return DefaultMetadata{[]fs.OutputPath{out}}, nil
 }

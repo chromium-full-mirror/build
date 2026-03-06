@@ -18,7 +18,7 @@ type ResolverContext struct {
 	// ConfigValues returns the config values for this target.
 	ConfigValues ConfigValues
 	// DeclareTool declares a tool call.
-	DeclareTool func(tool string, source fs.SourceFile, inputs []fs.SourceFile, outputName string, expansions map[string]string) (fs.SourceFile, error)
+	DeclareTool func(tool string, source fs.SourceFile, inputs []fs.SourceFile, outputName string, expansions map[string]string) (fs.OutputPath, error)
 	// LabelKeyedStringMapFor returns the map of labels to strings for the variable, if it accepts
 	// a variable that is processed into a map of labels to strings.
 	LabelKeyedStringMapFor func(varName string) (map[environment.Label]string, error)
@@ -53,7 +53,7 @@ type RunToolAction struct {
 	Tool       string
 	Source     fs.SourceFile
 	Inputs     []fs.SourceFile
-	Output     fs.SourceFile
+	Output     fs.OutputPath
 	Expansions map[string]string
 }
 
@@ -63,5 +63,5 @@ type RunToolAction struct {
 // additional metadata.
 type ResolutionMetadata interface {
 	// Outputs returns the output(s) from this target.
-	Outputs() []fs.SourceFile
+	Outputs() []fs.OutputPath
 }

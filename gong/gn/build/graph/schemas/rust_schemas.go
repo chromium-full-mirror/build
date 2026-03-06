@@ -17,15 +17,15 @@ type RustLibraryMetadata struct {
 	// CrateName is the crate name for this target.
 	CrateName string
 	// OutputRlib is the .rlib produced by this target.
-	OutputRlib fs.SourceFile
+	OutputRlib fs.OutputPath
 	// TransitiveRlibs collects the transitive rlibs needed by executable().
 	// TODO: maybe use map[fs.SourceFile]struct{} instead?
 	TransitiveRlibs []fs.SourceFile
 }
 
 // Outputs returns the output(s) from this target.
-func (m RustLibraryMetadata) Outputs() []fs.SourceFile {
-	return []fs.SourceFile{m.OutputRlib}
+func (m RustLibraryMetadata) Outputs() []fs.OutputPath {
+	return []fs.OutputPath{m.OutputRlib}
 }
 
 var RustLibrarySchema = graph.Schema{
