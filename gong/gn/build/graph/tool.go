@@ -14,11 +14,13 @@ import (
 
 // Tool represents arguments to a toolchain tool.
 type Tool struct {
-	Name        string
-	Command     substitutionPattern
-	outputs     []string // Simplified: List of output pattern strings
-	Description substitutionPattern
-	definedFrom parse.Node
+	Name           string
+	Command        substitutionPattern
+	outputs        []string // Simplified: List of output pattern strings
+	Description    substitutionPattern
+	Rspfile        substitutionPattern
+	RspfileContent substitutionPattern
+	definedFrom    parse.Node
 }
 
 // NewTool creates a new tool struct with the given name.
@@ -31,6 +33,9 @@ func NewTool(name string) *Tool {
 // WriteNinjaRule writes the tool rule to the given writer.
 // This is a rudimentary implementation.
 // TODO: Use text/template? Need to escape ninja meta characters?
+// TODO: Move into ninjawriter package?
+// TODO: or better for substitutionPattern to have NinjaString/WriteTo/etc method
+// that concatenates pattern's NinjaString?
 func (t *Tool) WriteNinjaRule(w io.Writer) error {
 	_, err := fmt.Fprintf(w, "rule %s\n", t.Name)
 	if err != nil {
@@ -57,6 +62,40 @@ func (t *Tool) WriteNinjaRule(w io.Writer) error {
 			return err
 		}
 		for _, sub := range t.Description.Pattern {
+			_, err = w.Write([]byte(sub.NinjaString()))
+			if err != nil {
+				return err
+			}
+		}
+		_, err = fmt.Fprintln(w)
+		if err != nil {
+			return err
+		}
+	}
+
+	if len(t.Rspfile.Pattern) > 0 {
+		_, err = fmt.Fprintf(w, "  rspfile = ")
+		if err != nil {
+			return err
+		}
+		for _, sub := range t.Rspfile.Pattern {
+			_, err = w.Write([]byte(sub.NinjaString()))
+			if err != nil {
+				return err
+			}
+		}
+		_, err = fmt.Fprintln(w)
+		if err != nil {
+			return err
+		}
+	}
+
+	if len(t.RspfileContent.Pattern) > 0 {
+		_, err = fmt.Fprintf(w, "  rspfile_content = ")
+		if err != nil {
+			return err
+		}
+		for _, sub := range t.RspfileContent.Pattern {
 			_, err = w.Write([]byte(sub.NinjaString()))
 			if err != nil {
 				return err
@@ -185,6 +224,30 @@ func (ToolFunction) Run(scope *resolve.Scope, call *parse.FunctionCallNode, args
 		}
 	}
 
+	// rspfile (optional).
+	if v := blockScope.Value("rspfile", true); v != nil {
+		sv, err := resolve.AsValue[*resolve.StringValue](v)
+		if err != nil {
+			return nil, err
+		}
+		tool.Rspfile, err = makeSubstitutionPattern(sv.RawGNString())
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	// rspfile_content (optional).
+	if v := blockScope.Value("rspfile_content", true); v != nil {
+		sv, err := resolve.AsValue[*resolve.StringValue](v)
+		if err != nil {
+			return nil, err
+		}
+		tool.RspfileContent, err = makeSubstitutionPattern(sv.RawGNString())
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	// Values that haven't been implemented yet.
 	// TODO: Use these values.
 	blockScope.Value("default_output_dir", true)
@@ -193,7 +256,6 @@ func (ToolFunction) Run(scope *resolve.Scope, call *parse.FunctionCallNode, args
 	blockScope.Value("depsformat", true)
 	blockScope.Value("link_output", true)
 	blockScope.Value("output_prefix", true)
-	blockScope.Value("rspfile_content", true)
 
 	toolchain.Tools[name] = tool
 	return nil, blockScope.CheckForUnusedVars()
