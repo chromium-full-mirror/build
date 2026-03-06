@@ -248,7 +248,7 @@ func TestBuild_Deps_Stale(t *testing.T) {
 				err = fmt.Errorf("depsLog.Close: %w", cerr)
 			}
 		}()
-		got, gott, err := depsLog.RetrievePaths(ctx, "foo.o")
+		got, gotKey, err := depsLog.RetrievePaths(ctx, "foo.o")
 		if err != nil {
 			return fmt.Errorf("deps for foo.o: %w", err)
 		}
@@ -256,8 +256,8 @@ func TestBuild_Deps_Stale(t *testing.T) {
 		if err != nil {
 			return fmt.Errorf("deps for foo.o: missing: %w", build.ErrStaleDeps)
 		}
-		if !fi.ModTime().Equal(gott) {
-			return fmt.Errorf("deps for foo.o: stale %v != %v: %w", fi.ModTime(), gott, build.ErrStaleDeps)
+		if !fi.ModTime().Equal(gotKey.Mtime) {
+			return fmt.Errorf("deps for foo.o: stale %v != %v: %w", fi.ModTime(), gotKey.Mtime, build.ErrStaleDeps)
 		}
 		if !slices.Equal(got, gccDeps) {
 			return fmt.Errorf("deps for foo.o: got=%q want=%q", got, gccDeps)

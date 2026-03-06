@@ -22,6 +22,7 @@ import (
 	"go.chromium.org/build/siso/execute/reproxyexec"
 	"go.chromium.org/build/siso/o11y/clog"
 	"go.chromium.org/build/siso/o11y/trace"
+	"go.chromium.org/build/siso/reapi/digest"
 )
 
 // StepDef is a build step definition.
@@ -121,7 +122,7 @@ type StepDef interface {
 	Sandbox() map[string]string
 
 	// RecordDeps records deps.
-	RecordDeps(context.Context, string, time.Time, []string) (bool, error)
+	RecordDeps(context.Context, string, time.Time, digest.Digest, []string) (bool, error)
 
 	// RuleFix returns required fix for the rule of the step.
 	RuleFix(ctx context.Context, inadds, outadds []string) []byte

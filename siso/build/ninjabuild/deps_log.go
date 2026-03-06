@@ -36,6 +36,7 @@ const (
 	DepsLogUnknown DepsLogState = iota
 	DepsLogStale
 	DepsLogValid
+	DepsLogValidDigest
 )
 
 func (s DepsLogState) String() string {
@@ -44,7 +45,7 @@ func (s DepsLogState) String() string {
 		return "UNKNOWN"
 	case DepsLogStale:
 		return "STALE"
-	case DepsLogValid:
+	case DepsLogValid, DepsLogValidDigest:
 		return "VALID"
 	}
 	return fmt.Sprintf("DepsLogState[%d]", int(s))
@@ -54,19 +55,40 @@ func (s DepsLogState) MarshalJSON() ([]byte, error) {
 	return json.Marshal(s.String())
 }
 
-// CheckDepsLogState checks deps log state by its output file.
+// DepsLogKey is a key to lookup a deps log entry.
+type DepsLogKey struct {
+	Target string
+	Mtime  time.Time
+	Digest digest.Digest
+}
+
+// checkDepsLogState checks deps log state by its output file.
 // TODO(b/374196367): use digest for validity of output.
-func CheckDepsLogState(ctx context.Context, hashFS *hashfs.HashFS, bpath *build.Path, target string, depsTime time.Time) (DepsLogState, string) {
-	fi, err := hashFS.Stat(ctx, bpath.ExecRoot, bpath.MaybeFromWD(ctx, target))
+func checkDepsLogState(ctx context.Context, hashFS *hashfs.HashFS, bpath *build.Path, key DepsLogKey) (DepsLogState, error) {
+	fname := bpath.MaybeFromWD(ctx, key.Target)
+	fi, err := hashFS.Stat(ctx, bpath.ExecRoot, fname)
 	if err != nil {
-		return DepsLogStale, fmt.Sprintf("not found deps output %q: %v", target, err)
+		return DepsLogStale, fmt.Errorf("not found deps output %q: %v", key.Target, err)
 	}
-	if fi.ModTime().After(depsTime) {
-		return DepsLogStale, fmt.Sprintf("output mtime %q newer than log: fs=%v depslog=%v", target, fi.ModTime(), depsTime)
-	} else if fi.ModTime().Before(depsTime) {
-		return DepsLogStale, fmt.Sprintf("output mtime %q older than log: fs=%v depslog=%v", target, fi.ModTime(), depsTime)
+	if fi.ModTime().Equal(key.Mtime) {
+		return DepsLogValid, nil
 	}
-	return DepsLogValid, ""
+	if !key.Digest.IsZero() {
+		ents, err := hashFS.Entries(ctx, bpath.ExecRoot, []string{fname})
+		if err != nil || len(ents) == 0 {
+			return DepsLogStale, fmt.Errorf("output %q entry error %v: ents=%d %v", key.Target, key.Digest, len(ents), err)
+		}
+		if key.Digest != ents[0].Data.Digest() {
+			return DepsLogStale, fmt.Errorf("output %s digest mismatch fs=%v depslog=%v", key.Target, ents[0].Data.Digest(), key.Digest)
+		}
+		return DepsLogValidDigest, nil
+	}
+	if fi.ModTime().After(key.Mtime) {
+		return DepsLogStale, fmt.Errorf("output mtime %q newer than log: fs=%v depslog=%v", key.Target, fi.ModTime(), key.Mtime)
+	} else if fi.ModTime().Before(key.Mtime) {
+		return DepsLogStale, fmt.Errorf("output mtime %q older than log: fs=%v depslog=%v", key.Target, fi.ModTime(), key.Mtime)
+	}
+	return DepsLogStale, fmt.Errorf("output unexpected mtime %q: fs=%v depslog=%v", key.Target, fi.ModTime(), key.Mtime)
 }
 
 // DepsLog is an in-memory representation of siso's depslog.
@@ -145,29 +167,53 @@ func (d *DepsLog) Close() error {
 }
 
 // RetrievePaths returns deps log for the output, converting from id to path.
-// TODO(b/374196367): return digest of output.
-func (d *DepsLog) RetrievePaths(ctx context.Context, output string) ([]string, time.Time, error) {
+func (d *DepsLog) RetrievePaths(ctx context.Context, output string) ([]string, DepsLogKey, error) {
 	switch {
 	case d.depsLog != nil:
-		deps, mtime, _, err := d.depsLog.RetrievePaths(ctx, output)
-		return deps, mtime, err
+		return d.depsLog.RetrievePaths(ctx, output)
 	case d.legacy != nil:
-		return d.legacy.RetrievePaths(ctx, output)
+		deps, mtime, err := d.legacy.RetrievePaths(ctx, output)
+		key := DepsLogKey{
+			Target: output,
+			Mtime:  mtime,
+		}
+		return deps, key, err
 	}
-	return nil, time.Time{}, errors.New("no deps log")
+	return nil, DepsLogKey{}, errors.New("no deps log")
 }
 
 // RetrieveIDs returns deps log for the output.
-// TODO(b/374196367): return digest of output.
-func (d *DepsLog) RetrieveIDs(ctx context.Context, out string) ([]int, time.Time, error) {
+func (d *DepsLog) RetrieveIDs(ctx context.Context, out string) ([]int, DepsLogKey, error) {
 	switch {
 	case d.depsLog != nil:
-		deps, mtime, _, err := d.depsLog.RetrieveIDs(ctx, out)
-		return deps, mtime, err
+		return d.depsLog.RetrieveIDs(ctx, out)
 	case d.legacy != nil:
-		return d.legacy.RetrieveIDs(ctx, out)
+		deps, mtime, err := d.legacy.RetrieveIDs(ctx, out)
+		key := DepsLogKey{
+			Target: out,
+			Mtime:  mtime,
+		}
+		return deps, key, err
 	}
-	return nil, time.Time{}, errors.New("no deps log")
+	return nil, DepsLogKey{}, errors.New("no deps log")
+}
+
+// CheckKey checks DepsLogKey is valid with hashFS.
+func (d *DepsLog) CheckKey(ctx context.Context, hashFS *hashfs.HashFS, bpath *build.Path, key DepsLogKey) (DepsLogState, error) {
+	switch {
+	case d.depsLog != nil:
+		if key.Digest.IsZero() {
+			return DepsLogStale, fmt.Errorf("deps key %q digest is zero", key.Target)
+		}
+		return checkDepsLogState(ctx, hashFS, bpath, key)
+	case d.legacy != nil:
+		if !key.Digest.IsZero() {
+			clog.Warningf(ctx, "deps key %q digest should be zero, but %s", key.Target, key.Digest)
+		}
+		key.Digest = digest.Digest{}
+		return checkDepsLogState(ctx, hashFS, bpath, key)
+	}
+	return DepsLogStale, errors.New("no deps log")
 }
 
 // NumPaths returns number of paths read at startup time.
@@ -195,12 +241,12 @@ func (d *DepsLog) Path(id int) (string, error) {
 // Record records deps log for the output. This will write to disk.
 // Returns whether any deps were updated.
 // TODO(b/374196367): record digest of output.
-func (d *DepsLog) Record(ctx context.Context, output string, mtime time.Time, deps []string) (bool, error) {
+func (d *DepsLog) Record(ctx context.Context, key DepsLogKey, deps []string) (bool, error) {
 	switch {
 	case d.depsLog != nil:
-		return d.depsLog.Record(ctx, output, mtime, digest.Digest{}, deps)
+		return d.depsLog.Record(ctx, key, deps)
 	case d.legacy != nil:
-		return d.legacy.Record(ctx, output, mtime, deps)
+		return d.legacy.Record(ctx, key.Target, key.Mtime, deps)
 	}
 	return false, nil
 }
@@ -480,13 +526,16 @@ func (d *depsLog) recompactIfNeeded(ctx context.Context) error {
 		if deps == nil {
 			continue
 		}
-		out := d.rPaths[i]
-		mtime := time.Unix(0, deps.mtime)
+		key := DepsLogKey{
+			Target: d.rPaths[i],
+			Mtime:  time.Unix(0, deps.mtime),
+			Digest: deps.digest,
+		}
 		inputs := make([]string, len(deps.inputs))
 		for i, in := range deps.inputs {
 			inputs[i] = d.rPaths[in]
 		}
-		_, err = nd.Record(ctx, out, mtime, deps.digest, inputs)
+		_, err = nd.Record(ctx, key, inputs)
 		if err != nil {
 			nd.Close()
 			return fmt.Errorf("record in recompaction: %w", err)
@@ -567,49 +616,51 @@ func (d *depsLog) update(ctx context.Context, outID int64, rec *depsRecord) bool
 var ErrNoDepsLog = errors.New("deps not found")
 
 // RetrievePaths returns deps log for the output, converting from id to path.
-func (d *depsLog) RetrievePaths(ctx context.Context, output string) ([]string, time.Time, digest.Digest, error) {
-	ids, mtime, dg, err := d.RetrieveIDs(ctx, output)
+func (d *depsLog) RetrievePaths(ctx context.Context, output string) ([]string, DepsLogKey, error) {
+	ids, key, err := d.RetrieveIDs(ctx, output)
 	if err != nil {
-		return nil, mtime, dg, err
+		return nil, key, err
 	}
 	deps := make([]string, len(ids))
 	for i, id := range ids {
 		path, err := d.Path(id)
 		if err != nil {
-			return nil, mtime, dg, fmt.Errorf("inputs[%d]=%d: %w", i, id, err)
+			return nil, key, fmt.Errorf("inputs[%d]=%d: %w", i, id, err)
 		}
 		deps[i] = path
 	}
-	return deps, mtime, dg, err
+	return deps, key, err
 }
 
 // RetrieveIDs returns deps log for the output.
-func (d *depsLog) RetrieveIDs(ctx context.Context, output string) ([]int, time.Time, digest.Digest, error) {
-	var mtime time.Time
-	var dg digest.Digest
+func (d *depsLog) RetrieveIDs(ctx context.Context, output string) ([]int, DepsLogKey, error) {
+	var key DepsLogKey
 	if d == nil {
-		return nil, mtime, dg, errors.New("no deps log")
+		return nil, key, errors.New("no deps log")
 	}
 	output = filepath.ToSlash(output)
 	i, found := d.rPathIdx[output]
 	if !found {
-		return nil, mtime, dg, ErrNoDepsLog
+		return nil, key, ErrNoDepsLog
 	}
 	if i < 0 || i >= len(d.rPaths) {
-		return nil, mtime, dg, fmt.Errorf("no path entry for %s %d: %w", output, i, ErrNoDepsLog)
+		return nil, key, fmt.Errorf("no path entry for %s %d: %w", output, i, ErrNoDepsLog)
 	}
 	if d.rPaths[i] != output {
 		clog.Errorf(ctx, "inconsistent paths %s -> %d -> %s", output, i, d.rPaths[i])
-		return nil, mtime, dg, errors.New("inconsistent path in deps log")
+		return nil, key, errors.New("inconsistent path in deps log")
 	}
 	if i >= len(d.rDeps) {
-		return nil, mtime, dg, fmt.Errorf("no deps log entry: %w", ErrNoDepsLog)
+		return nil, key, fmt.Errorf("no deps log entry: %w", ErrNoDepsLog)
 	}
 	deps := d.rDeps[i]
 	if deps == nil {
-		return nil, mtime, dg, fmt.Errorf("no deps log entry: %w", ErrNoDepsLog)
+		return nil, key, fmt.Errorf("no deps log entry: %w", ErrNoDepsLog)
 	}
-	return deps.inputs, time.Unix(0, deps.mtime), deps.digest, nil
+	key.Target = output
+	key.Mtime = time.Unix(0, deps.mtime)
+	key.Digest = deps.digest
+	return deps.inputs, key, nil
 }
 
 // NumPaths returns number of paths read at startup time.
@@ -654,11 +705,11 @@ func depsRecordPadding(sz int32) int {
 
 // Record records deps log for the output. This will write to disk.
 // Returns whether any deps were updated.
-func (d *depsLog) Record(ctx context.Context, output string, mtime time.Time, dg digest.Digest, deps []string) (bool, error) {
+func (d *depsLog) Record(ctx context.Context, key DepsLogKey, deps []string) (bool, error) {
 	if d == nil {
 		return false, nil
 	}
-	output = filepath.ToSlash(output)
+	output := filepath.ToSlash(key.Target)
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
@@ -704,9 +755,9 @@ func (d *depsLog) Record(ctx context.Context, output string, mtime time.Time, dg
 			// Verify the stored record.
 			if len(depIDs) != len(dr.inputs) {
 				rec = &pb.DepsLogRecord{}
-			} else if mtime.UnixNano() != dr.mtime {
+			} else if key.Mtime.UnixNano() != dr.mtime {
 				rec = &pb.DepsLogRecord{}
-			} else if dg != dr.digest {
+			} else if key.Digest != dr.digest {
 				rec = &pb.DepsLogRecord{}
 			} else {
 				for i, di := range dr.inputs {
@@ -722,14 +773,14 @@ func (d *depsLog) Record(ctx context.Context, output string, mtime time.Time, dg
 	}
 	rec.Deps = append(rec.Deps, &pb.DepsRecord{
 		OutId:        int64(i),
-		OutMtime:     mtime.UnixNano(),
-		OutHash:      dg.Hash,
-		OutSizeBytes: dg.SizeBytes,
+		OutMtime:     key.Mtime.UnixNano(),
+		OutHash:      key.Digest.Hash,
+		OutSizeBytes: key.Digest.SizeBytes,
 		InputIds:     inputs,
 	})
 	d.update(ctx, int64(i), &depsRecord{
-		mtime:  mtime.UnixNano(),
-		digest: dg,
+		mtime:  key.Mtime.UnixNano(),
+		digest: key.Digest,
 		inputs: depIDs,
 	})
 	sz := proto.Size(rec)

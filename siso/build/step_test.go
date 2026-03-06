@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"go.chromium.org/build/siso/execute"
+	"go.chromium.org/build/siso/reapi/digest"
 )
 
 type fakeStepDef struct {
@@ -81,7 +82,7 @@ func (fakeStepDef) LocalOutputs(context.Context) []string { return nil }
 func (fakeStepDef) Pure() bool                            { return false }
 func (fakeStepDef) Platform() map[string]string           { return nil }
 func (fakeStepDef) Sandbox() map[string]string            { return nil }
-func (fakeStepDef) RecordDeps(context.Context, string, time.Time, []string) (bool, error) {
+func (fakeStepDef) RecordDeps(context.Context, string, time.Time, digest.Digest, []string) (bool, error) {
 	return false, nil
 }
 func (fakeStepDef) RuleFix(context.Context, []string, []string) []byte { return nil }

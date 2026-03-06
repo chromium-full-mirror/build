@@ -31,6 +31,7 @@ import (
 	"go.chromium.org/build/siso/execute"
 	"go.chromium.org/build/siso/o11y/clog"
 	"go.chromium.org/build/siso/o11y/trace"
+	"go.chromium.org/build/siso/reapi/digest"
 	"go.chromium.org/build/siso/toolsupport/cmdutil"
 	"go.chromium.org/build/siso/toolsupport/makeutil"
 	"go.chromium.org/build/siso/toolsupport/ninjautil"
@@ -466,23 +467,23 @@ func depInputs(ctx context.Context, s *StepDef) (iter.Seq[string], error) {
 			return nil, fmt.Errorf("%w: no outputs", build.ErrMissingDeps)
 		}
 		out := outputs[0].Path()
-		var depsTime time.Time
+		var key DepsLogKey
 		var depIDs []int
-		depIDs, depsTime, err = s.globals.depsLog.RetrieveIDs(ctx, out)
+		depIDs, key, err = s.globals.depsLog.RetrieveIDs(ctx, out)
 		if err != nil {
 			return nil, fmt.Errorf("%w: failed to lookup deps log %s: %w", build.ErrMissingDeps, out, err)
 		}
-		state, msg := CheckDepsLogState(ctx, s.globals.hashFS, s.globals.path, out, depsTime)
+		state, err := s.globals.depsLog.CheckKey(ctx, s.globals.hashFS, s.globals.path, key)
+		if log.V(1) {
+			clog.Infof(ctx, "depslog %s: %s %d", out, state, len(deps))
+		}
 		switch state {
 		case DepsLogStale:
-			return nil, fmt.Errorf("%w: %s", build.ErrStaleDeps, msg)
-		case DepsLogValid:
+			return nil, fmt.Errorf("%w: %v", build.ErrStaleDeps, err)
+		case DepsLogValid, DepsLogValidDigest:
 			// ok
 		default:
-			return nil, fmt.Errorf("wrong deps log state for %q: state=%s %s", out, state, msg)
-		}
-		if log.V(1) {
-			clog.Infof(ctx, "depslog %s: %d", out, len(deps))
+			return nil, fmt.Errorf("wrong deps log state for %q: state=%s %v", out, state, err)
 		}
 		return func(yield func(string) bool) {
 			for _, depID := range depIDs {
@@ -1172,12 +1173,17 @@ func (s *StepDef) Sandbox() map[string]string {
 }
 
 // RecordDeps records deps of the step.
-func (s *StepDef) RecordDeps(ctx context.Context, output string, t time.Time, deps []string) (bool, error) {
+func (s *StepDef) RecordDeps(ctx context.Context, output string, mtime time.Time, dg digest.Digest, deps []string) (bool, error) {
 	if s.edge.Binding("deps") == "" {
 		// no need to record deps
 		return false, nil
 	}
-	return s.globals.depsLog.Record(ctx, output, t, deps)
+	key := DepsLogKey{
+		Target: output,
+		Mtime:  mtime,
+		Digest: dg,
+	}
+	return s.globals.depsLog.Record(ctx, key, deps)
 }
 
 // RuleFix shows suggested fix for the rule.

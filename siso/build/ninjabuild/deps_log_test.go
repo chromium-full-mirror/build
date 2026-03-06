@@ -11,8 +11,6 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
-
-	"go.chromium.org/build/siso/reapi/digest"
 )
 
 // TODO(b/267409605): At minimum have test parity with
@@ -21,35 +19,39 @@ import (
 func TestReadWriteDepsLog(t *testing.T) {
 	ctx := t.Context()
 	fname := filepath.Join(t.TempDir(), "mydepslog")
-	t1 := time.Unix(1, 0)
-	var d1 digest.Digest
-	t2 := time.Unix(2, 0)
-	var d2 digest.Digest
+	key1 := DepsLogKey{
+		Target: "out.o",
+		Mtime:  time.Unix(1, 0),
+	}
+	key2 := DepsLogKey{
+		Target: "out2.o",
+		Mtime:  time.Unix(2, 0),
+	}
 
 	createNewDepsLogFile(ctx, fname)
 	dl1, err := newDepsLog(ctx, fname)
 	if err != nil {
 		t.Errorf("newDepsLog(ctx, %s)=_, %v; want nil error", fname, err)
 	}
-	r, err := dl1.Record(ctx, "out.o", t1, d1, []string{"foo.h", "bar.h"})
+	r, err := dl1.Record(ctx, key1, []string{"foo.h", "bar.h"})
 	if err != nil || !r {
-		t.Errorf(`dl1.Record(ctx, "out.o", %v, %v, []string{"foo.h", "bar.h"})=%t, %v; want true, nil error`, t1, d1, r, err)
+		t.Errorf(`dl1.Record(ctx, %v, []string{"foo.h", "bar.h"})=%t, %v; want true, nil error`, key1, r, err)
 	}
-	r, err = dl1.Record(ctx, "out2.o", t2, d2, []string{"foo.h", "bar2.h"})
+	r, err = dl1.Record(ctx, key2, []string{"foo.h", "bar2.h"})
 	if err != nil || !r {
-		t.Errorf(`dl1.Record(ctx, "out2.o", %v, %v, []string{"foo.h", "bar2.h"})=%t, %v; want true, nil error`, t2, d2, r, err)
+		t.Errorf(`dl1.Record(ctx, %v, []string{"foo.h", "bar2.h"})=%t, %v; want true, nil error`, key2, r, err)
 	}
 	// Get will not see recorded entry in the same session.
 	var want []string
-	deps, mtime, dg, err := dl1.RetrievePaths(ctx, "out.o")
+	deps, key, err := dl1.RetrievePaths(ctx, "out.o")
 	if err == nil {
-		t.Errorf(`d1.RetrievePaths(ctx, "out.o")=_, _, _, %v; want _, _, _, error`, err)
+		t.Errorf(`d1.RetrievePaths(ctx, "out.o")=_, _, %v; want _, _, error`, err)
 	}
 	if diff := cmp.Diff(deps, want); diff != "" {
-		t.Errorf(`d1.RetrievePaths(ctx, "out.o")=%v, _, _, _ mismatch (-got +want):\n%s`, deps, diff)
+		t.Errorf(`d1.RetrievePaths(ctx, "out.o")=%v, _, _ mismatch (-got +want):\n%s`, deps, diff)
 	}
-	if mtime.Equal(t1) {
-		t.Errorf(`d1.RetrievePaths(ctx, "out.o")=_, %v, %v, _; not want _, %v, %v, _`, mtime, dg, t1, d1)
+	if cmp.Equal(key, key1) {
+		t.Errorf(`d1.RetrievePaths(ctx, "out.o")=_, %v, _; not want _, %v, _`, key, key1)
 	}
 
 	err = dl1.Close()
@@ -68,45 +70,45 @@ func TestReadWriteDepsLog(t *testing.T) {
 		}
 	}()
 
-	deps, mtime, dg, err = dl2.RetrievePaths(ctx, "out.o")
+	deps, key, err = dl2.RetrievePaths(ctx, "out.o")
 	if err != nil {
-		t.Errorf(`dl2.RetrievePaths(ctx, "out.o")=_, _, _, %v; want _, _, _, nil error`, err)
+		t.Errorf(`dl2.RetrievePaths(ctx, "out.o")=_, _, %v; want _, _, nil error`, err)
 	}
 	want = []string{"foo.h", "bar.h"}
 	if diff := cmp.Diff(deps, want); diff != "" {
-		t.Errorf(`dl2.RetrievePaths(ctx, "out.o")=%v, _, _, _ mismatch (-got +want):\n%s`, deps, diff)
+		t.Errorf(`dl2.RetrievePaths(ctx, "out.o")=%v, _, _ mismatch (-got +want):\n%s`, deps, diff)
 	}
-	if !mtime.Equal(t1) {
-		t.Errorf(`dl2.RetrivePaths(ctx, "out.o")=_, %v, _, _; want _, %v, _, _`, mtime, t1)
-	}
-	if dg != d1 {
-		t.Errorf(`dl2.RetrievePaths(ctx, "out.o")=_, _, %v, _; want _, _, %v, _`, dg, d1)
+	if !cmp.Equal(key, key1) {
+		t.Errorf(`dl2.RetrivePaths(ctx, "out.o")=_, %v, _; want _, %v, _`, key, key1)
 	}
 	want = []string{"foo.h", "bar2.h"}
-	deps, mtime, dg, err = dl2.RetrievePaths(ctx, "out2.o")
+	deps, key, err = dl2.RetrievePaths(ctx, "out2.o")
 	if err != nil {
-		t.Errorf(`dl2.RetrievePaths(ctx, "out2.o")=_, _, _, %v; want _, _, _, nil error`, err)
+		t.Errorf(`dl2.RetrievePaths(ctx, "out2.o")=_, _, %v; want _, _, nil error`, err)
 	}
 	if diff := cmp.Diff(deps, want); diff != "" {
-		t.Errorf(`dl2.RetrievePaths(ctx, "out2.o")=%v, _, _, _ mismatch (-got +want):\n%s`, deps, diff)
+		t.Errorf(`dl2.RetrievePaths(ctx, "out2.o")=%v, _, _ mismatch (-got +want):\n%s`, deps, diff)
 	}
-	if !mtime.Equal(t2) {
-		t.Errorf(`dl2.RetrievePaths(ctx, "out2.o")=_, %v, _, _; want _, %v, _, _`, mtime, t2)
-	}
-	if dg != d2 {
-		t.Errorf(`dl2.RetrievePaths(ctx, "out2.o")=_, _, %v_, _; want _, _, %v, _`, dg, d2)
+	if !cmp.Equal(key, key2) {
+		t.Errorf(`dl2.RetrievePaths(ctx, "out2.o")=_, %v, _; want _, %v, _`, key, key2)
 	}
 }
 
 func TestRecompact(t *testing.T) {
 	ctx := t.Context()
 	fname := filepath.Join(t.TempDir(), "mydepslog")
-	t1 := time.Unix(1, 0)
-	var d1 digest.Digest
-	t2 := time.Unix(2, 0)
-	var d2 digest.Digest
-	t3 := time.Unix(3, 0)
-	var d3 digest.Digest
+	key1 := DepsLogKey{
+		Target: "out.o",
+		Mtime:  time.Unix(1, 0),
+	}
+	key2 := DepsLogKey{
+		Target: "other_out.o",
+		Mtime:  time.Unix(2, 0),
+	}
+	key3 := DepsLogKey{
+		Target: "out.o",
+		Mtime:  time.Unix(3, 0),
+	}
 
 	var fileSize1 int64
 	t.Logf("Write some deps to the file and grab its size.")
@@ -116,13 +118,13 @@ func TestRecompact(t *testing.T) {
 		if err != nil {
 			t.Fatalf("newDepsLog(ctx, %s)=_, %v; want nil error", fname, err)
 		}
-		r, err := dl.Record(ctx, "out.o", t1, d1, []string{"foo.h", "bar.h"})
+		r, err := dl.Record(ctx, key1, []string{"foo.h", "bar.h"})
 		if err != nil || !r {
-			t.Fatalf(`dl.Record(ctx, "out.o", %v, %v, {"foo.h", "bar.h")=%t, %v; want true, nil error`, t1, d1, r, err)
+			t.Fatalf(`dl.Record(ctx, %v, {"foo.h", "bar.h")=%t, %v; want true, nil error`, key1, r, err)
 		}
-		r, err = dl.Record(ctx, "other_out.o", t2, d2, []string{"foo.h", "baz.h"})
+		r, err = dl.Record(ctx, key2, []string{"foo.h", "baz.h"})
 		if err != nil || !r {
-			t.Fatalf(`dl.Record(ctx, "other_out.o", %v, %v, {"foo.h", "baz.h")=%t, %v; want true, nil error`, t2, d2, r, err)
+			t.Fatalf(`dl.Record(ctx, %v, {"foo.h", "baz.h")=%t, %v; want true, nil error`, key2, r, err)
 		}
 		err = dl.Close()
 		if err != nil {
@@ -144,9 +146,9 @@ func TestRecompact(t *testing.T) {
 		if err != nil {
 			t.Fatalf("newDepsLog(ctx, %s)=_, %v; want nil error", fname, err)
 		}
-		r, err := dl.Record(ctx, "out.o", t3, d3, []string{"foo.h"})
+		r, err := dl.Record(ctx, key3, []string{"foo.h"})
 		if err != nil || !r {
-			t.Fatalf(`dl.Record(ctx, "out.o", %v, %v, {"foo.h"})=%t, %v; want true, nil error`, t3, d3, r, err)
+			t.Fatalf(`dl.Record(ctx, %v, {"foo.h"})=%t, %v; want true, nil error`, key3, r, err)
 		}
 		err = dl.Close()
 		if err != nil {
@@ -171,16 +173,16 @@ func TestRecompact(t *testing.T) {
 		if err != nil {
 			t.Fatalf("newDepsLog(ctx, %s)=_, %v; want nil error", fname, err)
 		}
-		deps, ts, dg, err := dl.RetrievePaths(ctx, "out.o")
+		deps, key, err := dl.RetrievePaths(ctx, "out.o")
 		want := []string{"foo.h"}
-		if !cmp.Equal(deps, want) || !ts.Equal(t3) || dg != d3 || err != nil {
-			t.Errorf(`dl.RetrievePaths(ctx, "out.o")=%v, %v, %v, %v; want %v, %v, %v, %v`, deps, ts, dg, err, want, t3, d3, nil)
+		if !cmp.Equal(deps, want) || !cmp.Equal(key, key3) || err != nil {
+			t.Errorf(`dl.RetrievePaths(ctx, "out.o")=%v, %v, %v; want %v, %v, %v`, deps, key, err, want, key3, nil)
 		}
 
-		deps, ts, dg, err = dl.RetrievePaths(ctx, "other_out.o")
+		deps, key, err = dl.RetrievePaths(ctx, "other_out.o")
 		want = []string{"foo.h", "baz.h"}
-		if !cmp.Equal(deps, want) || !ts.Equal(t2) || dg != d2 || err != nil {
-			t.Errorf(`d1.RetrievePaths(ctx, "other_out.o")=%v, %v, %v, %v; want %v, %v, %v, %v`, deps, ts, dg, err, want, t2, d2, nil)
+		if !cmp.Equal(deps, want) || !cmp.Equal(key, key2) || err != nil {
+			t.Errorf(`d1.RetrievePaths(ctx, "other_out.o")=%v, %v, %v; want %v, %v, %v`, deps, key, err, want, key2, nil)
 		}
 
 		dl.needsRecompact = true
@@ -190,15 +192,15 @@ func TestRecompact(t *testing.T) {
 		}
 
 		t.Logf("The in-memory deps graph should still be valid after recompaction.")
-		deps, ts, dg, err = dl.RetrievePaths(ctx, "out.o")
+		deps, key, err = dl.RetrievePaths(ctx, "out.o")
 		want = []string{"foo.h"}
-		if !cmp.Equal(deps, want) || !ts.Equal(t3) || dg != d3 || err != nil {
-			t.Errorf(`dl.RetrievePaths(ctx, "out.o")=%v, %v, %v, %v; want %v, %v, %v, %v`, deps, ts, dg, err, want, t3, d3, nil)
+		if !cmp.Equal(deps, want) || !cmp.Equal(key, key3) || err != nil {
+			t.Errorf(`dl.RetrievePaths(ctx, "out.o")=%v, %v, %v; want %v, %v, %v`, deps, key, err, want, key3, nil)
 		}
-		deps, ts, dg, err = dl.RetrievePaths(ctx, "other_out.o")
+		deps, key, err = dl.RetrievePaths(ctx, "other_out.o")
 		want = []string{"foo.h", "baz.h"}
-		if !cmp.Equal(deps, want) || !ts.Equal(t2) || dg != d2 || err != nil {
-			t.Errorf(`d1.RetrievePaths("other_out.o")=%v, %v, %v, %v; want %v, %v, %v, %v`, deps, ts, dg, err, want, t2, d3, nil)
+		if !cmp.Equal(deps, want) || !cmp.Equal(key, key2) || err != nil {
+			t.Errorf(`d1.RetrievePaths("other_out.o")=%v, %v, %v; want %v, %v, %v`, deps, key, err, want, key2, nil)
 		}
 
 		err = dl.Close()
@@ -222,10 +224,14 @@ func TestRecompact(t *testing.T) {
 func TestDepsLog_broken(t *testing.T) {
 	ctx := t.Context()
 	fname := filepath.Join(t.TempDir(), "mydepslog")
-	t1 := time.Unix(1, 0)
-	var d1 digest.Digest
-	t2 := time.Unix(2, 0)
-	var d2 digest.Digest
+	key1 := DepsLogKey{
+		Target: "out.o",
+		Mtime:  time.Unix(1, 0),
+	}
+	key2 := DepsLogKey{
+		Target: "out2.o",
+		Mtime:  time.Unix(2, 0),
+	}
 
 	t.Logf("-- create deps log")
 	createNewDepsLogFile(ctx, fname)
@@ -233,13 +239,13 @@ func TestDepsLog_broken(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newDepsLog(ctx, %q)=_, %v; want nil error", fname, err)
 	}
-	r, err := dl1.Record(ctx, "out.o", t1, d1, []string{"foo.h", "bar.h"})
+	r, err := dl1.Record(ctx, key1, []string{"foo.h", "bar.h"})
 	if err != nil || !r {
-		t.Fatalf(`dl1.Record(ctx, "out.o", %v, %v, []string{"foo.h", "bar.h"})=%t, %v; want true, nil error`, t1, d1, r, err)
+		t.Fatalf(`dl1.Record(ctx, %v, []string{"foo.h", "bar.h"})=%t, %v; want true, nil error`, key1, r, err)
 	}
-	r, err = dl1.Record(ctx, "out2.o", t2, d2, []string{"foo.h", "bar2.h"})
+	r, err = dl1.Record(ctx, key2, []string{"foo.h", "bar2.h"})
 	if err != nil || !r {
-		t.Fatalf(`dl1.Record(ctx, "out2.o", %v, %v, []string{"foo.h", "bar2.h"})=%t, %v; want true, nil error`, t2, d2, r, err)
+		t.Fatalf(`dl1.Record(ctx, %v, []string{"foo.h", "bar2.h"})=%t, %v; want true, nil error`, key2, r, err)
 	}
 	err = dl1.Close()
 	if err != nil {

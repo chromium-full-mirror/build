@@ -24,6 +24,7 @@ import (
 	"go.chromium.org/build/siso/build"
 	"go.chromium.org/build/siso/build/ninjabuild"
 	"go.chromium.org/build/siso/hashfs"
+	"go.chromium.org/build/siso/reapi/digest"
 	"go.chromium.org/build/siso/toolsupport/makeutil"
 	"go.chromium.org/build/siso/toolsupport/ninjautil"
 )
@@ -75,11 +76,12 @@ type depsCommand struct {
 }
 
 type dependencies struct {
-	Target   string                  `json:"target"`
-	DepType  string                  `json:"dep_type"`
-	Deps     []string                `json:"deps"`
-	DepsTime time.Time               `json:"deps_time"`
-	DepState ninjabuild.DepsLogState `json:"dep_state"`
+	Target     string                  `json:"target"`
+	DepType    string                  `json:"dep_type"`
+	Deps       []string                `json:"deps"`
+	DepsTime   time.Time               `json:"deps_time"`
+	DepsDigest digest.Digest           `json:"deps_digest"`
+	DepState   ninjabuild.DepsLogState `json:"dep_state"`
 }
 
 type marshaller interface{ Marshal(dependencies) error }
@@ -94,8 +96,17 @@ type textMarshaller struct{ w io.Writer }
 
 func (m textMarshaller) Marshal(dep dependencies) error {
 	var buf bytes.Buffer
-	fmt.Fprintf(&buf, "%s: #%s %d, deps mtime %d (%s)\n",
-		dep.Target, dep.DepType, len(dep.Deps), dep.DepsTime.Nanosecond(), dep.DepState)
+	var key string
+	switch dep.DepState {
+	case ninjabuild.DepsLogValid:
+		key = fmt.Sprintf("mtime %d", dep.DepsTime.Nanosecond())
+	case ninjabuild.DepsLogValidDigest:
+		key = fmt.Sprintf("digest %s", dep.DepsDigest)
+	default:
+		key = fmt.Sprintf("mtime %d digest %s", dep.DepsTime.Nanosecond(), dep.DepsDigest)
+	}
+	fmt.Fprintf(&buf, "%s: #%s %d, deps %s (%s)\n",
+		dep.Target, dep.DepType, len(dep.Deps), key, dep.DepState)
 	for _, d := range dep.Deps {
 		fmt.Fprintf(&buf, "    %s\n", d)
 	}
@@ -196,7 +207,7 @@ func (c *depsCommand) run(ctx context.Context, args []string) error {
 	}
 
 	for _, target := range targets {
-		depType, deps, depsTime, depState, err := lookupDeps(ctx, state, hashFS, depsLog, bpath, target)
+		depType, deps, key, depState, err := lookupDeps(ctx, state, hashFS, depsLog, bpath, target)
 		if err != nil {
 			if errors.Is(err, ninjautil.ErrNoDepsLog) {
 				continue
@@ -204,59 +215,66 @@ func (c *depsCommand) run(ctx context.Context, args []string) error {
 			fmt.Fprintf(os.Stderr, "%s: deps log error: %v\n", target, err)
 			continue
 		}
-		if err = m.Marshal(dependencies{Target: target, DepType: depType, Deps: deps, DepsTime: depsTime, DepState: depState}); err != nil {
+		if err = m.Marshal(dependencies{Target: target, DepType: depType, Deps: deps, DepsTime: key.Mtime, DepsDigest: key.Digest, DepState: depState}); err != nil {
 			return fmt.Errorf("failed to encode: %w for %q format", err, c.format)
 		}
 	}
 	return w.Flush()
 }
 
-func lookupDeps(ctx context.Context, state *ninjautil.State, hashFS *hashfs.HashFS, depsLog *ninjabuild.DepsLog, bpath *build.Path, target string) (string, []string, time.Time, ninjabuild.DepsLogState, error) {
+func lookupDeps(ctx context.Context, state *ninjautil.State, hashFS *hashfs.HashFS, depsLog *ninjabuild.DepsLog, bpath *build.Path, target string) (string, []string, ninjabuild.DepsLogKey, ninjabuild.DepsLogState, error) {
 	var depState ninjabuild.DepsLogState
-	deps, depsTime, err := depsLog.RetrievePaths(ctx, target)
+	deps, key, err := depsLog.RetrievePaths(ctx, target)
 	if err == nil {
 		if hashFS != nil {
-			depState, _ = ninjabuild.CheckDepsLogState(ctx, hashFS, bpath, target, depsTime)
+			depState, _ = depsLog.CheckKey(ctx, hashFS, bpath, key)
 		}
-		return "deps", deps, depsTime, depState, err
+		return "deps", deps, key, depState, err
 	}
 	if state == nil {
-		return "", nil, time.Time{}, depState, ninjautil.ErrNoDepsLog
+		return "", nil, key, depState, ninjautil.ErrNoDepsLog
 	}
 	node, ok := state.LookupNodeByPath(target)
 	if !ok {
-		return "", nil, time.Time{}, depState, fmt.Errorf("no such target in build graph: %q", target)
+		return "", nil, key, depState, fmt.Errorf("no such target in build graph: %q", target)
 	}
 	edge, ok := node.InEdge()
 	if !ok {
-		return "", nil, time.Time{}, depState, fmt.Errorf("no rule to build target: %q", target)
+		return "", nil, key, depState, fmt.Errorf("no rule to build target: %q", target)
 	}
 	depsType := edge.Binding("deps")
 	switch depsType {
 	case "gcc", "msvc":
 		// for deps=gcc|msvc, deps is recorded in deps log.
-		return "", nil, time.Time{}, depState, ninjautil.ErrNoDepsLog
+		return "", nil, key, depState, ninjautil.ErrNoDepsLog
 	case "":
 		// check depfile
 	default:
-		return "", nil, time.Time{}, depState, fmt.Errorf("unknown deps=%q in rule to build target %q", depsType, target)
+		return "", nil, key, depState, fmt.Errorf("unknown deps=%q in rule to build target %q", depsType, target)
 	}
 	depfile := edge.UnescapedBinding("depfile")
 	if depfile == "" {
 		// the rule has no deps,depfile.
-		return "", nil, time.Time{}, depState, ninjautil.ErrNoDepsLog
+		return "", nil, key, depState, ninjautil.ErrNoDepsLog
 	}
 	df := bpath.MaybeFromWD(ctx, depfile)
 	fi, err := hashFS.Stat(ctx, bpath.ExecRoot, df)
 	if err != nil {
-		return "", nil, time.Time{}, depState, fmt.Errorf("no depfile=%q to build target %q: %w", depfile, target, err)
+		return "", nil, key, depState, fmt.Errorf("no depfile=%q to build target %q: %w", depfile, target, err)
+	}
+	ents, err := hashFS.Entries(ctx, bpath.ExecRoot, []string{df})
+	if err != nil || len(ents) == 0 {
+		return "", nil, key, depState, fmt.Errorf("failed to get entry for depfile=%q %d to build target %q: %w", depfile, len(ents), target, err)
 	}
 	fsys := hashFS.FileSystem(ctx, bpath.ExecRoot)
 	deps, err = makeutil.ParseDepsFile(ctx, fsys, df)
 	if err != nil {
-		return "", nil, time.Time{}, depState, fmt.Errorf("failed to read depfile=%q to build target %q: %w", depfile, target, err)
+		return "", nil, key, depState, fmt.Errorf("failed to read depfile=%q to build target %q: %w", depfile, target, err)
 	}
-	return fmt.Sprintf("depfile=%q", depfile), deps, fi.ModTime(), ninjabuild.DepsLogValid, nil
+	key.Target = target
+	key.Mtime = fi.ModTime()
+	key.Digest = ents[0].Data.Digest()
+	return fmt.Sprintf("depfile=%q", depfile), deps, key, ninjabuild.DepsLogValid, nil
 }
 
 func depsTargets(state *ninjautil.State, args []string) ([]string, error) {

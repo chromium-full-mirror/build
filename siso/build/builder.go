@@ -1229,13 +1229,18 @@ func (b *Builder) updateDeps(ctx context.Context, step *Step) error {
 		clog.Warningf(ctx, "update deps: missing outputs %s: %v", step.cmd.Outputs[0], err)
 		return nil
 	}
+	ents, err := b.hashFS.Entries(ctx, step.cmd.ExecRoot, []string{step.cmd.Outputs[0]})
+	if err != nil || len(ents) == 0 {
+		clog.Warningf(ctx, "update deps: failed to get output entry %q %d: %v", step.cmd.Outputs[0], len(ents), err)
+		return nil
+	}
 	deps, err := depsAfterRun(ctx, b, step)
 	if err != nil {
 		return err
 	}
-	updated, err := step.def.RecordDeps(ctx, output, fi.ModTime(), deps)
+	updated, err := step.def.RecordDeps(ctx, output, fi.ModTime(), ents[0].Data.Digest(), deps)
 	if err != nil {
-		clog.Warningf(ctx, "update deps: failed to record deps %s, %s, %s, %s: %v", output, base64.StdEncoding.EncodeToString(step.cmd.CmdHash), fi.ModTime(), deps, err)
+		clog.Warningf(ctx, "update deps: failed to record deps %s, %s, %s, %s, %s: %v", output, base64.StdEncoding.EncodeToString(step.cmd.CmdHash), fi.ModTime(), ents[0].Data.Digest(), deps, err)
 	}
 	clog.Infof(ctx, "update deps=%s: %s %s %d updated:%t pure:%t/%t->true", step.cmd.Deps, output, base64.StdEncoding.EncodeToString(step.cmd.CmdHash), len(deps), updated, step.cmd.Pure, step.cmd.Pure)
 	span.SetAttr("deps", len(deps))
