@@ -11,7 +11,7 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"runtime"
+	"runtime/metrics"
 	"sort"
 	"strings"
 	"sync"
@@ -41,8 +41,8 @@ type traceEvents struct {
 	// signals to terminate trace writer.
 	quit, done chan struct{}
 
-	// memstats record of siso.
-	memstats runtime.MemStats
+	// metrics samples to avoid STW from ReadMemStats.
+	metricsSamples []metrics.Sample
 	// resource usage record of siso.
 	rusage usageRecord
 	// system resource record
@@ -70,6 +70,13 @@ func newTraceEvents(fname string, metadata metadata.Metadata) *traceEvents {
 		quit:       make(chan struct{}),
 		done:       make(chan struct{}),
 		rbeWorkers: make(map[string]int),
+		metricsSamples: []metrics.Sample{
+			{Name: "/memory/classes/heap/objects:bytes"},
+			{Name: "/gc/heap/allocs:bytes"},
+			{Name: "/memory/classes/total:bytes"},
+			{Name: "/sched/pauses/total/gc:seconds"},
+			{Name: "/gc/cycles/total:gc-cycles"},
+		},
 	}
 }
 
@@ -85,7 +92,6 @@ func (te *traceEvents) Start(ctx context.Context, semas []semaphore.Monitorable,
 func (te *traceEvents) loop(ctx context.Context) {
 	clog.Infof(ctx, "trace loop start")
 	defer close(te.done)
-	runtime.ReadMemStats(&te.memstats)
 	te.rusage.get()
 	te.sys.get(ctx)
 	w := io.Discard
@@ -297,6 +303,46 @@ func (te *traceEvents) sample(ctx context.Context, w io.Writer, t time.Time) {
 }
 
 func (te *traceEvents) traceMemStats(t time.Time) []traceEventObject {
+	var alloc, totalAlloc, sys, numGC, pauseNs uint64
+
+	metrics.Read(te.metricsSamples)
+	// See also: https://pkg.go.dev/runtime/metrics#hdr-Supported_metrics
+	for _, sample := range te.metricsSamples {
+		switch sample.Name {
+		case "/memory/classes/heap/objects:bytes":
+			if sample.Value.Kind() == metrics.KindUint64 {
+				alloc = sample.Value.Uint64()
+			}
+		case "/gc/heap/allocs:bytes":
+			if sample.Value.Kind() == metrics.KindUint64 {
+				totalAlloc = sample.Value.Uint64()
+			}
+		case "/memory/classes/total:bytes":
+			if sample.Value.Kind() == metrics.KindUint64 {
+				sys = sample.Value.Uint64()
+			}
+		case "/gc/cycles/total:gc-cycles":
+			if sample.Value.Kind() == metrics.KindUint64 {
+				numGC = sample.Value.Uint64()
+			}
+		case "/sched/pauses/total/gc:seconds":
+			// Approximate the cumulative nanoseconds in GC STW pauses.
+			// runtime/metrics exports this as a Float64Histogram rather than a scalar,
+			// so we estimate the total by summing (count * bucket midpoint).
+			if sample.Value.Kind() == metrics.KindFloat64Histogram {
+				h := sample.Value.Float64Histogram()
+				var sum float64
+				for j, count := range h.Counts {
+					if count > 0 {
+						mid := (h.Buckets[j] + h.Buckets[j+1]) / 2.0
+						sum += float64(count) * mid
+					}
+				}
+				pauseNs = uint64(sum * 1e9)
+			}
+		}
+	}
+
 	ret := []traceEventObject{
 		{
 			Name: "memstats",
@@ -305,15 +351,14 @@ func (te *traceEvents) traceMemStats(t time.Time) []traceEventObject {
 			Pid:  sisoPid,
 			Tid:  sisoTid,
 			Args: map[string]any{
-				"alloc":       te.memstats.Alloc,
-				"total_alloc": te.memstats.TotalAlloc,
-				"sys":         te.memstats.Sys,
-				"pause":       te.memstats.PauseTotalNs,
-				"gc":          te.memstats.NumGC,
+				"alloc":       alloc,
+				"total_alloc": totalAlloc,
+				"sys":         sys,
+				"pause":       pauseNs,
+				"gc":          numGC,
 			},
 		},
 	}
-	runtime.ReadMemStats(&te.memstats)
 	return ret
 }
 
