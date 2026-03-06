@@ -72,7 +72,9 @@ func TestWriteBinaryTarget(t *testing.T) {
 					},
 				},
 			},
-			want: `target_out_dir = obj
+			want: `output_dir = obj
+target_output_name = app
+target_out_dir = obj
 
 build obj/base/main.o: cxx ../../base/main.cc
   source_file_part = main.cc
@@ -104,7 +106,10 @@ build obj/base/app: link obj/base/main.o obj/foo/libfoo.o
 					},
 				},
 			},
-			want: `target_out_dir = obj
+			want: `output_extension = .rlib
+output_dir = obj
+target_output_name = libfoo
+target_out_dir = obj
 
 build obj/libfoo.rlib: rust_rlib ../../src/lib.rs | obj/bar/libbar.rlib
   crate_name = foo

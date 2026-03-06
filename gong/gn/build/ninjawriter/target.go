@@ -10,6 +10,7 @@ import (
 	"maps"
 	"os"
 	"path"
+	"path/filepath"
 	"slices"
 	"strings"
 
@@ -91,19 +92,69 @@ func writeTarget(w io.Writer, t *graph.Target, buildSettings *environment.BuildS
 }
 
 func writeBinaryTarget(w io.Writer, t *graph.Target, buildSettings *environment.BuildSettings) error {
+	var outputExtension, targetOutputName string
 	targetOutDir := t.OutDir(buildSettings)
-	targetOutBuildDirRel := targetOutDir.Path()
+	outputDir := targetOutDir.Path()
+
+	// HACK: Decide the "final output" for this target.
+	// In C++ GN, this is done by Tool::GetToolTypeForTargetFinalOutput, which checks the actual
+	// type of the target.
+	// This is not trivial to implement in this codebase currently, so for now naively assume
+	// the final tool declared by the target is the "final output".
+	if len(t.Resolution.Actions) > 0 {
+		lastAction := t.Resolution.Actions[len(t.Resolution.Actions)-1]
+		outputBase := filepath.Base(lastAction.Output.Path())
+		outputExtension = filepath.Ext(outputBase)
+		targetOutputName = strings.TrimSuffix(outputBase, outputExtension)
+	} else {
+		targetOutputName = t.Label().Name
+	}
+
+	// Read target declaration for top-level overrides if set.
+	if nameVar, err := t.StringFor("output_name"); err == nil {
+		targetOutputName = nameVar
+	}
+	if extVar, err := t.StringFor("output_extension"); err == nil {
+		if extVar != "" {
+			outputExtension = "." + extVar
+		} else {
+			outputExtension = ""
+		}
+	}
+	if dirVar, err := t.StringFor("output_dir"); err == nil {
+		outputDir = dirVar
+	}
+
+	// Now write the substitutions that depend on the target and
+	// do not vary on a per-file basis.
 	// TODO: escape special chars (e.g. space, $, : etc?)
-	_, err := fmt.Fprintf(w, "target_out_dir = %s\n", targetOutBuildDirRel)
+	var err error
+	if outputExtension != "" {
+		_, err = fmt.Fprintf(w, "output_extension = %s\n", outputExtension)
+		if err != nil {
+			return err
+		}
+	}
+	_, err = fmt.Fprintf(w, "output_dir = %s\n", fs.DirectoryWithNoLastSlash(outputDir))
 	if err != nil {
 		return err
 	}
-	// TODO: more top-level substitutions
+	_, err = fmt.Fprintf(w, "target_output_name = %s\n", targetOutputName)
+	if err != nil {
+		return err
+	}
+	_, err = fmt.Fprintf(w, "target_out_dir = %s\n", fs.DirectoryWithNoLastSlash(targetOutDir.Path()))
+	if err != nil {
+		return err
+	}
+
+	// End of target-level substitutions.
 	_, err = fmt.Fprintln(w)
 	if err != nil {
 		return err
 	}
 
+	// Then, write out each tool call action.
 	for _, action := range t.Resolution.Actions {
 		var inputPaths []string
 		var implicitDeps []string
