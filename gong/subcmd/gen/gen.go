@@ -97,8 +97,8 @@ func (h *Command) genOneDir(dir string) error {
 	}
 
 	// TODO: get count of loaded files from fs.InputFileManager somehow?
-	// TODO: color?
-	fmt.Printf("Done. Made %d targets from ?? files in %dms\n", targetsCollected, elapsed.Milliseconds())
+	msgPrefix := ui.SGR(ui.Green, "Done.")
+	ui.Default.Printf("%s Made %d targets from ?? files in %dms\n", msgPrefix, targetsCollected, elapsed.Milliseconds())
 	return nil
 }
 

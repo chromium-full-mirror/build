@@ -6,8 +6,33 @@
 package ui
 
 import (
+	"os"
 	"strings"
 )
+
+// UI is a user interface.
+type UI interface {
+	// Printf prints message to stdout.
+	Printf(string, ...any)
+
+	// Followings will go to stderr when redirected.
+
+	// Errorf reports error level.
+	Errorf(string, ...any)
+}
+
+// Default holds the default UI interface.
+// Making changes to this variable after init is undefined behavior.
+// UI implementations are currently not expected to handle being changed.
+var Default UI
+
+func init() {
+	// TODO: support LogUI?
+	termUI := &TermUI{
+		noColor: os.Getenv("NO_COLOR") != "",
+	}
+	Default = termUI
+}
 
 // FormatError formats provided error for printing as GN-style error.
 // TODO: implement SGR colors.
@@ -19,7 +44,8 @@ func formatError(err error, isSubErr bool) string {
 	var sb strings.Builder
 
 	if !isSubErr {
-		sb.WriteString("ERROR ")
+		sb.WriteString(SGR(Bold, SGR(Red, "ERROR")))
+		sb.WriteString(" ")
 	}
 
 	// File name and location.

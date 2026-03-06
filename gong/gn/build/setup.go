@@ -114,7 +114,6 @@ func (s *Setup) DoSetup(buildDir string, forceCreate bool, flags *gn.CommonFlags
 		return err
 	}
 
-	fmt.Fprintf(os.Stderr, "warn: DoSetup not completely implemented\n")
 	return nil
 }
 
