@@ -227,7 +227,7 @@ func (c *flushCommand) flushEntry(ctx context.Context, cacheStore reapi.CacheSto
 			fmt.Printf("exists\n")
 			return nil
 		}
-		if fi.ModTime().Before(mtime) {
+		if fi.ModTime().After(mtime) {
 			// disk is newer than state.
 			fmt.Printf("new file exists\n")
 			return fmt.Errorf("disk is newer than state: disk=%s state=%s. use '-f' to force update", fi.ModTime(), mtime)
