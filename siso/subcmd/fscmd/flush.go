@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/google/subcommands"
+	"golang.org/x/sync/errgroup"
 
 	"go.chromium.org/build/siso/auth/cred"
 	"go.chromium.org/build/siso/build/ninjabuild"
@@ -24,7 +25,9 @@ import (
 	pb "go.chromium.org/build/siso/hashfs/proto"
 	"go.chromium.org/build/siso/reapi"
 	"go.chromium.org/build/siso/reapi/digest"
+	"go.chromium.org/build/siso/runtimex"
 	"go.chromium.org/build/siso/signals"
+	"go.chromium.org/build/siso/sync/semaphore"
 )
 
 const flushUsage = `flush recorded files to the disk.
@@ -57,6 +60,9 @@ type flushCommand struct {
 	force        bool
 	recursive    bool
 	fileListPath string
+
+	eg   errgroup.Group
+	sema *semaphore.Semaphore
 }
 
 func (c *flushCommand) SetFlags(flagSet *flag.FlagSet) {
@@ -71,6 +77,7 @@ func (c *flushCommand) SetFlags(flagSet *flag.FlagSet) {
 }
 
 func (c *flushCommand) Execute(ctx context.Context, flagSet *flag.FlagSet, _ ...any) subcommands.ExitStatus {
+	c.sema = semaphore.New("flush", runtimex.NumCPU())
 	c.Flags = flagSet
 	err := c.run(ctx)
 	if err != nil {
@@ -168,6 +175,10 @@ func (c *flushCommand) run(ctx context.Context) error {
 				_ = os.Stdout.Sync()
 				err = c.flushEntry(ctx, cacheStore, fname, ent)
 				if err != nil {
+					eerr := c.eg.Wait()
+					if eerr != nil {
+						fmt.Fprintf(os.Stderr, "Error: %v\n", eerr)
+					}
 					return err
 				}
 			}
@@ -179,10 +190,14 @@ func (c *flushCommand) run(ctx context.Context) error {
 		}
 		err = c.flushEntry(ctx, cacheStore, fname, ent)
 		if err != nil {
+			eerr := c.eg.Wait()
+			if eerr != nil {
+				fmt.Fprintf(os.Stderr, "Error: %v\n", eerr)
+			}
 			return err
 		}
 	}
-	return nil
+	return c.eg.Wait()
 }
 
 func isDirEnt(ent *pb.Entry) bool {
@@ -249,16 +264,21 @@ func (c *flushCommand) flushEntry(ctx context.Context, cacheStore reapi.CacheSto
 		fmt.Printf("local generated\n")
 		return nil
 	}
-	err = c.flushFile(ctx, cacheStore, fname, d, ent)
-	if err != nil {
-		fmt.Printf("err: %v\n", err)
-		return fmt.Errorf("flush err: %w", err)
-	}
-	fmt.Printf("done\n")
+	fmt.Printf("file %s\n", d)
+	c.eg.Go(func() error {
+		return c.sema.Do(ctx, func(ctx context.Context) error {
+			err := c.flushFile(ctx, cacheStore, fname, d, ent)
+			if err != nil {
+				return fmt.Errorf("flush err: %w", err)
+			}
+			return nil
+		})
+	})
 	return nil
 }
 
 func (c *flushCommand) flushFile(ctx context.Context, cacheStore reapi.CacheStore, fname string, d digest.Digest, ent *pb.Entry) error {
+	started := time.Now()
 	w, err := os.Create(fname)
 	if err != nil {
 		return err
@@ -294,6 +314,7 @@ func (c *flushCommand) flushFile(ctx context.Context, cacheStore reapi.CacheStor
 		_ = os.Remove(fname)
 		return err
 	}
+	fmt.Printf("%s ... file %s %s\n", fname, d, time.Since(started))
 	return nil
 }
 
