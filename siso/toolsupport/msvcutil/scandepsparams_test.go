@@ -123,6 +123,32 @@ func TestScanDepsParams(t *testing.T) {
 			},
 		},
 		{
+			name: "clang-cl-warning-suppression-mapping",
+			args: []string{
+				`..\..\third_party\llvm-build\Release+Asserts\bin\clang-cl.exe`,
+				"/c",
+				"../../base/base64.cc",
+				"/Foobj/base/base/base64.obj",
+				"/nologo",
+				"/showIncludes:user",
+				"/winsysroot../../third_party/depot_tools/win_toolchain/vs_files/27370823e7",
+				"--warning-suppression-mappings=../../build/config/warning_suppression.txt",
+			},
+			want: scandepsparams.ScanDepsParams{
+				Sources: []string{
+					"../../base/base64.cc",
+				},
+				Files: []string{
+					"../../build/config/warning_suppression.txt",
+				},
+				Sysroots: []string{
+					"../../third_party/llvm-build/Release+Asserts",
+					"../../third_party/depot_tools/win_toolchain/vs_files/27370823e7",
+				},
+				Defines: map[string]string{},
+			},
+		},
+		{
 			name: "clang-module-file",
 			args: []string{
 				"../../third_party/llvm-build/Release+Asserts/bin/clang-cl.exe",

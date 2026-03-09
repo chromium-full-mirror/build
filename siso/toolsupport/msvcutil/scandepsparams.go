@@ -113,6 +113,8 @@ func ExtractScanDepsParams(ctx context.Context, args, env []string, fsys fs.FS) 
 			res.Files = append(res.Files, strings.TrimPrefix(arg, "-fprofile-use="))
 		case strings.HasPrefix(arg, "-fsanitize-ignorelist="):
 			res.Files = append(res.Files, strings.TrimPrefix(arg, "-fsanitize-ignorelist="))
+		case strings.HasPrefix(arg, "--warning-suppression-mappings="):
+			res.Files = append(res.Files, strings.TrimPrefix(arg, "--warning-suppression-mappings="))
 
 		case strings.HasPrefix(arg, "/winsysroot"):
 			res.Sysroots = append(res.Sysroots, filepath.ToSlash(strings.TrimPrefix(arg, "/winsysroot")))

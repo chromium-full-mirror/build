@@ -261,6 +261,32 @@ func TestScanDepsParams(t *testing.T) {
 			},
 		},
 		{
+			name: "clang-warning-suppression-mapping",
+			args: []string{
+				"../../third_party/llvm-build/Release+Asserts/bin/clang++",
+				"-MMD",
+				"-MF",
+				"android_clang_arm/obj/skia/skia_core_and_effects/SkRecords.o.d",
+				"--warning-suppression-mappings=../../build/config/warning_suppression.txt",
+				"-c",
+				"../../third_party/skia/src/core/SkRecords.cpp",
+				"-o",
+				"android_clang_arm/obj/skia/skia_core_and_effects/SkRecords.o",
+			},
+			want: scandepsparams.ScanDepsParams{
+				Sources: []string{
+					"../../third_party/skia/src/core/SkRecords.cpp",
+				},
+				Files: []string{
+					"../../build/config/warning_suppression.txt",
+				},
+				Sysroots: []string{
+					"../../third_party/llvm-build/Release+Asserts",
+				},
+				Defines: map[string]string{},
+			},
+		},
+		{
 			name: "clang-module-file",
 			args: []string{
 				"../../third_party/llvm-build/Release+Asserts/bin/clang++",
