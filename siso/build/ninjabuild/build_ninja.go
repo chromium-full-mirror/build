@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -46,6 +47,24 @@ func (b BuildError) Error() string {
 	return b.Err.Error()
 }
 
+func initNinjaLogWriter(bopts *build.Options, builddir string) error {
+	if bopts.NinjaLogWriter != nil {
+		return nil
+	}
+	if builddir != "" {
+		err := os.MkdirAll(builddir, 0755)
+		if err != nil {
+			return err
+		}
+	}
+	ninjaLogWriter, err := ninjautil.InitializeNinjaLog(builddir)
+	if err != nil {
+		return err
+	}
+	bopts.NinjaLogWriter = ninjaLogWriter
+	return nil
+}
+
 // CheckManifest quickly checks build.ninja is up-to-date by reading
 // toplevel build.ninja file (without reading all build graph in subninja)
 // and building build.ninja only.
@@ -53,7 +72,7 @@ func (b BuildError) Error() string {
 // for build.ninja in main build.ninja file.
 // Even if this assumption failed e.g. soong doesn't have such build rule,
 // Run will rebuild manifest after reading all build.ninja files.
-func CheckManifest(ctx context.Context, filename string, buildPath *build.Path, config *buildconfig.Config, hashFS *hashfs.HashFS, localDepsLog *DepsLog, bopts build.Options) error {
+func CheckManifest(ctx context.Context, filename string, buildPath *build.Path, config *buildconfig.Config, hashFS *hashfs.HashFS, localDepsLog *DepsLog, bopts *build.Options) error {
 	started := time.Now()
 	defer func() {
 		ui.Default.PrintLines("")
@@ -68,11 +87,22 @@ func CheckManifest(ctx context.Context, filename string, buildPath *build.Path, 
 		return nil
 	}
 	clog.Infof(ctx, "check build ninja: load file in %s", time.Since(started))
+
+	builddir := nstate.Binding("builddir")
+	// We initialize ninja_log here instead of at the caller side (ninja.go) because
+	// the location of the .ninja_log depends on the `builddir` binding from the manifest.
+	// CheckManifest is the first place where the top-level manifest is parsed,
+	// so it's the earliest and most accurate place to know the builddir and initialize the log.
+	err = initNinjaLogWriter(bopts, builddir)
+	if err != nil {
+		return err
+	}
+	clog.Infof(ctx, "check build ninja: initialize ninja log in %s", time.Since(started))
 	// zero step config. no remote exec for gn gen?
 	stepConfig := &StepConfig{}
 	graph := NewGraph(ctx, filename, nstate, config, buildPath, hashFS, stepConfig, localDepsLog)
 
-	err = rebuildManifest(ctx, graph, bopts)
+	err = rebuildManifest(ctx, graph, *bopts)
 	if errors.Is(err, build.ErrManifestModified) {
 		started := time.Now()
 		err := hashFS.Refresh(ctx, buildPath.ExecRoot)
@@ -105,21 +135,16 @@ func Run(ctx context.Context, graph *Graph, bopts build.Options, targets []strin
 
 	builddir := graph.Binding("builddir")
 	clog.Infof(ctx, "builddir=%q", builddir)
-	if builddir != "" {
-		err := os.MkdirAll(builddir, 0755)
-		if err != nil {
-			return build.Stats{}, err
-		}
-	}
-	ninjaLogWriter, err := ninjautil.InitializeNinjaLog(builddir)
+	err := initNinjaLogWriter(&bopts, builddir)
 	if err != nil {
 		return build.Stats{}, err
 	}
-	defer func() {
-		cerr := ninjaLogWriter.Close()
-		clog.Infof(ctx, "close .ninja_log: %v", cerr)
-	}()
-	bopts.NinjaLogWriter = ninjaLogWriter
+	if closer, ok := bopts.NinjaLogWriter.(io.Closer); ok {
+		defer func() {
+			cerr := closer.Close()
+			clog.Infof(ctx, "close .ninja_log: %v", cerr)
+		}()
+	}
 
 	for {
 		clog.Infof(ctx, "build starts")

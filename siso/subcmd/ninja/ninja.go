@@ -483,7 +483,7 @@ func (c *Command) Run(ctx context.Context) (stats build.Stats, finalErr error) {
 		}
 	}
 
-	err = ninjabuild.CheckManifest(ctx, c.fname, buildPath, config, hashFS, localDepsLog, bopts)
+	err = ninjabuild.CheckManifest(ctx, c.fname, buildPath, config, hashFS, localDepsLog, &bopts)
 	if err != nil {
 		return stats, err
 	}
