@@ -2208,7 +2208,7 @@ func TestSymlinkFlush(t *testing.T) {
 	for _, name := range flushTestNames {
 		t.Run(name, func(t *testing.T) {
 			hashFS, dir := setupForFlush(t)
-			target := filepath.Join(dir, "subdir/some-file")
+			target := filepath.Join(dir, "target-file")
 			now := time.Now()
 			err := hashFS.Symlink(ctx, dir, target, name, now, []byte("cmdhash"), nil)
 			if err != nil {
