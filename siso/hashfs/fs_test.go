@@ -2208,7 +2208,16 @@ func TestSymlinkFlush(t *testing.T) {
 	for _, name := range flushTestNames {
 		t.Run(name, func(t *testing.T) {
 			hashFS, dir := setupForFlush(t)
-			target := filepath.Join(dir, "target-file")
+			target := filepath.Join(dir, "subdir/some-file")
+			// macOS `os.RemoveAll` takes a very long time processing a self-referencing symlink loop.
+			// Rename it so that it is no longer self-referencing.
+			if name == "subdir/some-file" {
+				t.Cleanup(func() {
+					if err := os.Rename(filepath.Join(dir, name), filepath.Join(dir, "subdir/some-file.test-cleanup-rename")); err != nil {
+						t.Logf("cleanup rename failed: %v", err)
+					}
+				})
+			}
 			now := time.Now()
 			err := hashFS.Symlink(ctx, dir, target, name, now, []byte("cmdhash"), nil)
 			if err != nil {
