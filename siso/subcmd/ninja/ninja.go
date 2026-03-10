@@ -10,8 +10,11 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"go/version"
 	"os"
 	"path/filepath"
+	"runtime"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"time"
@@ -252,6 +255,28 @@ func (c *Command) initCredentials(ctx context.Context) (cred.Cred, error) {
 
 // Exposed for e2e testing. To be reevaluated.
 func (c *Command) Run(ctx context.Context) (stats build.Stats, finalErr error) {
+	if runtime.GOOS == "darwin" && version.Compare(runtime.Version(), "go1.26") >= 0 {
+		// If go1.26.0+ is used, check greenteagc is disabled.
+		// See https://github.com/golang/go/issues/77824
+		enableGreenTeaGC := true
+
+		if info, ok := debug.ReadBuildInfo(); ok {
+			for _, setting := range info.Settings {
+				if setting.Key == "GOEXPERIMENT" && setting.Value == "nogreenteagc" {
+					enableGreenTeaGC = false
+				}
+			}
+		} else {
+			fmt.Fprintf(os.Stderr, "failed to read build info\n")
+			os.Exit(1)
+		}
+
+		if enableGreenTeaGC {
+			fmt.Fprintf(os.Stderr, "siso must be built with GOEXPERIMENT=nogreenteagc on darwin when using go1.26.0 or later.\n")
+			os.Exit(1)
+		}
+	}
+
 	// Cleanup functions to run after serial cleanups in parallel.
 	// This mostly exists for logger and metrics functions cleanup.
 	// Each of these functions take about 1 second on no-op builds to finish,

@@ -8,7 +8,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"go/version"
 	"io"
 	"net/http"
 	"os"
@@ -46,12 +45,6 @@ func buildSiso(t *testing.T) string {
 	}
 
 	buildCmd := exec.Command("go", "build", "-o", sisoBin, "go.chromium.org/build/siso")
-	if runtime.GOOS == "darwin" && version.Compare(runtime.Version(), "go1.26") >= 0 {
-		// Disable greenteagc to pass check in siso binary on mac.
-		// See https://github.com/golang/go/issues/77824
-		buildCmd.Env = append(os.Environ(), "GOEXPERIMENT=nogreenteagc")
-	}
-
 	out, err := buildCmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("failed to build siso: %v\n%s", err, out)
