@@ -130,7 +130,7 @@ func (d *digester) worker(ctx context.Context) {
 			if len(d.queue) > 0 {
 				select {
 				case d.q <- d.queue[0]:
-					copy(d.queue, d.queue[:len(d.queue)-1])
+					copy(d.queue, d.queue[1:])
 					d.queue[len(d.queue)-1] = digestReq{}
 					d.queue = d.queue[:len(d.queue)-1]
 				default:
