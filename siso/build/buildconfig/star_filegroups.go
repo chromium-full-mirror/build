@@ -11,16 +11,13 @@ import (
 	"io/fs"
 	"path/filepath"
 	"strings"
-	"sync"
 
 	log "github.com/golang/glog"
 	"go.starlark.net/starlark"
-	"golang.org/x/sync/errgroup"
 
 	"go.chromium.org/build/siso/build"
 	"go.chromium.org/build/siso/hashfs"
 	"go.chromium.org/build/siso/o11y/clog"
-	"go.chromium.org/build/siso/runtimex"
 )
 
 func parseFilegroups(v starlark.Value) (map[string]filegroupUpdater, error) {
@@ -123,40 +120,29 @@ func (cfg *Config) UpdateFilegroups(ctx context.Context, hashFS *hashfs.HashFS, 
 		ETags:      make(map[string]string),
 		Filegroups: make(map[string][]string),
 	}
-	eg, ctx := errgroup.WithContext(ctx)
-	eg.SetLimit(runtimex.NumCPU())
-	var mu sync.Mutex
 	for k, g := range cfg.filegroups {
-		eg.Go(func() error {
-			clog.Infof(ctx, "filegroup %s", k)
-			v := filegroup{
-				etag:  filegroups.ETags[k],
-				files: filegroups.Filegroups[k],
+		clog.Infof(ctx, "filegroup %s", k)
+		v := filegroup{
+			etag:  filegroups.ETags[k],
+			files: filegroups.Filegroups[k],
+		}
+		fsys := fsysExecRoot
+		if filepath.IsAbs(k) {
+			fsys = fsysRoot
+		}
+		v, err := g.Update(ctx, fsys, v)
+		if errors.Is(err, fs.ErrNotExist) {
+			// ignore the filegroup. b/283203079
+			if log.V(1) {
+				clog.Warningf(ctx, "failed to update filegroup %q: %v", k, err)
 			}
-			fsys := fsysExecRoot
-			if filepath.IsAbs(k) {
-				fsys = fsysRoot
-			}
-			v, err := g.Update(ctx, fsys, v)
-			if errors.Is(err, fs.ErrNotExist) {
-				// ignore the filegroup. b/283203079
-				if log.V(1) {
-					clog.Warningf(ctx, "failed to update filegroup %q: %v", k, err)
-				}
-				return nil
-			}
-			if err != nil {
-				return err
-			}
-			mu.Lock()
-			defer mu.Unlock()
-			fg.ETags[k] = v.etag
-			fg.Filegroups[k] = v.files
-			return nil
-		})
-	}
-	if err := eg.Wait(); err != nil {
-		return Filegroups{}, err
+			continue
+		}
+		if err != nil {
+			return Filegroups{}, err
+		}
+		fg.ETags[k] = v.etag
+		fg.Filegroups[k] = v.files
 	}
 	return fg, nil
 }
