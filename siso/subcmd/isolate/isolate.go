@@ -171,6 +171,9 @@ func (c *Command) run(ctx context.Context) error {
 
 	ui.Default.Printf("use %s\n", c.reopt)
 	client, err := reapi.New(ctx, credential, *c.reopt)
+	if err == nil {
+		err = client.Init(ctx)
+	}
 	if err != nil {
 		return fmt.Errorf("failed to initialize reapi client: %w", err)
 	}
@@ -189,6 +192,9 @@ func (c *Command) run(ctx context.Context) error {
 		return fmt.Errorf("failed to get cas credential: %w", err)
 	}
 	casClient, err := reapi.New(ctx, ccred, *c.casopt)
+	if err == nil {
+		err = casClient.Init(ctx)
+	}
 	if err != nil {
 		return fmt.Errorf("failed to initialize cas client: %w", err)
 	}

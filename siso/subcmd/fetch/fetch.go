@@ -144,6 +144,9 @@ func (c *Command) run(ctx context.Context) error {
 		return err
 	}
 	client, err := reapi.New(ctx, credential, *c.reopt)
+	if err == nil {
+		err = client.Init(ctx)
+	}
 	if err != nil {
 		return err
 	}

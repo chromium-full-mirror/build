@@ -466,51 +466,6 @@ func newConn(ctx context.Context, addr string, cred cred.Cred, opt Option) (grpc
 
 // NewFromConn creates new remote exec API client from conn and casConn.
 func NewFromConn(ctx context.Context, opt Option, conn, casConn grpcClientConn) (*Client, error) {
-	cc := rpb.NewCapabilitiesClient(conn)
-	var capa *rpb.ServerCapabilities
-	// TODO(b/328332495): grpc should retry by service config?
-	err := retry.Do(ctx, func() error {
-		var err error
-		capa, err = cc.GetCapabilities(ctx, &rpb.GetCapabilitiesRequest{
-			InstanceName: opt.Instance,
-		})
-		return err
-	})
-	if err != nil {
-		conn.Close()
-		return nil, fmt.Errorf("failed to get capabilities: %w", err)
-	}
-	clog.Infof(ctx, "capabilities of %s: %s", opt.Instance, capa)
-	if opt.CompressedBlob > 0 {
-		opt.compressor = selectCompressor(capa.GetCacheCapabilities().GetSupportedCompressors())
-		if opt.compressor != rpb.Compressor_IDENTITY {
-			clog.Infof(ctx, "compressed-blobs/%s for > %d", strings.ToLower(opt.compressor.String()), opt.CompressedBlob)
-		} else {
-			clog.Infof(ctx, "compressed-blobs is not supported")
-		}
-	}
-	clog.Infof(ctx, "byte stream read threshold: %d", opt.ByteStreamReadThreshold)
-	var apiVersion *semverpb.SemVer
-	if opt.REAPIVersion != "" {
-		var major, minor int32
-		_, err := fmt.Sscanf(opt.REAPIVersion, "v%d.%d", &major, &minor)
-		if err != nil {
-			clog.Warningf(ctx, "failed to parse reapi version %q: %v", opt.REAPIVersion, err)
-		} else {
-			apiVersion = &semverpb.SemVer{
-				Major: major,
-				Minor: minor,
-			}
-			highVer := capa.GetHighApiVersion()
-			if highVer.GetMajor() < major || (highVer.GetMajor() == major && highVer.GetMinor() < minor) {
-				clog.Errorf(ctx, "higher api version is specified than server capabilities: %v > %v", apiVersion, highVer)
-			}
-			lowVer := capa.GetLowApiVersion()
-			if lowVer.GetMajor() > major || (lowVer.GetMajor() == major && lowVer.GetMinor() > minor) {
-				clog.Errorf(ctx, "lower api version is specified than server capabilities: %v < %v", apiVersion, lowVer)
-			}
-		}
-	}
 	zstdDecoderPool := &sync.Pool{}
 	zstdDecoderPool.New = func() any {
 		d, err := zstd.NewReader(nil)
@@ -527,13 +482,64 @@ func NewFromConn(ctx context.Context, opt Option, conn, casConn grpcClientConn) 
 		opt:             opt,
 		conn:            conn,
 		casConn:         casConn,
-		capabilities:    capa,
-		apiVersion:      apiVersion,
 		zstdDecoderPool: zstdDecoderPool,
 		m:               iometrics.New("reapi"),
 	}
 	c.knownDigests.Store(digest.Empty, true)
 	return c, nil
+}
+
+// Init initializes the client by fetching capabilities and negotiating compression.
+// This requires an active connection to the remote execution backend.
+func (c *Client) Init(ctx context.Context) error {
+	cc := rpb.NewCapabilitiesClient(c.conn)
+	var capa *rpb.ServerCapabilities
+	// TODO(b/328332495): grpc should retry by service config?
+	err := retry.Do(ctx, func() error {
+		var err error
+		capa, err = cc.GetCapabilities(ctx, &rpb.GetCapabilitiesRequest{
+			InstanceName: c.opt.Instance,
+		})
+		return err
+	})
+	if err != nil {
+		c.conn.Close()
+		return fmt.Errorf("failed to get capabilities: %w", err)
+	}
+	clog.Infof(ctx, "capabilities of %s: %s", c.opt.Instance, capa)
+	if c.opt.CompressedBlob > 0 {
+		c.opt.compressor = selectCompressor(capa.GetCacheCapabilities().GetSupportedCompressors())
+		if c.opt.compressor != rpb.Compressor_IDENTITY {
+			clog.Infof(ctx, "compressed-blobs/%s for > %d", strings.ToLower(c.opt.compressor.String()), c.opt.CompressedBlob)
+		} else {
+			clog.Infof(ctx, "compressed-blobs is not supported")
+		}
+	}
+	clog.Infof(ctx, "byte stream read threshold: %d", c.opt.ByteStreamReadThreshold)
+	var apiVersion *semverpb.SemVer
+	if c.opt.REAPIVersion != "" {
+		var major, minor int32
+		_, err := fmt.Sscanf(c.opt.REAPIVersion, "v%d.%d", &major, &minor)
+		if err != nil {
+			clog.Warningf(ctx, "failed to parse reapi version %q: %v", c.opt.REAPIVersion, err)
+		} else {
+			apiVersion = &semverpb.SemVer{
+				Major: major,
+				Minor: minor,
+			}
+			highVer := capa.GetHighApiVersion()
+			if highVer.GetMajor() < major || (highVer.GetMajor() == major && highVer.GetMinor() < minor) {
+				clog.Errorf(ctx, "higher api version is specified than server capabilities: %v > %v", apiVersion, highVer)
+			}
+			lowVer := capa.GetLowApiVersion()
+			if lowVer.GetMajor() > major || (lowVer.GetMajor() == major && lowVer.GetMinor() > minor) {
+				clog.Errorf(ctx, "lower api version is specified than server capabilities: %v < %v", apiVersion, lowVer)
+			}
+		}
+	}
+	c.capabilities = capa
+	c.apiVersion = apiVersion
+	return nil
 }
 
 // Close closes the client.

@@ -418,8 +418,26 @@ func (c *Command) Run(ctx context.Context) (stats build.Stats, finalErr error) {
 		return nil
 	})
 
+	var reapiClient *reapi.Client
 	if err := c.reopt.CheckValid(); err == nil {
 		ui.Default.Infof("use %s\n", c.reopt)
+		reapiClient, err = reapi.New(ctx, credential, *c.reopt)
+		if err != nil {
+			return stats, err
+		}
+		eg.Go(func() error {
+			err := reapiClient.Init(ctx)
+			if err != nil {
+				return err
+			}
+			if c.reExecEnable {
+				err := reapiClient.CheckWritable(ctx)
+				if err != nil {
+					return err
+				}
+			}
+			return nil
+		})
 	} else {
 		if c.strictRemote {
 			return stats, flagError{err: fmt.Errorf("no reapi specified, but remote is requested as --strict_remote: %w", err)}
@@ -431,20 +449,7 @@ func (c *Command) Run(ctx context.Context) (stats build.Stats, finalErr error) {
 	if !c.localCacheEnable {
 		c.cacheDir = ""
 	}
-	var reapiClient *reapi.Client
-	err = c.reopt.CheckValid()
-	if err == nil {
-		reapiClient, err = reapi.New(ctx, credential, *c.reopt)
-		if err != nil {
-			return stats, err
-		}
-		if c.reExecEnable {
-			err = reapiClient.CheckWritable(ctx)
-			if err != nil {
-				return stats, err
-			}
-		}
-	}
+
 	ds := build.NewDataSource(ctx, credential, c.localCacheEnable, c.cacheDir, reapiClient)
 	defer func() {
 		err := ds.Close(ctx)

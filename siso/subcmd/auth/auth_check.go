@@ -84,6 +84,9 @@ func (c *CheckCommand) Execute(ctx context.Context, flagSet *flag.FlagSet, _ ...
 		return subcommands.ExitSuccess
 	}
 	client, err := reapi.New(ctx, credential, *c.reopt)
+	if err == nil {
+		err = client.Init(ctx)
+	}
 	fmt.Printf("use %s\n", c.reopt)
 	if err != nil {
 		fmt.Printf("access error: %v\n", err)

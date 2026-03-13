@@ -166,6 +166,9 @@ func (c *Command) run(ctx context.Context) error {
 		return c.call(ctx, *c.reopt, credential, executeReq)
 	}
 	client, err := reapi.New(ctx, credential, *c.reopt)
+	if err == nil {
+		err = client.Init(ctx)
+	}
 	if err != nil {
 		return err
 	}
@@ -237,6 +240,9 @@ func (c *Command) call(ctx context.Context, reopt reapi.Option, credential cred.
 		return c.callLocal(ctx)
 	}
 	client, err := reapi.New(ctx, credential, reopt)
+	if err == nil {
+		err = client.Init(ctx)
+	}
 	if err != nil {
 		return err
 	}
