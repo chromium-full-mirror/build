@@ -71,12 +71,15 @@ func TestRebasePathFunction(t *testing.T) {
 			wantErr: &resolve.ArgumentCountError{},
 		},
 		{
-			name:    "invalid input type",
-			args:    []resolve.Value{&resolve.IntegerValue{}},
+			name: "invalid rebase input type",
+			args: []resolve.Value{
+				&resolve.IntegerValue{},
+				resolve.NewOriginlessStringValue("//foo/"),
+			},
 			wantErr: &resolve.TypeError{},
 		},
 		{
-			name: "invalid new_base type",
+			name: "invalid rebase new_base type",
 			args: []resolve.Value{
 				resolve.NewOriginlessStringValue("//foo"),
 				&resolve.IntegerValue{},
@@ -84,9 +87,17 @@ func TestRebasePathFunction(t *testing.T) {
 			wantErr: &resolve.TypeError{},
 		},
 		{
-			name:    "list input not implemented",
-			args:    []resolve.Value{&resolve.ListValue{}},
-			wantErr: &NotImplementedError{},
+			name: "list input",
+			args: []resolve.Value{
+				resolve.NewOriginlessListValue([]resolve.Value{
+					resolve.NewOriginlessStringValue("foo.txt"),
+					resolve.NewOriginlessStringValue("bar.txt"),
+				}),
+				resolve.NewOriginlessStringValue("//out/Debug/"),
+				resolve.NewOriginlessStringValue("."),
+			},
+			curDir: mustDir(t, "//gn/"),
+			want:   `["../../gn/foo.txt", "../../gn/bar.txt"]`,
 		},
 		{
 			name: "relative input",

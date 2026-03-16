@@ -22,6 +22,30 @@ func valueLooksLikeDir(value string) bool {
 	return trimmed == "" || strings.HasSuffix(trimmed, "/")
 }
 
+func rebaseOnePath(ctx *scopeContext, path string, destDir fs.SourceDir) (resolve.Value, error) {
+	if !fs.IsPathSourceAbsolute(path) && !filepath.IsAbs(path) {
+		if valueLooksLikeDir(path) {
+			sourceDir, err := ctx.sourceDir.ResolveRelativeDir(path)
+			if err != nil {
+				return nil, err
+			}
+			path = sourceDir.Path()
+		} else {
+			sourceFile, err := ctx.sourceDir.ResolveRelativeFile(path)
+			if err != nil {
+				return nil, err
+			}
+			path = sourceFile.Filename()
+		}
+	}
+
+	rebased, err := fs.RebasePath(path, destDir, ctx.settings.buildSettings.RootPath)
+	if err != nil {
+		return nil, err
+	}
+	return resolve.NewOriginlessStringValue(rebased), nil
+}
+
 type rebasePathFunction struct{}
 
 func (rebasePathFunction) IsTarget() bool { return false }
@@ -133,54 +157,47 @@ func (rebasePathFunction) Run(scope *resolve.Scope, call *parse.FunctionCallNode
 		}
 	}
 
+	var newBase string
+	if len(args) >= 2 {
+		val, err := resolve.AsValue[*resolve.StringValue](args[1])
+		if err != nil {
+			return nil, err
+		}
+		newBase = val.RawGNString()
+	}
+	if newBase == "" {
+		return nil, NotImplementedError{OriginFunction: resolve.OriginFunction{Call: call}, what: "empty new_base in rebase_path"}
+	}
+
+	destDir, err := ctx.sourceDir.ResolveRelativeDir(newBase)
+	if err != nil {
+		return nil, err
+	}
+
+	if !fs.IsPathSourceAbsolute(newBase) && !filepath.IsAbs(newBase) {
+		// TODO: scope knows curDir now, need to implement support for using it in this param.
+		fmt.Fprintf(os.Stderr, "warn: relative new_base in rebase_path is not correctly implemented yet. this will be treated as relative to //.\n")
+	}
+
 	switch v := args[0].(type) {
 	case *resolve.ListValue:
-		return nil, NotImplementedError{OriginFunction: resolve.OriginFunction{Call: call}, what: "list input in rebase_path is not implemented yet."}
-
-	case *resolve.StringValue:
-		path := v.RawGNString()
-		if !fs.IsPathSourceAbsolute(path) && !filepath.IsAbs(path) {
-			if valueLooksLikeDir(path) {
-				sourceDir, err := ctx.sourceDir.ResolveRelativeDir(path)
-				if err != nil {
-					return nil, err
-				}
-				path = sourceDir.Path()
-			} else {
-				sourceFile, err := ctx.sourceDir.ResolveRelativeFile(path)
-				if err != nil {
-					return nil, err
-				}
-				path = sourceFile.Filename()
-			}
-		}
-
-		var newBase string
-		if len(args) >= 2 {
-			val, err := resolve.AsValue[*resolve.StringValue](args[1])
+		listResult := make([]resolve.Value, 0, v.Len())
+		for item := range v.Values() {
+			sv, err := resolve.AsValue[*resolve.StringValue](item)
 			if err != nil {
 				return nil, err
 			}
-			newBase = val.RawGNString()
+			converted, err := rebaseOnePath(ctx, sv.RawGNString(), destDir)
+			if err != nil {
+				return nil, err
+			}
+			listResult = append(listResult, converted)
 		}
-		if newBase == "" {
-			return nil, NotImplementedError{OriginFunction: resolve.OriginFunction{Call: call}, what: "empty new_base in rebase_path"}
-		}
+		// TODO: Implement NewListValueAt to attach origin to list values if needed.
+		return resolve.NewOriginlessListValue(listResult), nil
 
-		destDir, err := ctx.sourceDir.ResolveRelativeDir(newBase)
-		if err != nil {
-			return nil, err
-		}
-
-		if !fs.IsPathSourceAbsolute(newBase) && !filepath.IsAbs(newBase) {
-			// TODO: scope knows curDir now, need to implement support for using it in this param.
-			fmt.Fprintf(os.Stderr, "warn: relative new_base in rebase_path is not correctly implemented yet. this will be treated as relative to //.\n")
-		}
-		rebased, err := fs.RebasePath(path, destDir, ctx.settings.buildSettings.RootPath)
-		if err != nil {
-			return nil, err
-		}
-		return resolve.NewOriginlessStringValue(rebased), nil
+	case *resolve.StringValue:
+		return rebaseOnePath(ctx, v.RawGNString(), destDir)
 
 	default:
 		return nil, resolve.TypeError{
