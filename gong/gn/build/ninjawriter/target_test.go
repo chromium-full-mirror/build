@@ -129,10 +129,9 @@ build obj/libfoo.rlib: rust_rlib ../../src/lib.rs | obj/bar/libbar.rlib
 				},
 			}
 
-			buildDir, _ := fs.MakeSourceDir("/my/builddir/out/Default")
 			bs := &environment.BuildSettings{
 				RootPath: "/my/builddir/",
-				BuildDir: buildDir,
+				BuildDir: mustSourceDir(t, "/my/builddir/out/Default"),
 			}
 
 			var sb strings.Builder
