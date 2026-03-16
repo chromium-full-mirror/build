@@ -46,6 +46,24 @@ func rebaseOnePath(ctx *scopeContext, path string, destDir fs.SourceDir) (resolv
 	return resolve.NewOriginlessStringValue(rebased), nil
 }
 
+func systemAbsoluteOnePath(ctx *scopeContext, path string) (resolve.Value, error) {
+	var rebased string
+	if valueLooksLikeDir(path) {
+		sourceDir, err := ctx.sourceDir.ResolveRelativeDir(path)
+		if err != nil {
+			return nil, err
+		}
+		rebased = ctx.settings.buildSettings.FullDirPath(sourceDir)
+	} else {
+		sourceFile, err := ctx.sourceDir.ResolveRelativeFile(path)
+		if err != nil {
+			return nil, err
+		}
+		rebased = ctx.settings.buildSettings.FullPath(sourceFile)
+	}
+	return resolve.NewOriginlessStringValue(rebased), nil
+}
+
 type rebasePathFunction struct{}
 
 func (rebasePathFunction) IsTarget() bool { return false }
@@ -165,21 +183,28 @@ func (rebasePathFunction) Run(scope *resolve.Scope, call *parse.FunctionCallNode
 		}
 		newBase = val.RawGNString()
 	}
-	if newBase == "" {
-		return nil, NotImplementedError{OriginFunction: resolve.OriginFunction{Call: call}, what: "empty new_base in rebase_path"}
+
+	if newBase != "" {
+		if !fs.IsPathSourceAbsolute(newBase) && !filepath.IsAbs(newBase) {
+			// TODO: scope knows curDir now, need to implement support for using it in this param.
+			fmt.Fprintf(os.Stderr, "warn: relative new_base in rebase_path is not correctly implemented yet. this will be treated as relative to //.\n")
+		}
+		destDir, err := ctx.sourceDir.ResolveRelativeDir(newBase)
+		if err != nil {
+			return nil, err
+		}
+		return rebaseInput(args[0], func(path string) (resolve.Value, error) {
+			return rebaseOnePath(ctx, path, destDir)
+		})
 	}
 
-	destDir, err := ctx.sourceDir.ResolveRelativeDir(newBase)
-	if err != nil {
-		return nil, err
-	}
+	return rebaseInput(args[0], func(path string) (resolve.Value, error) {
+		return systemAbsoluteOnePath(ctx, path)
+	})
+}
 
-	if !fs.IsPathSourceAbsolute(newBase) && !filepath.IsAbs(newBase) {
-		// TODO: scope knows curDir now, need to implement support for using it in this param.
-		fmt.Fprintf(os.Stderr, "warn: relative new_base in rebase_path is not correctly implemented yet. this will be treated as relative to //.\n")
-	}
-
-	switch v := args[0].(type) {
+func rebaseInput(input resolve.Value, rebaser func(path string) (resolve.Value, error)) (resolve.Value, error) {
+	switch v := input.(type) {
 	case *resolve.ListValue:
 		listResult := make([]resolve.Value, 0, v.Len())
 		for item := range v.Values() {
@@ -187,7 +212,7 @@ func (rebasePathFunction) Run(scope *resolve.Scope, call *parse.FunctionCallNode
 			if err != nil {
 				return nil, err
 			}
-			converted, err := rebaseOnePath(ctx, sv.RawGNString(), destDir)
+			converted, err := rebaser(sv.RawGNString())
 			if err != nil {
 				return nil, err
 			}
@@ -197,7 +222,7 @@ func (rebasePathFunction) Run(scope *resolve.Scope, call *parse.FunctionCallNode
 		return resolve.NewOriginlessListValue(listResult), nil
 
 	case *resolve.StringValue:
-		return rebaseOnePath(ctx, v.RawGNString(), destDir)
+		return rebaser(v.RawGNString())
 
 	default:
 		return nil, resolve.TypeError{

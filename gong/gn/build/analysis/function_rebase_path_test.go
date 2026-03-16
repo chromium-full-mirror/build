@@ -118,12 +118,38 @@ func TestRebasePathFunction(t *testing.T) {
 			want:   "foo/bar.txt",
 		},
 		{
-			name: "empty new_base not implemented",
+			name: "empty new_base (explicit)",
 			args: []resolve.Value{
 				resolve.NewOriginlessStringValue("//foo/bar.txt"),
 				resolve.NewOriginlessStringValue(""),
 			},
-			wantErr: &NotImplementedError{},
+			want: "foo/bar.txt",
+		},
+		{
+			name: "empty new_base (default)",
+			args: []resolve.Value{
+				resolve.NewOriginlessStringValue("//foo/bar.txt"),
+			},
+			want: "foo/bar.txt",
+		},
+		{
+			name: "empty new_base with directory input",
+			args: []resolve.Value{
+				resolve.NewOriginlessStringValue("//foo/bar/"),
+				resolve.NewOriginlessStringValue(""),
+			},
+			want: "foo/bar",
+		},
+		{
+			name: "empty new_base with list input",
+			args: []resolve.Value{
+				resolve.NewOriginlessListValue([]resolve.Value{
+					resolve.NewOriginlessStringValue("//foo/bar.txt"),
+					resolve.NewOriginlessStringValue("//baz/qux/"),
+				}),
+				resolve.NewOriginlessStringValue(""),
+			},
+			want: `["foo/bar.txt", "baz/qux"]`,
 		},
 		{
 			name: "relative new_base",
