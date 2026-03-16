@@ -5,34 +5,15 @@
 package analysis
 
 import (
-	"os"
 	"testing"
 
-	"go.chromium.org/build/gong/gn/parse"
 	"go.chromium.org/build/gong/gn/resolve"
-	"go.chromium.org/build/gong/gn/syntax"
 )
 
 func TestStringSplit(t *testing.T) {
-	// TODO: rename/refactor once there are more generic functions tested?
-	file := "testdata/string_split.gni"
-	content, err := os.ReadFile(file)
-	if err != nil {
-		t.Fatalf("failed to read %q: %v", file, err)
-	}
-	tokens, err := syntax.Tokenize(syntax.LiteralInput{
-		CustomName: file,
-		Bytes:      content,
-	})
-	if err != nil {
-		t.Fatalf("failed to tokenize %q: %v", file, err)
-	}
-	root, err := parse.Parse(tokens)
-	if err != nil {
-		t.Fatalf("failed to parse %q: %v", file, err)
-	}
+	root := parseGniTest(t, "testdata/string_split.gni")
 
-	_, err = resolve.ExecuteNode(root, resolve.NewScope(nil, nil, map[string]resolve.FunctionInfo{
+	_, err := resolve.ExecuteNode(root, resolve.NewScope(nil, nil, map[string]resolve.FunctionInfo{
 		"assert":         resolve.AssertFunction{},
 		"assert_failure": resolve.AssertFailureFunction{},
 		"string_split":   stringSplitFunction{},
