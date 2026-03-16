@@ -150,6 +150,7 @@ func (d SourceDir) ResolveRelativeFile(path string) (SourceFile, error) {
 	// because both ResolveRelativeDir and this function should then rely on that common
 	// function.
 	if path == "" {
+		// TODO: switch to concrete error type
 		return SourceFile{}, fmt.Errorf("empty file path")
 	}
 	norm := NormalizePath(path)
@@ -172,6 +173,7 @@ func (d SourceDir) ResolveRelativeDir(path string) (SourceDir, error) {
 	// because both ResolveRelativeFile and this function should then rely on that common
 	// function.
 	if path == "" {
+		// TODO: switch to concrete error type
 		return SourceDir{}, fmt.Errorf("empty directory path")
 	}
 

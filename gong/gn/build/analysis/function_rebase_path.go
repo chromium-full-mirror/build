@@ -15,6 +15,13 @@ import (
 	"go.chromium.org/build/gong/gn/resolve"
 )
 
+// Port of C++ GN's logic to determine whether inputs to rebase_path() look like a directory.
+// Basically, does it end with a slash (optionally with dots after) or is it all dots.
+func valueLooksLikeDir(value string) bool {
+	trimmed := strings.TrimRight(value, ".")
+	return trimmed == "" || strings.HasSuffix(trimmed, "/")
+}
+
 type rebasePathFunction struct{}
 
 func (rebasePathFunction) IsTarget() bool { return false }
@@ -133,9 +140,7 @@ func (rebasePathFunction) Run(scope *resolve.Scope, call *parse.FunctionCallNode
 	case *resolve.StringValue:
 		path := v.RawGNString()
 		if !fs.IsPathSourceAbsolute(path) && !filepath.IsAbs(path) {
-			// TODO: this is a really rudimentary check. we probably need to switch to something like ValueLooksLikeDir.
-			// https://source.chromium.org/gn/gn/+/main:src/gn/function_rebase_path.cc;l=69;drc=ab32747ae7a399c57b04280f38e49b8fdf237a8a
-			if strings.HasSuffix(path, "/") {
+			if valueLooksLikeDir(path) {
 				sourceDir, err := ctx.sourceDir.ResolveRelativeDir(path)
 				if err != nil {
 					return nil, err

@@ -150,6 +150,42 @@ func TestRebasePathFunction(t *testing.T) {
 			curDir: mustDir(t, "//foo/"),
 			want:   "foo/sub/dir/",
 		},
+		{
+			name: "relative input dot",
+			args: []resolve.Value{
+				resolve.NewOriginlessStringValue("."),
+				resolve.NewOriginlessStringValue("//"),
+			},
+			curDir: mustDir(t, "//foo/"),
+			want:   "foo/",
+		},
+		{
+			name: "relative input double dot",
+			args: []resolve.Value{
+				resolve.NewOriginlessStringValue(".."),
+				resolve.NewOriginlessStringValue("//"),
+			},
+			curDir: mustDir(t, "//foo/bar/"),
+			want:   "foo/",
+		},
+		{
+			name: "relative input path with dot",
+			args: []resolve.Value{
+				resolve.NewOriginlessStringValue("sub/."),
+				resolve.NewOriginlessStringValue("//"),
+			},
+			curDir: mustDir(t, "//foo/"),
+			want:   "foo/sub/",
+		},
+		{
+			name: "relative input empty string",
+			args: []resolve.Value{
+				resolve.NewOriginlessStringValue(""),
+				resolve.NewOriginlessStringValue("//"),
+			},
+			curDir:  mustDir(t, "//foo/"),
+			wantErr: "empty directory path",
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			scope := resolve.NewScope(
@@ -174,6 +210,14 @@ func TestRebasePathFunction(t *testing.T) {
 			}
 
 			if tc.wantErr != nil {
+				// HACK: temporary until fs.SourceDir's resolve relative functions return concrete error types.
+				// This needs a larger refactor so leave for followup.
+				if wantErrStr, ok := tc.wantErr.(string); ok {
+					if err.Error() != wantErrStr {
+						t.Errorf("Run(...) got err=%v, want string %q", err, wantErrStr)
+					}
+					return
+				}
 				if !errors.As(err, tc.wantErr) {
 					t.Errorf("Run(...) got err=%v (%T), wantErr %T", err, err, tc.wantErr)
 				}
