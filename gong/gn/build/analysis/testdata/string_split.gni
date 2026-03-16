@@ -1,0 +1,69 @@
+# Copyright 2026 The Chromium Authors
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+# Split on all whitespace: empty string.
+assert(string_split("") == [])
+
+# Split on all whitespace: string is only whitespace.
+assert(string_split("      ") == [])
+
+# Split on all whitespace: leading, trailing, runs; one element.
+assert(string_split("hello") == ["hello"])
+assert(string_split("  hello") == ["hello"])
+assert(string_split("  hello   ") == ["hello"])
+assert(string_split("hello   ") == ["hello"])
+
+# Split on all whitespace: leading, trailing, runs; multiple elements.
+assert(string_split("a b") == ["a", "b"])                       # Pre-stripped
+assert(string_split("  a b") == ["a", "b"])                     # Leading whitespace
+assert(string_split("  a b  ") == ["a", "b"])                   # Leading & trailing whitespace
+assert(string_split("a b  ") == ["a", "b"])                     # Trailing whitespace
+assert(string_split("a  b  ") == ["a", "b"])                    # Whitespace run between words
+assert(string_split(" a b cc ddd") == ["a", "b", "cc", "ddd"])  # More & multi-character elements
+
+# Split on string.
+assert(string_split("", "|") == [""])                       # Empty string (like Python)
+assert(string_split("|", "|") == ["", ""])                  # Only a separator
+assert(string_split("||", "|") == ["", "", ""])             # Only separators
+assert(string_split("ab", "|") == ["ab"])                   # String is missing separator
+assert(string_split("a|b", "|") == ["a", "b"])              # Two elements
+assert(string_split("|a|b", "|") == ["", "a", "b"])         # Leading separator
+assert(string_split("a|b|", "|") == ["a", "b", ""])         # Trailing separator
+assert(string_split("||x", "|") == ["", "", "x"])           # Leading consecutive separators
+assert(string_split("x||", "|") == ["x", "", ""])           # Trailing consecutive separators
+assert(string_split("a|bb|ccc", "|") == ["a", "bb", "ccc"]) # Multiple elements
+assert(string_split(".x.x.x.", ".x.") == ["", "x", ""])     # Self-overlapping separators 1
+assert(string_split("x.x.x.", ".x.") == ["x", "x."])        # Self-overlapping separators 2
+
+assert_failure("Wrong number of arguments to string_split().", "Usage: string_split(str[, sep])") {
+  string_split()
+}
+
+assert_failure("Wrong number of arguments to string_split().", "Usage: string_split(str[, sep])") {
+  string_split("a", "b", "c")
+}
+
+assert_failure("Separator argument to string_split() cannot be empty string", "Usage: string_split(str[, sep])") {
+  string_split("kk", "")
+}
+
+# TODO: need to fix type error message
+assert_failure("This is not a 1. Instead I see a integer = true") {
+  string_split(1)
+}
+
+# TODO: need to fix type error message
+assert_failure("This is not a [\"oops\"]. Instead I see a list = true") {
+  string_split(["oops"])
+}
+
+# TODO: need to fix type error message
+assert_failure("This is not a 1. Instead I see a integer = true") {
+  string_split("kk", 1)
+}
+
+# TODO: need to fix type error message
+assert_failure("This is not a [\"oops\"]. Instead I see a list = true") {
+  string_split("kk", ["oops"])
+}

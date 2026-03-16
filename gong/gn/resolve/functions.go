@@ -102,11 +102,11 @@ func (AssertFunction) Run(scope *Scope, call *parse.FunctionCallNode, args []Val
 	return nil, nil
 }
 
-// assertFailureFunction is an internal function for testing that checks a block fails with the given error message.
-type assertFailureFunction struct{}
+// AssertFailureFunction is an internal function for testing that checks a block fails with the given error message.
+type AssertFailureFunction struct{}
 
-func (assertFailureFunction) HelpShort() string { return "assert_failure: Internal function." }
-func (assertFailureFunction) Help() string {
+func (AssertFailureFunction) HelpShort() string { return "assert_failure: Internal function." }
+func (AssertFailureFunction) Help() string {
 	return `assert_failure(<error string> [, <help string>]) {
   <block that should fail>
 }
@@ -129,8 +129,8 @@ Examples
   }
 `
 }
-func (assertFailureFunction) IsTarget() bool { return false }
-func (assertFailureFunction) Run(scope *Scope, call *parse.FunctionCallNode, args []Value, block *parse.BlockNode) (Value, error) {
+func (AssertFailureFunction) IsTarget() bool { return false }
+func (AssertFailureFunction) Run(scope *Scope, call *parse.FunctionCallNode, args []Value, block *parse.BlockNode) (Value, error) {
 	if len(args) < 1 || len(args) > 2 {
 		return nil, ArgumentCountError{
 			OriginFunction: OriginFunction{Call: call},

@@ -340,6 +340,23 @@ func (e TypeError) Ranges() []syntax.LocationRange {
 	return []syntax.LocationRange{e.Value.OriginNode().LocationRange()}
 }
 
+// ValueError is returned when a function is called with an argument of the right type
+// but an inappropriate value.
+type ValueError struct {
+	OriginFunction
+	Msg  string
+	Help string
+}
+
+// Error implements error.
+func (e ValueError) Error() string { return fmt.Sprintf("value error: %s", e.Msg) }
+
+// Message returns the user-facing error message.
+func (e ValueError) Message() string { return e.Msg }
+
+// HelpText returns the user-facing help text.
+func (e ValueError) HelpText() string { return e.Help }
+
 // ScopeMergeError is returned when a scope merge fails due to a value collision.
 type ScopeMergeError struct {
 	mergeOptions  ScopeMergeOptions

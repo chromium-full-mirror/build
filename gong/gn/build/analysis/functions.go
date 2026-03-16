@@ -27,6 +27,7 @@ func FunctionMap(buildSettings *environment.BuildSettings) map[string]resolve.Fu
 		"set_default_toolchain": setDefaultToolchainFunction{},
 		"shared_library":        targetFunction{schema: &schemas.SharedLibrarySchema},
 		"static_library":        targetFunction{schema: &schemas.StaticLibrarySchema},
+		"string_split":          stringSplitFunction{},
 		"toolchain":             toolchainFunction{},
 		"tool":                  graph.ToolFunction{},
 	}

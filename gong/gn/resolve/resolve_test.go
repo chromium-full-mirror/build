@@ -570,7 +570,7 @@ func TestExecFile(t *testing.T) {
 		_, err = ExecuteNode(root, &Scope{
 			functions: map[string]FunctionInfo{
 				"assert":         AssertFunction{},
-				"assert_failure": assertFailureFunction{},
+				"assert_failure": AssertFailureFunction{},
 			},
 			values: map[string]record{},
 		})
