@@ -9,7 +9,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"maps"
-	"path"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -32,90 +31,6 @@ type StepDeps struct {
 	Outputs     []string          `json:"outputs,omitempty"`
 	Platform    map[string]string `json:"platform,omitempty"`
 	PlatformRef string            `json:"platform_ref,omitempty"`
-}
-
-// IndirectInputs specifies what indirect inputs are used as action inputs.
-type IndirectInputs struct {
-	// glob pattern to use as action inputs from indirect inputs.
-	Includes []string `json:"includes,omitempty"`
-
-	// add other options? max depth, exclude etc?
-}
-
-// enabled returns true when IndirectInputs is enabled.
-func (ii *IndirectInputs) enabled() bool {
-	if ii == nil {
-		return false
-	}
-	return len(ii.Includes) > 0
-}
-
-func (ii *IndirectInputs) filter(ctx context.Context) func(context.Context, string, bool) bool {
-	var m []func(context.Context, string, bool) bool
-	for _, in := range ii.Includes {
-		if in == "*" {
-			// match any file
-			m = append(m, func(ctx context.Context, p string, debug bool) bool {
-				if debug {
-					clog.Infof(ctx, "match any: %q", p)
-				}
-				return true
-			})
-			continue
-		}
-		if strings.HasPrefix(in, "*") && !strings.ContainsAny(in[1:], "*?[\\/") {
-			// just has * prefix, and no pattern meta or '/' in suffix.
-			// just suffix match with base name.
-			suffix := in[1:]
-			m = append(m, func(ctx context.Context, p string, debug bool) bool {
-				ok := strings.HasSuffix(path.Base(p), suffix)
-				if debug {
-					clog.Infof(ctx, "match suffix %q: %q => %t", suffix, p, ok)
-				}
-				return ok
-			})
-			continue
-		}
-		// just check ErrBadPattern for pattern `in`.
-		// it's sufficient to check error once, and no other way
-		// to test pattern.
-		_, err := path.Match(in, in)
-		if err != nil {
-			clog.Warningf(ctx, "bad indirect_inputs.includes pattern %q: %v", in, err)
-			continue
-		}
-		pattern := in
-		if strings.Count(in, "/") == 0 {
-			// basename match.
-			m = append(m, func(ctx context.Context, p string, debug bool) bool {
-				b := path.Base(p)
-				ok, _ := path.Match(pattern, b)
-				if debug {
-					clog.Infof(ctx, "match pattern(base) %q: %q => %t", pattern, p, ok)
-				}
-				return ok
-			})
-			continue
-		}
-		m = append(m, func(ctx context.Context, p string, debug bool) bool {
-			ok, _ := path.Match(pattern, p)
-			if debug {
-				clog.Infof(ctx, "match pattern %q: %q => %t", pattern, p, ok)
-			}
-			return ok
-		})
-	}
-	return func(ctx context.Context, p string, debug bool) bool {
-		for _, f := range m {
-			if f(ctx, p, debug) {
-				return true
-			}
-		}
-		if debug {
-			clog.Infof(ctx, "match none %q", p)
-		}
-		return false
-	}
 }
 
 // StepRule is a rule for step.
@@ -152,7 +67,7 @@ type StepRule struct {
 
 	// IndirectInputs enables indirect (transitive, recursive) inputs
 	// as action input of the step.
-	IndirectInputs *IndirectInputs `json:"indirect_inputs,omitempty"`
+	IndirectInputs *PathFilter `json:"indirect_inputs,omitempty"`
 
 	// Outputs are outputs to add to the step.
 	Outputs []string `json:"outputs,omitempty"`

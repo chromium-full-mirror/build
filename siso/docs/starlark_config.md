@@ -200,9 +200,14 @@ to register handlers and step configs.
             The matched indirect input are included recursively.
             Sibling outputs are also included. e.g. gen/{foo.stamp, foo.h, foo.cc} -> a step depending on gen/foo.stamp may need foo.h/foo.cc.
             Consider using `replace` or `accumulate` first, and use `indirect_inputs` only when they are not sufficient.
-            * `includes`: glob patterns to match to indirect inputs.
-              * if it contains '/', full match to input path with [path.Match](https://pkg.go.dev/path#Match).
-              * otherwise, match basename of input path with [path.Match](https://pkg.go.dev/path#Match).
+            * `excludes`: A list of glob patterns. Any input path that matches a pattern in this list is excluded. `excludes` are processed before `includes`.
+            * `includes`: An optional list of glob patterns that specifies which inputs to include.
+               * If `includes` is not specified or is empty, all inputs not excluded by `excludes` are included.
+               * If `includes` is specified, an input is included only if it matches a pattern in `includes` (and is not excluded by `excludes`).
+            * glob pattern:
+               * If a pattern contains `/`, it is matched against the full path of an input.
+               * Otherwise, the pattern is matched against the basename of the input's path.
+               * The matching logic is equivalent to Go's [path.Match](https://pkg.go.dev/path#Match).
           * `outputs`: additional outputs. note: ignored in `cleandead`.
           * `outputs_map`: different deps based on outputs[0]
              * key: outputs[0]

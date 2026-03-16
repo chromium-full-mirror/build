@@ -424,7 +424,7 @@ build target1: __rule ../../source1.cc target2.h target3.h
 					{
 						Name:       "rule1",
 						ActionName: "__rule",
-						IndirectInputs: &IndirectInputs{
+						IndirectInputs: &PathFilter{
 							Includes: []string{"*.h"},
 						},
 					},
