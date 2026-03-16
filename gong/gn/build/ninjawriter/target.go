@@ -38,9 +38,9 @@ func writeTarget(w io.Writer, t *graph.Target, buildSettings *environment.BuildS
 	if len(t.Resolution.Actions) == 0 {
 		var outputPaths []string
 		for _, output := range t.Resolution.Metadata.Outputs() {
-			outputPaths = append(outputPaths, output.Path())
+			outputPaths = append(outputPaths, escapeStringNinja(output.Path()))
 		}
-		_, err := fmt.Fprintf(w, "build phony/%s: phony %s", targetLabel.Name, strings.Join(outputPaths, " "))
+		_, err := fmt.Fprintf(w, "build phony/%s: phony %s", escapeStringNinja(targetLabel.Name), strings.Join(outputPaths, " "))
 		if err != nil {
 			return err
 		}
@@ -82,7 +82,7 @@ func writeTarget(w io.Writer, t *graph.Target, buildSettings *environment.BuildS
 			return err
 		}
 
-		_, err = fmt.Fprintf(w, "subninja %s", targetNinjaRel)
+		_, err = fmt.Fprintf(w, "subninja %s", escapeStringNinja(targetNinjaRel))
 		if err != nil {
 			return err
 		}
@@ -127,23 +127,22 @@ func writeBinaryTarget(w io.Writer, t *graph.Target, buildSettings *environment.
 
 	// Now write the substitutions that depend on the target and
 	// do not vary on a per-file basis.
-	// TODO: escape special chars (e.g. space, $, : etc?)
 	var err error
 	if outputExtension != "" {
-		_, err = fmt.Fprintf(w, "output_extension = %s\n", outputExtension)
+		_, err = fmt.Fprintf(w, "output_extension = %s\n", escapeStringNinja(outputExtension))
 		if err != nil {
 			return err
 		}
 	}
-	_, err = fmt.Fprintf(w, "output_dir = %s\n", fs.DirectoryWithNoLastSlash(outputDir))
+	_, err = fmt.Fprintf(w, "output_dir = %s\n", escapeStringNinja(fs.DirectoryWithNoLastSlash(outputDir)))
 	if err != nil {
 		return err
 	}
-	_, err = fmt.Fprintf(w, "target_output_name = %s\n", targetOutputName)
+	_, err = fmt.Fprintf(w, "target_output_name = %s\n", escapeStringNinja(targetOutputName))
 	if err != nil {
 		return err
 	}
-	_, err = fmt.Fprintf(w, "target_out_dir = %s\n", fs.DirectoryWithNoLastSlash(targetOutDir.Path()))
+	_, err = fmt.Fprintf(w, "target_out_dir = %s\n", escapeStringNinja(fs.DirectoryWithNoLastSlash(targetOutDir.Path())))
 	if err != nil {
 		return err
 	}
@@ -163,7 +162,7 @@ func writeBinaryTarget(w io.Writer, t *graph.Target, buildSettings *environment.
 			if err != nil {
 				return err
 			}
-			inputPaths = []string{rebasedSource}
+			inputPaths = []string{escapeStringNinja(rebasedSource)}
 			for _, in := range action.Inputs {
 				if in == action.Source {
 					continue
@@ -172,7 +171,7 @@ func writeBinaryTarget(w io.Writer, t *graph.Target, buildSettings *environment.
 				if err != nil {
 					return err
 				}
-				implicitDeps = append(implicitDeps, rebasedIn)
+				implicitDeps = append(implicitDeps, escapeStringNinja(rebasedIn))
 			}
 		} else {
 			for _, in := range action.Inputs {
@@ -180,16 +179,15 @@ func writeBinaryTarget(w io.Writer, t *graph.Target, buildSettings *environment.
 				if err != nil {
 					return err
 				}
-				inputPaths = append(inputPaths, rebasedIn)
+				inputPaths = append(inputPaths, escapeStringNinja(rebasedIn))
 			}
 		}
 
-		rebasedOutput := action.Output.Path()
+		rebasedOutput := escapeStringNinja(action.Output.Path())
 
-		// TODO: escape special chars (e.g. space, $, : etc?)
 		_, err = fmt.Fprintf(w, "build %s: %s %s",
 			rebasedOutput,
-			action.Tool,
+			escapeStringNinja(action.Tool),
 			strings.Join(inputPaths, " "),
 		)
 		if err != nil {
@@ -197,7 +195,6 @@ func writeBinaryTarget(w io.Writer, t *graph.Target, buildSettings *environment.
 		}
 
 		if len(implicitDeps) > 0 {
-			// TODO: likewise escape?
 			_, err = fmt.Fprint(w, " | "+strings.Join(implicitDeps, " "))
 			if err != nil {
 				return err
@@ -210,14 +207,12 @@ func writeBinaryTarget(w io.Writer, t *graph.Target, buildSettings *environment.
 		}
 
 		for _, k := range slices.Sorted(maps.Keys(action.Expansions)) {
-			// TODO: likewise escape?
 			_, err := fmt.Fprintf(w, "  %s =", k)
 			if err != nil {
 				return err
 			}
 			v := action.Expansions[k]
 			if v != "" {
-				// TODO: likewise escape?
 				_, err = fmt.Fprintf(w, " %s", v)
 				if err != nil {
 					return err

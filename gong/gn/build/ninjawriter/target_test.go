@@ -119,6 +119,27 @@ build obj/libfoo.rlib: rust_rlib ../../src/lib.rs | obj/bar/libbar.rlib
   rustflags = -Cdebuginfo=2
 `,
 		},
+		{
+			name: "escaping",
+			actions: []graph.RunToolAction{
+				{
+					Tool:   "copy",
+					Source: mustFile(t, "//src/file with spaces.txt"),
+					Inputs: []fs.SourceFile{
+						mustFile(t, "//src/file with spaces.txt"),
+					},
+					Output:     mustOutputPath(t, mustSourceDir(t, "//out/Default/"), "obj/out file with spaces.txt"),
+					Expansions: map[string]string{},
+				},
+			},
+			want: `output_extension = .txt
+output_dir = obj
+target_output_name = out$ file$ with$ spaces
+target_out_dir = obj
+
+build obj/out$ file$ with$ spaces.txt: copy ../../src/file$ with$ spaces.txt
+`,
+		},
 	}
 
 	for _, tc := range tests {
