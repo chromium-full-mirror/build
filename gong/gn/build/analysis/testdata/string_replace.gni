@@ -1,0 +1,55 @@
+# Copyright 2026 The Chromium Authors
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+out1 = string_replace("abbcc", "b", "d")
+assert(out1 == "addcc")
+
+out2 = string_replace("abbcc", "b", "d", 1)
+assert(out2 == "adbcc")
+
+out3 = string_replace("abbcc", "b", "bb")
+assert(out3 == "abbbbcc")
+
+out4 = string_replace("aaa", "aa", "b")
+assert(out4 == "ba")
+
+assert_failure("Requested number of replacements is not positive.") {
+  string_replace("a", "a", "b", 0)
+}
+
+assert_failure("Requested number of replacements is not positive.") {
+  string_replace("a", "a", "b", -1)
+}
+
+assert_failure("Wrong number of arguments to string_replace().") {
+  string_replace("a")
+}
+
+assert_failure("Wrong number of arguments to string_replace().") {
+  string_replace("a", "a")
+}
+
+assert_failure("Wrong number of arguments to string_replace().") {
+  string_replace("a", "a", "b", 3, "d")
+}
+
+# TODO: need to fix type error message
+assert_failure("This is not a 1. Instead I see a integer = true") {
+  string_replace(1, "a", "b")
+}
+
+# TODO: need to fix type error message
+assert_failure("This is not a 1. Instead I see a integer = true") {
+  string_replace("a", 1, "b")
+}
+
+# TODO: need to fix type error message
+assert_failure("This is not a 1. Instead I see a integer = true") {
+  string_replace("a", "b", 1)
+}
+
+# TODO: need to fix type error message
+assert_failure("This is not a \"d\". Instead I see a string = true") {
+  string_replace("a", "b", "c", "d")
+}

@@ -48,6 +48,10 @@ func (v *IntegerValue) Equal(other Value) bool {
 	return false
 }
 
+func (v *IntegerValue) Value() int64 {
+	return v.value
+}
+
 // starlark.Value interface.
 
 func (v IntegerValue) String() string        { return strconv.FormatInt(v.value, 10) }
