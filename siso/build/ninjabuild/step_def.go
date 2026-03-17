@@ -558,6 +558,40 @@ func depInputs(ctx context.Context, s *StepDef) (iter.Seq[string], error) {
 	return func(yield func(string) bool) {}, nil
 }
 
+// DepsBaseInputs returns inputs of the step, which will be combined with scandeps results.
+func (s *StepDef) DepsBaseInputs(ctx context.Context, toolInputs []string) []string {
+	var inputs []string
+	switch s.Binding("deps") {
+	case "gcc", "msvc":
+		// always use toolInputs.
+		inputs = append(inputs, toolInputs...)
+		// TODO: per rule?
+		if filter := s.globals.stepConfig.Scandeps.stepInputsFilter; filter != nil {
+			seen := make(map[string]bool)
+			for _, in := range s.Inputs(ctx) {
+				in = filepath.ToSlash(in)
+				if seen[in] {
+					continue
+				}
+				seen[in] = true
+				if !filter(ctx, in, s.rule.Debug) {
+					if s.rule.Debug {
+						clog.Infof(ctx, "deps base inputs ignored: %s", in)
+					}
+					continue
+				}
+				if s.rule.Debug {
+					clog.Infof(ctx, "deps base inputs preserve %s", in)
+				}
+				inputs = append(inputs, in)
+			}
+		}
+	default:
+		inputs = s.Inputs(ctx) // use ToolInputs?
+	}
+	return inputs
+}
+
 // ToolInputs returns tool inputs of the step.
 func (s *StepDef) ToolInputs(ctx context.Context) []string {
 	ctx, span := trace.NewSpan(ctx, "stepdef-tool-inputs")

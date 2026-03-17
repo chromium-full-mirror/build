@@ -74,6 +74,10 @@ type StepDef interface {
 	// if depfile or deplog is not found, returns wrapped ErrMissingDeps.
 	DepInputs(context.Context) (iter.Seq[string], error)
 
+	// DepsBaseInputs returns inputs of the step, which will be combined
+	// with scandeps results.
+	DepsBaseInputs(context.Context, []string) []string
+
 	// ToolInputs returns tool inputs of the step.
 	// ToolInputs is added to deps inputs.
 	ToolInputs(context.Context) []string

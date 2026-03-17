@@ -121,6 +121,7 @@ type Cmd struct {
 	// (or inputs would be deps + tool inputs).
 	// These are expected to be toolchain input files, not by specified
 	// by build deps, nor in deps log.
+	// deprecated: use scandeps.step_inputs to filter step inputs.
 	ToolInputs []string
 
 	// TreeInputs are precomputed subtree inputs of the cmd.

@@ -234,14 +234,19 @@ type StepConfig struct {
 	// use these case sensitive filename. apply only for deps?
 	CaseSensitiveInputs []string `json:"case_sensitive_inputs,omitempty"`
 
+	// Scandeps specifies scandeps config.
+	Scandeps *ScandepsConfig `json:"scandeps,omitempty"`
+
 	// InputsRequiringClangScandeps lists inputs that requires clang
 	// scan deps.
+	// deprecated: use scandeps.inputs_requiring_clang instead.
 	InputsRequiringClangScandeps []string `json:"inputs_requiring_clang_scandeps,omitempty"`
 
 	// ClangScandeps specifies clang scandeps mode.
 	//  - "" - no clang scandeps
 	//  - "unsupported-macro" - if unsupported macro is detected.
 	//  - "scandeps-err" - if scandeps failed.
+	// deprecated: use scandeps.use_clang instead.
 	ClangScandeps string `json:"clang_scandeps,omitempty"`
 
 	// Rules lists step rules.
@@ -265,8 +270,28 @@ type StepConfig struct {
 	Sandbox map[string]string `json:"sandbox,omitempty"`
 }
 
+// ScandepsConfig is a config for scandeps.
+type ScandepsConfig struct {
+	// InputsRequiringClang lists inputs that requires clang
+	// scan deps.
+	InputsRequiringClang []string `json:"inputs_requiring_clang,omitempty"`
+
+	// UseClang specifies when to use `clang -M` for scandeps.
+	//  - "" - no clang scandeps
+	//  - "unsupported-macro" - if unsupported macro is detected.
+	//  - "scandeps-err" - if scandeps failed.
+	UseClang string `json:"use_clang,omitempty"`
+
+	// StepInputs filters step inputs for as action inputs
+	// in addition to scandeps results and tool_inputs.
+	// If not set, all step inputs will be discarded and scandeps results
+	// and tool_inputs are used.
+	StepInputs       *PathFilter `json:"step_inputs,omitempty"`
+	stepInputsFilter func(context.Context, string, bool) bool
+}
+
 // Init initializes StepConfig.
-func (sc StepConfig) Init(ctx context.Context) error {
+func (sc *StepConfig) Init(ctx context.Context) error {
 	seen := make(map[string]bool)
 	for _, rule := range sc.Rules {
 		if rule == nil {
@@ -286,6 +311,20 @@ func (sc StepConfig) Init(ctx context.Context) error {
 			clog.Errorf(ctx, "Failed to init rule %q: %v", rule.Name, err)
 			return fmt.Errorf("failed to init rule %q: %w", rule.Name, err)
 		}
+	}
+	if sc.Scandeps == nil {
+		sc.Scandeps = &ScandepsConfig{
+			InputsRequiringClang: sc.InputsRequiringClangScandeps,
+			UseClang:             sc.ClangScandeps,
+		}
+		sc.InputsRequiringClangScandeps = nil
+		sc.ClangScandeps = ""
+	}
+	if len(sc.InputsRequiringClangScandeps) > 0 || sc.ClangScandeps != "" {
+		return fmt.Errorf("inputs_requiring_clang_scandeps and clang_scandeps is deprecated. just use scandeps")
+	}
+	if sc.Scandeps.StepInputs.enabled() {
+		sc.Scandeps.stepInputsFilter = sc.Scandeps.StepInputs.filter(ctx, "scandeps.step_inputs")
 	}
 	return nil
 }

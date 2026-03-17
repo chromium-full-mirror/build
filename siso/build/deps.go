@@ -83,7 +83,7 @@ func depsFastStep(ctx context.Context, b *Builder, step *Step) (*Step, error) {
 		newCmd.ID += "-fast-deps"
 		// Inputs may contains unnecessary inputs.
 		// just needs ToolInputs.
-		stepInputs := newCmd.ToolInputs
+		stepInputs := step.def.DepsBaseInputs(ctx, newCmd.ToolInputs)
 		depsIns = step.def.ExpandedCaseSensitives(ctx, depsIns)
 		inputs, err := fixInputsByDeps(ctx, b, stepInputs, depsIns)
 		if err != nil {
@@ -201,15 +201,7 @@ func depsCmd(ctx context.Context, b *Builder, step *Step) error {
 	if found {
 		start := time.Now()
 		// TODO: same as depsFastStep
-		var stepInputs []string
-		switch step.cmd.Deps {
-		case "gcc", "msvc":
-			// Inputs may contains unnecessary inputs.
-			// just needs ToolInputs for deps=gcc, msvc.
-			stepInputs = step.cmd.ToolInputs
-		default:
-			stepInputs = step.def.Inputs(ctx) // use ToolInputs?
-		}
+		stepInputs := step.def.DepsBaseInputs(ctx, step.cmd.ToolInputs)
 		depsIns, err := ds.DepsCmd(ctx, b, step)
 		depsIns = step.def.ExpandedCaseSensitives(ctx, depsIns)
 		inputs := uniqueFiles(stepInputs, depsIns)

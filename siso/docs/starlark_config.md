@@ -171,11 +171,18 @@ to register handlers and step configs.
          used as input, "A.txt" will be added as input too.
      * `inputs_requiring_clang_scandeps`
         a list of filename that requires clang scandeps.
+        deprecated: use `scandeps.inputs_requiring_clang` instead.
      * `clang_scandeps`
-        clang scandeps mode
-        * "": don't use clang scandeps
-        * "unsupported-macro": use clang scandeps when unsupported macro detected.
-        * "scandeps-err": use clang scandeps when builtin scandeps failed.
+        clang scandeps mode.
+        deprecated: use `scandeps.use_clang` instead.
+     * `scandeps`:
+        * `inputs_requiring_clang`:
+        a list of filename that requires clang scandeps.
+        * `use_clang`:
+          * "": don't use clang scandeps
+          * "unsupported-macro": use clang scandeps when unsupported macro detected.
+          * "scandeps-err": use clang scandeps when builtin scandeps failed.
+        * `step_inputs`: [path_filter](#path_filter) specify what inputs from the ninja graph are used in addition to tool_inputs, scandeps results.
      * `bad_deps`
        * key: output target known to have bad deps
        * value: annotation (usually bug link)
@@ -196,18 +203,11 @@ to register handlers and step configs.
           * `exclude_input_patterns`: glob pattern to exclude from inputs
             * if it contains '/', full match to input path
             * otherwise, match basename of input path.
-          * `indirect_inputs`: specify what inputs from the previous steps to use as inputs of this step.
+          * `indirect_inputs`: [path_filter](#path_filter) specify what
+            inputs from the previous steps to use as inputs of this step.
             The matched indirect input are included recursively.
             Sibling outputs are also included. e.g. gen/{foo.stamp, foo.h, foo.cc} -> a step depending on gen/foo.stamp may need foo.h/foo.cc.
             Consider using `replace` or `accumulate` first, and use `indirect_inputs` only when they are not sufficient.
-            * `excludes`: A list of glob patterns. Any input path that matches a pattern in this list is excluded. `excludes` are processed before `includes`.
-            * `includes`: An optional list of glob patterns that specifies which inputs to include.
-               * If `includes` is not specified or is empty, all inputs not excluded by `excludes` are included.
-               * If `includes` is specified, an input is included only if it matches a pattern in `includes` (and is not excluded by `excludes`).
-            * glob pattern:
-               * If a pattern contains `/`, it is matched against the full path of an input.
-               * Otherwise, the pattern is matched against the basename of the input's path.
-               * The matching logic is equivalent to Go's [path.Match](https://pkg.go.dev/path#Match).
           * `outputs`: additional outputs. note: ignored in `cleandead`.
           * `outputs_map`: different deps based on outputs[0]
              * key: outputs[0]
@@ -273,6 +273,29 @@ to register handlers and step configs.
              Not recursively accumulated.
           * `debug`: enable debug log in this step.
 
+### path_filter
+
+path_filter is used for `scandeps.step_inputs` and `indirect_inputs`.
+
+ * `excludes`: A list of [glob patterns](#glob-pattern).
+   Any input path that matches a pattern
+   in this list is excluded. `excludes` are processed before `includes`.
+
+ * `includes`: An optional list of [glob patterns](#glob-pattern) that
+   specifies which inputs to include.
+
+If `includes` is not specified or is empty, all inputs not excluded by
+`excludes` are included.
+
+If `includes` is specified, an input is included only if it matches a pattern
+in`includes` (and is not excluded by `excludes`).
+
+### glob pattern
+
+ * If a pattern contains `/`, it is matched against the full path of an input.
+ * Otherwise, the pattern is matched against the basename of the input's path.
+ * The matching logic is equivalent to Go's [path.Match](https://pkg.go.dev/path#Match).
+
 ## per-step config
 
 for each step, siso will apply the first matched rule.
@@ -286,6 +309,7 @@ All inputs should be ready to use (via `ctx.fs`).
     * `fix`: fix step
       * `inputs`: input pathnames
       * `tool_inputs`: input pathnames (not modified by deps)
+        deprecated: use scandeps.step_inputs to filter step inputs with deps.
       * `outputs`: output pathnames. note: ignored in `cleandead`.
       * `args`: args for the step
       * `rspfile_content`: rspfile_content for the step.
@@ -317,6 +341,7 @@ All inputs should be ready to use (via `ctx.fs`).
   * `deps` string: deps type
   * `inputs` list: input pathnames
   * `tool_inputs` list: input pathnames (rule's inputs).
+    deprecated: use scandeps.step_inputs to filter inputs with deps.
   * `expanded_inputs`: func returns list: expanded input pathnames
   * `rspfile_content`: bytes: rspfile content
   * `outputs` list: output pathnames
