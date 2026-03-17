@@ -22,45 +22,45 @@ func valueLooksLikeDir(value string) bool {
 	return trimmed == "" || strings.HasSuffix(trimmed, "/")
 }
 
-func rebaseOnePath(ctx *scopeContext, path string, destDir fs.SourceDir) (resolve.Value, error) {
-	if !fs.IsPathSourceAbsolute(path) && !filepath.IsAbs(path) {
-		if valueLooksLikeDir(path) {
-			sourceDir, err := ctx.sourceDir.ResolveRelativeDir(path)
-			if err != nil {
-				return nil, err
-			}
-			path = sourceDir.Path()
-		} else {
-			sourceFile, err := ctx.sourceDir.ResolveRelativeFile(path)
-			if err != nil {
-				return nil, err
-			}
-			path = sourceFile.Filename()
+func rebaseOnePath(ctx *scopeContext, path string, fromDir, destDir fs.SourceDir) (resolve.Value, error) {
+	if valueLooksLikeDir(path) {
+		sourceDir, err := fromDir.ResolveRelativeDir(path)
+		if err != nil {
+			return nil, err
 		}
+		path = sourceDir.Path()
+	} else {
+		sourceFile, err := fromDir.ResolveRelativeFile(path)
+		if err != nil {
+			return nil, err
+		}
+		path = sourceFile.Filename()
 	}
 
 	rebased, err := fs.RebasePath(path, destDir, ctx.settings.buildSettings.RootPath)
 	if err != nil {
 		return nil, err
 	}
+	// TODO: Match slash ending with input (MakeSlashEndingMatchInput in C++ GN)
 	return resolve.NewOriginlessStringValue(rebased), nil
 }
 
-func systemAbsoluteOnePath(ctx *scopeContext, path string) (resolve.Value, error) {
+func systemAbsoluteOnePath(ctx *scopeContext, path string, fromDir fs.SourceDir) (resolve.Value, error) {
 	var rebased string
 	if valueLooksLikeDir(path) {
-		sourceDir, err := ctx.sourceDir.ResolveRelativeDir(path)
+		sourceDir, err := fromDir.ResolveRelativeDir(path)
 		if err != nil {
 			return nil, err
 		}
 		rebased = ctx.settings.buildSettings.FullDirPath(sourceDir)
 	} else {
-		sourceFile, err := ctx.sourceDir.ResolveRelativeFile(path)
+		sourceFile, err := fromDir.ResolveRelativeFile(path)
 		if err != nil {
 			return nil, err
 		}
 		rebased = ctx.settings.buildSettings.FullPath(sourceFile)
 	}
+	// TODO: Match slash ending with input (MakeSlashEndingMatchInput in C++ GN)
 	return resolve.NewOriginlessStringValue(rebased), nil
 }
 
@@ -184,6 +184,18 @@ func (rebasePathFunction) Run(scope *resolve.Scope, call *parse.FunctionCallNode
 		newBase = val.RawGNString()
 	}
 
+	fromDir := ctx.sourceDir
+	if len(args) >= 3 {
+		val, err := resolve.AsValue[*resolve.StringValue](args[2])
+		if err != nil {
+			return nil, err
+		}
+		fromDir, err = ctx.sourceDir.ResolveRelativeDir(val.RawGNString())
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	if newBase != "" {
 		if !fs.IsPathSourceAbsolute(newBase) && !filepath.IsAbs(newBase) {
 			// TODO: scope knows curDir now, need to implement support for using it in this param.
@@ -194,12 +206,12 @@ func (rebasePathFunction) Run(scope *resolve.Scope, call *parse.FunctionCallNode
 			return nil, err
 		}
 		return rebaseInput(args[0], func(path string) (resolve.Value, error) {
-			return rebaseOnePath(ctx, path, destDir)
+			return rebaseOnePath(ctx, path, fromDir, destDir)
 		})
 	}
 
 	return rebaseInput(args[0], func(path string) (resolve.Value, error) {
-		return systemAbsoluteOnePath(ctx, path)
+		return systemAbsoluteOnePath(ctx, path, fromDir)
 	})
 }
 

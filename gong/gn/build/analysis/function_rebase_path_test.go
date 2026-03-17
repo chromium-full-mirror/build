@@ -223,6 +223,34 @@ func TestRebasePathFunction(t *testing.T) {
 			curDir:  mustDir(t, "//foo/"),
 			wantErr: "empty directory path",
 		},
+		{
+			name: "relative input with current_base",
+			args: []resolve.Value{
+				resolve.NewOriginlessStringValue("bar.txt"),
+				resolve.NewOriginlessStringValue("//baz/"),
+				resolve.NewOriginlessStringValue("//foo/"),
+			},
+			want: "../foo/bar.txt",
+		},
+		{
+			name: "relative input with relative current_base",
+			args: []resolve.Value{
+				resolve.NewOriginlessStringValue("bar.txt"),
+				resolve.NewOriginlessStringValue("//baz/"),
+				resolve.NewOriginlessStringValue("foo/"),
+			},
+			curDir: mustDir(t, "//base/"),
+			want:   "../base/foo/bar.txt",
+		},
+		{
+			name: "relative input with relative current_base and empty new_base",
+			args: []resolve.Value{
+				resolve.NewOriginlessStringValue("bar.txt"),
+				resolve.NewOriginlessStringValue(""),
+				resolve.NewOriginlessStringValue("//foo/"),
+			},
+			want: "foo/bar.txt",
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			scope := resolve.NewScope(
