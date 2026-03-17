@@ -28,7 +28,12 @@ group("foo") {
 # TODO: rule build.ninja.stamp
 # TODO: rule build.ninja
 subninja toolchain.ninja
-# TODO: build all
+build foo: phony
+build $:foo: phony
+
+build all: phony
+
+default all
 `,
 			"toolchain.ninja": `
 rule stamp

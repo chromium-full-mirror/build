@@ -30,7 +30,13 @@ executable("app") {
 # TODO: rule build.ninja.stamp
 # TODO: rule build.ninja
 subninja toolchain.ninja
-# TODO: build all
+build app: phony obj/app
+build $:app: phony obj/app
+
+build all: phony $
+    obj/app
+
+default all
 `,
 			"toolchain.ninja": `
 rule rust_bin

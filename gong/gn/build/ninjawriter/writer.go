@@ -147,7 +147,12 @@ func Write(toolchains map[environment.Label]*graph.Toolchain, targetsByToolchain
 	for _, tcNinjaRel := range tcNinjasRel {
 		fmt.Fprintf(bf, "subninja %s\n", tcNinjaRel)
 	}
-	fmt.Fprint(bf, "# TODO: build all\n")
+
+	if defaultTargets, ok := targetsByToolchain[defaultToolchain]; ok {
+		if err := writePhonyAndAllRules(bf, defaultTargets, buildSettings); err != nil {
+			return err
+		}
+	}
 
 	return err
 }

@@ -31,7 +31,13 @@ executable("app") {
 # TODO: rule build.ninja.stamp
 # TODO: rule build.ninja
 subninja toolchain.ninja
-# TODO: build all
+build app: phony obj/app
+build $:app: phony obj/app
+
+build all: phony $
+    obj/app
+
+default all
 `,
 			"toolchain.ninja": `
 rule cxx
@@ -84,7 +90,13 @@ shared_library("foo") {
 # TODO: rule build.ninja.stamp
 # TODO: rule build.ninja
 subninja toolchain.ninja
-# TODO: build all
+build foo: phony obj/libfoo.so
+build $:foo: phony obj/libfoo.so
+
+build all: phony $
+    obj/libfoo.so
+
+default all
 `,
 			"toolchain.ninja": `
 rule cxx
@@ -138,7 +150,13 @@ static_library("foo") {
 # TODO: rule build.ninja.stamp
 # TODO: rule build.ninja
 subninja toolchain.ninja
-# TODO: build all
+build foo: phony obj/libfoo.a
+build $:foo: phony obj/libfoo.a
+
+build all: phony $
+    obj/libfoo.a
+
+default all
 `,
 			"toolchain.ninja": `
 rule alink

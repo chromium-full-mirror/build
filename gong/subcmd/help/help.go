@@ -17,6 +17,7 @@ import (
 
 	"go.chromium.org/build/gong/gn/build/analysis"
 	"go.chromium.org/build/gong/gn/build/environment"
+	"go.chromium.org/build/gong/gn/build/ninjawriter"
 	"go.chromium.org/build/gong/ui"
 )
 
@@ -58,6 +59,10 @@ func (h *Command) Execute(ctx context.Context, f *flag.FlagSet, _ ...any) subcom
 			subcommands.DefaultCommander.ExplainCommand(os.Stdout, c)
 			fmt.Fprintf(os.Stdout, "\n")
 		})
+		return subcommands.ExitSuccess
+
+	case "ninja_rules":
+		fmt.Fprint(os.Stdout, ninjawriter.NinjaRulesHelp)
 		return subcommands.ExitSuccess
 
 	default:
