@@ -27,12 +27,15 @@ type Settings struct {
 	baseConfig *resolve.Scope
 	// The toolchain this object represents.
 	toolchainLabel environment.Label
+	// Cache for file imports.
+	importManager *ImportManager
 }
 
 // NewSettings creates a new Settings.
-func NewSettings(buildSettings *environment.BuildSettings) *Settings {
+func NewSettings(buildSettings *environment.BuildSettings, importManager *ImportManager) *Settings {
 	s := &Settings{
 		buildSettings: buildSettings,
+		importManager: importManager,
 	}
 	s.baseConfig = s.NewScope()
 	return s
@@ -78,6 +81,11 @@ type scopeContext struct {
 	// The target defaults for this scope.
 	// Target defaults are scope-local, not toolchain-global.
 	targetDefaults map[string]*resolve.Scope
+	// The chain of imported files that led to this scope being evaluated.
+	// TODO: just change to boolean, and keep a set in ImportManager instead?
+	// chain is unnecessary to keep track of for errors because ImportError
+	// is a chain of wrapped errors. This is what C++ GN does.
+	importChain []fs.SourceFile
 }
 
 func contextFromScope(scope *resolve.Scope) (*scopeContext, error) {
@@ -100,9 +108,11 @@ func (s *scopeContext) BaseConfig() *resolve.Scope {
 func (s *scopeContext) NestedContext() resolve.ExecContext {
 	return &scopeContext{
 		parent:         s,
+		sourceDir:      s.sourceDir,
 		settings:       s.settings,
 		itemCollector:  s.itemCollector,
 		targetDefaults: make(map[string]*resolve.Scope),
+		importChain:    s.importChain,
 	}
 }
 

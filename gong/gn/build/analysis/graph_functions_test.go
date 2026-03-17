@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"go.chromium.org/build/gong/gn/build/environment"
+	"go.chromium.org/build/gong/gn/build/fs"
 	"go.chromium.org/build/gong/gn/build/graph"
 	"go.chromium.org/build/gong/gn/parse"
 	"go.chromium.org/build/gong/gn/resolve"
@@ -33,7 +34,7 @@ func execToolchain(t *testing.T, input string) (*graph.Toolchain, error) {
 	var capturedToolchain *graph.Toolchain
 	scope := resolve.NewScope(
 		&scopeContext{
-			settings:  NewSettings(&environment.BuildSettings{}),
+			settings:  NewSettings(&environment.BuildSettings{}, NewImportManager(&fs.InputFileManager{})),
 			sourceDir: mustDir(t, "//"),
 			itemCollector: func(i graph.Item) {
 				if tc, ok := i.(*graph.Toolchain); ok {

@@ -58,7 +58,7 @@ func newToolchainRecord(loader *Loader) *toolchainRecord {
 	// toolchain is loaded, since we don't know it yet. This will be fixed up
 	// later. It should be valid in all other cases.
 	return &toolchainRecord{
-		settings:     NewSettings(loader.buildSettings),
+		settings:     NewSettings(loader.buildSettings, NewImportManager(loader.inputFileManager)),
 		configLoaded: false,
 	}
 }

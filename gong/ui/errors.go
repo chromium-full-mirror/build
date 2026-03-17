@@ -37,7 +37,7 @@ type PresentableError interface {
 	Error() string
 }
 
-// A PresentableSourceError is a PresentableError that may return an origin location and range(s).
+// A PresentableSourceError is a [PresentableError] that may return an origin location and range(s).
 type PresentableSourceError interface {
 	PresentableError
 	// Location returns origin location of the error if available.
@@ -45,4 +45,45 @@ type PresentableSourceError interface {
 	Location() syntax.Location
 	// Ranges returns origin range(s) of the error if available.
 	Ranges() []syntax.LocationRange
+}
+
+// A StackTraceError is a [PresentableError] that unwraps with the root cause as innermost,
+// but for rendering the UI should display the root cause first.
+//
+// For example, consider an error from an import several layers deep.
+//
+// In Go, the error message would follow the logical order of a "DoImport" returning an
+// error, then the "DoImport" calling it wrapping that error, and so on until we hit
+// the top-level exec call:
+//
+//	import //foo.gni failed: import //bar.gni failed: import //baz.gni failed: undefined identifier "give_you_up"
+//
+// However, this is reversed for UI error-reporting purposes.
+//
+// The root cause should be displayed first, then the chain of errors in stack trace order:
+//
+//	ERROR at //baz.gni:5:15: Undefined identifier.
+//	never_going_to = give_you_up
+//	                 ^----------
+//	See //baz.gni:2:1: whence it was imported.
+//	import("//baz.gni")
+//	^-----------------
+//	See //foo.gni:2:1: whence it was imported.
+//	import("//bar.gni")
+//	^-----------------
+//	See //BUILD.gn:2:1: whence it was imported.
+//	import("//foo.gni")
+//	^-----------------
+//
+// Implementers of this interface are expected to return the chain of errors in stack order,
+// that is, the root cause first, then the reverse chain of wrapped orders.
+// The error itself should not be included in the stack.
+type StackTraceError interface {
+	PresentableError
+	// Stack returns the chain of wrapped errors in stack trace order.
+	// The first element is the root cause, and the last element is the error before this error.
+	// This error itself is not included in the stack.
+	//
+	// Use Unwrap() if you want to iterate through the errors in the order they were wrapped.
+	Stack() []error
 }

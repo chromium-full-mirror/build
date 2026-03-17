@@ -255,7 +255,7 @@ func TestRebasePathFunction(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			scope := resolve.NewScope(
 				&scopeContext{
-					settings:  NewSettings(&environment.BuildSettings{}),
+					settings:  NewSettings(&environment.BuildSettings{}, NewImportManager(&fs.InputFileManager{})),
 					sourceDir: tc.curDir,
 				},
 				nil,

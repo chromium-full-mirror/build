@@ -17,6 +17,7 @@ func FunctionMap(buildSettings *environment.BuildSettings) map[string]resolve.Fu
 	return map[string]resolve.FunctionInfo{
 		"action":                targetFunction{schema: &schemas.ActionSchema},
 		"assert":                resolve.AssertFunction{},
+		"import":                importFunction{},
 		"config":                configFunction{},
 		"copy":                  targetFunction{schema: &schemas.CopySchema},
 		"group":                 targetFunction{schema: &schemas.GroupSchema},

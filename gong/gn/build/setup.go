@@ -74,7 +74,7 @@ func NewSetup() *Setup {
 	}
 	setup.loader = analysis.MakeLoader(&setup.BuildSettings, &setup.inputFileManager)
 	setup.builder = analysis.MakeBuilder(&setup.loader)
-	setup.dotfileSettings = analysis.NewSettings(&setup.BuildSettings)
+	setup.dotfileSettings = analysis.NewSettings(&setup.BuildSettings, analysis.NewImportManager(&setup.inputFileManager))
 	setup.dotfileScope = setup.dotfileSettings.NewScope()
 	return setup
 }

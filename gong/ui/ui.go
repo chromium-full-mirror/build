@@ -35,9 +35,39 @@ func init() {
 }
 
 // FormatError formats provided error for printing as GN-style error.
-// TODO: implement SGR colors.
 func FormatError(err error) string {
-	return formatError(err, false)
+	var sb strings.Builder
+	for i, e := range collectErrors(nil, err) {
+		sb.WriteString(formatError(e, i > 0))
+	}
+	return sb.String()
+}
+
+func collectErrors(acc []error, err error) []error {
+	if err == nil {
+		return acc
+	}
+
+	// Handle stack trace errors by showing the cause first.
+	// nolint:errorlint // Do not use errors.As as it will check wrapped errors.
+	if e, ok := err.(StackTraceError); ok {
+		acc = append(acc, e.Stack()...)
+		return append(acc, err)
+	}
+
+	acc = append(acc, err)
+
+	// Sub errors.
+	// nolint:errorlint // Intentional type switch to handle wrapped errors.
+	switch err := err.(type) {
+	case interface{ Unwrap() error }:
+		return collectErrors(acc, err.Unwrap())
+	case interface{ Unwrap() []error }:
+		for _, subErr := range err.Unwrap() {
+			acc = collectErrors(acc, subErr)
+		}
+	}
+	return acc
 }
 
 func formatError(err error, isSubErr bool) string {
@@ -49,7 +79,7 @@ func formatError(err error, isSubErr bool) string {
 	}
 
 	// File name and location.
-	// nolint:errorlint // Do not want errors.As, wrapped errors printed below.
+	// nolint:errorlint // Do not use errors.As as it will check wrapped errors.
 	if e, ok := err.(PresentableSourceError); ok {
 		locStr := e.Location().Describe(true)
 		if locStr != "" {
@@ -63,7 +93,7 @@ func formatError(err error, isSubErr bool) string {
 	}
 
 	// Error message.
-	// nolint:errorlint // Do not want errors.As, wrapped errors printed below.
+	// nolint:errorlint // Do not use errors.As as it will check wrapped errors.
 	if e, ok := err.(PresentableError); ok {
 		sb.WriteString(e.Message() + "\n")
 
@@ -75,17 +105,6 @@ func formatError(err error, isSubErr bool) string {
 		}
 	} else {
 		sb.WriteString(err.Error() + "\n")
-	}
-
-	// Sub errors.
-	// nolint:errorlint // Intentional type switch to handle wrapped errors.
-	switch err := err.(type) {
-	case interface{ Unwrap() error }:
-		sb.WriteString(formatError(err.Unwrap(), true))
-	case interface{ Unwrap() []error }:
-		for _, subErr := range err.Unwrap() {
-			sb.WriteString(formatError(subErr, true))
-		}
 	}
 
 	return sb.String()

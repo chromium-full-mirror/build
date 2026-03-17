@@ -5,9 +5,12 @@
 package analysis
 
 import (
+	"errors"
 	"fmt"
+	"slices"
 
 	"go.chromium.org/build/gong/gn/build/environment"
+	"go.chromium.org/build/gong/gn/build/fs"
 	"go.chromium.org/build/gong/gn/build/graph"
 	"go.chromium.org/build/gong/gn/parse"
 	"go.chromium.org/build/gong/gn/resolve"
@@ -162,3 +165,93 @@ func itemTypeName(item graph.Item) string {
 	}
 	return "unknown"
 }
+
+// ImportError is returned when an import call fails while evaluating the imported file.
+type ImportError struct {
+	parse.OriginNode
+	file  fs.SourceFile
+	stack []error
+}
+
+// makeImportError wraps an error in an ImportError, preserving the unwrap chain if the cause is an ImportError.
+func makeImportError(nodeForErr parse.Node, file fs.SourceFile, err error) *ImportError {
+	ret := &ImportError{OriginNode: parse.OriginNode{Node: nodeForErr}, file: file}
+	if e, ok := errors.AsType[*ImportError](err); ok {
+		// Don't mutate the slice held by the wrapped ImportError.
+		ret.stack = slices.Concat(e.stack, []error{err})
+	} else {
+		ret.stack = []error{err}
+	}
+	return ret
+}
+
+// Stack returns the chain of wrapped errors in stack trace order.
+func (e ImportError) Stack() []error {
+	return e.stack
+}
+
+// Error returns the error string.
+func (e ImportError) Error() string {
+	if len(e.stack) == 0 {
+		return fmt.Sprintf("import %s failed, but cause missing", e.file.Filename())
+	}
+	return fmt.Sprintf("import %s failed: %v", e.file.Filename(), e.stack[0])
+}
+
+// Message returns the user-facing error message.
+//
+// Because ui.StackTraceError is used, this function is expected to be
+// called *after* the root error has been displayed.
+//
+// This should result in something like:
+//
+//	ERROR at //baz.gni:5:15: Undefined identifier.
+//	never_going_to = give_you_up
+//	                 ^----------
+//	See //baz.gni:2:1: whence it was imported.
+//	import("//baz.gni")
+//	^-----------------
+//	See //foo.gni:2:1: whence it was imported.
+//	import("//bar.gni")
+//	^-----------------
+//	See //BUILD.gn:2:1: whence it was imported.
+//	import("//foo.gni")
+//	^-----------------
+//
+// In case an ImportError is accidentally constructed without an underlying
+// cause, this is handled so that a fallback is displayed:
+//
+//	ERROR at //BUILD.gn:2:1: Import failed, but cause missing.
+//	import("//foo.gni")
+//	^-----------------
+func (e ImportError) Message() string {
+	if len(e.stack) == 0 {
+		return "Import failed, but cause missing."
+	}
+	return "whence it was imported."
+}
+
+// HelpText returns the user-facing error help text.
+// It returns an empty string because there is no detailed help text for this error.
+func (e ImportError) HelpText() string { return "" }
+
+// ImportLoopError is returned when an import call creates a circular dependency.
+type ImportLoopError struct {
+	parse.OriginNode
+	cause fs.SourceFile
+	chain []fs.SourceFile
+}
+
+// Error returns the error string.
+func (e ImportLoopError) Error() string {
+	return fmt.Sprintf("%s is part of an import loop", e.cause.Filename())
+}
+
+// Message returns the user-facing error message.
+func (e ImportLoopError) Message() string {
+	return fmt.Sprintf("%s is part of an import loop.", e.cause.Filename())
+}
+
+// HelpText returns the user-facing error help text.
+// It returns an empty string because there is no detailed help text for this error.
+func (e ImportLoopError) HelpText() string { return "" }
