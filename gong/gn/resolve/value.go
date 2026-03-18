@@ -43,6 +43,14 @@ func (t ValueType) String() string {
 	}
 }
 
+// DescribeType returns a human-readable string for the type of the value.
+func DescribeType(v Value) string {
+	if v == nil {
+		return "none"
+	}
+	return v.valueType().String()
+}
+
 // Value represents a variable value in the interpreter.
 type Value interface {
 	starlark.Value

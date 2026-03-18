@@ -18,6 +18,11 @@ type IntegerValue struct {
 	value  int64
 }
 
+// NewOriginlessIntegerValue creates an integer value without an origin.
+func NewOriginlessIntegerValue(value int64) *IntegerValue {
+	return &IntegerValue{value: value}
+}
+
 func (v *IntegerValue) valueType() ValueType {
 	return ValueTypeInteger
 }
