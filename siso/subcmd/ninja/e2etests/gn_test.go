@@ -19,6 +19,9 @@ import (
 
 // Test rebuild build.ninja (gn gen) behavior.
 func TestBuild_GNGen(t *testing.T) {
+	if !runInSubProcess(t) {
+		return
+	}
 	ctx := t.Context()
 	dir := tempDir(t)
 

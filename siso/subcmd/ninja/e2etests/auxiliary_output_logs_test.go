@@ -22,6 +22,9 @@ import (
 )
 
 func TestBuild_Auxiliary_Remote(t *testing.T) {
+	if !runInSubProcess(t) {
+		return
+	}
 	ctx := t.Context()
 	testDataName := t.Name()
 

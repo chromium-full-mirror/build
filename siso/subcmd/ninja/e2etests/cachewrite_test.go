@@ -22,6 +22,9 @@ import (
 //   - Upload results of local execution back to RE
 //   - Use the locally uploaded cache-write for future remote cache hits
 func TestBuild_CacheWrite(t *testing.T) {
+	if !runInSubProcess(t) {
+		return
+	}
 	ctx := t.Context()
 
 	allOutputs := []string{

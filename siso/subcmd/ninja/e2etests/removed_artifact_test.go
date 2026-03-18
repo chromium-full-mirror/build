@@ -20,6 +20,9 @@ import (
 )
 
 func TestBuild_RemovedArtifact(t *testing.T) {
+	if !runInSubProcess(t) {
+		return
+	}
 	ctx := t.Context()
 	dir := tempDir(t)
 
@@ -97,6 +100,9 @@ func TestBuild_RemovedArtifact(t *testing.T) {
 }
 
 func TestBuild_RemovedArtifactOutputLocalMinimum(t *testing.T) {
+	if !runInSubProcess(t) {
+		return
+	}
 	ctx := t.Context()
 	dir := tempDir(t)
 

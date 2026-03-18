@@ -16,6 +16,9 @@ import (
 )
 
 func TestBuild_NinjaLog(t *testing.T) {
+	if !runInSubProcess(t) {
+		return
+	}
 	ctx := t.Context()
 	dir := tempDir(t)
 

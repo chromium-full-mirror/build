@@ -28,6 +28,9 @@ import (
 //	dependencies to be removed from the list of pending build
 //	actions.
 func TestBuild_Restat(t *testing.T) {
+	if !runInSubProcess(t) {
+		return
+	}
 	ctx := t.Context()
 	dir := tempDir(t)
 
@@ -181,6 +184,9 @@ func TestBuild_Restat(t *testing.T) {
 
 // Test restat=1 behavior when restat_content=true is set
 func TestBuild_Restat_RestatContent(t *testing.T) {
+	if !runInSubProcess(t) {
+		return
+	}
 	ctx := t.Context()
 	dir := tempDir(t)
 
@@ -335,6 +341,9 @@ func TestBuild_Restat_RestatContent(t *testing.T) {
 // Test restat=1 behavior for multiple output.
 // some output may keep mtime, but some output was updated.
 func TestBuild_RestatMultiout(t *testing.T) {
+	if !runInSubProcess(t) {
+		return
+	}
 	ctx := t.Context()
 	dir := tempDir(t)
 

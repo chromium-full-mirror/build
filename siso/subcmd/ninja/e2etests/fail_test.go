@@ -25,6 +25,9 @@ import (
 )
 
 func TestBuild_Fail_Reproxy(t *testing.T) {
+	if !runInSubProcess(t) {
+		return
+	}
 	ctx := t.Context()
 	dir := tempDir(t)
 
@@ -127,6 +130,9 @@ func TestBuild_Fail_Reproxy(t *testing.T) {
 }
 
 func TestBuild_Fail_Remote(t *testing.T) {
+	if !runInSubProcess(t) {
+		return
+	}
 	ctx := t.Context()
 	dir := tempDir(t)
 

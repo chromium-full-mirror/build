@@ -21,6 +21,9 @@ import (
 )
 
 func TestBuild_OutputLocal(t *testing.T) {
+	if !runInSubProcess(t) {
+		return
+	}
 	ctx := t.Context()
 	dir := tempDir(t)
 

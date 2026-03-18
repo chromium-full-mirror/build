@@ -20,6 +20,9 @@ import (
 )
 
 func TestBuild_EdgeRule(t *testing.T) {
+	if !runInSubProcess(t) {
+		return
+	}
 	ctx := t.Context()
 	dir := tempDir(t)
 
@@ -234,6 +237,9 @@ func TestBuild_EdgeRule(t *testing.T) {
 }
 
 func TestBuild_EdgeRule_solibs(t *testing.T) {
+	if !runInSubProcess(t) {
+		return
+	}
 	ctx := t.Context()
 	dir := tempDir(t)
 
@@ -340,6 +346,9 @@ func TestBuild_EdgeRule_solibs(t *testing.T) {
 }
 
 func TestBuild_EdgeRule_solibs_recursive(t *testing.T) {
+	if !runInSubProcess(t) {
+		return
+	}
 	ctx := t.Context()
 	dir := tempDir(t)
 
@@ -447,6 +456,9 @@ func TestBuild_EdgeRule_solibs_recursive(t *testing.T) {
 }
 
 func TestBuild_EdgeRule_stamp_solibs(t *testing.T) {
+	if !runInSubProcess(t) {
+		return
+	}
 	ctx := t.Context()
 	dir := tempDir(t)
 

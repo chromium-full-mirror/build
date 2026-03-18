@@ -22,6 +22,9 @@ import (
 )
 
 func TestBuild_PhonyDir(t *testing.T) {
+	if !runInSubProcess(t) {
+		return
+	}
 	ctx := t.Context()
 	dir := tempDir(t)
 
@@ -77,6 +80,9 @@ func TestBuild_PhonyDir(t *testing.T) {
 }
 
 func TestBuild_PhonyDirCopyHandler(t *testing.T) {
+	if !runInSubProcess(t) {
+		return
+	}
 	ctx := t.Context()
 	dir := tempDir(t)
 
@@ -133,6 +139,9 @@ func TestBuild_PhonyDirCopyHandler(t *testing.T) {
 }
 
 func TestBuild_PhonyDirStampHandler(t *testing.T) {
+	if !runInSubProcess(t) {
+		return
+	}
 	ctx := t.Context()
 	dir := tempDir(t)
 
@@ -189,6 +198,9 @@ func TestBuild_PhonyDirStampHandler(t *testing.T) {
 }
 
 func TestBuild_PhonyDirStampCopyHandler(t *testing.T) {
+	if !runInSubProcess(t) {
+		return
+	}
 	ctx := t.Context()
 	dir := tempDir(t)
 
@@ -245,6 +257,9 @@ func TestBuild_PhonyDirStampCopyHandler(t *testing.T) {
 }
 
 func TestBuild_PhonyStamp(t *testing.T) {
+	if !runInSubProcess(t) {
+		return
+	}
 	ctx := t.Context()
 	dir := tempDir(t)
 
@@ -293,6 +308,9 @@ func TestBuild_PhonyStamp(t *testing.T) {
 }
 
 func TestBuild_PhonyReplace(t *testing.T) {
+	if !runInSubProcess(t) {
+		return
+	}
 	ctx := t.Context()
 	dir := tempDir(t)
 
@@ -376,6 +394,9 @@ func TestBuild_PhonyReplace(t *testing.T) {
 }
 
 func TestBuild_PhonyIndirectInputs(t *testing.T) {
+	if !runInSubProcess(t) {
+		return
+	}
 	ctx := t.Context()
 	dir := tempDir(t)
 
@@ -493,6 +514,9 @@ func TestBuild_PhonyIndirectInputs(t *testing.T) {
 }
 
 func TestBuild_PhonyDirty(t *testing.T) {
+	if !runInSubProcess(t) {
+		return
+	}
 	ctx := t.Context()
 	dir := tempDir(t)
 

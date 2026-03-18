@@ -14,6 +14,9 @@ import (
 )
 
 func TestBuild_offline(t *testing.T) {
+	if !runInSubProcess(t) {
+		return
+	}
 	ctx := t.Context()
 	dir := tempDir(t)
 

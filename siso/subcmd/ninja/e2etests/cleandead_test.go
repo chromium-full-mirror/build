@@ -16,6 +16,9 @@ import (
 )
 
 func TestBuild_Cleandead(t *testing.T) {
+	if !runInSubProcess(t) {
+		return
+	}
 	ctx := t.Context()
 	dir := tempDir(t)
 
@@ -103,6 +106,9 @@ func TestBuild_Cleandead(t *testing.T) {
 }
 
 func TestBuild_CleandeadPreserveNonOut(t *testing.T) {
+	if !runInSubProcess(t) {
+		return
+	}
 	ctx := t.Context()
 	dir := tempDir(t)
 	sdkDir := filepath.Join(tempDir(t), "sdk")

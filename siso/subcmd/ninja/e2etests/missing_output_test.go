@@ -13,6 +13,9 @@ import (
 )
 
 func TestBuild_MissingOutput(t *testing.T) {
+	if !runInSubProcess(t) {
+		return
+	}
 	ctx := t.Context()
 	dir := tempDir(t)
 

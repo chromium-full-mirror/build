@@ -19,6 +19,9 @@ import (
 )
 
 func TestBuild_MultiOut(t *testing.T) {
+	if !runInSubProcess(t) {
+		return
+	}
 	ctx := t.Context()
 	dir := tempDir(t)
 
@@ -45,6 +48,9 @@ func TestBuild_MultiOut(t *testing.T) {
 
 // Test step that outputs multiple targets correctly generates the outputs.
 func TestBuild_MultiOut_Remote(t *testing.T) {
+	if !runInSubProcess(t) {
+		return
+	}
 	ctx := t.Context()
 	dir := tempDir(t)
 

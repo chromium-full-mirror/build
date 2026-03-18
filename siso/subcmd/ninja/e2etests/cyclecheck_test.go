@@ -16,6 +16,9 @@ import (
 )
 
 func TestBuild_CycleCheck(t *testing.T) {
+	if !runInSubProcess(t) {
+		return
+	}
 	ctx := t.Context()
 	dir := tempDir(t)
 

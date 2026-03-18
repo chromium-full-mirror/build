@@ -15,6 +15,9 @@ import (
 )
 
 func TestBuild_Validations(t *testing.T) {
+	if !runInSubProcess(t) {
+		return
+	}
 	ctx := t.Context()
 	dir := tempDir(t)
 
@@ -104,6 +107,9 @@ func TestBuild_Validations(t *testing.T) {
 }
 
 func TestBuild_ValidationsDependsOnOutput(t *testing.T) {
+	if !runInSubProcess(t) {
+		return
+	}
 	ctx := t.Context()
 	dir := tempDir(t)
 
@@ -193,6 +199,9 @@ func TestBuild_ValidationsDependsOnOutput(t *testing.T) {
 }
 
 func TestBuild_ValidationsNested(t *testing.T) {
+	if !runInSubProcess(t) {
+		return
+	}
 	ctx := t.Context()
 	dir := tempDir(t)
 

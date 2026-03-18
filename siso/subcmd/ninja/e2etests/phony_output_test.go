@@ -13,6 +13,9 @@ import (
 )
 
 func TestBuild_PhonyOutput(t *testing.T) {
+	if !runInSubProcess(t) {
+		return
+	}
 	ctx := t.Context()
 	dir := tempDir(t)
 
@@ -46,6 +49,9 @@ func TestBuild_PhonyOutput(t *testing.T) {
 }
 
 func TestBuild_PhonyOutputDepError(t *testing.T) {
+	if !runInSubProcess(t) {
+		return
+	}
 	ctx := t.Context()
 	dir := tempDir(t)
 
@@ -67,6 +73,9 @@ func TestBuild_PhonyOutputDepError(t *testing.T) {
 }
 
 func TestBuild_PhonyOutputOrderOnly(t *testing.T) {
+	if !runInSubProcess(t) {
+		return
+	}
 	ctx := t.Context()
 	dir := tempDir(t)
 

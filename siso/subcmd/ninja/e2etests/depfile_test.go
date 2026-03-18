@@ -21,6 +21,9 @@ import (
 )
 
 func TestBuild_Depfile_OutputLocalMinimum(t *testing.T) {
+	if !runInSubProcess(t) {
+		return
+	}
 	ctx := t.Context()
 	dir := tempDir(t)
 
@@ -112,6 +115,9 @@ func TestBuild_Depfile_OutputLocalMinimum(t *testing.T) {
 }
 
 func TestBuild_Depfile_AsOutput(t *testing.T) {
+	if !runInSubProcess(t) {
+		return
+	}
 	ctx := t.Context()
 	dir := tempDir(t)
 

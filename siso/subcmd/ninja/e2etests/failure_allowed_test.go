@@ -15,6 +15,9 @@ import (
 )
 
 func TestBuild_SwallowFailures(t *testing.T) {
+	if !runInSubProcess(t) {
+		return
+	}
 	ctx := t.Context()
 	dir := tempDir(t)
 
@@ -46,6 +49,9 @@ func TestBuild_SwallowFailures(t *testing.T) {
 }
 
 func TestBuild_SwallowFailuresLimit(t *testing.T) {
+	if !runInSubProcess(t) {
+		return
+	}
 	ctx := t.Context()
 	dir := tempDir(t)
 
@@ -77,6 +83,9 @@ func TestBuild_SwallowFailuresLimit(t *testing.T) {
 }
 
 func TestBuild_KeepGoing(t *testing.T) {
+	if !runInSubProcess(t) {
+		return
+	}
 	ctx := t.Context()
 	dir := tempDir(t)
 

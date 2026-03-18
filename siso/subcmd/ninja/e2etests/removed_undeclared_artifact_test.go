@@ -19,6 +19,9 @@ import (
 )
 
 func TestBuild_RemovedUndeclaredArtifact(t *testing.T) {
+	if !runInSubProcess(t) {
+		return
+	}
 	ctx := t.Context()
 	dir := tempDir(t)
 

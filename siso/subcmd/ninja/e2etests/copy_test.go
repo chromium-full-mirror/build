@@ -22,6 +22,9 @@ import (
 )
 
 func TestBuild_Copy(t *testing.T) {
+	if !runInSubProcess(t) {
+		return
+	}
 	ctx := t.Context()
 
 	runNinjaTest := func(t *testing.T, dir string, outputLocal hashfs.OutputLocalFunc) (build.Stats, error) {
@@ -175,6 +178,9 @@ func TestBuild_Copy(t *testing.T) {
 }
 
 func TestBuild_CopyLocalOut(t *testing.T) {
+	if !runInSubProcess(t) {
+		return
+	}
 	ctx := t.Context()
 
 	runNinjaTest := func(t *testing.T, dir string) error {
@@ -248,6 +254,9 @@ func TestBuild_CopyLocalOut(t *testing.T) {
 }
 
 func TestBuild_CopyBundleDataRemovedFile(t *testing.T) {
+	if !runInSubProcess(t) {
+		return
+	}
 	ctx := t.Context()
 
 	runNinjaTest := func(t *testing.T, dir string) (build.Stats, error) {

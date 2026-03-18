@@ -24,6 +24,9 @@ import (
 )
 
 func TestBuild_Deps_Incremental(t *testing.T) {
+	if !runInSubProcess(t) {
+		return
+	}
 	ctx := t.Context()
 	dir := tempDir(t)
 
@@ -232,6 +235,9 @@ func TestBuild_Deps_Incremental(t *testing.T) {
 // TestBuild_Deps_Stale checks ninja runs step if deps log is stale
 // (foo.o is modified, so newer than mtime recorded in deps log).
 func TestBuild_Deps_Stale(t *testing.T) {
+	if !runInSubProcess(t) {
+		return
+	}
 	ctx := t.Context()
 	dir := tempDir(t)
 

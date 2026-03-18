@@ -19,6 +19,9 @@ import (
 
 // Test schedule for abs path correctly. b/354792946
 func TestBuild_Local_AbsPath(t *testing.T) {
+	if !runInSubProcess(t) {
+		return
+	}
 	ctx := t.Context()
 	topdir := tempDir(t)
 
@@ -114,6 +117,9 @@ build build.ninja: phony
 }
 
 func TestBuild_Local_Inputs(t *testing.T) {
+	if !runInSubProcess(t) {
+		return
+	}
 	ctx := t.Context()
 	dir := tempDir(t)
 

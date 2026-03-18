@@ -8,9 +8,12 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"flag"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -20,6 +23,95 @@ import (
 	"go.chromium.org/build/siso/build/ninjabuild"
 	"go.chromium.org/build/siso/hashfs"
 )
+
+var (
+	testSerial = flag.Bool("siso-test-serial", false, "execute the actual test sequentially in the current process")
+)
+
+// runInSubProcess runs the test in a separate process to allow safe chdir.
+// It returns true if the test should proceed (i.e., we are in the subprocess).
+// It returns false if we are in the parent process and should skip the actual test logic.
+func runInSubProcess(t *testing.T) bool {
+	t.Helper()
+	if *testSerial {
+		return true // Execute the actual test in the current process
+	}
+	t.Parallel()
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatalf("could not get executable: %v", err)
+	}
+
+	args := []string{"-test.run=^" + t.Name() + "$"}
+	skipNext := false
+
+	// We must selectively forward flags from the parent `go test` runner to the subprocess:
+	// 1. Keep safe flags (e.g., -test.v, -test.timeout) to preserve expected user behavior.
+	// 2. Drop multiplier flags (e.g., -test.count) to prevent exponential test executions.
+	// 3. Rewrite profiling/output flags (e.g., -test.cpuprofile) by appending the test name
+	//    so that parallel subprocesses do not concurrently write to and corrupt a single shared file.
+	for i, arg := range os.Args[1:] {
+		if skipNext {
+			skipNext = false
+			continue
+		}
+
+		if strings.HasPrefix(arg, "-test.") {
+			if strings.HasPrefix(arg, "-test.v=") || arg == "-test.v" ||
+				strings.HasPrefix(arg, "-test.short=") || arg == "-test.short" ||
+				strings.HasPrefix(arg, "-test.failfast=") || arg == "-test.failfast" ||
+				strings.HasPrefix(arg, "-test.paniconexit0=") || arg == "-test.paniconexit0" ||
+				strings.HasPrefix(arg, "-test.timeout=") || arg == "-test.timeout" {
+				args = append(args, arg)
+			} else if strings.HasPrefix(arg, "-test.cpuprofile") ||
+				strings.HasPrefix(arg, "-test.memprofile") ||
+				strings.HasPrefix(arg, "-test.mutexprofile") ||
+				strings.HasPrefix(arg, "-test.blockprofile") ||
+				strings.HasPrefix(arg, "-test.trace") ||
+				strings.HasPrefix(arg, "-test.outputdir") {
+
+				// Handle both `-test.cpuprofile=cpu.prof` and `-test.cpuprofile cpu.prof`
+				val := ""
+				key := arg
+				hasEq := strings.Contains(arg, "=")
+				if hasEq {
+					parts := strings.SplitN(arg, "=", 2)
+					key = parts[0]
+					val = parts[1]
+				} else if i+1 < len(os.Args[1:]) {
+					val = os.Args[1:][i+1]
+					skipNext = true
+				}
+
+				if val != "" {
+					newVal := val + "." + t.Name()
+					if key == "-test.outputdir" {
+						if err := os.MkdirAll(newVal, 0755); err != nil {
+							t.Fatalf("os.MkdirAll(%q)=%v; want nil err", newVal, err)
+						}
+					}
+					args = append(args, key+"="+newVal)
+				} else {
+					args = append(args, arg)
+				}
+			}
+		} else {
+			args = append(args, arg)
+		}
+	}
+
+	args = append(args, "-siso-test-serial")
+
+	cmd := exec.CommandContext(t.Context(), exe, args...)
+	out, err := cmd.CombinedOutput()
+	if len(out) > 0 {
+		t.Logf("\n%s", out)
+	}
+	if err != nil {
+		t.Fatalf("subprocess test failed: %v", err)
+	}
+	return false // Indicates parent should skip test logic
+}
 
 // tempDir returns real path of temp dir.
 // mac uses /tmp -> private/tmp symlink, so TempDir may contains

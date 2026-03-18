@@ -19,6 +19,9 @@ import (
 )
 
 func TestBuild_ScanDeps_ClangCL_FI(t *testing.T) {
+	if !runInSubProcess(t) {
+		return
+	}
 	ctx := t.Context()
 	dir := tempDir(t)
 
@@ -79,6 +82,9 @@ func TestBuild_ScanDeps_ClangCL_FI(t *testing.T) {
 }
 
 func TestBuild_ScanDeps_Timeout(t *testing.T) {
+	if !runInSubProcess(t) {
+		return
+	}
 	ctx := t.Context()
 	dir := tempDir(t)
 

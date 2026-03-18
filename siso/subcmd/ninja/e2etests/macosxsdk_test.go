@@ -21,6 +21,9 @@ import (
 
 // test precomputed tree for sysroot and frameworks dir inside sysroot.
 func TestBuild_MacOSXSDK(t *testing.T) {
+	if !runInSubProcess(t) {
+		return
+	}
 	if runtime.GOOS == "windows" {
 		t.Skip("skip: no symlink support on windows")
 		return

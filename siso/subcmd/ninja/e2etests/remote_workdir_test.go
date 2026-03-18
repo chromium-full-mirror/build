@@ -19,6 +19,9 @@ import (
 )
 
 func TestBuild_RemoteWorkDir(t *testing.T) {
+	if !runInSubProcess(t) {
+		return
+	}
 	ctx := t.Context()
 	dir := tempDir(t)
 

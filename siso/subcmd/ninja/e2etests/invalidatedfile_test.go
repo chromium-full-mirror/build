@@ -20,6 +20,9 @@ import (
 )
 
 func TestBuild_InvalidatedFile(t *testing.T) {
+	if !runInSubProcess(t) {
+		return
+	}
 	ctx := t.Context()
 	dir := tempDir(t)
 
@@ -107,6 +110,9 @@ func TestBuild_InvalidatedFile(t *testing.T) {
 }
 
 func TestBuild_InvalidatedBuildNinja(t *testing.T) {
+	if !runInSubProcess(t) {
+		return
+	}
 	ctx := t.Context()
 	dir := tempDir(t)
 

@@ -27,6 +27,9 @@ import (
 
 // tools/cp has is_executable even from windows to make it executable.
 func TestBuild_CrossWindows_Remote(t *testing.T) {
+	if !runInSubProcess(t) {
+		return
+	}
 	ctx := t.Context()
 	dir := tempDir(t)
 
@@ -87,6 +90,9 @@ func TestBuild_CrossWindows_Remote(t *testing.T) {
 
 // tools/cp is passed via toolchain_inputs from windows to make it executable.
 func TestBuild_CrossWindows_Reproxy(t *testing.T) {
+	if !runInSubProcess(t) {
+		return
+	}
 	ctx := t.Context()
 	dir := tempDir(t)
 

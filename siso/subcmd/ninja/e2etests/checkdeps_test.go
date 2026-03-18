@@ -16,6 +16,9 @@ import (
 )
 
 func TestBuild_CheckDeps(t *testing.T) {
+	if !runInSubProcess(t) {
+		return
+	}
 	ctx := t.Context()
 	dir := tempDir(t)
 

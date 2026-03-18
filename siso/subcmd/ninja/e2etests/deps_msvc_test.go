@@ -24,6 +24,9 @@ import (
 )
 
 func TestBuild_DepsMSVC(t *testing.T) {
+	if !runInSubProcess(t) {
+		return
+	}
 	ctx := t.Context()
 	dir := tempDir(t)
 
@@ -109,6 +112,9 @@ func TestBuild_DepsMSVC(t *testing.T) {
 }
 
 func TestBuild_DepsMSVC_Reproxy(t *testing.T) {
+	if !runInSubProcess(t) {
+		return
+	}
 	ctx := t.Context()
 	dir := tempDir(t)
 	func() {
@@ -245,6 +251,9 @@ Note: including file:   ../../base/other2.h
 }
 
 func TestBuild_DepsMSVC_fastlocal(t *testing.T) {
+	if !runInSubProcess(t) {
+		return
+	}
 	ctx := t.Context()
 	dir := tempDir(t)
 
@@ -341,6 +350,9 @@ func TestBuild_DepsMSVC_fastlocal(t *testing.T) {
 
 // regression test for b/322270122
 func TestBuild_DepsMSVC_InstallerRC(t *testing.T) {
+	if !runInSubProcess(t) {
+		return
+	}
 	ctx := t.Context()
 	dir := tempDir(t)
 

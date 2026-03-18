@@ -25,6 +25,9 @@ import (
 )
 
 func TestBuild_Trace_remote(t *testing.T) {
+	if !runInSubProcess(t) {
+		return
+	}
 	ctx := t.Context()
 	dir := tempDir(t)
 
@@ -188,6 +191,9 @@ func TestBuild_Trace_remote(t *testing.T) {
 }
 
 func TestBuild_Trace_reproxy(t *testing.T) {
+	if !runInSubProcess(t) {
+		return
+	}
 	ctx := t.Context()
 	dir := tempDir(t)
 

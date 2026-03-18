@@ -19,6 +19,9 @@ import (
 
 // Test symlink won't modify mtime of symlink's target.
 func TestBuild_Symlink(t *testing.T) {
+	if !runInSubProcess(t) {
+		return
+	}
 	if runtime.GOOS == "windows" {
 		t.Skip("symlink not available on windows")
 		return
@@ -97,6 +100,9 @@ func TestBuild_Symlink(t *testing.T) {
 
 // Test symlink source uses mtime of symlink's target.
 func TestBuild_SymlinkSource(t *testing.T) {
+	if !runInSubProcess(t) {
+		return
+	}
 	if runtime.GOOS == "windows" {
 		t.Skip("symlink not available on windows")
 		return
@@ -230,6 +236,9 @@ func TestBuild_SymlinkSource(t *testing.T) {
 
 // Test symlink source uses mtime of symlink's target.
 func TestBuild_SymlinkSourceSymlinkDir(t *testing.T) {
+	if !runInSubProcess(t) {
+		return
+	}
 	if runtime.GOOS == "windows" {
 		t.Skip("symlink not available on windows")
 		return
@@ -277,6 +286,9 @@ func TestBuild_SymlinkSourceSymlinkDir(t *testing.T) {
 }
 
 func TestBuild_SymlinkSourceDangling(t *testing.T) {
+	if !runInSubProcess(t) {
+		return
+	}
 	if runtime.GOOS == "windows" {
 		t.Skip("symlink not available on windows")
 		return
@@ -305,6 +317,9 @@ func TestBuild_SymlinkSourceDangling(t *testing.T) {
 }
 
 func TestBuild_SymlinkGeneratedDangling(t *testing.T) {
+	if !runInSubProcess(t) {
+		return
+	}
 	if runtime.GOOS == "windows" {
 		t.Skip("symlink not available on windows")
 		return

@@ -19,6 +19,9 @@ import (
 
 // test precomputed tree for sysroot/frameworks.
 func TestBuild_ObjcxxFrameworks(t *testing.T) {
+	if !runInSubProcess(t) {
+		return
+	}
 	ctx := t.Context()
 	dir := tempDir(t)
 
