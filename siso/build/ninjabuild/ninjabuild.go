@@ -112,21 +112,21 @@ func NewStepConfig(ctx context.Context, config *buildconfig.Config, p *build.Pat
 		return nil, fmt.Errorf("failed to parse init output: %w", err)
 	}
 	clog.Infof(ctx, "loaded %d platforms / %d input deps / %d rules", len(stepConfig.Platforms), len(stepConfig.InputDeps), len(stepConfig.Rules))
+	stepConfig.StateDir = stateDir
+	err = stepConfig.Init(ctx)
+	if err != nil {
+		return nil, err
+	}
 	buf, err := json.MarshalIndent(stepConfig, "", " ")
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal config: %w", err)
 	}
-	stepConfig.StateDir = stateDir
 	configFilename := filepath.Join(stateDir, ".siso_config")
 	err = os.WriteFile(configFilename, buf, 0644)
 	if err != nil {
 		return nil, err
 	}
 	clog.Infof(ctx, "save to %s", configFilename)
-	err = stepConfig.Init(ctx)
-	if err != nil {
-		return nil, err
-	}
 	err = updateFilegroups(ctx, config, p, hashFS, fname, stepConfig)
 	if err != nil {
 		return nil, err
