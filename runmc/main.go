@@ -84,7 +84,6 @@ func run(ctx context.Context) error {
 		"--pty",
 		"--user",
 		"--json=pretty",
-		"-p", "CPUAccounting=yes",
 		"-p", "MemoryAccounting=yes",
 		"-p", "IOAccounting=yes",
 		"-p", "IPAccounting=yes",
