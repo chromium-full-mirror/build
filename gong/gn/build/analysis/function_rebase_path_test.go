@@ -118,6 +118,32 @@ func TestRebasePathFunction(t *testing.T) {
 			want:   "foo/bar.txt",
 		},
 		{
+			name: "relative input trailing slash preserved",
+			args: []resolve.Value{
+				resolve.NewOriginlessStringValue("bar/"),
+				resolve.NewOriginlessStringValue("//"),
+			},
+			curDir: mustDir(t, "//foo/"),
+			want:   "foo/bar/",
+		},
+		{
+			name: "input with slash but output dot",
+			args: []resolve.Value{
+				resolve.NewOriginlessStringValue("./"),
+				resolve.NewOriginlessStringValue("."),
+			},
+			curDir: mustDir(t, "//foo/bar/"),
+			want:   "./",
+		},
+		{
+			name: "source-absolute directory to empty new_base",
+			args: []resolve.Value{
+				resolve.NewOriginlessStringValue("//foo/bar/"),
+				resolve.NewOriginlessStringValue(""),
+			},
+			want: "foo/bar/",
+		},
+		{
 			name: "empty new_base (explicit)",
 			args: []resolve.Value{
 				resolve.NewOriginlessStringValue("//foo/bar.txt"),
@@ -138,7 +164,7 @@ func TestRebasePathFunction(t *testing.T) {
 				resolve.NewOriginlessStringValue("//foo/bar/"),
 				resolve.NewOriginlessStringValue(""),
 			},
-			want: "foo/bar",
+			want: "foo/bar/",
 		},
 		{
 			name: "empty new_base with list input",
@@ -149,7 +175,7 @@ func TestRebasePathFunction(t *testing.T) {
 				}),
 				resolve.NewOriginlessStringValue(""),
 			},
-			want: `["foo/bar.txt", "baz/qux"]`,
+			want: `["foo/bar.txt", "baz/qux/"]`,
 		},
 		{
 			name: "relative new_base",
@@ -194,7 +220,7 @@ func TestRebasePathFunction(t *testing.T) {
 				resolve.NewOriginlessStringValue("//"),
 			},
 			curDir: mustDir(t, "//foo/"),
-			want:   "foo/",
+			want:   "foo",
 		},
 		{
 			name: "relative input double dot",
@@ -203,7 +229,7 @@ func TestRebasePathFunction(t *testing.T) {
 				resolve.NewOriginlessStringValue("//"),
 			},
 			curDir: mustDir(t, "//foo/bar/"),
-			want:   "foo/",
+			want:   "foo",
 		},
 		{
 			name: "relative input path with dot",
@@ -212,7 +238,7 @@ func TestRebasePathFunction(t *testing.T) {
 				resolve.NewOriginlessStringValue("//"),
 			},
 			curDir: mustDir(t, "//foo/"),
-			want:   "foo/sub/",
+			want:   "foo/sub",
 		},
 		{
 			name: "relative input empty string",

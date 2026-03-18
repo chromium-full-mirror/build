@@ -22,7 +22,21 @@ func valueLooksLikeDir(value string) bool {
 	return trimmed == "" || strings.HasSuffix(trimmed, "/")
 }
 
+// matchSlashEnding ensures the output path has a trailing slash iff the input path does.
+// TODO: what happens with windows style paths?
+func matchSlashEnding(input, output string) string {
+	if strings.HasSuffix(input, "/") {
+		if !strings.HasSuffix(output, "/") {
+			return output + "/"
+		}
+	} else if outputCut, ok := strings.CutSuffix(output, "/"); ok {
+		return outputCut
+	}
+	return output
+}
+
 func rebaseOnePath(ctx *scopeContext, path string, fromDir, destDir fs.SourceDir) (resolve.Value, error) {
+	origPath := path
 	if valueLooksLikeDir(path) {
 		sourceDir, err := fromDir.ResolveRelativeDir(path)
 		if err != nil {
@@ -41,11 +55,12 @@ func rebaseOnePath(ctx *scopeContext, path string, fromDir, destDir fs.SourceDir
 	if err != nil {
 		return nil, err
 	}
-	// TODO: Match slash ending with input (MakeSlashEndingMatchInput in C++ GN)
+	rebased = matchSlashEnding(origPath, rebased)
 	return resolve.NewOriginlessStringValue(rebased), nil
 }
 
 func systemAbsoluteOnePath(ctx *scopeContext, path string, fromDir fs.SourceDir) (resolve.Value, error) {
+	origPath := path
 	var rebased string
 	if valueLooksLikeDir(path) {
 		sourceDir, err := fromDir.ResolveRelativeDir(path)
@@ -60,7 +75,7 @@ func systemAbsoluteOnePath(ctx *scopeContext, path string, fromDir fs.SourceDir)
 		}
 		rebased = ctx.settings.buildSettings.FullPath(sourceFile)
 	}
-	// TODO: Match slash ending with input (MakeSlashEndingMatchInput in C++ GN)
+	rebased = matchSlashEnding(origPath, rebased)
 	return resolve.NewOriginlessStringValue(rebased), nil
 }
 
