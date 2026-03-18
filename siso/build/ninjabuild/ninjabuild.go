@@ -96,12 +96,17 @@ func (g gnTarget) String() string {
 
 // NewStepConfig creates new *StepConfig and stores it in .siso_config
 // and .siso_filegroups.
-func NewStepConfig(ctx context.Context, config *buildconfig.Config, p *build.Path, hashFS *hashfs.HashFS, fname, stateDir string) (*StepConfig, error) {
-	err := hashFS.WaitReady(ctx)
+func NewStepConfig(ctx context.Context, config *buildconfig.Config, p *build.Path, fname, stateDir string) (*StepConfig, error) {
+	// Use a temporary HashFS for config initialization and updating filegroups.
+	// Config initialization is mostly CPU-bound (loading Starlark scripts, parsing config),
+	// while HashFS initialization is Disk-bound (scanning directory state, computing digests).
+	// Isolating config parsing avoids blocking the CPU execution phase on the long
+	// background disk scan of the main HashFS, allowing them to run concurrently.
+	tempHashFS, err := hashfs.New(ctx, hashfs.Option{})
 	if err != nil {
 		return nil, err
 	}
-	s, err := config.Init(ctx, hashFS, p)
+	s, err := config.Init(ctx, tempHashFS, p)
 	if err != nil {
 		return nil, err
 	}
@@ -127,7 +132,7 @@ func NewStepConfig(ctx context.Context, config *buildconfig.Config, p *build.Pat
 		return nil, err
 	}
 	clog.Infof(ctx, "save to %s", configFilename)
-	err = updateFilegroups(ctx, config, p, hashFS, fname, stepConfig)
+	err = updateFilegroups(ctx, config, p, tempHashFS, fname, stepConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -237,11 +242,11 @@ func (g *Graph) Reload(ctx context.Context) error {
 	eg.Go(func() error {
 		// need to refresh cached entries as `gn gen` updated files
 		// but ninja manifest doesn't know what files are updated.
-		err := g.globals.hashFS.Refresh(ctx, g.globals.path.ExecRoot)
-		if err != nil {
-			return err
-		}
-		g.globals.stepConfig, err = NewStepConfig(ctx, g.globals.buildConfig, g.globals.path, g.globals.hashFS, g.fname, stateDir)
+		return g.globals.hashFS.Refresh(ctx, g.globals.path.ExecRoot)
+	})
+	eg.Go(func() error {
+		var err error
+		g.globals.stepConfig, err = NewStepConfig(ctx, g.globals.buildConfig, g.globals.path, g.fname, stateDir)
 		return err
 	})
 	eg.Go(func() error {

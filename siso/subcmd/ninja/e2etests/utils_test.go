@@ -313,7 +313,7 @@ func setupBuild(ctx context.Context, t *testing.T, dir string, fsopt hashfs.Opti
 			t.Fatal(err)
 		}
 	})
-	stepConfig, err := ninjabuild.NewStepConfig(ctx, config, path, hashFS, "build.ninja", ".")
+	stepConfig, err := ninjabuild.NewStepConfig(ctx, config, path, "build.ninja", ".")
 	if err != nil {
 		t.Fatal(err)
 	}

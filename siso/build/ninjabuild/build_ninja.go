@@ -131,11 +131,15 @@ func CheckManifest(ctx context.Context, filename string, buildPath *build.Path, 
 // Run runs a ninja build.
 // It returns build statistics and an error if the build fails.
 func Run(ctx context.Context, graph *Graph, bopts build.Options, targets []string, nopts RunNinjaOpts) (build.Stats, error) {
+	err := graph.globals.hashFS.WaitReady(ctx)
+	if err != nil {
+		return build.Stats{}, err
+	}
 	spin := ui.Default.NewSpinner()
 
 	builddir := graph.Binding("builddir")
 	clog.Infof(ctx, "builddir=%q", builddir)
-	err := initNinjaLogWriter(&bopts, builddir)
+	err = initNinjaLogWriter(&bopts, builddir)
 	if err != nil {
 		return build.Stats{}, err
 	}
