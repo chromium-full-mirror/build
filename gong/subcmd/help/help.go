@@ -61,6 +61,10 @@ func (h *Command) Execute(ctx context.Context, f *flag.FlagSet, _ ...any) subcom
 		})
 		return subcommands.ExitSuccess
 
+	case "file_pattern":
+		fmt.Fprint(os.Stdout, analysis.PatternsHelp)
+		return subcommands.ExitSuccess
+
 	case "ninja_rules":
 		fmt.Fprint(os.Stdout, ninjawriter.NinjaRulesHelp)
 		return subcommands.ExitSuccess
