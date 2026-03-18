@@ -1,0 +1,62 @@
+# Copyright 2026 The Chromium Authors
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+# Empty list
+assert_failure("First argument must be a list of strings.") {
+  filter_exclude("foo", ["*"])
+}
+
+# Values filter exclude
+values = ["foo.cc", "foo.h", "foo.proto"]
+result = filter_exclude(values, ["*.proto"])
+assert(result == ["foo.cc", "foo.h"])
+
+result2 = filter_exclude(values, ["foo.*"])
+assert(result2 == [])
+
+# Values filter include
+result3 = filter_include(values, ["*.h"])
+assert(result3 == ["foo.h"])
+
+result4 = filter_include(values, ["*.cc", "*.h"])
+assert(result4 == ["foo.cc", "foo.h"])
+
+result5 = filter_include(values, ["foo.*"])
+assert(result5 == ["foo.cc", "foo.h", "foo.proto"])
+
+# Empty outputs
+assert(filter_exclude([], []) == [])
+assert(filter_include([], []) == [])
+
+# Mixed patterns
+values2 = [ "a", "b", "c", "d" ]
+assert(filter_include(values2, ["a", "c"]) == ["a", "c"])
+assert(filter_exclude(values2, ["a", "c"]) == ["b", "d"])
+
+# Error tests
+assert_failure("First argument must be a list of strings.") {
+  filter_include("not a list", [])
+}
+
+assert_failure("This value must be a list.") {
+  filter_exclude([], "not a list")
+}
+
+assert_failure("Expecting exactly two arguments.") {
+  filter_include(["foo"])
+}
+
+assert_failure("Expecting exactly two arguments.") {
+  filter_exclude(["foo"], ["bar"], ["baz"])
+}
+
+# Type errors in lists
+assert_failure("First argument must be a list of strings.") {
+  filter_include([1, 2], ["*"])
+}
+
+# TODO: need to fix type error message
+assert_failure("This is not a 1. Instead I see a integer = true") {
+  filter_exclude(["foo"], [1, 2])
+}

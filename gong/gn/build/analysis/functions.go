@@ -20,6 +20,8 @@ func FunctionMap(buildSettings *environment.BuildSettings) map[string]resolve.Fu
 		"import":                importFunction{},
 		"config":                configFunction{},
 		"copy":                  targetFunction{schema: &schemas.CopySchema},
+		"filter_exclude":        filterExcludeFunction{},
+		"filter_include":        filterIncludeFunction{},
 		"group":                 targetFunction{schema: &schemas.GroupSchema},
 		"len":                   lenFunction{},
 		"executable":            targetFunction{schema: &schemas.ExecutableSchema},
