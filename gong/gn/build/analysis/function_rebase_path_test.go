@@ -205,6 +205,15 @@ func TestRebasePathFunction(t *testing.T) {
 			want:   "sub/file.txt",
 		},
 		{
+			name: "relative new_base with non-root curDir and absolute input",
+			args: []resolve.Value{
+				resolve.NewOriginlessStringValue("//foo/bar.txt"),
+				resolve.NewOriginlessStringValue("baz/"),
+			},
+			curDir: mustDir(t, "//tools/gn/"),
+			want:   "../../../foo/bar.txt",
+		},
+		{
 			name: "directory path with non-root curDir",
 			args: []resolve.Value{
 				resolve.NewOriginlessStringValue("sub/dir/"),

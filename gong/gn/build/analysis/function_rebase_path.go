@@ -5,9 +5,6 @@
 package analysis
 
 import (
-	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 
 	"go.chromium.org/build/gong/gn/build/fs"
@@ -212,10 +209,6 @@ func (rebasePathFunction) Run(scope *resolve.Scope, call *parse.FunctionCallNode
 	}
 
 	if newBase != "" {
-		if !fs.IsPathSourceAbsolute(newBase) && !filepath.IsAbs(newBase) {
-			// TODO: scope knows curDir now, need to implement support for using it in this param.
-			fmt.Fprintf(os.Stderr, "warn: relative new_base in rebase_path is not correctly implemented yet. this will be treated as relative to //.\n")
-		}
 		destDir, err := ctx.sourceDir.ResolveRelativeDir(newBase)
 		if err != nil {
 			return nil, err
