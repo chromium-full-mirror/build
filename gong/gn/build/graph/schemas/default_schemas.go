@@ -118,6 +118,24 @@ var (
 			"args":    graph.StringListVar{},
 			"depfile": graph.StringVar{},
 		},
+		Resolver: func(ctx graph.ResolverContext) (graph.ResolutionMetadata, error) {
+			script, err := ctx.SourceFileFor("script")
+			if err != nil {
+				return nil, fmt.Errorf("action missing script: %w", err)
+			}
+
+			var args []string
+			for arg, err := range ctx.StringsFor("args") {
+				if err != nil {
+					return nil, err
+				}
+				args = append(args, arg)
+			}
+
+			return nil, NotImplementedError{
+				what: fmt.Sprintf("action targets. you requested to run %s with args %v", script.Filename(), args),
+			}
+		},
 	}
 	ExecutableSchema = graph.Schema{
 		Name:    "executable",

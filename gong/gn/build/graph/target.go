@@ -74,6 +74,26 @@ func (t *Target) StringFor(varName string) (string, error) {
 	return sv.str, nil
 }
 
+// StringsFor returns an iterator over strings for the variable, if it accepts string lists.
+func (t *Target) StringsFor(varName string) iter.Seq2[string, error] {
+	return func(yield func(string, error) bool) {
+		v, ok := t.Values[varName]
+		if !ok {
+			return
+		}
+		sv, err := ProcessedValueAs[StringListValue](v)
+		if err != nil {
+			yield("", err)
+			return
+		}
+		for _, s := range sv.list {
+			if !yield(s, nil) {
+				return
+			}
+		}
+	}
+}
+
 // SourceFileFor returns the source file for the variable, if it accepts a file.
 func (t *Target) SourceFileFor(varName string) (fs.SourceFile, error) {
 	v, ok := t.Values[varName]

@@ -347,6 +347,7 @@ func (b *Builder) resolveTarget(target *graph.Target, record *builderRecord) ([]
 		},
 		LabelKeyedStringMapFor: target.LabelKeyedStringMapFor,
 		StringFor:              target.StringFor,
+		StringsFor:             target.StringsFor,
 		BoolFor:                target.BoolFor,
 		SourceFileFor:          target.SourceFileFor,
 		SourceFilesFor:         target.SourceFilesFor,
