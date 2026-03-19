@@ -24,6 +24,23 @@ type TargetVar interface {
 	Process(environment.Label, resolve.Value) (ProcessedValue, error)
 }
 
+// A BoolVar variable accepts a boolean e.g.
+//
+//	testonly = true
+type BoolVar struct{}
+
+func (BoolVar) ExpectedItems() Item { return nil }
+func (BoolVar) Process(_ environment.Label, value resolve.Value) (ProcessedValue, error) {
+	bv, err := resolve.AsValue[*resolve.BooleanValue](value)
+	if err != nil {
+		return nil, err
+	}
+	return BoolValue{
+		origin: bv,
+		bool:   bv.Value(),
+	}, nil
+}
+
 // A StringVar variable accepts single strings e.g.
 //
 //	depfile = "$target_gen_dir/$target_name.d"
@@ -205,6 +222,17 @@ type ProcessedValue interface {
 	// Labels returns an iterator over all label(s) this value contains, if any.
 	Labels() iter.Seq[environment.LabelWithOrigin]
 }
+
+// BoolValue represents a processed boolean value.
+type BoolValue struct {
+	origin *resolve.BooleanValue
+	bool   bool
+}
+
+func (f BoolValue) value() resolve.Value {
+	return f.origin
+}
+func (BoolValue) Labels() iter.Seq[environment.LabelWithOrigin] { return nil }
 
 // StringValue represents a processed string value.
 type StringValue struct {

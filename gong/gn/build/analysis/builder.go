@@ -347,6 +347,7 @@ func (b *Builder) resolveTarget(target *graph.Target, record *builderRecord) ([]
 		},
 		LabelKeyedStringMapFor: target.LabelKeyedStringMapFor,
 		StringFor:              target.StringFor,
+		BoolFor:                target.BoolFor,
 		SourceFileFor:          target.SourceFileFor,
 		SourceFilesFor:         target.SourceFilesFor,
 		ResolvedTargetsFor: func(varName string) iter.Seq2[graph.Resolution, error] {

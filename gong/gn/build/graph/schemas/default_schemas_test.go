@@ -377,6 +377,55 @@ func TestStaticLibrarySchema_Resolver(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "prefixoverride",
+			ctx: fakeResolverContext(fakeResolverData{
+				configValues: graph.ConfigValues{
+					Cflags:  []string{"-fPIC", "-O2"},
+					Arflags: []string{"rcs"},
+				},
+				booleans: map[string]bool{
+					"output_prefix_override": true,
+				},
+				strings: map[string]string{
+					"name": "bar",
+				},
+				sourceFileLists: map[string][]fs.SourceFile{
+					"sources": {
+						mustSourceFile(t, "//src/lib.cc"),
+					},
+				},
+			}),
+			want: DefaultMetadata{
+				OutputPaths: []fs.OutputPath{
+					mustOutputPath(t, "//out/Default/", "obj/bar.a"),
+				},
+			},
+			wantTools: []gotToolCall{
+				{
+					Tool:       "cxx",
+					Source:     mustSourceFile(t, "//src/lib.cc"),
+					Inputs:     []fs.SourceFile{mustSourceFile(t, "//src/lib.cc")},
+					OutputName: "bar.lib.cc.o",
+					Expansions: map[string]string{
+						"source_file_part": "",
+						"source_name_part": "",
+						"cflags":           "-fPIC -O2",
+					},
+				},
+				{
+					Tool:   "alink",
+					Source: fs.SourceFile{},
+					Inputs: []fs.SourceFile{
+						mustSourceFile(t, "//out/Default/obj/bar.lib.cc.o"),
+					},
+					OutputName: "bar.a",
+					Expansions: map[string]string{
+						"arflags": "rcs",
+					},
+				},
+			},
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var gotTools []gotToolCall

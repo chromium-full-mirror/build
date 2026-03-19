@@ -48,6 +48,19 @@ func (t *Target) LabelKeyedStringMapFor(varName string) (map[environment.Label]s
 	return mv.data, nil
 }
 
+// BoolFor returns the boolean for the variable, if it accepts a boolean.
+func (t *Target) BoolFor(varName string) (bool, error) {
+	v, ok := t.Values[varName]
+	if !ok {
+		return false, fmt.Errorf("%s not declared", varName)
+	}
+	bv, err := ProcessedValueAs[BoolValue](v)
+	if err != nil {
+		return false, err
+	}
+	return bv.bool, nil
+}
+
 // StringFor returns the string for the variable, if it accepts strings.
 func (t *Target) StringFor(varName string) (string, error) {
 	v, ok := t.Values[varName]

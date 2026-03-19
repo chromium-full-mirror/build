@@ -20,6 +20,11 @@ func (v *BooleanValue) valueType() ValueType {
 	return ValueTypeBoolean
 }
 
+// Value returns the boolean value.
+func (v *BooleanValue) Value() bool {
+	return v.value
+}
+
 func (v *BooleanValue) setOrigin(origin parse.Node) {
 	v.origin = origin
 }

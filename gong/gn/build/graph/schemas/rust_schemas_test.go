@@ -26,6 +26,7 @@ type gotToolCall struct {
 }
 
 type fakeResolverData struct {
+	booleans            map[string]bool
 	strings             map[string]string
 	labelKeyedStringMap map[string]map[environment.Label]string
 	sourceFiles         map[string]fs.SourceFile
@@ -47,6 +48,12 @@ func fakeResolverContext(data fakeResolverData) graph.ResolverContext {
 				return v, nil
 			}
 			return "", fmt.Errorf("unknown var %q", varName)
+		},
+		BoolFor: func(varName string) (bool, error) {
+			if v, ok := data.booleans[varName]; ok {
+				return v, nil
+			}
+			return false, fmt.Errorf("unknown var %q", varName)
 		},
 		SourceFileFor: func(varName string) (fs.SourceFile, error) {
 			if v, ok := data.sourceFiles[varName]; ok {

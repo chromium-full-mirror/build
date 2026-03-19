@@ -183,3 +183,61 @@ build obj/libfoo.a: alink obj/libfoo.lib.cc.o
 		},
 	)
 }
+
+func TestCxx_StaticLibrary_PrefixOverride(t *testing.T) {
+	runTest(t,
+		map[string]string{
+			"build/BUILDCONFIG.gn": `
+set_default_toolchain("//:tc")`,
+			"BUILD.gn": `
+toolchain("tc") {
+  tool("cxx") { command = "clang++" }
+  tool("alink") { command = "ar" }
+}
+
+static_library("foo") {
+  sources = [ "lib.cc" ]
+  output_prefix_override = true
+}`,
+			"lib.cc": "",
+		},
+		map[string]string{
+			"build.ninja": `
+# TODO: ninja_required_version
+# TODO: rule gn
+# TODO: rule build.ninja.stamp
+# TODO: rule build.ninja
+subninja toolchain.ninja
+build foo: phony obj/foo.a
+build $:foo: phony obj/foo.a
+
+build all: phony $
+    obj/foo.a
+
+default all
+`,
+			"toolchain.ninja": `
+rule alink
+  command = ar
+
+rule cxx
+  command = clang++
+
+subninja obj/foo.ninja
+`,
+			"obj/foo.ninja": `
+output_extension = .a
+output_dir = obj
+target_output_name = foo
+target_out_dir = obj
+
+build obj/foo.lib.cc.o: cxx ../../lib.cc
+  cflags =
+  source_file_part =
+  source_name_part =
+build obj/foo.a: alink obj/foo.lib.cc.o
+  arflags =
+`,
+		},
+	)
+}

@@ -195,7 +195,11 @@ var (
 			}
 			targetCategory := binaryUncategorized
 			var linkInputs []fs.SourceFile
-			outPrefix := fmt.Sprintf("lib%s", name)
+			outName := fmt.Sprintf("lib%s", name)
+			override, err := ctx.BoolFor("output_prefix_override")
+			if err == nil && override {
+				outName = name
+			}
 			for source := range ctx.SourceFilesFor("sources") {
 				sourceName := source.Filename()
 				sourceType, category := fileTypeCategory(source.Filename())
@@ -220,7 +224,7 @@ var (
 					"cxx",
 					source,
 					[]fs.SourceFile{source},
-					fmt.Sprintf("%s.%s.o", outPrefix, sourceBase),
+					fmt.Sprintf("%s.%s.o", outName, sourceBase),
 					map[string]string{
 						// TODO: fill these out.
 						"source_file_part": "",
@@ -241,7 +245,7 @@ var (
 				"solink",
 				fs.SourceFile{},
 				linkInputs,
-				fmt.Sprintf("%s.so", outPrefix),
+				fmt.Sprintf("%s.so", outName),
 				map[string]string{
 					// TODO: fill these out.
 					"ldflags":      strings.Join(ctx.ConfigValues.Ldflags, " "),
@@ -270,8 +274,9 @@ var (
 		Summary: "Declare a shared library target.",
 		Vars: map[string]graph.TargetVar{
 			// TODO: support more variables.
-			"sources": graph.FileListVar{},
-			"deps":    graph.LabelListVar{Expected: &graph.Target{}},
+			"sources":                graph.FileListVar{},
+			"deps":                   graph.LabelListVar{Expected: &graph.Target{}},
+			"output_prefix_override": graph.BoolVar{},
 		},
 		Resolver: func(ctx graph.ResolverContext) (graph.ResolutionMetadata, error) {
 			name, err := ctx.StringFor("name")
@@ -280,7 +285,11 @@ var (
 			}
 			targetCategory := binaryUncategorized
 			var linkInputs []fs.SourceFile
-			outPrefix := fmt.Sprintf("lib%s", name)
+			outName := fmt.Sprintf("lib%s", name)
+			override, err := ctx.BoolFor("output_prefix_override")
+			if err == nil && override {
+				outName = name
+			}
 			for source := range ctx.SourceFilesFor("sources") {
 				sourceName := source.Filename()
 				sourceType, category := fileTypeCategory(source.Filename())
@@ -305,7 +314,7 @@ var (
 					"cxx",
 					source,
 					[]fs.SourceFile{source},
-					fmt.Sprintf("%s.%s.o", outPrefix, sourceBase),
+					fmt.Sprintf("%s.%s.o", outName, sourceBase),
 					map[string]string{
 						// TODO: fill these out.
 						"source_file_part": "",
@@ -326,7 +335,7 @@ var (
 				"alink",
 				fs.SourceFile{},
 				linkInputs,
-				fmt.Sprintf("%s.a", outPrefix),
+				fmt.Sprintf("%s.a", outName),
 				map[string]string{
 					// TODO: add more.
 					"arflags": strings.Join(ctx.ConfigValues.Arflags, " "),

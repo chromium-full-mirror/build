@@ -24,6 +24,8 @@ type ResolverContext struct {
 	LabelKeyedStringMapFor func(varName string) (map[environment.Label]string, error)
 	// StringFor returns the string for the variable, if it accepts strings.
 	StringFor func(varName string) (string, error)
+	// BoolFor returns the boolean for the variable, if it accepts booleans.
+	BoolFor func(varName string) (bool, error)
 	// SourceFileFor returns the source file for the variable, if it accepts a file.
 	SourceFileFor func(varName string) (fs.SourceFile, error)
 	// SourceFilesFor returns an iterator over source files for the variable, if it accepts file lists.
