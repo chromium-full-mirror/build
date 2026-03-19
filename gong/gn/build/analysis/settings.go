@@ -49,7 +49,7 @@ func (s *Settings) NewScope() *resolve.Scope {
 			targetDefaults: make(map[string]*resolve.Scope),
 		},
 		&builtinProvider{buildSettings: s.buildSettings},
-		FunctionMap(s.buildSettings),
+		FunctionMap,
 	)
 }
 

@@ -16,7 +16,6 @@ import (
 	"github.com/google/subcommands"
 
 	"go.chromium.org/build/gong/gn/build/analysis"
-	"go.chromium.org/build/gong/gn/build/environment"
 	"go.chromium.org/build/gong/gn/build/ninjawriter"
 	"go.chromium.org/build/gong/ui"
 )
@@ -44,9 +43,8 @@ func (h *Command) Execute(ctx context.Context, f *flag.FlagSet, _ ...any) subcom
 		fmt.Fprintf(os.Stdout, "\nBuildfile functions ")
 		fmt.Fprintf(os.Stdout, `(type "%s help <function>" for more help)`, subcommands.DefaultCommander.Name())
 		fmt.Fprintf(os.Stdout, ":\n")
-		functionMap := analysis.FunctionMap(&environment.BuildSettings{})
-		for _, name := range slices.Sorted(maps.Keys(functionMap)) {
-			fmt.Fprintf(os.Stdout, "  %s\n", functionMap[name].HelpShort())
+		for _, name := range slices.Sorted(maps.Keys(analysis.FunctionMap)) {
+			fmt.Fprintf(os.Stdout, "  %s\n", analysis.FunctionMap[name].HelpShort())
 		}
 
 		return subcommands.ExitSuccess
@@ -83,8 +81,7 @@ func (h *Command) Execute(ctx context.Context, f *flag.FlagSet, _ ...any) subcom
 		}
 
 		// Then try to find it as a build function.
-		functionMap := analysis.FunctionMap(&environment.BuildSettings{})
-		if info, ok := functionMap[what]; ok {
+		if info, ok := analysis.FunctionMap[what]; ok {
 			fmt.Fprintf(os.Stdout, "%s\n%s", info.HelpShort(), info.Help())
 			return subcommands.ExitSuccess
 		}
