@@ -345,6 +345,9 @@ func (b *Builder) resolveTarget(target *graph.Target, record *builderRecord) ([]
 		DeclareTool: func(tool string, source fs.SourceFile, inputs []fs.SourceFile, outputName string, expansions map[string]string) (fs.OutputPath, error) {
 			return target.DeclareTool(outDir, tool, source, inputs, outputName, expansions)
 		},
+		DeclareScript: func(script fs.SourceFile, args, outputs []string, inputs []fs.SourceFile, depfile string) ([]fs.OutputPath, error) {
+			return target.DeclareScript(outDir, script, args, outputs, inputs, depfile)
+		},
 		LabelKeyedStringMapFor: target.LabelKeyedStringMapFor,
 		StringFor:              target.StringFor,
 		StringsFor:             target.StringsFor,

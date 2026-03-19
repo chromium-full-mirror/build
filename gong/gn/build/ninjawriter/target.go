@@ -103,9 +103,16 @@ func writeBinaryTarget(w io.Writer, t *graph.Target, buildSettings *environment.
 	// the final tool declared by the target is the "final output".
 	if len(t.Resolution.Actions) > 0 {
 		lastAction := t.Resolution.Actions[len(t.Resolution.Actions)-1]
-		outputBase := filepath.Base(lastAction.Output.Path())
-		outputExtension = filepath.Ext(outputBase)
-		targetOutputName = strings.TrimSuffix(outputBase, outputExtension)
+		switch action := lastAction.(type) {
+		case graph.RunToolAction:
+			outputBase := filepath.Base(action.Output.Path())
+			outputExtension = filepath.Ext(outputBase)
+			targetOutputName = strings.TrimSuffix(outputBase, outputExtension)
+		case graph.RunScriptAction:
+			return fmt.Errorf("script actions not implemented yet")
+		default:
+			return fmt.Errorf("unknown action type: %T", action)
+		}
 	} else {
 		targetOutputName = t.Label().Name
 	}
@@ -153,8 +160,18 @@ func writeBinaryTarget(w io.Writer, t *graph.Target, buildSettings *environment.
 		return err
 	}
 
-	// Then, write out each tool call action.
+	// Then, write out each action.
 	for _, action := range t.Resolution.Actions {
+		if err := writeAction(w, action, buildSettings); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func writeAction(w io.Writer, action graph.Action, buildSettings *environment.BuildSettings) error {
+	switch action := action.(type) {
+	case graph.RunToolAction:
 		var inputPaths []string
 		var implicitDeps []string
 		if !action.Source.IsZero() {
@@ -185,7 +202,7 @@ func writeBinaryTarget(w io.Writer, t *graph.Target, buildSettings *environment.
 
 		rebasedOutput := escapeStringNinja(action.Output.Path())
 
-		_, err = fmt.Fprintf(w, "build %s: %s %s",
+		_, err := fmt.Fprintf(w, "build %s: %s %s",
 			rebasedOutput,
 			escapeStringNinja(action.Tool),
 			strings.Join(inputPaths, " "),
@@ -223,6 +240,10 @@ func writeBinaryTarget(w io.Writer, t *graph.Target, buildSettings *environment.
 				return err
 			}
 		}
+	case graph.RunScriptAction:
+		return fmt.Errorf("script actions not implemented yet")
+	default:
+		return fmt.Errorf("unknown action type: %T", action)
 	}
 	return nil
 }

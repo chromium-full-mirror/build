@@ -19,6 +19,8 @@ type ResolverContext struct {
 	ConfigValues ConfigValues
 	// DeclareTool declares a tool call.
 	DeclareTool func(tool string, source fs.SourceFile, inputs []fs.SourceFile, outputName string, expansions map[string]string) (fs.OutputPath, error)
+	// DeclareScript declares a script call.
+	DeclareScript func(script fs.SourceFile, args, outputNames []string, inputs []fs.SourceFile, depfile string) ([]fs.OutputPath, error)
 	// LabelKeyedStringMapFor returns the map of labels to strings for the variable, if it accepts
 	// a variable that is processed into a map of labels to strings.
 	LabelKeyedStringMapFor func(varName string) (map[environment.Label]string, error)
@@ -47,9 +49,15 @@ type ResolverFn = func(ResolverContext) (ResolutionMetadata, error)
 // A Resolution of a target records the actions that a target performs, and any metadata that
 // may be relevant to targets waiting for this target to be resolved.
 type Resolution struct {
-	Actions  []RunToolAction
+	Actions  []Action
 	Label    environment.Label
 	Metadata ResolutionMetadata
+}
+
+// An Action represents anything a target does that results in build graph outputs.
+// This is not to be confused with GN's action() target type.
+type Action interface {
+	Ins() []fs.SourceFile
 }
 
 // A RunToolAction represents a call to a tool inside the current toolchain.
@@ -60,6 +68,21 @@ type RunToolAction struct {
 	Output     fs.OutputPath
 	Expansions map[string]string
 }
+
+func (r RunToolAction) Ins() []fs.SourceFile { return r.Inputs }
+
+// A RunScriptAction represents a script call.
+type RunScriptAction struct {
+	Script  fs.SourceFile
+	Args    []string
+	Outputs []fs.OutputPath
+	Inputs  []fs.SourceFile
+	Depfile string
+	// TODO: rspfile?
+	// TODO: expansions?
+}
+
+func (r RunScriptAction) Ins() []fs.SourceFile { return r.Inputs }
 
 // ResolutionMetadata represents metadata provided by target resolvers,
 // that dependent target resolvers may access.

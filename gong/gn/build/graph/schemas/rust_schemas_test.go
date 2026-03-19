@@ -25,16 +25,19 @@ type gotToolCall struct {
 	Expansions map[string]string
 }
 
+// TODO: move into somewhere common (utils_test.go)?
 type fakeResolverData struct {
 	booleans            map[string]bool
 	strings             map[string]string
 	labelKeyedStringMap map[string]map[environment.Label]string
 	sourceFiles         map[string]fs.SourceFile
 	sourceFileLists     map[string][]fs.SourceFile
+	stringLists         map[string][]string
 	resolvedDeps        []graph.Resolution
 	configValues        graph.ConfigValues
 }
 
+// TODO: move into somewhere common (utils_test.go)?
 func fakeResolverContext(data fakeResolverData) graph.ResolverContext {
 	return graph.ResolverContext{
 		LabelKeyedStringMapFor: func(varName string) (map[environment.Label]string, error) {
@@ -72,6 +75,19 @@ func fakeResolverContext(data fakeResolverData) graph.ResolverContext {
 					return
 				}
 				yield(fs.SourceFile{}, fmt.Errorf("unknown var %q", varName))
+			}
+		},
+		StringsFor: func(varName string) iter.Seq2[string, error] {
+			return func(yield func(string, error) bool) {
+				if v, ok := data.stringLists[varName]; ok {
+					for _, d := range v {
+						if !yield(d, nil) {
+							return
+						}
+					}
+					return
+				}
+				yield("", fmt.Errorf("unknown var %q", varName))
 			}
 		},
 		ResolvedTargetsFor: func(varName string) iter.Seq2[graph.Resolution, error] {

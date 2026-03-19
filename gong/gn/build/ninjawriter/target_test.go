@@ -41,13 +41,13 @@ func mustSourceDir(t *testing.T, path string) fs.SourceDir {
 func TestWriteBinaryTarget(t *testing.T) {
 	tests := []struct {
 		name    string
-		actions []graph.RunToolAction
+		actions []graph.Action
 		want    string
 	}{
 		{
 			name: "twostep",
-			actions: []graph.RunToolAction{
-				{
+			actions: []graph.Action{
+				graph.RunToolAction{
 					Tool:   "cxx",
 					Source: mustFile(t, "//base/main.cc"),
 					Inputs: []fs.SourceFile{mustFile(t, "//base/main.cc")},
@@ -57,7 +57,7 @@ func TestWriteBinaryTarget(t *testing.T) {
 						"source_name_part": "main",
 					},
 				},
-				{
+				graph.RunToolAction{
 					Tool: "link",
 					Inputs: []fs.SourceFile{
 						mustFile(t, "//out/Default/obj/base/main.o"),
@@ -88,8 +88,8 @@ build obj/base/app: link obj/base/main.o obj/foo/libfoo.o
 		},
 		{
 			name: "implicitdeps",
-			actions: []graph.RunToolAction{
-				{
+			actions: []graph.Action{
+				graph.RunToolAction{
 					Tool:   "rust_rlib",
 					Source: mustFile(t, "//src/lib.rs"),
 					Inputs: []fs.SourceFile{
@@ -121,8 +121,8 @@ build obj/libfoo.rlib: rust_rlib ../../src/lib.rs | obj/bar/libbar.rlib
 		},
 		{
 			name: "escaping",
-			actions: []graph.RunToolAction{
-				{
+			actions: []graph.Action{
+				graph.RunToolAction{
 					Tool:   "copy",
 					Source: mustFile(t, "//src/file with spaces.txt"),
 					Inputs: []fs.SourceFile{

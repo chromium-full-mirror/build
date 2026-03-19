@@ -86,3 +86,19 @@ func (e CrateRootNotFoundError) Message() string {
 // HelpText returns the user-facing error help text.
 // It returns an empty string because there is no detailed help text for this error.
 func (CrateRootNotFoundError) HelpText() string { return "" }
+
+// ActionMissingScriptError is returned when an action target is missing a script.
+type ActionMissingScriptError struct{}
+
+// Error returns the error string.
+func (ActionMissingScriptError) Error() string {
+	return "action missing script"
+}
+
+// Message returns the user-facing error message.
+func (ActionMissingScriptError) Message() string {
+	return `This target type requires a "script".`
+}
+
+// HelpText returns the user-facing error help text.
+func (ActionMissingScriptError) HelpText() string { return "" }

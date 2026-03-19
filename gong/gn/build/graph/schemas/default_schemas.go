@@ -107,36 +107,6 @@ func fileTypeCategory(file string) (sourceFileType, sourceFileCategory) {
 }
 
 var (
-	ActionSchema = graph.Schema{
-		Name:    "action",
-		Summary: "Declare a target that runs a script a single time.",
-		Vars: map[string]graph.TargetVar{
-			// TODO: support more variables.
-			"script":  graph.FileVar{},
-			"sources": graph.FileListVar{},
-			"outputs": graph.FileListVar{},
-			"args":    graph.StringListVar{},
-			"depfile": graph.StringVar{},
-		},
-		Resolver: func(ctx graph.ResolverContext) (graph.ResolutionMetadata, error) {
-			script, err := ctx.SourceFileFor("script")
-			if err != nil {
-				return nil, fmt.Errorf("action missing script: %w", err)
-			}
-
-			var args []string
-			for arg, err := range ctx.StringsFor("args") {
-				if err != nil {
-					return nil, err
-				}
-				args = append(args, arg)
-			}
-
-			return nil, NotImplementedError{
-				what: fmt.Sprintf("action targets. you requested to run %s with args %v", script.Filename(), args),
-			}
-		},
-	}
 	ExecutableSchema = graph.Schema{
 		Name:    "executable",
 		Summary: "Declare an executable target.",

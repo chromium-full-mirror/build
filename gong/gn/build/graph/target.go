@@ -153,6 +153,22 @@ func (t *Target) DeclareTool(outDir fs.OutputPath, tool string, source fs.Source
 	return outPath, nil
 }
 
+// DeclareScript declares a script call.
+func (t *Target) DeclareScript(outDir fs.OutputPath, script fs.SourceFile, args []string, outputNames []string, inputs []fs.SourceFile, depfile string) ([]fs.OutputPath, error) {
+	var outputs []fs.OutputPath
+	for _, name := range outputNames {
+		outputs = append(outputs, fs.MakeOutputPath(outDir.BuildDir(), path.Join(outDir.Path(), name)))
+	}
+	t.Resolution.Actions = append(t.Resolution.Actions, RunScriptAction{
+		Script:  script,
+		Args:    args,
+		Outputs: outputs,
+		Inputs:  inputs,
+		Depfile: depfile,
+	})
+	return outputs, nil
+}
+
 // OutDir returns the output directory for this target.
 func (t *Target) OutDir(buildSettings *environment.BuildSettings) fs.OutputPath {
 	// The source dir is source-absolute, so we trim off the two leading
