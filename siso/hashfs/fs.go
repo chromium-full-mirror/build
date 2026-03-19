@@ -2551,17 +2551,34 @@ func nextDir(ctx context.Context, d *directory, pe pathElements, elem string) (*
 	lready <- true
 	newDent := &entry{
 		lready: lready,
-		mode:   0644 | fs.ModeDir,
+		mode:   0o644 | fs.ModeDir,
 		mtime:  mtime,
 		// don't set directory.mtime for intermediate dir.
 		// mtime will be updated by updateDir
 		// when all dirents have been loaded.
 		directory: &directory{},
 	}
-	dent := newDent
-	v, ok = d.m.LoadOrStore(elem, dent)
-	if ok {
+	var dent *entry
+	for {
+		dent = newDent
+		v, loaded := d.m.LoadOrStore(elem, dent)
+		if !loaded {
+			break
+		}
 		dent = v.(*entry)
+		if dent != nil && dent.err != nil {
+			// A concurrent lstat may have cached an ErrNotExist
+			// here (e.g. one filegroup evaluates a missing
+			// 'sysroot', while another concurrently evaluates
+			// 'sysroot/usr/lib'). We need to upgrade it to a
+			// virtual directory to hold nested entries.
+			if d.m.CompareAndSwap(elem, dent, newDent) {
+				dent = newDent
+				break
+			}
+			continue
+		}
+		break
 	}
 	var target string
 	if dent != nil {
