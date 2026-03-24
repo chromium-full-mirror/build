@@ -1,0 +1,37 @@
+# Copyright 2026 The Chromium Authors
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+template("my_template") {
+  assert(target_name == "foo")
+  assert(invoker.some_var == "hello")
+  assert(invoker.forward_me == "world")
+}
+
+assert_failure("Need exactly one string arg to template.") {
+  template() {
+    assert(target_name == "foo")
+    assert(invoker.some_var == "hello")
+    assert(invoker.forward_me == "world")
+  }
+}
+
+assert_failure("This function call requires a block.") {
+  template("foo")
+}
+
+my_template("foo") {
+  some_var = "hello"
+  forward_me = "world"
+}
+
+assert_failure("Incorrect arguments.", "This function requires a single string argument.") {
+  my_template() {
+    some_var = "hello"
+    forward_me = "world"
+  }
+}
+
+assert_failure("This function call requires a block.") {
+  my_template("foo")
+}

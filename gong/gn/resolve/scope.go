@@ -255,25 +255,33 @@ func (s *Scope) valueInCurrentScope(ident string, markAsUsed bool) Value {
 	return nil
 }
 
-// function gets the function with the ident in the current scope if found,
+// Function gets the Function with the ident in the current scope if found,
 // otherwise recursively searches containing scopes until a match is found
 // or there are no more containing scopes.
-func (s *Scope) function(name string) (FunctionInfo, bool) {
+func (s *Scope) Function(name string) (FunctionInfo, bool) {
 	if f, found := s.functions[name]; found {
 		return f, true
 	}
 
 	// Search in the containing scope.
 	if s.parent != nil {
-		return s.parent.function(name)
+		return s.parent.Function(name)
 	}
 
 	// If there is no containing scope, search the base config.
 	if !s.skipBaseConfig && s.execContext != nil && s.execContext.BaseConfig() != s {
-		return s.execContext.BaseConfig().function(name)
+		return s.execContext.BaseConfig().Function(name)
 	}
 
 	return nil, false
+}
+
+// SetFunction sets a function in the current scope level.
+func (s *Scope) SetFunction(name string, f FunctionInfo) {
+	if s.functions == nil {
+		s.functions = make(map[string]FunctionInfo)
+	}
+	s.functions[name] = f
 }
 
 // valuesInCurrentScope returns an iterator over the values in the current scope

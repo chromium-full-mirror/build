@@ -20,6 +20,13 @@ type ScopeValue struct {
 	scope  *Scope
 }
 
+// NewScopeValue creates a new ScopeValue with the given scope.
+func NewScopeValue(s *Scope) *ScopeValue {
+	return &ScopeValue{
+		scope: s,
+	}
+}
+
 // OriginNode returns the node that made this. May be nil.
 func (v *ScopeValue) OriginNode() parse.Node {
 	return v.origin

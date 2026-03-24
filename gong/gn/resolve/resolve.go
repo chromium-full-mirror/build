@@ -81,7 +81,7 @@ func ExecuteNode(n parse.Node, s *Scope) (Value, error) {
 
 	case *parse.FunctionCallNode:
 		name := n.Function
-		info, ok := s.function(name.Value())
+		info, ok := s.Function(name.Value())
 		if !ok {
 			return nil, UnknownFunctionError{
 				OriginToken: syntax.OriginToken{Token: name},

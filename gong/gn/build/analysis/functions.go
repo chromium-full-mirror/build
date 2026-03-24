@@ -30,6 +30,7 @@ var FunctionMap = map[string]resolve.FunctionInfo{
 	"static_library":        targetFunction{schema: &schemas.StaticLibrarySchema},
 	"string_replace":        stringReplaceFunction{},
 	"string_split":          stringSplitFunction{},
+	"template":              templateFunction{},
 	"toolchain":             toolchainFunction{},
 	"tool":                  graph.ToolFunction{},
 }
