@@ -17,6 +17,26 @@ import (
 	"go.chromium.org/build/siso/toolsupport/ninjautil"
 )
 
+func TestStepConfigUpdateFilegroups_NilInputDeps(t *testing.T) {
+	ctx := t.Context()
+	sc := &StepConfig{}
+	if err := sc.Init(ctx); err != nil {
+		t.Fatalf("Init failed: %v", err)
+	}
+	err := sc.UpdateFilegroups(ctx, map[string][]string{
+		"includes:headers": {"includes/foo.h", "includes/bar.h"},
+	})
+	if err != nil {
+		t.Fatalf("UpdateFilegroups failed: %v", err)
+	}
+	if got, want := len(sc.InputDeps), 1; got != want {
+		t.Fatalf("len(InputDeps) = %d, want %d", got, want)
+	}
+	if diff := cmp.Diff([]string{"includes/foo.h", "includes/bar.h"}, sc.InputDeps["includes:headers"]); diff != "" {
+		t.Errorf("InputDeps[\"includes:headers\"] diff -want +got:\n%s", diff)
+	}
+}
+
 func TestStepConfigExpandInputs(t *testing.T) {
 	ctx := t.Context()
 	tdir := t.TempDir()

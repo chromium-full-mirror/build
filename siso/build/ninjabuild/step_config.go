@@ -326,11 +326,14 @@ func (sc *StepConfig) Init(ctx context.Context) error {
 	if sc.Scandeps.StepInputs.enabled() {
 		sc.Scandeps.stepInputsFilter = sc.Scandeps.StepInputs.filter(ctx, "scandeps.step_inputs")
 	}
+	if sc.InputDeps == nil {
+		sc.InputDeps = make(map[string][]string)
+	}
 	return nil
 }
 
 // UpdateFilegroups updates filegroups (input_deps) in the step config.
-func (sc StepConfig) UpdateFilegroups(ctx context.Context, filegroups map[string][]string) error {
+func (sc *StepConfig) UpdateFilegroups(ctx context.Context, filegroups map[string][]string) error {
 	maps.Copy(sc.InputDeps, filegroups)
 	return nil
 }
