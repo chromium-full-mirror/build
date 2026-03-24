@@ -2479,9 +2479,8 @@ func TestEntries_NonExistentIntermediateDirectory(t *testing.T) {
 		t.Fatalf("hfs.Entries(ctx, _, _)=_, %v; want nil err", err)
 	}
 
-	// TODO(b/455446876): Entries shouldn't return entry for non-existing directory.
-	if len(ents) != 1 {
-		t.Fatalf("len(ent)=%d; want 1", len(ents))
+	if len(ents) != 0 {
+		t.Fatalf("len(ent)=%d; want 0", len(ents))
 	}
 }
 

@@ -2177,6 +2177,8 @@ func (d *directory) lookup(ctx context.Context, fname string) (*entry, string, *
 	return nil, fname, nil, false
 }
 
+var missingEntry = &entry{err: fs.ErrNotExist}
+
 func (d *directory) lookupEntry(ctx context.Context, fname string) (*entry, *directory, string, bool) {
 	pe := pathElements{
 		origFname: fname,
@@ -2193,14 +2195,12 @@ func (d *directory) lookupEntry(ctx context.Context, fname string) (*entry, *dir
 		}
 		fname = rest
 		pe.n++
-		subdir, target, ok := resolveNextDir(ctx, d, lookupNextDir, pe, elem, fname)
+		subdir, target, missing := resolveNextDir(ctx, d, lookupNextDir, pe, elem, fname)
 		if subdir == nil {
-			if target != "" {
-				return nil, nil, target, false
+			if missing {
+				return missingEntry, nil, "", true
 			}
-			if !ok {
-				return nil, nil, "", false
-			}
+			return nil, nil, target, false
 		}
 		d = subdir
 	}
@@ -2256,6 +2256,9 @@ func (d *directory) storeEntry(ctx context.Context, fname string, e *entry) (*en
 	}
 	if strings.HasPrefix(fname, "/") {
 		pe.elems = append(pe.elems, "/")
+	}
+	nextDir := func(ctx context.Context, d *directory, pe pathElements, elem string) (*directory, string, bool) {
+		return storeNextDir(ctx, d, pe, elem, errors.Is(e.err, fs.ErrNotExist))
 	}
 	for fname != "" {
 		fname = strings.TrimPrefix(fname, "/")
@@ -2377,11 +2380,14 @@ func (d *directory) storeEntry(ctx context.Context, fname string, e *entry) (*en
 		pe.n++
 		pe.elems = append(pe.elems, elem)
 		fname = rest
-		subdir, resolved, ok := resolveNextDir(ctx, d, nextDir, pe, elem, fname)
-		if resolved != "" {
-			return nil, resolved, nil
-		}
-		if !ok {
+		subdir, resolved, missing := resolveNextDir(ctx, d, nextDir, pe, elem, fname)
+		if subdir == nil {
+			if missing {
+				return missingEntry, "", nil
+			}
+			if resolved != "" {
+				return nil, resolved, nil
+			}
 			return nil, "", fmt.Errorf("store resolve next dir %s failed: %s", elem, pe.origFname)
 		}
 		d = subdir
@@ -2393,59 +2399,57 @@ func (d *directory) storeEntry(ctx context.Context, fname string, e *entry) (*en
 // resolveNextDir resolves a dir named `elem` by calling `next`.
 // `next` will return *directory if `elem` entry is directory.
 // `next` will return string if `elem` entry is symlink.
+// `next` will return (nil, "", true) if `elem` is recorded as not found.
+// `next` will return (nil, "", false) if `elem` is not recorded.
 // resolveNextDir returns directory if resolved `elem` is directory.
 // resolveNextDir returns resolved path name as string if resolved `elem` is symlink.
+// resolveNextDir returns true if the next dir entry is recorded as not found.
+// resolveNextDir returns (nil, "", false) if `elem` is not recorded.
 func resolveNextDir(ctx context.Context, d *directory, next func(context.Context, *directory, pathElements, string) (*directory, string, bool), pe pathElements, elem, rest string) (*directory, string, bool) {
-	for i := range maxSymlinks {
-		nextDir, target, ok := next(ctx, d, pe, elem)
-		if target != "" {
-			if len(pe.elems) != pe.n {
-				// reconstruct elems for lookup
-				pe.elems = make([]string, 0, pe.n+1)
-				if strings.HasPrefix(pe.origFname, "/") {
-					pe.elems = append(pe.elems, "/")
-				}
-				s := pe.origFname
-				for range pe.n - 1 {
-					s = strings.TrimPrefix(s, "/")
-					elem, rest, _ := strings.Cut(s, "/")
-					pe.elems = append(pe.elems, elem)
-					s = rest
-				}
-				if runtime.GOOS == "windows" && !strings.HasSuffix(pe.elems[0], `\`) {
-					// elems[0] is drive letter. e.g. "C:"
-					pe.elems[0] += `\`
-				}
+	nextDir, target, missing := next(ctx, d, pe, elem)
+	if target != "" {
+		if len(pe.elems) != pe.n {
+			// reconstruct elems for lookup
+			pe.elems = make([]string, 0, pe.n+1)
+			if strings.HasPrefix(pe.origFname, "/") {
+				pe.elems = append(pe.elems, "/")
+			}
+			s := pe.origFname
+			for range pe.n - 1 {
+				s = strings.TrimPrefix(s, "/")
+				elem, rest, _ := strings.Cut(s, "/")
 				pe.elems = append(pe.elems, elem)
+				s = rest
 			}
-			if filepath.IsAbs(target) {
-				resolved := filepath.ToSlash(filepath.Join(target, rest))
-				if log.V(1) {
-					clog.Infof(ctx, "resolve symlink -> %s", resolved)
-				}
-				return nil, resolved, false
+			if runtime.GOOS == "windows" && !strings.HasSuffix(pe.elems[0], `\`) {
+				// elems[0] is drive letter. e.g. "C:"
+				pe.elems[0] += `\`
 			}
-			pe.elems[len(pe.elems)-1] = target
-			pe.elems = append(pe.elems, rest)
-			resolved := filepath.ToSlash(filepath.Join(pe.elems...))
+			pe.elems = append(pe.elems, elem)
+		}
+		if filepath.IsAbs(target) {
+			resolved := filepath.ToSlash(filepath.Join(target, rest))
 			if log.V(1) {
 				clog.Infof(ctx, "resolve symlink -> %s", resolved)
 			}
 			return nil, resolved, false
 		}
-
-		if !ok {
-			return nil, "", false
-		}
-		if nextDir != nil {
-			return nextDir, "", true
-		}
+		pe.elems[len(pe.elems)-1] = target
+		pe.elems = append(pe.elems, rest)
+		resolved := filepath.ToSlash(filepath.Join(pe.elems...))
 		if log.V(1) {
-			clog.Infof(ctx, "next %s %d", elem, i)
+			clog.Infof(ctx, "resolve symlink -> %s", resolved)
 		}
+		return nil, resolved, false
+	}
+	if nextDir != nil {
+		return nextDir, "", false
+	}
+	if nextDir == nil && target == "" && missing {
+		return nil, "", true
 	}
 	if log.V(1) {
-		clog.Warningf(ctx, "resolve loop?")
+		clog.Warningf(ctx, "resolve next %q not recorded yet for %q", elem, pe.origFname)
 	}
 	return nil, "", false
 }
@@ -2458,6 +2462,9 @@ func lookupNextDir(ctx context.Context, d *directory, pe pathElements, elem stri
 	}
 	dent := v.(*entry)
 	if dent != nil {
+		if errors.Is(dent.err, fs.ErrNotExist) {
+			return nil, "", true
+		}
 		if dent.err != nil {
 			return nil, "", false
 		}
@@ -2466,17 +2473,21 @@ func lookupNextDir(ctx context.Context, d *directory, pe pathElements, elem stri
 		if subdir == nil && target == "" {
 			return nil, "", false
 		}
-		return subdir, target, true
+		return subdir, target, false
 	}
 	return nil, "", false
 }
 
 // next for store case.
-// nextDir will create next dir entry if needed.
-func nextDir(ctx context.Context, d *directory, pe pathElements, elem string) (*directory, string, bool) {
+// storeNextDir will create next dir entry if needed.
+// storeNextDir will not create next dir if notExistEntry is true and entry has ErrNotExist.
+func storeNextDir(ctx context.Context, d *directory, pe pathElements, elem string, notExistEntry bool) (*directory, string, bool) {
 	v, ok := d.m.Load(elem)
 	if ok {
 		dent := v.(*entry)
+		if notExistEntry && dent != nil && errors.Is(dent.err, fs.ErrNotExist) {
+			return nil, "", true
+		}
 		if dent != nil && dent.err == nil {
 			target := dent.target
 			subdir := dent.getDir()
@@ -2495,7 +2506,7 @@ func nextDir(ctx context.Context, d *directory, pe pathElements, elem string) (*
 				}
 				return nil, "", false
 			}
-			return subdir, target, true
+			return subdir, target, false
 		}
 		deleted := d.m.CompareAndDelete(elem, dent)
 		if log.V(9) {
@@ -2541,7 +2552,7 @@ func nextDir(ctx context.Context, d *directory, pe pathElements, elem string) (*
 			if dent.mode != newDent.mode || dent.target != newDent.target {
 				clog.Warningf(ctx, "store %s symlink dir: race? store %s %s / loaded %s %s", pe.origFname, newDent.mode, newDent.target, dent.mode, dent.target)
 			}
-			return nil, target, true
+			return nil, target, false
 		default:
 			clog.Warningf(ctx, "unexpected mode %s: %s", fullname, dfi.Mode().Type())
 			return nil, "", false
@@ -2558,6 +2569,7 @@ func nextDir(ctx context.Context, d *directory, pe pathElements, elem string) (*
 		// when all dirents have been loaded.
 		directory: &directory{},
 	}
+	// TODO: store newDent.err=fs.ErrNotExist when notExistEntry and err=fs.ErrNotExist?
 	var dent *entry
 	for {
 		dent = newDent
@@ -2599,7 +2611,7 @@ func nextDir(ctx context.Context, d *directory, pe pathElements, elem string) (*
 		clog.Warningf(ctx, "store %s no dir, no symlink", pe.origFname)
 		return nil, "", false
 	}
-	return d, target, true
+	return d, target, false
 }
 
 func (d *directory) delete(ctx context.Context, fname string) {
