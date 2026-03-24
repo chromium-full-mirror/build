@@ -518,7 +518,7 @@ func (hfs *HashFS) ReadDir(ctx context.Context, root, name string) (dents []DirE
 	if err != nil {
 		return nil, fmt.Errorf("read dir %s: %w", dname, err)
 	}
-	if e.target != "" {
+	if e.isSymlink() {
 		relDname, err := filepath.Rel(root, dname)
 		if err != nil || !filepath.IsLocal(relDname) {
 			clog.Warningf(ctx, "read dir: symlink rel root %q: %v", dname, err)
@@ -605,7 +605,7 @@ func (hfs *HashFS) ReadFile(ctx context.Context, root, fname string) ([]byte, er
 		}
 		// already flushed. reading from local disk is faster.
 	}
-	if e.target != "" {
+	if e.isSymlink() {
 		relFname, err := filepath.Rel(root, fname)
 		if err != nil || !filepath.IsLocal(relFname) {
 			clog.Warningf(ctx, "readfile: symlink rel root %q: %v", fname, err)
@@ -744,7 +744,7 @@ func (hfs *HashFS) Copy(ctx context.Context, root, src, dst string, mtime time.T
 			return fmt.Errorf("copy src: %w", err)
 		}
 	}
-	if e.target == "" {
+	if !e.isSymlink() {
 		hfs.digester.compute(ctx, srcfname, e)
 	}
 	lready := make(chan bool, 1)
@@ -1069,7 +1069,7 @@ func (hfs *HashFS) Entries(ctx context.Context, root string, inputs []string) ([
 	for i, fname := range inputs {
 		e := ents[i]
 		d := e.digest()
-		if e.err != nil || (d.IsZero() && e.target == "" && e.directory == nil) {
+		if e.err != nil || (d.IsZero() && !e.isSymlink() && e.directory == nil) {
 			// TODO(b/435555841): hard fail instead
 			if e.entryErrLogged.CompareAndSwap(false, true) {
 				clog.Warningf(ctx, "missing %s data:%v target:%q: %v", fname, e.d, e.target, e.err)
@@ -1113,7 +1113,7 @@ func (hfs *HashFS) Entries(ctx context.Context, root string, inputs []string) ([
 					}
 					hfs.digester.lazyCompute(ctx, name, elink)
 				}
-				if elink.err != nil || elink.target == "" {
+				if elink.err != nil || !elink.isSymlink() {
 					break
 				}
 			}
@@ -1281,7 +1281,7 @@ func (hfs *HashFS) Update(ctx context.Context, execRoot string, entries []Update
 				return err
 			}
 			hfs.journalEntry(ctx, fname, e)
-			if ent.IsLocal && e.isChanged && e.target == "" {
+			if ent.IsLocal && e.isChanged && !e.isSymlink() {
 				// Update mtime for the local entry if it has changed.
 				// Don't update mtime for symlink,
 				// since os.Chtimes updates the mtime of target
@@ -1526,7 +1526,7 @@ func (hfs *HashFS) Flush(ctx context.Context, execRoot string, files []string) e
 					clog.Infof(ctx, "flush %s local ready", fname)
 				}
 				e.mu.Lock()
-				if e.mtimeUpdated && e.target == "" {
+				if e.mtimeUpdated && !e.isSymlink() {
 					// mtime was updated after entry sets mtime from the local disk.
 					// Don't update mtime for symlink,
 					// since os.Chtimes updates the mtime of target
@@ -1597,6 +1597,13 @@ func (hfs *HashFS) Refresh(ctx context.Context, execRoot string) error {
 	return werr
 }
 
+// entry represents a file, directory, or symlink in hashfs.
+//
+// The type of entry is determined by the following invariants:
+//   - directory: directory is not nil. target must be "" and d must be zero.
+//   - symlink: target is not "". directory must be nil and d must be zero.
+//   - file: directory is nil and target is "". d may be zero
+//     (if digest has not been calculated yet).
 type entry struct {
 	// lready represents whether it is ready to use local file.
 	// true - need to download contents.
@@ -1899,6 +1906,11 @@ func (e *entry) getDir() *directory {
 	return e.directory
 }
 
+// isSymlink returns whether the entry is a symlink.
+func (e *entry) isSymlink() bool {
+	return e.target != ""
+}
+
 func (e *entry) flush(ctx context.Context, fname string, osfs *osfs.OSFS, timeout time.Duration) (retErr error) {
 	defer func() {
 		if retErr != nil {
@@ -1958,7 +1970,7 @@ func (e *entry) flush(ctx context.Context, fname string, osfs *osfs.OSFS, timeou
 			clog.Infof(ctx, "flush dir chtime %s %v: %v", fname, mtime, err)
 		}
 		return err
-	case d.IsZero() && e.target != "":
+	case e.isSymlink():
 		target, err := osfs.Readlink(ctx, fname)
 		if err == nil && e.target == target {
 			return nil
@@ -2295,7 +2307,7 @@ func (d *directory) storeEntry(ctx context.Context, fname string, e *entry) (*en
 			cmdchanged := !bytes.Equal(ee.cmdhash, e.cmdhash)
 			edgechanged := !bytes.Equal(ee.edgehash, e.edgehash)
 			actionchanged := ee.action != e.action
-			if e.target != "" && ee.target != e.target {
+			if e.isSymlink() && ee.target != e.target {
 				if log.V(1) {
 					// lv is to reduce the number of memory allocations when variables are escaping to heap.
 					lv := struct {

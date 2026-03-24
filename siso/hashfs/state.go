@@ -977,7 +977,7 @@ func (hfs *HashFS) State(ctx context.Context) *pb.State {
 			}
 			// need to record the entry for incremental build
 			ed := e.digest()
-			if e.directory == nil && e.target == "" && ed.IsZero() {
+			if e.directory == nil && !e.isSymlink() && ed.IsZero() {
 				// digest is not calculated yet?
 				if e.src == nil {
 					clog.Warningf(ctx, "wrong entry for %s?", name)
@@ -1003,7 +1003,7 @@ func (hfs *HashFS) State(ctx context.Context) *pb.State {
 					state.MissingDigests = append(state.MissingDigests, name)
 				}
 			}
-			if !ed.IsZero() || e.target != "" || (e.directory == nil && len(e.cmdhash) > 0) {
+			if !ed.IsZero() || e.isSymlink() || (e.directory == nil && len(e.cmdhash) > 0) {
 				e.mu.RLock()
 				state.Entries = append(state.Entries, &pb.Entry{
 					Id: &pb.FileID{
