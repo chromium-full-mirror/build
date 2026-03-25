@@ -774,3 +774,54 @@ build out4: rule_with_double_continuation_no_space in
 		}
 	}
 }
+
+// TestParser_IncludeInLastChunk is a regression test for crrev.com/c/7692413:
+// setup() used `if i < len(p.chunks)` to guard access to `p.chunks[i+1]`, but
+// the condition should be `if i+1 < len(p.chunks)`. When a file with an
+// include directive fit in a single chunk, the loop's only iteration (i=0)
+// passed the old guard (0 < 1) and tried to access p.chunks[1], panicking with
+// an index out of range.
+//
+// This test uses a minimal parent file whose only statement is an include
+// directive, ensuring a single chunk with ninclude > 0.
+func TestParser_IncludeInLastChunk(t *testing.T) {
+	t.Skip("includeChunks indexes parent instead of child statements; fixed in next commit")
+	ctx := t.Context()
+	dir := t.TempDir()
+
+	err := os.WriteFile(filepath.Join(dir, "rules.ninja"), []byte(`
+rule cc
+  command = cc -c ${in} -o ${out}
+`), 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = os.WriteFile(filepath.Join(dir, "build.ninja"), []byte(`
+include rules.ninja
+build obj/a.o: cc a.c
+`), 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	state := NewState()
+	p := NewManifestParser(state)
+	t.Chdir(dir)
+	err = p.Load(ctx, "build.ninja")
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	node, ok := state.LookupNodeByPath("obj/a.o")
+	if !ok {
+		t.Fatal("missing node for obj/a.o")
+	}
+	edge, ok := node.InEdge()
+	if !ok {
+		t.Fatal("no inEdge for obj/a.o")
+	}
+	if got, want := edge.RuleName(), "cc"; got != want {
+		t.Errorf("RuleName=%q; want=%q", got, want)
+	}
+}
