@@ -126,7 +126,7 @@ func (c *Command) Execute(ctx context.Context, flagSet *flag.FlagSet, _ ...any) 
 	}
 
 	stats, err := c.Run(ctx)
-	return c.postRun(stats, err)
+	return c.postRun(ctx, stats, err)
 }
 
 // parse flags without stopping at non flags.
@@ -186,6 +186,8 @@ func (c *Command) setup(ctx context.Context) (buildPath *build.Path, doneLock fu
 		return nil, nil, nil, err
 	}
 	clog.Infof(ctx, "siso log dir=%s", c.logDir)
+
+	c.cleanupReclientMetrics(ctx)
 
 	resetCrashOutput, err = c.setupCrashOutput(ctx)
 	if err != nil {
@@ -558,8 +560,13 @@ func (c *Command) Run(ctx context.Context) (stats build.Stats, finalErr error) {
 }
 
 // postRun prints build result messages and returns exit status based on the build stats and the error from Run().
-func (c *Command) postRun(stats build.Stats, runErr error) subcommands.ExitStatus {
+func (c *Command) postRun(ctx context.Context, stats build.Stats, runErr error) subcommands.ExitStatus {
 	d := time.Since(c.started)
+	if c.writeReclientMetricsLogs {
+		if err := c.writeReclientMetrics(d, stats); err != nil {
+			clog.Warningf(ctx, "failed to write RBE build metrics: %v", err)
+		}
+	}
 	sps := float64(stats.Done-stats.Skipped) / d.Seconds()
 	dur := ui.FormatDuration(d)
 	if runErr != nil {

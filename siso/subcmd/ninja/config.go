@@ -146,6 +146,7 @@ type NinjaFlags struct {
 	enableBuildNinjaFilesUpload bool
 	metricsLabels               string
 	metricsProject              string
+	writeReclientMetricsLogs    bool
 	traceThreshold              time.Duration
 	traceSpanThreshold          time.Duration
 
@@ -262,6 +263,7 @@ func (c *Command) SetFlags(flagSet *flag.FlagSet) {
 	flagSet.BoolVar(&c.enableBuildNinjaFilesUpload, "enable_build_ninja_files_upload", true, "enable Build Ninja files upload to RBE-CAS")
 	flagSet.StringVar(&c.metricsLabels, "metrics_labels", os.Getenv("RBE_metrics_labels"), "comma-separated arbitrary key value pairs in the form key=value, which are added to cloud monitoring metrics and siso_metadata.json.")
 	flagSet.StringVar(&c.metricsProject, "metrics_project", os.Getenv("RBE_metrics_project"), "override Cloud Monitoring GCP project where Siso sends action and build metrics.")
+	flagSet.BoolVar(&c.writeReclientMetricsLogs, "write_reclient_metrics_logs", false, "write Reclient's RBE build metrics to rbe_metrics.{txt, pb} under -log_dir.")
 
 	flagSet.StringVar(&c.subtool, "t", "", "run a subtool (use '-t list' to list subtools)")
 	flagSet.BoolVar(&c.cleandead, "cleandead", false, "clean built files that are no longer produced by the manifest")

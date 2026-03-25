@@ -12,6 +12,7 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"runtime"
 	"runtime/debug"
@@ -19,9 +20,12 @@ import (
 	"time"
 
 	log "github.com/golang/glog"
+	"google.golang.org/protobuf/encoding/prototext"
+	"google.golang.org/protobuf/proto"
 
 	"go.chromium.org/build/siso/build"
 	"go.chromium.org/build/siso/o11y/clog"
+	"go.chromium.org/build/siso/toolsupport/reclientutil"
 )
 
 type logWriters struct {
@@ -275,4 +279,43 @@ func (c *Command) writeSisoMetadata(metricsLabels map[string]string, targets []s
 		return err
 	}
 	return os.WriteFile(filepath.Join(c.logDir, sisoMetadataFilename), j, 0644)
+}
+
+func (c *Command) cleanupReclientMetrics(ctx context.Context) {
+	for _, f := range []string{"rbe_metrics.pb", "rbe_metrics.txt"} {
+		file := path.Join(c.logDir, f)
+		err := os.Remove(file)
+		if err == nil {
+			clog.Infof(ctx, "removed %q", file)
+		} else {
+			if errors.Is(err, os.ErrNotExist) {
+				clog.Infof(ctx, "%q does not exit", file)
+			} else {
+				clog.Warningf(ctx, "failed to remove %q. %v", f, err)
+			}
+		}
+	}
+}
+
+func (c *Command) writeReclientMetrics(dur time.Duration, stats build.Stats) error {
+	m := reclientutil.RBEBuildMetrics(c.buildID, c.version, dur, stats)
+	mb, err := proto.Marshal(m)
+	if err != nil {
+		return fmt.Errorf("failed to marshal RBE build metrics. %w", err)
+	}
+	if err := os.WriteFile(path.Join(c.logDir, "rbe_metrics.pb"), mb, 0644); err != nil {
+		return fmt.Errorf("failed to write iRBE build metrics. %w", err)
+	}
+	opts := prototext.MarshalOptions{
+		Multiline: true,
+		Indent:    "  ",
+	}
+	mt, err := opts.Marshal(m)
+	if err != nil {
+		return fmt.Errorf("failed to marshal RBE build metrics. %w", err)
+	}
+	if err := os.WriteFile(path.Join(c.logDir, "rbe_metrics.txt"), mt, 0644); err != nil {
+		return fmt.Errorf("failed to write iRBE build metrics. %w", err)
+	}
+	return nil
 }
