@@ -1442,6 +1442,7 @@ func (hfs *HashFS) RetrieveUpdateEntriesFromLocal(ctx context.Context, root stri
 	defer span.Close(nil)
 
 	ents := make([]UpdateEntry, 0, len(fnames))
+	// invalidate hashfs cache for all fnames and its missing parents.
 	for _, fname := range fnames {
 		fullname := makeFullpath(root, fname)
 		lfi, err := hfs.OS.Lstat(ctx, fullname)
@@ -1459,23 +1460,39 @@ func (hfs *HashFS) RetrieveUpdateEntriesFromLocal(ctx context.Context, root stri
 			// need to keep dir to keep other files in the dir.
 			hfs.directory.delete(ctx, fullname)
 		}
+		// clear negative cache in parent directories
+		pathname := fname
+		for pathname != "/" && pathname != "" {
+			_, err = hfs.Stat(ctx, root, pathname)
+			if errors.Is(err, fs.ErrNotExist) {
+				hfs.directory.delete(ctx, makeFullpath(root, pathname))
+				pathname = filepath.ToSlash(filepath.Dir(pathname))
+				continue
+			}
+			break
+		}
 		ent := UpdateEntry{
 			Name:    fname,
 			Mode:    lfi.Mode(),
 			ModTime: lfi.ModTime(),
 			IsLocal: true,
 		}
-		fi, err := hfs.Stat(ctx, root, fname)
+		ents = append(ents, ent)
+	}
+	// capture hashfs for all fnames after all missing entries, parents
+	// are invalidated in the above loop.
+	for i, ent := range ents {
+		fi, err := hfs.Stat(ctx, root, ent.Name)
 		if err != nil {
-			clog.Warningf(ctx, "failed to stat after invalidate %s: %v", fname, err)
+			clog.Warningf(ctx, "failed to stat after invalidate %s: %v", ent.Name, err)
 		} else {
 			ent.CmdHash = fi.CmdHash()
 			ent.EdgeHash = fi.EdgeHash()
 			ent.Action = fi.Action()
 			ent.UpdatedTime = fi.UpdatedTime()
 			ent.IsChanged = fi.IsChanged()
+			ents[i] = ent
 		}
-		ents = append(ents, ent)
 	}
 	return ents
 }
@@ -2570,16 +2587,22 @@ func storeNextDir(ctx context.Context, d *directory, pe pathElements, elem strin
 			return nil, "", false
 		}
 	}
+	if !notExistEntry {
+		err = nil
+	}
 	lready := make(chan bool, 1)
 	lready <- true
 	newDent := &entry{
 		lready: lready,
+		err:    err,
 		mode:   0o644 | fs.ModeDir,
 		mtime:  mtime,
+	}
+	if newDent.err == nil {
 		// don't set directory.mtime for intermediate dir.
 		// mtime will be updated by updateDir
 		// when all dirents have been loaded.
-		directory: &directory{},
+		newDent.directory = &directory{}
 	}
 	// TODO: store newDent.err=fs.ErrNotExist when notExistEntry and err=fs.ErrNotExist?
 	var dent *entry
@@ -2590,7 +2613,7 @@ func storeNextDir(ctx context.Context, d *directory, pe pathElements, elem strin
 			break
 		}
 		dent = v.(*entry)
-		if dent != nil && dent.err != nil {
+		if dent != nil && dent.err != nil && newDent.err == nil {
 			// A concurrent lstat may have cached an ErrNotExist
 			// here (e.g. one filegroup evaluates a missing
 			// 'sysroot', while another concurrently evaluates
@@ -2620,6 +2643,9 @@ func storeNextDir(ctx context.Context, d *directory, pe pathElements, elem strin
 	}
 	d = subdir
 	if d == nil && target == "" {
+		if notExistEntry && errors.Is(err, fs.ErrNotExist) {
+			return nil, "", true
+		}
 		clog.Warningf(ctx, "store %s no dir, no symlink", pe.origFname)
 		return nil, "", false
 	}
@@ -2628,7 +2654,7 @@ func storeNextDir(ctx context.Context, d *directory, pe pathElements, elem strin
 
 func (d *directory) delete(ctx context.Context, fname string) {
 	_, _, dir, ok := d.lookup(ctx, fname)
-	if !ok {
+	if !ok || dir == nil {
 		clog.Warningf(ctx, "delete %q: lookup filed", fname)
 		return
 	}
