@@ -294,7 +294,6 @@ func TestRebasePathFunction(t *testing.T) {
 					sourceDir: tc.curDir,
 				},
 				nil,
-				nil,
 			)
 			callNode := &parse.FunctionCallNode{
 				Function: syntax.MakeToken(syntax.TokenIdentifier, "rebase_path"),

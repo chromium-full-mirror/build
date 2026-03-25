@@ -26,6 +26,11 @@ func isPrivateVar(name string) bool {
 // ExecContext is the execution context for a scope, and may also reference
 // a scope to be used as a top-level read-only value source.
 //
+// This allows non core language functionality to be kept outside of the
+// scope implementation, for example build target collection.
+// This interface also subsumes the ProgrammaticProvider concept from C++ GN,
+// by making available the ProgrammaticBuiltin function.
+//
 // Implementations are expected to be safe for concurrent read access.
 type ExecContext interface {
 	// BaseConfig returns the top-level read-only scope.
@@ -34,12 +39,6 @@ type ExecContext interface {
 	// NestedContext creates a new nested context for the given scope.
 	// It is called when creating a nested scope.
 	NestedContext() ExecContext
-}
-
-// ProgrammaticProvider allows code to provide values for built-in variables.
-//
-// TODO: should this be merged with ExecContext?
-type ProgrammaticProvider interface {
 	// ProgrammaticBuiltin returns (Value, true) if the given value can be programmatically
 	// generated, or (nil, false) if there is none.
 	ProgrammaticBuiltin(ident string) (Value, bool)
@@ -58,10 +57,9 @@ type ProgrammaticProvider interface {
 // When reading values, the ExecContext's BaseConfig() will then be checked
 // as a last-resort, and we avoid performing direct mutate operations on it.
 type Scope struct {
-	execContext          ExecContext
-	programmaticProvider ProgrammaticProvider
-	skipBaseConfig       bool
-	parent               *Scope
+	execContext    ExecContext
+	skipBaseConfig bool
+	parent         *Scope
 	// functions is a map from names to GN functions and/or GN templates.
 	functions map[string]FunctionInfo
 
@@ -165,12 +163,11 @@ func (s *Scope) isolate() {
 }
 
 // NewScope creates a top-level scope.
-func NewScope(c ExecContext, programmaticProvider ProgrammaticProvider, functions map[string]FunctionInfo) *Scope {
+func NewScope(c ExecContext, functions map[string]FunctionInfo) *Scope {
 	return &Scope{
-		execContext:          c,
-		programmaticProvider: programmaticProvider,
-		functions:            functions,
-		values:               make(map[string]record),
+		execContext: c,
+		functions:   functions,
+		values:      make(map[string]record),
 	}
 }
 
@@ -216,8 +213,8 @@ func (s *Scope) ExecContext() ExecContext {
 // markAsUsed should be set if the variable is being read in a way that should
 // count for unused variable checking.
 func (s *Scope) Value(ident string, markAsUsed bool) Value {
-	if s.programmaticProvider != nil {
-		if v, ok := s.programmaticProvider.ProgrammaticBuiltin(ident); ok {
+	if s.execContext != nil {
+		if v, ok := s.execContext.ProgrammaticBuiltin(ident); ok {
 			return v
 		}
 	}

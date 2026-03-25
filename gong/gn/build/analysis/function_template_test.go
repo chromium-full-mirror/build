@@ -13,7 +13,7 @@ import (
 func TestTemplate(t *testing.T) {
 	root := parseGniTest(t, "testdata/template.gni")
 
-	_, err := resolve.ExecuteNode(root, resolve.NewScope(nil, nil, map[string]resolve.FunctionInfo{
+	_, err := resolve.ExecuteNode(root, resolve.NewScope(nil, map[string]resolve.FunctionInfo{
 		"assert":         resolve.AssertFunction{},
 		"assert_failure": resolve.AssertFailureFunction{},
 		"template":       templateFunction{},

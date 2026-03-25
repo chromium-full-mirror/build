@@ -42,7 +42,6 @@ func execToolchain(t *testing.T, input string) (*graph.Toolchain, error) {
 				}
 			},
 		},
-		nil,
 		map[string]resolve.FunctionInfo{
 			"toolchain": &toolchainFunction{},
 		},

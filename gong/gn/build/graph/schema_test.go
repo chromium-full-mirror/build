@@ -68,7 +68,6 @@ func TestSchema_Run(t *testing.T) {
 
 			_, err = resolve.ExecuteNode(root, resolve.NewScope(
 				nil,
-				nil,
 				map[string]resolve.FunctionInfo{
 					"example": schemaRunner{
 						schema: Schema{

@@ -13,7 +13,7 @@ import (
 func TestLen(t *testing.T) {
 	root := parseGniTest(t, "testdata/len.gni")
 
-	_, err := resolve.ExecuteNode(root, resolve.NewScope(nil, nil, map[string]resolve.FunctionInfo{
+	_, err := resolve.ExecuteNode(root, resolve.NewScope(nil, map[string]resolve.FunctionInfo{
 		"assert":         resolve.AssertFunction{},
 		"assert_failure": resolve.AssertFailureFunction{},
 		"len":            lenFunction{},

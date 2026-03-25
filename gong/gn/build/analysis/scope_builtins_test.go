@@ -18,11 +18,12 @@ func TestBuiltinProvider(t *testing.T) {
 		t.Fatalf("setup error: failed to make build dir: %v", err)
 	}
 	scope := resolve.NewScope(
-		&scopeContext{},
-		&builtinProvider{
-			buildSettings: &environment.BuildSettings{
-				BuildDir:   buildDir,
-				PythonPath: "python3",
+		&scopeContext{
+			settings: &Settings{
+				buildSettings: &environment.BuildSettings{
+					BuildDir:   buildDir,
+					PythonPath: "python3",
+				},
 			},
 		},
 		map[string]resolve.FunctionInfo{},

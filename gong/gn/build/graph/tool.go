@@ -129,6 +129,9 @@ func (t toolExecContext) NestedContext() resolve.ExecContext {
 		toolchain:   t.toolchain,
 	}
 }
+func (t toolExecContext) ProgrammaticBuiltin(ident string) (resolve.Value, bool) {
+	return t.baseContext.ProgrammaticBuiltin(ident)
+}
 
 // ToolFunction defines the tool() function.
 // It is for exclusive use inside the toolchain() function, and will return

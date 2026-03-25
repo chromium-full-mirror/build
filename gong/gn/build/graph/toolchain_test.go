@@ -18,8 +18,9 @@ import (
 
 type fakeExecContext struct{}
 
-func (fakeExecContext) BaseConfig() *resolve.Scope         { return &resolve.Scope{} }
-func (fakeExecContext) NestedContext() resolve.ExecContext { return &fakeExecContext{} }
+func (fakeExecContext) BaseConfig() *resolve.Scope                         { return &resolve.Scope{} }
+func (fakeExecContext) NestedContext() resolve.ExecContext                 { return &fakeExecContext{} }
+func (fakeExecContext) ProgrammaticBuiltin(_ string) (resolve.Value, bool) { return nil, false }
 
 func TestToolchain_Run_Valid(t *testing.T) {
 	input := `
@@ -61,7 +62,7 @@ func TestToolchain_Run_Valid(t *testing.T) {
 	}
 	tc, err := NewToolchain(
 		mustDir(t, "//"),
-		resolve.NewScope(&fakeExecContext{}, nil, map[string]resolve.FunctionInfo{
+		resolve.NewScope(&fakeExecContext{}, map[string]resolve.FunctionInfo{
 			"tool": ToolFunction{},
 		}),
 		nil,
@@ -100,7 +101,7 @@ func TestToolchain_Run_ToolMissingCommand(t *testing.T) {
 	}
 	_, err = NewToolchain(
 		mustDir(t, "//"),
-		resolve.NewScope(&fakeExecContext{}, nil, map[string]resolve.FunctionInfo{
+		resolve.NewScope(&fakeExecContext{}, map[string]resolve.FunctionInfo{
 			"tool": ToolFunction{},
 		}),
 		nil,
@@ -137,7 +138,7 @@ func TestToolchain_Run_ToolAction(t *testing.T) {
 	}
 	tc, err := NewToolchain(
 		mustDir(t, "//"),
-		resolve.NewScope(&fakeExecContext{}, nil, map[string]resolve.FunctionInfo{
+		resolve.NewScope(&fakeExecContext{}, map[string]resolve.FunctionInfo{
 			"tool": ToolFunction{},
 		}),
 		nil,
@@ -171,7 +172,7 @@ tool("cc") {
 	}
 	_, err = resolve.ExecuteNode(
 		node,
-		resolve.NewScope(&fakeExecContext{}, nil, map[string]resolve.FunctionInfo{
+		resolve.NewScope(&fakeExecContext{}, map[string]resolve.FunctionInfo{
 			"tool": ToolFunction{},
 		}),
 	)

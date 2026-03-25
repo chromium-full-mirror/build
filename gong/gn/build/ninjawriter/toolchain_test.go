@@ -28,8 +28,9 @@ func mustDir(t *testing.T, path string) fs.SourceDir {
 
 type fakeExecContext struct{}
 
-func (fakeExecContext) BaseConfig() *resolve.Scope         { return &resolve.Scope{} }
-func (fakeExecContext) NestedContext() resolve.ExecContext { return &fakeExecContext{} }
+func (fakeExecContext) BaseConfig() *resolve.Scope                         { return &resolve.Scope{} }
+func (fakeExecContext) NestedContext() resolve.ExecContext                 { return &fakeExecContext{} }
+func (fakeExecContext) ProgrammaticBuiltin(_ string) (resolve.Value, bool) { return nil, false }
 
 func TestWriteToolchain(t *testing.T) {
 	tcName := "gcc"
@@ -65,7 +66,7 @@ subninja obj/hello_world/src/hello_world.ninja
 	}
 	tc, err := graph.NewToolchain(
 		mustDir(t, "//"),
-		resolve.NewScope(&fakeExecContext{}, nil, map[string]resolve.FunctionInfo{
+		resolve.NewScope(&fakeExecContext{}, map[string]resolve.FunctionInfo{
 			"tool": graph.ToolFunction{},
 		}),
 		nil,

@@ -48,7 +48,6 @@ func (s *Settings) NewScope() *resolve.Scope {
 			settings:       s,
 			targetDefaults: make(map[string]*resolve.Scope),
 		},
-		&builtinProvider{buildSettings: s.buildSettings},
 		FunctionMap,
 	)
 }
@@ -130,4 +129,15 @@ func (s *scopeContext) isProcessingBuildConfig() bool {
 		return s.parent.isProcessingBuildConfig()
 	}
 	return false
+}
+
+// ProgrammaticBuiltin implements resolve.ExecContext.
+func (s *scopeContext) ProgrammaticBuiltin(ident string) (resolve.Value, bool) {
+	switch ident {
+	case "python_path":
+		return resolve.NewOriginlessStringValue(s.settings.buildSettings.PythonPath), true
+	case "root_build_dir":
+		return resolve.NewOriginlessStringValue(s.settings.buildSettings.BuildDir.WithNoTrailingSlash()), true
+	}
+	return nil, false
 }

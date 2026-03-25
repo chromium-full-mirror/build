@@ -74,7 +74,6 @@ func TestImportFunction(t *testing.T) {
 			dest := resolve.NewScope(
 				&scopeContext{settings: settings, sourceDir: tc.curDir},
 				nil,
-				nil,
 			)
 			_, err := importFunction{}.Run(dest, &parse.FunctionCallNode{}, tc.args)
 			wantErr := tc.wantErr != nil
