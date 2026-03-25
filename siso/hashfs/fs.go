@@ -147,21 +147,22 @@ func New(ctx context.Context, opt Option) (*HashFS, error) {
 			clog.Infof(ctx, "Load fs state from %s: %s", opt.StateFile, time.Since(start))
 		}
 
-		// for corrupted fs state, we also don't use journal,
-		// as we don't have base state for the journal.
+		// Recover last build updates from the journal if the previous
+		// build didn't finish properly (journal file not removed).
+		// Skip the journal when state was corrupted, since we don't
+		// have a valid base state to apply it to.
+		var reconciled bool
 		if fsys.loadErr == nil {
-			// if previous build didn't finish properly, journal file
-			// is not removed, so recover last build updates from the journal.
-			reconciled := loadJournal(ctx, journalFile, fstate)
-			if err := fsys.SetState(ctx, fstate); err != nil {
-				return nil, err
-			}
-			if reconciled {
-				// save fstate to make it base state for next journaling.
-				err := Save(ctx, fstate, opt)
-				if err != nil {
-					clog.Errorf(ctx, "Failed to save reconciled fs state in %s: %v", opt.StateFile, err)
-				}
+			reconciled = loadJournal(ctx, journalFile, fstate)
+		}
+		if err := fsys.SetState(ctx, fstate); err != nil {
+			return nil, err
+		}
+		if reconciled {
+			// Save fstate to make it base state for next journaling.
+			err := Save(ctx, fstate, opt)
+			if err != nil {
+				clog.Errorf(ctx, "Failed to save reconciled fs state in %s: %v", opt.StateFile, err)
 			}
 		}
 		err = os.Remove(journalFile)
