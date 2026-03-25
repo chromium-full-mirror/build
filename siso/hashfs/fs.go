@@ -194,7 +194,7 @@ func (hfs *HashFS) WaitReady(ctx context.Context) error {
 	started := time.Now()
 	select {
 	case <-ctx.Done():
-		clog.Errorf(ctx, "hashfs does not become ready %s: %v", time.Since(started), context.Cause(ctx))
+		clog.Warningf(ctx, "hashfs does not become ready %s: %v", time.Since(started), context.Cause(ctx))
 		return context.Cause(ctx)
 
 	case err := <-hfs.setStateCh:
