@@ -151,7 +151,10 @@ loop:
 			ch.ncomment++
 			continue
 
-		case ' ', '\t':
+		case '\t':
+			return fmt.Errorf("line:%d: tabs are not allowed, use spaces", lineno(buf, i))
+
+		case ' ':
 			e := findNextLine(buf, i)
 			var st statementType
 			switch lastStatement {
