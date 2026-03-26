@@ -81,6 +81,7 @@ func (p *ManifestParser) loadFile(ctx context.Context, fname string) error {
 		scope: p.scope,
 		state: p.state,
 		sema:  p.fsema,
+		wd:    p.wd,
 	}
 	err := fp.parseFile(ctx, filepath.Join(p.wd, fname))
 	if err != nil {

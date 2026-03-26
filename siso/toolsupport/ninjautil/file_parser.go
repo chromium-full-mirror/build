@@ -48,6 +48,7 @@ type fileParser struct {
 
 	sema chan struct{}
 
+	wd     string // working directory for resolving relative paths
 	fname  string
 	buf    []byte
 	full   chunk // for accumulated numbers from chunks
@@ -245,6 +246,7 @@ func (p *fileParser) alloc(ctx context.Context) {
 		ch := &p.chunks[i]
 		ch.state = p.state
 		ch.scope = p.scope
+		ch.wd = p.wd
 		ch.nodemap = p.state.nodeMap.localNodeMap(ch.nbuild) // estimates # of nodes
 
 		ch.ruleArena = p.ruleArena.chunk(ch.nrule)

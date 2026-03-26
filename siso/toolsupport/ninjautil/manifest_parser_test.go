@@ -806,7 +806,7 @@ build obj/a.o: cc a.c
 
 	state := NewState()
 	p := NewManifestParser(state)
-	t.Chdir(dir)
+	p.SetWd(dir)
 	err = p.Load(ctx, "build.ninja")
 	if err != nil {
 		t.Fatalf("Load: %v", err)
@@ -863,7 +863,7 @@ include included.ninja
 
 	state := NewState()
 	p := NewManifestParser(state)
-	t.Chdir(dir)
+	p.SetWd(dir)
 	err = p.Load(ctx, "build.ninja")
 	if err != nil {
 		t.Fatalf("Load: %v", err)
@@ -882,5 +882,50 @@ include included.ninja
 	}
 	if got, want := len(edge.Inputs()), 3; got != want {
 		t.Errorf("len(Inputs)=%d; want=%d", got, want)
+	}
+}
+
+// TestParser_IncludeResolvesRelativeToWd verifies that include directives are
+// resolved relative to the working directory set via SetWd, not the process
+// working directory (regression test for crrev.com/c/7692380).
+func TestParser_IncludeResolvesRelativeToWd(t *testing.T) {
+	ctx := t.Context()
+	dir := t.TempDir()
+
+	err := os.WriteFile(filepath.Join(dir, "included.ninja"), []byte(`
+rule cc
+  command = cc -c ${in} -o ${out}
+
+build obj/a.o: cc a.c
+`), 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = os.WriteFile(filepath.Join(dir, "build.ninja"), []byte(`
+include included.ninja
+`), 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	state := NewState()
+	p := NewManifestParser(state)
+	p.SetWd(dir)
+	err = p.Load(ctx, "build.ninja")
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	node, ok := state.LookupNodeByPath("obj/a.o")
+	if !ok {
+		t.Fatal("missing node for obj/a.o")
+	}
+	edge, ok := node.InEdge()
+	if !ok {
+		t.Fatal("no inEdge for obj/a.o")
+	}
+	if got, want := edge.RuleName(), "cc"; got != want {
+		t.Errorf("RuleName=%q; want=%q", got, want)
 	}
 }

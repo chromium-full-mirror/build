@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"path/filepath"
 	"runtime/trace"
 	"strconv"
 	"sync"
@@ -48,6 +49,7 @@ type chunk struct {
 
 	state *State
 	scope *fileScope
+	wd    string // working directory for resolving relative paths
 
 	nodemap *localNodeMap
 
@@ -378,9 +380,10 @@ func (ch *chunk) setupInChunk(ctx context.Context) error {
 				state: ch.state,
 				scope: ch.scope,
 				sema:  make(chan struct{}, 1),
+				wd:    ch.wd,
 			}
 			ch.state.filenames = append(ch.state.filenames, include)
-			fp.buf, err = fp.readFile(ctx, include)
+			fp.buf, err = fp.readFile(ctx, filepath.Join(ch.wd, include))
 			if err != nil {
 				return err
 			}
