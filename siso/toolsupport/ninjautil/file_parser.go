@@ -272,19 +272,23 @@ func (p *fileParser) setup(ctx context.Context) error {
 			p.sema <- struct{}{}
 			defer func() { <-p.sema }()
 
-			return ch.setupInChunk(ctx)
-		})
-		// adjust statement positions if there is any include in any chunk.
-		if p.full.ninclude > 0 {
-			pos := ch.statements[len(ch.statements)-1].pos
-			if i+1 < len(p.chunks) && p.chunks[i+1].statements[0].pos < pos {
-				nch := &p.chunks[i+1]
-				for j := range nch.statements {
-					nch.statements[j].pos = pos + 1
-					pos++
+			err := ch.setupInChunk(ctx)
+			if err != nil {
+				return err
+			}
+			// adjust statement positions if there is any include in any chunk.
+			if p.full.ninclude > 0 {
+				pos := ch.statements[len(ch.statements)-1].pos
+				if i+1 < len(p.chunks) && p.chunks[i+1].statements[0].pos < pos {
+					nch := &p.chunks[i+1]
+					for j := range nch.statements {
+						nch.statements[j].pos = pos + 1
+						pos++
+					}
 				}
 			}
-		}
+			return nil
+		})
 	}
 	return eg.Wait()
 }
