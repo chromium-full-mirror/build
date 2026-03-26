@@ -87,6 +87,7 @@ func (c *Command) initCloudLogging(ctx context.Context, projectID, execRoot stri
 	if err != nil {
 		return ctx, "", func() {}, err
 	}
+	logger.SetMetricsLabels(c.metricsLabels)
 	ctx = clog.NewContext(ctx, logger)
 	slogger.SetLogger(logger)
 	return ctx, logger.URL(), func() {

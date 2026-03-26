@@ -307,9 +307,12 @@ type Logger struct {
 	// The following properties are equivalent to the ones in logging.LogEntry.
 	// See the document for the details.
 	// https://cloud.google.com/logging/docs/reference/v2/rest/v2/LogEntry
-	trace        string
-	spanID       string
-	labels       map[string]string
+	trace  string
+	spanID string
+	labels map[string]string
+
+	metricsLabels string
+
 	otelLogger   otelog.Logger
 	otelProvider *sdklog.LoggerProvider
 	otelGRPCConn *grpc.ClientConn
@@ -341,6 +344,11 @@ func newOtelCollectorClient(ctx context.Context, collectorAddr string, res *mrpb
 	)
 	logger := provider.Logger("siso")
 	return conn, provider, logger, nil
+}
+
+// SetMetricsLabels sets metricsLabels into logger (for errorReporting).
+func (l *Logger) SetMetricsLabels(s string) {
+	l.metricsLabels = s
 }
 
 // WithWriter returns logger with additional log writer.
@@ -591,24 +599,24 @@ func Warningf(ctx context.Context, format string, args ...any) {
 
 // Error logs at error log level in the manner of fmt.Print.
 func (l *Logger) Error(args ...any) {
-	l.log(l.Entry(logging.Error, errorReportEntry(errors.New(fmt.Sprint(args...)), debug.Stack())))
+	l.log(l.Entry(logging.Error, errorReportEntry(errors.New(fmt.Sprint(args...)), l.metricsLabels, debug.Stack())))
 }
 
 // Errorln logs at error log level in the manner of fmt.Println.
 func (l *Logger) Errorln(args ...any) {
-	l.log(l.Entry(logging.Error, errorReportEntry(errors.New(fmt.Sprintln(args...)), debug.Stack())))
+	l.log(l.Entry(logging.Error, errorReportEntry(errors.New(fmt.Sprintln(args...)), l.metricsLabels, debug.Stack())))
 }
 
 // Errorf logs at error log level in the manner of fmt.Printf.
 func (l *Logger) Errorf(format string, args ...any) {
-	l.log(l.Entry(logging.Error, errorReportEntry(fmt.Errorf(format, args...), debug.Stack())))
+	l.log(l.Entry(logging.Error, errorReportEntry(fmt.Errorf(format, args...), l.metricsLabels, debug.Stack())))
 }
 
 // Errorf logs at error log level in the manner of fmt.Printf,
 // and report error to errorreporting.
 func Errorf(ctx context.Context, format string, args ...any) {
 	logger := FromContext(ctx)
-	logger.log(logger.Entry(logging.Error, errorReportEntry(fmt.Errorf(format, args...), debug.Stack())))
+	logger.log(logger.Entry(logging.Error, errorReportEntry(fmt.Errorf(format, args...), logger.metricsLabels, debug.Stack())))
 }
 
 // Fatal logs at fatal log level in the manner of fmt.Print with stacktrace, and exit.
@@ -633,7 +641,7 @@ func (l *Logger) Fatalf(format string, args ...any) {
 }
 
 func (l *Logger) fatalf(ctx context.Context, format string, args ...any) {
-	err := l.LogSync(ctx, l.Entry(logging.Critical, errorReportEntry(fmt.Errorf(format, args...), debug.Stack())))
+	err := l.LogSync(ctx, l.Entry(logging.Critical, errorReportEntry(fmt.Errorf(format, args...), l.metricsLabels, debug.Stack())))
 	if err != nil {
 		glog.ErrorDepth(1, fmt.Sprintf("logSync: %v", err))
 	}
@@ -654,7 +662,7 @@ func (l *Logger) Exitf(format string, args ...any) {
 }
 
 func (l *Logger) exitf(ctx context.Context, format string, args ...any) {
-	err := l.LogSync(ctx, l.Entry(logging.Emergency, errorReportEntry(fmt.Errorf(format, args...), debug.Stack())))
+	err := l.LogSync(ctx, l.Entry(logging.Emergency, errorReportEntry(fmt.Errorf(format, args...), l.metricsLabels, debug.Stack())))
 	if err != nil {
 		glog.ErrorDepth(1, fmt.Sprintf("logSync: %v", err))
 	}
@@ -669,11 +677,11 @@ func Exitf(ctx context.Context, format string, args ...any) {
 
 // https://docs.cloud.google.com/error-reporting/docs/formatting-error-messages
 // https://github.com/googleapis/google-cloud-go/blob/errorreporting/v0.4.0/errorreporting/errors.go#L180
-func errorReportEntry(err error, stack []byte) map[string]any {
+func errorReportEntry(err error, metricsLabels string, stack []byte) map[string]any {
 	return map[string]any{
 		"@type":       "type.googleapis.com/google.devtools.clouderrorreporting.v1beta1.ReportedErrorEvent",
 		"message":     err.Error(),
-		"stack_trace": err.Error() + "\n" + string(stack),
+		"stack_trace": err.Error() + " " + metricsLabels + "\n" + string(stack),
 	}
 }
 
