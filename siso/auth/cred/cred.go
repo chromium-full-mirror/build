@@ -14,6 +14,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"golang.org/x/oauth2"
 	"google.golang.org/api/option"
@@ -34,6 +35,21 @@ type Cred struct {
 
 	perRPCCredentials credentials.PerRPCCredentials
 	tokenSource       oauth2.TokenSource
+
+	lazy *lazyCredWrapper
+}
+
+// Wait waits for background credential initialization.
+func (c *Cred) Wait() error {
+	if c.lazy != nil {
+		c.lazy.wg.Wait()
+		if c.lazy.err != nil {
+			return c.lazy.err
+		}
+		c.Type = c.lazy.Type
+		c.Email = c.lazy.Email
+	}
+	return nil
 }
 
 // Options is an options for credentials.
@@ -162,64 +178,20 @@ func New(ctx context.Context, uri string, opts Options) (Cred, error) {
 	if opts.TokenSource == nil {
 		return Cred{Type: opts.Type}, nil
 	}
-	if opts.PerRPCCredentials != nil && uri != "" {
-		_, err := opts.PerRPCCredentials.GetRequestMetadata(ctx, uri)
-		if err == nil {
-			t := "credential_helper"
-			if ch, ok := opts.PerRPCCredentials.(*credHelper); ok {
-				t = ch.path
-			}
-			return Cred{
-				Type:              t,
-				perRPCCredentials: opts.PerRPCCredentials,
-				tokenSource:       opts.TokenSource,
-			}, nil
-		}
-		clog.Warningf(ctx, "failed to get perRPCCredentials for %q: %v", uri, err)
+
+	lc := &lazyCredWrapper{
+		opts: opts,
+		uri:  uri,
+		ctx:  context.WithoutCancel(ctx),
 	}
-	var t string
-	var email string
-	ts := opts.TokenSource
-	tok, err := ts.Token()
-	if err != nil {
-		if ctx.Err() != nil {
-			return Cred{Type: opts.Type}, err
-		}
-		if errors.Is(err, errNoAuthorization) {
-			if ch, ok := ts.(*credHelperGoogle); ok {
-				t = ch.h.path
-				clog.Warningf(ctx, "use auth %s, no token source %v", ch.h.path, err)
-			} else {
-				t = fmt.Sprintf("%T", ts)
-				clog.Warningf(ctx, "use auth %T, no token source: %v", ts, err)
-			}
-			ts = nil
-		} else {
-			switch opts.Type {
-			case "luci-auth", "gcloud", "":
-				clog.Warningf(ctx, "auth %s: %v", opts.Type, err)
-				return Cred{Type: opts.Type}, fmt.Errorf("need to run `siso login`")
-			default:
-				return Cred{Type: opts.Type}, err
-			}
-		}
-	} else {
-		t, _ = tok.Extra("x-token-source").(string)
-		email, _ = tok.Extra("x-token-email").(string)
-		clog.Infof(ctx, "use auth %v email: %s", t, email)
-		ts = oauth2.ReuseTokenSource(tok, ts)
-	}
-	perRPCCredentials := opts.PerRPCCredentials
-	if perRPCCredentials == nil {
-		perRPCCredentials = oauth.TokenSource{
-			TokenSource: ts,
-		}
-	}
+	lc.wg.Go(lc.init)
+
 	return Cred{
-		Type:              t,
-		Email:             email,
-		perRPCCredentials: perRPCCredentials,
-		tokenSource:       ts,
+		Type:              opts.Type,
+		Email:             "",
+		perRPCCredentials: lc,
+		tokenSource:       lc,
+		lazy:              lc,
 	}, nil
 }
 
@@ -259,4 +231,113 @@ func (c Cred) ClientOptions() []option.ClientOption {
 	return []option.ClientOption{
 		option.WithTokenSource(c.tokenSource),
 	}
+}
+
+type lazyCredWrapper struct {
+	opts Options
+	uri  string
+	ctx  context.Context
+
+	wg  sync.WaitGroup
+	err error
+
+	Type  string
+	Email string
+
+	perRPCCredentials credentials.PerRPCCredentials
+	tokenSource       oauth2.TokenSource
+}
+
+func (c *lazyCredWrapper) init() {
+	if c.opts.PerRPCCredentials != nil && c.uri != "" {
+		_, err := c.opts.PerRPCCredentials.GetRequestMetadata(c.ctx, c.uri)
+		if err == nil {
+			t := "credential_helper"
+			if ch, ok := c.opts.PerRPCCredentials.(*credHelper); ok {
+				t = ch.path
+			}
+			c.Type = t
+			c.perRPCCredentials = c.opts.PerRPCCredentials
+			c.tokenSource = c.opts.TokenSource
+			return
+		}
+		clog.Warningf(c.ctx, "failed to get perRPCCredentials for %q: %v", c.uri, err)
+	}
+	var t string
+	var email string
+	ts := c.opts.TokenSource
+	tok, err := ts.Token()
+	if err != nil {
+		if c.ctx.Err() != nil {
+			c.err = err
+			return
+		}
+		if errors.Is(err, errNoAuthorization) {
+			if ch, ok := ts.(*credHelperGoogle); ok {
+				t = ch.h.path
+				clog.Warningf(c.ctx, "use auth %s, no token source %v", ch.h.path, err)
+			} else {
+				t = fmt.Sprintf("%T", ts)
+				clog.Warningf(c.ctx, "use auth %T, no token source: %v", ts, err)
+			}
+			ts = nil
+		} else {
+			switch c.opts.Type {
+			case "luci-auth", "gcloud", "":
+				clog.Warningf(c.ctx, "auth %s: %v", c.opts.Type, err)
+				c.err = fmt.Errorf("need to run `siso login`")
+				return
+			default:
+				c.err = err
+				return
+			}
+		}
+	} else {
+		t, _ = tok.Extra("x-token-source").(string)
+		email, _ = tok.Extra("x-token-email").(string)
+		clog.Infof(c.ctx, "use auth %v email: %s", t, email)
+		ts = oauth2.ReuseTokenSource(tok, ts)
+	}
+	perRPCCredentials := c.opts.PerRPCCredentials
+	if perRPCCredentials == nil {
+		if ts != nil {
+			perRPCCredentials = oauth.TokenSource{
+				TokenSource: ts,
+			}
+		}
+	}
+	c.Type = t
+	c.Email = email
+	c.perRPCCredentials = perRPCCredentials
+	c.tokenSource = ts
+}
+
+func (c *lazyCredWrapper) GetRequestMetadata(ctx context.Context, uri ...string) (map[string]string, error) {
+	c.wg.Wait()
+	if c.err != nil {
+		return nil, c.err
+	}
+	if c.perRPCCredentials != nil {
+		return c.perRPCCredentials.GetRequestMetadata(ctx, uri...)
+	}
+	return nil, nil
+}
+
+func (c *lazyCredWrapper) RequireTransportSecurity() bool {
+	c.wg.Wait()
+	if c.perRPCCredentials != nil {
+		return c.perRPCCredentials.RequireTransportSecurity()
+	}
+	return true
+}
+
+func (c *lazyCredWrapper) Token() (*oauth2.Token, error) {
+	c.wg.Wait()
+	if c.err != nil {
+		return nil, c.err
+	}
+	if c.tokenSource != nil {
+		return c.tokenSource.Token()
+	}
+	return nil, fmt.Errorf("no token source")
 }

@@ -72,6 +72,11 @@ func (c *CheckCommand) Execute(ctx context.Context, flagSet *flag.FlagSet, _ ...
 			fmt.Fprintf(os.Stderr, "auth error: %v\n", err)
 			return subcommands.ExitFailure
 		}
+		err = credential.Wait()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "auth error: %v\n", err)
+			return subcommands.ExitFailure
+		}
 		fmt.Printf("Logged in by %s\n", credential.Type)
 		if credential.Email != "" {
 			fmt.Printf(" as %s\n", credential.Email)

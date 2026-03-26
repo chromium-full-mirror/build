@@ -254,6 +254,7 @@ type grpcClientConn interface {
 // Client is a remote exec API client.
 type Client struct {
 	opt     Option
+	cred    cred.Cred
 	conn    grpcClientConn
 	casConn grpcClientConn
 
@@ -375,7 +376,7 @@ func New(ctx context.Context, cred cred.Cred, opt Option) (*Client, error) {
 			return nil, err
 		}
 	}
-	return NewFromConn(ctx, opt, conn, casConn)
+	return NewFromConn(ctx, opt, cred, conn, casConn)
 }
 
 func newConn(ctx context.Context, addr string, cred cred.Cred, opt Option) (grpcClientConn, error) {
@@ -465,7 +466,7 @@ func newConn(ctx context.Context, addr string, cred cred.Cred, opt Option) (grpc
 }
 
 // NewFromConn creates new remote exec API client from conn and casConn.
-func NewFromConn(ctx context.Context, opt Option, conn, casConn grpcClientConn) (*Client, error) {
+func NewFromConn(ctx context.Context, opt Option, cred cred.Cred, conn, casConn grpcClientConn) (*Client, error) {
 	zstdDecoderPool := &sync.Pool{}
 	zstdDecoderPool.New = func() any {
 		d, err := zstd.NewReader(nil)
@@ -480,6 +481,7 @@ func NewFromConn(ctx context.Context, opt Option, conn, casConn grpcClientConn) 
 	}
 	c := &Client{
 		opt:             opt,
+		cred:            cred,
 		conn:            conn,
 		casConn:         casConn,
 		zstdDecoderPool: zstdDecoderPool,
@@ -492,6 +494,10 @@ func NewFromConn(ctx context.Context, opt Option, conn, casConn grpcClientConn) 
 // Init initializes the client by fetching capabilities and negotiating compression.
 // This requires an active connection to the remote execution backend.
 func (c *Client) Init(ctx context.Context) error {
+	if err := c.cred.Wait(); err != nil {
+		return fmt.Errorf("failed to initialize credentials: %w", err)
+	}
+
 	cc := rpb.NewCapabilitiesClient(c.conn)
 	var capa *rpb.ServerCapabilities
 	// TODO(b/328332495): grpc should retry by service config?

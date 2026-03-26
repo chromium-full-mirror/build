@@ -243,15 +243,10 @@ func (c *Command) initCredentials(ctx context.Context) (cred.Cred, error) {
 		return cred.Cred{}, nil
 	}
 
-	// TODO: can be async until cred is needed?
-	spin := ui.Default.NewSpinner()
-	spin.Start("init credentials by %q", c.authOpts.Type)
 	credential, err := cred.New(ctx, c.reopt.ServiceURI(), c.authOpts)
 	if err != nil {
-		spin.Stop(errors.New(""))
 		return cred.Cred{}, err
 	}
-	spin.Stop(nil)
 	return credential, nil
 }
 
@@ -409,7 +404,7 @@ func (c *Command) Run(ctx context.Context) (stats build.Stats, finalErr error) {
 		return stats, err
 	}
 
-	var eg errgroup.Group
+	var eg, reeg errgroup.Group
 	var localDepsLog *ninjabuild.DepsLog
 	eg.Go(func() error {
 		depsLog, err := initDepsLog(ctx, c.stateDir, c.depsLogFile)
@@ -427,7 +422,7 @@ func (c *Command) Run(ctx context.Context) (stats build.Stats, finalErr error) {
 		if err != nil {
 			return stats, err
 		}
-		eg.Go(func() error {
+		reeg.Go(func() error {
 			err := reapiClient.Init(ctx)
 			if err != nil {
 				return err
@@ -456,7 +451,17 @@ func (c *Command) Run(ctx context.Context) (stats build.Stats, finalErr error) {
 	defer func() {
 		err := ds.Close(ctx)
 		if err != nil {
-			clog.Warningf(ctx, "close datasource: %v", err)
+			isCanceled := errors.Is(err, context.Canceled)
+			if !isCanceled {
+				if st, ok := status.FromError(err); ok && st.Code() == codes.Canceled {
+					isCanceled = true
+				}
+			}
+			if isCanceled {
+				clog.Infof(ctx, "close datasource: %v", err)
+			} else {
+				clog.Warningf(ctx, "close datasource: %v", err)
+			}
 		}
 	}()
 	hashFS, closeHashFS, err := c.setupHashFS(ctx, buildPath, ds)
@@ -552,6 +557,10 @@ func (c *Command) Run(ctx context.Context) (stats build.Stats, finalErr error) {
 		return stats, err
 	}
 
+	err = reeg.Wait()
+	if err != nil {
+		return stats, err
+	}
 	return ninjabuild.Run(ctx, graph, bopts, targets, ninjabuild.RunNinjaOpts{
 		Cleandead:     c.cleandead,
 		Subtool:       c.subtool,

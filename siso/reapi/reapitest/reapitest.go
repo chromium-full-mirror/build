@@ -30,6 +30,7 @@ import (
 	"go.chromium.org/build/kajiya/execution"
 	"go.chromium.org/build/kajiya/execution/model"
 
+	"go.chromium.org/build/siso/auth/cred"
 	"go.chromium.org/build/siso/reapi"
 )
 
@@ -142,7 +143,7 @@ func NewWithOption(ctx context.Context, t *testing.T, fake *Fake, opt reapi.Opti
 	if err != nil {
 		t.Fatal(err)
 	}
-	client, err := reapi.NewFromConn(ctx, opt, conn, conn)
+	client, err := reapi.NewFromConn(ctx, opt, cred.Cred{}, conn, conn)
 	if err != nil {
 		t.Fatal(err)
 	}
