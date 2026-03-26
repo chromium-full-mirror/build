@@ -12,10 +12,12 @@ package clog
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"path/filepath"
 	"runtime"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"time"
@@ -194,7 +196,7 @@ var contextKey contextKeyType
 
 // defaultFormatter doesn't set any context to the log content.
 var defaultFormatter = func(e logging.Entry) string {
-	return fmt.Sprintf("%v", e.Payload)
+	return Message(e)
 }
 
 // New creates a new Logger.
@@ -285,7 +287,7 @@ func FromContext(ctx context.Context) *Logger {
 // It also can have custom formatter to generate a log content.
 type Logger struct {
 	// Formatter is a formatter of the entry for glog.
-	// Default to `fmt.Sprintf("%v", e.Payload)`.
+	// Default to `clog.Message(e)`.
 	Formatter func(e logging.Entry) string
 
 	// Additional log writer if non-nil
@@ -394,6 +396,26 @@ func (l *Logger) Log(e logging.Entry) {
 	l.log(e)
 }
 
+func toOtelValue(v any) otelog.Value {
+	switch val := v.(type) {
+	case string:
+		return otelog.StringValue(val)
+	case map[string]any:
+		var kvs []otelog.KeyValue
+		for k, v := range val {
+			kvs = append(kvs, otelog.KeyValue{
+				Key:   k,
+				Value: toOtelValue(v),
+			})
+		}
+		return otelog.MapValue(kvs...)
+
+		// TODO: bool, float64, int64, []byte, slice
+	default:
+		return otelog.StringValue(fmt.Sprintf("%v", val))
+	}
+}
+
 func (l *Logger) log(e logging.Entry) {
 	if l != nil && l.otelLogger != nil {
 		rec := otelog.Record{}
@@ -416,7 +438,7 @@ func (l *Logger) log(e logging.Entry) {
 		rec.SetSeverity(s)
 		rec.SetSeverityText(e.Severity.String())
 
-		rec.SetBody(otelog.StringValue(fmt.Sprintf("%v", e.Payload)))
+		rec.SetBody(toOtelValue(e.Payload))
 
 		var attrs []otelog.KeyValue
 		for k, v := range e.Labels {
@@ -569,23 +591,24 @@ func Warningf(ctx context.Context, format string, args ...any) {
 
 // Error logs at error log level in the manner of fmt.Print.
 func (l *Logger) Error(args ...any) {
-	l.log(l.Entry(logging.Error, fmt.Sprint(args...)))
+	l.log(l.Entry(logging.Error, errorReportEntry(errors.New(fmt.Sprint(args...)), debug.Stack())))
 }
 
 // Errorln logs at error log level in the manner of fmt.Println.
 func (l *Logger) Errorln(args ...any) {
-	l.log(l.Entry(logging.Error, fmt.Sprintln(args...)))
+	l.log(l.Entry(logging.Error, errorReportEntry(errors.New(fmt.Sprintln(args...)), debug.Stack())))
 }
 
 // Errorf logs at error log level in the manner of fmt.Printf.
 func (l *Logger) Errorf(format string, args ...any) {
-	l.log(l.Entry(logging.Error, fmt.Sprintf(format, args...)))
+	l.log(l.Entry(logging.Error, errorReportEntry(fmt.Errorf(format, args...), debug.Stack())))
 }
 
-// Errorf logs at error log level in the manner of fmt.Printf.
+// Errorf logs at error log level in the manner of fmt.Printf,
+// and report error to errorreporting.
 func Errorf(ctx context.Context, format string, args ...any) {
 	logger := FromContext(ctx)
-	logger.log(logger.Entry(logging.Error, fmt.Sprintf(format, args...)))
+	logger.log(logger.Entry(logging.Error, errorReportEntry(fmt.Errorf(format, args...), debug.Stack())))
 }
 
 // Fatal logs at fatal log level in the manner of fmt.Print with stacktrace, and exit.
@@ -610,7 +633,7 @@ func (l *Logger) Fatalf(format string, args ...any) {
 }
 
 func (l *Logger) fatalf(ctx context.Context, format string, args ...any) {
-	err := l.LogSync(ctx, l.Entry(logging.Critical, fmt.Sprintf(format, args...)))
+	err := l.LogSync(ctx, l.Entry(logging.Critical, errorReportEntry(fmt.Errorf(format, args...), debug.Stack())))
 	if err != nil {
 		glog.ErrorDepth(1, fmt.Sprintf("logSync: %v", err))
 	}
@@ -620,7 +643,7 @@ func (l *Logger) fatalf(ctx context.Context, format string, args ...any) {
 // Fatalf logs at fatal log level in the manner of fmt.Printf with stacktrace, and exit.
 func Fatalf(ctx context.Context, format string, args ...any) {
 	logger := FromContext(ctx)
-	logger.log(logger.Entry(logging.Critical, fmt.Sprintf(format, args...)))
+	logger.fatalf(ctx, format, args...)
 }
 
 // Exitf logs at fatal log level in the manner of fmt.Printf, and exit.
@@ -631,7 +654,7 @@ func (l *Logger) Exitf(format string, args ...any) {
 }
 
 func (l *Logger) exitf(ctx context.Context, format string, args ...any) {
-	err := l.LogSync(ctx, l.Entry(logging.Emergency, fmt.Sprintf(format, args...)))
+	err := l.LogSync(ctx, l.Entry(logging.Emergency, errorReportEntry(fmt.Errorf(format, args...), debug.Stack())))
 	if err != nil {
 		glog.ErrorDepth(1, fmt.Sprintf("logSync: %v", err))
 	}
@@ -642,6 +665,24 @@ func (l *Logger) exitf(ctx context.Context, format string, args ...any) {
 func Exitf(ctx context.Context, format string, args ...any) {
 	logger := FromContext(ctx)
 	logger.exitf(ctx, format, args...)
+}
+
+// https://docs.cloud.google.com/error-reporting/docs/formatting-error-messages
+// https://github.com/googleapis/google-cloud-go/blob/errorreporting/v0.4.0/errorreporting/errors.go#L180
+func errorReportEntry(err error, stack []byte) map[string]any {
+	return map[string]any{
+		"@type":       "type.googleapis.com/google.devtools.clouderrorreporting.v1beta1.ReportedErrorEvent",
+		"message":     err.Error(),
+		"stack_trace": err.Error() + "\n" + string(stack),
+	}
+}
+
+// Message returns message in logging.
+func Message(e logging.Entry) string {
+	if m, ok := e.Payload.(map[string]any); ok {
+		return fmt.Sprintf("%v", m["message"])
+	}
+	return fmt.Sprintf("%v", e.Payload)
 }
 
 // Entry creates a new log entry for the given severity.

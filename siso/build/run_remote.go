@@ -100,6 +100,15 @@ func (b *Builder) runRemote(ctx context.Context, step *Step) error {
 		err = b.runRemoteStep(ctx, step, needCheckCache && cacheCheck)
 	}
 	if err != nil {
+		output := step.outputPaths[0]
+		var fallbackReported bool
+		fallbackReport := func(category string) {
+			if fallbackReported {
+				return
+			}
+			clog.Errorf(ctx, "%s: remote-exec %s failed, fallback to local: %q siso_config=%q, gn_target=%q: %v", category, step.cmd.ActionDigest(), output, step.def.RuleName(), step.def.Binding("gn_target"), err)
+			fallbackReported = true
+		}
 		if errors.Is(err, errRemoteExecDisabled) {
 			return b.execLocal(ctx, step)
 		}
@@ -109,11 +118,18 @@ func (b *Builder) runRemote(ctx context.Context, step *Step) error {
 		if errors.Is(err, reapi.ErrBadPlatformContainerImage) {
 			return fmt.Errorf("remote-exec %s failed: %w", step.cmd.ActionDigest(), err)
 		}
-		switch status.Code(err) {
+		switch errCode := status.Code(err); errCode {
 		case codes.PermissionDenied,
 			codes.InvalidArgument,
 			codes.FailedPrecondition:
 			return fmt.Errorf("remote-exec %s failed: %w", step.cmd.ActionDigest(), err)
+		case codes.Canceled:
+			if errors.Is(ctx.Err(), context.Canceled) {
+				return fmt.Errorf("remote-exec %s canceled: %w", step.cmd.ActionDigest(), err)
+			}
+		case codes.Unknown:
+		default:
+			fallbackReport(fmt.Sprintf("fallback-on-%s", errCode))
 		}
 		if errors.Is(err, errNotRelocatable) {
 			clog.Errorf(ctx, "not relocatable: %v", err)
@@ -125,12 +141,12 @@ func (b *Builder) runRemote(ctx context.Context, step *Step) error {
 		}
 		var eerr execute.ExitError
 		if errors.As(err, &eerr) && len(step.cmd.Stdout())+len(step.cmd.Stderr()) > 0 && b.failures.allowed == 1 {
-			output := step.outputPaths[0]
 			switch {
 			case eerr.ExitCode == 137:
-				clog.Warningf(ctx, "Fallback due to potential SIGKILL by docker: remote exec %s failed: output=%q siso_config=%q, gn_target=%q: %v", step.cmd.ActionDigest(), output, step.def.RuleName(), step.def.Binding("gn_target"), err)
+				fallbackReport("fallback-on-SIGKILL")
+
 			case experiments.Enabled("fallback-on-exec-error", "remote exec %s failed: %v", step.cmd.ActionDigest(), err):
-				clog.Warningf(ctx, "fallback-on-exec-error: remote exec %s failed: output=%q siso_config=%q, gn_target=%q: %v", step.cmd.ActionDigest(), output, step.def.RuleName(), step.def.Binding("gn_target"), err)
+				fallbackReport("fallback-on-exec-error")
 			default:
 				// report compile fail early to developers.
 				// If user runs on non-terminal or user sets a
@@ -143,7 +159,7 @@ func (b *Builder) runRemote(ctx context.Context, step *Step) error {
 		if !b.localFallbackEnabled() {
 			return fmt.Errorf("remote-exec %s failed no-fallback: %w", step.cmd.ActionDigest(), err)
 		}
-		clog.Warningf(ctx, "remote-exec %s failed, fallback to local: %v", step.cmd.ActionDigest(), err)
+		fallbackReport("fallback-on-other")
 		b.progressStepFallback(step)
 		step.metrics.IsRemote = false
 		step.metrics.Fallback = true

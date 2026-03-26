@@ -22,8 +22,9 @@ type sysRecord struct {
 	// https://docs.kernel.org/accounting/psi.html
 	// pressure stall information
 	// psiMemory is PSI memory `some` total value.
-	psiMemory int64
-	start     time.Time
+	psiMemory   int64
+	start       time.Time
+	errReported time.Time
 }
 
 func readProcPressureMemorySome() (int64, error) {
@@ -84,7 +85,12 @@ func (s *sysRecord) sample(ctx context.Context, t time.Time) []traceEventObject 
 	// note sample is called every second
 	switch {
 	case m > 500*1000: // 500ms stalled
-		clog.Warningf(ctx, "memory stall %s/s", time.Duration(m*1000))
+		if time.Since(s.errReported) >= 1*time.Minute {
+			clog.Errorf(ctx, "memory stall %s/s", time.Duration(m*1000))
+			s.errReported = time.Now()
+		} else {
+			clog.Warningf(ctx, "memory stall %s/s", time.Duration(m*1000))
+		}
 	case m > 100*1000: // 100ms stalled
 		clog.Infof(ctx, "memory stall %s/s", time.Duration(m*1000))
 	}
