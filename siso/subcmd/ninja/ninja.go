@@ -456,7 +456,7 @@ func (c *Command) Run(ctx context.Context) (stats build.Stats, finalErr error) {
 	defer func() {
 		err := ds.Close(ctx)
 		if err != nil {
-			clog.Errorf(ctx, "close datasource: %v", err)
+			clog.Warningf(ctx, "close datasource: %v", err)
 		}
 	}()
 	hashFS, closeHashFS, err := c.setupHashFS(ctx, buildPath, ds)
