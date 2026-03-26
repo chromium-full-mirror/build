@@ -29,6 +29,7 @@ import (
 	"go.chromium.org/build/kajiya/digest"
 	"go.chromium.org/build/kajiya/execution"
 	"go.chromium.org/build/kajiya/execution/model"
+	"go.chromium.org/build/kajiya/server"
 
 	"go.chromium.org/build/siso/auth/cred"
 	"go.chromium.org/build/siso/reapi"
@@ -53,15 +54,15 @@ func (f *Fake) Execute(action *model.Action) (*rpb.ActionResult, error) {
 	})
 }
 
-type server struct {
+type testServer struct {
 	addr     string
 	cleanups []func()
 	closed   chan struct{}
 }
 
-func newServer(ctx context.Context, t *testing.T, fake *Fake) *server {
+func newServer(ctx context.Context, t *testing.T, fake *Fake) *testServer {
 	t.Helper()
-	s := &server{
+	s := &testServer{
 		closed: make(chan struct{}),
 	}
 	lis, err := net.Listen("tcp", "localhost:0")
@@ -79,7 +80,8 @@ func newServer(ctx context.Context, t *testing.T, fake *Fake) *server {
 
 	dir := t.TempDir()
 	serv := grpc.NewServer()
-	capabilities.Register(serv)
+	cfg := server.Config{}
+	capabilities.Register(serv, cfg)
 
 	casDir := filepath.Join(dir, "cas")
 	cas, err := blobstore.New(ctx, casDir)
@@ -88,11 +90,7 @@ func newServer(ctx context.Context, t *testing.T, fake *Fake) *server {
 	}
 	fake.CAS = cas
 
-	uploadDir := filepath.Join(casDir, "tmp")
-	err = blobstore.Register(serv, cas, uploadDir)
-	if err != nil {
-		t.Fatal(err)
-	}
+	blobstore.Register(serv, cas, cfg)
 	acDir := filepath.Join(dir, "ac")
 	ac, err := actioncache.New(ctx, acDir, cas)
 	if err != nil {
@@ -116,7 +114,7 @@ func newServer(ctx context.Context, t *testing.T, fake *Fake) *server {
 	return s
 }
 
-func (s *server) Close() {
+func (s *testServer) Close() {
 	for i := len(s.cleanups) - 1; i >= 0; i-- {
 		s.cleanups[i]()
 	}
