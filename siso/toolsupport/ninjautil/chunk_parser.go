@@ -414,7 +414,7 @@ func (ch *chunk) includeChunks(i int, chunks []chunk) {
 	for i := range chunks {
 		cch := &chunks[i]
 		for j := range cch.statements {
-			ch.statements[j].pos = pos
+			cch.statements[j].pos = pos
 			pos++
 		}
 	}

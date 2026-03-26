@@ -785,7 +785,6 @@ build out4: rule_with_double_continuation_no_space in
 // This test uses a minimal parent file whose only statement is an include
 // directive, ensuring a single chunk with ninclude > 0.
 func TestParser_IncludeInLastChunk(t *testing.T) {
-	t.Skip("includeChunks indexes parent instead of child statements; fixed in next commit")
 	ctx := t.Context()
 	dir := t.TempDir()
 
@@ -823,5 +822,65 @@ build obj/a.o: cc a.c
 	}
 	if got, want := edge.RuleName(), "cc"; got != want {
 		t.Errorf("RuleName=%q; want=%q", got, want)
+	}
+}
+
+// TestParser_IncludeMoreStatementsThanParent is a regression test for
+// crrev.com/c/7692414: includeChunks() used to index into ch.statements
+// (the parent chunk) instead of cch.statements (the included chunk),
+// causing an out-of-bounds panic when the included file had more statements
+// than the parent chunk had remaining after the include directive.
+func TestParser_IncludeMoreStatementsThanParent(t *testing.T) {
+	ctx := t.Context()
+	dir := t.TempDir()
+
+	// The included file has many statements (more than the parent has
+	// after its include directive).
+	err := os.WriteFile(filepath.Join(dir, "included.ninja"), []byte(`
+rule cc
+  command = cc -c ${in} -o ${out}
+
+rule link
+  command = cc ${in} -o ${out}
+
+build obj/a.o: cc a.c
+build obj/b.o: cc b.c
+build obj/c.o: cc c.c
+build prog: link obj/a.o obj/b.o obj/c.o
+`), 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// The parent file has only the include directive and nothing after it,
+	// so the parent chunk has fewer statements than the included file.
+	err = os.WriteFile(filepath.Join(dir, "build.ninja"), []byte(`
+include included.ninja
+`), 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	state := NewState()
+	p := NewManifestParser(state)
+	t.Chdir(dir)
+	err = p.Load(ctx, "build.ninja")
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	node, ok := state.LookupNodeByPath("prog")
+	if !ok {
+		t.Fatal("missing node for prog")
+	}
+	edge, ok := node.InEdge()
+	if !ok {
+		t.Fatal("no inEdge for prog")
+	}
+	if got, want := edge.RuleName(), "link"; got != want {
+		t.Errorf("RuleName=%q; want=%q", got, want)
+	}
+	if got, want := len(edge.Inputs()), 3; got != want {
+		t.Errorf("len(Inputs)=%d; want=%d", got, want)
 	}
 }
