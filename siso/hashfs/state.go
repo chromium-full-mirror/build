@@ -947,6 +947,9 @@ func (hfs *HashFS) State(ctx context.Context) *pb.State {
 		for _, name := range names {
 			v, ok := dir.dir.m.Load(filepath.Base(name))
 			if !ok {
+				if dir.name == "/" && name == "/" {
+					continue
+				}
 				clog.Errorf(ctx, "dir:%s name:%s entries:%v", dir.name, name, dir.dir)
 				continue
 			}
