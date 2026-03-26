@@ -33,6 +33,8 @@ service:
       processors: []
       exporters: [googlecloud]
 extensions:
+  # Docs for healthcheckv2 extension:
+  # https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/extension/healthcheckv2extension/README.md#v2
   healthcheckv2:
     use_v2: true
     component_health:
