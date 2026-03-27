@@ -99,9 +99,34 @@ func (c *Command) Execute(ctx context.Context, f *flag.FlagSet, args ...any) sub
 	otelcolArgs := f.Args()
 	otelcolArgs = append(otelcolArgs, "--config", "yaml:"+string(collectorConfig))
 
-	if err := run(set, otelcolArgs); err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to start collector: %v\n", err)
-		return subcommands.ExitFailure
+	credCh := make(chan error, 1)
+	runCh := make(chan error, 1)
+	go func() {
+		credCh <- credential.Wait()
+	}()
+	go func() {
+		runCh <- run(set, otelcolArgs)
+	}()
+
+	// Wait for either credential initialization or collector execution to finish.
+	select {
+	case err := <-credCh:
+		// If credential.Wait() returns an error, we should exit immediately without waiting for run().
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Credential error: %v\n", err)
+			return subcommands.ExitFailure
+		}
+		// If credential.Wait() succeeded, we still need to wait for run() to finish.
+		if err := <-runCh; err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to start collector: %v\n", err)
+			return subcommands.ExitFailure
+		}
+	case err := <-runCh:
+		// If run() finishes first (likely an error during startup), return its status.
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to start collector: %v\n", err)
+			return subcommands.ExitFailure
+		}
 	}
 	return subcommands.ExitSuccess
 }
