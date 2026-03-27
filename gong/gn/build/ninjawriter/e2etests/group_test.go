@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-func TestGeneric_Group(t *testing.T) {
+func TestGroup_Simple(t *testing.T) {
 	runTest(t,
 		map[string]string{
 			"build/BUILDCONFIG.gn": `

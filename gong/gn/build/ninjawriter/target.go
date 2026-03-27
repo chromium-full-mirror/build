@@ -31,20 +31,16 @@ import (
 //
 // TODO: use io/fs to test expected file outputs?
 func writeTarget(w io.Writer, t *graph.Target, buildSettings *environment.BuildSettings) error {
-	targetLabel := t.Label()
-
-	// TODO: this is a hack that naively assumes all targets are either phony or binary.
-	// obviously this is not correct and is only going to work for very simple builds.
-	if len(t.Resolution.Actions) == 0 {
-		var outputPaths []string
-		for _, output := range t.Resolution.Metadata.Outputs() {
-			outputPaths = append(outputPaths, escapeStringNinja(output.Path()))
-		}
-		_, err := fmt.Fprintf(w, "build phony/%s: phony %s", escapeStringNinja(targetLabel.Name), strings.Join(outputPaths, " "))
-		if err != nil {
-			return err
-		}
-	} else {
+	// HACK: right now gong only has a concept of "tool" or "script" actions.
+	// targets that should be written as phony right now are:
+	//	- group(), which has 0 actions
+	//	- anything with script calls only
+	// so, we'll naively assume that if the target doesn't use tools, write it as phony.
+	if slices.ContainsFunc(t.Resolution.Actions, func(action graph.Action) bool {
+		_, ok := action.(graph.RunToolAction)
+		return ok
+	}) {
+		targetLabel := t.Label()
 		// TODO: reusing C++ GN's builddir resolution funcs is really clumsy.
 		// can this be improved by adopting io/fs and its FS and SubFS interfaces?
 		// alternatively, look more carefully at how C++ GN uses the funcs
@@ -86,8 +82,28 @@ func writeTarget(w io.Writer, t *graph.Target, buildSettings *environment.BuildS
 		if err != nil {
 			return err
 		}
+		return nil
 	}
 
+	return writePhonyForTarget(w, t, buildSettings)
+}
+
+func writePhonyForTarget(w io.Writer, t *graph.Target, buildSettings *environment.BuildSettings) error {
+	for _, action := range t.Resolution.Actions {
+		switch action := action.(type) {
+		case graph.RunScriptAction:
+			writeAction(w, t, action, buildSettings)
+		}
+	}
+
+	var outputPaths []string
+	for _, output := range t.Resolution.Metadata.Outputs() {
+		outputPaths = append(outputPaths, escapeStringNinja(output.Path()))
+	}
+	_, err := fmt.Fprintf(w, "build phony/%s: phony %s", escapeStringNinja(t.Label().Name), strings.Join(outputPaths, " "))
+	if err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -109,7 +125,7 @@ func writeBinaryTarget(w io.Writer, t *graph.Target, buildSettings *environment.
 			outputExtension = filepath.Ext(outputBase)
 			targetOutputName = strings.TrimSuffix(outputBase, outputExtension)
 		case graph.RunScriptAction:
-			return fmt.Errorf("script actions not implemented yet")
+			return fmt.Errorf("script actions not implemented for binary targets")
 		default:
 			return fmt.Errorf("unknown action type: %T", action)
 		}
@@ -162,14 +178,18 @@ func writeBinaryTarget(w io.Writer, t *graph.Target, buildSettings *environment.
 
 	// Then, write out each action.
 	for _, action := range t.Resolution.Actions {
-		if err := writeAction(w, action, buildSettings); err != nil {
+		if err := writeAction(w, t, action, buildSettings); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func writeAction(w io.Writer, action graph.Action, buildSettings *environment.BuildSettings) error {
+// TODO: look into simplifying the fmt.Fprint + repeated err checking boilerplate.
+// stylistically it makes it not as easy to review as well.
+// would combining into larger format strings using backticks work?
+// what performance impacts might happen as a result?
+func writeAction(w io.Writer, t *graph.Target, action graph.Action, buildSettings *environment.BuildSettings) error {
 	switch action := action.(type) {
 	case graph.RunToolAction:
 		var inputPaths []string
@@ -241,7 +261,80 @@ func writeAction(w io.Writer, action graph.Action, buildSettings *environment.Bu
 			}
 		}
 	case graph.RunScriptAction:
-		return fmt.Errorf("script actions not implemented yet")
+		targetLabel := t.Label().UserVisibleString(true)
+		ruleName := scriptRuleNormalizer.Replace(targetLabel) + "_rule"
+		rebasedScript, err := fs.RebasePath(action.Script.Filename(), buildSettings.BuildDir, buildSettings.RootPath)
+		if err != nil {
+			return err
+		}
+
+		_, err = fmt.Fprintf(w, "rule %s\n", ruleName)
+		if err != nil {
+			return err
+		}
+		_, err = fmt.Fprintf(w, "  command = %s %s", escapeStringNinja(buildSettings.PythonPath), escapeStringNinja(rebasedScript))
+		if err != nil {
+			return err
+		}
+		for _, arg := range action.Args {
+			_, err = fmt.Fprintf(w, " %s", escapeStringNinja(arg))
+			if err != nil {
+				return err
+			}
+		}
+		_, err = fmt.Fprintln(w)
+		if err != nil {
+			return err
+		}
+		_, err = fmt.Fprintf(w, "  description = ACTION %s\n", targetLabel)
+		if err != nil {
+			return err
+		}
+		_, err = fmt.Fprintln(w, "  restat = 1")
+		if err != nil {
+			return err
+		}
+		if action.Depfile != "" {
+			_, err = fmt.Fprintf(w, "  depfile = %s\n", escapeStringNinja(action.Depfile))
+			if err != nil {
+				return err
+			}
+			// Using "deps = gcc" allows Ninja to read and store the depfile content in
+			// its internal database which improves performance, especially for large
+			// depfiles. The use of this feature with depfiles that contain multiple
+			// outputs require Ninja version 1.9.0 or newer.
+			// TODO: buildSettings needs to store ninja required version
+			_, err = fmt.Fprintln(w, "  deps = gcc")
+			if err != nil {
+				return err
+			}
+		}
+		_, err = fmt.Fprintln(w)
+		if err != nil {
+			return err
+		}
+
+		var outs []string
+		for _, out := range action.Outputs {
+			outs = append(outs, escapeStringNinja(out.Path()))
+		}
+		ins := []string{escapeStringNinja(rebasedScript)}
+		for _, in := range action.Inputs {
+			rebasedIn, err := fs.RebasePath(in.Filename(), buildSettings.BuildDir, buildSettings.RootPath)
+			if err != nil {
+				return err
+			}
+			ins = append(ins, escapeStringNinja(rebasedIn))
+		}
+
+		_, err = fmt.Fprintf(w, "build %s: %s | %s", strings.Join(outs, " "), ruleName, strings.Join(ins, " "))
+		if err != nil {
+			return err
+		}
+		_, err = fmt.Fprintln(w)
+		if err != nil {
+			return err
+		}
 	default:
 		return fmt.Errorf("unknown action type: %T", action)
 	}

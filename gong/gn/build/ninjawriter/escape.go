@@ -8,6 +8,14 @@ import (
 	"strings"
 )
 
+var scriptRuleNormalizer = strings.NewReplacer(
+	":", "_",
+	"/", "_",
+	"(", "_",
+	")", "_",
+	"+", "_",
+)
+
 // Ninja's escaping rules are very simple. We always escape colons even
 // though they're OK in many places, in case the resulting string is used on
 // the left-hand-side of a rule.

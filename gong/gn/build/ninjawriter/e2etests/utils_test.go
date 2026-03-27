@@ -91,6 +91,7 @@ func runTest(t *testing.T, files map[string]string, wantNinja map[string]string)
 		RootPath:        dir,
 		BuildDir:        outDir,
 		BuildConfigFile: mustFile(t, "//build/BUILDCONFIG.gn"),
+		PythonPath:      "/path/to/my/python",
 	}
 
 	loader := analysis.MakeLoader(buildSettings, &fs.InputFileManager{})
