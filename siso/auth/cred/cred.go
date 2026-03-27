@@ -264,12 +264,26 @@ func (c *lazyCredWrapper) init(ctx context.Context) {
 	var t string
 	var email string
 	ts := c.opts.TokenSource
-	tok, err := ts.Token()
+
+	// TODO: Use ctx directly when https://github.com/golang/oauth2/issues/262 is fixed.
+	// We run ts.Token() in a goroutine because it doesn't take a context and might
+	// block indefinitely, allowing us to abort early if ctx is canceled.
+	var tok *oauth2.Token
+	var err error
+	ch := make(chan struct{})
+	go func() {
+		tok, err = ts.Token()
+		close(ch)
+	}()
+
+	select {
+	case <-ctx.Done():
+		c.err = context.Cause(ctx)
+		return
+	case <-ch:
+	}
+
 	if err != nil {
-		if ctx.Err() != nil {
-			c.err = err
-			return
-		}
 		if errors.Is(err, errNoAuthorization) {
 			if ch, ok := ts.(*credHelperGoogle); ok {
 				t = ch.h.path
