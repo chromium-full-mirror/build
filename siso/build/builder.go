@@ -1171,7 +1171,7 @@ func (b *Builder) outputs(ctx context.Context, step *Step) error {
 	if len(localOutputs) > 0 {
 		err := b.hashFS.Flush(ctx, step.cmd.ExecRoot, localOutputs)
 		if err != nil {
-			return fmt.Errorf("failed to flush outputs to local: %w", err)
+			return fmt.Errorf("%w: %w", errFlushOutput, err)
 		}
 	}
 	return nil
@@ -1211,6 +1211,7 @@ func (b *Builder) progressStepCacheWrite(step *Step) {
 
 var errNotRelocatable = errors.New("request is not relocatable")
 var errNotUnderExecRoot = errors.New("inputs are not under exec root")
+var errFlushOutput = errors.New("failed to flush outputs to local")
 
 func (b *Builder) updateDeps(ctx context.Context, step *Step) error {
 	ctx, span := trace.NewSpan(ctx, "update-deps")
