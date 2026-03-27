@@ -111,6 +111,12 @@ Use "siso flags" to display all flags.
 
 	var printVersion bool
 	flag.BoolVar(&printVersion, "version", false, "print version")
+
+	// set stderrthreshold to FATAL by default
+	// but could be overridden by command line by flag.Parse later.
+	if err := flag.Set("stderrthreshold", "FATAL"); err != nil {
+		log.Exitf("failed to set --stderrthreshold=FATAL: %v\n", err)
+	}
 	flag.Parse()
 
 	ctx := context.Background()
