@@ -182,9 +182,8 @@ func New(ctx context.Context, uri string, opts Options) (Cred, error) {
 	lc := &lazyCredWrapper{
 		opts: opts,
 		uri:  uri,
-		ctx:  context.WithoutCancel(ctx),
 	}
-	lc.wg.Go(lc.init)
+	lc.wg.Go(func() { lc.init(ctx) })
 
 	return Cred{
 		Type:              opts.Type,
@@ -236,7 +235,6 @@ func (c Cred) ClientOptions() []option.ClientOption {
 type lazyCredWrapper struct {
 	opts Options
 	uri  string
-	ctx  context.Context
 
 	wg  sync.WaitGroup
 	err error
@@ -248,9 +246,9 @@ type lazyCredWrapper struct {
 	tokenSource       oauth2.TokenSource
 }
 
-func (c *lazyCredWrapper) init() {
+func (c *lazyCredWrapper) init(ctx context.Context) {
 	if c.opts.PerRPCCredentials != nil && c.uri != "" {
-		_, err := c.opts.PerRPCCredentials.GetRequestMetadata(c.ctx, c.uri)
+		_, err := c.opts.PerRPCCredentials.GetRequestMetadata(ctx, c.uri)
 		if err == nil {
 			t := "credential_helper"
 			if ch, ok := c.opts.PerRPCCredentials.(*credHelper); ok {
@@ -261,30 +259,30 @@ func (c *lazyCredWrapper) init() {
 			c.tokenSource = c.opts.TokenSource
 			return
 		}
-		clog.Warningf(c.ctx, "failed to get perRPCCredentials for %q: %v", c.uri, err)
+		clog.Warningf(ctx, "failed to get perRPCCredentials for %q: %v", c.uri, err)
 	}
 	var t string
 	var email string
 	ts := c.opts.TokenSource
 	tok, err := ts.Token()
 	if err != nil {
-		if c.ctx.Err() != nil {
+		if ctx.Err() != nil {
 			c.err = err
 			return
 		}
 		if errors.Is(err, errNoAuthorization) {
 			if ch, ok := ts.(*credHelperGoogle); ok {
 				t = ch.h.path
-				clog.Warningf(c.ctx, "use auth %s, no token source %v", ch.h.path, err)
+				clog.Warningf(ctx, "use auth %s, no token source %v", ch.h.path, err)
 			} else {
 				t = fmt.Sprintf("%T", ts)
-				clog.Warningf(c.ctx, "use auth %T, no token source: %v", ts, err)
+				clog.Warningf(ctx, "use auth %T, no token source: %v", ts, err)
 			}
 			ts = nil
 		} else {
 			switch c.opts.Type {
 			case "luci-auth", "gcloud", "":
-				clog.Warningf(c.ctx, "auth %s: %v", c.opts.Type, err)
+				clog.Warningf(ctx, "auth %s: %v", c.opts.Type, err)
 				c.err = fmt.Errorf("need to run `siso login`")
 				return
 			default:
@@ -295,7 +293,7 @@ func (c *lazyCredWrapper) init() {
 	} else {
 		t, _ = tok.Extra("x-token-source").(string)
 		email, _ = tok.Extra("x-token-email").(string)
-		clog.Infof(c.ctx, "use auth %v email: %s", t, email)
+		clog.Infof(ctx, "use auth %v email: %s", t, email)
 		ts = oauth2.ReuseTokenSource(tok, ts)
 	}
 	perRPCCredentials := c.opts.PerRPCCredentials
