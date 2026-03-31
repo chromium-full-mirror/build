@@ -357,6 +357,22 @@ func (p *fileParser) finalize(ctx context.Context) error {
 			p.fileState.edges = append(p.fileState.edges, edge)
 		}
 	}
+	// Also collect edges from included chunks, whose edges live
+	// in the included fileParser's arena, not the parent's.
+	for i := range p.chunks {
+		ch := &p.chunks[i]
+		for j := range ch.includes {
+			inc := ch.includes[j]
+			for k := range inc {
+				for l := range inc[k].edgeArena.used() {
+					edge := inc[k].edgeArena.at(l)
+					if edge.rule != nil {
+						p.fileState.edges = append(p.fileState.edges, edge)
+					}
+				}
+			}
+		}
+	}
 	p.state.mergeFileState(&p.fileState)
 	p.chunks = nil
 	return nil
