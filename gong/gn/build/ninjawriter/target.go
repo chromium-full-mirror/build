@@ -13,11 +13,32 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"text/template"
 
 	"go.chromium.org/build/gong/gn/build/environment"
 	"go.chromium.org/build/gong/gn/build/fs"
 	"go.chromium.org/build/gong/gn/build/graph"
 )
+
+// NOTE:
+// Using "deps = gcc" allows Ninja to read and store the depfile content in
+// its internal database which improves performance, especially for large
+// depfiles. The use of this feature with depfiles that contain multiple
+// outputs require Ninja version 1.9.0 or newer.
+// TODO:
+// So we need to have a setting for the Ninja version we are building for.
+var scriptActionTemplate = template.Must(template.New("scriptAction").Parse(strings.TrimLeft(`
+rule {{.RuleName}}
+  command = {{.PythonPath}} {{.ScriptPath}}{{range .Args}} {{.}}{{end}}
+  description = ACTION {{.FullLabel}}
+  restat = 1
+{{- if .Depfile}}
+  depfile = {{.Depfile}}
+  deps = gcc
+{{- end}}
+
+build {{.Outs}}: {{.RuleName}} | {{.Ins}}
+`, "\n")))
 
 // writeTarget is a rudimentary stub implementation of writing a ninja build target out.
 //
@@ -185,10 +206,7 @@ func writeBinaryTarget(w io.Writer, t *graph.Target, buildSettings *environment.
 	return nil
 }
 
-// TODO: look into simplifying the fmt.Fprint + repeated err checking boilerplate.
-// stylistically it makes it not as easy to review as well.
-// would combining into larger format strings using backticks work?
-// what performance impacts might happen as a result?
+// TODO: convert RunToolAction to use text/template too?
 func writeAction(w io.Writer, t *graph.Target, action graph.Action, buildSettings *environment.BuildSettings) error {
 	switch action := action.(type) {
 	case graph.RunToolAction:
@@ -268,70 +286,42 @@ func writeAction(w io.Writer, t *graph.Target, action graph.Action, buildSetting
 			return err
 		}
 
-		_, err = fmt.Fprintf(w, "rule %s\n", ruleName)
-		if err != nil {
-			return err
-		}
-		_, err = fmt.Fprintf(w, "  command = %s %s", escapeStringNinja(buildSettings.PythonPath), escapeStringNinja(rebasedScript))
-		if err != nil {
-			return err
-		}
+		var escapedArgs []string
 		for _, arg := range action.Args {
-			_, err = fmt.Fprintf(w, " %s", escapeStringNinja(arg))
-			if err != nil {
-				return err
-			}
+			escapedArgs = append(escapedArgs, escapeStringNinja(arg))
 		}
-		_, err = fmt.Fprintln(w)
-		if err != nil {
-			return err
-		}
-		_, err = fmt.Fprintf(w, "  description = ACTION %s\n", targetLabel)
-		if err != nil {
-			return err
-		}
-		_, err = fmt.Fprintln(w, "  restat = 1")
-		if err != nil {
-			return err
-		}
-		if action.Depfile != "" {
-			_, err = fmt.Fprintf(w, "  depfile = %s\n", escapeStringNinja(action.Depfile))
-			if err != nil {
-				return err
-			}
-			// Using "deps = gcc" allows Ninja to read and store the depfile content in
-			// its internal database which improves performance, especially for large
-			// depfiles. The use of this feature with depfiles that contain multiple
-			// outputs require Ninja version 1.9.0 or newer.
-			// TODO: buildSettings needs to store ninja required version
-			_, err = fmt.Fprintln(w, "  deps = gcc")
-			if err != nil {
-				return err
-			}
-		}
-		_, err = fmt.Fprintln(w)
-		if err != nil {
-			return err
-		}
-
-		var outs []string
+		var escapedOuts []string
 		for _, out := range action.Outputs {
-			outs = append(outs, escapeStringNinja(out.Path()))
+			escapedOuts = append(escapedOuts, escapeStringNinja(out.Path()))
 		}
-		ins := []string{escapeStringNinja(rebasedScript)}
+		escapedIns := []string{escapeStringNinja(rebasedScript)}
 		for _, in := range action.Inputs {
 			rebasedIn, err := fs.RebasePath(in.Filename(), buildSettings.BuildDir, buildSettings.RootPath)
 			if err != nil {
 				return err
 			}
-			ins = append(ins, escapeStringNinja(rebasedIn))
+			escapedIns = append(escapedIns, escapeStringNinja(rebasedIn))
 		}
 
-		_, err = fmt.Fprintf(w, "build %s: %s | %s", strings.Join(outs, " "), ruleName, strings.Join(ins, " "))
-		if err != nil {
-			return err
-		}
-		_, err = fmt.Fprintln(w)
+		err = scriptActionTemplate.Execute(w, struct {
+			RuleName   string
+			PythonPath string
+			ScriptPath string
+			Args       []string
+			FullLabel  string
+			Depfile    string
+			Outs       string
+			Ins        string
+		}{
+			RuleName:   ruleName,
+			PythonPath: escapeStringNinja(buildSettings.PythonPath),
+			ScriptPath: escapeStringNinja(rebasedScript),
+			Args:       escapedArgs,
+			FullLabel:  targetLabel,
+			Depfile:    escapeStringNinja(action.Depfile),
+			Outs:       strings.Join(escapedOuts, " "),
+			Ins:        strings.Join(escapedIns, " "),
+		})
 		if err != nil {
 			return err
 		}

@@ -166,3 +166,76 @@ build obj/out$ file$ with$ spaces.txt: copy ../../src/file$ with$ spaces.txt
 		})
 	}
 }
+
+func TestWriteAction_ScriptAction(t *testing.T) {
+	tests := []struct {
+		name   string
+		action graph.RunScriptAction
+		want   string
+	}{
+		{
+			name: "basic",
+			action: graph.RunScriptAction{
+				Script: mustFile(t, "//tools/script.py"),
+				Args:   []string{"--flag", "value"},
+				Inputs: []fs.SourceFile{mustFile(t, "//src/input.txt")},
+				Outputs: []fs.OutputPath{
+					mustOutputPath(t, mustSourceDir(t, "//out/Default/"), "obj/foo.out"),
+				},
+			},
+			want: `rule _rule
+  command = python3 ../../tools/script.py --flag value
+  description = ACTION ` +
+				// TODO: expose a way to create graph.Target with a label
+				`
+  restat = 1
+
+build obj/foo.out: _rule | ../../tools/script.py ../../src/input.txt
+`,
+		},
+		{
+			name: "with depfile",
+			action: graph.RunScriptAction{
+				Script: mustFile(t, "//tools/script.py"),
+				Args:   []string{"-o", "outfile.txt"},
+				Inputs: []fs.SourceFile{mustFile(t, "//src/input.txt")},
+				Outputs: []fs.OutputPath{
+					mustOutputPath(t, mustSourceDir(t, "//out/Default/"), "outfile.txt"),
+				},
+				Depfile: "outfile.d",
+			},
+			want: `rule _rule
+  command = python3 ../../tools/script.py -o outfile.txt
+  description = ACTION ` +
+				// TODO: expose a way to create graph.Target with a label
+				`
+  restat = 1
+  depfile = outfile.d
+  deps = gcc
+
+build outfile.txt: _rule | ../../tools/script.py ../../src/input.txt
+`,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			target := &graph.Target{}
+
+			bs := &environment.BuildSettings{
+				RootPath:   "/my/builddir/",
+				BuildDir:   mustSourceDir(t, "/my/builddir/out/Default"),
+				PythonPath: "python3",
+			}
+
+			var sb strings.Builder
+			if err := writeAction(&sb, target, tc.action, bs); err != nil {
+				t.Fatalf("writeAction()=%v; want nil err", err)
+			}
+
+			if diff := cmp.Diff(tc.want, sb.String()); diff != "" {
+				t.Errorf("writeAction() mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
