@@ -251,8 +251,15 @@ func (p *fileParser) alloc(ctx context.Context) {
 	p.poolArena.reserve(p.full.npool)
 	p.bindingArena.reserve(p.full.nrulevar + p.full.nbuildvar)
 
-	p.scope.rules = newRuleMap(p.full.nrule)
-	p.scope.bindings = newShardBindings(p.full.nvar)
+	// Only create new scope maps for fresh scopes. When the scope
+	// is reused from a parent (as with `include`), preserve existing
+	// rules and bindings.
+	if p.scope.rules == nil {
+		p.scope.rules = newRuleMap(p.full.nrule)
+	}
+	if p.scope.bindings == nil {
+		p.scope.bindings = newShardBindings(p.full.nvar)
+	}
 
 	if log.V(1) {
 		clog.Infof(ctx, "alloc rule=%d edge=%d pool=%d var=%d binding=%d+%d", p.full.nrule, p.full.nbuild, p.full.npool, p.full.nvar, p.full.nrulevar, p.full.nbuildvar)
