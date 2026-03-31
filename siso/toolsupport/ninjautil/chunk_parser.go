@@ -414,11 +414,14 @@ func (ch *chunk) setupInChunk(ctx context.Context) error {
 				return err
 			}
 			fp.alloc(ctx)
+			// Assign final positions before setup, so that
+			// variables stored during setup get correct positions
+			// for proper shadowing/ordering in the shared scope.
+			ch.includeChunks(i, fp.chunks)
 			err = fp.setup(ctx)
 			if err != nil {
 				return err
 			}
-			ch.includeChunks(i, fp.chunks)
 			i++
 			continue
 		case statementSubninja:
