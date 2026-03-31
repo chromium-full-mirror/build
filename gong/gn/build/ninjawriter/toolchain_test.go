@@ -33,25 +33,31 @@ func (fakeExecContext) NestedContext() resolve.ExecContext                 { ret
 func (fakeExecContext) ProgrammaticBuiltin(_ string) (resolve.Value, bool) { return nil, false }
 
 func TestWriteToolchain(t *testing.T) {
-	tcName := "gcc"
+	// Referencing "clang++" catches accidental use of html/template instead of text/template,
+	// which would escape it and result in "clang&#43;&#43;" being written instead.
+	tcName := "clang"
 	tcBlock := `
 {
   tool("cc") {
-    command = "gcc -c {{source}} -o {{output}}"
+    command = "clang -c {{source}} -o {{output}}"
     description = "CC {{output}}"
   }
-  tool("alink") {
-    command = "ar rcs {{output}} {{source}}"
-    description = "AR {{output}}"
+  tool("link") {
+    command = "clang++ {{ldflags}} -o {{output}} @{{output}}.rsp"
+    description = "LINK {{output}}"
+    rspfile = "{{output}}.rsp"
+    rspfile_content = "{{inputs}} {{solibs}} {{libs}}"
   }
 }`
-	want := `rule alink
-  command = ar rcs ${out} ${in}
-  description = AR ${out}
-
-rule cc
-  command = gcc -c ${in} -o ${out}
+	want := `rule cc
+  command = clang -c ${in} -o ${out}
   description = CC ${out}
+
+rule link
+  command = clang++ ${ldflags} -o ${out} @${out}.rsp
+  description = LINK ${out}
+  rspfile = ${out}.rsp
+  rspfile_content = ${in} ${solibs} ${libs}
 
 build phony/default: phony obj/hello_world/src/hello_world
 subninja obj/hello_world/src/hello_world.ninja

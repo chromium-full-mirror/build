@@ -8,15 +8,15 @@ import (
 	"strings"
 )
 
-// substitutionPattern represents a string pattern that may contain {{substitutions}}.
-type substitutionPattern struct {
+// SubstitutionPattern represents a string pattern that may contain {{substitutions}}.
+type SubstitutionPattern struct {
 	// Pattern specifies in order the substitutions used by this pattern.
-	Pattern []substitutionPart
+	Pattern []SubstitutionPart
 }
 
 // makeSubstitutionPattern builds a new substitution pattern.
-func makeSubstitutionPattern(str string) (substitutionPattern, error) {
-	p := substitutionPattern{}
+func makeSubstitutionPattern(str string) (SubstitutionPattern, error) {
+	p := SubstitutionPattern{}
 	cur := 0
 	for {
 		// Find the next pattern.
@@ -24,7 +24,7 @@ func makeSubstitutionPattern(str string) (substitutionPattern, error) {
 		if next == -1 {
 			// No more patterns, add the rest as a literal.
 			if cur < len(str) {
-				p.Pattern = append(p.Pattern, substitutionLiteral{str[cur:]})
+				p.Pattern = append(p.Pattern, SubstitutionLiteral{str[cur:]})
 			}
 			break
 		}
@@ -32,7 +32,7 @@ func makeSubstitutionPattern(str string) (substitutionPattern, error) {
 		// Add literal part before the pattern.
 		next += cur
 		if next > cur {
-			p.Pattern = append(p.Pattern, substitutionLiteral{str[cur:next]})
+			p.Pattern = append(p.Pattern, SubstitutionLiteral{str[cur:next]})
 		}
 
 		// Find the matching substitution type.
@@ -46,7 +46,7 @@ func makeSubstitutionPattern(str string) (substitutionPattern, error) {
 			}
 		}
 		if !found {
-			return substitutionPattern{}, SubstitutionFormatError{invalidPart: str[next:]}
+			return SubstitutionPattern{}, SubstitutionFormatError{invalidPart: str[next:]}
 		}
 	}
 	return p, nil

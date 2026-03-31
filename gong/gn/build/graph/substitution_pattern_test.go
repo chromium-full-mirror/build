@@ -15,22 +15,22 @@ func TestMakeSubstitutionPattern_Valid(t *testing.T) {
 	for _, tc := range []struct {
 		name  string
 		input string
-		want  []substitutionPart
+		want  []SubstitutionPart
 	}{
 		{
 			name:  "literal",
 			input: "This is a literal",
-			want: []substitutionPart{
-				substitutionLiteral{"This is a literal"},
+			want: []SubstitutionPart{
+				SubstitutionLiteral{"This is a literal"},
 			},
 		},
 		{
 			name:  "complex",
 			input: "AA{{source}}BB{{output}}",
-			want: []substitutionPart{
-				substitutionLiteral{"AA"},
+			want: []SubstitutionPart{
+				SubstitutionLiteral{"AA"},
 				substitutionSource,
-				substitutionLiteral{"BB"},
+				SubstitutionLiteral{"BB"},
 				substitutionOutput,
 			},
 		},
