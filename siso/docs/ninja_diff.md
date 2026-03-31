@@ -54,6 +54,12 @@
  * **Siso:** similar with [n2](https://neugierig.org/software/blog/2022/03/n2.html),
      re-run when inputs/outputs list has changed too.
 
+## Absolute paths in include/subninja statements
+
+  * **Ninja:** Allows absolute paths in `include` and `subninja` statements.
+  * **Siso:** Rejects absolute paths in `include` and `subninja` statements.
+      Use relative paths instead.
+
 ## Unsupported features
 
    Siso may not support Ninja features if they are not used for Chromium

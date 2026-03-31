@@ -7,7 +7,6 @@ package ninjautil
 import (
 	"context"
 	"fmt"
-	"path/filepath"
 
 	"golang.org/x/sync/errgroup"
 
@@ -83,7 +82,7 @@ func (p *ManifestParser) loadFile(ctx context.Context, fname string) error {
 		sema:  p.fsema,
 		wd:    p.wd,
 	}
-	err := fp.parseFile(ctx, filepath.Join(p.wd, fname))
+	err := fp.parseFile(ctx, fname)
 	if err != nil {
 		return err
 	}
@@ -119,7 +118,7 @@ func (p *ManifestParser) LoadSingle(ctx context.Context, fname string) error {
 			state: p.state,
 			sema:  p.fsema,
 		}
-		return fp.parseFile(ctx, filepath.Join(p.wd, fname))
+		return fp.parseFile(ctx, fname)
 	})
 	err := p.eg.Wait()
 	if err != nil {

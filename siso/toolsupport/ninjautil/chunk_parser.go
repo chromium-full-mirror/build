@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"maps"
 	"path/filepath"
 	"runtime/trace"
 	"strconv"
@@ -50,6 +51,13 @@ type chunk struct {
 	state *State
 	scope *fileScope
 	wd    string // working directory for resolving relative paths
+
+	// includeAncestors tracks the chain of files leading to this
+	// chunk via include directives, used to detect include cycles.
+	// It does NOT include files from sibling subninja trees, so
+	// diamond dependencies (two subninjas both including the same
+	// file) are correctly allowed.
+	includeAncestors map[string]bool
 
 	nodemap *localNodeMap
 
@@ -376,17 +384,30 @@ func (ch *chunk) setupInChunk(ctx context.Context) error {
 			if err != nil {
 				return err
 			}
-			fp := &fileParser{
-				state: ch.state,
-				scope: ch.scope,
-				sema:  make(chan struct{}, 1),
-				wd:    ch.wd,
+			if filepath.IsAbs(include) {
+				return fmt.Errorf("line:%d absolute path %q not supported in include/subninja statements", lineno(ch.buf, st.s), include)
 			}
-			ch.state.filenames = append(ch.state.filenames, include)
-			fp.buf, err = fp.readFile(ctx, filepath.Join(ch.wd, include))
+			include = filepath.Join(ch.wd, include)
+
+			canonical := canonicalPath(include)
+			if ch.includeAncestors[canonical] {
+				return fmt.Errorf("line:%d include cycle: %q already included", lineno(ch.buf, st.s), include)
+			}
+			ancestors := maps.Clone(ch.includeAncestors)
+			ancestors[canonical] = true
+
+			fp := &fileParser{
+				state:            ch.state,
+				scope:            ch.scope,
+				sema:             make(chan struct{}, 1),
+				wd:               ch.wd,
+				includeAncestors: ancestors,
+			}
+			fp.buf, err = fp.readFile(ctx, include)
 			if err != nil {
 				return err
 			}
+			ch.state.addFilename(include)
 			fp.chunks = splitIntoChunks(ctx, fp.buf)
 			err = fp.parseChunks(ctx)
 			if err != nil {
@@ -756,6 +777,17 @@ func (ch *chunk) parseSubninja(i int) (string, error) {
 		return "", fmt.Errorf("line:%d bad subninja %q: %w", lineno(ch.buf, st.s), paths[0].v, err)
 	}
 	return string(subninja), nil
+}
+
+// canonicalPath returns a canonical form of path by resolving symlinks.
+// If the path cannot be resolved (e.g. file does not exist yet),
+// it falls back to filepath.Clean.
+func canonicalPath(path string) string {
+	resolved, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return filepath.Clean(path)
+	}
+	return resolved
 }
 
 func lineno(buf []byte, i int) int {

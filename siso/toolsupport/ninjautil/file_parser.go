@@ -8,6 +8,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"runtime/trace"
 	"sync"
 	"time"
@@ -54,6 +55,10 @@ type fileParser struct {
 	full   chunk // for accumulated numbers from chunks
 	chunks []chunk
 
+	// includeAncestors tracks the chain of files leading to this
+	// fileParser via include directives, used to detect cycles.
+	includeAncestors map[string]bool
+
 	fileState fileState
 
 	// allocations
@@ -65,10 +70,19 @@ type fileParser struct {
 
 // parseFile parses a file of fname.
 func (p *fileParser) parseFile(ctx context.Context, fname string) error {
+	if !filepath.IsAbs(fname) {
+		fname = filepath.Join(p.wd, fname)
+	}
+
 	ctx, task := trace.NewTask(ctx, "ninja:"+fname)
 	defer task.End()
+
 	p.fname = fname
 	p.fileState.filenames = append(p.fileState.filenames, fname)
+	if p.includeAncestors == nil {
+		p.includeAncestors = map[string]bool{canonicalPath(fname): true}
+	}
+
 	t := time.Now()
 	var err error
 	p.buf, err = p.readFile(ctx, fname)
@@ -78,6 +92,7 @@ func (p *fileParser) parseFile(ctx context.Context, fname string) error {
 	if err != nil {
 		return err
 	}
+
 	t = time.Now()
 	err = p.parseContent(ctx)
 	if err != nil {
@@ -86,6 +101,7 @@ func (p *fileParser) parseFile(ctx context.Context, fname string) error {
 	if log.V(1) {
 		clog.Infof(ctx, "parseContent %s %v: %s", p.fname, err, time.Since(t))
 	}
+
 	return nil
 }
 
@@ -247,6 +263,7 @@ func (p *fileParser) alloc(ctx context.Context) {
 		ch.state = p.state
 		ch.scope = p.scope
 		ch.wd = p.wd
+		ch.includeAncestors = p.includeAncestors
 		ch.nodemap = p.state.nodeMap.localNodeMap(ch.nbuild) // estimates # of nodes
 
 		ch.ruleArena = p.ruleArena.chunk(ch.nrule)

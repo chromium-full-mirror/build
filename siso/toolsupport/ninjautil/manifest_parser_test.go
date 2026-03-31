@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -927,5 +928,138 @@ include included.ninja
 	}
 	if got, want := edge.RuleName(), "cc"; got != want {
 		t.Errorf("RuleName=%q; want=%q", got, want)
+	}
+}
+
+func TestParser_IncludeCycle(t *testing.T) {
+	ctx := t.Context()
+	dir := t.TempDir()
+
+	write := func(fname, content string) {
+		t.Helper()
+		fname = filepath.Join(dir, fname)
+		err := os.MkdirAll(filepath.Dir(fname), 0755)
+		if err != nil {
+			t.Fatal(err)
+		}
+		err = os.WriteFile(fname, []byte(content), 0644)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	t.Run("self_include", func(t *testing.T) {
+		write("self.ninja", "include self.ninja\n")
+
+		state := NewState()
+		p := NewManifestParser(state)
+		p.SetWd(dir)
+		err := p.Load(ctx, "self.ninja")
+		if err == nil {
+			t.Fatal("expected error for self-include, got nil")
+		}
+		t.Logf("got expected error: %v", err)
+	})
+
+	t.Run("mutual_include", func(t *testing.T) {
+		write("a.ninja", "include b.ninja\n")
+		write("b.ninja", "include a.ninja\n")
+
+		state := NewState()
+		p := NewManifestParser(state)
+		p.SetWd(dir)
+		err := p.Load(ctx, "a.ninja")
+		if err == nil {
+			t.Fatal("expected error for mutual include cycle, got nil")
+		}
+		t.Logf("got expected error: %v", err)
+	})
+
+	t.Run("diamond_include_across_subninjas", func(t *testing.T) {
+		write("build.ninja", "subninja sub_a.ninja\nsubninja sub_b.ninja\n")
+		write("sub_a.ninja", "include shared.ninja\n")
+		write("sub_b.ninja", "include shared.ninja\n")
+		write("shared.ninja", "rule cat\n  command = cat $in > $out\n")
+
+		state := NewState()
+		p := NewManifestParser(state)
+		p.SetWd(dir)
+		err := p.Load(ctx, "build.ninja")
+		if err != nil {
+			t.Fatalf("diamond include across subninjas should not be a cycle, got: %v", err)
+		}
+	})
+
+	t.Run("diamond_include_within_file", func(t *testing.T) {
+		write("main.ninja", "include common.ninja\ninclude common.ninja\n")
+		write("common.ninja", "myvar = hello\n")
+
+		state := NewState()
+		p := NewManifestParser(state)
+		p.SetWd(dir)
+		err := p.Load(ctx, "main.ninja")
+		if err != nil {
+			t.Fatalf("including the same file twice sequentially should not be a cycle, got: %v", err)
+		}
+	})
+
+	t.Run("symlink_cycle", func(t *testing.T) {
+		write("sym_target.ninja", "include sym_link.ninja\n")
+		linkPath := filepath.Join(dir, "sym_link.ninja")
+		os.Remove(linkPath) // remove if exists from prior test run
+		err := os.Symlink(filepath.Join(dir, "sym_target.ninja"), linkPath)
+		if err != nil {
+			t.Skipf("symlinks not supported: %v", err)
+		}
+
+		state := NewState()
+		p := NewManifestParser(state)
+		p.SetWd(dir)
+		err = p.Load(ctx, "sym_target.ninja")
+		if err == nil {
+			t.Fatal("expected error for symlink include cycle, got nil")
+		}
+		t.Logf("got expected error: %v", err)
+	})
+}
+
+// TestParser_IncludeFilenames verifies that files loaded via include
+// directives appear in State.Filenames().
+func TestParser_IncludeFilenames(t *testing.T) {
+	ctx := t.Context()
+	dir := t.TempDir()
+
+	err := os.WriteFile(filepath.Join(dir, "rules.ninja"), []byte(`
+rule cc
+  command = cc -c ${in} -o ${out}
+`), 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = os.WriteFile(filepath.Join(dir, "build.ninja"), []byte(`
+include rules.ninja
+build obj/a.o: cc a.c
+`), 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	state := NewState()
+	p := NewManifestParser(state)
+	p.SetWd(dir)
+	err = p.Load(ctx, "build.ninja")
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	filenames := state.Filenames()
+	slices.Sort(filenames)
+	want := []string{
+		filepath.Join(dir, "build.ninja"),
+		filepath.Join(dir, "rules.ninja"),
+	}
+	if diff := cmp.Diff(want, filenames); diff != "" {
+		t.Errorf("Filenames() mismatch (-want +got):\n%s", diff)
 	}
 }

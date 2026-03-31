@@ -357,6 +357,13 @@ func (s *State) mergeFileState(fstate *fileState) {
 	s.filenames = append(s.filenames, fstate.filenames...)
 }
 
+// addFilename adds a filename to the list of parsed files.
+func (s *State) addFilename(fname string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.filenames = append(s.filenames, fname)
+}
+
 // PhonyNodes returns phony's output nodes.
 func (s *State) PhonyNodes() []*Node {
 	var phony []*Node
