@@ -177,14 +177,17 @@ func TestWriteAction_ScriptAction(t *testing.T) {
 			name: "basic",
 			action: graph.RunScriptAction{
 				Script: mustFile(t, "//tools/script.py"),
-				Args:   []string{"--flag", "value"},
+				Args: []graph.SubstitutionPattern{
+					{Pattern: []graph.SubstitutionPart{graph.SubstitutionLiteral{Literal: "--flag"}}},
+					{Pattern: []graph.SubstitutionPart{graph.SubstitutionLiteral{Literal: "hello world"}}},
+				},
 				Inputs: []fs.SourceFile{mustFile(t, "//src/input.txt")},
 				Outputs: []fs.OutputPath{
 					mustOutputPath(t, mustSourceDir(t, "//out/Default/"), "obj/foo.out"),
 				},
 			},
 			want: `rule _rule
-  command = python3 ../../tools/script.py --flag value
+  command = python3 ../../tools/script.py --flag hello$ world
   description = ACTION ` +
 				// TODO: expose a way to create graph.Target with a label
 				`
@@ -197,7 +200,10 @@ build obj/foo.out: _rule | ../../tools/script.py ../../src/input.txt
 			name: "with depfile",
 			action: graph.RunScriptAction{
 				Script: mustFile(t, "//tools/script.py"),
-				Args:   []string{"-o", "outfile.txt"},
+				Args: []graph.SubstitutionPattern{
+					{Pattern: []graph.SubstitutionPart{graph.SubstitutionLiteral{Literal: "-o"}}},
+					{Pattern: []graph.SubstitutionPart{graph.SubstitutionLiteral{Literal: "outfile.txt"}}},
+				},
 				Inputs: []fs.SourceFile{mustFile(t, "//src/input.txt")},
 				Outputs: []fs.OutputPath{
 					mustOutputPath(t, mustSourceDir(t, "//out/Default/"), "outfile.txt"),
@@ -212,6 +218,47 @@ build obj/foo.out: _rule | ../../tools/script.py ../../src/input.txt
   restat = 1
   depfile = outfile.d
   deps = gcc
+
+build outfile.txt: _rule | ../../tools/script.py ../../src/input.txt
+`,
+		},
+		{
+			name: "substitutions",
+			action: graph.RunScriptAction{
+				Script: mustFile(t, "//tools/script.py"),
+				Args: []graph.SubstitutionPattern{
+					{Pattern: []graph.SubstitutionPart{
+						graph.SubstitutionLiteral{Literal: "--in="},
+						graph.SubstitutionVar{
+							GN:    "{{source}}",
+							Ninja: "${in}",
+						},
+					}},
+					{Pattern: []graph.SubstitutionPart{
+						graph.SubstitutionLiteral{Literal: "--name="},
+						graph.SubstitutionVar{
+							GN:    "{{target_output_name}}",
+							Ninja: "${target_output_name}",
+						},
+						graph.SubstitutionLiteral{Literal: "."},
+						graph.SubstitutionVar{
+							GN:    "{{output_extension}}",
+							Ninja: "${output_extension}",
+						},
+					}},
+					{Pattern: []graph.SubstitutionPart{graph.SubstitutionLiteral{Literal: "--verbose"}}},
+				},
+				Inputs: []fs.SourceFile{mustFile(t, "//src/input.txt")},
+				Outputs: []fs.OutputPath{
+					mustOutputPath(t, mustSourceDir(t, "//out/Default/"), "outfile.txt"),
+				},
+			},
+			want: `rule _rule
+  command = python3 ../../tools/script.py --in=${in} --name=${target_output_name}.${output_extension} --verbose
+  description = ACTION ` +
+				// TODO: expose a way to create graph.Target with a label
+				`
+  restat = 1
 
 build outfile.txt: _rule | ../../tools/script.py ../../src/input.txt
 `,

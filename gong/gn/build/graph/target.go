@@ -155,13 +155,21 @@ func (t *Target) DeclareTool(outDir fs.OutputPath, tool string, source fs.Source
 
 // DeclareScript declares a script call.
 func (t *Target) DeclareScript(outDir fs.OutputPath, script fs.SourceFile, args []string, outputNames []string, inputs []fs.SourceFile, depfile string) ([]fs.OutputPath, error) {
+	var parsedArgs []SubstitutionPattern
+	for _, arg := range args {
+		parsed, err := makeSubstitutionPattern(arg)
+		if err != nil {
+			return nil, err
+		}
+		parsedArgs = append(parsedArgs, parsed)
+	}
 	var outputs []fs.OutputPath
 	for _, name := range outputNames {
 		outputs = append(outputs, fs.MakeOutputPath(outDir.BuildDir(), path.Join(outDir.Path(), name)))
 	}
 	t.Resolution.Actions = append(t.Resolution.Actions, RunScriptAction{
 		Script:  script,
-		Args:    args,
+		Args:    parsedArgs,
 		Outputs: outputs,
 		Inputs:  inputs,
 		Depfile: depfile,

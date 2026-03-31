@@ -74,12 +74,11 @@ func (r RunToolAction) Ins() []fs.SourceFile { return r.Inputs }
 // A RunScriptAction represents a script call.
 type RunScriptAction struct {
 	Script  fs.SourceFile
-	Args    []string
+	Args    []SubstitutionPattern // TODO: port SubstitutionList so validation can be performed.
 	Outputs []fs.OutputPath
 	Inputs  []fs.SourceFile
 	Depfile string
 	// TODO: rspfile?
-	// TODO: expansions?
 }
 
 func (r RunScriptAction) Ins() []fs.SourceFile { return r.Inputs }

@@ -288,7 +288,26 @@ func writeAction(w io.Writer, t *graph.Target, action graph.Action, buildSetting
 
 		var escapedArgs []string
 		for _, arg := range action.Args {
-			escapedArgs = append(escapedArgs, escapeStringNinja(arg))
+			var escapedArg strings.Builder
+			for _, part := range arg.Pattern {
+				// TODO: redesign the SubstitutionPart interface or redesign
+				// SubstitutionLiteral?
+				// it doesn't make sense for SubstitutionLiteral to implement
+				// SubstitutionPart by returning an unescaped string. Maybe
+				// Ninja-specific logic should be moved into this package.
+				switch part := part.(type) {
+				case graph.SubstitutionLiteral:
+					escapedArg.WriteString(escapeStringNinja(part.Literal))
+				default:
+					escapedArg.WriteString(part.NinjaString())
+				}
+			}
+			// TODO: this escaping logic is wrong.
+			// For example, if the literal is "hello world", it will be escaped as
+			// "hello world", but right now we'll get hello$ world instead.
+			// Args need to be quoted on an individual level if necessary
+			// (this is why args can't be one giant flat SubstitutionPattern)
+			escapedArgs = append(escapedArgs, escapedArg.String())
 		}
 		var escapedOuts []string
 		for _, out := range action.Outputs {
