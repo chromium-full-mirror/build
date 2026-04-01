@@ -988,8 +988,15 @@ func stepLogEntry(ctx context.Context, logger *clog.Logger, step *Step, duration
 		"prev":        step.metrics.PrevStepID,
 		"prev_output": step.metrics.PrevStepOut,
 		"digest":      step.metrics.Digest,
-		"run_secs":    fmt.Sprintf("%.02f", time.Duration(step.metrics.RunTime).Seconds()),
-		"exec_secs":   fmt.Sprintf("%.02f", time.Duration(step.metrics.ExecTime).Seconds()),
+	}
+	if step.metrics.RunTime > 0 {
+		logEntry.Labels["run_secs"] = fmt.Sprintf("%.02f", time.Duration(step.metrics.RunTime).Seconds())
+	}
+	if step.metrics.ExecTime > 0 {
+		logEntry.Labels["exec_secs"] = fmt.Sprintf("%.02f", time.Duration(step.metrics.ExecTime).Seconds())
+	}
+	if step.metrics.WorkerTime > 0 {
+		logEntry.Labels["worker_secs"] = fmt.Sprintf("%.02f", time.Duration(step.metrics.WorkerTime).Seconds())
 	}
 	if step.metrics.NoExec {
 		logEntry.Labels["no_exec"] = "true"

@@ -136,6 +136,11 @@ type StepMetric struct {
 	// ExecTime is the time measured from the execution strategy starting
 	// the process until the process exited.
 	ExecTime IntervalMetric `json:"exec,omitempty"`
+
+	// WorkerTime is the time measured from when the worker started the process
+	// until the worker completed the process (including input fetch and output upload time and
+	// other miscellaneous overheads that aren't measured individually).
+	WorkerTime IntervalMetric `json:"worker_time,omitempty"`
 	// OutputUploadTime is the time spent on uploading action outputs from
 	// the remote worker.
 	// It is set only when using remoteexec strategy and no cache.
@@ -189,6 +194,7 @@ func (m *StepMetric) done(ctx context.Context, step *Step, buildStart time.Time)
 		m.ExecStartTime = IntervalMetric(md.GetExecutionStartTimestamp().AsTime().Sub(buildStart))
 		m.InputFetchTime = IntervalMetric(md.GetInputFetchCompletedTimestamp().AsTime().Sub(md.GetInputFetchStartTimestamp().AsTime()))
 		m.OutputUploadTime = IntervalMetric(md.GetOutputUploadCompletedTimestamp().AsTime().Sub(md.GetOutputUploadStartTimestamp().AsTime()))
+		m.WorkerTime = IntervalMetric(md.GetWorkerCompletedTimestamp().AsTime().Sub(md.GetWorkerStartTimestamp().AsTime()))
 	}
 	m.ExecTime = IntervalMetric(md.GetExecutionCompletedTimestamp().AsTime().Sub(md.GetExecutionStartTimestamp().AsTime()))
 	for _, any := range md.GetAuxiliaryMetadata() {
