@@ -32,6 +32,10 @@ rule {{.RuleName}}
   command = {{.PythonPath}} {{.ScriptPath}}{{range .Args}} {{.}}{{end}}
   description = ACTION {{.FullLabel}}
   restat = 1
+{{- if .Rspfile}}
+  rspfile = {{.Rspfile}}
+  rspfile_content = {{.RspfileContent}}
+{{- end}}
 {{- if .Depfile}}
   depfile = {{.Depfile}}
   deps = gcc
@@ -322,24 +326,51 @@ func writeAction(w io.Writer, t *graph.Target, action graph.Action, buildSetting
 			escapedIns = append(escapedIns, escapeStringNinja(rebasedIn))
 		}
 
+		var escapedRspContent []string
+		for _, arg := range action.RspfileContent {
+			var escapedArg strings.Builder
+			for _, part := range arg.Pattern {
+				// TODO: the exact same TODO from above re SubstitutionPart's
+				// design having some shortcomings applies here too.
+				switch part := part.(type) {
+				case graph.SubstitutionLiteral:
+					escapedArg.WriteString(escapeStringNinja(part.Literal))
+				default:
+					escapedArg.WriteString(part.NinjaString())
+				}
+			}
+			// TODO: the exact same TODO from above regarding incorrect
+			// escaping applies here too.
+			escapedRspContent = append(escapedRspContent, escapedArg.String())
+		}
+		var rspfileName, rspfileContent string
+		if len(escapedRspContent) > 0 {
+			rspfileName = ruleName + ".rsp"
+			rspfileContent = strings.Join(escapedRspContent, " ")
+		}
+
 		err = scriptActionTemplate.Execute(w, struct {
-			RuleName   string
-			PythonPath string
-			ScriptPath string
-			Args       []string
-			FullLabel  string
-			Depfile    string
-			Outs       string
-			Ins        string
+			RuleName       string
+			PythonPath     string
+			ScriptPath     string
+			Args           []string
+			FullLabel      string
+			Depfile        string
+			Rspfile        string
+			RspfileContent string
+			Outs           string
+			Ins            string
 		}{
-			RuleName:   ruleName,
-			PythonPath: escapeStringNinja(buildSettings.PythonPath),
-			ScriptPath: escapeStringNinja(rebasedScript),
-			Args:       escapedArgs,
-			FullLabel:  targetLabel,
-			Depfile:    escapeStringNinja(action.Depfile),
-			Outs:       strings.Join(escapedOuts, " "),
-			Ins:        strings.Join(escapedIns, " "),
+			RuleName:       ruleName,
+			PythonPath:     escapeStringNinja(buildSettings.PythonPath),
+			ScriptPath:     escapeStringNinja(rebasedScript),
+			Args:           escapedArgs,
+			FullLabel:      targetLabel,
+			Depfile:        escapeStringNinja(action.Depfile),
+			Rspfile:        rspfileName,
+			RspfileContent: rspfileContent,
+			Outs:           strings.Join(escapedOuts, " "),
+			Ins:            strings.Join(escapedIns, " "),
 		})
 		if err != nil {
 			return err

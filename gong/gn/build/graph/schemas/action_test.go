@@ -16,11 +16,12 @@ import (
 )
 
 type gotScriptCall struct {
-	Script      fs.SourceFile
-	Args        []string
-	OutputNames []string
-	Inputs      []fs.SourceFile
-	Depfile     string
+	Script         fs.SourceFile
+	Args           []string
+	OutputNames    []string
+	Inputs         []fs.SourceFile
+	Depfile        string
+	RspfileContent []string
 }
 
 func TestActionSchema_Resolver(t *testing.T) {
@@ -121,13 +122,14 @@ func TestActionSchema_Resolver(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			var gotScripts []gotScriptCall
 			buildDir := mustSourceDir(t, "//out/Default/")
-			tc.ctx.DeclareScript = func(script fs.SourceFile, args []string, outputNames []string, inputs []fs.SourceFile, depfile string) ([]fs.OutputPath, error) {
+			tc.ctx.DeclareScript = func(script fs.SourceFile, args []string, outputNames []string, inputs []fs.SourceFile, depfile string, rspfileContent []string) ([]fs.OutputPath, error) {
 				gotScripts = append(gotScripts, gotScriptCall{
-					Script:      script,
-					Args:        args,
-					OutputNames: outputNames,
-					Inputs:      inputs,
-					Depfile:     depfile,
+					Script:         script,
+					Args:           args,
+					OutputNames:    outputNames,
+					Inputs:         inputs,
+					Depfile:        depfile,
+					RspfileContent: rspfileContent,
 				})
 				var outputs []fs.OutputPath
 				for _, name := range outputNames {

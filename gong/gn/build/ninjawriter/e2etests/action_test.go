@@ -110,3 +110,53 @@ build phony/multi_output: phony obj/gen/output1.txt obj/gen/output2.txt
 		},
 	)
 }
+
+func TestAction_RspFile(t *testing.T) {
+	runTest(t,
+		map[string]string{
+			"build/BUILDCONFIG.gn": `
+set_default_toolchain("//:tc")`,
+			"BUILD.gn": `
+toolchain("tc") {
+  tool("stamp") { command = "touch" }
+}
+
+action("foo") {
+  script = "foo.py"
+  outputs = [ "gen/foo.out" ]
+  response_file_contents = [ "--rsp", "file", "contents" ]
+  args = [ "--rsp-file", "{{response_file_name}}" ]
+}`,
+		},
+		map[string]string{
+			"build.ninja": `
+# TODO: ninja_required_version
+# TODO: rule gn
+# TODO: rule build.ninja.stamp
+# TODO: rule build.ninja
+subninja toolchain.ninja
+build foo: phony obj/gen/foo.out
+build $:foo: phony obj/gen/foo.out
+
+build all: phony $
+    obj/gen/foo.out
+
+default all
+`,
+			"toolchain.ninja": `
+rule stamp
+  command = touch
+
+rule ___foo____tc__rule
+  command = /path/to/my/python ../../foo.py --rsp-file ${rspfile}
+  description = ACTION //:foo(//:tc)
+  restat = 1
+  rspfile = ___foo____tc__rule.rsp
+  rspfile_content = --rsp file contents
+
+build obj/gen/foo.out: ___foo____tc__rule | ../../foo.py
+build phony/foo: phony obj/gen/foo.out
+`,
+		},
+	)
+}

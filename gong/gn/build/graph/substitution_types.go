@@ -70,6 +70,9 @@ var substitutionRustEnv = SubstitutionVar{"{{rustenv}}", "${rustenv}"}
 var substitutionRustFlags = SubstitutionVar{"{{rustflags}}", "${rustflags}"}
 var substitutionRustSources = SubstitutionVar{"{{sources}}", "${sources}"}
 
+// Used only for the args of actions.
+var substitutionRspFileName = SubstitutionVar{"{{response_file_name}}", "${rspfile}"}
+
 var generalSubstitutions = []SubstitutionPart{
 	substitutionSource,
 	substitutionOutput,
@@ -77,6 +80,7 @@ var generalSubstitutions = []SubstitutionPart{
 	substitutionOutputExtension,
 	substitutionTargetOutDir,
 	substitutionTargetOutputName,
+	substitutionRspFileName,
 }
 
 var cSubstitutions = []SubstitutionPart{

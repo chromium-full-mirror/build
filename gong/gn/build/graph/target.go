@@ -154,7 +154,7 @@ func (t *Target) DeclareTool(outDir fs.OutputPath, tool string, source fs.Source
 }
 
 // DeclareScript declares a script call.
-func (t *Target) DeclareScript(outDir fs.OutputPath, script fs.SourceFile, args []string, outputNames []string, inputs []fs.SourceFile, depfile string) ([]fs.OutputPath, error) {
+func (t *Target) DeclareScript(outDir fs.OutputPath, script fs.SourceFile, args []string, outputNames []string, inputs []fs.SourceFile, depfile string, rspfileContent []string) ([]fs.OutputPath, error) {
 	var parsedArgs []SubstitutionPattern
 	for _, arg := range args {
 		parsed, err := makeSubstitutionPattern(arg)
@@ -163,16 +163,25 @@ func (t *Target) DeclareScript(outDir fs.OutputPath, script fs.SourceFile, args 
 		}
 		parsedArgs = append(parsedArgs, parsed)
 	}
+	var parsedRsp []SubstitutionPattern
+	for _, r := range rspfileContent {
+		parsed, err := makeSubstitutionPattern(r)
+		if err != nil {
+			return nil, err
+		}
+		parsedRsp = append(parsedRsp, parsed)
+	}
 	var outputs []fs.OutputPath
 	for _, name := range outputNames {
 		outputs = append(outputs, fs.MakeOutputPath(outDir.BuildDir(), path.Join(outDir.Path(), name)))
 	}
 	t.Resolution.Actions = append(t.Resolution.Actions, RunScriptAction{
-		Script:  script,
-		Args:    parsedArgs,
-		Outputs: outputs,
-		Inputs:  inputs,
-		Depfile: depfile,
+		Script:         script,
+		Args:           parsedArgs,
+		Outputs:        outputs,
+		Inputs:         inputs,
+		Depfile:        depfile,
+		RspfileContent: parsedRsp,
 	})
 	return outputs, nil
 }

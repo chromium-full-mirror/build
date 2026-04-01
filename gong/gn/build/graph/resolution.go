@@ -20,7 +20,7 @@ type ResolverContext struct {
 	// DeclareTool declares a tool call.
 	DeclareTool func(tool string, source fs.SourceFile, inputs []fs.SourceFile, outputName string, expansions map[string]string) (fs.OutputPath, error)
 	// DeclareScript declares a script call.
-	DeclareScript func(script fs.SourceFile, args, outputNames []string, inputs []fs.SourceFile, depfile string) ([]fs.OutputPath, error)
+	DeclareScript func(script fs.SourceFile, args, outputNames []string, inputs []fs.SourceFile, depfile string, rspfileContent []string) ([]fs.OutputPath, error)
 	// LabelKeyedStringMapFor returns the map of labels to strings for the variable, if it accepts
 	// a variable that is processed into a map of labels to strings.
 	LabelKeyedStringMapFor func(varName string) (map[environment.Label]string, error)
@@ -73,12 +73,12 @@ func (r RunToolAction) Ins() []fs.SourceFile { return r.Inputs }
 
 // A RunScriptAction represents a script call.
 type RunScriptAction struct {
-	Script  fs.SourceFile
-	Args    []SubstitutionPattern // TODO: port SubstitutionList so validation can be performed.
-	Outputs []fs.OutputPath
-	Inputs  []fs.SourceFile
-	Depfile string
-	// TODO: rspfile?
+	Script         fs.SourceFile
+	Args           []SubstitutionPattern // TODO: port SubstitutionList so validation can be performed.
+	Outputs        []fs.OutputPath
+	Inputs         []fs.SourceFile
+	Depfile        string
+	RspfileContent []SubstitutionPattern
 }
 
 func (r RunScriptAction) Ins() []fs.SourceFile { return r.Inputs }
