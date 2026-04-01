@@ -288,7 +288,13 @@ func schedule(ctx context.Context, sched *scheduler, graph Graph, args ...string
 		ui.Default.PrintLines(ui.SGR(ui.Yellow, fmt.Sprintf("WARNING: ignore missing targets: %v\n\n", err)))
 	}
 	if len(targets) == 0 {
-		return TargetError{err: errors.New("no targets")}
+		if len(args) > 0 {
+			return TargetError{err: errors.New("no targets")}
+		}
+		// No explicit targets requested and the build file has no
+		// default/root targets. Return nil so the caller prints
+		// "ninja: no work to do." and exits 0, matching Ninja behavior.
+		return nil
 	}
 	if len(args) > 0 {
 		var targetNames []string
