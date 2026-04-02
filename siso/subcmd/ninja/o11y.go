@@ -50,7 +50,7 @@ import (
 
 // initCloudLogging initializes cloud logging.
 // It returns a new context with a logger, the logger's URL, a function to close the logger, and any error that occurred.
-func (c *Command) initCloudLogging(ctx context.Context, projectID, execRoot string, credential cred.Cred) (context.Context, string, func(), error) {
+func (c *Command) initCloudLogging(ctx context.Context, projectID, namespace string, credential cred.Cred) (context.Context, string, func(), error) {
 	log.Infof("enable cloud logging project=%s id=%s", projectID, c.buildID)
 
 	// log_id: "siso.log" and "siso.step"
@@ -68,10 +68,6 @@ func (c *Command) initCloudLogging(ctx context.Context, projectID, execRoot stri
 	if err != nil {
 		return ctx, "", func() {}, err
 	}
-	hostname, err := os.Hostname()
-	if err != nil {
-		return ctx, "", func() {}, err
-	}
 	logger, err := clog.New(ctx, client, "siso.log", "siso.step", &mrpb.MonitoredResource{
 		Type: "generic_task",
 		// should set labels for generic_task.
@@ -80,8 +76,11 @@ func (c *Command) initCloudLogging(ctx context.Context, projectID, execRoot stri
 			"project_id": projectID,
 			"job":        c.jobID,
 			"task_id":    c.buildID,
-			"location":   hostname,
-			"namespace":  execRoot,
+			// TODO: Set location appropriately.
+			// GCE VMs/Cloudtops -> GCP region
+			// Developer workstations/laptops -> "global" or a location group. e.g. "US", "EMEA", "APAC"
+			"location":  "global",
+			"namespace": namespace,
 		},
 	}, c.collectorAddress)
 	if err != nil {

@@ -313,7 +313,7 @@ func (c *Command) Run(ctx context.Context) (stats build.Stats, finalErr error) {
 	if c.enableCloudLogging {
 		spin := ui.Default.NewSpinner()
 		spin.Start("init cloud logging")
-		logCtx, loggerURL, done, err := c.initCloudLogging(ctx, projectID, buildPath.ExecRoot, credential)
+		logCtx, loggerURL, done, err := c.initCloudLogging(ctx, projectID, c.namespace, credential)
 		spin.Stop(err)
 		if err != nil {
 			// b/335295396 Compile step hitting write requests quota

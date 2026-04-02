@@ -75,8 +75,9 @@ type NinjaFlags struct {
 	configName string
 	projectID  string
 
-	buildID string
-	jobID   string
+	buildID   string
+	jobID     string
+	namespace string
 
 	offline         bool
 	fastNop         bool
@@ -167,6 +168,7 @@ func (c *Command) SetFlags(flagSet *flag.FlagSet) {
 	}
 	flagSet.StringVar(&c.buildID, "build_id", defaultBuildID, "ID for the build. used for `invocation_id` of remote-apis-sdks and `tool_invocation_id` of remote-apis, and Cloud logging resource `build_id` label.")
 	flagSet.StringVar(&c.jobID, "job_id", uuid.New().String(), "ID for a grouping of related builds such as a Buildbucket job. used for `correlated_invocations_id` of remote-apis and remote-apis-sdks, and Cloud logging resource `job_id` label.")
+	flagSet.StringVar(&c.namespace, "namespace", "", "namespace for cloud logging's resource label")
 
 	flagSet.BoolVar(&c.offline, "offline", false, "offline mode.")
 	flagSet.BoolVar(&c.offline, "o", false, "alias of `-offline`")

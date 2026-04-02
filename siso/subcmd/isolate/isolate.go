@@ -81,6 +81,7 @@ type Command struct {
 	dumpJSON string
 
 	jobID              string
+	namespace          string
 	enableCloudLogging bool
 }
 
@@ -101,6 +102,7 @@ func (c *Command) SetFlags(flagSet *flag.FlagSet) {
 	flagSet.StringVar(&c.dumpJSON, "dump_json", "", "dump in json file")
 
 	flagSet.StringVar(&c.jobID, "job_id", uuid.New().String(), "ID for a grouping of related builds such as a Buildbucket job. ")
+	flagSet.StringVar(&c.namespace, "namespace", "", "namespace for cloud logging's resource label")
 	flagSet.BoolVar(&c.enableCloudLogging, "enable_cloud_logging", true, "enable cloud logging")
 }
 
@@ -155,7 +157,7 @@ func (c *Command) run(ctx context.Context) error {
 		spin.Stop(nil)
 	}
 	if c.enableCloudLogging {
-		logCtx, loggerURL, done, err := c.initCloudLogging(ctx, projectID, execRoot, credential)
+		logCtx, loggerURL, done, err := c.initCloudLogging(ctx, projectID, c.namespace, credential)
 		if err != nil {
 			// b/335295396 Compile step hitting write requests quota
 			// rather than build fails, fallback to glog.
@@ -391,7 +393,7 @@ func upload(ctx context.Context, execRoot, buildDir string, hashFS *hashfs.HashF
 	return d, nil
 }
 
-func (c *Command) initCloudLogging(ctx context.Context, projectID, execRoot string, credential cred.Cred) (context.Context, string, func(), error) {
+func (c *Command) initCloudLogging(ctx context.Context, projectID, namespace string, credential cred.Cred) (context.Context, string, func(), error) {
 	taskID := uuid.New().String()
 	log.Infof("enable cloud logging project=%s id=%s", projectID, taskID)
 
@@ -403,10 +405,6 @@ func (c *Command) initCloudLogging(ctx context.Context, projectID, execRoot stri
 	if err != nil {
 		return ctx, "", func() {}, err
 	}
-	hostname, err := os.Hostname()
-	if err != nil {
-		return ctx, "", func() {}, err
-	}
 	logger, err := clog.New(ctx, client, "siso.log", "siso.step", &mrpb.MonitoredResource{
 		Type: "generic_task",
 		// should set labels for generic_task.
@@ -415,8 +413,11 @@ func (c *Command) initCloudLogging(ctx context.Context, projectID, execRoot stri
 			"project_id": projectID,
 			"job":        c.jobID,
 			"task_id":    taskID,
-			"location":   hostname,
-			"namespace":  execRoot,
+			// TODO: Set location appropriately.
+			// GCE VMs/Cloudtops -> GCP region
+			// Developer workstations/laptops -> "global" or a location group. e.g. "US", "EMEA", "APAC"
+			"location":  "global",
+			"namespace": namespace,
 		},
 	}, "")
 	if err != nil {
