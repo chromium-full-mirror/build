@@ -88,10 +88,7 @@ func InitDir(ctx context.Context, f DirFlag) (startDir, execRoot, dir string, _ 
 		cwd = realCWD
 	}
 	if !filepath.IsAbs(f.ConfigRepoDir) {
-		execRoot, err = detectExecRoot(cwd, f.ConfigRepoDir)
-		if err != nil {
-			return "", "", "", err
-		}
+		execRoot = detectExecRoot(cwd, f.ConfigRepoDir)
 	}
 	rdir, err := filepath.Rel(execRoot, cwd)
 	if err != nil {
@@ -104,17 +101,21 @@ func InitDir(ctx context.Context, f DirFlag) (startDir, execRoot, dir string, _ 
 }
 
 // detectExecRoot detects exec root from path given marker.
-func detectExecRoot(execRoot, marker string) (string, error) {
+// If the marker is not found in any parent directory, it falls back
+// to using cwd as the exec root. This allows simple Ninja projects
+// without Starlark configuration to work.
+func detectExecRoot(cwd, marker string) string {
+	dir := cwd
 	for {
-		_, err := os.Stat(filepath.Join(execRoot, marker))
+		_, err := os.Stat(filepath.Join(dir, marker))
 		if err == nil {
-			return execRoot, nil
+			return dir
 		}
-		dir := filepath.Dir(execRoot)
-		if dir == execRoot {
-			// reached to root dir
-			return "", fmt.Errorf("can not detect exec_root: %s not found", marker)
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			// Marker not found; use cwd as exec root.
+			return cwd
 		}
-		execRoot = dir
+		dir = parent
 	}
 }

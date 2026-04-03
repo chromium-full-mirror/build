@@ -47,6 +47,16 @@ type Config struct {
 	fscache *fscache
 }
 
+// NewDefault returns a default build config with no Starlark configuration.
+// All build steps will run locally without any custom handlers.
+func NewDefault(flags map[string]string) *Config {
+	return &Config{
+		Metadata: metadata.New(),
+		flags:    flags,
+		fscache:  &fscache{m: make(map[string][]byte)},
+	}
+}
+
 // New returns new build config.
 func New(ctx context.Context, fname string, flags map[string]string, repos map[string]fs.FS) (*Config, error) {
 	metadata := metadata.New()
@@ -128,6 +138,13 @@ func (e HandlerError) Unwrap() error {
 func (cfg *Config) Init(ctx context.Context, hashFS *hashfs.HashFS, buildPath *build.Path) (string, error) {
 	// Clear fscache to read updated contents after `gn gen`.
 	cfg.fscache = &fscache{m: make(map[string][]byte)}
+
+	if cfg.globals == nil {
+		// Default config with no Starlark: all steps run locally.
+		cfg.handlers = new(starlark.Dict)
+		cfg.filegroups = make(map[string]filegroupUpdater)
+		return "{}", nil
+	}
 
 	fun, ok := cfg.globals[configEntryPoint]
 	if !ok {

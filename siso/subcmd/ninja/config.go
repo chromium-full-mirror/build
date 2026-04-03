@@ -293,16 +293,22 @@ func (c *Command) initConfigFlags(targets []string) map[string]string {
 }
 
 // initConfig initializes the build configuration by loading and parsing the main starlark file.
+// If no Starlark config exists, it returns a default config that runs all steps locally.
 // It also captures `args.gn` content if available.
 func (c *Command) initConfig(ctx context.Context, execRoot string, targets []string) (*buildconfig.Config, error) {
+	flags := c.initConfigFlags(targets)
 	if c.configFilename == "" {
-		return nil, errors.New("no config filename")
+		return buildconfig.NewDefault(flags), nil
+	}
+	configRepoDir := filepath.Join(execRoot, c.ninjaDir.ConfigRepoDir)
+	if _, err := os.Stat(configRepoDir); errors.Is(err, fs.ErrNotExist) {
+		clog.Infof(ctx, "no config repo dir %s, using default config", configRepoDir)
+		return buildconfig.NewDefault(flags), nil
 	}
 	cfgrepos := map[string]fs.FS{
-		"config":           os.DirFS(filepath.Join(execRoot, c.ninjaDir.ConfigRepoDir)),
+		"config":           os.DirFS(configRepoDir),
 		"config_overrides": os.DirFS(filepath.Join(execRoot, ".siso_remote")),
 	}
-	flags := c.initConfigFlags(targets)
 	config, err := buildconfig.New(ctx, c.configFilename, flags, cfgrepos)
 	if err != nil {
 		return nil, err
