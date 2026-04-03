@@ -579,23 +579,18 @@ func (c *Command) postRun(ctx context.Context, stats build.Stats, runErr error) 
 	sps := float64(stats.Done-stats.Skipped) / d.Seconds()
 	dur := ui.FormatDuration(d)
 	if runErr != nil {
-		var errFlag flagError
-		var errBuild ninjabuild.BuildError
-		switch {
-		case errors.Is(runErr, errNothingToDo):
+		if errors.Is(runErr, errNothingToDo) {
 			msgPrefix := "Everything is up-to-date"
 			if ui.IsTerminal() {
 				msgPrefix = ui.SGR(ui.Green, msgPrefix)
 			}
 			ui.Default.Infof("%s Nothing to do.\n", msgPrefix)
 			return subcommands.ExitSuccess
-
-		case errors.As(runErr, &errFlag):
+		}
+		if _, ok := errors.AsType[flagError](runErr); ok {
 			ui.Default.Errorf("%v\n", runErr)
-
-		case errors.As(runErr, &errBuild):
-			var errTarget build.TargetError
-			if errors.As(errBuild.Err, &errTarget) {
+		} else if errBuild, ok := errors.AsType[ninjabuild.BuildError](runErr); ok {
+			if errTarget, ok := errors.AsType[build.TargetError](errBuild.Err); ok {
 				msgPrefix := "Schedule Failure"
 				if ui.IsTerminal() {
 					dur = ui.SGR(ui.Bold, dur)
@@ -613,8 +608,7 @@ func (c *Command) postRun(ctx context.Context, stats build.Stats, runErr error) 
 				}
 				return subcommands.ExitFailure
 			}
-			var errMissingSource build.MissingSourceError
-			if errors.As(errBuild.Err, &errMissingSource) {
+			if errMissingSource, ok := errors.AsType[build.MissingSourceError](errBuild.Err); ok {
 				msgPrefix := "Schedule Failure"
 				if ui.IsTerminal() {
 					dur = ui.SGR(ui.Bold, dur)
@@ -644,7 +638,7 @@ func (c *Command) postRun(ctx context.Context, stats build.Stats, runErr error) 
 				suggest = ui.SGR(ui.Bold, suggest)
 			}
 			ui.Default.Warningf("%s\n", suggest)
-		default:
+		} else {
 			msgPrefix := "Error"
 			if ui.IsTerminal() {
 				msgPrefix = ui.SGR(ui.BackgroundRed, msgPrefix)
@@ -682,12 +676,12 @@ func (c *Command) saveFailedTargetsAndCommand(ctx context.Context, err error, ta
 	if err != nil {
 		// Even when batch mode, it records failed targets.
 		// It will be read by Chromium recipe.
-		var errBuild ninjabuild.BuildError
-		if !errors.As(err, &errBuild) {
+		errBuild, ok := errors.AsType[ninjabuild.BuildError](err)
+		if !ok {
 			return
 		}
-		var stepError build.StepError
-		if !errors.As(errBuild.Err, &stepError) {
+		stepError, ok := errors.AsType[build.StepError](errBuild.Err)
+		if !ok {
 			rerr := os.Remove(c.logFilename(c.failedCommandsFile, ""))
 			if rerr != nil {
 				clog.Warningf(ctx, "failed to remove failed command file: %v", rerr)

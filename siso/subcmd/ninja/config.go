@@ -589,8 +589,7 @@ func initLock(ctx context.Context, dryRun bool, stateDir string) (func(), error)
 		spin := ui.Default.NewSpinner()
 		for {
 			err = lock.Lock()
-			alreadyLocked := &lockfile.ErrAlreadyLocked{}
-			if errors.As(err, &alreadyLocked) {
+			if alreadyLocked, ok := errors.AsType[*lockfile.ErrAlreadyLocked](err); ok {
 				if owner != alreadyLocked.Owner {
 					if owner != "" {
 						spin.Done("lock holder %s completed", owner)

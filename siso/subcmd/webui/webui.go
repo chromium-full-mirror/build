@@ -64,11 +64,9 @@ func (c *Command) Execute(ctx context.Context, flagSet *flag.FlagSet, _ ...any) 
 		ManifestPath:     c.fname,
 	})
 	if err != nil {
-		var execrootNotExist *webui.ErrExecrootNotExist
-		var manifestNotExist *webui.ErrManifestNotExist
-		if errors.As(err, &execrootNotExist) {
+		if execrootNotExist, ok := errors.AsType[*webui.ErrExecrootNotExist](err); ok {
 			fmt.Fprintf(os.Stderr, "%v: need `-config_repo_dir <dir>` and/or `-C <dir>`?\n", execrootNotExist)
-		} else if errors.As(err, &manifestNotExist) {
+		} else if manifestNotExist, ok := errors.AsType[*webui.ErrManifestNotExist](err); ok {
 			fmt.Fprintf(os.Stderr, "%v: need `-C <dir>` and/or `-f <manifest>`?\n", manifestNotExist)
 		} else {
 			fmt.Fprintf(os.Stderr, "failed to init server: %v\n", err)

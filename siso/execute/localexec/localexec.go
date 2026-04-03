@@ -223,8 +223,8 @@ func exitCode(err error) int32 {
 	if err == nil {
 		return 0
 	}
-	var eerr *exec.ExitError
-	if !errors.As(err, &eerr) {
+	eerr, ok := errors.AsType[*exec.ExitError](err)
+	if !ok {
 		return -1
 	}
 	return int32(eerr.ExitCode())

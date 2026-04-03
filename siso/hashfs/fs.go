@@ -815,8 +815,7 @@ func (hfs *HashFS) Mkdir(ctx context.Context, root, dirname string, cmdhash, edg
 		isChanged:   true,
 	}
 	err = hfs.dirStoreAndNotify(ctx, dirname, e)
-	var serr storeRaceError
-	if errors.As(err, &serr) {
+	if serr, ok := errors.AsType[storeRaceError](err); ok {
 		curEntry, ok := serr.curEntry.(*entry)
 		if ok {
 			// Mkdir succeeds if cur entry is the directory and has the same cmdhash, or cur cmdhash exists but trying to add no cmdhash.

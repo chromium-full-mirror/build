@@ -178,8 +178,7 @@ func (g *inputsGraph) Traverse(ctx context.Context, target string) error {
 	}
 	for _, dep := range deps {
 		err := g.Traverse(ctx, dep)
-		var terr targetNotFoundError
-		if errors.As(err, &terr) {
+		if _, ok := errors.AsType[targetNotFoundError](err); ok {
 			clog.Infof(ctx, "target for deps %q: implicit header?", dep)
 			continue
 		}

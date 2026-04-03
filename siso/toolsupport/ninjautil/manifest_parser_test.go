@@ -328,9 +328,8 @@ build b: cat c
 	p := NewManifestParser(state)
 	p.SetWd(dir)
 	err = p.Load(ctx, "build.ninja")
-	var wantErr multipleRulesError
-	if !errors.As(err, &wantErr) {
-		t.Errorf("p.Load() got: %v; want: %v", err, wantErr)
+	if _, ok := errors.AsType[multipleRulesError](err); !ok {
+		t.Errorf("p.Load() got: %v; want: %v", err, multipleRulesError{})
 	}
 }
 

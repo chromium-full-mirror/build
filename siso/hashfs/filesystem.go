@@ -178,8 +178,7 @@ func (fsys FileSystem) ReadDir(name string) ([]fs.DirEntry, error) {
 		}
 		ents, err := fsys.hashFS.ReadDir(fsys.ctx, root, name)
 		if err != nil {
-			var serr SymlinkError
-			if errors.As(err, &serr) {
+			if serr, ok := errors.AsType[SymlinkError](err); ok {
 				name = resolveSymlinkPath(fsys.dir, serr.Path, serr.Target)
 				continue
 			}
@@ -215,8 +214,7 @@ func (fsys FileSystem) ReadFile(name string) ([]byte, error) {
 		}
 		buf, err := fsys.hashFS.ReadFile(fsys.ctx, root, name)
 		if err != nil {
-			var serr SymlinkError
-			if errors.As(err, &serr) {
+			if serr, ok := errors.AsType[SymlinkError](err); ok {
 				name = resolveSymlinkPath(fsys.dir, serr.Path, serr.Target)
 				continue
 			}

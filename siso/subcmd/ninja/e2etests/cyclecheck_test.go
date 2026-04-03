@@ -39,9 +39,9 @@ func TestBuild_CycleCheck(t *testing.T) {
 		t.Fatalf("ninja %v; want error", err)
 	}
 	t.Logf("ninja %v", err)
-	var cycleErr build.DependencyCycleError
-	if !errors.As(err, &cycleErr) {
-		t.Fatalf("err type %T; want %T", err, cycleErr)
+	cycleErr, ok := errors.AsType[build.DependencyCycleError](err)
+	if !ok {
+		t.Fatalf("err type %T; want %T", err, build.DependencyCycleError{})
 	}
 	want := build.DependencyCycleError{
 		Targets: []string{"gen/foo.txt", "gen/foo.txt"},
