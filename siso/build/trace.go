@@ -96,28 +96,26 @@ func (te *traceEvents) loop(ctx context.Context) {
 	te.sys.get(ctx)
 	w := io.Discard
 	if te.fname != "" {
-		tmpname := te.fname + ".tmp"
-		f, err := os.Create(te.fname + ".tmp")
+		f, err := os.Create(te.fname)
 		if err != nil {
-			clog.Warningf(ctx, "Failed to create %s: %v", tmpname, err)
+			clog.Warningf(ctx, "Failed to create %s: %v", te.fname, err)
 			return
 		}
-		w = bufio.NewWriterSize(f, 256*1024)
+		bw := bufio.NewWriterSize(f, 256*1024)
+		w = bw
 		defer func() {
-			fmt.Fprintf(w, "\n]")
-			if fw, ok := w.(interface{ Flush() error }); ok {
-				err := fw.Flush()
-				if err != nil {
-					clog.Warningf(ctx, "Failed to flush %s: %v", tmpname, err)
-				}
+			te.writeTraceFooter(ctx, bw)
+			err := bw.Flush()
+			if err != nil {
+				clog.Warningf(ctx, "Failed to flush %s: %v", te.fname, err)
 			}
 			err = f.Close()
 			if err != nil {
-				clog.Warningf(ctx, "Failed to close %s: %v", tmpname, err)
+				clog.Warningf(ctx, "Failed to close %s: %v", te.fname, err)
 			}
 		}()
 	}
-	fmt.Fprintf(w, "[\n")
+	fmt.Fprintf(w, "{\"traceEvents\":[\n")
 	te.rusage.start = te.start
 	te.sys.start = te.start
 	te.write(ctx, w, traceEventObject{
@@ -592,39 +590,28 @@ func (te *traceEvents) rbeWorkerSpanEvent(span trace.SpanData, attr spanEventAtt
 	}
 }
 
+func (te *traceEvents) writeTraceFooter(ctx context.Context, w io.Writer) {
+	fmt.Fprintf(w, "\n],\n\"displayTimeUnit\":\"ms\"")
+	for _, key := range te.metadata.Keys() {
+		keyJSON, err := json.Marshal(key)
+		if err != nil {
+			clog.Warningf(ctx, "Failed to marshal metadata key %s: %v", key, err)
+			continue
+		}
+		valJSON, err := json.Marshal(te.metadata.Get(key))
+		if err != nil {
+			clog.Warningf(ctx, "Failed to marshal metadata value for %s: %v", key, err)
+			continue
+		}
+		fmt.Fprintf(w, ",\n%s:%s", keyJSON, valJSON)
+	}
+	fmt.Fprintf(w, "\n}")
+}
+
 func (te *traceEvents) Close(ctx context.Context) {
 	close(te.quit)
 	<-te.done
 	clog.Infof(ctx, "trace finalize")
-
-	if te.fname == "" {
-		return
-	}
-	tmpname := te.fname + ".tmp"
-	buf, err := os.ReadFile(tmpname)
-	if err != nil {
-		clog.Warningf(ctx, "Failed to read %s: %v", tmpname, err)
-		return
-	}
-	defer os.Remove(tmpname)
-
-	traceData := map[string]any{
-		"traceEvents":     json.RawMessage(buf),
-		"displayTimeUnit": "ms",
-	}
-	for _, key := range te.metadata.Keys() {
-		traceData[key] = te.metadata.Get(key)
-	}
-	traceDataJson, err := json.Marshal(traceData)
-	if err != nil {
-		clog.Warningf(ctx, "Failed to marshal trace data: %v", err)
-		return
-	}
-
-	err = os.WriteFile(te.fname, traceDataJson, 0644)
-	if err != nil {
-		clog.Warningf(ctx, "Failed to write %s: %v", te.fname, err)
-	}
 }
 
 type traceStats struct {
