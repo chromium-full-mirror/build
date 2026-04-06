@@ -11,12 +11,13 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/google/subcommands"
 
 	"go.chromium.org/build/siso/auth/cred"
 	"go.chromium.org/build/siso/reapi"
-	"go.chromium.org/build/siso/signals"
 )
 
 const usage = `proxy RE API service.
@@ -77,8 +78,8 @@ func (c *Command) Execute(ctx context.Context, flagSet *flag.FlagSet, _ ...any) 
 }
 
 func (c *Command) run(ctx context.Context) error {
-	ctx, cancel := context.WithCancel(ctx)
-	defer signals.HandleInterrupt(ctx, cancel)()
+	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
+	defer stop()
 
 	c.reopt.UpdateProjectID(c.projectID)
 	var credential cred.Cred

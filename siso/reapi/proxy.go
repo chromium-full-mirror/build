@@ -11,6 +11,7 @@ import (
 	"net"
 	"net/url"
 	"os"
+	"time"
 
 	rpb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
@@ -63,7 +64,35 @@ func (p *Proxy) Serve(ctx context.Context) error {
 	bsp := &byteStreamProxy{client: bspb.NewByteStreamClient(p.client.casConn)}
 	bspb.RegisterByteStreamServer(server, bsp)
 
-	return server.Serve(lis)
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- server.Serve(lis)
+	}()
+
+	select {
+	case <-ctx.Done():
+		stopped := make(chan struct{})
+		go func() {
+			server.GracefulStop()
+			close(stopped)
+		}()
+
+		// Give active requests 30 seconds to finish, then force close
+		shutdownTimer := time.NewTimer(30 * time.Second)
+		select {
+		case <-stopped:
+			shutdownTimer.Stop()
+			fmt.Printf("gracefully shut down proxy\n")
+		case <-shutdownTimer.C:
+			// Forcefully stop the server if it takes too long
+			server.Stop()
+			fmt.Fprintf(os.Stderr, "forced shutdown of proxy\n")
+		}
+
+		return <-errCh
+	case err := <-errCh:
+		return err
+	}
 }
 
 type capabilitiesProxy struct {
