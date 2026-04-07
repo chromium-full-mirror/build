@@ -165,6 +165,7 @@ func (c *Command) run(ctx context.Context) error {
 		executeReq.SkipCacheLookup = !c.reCacheEnableRead
 		return c.call(ctx, *c.reopt, credential, executeReq)
 	}
+	ctx = reapi.NewContext(ctx, nil)
 	client, err := reapi.New(ctx, credential, *c.reopt)
 	if err == nil {
 		err = client.Init(ctx)

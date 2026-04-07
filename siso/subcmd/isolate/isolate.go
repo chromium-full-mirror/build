@@ -172,6 +172,7 @@ func (c *Command) run(ctx context.Context) error {
 	}
 
 	ui.Default.Printf("use %s\n", c.reopt)
+	ctx = reapi.NewContext(ctx, nil)
 	client, err := reapi.New(ctx, credential, *c.reopt)
 	if err == nil {
 		err = client.Init(ctx)

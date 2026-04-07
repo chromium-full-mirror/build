@@ -88,6 +88,7 @@ func (c *CheckCommand) Execute(ctx context.Context, flagSet *flag.FlagSet, _ ...
 		fmt.Println("no reapi check")
 		return subcommands.ExitSuccess
 	}
+	ctx = reapi.NewContext(ctx, nil)
 	client, err := reapi.New(ctx, credential, *c.reopt)
 	if err == nil {
 		err = client.Init(ctx)

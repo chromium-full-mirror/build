@@ -649,6 +649,9 @@ func UseOutputPaths(apiVer *semverpb.SemVer) bool {
 
 // NewContext returns new context with request metadata.
 func NewContext(ctx context.Context, rmd *rpb.RequestMetadata) context.Context {
+	if rmd == nil {
+		rmd = &rpb.RequestMetadata{}
+	}
 	ver, err := version.Current()
 	if err == nil {
 		rmd.ToolDetails = &rpb.ToolDetails{

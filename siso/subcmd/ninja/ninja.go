@@ -418,6 +418,7 @@ func (c *Command) Run(ctx context.Context) (stats build.Stats, finalErr error) {
 	var reapiClient *reapi.Client
 	if err := c.reopt.CheckValid(); err == nil {
 		ui.Default.Infof("use %s\n", c.reopt)
+		ctx = reapi.NewContext(ctx, nil)
 		reapiClient, err = reapi.New(ctx, credential, *c.reopt)
 		if err != nil {
 			return stats, err

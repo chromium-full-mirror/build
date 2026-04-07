@@ -126,6 +126,7 @@ func (c *flushCommand) run(ctx context.Context) error {
 			return err
 		}
 	}
+	ctx = reapi.NewContext(ctx, nil)
 	client, err := reapi.New(ctx, credential, *c.reopt)
 	if err == nil {
 		err = client.Init(ctx)
