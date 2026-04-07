@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"cloud.google.com/go/logging"
+	rpb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
 	"google.golang.org/grpc/status"
 
 	"go.chromium.org/build/siso/o11y/clog"
@@ -123,6 +124,13 @@ func (b *Builder) runStep(ctx context.Context, step *Step) (err error) {
 
 	ctx, span = trace.NewSpan(ctx, "run-step")
 	defer span.Close(nil)
+	ctx = reapi.NewContext(ctx, &rpb.RequestMetadata{
+		ActionId:                step.cmd.ID,
+		ToolInvocationId:        b.id,
+		CorrelatedInvocationsId: b.jobID,
+		ActionMnemonic:          step.def.ActionName(),
+		TargetId:                step.outputPaths[0],
+	})
 
 	if b.dryRun {
 		select {

@@ -15,14 +15,12 @@ import (
 	"time"
 
 	ppb "github.com/bazelbuild/reclient/api/proxy"
-	rpb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
 	log "github.com/golang/glog"
 
 	"go.chromium.org/build/siso/execute"
 	"go.chromium.org/build/siso/execute/reproxyexec"
 	"go.chromium.org/build/siso/o11y/clog"
 	"go.chromium.org/build/siso/o11y/trace"
-	"go.chromium.org/build/siso/reapi"
 )
 
 func (b *Builder) execReproxy(ctx context.Context, step *Step) error {
@@ -45,13 +43,6 @@ func (b *Builder) execReproxy(ctx context.Context, step *Step) error {
 		started := time.Now()
 		step.setPhase(phase)
 		b.actionStarted(step)
-		ctx = reapi.NewContext(ctx, &rpb.RequestMetadata{
-			ActionId:                step.cmd.ID,
-			ToolInvocationId:        b.id,
-			CorrelatedInvocationsId: b.jobID,
-			ActionMnemonic:          step.def.ActionName(),
-			TargetId:                step.outputPaths[0],
-		})
 		clog.Infof(ctx, "step state: remote exec (via reproxy)")
 		maybeDisableLocalFallback(ctx, b, step)
 

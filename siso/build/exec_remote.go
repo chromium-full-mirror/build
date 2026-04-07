@@ -9,13 +9,11 @@ import (
 	"errors"
 	"time"
 
-	rpb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
 	"go.chromium.org/build/siso/o11y/clog"
 	"go.chromium.org/build/siso/o11y/trace"
-	"go.chromium.org/build/siso/reapi"
 	"go.chromium.org/build/siso/reapi/retry"
 )
 
@@ -48,13 +46,6 @@ func (b *Builder) execRemote(ctx context.Context, step *Step) error {
 			}
 			reExecStarted := time.Now()
 			b.actionStarted(step)
-			ctx = reapi.NewContext(ctx, &rpb.RequestMetadata{
-				ActionId:                step.cmd.ID,
-				ToolInvocationId:        b.id,
-				CorrelatedInvocationsId: b.jobID,
-				ActionMnemonic:          step.def.ActionName(),
-				TargetId:                step.outputPaths[0],
-			})
 			clog.Infof(ctx, "step state: remote exec [%s]", phase)
 			phase = stepRetryRun
 			err := b.remoteExec.Run(ctx, step.cmd)
