@@ -342,7 +342,7 @@ func (b *Builder) resolveTarget(target *graph.Target, record *builderRecord) ([]
 	// Finally, the target resolver can be called.
 	result, err := target.Schema.Resolver(graph.ResolverContext{
 		ConfigValues: configValues,
-		DeclareTool: func(tool string, source fs.SourceFile, inputs []fs.SourceFile, outputName string, expansions map[string]string) (fs.OutputPath, error) {
+		DeclareTool: func(tool string, source fs.SourceFile, inputs []fs.SourceFile, outputName string, expansions graph.Expansions) (fs.OutputPath, error) {
 			return target.DeclareTool(outDir, tool, source, inputs, outputName, expansions)
 		},
 		DeclareScript: func(script fs.SourceFile, args, outputs []string, inputs []fs.SourceFile, depfile string, rspfileContent []string) ([]fs.OutputPath, error) {

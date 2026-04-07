@@ -22,7 +22,7 @@ type gotToolCall struct {
 	Source     fs.SourceFile
 	Inputs     []fs.SourceFile
 	OutputName string
-	Expansions map[string]string
+	Expansions graph.Expansions
 }
 
 // TODO: move into somewhere common (utils_test.go)?
@@ -140,13 +140,13 @@ func TestRustLibrarySchema_Resolver(t *testing.T) {
 					Source:     mustSourceFile(t, "//src/lib.rs"),
 					Inputs:     []fs.SourceFile{mustSourceFile(t, "//src/lib.rs")},
 					OutputName: "libfoo.rlib",
-					Expansions: map[string]string{
+					Expansions: &graph.SimpleExpansions{Elems: map[string]string{
 						"crate_name": "foo",
 						"crate_type": "rlib",
 						"externs":    "",
 						"rustflags":  "--edition=2021 -Copt-level=3",
 						"rustdeps":   "",
-					},
+					}},
 				},
 			},
 		},
@@ -180,13 +180,13 @@ func TestRustLibrarySchema_Resolver(t *testing.T) {
 						mustSourceFile(t, "//src/other_file.rs"),
 					},
 					OutputName: "libfoo.rlib",
-					Expansions: map[string]string{
+					Expansions: &graph.SimpleExpansions{Elems: map[string]string{
 						"crate_name": "foo",
 						"crate_type": "rlib",
 						"externs":    "",
 						"rustflags":  "",
 						"rustdeps":   "",
-					},
+					}},
 				},
 			},
 		},
@@ -230,13 +230,13 @@ func TestRustLibrarySchema_Resolver(t *testing.T) {
 						mustSourceFile(t, "//out/obj/baz.rlib"),
 					},
 					OutputName: "libfoo.rlib",
-					Expansions: map[string]string{
+					Expansions: &graph.SimpleExpansions{Elems: map[string]string{
 						"crate_name": "foo",
 						"crate_type": "rlib",
 						"externs":    "--extern bar=obj/bar.rlib",
 						"rustflags":  "",
 						"rustdeps":   "",
-					},
+					}},
 				},
 			},
 		},
@@ -258,7 +258,7 @@ func TestRustLibrarySchema_Resolver(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var gotTools []gotToolCall
-			tc.ctx.DeclareTool = func(tool string, source fs.SourceFile, inputs []fs.SourceFile, outputName string, expansions map[string]string) (fs.OutputPath, error) {
+			tc.ctx.DeclareTool = func(tool string, source fs.SourceFile, inputs []fs.SourceFile, outputName string, expansions graph.Expansions) (fs.OutputPath, error) {
 				gotTools = append(gotTools, gotToolCall{
 					Tool:       tool,
 					Source:     source,

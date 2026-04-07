@@ -6,6 +6,7 @@ package graph
 
 import (
 	"iter"
+	"maps"
 
 	"go.chromium.org/build/gong/gn/build/environment"
 	"go.chromium.org/build/gong/gn/build/fs"
@@ -18,7 +19,7 @@ type ResolverContext struct {
 	// ConfigValues returns the config values for this target.
 	ConfigValues ConfigValues
 	// DeclareTool declares a tool call.
-	DeclareTool func(tool string, source fs.SourceFile, inputs []fs.SourceFile, outputName string, expansions map[string]string) (fs.OutputPath, error)
+	DeclareTool func(tool string, source fs.SourceFile, inputs []fs.SourceFile, outputName string, expansions Expansions) (fs.OutputPath, error)
 	// DeclareScript declares a script call.
 	DeclareScript func(script fs.SourceFile, args, outputNames []string, inputs []fs.SourceFile, depfile string, rspfileContent []string) ([]fs.OutputPath, error)
 	// LabelKeyedStringMapFor returns the map of labels to strings for the variable, if it accepts
@@ -60,13 +61,71 @@ type Action interface {
 	Ins() []fs.SourceFile
 }
 
+// Expansions represents expansions to a GN tool call.
+type Expansions interface {
+	// Keys returns an iterator over the keys of the expansions.
+	// The iteration order is not specified and is not guaranteed to be the same
+	// from one call to the next.
+	Keys() iter.Seq[string]
+	// Value returns the value for the given key, if it exists.
+	Value(k string) (string, bool)
+}
+
+// SimpleExpansions represents a basic set of expansions to a GN tool call.
+type SimpleExpansions struct {
+	Elems map[string]string
+}
+
+func (s *SimpleExpansions) Keys() iter.Seq[string] {
+	return maps.Keys(s.Elems)
+}
+
+func (s *SimpleExpansions) Value(k string) (v string, ok bool) {
+	v, ok = s.Elems[k]
+	return
+}
+
+// CompositeExpansions represents a set of expansions to a GN tool call
+// that shares a common set of expansions.
+type CompositeExpansions struct {
+	Common *SimpleExpansions
+	Elems  map[string]string
+}
+
+func (c *CompositeExpansions) Keys() iter.Seq[string] {
+	return func(yield func(string) bool) {
+		seen := make(map[string]struct{})
+		for k := range c.Common.Elems {
+			seen[k] = struct{}{}
+			if !yield(k) {
+				return
+			}
+		}
+		for k := range c.Elems {
+			if _, ok := seen[k]; ok {
+				continue
+			}
+			if !yield(k) {
+				return
+			}
+		}
+	}
+}
+
+func (c *CompositeExpansions) Value(k string) (string, bool) {
+	if v, ok := c.Elems[k]; ok {
+		return v, true
+	}
+	return c.Common.Value(k)
+}
+
 // A RunToolAction represents a call to a tool inside the current toolchain.
 type RunToolAction struct {
 	Tool       string
 	Source     fs.SourceFile
 	Inputs     []fs.SourceFile
 	Output     fs.OutputPath
-	Expansions map[string]string
+	Expansions Expansions
 }
 
 func (r RunToolAction) Ins() []fs.SourceFile { return r.Inputs }

@@ -15,6 +15,11 @@ import (
 
 // TODO: can this be merged with shared_library, static_library?
 func cExecutableResolver(name string, cInputs []fs.SourceFile, ctx graph.ResolverContext) (graph.ResolutionMetadata, error) {
+	sharedExpansions := &graph.SimpleExpansions{Elems: map[string]string{
+		// TODO: fill these out.
+		"cflags":  strings.Join(ctx.ConfigValues.Cflags, " "),
+		"defines": strings.Join(ctx.ConfigValues.Defines, " "),
+	}}
 	var linkInputs []fs.SourceFile
 	for _, source := range cInputs {
 		sourceName := source.Filename()
@@ -29,11 +34,13 @@ func cExecutableResolver(name string, cInputs []fs.SourceFile, ctx graph.Resolve
 			source,
 			[]fs.SourceFile{source},
 			fmt.Sprintf("%s.%s.o", name, sourceBase),
-			map[string]string{
-				// TODO: fill these out.
-				"source_file_part": "",
-				"source_name_part": "",
-				"cflags":           strings.Join(ctx.ConfigValues.Cflags, " "),
+			&graph.CompositeExpansions{
+				Common: sharedExpansions,
+				Elems: map[string]string{
+					// TODO: fill these out.
+					"source_file_part": "",
+					"source_name_part": "",
+				},
 			},
 		)
 		if err != nil {
@@ -72,13 +79,13 @@ func cExecutableResolver(name string, cInputs []fs.SourceFile, ctx graph.Resolve
 		fs.SourceFile{},
 		linkInputs,
 		name,
-		map[string]string{
+		&graph.SimpleExpansions{Elems: map[string]string{
 			// TODO: fill these out.
 			"ldflags":      strings.Join(ctx.ConfigValues.Ldflags, " "),
 			"libs":         "",
 			"frameworks":   "",
 			"swiftmodules": "",
-		},
+		}},
 	)
 	if err != nil {
 		return nil, err
@@ -163,13 +170,13 @@ func rustBinaryResolver(name string, isLibrary bool, rsInputs []fs.SourceFile, c
 		crateRoot,
 		allInputs,
 		outputName,
-		map[string]string{
+		&graph.SimpleExpansions{Elems: map[string]string{
 			"crate_name": crateName,
 			"crate_type": crateType,
 			"externs":    strings.Join(externs, " "),
 			"rustflags":  strings.Join(ctx.ConfigValues.Rustflags, " "),
 			"rustdeps":   "",
-		},
+		}},
 	)
 	if err != nil {
 		return nil, err

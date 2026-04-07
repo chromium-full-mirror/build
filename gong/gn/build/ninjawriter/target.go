@@ -7,7 +7,6 @@ package ninjawriter
 import (
 	"fmt"
 	"io"
-	"maps"
 	"os"
 	"path"
 	"path/filepath"
@@ -56,20 +55,30 @@ build {{.Outs}}: {{.RuleName}} | {{.Ins}}
 //
 // TODO: use io/fs to test expected file outputs?
 func writeTarget(w io.Writer, t *graph.Target, buildSettings *environment.BuildSettings) error {
-	// HACK: right now gong only has a concept of "tool" or "script" actions.
-	// targets that should be written inline right now are:
-	//	- group(), which has 0 actions
-	//	- anything with script calls only
-	//	- anything with copy calls only
-	// so, we'll naively assume that if the target doesn't use tools, write it inline.
-	// There needs to be thought put into a more generic way to decide which targets
-	// will be written inline directly into the toolchain's root ninja files,
-	// versus which targets get their own subninja files, without tight coupling with
-	// the type of the actual targets.
+	// Decide whether this target needs to be written as a subninja, or can be inlined
+	// to avoid extra file writes.
+	//
+	// C++ GN uses a concept of whether a target is "binary" to decide to write a subninja,
+	// which helps localize the long complex compiler/linker args repeated across many
+	// command invocations from spilling into the top-level .ninja files.
+	//
+	// We don't use the same logic since our implementation of targets is more generic
+	// and currently avoids the concept of a "binary" target.
+	//
+	// However, considering the shapes of how non-binary targets in C++ GN are translated
+	// into our generic implementation:
+	//	- group() targets have 0 actions
+	//	- action() targets only declare graph.RunScriptAction
+	//	- copy() targets declare graph.RunToolAction with nil expansions
+	//
+	// We can apply a heuristic of writing a target as a subninja...
 	if slices.ContainsFunc(t.Resolution.Actions, func(action graph.Action) bool {
+		// ... only if that target has graph.RunToolAction declarations with expansions.
 		toolAction, ok := action.(graph.RunToolAction)
-		return ok && toolAction.Tool != "copy"
+		return ok && toolAction.Expansions != nil
 	}) {
+		// TODO: merge the below logic into writeSubninjaTarget, so that this function
+		// becomes much easier to read?
 		targetLabel := t.Label()
 		// TODO: reusing C++ GN's builddir resolution funcs is really clumsy.
 		// can this be improved by adopting io/fs and its FS and SubFS interfaces?
@@ -267,21 +276,24 @@ func writeAction(w io.Writer, t *graph.Target, action graph.Action, buildSetting
 			return err
 		}
 
-		for _, k := range slices.Sorted(maps.Keys(action.Expansions)) {
-			_, err := fmt.Fprintf(w, "  %s =", k)
-			if err != nil {
-				return err
-			}
-			v := action.Expansions[k]
-			if v != "" {
-				_, err = fmt.Fprintf(w, " %s", v)
+		if action.Expansions != nil {
+			// TODO: common expansions should be hoisted to the top of subninja files.
+			for _, k := range slices.Sorted(action.Expansions.Keys()) {
+				_, err := fmt.Fprintf(w, "  %s =", k)
 				if err != nil {
 					return err
 				}
-			}
-			_, err = fmt.Fprintln(w)
-			if err != nil {
-				return err
+				v, ok := action.Expansions.Value(k)
+				if ok && v != "" {
+					_, err = fmt.Fprintf(w, " %s", v)
+					if err != nil {
+						return err
+					}
+				}
+				_, err = fmt.Fprintln(w)
+				if err != nil {
+					return err
+				}
 			}
 		}
 	case graph.RunScriptAction:

@@ -52,10 +52,10 @@ func TestWriteBinaryTarget(t *testing.T) {
 					Source: mustFile(t, "//base/main.cc"),
 					Inputs: []fs.SourceFile{mustFile(t, "//base/main.cc")},
 					Output: mustOutputPath(t, mustSourceDir(t, "//out/Default/"), "obj/base/main.o"),
-					Expansions: map[string]string{
+					Expansions: &graph.SimpleExpansions{Elems: map[string]string{
 						"source_file_part": "main.cc",
 						"source_name_part": "main",
-					},
+					}},
 				},
 				graph.RunToolAction{
 					Tool: "link",
@@ -64,12 +64,12 @@ func TestWriteBinaryTarget(t *testing.T) {
 						mustFile(t, "//out/Default/obj/foo/libfoo.o"),
 					},
 					Output: mustOutputPath(t, mustSourceDir(t, "//out/Default/"), "obj/base/app"),
-					Expansions: map[string]string{
+					Expansions: &graph.SimpleExpansions{Elems: map[string]string{
 						"ldflags":      "",
 						"libs":         "",
 						"frameworks":   "",
 						"swiftmodules": "",
-					},
+					}},
 				},
 			},
 			want: `output_dir = obj
@@ -97,13 +97,13 @@ build obj/base/app: link obj/base/main.o obj/foo/libfoo.o
 						mustFile(t, "//out/Default/obj/bar/libbar.rlib"),
 					},
 					Output: mustOutputPath(t, mustSourceDir(t, "//out/Default/"), "obj/libfoo.rlib"),
-					Expansions: map[string]string{
+					Expansions: &graph.SimpleExpansions{Elems: map[string]string{
 						"crate_name": "foo",
 						"crate_type": "rlib",
 						"rustflags":  "-Cdebuginfo=2",
 						"rustdeps":   "-Ldependency=obj/bar",
 						"externs":    "--extern bar=obj/bar/libbar.rlib",
-					},
+					}},
 				},
 			},
 			want: `output_extension = .rlib
@@ -129,7 +129,7 @@ build obj/libfoo.rlib: rust_rlib ../../src/lib.rs | obj/bar/libbar.rlib
 						mustFile(t, "//src/file with spaces.txt"),
 					},
 					Output:     mustOutputPath(t, mustSourceDir(t, "//out/Default/"), "obj/out file with spaces.txt"),
-					Expansions: map[string]string{},
+					Expansions: nil,
 				},
 			},
 			want: `output_extension = .txt

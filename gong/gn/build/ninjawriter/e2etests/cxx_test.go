@@ -53,8 +53,14 @@ output_dir = obj
 target_output_name = app
 target_out_dir = obj
 
-build obj/app.main.cc.o: cxx ../../main.cc
+build obj/app.main.cc.o: cxx ../../main.cc` +
+				// TODO: cflags, defines, etc. which are shared across all cxx tool
+				// calls should be written to the top of the subninja file. Now that
+				// graph.Expansions exists, we can look for multiple cxx calls with the
+				// same expansions and hoist them to the top of the .ninja file.
+				`
   cflags =
+  defines =
   source_file_part =
   source_name_part =
 build obj/app: link obj/app.main.cc.o
@@ -115,6 +121,7 @@ target_out_dir = obj
 
 build obj/libfoo.lib.cc.o: cxx ../../lib.cc
   cflags =
+  defines =
   source_file_part =
   source_name_part =
 build obj/libfoo.so: solink obj/libfoo.lib.cc.o
@@ -175,6 +182,7 @@ target_out_dir = obj
 
 build obj/libfoo.lib.cc.o: cxx ../../lib.cc
   cflags =
+  defines =
   source_file_part =
   source_name_part =
 build obj/libfoo.a: alink obj/libfoo.lib.cc.o
@@ -233,6 +241,7 @@ target_out_dir = obj
 
 build obj/foo.lib.cc.o: cxx ../../lib.cc
   cflags =
+  defines =
   source_file_part =
   source_name_part =
 build obj/foo.a: alink obj/foo.lib.cc.o
