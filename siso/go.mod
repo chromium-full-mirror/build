@@ -18,7 +18,6 @@ require (
 	github.com/bazelbuild/reclient/api v0.0.0-20240617160057-89d6134e48e5
 	github.com/bazelbuild/remote-apis v0.0.0-20260216160025-715b73f3f9e4
 	github.com/bazelbuild/remote-apis-sdks v0.0.0-20260226204128-f61d3747b896
-	github.com/biogo/hts v1.4.5
 	github.com/golang/glog v1.2.5
 	github.com/google/go-cmp v0.7.0
 	github.com/google/subcommands v1.2.0

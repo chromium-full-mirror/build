@@ -25,7 +25,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/biogo/hts/bgzf"
 	log "github.com/golang/glog"
 	"github.com/klauspost/compress/zstd"
 	"golang.org/x/sync/errgroup"
@@ -59,8 +58,6 @@ type IgnoreFunc func(context.Context, string) bool
 // Option is an option for HashFS.
 type Option struct {
 	StateFile       string // filename that HashFS saves its state to
-	GzipUsesBgzf    bool   // use bgzf for gzip compression
-	CompressZstd    bool   // compress fs state using zstd instead of gzip
 	CompressLevel   int    // compression level (0 = uncompressed, 1 = fastest, 10 = best)
 	CompressThreads int    // number of threads to use for data compression
 	UseMmap         bool   // use mmap for reading/writing state files
@@ -87,8 +84,6 @@ type Option struct {
 // RegisterFlags registers flags for the option.
 func (o *Option) RegisterFlags(flagSet *flag.FlagSet) {
 	flagSet.StringVar(&o.StateFile, "fs_state", defaultStateFile, "fs state filename")
-	flagSet.BoolVar(&o.GzipUsesBgzf, "fs_state_use_bgzf", true, "use bgzf for gzip compression")
-	flagSet.BoolVar(&o.CompressZstd, "fs_state_use_zstd", true, "compress fs state using zstd instead of gzip")
 	flagSet.IntVar(&o.CompressLevel, "fs_state_compression_level", 1, "fs state compression level (1 = fastest, 10 = best)")
 	flagSet.IntVar(&o.CompressThreads, "fs_state_compression_threads", defaultCompressThreads, "number of threads to use for data compression")
 	flagSet.BoolVar(&o.UseMmap, "fs_state_mmap", true, "use memory-mapped I/O for state file reads/writes")
@@ -278,23 +273,9 @@ func loadFile(ctx context.Context, opts Option) ([]byte, error) {
 		return dec.DecodeAll(compressed, nil)
 	}
 	if isGzip(compressed) {
-		clog.Infof(ctx, "fs_state is gzip compressed")
-		if opts.GzipUsesBgzf {
-			r, err := bgzf.NewReader(bytes.NewReader(compressed), 0)
-			if err == nil {
-				clog.Infof(ctx, "using bgzf for faster gzip decompression")
-				defer r.Close()
-				return io.ReadAll(r)
-			} else if errors.Is(err, bgzf.ErrNoBlockSize) {
-				// bgzf refuses to decompress regular gzip files, so we need to
-				// check for this case and retry with a regular gzip reader.
-				clog.Infof(ctx, "not bgzf, retrying as regular gzip")
-			} else {
-				return nil, err
-			}
-		}
 		// Backward compatibility: decompress old gzip/bgzf state files.
 		// Go's gzip.Reader handles both plain gzip and bgzf (concatenated gzip members).
+		clog.Infof(ctx, "fs_state is gzip compressed (legacy format, %d bytes)", len(compressed))
 		r, err := gzip.NewReader(bytes.NewReader(compressed))
 		if err != nil {
 			return nil, err
@@ -1052,6 +1033,19 @@ func saveFile(ctx context.Context, data []byte, opts Option) (retErr error) {
 		compressThreads = defaultCompressThreads
 	}
 
+	level := zstd.EncoderLevelFromZstd(opts.CompressLevel)
+	clog.Infof(ctx, "compressing fs_state with zstd (level %d, %d threads, %d bytes)", opts.CompressLevel, compressThreads, len(data))
+
+	comp, err := newZstdCompressor(len(data), level, compressThreads)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err := comp.Close(); err != nil && retErr == nil {
+			retErr = err
+		}
+	}()
+
 	f, err := os.CreateTemp(filepath.Dir(opts.StateFile), filepath.Base(opts.StateFile)+".*")
 	if err != nil {
 		return err
@@ -1062,84 +1056,43 @@ func saveFile(ctx context.Context, data []byte, opts Option) (retErr error) {
 		}
 	}()
 
-	if opts.CompressZstd {
-		level := zstd.EncoderLevelFromZstd(opts.CompressLevel)
-		clog.Infof(ctx, "compressing fs_state with zstd (level %d, %d threads, %d bytes)", opts.CompressLevel, compressThreads, len(data))
-
-		comp, err := newZstdCompressor(len(data), level, compressThreads)
+	if opts.UseMmap {
+		// Mmap the temp file at worst-case size and compress directly
+		// into the mmap'd region, avoiding a heap-allocated output buffer.
+		out, closer, err := mmapWriteFile(f, comp.MaxCompressedSize())
 		if err != nil {
+			_ = os.Remove(f.Name())
 			return err
 		}
-		defer func() {
-			if err := comp.Close(); err != nil && retErr == nil {
-				retErr = err
-			}
-		}()
 
-		if opts.UseMmap {
-			// Mmap the temp file at worst-case size and compress directly
-			// into the mmap'd region, avoiding a heap-allocated output buffer.
-			out, closer, err := mmapWriteFile(f, comp.MaxCompressedSize())
-			if err != nil {
-				_ = os.Remove(f.Name())
-				return err
-			}
+		actualSize, err := comp.Compress(out, data)
+		if err != nil {
+			closer()
+			return err
+		}
+		clog.Infof(ctx, "compressed %d -> %d bytes (%.1fx)", len(data), actualSize, float64(len(data))/float64(actualSize))
 
-			actualSize, err := comp.Compress(out, data)
-			if err != nil {
-				closer()
-				return err
-			}
-			clog.Infof(ctx, "compressed %d -> %d bytes (%.1fx)", len(data), actualSize, float64(len(data))/float64(actualSize))
+		if err := closer(); err != nil {
+			return err
+		}
 
-			if err := closer(); err != nil {
-				return err
-			}
-
-			// Truncate from worst-case to actual compressed size.
-			if err := os.Truncate(f.Name(), int64(actualSize)); err != nil {
-				return err
-			}
-		} else {
-			out := make([]byte, comp.MaxCompressedSize())
-			actualSize, err := comp.Compress(out, data)
-			if err != nil {
-				return err
-			}
-			clog.Infof(ctx, "compressed %d -> %d bytes (%.1fx)", len(data), actualSize, float64(len(data))/float64(actualSize))
-
-			if _, err := f.Write(out[:actualSize]); err != nil {
-				f.Close()
-				return err
-			}
-			if err := f.Close(); err != nil {
-				return err
-			}
+		// Truncate from worst-case to actual compressed size.
+		if err := os.Truncate(f.Name(), int64(actualSize)); err != nil {
+			return err
 		}
 	} else {
-		clog.Infof(ctx, "using gzip compression (level %d)", opts.CompressLevel)
-		var w io.WriteCloser
-		if opts.GzipUsesBgzf {
-			clog.Infof(ctx, "using bgzf for faster gzip compression (threads=%d)", compressThreads)
-			w, err = bgzf.NewWriterLevel(f, opts.CompressLevel, compressThreads)
-		} else {
-			w, err = gzip.NewWriterLevel(f, opts.CompressLevel)
-		}
+		out := make([]byte, comp.MaxCompressedSize())
+		actualSize, err := comp.Compress(out, data)
 		if err != nil {
+			return err
+		}
+		clog.Infof(ctx, "compressed %d -> %d bytes (%.1fx)", len(data), actualSize, float64(len(data))/float64(actualSize))
+
+		if _, err := f.Write(out[:actualSize]); err != nil {
 			f.Close()
 			return err
 		}
-		if _, err := w.Write(data); err != nil {
-			f.Close()
-			return err
-		}
-		err = w.Close()
-		if err != nil {
-			f.Close()
-			return err
-		}
-		err = f.Close()
-		if err != nil {
+		if err := f.Close(); err != nil {
 			return err
 		}
 	}

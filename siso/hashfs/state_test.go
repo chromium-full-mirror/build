@@ -6,14 +6,17 @@ package hashfs_test
 
 import (
 	"bytes"
+	"compress/gzip"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
 	"errors"
 	"fmt"
 	"io/fs"
+	mathrand "math/rand/v2"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"testing"
 	"time"
@@ -73,7 +76,6 @@ func TestLoadMissingStateFile(t *testing.T) {
 
 	opts := hashfs.Option{
 		StateFile:     filepath.Join(dir, ".siso_fs_state"),
-		CompressZstd:  true,
 		CompressLevel: 1,
 	}
 
@@ -97,7 +99,6 @@ func TestLoadSaveEmptyState(t *testing.T) {
 
 	opts := hashfs.Option{
 		StateFile:     filepath.Join(dir, ".siso_fs_state"),
-		CompressZstd:  true,
 		CompressLevel: 1,
 	}
 
@@ -127,126 +128,91 @@ func TestLoadSave(t *testing.T) {
 	ctx := t.Context()
 	savedState := mockState(t)
 
-	// Test with both gzip and zstd compression.
-	tests := map[string]bool{
-		"gzip": false,
-		"zstd": true,
+	dir := t.TempDir()
+	dir, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		t.Fatal(err)
 	}
-	for name, useZstd := range tests {
-		t.Run(name, func(t *testing.T) {
-			t.Parallel()
 
-			dir := t.TempDir()
-			dir, err := filepath.EvalSymlinks(dir)
-			if err != nil {
-				t.Fatal(err)
-			}
+	opts := hashfs.Option{
+		StateFile:     filepath.Join(dir, ".siso_fs_state"),
+		CompressLevel: 1,
+		UseMmap:       true,
+	}
 
-			opts := hashfs.Option{
-				StateFile:     filepath.Join(dir, ".siso_fs_state"),
-				CompressZstd:  useZstd,
-				CompressLevel: 1,
-				UseMmap:       true,
-			}
+	// Save a mock state.
+	if err := hashfs.Save(ctx, savedState, opts); err != nil {
+		t.Fatalf("Save(...)=%v; want nil", err)
+	}
 
-			// Save a mock state.
-			t.Logf("save with useZstd=%v", opts.CompressZstd)
-			if err := hashfs.Save(ctx, savedState, opts); err != nil {
-				t.Errorf("Save(...)=%v; want nil", err)
-			}
+	// Verify the file starts with a zstd skippable frame (parallel format).
+	b, err := os.ReadFile(opts.StateFile)
+	if err != nil {
+		t.Fatalf("Could not read %q: %v", opts.StateFile, err)
+	}
+	// Skippable frame magic is 0x184D2A50 (little-endian: 0x50 0x2A 0x4D 0x18).
+	if got, want := b[:4], []byte{0x50, 0x2a, 0x4d, 0x18}; !bytes.Equal(got, want) {
+		t.Errorf("Save(...) magic = %x, want %x (zstd skippable frame)", got, want)
+	}
 
-			// Check if the file was really saved with the chosen compression method by checking
-			// whether the first bytes are the correct magic bytes.
-			b, err := os.ReadFile(opts.StateFile)
-			if err != nil {
-				t.Fatalf("Could not read %q: %v", opts.StateFile, err)
-			}
-			if useZstd {
-				// Skippable frame magic is 0x184D2A50 (little-endian: 0x50 0x2A 0x4D 0x18).
-				if diff := cmp.Diff([]byte{0x50, 0x2a, 0x4d, 0x18}, b[:4]); diff != "" {
-					t.Errorf("Save(...) missing zstd skippable frame header, diff -want +got:\n%s", diff)
-				}
-			} else {
-				if diff := cmp.Diff([]byte{0x1f, 0x8b}, b[:2]); diff != "" {
-					t.Errorf("Save(...) missing gzip header, diff -want +got:\n%s", diff)
-				}
-			}
+	// Load the saved state.
+	loadedState, err := hashfs.Load(ctx, opts)
+	if err != nil {
+		t.Fatalf("Load(...)=%v, %v; want nil err", loadedState, err)
+	}
 
-			// Load the saved state.
-			t.Logf("load with useZstd=%v", opts.CompressZstd)
-			loadedState, err := hashfs.Load(ctx, opts)
-			if err != nil {
-				t.Errorf("Load(...)=%v, %v; want nil err", loadedState, err)
-			}
-
-			// Compare the loaded state with the saved state.
-			if diff := cmp.Diff(savedState, loadedState, protocmp.Transform()); diff != "" {
-				t.Errorf("Load(...) diff -want +got:\n%s", diff)
-			}
-
-			// Simulate the user flipping the -fs_state_use_zstd flag and verify that we can
-			// still load the state file.
-			opts.CompressZstd = !opts.CompressZstd
-			t.Logf("load with useZstd=%v", opts.CompressZstd)
-			loadedState, err = hashfs.Load(ctx, opts)
-			if err != nil {
-				t.Errorf("Load(...)=%v, %v; want nil err", loadedState, err)
-			}
-
-			// Compare the loaded state with the saved state.
-			if diff := cmp.Diff(savedState, loadedState, protocmp.Transform()); diff != "" {
-				t.Errorf("Load(...) diff -want +got:\n%s", diff)
-			}
-		})
+	// Compare the loaded state with the saved state.
+	if diff := cmp.Diff(savedState, loadedState, protocmp.Transform()); diff != "" {
+		t.Errorf("Load(...) diff -want +got:\n%s", diff)
 	}
 }
 
-// TestBgzfCompatibility tests that a state file saved with plain gzip compression can be
-// loaded with bgzf compression enabled, and vice versa.
-func TestBgzfCompatibility(t *testing.T) {
+// TestLoadLegacyGzip tests that old gzip-compressed state files can still be loaded.
+func TestLoadLegacyGzip(t *testing.T) {
 	t.Parallel()
 
 	ctx := t.Context()
 	savedState := mockState(t)
 
-	tests := map[string]bool{
-		"save_bgzf_load_gzip": true,
-		"save_gzip_load_bgzf": false,
+	dir := t.TempDir()
+	dir, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		t.Fatal(err)
 	}
-	for name, saveWithBgzf := range tests {
-		t.Run(name, func(t *testing.T) {
-			t.Parallel()
 
-			dir := t.TempDir()
-			dir, err := filepath.EvalSymlinks(dir)
-			if err != nil {
-				t.Fatal(err)
-			}
+	stateFile := filepath.Join(dir, ".siso_fs_state")
 
-			opts := hashfs.Option{
-				StateFile:     filepath.Join(dir, ".siso_fs_state"),
-				GzipUsesBgzf:  saveWithBgzf,
-				CompressZstd:  false,
-				CompressLevel: 3,
-			}
+	// Manually create a gzip-compressed state file (simulating an old siso version).
+	data, err := proto.Marshal(savedState)
+	if err != nil {
+		t.Fatalf("proto.Marshal(...)=%v; want nil", err)
+	}
+	var buf bytes.Buffer
+	gw, err := gzip.NewWriterLevel(&buf, gzip.BestSpeed)
+	if err != nil {
+		t.Fatalf("gzip.NewWriterLevel(...)=%v; want nil", err)
+	}
+	if _, err := gw.Write(data); err != nil {
+		t.Fatalf("gzip.Write(...)=%v; want nil", err)
+	}
+	if err := gw.Close(); err != nil {
+		t.Fatalf("gzip.Close(...)=%v; want nil", err)
+	}
+	if err := os.WriteFile(stateFile, buf.Bytes(), 0o644); err != nil {
+		t.Fatalf("WriteFile(...)=%v; want nil", err)
+	}
 
-			// Save a mock state.
-			if err := hashfs.Save(ctx, savedState, opts); err != nil {
-				t.Errorf("Save(...)=%v; want nil", err)
-			}
-
-			// Load it using the opposite bgzf setting.
-			opts.GzipUsesBgzf = !opts.GzipUsesBgzf
-			loadedState, err := hashfs.Load(ctx, opts)
-			if err != nil {
-				t.Errorf("Load(...)=%v, %v; want nil err", loadedState, err)
-			}
-
-			// Compare the loaded state with the saved state.
-			if diff := cmp.Diff(savedState, loadedState, protocmp.Transform()); diff != "" {
-				t.Errorf("Load(...) diff -want +got:\n%s", diff)
-			}
-		})
+	// Loading the gzip file should work via backward compat.
+	opts := hashfs.Option{
+		StateFile:     stateFile,
+		CompressLevel: 1,
+	}
+	loadedState, err := hashfs.Load(ctx, opts)
+	if err != nil {
+		t.Fatalf("Load(...)=%v, %v; want nil err", loadedState, err)
+	}
+	if diff := cmp.Diff(savedState, loadedState, protocmp.Transform()); diff != "" {
+		t.Errorf("Load(...) diff -want +got:\n%s", diff)
 	}
 }
 
@@ -261,7 +227,6 @@ func TestState(t *testing.T) {
 
 	opts := hashfs.Option{
 		StateFile:     filepath.Join(dir, ".siso_fs_state"),
-		CompressZstd:  true,
 		CompressLevel: 1,
 	}
 
@@ -305,7 +270,6 @@ func TestState_Dir(t *testing.T) {
 
 	opts := hashfs.Option{
 		StateFile:     filepath.Join(dir, ".siso_fs_state"),
-		CompressZstd:  true,
 		CompressLevel: 1,
 	}
 
@@ -367,7 +331,6 @@ func TestState_BadDirEntry(t *testing.T) {
 
 	opts := hashfs.Option{
 		StateFile:     filepath.Join(dir, ".siso_fs_state"),
-		CompressZstd:  true,
 		CompressLevel: 1,
 	}
 	mtime := time.Now()
@@ -471,7 +434,6 @@ func TestState_Symlink(t *testing.T) {
 
 	opts := hashfs.Option{
 		StateFile:     filepath.Join(dir, ".siso_fs_state"),
-		CompressZstd:  true,
 		CompressLevel: 1,
 	}
 
@@ -569,81 +531,259 @@ func TestState_Symlink(t *testing.T) {
 	}()
 }
 
-func createBenchmarkState(tb testing.TB, dir string) *pb.State {
-	for i := range 60000 {
-		err := os.WriteFile(filepath.Join(dir, fmt.Sprintf("%d.txt", i)), nil, 0644)
-		if err != nil {
-			tb.Fatal(err)
-		}
-	}
-	ctx := tb.Context()
-	hashFS, err := hashfs.New(ctx, hashfs.Option{})
-	if err != nil {
-		tb.Fatal(err)
-	}
-	defer hashFS.Close(ctx)
-	err = hashFS.WaitReady(ctx)
-	if err != nil {
-		tb.Fatalf("WaitReady=%v; want nil", err)
+// createLargeBenchmarkState builds a protobuf state that approximates real
+// Chromium build state data in terms of field population rates, path
+// structure, and entry variety. The goal is to produce compression ratios
+// close to those observed on real state files.
+func createLargeBenchmarkState(tb testing.TB, numEntries int) *pb.State {
+	tb.Helper()
+
+	state := &pb.State{}
+	state.Entries = make([]*pb.Entry, 0, numEntries)
+
+	// Use a deterministic seed so benchmarks are reproducible.
+	rng := mathrand.New(mathrand.NewPCG(42, 0))
+
+	now := time.Now().UnixNano()
+
+	// Word list for generating Chromium-like path components.
+	// Directory names and file stems are built by combining 2-3 words.
+	words := []string{
+		"access", "audio", "base", "bindings", "browser", "build",
+		"cache", "chrome", "client", "common", "content", "controller",
+		"core", "decoder", "device", "engine", "event", "extension",
+		"factory", "file", "frame", "gpu", "handler", "host",
+		"impl", "input", "layer", "loader", "manager", "media",
+		"model", "network", "platform", "renderer", "resource",
+		"scheduler", "service", "stream", "test", "view",
 	}
 
-	fsys := hashFS.FileSystem(ctx, dir)
-	err = fs.WalkDir(fsys, ".", func(path string, d fs.DirEntry, err error) error {
-		return err
+	// pick returns a word from the list using the next random bits.
+	pick := func() string {
+		return words[rng.IntN(len(words))]
+	}
+
+	// combine joins 2-3 words with underscores to build a path component.
+	combine := func() string {
+		if rng.IntN(3) == 0 {
+			return pick() + "_" + pick() + "_" + pick()
+		}
+		return pick() + "_" + pick()
+	}
+
+	exts := []string{
+		".h", ".h", ".h", ".h", ".h", // ~26%
+		".o", ".o", ".o", ".o", // ~20%
+		".cc", ".cc", ".cc", // ~17%
+		".js", ".ts", ".ninja", ".pak", ".info", ".cpp",
+		".rs", ".gn", ".json", ".c", ".map", ".html",
+		".rsp", ".idl", ".css", ".py", ".java", ".xml",
+		".svg", ".png", ".txt",
+	}
+
+	const prefix = "/home/user/chromium/src/"
+
+	// Pre-generate hash pools with realistic reuse rates from real data:
+	//   CmdHash:  ~90k unique values shared across ~178k entries (49% reuse)
+	//   Action:   ~80k unique values shared across ~134k entries (40% reuse)
+	//   Digest:   ~336k unique values across ~374k entries (10% reuse)
+	//   EdgeHash: ~91k unique values across ~94k entries (4% reuse, nearly unique)
+	cmdHashPool := make([][32]byte, 90_000)
+	for j := range cmdHashPool {
+		cmdHashPool[j] = sha256.Sum256(fmt.Appendf(nil, "cmd-pool-%d", j))
+	}
+	actionHashPool := make([][32]byte, 80_000)
+	for j := range actionHashPool {
+		actionHashPool[j] = sha256.Sum256(fmt.Appendf(nil, "action-pool-%d", j))
+	}
+
+	// Generate entries in groups that share a directory, like real build
+	// targets that produce multiple .o files in the same obj/ subdirectory.
+	// This creates the long shared-prefix patterns that compressors exploit.
+	seen := make(map[string]bool, numEntries)
+	i := 0
+	for i < numEntries {
+		// Build a directory path: top/sub/mid, optionally with a leaf.
+		top := pick()
+		sub := pick()
+		mid := combine()
+		isBuildOutput := rng.IntN(100) < 52
+
+		// Each group has 5-30 files in the same directory, sharing the
+		// same CmdHash and often the same Action (like a real build target).
+		groupSize := 5 + rng.IntN(26)
+		groupCmdHash := cmdHashPool[rng.IntN(len(cmdHashPool))]
+		groupActionHash := actionHashPool[rng.IntN(len(actionHashPool))]
+
+		for g := range groupSize {
+			if i >= numEntries {
+				break
+			}
+
+			stem := combine()
+			ext := exts[rng.IntN(len(exts))]
+
+			var name string
+			if isBuildOutput {
+				if rng.IntN(100) < 60 {
+					name = fmt.Sprintf("%sout/debug/obj/%s/%s/%s/%s/%s%s", prefix, top, sub, mid, pick(), stem, ext)
+				} else {
+					name = fmt.Sprintf("%sout/debug/obj/%s/%s/%s/%s%s", prefix, top, sub, mid, stem, ext)
+				}
+			} else {
+				if rng.IntN(100) < 60 {
+					name = fmt.Sprintf("%s%s/%s/%s/%s/%s%s", prefix, top, sub, mid, pick(), stem, ext)
+				} else {
+					name = fmt.Sprintf("%s%s/%s/%s/%s%s", prefix, top, sub, mid, stem, ext)
+				}
+			}
+
+			// Skip duplicates — append group-local index if needed.
+			if seen[name] {
+				name = fmt.Sprintf("%s_%d", name[:len(name)-len(ext)], g) + ext
+				if seen[name] {
+					continue
+				}
+			}
+			seen[name] = true
+
+			entry := &pb.Entry{
+				Id:          &pb.FileID{ModTime: now - rng.Int64N(7*24*3600)*1e9},
+				Name:        name,
+				UpdatedTime: now - rng.Int64N(3600)*1e9,
+			}
+
+			// 99.8% have a digest (10% reuse rate — mostly unique).
+			if rng.IntN(1000) < 998 {
+				h := sha256.Sum256(fmt.Appendf(nil, "content-%d-%d", i, g))
+				entry.Digest = &pb.Digest{
+					Hash:      fmt.Sprintf("%x", h),
+					SizeBytes: rng.Int64N(10 * 1024 * 1024),
+				}
+			}
+
+			// CmdHash 47.6%: entries in the same group share the hash.
+			if rng.IntN(1000) < 476 {
+				entry.CmdHash = groupCmdHash[:]
+			}
+			// EdgeHash 25.1%: nearly unique per entry.
+			if rng.IntN(1000) < 251 {
+				h := sha256.Sum256(fmt.Appendf(nil, "edge-%d-%d", i, g))
+				entry.EdgeHash = h[:]
+			}
+			// Action 35.7%: entries in the same group share the action.
+			if rng.IntN(1000) < 357 {
+				entry.Action = &pb.Digest{
+					Hash:      fmt.Sprintf("%x", groupActionHash),
+					SizeBytes: rng.Int64N(1024 * 1024),
+				}
+			}
+
+			if rng.IntN(1000) < 5 {
+				entry.IsExecutable = true
+			}
+			if rng.IntN(1000) < 119 {
+				entry.Local = true
+			}
+			if rng.IntN(1000) < 2 {
+				entry.Target = fmt.Sprintf("../target_%d", i%50)
+			}
+
+			state.Entries = append(state.Entries, entry)
+			i++
+		}
+	}
+
+	// Sort entries by name, matching real data where entries are ordered
+	// alphabetically. This is critical for compression: adjacent entries
+	// share long path prefixes, giving LZ77 much better matches.
+	sort.Slice(state.Entries, func(i, j int) bool {
+		return state.Entries[i].Name < state.Entries[j].Name
 	})
-	if err != nil {
-		tb.Fatal(err)
-	}
-	st := hashFS.State(ctx)
-	return st
+
+	return state
 }
 
-func BenchmarkSetState(b *testing.B) {
-	dir := b.TempDir()
-	st := createBenchmarkState(b, dir)
-	ctx := b.Context()
-
-	b.ReportAllocs()
-
-	for b.Loop() {
-		hashFS, err := hashfs.New(ctx, hashfs.Option{})
-		if err != nil {
-			b.Fatal(err)
-		}
-		err = hashFS.SetState(ctx, st)
-		if err != nil {
-			hashFS.Close(ctx)
-			b.Fatal(err)
-		}
-		hashFS.Close(ctx)
-	}
-}
-
-func BenchmarkLoadState(b *testing.B) {
-	dir := b.TempDir()
-	ctx := b.Context()
-	st := createBenchmarkState(b, dir)
-
-	opts := hashfs.Option{
-		StateFile:     filepath.Join(dir, ".siso_fs_state"),
-		CompressZstd:  true,
-		CompressLevel: 1,
-	}
-
-	err := hashfs.Save(ctx, st, opts)
+func BenchmarkCompression(b *testing.B) {
+	st := createLargeBenchmarkState(b, 375_000)
+	data, err := proto.Marshal(st)
 	if err != nil {
 		b.Fatal(err)
 	}
-	origState := st
-	b.ReportAllocs()
+	b.Logf("uncompressed state size: %d bytes (%.1f MB, %d entries)", len(data), float64(len(data))/(1024*1024), len(st.Entries))
 
-	for b.Loop() {
-		st, err := hashfs.Load(ctx, opts)
-		if err != nil {
-			b.Fatal(err)
-		}
-		if len(st.Entries) != len(origState.Entries) {
-			b.Fatalf("mismatch entries got=%d want=%d", len(st.Entries), len(origState.Entries))
+	levels := []int{1}
+	maxThreads := runtime.GOMAXPROCS(0)
+	var threadCounts []int
+	for n := 1; n <= maxThreads; n *= 2 {
+		threadCounts = append(threadCounts, n)
+	}
+	if threadCounts[len(threadCounts)-1] != maxThreads {
+		threadCounts = append(threadCounts, maxThreads)
+	}
+
+	type compressionCase struct {
+		name string
+		opts hashfs.Option
+	}
+	var cases []compressionCase
+	for _, level := range levels {
+		for _, threads := range threadCounts {
+			cases = append(cases, compressionCase{
+				name: fmt.Sprintf("zstd/level=%d/threads=%d", level, threads),
+				opts: hashfs.Option{
+					CompressLevel:   level,
+					CompressThreads: threads,
+					UseMmap:         true,
+				},
+			})
 		}
 	}
+
+	ctx := b.Context()
+
+	b.Run("save", func(b *testing.B) {
+		for _, tc := range cases {
+			b.Run(tc.name, func(b *testing.B) {
+				benchDir := b.TempDir()
+				opts := tc.opts
+				opts.StateFile = filepath.Join(benchDir, ".siso_fs_state")
+				b.ReportAllocs()
+				for b.Loop() {
+					if err := hashfs.Save(ctx, st, opts); err != nil {
+						b.Fatal(err)
+					}
+				}
+				fi, err := os.Stat(opts.StateFile)
+				if err != nil {
+					b.Fatal(err)
+				}
+				b.ReportMetric(float64(fi.Size())/(1024*1024), "compressed-MB")
+				b.ReportMetric(float64(len(data))/float64(fi.Size()), "ratio")
+			})
+		}
+	})
+
+	b.Run("load", func(b *testing.B) {
+		for _, tc := range cases {
+			b.Run(tc.name, func(b *testing.B) {
+				benchDir := b.TempDir()
+				opts := tc.opts
+				opts.StateFile = filepath.Join(benchDir, ".siso_fs_state")
+				if err := hashfs.Save(ctx, st, opts); err != nil {
+					b.Fatal(err)
+				}
+				b.ReportAllocs()
+				for b.Loop() {
+					loaded, err := hashfs.Load(ctx, opts)
+					if err != nil {
+						b.Fatal(err)
+					}
+					if len(loaded.Entries) != len(st.Entries) {
+						b.Fatalf("mismatch entries got=%d want=%d", len(loaded.Entries), len(st.Entries))
+					}
+				}
+			})
+		}
+	})
 }
