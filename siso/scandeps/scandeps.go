@@ -126,7 +126,7 @@ type Request struct {
 }
 
 // Scan scans C/C++ source/header files for req to get C/C++ dependencies.
-func (s *ScanDeps) Scan(ctx context.Context, execRoot string, req Request) (_ []string, retErr error) {
+func (s *ScanDeps) Scan(ctx context.Context, workspaceRoot string, req Request) (_ []string, retErr error) {
 	defer func() {
 		if retErr != nil && s.clangScandeps == clangModeErr && !errors.Is(retErr, ErrRequireClangScandeps) {
 			retErr = fmt.Errorf("%w: %v", ErrRequireClangScandeps, retErr)
@@ -146,7 +146,7 @@ func (s *ScanDeps) Scan(ctx context.Context, execRoot string, req Request) (_ []
 	// framework, or some system include dirs may also use precomputed tree
 	// if precomputed tree is defined for the dir (in addDir later).
 
-	scanner := s.fs.scanner(ctx, execRoot, s.inputDeps, precomputedTrees)
+	scanner := s.fs.scanner(ctx, workspaceRoot, s.inputDeps, precomputedTrees)
 	defer scanner.Close()
 	scanner.setMacros(req.Defines)
 

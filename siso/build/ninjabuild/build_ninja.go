@@ -105,7 +105,7 @@ func CheckManifest(ctx context.Context, filename string, buildPath *build.Path, 
 	err = rebuildManifest(ctx, graph, *bopts)
 	if errors.Is(err, build.ErrManifestModified) {
 		started := time.Now()
-		err := hashFS.Refresh(ctx, buildPath.ExecRoot)
+		err := hashFS.Refresh(ctx)
 		if err != nil {
 			clog.Warningf(ctx, "%s modified. failed to refresh hashfs %s: %v", filename, time.Since(started), err)
 			return err
@@ -278,7 +278,7 @@ func doBuild(ctx context.Context, graph *Graph, bopts build.Options, nopts RunNi
 		bopts.ResultstoreUploader.HashFS = bopts.HashFS
 		bopts.ResultstoreUploader.REAPIClient = bopts.REAPIClient
 
-		ents, err := bopts.HashFS.Entries(ctx, filepath.Join(bopts.Path.ExecRoot, bopts.Path.Dir), []string{filepath.Join(stateDir, ".siso_config"), filepath.Join(stateDir, ".siso_filegroups")})
+		ents, err := bopts.HashFS.Entries(ctx, filepath.Join(bopts.Path.WorkspaceRoot, bopts.Path.Dir), []string{filepath.Join(stateDir, ".siso_config"), filepath.Join(stateDir, ".siso_filegroups")})
 		if err != nil {
 			return stats, err
 		}

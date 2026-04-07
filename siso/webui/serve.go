@@ -147,7 +147,7 @@ type WebuiServer struct {
 	port              int
 	staticFS          fs.FS
 	sseServer         *sseServer
-	execRoot          string
+	workspaceRoot     string
 	defaultOutdir     string
 	defaultOutdirRoot string
 	defaultOutdirSub  string
@@ -165,17 +165,17 @@ type runningStepInfo struct {
 	started  time.Time
 }
 
-// ErrExecrootNotExist represents error when exec root was not found.
-type ErrExecrootNotExist struct {
+// ErrWorkspaceNotExist represents error when workspace was not found.
+type ErrWorkspaceNotExist struct {
 	err error
 }
 
-func (f ErrExecrootNotExist) Unwrap() error {
+func (f ErrWorkspaceNotExist) Unwrap() error {
 	return f.err
 }
 
-func (f ErrExecrootNotExist) Error() string {
-	return fmt.Sprintf("failed to find execroot: %v", f.err)
+func (f ErrWorkspaceNotExist) Error() string {
+	return fmt.Sprintf("failed to find workspace: %v", f.err)
 }
 
 // ErrManifestNotExist represents error when build manifest was not found.
@@ -320,16 +320,16 @@ type ServerConfig struct {
 // NewServer inits a webui server.
 func NewServer(ctx context.Context, cfg ServerConfig) (*WebuiServer, error) {
 
-	_, execRoot, dir, err := ninjabuild.InitDir(ctx, cfg.NinjaDir)
+	_, workspaceRoot, dir, err := ninjabuild.InitDir(ctx, cfg.NinjaDir)
 	if err != nil {
-		return nil, &ErrExecrootNotExist{err}
+		return nil, &ErrWorkspaceNotExist{err}
 	}
 	s := WebuiServer{
 		sisoVersion:      cfg.Version,
 		localDevelopment: cfg.LocalDevelopment,
 		staticFS:         fs.FS(content),
 		sseServer:        newSseServer(),
-		execRoot:         execRoot,
+		workspaceRoot:    workspaceRoot,
 		defaultOutdir:    dir,
 		outdirMetrics:    make(map[string]*outdirInfo),
 		port:             cfg.Port,
@@ -339,7 +339,7 @@ func NewServer(ctx context.Context, cfg ServerConfig) (*WebuiServer, error) {
 	}
 
 	// Preload default outdir.
-	defaultOutdirInfo, err := loadOutdirInfo(execRoot, dir, cfg.ManifestPath)
+	defaultOutdirInfo, err := loadOutdirInfo(workspaceRoot, dir, cfg.ManifestPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to preload outdir: %w", err)
 	}
@@ -350,9 +350,9 @@ func NewServer(ctx context.Context, cfg ServerConfig) (*WebuiServer, error) {
 	// Find other outdirs.
 	// TODO: support out*/*
 	// TODO(b/361703735): can use defaultOutdirParent?
-	matches, err := filepath.Glob(filepath.Join(s.execRoot, "out/*"))
+	matches, err := filepath.Glob(filepath.Join(s.workspaceRoot, "out/*"))
 	if err != nil {
-		return nil, fmt.Errorf("failed to glob %s: %w", s.execRoot, err)
+		return nil, fmt.Errorf("failed to glob %s: %w", s.workspaceRoot, err)
 	}
 	for _, match := range matches {
 		m, err := os.Stat(match)
@@ -360,9 +360,9 @@ func NewServer(ctx context.Context, cfg ServerConfig) (*WebuiServer, error) {
 			return nil, fmt.Errorf("failed to stat outdir %s: %w", match, err)
 		}
 		if m.IsDir() {
-			outsub, err := filepath.Rel(filepath.Join(s.execRoot, defaultOutdirInfo.outroot), match)
+			outsub, err := filepath.Rel(filepath.Join(s.workspaceRoot, defaultOutdirInfo.outroot), match)
 			if err != nil {
-				return nil, fmt.Errorf("failed to make %s execroot relative: %w", match, err)
+				return nil, fmt.Errorf("failed to make %s workspace relative: %w", match, err)
 			}
 			s.outsubs = append(s.outsubs, outsub)
 		}

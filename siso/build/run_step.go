@@ -159,7 +159,7 @@ func (b *Builder) runStep(ctx context.Context, step *Step) (err error) {
 		// store handler generated outputs to local disk.
 		// better to upload to CAS, or store in fs_state?
 		clog.Infof(ctx, "outputs[handler] %d", len(step.cmd.Outputs))
-		err = b.hashFS.Flush(ctx, step.cmd.ExecRoot, step.cmd.Outputs)
+		err = b.hashFS.Flush(ctx, step.cmd.WorkspaceRoot, step.cmd.Outputs)
 		if err == nil {
 			b.plan.completeStep(ctx, step)
 			return nil
@@ -175,7 +175,7 @@ func (b *Builder) runStep(ctx context.Context, step *Step) (err error) {
 	defer func() {
 		if err != nil && !errors.Is(err, context.Canceled) {
 			// force flush to disk
-			ferr := b.hashFS.Flush(ctx, step.cmd.ExecRoot, []string{step.cmd.RSPFile})
+			ferr := b.hashFS.Flush(ctx, step.cmd.WorkspaceRoot, []string{step.cmd.RSPFile})
 			clog.Warningf(ctx, "failed to exec %v: preserve rsp=%s flush:%v", err, step.cmd.RSPFile, ferr)
 			return
 		}

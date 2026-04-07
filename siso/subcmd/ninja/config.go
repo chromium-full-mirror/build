@@ -295,19 +295,19 @@ func (c *Command) initConfigFlags(targets []string) map[string]string {
 // initConfig initializes the build configuration by loading and parsing the main starlark file.
 // If no Starlark config exists, it returns a default config that runs all steps locally.
 // It also captures `args.gn` content if available.
-func (c *Command) initConfig(ctx context.Context, execRoot string, targets []string) (*buildconfig.Config, error) {
+func (c *Command) initConfig(ctx context.Context, workspaceRoot string, targets []string) (*buildconfig.Config, error) {
 	flags := c.initConfigFlags(targets)
 	if c.configFilename == "" {
 		return buildconfig.NewDefault(flags), nil
 	}
-	configRepoDir := filepath.Join(execRoot, c.ninjaDir.ConfigRepoDir)
+	configRepoDir := filepath.Join(workspaceRoot, c.ninjaDir.ConfigRepoDir)
 	if _, err := os.Stat(configRepoDir); errors.Is(err, fs.ErrNotExist) {
 		clog.Infof(ctx, "no config repo dir %s, using default config", configRepoDir)
 		return buildconfig.NewDefault(flags), nil
 	}
 	cfgrepos := map[string]fs.FS{
 		"config":           os.DirFS(configRepoDir),
-		"config_overrides": os.DirFS(filepath.Join(execRoot, ".siso_remote")),
+		"config_overrides": os.DirFS(filepath.Join(workspaceRoot, ".siso_remote")),
 	}
 	config, err := buildconfig.New(ctx, c.configFilename, flags, cfgrepos)
 	if err != nil {
@@ -329,7 +329,7 @@ func (c *Command) initConfig(ctx context.Context, execRoot string, targets []str
 // changeToWorkdir establishes the execution root and working directory.
 // It changes the current directory to working directory, detects the
 // execution root, and updates path configurations to be relative to the root.
-// It returns build path (exec root and dir).
+// It returns build path (workspace and dir).
 func (c *Command) changeToWorkdir(ctx context.Context) (*build.Path, error) {
 	// The formatting of this string, complete with funny quotes, is
 	// so Emacs can properly identify that the cwd has changed for
@@ -339,20 +339,20 @@ func (c *Command) changeToWorkdir(ctx context.Context) (*build.Path, error) {
 	if c.subtool == "" && c.ninjaDir.Dir != "." {
 		ui.Default.PrintLines(fmt.Sprintf("ninja: Entering directory `%s'\n\n", c.ninjaDir.Dir))
 	}
-	startDir, execRoot, dir, err := ninjabuild.InitDir(ctx, c.ninjaDir)
+	startDir, workspaceRoot, dir, err := ninjabuild.InitDir(ctx, c.ninjaDir)
 	if err != nil {
 		return nil, err
 	}
 	c.startDir = startDir
-	clog.Infof(ctx, "working_directory in exec_root: %s", dir)
-	if c.startDir != execRoot {
-		ui.Default.Printf("exec_root=%s dir=%s\n", execRoot, dir)
+	clog.Infof(ctx, "working directory in workspace: %s", dir)
+	if c.startDir != workspaceRoot {
+		ui.Default.Printf("workspace=%s dir=%s\n", workspaceRoot, dir)
 	}
 	_, err = os.Stat(c.fname)
 	if errors.Is(err, fs.ErrNotExist) {
-		return nil, fmt.Errorf("%s not found in %s. need `-C <dir>`?", c.fname, filepath.Join(execRoot, dir))
+		return nil, fmt.Errorf("%s not found in %s. need `-C <dir>`?", c.fname, filepath.Join(workspaceRoot, dir))
 	}
-	return build.NewPath(execRoot, dir), err
+	return build.NewPath(workspaceRoot, dir), err
 }
 
 // resolveFlags validates and adjusts flag values after they have been parsed.
@@ -628,7 +628,7 @@ func initLock(ctx context.Context, dryRun bool, stateDir string) (func(), error)
 // initFSMonitor initializes a file system monitor like Watchman, based on
 // the `SISO_FSMONITOR` environment variable.
 // It returns an `fs.FSMonitor` implementation.
-func initFSMonitor(ctx context.Context, execRoot string) hashfs.FSMonitor {
+func initFSMonitor(ctx context.Context, workspaceRoot string) hashfs.FSMonitor {
 	fsmonitor := os.Getenv("SISO_FSMONITOR")
 	if fsmonitor == "" {
 		return nil
@@ -648,7 +648,7 @@ func initFSMonitor(ctx context.Context, execRoot string) hashfs.FSMonitor {
 	fsm := strings.TrimSuffix(filepath.Base(fsmonitor), filepath.Ext(fsmonitor))
 	switch fsm {
 	case "watchman":
-		wm, err := watchmanutil.New(ctx, fsmonitorPath, execRoot)
+		wm, err := watchmanutil.New(ctx, fsmonitorPath, workspaceRoot)
 		if err != nil {
 			clog.Warningf(ctx, "failed to initialize watchman: %v", err)
 			ui.Default.Errorf("%s", ui.SGR(ui.BackgroundRed, fmt.Sprintf("SISO_FSMONITOR=watchman: failed %v\n", err)))

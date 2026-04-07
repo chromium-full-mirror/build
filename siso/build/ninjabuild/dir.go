@@ -43,10 +43,10 @@ func defaultConfigRepoDir() string {
 // RegisterFlags registers dir flags in fs.
 func (f *DirFlag) RegisterFlags(fs *flag.FlagSet) {
 	fs.StringVar(&f.Dir, "C", ".", "ninja running directory (chdir before run)")
-	fs.StringVar(&f.ConfigRepoDir, "config_repo_dir", defaultConfigRepoDir(), "config repo directory (relative to exec root)")
+	fs.StringVar(&f.ConfigRepoDir, "config_repo_dir", defaultConfigRepoDir(), "config repo directory (relative to workspace)")
 }
 
-// InitDir prepares the environment for a build by resolving the exec root.
+// InitDir prepares the environment for a build by resolving the workspace.
 //
 // It resolves the current working directory (evaluating symlinks),
 // changes the working directory to f.Dir, and
@@ -54,12 +54,12 @@ func (f *DirFlag) RegisterFlags(fs *flag.FlagSet) {
 //
 // It returns:
 // - startDir: The absolute, symlink-free original directory.
-// - execRoot: The absolute path to the execution root.
-// - dir: The relative path from execRoot to the new working directory.
+// - workspaceRoot: The absolute path to the workspace.
+// - dir: The relative path from workspaceRoot to the new working directory.
 //
-// current working directory becomes execRoot/dir, where
-// execRoot/f.ConfigRepoDir exists.
-func InitDir(ctx context.Context, f DirFlag) (startDir, execRoot, dir string, _ error) {
+// current working directory becomes workspaceRoot/dir, where
+// workspaceRoot/f.ConfigRepoDir exists.
+func InitDir(ctx context.Context, f DirFlag) (startDir, workspaceRoot, dir string, _ error) {
 	wd, err := os.Getwd()
 	if err != nil {
 		return "", "", "", err
@@ -70,7 +70,7 @@ func InitDir(ctx context.Context, f DirFlag) (startDir, execRoot, dir string, _ 
 	}
 	clog.Infof(ctx, "wd: %s", wd)
 	startDir = wd
-	execRoot = startDir
+	workspaceRoot = startDir
 	err = os.Chdir(f.Dir)
 	if err != nil {
 		return "", "", "", err
@@ -88,23 +88,23 @@ func InitDir(ctx context.Context, f DirFlag) (startDir, execRoot, dir string, _ 
 		cwd = realCWD
 	}
 	if !filepath.IsAbs(f.ConfigRepoDir) {
-		execRoot = detectExecRoot(cwd, f.ConfigRepoDir)
+		workspaceRoot = detectWorkspaceRoot(cwd, f.ConfigRepoDir)
 	}
-	rdir, err := filepath.Rel(execRoot, cwd)
+	rdir, err := filepath.Rel(workspaceRoot, cwd)
 	if err != nil {
 		return "", "", "", err
 	}
 	if !filepath.IsLocal(rdir) {
-		return "", "", "", fmt.Errorf("dir %q is out of exec root %q", cwd, execRoot)
+		return "", "", "", fmt.Errorf("dir %q is outside of workspace %q", cwd, workspaceRoot)
 	}
-	return startDir, execRoot, rdir, nil
+	return startDir, workspaceRoot, rdir, nil
 }
 
-// detectExecRoot detects exec root from path given marker.
+// detectWorkspaceRoot detects workspace from path given marker.
 // If the marker is not found in any parent directory, it falls back
-// to using cwd as the exec root. This allows simple Ninja projects
+// to using cwd as the workspace. This allows simple Ninja projects
 // without Starlark configuration to work.
-func detectExecRoot(cwd, marker string) string {
+func detectWorkspaceRoot(cwd, marker string) string {
 	dir := cwd
 	for {
 		_, err := os.Stat(filepath.Join(dir, marker))
@@ -113,7 +113,7 @@ func detectExecRoot(cwd, marker string) string {
 		}
 		parent := filepath.Dir(dir)
 		if parent == dir {
-			// Marker not found; use cwd as exec root.
+			// Marker not found; use cwd as workspace.
 			return cwd
 		}
 		dir = parent

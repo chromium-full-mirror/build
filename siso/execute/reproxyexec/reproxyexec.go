@@ -205,7 +205,7 @@ func createRequest(ctx context.Context, cmd *execute.Cmd, execTimeout, reclientT
 		if strings.Contains(in, ":") {
 			return false
 		}
-		_, err := cmd.HashFS.Stat(ctx, cmd.ExecRoot, in)
+		_, err := cmd.HashFS.Stat(ctx, cmd.WorkspaceRoot, in)
 		return err == nil
 	}
 	for _, in := range cmd.REProxyConfig.Inputs {
@@ -235,7 +235,7 @@ func createRequest(ctx context.Context, cmd *execute.Cmd, execTimeout, reclientT
 
 	c := &cpb.Command{
 		Identifiers: reqID,
-		ExecRoot:    cmd.ExecRoot,
+		ExecRoot:    cmd.WorkspaceRoot,
 		Input: &cpb.InputSpec{
 			Inputs: inputs,
 		},
@@ -417,7 +417,7 @@ func processResponse(ctx context.Context, cmd *execute.Cmd, response *ppb.RunRes
 	// update outputs file only step succeeded.
 	updatedTime := time.Now()
 	if remoteSuccess {
-		ds := &reproxyOutputsDataSource{execRoot: cmd.ExecRoot, osfs: cmd.HashFS.OS}
+		ds := &reproxyOutputsDataSource{workspaceRoot: cmd.WorkspaceRoot, osfs: cmd.HashFS.OS}
 		return cmd.RecordOutputs(ctx, ds, updatedTime)
 	}
 	return cmd.RecordOutputsFromLocal(ctx, updatedTime)
@@ -448,12 +448,12 @@ func resultErr(response *ppb.RunResponse) error {
 // This allows cmd.RecordOutputs() to skip calculating
 // digests.
 type reproxyOutputsDataSource struct {
-	execRoot string
-	osfs     *osfs.OSFS
+	workspaceRoot string
+	osfs          *osfs.OSFS
 }
 
 func (ds reproxyOutputsDataSource) Source(_ context.Context, _ digest.Digest, fname string) digest.Source {
-	path := filepath.Join(ds.execRoot, fname)
+	path := filepath.Join(ds.workspaceRoot, fname)
 	return ds.osfs.FileSource(path, -1)
 }
 

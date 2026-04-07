@@ -165,16 +165,16 @@ func loadBuildMetrics(metricsPath string) (*buildMetrics, error) {
 }
 
 // loadOutdirInfo attempts to load all metrics found in the outdir.
-func loadOutdirInfo(execRoot, outdirPath, manifestPath string) (*outdirInfo, error) {
+func loadOutdirInfo(workspaceRoot, outdirPath, manifestPath string) (*outdirInfo, error) {
 	start := time.Now()
 	fmt.Fprintf(os.Stderr, "load data at %s...", outdirPath)
 	defer func() {
 		fmt.Fprintf(os.Stderr, " returned in %v\n", time.Since(start))
 	}()
 
-	// Get path relative to execroot.
-	// TODO: support paths non-relative to execroot?
-	execRel, err := filepath.Rel(execRoot, outdirPath)
+	// Get path relative to workspace.
+	// TODO: support paths non-relative to workspace?
+	execRel, err := filepath.Rel(workspaceRoot, outdirPath)
 	if err != nil {
 		return nil, fmt.Errorf("couldn't get outdir relative to execdir: %w", err)
 	}
@@ -188,7 +188,7 @@ func loadOutdirInfo(execRoot, outdirPath, manifestPath string) (*outdirInfo, err
 	// TODO(b/361703735): make sure this works on windows? https://chromium-review.googlesource.com/c/infra/infra/+/5803123/comment/502308d3_ac05bf91/
 	outroot, outsub := filepath.Split(execRel)
 	if outroot == "" || strings.Contains(outsub, "/") {
-		return nil, fmt.Errorf("outdir must match pattern `execroot/outroot/outsub`, others are not supported yet")
+		return nil, fmt.Errorf("outdir must match pattern `workspace/outroot/outsub`, others are not supported yet")
 	}
 	outroot = filepath.Clean(outroot)
 
@@ -242,14 +242,14 @@ func loadOutdirInfo(execRoot, outdirPath, manifestPath string) (*outdirInfo, err
 
 // getOutdirForRequest lazy-loads outdir for the request, returning cached result if possible.
 func (s *WebuiServer) getOutdirForRequest(r *http.Request) (*outdirInfo, error) {
-	abs := filepath.Join(s.execRoot, r.PathValue("outroot"), r.PathValue("outsub"))
+	abs := filepath.Join(s.workspaceRoot, r.PathValue("outroot"), r.PathValue("outsub"))
 	s.metricsMu.Lock()
 	defer s.metricsMu.Unlock()
 	outdirInfo, ok := s.outdirMetrics[abs]
 	if !ok {
 		var err error
 		// TODO: support override manifest path (i.e. other than build.ninja?)
-		outdirInfo, err = loadOutdirInfo(s.execRoot, abs, "build.ninja")
+		outdirInfo, err = loadOutdirInfo(s.workspaceRoot, abs, "build.ninja")
 		if err != nil {
 			return nil, fmt.Errorf("couldn't load outdir %s: %w", abs, err)
 		}
@@ -266,7 +266,7 @@ func (s *WebuiServer) handleOutdirReload(w http.ResponseWriter, r *http.Request)
 	}
 
 	// loadOutdirInfo will always override existing cached data.
-	newOutdirInfo, err := loadOutdirInfo(s.execRoot, outdirInfo.path, outdirInfo.manifestPath)
+	newOutdirInfo, err := loadOutdirInfo(s.workspaceRoot, outdirInfo.path, outdirInfo.manifestPath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed to reload outdir: %v", err)
 		w.WriteHeader(http.StatusInternalServerError)

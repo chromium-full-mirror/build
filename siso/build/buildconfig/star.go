@@ -22,8 +22,8 @@ const (
 	cmdFieldEnvs = "envs"
 	// cmd dir. string
 	cmdFieldDir = "dir"
-	// cmd exec_root. string
-	cmdFieldExecRoot = "exec_root"
+	// cmd workspace_root. string
+	cmdFieldWorkspaceRoot = "workspace_root"
 	// cmd deps. string
 	cmdFieldDeps = "deps"
 	// cmd inputs. list
@@ -45,13 +45,13 @@ func packCmd(cmd *execute.Cmd, expandedInputs func() []string) (*starlarkstruct.
 		return nil, err
 	}
 	return starlarkstruct.FromStringDict(starlark.String("cmd"), map[string]starlark.Value{
-		cmdFieldArgs:       packTuple(cmd.Args),
-		cmdFieldEnvs:       envs,
-		cmdFieldDir:        starlark.String(cmd.Dir),
-		cmdFieldExecRoot:   starlark.String(cmd.ExecRoot),
-		cmdFieldDeps:       starlark.String(cmd.Deps),
-		cmdFieldInputs:     packList(cmd.Inputs),
-		cmdFieldToolInputs: packList(cmd.ToolInputs),
+		cmdFieldArgs:          packTuple(cmd.Args),
+		cmdFieldEnvs:          envs,
+		cmdFieldDir:           starlark.String(cmd.Dir),
+		cmdFieldWorkspaceRoot: starlark.String(cmd.WorkspaceRoot),
+		cmdFieldDeps:          starlark.String(cmd.Deps),
+		cmdFieldInputs:        packList(cmd.Inputs),
+		cmdFieldToolInputs:    packList(cmd.ToolInputs),
 		cmdFieldExpandedInputs: starlark.NewBuiltin(cmdFieldExpandedInputs, func(thread *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
 			log.V(1).Infof("cmd.expanded_inputs")
 			return packList(expandedInputs()), nil

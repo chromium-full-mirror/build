@@ -49,7 +49,7 @@ type StepDef struct {
 	pure      bool
 
 	// from depfile/depslog
-	deps   iter.Seq[string] // exec root relative
+	deps   iter.Seq[string] // workspace relative
 	deperr error
 
 	envfile string // for ninja -t msvc -e <envfile> --
@@ -337,7 +337,7 @@ func (s *StepDef) Binding(name string) string {
 	return s.edge.Binding(name)
 }
 
-// Depfile returns exec-root relative depfile path or empty if not set.
+// Depfile returns workspace relative depfile path or empty if not set.
 func (s *StepDef) Depfile(ctx context.Context) string {
 	depfile := s.edge.UnescapedBinding("depfile")
 	if depfile == "" {
@@ -346,7 +346,7 @@ func (s *StepDef) Depfile(ctx context.Context) string {
 	return s.globals.path.MaybeFromWD(ctx, depfile)
 }
 
-// Rspfile returns exec-root relative rspfile path or empty if not set.
+// Rspfile returns workspace relative rspfile path or empty if not set.
 func (s *StepDef) Rspfile(ctx context.Context) string {
 	rspfile := s.edge.UnescapedBinding("rspfile")
 	if rspfile == "" {
@@ -532,13 +532,13 @@ func depInputs(ctx context.Context, s *StepDef) (iter.Seq[string], error) {
 			// e.g. rule gn.
 			// generator runs locally, so believe a local file
 			// rather than a file in hashfs.
-			s.globals.hashFS.Forget(ctx, s.globals.path.ExecRoot, []string{df})
+			s.globals.hashFS.Forget(ctx, s.globals.path.WorkspaceRoot, []string{df})
 		}
-		_, err := s.globals.hashFS.Stat(ctx, s.globals.path.ExecRoot, df)
+		_, err := s.globals.hashFS.Stat(ctx, s.globals.path.WorkspaceRoot, df)
 		if err != nil {
 			return nil, fmt.Errorf("%w: no depfile %s: %w", build.ErrMissingDeps, depfile, err)
 		}
-		fsys := s.globals.hashFS.FileSystem(ctx, s.globals.path.ExecRoot)
+		fsys := s.globals.hashFS.FileSystem(ctx, s.globals.path.WorkspaceRoot)
 		deps, err = makeutil.ParseDepsFile(ctx, fsys, df)
 		if err != nil {
 			return nil, fmt.Errorf("%w: failed to load depfile %s: %w", build.ErrMissingDeps, df, err)
@@ -611,7 +611,7 @@ func fixInputs(ctx context.Context, stepDef *StepDef, inputs, excludes []string)
 	newInputs := make([]string, 0, len(inputs))
 	for _, in := range inputs {
 		if stepDef.globals.phony[in] {
-			_, err := stepDef.globals.hashFS.Stat(ctx, stepDef.globals.path.ExecRoot, in)
+			_, err := stepDef.globals.hashFS.Stat(ctx, stepDef.globals.path.WorkspaceRoot, in)
 			if err != nil {
 				if errors.Is(err, fs.ErrNotExist) {
 					if log.V(1) {

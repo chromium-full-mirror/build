@@ -192,7 +192,7 @@ func updateFilegroups(ctx context.Context, config *buildconfig.Config, buildPath
 func Load(ctx context.Context, fname string, buildPath *build.Path) (*ninjautil.State, error) {
 	started := time.Now()
 	state := ninjautil.NewState()
-	state.AddBinding("exec_root", buildPath.ExecRoot)
+	state.AddBinding("workspace_root", buildPath.WorkspaceRoot)
 	state.AddBinding("working_directory", buildPath.Dir)
 	p := ninjautil.NewManifestParser(state)
 	err := p.Load(ctx, fname)
@@ -242,7 +242,7 @@ func (g *Graph) Reload(ctx context.Context) error {
 	eg.Go(func() error {
 		// need to refresh cached entries as `gn gen` updated files
 		// but ninja manifest doesn't know what files are updated.
-		return g.globals.hashFS.Refresh(ctx, g.globals.path.ExecRoot)
+		return g.globals.hashFS.Refresh(ctx)
 	})
 	eg.Go(func() error {
 		var err error
@@ -265,7 +265,7 @@ func (g *Graph) Reload(ctx context.Context) error {
 // Reset resets graph status and hashfs.
 func (g *Graph) Reset(ctx context.Context) error {
 	// need to refresh hashfs to clear dirty state.
-	err := g.globals.hashFS.Refresh(ctx, g.globals.path.ExecRoot)
+	err := g.globals.hashFS.Refresh(ctx)
 	if err != nil {
 		return err
 	}
@@ -333,7 +333,7 @@ func (g *Graph) initGlobals(ctx context.Context) {
 		g.globals.executables[f] = true
 		absPath := f
 		if !filepath.IsAbs(absPath) {
-			absPath = filepath.Join(g.globals.path.ExecRoot, f)
+			absPath = filepath.Join(g.globals.path.WorkspaceRoot, f)
 		}
 		absPath = filepath.ToSlash(absPath)
 		hfsExecutables[absPath] = true
@@ -474,7 +474,7 @@ func (g *Graph) SpellcheckTarget(t string) (string, error) {
 	return g.globals.nstate.SpellcheckTarget(t)
 }
 
-// TargetPath returns exec-root relative path of the target.
+// TargetPath returns workspace relative path of the target.
 func (g *Graph) TargetPath(ctx context.Context, target build.Target) (string, error) {
 	node, ok := g.globals.nstate.LookupNode(int(target))
 	if !ok {
@@ -496,7 +496,7 @@ func (g *globals) targetPath(node *ninjautil.Node) string {
 	return p
 }
 
-// Edge returns a new Edge to build target (exec-root relative), needed for next.
+// Edge returns a new Edge to build target (workspace relative), needed for next.
 // top-level target will use nil for next.
 func (g *Graph) Edge(ctx context.Context, target build.Target, next build.StepDef) (*build.Edge, error) {
 	n, ok := g.globals.nstate.LookupNode(int(target))
@@ -584,7 +584,7 @@ func (g *Graph) StepLimits(ctx context.Context) map[string]int {
 func (g *Graph) CleanDead(ctx context.Context) (int, int, error) {
 	started := time.Now()
 	var deads []string
-	dir := filepath.Join(g.globals.path.ExecRoot, g.globals.path.Dir)
+	dir := filepath.Join(g.globals.path.WorkspaceRoot, g.globals.path.Dir)
 	genFiles := g.globals.hashFS.PreviouslyGeneratedFiles()
 	for _, genFile := range genFiles {
 		rel, err := filepath.Rel(dir, genFile)

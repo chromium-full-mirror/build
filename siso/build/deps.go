@@ -31,7 +31,7 @@ type depsProcessor interface {
 	DepsFastCmd(context.Context, *Builder, *execute.Cmd) (*execute.Cmd, error)
 
 	// fix step.cmd and returns deps inputs.
-	// paths are execroot relative.
+	// paths are workspace relative.
 	DepsCmd(context.Context, *Builder, *Step) ([]string, error)
 
 	// collects deps after cmd run.
@@ -110,7 +110,7 @@ func depsExpandInputs(ctx context.Context, b *Builder, step *Step) {
 	ctx, span := trace.NewSpan(ctx, "deps-expand-inputs")
 	defer span.Close(nil)
 
-	fsys := b.hashFS.FileSystem(ctx, filepath.Join(step.cmd.ExecRoot, step.cmd.Dir))
+	fsys := b.hashFS.FileSystem(ctx, filepath.Join(step.cmd.WorkspaceRoot, step.cmd.Dir))
 
 	// deps=gcc,msvc with sources doesn't need to expand inputs.
 	switch step.cmd.Deps {
@@ -146,7 +146,7 @@ func depsExpandInputs(ctx context.Context, b *Builder, step *Step) {
 				continue
 			}
 		}
-		if _, err := b.hashFS.Stat(ctx, b.path.ExecRoot, in); err != nil {
+		if _, err := b.hashFS.Stat(ctx, b.path.WorkspaceRoot, in); err != nil {
 			clog.Warningf(ctx, "deps stat error %s: %v", in, err)
 			continue
 		}
@@ -157,7 +157,7 @@ func depsExpandInputs(ctx context.Context, b *Builder, step *Step) {
 			continue
 		}
 		seen[in] = true
-		if _, err := b.hashFS.Stat(ctx, b.path.ExecRoot, in); err != nil {
+		if _, err := b.hashFS.Stat(ctx, b.path.WorkspaceRoot, in); err != nil {
 			clog.Warningf(ctx, "deps stat error %s: %v", in, err)
 			continue
 		}
@@ -244,7 +244,7 @@ func fixInputsByDeps(ctx context.Context, b *Builder, stepInputs, depsIns []stri
 	ctx, span := trace.NewSpan(ctx, "fix-inputs-by-deps")
 	defer span.Close(nil)
 	span.SetAttr("deps-inputs", len(depsIns))
-	entries, err := b.hashFS.Entries(ctx, b.path.ExecRoot, depsIns)
+	entries, err := b.hashFS.Entries(ctx, b.path.WorkspaceRoot, depsIns)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get entries: %w", err)
 	}
@@ -270,11 +270,11 @@ func fixInputsByDeps(ctx context.Context, b *Builder, stepInputs, depsIns []stri
 
 func checkDepfile(ctx context.Context, b *Builder, step *Step) error {
 	// need to write depfile on disk even if output_local_strategy skips downloading. b/355099718
-	err := b.hashFS.Flush(ctx, b.path.ExecRoot, []string{step.cmd.Depfile})
+	err := b.hashFS.Flush(ctx, b.path.WorkspaceRoot, []string{step.cmd.Depfile})
 	if err != nil {
 		return fmt.Errorf("failed to fetch depfile %q: %w", step.cmd.Depfile, err)
 	}
-	fsys := b.hashFS.FileSystem(ctx, b.path.ExecRoot)
+	fsys := b.hashFS.FileSystem(ctx, b.path.WorkspaceRoot)
 	deps, err := makeutil.ParseDepsFile(ctx, fsys, step.cmd.Depfile)
 	if err != nil {
 		return fmt.Errorf("failed to parse depfile %q: %w", step.cmd.Depfile, err)
@@ -313,13 +313,13 @@ func checkDeps(ctx context.Context, b *Builder, step *Step, deps []string) error
 		}
 		// all dep (== inputs) should exist just after step ran.
 		input := b.path.MaybeFromWD(ctx, dep)
-		fi, err := b.hashFS.Stat(ctx, b.path.ExecRoot, input)
+		fi, err := b.hashFS.Stat(ctx, b.path.WorkspaceRoot, input)
 		if errors.Is(err, fs.ErrNotExist) {
 			// file may be read by handler and not found
 			// and generated after that (e.g. gn_logs.txt)
 			// forget and check again.
-			b.hashFS.Forget(ctx, b.path.ExecRoot, []string{input})
-			fi, err = b.hashFS.Stat(ctx, b.path.ExecRoot, input)
+			b.hashFS.Forget(ctx, b.path.WorkspaceRoot, []string{input})
+			fi, err = b.hashFS.Stat(ctx, b.path.WorkspaceRoot, input)
 		}
 		if err != nil {
 			return fmt.Errorf("deps input %q not exist: %w", dep, err)

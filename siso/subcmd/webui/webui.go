@@ -64,8 +64,8 @@ func (c *Command) Execute(ctx context.Context, flagSet *flag.FlagSet, _ ...any) 
 		ManifestPath:     c.fname,
 	})
 	if err != nil {
-		if execrootNotExist, ok := errors.AsType[*webui.ErrExecrootNotExist](err); ok {
-			fmt.Fprintf(os.Stderr, "%v: need `-config_repo_dir <dir>` and/or `-C <dir>`?\n", execrootNotExist)
+		if workspaceNotExist, ok := errors.AsType[*webui.ErrWorkspaceNotExist](err); ok {
+			fmt.Fprintf(os.Stderr, "%v: need `-config_repo_dir <dir>` and/or `-C <dir>`?\n", workspaceNotExist)
 		} else if manifestNotExist, ok := errors.AsType[*webui.ErrManifestNotExist](err); ok {
 			fmt.Fprintf(os.Stderr, "%v: need `-C <dir>` and/or `-f <manifest>`?\n", manifestNotExist)
 		} else {

@@ -60,7 +60,7 @@ type Graph interface {
 	// SpellcheckTarget returns the most similar target from given target.
 	SpellcheckTarget(string) (string, error)
 
-	// TargetPath returns exec-root relative path of target.
+	// TargetPath returns workspace relative path of target.
 	TargetPath(context.Context, Target) (string, error)
 
 	// Edge creates new Edge for the target.
@@ -73,7 +73,7 @@ type Graph interface {
 	// InputDeps returns input dependencies.
 	// input dependencies is a map from input path or label to
 	// other files or labels needed for the key.
-	// path is exec root relative and label contains ':'.
+	// path is workspace relative and label contains ':'.
 	// it's "input_deps" in Starlark config.
 	InputDeps(context.Context) map[string][]string
 
@@ -622,16 +622,16 @@ func newScheduler(ctx context.Context, opt schedulerOption) *scheduler {
 	}
 }
 
-// mark marks target (exec root relative) as source file.
+// mark marks target (workspace relative) as source file.
 func (s *scheduler) mark(ctx context.Context, graph Graph, target Target, next StepDef) error {
 	fname, err := graph.TargetPath(ctx, target)
 	if err != nil {
 		return err
 	}
-	fi, err := s.hashFS.Stat(ctx, s.path.ExecRoot, fname)
+	fi, err := s.hashFS.Stat(ctx, s.path.WorkspaceRoot, fname)
 	if err == nil && fi.Target() != "" {
 		// resolve symlink for source file.
-		fsys := s.hashFS.FileSystem(ctx, s.path.ExecRoot)
+		fsys := s.hashFS.FileSystem(ctx, s.path.WorkspaceRoot)
 		_, err = fsys.Stat(fname)
 	}
 	if err != nil {
@@ -908,9 +908,9 @@ func (p *plan) dump(ctx context.Context, graph Graph) {
 }
 
 func suggestTargets(ctx context.Context, sched *scheduler, graph Graph, args ...string) []string {
-	rel, err := filepath.Rel(filepath.Join(sched.path.ExecRoot, sched.path.Dir), sched.path.ExecRoot)
+	rel, err := filepath.Rel(filepath.Join(sched.path.WorkspaceRoot, sched.path.Dir), sched.path.WorkspaceRoot)
 	if err != nil {
-		clog.Warningf(ctx, "failed to get rel to exec root: %v", err)
+		clog.Warningf(ctx, "failed to get rel to workspace: %v", err)
 		return nil
 	}
 	var suggests []string
@@ -922,7 +922,7 @@ func suggestTargets(ctx context.Context, sched *scheduler, graph Graph, args ...
 			continue
 		}
 		target := strings.TrimSuffix(arg, "^")
-		_, err = sched.hashFS.Stat(ctx, sched.path.ExecRoot, filepath.Join(sched.path.Dir, target))
+		_, err = sched.hashFS.Stat(ctx, sched.path.WorkspaceRoot, filepath.Join(sched.path.Dir, target))
 		if err == nil {
 			// just missing ^?
 			target := filepath.ToSlash(target) + "^"
@@ -932,7 +932,7 @@ func suggestTargets(ctx context.Context, sched *scheduler, graph Graph, args ...
 				continue
 			}
 		}
-		_, err = sched.hashFS.Stat(ctx, sched.path.ExecRoot, target)
+		_, err = sched.hashFS.Stat(ctx, sched.path.WorkspaceRoot, target)
 		if err == nil {
 			// wrong relative dir?
 			target := filepath.ToSlash(filepath.Join(rel, target) + "^")
@@ -991,7 +991,7 @@ func (e *ensureOutDirs) run(ctx context.Context, path *Path) {
 			}
 			dir := filepath.ToSlash(filepath.Dir(fname))
 			if !filepath.IsAbs(dir) {
-				dir = filepath.ToSlash(filepath.Join(path.ExecRoot, dir))
+				dir = filepath.ToSlash(filepath.Join(path.WorkspaceRoot, dir))
 			}
 			_, found := e.knownDirs[dir]
 			if found {

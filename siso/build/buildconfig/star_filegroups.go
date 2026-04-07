@@ -114,7 +114,7 @@ func parseFilegroupUpdater(key string, v starlark.Value) (filegroupUpdater, erro
 // When a given filegroup is valid, it is reused.
 // Otherwise, gets the file list by the filegroup operation. e.g. glob.
 func (cfg *Config) UpdateFilegroups(ctx context.Context, hashFS *hashfs.HashFS, buildPath *build.Path, filegroups Filegroups) (Filegroups, error) {
-	fsysExecRoot := hashFS.FileSystem(ctx, buildPath.ExecRoot)
+	fsysWorkspace := hashFS.FileSystem(ctx, buildPath.WorkspaceRoot)
 	// fsysRoot is used only when the filegroups are absolute paths to
 	// support CrOS chroot builds.
 	fsysRoot := hashFS.FileSystem(ctx, "/")
@@ -133,7 +133,7 @@ func (cfg *Config) UpdateFilegroups(ctx context.Context, hashFS *hashfs.HashFS, 
 				etag:  filegroups.ETags[k],
 				files: filegroups.Filegroups[k],
 			}
-			fsys := fsysExecRoot
+			fsys := fsysWorkspace
 			if filepath.IsAbs(k) {
 				fsys = fsysRoot
 			}

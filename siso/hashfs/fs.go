@@ -1091,7 +1091,7 @@ func (hfs *HashFS) Entries(ctx context.Context, root string, inputs []string) ([
 				if strings.HasPrefix(tname, root+"/") {
 					break
 				}
-				// symlink to out of exec root (e.g. ../.cipd/pkgs/..)
+				// symlink to outside of workspace (e.g. ../.cipd/pkgs/..)
 				name = tname
 				tname = ""
 				var ok bool
@@ -1184,8 +1184,8 @@ func (e UpdateEntry) String() string {
 	return buf.String()
 }
 
-// Update updates cache information for entries under execRoot.
-func (hfs *HashFS) Update(ctx context.Context, execRoot string, entries []UpdateEntry) error {
+// Update updates cache information for entries under workspaceRoot.
+func (hfs *HashFS) Update(ctx context.Context, workspaceRoot string, entries []UpdateEntry) error {
 	ctx, span := trace.NewSpan(ctx, "fs-update")
 	defer span.Close(nil)
 	select {
@@ -1221,11 +1221,11 @@ func (hfs *HashFS) Update(ctx context.Context, execRoot string, entries []Update
 			updates = append(updates, *ent.Entry)
 		}
 		if len(updates) > 0 {
-			err := hfs.opt.ArtFS.ArtfsInsert(ctx, execRoot, updates)
+			err := hfs.opt.ArtFS.ArtfsInsert(ctx, workspaceRoot, updates)
 			if err != nil {
-				clog.Warningf(ctx, "artfs insert %d under %s: %v", len(updates), execRoot, err)
+				clog.Warningf(ctx, "artfs insert %d under %s: %v", len(updates), workspaceRoot, err)
 			} else {
-				clog.Infof(ctx, "artfs insert %d under %s", len(updates), execRoot)
+				clog.Infof(ctx, "artfs insert %d under %s", len(updates), workspaceRoot)
 				// artfsfs inserted the update, so we can assume
 				// these files exist locally.
 				for _, i := range updateIdx {
@@ -1239,12 +1239,12 @@ func (hfs *HashFS) Update(ctx context.Context, execRoot string, entries []Update
 
 	for _, ent := range entries {
 		clog.Infof(ctx, "update %v", ent)
-		fname := filepath.Join(execRoot, ent.Name)
+		fname := filepath.Join(workspaceRoot, ent.Name)
 		fname = filepath.ToSlash(fname)
 		if ent.Entry == nil {
 			// UpdateEntry was captured by RetrieveUpdateEntriesFromLocal
 			// so the entry should exists in hfs.directory.
-			e, _, _, ok := hfs.dirLookup(ctx, execRoot, ent.Name)
+			e, _, _, ok := hfs.dirLookup(ctx, workspaceRoot, ent.Name)
 			if !ok {
 				clog.Warningf(ctx, "failed to update: no entry %s", ent.Name)
 				continue
@@ -1528,19 +1528,19 @@ func (noDataSource) Source(_ context.Context, d digest.Digest, fname string) dig
 }
 
 // NeedFlush returns whether the fname need to be flushed based on OutputLocal option.
-func (hfs *HashFS) NeedFlush(ctx context.Context, execRoot, fname string) bool {
-	return hfs.opt.OutputLocal(ctx, makeFullpath(execRoot, fname))
+func (hfs *HashFS) NeedFlush(ctx context.Context, workspaceRoot, fname string) bool {
+	return hfs.opt.OutputLocal(ctx, makeFullpath(workspaceRoot, fname))
 }
 
-// Flush flushes cached information for files under execRoot to local disk.
-func (hfs *HashFS) Flush(ctx context.Context, execRoot string, files []string) error {
+// Flush flushes cached information for files under workspaceRoot to local disk.
+func (hfs *HashFS) Flush(ctx context.Context, workspaceRoot string, files []string) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	ctx, span := trace.NewSpan(ctx, "flush")
 	defer span.Close(nil)
 	eg, ctx := errgroup.WithContext(ctx)
 	for _, file := range files {
-		fname := makeFullpath(execRoot, file)
+		fname := makeFullpath(workspaceRoot, file)
 		e, _, _, ok := hfs.directory.lookup(ctx, fname)
 		if !ok {
 			// If it doesn't exist in memory, just use local disk as is.
@@ -1611,8 +1611,8 @@ func (hfs *HashFS) Flush(ctx context.Context, execRoot string, files []string) e
 	return eg.Wait()
 }
 
-// Refresh refreshes cached file entries under execRoot.
-func (hfs *HashFS) Refresh(ctx context.Context, execRoot string) error {
+// Refresh refreshes cached file entries.
+func (hfs *HashFS) Refresh(ctx context.Context) error {
 	// TODO: optimize?
 	state := hfs.State(ctx)
 	// reset loaded as it reset entry data.

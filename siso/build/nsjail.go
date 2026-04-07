@@ -38,7 +38,7 @@ func newNSJailExecutor(ctx context.Context, b *Builder, executor execute.Executo
 		return nil, errors.New("nsjail_workdir is not specified")
 	}
 	if !filepath.IsAbs(workDir) {
-		workDir = filepath.Join(b.path.ExecRoot, workDir)
+		workDir = filepath.Join(b.path.WorkspaceRoot, workDir)
 	}
 	err := os.MkdirAll(workDir, 0755)
 	if err != nil {
@@ -52,11 +52,11 @@ func newNSJailExecutor(ctx context.Context, b *Builder, executor execute.Executo
 		b:        b,
 		executor: executor,
 		req: nsjailutil.Request{
-			ExePath:     exePath,
-			JailRootDir: workDir,
-			ExecRoot:    b.path.ExecRoot,
-			Dir:         b.path.Dir,
-			OutDir:      outDir,
+			ExePath:       exePath,
+			JailRootDir:   workDir,
+			WorkspaceRoot: b.path.WorkspaceRoot,
+			Dir:           b.path.Dir,
+			OutDir:        outDir,
 		},
 	}, nil
 }

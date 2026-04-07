@@ -76,13 +76,13 @@ func TestRun_Unauthenticated(t *testing.T) {
 		connAddress: s.Addr(),
 	}
 	err = re.Run(ctx, &execute.Cmd{
-		ID:       "stepid",
-		ExecRoot: dir,
-		Dir:      "out/siso",
-		HashFS:   hashFS,
-		Args:     []string{"../../third_party/llvm-build/Release+Asserts/bin/clang++", "-c", "../../base/base.cc", "-o", "obj/base/base.o"},
-		Inputs:   []string{"base/base.cc", "third_party/llvm-build/Release+Asserts/bin/clang++"},
-		Outputs:  []string{"out/siso/obj/base/base.o"},
+		ID:            "stepid",
+		WorkspaceRoot: dir,
+		Dir:           "out/siso",
+		HashFS:        hashFS,
+		Args:          []string{"../../third_party/llvm-build/Release+Asserts/bin/clang++", "-c", "../../base/base.cc", "-o", "obj/base/base.o"},
+		Inputs:        []string{"base/base.cc", "third_party/llvm-build/Release+Asserts/bin/clang++"},
+		Outputs:       []string{"out/siso/obj/base/base.o"},
 		REProxyConfig: &execute.REProxyConfig{
 			ExecStrategy: "remote_local_fallback",
 			Labels: map[string]string{
@@ -152,13 +152,13 @@ func TestRun_RemoteSuccess(t *testing.T) {
 	}
 
 	err = re.Run(ctx, &execute.Cmd{
-		ID:       "stepid",
-		ExecRoot: dir,
-		Dir:      "out/siso",
-		HashFS:   hashFS,
-		Args:     []string{"../../third_party/llvm-build/Release+Asserts/bin/clang++", "-c", "../../base/base.cc", "-o", "obj/base/base.o"},
-		Inputs:   []string{"base/base.cc", "third_party/llvm-build/Release+Asserts/bin/clang++"},
-		Outputs:  []string{"out/siso/obj/base/base.o"},
+		ID:            "stepid",
+		WorkspaceRoot: dir,
+		Dir:           "out/siso",
+		HashFS:        hashFS,
+		Args:          []string{"../../third_party/llvm-build/Release+Asserts/bin/clang++", "-c", "../../base/base.cc", "-o", "obj/base/base.o"},
+		Inputs:        []string{"base/base.cc", "third_party/llvm-build/Release+Asserts/bin/clang++"},
+		Outputs:       []string{"out/siso/obj/base/base.o"},
 		REProxyConfig: &execute.REProxyConfig{
 			ExecStrategy: "remote_local_fallback",
 			Labels: map[string]string{
@@ -255,13 +255,13 @@ func TestRun_LocalFallback(t *testing.T) {
 	}
 
 	err = re.Run(ctx, &execute.Cmd{
-		ID:       "stepid",
-		ExecRoot: dir,
-		Dir:      "out/siso",
-		HashFS:   hashFS,
-		Args:     []string{"../../third_party/llvm-build/Release+Asserts/bin/clang++", "-c", "../../base/base.cc", "-o", "obj/base/base.o"},
-		Inputs:   []string{"base/base.cc", "third_party/llvm-build/Release+Asserts/bin/clang++"},
-		Outputs:  []string{"out/siso/obj/base/base.o"},
+		ID:            "stepid",
+		WorkspaceRoot: dir,
+		Dir:           "out/siso",
+		HashFS:        hashFS,
+		Args:          []string{"../../third_party/llvm-build/Release+Asserts/bin/clang++", "-c", "../../base/base.cc", "-o", "obj/base/base.o"},
+		Inputs:        []string{"base/base.cc", "third_party/llvm-build/Release+Asserts/bin/clang++"},
+		Outputs:       []string{"out/siso/obj/base/base.o"},
 		REProxyConfig: &execute.REProxyConfig{
 			ExecStrategy: "remote_local_fallback",
 			Labels: map[string]string{

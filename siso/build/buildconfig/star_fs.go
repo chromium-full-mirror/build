@@ -54,7 +54,7 @@ type starFSReceiver struct {
 }
 
 func (r starFSReceiver) String() string {
-	return fmt.Sprintf("fs[%s,%s]", r.path.ExecRoot, r.path.Dir)
+	return fmt.Sprintf("fs[%s,%s]", r.path.WorkspaceRoot, r.path.Dir)
 }
 
 func (starFSReceiver) Type() string          { return "fs" }

@@ -511,7 +511,7 @@ func (b *Builder) Build(ctx context.Context, name string, args ...string) (err e
 	if b.rebuildManifest == "" {
 		// record build files in hashfs. b/489164002
 		for _, fname := range b.graph.Filenames() {
-			_, err = b.hashFS.Stat(ctx, filepath.Join(b.path.ExecRoot, b.path.Dir), fname)
+			_, err = b.hashFS.Stat(ctx, filepath.Join(b.path.WorkspaceRoot, b.path.Dir), fname)
 			if err != nil {
 				clog.Warningf(ctx, "failed to stat build file %q: %v", fname, err)
 			}
@@ -591,7 +591,7 @@ func (b *Builder) Build(ctx context.Context, name string, args ...string) (err e
 
 	var mftime time.Time
 	if b.rebuildManifest != "" {
-		fi, err := b.hashFS.Stat(ctx, b.path.ExecRoot, filepath.Join(b.path.Dir, b.rebuildManifest))
+		fi, err := b.hashFS.Stat(ctx, b.path.WorkspaceRoot, filepath.Join(b.path.Dir, b.rebuildManifest))
 		if err == nil {
 			mftime = fi.ModTime()
 			clog.Infof(ctx, "manifest %s: %s", b.rebuildManifest, mftime)
@@ -600,7 +600,7 @@ func (b *Builder) Build(ctx context.Context, name string, args ...string) (err e
 	defer func() {
 		stat = b.Stats()
 		if b.rebuildManifest != "" {
-			fi, mferr := b.hashFS.Stat(ctx, b.path.ExecRoot, filepath.Join(b.path.Dir, b.rebuildManifest))
+			fi, mferr := b.hashFS.Stat(ctx, b.path.WorkspaceRoot, filepath.Join(b.path.Dir, b.rebuildManifest))
 			if mferr != nil {
 				clog.Warningf(ctx, "failed to stat %s: %v", b.rebuildManifest, mferr)
 				err = fmt.Errorf("%w: missing manifest %s: %v", ErrManifest, b.rebuildManifest, mferr)
@@ -879,7 +879,7 @@ func (b *Builder) uploadBuildNinja(ctx context.Context) {
 	started := time.Now()
 	inputs := b.graph.Filenames()
 	inputs = append(inputs, "args.gn")
-	ents, err := b.hashFS.Entries(ctx, filepath.Join(b.path.ExecRoot, b.path.Dir), inputs)
+	ents, err := b.hashFS.Entries(ctx, filepath.Join(b.path.WorkspaceRoot, b.path.Dir), inputs)
 	if err != nil {
 		clog.Warningf(ctx, "failed to get build files entries: %v", err)
 		return
@@ -1130,7 +1130,7 @@ func (b *Builder) outputs(ctx context.Context, step *Step) error {
 		var local bool
 		fullOut := out
 		if !filepath.IsAbs(fullOut) {
-			fullOut = filepath.Join(step.cmd.ExecRoot, out)
+			fullOut = filepath.Join(step.cmd.WorkspaceRoot, out)
 		}
 		if b.outputLocal != nil && b.outputLocal(ctx, out) {
 			localOutputs = append(localOutputs, out)
@@ -1146,7 +1146,7 @@ func (b *Builder) outputs(ctx context.Context, step *Step) error {
 				local = true
 			}
 		}
-		fi, err := b.hashFS.Stat(ctx, step.cmd.ExecRoot, out)
+		fi, err := b.hashFS.Stat(ctx, step.cmd.WorkspaceRoot, out)
 		if err != nil {
 			b.targets.Store(out, targetState{
 				dirtyErr: err,
@@ -1154,7 +1154,7 @@ func (b *Builder) outputs(ctx context.Context, step *Step) error {
 			reqOut := slices.Contains(defOutputs, out)
 			if reqOut {
 				if experiments.Enabled("ignore-missing-outputs", "") {
-					b.hashFS.AddMissingOutput(ctx, step.cmd.ExecRoot, out)
+					b.hashFS.AddMissingOutput(ctx, step.cmd.WorkspaceRoot, out)
 				} else {
 					return fmt.Errorf("missing outputs %s: %w", out, err)
 				}
@@ -1176,7 +1176,7 @@ func (b *Builder) outputs(ctx context.Context, step *Step) error {
 		})
 	}
 	if len(localOutputs) > 0 {
-		err := b.hashFS.Flush(ctx, step.cmd.ExecRoot, localOutputs)
+		err := b.hashFS.Flush(ctx, step.cmd.WorkspaceRoot, localOutputs)
 		if err != nil {
 			return fmt.Errorf("%w: %w", errFlushOutput, err)
 		}
@@ -1217,7 +1217,7 @@ func (b *Builder) progressStepCacheWrite(step *Step) {
 }
 
 var errNotRelocatable = errors.New("request is not relocatable")
-var errNotUnderExecRoot = errors.New("inputs are not under exec root")
+var errNotInsideWorkspace = errors.New("inputs are not inside workspace")
 var errFlushOutput = errors.New("failed to flush outputs to local")
 
 func (b *Builder) updateDeps(ctx context.Context, step *Step) error {
@@ -1232,12 +1232,12 @@ func (b *Builder) updateDeps(ctx context.Context, step *Step) error {
 		clog.Warningf(ctx, "update deps: failed to get rel %s,%s: %v", step.cmd.Dir, step.cmd.Outputs[0], err)
 		return nil
 	}
-	fi, err := b.hashFS.Stat(ctx, step.cmd.ExecRoot, step.cmd.Outputs[0])
+	fi, err := b.hashFS.Stat(ctx, step.cmd.WorkspaceRoot, step.cmd.Outputs[0])
 	if err != nil {
 		clog.Warningf(ctx, "update deps: missing outputs %s: %v", step.cmd.Outputs[0], err)
 		return nil
 	}
-	ents, err := b.hashFS.Entries(ctx, step.cmd.ExecRoot, []string{step.cmd.Outputs[0]})
+	ents, err := b.hashFS.Entries(ctx, step.cmd.WorkspaceRoot, []string{step.cmd.Outputs[0]})
 	if err != nil || len(ents) == 0 {
 		clog.Warningf(ctx, "update deps: failed to get output entry %q %d: %v", step.cmd.Outputs[0], len(ents), err)
 		return nil

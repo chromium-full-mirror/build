@@ -29,9 +29,9 @@ var cppScanSema = semaphore.New("cppscan", runtimex.NumCPU())
 // fsview is a view of filesystem per scandeps process.
 // It will reduce unnecessary contention to filesystem.
 type fsview struct {
-	fs        *filesystem
-	execRoot  string
-	inputDeps map[string][]string
+	fs            *filesystem
+	workspaceRoot string
+	inputDeps     map[string][]string
 
 	// precomputed trees for this include dirs (framework, sysroots).
 	precomputedTrees []string
@@ -60,9 +60,9 @@ type fsview struct {
 	pathbuf bytes.Buffer
 }
 
-func (fv *fsview) reset(fs *filesystem, execRoot string, inputDeps map[string][]string, precomputedTrees []string) {
+func (fv *fsview) reset(fs *filesystem, workspaceRoot string, inputDeps map[string][]string, precomputedTrees []string) {
 	fv.fs = fs
-	fv.execRoot = execRoot
+	fv.workspaceRoot = workspaceRoot
 	fv.inputDeps = inputDeps
 	fv.precomputedTrees = precomputedTrees
 	fv.searchPaths = fv.searchPaths[:0]
@@ -132,7 +132,7 @@ func (fv *fsview) addDir(ctx context.Context, dir string, searchPath searchPathT
 	if log.V(1) {
 		clog.Infof(ctx, "add dir readdir %s", dir)
 	}
-	dents, symlinks, err := fv.fs.ReadDir(ctx, fv.execRoot, dir)
+	dents, symlinks, err := fv.fs.ReadDir(ctx, fv.workspaceRoot, dir)
 	if err != nil {
 		if !errors.Is(err, fs.ErrNotExist) {
 			clog.Warningf(ctx, "failed in readdir %s: %v", dir, err)
@@ -210,7 +210,7 @@ func (fv *fsview) scanFile(ctx context.Context, fname string) (*scanResult, erro
 	ctx, span := trace.NewSpan(ctx, "scanFile")
 	defer span.Close(nil)
 
-	buf, visited, err := fv.fs.readFile(ctx, fv.execRoot, fname)
+	buf, visited, err := fv.fs.readFile(ctx, fv.workspaceRoot, fname)
 	if log.V(1) {
 		clog.Infof(ctx, "scanFile readfile: %s %s %v", fname, visited, err)
 	}
@@ -279,7 +279,7 @@ func (fv *fsview) scanResult(ctx context.Context, incpath string) (*scanResult, 
 				}
 				return nil, fs.ErrNotExist
 			}
-			fi, err := fv.fs.statFollowSymlink(ctx, fv.execRoot, dirname)
+			fi, err := fv.fs.statFollowSymlink(ctx, fv.workspaceRoot, dirname)
 			if err != nil {
 				fv.setDir(dirname, false)
 				if log.V(1) {
@@ -297,7 +297,7 @@ func (fv *fsview) scanResult(ctx context.Context, incpath string) (*scanResult, 
 			fv.setDir(dirname, true)
 		}
 	}
-	fi, err := fv.fs.statFollowSymlink(ctx, fv.execRoot, incpath)
+	fi, err := fv.fs.statFollowSymlink(ctx, fv.workspaceRoot, incpath)
 	if log.V(1) {
 		clog.Infof(ctx, "scanResult stat %q: %v", incpath, err)
 	}
@@ -330,7 +330,7 @@ func (fv *fsview) checkDir(dname string) (exist, ok bool) {
 	if ok {
 		return exist, ok
 	}
-	exist, ok = fv.fs.getDir(fv.execRoot, dname)
+	exist, ok = fv.fs.getDir(fv.workspaceRoot, dname)
 	if ok {
 		fv.dirs[dname] = exist
 		return exist, true
@@ -340,7 +340,7 @@ func (fv *fsview) checkDir(dname string) (exist, ok bool) {
 
 func (fv *fsview) setDir(dname string, exist bool) {
 	fv.dirs[dname] = exist
-	fv.fs.setDir(fv.execRoot, dname, exist)
+	fv.fs.setDir(fv.workspaceRoot, dname, exist)
 }
 
 func (fv *fsview) getFile(fname string) (*scanResult, bool) {
@@ -348,7 +348,7 @@ func (fv *fsview) getFile(fname string) (*scanResult, bool) {
 	if ok {
 		return sr, ok
 	}
-	sr, ok = fv.fs.getFile(fv.execRoot, fname)
+	sr, ok = fv.fs.getFile(fv.workspaceRoot, fname)
 	if !ok {
 		return nil, false
 	}
@@ -358,7 +358,7 @@ func (fv *fsview) getFile(fname string) (*scanResult, bool) {
 
 func (fv *fsview) setFile(fname string, sr *scanResult) {
 	fv.files[fname] = sr
-	fv.fs.setFile(fv.execRoot, fname, sr)
+	fv.fs.setFile(fv.workspaceRoot, fname, sr)
 }
 
 func (fv *fsview) markVisited(visits ...string) {
@@ -419,13 +419,13 @@ func (fv *fsview) pathJoin(dir, fname string) string {
 	return fv.pathbuf.String()
 }
 
-// getHmap returns hmap excluding files that aren't under execRoot.
+// getHmap returns hmap excluding files that aren't under workspaceRoot.
 func (fv *fsview) getHmap(ctx context.Context, hmap string) (map[string]string, bool) {
-	m, ok := fv.fs.getHmap(ctx, fv.execRoot, hmap)
+	m, ok := fv.fs.getHmap(ctx, fv.workspaceRoot, hmap)
 	mm := make(map[string]string)
 	for k, v := range m {
 		if filepath.IsAbs(v) {
-			rel, err := filepath.Rel(fv.execRoot, v)
+			rel, err := filepath.Rel(fv.workspaceRoot, v)
 			if err != nil || !filepath.IsLocal(rel) {
 				clog.Warningf(ctx, "unacceptable dir for %s in hmap %s: %s: %v", k, hmap, v, err)
 				continue

@@ -143,7 +143,7 @@ func (c *depsCommand) Execute(ctx context.Context, flagSet *flag.FlagSet, _ ...a
 }
 
 func (c *depsCommand) run(ctx context.Context, args []string) error {
-	_, execRoot, dir, err := ninjabuild.InitDir(ctx, c.ninjaDir)
+	_, workspaceRoot, dir, err := ninjabuild.InitDir(ctx, c.ninjaDir)
 	if err != nil {
 		return err
 	}
@@ -193,7 +193,7 @@ func (c *depsCommand) run(ctx context.Context, args []string) error {
 		state = nil
 	}
 
-	bpath := build.NewPath(execRoot, dir)
+	bpath := build.NewPath(workspaceRoot, dir)
 
 	var m marshaller
 	w := bufio.NewWriter(os.Stdout)
@@ -258,15 +258,15 @@ func lookupDeps(ctx context.Context, state *ninjautil.State, hashFS *hashfs.Hash
 		return "", nil, key, depState, ninjautil.ErrNoDepsLog
 	}
 	df := bpath.MaybeFromWD(ctx, depfile)
-	fi, err := hashFS.Stat(ctx, bpath.ExecRoot, df)
+	fi, err := hashFS.Stat(ctx, bpath.WorkspaceRoot, df)
 	if err != nil {
 		return "", nil, key, depState, fmt.Errorf("no depfile=%q to build target %q: %w", depfile, target, err)
 	}
-	ents, err := hashFS.Entries(ctx, bpath.ExecRoot, []string{df})
+	ents, err := hashFS.Entries(ctx, bpath.WorkspaceRoot, []string{df})
 	if err != nil || len(ents) == 0 {
 		return "", nil, key, depState, fmt.Errorf("failed to get entry for depfile=%q %d to build target %q: %w", depfile, len(ents), target, err)
 	}
-	fsys := hashFS.FileSystem(ctx, bpath.ExecRoot)
+	fsys := hashFS.FileSystem(ctx, bpath.WorkspaceRoot)
 	deps, err = makeutil.ParseDepsFile(ctx, fsys, df)
 	if err != nil {
 		return "", nil, key, depState, fmt.Errorf("failed to read depfile=%q to build target %q: %w", depfile, target, err)

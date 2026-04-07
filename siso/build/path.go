@@ -15,30 +15,30 @@ import (
 
 // Path manages paths used by the build.
 type Path struct {
-	ExecRoot string
-	Dir      string // relative to ExecRoot, use slashes
+	WorkspaceRoot string
+	Dir           string // relative to WorkspaceRoot, use slashes
 
 	// Symbol table for seen paths.
 	intern symtab
-	// Stores paths converted cwd relative to exec root relative.
+	// Stores paths converted cwd relative to workspace relative.
 	m sync.Map
 }
 
 // NewPath returns new path for the build.
-func NewPath(execRoot, dir string) *Path {
+func NewPath(workspaceRoot, dir string) *Path {
 	return &Path{
-		ExecRoot: execRoot,
-		Dir:      filepath.ToSlash(dir),
+		WorkspaceRoot: workspaceRoot,
+		Dir:           filepath.ToSlash(dir),
 	}
 }
 
 // Check checks the path is valid.
 func (p *Path) Check() error {
-	if !filepath.IsAbs(p.ExecRoot) {
-		return fmt.Errorf("exec_root must be absolute path: %q", p.ExecRoot)
+	if !filepath.IsAbs(p.WorkspaceRoot) {
+		return fmt.Errorf("workspace root must be absolute path: %q", p.WorkspaceRoot)
 	}
 	if filepath.IsAbs(p.Dir) {
-		return fmt.Errorf("dir must be relative to exec_root: %q", p.Dir)
+		return fmt.Errorf("dir must be relative to workspace: %q", p.Dir)
 	}
 	return nil
 }
@@ -48,20 +48,20 @@ func (p *Path) Intern(path string) string {
 	return p.intern.Intern(path)
 }
 
-// MaybeFromWD attempts to convert cwd relative to exec root relative.
+// MaybeFromWD attempts to convert cwd relative to workspace relative.
 // It logs an error and returns the path as-is if this fails.
 func (p *Path) MaybeFromWD(ctx context.Context, path string) string {
 	s, err := p.FromWD(path)
 	if err != nil {
-		clog.Warningf(ctx, "Failed to get rel %s, %s: %v", p.ExecRoot, path, err)
+		clog.Warningf(ctx, "Failed to get rel %s, %s: %v", p.WorkspaceRoot, path, err)
 		return path
 	}
 	return s
 }
 
-// FromWD converts cwd relative to exec root relative,
+// FromWD converts cwd relative to workspace relative,
 // slash-separated.
-// It keeps absolute path if it is out of exec root.
+// It keeps absolute path if it is outside of workspace.
 func (p *Path) FromWD(path string) (string, error) {
 	if path == "" {
 		return "", nil
@@ -71,12 +71,12 @@ func (p *Path) FromWD(path string) (string, error) {
 		return v.(string), nil
 	}
 	if filepath.IsAbs(path) {
-		rel, err := filepath.Rel(p.ExecRoot, path)
+		rel, err := filepath.Rel(p.WorkspaceRoot, path)
 		if err != nil {
 			return "", err
 		}
 		if !filepath.IsLocal(rel) {
-			// use abs path for out of exec root
+			// use abs path for outside of workspace
 			return path, nil
 		}
 		rel = filepath.ToSlash(rel)
@@ -90,7 +90,7 @@ func (p *Path) FromWD(path string) (string, error) {
 	return v.(string), nil
 }
 
-// MaybeToWD converts exec root relative to cwd relative,
+// MaybeToWD converts workspace relative to cwd relative,
 // slash-separated.
 // It keeps absolute path as is.
 // It logs an error and returns the path as-is if this fails.
@@ -115,5 +115,5 @@ func (p *Path) AbsFromWD(path string) string {
 	if filepath.IsAbs(path) {
 		return path
 	}
-	return filepath.Join(p.ExecRoot, p.Dir, path)
+	return filepath.Join(p.WorkspaceRoot, p.Dir, path)
 }

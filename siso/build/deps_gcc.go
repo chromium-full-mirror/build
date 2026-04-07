@@ -47,7 +47,7 @@ func (gcc depsGCC) DepsFastCmd(ctx context.Context, b *Builder, cmd *execute.Cmd
 }
 
 func (gcc depsGCC) fixCmdInputs(ctx context.Context, b *Builder, cmd *execute.Cmd) ([]string, error) {
-	params, err := gccutil.ExtractScanDepsParams(ctx, cmd.Args, cmd.Env, b.hashFS.FileSystem(ctx, filepath.Join(cmd.ExecRoot, cmd.Dir)))
+	params, err := gccutil.ExtractScanDepsParams(ctx, cmd.Args, cmd.Env, b.hashFS.FileSystem(ctx, filepath.Join(cmd.WorkspaceRoot, cmd.Dir)))
 	if err != nil {
 		return nil, err
 	}
@@ -134,12 +134,12 @@ func (depsGCC) DepsAfterRun(ctx context.Context, b *Builder, step *Step) (_ []st
 			return
 		}
 		if !b.keepDepfile {
-			b.hashFS.Remove(ctx, step.cmd.ExecRoot, step.cmd.Depfile)
+			b.hashFS.Remove(ctx, step.cmd.WorkspaceRoot, step.cmd.Depfile)
 		}
 
-		b.hashFS.Flush(ctx, step.cmd.ExecRoot, []string{step.cmd.Depfile})
+		b.hashFS.Flush(ctx, step.cmd.WorkspaceRoot, []string{step.cmd.Depfile})
 	}()
-	buf, err := b.hashFS.ReadFile(ctx, step.cmd.ExecRoot, step.cmd.Depfile)
+	buf, err := b.hashFS.ReadFile(ctx, step.cmd.WorkspaceRoot, step.cmd.Depfile)
 	if err != nil {
 		return nil, fmt.Errorf("gcc-deps: failed to get depfile %q of %s: %w", step.cmd.Depfile, step, err)
 	}
@@ -203,7 +203,7 @@ func (depsGCC) scandeps(ctx context.Context, b *Builder, step *Step) ([]string, 
 		// fastDeps + remote execution may have already run.
 		// In this case, do not change ActionStartTime set by the remote exec.
 		b.actionStarted(step)
-		params, err := gccutil.ExtractScanDepsParams(ctx, step.cmd.Args, step.cmd.Env, b.hashFS.FileSystem(ctx, filepath.Join(step.cmd.ExecRoot, step.cmd.Dir)))
+		params, err := gccutil.ExtractScanDepsParams(ctx, step.cmd.Args, step.cmd.Env, b.hashFS.FileSystem(ctx, filepath.Join(step.cmd.WorkspaceRoot, step.cmd.Dir)))
 		if err != nil {
 			return err
 		}
@@ -221,7 +221,7 @@ func (depsGCC) scandeps(ctx context.Context, b *Builder, step *Step) ([]string, 
 			// no-fallback has longer timeout for scandeps
 			timeout = 2 * timeout
 		}
-		req, execRoot, err := CreateScanDepsRequestGCC(ctx, b.path, params, step.cmd.Platform, step.cmd.UseSystemInput, timeout)
+		req, workspaceRoot, err := CreateScanDepsRequestGCC(ctx, b.path, params, step.cmd.Platform, step.cmd.UseSystemInput, timeout)
 		if err != nil {
 			return err
 		}
@@ -233,7 +233,7 @@ func (depsGCC) scandeps(ctx context.Context, b *Builder, step *Step) ([]string, 
 			clog.Infof(ctx, "scandeps req=%s", buf)
 		}
 		started := time.Now()
-		ins, err = b.scanDeps.Scan(ctx, execRoot, req)
+		ins, err = b.scanDeps.Scan(ctx, workspaceRoot, req)
 		if bool(log.V(1)) || debug {
 			clog.Infof(ctx, "scandeps %d %s: %v", len(ins), time.Since(started), err)
 		}
@@ -243,10 +243,10 @@ func (depsGCC) scandeps(ctx context.Context, b *Builder, step *Step) ([]string, 
 			return err
 		}
 		ins = append(ins, params.Files...)
-		if execRoot != b.path.ExecRoot {
+		if workspaceRoot != b.path.WorkspaceRoot {
 			// make ins[i] full absolute paths.
 			for i := range ins {
-				ins[i] = filepath.Join(execRoot, ins[i])
+				ins[i] = filepath.Join(workspaceRoot, ins[i])
 			}
 		}
 		return nil
@@ -280,7 +280,7 @@ func (gcc depsGCC) scandepsByClang(ctx context.Context, b *Builder, step *Step) 
 		// e.g.
 		//  /usr/local/google/home/ukai/src/chromium/src/native_client/toolchain/linux_x86/nacl_x86_glibc/bin/../lib/gcc/x86_64-nacl/4.4.3/../../../../x86_64-nacl/include/stdint.h
 		inpath := b.path.MaybeFromWD(ctx, in)
-		fi, err := b.hashFS.Stat(ctx, b.path.ExecRoot, inpath)
+		fi, err := b.hashFS.Stat(ctx, b.path.WorkspaceRoot, inpath)
 		if err != nil {
 			clog.Warningf(ctx, "missing inputs? %s: %v", inpath, err)
 			continue
@@ -296,7 +296,7 @@ func (gcc depsGCC) scandepsByClang(ctx context.Context, b *Builder, step *Step) 
 }
 
 func (depsGCC) expandSymlinkDirs(ctx context.Context, b *Builder, inpath string) []string {
-	fsys := b.hashFS.FileSystem(ctx, b.path.ExecRoot)
+	fsys := b.hashFS.FileSystem(ctx, b.path.WorkspaceRoot)
 	return fsys.ExpandSymlinks(inpath)
 }
 
@@ -333,11 +333,11 @@ func CreateScanDepsRequestGCC(ctx context.Context, p *Path, params scandepsparam
 		params.Sysroots[i] = canonicalize(s)
 	}
 
-	execRoot := p.ExecRoot
+	workspaceRoot := p.WorkspaceRoot
 	if len(externals) > 0 && !allowExternals {
-		// If allowExternals is true, use execRoot as is.
+		// If allowExternals is true, use workspaceRoot as is.
 		// If checkRemoteChroot is true (e.g. gcc) and it is remote chroot (container image),
-		// use "/" as execRoot and convert paths to be relative to "/".
+		// use "/" as workspaceRoot and convert paths to be relative to "/".
 		// Otherwise, return error.
 		isRemoteChroot := false
 		if _, ok := platform["dockerChrootPath"]; ok {
@@ -346,18 +346,18 @@ func CreateScanDepsRequestGCC(ctx context.Context, p *Path, params scandepsparam
 
 		if !isRemoteChroot {
 			v := externals[:min(len(externals), 5)]
-			return scandeps.Request{}, "", fmt.Errorf("%w %d %q...: platform=%q", errNotUnderExecRoot, len(externals), v, platform)
+			return scandeps.Request{}, "", fmt.Errorf("%w %d %q...: platform=%q", errNotInsideWorkspace, len(externals), v, platform)
 		}
-		// Convert paths from relative to exec root to relative to /
+		// Convert paths from relative to workspace to relative to /
 		// e.g.
-		//  execRoot: /path/to/chromium/src
+		//  workspaceRoot: /path/to/chromium/src
 		//     path:  ../../../../usr/include
 		// ->
-		//  execRoot: /
+		//  workspaceRoot: /
 		//     path:  usr/include
-		execRoot = "/"
+		workspaceRoot = "/"
 		rebaseToSystemRoot := func(s string) string {
-			return filepath.Join(p.ExecRoot, s)[1:]
+			return filepath.Join(p.WorkspaceRoot, s)[1:]
 		}
 		for i, s := range params.Sources {
 			params.Sources[i] = rebaseToSystemRoot(s)
@@ -392,5 +392,5 @@ func CreateScanDepsRequestGCC(ctx context.Context, p *Path, params scandepsparam
 		Sysroots:   params.Sysroots,
 		Timeout:    timeout,
 	}
-	return req, execRoot, nil
+	return req, workspaceRoot, nil
 }

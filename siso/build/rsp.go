@@ -34,18 +34,18 @@ func (b *Builder) setupRSP(ctx context.Context, step *Step) error {
 		// remove before write to make sure write content to the disk
 		// to avoid chtimes error with "no such file or directory"
 		// when rsp was removed by some other action. b/479933778
-		_, herr := b.hashFS.Stat(ctx, step.cmd.ExecRoot, rsp)
-		_, lerr := b.hashFS.OS.Lstat(ctx, filepath.Join(step.cmd.ExecRoot, rsp))
+		_, herr := b.hashFS.Stat(ctx, step.cmd.WorkspaceRoot, rsp)
+		_, lerr := b.hashFS.OS.Lstat(ctx, filepath.Join(step.cmd.WorkspaceRoot, rsp))
 		if herr == nil && errors.Is(lerr, fs.ErrNotExist) {
 			clog.Warningf(ctx, "unexpected rsp remove detected %q", rsp)
-			b.hashFS.Forget(ctx, step.cmd.ExecRoot, []string{rsp})
-			_, herr := b.hashFS.Stat(ctx, step.cmd.ExecRoot, rsp)
+			b.hashFS.Forget(ctx, step.cmd.WorkspaceRoot, []string{rsp})
+			_, herr := b.hashFS.Stat(ctx, step.cmd.WorkspaceRoot, rsp)
 			if !errors.Is(herr, fs.ErrNotExist) {
 				clog.Warningf(ctx, "forget, but hashfs detect %q? %v", rsp, herr)
 			}
 		}
 	}
-	err := b.hashFS.WriteFile(ctx, step.cmd.ExecRoot, rsp, content, false, time.Now(), nil, nil)
+	err := b.hashFS.WriteFile(ctx, step.cmd.WorkspaceRoot, rsp, content, false, time.Now(), nil, nil)
 	if err != nil {
 		return fmt.Errorf("failed to create rsp %s: %w", rsp, err)
 	}
@@ -63,12 +63,12 @@ func (b *Builder) teardownRSP(ctx context.Context, step *Step) {
 	if log.V(1) {
 		clog.Infof(ctx, "remove rsp %q", rsp)
 	}
-	err := b.hashFS.Remove(ctx, step.cmd.ExecRoot, rsp)
+	err := b.hashFS.Remove(ctx, step.cmd.WorkspaceRoot, rsp)
 	if err != nil {
 		clog.Warningf(ctx, "failed to remove %s: %v", rsp, err)
 	}
 	// remove local file if it is used on local?
-	err = os.Remove(filepath.Join(step.cmd.ExecRoot, rsp))
+	err = os.Remove(filepath.Join(step.cmd.WorkspaceRoot, rsp))
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		clog.Warningf(ctx, "failed to remove %s: %v", rsp, err)
 	}

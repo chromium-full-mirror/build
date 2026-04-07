@@ -135,8 +135,8 @@ func (b *Builder) runRemote(ctx context.Context, step *Step) error {
 			clog.Errorf(ctx, "not relocatable: %v", err)
 			return fmt.Errorf("remote-exec %s failed: %w", step.cmd.ActionDigest(), err)
 		}
-		if errors.Is(err, errNotUnderExecRoot) {
-			clog.Errorf(ctx, "not remote executable: %v\nUse `use_system_inputs` or put them under exec_root", err)
+		if errors.Is(err, errNotInsideWorkspace) {
+			clog.Errorf(ctx, "not remote executable: %v\nUse `use_system_inputs` or put them inside workspace", err)
 			return fmt.Errorf("remote-exec %s failed: %w", step.cmd.ActionDigest(), err)
 		}
 		var eerr execute.ExitError

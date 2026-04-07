@@ -126,8 +126,8 @@ func (fsys *filesystem) markDirExists(dname string) bool {
 	return false
 }
 
-func (fsys *filesystem) ReadDir(ctx context.Context, execRoot, dname string) (*sync.Map, []string, error) {
-	fullpath := filepath.ToSlash(filepath.Join(execRoot, dname))
+func (fsys *filesystem) ReadDir(ctx context.Context, workspaceRoot, dname string) (*sync.Map, []string, error) {
+	fullpath := filepath.ToSlash(filepath.Join(workspaceRoot, dname))
 
 	// To avoid allocation of `dircache` in LoadOrStore, call Load first here.
 	dv, loaded := fsys.dircache.Load(fullpath)
@@ -146,7 +146,7 @@ func (fsys *filesystem) ReadDir(ctx context.Context, execRoot, dname string) (*s
 			var dents []hashfs.DirEntry
 			var visited []string
 			var err error
-			hfsys := fsys.hashfs.FileSystem(ctx, execRoot)
+			hfsys := fsys.hashfs.FileSystem(ctx, workspaceRoot)
 			fi, err := hfsys.Stat(dname)
 			if err == nil {
 				if len(hfsys.Visited(fi)) > 1 {
@@ -202,11 +202,11 @@ func (fsys *filesystem) pathIntern(v string) string {
 	return vv.(string)
 }
 
-func (fsys *filesystem) getDir(execRoot, dname string) (exist, ok bool) {
+func (fsys *filesystem) getDir(workspaceRoot, dname string) (exist, ok bool) {
 	base := filepath.Base(dname)
 	v, _ := fsys.dirs.LoadOrStore(base, new(sync.Map))
 	m := v.(*sync.Map)
-	v, ok = m.Load(filepath.ToSlash(filepath.Join(execRoot, dname)))
+	v, ok = m.Load(filepath.ToSlash(filepath.Join(workspaceRoot, dname)))
 	if !ok {
 		return false, false
 	}
@@ -214,19 +214,19 @@ func (fsys *filesystem) getDir(execRoot, dname string) (exist, ok bool) {
 	return exist, true
 }
 
-func (fsys *filesystem) setDir(execRoot, dname string, exist bool) {
+func (fsys *filesystem) setDir(workspaceRoot, dname string, exist bool) {
 	v, _ := fsys.dirs.LoadOrStore(filepath.Base(dname), new(sync.Map))
 	m := v.(*sync.Map)
-	m.Store(filepath.ToSlash(filepath.Join(execRoot, dname)), exist)
+	m.Store(filepath.ToSlash(filepath.Join(workspaceRoot, dname)), exist)
 }
 
-func (fsys *filesystem) getFile(execRoot, fname string) (*scanResult, bool) {
+func (fsys *filesystem) getFile(workspaceRoot, fname string) (*scanResult, bool) {
 	v, ok := fsys.files.Load(filepath.Base(fname))
 	if !ok {
 		return nil, false
 	}
 	m := v.(*sync.Map)
-	v, ok = m.Load(filepath.ToSlash(filepath.Join(execRoot, fname)))
+	v, ok = m.Load(filepath.ToSlash(filepath.Join(workspaceRoot, fname)))
 	if !ok {
 		return nil, false
 	}
@@ -234,10 +234,10 @@ func (fsys *filesystem) getFile(execRoot, fname string) (*scanResult, bool) {
 	return sr, true
 }
 
-func (fsys *filesystem) setFile(execRoot, fname string, sr *scanResult) {
+func (fsys *filesystem) setFile(workspaceRoot, fname string, sr *scanResult) {
 	v, _ := fsys.files.LoadOrStore(filepath.Base(fname), new(sync.Map))
 	m := v.(*sync.Map)
-	m.Store(filepath.ToSlash(filepath.Join(execRoot, fname)), sr)
+	m.Store(filepath.ToSlash(filepath.Join(workspaceRoot, fname)), sr)
 }
 
 type hmapresult struct {
@@ -252,9 +252,9 @@ type hmapresult struct {
 
 // getHmap returns hmap and success flag.
 // If the same hamp has been computed, the results are returned from cache.
-func (fsys *filesystem) getHmap(ctx context.Context, execRoot, fname string) (map[string]string, bool) {
+func (fsys *filesystem) getHmap(ctx context.Context, workspaceRoot, fname string) (map[string]string, bool) {
 	clog.Infof(ctx, "check hmap %s", fname)
-	v, _ := fsys.hmaps.LoadOrStore(filepath.ToSlash(filepath.Join(execRoot, fname)), new(hmapresult))
+	v, _ := fsys.hmaps.LoadOrStore(filepath.ToSlash(filepath.Join(workspaceRoot, fname)), new(hmapresult))
 	hr := v.(*hmapresult)
 	hr.mu.Lock()
 	defer hr.mu.Unlock()
@@ -263,7 +263,7 @@ func (fsys *filesystem) getHmap(ctx context.Context, execRoot, fname string) (ma
 		clog.Infof(ctx, "check hmap %s: reuse ok=%t", fname, hr.ok)
 		return hr.m, hr.ok
 	}
-	buf, err := fsys.hashfs.ReadFile(ctx, execRoot, fname)
+	buf, err := fsys.hashfs.ReadFile(ctx, workspaceRoot, fname)
 	if err != nil {
 		clog.Warningf(ctx, "missing hmap %s: %v", fname, err)
 		return nil, false

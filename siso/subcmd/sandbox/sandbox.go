@@ -84,7 +84,7 @@ func (c *Command) Execute(ctx context.Context, flagSet *flag.FlagSet, _ ...any) 
 }
 
 func (c *Command) run(ctx context.Context) error {
-	_, execRoot, dir, err := ninjabuild.InitDir(ctx, c.ninjaDir)
+	_, workspaceRoot, dir, err := ninjabuild.InitDir(ctx, c.ninjaDir)
 	if err != nil {
 		return err
 	}
@@ -110,7 +110,7 @@ func (c *Command) run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	req.ExecRoot = execRoot
+	req.WorkspaceRoot = workspaceRoot
 	req.Dir = dir
 	clog.Infof(ctx, "req: %#v", req)
 	fsys := hashFS.FileSystem(ctx, "/")
@@ -123,7 +123,7 @@ func (c *Command) run(ctx context.Context) error {
 	}
 
 	cmd := &execute.Cmd{
-		ExecRoot:          execRoot,
+		WorkspaceRoot:     workspaceRoot,
 		Dir:               dir,
 		Inputs:            req.Inputs,
 		Outputs:           req.Outputs,
@@ -142,7 +142,7 @@ func (c *Command) run(ctx context.Context) error {
 		return err
 	}
 	result, _ := cmd.ActionResult()
-	outputEntries, err := hashFS.Entries(ctx, cmd.ExecRoot, cmd.AllOutputs())
+	outputEntries, err := hashFS.Entries(ctx, cmd.WorkspaceRoot, cmd.AllOutputs())
 	if err != nil {
 		return err
 	}

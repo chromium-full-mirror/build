@@ -38,16 +38,16 @@ type Request struct {
 	// absolute paths. e.g. /bin
 	PublicDirs []string `json:"public_dirs,omitempty"`
 
-	ExecRoot string `json:"exec_root"`     // absolute path.
-	Dir      string `json:"dir,omitempty"` // working dir, relative to ExecRoot
+	WorkspaceRoot string `json:"workspace_root"` // absolute path.
+	Dir           string `json:"dir,omitempty"`  // working dir, relative to WorkspaceRoot
 
-	// relative to exec root.
+	// relative to workspace.
 	Inputs []string `json:"inputs"`
 
-	// relative to exec root, or absolute path. read/write.
+	// relative to workspace, or absolute path. read/write.
 	OutDir string `json:"out_dir"`
 
-	// relative to exec root, or absolute path
+	// relative to workspace, or absolute path
 	Outputs []string `json:"outputs"`
 }
 
@@ -76,13 +76,13 @@ func New(ctx context.Context, fsys fs.FS, req Request) (_ *NSJail, err error) {
 	if !filepath.IsAbs(req.JailRootDir) {
 		return nil, fmt.Errorf("root_dir is not absolute path: %q", req.JailRootDir)
 	}
-	if !filepath.IsAbs(req.ExecRoot) {
-		return nil, fmt.Errorf("exec_root is not absolute path: %q", req.ExecRoot)
+	if !filepath.IsAbs(req.WorkspaceRoot) {
+		return nil, fmt.Errorf("workspace root is not absolute path: %q", req.WorkspaceRoot)
 	}
 	if filepath.IsAbs(req.Dir) {
 		return nil, fmt.Errorf("dir is absolute path: %q", req.Dir)
 	}
-	fsys, err = fs.Sub(fsys, strings.TrimPrefix(req.ExecRoot, "/"))
+	fsys, err = fs.Sub(fsys, strings.TrimPrefix(req.WorkspaceRoot, "/"))
 	if err != nil {
 		return nil, err
 	}
@@ -195,7 +195,7 @@ func New(ctx context.Context, fsys fs.FS, req Request) (_ *NSJail, err error) {
 	})
 
 	for _, input := range req.Inputs {
-		absInputPath := filepath.Join(req.ExecRoot, input)
+		absInputPath := filepath.Join(req.WorkspaceRoot, input)
 		inputPathInSandbox := filepath.Join(execRootInSandbox, input)
 		fi, err := fs.Lstat(fsys, input)
 		if err != nil {

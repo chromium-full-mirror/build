@@ -165,7 +165,7 @@ func (cfg *Config) Init(ctx context.Context, hashFS *hashfs.HashFS, buildPath *b
 		"metadata": starMetadata(cfg.Metadata),
 		"flags":    starFlags(cfg.flags),
 		// want "envs" ?
-		"fs": starFS(ctx, hashFS.FileSystem(ctx, buildPath.ExecRoot), buildPath, cfg.fscache),
+		"fs": starFS(ctx, hashFS.FileSystem(ctx, buildPath.WorkspaceRoot), buildPath, cfg.fscache),
 	})
 	clog.Infof(ctx, "hctx: %v", hctx)
 	ret, err := starlark.Call(thread, fun, starlark.Tuple([]starlark.Value{hctx}), nil)
@@ -252,7 +252,7 @@ func (cfg *Config) Handle(ctx context.Context, handler string, bpath *build.Path
 		"actions":  starCmdActions(ctx, cmd),
 		"metadata": starMetadata(cfg.Metadata),
 		"flags":    starFlags(cfg.flags),
-		"fs":       starFS(ctx, cmd.HashFS.FileSystem(ctx, cmd.ExecRoot), bpath, cfg.fscache),
+		"fs":       starFS(ctx, cmd.HashFS.FileSystem(ctx, cmd.WorkspaceRoot), bpath, cfg.fscache),
 	})
 	if log.V(1) {
 		clog.Infof(ctx, "hctx: %v", hctx)

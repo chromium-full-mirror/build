@@ -199,7 +199,7 @@ func (c *Command) setup(ctx context.Context) (buildPath *build.Path, doneLock fu
 
 func (c *Command) computeLimits(ctx context.Context) build.Limits {
 	// compute default limits based on fstype of work dir (e.g. artfs),
-	// not of exec root.
+	// not of workspace.
 	limits := build.DefaultLimits(ctx)
 	if c.localJobs > 0 {
 		limits.Local = c.localJobs
@@ -399,7 +399,7 @@ func (c *Command) Run(ctx context.Context) (stats build.Stats, finalErr error) {
 	// upload build pprof
 
 	targets := c.Flags.Args()
-	config, err := c.initConfig(ctx, buildPath.ExecRoot, targets)
+	config, err := c.initConfig(ctx, buildPath.WorkspaceRoot, targets)
 	if err != nil {
 		return stats, err
 	}
@@ -712,8 +712,8 @@ func (c *Command) setupHashFS(ctx context.Context, buildPath *build.Path, ds bui
 	if err != nil {
 		return nil, nil, err
 	}
-	if c.logDir == "." || c.logDir == filepath.Join(buildPath.ExecRoot, buildPath.Dir) {
-		cwd := filepath.Join(buildPath.ExecRoot, buildPath.Dir)
+	if c.logDir == "." || c.logDir == filepath.Join(buildPath.WorkspaceRoot, buildPath.Dir) {
+		cwd := filepath.Join(buildPath.WorkspaceRoot, buildPath.Dir)
 		// ignore siso files not to be captured by ReadDir
 		// (i.g. scandeps for -I.)
 		clog.Infof(ctx, "ignore siso files in %s", cwd)
@@ -739,14 +739,14 @@ func (c *Command) setupHashFS(ctx context.Context, buildPath *build.Path, ds bui
 			return false
 		}
 	} else {
-		// expect logDir is out of exec root.
+		// expect logDir is outside of workspace.
 		clog.Infof(ctx, "ignore .ninja_log")
-		ninjaLogFname := filepath.Join(buildPath.ExecRoot, buildPath.Dir, ".ninja_log")
+		ninjaLogFname := filepath.Join(buildPath.WorkspaceRoot, buildPath.Dir, ".ninja_log")
 		c.fsopt.Ignore = func(ctx context.Context, fname string) bool {
 			return fname == ninjaLogFname
 		}
 	}
-	cogfs, err := cogutil.New(ctx, buildPath.ExecRoot)
+	cogfs, err := cogutil.New(ctx, buildPath.WorkspaceRoot)
 	if err != nil && !errors.Is(err, errors.ErrUnsupported) {
 		clog.Warningf(ctx, "unable to use cog? %v", err)
 	}
@@ -763,7 +763,7 @@ func (c *Command) setupHashFS(ctx context.Context, buildPath *build.Path, ds bui
 		c.fsopt.ArtFS = artfs
 	}
 
-	c.fsopt.FSMonitor = initFSMonitor(ctx, buildPath.ExecRoot)
+	c.fsopt.FSMonitor = initFSMonitor(ctx, buildPath.WorkspaceRoot)
 
 	spin := ui.Default.NewSpinner()
 	spin.Start("loading fs state")

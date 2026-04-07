@@ -66,7 +66,7 @@ type DepsLogKey struct {
 // TODO(b/374196367): use digest for validity of output.
 func checkDepsLogState(ctx context.Context, hashFS *hashfs.HashFS, bpath *build.Path, key DepsLogKey) (DepsLogState, error) {
 	fname := bpath.MaybeFromWD(ctx, key.Target)
-	fi, err := hashFS.Stat(ctx, bpath.ExecRoot, fname)
+	fi, err := hashFS.Stat(ctx, bpath.WorkspaceRoot, fname)
 	if err != nil {
 		return DepsLogStale, fmt.Errorf("not found deps output %q: %v", key.Target, err)
 	}
@@ -74,7 +74,7 @@ func checkDepsLogState(ctx context.Context, hashFS *hashfs.HashFS, bpath *build.
 		return DepsLogValid, nil
 	}
 	if !key.Digest.IsZero() {
-		ents, err := hashFS.Entries(ctx, bpath.ExecRoot, []string{fname})
+		ents, err := hashFS.Entries(ctx, bpath.WorkspaceRoot, []string{fname})
 		if err != nil || len(ents) == 0 {
 			return DepsLogStale, fmt.Errorf("output %q entry error %v: ents=%d %v", key.Target, key.Digest, len(ents), err)
 		}

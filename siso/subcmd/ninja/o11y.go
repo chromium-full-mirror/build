@@ -243,7 +243,7 @@ func (c *Command) buildProperties(ctx context.Context, buildPath *build.Path) re
 func (c *Command) setupResultStore(ctx context.Context, projectID string, buildPath *build.Path, properties resultstore.Properties, credential cred.Cred, hashFS *hashfs.HashFS) (func(error), error) {
 	resultstoreUploader, err := resultstore.New(ctx, resultstore.Options{
 		InvocationID:  c.buildID,
-		Invocation:    c.invocation(ctx, c.buildID, projectID, buildPath.ExecRoot, properties),
+		Invocation:    c.invocation(ctx, c.buildID, projectID, buildPath.WorkspaceRoot, properties),
 		ClientOptions: credential.ClientOptions(),
 	})
 	if err != nil {
@@ -260,7 +260,7 @@ func (c *Command) setupResultStore(ctx context.Context, projectID string, buildP
 		// TODO(b/329564182): add other files? e.g. siso_output, siso_trace.json etc.
 		if len(files) > 0 {
 			var entsErr error
-			ents, entsErr = hashFS.Entries(ctx, filepath.Join(buildPath.ExecRoot, buildPath.Dir), files)
+			ents, entsErr = hashFS.Entries(ctx, filepath.Join(buildPath.WorkspaceRoot, buildPath.Dir), files)
 			if entsErr != nil {
 				clog.Warningf(ctx, "failed to get entries for %q: %v", files, entsErr)
 			}
@@ -330,7 +330,7 @@ func gcinfo() string {
 
 // invocation creates the ResultStore invocation proto.
 // It returns the invocation.
-func (c *Command) invocation(ctx context.Context, buildID, projectID, execRoot string, properties resultstore.Properties) *rspb.Invocation {
+func (c *Command) invocation(ctx context.Context, buildID, projectID, workspaceRoot string, properties resultstore.Properties) *rspb.Invocation {
 	var username string
 	currentUser, err := user.Current()
 	if err != nil {
@@ -357,7 +357,7 @@ func (c *Command) invocation(ctx context.Context, buildID, projectID, execRoot s
 		},
 		WorkspaceInfo: &rspb.WorkspaceInfo{
 			Hostname:         hostname,
-			WorkingDirectory: execRoot,
+			WorkingDirectory: workspaceRoot,
 			ToolTag:          "siso",
 			CommandLines:     c.commandLines(),
 		},

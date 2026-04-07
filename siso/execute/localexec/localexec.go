@@ -99,7 +99,7 @@ func run(ctx context.Context, cmd *execute.Cmd) (*rpb.ActionResult, error) {
 		return err
 	}
 	c.Env = cmd.Env
-	c.Dir = filepath.Join(cmd.ExecRoot, cmd.Dir)
+	c.Dir = filepath.Join(cmd.WorkspaceRoot, cmd.Dir)
 	c.Stdout = cmd.StdoutWriter()
 	c.Stderr = cmd.StderrWriter()
 	var consoleWG sync.WaitGroup

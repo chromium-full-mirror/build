@@ -35,7 +35,7 @@ type StepDeps struct {
 
 // StepRule is a rule for step.
 type StepRule struct {
-	// path is exec root relative
+	// path is workspace relative
 	// if path starts with ./, it is working directory relative.
 
 	// Name is a step rule label. required.
@@ -52,7 +52,7 @@ type StepRule struct {
 	ActionOuts []string `json:"action_outs,omitempty"`
 
 	// CommandPrefix matches the command prefix of the step.
-	// If argv[0] is absolute path outside of execroot,
+	// If argv[0] is absolute path outside of the workspace,
 	// it is compared with basename of argv[0].
 	// Note: it doesn't support space in argv[0] for such case.
 	CommandPrefix string `json:"command_prefix,omitempty"`
@@ -115,7 +115,7 @@ type StepRule struct {
 	// true, false or not-set(when nil), and treated as true when not set.
 	CanonicalizeDir *bool `json:"canonicalize_dir,omitempty"`
 
-	// UseSystemInput indicates to allow extra inputs outside exec root.
+	// UseSystemInput indicates to allow extra inputs outside of workspace.
 	UseSystemInput bool `json:"use_system_input,omitempty"`
 
 	// UseRemoteExecWrapper indicates the command uses remote exec wrapper
@@ -365,11 +365,11 @@ func (sc StepConfig) Lookup(ctx context.Context, bpath *build.Path, edge *ninjau
 	args0, args, ok := strings.Cut(command, " ")
 	// ptyhon3.exe may be absolute path in depot_tools, but
 	// config uses "python3.exe"...
-	// TODO(ukai): use execroot relative if it is in execroot?
+	// TODO(ukai): use workspace relative if it is in workspace?
 	if ok {
 		args0 = strings.Trim(args0, `"`)
 		args0 = strings.ReplaceAll(args0, "$:", ":")
-		if filepath.IsAbs(args0) && !strings.HasPrefix(args0, bpath.ExecRoot) {
+		if filepath.IsAbs(args0) && !strings.HasPrefix(args0, bpath.WorkspaceRoot) {
 			args0 = filepath.Base(args0)
 			command = args0 + " " + args
 			// TODO(b/277532415): preserve quote of args0?
@@ -424,7 +424,7 @@ loop:
 				}
 			}
 			if rule.InputRootAbsolutePath {
-				rule.Platform["InputRootAbsolutePath"] = bpath.ExecRoot
+				rule.Platform["InputRootAbsolutePath"] = bpath.WorkspaceRoot
 			}
 		}
 
@@ -491,7 +491,7 @@ func (sc StepConfig) ExpandInputs(ctx context.Context, p *build.Path, hashFS *ha
 		}
 		seen[path] = true
 		if !strings.Contains(path, ":") {
-			_, err := hashFS.Stat(ctx, p.ExecRoot, path)
+			_, err := hashFS.Stat(ctx, p.WorkspaceRoot, path)
 			if err != nil {
 				if _, loaded := knownMissingInputs.LoadOrStore(path, true); !loaded {
 					// TODO(b/271783311): hard error for bad config
@@ -513,7 +513,7 @@ func (sc StepConfig) ExpandInputs(ctx context.Context, p *build.Path, hashFS *ha
 					paths = append(paths, dep)
 					continue
 				}
-				_, err := hashFS.Stat(ctx, p.ExecRoot, dep)
+				_, err := hashFS.Stat(ctx, p.WorkspaceRoot, dep)
 				if err != nil {
 					if _, loaded := knownMissingInputs.LoadOrStore(depPathPair{dep, path}, true); !loaded {
 						clog.Warningf(ctx, "missing file in input-dep %s (from %s): %v", dep, path, err)

@@ -151,7 +151,7 @@ func (m *MerkleTree) Set(entry Entry) error {
 					return nil
 				}
 				if name == ".." && len(dirstack) == 0 {
-					return fmt.Errorf("set %s: out of exec root: %w", fname, ErrBadPath)
+					return fmt.Errorf("set %s: outside of workspace: %w", fname, ErrBadPath)
 				}
 				if name == ".." {
 					return nil
@@ -193,7 +193,7 @@ func (m *MerkleTree) Set(entry Entry) error {
 		}
 		if name == ".." {
 			if len(dirstack) == 0 {
-				return fmt.Errorf("set %s: out of exec root: %w", fname, ErrBadPath)
+				return fmt.Errorf("set %s: outside of workspace: %w", fname, ErrBadPath)
 			}
 			cur, dirstack = dirstack[len(dirstack)-1], dirstack[:len(dirstack)-1]
 			continue
@@ -293,7 +293,7 @@ func (m *MerkleTree) SetTree(tentry TreeEntry) error {
 		}
 		if name == ".." {
 			if len(dirstack) == 0 {
-				return fmt.Errorf("setTree %s: out of exec root: %w", dname, ErrBadPath)
+				return fmt.Errorf("setTree %s: outside of workspace: %w", dname, ErrBadPath)
 			}
 			cur, dirstack = dirstack[len(dirstack)-1], dirstack[:len(dirstack)-1]
 			continue

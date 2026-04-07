@@ -14,8 +14,8 @@ e.g. "Linux", "Windows".
 ## InputRootAbsolutePath
 
 If the step config has `input_root_absolute_path=true`,
-then Siso will set the absolute path of exec root to `InputRootAbsolutePath`.
-RE worker will mounts the remote inputs at this path.
+then Siso will set the absolute path of workspace to `InputRootAbsolutePath`.
+RE worker will then mount the remote inputs at this path.
 
 ## dockerRuntime
 
@@ -24,6 +24,5 @@ If `SISO_EXPERIMENTS=gvisor` is set, then Siso will set
 
 ## dockerChrootPath
 
-`dockerChrootPath=.` will work as chroot mode. i.e. exec root becomes `/`.
+`dockerChrootPath=.` will work as chroot mode. i.e. workspace becomes `/`.
 Other `dockerChrootPath` value is unsupported.
-

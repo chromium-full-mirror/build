@@ -93,11 +93,11 @@ func (c *Command) Execute(ctx context.Context, flagSet *flag.FlagSet, _ ...any) 
 }
 
 func (c *Command) run(ctx context.Context) error {
-	_, execRoot, dir, err := ninjabuild.InitDir(ctx, c.ninjaDir)
+	_, workspaceRoot, dir, err := ninjabuild.InitDir(ctx, c.ninjaDir)
 	if err != nil {
 		return err
 	}
-	buildPath := build.NewPath(execRoot, dir)
+	buildPath := build.NewPath(workspaceRoot, dir)
 	req, err := c.createRequest(ctx, buildPath)
 	if err != nil {
 		return err
@@ -238,7 +238,7 @@ func (c *Command) scanWithRequest(ctx context.Context, buildPath *build.Path, re
 		InputDeps: inputDeps,
 	})
 
-	result, err := s.Scan(ctx, buildPath.ExecRoot, req)
+	result, err := s.Scan(ctx, buildPath.WorkspaceRoot, req)
 	if err != nil {
 		return err
 	}

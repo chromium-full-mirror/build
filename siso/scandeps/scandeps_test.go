@@ -646,9 +646,9 @@ func TestScanDeps_SymlinkDir(t *testing.T) {
 		t.Errorf("scandeps()=%v, %v; want nil err", got, err)
 	}
 
-	// symlink_to_code is symlink but to out of exec root.
+	// symlink_to_code is symlink but to outside of workspace.
 	// hashfs Entries will resolve it as real one (i.e. directory)
-	// when it goes out of exec root.
+	// when it goes outside of workspace.
 	want := []string{
 		"base",
 		"base/logging.h",

@@ -161,7 +161,7 @@ func (b *Builder) checkUpToDate(ctx context.Context, stepDef StepDef, stepManife
 			}
 		}
 		if len(localOutputs) > 0 {
-			err := b.hashFS.Flush(ctx, b.path.ExecRoot, localOutputs)
+			err := b.hashFS.Flush(ctx, b.path.WorkspaceRoot, localOutputs)
 			if err != nil {
 				clog.Infof(ctx, "need: no local outputs %q: %v", localOutputs, err)
 				span.SetAttr("run-reason", "missing-local-outputs")
@@ -190,7 +190,7 @@ func outputMtime(ctx context.Context, b *Builder, outputs []string, restat bool)
 	var edgehash []byte
 	out0 := ""
 	for i, outPath := range outputs {
-		fi, err := b.hashFS.Stat(ctx, b.path.ExecRoot, outPath)
+		fi, err := b.hashFS.Stat(ctx, b.path.WorkspaceRoot, outPath)
 		if err != nil {
 			if oerr == nil {
 				out0 = outPath
@@ -264,7 +264,7 @@ func inputMtime(ctx context.Context, b *Builder, stepDef StepDef) (string, time.
 			mtime = ts.mtime
 			changed = ts.changed
 		} else {
-			fsys := b.hashFS.FileSystem(ctx, b.path.ExecRoot)
+			fsys := b.hashFS.FileSystem(ctx, b.path.WorkspaceRoot)
 			fi, err := fsys.Stat(in)
 			if log.V(1) {
 				clog.Infof(ctx, "input %q -> %v", in, err)

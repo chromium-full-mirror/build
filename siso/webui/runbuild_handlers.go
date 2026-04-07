@@ -77,7 +77,7 @@ func (s *WebuiServer) handleRunbuildPost(w http.ResponseWriter, r *http.Request)
 	s.activeBuildOutdir = r.FormValue("outdir")
 	s.activeBuildTarget = r.FormValue("target")
 	cmd := exec.Command(exe, "ninja", "-C", s.activeBuildOutdir, s.activeBuildTarget)
-	cmd.Dir = s.execRoot
+	cmd.Dir = s.workspaceRoot
 	pipe, _ := cmd.StdoutPipe()
 	cmd.Stderr = cmd.Stdout
 	if err := cmd.Start(); err != nil {

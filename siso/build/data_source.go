@@ -103,7 +103,7 @@ func (s source) Open(ctx context.Context) (io.ReadCloser, error) {
 	}
 	// siso process runs at some directory, but
 	// s.fname may not be relative to the working directory.
-	// Actually, it is exec-root relative if it is created by
+	// Actually, it is workspace relative if it is created by
 	// *Cmd.entriesFromResult, and failed to open as such path
 	// doesn't exist. return with better error message.
 	if !filepath.IsAbs(s.fname) {

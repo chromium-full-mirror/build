@@ -26,7 +26,7 @@ import (
 )
 
 // StepDef is a build step definition.
-// unless specified, path is execroot relative.
+// unless specified, path is workspace relative.
 type StepDef interface {
 	// String returns id of the step.
 	String() string
@@ -55,10 +55,10 @@ type StepDef interface {
 	// Binding returns binding value.
 	Binding(string) string
 
-	// Depfile returns exec-root relative depfile path, or empty if not set.
+	// Depfile returns workspace relative depfile path, or empty if not set.
 	Depfile(context.Context) string
 
-	// Rspfile returns exec-root relative rspfile path, or empty if not set.
+	// Rspfile returns workspace relative rspfile path, or empty if not set.
 	Rspfile(context.Context) string
 
 	// Inputs returns inputs of the step.
@@ -498,7 +498,7 @@ func newCmd(ctx context.Context, b *Builder, stepDef StepDef, stepManifest *step
 		RSPFile:                 stepDef.Rspfile(ctx),
 		RSPFileContent:          []byte(stepDef.Binding("rspfile_content")),
 		CmdHash:                 stepManifest.cmdHash,
-		ExecRoot:                b.path.ExecRoot, // use step binding?
+		WorkspaceRoot:           b.path.WorkspaceRoot, // use step binding?
 		Dir:                     b.path.Dir,
 		Inputs:                  stepInputs(ctx, stepDef),
 		ToolInputs:              stepDef.ToolInputs(ctx),
@@ -658,7 +658,7 @@ func (b *Builder) loadEnvfile(ctx context.Context, fname string) []string {
 		// https://ninja-build.org/manual.html#_extra_tools
 		// ninja -t msvc -e ENVFILE -- cl.exe <arguments>
 		//  Where ENVFILE is a binary file that contains an environment block suitable for CreateProcessA() on Windows (i.e. a series of zero-terminated strings that look like NAME=VALUE, followed by an extra zero terminator).
-		buf, err := b.hashFS.ReadFile(ctx, b.path.ExecRoot, b.path.MaybeFromWD(ctx, fname))
+		buf, err := b.hashFS.ReadFile(ctx, b.path.WorkspaceRoot, b.path.MaybeFromWD(ctx, fname))
 		if err != nil {
 			clog.Warningf(ctx, "failed to load envfile %q: %v", fname, err)
 			return

@@ -89,9 +89,9 @@ func (s *scanner) stats() string {
 		s.slowest, s.slowestDur)
 }
 
-func (s *scanner) reset(fsys *filesystem, execRoot string, inputDeps map[string][]string, precomputedTrees []string) {
+func (s *scanner) reset(fsys *filesystem, workspaceRoot string, inputDeps map[string][]string, precomputedTrees []string) {
 	s.pt.Reset()
-	s.fsview.reset(fsys, execRoot, inputDeps, precomputedTrees)
+	s.fsview.reset(fsys, workspaceRoot, inputDeps, precomputedTrees)
 	s.dirstack = s.dirstack[:0]
 	s.maxDirstack = 0
 	s.inputs = s.inputs[:0]
@@ -149,9 +149,9 @@ type scanResult struct {
 	err error
 }
 
-func (fsys *filesystem) scanner(ctx context.Context, execRoot string, inputDeps map[string][]string, precomputedTrees []string) *scanner {
+func (fsys *filesystem) scanner(ctx context.Context, workspaceRoot string, inputDeps map[string][]string, precomputedTrees []string) *scanner {
 	s := scannerPool.Get().(*scanner)
-	s.reset(fsys, execRoot, inputDeps, precomputedTrees)
+	s.reset(fsys, workspaceRoot, inputDeps, precomputedTrees)
 	for _, dir := range precomputedTrees {
 		s.fsview.addDir(ctx, dir, noSearchPath)
 	}
@@ -329,7 +329,7 @@ func (s *scanner) find(ctx context.Context, name string) (string, error) {
 		s.included[name] = included
 	}
 	if filepath.IsAbs(name) {
-		rel, err := filepath.Rel(s.fsview.execRoot, name)
+		rel, err := filepath.Rel(s.fsview.workspaceRoot, name)
 		if err != nil || !filepath.IsLocal(rel) {
 			return "", fmt.Errorf("unacceptable abs include path %q: %w", name, err)
 		}

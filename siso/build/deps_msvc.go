@@ -45,7 +45,7 @@ func (msvc depsMSVC) DepsFastCmd(ctx context.Context, b *Builder, cmd *execute.C
 }
 
 func (msvc depsMSVC) fixCmdInputs(ctx context.Context, b *Builder, cmd *execute.Cmd) ([]string, error) {
-	params, err := msvcutil.ExtractScanDepsParams(ctx, cmd.Args, cmd.Env, b.hashFS.FileSystem(ctx, filepath.Join(cmd.ExecRoot, cmd.Dir)))
+	params, err := msvcutil.ExtractScanDepsParams(ctx, cmd.Args, cmd.Env, b.hashFS.FileSystem(ctx, filepath.Join(cmd.WorkspaceRoot, cmd.Dir)))
 	if err != nil {
 		return nil, err
 	}
@@ -139,7 +139,7 @@ func (depsMSVC) DepsAfterRun(ctx context.Context, b *Builder, step *Step) ([]str
 			// and break no-op check.
 			continue
 		}
-		fi, err := b.hashFS.Stat(ctx, b.path.ExecRoot, in)
+		fi, err := b.hashFS.Stat(ctx, b.path.WorkspaceRoot, in)
 		if err == nil && fi.IsDir() {
 			// ignore directory input by `-I`
 			// even if the same base name
@@ -219,7 +219,7 @@ func (depsMSVC) scandeps(ctx context.Context, b *Builder, step *Step) ([]string,
 		// fastDeps + remote execution may have already run.
 		// In this case, do not change ActionStartTime set by the remote exec.
 		b.actionStarted(step)
-		params, err := msvcutil.ExtractScanDepsParams(ctx, step.cmd.Args, step.cmd.Env, b.hashFS.FileSystem(ctx, filepath.Join(step.cmd.ExecRoot, step.cmd.Dir)))
+		params, err := msvcutil.ExtractScanDepsParams(ctx, step.cmd.Args, step.cmd.Env, b.hashFS.FileSystem(ctx, filepath.Join(step.cmd.WorkspaceRoot, step.cmd.Dir)))
 		if err != nil {
 			return err
 		}
@@ -243,7 +243,7 @@ func (depsMSVC) scandeps(ctx context.Context, b *Builder, step *Step) ([]string,
 			clog.Infof(ctx, "scandeps req=%#v", req)
 		}
 		started := time.Now()
-		ins, err = b.scanDeps.Scan(ctx, b.path.ExecRoot, req)
+		ins, err = b.scanDeps.Scan(ctx, b.path.WorkspaceRoot, req)
 		if log.V(1) {
 			clog.Infof(ctx, "scandeps %d %s: %v", len(ins), time.Since(started), err)
 		}
@@ -305,7 +305,7 @@ func expandCPPCaseSensitiveIncludes(ctx context.Context, b *Builder, files []str
 		inc = strings.ToLower(filepath.ToSlash(filepath.Join(filepath.Base(filepath.Dir(f)), filepath.Base(f))))
 		includePaths[inc] = append(includePaths[inc], filepath.ToSlash(filepath.Dir(filepath.Dir(f))))
 
-		buf, err := b.hashFS.ReadFile(ctx, b.path.ExecRoot, f)
+		buf, err := b.hashFS.ReadFile(ctx, b.path.WorkspaceRoot, f)
 		if err != nil {
 			clog.Warningf(ctx, "expand cs: failed to read %s: %v", f, err)
 			continue
@@ -374,7 +374,7 @@ func (depsMSVC) scandepsByClang(ctx context.Context, b *Builder, step *Step) ([]
 	var inputs []string
 	for _, in := range ins {
 		inpath := b.path.MaybeFromWD(ctx, in)
-		_, err := b.hashFS.Stat(ctx, b.path.ExecRoot, inpath)
+		_, err := b.hashFS.Stat(ctx, b.path.WorkspaceRoot, inpath)
 		if err != nil {
 			clog.Warningf(ctx, "missing inputs? %s: %v", inpath, err)
 			continue
@@ -415,7 +415,7 @@ func CreateScanDepsRequestMSVC(ctx context.Context, p *Path, params scandepspara
 
 	if len(externals) > 0 && !allowExternals {
 		v := externals[:min(len(externals), 5)]
-		return scandeps.Request{}, fmt.Errorf("%w %d %q...: platform=%q", errNotUnderExecRoot, len(externals), v, platform)
+		return scandeps.Request{}, fmt.Errorf("%w %d %q...: platform=%q", errNotInsideWorkspace, len(externals), v, platform)
 	}
 	req := scandeps.Request{
 		Defines:   params.Defines,

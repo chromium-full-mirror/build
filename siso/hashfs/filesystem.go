@@ -369,12 +369,12 @@ resolve:
 				names = append(names, pathname)
 				// TODO: support remote chroot?
 				if filepath.IsAbs(target) {
-					// out of exec root
+					// outside of workspace
 					break resolve
 				}
 				targetPath := filepath.ToSlash(filepath.Join(filepath.Dir(pathname), target))
 				if !filepath.IsLocal(targetPath) {
-					// out of exec root
+					// outside of workspace
 					break resolve
 				}
 				name = filepath.ToSlash(filepath.Join(targetPath, strings.Join(elems[i+1:], "/")))

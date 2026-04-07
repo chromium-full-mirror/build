@@ -134,9 +134,9 @@ func Deps(ctx context.Context, args, env []string, cwd string) ([]string, error)
 		}
 	}
 	cmd := &execute.Cmd{
-		Args:     args,
-		Env:      env,
-		ExecRoot: cwd,
+		Args:          args,
+		Env:           env,
+		WorkspaceRoot: cwd,
 	}
 	var wait time.Duration
 	err := Semaphore.Do(ctx, func(ctx context.Context) error {

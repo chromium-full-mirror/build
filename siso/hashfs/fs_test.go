@@ -37,8 +37,8 @@ import (
 func TestStamp(t *testing.T) {
 	t.Parallel()
 	ctx := t.Context()
-	execRoot := t.TempDir()
-	execRoot, err := filepath.EvalSymlinks(execRoot)
+	dir := t.TempDir()
+	dir, err := filepath.EvalSymlinks(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -67,16 +67,16 @@ func TestStamp(t *testing.T) {
 			t.Parallel()
 			var cmdhash []byte
 			now := time.Now()
-			_, err := hfs.Stat(ctx, execRoot, fname)
+			_, err := hfs.Stat(ctx, dir, fname)
 			if err == nil {
 				t.Fatalf("Stat(%s)=_, %v; want nil error", fname, err)
 			}
 			t.Logf("Write(%q, %v)", fname, now)
-			err = hfs.WriteFile(ctx, execRoot, fname, nil, false, now, cmdhash, nil)
+			err = hfs.WriteFile(ctx, dir, fname, nil, false, now, cmdhash, nil)
 			if err != nil {
 				t.Errorf("Write(%s)=%v; want nil error", fname, err)
 			}
-			fi, err := hfs.Stat(ctx, execRoot, fname)
+			fi, err := hfs.Stat(ctx, dir, fname)
 			if err != nil {
 				t.Fatalf("Stat(%s)=_, %v; want nil error", fname, err)
 			}
@@ -95,7 +95,7 @@ func TestStamp(t *testing.T) {
 			if fi.IsDir() {
 				t.Errorf("fi.IsDir()=true; want=false")
 			}
-			fullname := filepath.ToSlash(filepath.Join(execRoot, fname))
+			fullname := filepath.ToSlash(filepath.Join(dir, fname))
 			got, ok := fi.Sys().(merkletree.Entry)
 			if !ok {
 				t.Fatalf("fi.Sys()=%T, want merkletree.Entry", fi.Sys())
@@ -1251,7 +1251,7 @@ func TestUpdate_FromLocal_AbsSymlink(t *testing.T) {
 	}
 
 	t.Logf("refresh")
-	err = hfs.Refresh(ctx, dir)
+	err = hfs.Refresh(ctx)
 	if err != nil {
 		t.Errorf("Refresh(ctx,%q)=%v; want nil err", dir, err)
 	}
@@ -1402,7 +1402,7 @@ func TestUpdate_FromLocal_NonLocalSymlink(t *testing.T) {
 		t.Errorf("Stat access fs? old=%#v new=%#v", stats, nstats)
 	}
 	t.Logf("refresh")
-	err = hfs.Refresh(ctx, dir)
+	err = hfs.Refresh(ctx)
 	if err != nil {
 		t.Errorf("Refresh(ctx,%q)=%v; want nil err", dir, err)
 	}
@@ -1688,7 +1688,7 @@ func TestFlusTohHardlink(t *testing.T) {
 
 // to test up cog for xattr test, see http://shortn/_m41XtnJUGu
 var (
-	xattrTestDir  = flag.String("xattr_test_dir", "", "exec root dir for TestXattr")
+	xattrTestDir  = flag.String("xattr_test_dir", "", "workspace dir for TestXattr")
 	xattrTestPath = flag.String("xattr_test_path", "", "test path for TestXattr")
 	xattrName     = flag.String("xattr_test_name", "", "xattr name for TestXattr")
 )
@@ -1779,7 +1779,7 @@ func TestRefresh(t *testing.T) {
 	if !nmtime.After(omtime) {
 		t.Errorf("disk mtime=%v must be newer than state mtime=%v", nmtime, omtime)
 	}
-	err = hashFS.Refresh(ctx, dir)
+	err = hashFS.Refresh(ctx)
 	if err != nil {
 		t.Fatalf("hashFS.Refresh(ctx, %q)=%v; want nil err", dir, err)
 	}
@@ -2109,7 +2109,7 @@ func TestWriteDataFlush(t *testing.T) {
 	}
 }
 
-func update(ctx context.Context, hfs *hashfs.HashFS, execRoot string, entries []merkletree.Entry, mtime time.Time, cmdhash []byte, action digest.Digest) error {
+func update(ctx context.Context, hfs *hashfs.HashFS, dir string, entries []merkletree.Entry, mtime time.Time, cmdhash []byte, action digest.Digest) error {
 	ents := make([]hashfs.UpdateEntry, 0, len(entries))
 	for _, ent := range entries {
 		mode := fs.FileMode(0644)
@@ -2135,7 +2135,7 @@ func update(ctx context.Context, hfs *hashfs.HashFS, execRoot string, entries []
 			IsChanged:   true,
 		})
 	}
-	return hfs.Update(ctx, execRoot, ents)
+	return hfs.Update(ctx, dir, ents)
 }
 
 func TestUpdate_WithLocalFlush(t *testing.T) {
@@ -2293,7 +2293,7 @@ func TestEntries_Symlink(t *testing.T) {
 		t.Skipf("no symlink on windows")
 	}
 	ctx := t.Context()
-	execRoot := t.TempDir()
+	dir := t.TempDir()
 
 	hashFS, err := hashfs.New(ctx, hashfs.Option{})
 	if err != nil {
@@ -2306,22 +2306,22 @@ func TestEntries_Symlink(t *testing.T) {
 		}
 	})
 
-	err = os.Mkdir(filepath.Join(execRoot, "dir"), 0755)
+	err = os.Mkdir(filepath.Join(dir, "dir"), 0755)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	err = os.WriteFile(filepath.Join(execRoot, "dir", "foo"), nil, 0644)
+	err = os.WriteFile(filepath.Join(dir, "dir", "foo"), nil, 0644)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	err = os.Symlink("dir", filepath.Join(execRoot, "symlink_dir"))
+	err = os.Symlink("dir", filepath.Join(dir, "symlink_dir"))
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	ents, err := hashFS.Entries(ctx, execRoot, []string{"dir", "symlink_dir", "dir/foo", "symlink_dir/foo"})
+	ents, err := hashFS.Entries(ctx, dir, []string{"dir", "symlink_dir", "dir/foo", "symlink_dir/foo"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2345,13 +2345,13 @@ func TestEntries_EscapedSymlink(t *testing.T) {
 		t.Skipf("no symlink on windows")
 	}
 	ctx := t.Context()
-	execRoot := t.TempDir()
-	extDir := t.TempDir()
-	extRel, err := filepath.Rel(execRoot, extDir)
-	if err != nil || filepath.IsLocal(extRel) {
-		t.Fatalf("extDir %q is not out of execRoot %q: rel=%s, %v", extDir, execRoot, extRel, err)
+	workspaceRoot := t.TempDir()
+	externalDir := t.TempDir()
+	externalRelPath, err := filepath.Rel(workspaceRoot, externalDir)
+	if err != nil || filepath.IsLocal(externalRelPath) {
+		t.Fatalf("externalDir %q is not outside workspaceRoot %q: rel=%s, %v", externalDir, workspaceRoot, externalRelPath, err)
 	}
-	t.Logf("execRoot=%s extDir=%s extRel=%s", execRoot, extDir, extRel)
+	t.Logf("workspaceRoot=%s externalDir=%s externalRelPath=%s", workspaceRoot, externalDir, externalRelPath)
 
 	hashFS, err := hashfs.New(ctx, hashfs.Option{})
 	if err != nil {
@@ -2388,19 +2388,19 @@ func TestEntries_EscapedSymlink(t *testing.T) {
 
 	entMap := make(map[string]merkletree.Entry)
 
-	entMap["/ext/file"] = createFile(extDir, "file", "/ext/file")
-	entMap["/ext/subdir/file"] = createFile(extDir, "subdir/file", "/ext/subdir/file")
-	createSymlink(execRoot, "absEscapedSymlink", filepath.Join(extDir, "file"))
-	createSymlink(execRoot, "absEscapedSymlinkDir", extDir)
-	createSymlink(execRoot, "escapedSymlink", filepath.Join(extRel, "file"))
-	createSymlink(execRoot, "escapedSymlinkDir", extRel)
+	entMap["/ext/file"] = createFile(externalDir, "file", "/ext/file")
+	entMap["/ext/subdir/file"] = createFile(externalDir, "subdir/file", "/ext/subdir/file")
+	createSymlink(workspaceRoot, "absEscapedSymlink", filepath.Join(externalDir, "file"))
+	createSymlink(workspaceRoot, "absEscapedSymlinkDir", externalDir)
+	createSymlink(workspaceRoot, "escapedSymlink", filepath.Join(externalRelPath, "file"))
+	createSymlink(workspaceRoot, "escapedSymlinkDir", externalRelPath)
 
-	entMap["file"] = createFile(execRoot, "file", "file")
-	createSymlink(execRoot, "localSymlink", "file")
-	entMap["subdir/file"] = createFile(execRoot, "subdir/file", "subdir/file")
-	createSymlink(execRoot, "subdir/localSymlink", "../file")
+	entMap["file"] = createFile(workspaceRoot, "file", "file")
+	createSymlink(workspaceRoot, "localSymlink", "file")
+	entMap["subdir/file"] = createFile(workspaceRoot, "subdir/file", "subdir/file")
+	createSymlink(workspaceRoot, "subdir/localSymlink", "../file")
 
-	ents, err := hashFS.Entries(ctx, execRoot, []string{
+	ents, err := hashFS.Entries(ctx, workspaceRoot, []string{
 		"absEscapedSymlink",
 		"absEscapedSymlinkDir",
 		"absEscapedSymlinkDir/file",

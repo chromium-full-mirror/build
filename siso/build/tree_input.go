@@ -59,7 +59,7 @@ func treeInputs(ctx context.Context, fn func(context.Context, string) (merkletre
 }
 
 func (b *Builder) resolveSymlinkForInputDeps(ctx context.Context, dir, labelSuffix string, inputDeps map[string][]string) (string, []string, error) {
-	fsys := b.hashFS.FileSystem(ctx, b.path.ExecRoot)
+	fsys := b.hashFS.FileSystem(ctx, b.path.WorkspaceRoot)
 	fi, err := fsys.Stat(dir)
 	if log.V(1) {
 		clog.Infof(ctx, "input deps stat %q: %v", dir, err)
@@ -68,8 +68,8 @@ func (b *Builder) resolveSymlinkForInputDeps(ctx context.Context, dir, labelSuff
 		return "", nil, fmt.Errorf("not in input_deps: stat err %s: %w", dir, err)
 	}
 	// check given dir and visited paths.
-	// visited may be out side of exec root, which won't be returned
-	// by VisitedPath, so dir is always exec root relative path.
+	// visited may be outside of workspace, which won't be returned
+	// by VisitedPath, so dir is always workspace relative path.
 	for _, dir := range append([]string{dir}, fsys.VisitedPaths(fi)...) {
 		files, ok := inputDeps[dir+labelSuffix]
 		if ok {
@@ -86,9 +86,9 @@ func (b *Builder) treeInput(ctx context.Context, dir, labelSuffix string, fixFn 
 	m := b.graph.InputDeps(ctx)
 	if !filepath.IsLocal(dir) {
 		// only allowed for dockerChrootPath=. in platform container image
-		absdir := filepath.ToSlash(filepath.Join(b.path.ExecRoot, dir))
+		absdir := filepath.ToSlash(filepath.Join(b.path.WorkspaceRoot, dir))
 		if log.V(1) {
-			clog.Infof(ctx, "tree dir: %q %q -> %q", b.path.ExecRoot, dir, absdir)
+			clog.Infof(ctx, "tree dir: %q %q -> %q", b.path.WorkspaceRoot, dir, absdir)
 		}
 		dir = absdir
 	}
@@ -133,9 +133,9 @@ func (st *subtree) init(ctx context.Context, b *Builder, dir string, files []str
 		sort.Strings(inputs)
 		rootDir := dir
 		if !filepath.IsAbs(rootDir) {
-			rootDir = filepath.Join(b.path.ExecRoot, dir)
+			rootDir = filepath.Join(b.path.WorkspaceRoot, dir)
 		}
-		clog.Infof(ctx, "tree init root dir: %q (%q %q)", rootDir, b.path.ExecRoot, dir)
+		clog.Infof(ctx, "tree init root dir: %q (%q %q)", rootDir, b.path.WorkspaceRoot, dir)
 		ents, err := b.hashFS.Entries(ctx, rootDir, inputs)
 		if err != nil {
 			clog.Warningf(ctx, "failed to get subtree entries %s: %v", dir, err)

@@ -255,7 +255,7 @@ func filesDiff(ctx context.Context, b *Builder, x, opts, y []string, ignorePatte
 		}
 		name := pathname
 		pathname = b.path.AbsFromWD(pathname)
-		relname, err := filepath.Rel(b.path.ExecRoot, pathname)
+		relname, err := filepath.Rel(b.path.WorkspaceRoot, pathname)
 		if err != nil {
 			errs = append(errs, fmt.Sprintf("%s: rel %v", name, err))
 			continue
@@ -268,7 +268,7 @@ func filesDiff(ctx context.Context, b *Builder, x, opts, y []string, ignorePatte
 			seen[relname] = stateDetected
 			continue
 		}
-		fi, err := b.hashFS.Stat(ctx, b.path.ExecRoot, relname)
+		fi, err := b.hashFS.Stat(ctx, b.path.WorkspaceRoot, relname)
 		if errors.Is(err, os.ErrNotExist) {
 			if log.V(1) {
 				clog.Infof(ctx, "%s: stat %v", name, err)

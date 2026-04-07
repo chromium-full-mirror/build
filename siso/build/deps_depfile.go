@@ -22,11 +22,11 @@ func (depsDepfile) DepsFastCmd(ctx context.Context, b *Builder, cmd *execute.Cmd
 }
 
 func (depsDepfile) DepsAfterRun(ctx context.Context, b *Builder, step *Step) ([]string, error) {
-	_, err := b.hashFS.Stat(ctx, b.path.ExecRoot, step.cmd.Depfile)
+	_, err := b.hashFS.Stat(ctx, b.path.WorkspaceRoot, step.cmd.Depfile)
 	if err != nil {
 		return nil, err
 	}
-	fsys := b.hashFS.FileSystem(ctx, b.path.ExecRoot)
+	fsys := b.hashFS.FileSystem(ctx, b.path.WorkspaceRoot)
 	depins, err := makeutil.ParseDepsFile(ctx, fsys, step.cmd.Depfile)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse depfile %q: %w", step.cmd.Depfile, err)

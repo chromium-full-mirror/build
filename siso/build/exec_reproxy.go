@@ -107,7 +107,7 @@ func allowWriteOutputs(ctx context.Context, cmd *execute.Cmd) error {
 	ctx, span := trace.NewSpan(ctx, "allow-write-outputs")
 	defer span.Close(nil)
 	for _, out := range cmd.Outputs {
-		fname := filepath.Join(cmd.ExecRoot, out)
+		fname := filepath.Join(cmd.WorkspaceRoot, out)
 		fi, err := os.Lstat(fname)
 		if errors.Is(err, fs.ErrNotExist) {
 			// Do nothing if the file doesn't exist.

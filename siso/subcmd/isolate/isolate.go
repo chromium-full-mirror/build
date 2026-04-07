@@ -133,7 +133,7 @@ func (c *Command) run(ctx context.Context) error {
 		cancel(errInterrupted{})
 	})()
 	started := time.Now()
-	execRoot, dir, err := c.initWorkdirs(ctx)
+	workspaceRoot, dir, err := c.initWorkdirs(ctx)
 	if err != nil {
 		return err
 	}
@@ -237,7 +237,7 @@ func (c *Command) run(ctx context.Context) error {
 	for _, target := range c.Flags.Args() {
 		eg.Go(func() error {
 			targetStarted := time.Now()
-			d, err := upload(ectx, execRoot, dir, hashFS, casClient, target)
+			d, err := upload(ectx, workspaceRoot, dir, hashFS, casClient, target)
 			duration := time.Since(targetStarted)
 			if err != nil {
 				return fmt.Errorf("failed for %s in %s: %w", target, duration, err)
@@ -269,13 +269,13 @@ func (c *Command) run(ctx context.Context) error {
 }
 
 func (c *Command) initWorkdirs(ctx context.Context) (string, string, error) {
-	_, execRoot, dir, err := ninjabuild.InitDir(ctx, c.ninjaDir)
+	_, workspaceRoot, dir, err := ninjabuild.InitDir(ctx, c.ninjaDir)
 	if err != nil {
 		return "", "", err
 	}
-	clog.Infof(ctx, "exec_root: %s", execRoot)
-	clog.Infof(ctx, "working_directory in exec_root: %s", dir)
-	return execRoot, dir, err
+	clog.Infof(ctx, "workspace root: %s", workspaceRoot)
+	clog.Infof(ctx, "working directory in workspace: %s", dir)
+	return workspaceRoot, dir, err
 }
 
 func (c *Command) casCred(ctx context.Context) (cred.Cred, error) {
@@ -298,7 +298,7 @@ func (c *Command) casCred(ctx context.Context) (cred.Cred, error) {
 	return cred.New(ctx, c.casopt.ServiceURI(), authOpts)
 }
 
-func upload(ctx context.Context, execRoot, buildDir string, hashFS *hashfs.HashFS, casClient *reapi.Client, target string) (digest.Digest, error) {
+func upload(ctx context.Context, workspaceRoot, buildDir string, hashFS *hashfs.HashFS, casClient *reapi.Client, target string) (digest.Digest, error) {
 	isolateName := fmt.Sprintf("%s.isolate", target)
 	buf, err := os.ReadFile(isolateName)
 	if err != nil {
@@ -328,7 +328,7 @@ func upload(ctx context.Context, execRoot, buildDir string, hashFS *hashfs.HashF
 		}
 		// Expand directory entries.
 		pathname := filepath.ToSlash(filepath.Join(buildDir, fname))
-		fi, err := hashFS.Stat(ctx, execRoot, pathname)
+		fi, err := hashFS.Stat(ctx, workspaceRoot, pathname)
 		if err != nil {
 			return digest.Digest{}, err
 		}
@@ -337,7 +337,7 @@ func upload(ctx context.Context, execRoot, buildDir string, hashFS *hashfs.HashF
 			continue
 		}
 		clog.Infof(ctx, "expand dir %s", pathname)
-		fsys := hashFS.FileSystem(ctx, filepath.Join(execRoot, pathname))
+		fsys := hashFS.FileSystem(ctx, filepath.Join(workspaceRoot, pathname))
 		err = fs.WalkDir(fsys, ".", func(path string, d fs.DirEntry, err error) error {
 			if err != nil {
 				return err
@@ -361,7 +361,7 @@ func upload(ctx context.Context, execRoot, buildDir string, hashFS *hashfs.HashF
 		if strings.HasSuffix(pathname, ".pyc") {
 			continue
 		}
-		ents, err := hashFS.Entries(ctx, execRoot, []string{pathname})
+		ents, err := hashFS.Entries(ctx, workspaceRoot, []string{pathname})
 		if err != nil {
 			return digest.Digest{}, err
 		}

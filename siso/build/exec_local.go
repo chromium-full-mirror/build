@@ -229,7 +229,7 @@ func (b *Builder) cacheWrite(ctx context.Context, step *Step) {
 
 		// Retrieve and compute output digests from HashFS on the action
 		hashFS := b.hashFS
-		outputEntries, err := hashFS.Entries(ctx, cmd.ExecRoot, cmd.AllOutputs())
+		outputEntries, err := hashFS.Entries(ctx, cmd.WorkspaceRoot, cmd.AllOutputs())
 		if err != nil {
 			return err
 		}
@@ -287,7 +287,7 @@ func (b *Builder) prepareLocalInputs(ctx context.Context, step *Step) error {
 	if log.V(1) {
 		clog.Infof(ctx, "prepare-local-inputs %d", len(inputs))
 	}
-	err := b.hashFS.Flush(ctx, step.cmd.ExecRoot, inputs)
+	err := b.hashFS.Flush(ctx, step.cmd.WorkspaceRoot, inputs)
 	clog.Infof(ctx, "prepare-local-inputs %d %s: %v", len(inputs), time.Since(start), err)
 	// now, all inputs are expected to be on disk.
 	// for reproxy and local, no need to scan deps.
@@ -298,10 +298,10 @@ func (b *Builder) prepareLocalInputs(ctx context.Context, step *Step) error {
 		// we need to check this against local disk, not hashfs.
 		// because command may add/remove files that are not
 		// known in ninja build graph.
-		inputs = b.hashFS.ForgetMissings(ctx, step.cmd.ExecRoot, step.cmd.Inputs)
+		inputs = b.hashFS.ForgetMissings(ctx, step.cmd.WorkspaceRoot, step.cmd.Inputs)
 	} else {
 		// if deps is not "msvc", just check against hashfs.
-		inputs = b.hashFS.Availables(ctx, step.cmd.ExecRoot, step.cmd.Inputs)
+		inputs = b.hashFS.Availables(ctx, step.cmd.WorkspaceRoot, step.cmd.Inputs)
 	}
 	if len(inputs) != len(step.cmd.Inputs) {
 		clog.Infof(ctx, "deps remove missing inputs %d -> %d", len(step.cmd.Inputs), len(inputs))
@@ -329,7 +329,7 @@ func (b *Builder) checkLocalOutputs(ctx context.Context, step *Step) error {
 	defOutputs := step.def.Outputs(ctx)
 
 	for _, out := range step.cmd.Outputs {
-		_, err := step.cmd.HashFS.Stat(ctx, step.cmd.ExecRoot, out)
+		_, err := step.cmd.HashFS.Stat(ctx, step.cmd.WorkspaceRoot, out)
 		if err != nil {
 			required := slices.Contains(defOutputs, out)
 			if !required {
@@ -337,7 +337,7 @@ func (b *Builder) checkLocalOutputs(ctx context.Context, step *Step) error {
 				continue
 			}
 			if experiments.Enabled("ignore-missing-outputs", "") {
-				b.hashFS.AddMissingOutput(ctx, step.cmd.ExecRoot, out)
+				b.hashFS.AddMissingOutput(ctx, step.cmd.WorkspaceRoot, out)
 				clog.Warningf(ctx, "ignore missing outputs %s: %v", out, err)
 				continue
 			}

@@ -101,7 +101,7 @@ to register handlers and step configs.
       some default value of flags.
       `-C` uses "dir" as key.
       targets (non-flags) uses "target" as key.
-  * `fs`: path is exec root relative.
+  * `fs`: path is workspace relative.
     * `read`: read contents.
       * `fname`: filename
     * `is_dir` check path is dir.
@@ -110,7 +110,7 @@ to register handlers and step configs.
       * `fname`: filename
     * `size` get file size.
       * `fname`: filename
-    * `canonpath`: convert wd relative to exec root relative
+    * `canonpath`: convert work dir relative to workspace relative
       * `fname`: filename
 
 `print` will print a message to log file.
@@ -191,7 +191,7 @@ to register handlers and step configs.
          This is used to send Linux executables from Windows machine.
          e.g. node binary for typescript action.
      * `rules` list of `StepRule`.
-        path is exec root relative, or cwd relative if it starts with "./"
+        path is workspace relative, or cwd relative if it starts with "./"
         * identifier
           * `name`: unique name of the rule. required.
         * rule selector
@@ -238,7 +238,7 @@ to register handlers and step configs.
           * `input_root_absolute_path`: need `InputRootAbsolutePath` or not.
           * `canonicalize_dir`: ok to canonicalize work dir or not.
              enable by default, but disable if input_root_absolute_path is set.
-          * `use_system_input`: ok to use input outside of exec root
+          * `use_system_input`: ok to use input outside of workspace
              as it assumes those are platform container image.
           * `use_remote_exec_wrapper`: true if gomacc/rewrapper is used,
              so it runs locally without using deps/file trace.
@@ -337,7 +337,7 @@ All inputs should be ready to use (via `ctx.fs`).
   * `args` tuple: command line args
   * `envs` dict: environment variables
   * `dir` string: working directory
-  * `exec_root` string: exec root
+  * `workspace_root` string: absolute path to workspace
   * `deps` string: deps type
   * `inputs` list: input pathnames
   * `tool_inputs` list: input pathnames (rule's inputs).
@@ -408,7 +408,7 @@ In chromium, `@config` is [//build/config/siso](https://chromium.googlesource.co
 ### @config_overrides
 
 `@config_overrides` provides access to local starlark files,
-in `$exec_root/.siso_remote`.
+in `$workspace/.siso_remote`.
 It is expected to have a module with name (basename of starlark) that
 has `rules`, `input_deps` functions.
 If file doesn't exist, it provides a None for the name (basename of starlark).

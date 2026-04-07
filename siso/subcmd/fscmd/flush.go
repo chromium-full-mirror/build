@@ -137,11 +137,11 @@ func (c *flushCommand) run(ctx context.Context) error {
 	defer client.Close()
 	cacheStore := client.CacheStore()
 
-	_, execRoot, dir, err := ninjabuild.InitDir(ctx, c.ninjaDir)
+	_, workspaceRoot, dir, err := ninjabuild.InitDir(ctx, c.ninjaDir)
 	if err != nil {
 		return fmt.Errorf("failed to init dir %s: %w", c.ninjaDir, err)
 	}
-	wd := filepath.Join(execRoot, dir)
+	wd := filepath.Join(workspaceRoot, dir)
 	st, err := hashfs.Load(ctx, hashfs.Option{StateFile: c.stateFile})
 	if err != nil {
 		return fmt.Errorf("failed to load %s: %w", c.stateFile, err)
