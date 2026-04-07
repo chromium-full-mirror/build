@@ -9,6 +9,7 @@ import (
 	"compress/gzip"
 	"context"
 	"encoding/base64"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -42,9 +43,11 @@ import (
 const defaultStateFile = ".siso_fs_state"
 
 // defaultCompressThreads is the default number of threads to use for data
-// compression. We limit the max parallelism to 32 due to benchmarks showing
-// that more isn't useful considering the typical file size of hashfs state
-// files, with decreasing gains and increased memory consumption.
+// compression. Each thread compresses an independent chunk via zstd EncodeAll,
+// so parallelism scales well up to the number of available cores. We limit
+// the max parallelism to 32 due to benchmarks showing that more isn't useful
+// considering the typical file size of hashfs state files, with decreasing
+// gains and increased memory consumption.
 var defaultCompressThreads = min(32, runtime.GOMAXPROCS(0))
 
 // OutputLocalFunc returns true if given fname needs to be on local disk.
@@ -98,91 +101,194 @@ type DataSource interface {
 	Source(context.Context, digest.Digest, string) digest.Source
 }
 
+const (
+	// gzipMagic is the 2-byte, little endian magic number at the start of every gzip-compressed data.
+	gzipMagic = 0x8B1F
+
+	// zstdMagic is the 4-byte, little endian magic number at the start of every zstd frame.
+	zstdMagic = 0xFD2FB528
+
+	// zstdSkippableMagic is the 4-byte, little endian magic number used to identify our indexed, zstd-compressed file
+	// format. It falls within the range of 0x184D2A50 to 0x184D2A5F, which are recognized by zstd as skippable frames,
+	// ensuring that zstd decoders automatically ignore our index metadata. This makes our indexed file format backwards
+	// and forwards compatible with Siso versions that attempt to decompress it as plain zstd-compressed data.
+	zstdSkippableMagic = 0x184D2A50
+
+	// zstdIndexVersion is the 4-byte, little endian magic number used to identify our current index format version.
+	zstdIndexVersion = 0x51500001
+)
+
 func isGzip(b []byte) bool {
-	// Files compressed with gzip always start with the magic bytes 0x1f 0x8b.
-	return bytes.HasPrefix(b, []byte{0x1f, 0x8b})
+	return len(b) >= 2 && binary.LittleEndian.Uint16(b) == gzipMagic
 }
 
 func isZstd(b []byte) bool {
-	// Files compressed with zstd always start with the magic bytes 0x28 0xb5 0x2f 0xfd.
-	return bytes.HasPrefix(b, []byte{0x28, 0xb5, 0x2f, 0xfd})
+	return len(b) >= 4 && binary.LittleEndian.Uint32(b) == zstdMagic || isZstdSkippable(b)
+}
+
+func isZstdSkippable(b []byte) bool {
+	// Zstd skippable frames use magic 0x184D2A50 through 0x184D2A5F.
+	return len(b) >= 4 && binary.LittleEndian.Uint32(b)&0xFFFFFFF0 == zstdSkippableMagic
+}
+
+// loadZstdParallel decompresses a multi-frame zstd file using the
+// embedded frame index for parallel decoding. The file format is:
+//
+//	[skippable frame: Magic_Number(4) + Frame_Size(4) +
+//	  Index_Version(4) + N * (Compressed_Size(4) + Uncompressed_Size(4))]
+//	[zstd frame 0]
+//	[zstd frame 1]
+//	...
+func loadZstdParallel(ctx context.Context, buf []byte, threads int) ([]byte, error) {
+	// Parse header and index data.
+	if len(buf) < 12 {
+		return nil, fmt.Errorf("buffer too short (%d bytes)", len(buf))
+	}
+	i := 0
+
+	if magicNumber := binary.LittleEndian.Uint32(buf[i : i+4]); magicNumber != zstdSkippableMagic {
+		return nil, fmt.Errorf("wrong zstd magic %x", magicNumber)
+	}
+	i += 4
+
+	frameSize := int(binary.LittleEndian.Uint32(buf[i : i+4]))
+	if frameSize < 4 || (frameSize-4)%8 != 0 {
+		return nil, fmt.Errorf("invalid frame size %d", frameSize)
+	}
+	if len(buf) < 8+frameSize {
+		return nil, fmt.Errorf("buffer too short for frame (%d bytes, need %d)", len(buf), 8+frameSize)
+	}
+	i += 4
+
+	if indexVersion := binary.LittleEndian.Uint32(buf[i : i+4]); indexVersion != zstdIndexVersion {
+		return nil, fmt.Errorf("wrong index version %x", indexVersion)
+	}
+	i += 4
+
+	framesMetadata := buf[i : i+frameSize-4]
+	numFrames := len(framesMetadata) / 8
+	i += len(framesMetadata)
+
+	framesData := buf[i:]
+
+	// Build frame slices and output offsets.
+	type frameInfo struct {
+		data   []byte
+		offset int
+		size   int
+	}
+	frames := make([]frameInfo, numFrames)
+	compOffset := 0
+	outOffset := 0
+	for frameIdx := range numFrames {
+		compSize := int(binary.LittleEndian.Uint32(framesMetadata[frameIdx*8 : frameIdx*8+4]))
+		outSize := int(binary.LittleEndian.Uint32(framesMetadata[frameIdx*8+4 : frameIdx*8+8]))
+		if compOffset+compSize > len(framesData) {
+			return nil, fmt.Errorf("frame %d extends beyond data (offset %d + size %d > %d)", frameIdx, compOffset, compSize, len(framesData))
+		}
+		frames[frameIdx] = frameInfo{
+			data:   framesData[compOffset : compOffset+compSize],
+			offset: outOffset,
+			size:   outSize,
+		}
+		compOffset += compSize
+		outOffset += outSize
+	}
+	totalUncompressed := outOffset
+
+	clog.Infof(ctx, "parallel decode of %d frames (%d bytes) using %d threads", numFrames, totalUncompressed, threads)
+
+	// Pre-allocate the output buffer.
+	out := make([]byte, totalUncompressed)
+
+	// DecodeAll is concurrency-safe: the decoder manages an internal pool
+	// of block decoders sized by WithDecoderConcurrency.
+	dec, err := zstd.NewReader(nil, zstd.WithDecoderConcurrency(threads))
+	if err != nil {
+		return nil, err
+	}
+	defer dec.Close()
+
+	// Decode each frame in parallel, directly into its slice of out.
+	var eg errgroup.Group
+	eg.SetLimit(threads)
+	for _, f := range frames {
+		eg.Go(func() error {
+			dst := out[f.offset : f.offset : f.offset+f.size]
+			result, err := dec.DecodeAll(f.data, dst)
+			if err != nil {
+				return err
+			}
+			if len(result) != f.size {
+				return fmt.Errorf("frame decoded %d bytes, expected %d", len(result), f.size)
+			}
+			return nil
+		})
+	}
+	if err := eg.Wait(); err != nil {
+		return nil, err
+	}
+
+	return out, nil
 }
 
 func loadFile(ctx context.Context, opts Option) ([]byte, error) {
-	f, err := os.Open(opts.StateFile)
-	if err != nil {
-		return nil, err
-	}
-	defer func() {
-		if err := f.Close(); err != nil {
-			clog.Warningf(ctx, "Failed to close %s: %v", opts.StateFile, err)
-		}
-	}()
-
-	fi, err := f.Stat()
+	compressed, err := os.ReadFile(opts.StateFile)
 	if err != nil {
 		return nil, err
 	}
 
-	// The first 4 bytes of the file are enough to determine the compression format.
-	magicBytes := make([]byte, 4)
-	if _, err := io.ReadFull(f, magicBytes); err != nil {
-		return nil, err
-	}
-	if _, err := f.Seek(0, io.SeekStart); err != nil {
-		return nil, err
+	if len(compressed) < 4 {
+		return nil, errors.New("state file too short to determine compression format")
 	}
 
-	var r io.ReadCloser
-	if isZstd(magicBytes) {
-		clog.Infof(ctx, "fs_state is zstd compressed")
-		var zd *zstd.Decoder
-		zd, err = zstd.NewReader(f)
+	compressThreads := opts.CompressThreads
+	if compressThreads == 0 {
+		compressThreads = defaultCompressThreads
+	}
+
+	// Detect format by magic bytes.
+	if isZstdSkippable(compressed) {
+		clog.Infof(ctx, "fs_state is indexed zstd (%d bytes)", len(compressed))
+		return loadZstdParallel(ctx, compressed, compressThreads)
+	}
+	if isZstd(compressed) {
+		// Old single-frame zstd format (no index): sequential decode.
+		clog.Infof(ctx, "fs_state is zstd compressed, no index (%d bytes)", len(compressed))
+		dec, err := zstd.NewReader(nil)
 		if err != nil {
 			return nil, err
 		}
-		r = zd.IOReadCloser()
-	} else if isGzip(magicBytes) {
+		defer dec.Close()
+		return dec.DecodeAll(compressed, nil)
+	}
+	if isGzip(compressed) {
 		clog.Infof(ctx, "fs_state is gzip compressed")
 		if opts.GzipUsesBgzf {
-			r, err = bgzf.NewReader(f, 0)
+			r, err := bgzf.NewReader(bytes.NewReader(compressed), 0)
 			if err == nil {
 				clog.Infof(ctx, "using bgzf for faster gzip decompression")
+				defer r.Close()
+				return io.ReadAll(r)
 			} else if errors.Is(err, bgzf.ErrNoBlockSize) {
 				// bgzf refuses to decompress regular gzip files, so we need to
 				// check for this case and retry with a regular gzip reader.
 				clog.Infof(ctx, "not bgzf, retrying as regular gzip")
-				if _, err := f.Seek(0, io.SeekStart); err != nil {
-					return nil, err
-				}
-				r, err = gzip.NewReader(f)
+			} else {
+				return nil, err
 			}
-		} else {
-			r, err = gzip.NewReader(f)
 		}
+		// Backward compatibility: decompress old gzip/bgzf state files.
+		// Go's gzip.Reader handles both plain gzip and bgzf (concatenated gzip members).
+		r, err := gzip.NewReader(bytes.NewReader(compressed))
 		if err != nil {
 			return nil, err
 		}
-	} else {
-		return nil, errors.New("unknown compression format, neither gzip nor zstd?")
+		defer r.Close()
+		return io.ReadAll(r)
 	}
 
-	// Unfortunately, neither zstd nor gzip are able to provide the uncompressed size
-	// of the data. However, it's a safe assumption that the uncompressed size is at
-	// least as large as the compressed size (and even if not we're only wasting a
-	// few bytes of memory).
-	b := bytes.NewBuffer(make([]byte, 0, fi.Size()))
-
-	if _, err = io.Copy(b, r); err != nil {
-		_ = r.Close()
-		return nil, err
-	}
-
-	if err = r.Close(); err != nil {
-		return nil, err
-	}
-
-	return b.Bytes(), nil
+	return nil, errors.New("unknown compression format, neither gzip nor zstd")
 }
 
 // Load loads a HashFS's state.
@@ -800,6 +906,131 @@ func (hfs *HashFS) SetState(ctx context.Context, state *pb.State) error {
 	return nil
 }
 
+// zstdCompressor handles parallel zstd compression of data into multiple
+// independent frames. It pre-computes the worst-case output size so the
+// caller can allocate the output buffer (e.g. via mmap) before compressing.
+type zstdCompressor struct {
+	enc       *zstd.Encoder
+	threads   int
+	dataLen   int
+	chunkSize int
+	numFrames int
+}
+
+// newZstdCompressor creates a compressor for the given data length.
+// Call Close when done.
+func newZstdCompressor(dataLen int, level zstd.EncoderLevel, threads int) (*zstdCompressor, error) {
+	enc, err := zstd.NewWriter(nil,
+		zstd.WithEncoderLevel(level),
+		zstd.WithEncoderConcurrency(threads),
+		zstd.WithEncoderCRC(true),
+	)
+	if err != nil {
+		return nil, err
+	}
+	chunkSize := max(1, (dataLen+threads-1)/threads)
+	numFrames := (dataLen + chunkSize - 1) / chunkSize
+	return &zstdCompressor{
+		enc:       enc,
+		threads:   threads,
+		dataLen:   dataLen,
+		chunkSize: chunkSize,
+		numFrames: numFrames,
+	}, nil
+}
+
+func (c *zstdCompressor) Close() error { return c.enc.Close() }
+
+// MaxCompressedSize returns the worst-case total output size (header +
+// index + all frames). Use this to size the output buffer.
+func (c *zstdCompressor) MaxCompressedSize() int {
+	indexPayload := 4 + c.numFrames*8
+	total := 8 + indexPayload
+	for i := range c.numFrames {
+		start := i * c.chunkSize
+		end := min(start+c.chunkSize, c.dataLen)
+		total += c.enc.MaxEncodedSize(end - start)
+	}
+	return total
+}
+
+// Compress compresses data into out and returns the number of bytes
+// written. out must be at least MaxCompressedSize() bytes.
+//
+// The output file format is:
+//
+//	[skippable frame: Magic_Number(4) + Frame_Size(4) +
+//	  Index_Version(4) + N * (Compressed_Size(4) + Uncompressed_Size(4))]
+//	[zstd frame 0]
+//	[zstd frame 1]
+//	...
+func (c *zstdCompressor) Compress(out, data []byte) (int, error) {
+	// Assign worst-case offsets within out for each frame.
+	indexPayload := 4 + c.numFrames*8
+	headerSize := 8 + indexPayload
+	type frameSlot struct {
+		dataStart  int // offset in out where compressed data begins
+		maxSize    int // worst-case compressed size for this frame
+		compSize   int // actual compressed size (filled after compression)
+		uncompSize int // uncompressed size of the input chunk
+	}
+	slots := make([]frameSlot, c.numFrames)
+	offset := headerSize
+	var eg errgroup.Group
+	eg.SetLimit(c.threads)
+	for i := range c.numFrames {
+		start := i * c.chunkSize
+		end := min(start+c.chunkSize, len(data))
+		uncompSize := end - start
+		maxSize := c.enc.MaxEncodedSize(uncompSize)
+		slots[i] = frameSlot{
+			dataStart:  offset,
+			maxSize:    maxSize,
+			uncompSize: uncompSize,
+		}
+		chunk := data[start:end]
+		slot := &slots[i]
+		eg.Go(func() error {
+			dst := out[slot.dataStart : slot.dataStart : slot.dataStart+slot.maxSize]
+			result := c.enc.EncodeAll(chunk, dst)
+			slot.compSize = len(result)
+			return nil
+		})
+		offset += maxSize
+	}
+	if err := eg.Wait(); err != nil {
+		return 0, err
+	}
+
+	// Compact: move each frame's actual data to be contiguous (removing
+	// the gaps from worst-case over-estimation).
+	writePos := headerSize
+	for i := range slots {
+		s := &slots[i]
+		if writePos != s.dataStart {
+			copy(out[writePos:], out[s.dataStart:s.dataStart+s.compSize])
+		}
+		writePos += s.compSize
+	}
+
+	// Write the skippable frame header + index at the beginning.
+	pos := 0
+	binary.LittleEndian.PutUint32(out[pos:], zstdSkippableMagic)
+	pos += 4
+	binary.LittleEndian.PutUint32(out[pos:], uint32(indexPayload))
+	pos += 4
+	binary.LittleEndian.PutUint32(out[pos:], zstdIndexVersion)
+	pos += 4
+	for _, s := range slots {
+		binary.LittleEndian.PutUint32(out[pos:], uint32(s.compSize))
+		pos += 4
+		binary.LittleEndian.PutUint32(out[pos:], uint32(s.uncompSize))
+		pos += 4
+	}
+
+	return writePos, nil
+}
+
 func saveFile(ctx context.Context, data []byte, opts Option) (retErr error) {
 	compressThreads := opts.CompressThreads
 	if compressThreads == 0 {
@@ -815,43 +1046,63 @@ func saveFile(ctx context.Context, data []byte, opts Option) (retErr error) {
 			_ = os.Remove(f.Name())
 		}
 	}()
-	clog.Infof(ctx, "save fs_state in temp %s", f.Name())
-	var w io.WriteCloser
+
 	if opts.CompressZstd {
-		clog.Infof(ctx, "using zstd compression (level %d)", opts.CompressLevel)
-		opts := []zstd.EOption{
-			zstd.WithEncoderCRC(true),
-			zstd.WithEncoderConcurrency(compressThreads),
-			zstd.WithEncoderLevel(zstd.EncoderLevelFromZstd(opts.CompressLevel)),
-			zstd.WithZeroFrames(true),
+		level := zstd.EncoderLevelFromZstd(opts.CompressLevel)
+		clog.Infof(ctx, "compressing fs_state with zstd (level %d, %d threads, %d bytes)", opts.CompressLevel, compressThreads, len(data))
+
+		comp, err := newZstdCompressor(len(data), level, compressThreads)
+		if err != nil {
+			return err
 		}
-		w, err = zstd.NewWriter(f, opts...)
+		defer func() {
+			if err := comp.Close(); err != nil && retErr == nil {
+				retErr = err
+			}
+		}()
+
+		out := make([]byte, comp.MaxCompressedSize())
+		actualSize, err := comp.Compress(out, data)
+		if err != nil {
+			return err
+		}
+		clog.Infof(ctx, "compressed %d -> %d bytes (%.1fx)", len(data), actualSize, float64(len(data))/float64(actualSize))
+
+		if _, err := f.Write(out[:actualSize]); err != nil {
+			f.Close()
+			return err
+		}
+		if err := f.Close(); err != nil {
+			return err
+		}
 	} else {
 		clog.Infof(ctx, "using gzip compression (level %d)", opts.CompressLevel)
+		var w io.WriteCloser
 		if opts.GzipUsesBgzf {
 			clog.Infof(ctx, "using bgzf for faster gzip compression (threads=%d)", compressThreads)
 			w, err = bgzf.NewWriterLevel(f, opts.CompressLevel, compressThreads)
 		} else {
 			w, err = gzip.NewWriterLevel(f, opts.CompressLevel)
 		}
+		if err != nil {
+			f.Close()
+			return err
+		}
+		if _, err := w.Write(data); err != nil {
+			f.Close()
+			return err
+		}
+		err = w.Close()
+		if err != nil {
+			f.Close()
+			return err
+		}
+		err = f.Close()
+		if err != nil {
+			return err
+		}
 	}
-	if err != nil {
-		f.Close()
-		return err
-	}
-	if _, err := w.Write(data); err != nil {
-		f.Close()
-		return err
-	}
-	err = w.Close()
-	if err != nil {
-		f.Close()
-		return err
-	}
-	err = f.Close()
-	if err != nil {
-		return err
-	}
+
 	// save old state in *.0
 	ofname := opts.StateFile + ".0"
 	if err := os.Remove(ofname); err != nil && !errors.Is(err, fs.ErrNotExist) {

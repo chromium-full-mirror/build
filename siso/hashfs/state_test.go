@@ -161,8 +161,9 @@ func TestLoadSave(t *testing.T) {
 				t.Fatalf("Could not read %q: %v", opts.StateFile, err)
 			}
 			if useZstd {
-				if diff := cmp.Diff([]byte{0x28, 0xb5, 0x2f, 0xfd}, b[:4]); diff != "" {
-					t.Errorf("Save(...) missing zstd header, diff -want +got:\n%s", diff)
+				// Skippable frame magic is 0x184D2A50 (little-endian: 0x50 0x2A 0x4D 0x18).
+				if diff := cmp.Diff([]byte{0x50, 0x2a, 0x4d, 0x18}, b[:4]); diff != "" {
+					t.Errorf("Save(...) missing zstd skippable frame header, diff -want +got:\n%s", diff)
 				}
 			} else {
 				if diff := cmp.Diff([]byte{0x1f, 0x8b}, b[:2]); diff != "" {
