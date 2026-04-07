@@ -57,13 +57,18 @@ build {{.Outs}}: {{.RuleName}} | {{.Ins}}
 // TODO: use io/fs to test expected file outputs?
 func writeTarget(w io.Writer, t *graph.Target, buildSettings *environment.BuildSettings) error {
 	// HACK: right now gong only has a concept of "tool" or "script" actions.
-	// targets that should be written as phony right now are:
+	// targets that should be written inline right now are:
 	//	- group(), which has 0 actions
 	//	- anything with script calls only
-	// so, we'll naively assume that if the target doesn't use tools, write it as phony.
+	//	- anything with copy calls only
+	// so, we'll naively assume that if the target doesn't use tools, write it inline.
+	// There needs to be thought put into a more generic way to decide which targets
+	// will be written inline directly into the toolchain's root ninja files,
+	// versus which targets get their own subninja files, without tight coupling with
+	// the type of the actual targets.
 	if slices.ContainsFunc(t.Resolution.Actions, func(action graph.Action) bool {
-		_, ok := action.(graph.RunToolAction)
-		return ok
+		toolAction, ok := action.(graph.RunToolAction)
+		return ok && toolAction.Tool != "copy"
 	}) {
 		targetLabel := t.Label()
 		// TODO: reusing C++ GN's builddir resolution funcs is really clumsy.
@@ -93,7 +98,7 @@ func writeTarget(w io.Writer, t *graph.Target, buildSettings *environment.BuildS
 		if err != nil {
 			return fmt.Errorf("failed to create target %s: %w", targetNinjaAbs, err)
 		}
-		if err := writeBinaryTarget(subninjaFile, t, buildSettings); err != nil {
+		if err := writeSubninjaTarget(subninjaFile, t, buildSettings); err != nil {
 			if err := subninjaFile.Close(); err != nil {
 				fmt.Fprintf(os.Stderr, "failed to close %s: %v", targetNinjaAbs, err)
 			}
@@ -110,15 +115,12 @@ func writeTarget(w io.Writer, t *graph.Target, buildSettings *environment.BuildS
 		return nil
 	}
 
-	return writePhonyForTarget(w, t, buildSettings)
+	return writeInlineTarget(w, t, buildSettings)
 }
 
-func writePhonyForTarget(w io.Writer, t *graph.Target, buildSettings *environment.BuildSettings) error {
+func writeInlineTarget(w io.Writer, t *graph.Target, buildSettings *environment.BuildSettings) error {
 	for _, action := range t.Resolution.Actions {
-		switch action := action.(type) {
-		case graph.RunScriptAction:
-			writeAction(w, t, action, buildSettings)
-		}
+		writeAction(w, t, action, buildSettings)
 	}
 
 	var outputPaths []string
@@ -132,7 +134,7 @@ func writePhonyForTarget(w io.Writer, t *graph.Target, buildSettings *environmen
 	return nil
 }
 
-func writeBinaryTarget(w io.Writer, t *graph.Target, buildSettings *environment.BuildSettings) error {
+func writeSubninjaTarget(w io.Writer, t *graph.Target, buildSettings *environment.BuildSettings) error {
 	var outputExtension, targetOutputName string
 	targetOutDir := t.OutDir(buildSettings)
 	outputDir := targetOutDir.Path()

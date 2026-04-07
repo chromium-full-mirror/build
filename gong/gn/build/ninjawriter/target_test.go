@@ -156,7 +156,7 @@ build obj/out$ file$ with$ spaces.txt: copy ../../src/file$ with$ spaces.txt
 			}
 
 			var sb strings.Builder
-			if err := writeBinaryTarget(&sb, target, bs); err != nil {
+			if err := writeSubninjaTarget(&sb, target, bs); err != nil {
 				t.Fatalf("writeBinaryTarget()=%v; want nil err", err)
 			}
 

@@ -102,3 +102,33 @@ func (ActionMissingScriptError) Message() string {
 
 // HelpText returns the user-facing error help text.
 func (ActionMissingScriptError) HelpText() string { return "" }
+
+// CopyNoSourcesError is returned when a copy target declares no sources.
+type CopyNoSourcesError struct{}
+
+// Error returns the error string.
+func (CopyNoSourcesError) Error() string { return "copy must have at least one source" }
+
+// Message returns the user-facing error message.
+func (CopyNoSourcesError) Message() string { return "Empty sources for copy command." }
+
+// HelpText returns the user-facing error help text.
+func (CopyNoSourcesError) HelpText() string {
+	return `You have to specify at least one file to copy in the "sources".`
+}
+
+// CopyBadOutputsError is returned when a copy target declares zero or multiple outputs.
+type CopyBadOutputsError struct{}
+
+// Error returns the error string.
+func (CopyBadOutputsError) Error() string { return "copy must have exactly one output" }
+
+// Message returns the user-facing error message.
+func (CopyBadOutputsError) Message() string { return "Copy command must have exactly one output." }
+
+// HelpText returns the user-facing error help text.
+func (CopyBadOutputsError) HelpText() string {
+	return `You must specify exactly one value in the "outputs" array for the destination of the copy
+(see "gn help copy"). If there are multiple sources to copy, use source expansion
+(see "gn help source_expansion").`
+}

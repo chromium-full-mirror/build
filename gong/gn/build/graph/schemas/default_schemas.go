@@ -335,15 +335,6 @@ var (
 			return DefaultMetadata{[]fs.OutputPath{out}}, nil
 		},
 	}
-	CopySchema = graph.Schema{
-		Name:    "copy",
-		Summary: "Declare a target that copies files.",
-		Vars: map[string]graph.TargetVar{
-			// TODO: support more variables.
-			"sources": graph.FileListVar{},
-			"outputs": graph.FileListVar{},
-		},
-	}
 	GroupSchema = graph.Schema{
 		Name:    "group",
 		Summary: "Declare a named group of targets.",

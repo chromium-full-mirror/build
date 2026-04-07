@@ -31,6 +31,13 @@ func (s SubstitutionVar) NinjaString() string { return s.Ninja }
 var substitutionSource = SubstitutionVar{"{{source}}", "${in}"}
 var substitutionOutput = SubstitutionVar{"{{output}}", "${out}"}
 
+var substitutionSourceNamePart = SubstitutionVar{"{{source_name_part}}", ""}
+var substitutionSourceFilePart = SubstitutionVar{"{{source_file_part}}", ""}
+var substitutionSourceDir = SubstitutionVar{"{{source_dir}}", ""}
+var substitutionSourceRootRelativeDir = SubstitutionVar{"{{source_root_relative_dir}}", ""}
+var substitutionSourceGenDir = SubstitutionVar{"{{source_gen_dir}}", ""}
+var substitutionSourceOutDir = SubstitutionVar{"{{source_out_dir}}", ""}
+
 // Valid for all compiler and linker tools. These depend on the target and
 // do not vary on a per-file basis.
 var substitutionOutputDir = SubstitutionVar{"{{output_dir}}", "${output_dir}"}
@@ -80,6 +87,12 @@ var generalSubstitutions = []SubstitutionPart{
 	substitutionOutputExtension,
 	substitutionTargetOutDir,
 	substitutionTargetOutputName,
+	substitutionSourceNamePart,
+	substitutionSourceFilePart,
+	substitutionSourceDir,
+	substitutionSourceRootRelativeDir,
+	substitutionSourceGenDir,
+	substitutionSourceOutDir,
 	substitutionRspFileName,
 }
 
