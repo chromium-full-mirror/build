@@ -2544,6 +2544,10 @@ func TestForget_UnexpectedRemoveRspFileUnderSymlinkDir(t *testing.T) {
 				t.Fatalf("hfs.Close=%v", err)
 			}
 		}()
+		err = hfs.WaitReady(ctx)
+		if err != nil {
+			t.Fatalf("hfs.WaitReady=%v; want nil", err)
+		}
 		_, err = hfs.Stat(ctx, srcDir, rspFile)
 		if err != nil {
 			t.Errorf("Stat %q: %v", rspFile, err)
