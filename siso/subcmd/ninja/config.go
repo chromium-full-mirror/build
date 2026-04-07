@@ -262,7 +262,7 @@ func (c *Command) SetFlags(flagSet *flag.FlagSet) {
 	flagSet.StringVar(&c.cloudProfilerServiceName, "cloud_profiler_service_name", "siso", "cloud profiler service name")
 	flagSet.BoolVar(&c.enableCloudTrace, "enable_cloud_trace", false, "enable cloud trace")
 	flagSet.BoolVar(&c.enableCloudMonitoring, "enable_cloud_monitoring", false, "enable cloud monitoring")
-	flagSet.BoolVar(&c.enableBuildNinjaFilesUpload, "enable_build_ninja_files_upload", true, "enable Build Ninja files upload to RBE-CAS")
+	flagSet.BoolVar(&c.enableBuildNinjaFilesUpload, "enable_build_ninja_files_upload", false, "enable Build Ninja files upload to RBE-CAS")
 	flagSet.StringVar(&c.metricsLabels, "metrics_labels", os.Getenv("RBE_metrics_labels"), "comma-separated arbitrary key value pairs in the form key=value, which are added to cloud monitoring metrics and siso_metadata.json.")
 	flagSet.StringVar(&c.metricsProject, "metrics_project", os.Getenv("RBE_metrics_project"), "override Cloud Monitoring GCP project where Siso sends action and build metrics.")
 	flagSet.BoolVar(&c.writeReclientMetricsLogs, "write_reclient_metrics_logs", false, "write Reclient's RBE build metrics to rbe_metrics.{txt, pb} under -log_dir.")
