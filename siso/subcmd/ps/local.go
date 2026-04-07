@@ -26,10 +26,10 @@ type localSource struct {
 	stateDir string
 }
 
-func newLocalSource(ctx context.Context, ninjaDir ninjabuild.DirFlag, stateDir string) (*localSource, error) {
-	_, workspaceRoot, dir, err := ninjabuild.InitDir(ctx, ninjaDir)
+func newLocalSource(ctx context.Context, outDir ninjabuild.DirFlag, stateDir string) (*localSource, error) {
+	_, workspaceRoot, dir, err := ninjabuild.InitDir(ctx, outDir)
 	if err != nil {
-		return nil, fmt.Errorf("failed to init dir %s: %w", ninjaDir, err)
+		return nil, fmt.Errorf("failed to init dir %s: %w", outDir, err)
 	}
 	wd := filepath.Join(workspaceRoot, dir)
 	return &localSource{wd: wd, stateDir: stateDir}, nil

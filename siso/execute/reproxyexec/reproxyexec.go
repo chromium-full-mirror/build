@@ -244,7 +244,7 @@ func createRequest(ctx context.Context, cmd *execute.Cmd, execTimeout, reclientT
 		},
 		Args:             args,
 		ExecutionTimeout: int32(execTimeout.Seconds()),
-		WorkingDirectory: cmd.Dir,
+		WorkingDirectory: cmd.WorkDir,
 		Platform:         cmd.REProxyConfig.Platform,
 	}
 	if cmd.REProxyConfig.PreserveSymlinks {

@@ -16,19 +16,19 @@ import (
 // Path manages paths used by the build.
 type Path struct {
 	WorkspaceRoot string
-	Dir           string // relative to WorkspaceRoot, use slashes
+	OutDir        string // relative to WorkspaceRoot, use slashes
 
 	// Symbol table for seen paths.
 	intern symtab
-	// Stores paths converted cwd relative to workspace relative.
+	// Stores paths converted from out dir relative to workspace relative.
 	m sync.Map
 }
 
 // NewPath returns new path for the build.
-func NewPath(workspaceRoot, dir string) *Path {
+func NewPath(workspaceRoot, outDir string) *Path {
 	return &Path{
 		WorkspaceRoot: workspaceRoot,
-		Dir:           filepath.ToSlash(dir),
+		OutDir:        filepath.ToSlash(outDir),
 	}
 }
 
@@ -37,8 +37,8 @@ func (p *Path) Check() error {
 	if !filepath.IsAbs(p.WorkspaceRoot) {
 		return fmt.Errorf("workspace root must be absolute path: %q", p.WorkspaceRoot)
 	}
-	if filepath.IsAbs(p.Dir) {
-		return fmt.Errorf("dir must be relative to workspace: %q", p.Dir)
+	if filepath.IsAbs(p.OutDir) {
+		return fmt.Errorf("output dir must be relative to workspace: %q", p.OutDir)
 	}
 	return nil
 }
@@ -48,7 +48,7 @@ func (p *Path) Intern(path string) string {
 	return p.intern.Intern(path)
 }
 
-// MaybeFromWD attempts to convert cwd relative to workspace relative.
+// MaybeFromWD attempts to convert output directory relative to workspace relative.
 // It logs an error and returns the path as-is if this fails.
 func (p *Path) MaybeFromWD(ctx context.Context, path string) string {
 	s, err := p.FromWD(path)
@@ -59,7 +59,7 @@ func (p *Path) MaybeFromWD(ctx context.Context, path string) string {
 	return s
 }
 
-// FromWD converts cwd relative to workspace relative,
+// FromWD converts from output directory relative to workspace relative,
 // slash-separated.
 // It keeps absolute path if it is outside of workspace.
 func (p *Path) FromWD(path string) (string, error) {
@@ -84,15 +84,14 @@ func (p *Path) FromWD(path string) (string, error) {
 		v, _ = p.m.LoadOrStore(path, rel)
 		return v.(string), nil
 	}
-	s := filepath.ToSlash(filepath.Join(p.Dir, path))
+	s := filepath.ToSlash(filepath.Join(p.OutDir, path))
 	s = p.intern.Intern(s)
 	v, _ = p.m.LoadOrStore(path, s)
 	return v.(string), nil
 }
 
-// MaybeToWD converts workspace relative to cwd relative,
-// slash-separated.
-// It keeps absolute path as is.
+// MaybeToWD converts from workspace relative to output directory
+// relative, slash-separated. It keeps absolute path as is.
 // It logs an error and returns the path as-is if this fails.
 func (p *Path) MaybeToWD(ctx context.Context, path string) string {
 	if path == "" {
@@ -101,9 +100,9 @@ func (p *Path) MaybeToWD(ctx context.Context, path string) string {
 	if filepath.IsAbs(path) {
 		return path
 	}
-	rel, err := filepath.Rel(p.Dir, path)
+	rel, err := filepath.Rel(p.OutDir, path)
 	if err != nil {
-		clog.Warningf(ctx, "Failed to get rel %s, %s: %v", p.Dir, path, err)
+		clog.Warningf(ctx, "Failed to get rel %s, %s: %v", p.OutDir, path, err)
 		return path
 	}
 	rel = filepath.ToSlash(rel)
@@ -115,5 +114,5 @@ func (p *Path) AbsFromWD(path string) string {
 	if filepath.IsAbs(path) {
 		return path
 	}
-	return filepath.Join(p.WorkspaceRoot, p.Dir, path)
+	return filepath.Join(p.WorkspaceRoot, p.OutDir, path)
 }

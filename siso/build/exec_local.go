@@ -251,7 +251,7 @@ func (b *Builder) cacheWrite(ctx context.Context, step *Step) {
 		result.StderrRaw = nil
 
 		// Set the outputs on the result
-		execute.ResultFromEntries(ctx, result, cmd.Dir, outputEntries)
+		execute.ResultFromEntries(ctx, result, cmd.WorkDir, outputEntries)
 		for _, entry := range outputEntries {
 			ds.Set(entry.Data)
 		}

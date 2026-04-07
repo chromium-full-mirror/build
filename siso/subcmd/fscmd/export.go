@@ -31,21 +31,21 @@ func (*exportCommand) Usage() string {
 }
 
 type exportCommand struct {
-	ninjaDir  ninjabuild.DirFlag
+	outDir    ninjabuild.DirFlag
 	format    string
 	stateFile string
 }
 
 func (c *exportCommand) SetFlags(flagSet *flag.FlagSet) {
-	c.ninjaDir.RegisterFlags(flagSet)
+	c.outDir.RegisterFlags(flagSet)
 	flagSet.StringVar(&c.format, "format", "json", "output format. json or prototext")
 	flagSet.StringVar(&c.stateFile, "fs_state", stateFile, "fs state filename")
 }
 
 func (c *exportCommand) Execute(ctx context.Context, flagSet *flag.FlagSet, _ ...any) subcommands.ExitStatus {
-	_, _, _, err := ninjabuild.InitDir(ctx, c.ninjaDir)
+	_, _, _, err := ninjabuild.InitDir(ctx, c.outDir)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "failed to init dir %s: %v\n", c.ninjaDir, err)
+		fmt.Fprintf(os.Stderr, "failed to init dir %s: %v\n", c.outDir, err)
 		return 1
 	}
 

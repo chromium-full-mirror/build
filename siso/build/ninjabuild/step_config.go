@@ -36,7 +36,7 @@ type StepDeps struct {
 // StepRule is a rule for step.
 type StepRule struct {
 	// path is workspace relative
-	// if path starts with ./, it is working directory relative.
+	// if path starts with ./, it is output dir relative.
 
 	// Name is a step rule label. required.
 	// must be unique to identify the step rule to make it easy
@@ -347,7 +347,7 @@ func fromConfigPath(ctx context.Context, p *build.Path, path string) string {
 
 func toConfigPath(p *build.Path, path string) string {
 	path = filepath.ToSlash(path)
-	if after, ok := strings.CutPrefix(path, p.Dir+"/"); ok {
+	if after, ok := strings.CutPrefix(path, p.OutDir+"/"); ok {
 		return "./" + after
 	}
 	return path
@@ -363,7 +363,7 @@ func (sc StepConfig) Lookup(ctx context.Context, bpath *build.Path, edge *ninjau
 	actionName := edge.RuleName()
 	command := edge.RawBinding("command")
 	args0, args, ok := strings.Cut(command, " ")
-	// ptyhon3.exe may be absolute path in depot_tools, but
+	// python3.exe may be absolute path in depot_tools, but
 	// config uses "python3.exe"...
 	// TODO(ukai): use workspace relative if it is in workspace?
 	if ok {

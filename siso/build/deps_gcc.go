@@ -47,7 +47,7 @@ func (gcc depsGCC) DepsFastCmd(ctx context.Context, b *Builder, cmd *execute.Cmd
 }
 
 func (gcc depsGCC) fixCmdInputs(ctx context.Context, b *Builder, cmd *execute.Cmd) ([]string, error) {
-	params, err := gccutil.ExtractScanDepsParams(ctx, cmd.Args, cmd.Env, b.hashFS.FileSystem(ctx, filepath.Join(cmd.WorkspaceRoot, cmd.Dir)))
+	params, err := gccutil.ExtractScanDepsParams(ctx, cmd.Args, cmd.Env, b.hashFS.FileSystem(ctx, filepath.Join(cmd.WorkspaceRoot, cmd.WorkDir)))
 	if err != nil {
 		return nil, err
 	}
@@ -203,7 +203,7 @@ func (depsGCC) scandeps(ctx context.Context, b *Builder, step *Step) ([]string, 
 		// fastDeps + remote execution may have already run.
 		// In this case, do not change ActionStartTime set by the remote exec.
 		b.actionStarted(step)
-		params, err := gccutil.ExtractScanDepsParams(ctx, step.cmd.Args, step.cmd.Env, b.hashFS.FileSystem(ctx, filepath.Join(step.cmd.WorkspaceRoot, step.cmd.Dir)))
+		params, err := gccutil.ExtractScanDepsParams(ctx, step.cmd.Args, step.cmd.Env, b.hashFS.FileSystem(ctx, filepath.Join(step.cmd.WorkspaceRoot, step.cmd.WorkDir)))
 		if err != nil {
 			return err
 		}

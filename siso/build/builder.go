@@ -511,7 +511,7 @@ func (b *Builder) Build(ctx context.Context, name string, args ...string) (err e
 	if b.rebuildManifest == "" {
 		// record build files in hashfs. b/489164002
 		for _, fname := range b.graph.Filenames() {
-			_, err = b.hashFS.Stat(ctx, filepath.Join(b.path.WorkspaceRoot, b.path.Dir), fname)
+			_, err = b.hashFS.Stat(ctx, filepath.Join(b.path.WorkspaceRoot, b.path.OutDir), fname)
 			if err != nil {
 				clog.Warningf(ctx, "failed to stat build file %q: %v", fname, err)
 			}
@@ -591,7 +591,7 @@ func (b *Builder) Build(ctx context.Context, name string, args ...string) (err e
 
 	var mftime time.Time
 	if b.rebuildManifest != "" {
-		fi, err := b.hashFS.Stat(ctx, b.path.WorkspaceRoot, filepath.Join(b.path.Dir, b.rebuildManifest))
+		fi, err := b.hashFS.Stat(ctx, b.path.WorkspaceRoot, filepath.Join(b.path.OutDir, b.rebuildManifest))
 		if err == nil {
 			mftime = fi.ModTime()
 			clog.Infof(ctx, "manifest %s: %s", b.rebuildManifest, mftime)
@@ -600,7 +600,7 @@ func (b *Builder) Build(ctx context.Context, name string, args ...string) (err e
 	defer func() {
 		stat = b.Stats()
 		if b.rebuildManifest != "" {
-			fi, mferr := b.hashFS.Stat(ctx, b.path.WorkspaceRoot, filepath.Join(b.path.Dir, b.rebuildManifest))
+			fi, mferr := b.hashFS.Stat(ctx, b.path.WorkspaceRoot, filepath.Join(b.path.OutDir, b.rebuildManifest))
 			if mferr != nil {
 				clog.Warningf(ctx, "failed to stat %s: %v", b.rebuildManifest, mferr)
 				err = fmt.Errorf("%w: missing manifest %s: %v", ErrManifest, b.rebuildManifest, mferr)
@@ -879,7 +879,7 @@ func (b *Builder) uploadBuildNinja(ctx context.Context) {
 	started := time.Now()
 	inputs := b.graph.Filenames()
 	inputs = append(inputs, "args.gn")
-	ents, err := b.hashFS.Entries(ctx, filepath.Join(b.path.WorkspaceRoot, b.path.Dir), inputs)
+	ents, err := b.hashFS.Entries(ctx, filepath.Join(b.path.WorkspaceRoot, b.path.OutDir), inputs)
 	if err != nil {
 		clog.Warningf(ctx, "failed to get build files entries: %v", err)
 		return
@@ -946,9 +946,9 @@ func (b *Builder) recordNinjaLogs(ctx context.Context, s *Step) {
 
 	// Remove prefixed working directory path from Outputs.
 	outputs := make([]string, 0, len(s.cmd.Outputs))
-	buildDir := s.cmd.Dir + "/"
+	outDir := s.cmd.WorkDir + "/"
 	for _, output := range s.cmd.Outputs {
-		outputs = append(outputs, strings.TrimPrefix(output, buildDir))
+		outputs = append(outputs, strings.TrimPrefix(output, outDir))
 	}
 	ninjautil.WriteNinjaLogEntries(ctx, b.ninjaLogWriter, start, end, s.endTime, outputs, s.cmd.Args)
 }
@@ -1227,9 +1227,9 @@ func (b *Builder) updateDeps(ctx context.Context, step *Step) error {
 		clog.Warningf(ctx, "update deps: no outputs")
 		return nil
 	}
-	output, err := filepath.Rel(step.cmd.Dir, step.cmd.Outputs[0])
+	output, err := filepath.Rel(step.cmd.WorkDir, step.cmd.Outputs[0])
 	if err != nil {
-		clog.Warningf(ctx, "update deps: failed to get rel %s,%s: %v", step.cmd.Dir, step.cmd.Outputs[0], err)
+		clog.Warningf(ctx, "update deps: failed to get rel %s,%s: %v", step.cmd.WorkDir, step.cmd.Outputs[0], err)
 		return nil
 	}
 	fi, err := b.hashFS.Stat(ctx, step.cmd.WorkspaceRoot, step.cmd.Outputs[0])

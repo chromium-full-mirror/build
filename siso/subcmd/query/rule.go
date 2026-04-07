@@ -37,13 +37,13 @@ func (*ruleCommand) Usage() string {
 }
 
 type ruleCommand struct {
-	ninjaDir ninjabuild.DirFlag
-	fname    string
-	binding  string
+	outDir  ninjabuild.DirFlag
+	fname   string
+	binding string
 }
 
 func (c *ruleCommand) SetFlags(flagSet *flag.FlagSet) {
-	c.ninjaDir.RegisterFlags(flagSet)
+	c.outDir.RegisterFlags(flagSet)
 	flagSet.StringVar(&c.fname, "f", "build.ninja", "input build filename (relative to -C")
 	flagSet.StringVar(&c.binding, "binding", "", "print binding value for the target")
 }
@@ -66,7 +66,7 @@ func (c *ruleCommand) Execute(ctx context.Context, flagSet *flag.FlagSet, _ ...a
 func (c *ruleCommand) run(ctx context.Context, args []string) error {
 	state := ninjautil.NewState()
 	p := ninjautil.NewManifestParser(state)
-	_, _, _, err := ninjabuild.InitDir(ctx, c.ninjaDir)
+	_, _, _, err := ninjabuild.InitDir(ctx, c.outDir)
 	if err != nil {
 		return err
 	}

@@ -59,7 +59,7 @@ func (f *DirFlag) RegisterFlags(fs *flag.FlagSet) {
 //
 // current working directory becomes workspaceRoot/dir, where
 // workspaceRoot/f.ConfigRepoDir exists.
-func InitDir(ctx context.Context, f DirFlag) (startDir, workspaceRoot, dir string, _ error) {
+func InitDir(ctx context.Context, f DirFlag) (startDir, workspaceRoot, outDir string, _ error) {
 	wd, err := os.Getwd()
 	if err != nil {
 		return "", "", "", err
@@ -90,14 +90,14 @@ func InitDir(ctx context.Context, f DirFlag) (startDir, workspaceRoot, dir strin
 	if !filepath.IsAbs(f.ConfigRepoDir) {
 		workspaceRoot = detectWorkspaceRoot(cwd, f.ConfigRepoDir)
 	}
-	rdir, err := filepath.Rel(workspaceRoot, cwd)
+	outDir, err = filepath.Rel(workspaceRoot, cwd)
 	if err != nil {
 		return "", "", "", err
 	}
-	if !filepath.IsLocal(rdir) {
+	if !filepath.IsLocal(outDir) {
 		return "", "", "", fmt.Errorf("dir %q is outside of workspace %q", cwd, workspaceRoot)
 	}
-	return startDir, workspaceRoot, rdir, nil
+	return startDir, workspaceRoot, outDir, nil
 }
 
 // detectWorkspaceRoot detects workspace from path given marker.

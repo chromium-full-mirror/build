@@ -258,8 +258,8 @@ func (s *WebuiServer) renderBuildView(wr http.ResponseWriter, r *http.Request, t
 		if rev == "" {
 			rev = outdirInfo.latestRevID
 		}
-		data["outroot"] = outdirInfo.outroot
-		data["outsub"] = outdirInfo.outsub
+		data["outroot"] = outdirInfo.outRoot
+		data["outsub"] = outdirInfo.outSub
 		outdirAbbrev := outdirInfo.path
 		// Showing the full path is too long in the webui so abbreviate home dir to ~.
 		// TODO(b/361703735): refactor https://chromium-review.googlesource.com/c/infra/infra/+/5804478/comment/dcfb372d_f21e4cc5/
@@ -313,14 +313,13 @@ type ServerConfig struct {
 	Version          string
 	LocalDevelopment bool
 	Port             int
-	NinjaDir         ninjabuild.DirFlag
+	OutDir           ninjabuild.DirFlag
 	ManifestPath     string
 }
 
 // NewServer inits a webui server.
 func NewServer(ctx context.Context, cfg ServerConfig) (*WebuiServer, error) {
-
-	_, workspaceRoot, dir, err := ninjabuild.InitDir(ctx, cfg.NinjaDir)
+	_, workspaceRoot, outDir, err := ninjabuild.InitDir(ctx, cfg.OutDir)
 	if err != nil {
 		return nil, &ErrWorkspaceNotExist{err}
 	}
@@ -330,22 +329,23 @@ func NewServer(ctx context.Context, cfg ServerConfig) (*WebuiServer, error) {
 		staticFS:         fs.FS(content),
 		sseServer:        newSseServer(),
 		workspaceRoot:    workspaceRoot,
-		defaultOutdir:    dir,
+		defaultOutdir:    outDir,
 		outdirMetrics:    make(map[string]*outdirInfo),
 		port:             cfg.Port,
 	}
+
 	if cfg.LocalDevelopment {
 		s.staticFS = os.DirFS("webui/")
 	}
 
 	// Preload default outdir.
-	defaultOutdirInfo, err := loadOutdirInfo(workspaceRoot, dir, cfg.ManifestPath)
+	defaultOutdirInfo, err := loadOutdirInfo(workspaceRoot, outDir, cfg.ManifestPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to preload outdir: %w", err)
 	}
-	s.outdirMetrics[dir] = defaultOutdirInfo
-	s.defaultOutdirRoot = defaultOutdirInfo.outroot
-	s.defaultOutdirSub = defaultOutdirInfo.outsub
+	s.outdirMetrics[outDir] = defaultOutdirInfo
+	s.defaultOutdirRoot = defaultOutdirInfo.outRoot
+	s.defaultOutdirSub = defaultOutdirInfo.outSub
 
 	// Find other outdirs.
 	// TODO: support out*/*
@@ -360,7 +360,7 @@ func NewServer(ctx context.Context, cfg ServerConfig) (*WebuiServer, error) {
 			return nil, fmt.Errorf("failed to stat outdir %s: %w", match, err)
 		}
 		if m.IsDir() {
-			outsub, err := filepath.Rel(filepath.Join(s.workspaceRoot, defaultOutdirInfo.outroot), match)
+			outsub, err := filepath.Rel(filepath.Join(s.workspaceRoot, defaultOutdirInfo.outRoot), match)
 			if err != nil {
 				return nil, fmt.Errorf("failed to make %s workspace relative: %w", match, err)
 			}

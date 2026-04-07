@@ -47,7 +47,7 @@ func packCmd(cmd *execute.Cmd, expandedInputs func() []string) (*starlarkstruct.
 	return starlarkstruct.FromStringDict(starlark.String("cmd"), map[string]starlark.Value{
 		cmdFieldArgs:          packTuple(cmd.Args),
 		cmdFieldEnvs:          envs,
-		cmdFieldDir:           starlark.String(cmd.Dir),
+		cmdFieldDir:           starlark.String(cmd.WorkDir),
 		cmdFieldWorkspaceRoot: starlark.String(cmd.WorkspaceRoot),
 		cmdFieldDeps:          starlark.String(cmd.Deps),
 		cmdFieldInputs:        packList(cmd.Inputs),

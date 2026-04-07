@@ -17,7 +17,7 @@ func TestCmdOutput(t *testing.T) {
 	execcmd := &execute.Cmd{
 		Desc:       "CXX foo.o",
 		ActionName: "cxx",
-		Dir:        "out/siso",
+		WorkDir:    "out/siso",
 		Outputs:    []string{"out/siso/foo.o"},
 	}
 	const command = "../../third_party/llvm-build/Release+Asserts/bin/clang++ -c ../../base/base.cc"
@@ -148,7 +148,7 @@ func TestCmdOutputMsg(t *testing.T) {
 	execcmd := &execute.Cmd{
 		Desc:       "CXX foo.o",
 		ActionName: "cxx",
-		Dir:        "out/siso",
+		WorkDir:    "out/siso",
 		Outputs:    []string{"out/siso/foo.o"},
 	}
 	const shortCommand = "python3 ../../build/gen.py gen/base.txt"

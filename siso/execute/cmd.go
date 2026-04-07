@@ -108,8 +108,8 @@ type Cmd struct {
 	// WorkspaceRoot is the path to the workspace of this cmd.
 	WorkspaceRoot string
 
-	// Dir specifies the working directory of the cmd, relative to WorkspaceRoot.
-	Dir string
+	// WorkDir specifies the working directory of the cmd, relative to WorkspaceRoot.
+	WorkDir string
 
 	// Inputs are input files of the cmd, relative to WorkspaceRoot.
 	// They may be overridden by deps inputs.
@@ -528,7 +528,7 @@ func (c *Cmd) inputTree(ctx context.Context) ([]merkletree.Entry, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to get entries for inputs in %s: %w", c.WorkspaceRoot, err)
 	}
-	ents = append([]merkletree.Entry{{Name: c.Dir}}, ents...)
+	ents = append([]merkletree.Entry{{Name: c.WorkDir}}, ents...)
 	ents = append(ents, rootEnts...)
 
 	if len(c.RemoteInputs) == 0 {
@@ -639,7 +639,7 @@ func (c *Cmd) canonicalizeDir(ctx context.Context, ents []merkletree.Entry, tree
 		return ents, treeInputs
 	}
 	if log.V(1) {
-		clog.Infof(ctx, "canonicalize dir: %s -> %s", c.Dir, cdir)
+		clog.Infof(ctx, "canonicalize dir: %s -> %s", c.WorkDir, cdir)
 	}
 	ents = c.canonicalizeEntries(cdir, ents)
 	treeInputs = slices.Clone(treeInputs)
@@ -651,7 +651,7 @@ func (c *Cmd) canonicalizeDir(ctx context.Context, ents []merkletree.Entry, tree
 func (c *Cmd) canonicalizeEntries(cdir string, entries []merkletree.Entry) []merkletree.Entry {
 	for i := range entries {
 		e := &entries[i]
-		e.Name = canonicalizeDir(e.Name, c.Dir, cdir)
+		e.Name = canonicalizeDir(e.Name, c.WorkDir, cdir)
 	}
 	return entries
 }
@@ -660,17 +660,17 @@ func (c *Cmd) canonicalizeEntries(cdir string, entries []merkletree.Entry) []mer
 func (c *Cmd) canonicalizeTrees(cdir string, trees []merkletree.TreeEntry) []merkletree.TreeEntry {
 	for i := range trees {
 		e := &trees[i]
-		e.Name = canonicalizeDir(e.Name, c.Dir, cdir)
+		e.Name = canonicalizeDir(e.Name, c.WorkDir, cdir)
 	}
 	return trees
 }
 
 // canonicalDir computes a canonical dir of the working directory.
 func (c *Cmd) canonicalDir() string {
-	if c.Dir == "" || c.Dir == "." {
+	if c.WorkDir == "" || c.WorkDir == "." {
 		return ""
 	}
-	n := len(strings.Split(filepath.ToSlash(c.Dir), "/"))
+	n := len(strings.Split(filepath.ToSlash(c.WorkDir), "/"))
 	elems := []string{"out"}
 	for i := 1; i < n; i++ {
 		elems = append(elems, "x")
@@ -739,9 +739,9 @@ func (c *Cmd) commandDigest(ctx context.Context, ds *digest.Store) (digest.Diges
 	var outFiles, outDirs []string
 	process := func(res []string, paths ...string) []string {
 		for _, out := range paths {
-			rout, err := filepath.Rel(c.Dir, out)
+			rout, err := filepath.Rel(c.WorkDir, out)
 			if err != nil {
-				clog.Warningf(ctx, "failed to get rel %s,%s: %v", c.Dir, out, err)
+				clog.Warningf(ctx, "failed to get rel %s,%s: %v", c.WorkDir, out, err)
 				rout = out
 			}
 			res = append(res, filepath.ToSlash(rout))
@@ -761,7 +761,7 @@ func (c *Cmd) commandDigest(ctx context.Context, ds *digest.Store) (digest.Diges
 	if err != nil {
 		return digest.Digest{}, err
 	}
-	dir := c.Dir
+	dir := c.WorkDir
 	if c.CanonicalizeDir {
 		dir = c.canonicalDir()
 	}
@@ -855,7 +855,7 @@ func (c *Cmd) entriesFromResult(ctx context.Context, ds hashfs.DataSource, updat
 		if f.Digest == nil {
 			continue
 		}
-		fname := filepath.ToSlash(filepath.Join(c.Dir, f.Path))
+		fname := filepath.ToSlash(filepath.Join(c.WorkDir, f.Path))
 		if c.IsAuxiliary(fname) && !c.outfiles[fname] {
 			continue
 		}
@@ -890,7 +890,7 @@ func (c *Cmd) entriesFromResult(ctx context.Context, ds hashfs.DataSource, updat
 		if s.Target == "" {
 			continue
 		}
-		fname := filepath.ToSlash(filepath.Join(c.Dir, s.Path))
+		fname := filepath.ToSlash(filepath.Join(c.WorkDir, s.Path))
 		if c.IsAuxiliary(fname) && !c.outfiles[fname] {
 			continue
 		}
@@ -912,7 +912,7 @@ func (c *Cmd) entriesFromResult(ctx context.Context, ds hashfs.DataSource, updat
 	}
 	for _, d := range c.actionResult.GetOutputDirectories() {
 		// It just needs to add the directories here because it assumes that they have already been expanded by ninja State.
-		dname := filepath.ToSlash(filepath.Join(c.Dir, d.Path))
+		dname := filepath.ToSlash(filepath.Join(c.WorkDir, d.Path))
 		if c.IsAuxiliary(dname) && !c.outfiles[dname] {
 			continue
 		}
@@ -976,13 +976,13 @@ func (c *Cmd) RecordAuxiliaryOutputDigests(ctx context.Context, result *rpb.Acti
 	}
 
 	for _, file := range result.OutputFiles {
-		fname := filepath.ToSlash(filepath.Join(c.Dir, file.Path))
+		fname := filepath.ToSlash(filepath.Join(c.WorkDir, file.Path))
 		if c.IsAuxiliary(fname) {
 			c.AuxiliaryOutputDigests[fname] = digest.FromProto(file.Digest)
 		}
 	}
 	for _, dir := range result.OutputDirectories {
-		dname := filepath.ToSlash(filepath.Join(c.Dir, dir.Path))
+		dname := filepath.ToSlash(filepath.Join(c.WorkDir, dir.Path))
 		if c.IsAuxiliary(dname) {
 			c.AuxiliaryOutputDigests[dname+"/"] = digest.FromProto(dir.TreeDigest)
 		}

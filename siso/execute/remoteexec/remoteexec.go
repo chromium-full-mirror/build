@@ -180,7 +180,7 @@ func (re *RemoteExec) processResult(ctx context.Context, cmd *execute.Cmd, resul
 	symlinks := result.GetOutputSymlinks()
 	var dirs []*rpb.OutputDirectory
 	for _, d := range result.GetOutputDirectories() {
-		dname := filepath.ToSlash(filepath.Join(cmd.Dir, d.GetPath()))
+		dname := filepath.ToSlash(filepath.Join(cmd.WorkDir, d.GetPath()))
 		// Auxiliary directories don't need to be expanded/flattened.
 		// We only need the Tree digest for logging, and they are not used as inputs for other steps.
 		if cmd.IsAuxiliary(dname) {

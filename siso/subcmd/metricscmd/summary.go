@@ -48,7 +48,7 @@ func (*summaryCommand) Usage() string {
 }
 
 type summaryCommand struct {
-	ninjaDir           ninjabuild.DirFlag
+	outDir             ninjabuild.DirFlag
 	input              string
 	stepTypes          string
 	elapsedTime        string
@@ -56,7 +56,7 @@ type summaryCommand struct {
 }
 
 func (c *summaryCommand) SetFlags(flagSet *flag.FlagSet) {
-	c.ninjaDir.RegisterFlags(flagSet)
+	c.outDir.RegisterFlags(flagSet)
 	flagSet.StringVar(&c.input, "input", "siso_metrics.json", "filename of siso_metrics.json to summarize")
 	flagSet.StringVar(&c.stepTypes, "step_types", "", "semicolon separated glob patterns (go filepath.Match) for build-step grouping")
 	flagSet.StringVar(&c.elapsedTime, "elapsed_time", "run", `metrics to use for elapsed time. "run" or "step". "run": time to run local command or call remote execution.  "step": full duration for the step, including preproc, waiting resource to run command etc.`)
@@ -85,7 +85,7 @@ func (c *summaryCommand) run(ctx context.Context) error {
 		return fmt.Errorf(`wrong --elapsed_time=%s  "run" or "step". %w`, c.elapsedTime, flag.ErrHelp)
 	}
 
-	_, _, _, err := ninjabuild.InitDir(ctx, c.ninjaDir)
+	_, _, _, err := ninjabuild.InitDir(ctx, c.outDir)
 	if err != nil {
 		return err
 	}

@@ -53,7 +53,7 @@ func (*flushCommand) Usage() string {
 type flushCommand struct {
 	Flags        *flag.FlagSet
 	authOpts     cred.Options
-	ninjaDir     ninjabuild.DirFlag
+	outDir       ninjabuild.DirFlag
 	stateFile    string
 	projectID    string
 	reopt        *reapi.Option
@@ -66,7 +66,7 @@ type flushCommand struct {
 }
 
 func (c *flushCommand) SetFlags(flagSet *flag.FlagSet) {
-	c.ninjaDir.RegisterFlags(flagSet)
+	c.outDir.RegisterFlags(flagSet)
 	flagSet.StringVar(&c.stateFile, "fs_state", stateFile, "fs_state filename")
 	flagSet.StringVar(&c.projectID, "project", os.Getenv("SISO_PROJECT"), "cloud project ID. can be set by $SISO_PROJECT")
 	c.reopt = new(reapi.Option)
@@ -137,9 +137,9 @@ func (c *flushCommand) run(ctx context.Context) error {
 	defer client.Close()
 	cacheStore := client.CacheStore()
 
-	_, workspaceRoot, dir, err := ninjabuild.InitDir(ctx, c.ninjaDir)
+	_, workspaceRoot, dir, err := ninjabuild.InitDir(ctx, c.outDir)
 	if err != nil {
-		return fmt.Errorf("failed to init dir %s: %w", c.ninjaDir, err)
+		return fmt.Errorf("failed to init dir %s: %w", c.outDir, err)
 	}
 	wd := filepath.Join(workspaceRoot, dir)
 	st, err := hashfs.Load(ctx, hashfs.Option{StateFile: c.stateFile})

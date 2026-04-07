@@ -37,12 +37,12 @@ func (*commandsCommand) Usage() string {
 }
 
 type commandsCommand struct {
-	ninjaDir ninjabuild.DirFlag
-	fname    string
+	outDir ninjabuild.DirFlag
+	fname  string
 }
 
 func (c *commandsCommand) SetFlags(flagSet *flag.FlagSet) {
-	c.ninjaDir.RegisterFlags(flagSet)
+	c.outDir.RegisterFlags(flagSet)
 	flagSet.StringVar(&c.fname, "f", "build.ninja", "input build filename (relative to -C)")
 }
 
@@ -64,7 +64,7 @@ func (c *commandsCommand) Execute(ctx context.Context, flagSet *flag.FlagSet, _ 
 func (c *commandsCommand) run(ctx context.Context, args []string) error {
 	state := ninjautil.NewState()
 	p := ninjautil.NewManifestParser(state)
-	_, _, _, err := ninjabuild.InitDir(ctx, c.ninjaDir)
+	_, _, _, err := ninjabuild.InitDir(ctx, c.outDir)
 	if err != nil {
 		return err
 	}

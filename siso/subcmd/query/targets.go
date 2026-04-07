@@ -42,8 +42,8 @@ func (*targetsCommand) Usage() string {
 type targetsCommand struct {
 	w io.Writer
 
-	ninjaDir ninjabuild.DirFlag
-	fname    string
+	outDir ninjabuild.DirFlag
+	fname  string
 
 	rule  targetRuleFlag
 	depth int
@@ -66,7 +66,7 @@ func (f *targetRuleFlag) Set(v string) error {
 }
 
 func (c *targetsCommand) SetFlags(flagSet *flag.FlagSet) {
-	c.ninjaDir.RegisterFlags(flagSet)
+	c.outDir.RegisterFlags(flagSet)
 	// TODO(b/340381100): extract common flags for ninja commands.
 	flagSet.StringVar(&c.fname, "f", "build.ninja", "input build filename (relative to -C)")
 
@@ -99,7 +99,7 @@ func (c *targetsCommand) run(ctx context.Context) error {
 	}
 	state := ninjautil.NewState()
 	p := ninjautil.NewManifestParser(state)
-	_, _, _, err := ninjabuild.InitDir(ctx, c.ninjaDir)
+	_, _, _, err := ninjabuild.InitDir(ctx, c.outDir)
 	if err != nil {
 		return err
 	}

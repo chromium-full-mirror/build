@@ -30,7 +30,7 @@ func TestCanonicalizeDir(t *testing.T) {
 		{
 			name: "empty-dir",
 			cmd: &Cmd{
-				Dir: "",
+				WorkDir: "",
 			},
 			ents: []merkletree.Entry{
 				{
@@ -56,7 +56,7 @@ func TestCanonicalizeDir(t *testing.T) {
 		{
 			name: "dot-dir",
 			cmd: &Cmd{
-				Dir: "",
+				WorkDir: "",
 			},
 			ents: []merkletree.Entry{
 				{
@@ -82,7 +82,7 @@ func TestCanonicalizeDir(t *testing.T) {
 		{
 			name: "canonicalize-dir",
 			cmd: &Cmd{
-				Dir: "out/Default",
+				WorkDir: "out/Default",
 			},
 			ents: []merkletree.Entry{
 				{
@@ -173,7 +173,7 @@ func TestEntriesFromResult_Auxiliary(t *testing.T) {
 	d3 := treeData.Digest()
 
 	cmd := &Cmd{
-		Dir: "out/Default",
+		WorkDir: "out/Default",
 		Outputs: []string{
 			"out/Default/main.o",
 		},

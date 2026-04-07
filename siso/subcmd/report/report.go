@@ -53,12 +53,12 @@ func (*Command) Usage() string {
 
 // Command implements report subcommand.
 type Command struct {
-	ninjaDir ninjabuild.DirFlag
-	osfsopt  osfs.Option
+	outDir  ninjabuild.DirFlag
+	osfsopt osfs.Option
 }
 
 func (c *Command) SetFlags(flagSet *flag.FlagSet) {
-	c.ninjaDir.RegisterFlags(flagSet)
+	c.outDir.RegisterFlags(flagSet)
 	c.osfsopt.RegisterFlags(flagSet)
 }
 
@@ -81,11 +81,11 @@ func (c *Command) run(ctx context.Context) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer signals.HandleInterrupt(ctx, cancel)()
 
-	_, _, dir, err := ninjabuild.InitDir(ctx, c.ninjaDir)
+	_, _, dir, err := ninjabuild.InitDir(ctx, c.outDir)
 	if err != nil {
 		return err
 	}
-	if dir == "." && c.ninjaDir.ConfigRepoDir != "build/config/siso" {
+	if dir == "." && c.outDir.ConfigRepoDir != "build/config/siso" {
 		dir = ninjabuild.AndroidOutDir()
 		ui.Default.Infof("collecting logs in %s\n", dir)
 		err = os.Chdir(dir)

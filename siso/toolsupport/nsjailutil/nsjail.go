@@ -38,8 +38,8 @@ type Request struct {
 	// absolute paths. e.g. /bin
 	PublicDirs []string `json:"public_dirs,omitempty"`
 
-	WorkspaceRoot string `json:"workspace_root"` // absolute path.
-	Dir           string `json:"dir,omitempty"`  // working dir, relative to WorkspaceRoot
+	WorkspaceRoot string `json:"workspace_root"`    // absolute path to workspace root
+	WorkDir       string `json:"workdir,omitempty"` // working dir, relative to WorkspaceRoot
 
 	// relative to workspace.
 	Inputs []string `json:"inputs"`
@@ -79,8 +79,8 @@ func New(ctx context.Context, fsys fs.FS, req Request) (_ *NSJail, err error) {
 	if !filepath.IsAbs(req.WorkspaceRoot) {
 		return nil, fmt.Errorf("workspace root is not absolute path: %q", req.WorkspaceRoot)
 	}
-	if filepath.IsAbs(req.Dir) {
-		return nil, fmt.Errorf("dir is absolute path: %q", req.Dir)
+	if filepath.IsAbs(req.WorkDir) {
+		return nil, fmt.Errorf("ninja dir is not relative path: %q", req.WorkDir)
 	}
 	fsys, err = fs.Sub(fsys, strings.TrimPrefix(req.WorkspaceRoot, "/"))
 	if err != nil {
@@ -107,7 +107,7 @@ func New(ctx context.Context, fsys fs.FS, req Request) (_ *NSJail, err error) {
 	// nsjail has a 10 minute time limit by default, disable it.
 	jail.config.TimeLimit = proto.Uint32(0)
 
-	jail.config.Cwd = proto.String(filepath.Join(execRootInSandbox, req.Dir))
+	jail.config.Cwd = proto.String(filepath.Join(execRootInSandbox, req.WorkDir))
 	// TODO: better environment variable sandboxing
 	jail.config.KeepEnv = proto.Bool(true)
 
@@ -178,7 +178,7 @@ func New(ctx context.Context, fsys fs.FS, req Request) (_ *NSJail, err error) {
 	// We don't want to encode the absolute path into output files,
 	// so use /src/$OUT_DIR as output dir. b/479926946
 	if filepath.IsAbs(req.OutDir) {
-		return nil, fmt.Errorf("outdir is absolute path: %q", req.OutDir)
+		return nil, fmt.Errorf("output dir is absolute path: %q", req.OutDir)
 	}
 	outDirInSandbox := filepath.Join(execRootInSandbox, req.OutDir)
 	absOutDir := filepath.Join(jail.dir, outDirInSandbox)

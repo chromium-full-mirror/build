@@ -26,7 +26,7 @@ import (
 )
 
 // StepDef is a build step definition.
-// unless specified, path is workspace relative.
+// Unless specified, path is workspace relative.
 type StepDef interface {
 	// String returns id of the step.
 	String() string
@@ -499,7 +499,7 @@ func newCmd(ctx context.Context, b *Builder, stepDef StepDef, stepManifest *step
 		RSPFileContent:          []byte(stepDef.Binding("rspfile_content")),
 		CmdHash:                 stepManifest.cmdHash,
 		WorkspaceRoot:           b.path.WorkspaceRoot, // use step binding?
-		Dir:                     b.path.Dir,
+		WorkDir:                 b.path.OutDir,
 		Inputs:                  stepInputs(ctx, stepDef),
 		ToolInputs:              stepDef.ToolInputs(ctx),
 		Outputs:                 stepManifest.outputs,

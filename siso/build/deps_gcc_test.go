@@ -146,7 +146,7 @@ func TestDepsGCCFixCmdInputs_ios(t *testing.T) {
 			"-o",
 			"obj/base/base.o",
 		},
-		Dir: "out/siso",
+		WorkDir: "out/siso",
 	}
 
 	gcc := depsGCC{
@@ -274,7 +274,7 @@ func TestDepsGCCFixCmdInputs_chromeos(t *testing.T) {
 			"-o",
 			"obj/base/base.o",
 		},
-		Dir: "out_amd64-generic/Release",
+		WorkDir: "out_amd64-generic/Release",
 	}
 
 	gcc := depsGCC{

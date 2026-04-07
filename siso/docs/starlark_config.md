@@ -110,7 +110,7 @@ to register handlers and step configs.
       * `fname`: filename
     * `size` get file size.
       * `fname`: filename
-    * `canonpath`: convert work dir relative to workspace relative
+    * `canonpath`: convert ninja dir relative to workspace relative
       * `fname`: filename
 
 `print` will print a message to log file.
@@ -191,7 +191,7 @@ to register handlers and step configs.
          This is used to send Linux executables from Windows machine.
          e.g. node binary for typescript action.
      * `rules` list of `StepRule`.
-        path is workspace relative, or cwd relative if it starts with "./"
+        path is workspace relative, or ninja dir relative if it starts with "./"
         * identifier
           * `name`: unique name of the rule. required.
         * rule selector

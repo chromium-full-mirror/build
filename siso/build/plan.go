@@ -244,7 +244,7 @@ type scheduler struct {
 	path   *Path
 	hashFS *hashfs.HashFS
 
-	outDirs ensureOutDirs
+	actionOutputDirs ensureActionOutputDirs
 
 	plan *plan
 
@@ -305,8 +305,8 @@ func schedule(ctx context.Context, sched *scheduler, graph Graph, args ...string
 			ui.Default.PrintLines(fmt.Sprintf("target: %q\n    ->  %q\n\n", args, targetNames))
 		}
 	}
-	sched.outDirs.init()
-	go sched.outDirs.run(ctx, sched.path)
+	sched.actionOutputDirs.init()
+	go sched.actionOutputDirs.run(ctx, sched.path)
 
 	// validationQueue collects validation targets found during scheduling.
 	var validationQueue []Target
@@ -701,7 +701,7 @@ func (s *scheduler) finish(ctx context.Context, started time.Time) error {
 	s.plan.pushReadyUnlocked()
 	nready := len(s.plan.q) + len(s.plan.ready)
 	npendings := s.plan.npendings
-	err := s.outDirs.wait()
+	err := s.actionOutputDirs.wait()
 	d := time.Since(started)
 	clog.Infof(ctx, "schedule finish pending:%d+ready:%d (node:%d edge:%d) in %s", npendings, nready, len(s.plan.targets), s.visited, d)
 	if d < ui.DurationThreshold {
@@ -735,7 +735,7 @@ func (s *scheduler) addStep(ctx context.Context, step *Step, graph Graph, target
 		// don't add output for phony targets. https://crbug.com/1517575
 		for _, output := range step.outputs {
 			s.plan.targets[output].output = true
-			s.outDirs.ensure(targetPath(ctx, graph, output))
+			s.actionOutputDirs.ensure(targetPath(ctx, graph, output))
 		}
 	}
 	if log.V(1) {
@@ -908,7 +908,7 @@ func (p *plan) dump(ctx context.Context, graph Graph) {
 }
 
 func suggestTargets(ctx context.Context, sched *scheduler, graph Graph, args ...string) []string {
-	rel, err := filepath.Rel(filepath.Join(sched.path.WorkspaceRoot, sched.path.Dir), sched.path.WorkspaceRoot)
+	rel, err := filepath.Rel(filepath.Join(sched.path.WorkspaceRoot, sched.path.OutDir), sched.path.WorkspaceRoot)
 	if err != nil {
 		clog.Warningf(ctx, "failed to get rel to workspace: %v", err)
 		return nil
@@ -922,7 +922,7 @@ func suggestTargets(ctx context.Context, sched *scheduler, graph Graph, args ...
 			continue
 		}
 		target := strings.TrimSuffix(arg, "^")
-		_, err = sched.hashFS.Stat(ctx, sched.path.WorkspaceRoot, filepath.Join(sched.path.Dir, target))
+		_, err = sched.hashFS.Stat(ctx, sched.path.WorkspaceRoot, filepath.Join(sched.path.OutDir, target))
 		if err == nil {
 			// just missing ^?
 			target := filepath.ToSlash(target) + "^"
@@ -963,20 +963,20 @@ func suggestTargets(ctx context.Context, sched *scheduler, graph Graph, args ...
 // TODO: remove this once generator makes sure out dirs in gen time.
 // gn: https://crbug.com/gn/461698357
 // soong: b/461917619
-type ensureOutDirs struct {
+type ensureActionOutputDirs struct {
 	req       chan string
 	done      chan error
 	err       error
 	knownDirs map[string]struct{}
 }
 
-func (e *ensureOutDirs) init() {
+func (e *ensureActionOutputDirs) init() {
 	e.req = make(chan string, 1000)
 	e.done = make(chan error)
 	e.knownDirs = make(map[string]struct{})
 }
 
-func (e *ensureOutDirs) run(ctx context.Context, path *Path) {
+func (e *ensureActionOutputDirs) run(ctx context.Context, path *Path) {
 	defer func() {
 		e.done <- e.err
 	}()
@@ -1020,11 +1020,11 @@ func (e *ensureOutDirs) run(ctx context.Context, path *Path) {
 	}
 }
 
-func (e *ensureOutDirs) ensure(fname string) {
+func (e *ensureActionOutputDirs) ensure(fname string) {
 	e.req <- fname
 }
 
-func (e *ensureOutDirs) wait() error {
+func (e *ensureActionOutputDirs) wait() error {
 	close(e.req)
 	return <-e.done
 }

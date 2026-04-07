@@ -51,7 +51,7 @@ func (*Command) Usage() string {
 
 // Command implements sandbox subcommand.
 type Command struct {
-	ninjaDir            ninjabuild.DirFlag
+	outDir              ninjabuild.DirFlag
 	fsopt               *hashfs.Option
 	nsjailReqJSONString string
 	cleanup             bool
@@ -59,7 +59,7 @@ type Command struct {
 }
 
 func (c *Command) SetFlags(flagSet *flag.FlagSet) {
-	c.ninjaDir.RegisterFlags(flagSet)
+	c.outDir.RegisterFlags(flagSet)
 	c.fsopt = new(hashfs.Option)
 	c.fsopt.StateFile = ".siso_fs_state"
 	c.fsopt.RegisterFlags(flagSet)
@@ -84,7 +84,7 @@ func (c *Command) Execute(ctx context.Context, flagSet *flag.FlagSet, _ ...any) 
 }
 
 func (c *Command) run(ctx context.Context) error {
-	_, workspaceRoot, dir, err := ninjabuild.InitDir(ctx, c.ninjaDir)
+	_, workspaceRoot, outDir, err := ninjabuild.InitDir(ctx, c.outDir)
 	if err != nil {
 		return err
 	}
@@ -111,7 +111,7 @@ func (c *Command) run(ctx context.Context) error {
 		return err
 	}
 	req.WorkspaceRoot = workspaceRoot
-	req.Dir = dir
+	req.WorkDir = outDir
 	clog.Infof(ctx, "req: %#v", req)
 	fsys := hashFS.FileSystem(ctx, "/")
 	jail, err := nsjailutil.New(ctx, fsys, req)
@@ -124,7 +124,7 @@ func (c *Command) run(ctx context.Context) error {
 
 	cmd := &execute.Cmd{
 		WorkspaceRoot:     workspaceRoot,
-		Dir:               dir,
+		WorkDir:           outDir,
 		Inputs:            req.Inputs,
 		Outputs:           req.Outputs,
 		HashFS:            hashFS,
@@ -147,7 +147,7 @@ func (c *Command) run(ctx context.Context) error {
 		return err
 	}
 	// Set the outputs on the result
-	execute.ResultFromEntries(ctx, result, cmd.Dir, outputEntries)
+	execute.ResultFromEntries(ctx, result, cmd.WorkDir, outputEntries)
 
 	buf, err := prototext.MarshalOptions{
 		Multiline: true,

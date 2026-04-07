@@ -74,7 +74,7 @@ type Command struct {
 	reopt     *reapi.Option
 	casopt    *reapi.Option
 
-	ninjaDir ninjabuild.DirFlag
+	outDir ninjabuild.DirFlag
 
 	fsopt *hashfs.Option
 
@@ -93,7 +93,7 @@ func (c *Command) SetFlags(flagSet *flag.FlagSet) {
 	c.casopt.Prefix = "cas"
 	c.casopt.RegisterFlags(flagSet, reapi.Envs("DEST_CASS"))
 
-	c.ninjaDir.RegisterFlags(flagSet)
+	c.outDir.RegisterFlags(flagSet)
 
 	c.fsopt = new(hashfs.Option)
 	c.fsopt.StateFile = ".siso_fs_state"
@@ -133,7 +133,7 @@ func (c *Command) run(ctx context.Context) error {
 		cancel(errInterrupted{})
 	})()
 	started := time.Now()
-	workspaceRoot, dir, err := c.initWorkdirs(ctx)
+	workspaceRoot, outDir, err := c.initWorkdirs(ctx)
 	if err != nil {
 		return err
 	}
@@ -237,7 +237,7 @@ func (c *Command) run(ctx context.Context) error {
 	for _, target := range c.Flags.Args() {
 		eg.Go(func() error {
 			targetStarted := time.Now()
-			d, err := upload(ectx, workspaceRoot, dir, hashFS, casClient, target)
+			d, err := upload(ectx, workspaceRoot, outDir, hashFS, casClient, target)
 			duration := time.Since(targetStarted)
 			if err != nil {
 				return fmt.Errorf("failed for %s in %s: %w", target, duration, err)
@@ -269,13 +269,13 @@ func (c *Command) run(ctx context.Context) error {
 }
 
 func (c *Command) initWorkdirs(ctx context.Context) (string, string, error) {
-	_, workspaceRoot, dir, err := ninjabuild.InitDir(ctx, c.ninjaDir)
+	_, workspaceRoot, outDir, err := ninjabuild.InitDir(ctx, c.outDir)
 	if err != nil {
 		return "", "", err
 	}
 	clog.Infof(ctx, "workspace root: %s", workspaceRoot)
-	clog.Infof(ctx, "working directory in workspace: %s", dir)
-	return workspaceRoot, dir, err
+	clog.Infof(ctx, "output directory in workspace: %s", outDir)
+	return workspaceRoot, outDir, err
 }
 
 func (c *Command) casCred(ctx context.Context) (cred.Cred, error) {
@@ -298,7 +298,7 @@ func (c *Command) casCred(ctx context.Context) (cred.Cred, error) {
 	return cred.New(ctx, c.casopt.ServiceURI(), authOpts)
 }
 
-func upload(ctx context.Context, workspaceRoot, buildDir string, hashFS *hashfs.HashFS, casClient *reapi.Client, target string) (digest.Digest, error) {
+func upload(ctx context.Context, workspaceRoot, outDir string, hashFS *hashfs.HashFS, casClient *reapi.Client, target string) (digest.Digest, error) {
 	isolateName := fmt.Sprintf("%s.isolate", target)
 	buf, err := os.ReadFile(isolateName)
 	if err != nil {
@@ -327,7 +327,7 @@ func upload(ctx context.Context, workspaceRoot, buildDir string, hashFS *hashfs.
 			return digest.Digest{}, fmt.Errorf(`not string in "variables.files[%d]" %v (%T)`, i, f, f)
 		}
 		// Expand directory entries.
-		pathname := filepath.ToSlash(filepath.Join(buildDir, fname))
+		pathname := filepath.ToSlash(filepath.Join(outDir, fname))
 		fi, err := hashFS.Stat(ctx, workspaceRoot, pathname)
 		if err != nil {
 			return digest.Digest{}, err
@@ -355,7 +355,7 @@ func upload(ctx context.Context, workspaceRoot, buildDir string, hashFS *hashfs.
 	ds := digest.NewStore()
 	tree := merkletree.New(ds)
 	for _, fname := range fnames {
-		pathname := filepath.ToSlash(filepath.Join(buildDir, fname))
+		pathname := filepath.ToSlash(filepath.Join(outDir, fname))
 		// To match with the implementation of `isolate` command,
 		// exclude only *.pyc file, while keeping an empty __pycache__/ dir.
 		if strings.HasSuffix(pathname, ".pyc") {

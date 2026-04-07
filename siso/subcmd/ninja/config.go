@@ -71,7 +71,7 @@ func (f *batchFlag) Set(v string) error {
 
 // NinjaFlags holds all configuration flags for the ninja command.
 type NinjaFlags struct {
-	ninjaDir   ninjabuild.DirFlag
+	outDir     ninjabuild.DirFlag
 	configName string
 	projectID  string
 
@@ -158,7 +158,7 @@ type NinjaFlags struct {
 }
 
 func (c *Command) SetFlags(flagSet *flag.FlagSet) {
-	c.ninjaDir.RegisterFlags(flagSet)
+	c.outDir.RegisterFlags(flagSet)
 	flagSet.StringVar(&c.configName, "config", "", "config name passed to starlark")
 	flagSet.StringVar(&c.projectID, "project", os.Getenv("SISO_PROJECT"), "cloud project ID. can set by $SISO_PROJECT")
 
@@ -300,7 +300,7 @@ func (c *Command) initConfig(ctx context.Context, workspaceRoot string, targets 
 	if c.configFilename == "" {
 		return buildconfig.NewDefault(flags), nil
 	}
-	configRepoDir := filepath.Join(workspaceRoot, c.ninjaDir.ConfigRepoDir)
+	configRepoDir := filepath.Join(workspaceRoot, c.outDir.ConfigRepoDir)
 	if _, err := os.Stat(configRepoDir); errors.Is(err, fs.ErrNotExist) {
 		clog.Infof(ctx, "no config repo dir %s, using default config", configRepoDir)
 		return buildconfig.NewDefault(flags), nil
@@ -329,17 +329,17 @@ func (c *Command) initConfig(ctx context.Context, workspaceRoot string, targets 
 // changeToWorkdir establishes the execution root and working directory.
 // It changes the current directory to working directory, detects the
 // execution root, and updates path configurations to be relative to the root.
-// It returns build path (workspace and dir).
+// It returns build path (workspace and ninja dir).
 func (c *Command) changeToWorkdir(ctx context.Context) (*build.Path, error) {
 	// The formatting of this string, complete with funny quotes, is
 	// so Emacs can properly identify that the cwd has changed for
 	// subsequent commands.
 	// Don't print this if a tool is being used, so that tool output
 	// can be piped into a file without this string showing up.
-	if c.subtool == "" && c.ninjaDir.Dir != "." {
-		ui.Default.PrintLines(fmt.Sprintf("ninja: Entering directory `%s'\n\n", c.ninjaDir.Dir))
+	if c.subtool == "" && c.outDir.Dir != "." {
+		ui.Default.PrintLines(fmt.Sprintf("ninja: Entering directory `%s'\n\n", c.outDir.Dir))
 	}
-	startDir, workspaceRoot, dir, err := ninjabuild.InitDir(ctx, c.ninjaDir)
+	startDir, workspaceRoot, dir, err := ninjabuild.InitDir(ctx, c.outDir)
 	if err != nil {
 		return nil, err
 	}

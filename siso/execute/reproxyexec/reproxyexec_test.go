@@ -78,7 +78,7 @@ func TestRun_Unauthenticated(t *testing.T) {
 	err = re.Run(ctx, &execute.Cmd{
 		ID:            "stepid",
 		WorkspaceRoot: dir,
-		Dir:           "out/siso",
+		WorkDir:       "out/siso",
 		HashFS:        hashFS,
 		Args:          []string{"../../third_party/llvm-build/Release+Asserts/bin/clang++", "-c", "../../base/base.cc", "-o", "obj/base/base.o"},
 		Inputs:        []string{"base/base.cc", "third_party/llvm-build/Release+Asserts/bin/clang++"},
@@ -154,7 +154,7 @@ func TestRun_RemoteSuccess(t *testing.T) {
 	err = re.Run(ctx, &execute.Cmd{
 		ID:            "stepid",
 		WorkspaceRoot: dir,
-		Dir:           "out/siso",
+		WorkDir:       "out/siso",
 		HashFS:        hashFS,
 		Args:          []string{"../../third_party/llvm-build/Release+Asserts/bin/clang++", "-c", "../../base/base.cc", "-o", "obj/base/base.o"},
 		Inputs:        []string{"base/base.cc", "third_party/llvm-build/Release+Asserts/bin/clang++"},
@@ -257,7 +257,7 @@ func TestRun_LocalFallback(t *testing.T) {
 	err = re.Run(ctx, &execute.Cmd{
 		ID:            "stepid",
 		WorkspaceRoot: dir,
-		Dir:           "out/siso",
+		WorkDir:       "out/siso",
 		HashFS:        hashFS,
 		Args:          []string{"../../third_party/llvm-build/Release+Asserts/bin/clang++", "-c", "../../base/base.cc", "-o", "obj/base/base.o"},
 		Inputs:        []string{"base/base.cc", "third_party/llvm-build/Release+Asserts/bin/clang++"},

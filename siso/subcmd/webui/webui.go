@@ -42,7 +42,7 @@ type Command struct {
 	version          string
 	localDevelopment bool
 	port             int
-	ninjaDir         ninjabuild.DirFlag
+	outDir           ninjabuild.DirFlag
 	fname            string
 	metricsFile      string
 }
@@ -50,7 +50,7 @@ type Command struct {
 func (c *Command) SetFlags(flagSet *flag.FlagSet) {
 	flagSet.BoolVar(&c.localDevelopment, "local_development", false, "whether to use local instead of embedded files")
 	flagSet.IntVar(&c.port, "port", 8080, "port to use (defaults to 8080)")
-	c.ninjaDir.RegisterFlags(flagSet)
+	c.outDir.RegisterFlags(flagSet)
 	flagSet.StringVar(&c.fname, "f", "build.ninja", "input build manifest filename (relative to -C)")
 	flagSet.StringVar(&c.metricsFile, "metrics_file", "", "optional path to siso_metrics.json to load (experimental, -C is still required for now)")
 }
@@ -60,7 +60,7 @@ func (c *Command) Execute(ctx context.Context, flagSet *flag.FlagSet, _ ...any) 
 		Version:          c.version,
 		LocalDevelopment: c.localDevelopment,
 		Port:             c.port,
-		NinjaDir:         c.ninjaDir,
+		OutDir:           c.outDir,
 		ManifestPath:     c.fname,
 	})
 	if err != nil {

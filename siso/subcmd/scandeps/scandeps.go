@@ -61,7 +61,7 @@ func (*Command) Usage() string {
 
 // Command implements scandeps subcommand.
 type Command struct {
-	ninjaDir      ninjabuild.DirFlag
+	outDir        ninjabuild.DirFlag
 	stateDir      string
 	reqJSONString string
 	targetName    string
@@ -69,7 +69,7 @@ type Command struct {
 }
 
 func (c *Command) SetFlags(flagSet *flag.FlagSet) {
-	c.ninjaDir.RegisterFlags(flagSet)
+	c.outDir.RegisterFlags(flagSet)
 	flagSet.StringVar(&c.stateDir, "state_dir", ".", "state directory (relative to -C)")
 	flagSet.StringVar(&c.reqJSONString, "req", "", "json format of scandeps request")
 	flagSet.StringVar(&c.targetName, "target", "", "build target name")
@@ -93,7 +93,7 @@ func (c *Command) Execute(ctx context.Context, flagSet *flag.FlagSet, _ ...any) 
 }
 
 func (c *Command) run(ctx context.Context) error {
-	_, workspaceRoot, dir, err := ninjabuild.InitDir(ctx, c.ninjaDir)
+	_, workspaceRoot, dir, err := ninjabuild.InitDir(ctx, c.outDir)
 	if err != nil {
 		return err
 	}

@@ -40,7 +40,7 @@ import (
 // go/reqs-for-peep
 
 type ideAnalysisCommand struct {
-	ninjaDir ninjabuild.DirFlag
+	outDir   ninjabuild.DirFlag
 	stateDir string
 	fname    string
 	fsopt    *hashfs.Option
@@ -68,7 +68,7 @@ func (*ideAnalysisCommand) Usage() string {
 	return ideAnalysisUsage
 }
 func (c *ideAnalysisCommand) SetFlags(flagSet *flag.FlagSet) {
-	c.ninjaDir.RegisterFlags(flagSet)
+	c.outDir.RegisterFlags(flagSet)
 	flagSet.StringVar(&c.stateDir, "state_dir", ".", "state directory (relative to -C)")
 	flagSet.StringVar(&c.fname, "f", "build.ninja", "input build filename (relative to -C)")
 	c.fsopt = new(hashfs.Option)
@@ -105,7 +105,7 @@ func (c *ideAnalysisCommand) run(ctx context.Context, args []string) error {
 	if c.fsopt.StateFile != "" {
 		c.fsopt.StateFile = filepath.Join(c.stateDir, c.fsopt.StateFile)
 	}
-	_, workspaceRoot, dir, err := ninjabuild.InitDir(ctx, c.ninjaDir)
+	_, workspaceRoot, dir, err := ninjabuild.InitDir(ctx, c.outDir)
 	if err != nil {
 		return err
 	}
@@ -144,8 +144,8 @@ func (c *ideAnalysisCommand) run(ctx context.Context, args []string) error {
 
 func (c *ideAnalysisCommand) analyze(ctx context.Context, buildPath *build.Path, args []string) (*pb.IdeAnalysis, error) {
 	analysis := &pb.IdeAnalysis{
-		BuildOutDir: buildPath.Dir,
-		WorkingDir:  buildPath.Dir,
+		BuildOutDir: buildPath.OutDir,
+		WorkingDir:  buildPath.OutDir,
 	}
 	if len(args) == 0 {
 		return analysis, errors.New("no target given")
@@ -257,7 +257,7 @@ func (a *ideAnalyzer) analyzeTarget(ctx context.Context, target string) (*pb.Ana
 		// for cxx, we don't compile *.o with
 		// `SISO_EXPERIMENTS=prepare-header-only`, so *.o may not exist.
 		var ok bool
-		nodeEnt, ok = a.fsm[filepath.ToSlash(filepath.Join(a.path.WorkspaceRoot, a.path.Dir, node.Path()))]
+		nodeEnt, ok = a.fsm[filepath.ToSlash(filepath.Join(a.path.WorkspaceRoot, a.path.OutDir, node.Path()))]
 		if !ok {
 			result.Status = &pb.AnalysisResult_Status{
 				Code:          pb.AnalysisResult_Status_CODE_BUILD_FAILED,
@@ -288,7 +288,7 @@ func (a *ideAnalyzer) analyzeTarget(ctx context.Context, target string) (*pb.Ana
 			// TODO: check phony's inputs?
 			continue
 		}
-		ent, ok := a.fsm[filepath.ToSlash(filepath.Join(a.path.WorkspaceRoot, a.path.Dir, input.Path()))]
+		ent, ok := a.fsm[filepath.ToSlash(filepath.Join(a.path.WorkspaceRoot, a.path.OutDir, input.Path()))]
 		if !ok {
 			result.Status = &pb.AnalysisResult_Status{
 				Code:          pb.AnalysisResult_Status_CODE_BUILD_FAILED,
@@ -398,7 +398,7 @@ func (a *ideAnalyzer) analyzeCPP(ctx context.Context, edge *ninjautil.Edge, resu
 		return result, nil
 	}
 	// scandeps
-	params, err := gccutil.ExtractScanDepsParams(ctx, cmdArgs, nil, a.hashFS.FileSystem(ctx, filepath.Join(a.path.WorkspaceRoot, a.path.Dir)))
+	params, err := gccutil.ExtractScanDepsParams(ctx, cmdArgs, nil, a.hashFS.FileSystem(ctx, filepath.Join(a.path.WorkspaceRoot, a.path.OutDir)))
 	if err != nil {
 		result.Status = &pb.AnalysisResult_Status{
 			Code:          pb.AnalysisResult_Status_CODE_BUILD_FAILED,
@@ -561,7 +561,7 @@ func (a *ideAnalyzer) invalidation(ctx context.Context) *pb.Invalidation {
 			},
 		},
 	}
-	buf, err := a.hashFS.ReadFile(ctx, a.path.WorkspaceRoot, filepath.Join(a.path.Dir, "build.ninja.d"))
+	buf, err := a.hashFS.ReadFile(ctx, a.path.WorkspaceRoot, filepath.Join(a.path.OutDir, "build.ninja.d"))
 	if err != nil {
 		clog.Warningf(ctx, "failed to read build.ninja.d: %v", err)
 		return inv
@@ -581,7 +581,7 @@ func (a *ideAnalyzer) invalidation(ctx context.Context) *pb.Invalidation {
 		if filepath.IsLocal(d) {
 			continue
 		}
-		inv.FilePaths = append(inv.FilePaths, filepath.ToSlash(filepath.Join(a.path.Dir, d)))
+		inv.FilePaths = append(inv.FilePaths, filepath.ToSlash(filepath.Join(a.path.OutDir, d)))
 	}
 	return inv
 }

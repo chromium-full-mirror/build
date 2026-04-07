@@ -49,7 +49,7 @@ for buiders build
 // Command implements ps subcommand.
 type Command struct {
 	stdoutURL string
-	ninjaDir  ninjabuild.DirFlag
+	outDir    ninjabuild.DirFlag
 	stateDir  string
 	n         int
 	interval  time.Duration
@@ -59,7 +59,7 @@ type Command struct {
 
 func (c *Command) SetFlags(flagSet *flag.FlagSet) {
 	flagSet.StringVar(&c.stdoutURL, "stdout_url", "", "stdout streaming URL")
-	c.ninjaDir.RegisterFlags(flagSet)
+	c.outDir.RegisterFlags(flagSet)
 	flagSet.StringVar(&c.stateDir, "state_dir", ".", "state directory (relative to -C)")
 	flagSet.IntVar(&c.n, "n", 0, "limit number of steps if it is positive")
 	flagSet.DurationVar(&c.interval, "interval", -1, "query interval if it is positive. default 1s on terminal")
@@ -93,7 +93,7 @@ func (c *Command) Execute(ctx context.Context, flagSet *flag.FlagSet, _ ...any) 
 	if c.stdoutURL != "" {
 		src, err = newStdoutURLSource(ctx, c.stdoutURL)
 	} else {
-		src, err = newLocalSource(ctx, c.ninjaDir, c.stateDir)
+		src, err = newLocalSource(ctx, c.outDir, c.stateDir)
 	}
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)

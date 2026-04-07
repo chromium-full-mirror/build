@@ -40,7 +40,7 @@ func (*inputsCommand) Usage() string {
 }
 
 type inputsCommand struct {
-	ninjaDir ninjabuild.DirFlag
+	outDir   ninjabuild.DirFlag
 	stateDir string
 	fname    string
 
@@ -49,7 +49,7 @@ type inputsCommand struct {
 }
 
 func (c *inputsCommand) SetFlags(flagSet *flag.FlagSet) {
-	c.ninjaDir.RegisterFlags(flagSet)
+	c.outDir.RegisterFlags(flagSet)
 	flagSet.StringVar(&c.stateDir, "state_dir", ".", "state directory (relative to -C)")
 	flagSet.StringVar(&c.fname, "f", "build.ninja", "input build filename (relative to -C)")
 	flagSet.BoolVar(&c.includeDeps, "include_deps", false, "include inputs recorded in deps log file")
@@ -74,7 +74,7 @@ func (c *inputsCommand) Execute(ctx context.Context, flagSet *flag.FlagSet, _ ..
 func (c *inputsCommand) run(ctx context.Context, args []string) error {
 	state := ninjautil.NewState()
 	p := ninjautil.NewManifestParser(state)
-	_, _, _, err := ninjabuild.InitDir(ctx, c.ninjaDir)
+	_, _, _, err := ninjabuild.InitDir(ctx, c.outDir)
 	if err != nil {
 		return err
 	}

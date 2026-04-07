@@ -47,14 +47,14 @@ func (*digraphCommand) Usage() string {
 }
 
 type digraphCommand struct {
-	ninjaDir ninjabuild.DirFlag
-	fname    string
+	outDir ninjabuild.DirFlag
+	fname  string
 
 	orderOnly bool
 }
 
 func (c *digraphCommand) SetFlags(flagSet *flag.FlagSet) {
-	c.ninjaDir.RegisterFlags(flagSet)
+	c.outDir.RegisterFlags(flagSet)
 	flagSet.StringVar(&c.fname, "f", "build.ninja", "input build filename (relative to -C)")
 	flagSet.BoolVar(&c.orderOnly, "order_only", true, "includes order_only deps")
 }
@@ -77,7 +77,7 @@ func (c *digraphCommand) Execute(ctx context.Context, flagSet *flag.FlagSet, _ .
 func (c *digraphCommand) run(ctx context.Context, args []string) error {
 	state := ninjautil.NewState()
 	p := ninjautil.NewManifestParser(state)
-	_, _, _, err := ninjabuild.InitDir(ctx, c.ninjaDir)
+	_, _, _, err := ninjabuild.InitDir(ctx, c.outDir)
 	if err != nil {
 		return err
 	}

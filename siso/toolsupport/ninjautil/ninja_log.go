@@ -24,8 +24,8 @@ const ninjaLogVersion = 5
 
 // InitializeNinjaLog creates or truncates the ninja log file (.ninja_log) for writing
 // and writes the version header.
-func InitializeNinjaLog(builddir string) (*os.File, error) {
-	f, err := os.OpenFile(filepath.Join(builddir, ninjaLogName), os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0644)
+func InitializeNinjaLog(outDir string) (*os.File, error) {
+	f, err := os.OpenFile(filepath.Join(outDir, ninjaLogName), os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0644)
 	if err != nil {
 		return nil, err
 	}

@@ -32,8 +32,8 @@ type outdirInfo struct {
 	path         string
 	pathRel      string
 	manifestPath string
-	outroot      string
-	outsub       string
+	outRoot      string
+	outSub       string
 	metrics      []*buildMetrics
 	latestRevID  string
 
@@ -165,46 +165,45 @@ func loadBuildMetrics(metricsPath string) (*buildMetrics, error) {
 }
 
 // loadOutdirInfo attempts to load all metrics found in the outdir.
-func loadOutdirInfo(workspaceRoot, outdirPath, manifestPath string) (*outdirInfo, error) {
+func loadOutdirInfo(workspaceRoot, outDir, manifestPath string) (*outdirInfo, error) {
 	start := time.Now()
-	fmt.Fprintf(os.Stderr, "load data at %s...", outdirPath)
+	fmt.Fprintf(os.Stderr, "load data at %s...", outDir)
 	defer func() {
 		fmt.Fprintf(os.Stderr, " returned in %v\n", time.Since(start))
 	}()
 
-	// Get path relative to workspace.
-	// TODO: support paths non-relative to workspace?
-	execRel, err := filepath.Rel(workspaceRoot, outdirPath)
+	// Get path relative to workspaceRoot.
+	execRel, err := filepath.Rel(workspaceRoot, outDir)
 	if err != nil {
-		return nil, fmt.Errorf("couldn't get outdir relative to execdir: %w", err)
+		return nil, fmt.Errorf("couldn't get ninja dir relative to workspace: %w", err)
 	}
 
 	// Validate manifest path.
-	_, err = os.Stat(filepath.Join(outdirPath, manifestPath))
+	_, err = os.Stat(filepath.Join(outDir, manifestPath))
 	if errors.Is(err, fs.ErrNotExist) {
-		return nil, &ErrManifestNotExist{outdirPath, manifestPath}
+		return nil, &ErrManifestNotExist{outDir, manifestPath}
 	}
 
 	// TODO(b/361703735): make sure this works on windows? https://chromium-review.googlesource.com/c/infra/infra/+/5803123/comment/502308d3_ac05bf91/
-	outroot, outsub := filepath.Split(execRel)
-	if outroot == "" || strings.Contains(outsub, "/") {
+	outRoot, outSub := filepath.Split(execRel)
+	if outRoot == "" || strings.Contains(outSub, "/") {
 		return nil, fmt.Errorf("outdir must match pattern `workspace/outroot/outsub`, others are not supported yet")
 	}
-	outroot = filepath.Clean(outroot)
+	outRoot = filepath.Clean(outRoot)
 
 	outdirInfo := &outdirInfo{
-		path:         outdirPath,
+		path:         outDir,
 		pathRel:      execRel,
 		manifestPath: manifestPath,
-		outroot:      outroot,
-		outsub:       outsub,
+		outRoot:      outRoot,
+		outSub:       outSub,
 		mu:           sync.Mutex{},
 	}
 
 	// Attempt to load latest metrics first.
 	// Only silently ignore if it doesn't exist, otherwise always return error.
 	// TODO(b/349287453): consider tolerate fail, so frontend can show error?
-	latestMetricsPath := filepath.Join(outdirPath, "siso_metrics.json")
+	latestMetricsPath := filepath.Join(outDir, "siso_metrics.json")
 	_, err = os.Stat(latestMetricsPath)
 	if err == nil {
 		latestMetrics, err := loadBuildMetrics(latestMetricsPath)
@@ -220,7 +219,7 @@ func loadOutdirInfo(workspaceRoot, outdirPath, manifestPath string) (*outdirInfo
 	// Then load revisions if available.
 	// Always return error if loading any fails.
 	// TODO(b/349287453): consider tolerate fail, so frontend can show error?
-	revPaths, err := filepath.Glob(filepath.Join(outdirPath, "siso_metrics.*.json"))
+	revPaths, err := filepath.Glob(filepath.Join(outDir, "siso_metrics.*.json"))
 	if err != nil {
 		return nil, fmt.Errorf("failed to glob revs: %w", err)
 	}

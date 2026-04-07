@@ -33,19 +33,19 @@ func (*importCommand) Usage() string {
 }
 
 type importCommand struct {
-	ninjaDir ninjabuild.DirFlag
-	format   string
+	outDir ninjabuild.DirFlag
+	format string
 }
 
 func (c *importCommand) SetFlags(flagSet *flag.FlagSet) {
-	c.ninjaDir.RegisterFlags(flagSet)
+	c.outDir.RegisterFlags(flagSet)
 	flagSet.StringVar(&c.format, "format", "json", "input format. json or prototext")
 }
 
 func (c *importCommand) Execute(ctx context.Context, flagSet *flag.FlagSet, _ ...any) subcommands.ExitStatus {
-	_, _, _, err := ninjabuild.InitDir(ctx, c.ninjaDir)
+	_, _, _, err := ninjabuild.InitDir(ctx, c.outDir)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "failed to init dir %s: %v\n", c.ninjaDir, err)
+		fmt.Fprintf(os.Stderr, "failed to init dir %s: %v\n", c.outDir, err)
 		return 1
 	}
 

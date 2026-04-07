@@ -34,13 +34,13 @@ func (*statusCommand) Usage() string {
 }
 
 type statusCommand struct {
-	ninjaDir ninjabuild.DirFlag
+	outDir ninjabuild.DirFlag
 
 	stateFile string
 }
 
 func (c *statusCommand) SetFlags(flagSet *flag.FlagSet) {
-	c.ninjaDir.RegisterFlags(flagSet)
+	c.outDir.RegisterFlags(flagSet)
 	flagSet.StringVar(&c.stateFile, "fs_state", stateFile, "fs_state filename")
 }
 
@@ -54,9 +54,9 @@ func (c *statusCommand) Execute(ctx context.Context, flagSet *flag.FlagSet, _ ..
 }
 
 func (c *statusCommand) run(ctx context.Context) error {
-	_, _, _, err := ninjabuild.InitDir(ctx, c.ninjaDir)
+	_, _, _, err := ninjabuild.InitDir(ctx, c.outDir)
 	if err != nil {
-		return fmt.Errorf("failed to init dir %s: %w", c.ninjaDir, err)
+		return fmt.Errorf("failed to init dir %s: %w", c.outDir, err)
 	}
 
 	hfs, err := hashfs.New(ctx, hashfs.Option{

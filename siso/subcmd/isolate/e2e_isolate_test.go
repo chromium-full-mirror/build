@@ -48,14 +48,14 @@ func setupFiles(t *testing.T, dir, name string) {
 	}
 }
 
-func setupBuildDir(ctx context.Context, t *testing.T, dir string, buildDir string) *hashfs.HashFS {
+func setupOutDir(ctx context.Context, t *testing.T, dir string, outDir string) *hashfs.HashFS {
 	t.Helper()
 
-	err := os.MkdirAll(filepath.Join(dir, buildDir), 0755)
+	err := os.MkdirAll(filepath.Join(dir, outDir), 0755)
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Chdir(filepath.Join(dir, buildDir))
+	t.Chdir(filepath.Join(dir, outDir))
 	hfs, err := hashfs.New(ctx, hashfs.Option{})
 	if err != nil {
 		t.Fatal(err)
@@ -74,8 +74,8 @@ func TestUpload(t *testing.T) {
 	dir := t.TempDir()
 
 	setupFiles(t, dir, t.Name())
-	buildDir := "out/siso"
-	hfs := setupBuildDir(ctx, t, dir, buildDir)
+	outDir := "out/siso"
+	hfs := setupOutDir(ctx, t, dir, outDir)
 
 	// Create .git dir manually.
 	err := os.MkdirAll(filepath.Join(dir, "testing", "data", ".git"), 0755)
@@ -100,7 +100,7 @@ func TestUpload(t *testing.T) {
 	cl := reapitest.New(ctx, t, fakere)
 
 	target := "base_unittests"
-	dg, err := upload(ctx, dir, buildDir, hfs, cl, target)
+	dg, err := upload(ctx, dir, outDir, hfs, cl, target)
 	if err != nil {
 		t.Fatalf("failed to upload. %v", err)
 	}
@@ -114,7 +114,7 @@ func TestUpload(t *testing.T) {
 		"testing/data/nested/input3.txt",
 		"testing/data/linked_dir/foo.txt",
 		"testing/data_withoutslash/input4.txt",
-		buildDir + "/pyproto/proto.py",
+		outDir + "/pyproto/proto.py",
 	} {
 		_, err := tree.LookupFileNode(ctx, f)
 		if err != nil {

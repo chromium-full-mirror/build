@@ -193,7 +193,7 @@ func Load(ctx context.Context, fname string, buildPath *build.Path) (*ninjautil.
 	started := time.Now()
 	state := ninjautil.NewState()
 	state.AddBinding("workspace_root", buildPath.WorkspaceRoot)
-	state.AddBinding("working_directory", buildPath.Dir)
+	state.AddBinding("working_directory", buildPath.OutDir)
 	p := ninjautil.NewManifestParser(state)
 	err := p.Load(ctx, fname)
 	if err != nil {
@@ -490,7 +490,7 @@ func (g *globals) targetPath(node *ninjautil.Node) string {
 	}
 	p = node.Path()
 	if !filepath.IsAbs(p) {
-		p = filepath.ToSlash(filepath.Join(g.path.Dir, p))
+		p = filepath.ToSlash(filepath.Join(g.path.OutDir, p))
 	}
 	g.targetPaths[node.ID()] = p
 	return p
@@ -584,7 +584,7 @@ func (g *Graph) StepLimits(ctx context.Context) map[string]int {
 func (g *Graph) CleanDead(ctx context.Context) (int, int, error) {
 	started := time.Now()
 	var deads []string
-	dir := filepath.Join(g.globals.path.WorkspaceRoot, g.globals.path.Dir)
+	dir := filepath.Join(g.globals.path.WorkspaceRoot, g.globals.path.OutDir)
 	genFiles := g.globals.hashFS.PreviouslyGeneratedFiles()
 	for _, genFile := range genFiles {
 		rel, err := filepath.Rel(dir, genFile)

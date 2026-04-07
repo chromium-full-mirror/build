@@ -54,7 +54,7 @@ func (*cmpCommand) Usage() string {
 }
 
 type cmpCommand struct {
-	ninjaDir       ninjabuild.DirFlag
+	outDir         ninjabuild.DirFlag
 	inputA, inputB string
 	format         string
 }
@@ -74,7 +74,7 @@ var formatKeys = func() []string {
 }()
 
 func (c *cmpCommand) SetFlags(flagSet *flag.FlagSet) {
-	c.ninjaDir.RegisterFlags(flagSet)
+	c.outDir.RegisterFlags(flagSet)
 	flagSet.StringVar(&c.inputA, "input_a", "siso_metrics.json", "target siso_metrics.json")
 	flagSet.StringVar(&c.inputB, "input_b", "siso_metrics.json.0", "base siso_metrics.json")
 
@@ -102,7 +102,7 @@ func (c *cmpCommand) run(ctx context.Context) error {
 		return fmt.Errorf("unknown format %q: known formats %q: %w", c.format, formatKeys, flag.ErrHelp)
 	}
 
-	_, _, _, err := ninjabuild.InitDir(ctx, c.ninjaDir)
+	_, _, _, err := ninjabuild.InitDir(ctx, c.outDir)
 	if err != nil {
 		return err
 	}

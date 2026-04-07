@@ -47,17 +47,17 @@ func (b BuildError) Error() string {
 	return b.Err.Error()
 }
 
-func initNinjaLogWriter(bopts *build.Options, builddir string) error {
+func initNinjaLogWriter(bopts *build.Options, outDir string) error {
 	if bopts.NinjaLogWriter != nil {
 		return nil
 	}
-	if builddir != "" {
-		err := os.MkdirAll(builddir, 0755)
+	if outDir != "" {
+		err := os.MkdirAll(outDir, 0755)
 		if err != nil {
 			return err
 		}
 	}
-	ninjaLogWriter, err := ninjautil.InitializeNinjaLog(builddir)
+	ninjaLogWriter, err := ninjautil.InitializeNinjaLog(outDir)
 	if err != nil {
 		return err
 	}
@@ -278,7 +278,7 @@ func doBuild(ctx context.Context, graph *Graph, bopts build.Options, nopts RunNi
 		bopts.ResultstoreUploader.HashFS = bopts.HashFS
 		bopts.ResultstoreUploader.REAPIClient = bopts.REAPIClient
 
-		ents, err := bopts.HashFS.Entries(ctx, filepath.Join(bopts.Path.WorkspaceRoot, bopts.Path.Dir), []string{filepath.Join(stateDir, ".siso_config"), filepath.Join(stateDir, ".siso_filegroups")})
+		ents, err := bopts.HashFS.Entries(ctx, filepath.Join(bopts.Path.WorkspaceRoot, bopts.Path.OutDir), []string{filepath.Join(stateDir, ".siso_config"), filepath.Join(stateDir, ".siso_filegroups")})
 		if err != nil {
 			return stats, err
 		}

@@ -65,7 +65,7 @@ func (*depsCommand) Usage() string {
 }
 
 type depsCommand struct {
-	ninjaDir    ninjabuild.DirFlag
+	outDir      ninjabuild.DirFlag
 	stateDir    string
 	fname       string
 	fsopt       *hashfs.Option
@@ -115,7 +115,7 @@ func (m textMarshaller) Marshal(dep dependencies) error {
 }
 
 func (c *depsCommand) SetFlags(flagSet *flag.FlagSet) {
-	c.ninjaDir.RegisterFlags(flagSet)
+	c.outDir.RegisterFlags(flagSet)
 	flagSet.StringVar(&c.stateDir, "state_dir", ".", "state directory (relative to -C)")
 	flagSet.StringVar(&c.fname, "f", "build.ninja", "input build filename (relative to -C)")
 	c.fsopt = new(hashfs.Option)
@@ -143,7 +143,7 @@ func (c *depsCommand) Execute(ctx context.Context, flagSet *flag.FlagSet, _ ...a
 }
 
 func (c *depsCommand) run(ctx context.Context, args []string) error {
-	_, workspaceRoot, dir, err := ninjabuild.InitDir(ctx, c.ninjaDir)
+	_, workspaceRoot, outDir, err := ninjabuild.InitDir(ctx, c.outDir)
 	if err != nil {
 		return err
 	}
@@ -193,7 +193,7 @@ func (c *depsCommand) run(ctx context.Context, args []string) error {
 		state = nil
 	}
 
-	bpath := build.NewPath(workspaceRoot, dir)
+	bpath := build.NewPath(workspaceRoot, outDir)
 
 	var m marshaller
 	w := bufio.NewWriter(os.Stdout)

@@ -35,7 +35,7 @@ type depsProcessor interface {
 	DepsCmd(context.Context, *Builder, *Step) ([]string, error)
 
 	// collects deps after cmd run.
-	// paths are cwd relative.
+	// paths are relative to the out dir.
 	DepsAfterRun(context.Context, *Builder, *Step) ([]string, error)
 }
 
@@ -110,7 +110,7 @@ func depsExpandInputs(ctx context.Context, b *Builder, step *Step) {
 	ctx, span := trace.NewSpan(ctx, "deps-expand-inputs")
 	defer span.Close(nil)
 
-	fsys := b.hashFS.FileSystem(ctx, filepath.Join(step.cmd.WorkspaceRoot, step.cmd.Dir))
+	fsys := b.hashFS.FileSystem(ctx, filepath.Join(step.cmd.WorkspaceRoot, step.cmd.WorkDir))
 
 	// deps=gcc,msvc with sources doesn't need to expand inputs.
 	switch step.cmd.Deps {

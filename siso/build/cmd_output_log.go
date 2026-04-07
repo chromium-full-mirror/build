@@ -213,7 +213,7 @@ func cmdOutput(ctx context.Context, result cmdOutputResult, cmd *execute.Cmd, in
 	if len(cmd.Outputs) > 0 {
 		output = cmd.Outputs[0]
 	}
-	if after, ok := strings.CutPrefix(output, cmd.Dir+"/"); ok {
+	if after, ok := strings.CutPrefix(output, cmd.WorkDir+"/"); ok {
 		output = "./" + after
 	}
 	res.output = output
