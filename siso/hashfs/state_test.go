@@ -73,8 +73,8 @@ func TestLoadMissingStateFile(t *testing.T) {
 
 	opts := hashfs.Option{
 		StateFile:     filepath.Join(dir, ".siso_fs_state"),
-		CompressZstd:  false,
-		CompressLevel: 3,
+		CompressZstd:  true,
+		CompressLevel: 1,
 	}
 
 	// Handle the case where the state file doesn't exist.
@@ -97,8 +97,8 @@ func TestLoadSaveEmptyState(t *testing.T) {
 
 	opts := hashfs.Option{
 		StateFile:     filepath.Join(dir, ".siso_fs_state"),
-		CompressZstd:  false,
-		CompressLevel: 3,
+		CompressZstd:  true,
+		CompressLevel: 1,
 	}
 
 	// Saving an empty state works.
@@ -145,7 +145,7 @@ func TestLoadSave(t *testing.T) {
 			opts := hashfs.Option{
 				StateFile:     filepath.Join(dir, ".siso_fs_state"),
 				CompressZstd:  useZstd,
-				CompressLevel: 3,
+				CompressLevel: 1,
 			}
 
 			// Save a mock state.
@@ -259,8 +259,8 @@ func TestState(t *testing.T) {
 
 	opts := hashfs.Option{
 		StateFile:     filepath.Join(dir, ".siso_fs_state"),
-		CompressZstd:  false,
-		CompressLevel: 3,
+		CompressZstd:  true,
+		CompressLevel: 1,
 	}
 
 	hashFS, err := hashfs.New(ctx, opts)
@@ -303,8 +303,8 @@ func TestState_Dir(t *testing.T) {
 
 	opts := hashfs.Option{
 		StateFile:     filepath.Join(dir, ".siso_fs_state"),
-		CompressZstd:  false,
-		CompressLevel: 3,
+		CompressZstd:  true,
+		CompressLevel: 1,
 	}
 
 	hashFS, err := hashfs.New(ctx, opts)
@@ -365,8 +365,8 @@ func TestState_BadDirEntry(t *testing.T) {
 
 	opts := hashfs.Option{
 		StateFile:     filepath.Join(dir, ".siso_fs_state"),
-		CompressZstd:  false,
-		CompressLevel: 3,
+		CompressZstd:  true,
+		CompressLevel: 1,
 	}
 	mtime := time.Now()
 	h := sha256.New()
@@ -469,8 +469,8 @@ func TestState_Symlink(t *testing.T) {
 
 	opts := hashfs.Option{
 		StateFile:     filepath.Join(dir, ".siso_fs_state"),
-		CompressZstd:  false,
-		CompressLevel: 3,
+		CompressZstd:  true,
+		CompressLevel: 1,
 	}
 
 	err = os.WriteFile(filepath.Join(dir, "target.0"), []byte("target.0"), 0644)
@@ -624,8 +624,8 @@ func BenchmarkLoadState(b *testing.B) {
 
 	opts := hashfs.Option{
 		StateFile:     filepath.Join(dir, ".siso_fs_state"),
-		CompressZstd:  false,
-		CompressLevel: 3,
+		CompressZstd:  true,
+		CompressLevel: 1,
 	}
 
 	err := hashfs.Save(ctx, st, opts)

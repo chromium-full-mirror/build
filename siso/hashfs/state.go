@@ -42,9 +42,10 @@ import (
 const defaultStateFile = ".siso_fs_state"
 
 // defaultCompressThreads is the default number of threads to use for data
-// compression. Using more than 8 threads is unlikely to provide any benefit
-// due to coordination overhead and contention
-var defaultCompressThreads = min(8, runtime.GOMAXPROCS(0))
+// compression. We limit the max parallelism to 32 due to benchmarks showing
+// that more isn't useful considering the typical file size of hashfs state
+// files, with decreasing gains and increased memory consumption.
+var defaultCompressThreads = min(32, runtime.GOMAXPROCS(0))
 
 // OutputLocalFunc returns true if given fname needs to be on local disk.
 type OutputLocalFunc func(context.Context, string) bool
@@ -83,8 +84,8 @@ type Option struct {
 func (o *Option) RegisterFlags(flagSet *flag.FlagSet) {
 	flagSet.StringVar(&o.StateFile, "fs_state", defaultStateFile, "fs state filename")
 	flagSet.BoolVar(&o.GzipUsesBgzf, "fs_state_use_bgzf", true, "use bgzf for gzip compression")
-	flagSet.BoolVar(&o.CompressZstd, "fs_state_use_zstd", false, "compress fs state using zstd instead of gzip")
-	flagSet.IntVar(&o.CompressLevel, "fs_state_compression_level", 3, "fs state compression level (0 = uncompressed, 1 = fastest, 10 = best)")
+	flagSet.BoolVar(&o.CompressZstd, "fs_state_use_zstd", true, "compress fs state using zstd instead of gzip")
+	flagSet.IntVar(&o.CompressLevel, "fs_state_compression_level", 1, "fs state compression level (1 = fastest, 10 = best)")
 	flagSet.IntVar(&o.CompressThreads, "fs_state_compression_threads", defaultCompressThreads, "number of threads to use for data compression")
 	flagSet.BoolVar(&o.KeepTainted, "fs_keep_tainted", false, "keep manually modified generated file")
 	flagSet.BoolVar(&o.DeferDigest, "fs_defer_digest", false, "defer digest calculation")

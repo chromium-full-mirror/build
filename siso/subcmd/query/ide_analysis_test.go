@@ -616,8 +616,8 @@ func setupFileState(t *testing.T, topdir, fname string, files map[string]fileSta
 	})
 	opts := hashfs.Option{
 		StateFile:     fname,
-		CompressZstd:  false,
-		CompressLevel: 3,
+		CompressZstd:  true,
+		CompressLevel: 1,
 	}
 	err := hashfs.Save(ctx, state, opts)
 	if err != nil {
