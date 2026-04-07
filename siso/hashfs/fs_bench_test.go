@@ -6,6 +6,7 @@ package hashfs
 
 import (
 	"io/fs"
+	"path/filepath"
 	"testing"
 
 	log "github.com/golang/glog"
@@ -14,7 +15,8 @@ import (
 func BenchmarkDirectoryLookup(b *testing.B) {
 	ctx := b.Context()
 	root := &directory{}
-	fname := "/b/s/w/ir/cache/builder/src/out/siso/gen"
+	dir := b.TempDir()
+	fname := filepath.Join(dir, "gen")
 	b.Run("miss", func(b *testing.B) {
 		b.ReportAllocs()
 		for b.Loop() {
@@ -43,7 +45,8 @@ func BenchmarkDirectoryLookup(b *testing.B) {
 func TestDirectoryLookup(t *testing.T) {
 	ctx := t.Context()
 	root := &directory{}
-	fname := "/b/s/w/ir/cache/builder/src/out/siso/gen"
+	dir := t.TempDir()
+	fname := filepath.Join(dir, "gen")
 
 	t.Run("miss", func(t *testing.T) {
 		num := 1000
