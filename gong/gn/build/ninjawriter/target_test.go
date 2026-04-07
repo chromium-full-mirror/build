@@ -38,7 +38,7 @@ func mustSourceDir(t *testing.T, path string) fs.SourceDir {
 	return d
 }
 
-func TestWriteBinaryTarget(t *testing.T) {
+func TestWriteSubninjaFile(t *testing.T) {
 	tests := []struct {
 		name    string
 		actions []graph.Action
@@ -156,12 +156,12 @@ build obj/out$ file$ with$ spaces.txt: copy ../../src/file$ with$ spaces.txt
 			}
 
 			var sb strings.Builder
-			if err := writeSubninjaTarget(&sb, target, bs); err != nil {
-				t.Fatalf("writeBinaryTarget()=%v; want nil err", err)
+			if err := writeSubninjaFile(&sb, target, bs); err != nil {
+				t.Fatalf("writeSubninjaFile()=%v; want nil err", err)
 			}
 
 			if diff := cmp.Diff(tc.want, sb.String()); diff != "" {
-				t.Errorf("writeBinaryTarget() mismatch (-want +got):\n%s", diff)
+				t.Errorf("writeSubninjaFile() mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}

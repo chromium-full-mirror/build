@@ -43,17 +43,7 @@ rule {{.RuleName}}
 build {{.Outs}}: {{.RuleName}} | {{.Ins}}
 `, "\n")))
 
-// writeTarget is a rudimentary stub implementation of writing a ninja build target out.
-//
-// It is nowhere near "correct" if the definition is "replicate C++ GN's outputs",
-// but is enough to help gong in its current incarnation write working Ninja for
-// very basic build repos.
-//
-// (To resolve this, one thing we need is for Builder to stop hardcoding target outdirs.
-// Instead some of that logic will likely need to move to this package. After all, where
-// outputs should go can be thought of as an implementation detail of ninjawriter.)
-//
-// TODO: use io/fs to test expected file outputs?
+// writeTarget writes a build target to a toolchain's top-level ninja file.
 func writeTarget(w io.Writer, t *graph.Target, buildSettings *environment.BuildSettings) error {
 	// Decide whether this target needs to be written as a subninja, or can be inlined
 	// to avoid extra file writes.
@@ -71,59 +61,14 @@ func writeTarget(w io.Writer, t *graph.Target, buildSettings *environment.BuildS
 	//	- action() targets only declare graph.RunScriptAction
 	//	- copy() targets declare graph.RunToolAction with nil expansions
 	//
-	// We can apply a heuristic of writing a target as a subninja...
+	// We can apply a heuristic of writing a target as a subninja, only if that target
+	// has graph.RunToolAction declarations with expansions.
 	if slices.ContainsFunc(t.Resolution.Actions, func(action graph.Action) bool {
-		// ... only if that target has graph.RunToolAction declarations with expansions.
 		toolAction, ok := action.(graph.RunToolAction)
 		return ok && toolAction.Expansions != nil
 	}) {
-		// TODO: merge the below logic into writeSubninjaTarget, so that this function
-		// becomes much easier to read?
-		targetLabel := t.Label()
-		// TODO: reusing C++ GN's builddir resolution funcs is really clumsy.
-		// can this be improved by adopting io/fs and its FS and SubFS interfaces?
-		// alternatively, look more carefully at how C++ GN uses the funcs
-		// for example do we want GetBuildDirForTargetAsSourceDir, etc?
-		// https://source.chromium.org/gn/gn/+/main:src/gn/filesystem_utils.cc;l=1097;drc=4526cdec9338674dfcc2a4b87cfe4b3231d046a9
-		targetDir := t.OutDir(buildSettings)
-		targetNinjaRel := path.Join(targetDir.Path(), fmt.Sprintf("%s.ninja", targetLabel.Name))
-		targetNinjaOutput := fs.MakeOutputPath(buildSettings.BuildDir, targetNinjaRel)
-
-		targetDirAsSource, err := targetDir.AsSourceDir()
-		if err != nil {
-			return fmt.Errorf("failed to determine target %s outdir: %w", targetLabel.UserVisibleString(true), err)
-		}
-		targetDirAbs := buildSettings.FullDirPath(targetDirAsSource)
-		if err := os.MkdirAll(targetDirAbs, 0755); err != nil {
-			return fmt.Errorf("failed to create target dir: %w", err)
-		}
-
-		targetNinjaFile, err := targetNinjaOutput.AsSourceFile()
-		if err != nil {
-			return fmt.Errorf("failed to determine target %s ninjafile: %w", targetLabel.UserVisibleString(true), err)
-		}
-		targetNinjaAbs := buildSettings.FullPath(targetNinjaFile)
-		subninjaFile, err := os.Create(targetNinjaAbs)
-		if err != nil {
-			return fmt.Errorf("failed to create target %s: %w", targetNinjaAbs, err)
-		}
-		if err := writeSubninjaTarget(subninjaFile, t, buildSettings); err != nil {
-			if err := subninjaFile.Close(); err != nil {
-				fmt.Fprintf(os.Stderr, "failed to close %s: %v", targetNinjaAbs, err)
-			}
-			return fmt.Errorf("failed to write target %s: %w", targetLabel.UserVisibleString(true), err)
-		}
-		if err := subninjaFile.Close(); err != nil {
-			return err
-		}
-
-		_, err = fmt.Fprintf(w, "subninja %s", escapeStringNinja(targetNinjaRel))
-		if err != nil {
-			return err
-		}
-		return nil
+		return writeSubninjaTarget(w, t, buildSettings)
 	}
-
 	return writeInlineTarget(w, t, buildSettings)
 }
 
@@ -144,6 +89,52 @@ func writeInlineTarget(w io.Writer, t *graph.Target, buildSettings *environment.
 }
 
 func writeSubninjaTarget(w io.Writer, t *graph.Target, buildSettings *environment.BuildSettings) error {
+	targetLabel := t.Label()
+	// TODO: reusing C++ GN's builddir resolution funcs is really clumsy.
+	// can this be improved by adopting io/fs and its FS and SubFS interfaces?
+	// alternatively, look more carefully at how C++ GN uses the funcs
+	// for example do we want GetBuildDirForTargetAsSourceDir, etc?
+	// https://source.chromium.org/gn/gn/+/main:src/gn/filesystem_utils.cc;l=1097;drc=4526cdec9338674dfcc2a4b87cfe4b3231d046a9
+	targetDir := t.OutDir(buildSettings)
+	targetNinjaRel := path.Join(targetDir.Path(), fmt.Sprintf("%s.ninja", targetLabel.Name))
+	targetNinjaOutput := fs.MakeOutputPath(buildSettings.BuildDir, targetNinjaRel)
+
+	targetDirAsSource, err := targetDir.AsSourceDir()
+	if err != nil {
+		return fmt.Errorf("failed to determine target %s outdir: %w", targetLabel.UserVisibleString(true), err)
+	}
+	targetDirAbs := buildSettings.FullDirPath(targetDirAsSource)
+	if err := os.MkdirAll(targetDirAbs, 0755); err != nil {
+		return fmt.Errorf("failed to create target dir: %w", err)
+	}
+
+	targetNinjaFile, err := targetNinjaOutput.AsSourceFile()
+	if err != nil {
+		return fmt.Errorf("failed to determine target %s ninjafile: %w", targetLabel.UserVisibleString(true), err)
+	}
+	targetNinjaAbs := buildSettings.FullPath(targetNinjaFile)
+	subninjaFile, err := os.Create(targetNinjaAbs)
+	if err != nil {
+		return fmt.Errorf("failed to create target %s: %w", targetNinjaAbs, err)
+	}
+	if err := writeSubninjaFile(subninjaFile, t, buildSettings); err != nil {
+		if err := subninjaFile.Close(); err != nil {
+			fmt.Fprintf(os.Stderr, "failed to close %s: %v", targetNinjaAbs, err)
+		}
+		return fmt.Errorf("failed to write target %s: %w", targetLabel.UserVisibleString(true), err)
+	}
+	if err := subninjaFile.Close(); err != nil {
+		return err
+	}
+
+	_, err = fmt.Fprintf(w, "subninja %s", escapeStringNinja(targetNinjaRel))
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func writeSubninjaFile(w io.Writer, t *graph.Target, buildSettings *environment.BuildSettings) error {
 	var outputExtension, targetOutputName string
 	targetOutDir := t.OutDir(buildSettings)
 	outputDir := targetOutDir.Path()
