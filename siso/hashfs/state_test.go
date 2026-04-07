@@ -146,6 +146,7 @@ func TestLoadSave(t *testing.T) {
 				StateFile:     filepath.Join(dir, ".siso_fs_state"),
 				CompressZstd:  useZstd,
 				CompressLevel: 1,
+				UseMmap:       true,
 			}
 
 			// Save a mock state.

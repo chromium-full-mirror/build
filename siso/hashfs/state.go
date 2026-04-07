@@ -63,6 +63,7 @@ type Option struct {
 	CompressZstd    bool   // compress fs state using zstd instead of gzip
 	CompressLevel   int    // compression level (0 = uncompressed, 1 = fastest, 10 = best)
 	CompressThreads int    // number of threads to use for data compression
+	UseMmap         bool   // use mmap for reading/writing state files
 
 	KeepTainted bool // keep manually modified generated file
 
@@ -90,6 +91,7 @@ func (o *Option) RegisterFlags(flagSet *flag.FlagSet) {
 	flagSet.BoolVar(&o.CompressZstd, "fs_state_use_zstd", true, "compress fs state using zstd instead of gzip")
 	flagSet.IntVar(&o.CompressLevel, "fs_state_compression_level", 1, "fs state compression level (1 = fastest, 10 = best)")
 	flagSet.IntVar(&o.CompressThreads, "fs_state_compression_threads", defaultCompressThreads, "number of threads to use for data compression")
+	flagSet.BoolVar(&o.UseMmap, "fs_state_mmap", true, "use memory-mapped I/O for state file reads/writes")
 	flagSet.BoolVar(&o.KeepTainted, "fs_keep_tainted", false, "keep manually modified generated file")
 	flagSet.BoolVar(&o.DeferDigest, "fs_defer_digest", false, "defer digest calculation")
 	flagSet.DurationVar(&o.MinFlushTimeout, "fs_min_flush_timeout", 10*time.Second, "minimum timeout for flush. ignored if it is shorter than 10s")
@@ -233,9 +235,22 @@ func loadZstdParallel(ctx context.Context, buf []byte, threads int) ([]byte, err
 }
 
 func loadFile(ctx context.Context, opts Option) ([]byte, error) {
-	compressed, err := os.ReadFile(opts.StateFile)
-	if err != nil {
-		return nil, err
+	var compressed []byte
+	if opts.UseMmap {
+		// Use mmap to read the compressed file. The data is backed by the
+		// OS page cache rather than the Go heap, avoiding a large allocation.
+		data, err := mmapReadFile(opts.StateFile)
+		if err != nil {
+			return nil, err
+		}
+		defer munmapFile(data)
+		compressed = data
+	} else {
+		data, err := os.ReadFile(opts.StateFile)
+		if err != nil {
+			return nil, err
+		}
+		compressed = data
 	}
 
 	if len(compressed) < 4 {
@@ -1061,19 +1076,45 @@ func saveFile(ctx context.Context, data []byte, opts Option) (retErr error) {
 			}
 		}()
 
-		out := make([]byte, comp.MaxCompressedSize())
-		actualSize, err := comp.Compress(out, data)
-		if err != nil {
-			return err
-		}
-		clog.Infof(ctx, "compressed %d -> %d bytes (%.1fx)", len(data), actualSize, float64(len(data))/float64(actualSize))
+		if opts.UseMmap {
+			// Mmap the temp file at worst-case size and compress directly
+			// into the mmap'd region, avoiding a heap-allocated output buffer.
+			out, closer, err := mmapWriteFile(f, comp.MaxCompressedSize())
+			if err != nil {
+				_ = os.Remove(f.Name())
+				return err
+			}
 
-		if _, err := f.Write(out[:actualSize]); err != nil {
-			f.Close()
-			return err
-		}
-		if err := f.Close(); err != nil {
-			return err
+			actualSize, err := comp.Compress(out, data)
+			if err != nil {
+				closer()
+				return err
+			}
+			clog.Infof(ctx, "compressed %d -> %d bytes (%.1fx)", len(data), actualSize, float64(len(data))/float64(actualSize))
+
+			if err := closer(); err != nil {
+				return err
+			}
+
+			// Truncate from worst-case to actual compressed size.
+			if err := os.Truncate(f.Name(), int64(actualSize)); err != nil {
+				return err
+			}
+		} else {
+			out := make([]byte, comp.MaxCompressedSize())
+			actualSize, err := comp.Compress(out, data)
+			if err != nil {
+				return err
+			}
+			clog.Infof(ctx, "compressed %d -> %d bytes (%.1fx)", len(data), actualSize, float64(len(data))/float64(actualSize))
+
+			if _, err := f.Write(out[:actualSize]); err != nil {
+				f.Close()
+				return err
+			}
+			if err := f.Close(); err != nil {
+				return err
+			}
 		}
 	} else {
 		clog.Infof(ctx, "using gzip compression (level %d)", opts.CompressLevel)
