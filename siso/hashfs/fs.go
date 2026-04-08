@@ -2218,7 +2218,14 @@ func (d *directory) lookup(ctx context.Context, fname string) (*entry, string, *
 	return nil, fname, nil, false
 }
 
-var missingEntry = &entry{err: fs.ErrNotExist}
+var missingEntry = func() *entry {
+	lready := make(chan bool, 1)
+	close(lready)
+	return &entry{
+		lready: lready,
+		err:    fs.ErrNotExist,
+	}
+}()
 
 func (d *directory) lookupEntry(ctx context.Context, fname string) (*entry, *directory, string, bool) {
 	pe := pathElements{
