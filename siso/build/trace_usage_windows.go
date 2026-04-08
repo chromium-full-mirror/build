@@ -1,10 +1,10 @@
-// Copyright 2026 The Chromium Authors
+// Copyright 2023 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 //go:build windows
 
-package trace
+package build
 
 import (
 	"time"
@@ -29,18 +29,18 @@ func (u *usageRecord) get() {
 	getProcessIoCounters.Call(uintptr(p), uintptr(unsafe.Pointer(&u.ioCounter)))
 }
 
-func (u *usageRecord) sample(pid int64, t time.Time) []Event {
+func (u *usageRecord) sample(t time.Time) []traceEventObject {
 	p := windows.CurrentProcess()
 	var creationTime, exitTime windows.Filetime
 	var kernelTime, userTime windows.Filetime
 	windows.GetProcessTimes(p, &creationTime, &exitTime, &kernelTime, &userTime)
 	var ioCounter windows.IO_COUNTERS
 	getProcessIoCounters.Call(uintptr(windows.CurrentProcess()), uintptr(unsafe.Pointer(&ioCounter)))
-	ret := make([]Event, 0, 2)
-	o := Event{
+	ret := make([]traceEventObject, 0, 2)
+	o := traceEventObject{
 		Ph:  "C",
 		T:   t.Sub(u.start).Microseconds(),
-		Pid: pid,
+		Pid: sisoPid,
 		Tid: sisoTid,
 	}
 	o.Name = "cpu"

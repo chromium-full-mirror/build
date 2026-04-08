@@ -21,7 +21,6 @@ import (
 	"go.chromium.org/build/siso/build/ninjabuild"
 	"go.chromium.org/build/siso/execute/reproxyexec/reproxytest"
 	"go.chromium.org/build/siso/hashfs"
-	"go.chromium.org/build/siso/o11y/trace"
 	"go.chromium.org/build/siso/reapi/reapitest"
 )
 
@@ -50,12 +49,7 @@ func TestBuild_Trace_remote(t *testing.T) {
 		})
 		defer cleanup()
 		opt.REAPIClient = ds.Client
-		tracer, err := trace.NewTracer(ctx, "siso_trace.json")
-		if err != nil {
-			return build.Stats{}, err
-		}
-		defer tracer.Close(ctx)
-		opt.Tracer = tracer
+		opt.TraceJSON = "siso_trace.json"
 		return ninjabuild.Run(ctx, graph, opt, nil, ninjabuild.RunNinjaOpts{})
 	}
 
@@ -213,12 +207,7 @@ func TestBuild_Trace_reproxy(t *testing.T) {
 		})
 		defer cleanup()
 		opt.ReproxyAddr = s.Addr()
-		tracer, err := trace.NewTracer(ctx, "siso_trace.json")
-		if err != nil {
-			return build.Stats{}, err
-		}
-		defer tracer.Close(ctx)
-		opt.Tracer = tracer
+		opt.TraceJSON = "siso_trace.json"
 		return ninjabuild.Run(ctx, graph, opt, nil, ninjabuild.RunNinjaOpts{})
 	}
 

@@ -5,46 +5,464 @@
 package build
 
 import (
+	"bufio"
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"os"
+	"runtime/metrics"
 	"sort"
 	"strings"
 	"sync"
 	"time"
 
+	"go.chromium.org/build/siso/build/metadata"
+	"go.chromium.org/build/siso/o11y/clog"
+	"go.chromium.org/build/siso/o11y/iometrics"
 	"go.chromium.org/build/siso/o11y/trace"
+	"go.chromium.org/build/siso/sync/semaphore"
 )
 
-func (b *Builder) traceEvents(tc *trace.Context) []trace.Event {
+type traceEvents struct {
+	// metadata of the build.
+	metadata metadata.Metadata
+
+	// filename of trace json file.
+	fname string
+
+	// number of traces written.
+	num int
+	// start time of the trace.
+	start time.Time
+
+	// pass traceEventObject from Add to write.
+	q chan traceEventObject
+	// signals to terminate trace writer.
+	quit, done chan struct{}
+
+	// metrics samples to avoid STW from ReadMemStats.
+	metricsSamples []metrics.Sample
+	// resource usage record of siso.
+	rusage usageRecord
+	// system resource record
+	sys sysRecord
+
+	// iometrics to emit in trace json.
+	ioms []*iometrics.IOMetrics
+	// iostats to emit in trace json.
+	iostats []iometrics.Stats
+	// semaphores to emit in trace json.
+	semas []semaphore.Monitorable
+	// last number of requests using in semaphore.
+	semaReqs []int
+
+	mu sync.Mutex
+	// RBE worker id -> index of worker.
+	rbeWorkers map[string]int
+}
+
+func newTraceEvents(fname string, metadata metadata.Metadata) *traceEvents {
+	return &traceEvents{
+		metadata:   metadata,
+		fname:      fname,
+		q:          make(chan traceEventObject, 10000),
+		quit:       make(chan struct{}),
+		done:       make(chan struct{}),
+		rbeWorkers: make(map[string]int),
+		metricsSamples: []metrics.Sample{
+			{Name: "/memory/classes/heap/objects:bytes"},
+			{Name: "/gc/heap/allocs:bytes"},
+			{Name: "/memory/classes/total:bytes"},
+			{Name: "/sched/pauses/total/gc:seconds"},
+			{Name: "/gc/cycles/total:gc-cycles"},
+		},
+	}
+}
+
+func (te *traceEvents) Start(ctx context.Context, semas []semaphore.Monitorable, ioms []*iometrics.IOMetrics) {
+	te.semas = semas
+	te.semaReqs = make([]int, len(semas))
+	te.ioms = ioms
+	te.iostats = make([]iometrics.Stats, len(ioms))
+	te.start = time.Now()
+	go te.loop(ctx)
+}
+
+func (te *traceEvents) loop(ctx context.Context) {
+	clog.Infof(ctx, "trace loop start")
+	defer close(te.done)
+	te.rusage.get()
+	te.sys.get(ctx)
+	w := io.Discard
+	if te.fname != "" {
+		f, err := os.Create(te.fname)
+		if err != nil {
+			clog.Warningf(ctx, "Failed to create %s: %v", te.fname, err)
+			return
+		}
+		bw := bufio.NewWriterSize(f, 256*1024)
+		w = bw
+		defer func() {
+			te.writeTraceFooter(ctx, bw)
+			err := bw.Flush()
+			if err != nil {
+				clog.Warningf(ctx, "Failed to flush %s: %v", te.fname, err)
+			}
+			err = f.Close()
+			if err != nil {
+				clog.Warningf(ctx, "Failed to close %s: %v", te.fname, err)
+			}
+		}()
+	}
+	fmt.Fprintf(w, "{\"traceEvents\":[\n")
+	te.rusage.start = te.start
+	te.sys.start = te.start
+	te.write(ctx, w, traceEventObject{
+		Name: "process_name",
+		Ph:   "M",
+		Pid:  sysPid,
+		Tid:  sysTid,
+		Args: map[string]any{
+			"name": "sys",
+		},
+	})
+	te.write(ctx, w, traceEventObject{
+		Name: "process_name",
+		Ph:   "M",
+		Pid:  sisoPid,
+		Tid:  sisoTid,
+		Args: map[string]any{
+			"name": "siso",
+		},
+	})
+	te.write(ctx, w, traceEventObject{
+		Name: "process_name",
+		Ph:   "M",
+		Pid:  sisoSemaPid,
+		Tid:  sisoTid,
+		Args: map[string]any{
+			"name": "siso-sema",
+		},
+	})
+	te.write(ctx, w, traceEventObject{
+		Name: "process_name",
+		Ph:   "M",
+		Pid:  sisoPreprocPid,
+		Tid:  sisoTid,
+		Args: map[string]any{
+			"name": "preproc",
+		},
+	})
+	te.write(ctx, w, traceEventObject{
+		Name: "process_name",
+		Ph:   "M",
+		Pid:  sisoLocalPid,
+		Tid:  sisoTid,
+		Args: map[string]any{
+			"name": "local-exec",
+		},
+	})
+	te.write(ctx, w, traceEventObject{
+		Name: "process_name",
+		Ph:   "M",
+		Pid:  sisoRemotePid,
+		Tid:  sisoTid,
+		Args: map[string]any{
+			"name": "remote-exec",
+		},
+	})
+	te.write(ctx, w, traceEventObject{
+		Name: "process_name",
+		Ph:   "M",
+		Pid:  sisoRBEPid,
+		Tid:  sisoTid,
+		Args: map[string]any{
+			"name": "rbe",
+		},
+	})
+	for i, sema := range te.ioms {
+		te.write(ctx, w, traceEventObject{
+			Name: "process_name",
+			Ph:   "M",
+			Pid:  int64(sisoIOPid + i),
+			Tid:  sisoTid,
+			Args: map[string]any{
+				"name": "siso-io-" + sema.Name(),
+			},
+		})
+	}
+	ticker := time.NewTicker(1 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-te.quit:
+			clog.Infof(ctx, "trace loop quit len=%d", len(te.q))
+			var timeout = time.After(1 * time.Second)
+		quit:
+			for len(te.q) > 0 {
+				select {
+				case obj := <-te.q:
+					te.write(ctx, w, obj)
+				case <-timeout:
+					clog.Warningf(ctx, "timed out")
+					break quit
+				}
+			}
+			clog.Infof(ctx, "trace loop quit done")
+			return
+
+		case t := <-ticker.C:
+			te.sample(ctx, w, t)
+
+		case obj := <-te.q:
+			te.write(ctx, w, obj)
+		}
+	}
+}
+
+const (
+	sysPid = iota + 1
+	sisoPid
+	sisoSemaPid
+	sisoPreprocPid
+	sisoLocalPid
+	sisoRemotePid
+	sisoRBEPid
+	sisoIOPid
+)
+
+const (
+	sysTid  = 1
+	sisoTid = 1
+)
+
+// traceEventObject is trace event for trace json.
+// see https://docs.google.com/document/d/1CvAClvFfyA5R-PhYUmn5OOQtYMH4h6I0nSsKchNAySU/preview
+type traceEventObject struct {
+	// The name of the event, as displayed in trace viewer.
+	Name string `json:"name"`
+
+	// The event categories.
+	// This is comma separated list of categories for the event.
+	// The categories can be used to hide events in the trace viewer UI.
+	Cat string `json:"cat,omitempty"`
+
+	// The event type.
+	// This is a single character which changes depending on the type
+	// of event being output.
+	Ph string `json:"ph"`
+
+	// The tracing clock timestamp of the event.
+	// The timestamps are provided at microsecond granularity.
+	T int64 `json:"ts"`
+
+	// The process ID of the process that output this event.
+	Pid int64 `json:"pid"`
+
+	// The thread ID of the thread that output this event.
+	Tid int64 `json:"tid"`
+
+	// The tracing clock duration of complete events in microseconds.
+	// Used for "ph"="X".
+	Dur int64 `json:"dur,omitempty"`
+
+	// Any arguments provided for the event.
+	Args map[string]any `json:"args,omitempty"`
+}
+
+func (te *traceEvents) sample(ctx context.Context, w io.Writer, t time.Time) {
+	for _, o := range te.traceMemStats(t) {
+		te.write(ctx, w, o)
+	}
+	for _, o := range te.rusage.sample(t) {
+		te.write(ctx, w, o)
+	}
+	for _, o := range te.sys.sample(ctx, t) {
+		te.write(ctx, w, o)
+	}
+
+	for i, sema := range te.semas {
+		if sema == nil {
+			continue
+		}
+		for _, o := range te.traceSemaphore(t, sema, &te.semaReqs[i]) {
+			te.write(ctx, w, o)
+		}
+	}
+	for i, m := range te.ioms {
+		if m == nil {
+			continue
+		}
+		for _, o := range te.traceIOMetrics(t, int64(sisoIOPid+i), m, &te.iostats[i]) {
+			te.write(ctx, w, o)
+		}
+	}
+}
+
+func (te *traceEvents) traceMemStats(t time.Time) []traceEventObject {
+	var alloc, totalAlloc, sys, numGC, pauseNs uint64
+
+	metrics.Read(te.metricsSamples)
+	// See also: https://pkg.go.dev/runtime/metrics#hdr-Supported_metrics
+	for _, sample := range te.metricsSamples {
+		switch sample.Name {
+		case "/memory/classes/heap/objects:bytes":
+			if sample.Value.Kind() == metrics.KindUint64 {
+				alloc = sample.Value.Uint64()
+			}
+		case "/gc/heap/allocs:bytes":
+			if sample.Value.Kind() == metrics.KindUint64 {
+				totalAlloc = sample.Value.Uint64()
+			}
+		case "/memory/classes/total:bytes":
+			if sample.Value.Kind() == metrics.KindUint64 {
+				sys = sample.Value.Uint64()
+			}
+		case "/gc/cycles/total:gc-cycles":
+			if sample.Value.Kind() == metrics.KindUint64 {
+				numGC = sample.Value.Uint64()
+			}
+		case "/sched/pauses/total/gc:seconds":
+			// Approximate the cumulative nanoseconds in GC STW pauses.
+			// runtime/metrics exports this as a Float64Histogram rather than a scalar,
+			// so we estimate the total by summing (count * bucket midpoint).
+			if sample.Value.Kind() == metrics.KindFloat64Histogram {
+				h := sample.Value.Float64Histogram()
+				var sum float64
+				for j, count := range h.Counts {
+					if count > 0 {
+						mid := (h.Buckets[j] + h.Buckets[j+1]) / 2.0
+						sum += float64(count) * mid
+					}
+				}
+				pauseNs = uint64(sum * 1e9)
+			}
+		}
+	}
+
+	ret := []traceEventObject{
+		{
+			Name: "memstats",
+			Ph:   "C",
+			T:    t.Sub(te.start).Microseconds(),
+			Pid:  sisoPid,
+			Tid:  sisoTid,
+			Args: map[string]any{
+				"alloc":       alloc,
+				"total_alloc": totalAlloc,
+				"sys":         sys,
+				"pause":       pauseNs,
+				"gc":          numGC,
+			},
+		},
+	}
+	return ret
+}
+
+func (te *traceEvents) traceSemaphore(t time.Time, sema semaphore.Monitorable, reqs *int) []traceEventObject {
+	r := sema.NumRequests()
+	rate := r - *reqs
+	*reqs = r
+	return []traceEventObject{
+		{
+			Name: sema.Name(),
+			Ph:   "C",
+			T:    t.Sub(te.start).Microseconds(),
+			Pid:  sisoSemaPid,
+			Tid:  sisoTid,
+			Args: map[string]any{
+				"queue": sema.NumWaits(),
+				"serv":  sema.NumServs(),
+				"rate":  rate,
+			},
+		},
+	}
+}
+
+func (te *traceEvents) traceIOMetrics(t time.Time, pid int64, m *iometrics.IOMetrics, s *iometrics.Stats) []traceEventObject {
+	stats := m.Stats()
+
+	o := traceEventObject{
+		Ph:  "C",
+		T:   t.Sub(te.start).Microseconds(),
+		Pid: pid,
+		Tid: sisoTid,
+	}
+	ret := make([]traceEventObject, 0, 3)
+	o.Name = m.Name() + "-ops"
+	o.Args = map[string]any{
+		"ops/s":  stats.Ops - s.Ops,
+		"errs/s": stats.OpsErrs - s.OpsErrs,
+	}
+	ret = append(ret, o)
+	o.Name = m.Name() + "-read"
+	o.Args = map[string]any{
+		"ops/s":   stats.ROps - s.ROps,
+		"bytes/s": stats.RBytes - s.RBytes,
+		"errs/s":  stats.RErrs - s.RErrs,
+	}
+	ret = append(ret, o)
+	o.Name = m.Name() + "-write"
+	o.Args = map[string]any{
+		"ops/s":   stats.WOps - s.WOps,
+		"bytes/s": stats.WBytes - s.WBytes,
+		"errs/s":  stats.WErrs - s.WErrs,
+	}
+	ret = append(ret, o)
+	*s = stats
+	return ret
+}
+
+func (te *traceEvents) write(ctx context.Context, w io.Writer, obj traceEventObject) {
+	if te.num > 0 {
+		fmt.Fprintf(w, ",\n ")
+	}
+	buf, err := json.Marshal(obj)
+	if err != nil {
+		clog.Warningf(ctx, "Failed to marshal %v: %v", obj, err)
+		return
+	}
+	te.num++
+	w.Write(buf)
+}
+
+func (te *traceEvents) Add(ctx context.Context, tc *trace.Context) {
 	spans := tc.Spans()
 	if len(spans) == 0 {
-		return nil
+		return
 	}
 
 	attr := newSpanEventAttr(spans[0].Attrs)
 
-	events := make([]trace.Event, 0, len(spans[:1]))
 	for _, span := range spans[1:] {
-		var obj trace.Event
+		var obj traceEventObject
 		switch span.NameKind() {
 		case "serv:preproc":
-			obj = runPreprocSpanEvent(span, attr, b.tracePidPreproc)
+			obj = te.runPreprocSpanEvent(span, attr)
 		case "serv:localexec":
-			obj = runLocalSpanEvent(span, attr, b.tracePidLocal)
+			obj = te.runLocalSpanEvent(span, attr)
 		case "serv:remoteexec", "serv:reproxyexec", "serv:rewrap":
-			obj = runRemoteSpanEvent(span, attr, b.tracePidRemote)
+			obj = te.runRemoteSpanEvent(span, attr)
 		case "rbe:worker":
 			worker, _ := span.Attrs["worker"].(string)
-			workerID := b.tracer.Thread(b.tracePidWorker, worker)
-			obj = rbeWorkerSpanEvent(span, attr, b.tracePidWorker, workerID)
+			te.mu.Lock()
+			workerID, ok := te.rbeWorkers[worker]
+			if !ok {
+				workerID = len(te.rbeWorkers)
+				te.rbeWorkers[worker] = workerID
+			}
+			te.mu.Unlock()
+			obj = te.rbeWorkerSpanEvent(span, attr, workerID)
 		default:
 			if strings.HasPrefix(span.Name, "serv:pool=") {
-				obj = runLocalSpanEvent(span, attr, b.tracePidLocal)
+				obj = te.runLocalSpanEvent(span, attr)
 			} else {
 				continue
 			}
 		}
-		events = append(events, obj)
+		te.q <- obj
 	}
-	return events
 }
 
 type spanEventAttr struct {
@@ -87,13 +505,13 @@ func newSpanEventAttr(attr map[string]any) spanEventAttr {
 	}
 }
 
-func runPreprocSpanEvent(span trace.SpanData, attr spanEventAttr, pid int64) trace.Event {
-	return trace.Event{
+func (te *traceEvents) runPreprocSpanEvent(span trace.SpanData, attr spanEventAttr) traceEventObject {
+	return traceEventObject{
 		Name: attr.output0,
 		Cat:  attr.spanName,
 		Ph:   "X",
-		T:    span.Start.Sub(trace.StartTime()).Microseconds(),
-		Pid:  pid,
+		T:    span.Start.Sub(te.start).Microseconds(),
+		Pid:  sisoPreprocPid,
 		Tid:  int64(span.Attrs["tid"].(int)),
 		Dur:  span.Duration().Microseconds(),
 		Args: map[string]any{
@@ -108,13 +526,13 @@ func runPreprocSpanEvent(span trace.SpanData, attr spanEventAttr, pid int64) tra
 	}
 }
 
-func runLocalSpanEvent(span trace.SpanData, attr spanEventAttr, pid int64) trace.Event {
-	return trace.Event{
+func (te *traceEvents) runLocalSpanEvent(span trace.SpanData, attr spanEventAttr) traceEventObject {
+	return traceEventObject{
 		Name: attr.output0,
 		Cat:  attr.spanName,
 		Ph:   "X",
-		T:    span.Start.Sub(trace.StartTime()).Microseconds(),
-		Pid:  pid,
+		T:    span.Start.Sub(te.start).Microseconds(),
+		Pid:  sisoLocalPid,
 		Tid:  int64(span.Attrs["tid"].(int)),
 		Dur:  span.Duration().Microseconds(),
 		Args: map[string]any{
@@ -129,13 +547,13 @@ func runLocalSpanEvent(span trace.SpanData, attr spanEventAttr, pid int64) trace
 	}
 }
 
-func runRemoteSpanEvent(span trace.SpanData, attr spanEventAttr, pid int64) trace.Event {
-	return trace.Event{
+func (te *traceEvents) runRemoteSpanEvent(span trace.SpanData, attr spanEventAttr) traceEventObject {
+	return traceEventObject{
 		Name: attr.output0,
 		Cat:  attr.spanName,
 		Ph:   "X",
-		T:    span.Start.Sub(trace.StartTime()).Microseconds(),
-		Pid:  pid,
+		T:    span.Start.Sub(te.start).Microseconds(),
+		Pid:  sisoRemotePid,
 		Tid:  int64(span.Attrs["tid"].(int)),
 		Dur:  span.Duration().Microseconds(),
 		Args: map[string]any{
@@ -150,13 +568,13 @@ func runRemoteSpanEvent(span trace.SpanData, attr spanEventAttr, pid int64) trac
 	}
 }
 
-func rbeWorkerSpanEvent(span trace.SpanData, attr spanEventAttr, pid int64, workerID int) trace.Event {
-	return trace.Event{
+func (te *traceEvents) rbeWorkerSpanEvent(span trace.SpanData, attr spanEventAttr, workerID int) traceEventObject {
+	return traceEventObject{
 		Name: attr.output0,
 		Cat:  attr.spanName,
 		Ph:   "X",
-		T:    span.Start.Sub(trace.StartTime()).Microseconds(),
-		Pid:  pid,
+		T:    span.Start.Sub(te.start).Microseconds(),
+		Pid:  sisoRBEPid,
 		Tid:  int64(workerID),
 		Dur:  span.Duration().Microseconds(),
 		Args: map[string]any{
@@ -170,6 +588,30 @@ func rbeWorkerSpanEvent(span trace.SpanData, attr spanEventAttr, pid int64, work
 			"worker":      span.Attrs["worker"].(string),
 		},
 	}
+}
+
+func (te *traceEvents) writeTraceFooter(ctx context.Context, w io.Writer) {
+	fmt.Fprintf(w, "\n],\n\"displayTimeUnit\":\"ms\"")
+	for _, key := range te.metadata.Keys() {
+		keyJSON, err := json.Marshal(key)
+		if err != nil {
+			clog.Warningf(ctx, "Failed to marshal metadata key %s: %v", key, err)
+			continue
+		}
+		valJSON, err := json.Marshal(te.metadata.Get(key))
+		if err != nil {
+			clog.Warningf(ctx, "Failed to marshal metadata value for %s: %v", key, err)
+			continue
+		}
+		fmt.Fprintf(w, ",\n%s:%s", keyJSON, valJSON)
+	}
+	fmt.Fprintf(w, "\n}")
+}
+
+func (te *traceEvents) Close(ctx context.Context) {
+	close(te.quit)
+	<-te.done
+	clog.Infof(ctx, "trace finalize")
 }
 
 type traceStats struct {

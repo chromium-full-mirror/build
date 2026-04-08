@@ -424,14 +424,20 @@ func initDepsLog(ctx context.Context, stateDir string, depsLogFile string) (*nin
 
 // initBuildOpts initializes the `build.Options` struct by collecting
 // various configuration settings and parameters.
-func (c *Command) initBuildOpts(ctx context.Context, projectID string, buildPath *build.Path, config *buildconfig.Config, ds build.DataSource, hashFS *hashfs.HashFS, limits build.Limits, tracer *trace.Tracer, traceExporter *trace.Exporter, logWriters logWriters) build.Options {
+func (c *Command) initBuildOpts(ctx context.Context, projectID string, buildPath *build.Path, config *buildconfig.Config, ds build.DataSource, hashFS *hashfs.HashFS, limits build.Limits, traceExporter *trace.Exporter, logWriters logWriters) build.Options {
+	if !filepath.IsAbs(c.traceJSON) {
+		c.traceJSON = filepath.Join(c.logDir, c.traceJSON)
+	}
 	if !filepath.IsAbs(c.buildPprof) {
 		c.buildPprof = filepath.Join(c.logDir, c.buildPprof)
 	}
-	tracer.SetMetadata(config.Metadata)
+
 	var actionSaltBytes []byte
 	if c.actionSalt != "" {
 		actionSaltBytes = []byte(c.actionSalt)
+	}
+	if c.traceJSON != "" {
+		rotateFiles(ctx, c.traceJSON)
 	}
 
 	cache, err := build.NewCache(ctx, build.CacheOptions{
@@ -464,7 +470,7 @@ func (c *Command) initBuildOpts(ctx context.Context, projectID string, buildPath
 		LocalexecLogWriter:    logWriters.localexecLogWriter,
 		MetricsJSONWriter:     logWriters.metricsJSONWriter,
 		TraceExporter:         traceExporter,
-		Tracer:                tracer,
+		TraceJSON:             c.traceJSON,
 		Pprof:                 c.buildPprof,
 		Clobber:               c.clobber,
 		FastExit:              c.fastExit,

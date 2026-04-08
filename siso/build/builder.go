@@ -100,8 +100,8 @@ type Options struct {
 	ExplainWriter        io.Writer
 	LocalexecLogWriter   io.Writer
 	MetricsJSONWriter    io.Writer
+	TraceJSON            string
 	Pprof                string
-	Tracer               *trace.Tracer
 	TraceExporter        *trace.Exporter
 	PprofUploader        *sisopprof.Uploader
 	ResultstoreUploader  *resultstore.Uploader
@@ -222,13 +222,11 @@ type Builder struct {
 	metricsJSONWriter    io.Writer
 	outputLogWriter      io.Writer
 	traceExporter        *trace.Exporter
-	tracer               *trace.Tracer
+	traceEvents          *traceEvents
 	traceStats           *traceStats
 	tracePprof           *tracePprof
 	pprofUploader        *sisopprof.Uploader
 	resultstoreUploader  *resultstore.Uploader
-
-	tracePidPreproc, tracePidLocal, tracePidRemote, tracePidWorker int64
 
 	// envfiles: filename -> *envfile
 	envFiles sync.Map
@@ -381,7 +379,7 @@ func New(ctx context.Context, graph Graph, opts Options) (_ *Builder, err error)
 		localexecLogWriter:    lelw,
 		metricsJSONWriter:     mw,
 		traceExporter:         opts.TraceExporter,
-		tracer:                opts.Tracer,
+		traceEvents:           newTraceEvents(opts.TraceJSON, opts.Metadata),
 		traceStats:            newTraceStats(),
 		tracePprof:            newTracePprof(opts.Pprof),
 		pprofUploader:         opts.PprofUploader,
@@ -659,7 +657,7 @@ func (b *Builder) Build(ctx context.Context, name string, args ...string) (err e
 			ui.Default.PrintLines("\n", "\n")
 		}
 	}()
-	semas := []trace.Semaphore{
+	semas := []semaphore.Monitorable{
 		b.cache.sema,
 		b.localSema,
 		b.remoteSema,
@@ -675,16 +673,12 @@ func (b *Builder) Build(ctx context.Context, name string, args ...string) (err e
 		msvcutil.Semaphore,
 		remoteexec.Semaphore,
 	}
-	b.tracer.Start(ctx, semas, []*iometrics.IOMetrics{
+	b.traceEvents.Start(ctx, semas, []*iometrics.IOMetrics{
 		b.hashFS.OS.IOMetrics,
 		b.reapiclient.IOMetrics(),
 		// TODO: cache iometrics?
 	})
-	b.tracePidPreproc = b.tracer.Process(ctx, "preproc")
-	b.tracePidLocal = b.tracer.Process(ctx, "local-exec")
-	b.tracePidRemote = b.tracer.Process(ctx, "remote-exec")
-	b.tracePidWorker = b.tracer.Process(ctx, "rbe")
-
+	defer b.traceEvents.Close(ctx)
 	b.tracePprof.SetMetadata(b.metadata)
 	b.pprofUploader.SetMetadata(ctx, b.metadata)
 	defer func(ctx context.Context) {
@@ -1268,7 +1262,7 @@ func (b *Builder) updateDeps(ctx context.Context, step *Step) error {
 }
 
 func (b *Builder) finalizeTrace(ctx context.Context, tc *trace.Context) {
-	b.tracer.Record(b.traceEvents(tc))
+	b.traceEvents.Add(ctx, tc)
 	b.traceStats.update(tc)
 	b.traceExporter.Export(ctx, tc)
 	b.tracePprof.Add(ctx, tc)

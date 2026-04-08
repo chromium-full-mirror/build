@@ -1,10 +1,10 @@
-// Copyright 2026 The Chromium Authors
+// Copyright 2023 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 //go:build unix
 
-package trace
+package build
 
 import (
 	"syscall"
@@ -20,14 +20,14 @@ func (u *usageRecord) get() {
 	syscall.Getrusage(syscall.RUSAGE_SELF, &u.rusage)
 }
 
-func (u *usageRecord) sample(pid int64, t time.Time) []Event {
+func (u *usageRecord) sample(t time.Time) []traceEventObject {
 	var rusage syscall.Rusage
 	syscall.Getrusage(syscall.RUSAGE_SELF, &rusage)
-	ret := make([]Event, 0, 3)
-	o := Event{
+	ret := make([]traceEventObject, 0, 3)
+	o := traceEventObject{
 		Ph:  "C",
 		T:   t.Sub(u.start).Microseconds(),
-		Pid: pid,
+		Pid: sisoPid,
 		Tid: sisoTid,
 	}
 	o.Name = "cpu"

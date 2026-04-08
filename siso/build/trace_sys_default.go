@@ -1,10 +1,10 @@
-// Copyright 2026 The Chromium Authors
+// Copyright 2023 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 //go:build !linux
 
-package trace
+package build
 
 import (
 	"context"
@@ -18,6 +18,6 @@ type sysRecord struct {
 
 func (*sysRecord) get(ctx context.Context) {}
 
-func (*sysRecord) sample(context.Context, int64, time.Time) []Event {
+func (*sysRecord) sample(context.Context, time.Time) []traceEventObject {
 	return nil
 }

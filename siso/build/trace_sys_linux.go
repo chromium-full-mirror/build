@@ -1,10 +1,10 @@
-// Copyright 2026 The Chromium Authors
+// Copyright 2023 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 //go:build linux
 
-package trace
+package build
 
 import (
 	"bytes"
@@ -73,7 +73,7 @@ func (s *sysRecord) get(ctx context.Context) {
 	}
 }
 
-func (s *sysRecord) sample(ctx context.Context, pid int64, t time.Time) []Event {
+func (s *sysRecord) sample(ctx context.Context, t time.Time) []traceEventObject {
 	psiMemory, err := readProcPressureMemorySome()
 	if err != nil {
 		clog.Warningf(ctx, "failed to read /proc/pressure/memory: %v", err)
@@ -95,12 +95,12 @@ func (s *sysRecord) sample(ctx context.Context, pid int64, t time.Time) []Event 
 		clog.Infof(ctx, "memory stall %s/s", time.Duration(m*1000))
 	}
 	s.psiMemory = psiMemory
-	return []Event{
+	return []traceEventObject{
 		{
 			Ph:   "C",
 			T:    t.Sub(s.start).Microseconds(),
-			Pid:  pid,
-			Tid:  sysTid,
+			Pid:  sysPid,
+			Tid:  sysPid,
 			Name: "pressure",
 			Args: map[string]any{
 				"memory/some": m,
