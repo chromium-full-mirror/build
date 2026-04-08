@@ -89,13 +89,13 @@ func TestExecutableSchema_Resolver(t *testing.T) {
 					Inputs:     []fs.SourceFile{mustSourceFile(t, "//src/main.cc")},
 					OutputName: "foo.main.cc.o",
 					Expansions: &graph.CompositeExpansions{
-						Common: &graph.SimpleExpansions{Elems: map[string]string{
-							"cflags":  "-O3 -Wall",
-							"defines": "",
+						Common: &graph.SimpleExpansions{Elems: map[string][]string{
+							"cflags":  {"-O3", "-Wall"},
+							"defines": nil,
 						}},
-						Elems: map[string]string{
-							"source_file_part": "",
-							"source_name_part": "",
+						Elems: map[string][]string{
+							"source_file_part": nil,
+							"source_name_part": nil,
 						},
 					},
 				},
@@ -107,11 +107,11 @@ func TestExecutableSchema_Resolver(t *testing.T) {
 						mustSourceFile(t, "//out/obj/libbar.a"),
 					},
 					OutputName: "foo",
-					Expansions: &graph.SimpleExpansions{Elems: map[string]string{
-						"ldflags":      "-static -lpthread",
-						"libs":         "",
-						"frameworks":   "",
-						"swiftmodules": "",
+					Expansions: &graph.SimpleExpansions{Elems: map[string][]string{
+						"ldflags":      {"-static", "-lpthread"},
+						"libs":         nil,
+						"frameworks":   nil,
+						"swiftmodules": nil,
 					}},
 				},
 			},
@@ -147,11 +147,11 @@ func TestExecutableSchema_Resolver(t *testing.T) {
 						mustSourceFile(t, "//out/obj/libbaz.a"),
 					},
 					OutputName: "foo",
-					Expansions: &graph.SimpleExpansions{Elems: map[string]string{
-						"ldflags":      "",
-						"libs":         "",
-						"frameworks":   "",
-						"swiftmodules": "",
+					Expansions: &graph.SimpleExpansions{Elems: map[string][]string{
+						"ldflags":      nil,
+						"libs":         nil,
+						"frameworks":   nil,
+						"swiftmodules": nil,
 					}},
 				},
 			},
@@ -200,12 +200,12 @@ func TestExecutableSchema_Resolver(t *testing.T) {
 						mustSourceFile(t, "//out/obj/libbaz.rlib"),
 					},
 					OutputName: "foo_crate",
-					Expansions: &graph.SimpleExpansions{Elems: map[string]string{
-						"crate_name": "foo_crate",
-						"crate_type": "bin",
-						"externs":    "--extern bar=obj/libbar.rlib",
-						"rustflags":  "-Cdebuginfo=2 --edition=2021",
-						"rustdeps":   "",
+					Expansions: &graph.SimpleExpansions{Elems: map[string][]string{
+						"crate_name": {"foo_crate"},
+						"crate_type": {"bin"},
+						"externs":    {"--extern", "bar=obj/libbar.rlib"},
+						"rustflags":  {"-Cdebuginfo=2", "--edition=2021"},
+						"rustdeps":   nil,
 					}},
 				},
 			},
@@ -246,12 +246,12 @@ func TestExecutableSchema_Resolver(t *testing.T) {
 						mustSourceFile(t, "//out/obj/libbaz.rlib"),
 					},
 					OutputName: "foo_crate",
-					Expansions: &graph.SimpleExpansions{Elems: map[string]string{
-						"crate_name": "foo_crate",
-						"crate_type": "bin",
-						"externs":    "--extern bar=obj/libbar.rlib",
-						"rustflags":  "",
-						"rustdeps":   "",
+					Expansions: &graph.SimpleExpansions{Elems: map[string][]string{
+						"crate_name": {"foo_crate"},
+						"crate_type": {"bin"},
+						"externs":    {"--extern", "bar=obj/libbar.rlib"},
+						"rustflags":  nil,
+						"rustdeps":   nil,
 					}},
 				},
 			},
@@ -364,13 +364,13 @@ func TestStaticLibrarySchema_Resolver(t *testing.T) {
 					Inputs:     []fs.SourceFile{mustSourceFile(t, "//src/lib.cc")},
 					OutputName: "libbar.lib.cc.o",
 					Expansions: &graph.CompositeExpansions{
-						Common: &graph.SimpleExpansions{Elems: map[string]string{
-							"cflags":  "-fPIC -O2",
-							"defines": "",
+						Common: &graph.SimpleExpansions{Elems: map[string][]string{
+							"cflags":  {"-fPIC", "-O2"},
+							"defines": nil,
 						}},
-						Elems: map[string]string{
-							"source_file_part": "",
-							"source_name_part": "",
+						Elems: map[string][]string{
+							"source_file_part": nil,
+							"source_name_part": nil,
 						},
 					},
 				},
@@ -381,8 +381,8 @@ func TestStaticLibrarySchema_Resolver(t *testing.T) {
 						mustSourceFile(t, "//out/Default/obj/libbar.lib.cc.o"),
 					},
 					OutputName: "libbar.a",
-					Expansions: &graph.SimpleExpansions{Elems: map[string]string{
-						"arflags": "rcs",
+					Expansions: &graph.SimpleExpansions{Elems: map[string][]string{
+						"arflags": {"rcs"},
 					}},
 				},
 			},
@@ -418,13 +418,13 @@ func TestStaticLibrarySchema_Resolver(t *testing.T) {
 					Inputs:     []fs.SourceFile{mustSourceFile(t, "//src/lib.cc")},
 					OutputName: "bar.lib.cc.o",
 					Expansions: &graph.CompositeExpansions{
-						Common: &graph.SimpleExpansions{Elems: map[string]string{
-							"cflags":  "-fPIC -O2",
-							"defines": "",
+						Common: &graph.SimpleExpansions{Elems: map[string][]string{
+							"cflags":  {"-fPIC", "-O2"},
+							"defines": nil,
 						}},
-						Elems: map[string]string{
-							"source_file_part": "",
-							"source_name_part": "",
+						Elems: map[string][]string{
+							"source_file_part": nil,
+							"source_name_part": nil,
 						},
 					},
 				},
@@ -435,8 +435,8 @@ func TestStaticLibrarySchema_Resolver(t *testing.T) {
 						mustSourceFile(t, "//out/Default/obj/bar.lib.cc.o"),
 					},
 					OutputName: "bar.a",
-					Expansions: &graph.SimpleExpansions{Elems: map[string]string{
-						"arflags": "rcs",
+					Expansions: &graph.SimpleExpansions{Elems: map[string][]string{
+						"arflags": {"rcs"},
 					}},
 				},
 			},

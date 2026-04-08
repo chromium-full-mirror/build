@@ -68,19 +68,19 @@ type Expansions interface {
 	// from one call to the next.
 	Keys() iter.Seq[string]
 	// Value returns the value for the given key, if it exists.
-	Value(k string) (string, bool)
+	Value(k string) ([]string, bool)
 }
 
 // SimpleExpansions represents a basic set of expansions to a GN tool call.
 type SimpleExpansions struct {
-	Elems map[string]string
+	Elems map[string][]string
 }
 
 func (s *SimpleExpansions) Keys() iter.Seq[string] {
 	return maps.Keys(s.Elems)
 }
 
-func (s *SimpleExpansions) Value(k string) (v string, ok bool) {
+func (s *SimpleExpansions) Value(k string) (v []string, ok bool) {
 	v, ok = s.Elems[k]
 	return
 }
@@ -89,7 +89,7 @@ func (s *SimpleExpansions) Value(k string) (v string, ok bool) {
 // that shares a common set of expansions.
 type CompositeExpansions struct {
 	Common *SimpleExpansions
-	Elems  map[string]string
+	Elems  map[string][]string
 }
 
 func (c *CompositeExpansions) Keys() iter.Seq[string] {
@@ -112,7 +112,7 @@ func (c *CompositeExpansions) Keys() iter.Seq[string] {
 	}
 }
 
-func (c *CompositeExpansions) Value(k string) (string, bool) {
+func (c *CompositeExpansions) Value(k string) ([]string, bool) {
 	if v, ok := c.Elems[k]; ok {
 		return v, true
 	}

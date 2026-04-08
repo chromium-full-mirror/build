@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"maps"
 	"path"
-	"strings"
 
 	"go.chromium.org/build/gong/gn/build/fs"
 	"go.chromium.org/build/gong/gn/build/graph"
@@ -106,6 +105,18 @@ func fileTypeCategory(file string) (sourceFileType, sourceFileCategory) {
 	}
 }
 
+// formatDefines returns the defines with -D prefixed, without escaping or joining.
+func formatDefines(defines []string) []string {
+	if len(defines) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(defines))
+	for _, d := range defines {
+		out = append(out, "-D"+d)
+	}
+	return out
+}
+
 var (
 	ExecutableSchema = graph.Schema{
 		Name:    "executable",
@@ -188,10 +199,9 @@ var (
 			if err == nil && override {
 				outName = name
 			}
-			sharedExpansions := &graph.SimpleExpansions{Elems: map[string]string{
-				// TODO: fill these out.
-				"cflags":  strings.Join(ctx.ConfigValues.Cflags, " "),
-				"defines": strings.Join(ctx.ConfigValues.Defines, " "),
+			sharedExpansions := &graph.SimpleExpansions{Elems: map[string][]string{
+				"cflags":  ctx.ConfigValues.Cflags,
+				"defines": formatDefines(ctx.ConfigValues.Defines),
 			}}
 			for source := range ctx.SourceFilesFor("sources") {
 				sourceName := source.Filename()
@@ -220,10 +230,10 @@ var (
 					fmt.Sprintf("%s.%s.o", outName, sourceBase),
 					&graph.CompositeExpansions{
 						Common: sharedExpansions,
-						Elems: map[string]string{
+						Elems: map[string][]string{
 							// TODO: fill these out.
-							"source_file_part": "",
-							"source_name_part": "",
+							"source_file_part": nil,
+							"source_name_part": nil,
 						},
 					},
 				)
@@ -241,12 +251,12 @@ var (
 				fs.SourceFile{},
 				linkInputs,
 				fmt.Sprintf("%s.so", outName),
-				&graph.SimpleExpansions{Elems: map[string]string{
+				&graph.SimpleExpansions{Elems: map[string][]string{
 					// TODO: fill these out.
-					"ldflags":      strings.Join(ctx.ConfigValues.Ldflags, " "),
-					"libs":         "",
-					"frameworks":   "",
-					"swiftmodules": "",
+					"ldflags":      ctx.ConfigValues.Ldflags,
+					"libs":         nil,
+					"frameworks":   nil,
+					"swiftmodules": nil,
 				}},
 			)
 			if err != nil {
@@ -285,10 +295,9 @@ var (
 			if err == nil && override {
 				outName = name
 			}
-			sharedExpansions := &graph.SimpleExpansions{Elems: map[string]string{
-				// TODO: fill these out.
-				"cflags":  strings.Join(ctx.ConfigValues.Cflags, " "),
-				"defines": strings.Join(ctx.ConfigValues.Defines, " "),
+			sharedExpansions := &graph.SimpleExpansions{Elems: map[string][]string{
+				"cflags":  ctx.ConfigValues.Cflags,
+				"defines": formatDefines(ctx.ConfigValues.Defines),
 			}}
 			for source := range ctx.SourceFilesFor("sources") {
 				sourceName := source.Filename()
@@ -317,10 +326,10 @@ var (
 					fmt.Sprintf("%s.%s.o", outName, sourceBase),
 					&graph.CompositeExpansions{
 						Common: sharedExpansions,
-						Elems: map[string]string{
+						Elems: map[string][]string{
 							// TODO: fill these out.
-							"source_file_part": "",
-							"source_name_part": "",
+							"source_file_part": nil,
+							"source_name_part": nil,
 						},
 					},
 				)
@@ -338,9 +347,9 @@ var (
 				fs.SourceFile{},
 				linkInputs,
 				fmt.Sprintf("%s.a", outName),
-				&graph.SimpleExpansions{Elems: map[string]string{
+				&graph.SimpleExpansions{Elems: map[string][]string{
 					// TODO: add more.
-					"arflags": strings.Join(ctx.ConfigValues.Arflags, " "),
+					"arflags": ctx.ConfigValues.Arflags,
 				}},
 			)
 			if err != nil {

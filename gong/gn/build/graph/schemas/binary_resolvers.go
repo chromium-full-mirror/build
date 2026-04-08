@@ -7,7 +7,6 @@ package schemas
 import (
 	"fmt"
 	"path"
-	"strings"
 
 	"go.chromium.org/build/gong/gn/build/fs"
 	"go.chromium.org/build/gong/gn/build/graph"
@@ -15,10 +14,9 @@ import (
 
 // TODO: can this be merged with shared_library, static_library?
 func cExecutableResolver(name string, cInputs []fs.SourceFile, ctx graph.ResolverContext) (graph.ResolutionMetadata, error) {
-	sharedExpansions := &graph.SimpleExpansions{Elems: map[string]string{
-		// TODO: fill these out.
-		"cflags":  strings.Join(ctx.ConfigValues.Cflags, " "),
-		"defines": strings.Join(ctx.ConfigValues.Defines, " "),
+	sharedExpansions := &graph.SimpleExpansions{Elems: map[string][]string{
+		"cflags":  ctx.ConfigValues.Cflags,
+		"defines": formatDefines(ctx.ConfigValues.Defines),
 	}}
 	var linkInputs []fs.SourceFile
 	for _, source := range cInputs {
@@ -36,10 +34,10 @@ func cExecutableResolver(name string, cInputs []fs.SourceFile, ctx graph.Resolve
 			fmt.Sprintf("%s.%s.o", name, sourceBase),
 			&graph.CompositeExpansions{
 				Common: sharedExpansions,
-				Elems: map[string]string{
+				Elems: map[string][]string{
 					// TODO: fill these out.
-					"source_file_part": "",
-					"source_name_part": "",
+					"source_file_part": nil,
+					"source_name_part": nil,
 				},
 			},
 		)
@@ -79,12 +77,12 @@ func cExecutableResolver(name string, cInputs []fs.SourceFile, ctx graph.Resolve
 		fs.SourceFile{},
 		linkInputs,
 		name,
-		&graph.SimpleExpansions{Elems: map[string]string{
+		&graph.SimpleExpansions{Elems: map[string][]string{
 			// TODO: fill these out.
-			"ldflags":      strings.Join(ctx.ConfigValues.Ldflags, " "),
-			"libs":         "",
-			"frameworks":   "",
-			"swiftmodules": "",
+			"ldflags":      ctx.ConfigValues.Ldflags,
+			"libs":         nil,
+			"frameworks":   nil,
+			"swiftmodules": nil,
 		}},
 	)
 	if err != nil {
@@ -152,7 +150,7 @@ func rustBinaryResolver(name string, isLibrary bool, rsInputs []fs.SourceFile, c
 				depCrateName = alias
 			}
 			// TODO: maybe it's not filename? see test files for why this seems wrong.
-			externs = append(externs, fmt.Sprintf("--extern %s=%s", depCrateName, rustLib.OutputRlib.Path()))
+			externs = append(externs, "--extern", fmt.Sprintf("%s=%s", depCrateName, rustLib.OutputRlib.Path()))
 		}
 	}
 
@@ -170,12 +168,12 @@ func rustBinaryResolver(name string, isLibrary bool, rsInputs []fs.SourceFile, c
 		crateRoot,
 		allInputs,
 		outputName,
-		&graph.SimpleExpansions{Elems: map[string]string{
-			"crate_name": crateName,
-			"crate_type": crateType,
-			"externs":    strings.Join(externs, " "),
-			"rustflags":  strings.Join(ctx.ConfigValues.Rustflags, " "),
-			"rustdeps":   "",
+		&graph.SimpleExpansions{Elems: map[string][]string{
+			"crate_name": {crateName},
+			"crate_type": {crateType},
+			"externs":    externs,
+			"rustflags":  ctx.ConfigValues.Rustflags,
+			"rustdeps":   nil,
 		}},
 	)
 	if err != nil {

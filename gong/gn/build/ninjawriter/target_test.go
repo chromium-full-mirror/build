@@ -52,9 +52,9 @@ func TestWriteSubninjaFile(t *testing.T) {
 					Source: mustFile(t, "//base/main.cc"),
 					Inputs: []fs.SourceFile{mustFile(t, "//base/main.cc")},
 					Output: mustOutputPath(t, mustSourceDir(t, "//out/Default/"), "obj/base/main.o"),
-					Expansions: &graph.SimpleExpansions{Elems: map[string]string{
-						"source_file_part": "main.cc",
-						"source_name_part": "main",
+					Expansions: &graph.SimpleExpansions{Elems: map[string][]string{
+						"source_file_part": {"main.cc"},
+						"source_name_part": {"main"},
 					}},
 				},
 				graph.RunToolAction{
@@ -64,11 +64,11 @@ func TestWriteSubninjaFile(t *testing.T) {
 						mustFile(t, "//out/Default/obj/foo/libfoo.o"),
 					},
 					Output: mustOutputPath(t, mustSourceDir(t, "//out/Default/"), "obj/base/app"),
-					Expansions: &graph.SimpleExpansions{Elems: map[string]string{
-						"ldflags":      "",
-						"libs":         "",
-						"frameworks":   "",
-						"swiftmodules": "",
+					Expansions: &graph.SimpleExpansions{Elems: map[string][]string{
+						"ldflags":      nil,
+						"libs":         nil,
+						"frameworks":   nil,
+						"swiftmodules": nil,
 					}},
 				},
 			},
@@ -97,12 +97,12 @@ build obj/base/app: link obj/base/main.o obj/foo/libfoo.o
 						mustFile(t, "//out/Default/obj/bar/libbar.rlib"),
 					},
 					Output: mustOutputPath(t, mustSourceDir(t, "//out/Default/"), "obj/libfoo.rlib"),
-					Expansions: &graph.SimpleExpansions{Elems: map[string]string{
-						"crate_name": "foo",
-						"crate_type": "rlib",
-						"rustflags":  "-Cdebuginfo=2",
-						"rustdeps":   "-Ldependency=obj/bar",
-						"externs":    "--extern bar=obj/bar/libbar.rlib",
+					Expansions: &graph.SimpleExpansions{Elems: map[string][]string{
+						"crate_name": {"foo"},
+						"crate_type": {"rlib"},
+						"rustflags":  {"-Cdebuginfo=2"},
+						"rustdeps":   {"-Ldependency=obj/bar"},
+						"externs":    {"--extern", "bar=obj/bar/libbar.rlib"},
 					}},
 				},
 			},
@@ -120,7 +120,7 @@ build obj/libfoo.rlib: rust_rlib ../../src/lib.rs | obj/bar/libbar.rlib
 `,
 		},
 		{
-			name: "escaping",
+			name: "pathescaping",
 			actions: []graph.Action{
 				graph.RunToolAction{
 					Tool:   "copy",
@@ -138,6 +138,54 @@ target_output_name = out$ file$ with$ spaces
 target_out_dir = obj
 
 build obj/out$ file$ with$ spaces.txt: copy ../../src/file$ with$ spaces.txt
+`,
+		},
+		{
+			name: "commandescaping",
+			actions: []graph.Action{
+				graph.RunToolAction{
+					Tool:   "cxx",
+					Source: mustFile(t, "//base/main.cc"),
+					Output: mustOutputPath(t, mustSourceDir(t, "//out/Default/"), "obj/foo.o"),
+					Expansions: &graph.SimpleExpansions{Elems: map[string][]string{
+						"cflags": {"-DBUFFER_SIZE=(1<<16)"},
+					}},
+				},
+			},
+			want: `output_extension = .o
+output_dir = obj
+target_output_name = foo
+target_out_dir = obj
+
+build obj/foo.o: cxx ../../base/main.cc
+  cflags = -DBUFFER_SIZE=\(1\<\<16\)
+`,
+		},
+		{
+			name: "hoisting",
+			actions: []graph.Action{
+				graph.RunToolAction{
+					Tool:   "cxx",
+					Source: mustFile(t, "//base/main.cc"),
+					Output: mustOutputPath(t, mustSourceDir(t, "//out/Default/"), "obj/foo.o"),
+					Expansions: &graph.CompositeExpansions{
+						Common: &graph.SimpleExpansions{Elems: map[string][]string{
+							"cflags": {"-O2"},
+						}},
+						Elems: map[string][]string{
+							"defines": {"-DDEBUG"},
+						},
+					},
+				},
+			},
+			want: `output_extension = .o
+output_dir = obj
+target_output_name = foo
+target_out_dir = obj
+cflags = -O2
+
+build obj/foo.o: cxx ../../base/main.cc
+  defines = -DDEBUG
 `,
 		},
 	}
@@ -276,7 +324,7 @@ build outfile.txt: _rule | ../../tools/script.py ../../src/input.txt
 			}
 
 			var sb strings.Builder
-			if err := writeAction(&sb, target, tc.action, bs); err != nil {
+			if err := writeAction(&sb, target, tc.action, bs, nil); err != nil {
 				t.Fatalf("writeAction()=%v; want nil err", err)
 			}
 

@@ -7,6 +7,7 @@ package ninjawriter
 import (
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"path"
 	"path/filepath"
@@ -74,7 +75,7 @@ func writeTarget(w io.Writer, t *graph.Target, buildSettings *environment.BuildS
 
 func writeInlineTarget(w io.Writer, t *graph.Target, buildSettings *environment.BuildSettings) error {
 	for _, action := range t.Resolution.Actions {
-		writeAction(w, t, action, buildSettings)
+		writeAction(w, t, action, buildSettings, nil)
 	}
 
 	var outputPaths []string
@@ -197,6 +198,59 @@ func writeSubninjaFile(w io.Writer, t *graph.Target, buildSettings *environment.
 		return err
 	}
 
+	// Collect common expansions from the target's actions, so that they can be hoisted.
+	commonExpansions := make(map[string][]string)
+	if len(t.Resolution.Actions) > 0 {
+		seen := make(map[*graph.SimpleExpansions]bool)
+		for _, action := range t.Resolution.Actions {
+			ta, ok := action.(graph.RunToolAction)
+			if !ok {
+				continue
+			}
+			ce, ok := ta.Expansions.(*graph.CompositeExpansions)
+			if !ok || ce.Common == nil || seen[ce.Common] {
+				continue
+			}
+			for k, v := range ce.Common.Elems {
+				// Target schemas that implement feature parity with C++ GN aren't
+				// expected to set common expansions that define the same thing more
+				// than once.
+				// Going beyond this feature parity is out of scope.
+				if _, ok := commonExpansions[k]; ok {
+					return fmt.Errorf("targets with duplicate common expansions are unsupported")
+				}
+				commonExpansions[k] = v
+			}
+			seen[ce.Common] = true
+		}
+	}
+
+	// Print the common expansions, sorted by key to ensure stable order.
+	sortedCommonKeys := slices.Sorted(maps.Keys(commonExpansions))
+	for _, k := range sortedCommonKeys {
+		v := commonExpansions[k]
+		var escaped []string
+		for _, s := range v {
+			escaped = append(escaped, escapeNinjaCommandPosix(s))
+		}
+		joined := strings.Join(escaped, " ")
+		if joined == "" {
+			continue
+		}
+		_, err = fmt.Fprintf(w, "%s =", k)
+		if err != nil {
+			return err
+		}
+		_, err = fmt.Fprintf(w, " %s", joined)
+		if err != nil {
+			return err
+		}
+		_, err = fmt.Fprintln(w)
+		if err != nil {
+			return err
+		}
+	}
+
 	// End of target-level substitutions.
 	_, err = fmt.Fprintln(w)
 	if err != nil {
@@ -205,7 +259,7 @@ func writeSubninjaFile(w io.Writer, t *graph.Target, buildSettings *environment.
 
 	// Then, write out each action.
 	for _, action := range t.Resolution.Actions {
-		if err := writeAction(w, t, action, buildSettings); err != nil {
+		if err := writeAction(w, t, action, buildSettings, sortedCommonKeys); err != nil {
 			return err
 		}
 	}
@@ -213,7 +267,7 @@ func writeSubninjaFile(w io.Writer, t *graph.Target, buildSettings *environment.
 }
 
 // TODO: convert RunToolAction to use text/template too?
-func writeAction(w io.Writer, t *graph.Target, action graph.Action, buildSettings *environment.BuildSettings) error {
+func writeAction(w io.Writer, t *graph.Target, action graph.Action, buildSettings *environment.BuildSettings, skipExpansions []string) error {
 	switch action := action.(type) {
 	case graph.RunToolAction:
 		var inputPaths []string
@@ -268,15 +322,22 @@ func writeAction(w io.Writer, t *graph.Target, action graph.Action, buildSetting
 		}
 
 		if action.Expansions != nil {
-			// TODO: common expansions should be hoisted to the top of subninja files.
 			for _, k := range slices.Sorted(action.Expansions.Keys()) {
+				v, _ := action.Expansions.Value(k)
+				if slices.Contains(skipExpansions, k) {
+					continue
+				}
 				_, err := fmt.Fprintf(w, "  %s =", k)
 				if err != nil {
 					return err
 				}
-				v, ok := action.Expansions.Value(k)
-				if ok && v != "" {
-					_, err = fmt.Fprintf(w, " %s", v)
+				var escaped []string
+				for _, s := range v {
+					escaped = append(escaped, escapeNinjaCommandPosix(s))
+				}
+				joined := strings.Join(escaped, " ")
+				if joined != "" {
+					_, err = fmt.Fprintf(w, " %s", joined)
 					if err != nil {
 						return err
 					}
