@@ -115,12 +115,26 @@ const (
 	zstdIndexVersion = 0x51500001
 )
 
+// zstdEmptyFrame is a zstd frame that decompresses to zero bytes. It is
+// written at the very start of the file so that older Siso versions (which
+// only check the first four bytes for zstdMagic 0xFD2FB528) correctly
+// identify the file as zstd-compressed. Standard decoders simply produce
+// zero bytes for this frame and then continue with the skippable index
+// frame and the data frames that follow.
+//
+//	28b52ffd 20 00 01 0000
+//	│        │  │  └─── empty block (last block flag set, raw block type, size 0)
+//	│        │  └────── frame content size (0 bytes)
+//	│        └───────── frame header descriptor (no dict, no content checksum, single segment = true)
+//	└────────┴───────── zstd magic number (0xFD2FB528, little endian)
+var zstdEmptyFrame = []byte{0x28, 0xb5, 0x2f, 0xfd, 0x20, 0x00, 0x01, 0x00, 0x00}
+
 func isGzip(b []byte) bool {
 	return len(b) >= 2 && binary.LittleEndian.Uint16(b) == gzipMagic
 }
 
 func isZstd(b []byte) bool {
-	return len(b) >= 4 && binary.LittleEndian.Uint32(b) == zstdMagic || isZstdSkippable(b)
+	return len(b) >= 4 && binary.LittleEndian.Uint32(b) == zstdMagic
 }
 
 func isZstdSkippable(b []byte) bool {
@@ -258,13 +272,27 @@ func loadFile(ctx context.Context, opts Option) ([]byte, error) {
 	}
 
 	// Detect format by magic bytes.
-	if isZstdSkippable(compressed) {
-		clog.Infof(ctx, "fs_state is indexed zstd (%d bytes)", len(compressed))
-		return loadZstdParallel(ctx, compressed, compressThreads)
-	}
-	if isZstd(compressed) {
-		// Old single-frame zstd format (no index): sequential decode.
-		clog.Infof(ctx, "fs_state is zstd compressed, no index (%d bytes)", len(compressed))
+	if isZstd(compressed) || isZstdSkippable(compressed) {
+		// Our indexed chunked format prepends an empty zstd frame so that
+		// older Siso versions that only check the first four bytes for
+		// zstdMagic (0xFD2FB528) correctly identify the file as zstd and
+		// decompress it using the standard sequential decoder.
+		clog.Infof(ctx, "fs_state is zstd compressed (%d bytes)", len(compressed))
+		compressed = bytes.TrimPrefix(compressed, zstdEmptyFrame)
+
+		// If we find a zstd skippable frame next, we attempt to decode it
+		// using our parallel decoding method. In case that fails (e.g.
+		// incompatible future index format), we fall back to sequential
+		// decoding - the file is still valid multi-frame zstd.
+		if isZstdSkippable(compressed) {
+			result, err := loadZstdParallel(ctx, compressed, compressThreads)
+			if err == nil {
+				return result, nil
+			}
+			clog.Warningf(ctx, "parallel zstd decode failed, falling back to sequential: %v", err)
+		}
+
+		// Standard sequential zstd decoding is always supported.
 		dec, err := zstd.NewReader(nil)
 		if err != nil {
 			return nil, err
@@ -937,11 +965,11 @@ func newZstdCompressor(dataLen int, level zstd.EncoderLevel, threads int) (*zstd
 
 func (c *zstdCompressor) Close() error { return c.enc.Close() }
 
-// MaxCompressedSize returns the worst-case total output size (header +
-// index + all frames). Use this to size the output buffer.
+// MaxCompressedSize returns the worst-case total output size (empty frame +
+// skippable index frame + all data frames). Use this to size the output buffer.
 func (c *zstdCompressor) MaxCompressedSize() int {
 	indexPayload := 4 + c.numFrames*8
-	total := 8 + indexPayload
+	total := len(zstdEmptyFrame) + 8 + indexPayload
 	for i := range c.numFrames {
 		start := i * c.chunkSize
 		end := min(start+c.chunkSize, c.dataLen)
@@ -955,15 +983,21 @@ func (c *zstdCompressor) MaxCompressedSize() int {
 //
 // The output file format is:
 //
+//	[zstd empty frame (9 bytes)]
 //	[skippable frame: Magic_Number(4) + Frame_Size(4) +
 //	  Index_Version(4) + N * (Compressed_Size(4) + Uncompressed_Size(4))]
 //	[zstd frame 0]
 //	[zstd frame 1]
 //	...
+//
+// The leading empty zstd frame ensures older Siso versions that only
+// check for zstdMagic (0xFD2FB528) in the first four bytes correctly
+// identify the file as zstd-compressed and fall back to sequential
+// decoding.
 func (c *zstdCompressor) Compress(out, data []byte) (int, error) {
 	// Assign worst-case offsets within out for each frame.
 	indexPayload := 4 + c.numFrames*8
-	headerSize := 8 + indexPayload
+	headerSize := len(zstdEmptyFrame) + 8 + indexPayload
 	type frameSlot struct {
 		dataStart  int // offset in out where compressed data begins
 		maxSize    int // worst-case compressed size for this frame
@@ -1009,8 +1043,8 @@ func (c *zstdCompressor) Compress(out, data []byte) (int, error) {
 		writePos += s.compSize
 	}
 
-	// Write the skippable frame header + index at the beginning.
-	pos := 0
+	// Write the empty frame + skippable frame header + index at the beginning.
+	pos := copy(out, zstdEmptyFrame)
 	binary.LittleEndian.PutUint32(out[pos:], zstdSkippableMagic)
 	pos += 4
 	binary.LittleEndian.PutUint32(out[pos:], uint32(indexPayload))

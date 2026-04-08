@@ -145,14 +145,14 @@ func TestLoadSave(t *testing.T) {
 		t.Fatalf("Save(...)=%v; want nil", err)
 	}
 
-	// Verify the file starts with a zstd skippable frame (parallel format).
+	// Verify the file starts with the zstd magic (empty frame prefix).
 	b, err := os.ReadFile(opts.StateFile)
 	if err != nil {
 		t.Fatalf("Could not read %q: %v", opts.StateFile, err)
 	}
-	// Skippable frame magic is 0x184D2A50 (little-endian: 0x50 0x2A 0x4D 0x18).
-	if got, want := b[:4], []byte{0x50, 0x2a, 0x4d, 0x18}; !bytes.Equal(got, want) {
-		t.Errorf("Save(...) magic = %x, want %x (zstd skippable frame)", got, want)
+	// Zstd magic is 0xFD2FB528 (little-endian: 0x28 0xB5 0x2F 0xFD).
+	if got, want := b[:4], []byte{0x28, 0xb5, 0x2f, 0xfd}; !bytes.Equal(got, want) {
+		t.Errorf("Save(...) magic = %x, want %x (zstd magic)", got, want)
 	}
 
 	// Load the saved state.
