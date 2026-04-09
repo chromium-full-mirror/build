@@ -25,7 +25,7 @@ var errRemoteExecDisabled = errors.New("remote exec disabled")
 // runRemote runs step with using remote apis.
 //
 //  1. for initial steps of startLocal, run locally.
-//  2. Check remote cacche with deps log if available.
+//  2. Check remote cache with deps log if available.
 //  3. If local resource is idle, run locally.
 //  4. Otherwise, try running a remote execution with deps log.
 //  5. If it failed, it will retry a remote execution with deps scan.
