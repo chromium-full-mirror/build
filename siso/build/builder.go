@@ -363,7 +363,7 @@ func New(ctx context.Context, graph Graph, opts Options) (_ *Builder, err error)
 		remoteSema:         semaphore.NewPrioritized("remoteexec", opts.Limits.Remote),
 		remoteExec:         re,
 		reExecEnable:       opts.REExecEnable,
-		reCacheEnableRead:  opts.RECacheEnableRead,
+		reCacheEnableRead:  opts.RECacheEnableRead || experiments.Enabled("simulate-remote-cache-misses", "simulate cache miss"),
 		reCacheEnableWrite: opts.RECacheEnableWrite,
 		reproxyExec:        pe,
 		reproxySema:        semaphore.NewPrioritized("reproxyexec", opts.Limits.Remote),

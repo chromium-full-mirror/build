@@ -70,6 +70,28 @@ func (b *Builder) execRemote(ctx context.Context, step *Step) error {
 			if cached {
 				step.metrics.Cached = true
 			}
+			// Simulates cache miss by sleeping for the remote execution time.
+			// This is to match the total execution time with the actual remote execution
+			// even when it hits the cache in RBE.
+			if cached && experiments.Enabled("simulate-remote-cache-misses", "simulate cache miss") {
+				step.metrics.Cached = false
+				md := result.GetExecutionMetadata()
+				if md != nil {
+					execDur := md.GetWorkerCompletedTimestamp().AsTime().Sub(md.GetWorkerStartTimestamp().AsTime())
+					runDur := time.Since(reExecStarted)
+					sleepDur := execDur - runDur
+					if sleepDur > 0 {
+						clog.Infof(ctx, "simulate cache miss in execRemote: sleep %s", sleepDur)
+						select {
+						case <-ctx.Done():
+							return context.Cause(ctx)
+						case <-time.After(sleepDur):
+						}
+					}
+				} else {
+					clog.Warningf(ctx, "simulate cache miss: missing execution metadata in action result")
+				}
+			}
 			step.metrics.RunTime = IntervalMetric(time.Since(reExecStarted))
 			step.metrics.done(ctx, step, b.start)
 			return err

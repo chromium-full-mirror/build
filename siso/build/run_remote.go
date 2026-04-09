@@ -228,10 +228,16 @@ func (b *Builder) runRemoteStep(ctx context.Context, step *Step, cacheCheck bool
 	}
 	if cacheCheck {
 		err := b.execRemoteCache(ctx, step)
-		if err == nil {
+		// If simulate-remote-cache-misses is enabled, we proceed to execRemote
+		// even if we hit the cache in execRemoteCache.
+		// We don't sleep here to ensure we wait for the remoteexec semaphore
+		// in execRemote, matching the behavior of a real remote execution.
+		if err == nil && !experiments.Enabled("simulate-remote-cache-misses", "simulate cache miss") {
 			return nil
 		}
-		clog.Infof(ctx, "cmd cache miss: %v", err)
+		if err != nil {
+			clog.Infof(ctx, "cmd cache miss: %v", err)
+		}
 	}
 	if !b.reExecEnable {
 		return errRemoteExecDisabled
