@@ -48,6 +48,16 @@ import (
 	"go.chromium.org/build/siso/version"
 )
 
+func (c *Command) initTracer(ctx context.Context) (*trace.Tracer, error) {
+	if c.traceJSON != "" {
+		if !filepath.IsAbs(c.traceJSON) {
+			c.traceJSON = filepath.Join(c.logDir, c.traceJSON)
+		}
+		rotateFiles(ctx, c.traceJSON)
+	}
+	return trace.NewTracer(ctx, c.traceJSON)
+}
+
 // initCloudLogging initializes cloud logging.
 // It returns a new context with a logger, the logger's URL, a function to close the logger, and any error that occurred.
 func (c *Command) initCloudLogging(ctx context.Context, projectID, namespace string, credential cred.Cred) (context.Context, string, func(), error) {

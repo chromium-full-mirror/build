@@ -310,6 +310,12 @@ func (c *Command) Run(ctx context.Context) (stats build.Stats, finalErr error) {
 	if err != nil {
 		return stats, err
 	}
+	tracer, err := c.initTracer(ctx)
+	if err != nil {
+		return stats, err
+	}
+	defer tracer.Close(ctx)
+
 	if c.enableCloudLogging {
 		spin := ui.Default.NewSpinner()
 		spin.Start("init cloud logging")
@@ -502,7 +508,7 @@ func (c *Command) Run(ctx context.Context) (stats build.Stats, finalErr error) {
 	}
 	// It mutates finalErr, hence passing over pointer.
 	defer done(&finalErr)
-	bopts := c.initBuildOpts(ctx, projectID, buildPath, config, ds, hashFS, limits, traceExporter, logWriters)
+	bopts := c.initBuildOpts(ctx, projectID, buildPath, config, ds, hashFS, limits, tracer, traceExporter, logWriters)
 	spin.Start("loading/recompacting deps log")
 	err = eg.Wait()
 	spin.Stop(err)
