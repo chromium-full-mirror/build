@@ -17,6 +17,7 @@ import (
 
 	"go.chromium.org/build/siso/o11y/clog"
 	"go.chromium.org/build/siso/o11y/trace"
+	"go.chromium.org/build/siso/ui"
 )
 
 func (b *Builder) setupRSP(ctx context.Context, step *Step) error {
@@ -54,6 +55,17 @@ func (b *Builder) setupRSP(ctx context.Context, step *Step) error {
 
 func (b *Builder) teardownRSP(ctx context.Context, step *Step) {
 	if b.keepRSP {
+		rsp := step.cmd.RSPFile
+		if rsp != "" {
+			// setupRSP creates rsp file in hashFS memory, but it might not be flushed to disk
+			// if the command was not executed locally (e.g. cache hit).
+			// So we need to explicitly flush it to disk here to keep it.
+			err := b.hashFS.Flush(ctx, step.cmd.WorkspaceRoot, []string{rsp})
+			if err != nil {
+				clog.Warningf(ctx, "failed to flush %s: %v", rsp, err)
+				ui.Default.Warningf("failed to flush %s: %v\n", rsp, err)
+			}
+		}
 		return
 	}
 	rsp := step.cmd.RSPFile
