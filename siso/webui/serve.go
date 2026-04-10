@@ -339,11 +339,12 @@ func NewServer(ctx context.Context, cfg ServerConfig) (*WebuiServer, error) {
 	}
 
 	// Preload default outdir.
-	defaultOutdirInfo, err := loadOutdirInfo(workspaceRoot, outDir, cfg.ManifestPath)
+	absOutDir := filepath.Join(workspaceRoot, outDir)
+	defaultOutdirInfo, err := loadOutdirInfo(workspaceRoot, absOutDir, cfg.ManifestPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to preload outdir: %w", err)
 	}
-	s.outdirMetrics[outDir] = defaultOutdirInfo
+	s.outdirMetrics[absOutDir] = defaultOutdirInfo
 	s.defaultOutdirRoot = defaultOutdirInfo.outRoot
 	s.defaultOutdirSub = defaultOutdirInfo.outSub
 
