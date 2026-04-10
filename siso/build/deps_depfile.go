@@ -40,8 +40,6 @@ func (depsDepfile) DepsAfterRun(ctx context.Context, b *Builder, step *Step) ([]
 }
 
 func (depsDepfile) DepsCmd(ctx context.Context, b *Builder, step *Step) ([]string, error) {
-	// depfile can use "remote" only for fastDeps case.
-	// Otherwise, should disable "remote"
 	clog.Infof(ctx, "deps= depfile=%s. no pure, no remote", step.cmd.Depfile)
 	step.cmd.Pure = false
 	return step.cmd.Inputs, nil

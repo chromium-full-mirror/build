@@ -32,9 +32,6 @@ func (b *Builder) execRemote(ctx context.Context, step *Step) error {
 	step.cmd.RecordPreOutputs(ctx)
 	clog.Infof(ctx, "exec remote %s", step.cmd.Desc)
 	phase := stepRemoteRun
-	if step.metrics.DepsLogErr {
-		phase = stepRetryRun
-	}
 	var reExecDur time.Duration
 	err := retry.Do(ctx, func() error {
 		step.setPhase(phase.wait())

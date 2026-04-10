@@ -10,24 +10,8 @@ import (
 	"sort"
 	"strings"
 
-	log "github.com/golang/glog"
-
-	"go.chromium.org/build/siso/o11y/clog"
 	"go.chromium.org/build/siso/o11y/trace"
 )
-
-func fastDepsCmd(ctx context.Context, b *Builder, step *Step) (*Step, bool) {
-	ctx, span := trace.NewSpan(ctx, "fast-deps")
-	defer span.Close(nil)
-	fastStep, err := depsFastStep(ctx, b, step)
-	if err != nil {
-		if log.V(1) {
-			clog.Infof(ctx, "no fast-deps %s: %v", step.cmd.Deps, err)
-		}
-		return nil, false
-	}
-	return fastStep, true
-}
 
 func preprocCmd(ctx context.Context, b *Builder, step *Step) error {
 	step.setPhase(stepPreproc)

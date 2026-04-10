@@ -233,8 +233,6 @@ type Builder struct {
 	// envfiles: filename -> *envfile
 	envFiles sync.Map
 
-	disableFastDeps atomic.Value // string
-
 	clobber bool
 
 	fastExit bool
@@ -409,21 +407,6 @@ func New(ctx context.Context, graph Graph, opts Options) (_ *Builder, err error)
 	if b.reapiclient != nil {
 		reapiVer := b.reapiclient.APIVersion()
 		clog.Infof(ctx, "reapi version=%v; output_paths=%t action.platform=%t", reapiVer, reapi.UseOutputPaths(reapiVer), reapi.UseActionForPlatformProperties(reapiVer))
-	}
-	var disableReason string
-	switch {
-	case b.reapiclient == nil:
-		disableReason = "reapi is not configured"
-	case b.hashFS.OnCog():
-		disableReason = "on Cog"
-	case experiments.Enabled("no-fast-deps", "disable fast-deps and force scandeps"):
-		disableReason = "SISO_EXPERIMENT=no-fast-deps"
-	case !experiments.Enabled("fast-deps", ""):
-		disableReason = "no SISO_EXPERIMENT=fast-deps"
-	}
-	if disableReason != "" {
-		clog.Infof(ctx, "disable fast-deps: %s", disableReason)
-		b.disableFastDeps.Store(disableReason)
 	}
 	if experiments.Enabled("ignore-missing-out-in-depfile", "ignore missing out error in depfile") {
 		makeutil.IgnoreMissingOut = true
@@ -633,10 +616,9 @@ func (b *Builder) Build(ctx context.Context, name string, args ...string) (err e
 		var depsStatLine string
 		var restatLine string
 		if b.reapiclient != nil {
-			// fastdeps / scandeps is only used in siso native mode.
-			if stat.FastDepsSuccess != 0 || stat.FastDepsFailed != 0 || stat.ScanDepsFailed != 0 || stat.ClangScanDeps != 0 {
-				depsStatLine = fmt.Sprintf("deps log:%d logErr:%d scanErr:%d cc-M:%d\n",
-					stat.FastDepsSuccess, stat.FastDepsFailed, stat.ScanDepsFailed, stat.ClangScanDeps)
+			// scandeps is only used in siso native mode.
+			if stat.ScanDepsFailed != 0 || stat.ClangScanDeps != 0 {
+				depsStatLine = fmt.Sprintf("scanErr:%d cc-M:%d\n", stat.ScanDepsFailed, stat.ClangScanDeps)
 			}
 			restat := b.reapiclient.IOMetrics().Stats()
 			restatLine = fmt.Sprintf("reapi: ops: %d(err:%d) / r:%d(err:%d) %s / w:%d(err:%d) %s\n",

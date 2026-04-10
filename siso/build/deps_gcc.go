@@ -200,8 +200,6 @@ func (depsGCC) scandeps(ctx context.Context, b *Builder, step *Step) ([]string, 
 	var ins []string
 	err := b.scanDepsSema.Do(ctx, step.weight, func(ctx context.Context) error {
 		debug := step.def.Binding("debug") == "true"
-		// fastDeps + remote execution may have already run.
-		// In this case, do not change ActionStartTime set by the remote exec.
 		b.actionStarted(step)
 		params, err := gccutil.ExtractScanDepsParams(ctx, step.cmd.Args, step.cmd.Env, b.hashFS.FileSystem(ctx, filepath.Join(step.cmd.WorkspaceRoot, step.cmd.WorkDir)))
 		if err != nil {

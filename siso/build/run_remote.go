@@ -14,11 +14,9 @@ import (
 
 	"go.chromium.org/build/siso/execute"
 	"go.chromium.org/build/siso/o11y/clog"
-	"go.chromium.org/build/siso/o11y/trace"
 	"go.chromium.org/build/siso/reapi"
 )
 
-var errDepsLog = errors.New("failed to exec with deps log")
 var errNeedPreproc = errors.New("need to preproc")
 var errRemoteExecDisabled = errors.New("remote exec disabled")
 
@@ -34,10 +32,7 @@ var errRemoteExecDisabled = errors.New("remote exec disabled")
 // - Before each remote exec, it checks remote cache before running.
 // - The fallbacks can be disabled via experiment flags.
 func (b *Builder) runRemote(ctx context.Context, step *Step) error {
-	var fastStep *Step
-	var fastOK, fastChecked bool
 	preprocErr := errNeedPreproc
-	fastNeedCheckCache := true
 	needCheckCache := true
 	cacheCheck := b.cache != nil && b.reCacheEnableRead
 	startLocal := b.startLocalCounter.Add(-1) >= 0
@@ -52,17 +47,6 @@ func (b *Builder) runRemote(ctx context.Context, step *Step) error {
 		// TODO: skip check cache when step is too new and can't expect cache hit?
 		if cacheCheck {
 			clog.Infof(ctx, "check cache before fast local")
-			fastStep, fastOK = fastDepsCmd(ctx, b, step)
-			if fastOK {
-				err := b.execRemoteCache(ctx, fastStep)
-				if err == nil {
-					return b.fastStepDone(ctx, step, fastStep)
-				}
-				fastNeedCheckCache = false
-				clog.Infof(ctx, "cmd fast cache miss: %v", err)
-			}
-			fastChecked = true
-
 			preprocErr = preprocCmd(ctx, b, step)
 			if len(step.cmd.Platform) > 0 && preprocErr == nil {
 				err := b.execRemoteCache(ctx, step)
@@ -80,15 +64,6 @@ func (b *Builder) runRemote(ctx context.Context, step *Step) error {
 			// TODO: detach remote for future cache hit.
 			err = b.execLocal(ctx, step)
 			step.metrics.FastLocal = true
-			return err
-		}
-	}
-	if !fastChecked {
-		fastStep, fastOK = fastDepsCmd(ctx, b, step)
-	}
-	if fastOK {
-		err := b.tryFastStep(ctx, step, fastStep, fastNeedCheckCache && cacheCheck)
-		if !errors.Is(err, errDepsLog) {
 			return err
 		}
 	}
@@ -178,48 +153,6 @@ func (b *Builder) runRemote(ctx context.Context, step *Step) error {
 		}
 	}
 	return err
-}
-
-func (b *Builder) tryFastStep(ctx context.Context, step, fastStep *Step, cacheCheck bool) error {
-	fctx, fastSpan := trace.NewSpan(ctx, "fast-deps-run")
-	err := b.runRemoteStep(fctx, fastStep, cacheCheck)
-	fastSpan.Close(nil)
-	if err == nil {
-		return b.fastStepDone(ctx, step, fastStep)
-	}
-	if errors.Is(err, context.Canceled) {
-		return err
-	}
-	if errors.Is(err, reapi.ErrBadPlatformContainerImage) {
-		return err
-	}
-	step.metrics.DepsLogErr = true
-	stats := b.stats.stats()
-	nFastDeps := stats.FastDepsSuccess + stats.FastDepsFailed + 1
-	if nFastDeps > 100 && (stats.FastDepsFailed+1)*100 > nFastDeps {
-		// many fast-deps failure.
-		// better to use scandeps to reduce retry by fast-deps failure.
-		clog.Infof(ctx, "too many fast-deps failure detected %d/%d", stats.FastDepsFailed+1, stats.FastDepsSuccess)
-		b.disableFastDeps.CompareAndSwap(nil, "too many fast-deps failure")
-	}
-
-	if experiments.Enabled("no-fast-deps-fallback", "fast-deps %s failed", step) {
-		return fmt.Errorf("fast-deps failed: %w", err)
-	}
-	return errDepsLog
-}
-
-func (b *Builder) fastStepDone(ctx context.Context, step, fastStep *Step) error {
-	step.metrics = fastStep.metrics
-	step.metrics.DepsLog = true
-	res := cmdOutput(ctx, cmdOutputResultSUCCESS, fastStep.cmd, b.reapiclient.Instance(), step.def.Binding("command"), step.def.RuleName(), nil)
-	if res != nil {
-		b.logOutput(res, step.cmd.Console)
-		if experiments.Enabled("fail-on-stdouterr", "step %s emit stdout/stderr", step) {
-			return fmt.Errorf("%s emit stdout/stderr", step)
-		}
-	}
-	return nil
 }
 
 func (b *Builder) runRemoteStep(ctx context.Context, step *Step, cacheCheck bool) error {

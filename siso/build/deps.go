@@ -45,65 +45,6 @@ var depsProcessors = map[string]depsProcessor{
 	"msvc":    depsMSVC{},
 }
 
-func depsFastStep(ctx context.Context, b *Builder, step *Step) (*Step, error) {
-	if step.useReclient() {
-		return nil, fmt.Errorf("no fast-deps (use reclient)")
-	}
-	if len(step.cmd.Platform) == 0 {
-		return nil, errors.New("no fast-deps (no remote step)")
-	}
-	if step.def.Binding("no_fast_deps") != "" {
-		return nil, errors.New("no fast-deps (siso config no_fast_deps=true)")
-	}
-	if reason, ok := b.disableFastDeps.Load().(string); ok && reason != "" {
-		return nil, fmt.Errorf("no fast-deps (%s)", reason)
-	}
-	ds, found := depsProcessors[step.cmd.Deps]
-	if !found {
-		return nil, fmt.Errorf("no fast-deps (deps=%q depfile=%q)", step.cmd.Deps, step.cmd.Depfile)
-	}
-	var newCmd *execute.Cmd
-	// protect from thread exhaustion,
-	// because it would access many files, which would call syscalls
-	// and may create new threads.
-	err := b.scanDepsSema.Do(ctx, step.weight, func(ctx context.Context) error {
-		depsIter, err := step.def.DepInputs(ctx)
-		if err != nil {
-			return fmt.Errorf("failed to get fast deps log (deps=%q): %w", step.cmd.Deps, err)
-		}
-		var depsIns []string
-		depsIter(func(in string) bool {
-			depsIns = append(depsIns, in)
-			return true
-		})
-		newCmd, err = ds.DepsFastCmd(ctx, b, step.cmd)
-		if err != nil {
-			return err
-		}
-		newCmd.ID += "-fast-deps"
-		// Inputs may contains unnecessary inputs.
-		// just needs ToolInputs.
-		stepInputs := step.def.DepsBaseInputs(ctx, newCmd.ToolInputs)
-		depsIns = step.def.ExpandedCaseSensitives(ctx, depsIns)
-		inputs, err := fixInputsByDeps(ctx, b, stepInputs, depsIns)
-		if err != nil {
-			clog.Warningf(ctx, "failed to fix inputs by deps: %v", err)
-			return err
-		}
-		clog.Infof(ctx, "fix inputs by deps %d -> %d", len(step.cmd.Inputs), len(inputs))
-		newCmd.Inputs = inputs
-		newCmd.Pure = true
-		return nil
-	})
-	if err != nil {
-		return nil, err
-	}
-	fastStep := &Step{}
-	*fastStep = *step
-	fastStep.cmd = newCmd
-	return fastStep, nil
-}
-
 // depsExpandInputs expands step.cmd.Inputs.
 // result will not contain labels nor non-existing files.
 func depsExpandInputs(ctx context.Context, b *Builder, step *Step) {
@@ -169,26 +110,15 @@ func depsExpandInputs(ctx context.Context, b *Builder, step *Step) {
 }
 
 // depsFixCmd checks the purity of the command by checking step inputs and deps.
-// It also updates the command inputs when fast deps is enabled.
 func depsFixCmd(ctx context.Context, b *Builder, step *Step, deps []string) {
-	stepInputs := step.def.Inputs(ctx) // use ToolInputs?
 	deps = step.def.ExpandedCaseSensitives(ctx, deps)
-	inputs, err := fixInputsByDeps(ctx, b, stepInputs, deps)
+	err := checkDepsExist(ctx, b, deps)
 	if err != nil {
-		clog.Warningf(ctx, "fix inputs by deps: %v", err)
+		clog.Warningf(ctx, "check deps exist: %v", err)
 		step.cmd.Pure = false
 		return
 	}
 	step.cmd.Pure = true
-	if reason, ok := b.disableFastDeps.Load().(string); ok && reason != "" {
-		// if fast deps is not used, scandeps is used for step.cmd
-		// so cache will hit in next build.
-		// no need to modify step.cmd's Inputs.
-		return
-	}
-	// if fast deps is used, fix cmd to match with deps_log used
-	// so that cache will hit in next build.
-	step.cmd.Inputs = inputs
 }
 
 func depsCmd(ctx context.Context, b *Builder, step *Step) error {
@@ -200,7 +130,6 @@ func depsCmd(ctx context.Context, b *Builder, step *Step) error {
 	ds, found := depsProcessors[step.cmd.Deps]
 	if found {
 		start := time.Now()
-		// TODO: same as depsFastStep
 		stepInputs := step.def.DepsBaseInputs(ctx, step.cmd.ToolInputs)
 		depsIns, err := ds.DepsCmd(ctx, b, step)
 		depsIns = step.def.ExpandedCaseSensitives(ctx, depsIns)
@@ -240,32 +169,22 @@ func depsAfterRun(ctx context.Context, b *Builder, step *Step) ([]string, error)
 	return deps, nil
 }
 
-func fixInputsByDeps(ctx context.Context, b *Builder, stepInputs, depsIns []string) ([]string, error) {
-	ctx, span := trace.NewSpan(ctx, "fix-inputs-by-deps")
+func checkDepsExist(ctx context.Context, b *Builder, depsIns []string) error {
+	ctx, span := trace.NewSpan(ctx, "check-deps-exist")
 	defer span.Close(nil)
+
 	span.SetAttr("deps-inputs", len(depsIns))
 	entries, err := b.hashFS.Entries(ctx, b.path.WorkspaceRoot, depsIns)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get entries: %w", err)
+		return fmt.Errorf("failed to get entries: %w", err)
 	}
 	if len(entries) < len(depsIns) {
-		// if deps inputs disappeared, it would be problematic
-		// to use the depsIns.
-		// don't use .siso_deps, but fallback to scandeps to
-		// collect actual include files.
-		return nil, fmt.Errorf("missing files in deps %d: %w", len(depsIns)-len(entries), fs.ErrNotExist)
+		// if deps inputs disappeared, it would be problematic to use the depsIns.
+		// don't use .siso_deps, but fallback to scandeps to collect actual include files.
+		return fmt.Errorf("missing files in deps %d: %w", len(depsIns)-len(entries), fs.ErrNotExist)
 	}
-	inputs := stepInputs
-	for _, ent := range entries {
-		inputs = append(inputs, b.path.Intern(ent.Name))
-		// no need to recursive expand?
-		// log.Infof("%s fix-input %s => %s", step, ent.Name, ent.Target)
-		if ent.Target != "" {
-			inputs = append(inputs, b.path.Intern(filepath.Join(filepath.Dir(ent.Name), ent.Target)))
-		}
-	}
-	inputs = uniqueFiles(inputs)
-	return inputs, nil
+
+	return nil
 }
 
 func checkDepfile(ctx context.Context, b *Builder, step *Step) error {
