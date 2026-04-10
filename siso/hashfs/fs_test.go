@@ -1453,6 +1453,76 @@ func TestUpdate_FromLocal_NonLocalSymlink(t *testing.T) {
 	}
 }
 
+// TestUpdate_SymlinkNoChtimes verifies that Update does not call
+// os.Chtimes on symlink outputs. os.Chtimes follows symlinks, so calling
+// it on a symlink would change the target's mtime, invalidating the
+// target in .siso_fs_state.
+func TestUpdate_SymlinkNoChtimes(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("no symlink test on windows")
+	}
+	ctx := t.Context()
+	dir := t.TempDir()
+	dir, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Create a target file with a known mtime.
+	targetPath := filepath.Join(dir, "target.txt")
+	if err := os.WriteFile(targetPath, []byte("content"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	targetMtime := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
+	if err := os.Chtimes(targetPath, time.Time{}, targetMtime); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create a symlink in the output directory.
+	outDir := filepath.Join(dir, "out")
+	if err := os.MkdirAll(outDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(targetPath, filepath.Join(outDir, "link.txt")); err != nil {
+		t.Fatal(err)
+	}
+
+	hfs, err := hashfs.New(ctx, hashfs.Option{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer hfs.Close(ctx)
+
+	// Update with a symlink entry that is local and changed.
+	// This is the combination that triggers Chtimes for regular files.
+	// It must NOT trigger Chtimes for symlinks.
+	entries := []hashfs.UpdateEntry{
+		{
+			Name: "out/link.txt",
+			Entry: &merkletree.Entry{
+				Name:   "out/link.txt",
+				Target: targetPath,
+			},
+			Mode:      fs.ModeSymlink | 0644,
+			ModTime:   time.Now(),
+			IsLocal:   true,
+			IsChanged: true,
+		},
+	}
+	if err := hfs.Update(ctx, dir, entries); err != nil {
+		t.Fatalf("Update=%v", err)
+	}
+
+	// Verify the target file's mtime was NOT changed.
+	fi, err := os.Lstat(targetPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !fi.ModTime().Equal(targetMtime) {
+		t.Errorf("target mtime changed from %v to %v; Chtimes was incorrectly called on symlink", targetMtime, fi.ModTime())
+	}
+}
+
 func TestSymlinkDir(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("no symlink test on windows")

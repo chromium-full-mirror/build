@@ -1182,6 +1182,46 @@ func (e UpdateEntry) String() string {
 	return buf.String()
 }
 
+// newEntryFromUpdate creates an entry from an UpdateEntry that has
+// a non-nil Entry (i.e. from remote execution, not local disk).
+func newEntryFromUpdate(ent UpdateEntry) *entry {
+	lready := make(chan bool, 1)
+	if ent.IsLocal {
+		close(lready)
+	} else {
+		lready <- true
+	}
+	e := &entry{
+		lready:      lready,
+		mtime:       ent.ModTime,
+		mode:        ent.Mode,
+		cmdhash:     ent.CmdHash,
+		edgehash:    ent.EdgeHash,
+		action:      ent.Action,
+		updatedTime: ent.UpdatedTime,
+		isChanged:   ent.IsChanged,
+	}
+	switch {
+	case !ent.Entry.Data.IsZero():
+		if ent.Entry.IsExecutable {
+			e.mode |= 0111
+		}
+		e.size = ent.Entry.Data.Digest().SizeBytes
+		e.local = ent.IsLocal
+		e.src = ent.Entry.Data
+		e.d = ent.Entry.Data.Digest()
+	case ent.Entry.Target != "":
+		e.mode |= fs.ModeSymlink
+		e.local = true
+		e.target = ent.Entry.Target
+	default: // directory
+		e.mode |= fs.ModeDir
+		e.local = true
+		e.directory = &directory{}
+	}
+	return e
+}
+
 // Update updates cache information for entries under workspaceRoot.
 func (hfs *HashFS) Update(ctx context.Context, workspaceRoot string, entries []UpdateEntry) error {
 	ctx, span := trace.NewSpan(ctx, "fs-update")
@@ -1296,104 +1336,25 @@ func (hfs *HashFS) Update(ctx context.Context, workspaceRoot string, entries []U
 			}
 			continue
 		}
-		switch {
-		case !ent.Entry.Data.IsZero():
-			lready := make(chan bool, 1)
-			if ent.IsLocal {
-				close(lready)
-			} else {
-				lready <- true
-			}
-			mode := ent.Mode
-			if ent.Entry.IsExecutable {
-				mode |= 0111
-			}
-			e := &entry{
-				lready:      lready,
-				size:        ent.Entry.Data.Digest().SizeBytes,
-				mtime:       ent.ModTime,
-				mode:        mode,
-				cmdhash:     ent.CmdHash,
-				edgehash:    ent.EdgeHash,
-				action:      ent.Action,
-				local:       ent.IsLocal,
-				src:         ent.Entry.Data,
-				d:           ent.Entry.Data.Digest(),
-				updatedTime: ent.UpdatedTime,
-				isChanged:   ent.IsChanged,
-			}
-			err := hfs.dirStoreAndNotify(ctx, fname, e)
-			if err != nil {
-				return err
-			}
-			hfs.journalEntry(ctx, fname, e)
-			if ent.IsLocal && e.isChanged {
-				err = hfs.OS.Chtimes(ctx, fname, time.Time{}, e.getMtime())
-				if errors.Is(err, fs.ErrNotExist) {
-					clog.Warningf(ctx, "failed to update mtime of %s: %v", fname, err)
-					continue
-				}
-				if err != nil {
-					return fmt.Errorf("failed to update mtime of %s: %w", fname, err)
-				}
-			}
-		case ent.Entry.Target != "":
-			lready := make(chan bool, 1)
-			if ent.IsLocal {
-				close(lready)
-			} else {
-				lready <- true
-			}
-			mode := ent.Mode
-			mode |= fs.ModeSymlink
-			e := &entry{
-				lready:   lready,
-				mtime:    ent.ModTime,
-				mode:     mode,
-				cmdhash:  ent.CmdHash,
-				edgehash: ent.EdgeHash,
-				action:   ent.Action,
-				local:    true,
-				target:   ent.Entry.Target,
-
-				updatedTime: ent.UpdatedTime,
-				isChanged:   ent.IsChanged,
-			}
-			err := hfs.dirStoreAndNotify(ctx, fname, e)
-			if err != nil {
-				return err
-			}
-			hfs.journalEntry(ctx, fname, e)
-		default: // directory
-			lready := make(chan bool, 1)
-			if ent.IsLocal {
-				close(lready)
-			} else {
-				lready <- true
-			}
-			mode := ent.Mode
-			mode |= fs.ModeDir
-			e := &entry{
-				lready:    lready,
-				mtime:     ent.ModTime,
-				mode:      mode,
-				cmdhash:   ent.CmdHash,
-				edgehash:  ent.EdgeHash,
-				action:    ent.Action,
-				local:     true,
-				directory: &directory{},
-
-				updatedTime: ent.UpdatedTime,
-				isChanged:   ent.IsChanged,
-			}
-			err := hfs.dirStoreAndNotify(ctx, fname, e)
-			if err != nil {
-				return err
-			}
-			hfs.journalEntry(ctx, fname, e)
+		e := newEntryFromUpdate(ent)
+		err := hfs.dirStoreAndNotify(ctx, fname, e)
+		if err != nil {
+			return err
+		}
+		hfs.journalEntry(ctx, fname, e)
+		if e.directory != nil {
 			err = hfs.OS.Chtimes(ctx, fname, time.Time{}, ent.ModTime)
 			if err != nil {
 				clog.Warningf(ctx, "failed to update dir mtime %s: %v", fname, err)
+			}
+		} else if ent.IsLocal && e.isChanged && !e.isSymlink() {
+			err = hfs.OS.Chtimes(ctx, fname, time.Time{}, e.getMtime())
+			if errors.Is(err, fs.ErrNotExist) {
+				clog.Warningf(ctx, "failed to update mtime of %s: %v", fname, err)
+				continue
+			}
+			if err != nil {
+				return fmt.Errorf("failed to update mtime of %s: %w", fname, err)
 			}
 		}
 	}
