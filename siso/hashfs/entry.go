@@ -354,69 +354,92 @@ func (e *entry) flush(ctx context.Context, fname string, osfs *osfs.OSFS, timeou
 		// no need to flush again.
 		close(e.lready)
 	}()
-	started := time.Now()
 
 	e.mu.Lock()
 	err := e.err
 	e.mu.Unlock()
 	if errors.Is(err, fs.ErrNotExist) {
-		// to protect concurrent digest calculation and removal
-		// on Windows.
-		digestLock.Lock()
-		for {
-			if _, ok := digestFnames[fname]; !ok {
-				break
-			}
-			// wait if digest calculation on fname is under progress
-			digestCond.Wait()
-		}
-		err := osfs.Remove(ctx, fname)
-		digestLock.Unlock()
-		clog.Infof(ctx, "flush remove %s: %v", fname, err)
-		if errors.Is(err, fs.ErrNotExist) {
-			err = nil
-		}
-		return err
+		return e.flushRemove(ctx, fname, osfs)
 	}
-	d := e.digest()
-	mtime := e.getMtime()
 	switch {
 	case e.directory != nil:
-		// directory
-		fi, err := osfs.Lstat(ctx, fname)
-		if err == nil && fi.IsDir() && fi.ModTime().Equal(mtime) {
-			if log.V(1) {
-				clog.Infof(ctx, "flush dir %s: already exist", fname)
-			}
-			return nil
-		}
-		err = osfs.MkdirAll(ctx, fname, 0755)
-		if err != nil {
-			clog.Infof(ctx, "flush dir %s: %v", fname, err)
-		} else {
-			err = osfs.Chtimes(ctx, fname, time.Time{}, mtime)
-			clog.Infof(ctx, "flush dir chtime %s %v: %v", fname, mtime, err)
-		}
-		return err
+		return e.flushDir(ctx, fname, osfs)
 	case e.isSymlink():
-		target, err := osfs.Readlink(ctx, fname)
-		if err == nil && e.target == target {
-			return nil
-		}
-		e.mu.Lock()
-		err = osfs.Symlink(ctx, e.target, fname)
-		if errors.Is(err, fs.ErrExist) {
-			err = osfs.Remove(ctx, fname)
-			if err == nil {
-				err = osfs.Symlink(ctx, e.target, fname)
-			}
-		}
-		e.mu.Unlock()
-		clog.Infof(ctx, "flush symlink %s -> %s: %v", fname, e.target, err)
-		// don't change mtimes. it fails if target doesn't exist.
-		return err
+		return e.flushSymlink(ctx, fname, osfs)
 	default:
+		return e.flushRegularFile(ctx, fname, osfs, timeout)
 	}
+}
+
+// flushRemove removes a file from disk, waiting for any in-progress
+// digest calculation to finish first (Windows sharing violation guard).
+func (e *entry) flushRemove(ctx context.Context, fname string, osfs *osfs.OSFS) error {
+	// to protect concurrent digest calculation and removal
+	// on Windows.
+	digestLock.Lock()
+	for {
+		if _, ok := digestFnames[fname]; !ok {
+			break
+		}
+		// wait if digest calculation on fname is under progress
+		digestCond.Wait()
+	}
+	err := osfs.Remove(ctx, fname)
+	digestLock.Unlock()
+	clog.Infof(ctx, "flush remove %s: %v", fname, err)
+	if errors.Is(err, fs.ErrNotExist) {
+		err = nil
+	}
+	return err
+}
+
+// flushDir ensures a directory exists on disk with the correct mtime.
+func (e *entry) flushDir(ctx context.Context, fname string, osfs *osfs.OSFS) error {
+	mtime := e.getMtime()
+	fi, err := osfs.Lstat(ctx, fname)
+	if err == nil && fi.IsDir() && fi.ModTime().Equal(mtime) {
+		if log.V(1) {
+			clog.Infof(ctx, "flush dir %s: already exist", fname)
+		}
+		return nil
+	}
+	err = osfs.MkdirAll(ctx, fname, 0755)
+	if err != nil {
+		clog.Infof(ctx, "flush dir %s: %v", fname, err)
+	} else {
+		err = osfs.Chtimes(ctx, fname, time.Time{}, mtime)
+		clog.Infof(ctx, "flush dir chtime %s %v: %v", fname, mtime, err)
+	}
+	return err
+}
+
+// flushSymlink ensures a symlink exists on disk pointing to the correct target.
+func (e *entry) flushSymlink(ctx context.Context, fname string, osfs *osfs.OSFS) error {
+	target, err := osfs.Readlink(ctx, fname)
+	if err == nil && e.target == target {
+		return nil
+	}
+	e.mu.Lock()
+	err = osfs.Symlink(ctx, e.target, fname)
+	if errors.Is(err, fs.ErrExist) {
+		err = osfs.Remove(ctx, fname)
+		if err == nil {
+			err = osfs.Symlink(ctx, e.target, fname)
+		}
+	}
+	e.mu.Unlock()
+	clog.Infof(ctx, "flush symlink %s -> %s: %v", fname, e.target, err)
+	// don't change mtimes. it fails if target doesn't exist.
+	return err
+}
+
+// flushRegularFile writes a regular file to disk from its data source,
+// handling hardlinks, clonefile optimization, and mtime updates.
+func (e *entry) flushRegularFile(ctx context.Context, fname string, osfs *osfs.OSFS, timeout time.Duration) error {
+	started := time.Now()
+	d := e.digest()
+	mtime := e.getMtime()
+
 	fi, err := osfs.Lstat(ctx, fname)
 	// need to remove the file after it reads from data source,
 	// since data source will read from the local disk.
