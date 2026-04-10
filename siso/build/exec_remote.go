@@ -124,6 +124,10 @@ func (b *Builder) execRemoteCache(ctx context.Context, step *Step) error {
 		if err != nil {
 			return err
 		}
+		if experiments.Enabled("simulate-remote-cache-misses", "simulate cache miss") {
+			clog.Infof(ctx, "simulate cache miss in execRemoteCache")
+			return status.Errorf(codes.NotFound, "simulate cache miss")
+		}
 		result, _ := step.cmd.ActionResult()
 		// result may be nil if GetActionResult detects
 		// "skip: no need to update", i.e. all outputs
