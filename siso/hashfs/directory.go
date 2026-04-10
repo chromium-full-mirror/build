@@ -153,6 +153,97 @@ func (e storeRaceError) Error() string {
 	return fmt.Sprintf("store race %s: %p -> %p -> %p %t", e.fname, e.prevEntry, e.entry, e.curEntry, e.exists)
 }
 
+// shouldKeep checks whether the existing entry ee can be kept
+// when a new entry e is stored. It also inherits cmdhash/action
+// from ee when appropriate and logs changes.
+// Returns (entry to use, keep bool).
+// If keep is true, the returned entry should be used as-is (no swap needed).
+func shouldKeep(ctx context.Context, origFname string, ee, e *entry) (*entry, bool) {
+	if e == ee {
+		// if storing entry `e` is the same as stored entry `ee`, no need to update.
+		return e, true
+	}
+	eed := ee.digest()
+	// old entry has cmdhash, but new entry has no cmdhash&action (not by Update*).
+	if len(ee.cmdhash) > 0 && len(e.cmdhash) == 0 && e.action.IsZero() {
+		// keep cmdhash and action
+		e.cmdhash = ee.cmdhash
+		e.edgehash = ee.edgehash
+		e.action = ee.action
+		e.local = ee.local
+	}
+	cmdchanged := !bytes.Equal(ee.cmdhash, e.cmdhash)
+	edgechanged := !bytes.Equal(ee.edgehash, e.edgehash)
+	actionchanged := ee.action != e.action
+	if e.isSymlink() && ee.target != e.target {
+		if log.V(1) {
+			// lv is to reduce the number of memory allocations when variables are escaping to heap.
+			lv := struct {
+				origFname         string
+				cmdchanged        bool
+				edgechanged       bool
+				eetarget, etarget string
+			}{origFname, cmdchanged, edgechanged, ee.target, e.target}
+			clog.Infof(ctx, "store %s: cmdchange:%t edgechanged:%t s:%q to %q", lv.origFname, lv.cmdchanged, lv.edgechanged, lv.eetarget, lv.etarget)
+		}
+	} else if !e.d.IsZero() && eed != e.d && eed.SizeBytes != 0 && e.d.SizeBytes != 0 {
+		if log.V(1) {
+			// don't log nil to digest of empty file (size=0)
+			// lv is to reduce the number of memory allocations when variables are escaping to heap.
+			lv := struct {
+				origFname   string
+				cmdchanged  bool
+				edgechanged bool
+				eed, ed     digest.Digest
+			}{origFname, cmdchanged, edgechanged, eed, e.d}
+			clog.Infof(ctx, "store %s: cmdchange:%t edgechanged:%t d:%v to %v", lv.origFname, lv.cmdchanged, lv.edgechanged, lv.eed, lv.ed)
+		}
+	} else if cmdchanged || edgechanged || actionchanged {
+		if log.V(1) {
+			// lv is to reduce the number of memory allocations when variables are escaping to heap.
+			lv := struct {
+				origFname     string
+				cmdchanged    bool
+				edgechanged   bool
+				actionchanged bool
+			}{origFname, cmdchanged, edgechanged, actionchanged}
+			clog.Infof(ctx, "store %s: cmdchange:%t edgechanged:%t actionchange:%t", lv.origFname, lv.cmdchanged, lv.edgechanged, lv.actionchanged)
+		}
+	} else if ee.target == e.target && ee.size == e.size && ee.mode == e.mode && (e.d.IsZero() || eed == e.d) {
+		// no change?
+
+		// if e.d is zero, it may be new local entry
+		// and ee.d has been calculated
+
+		// update mtime and updatedTime.
+		ee.mu.Lock()
+		ee.mtimeUpdated = !ee.mtime.Equal(e.mtime)
+		ee.mtime = e.mtime
+		if ee.updatedTime.Before(e.updatedTime) {
+			ee.updatedTime = e.updatedTime
+		}
+		ee.isChanged = e.isChanged
+		ee.mu.Unlock()
+		if log.V(1) {
+			// lv is to reduce the number of memory allocations when variables are escaping to heap.
+			lv := struct {
+				origFname   string
+				mtime       time.Time
+				updatedTime time.Time
+			}{origFname, ee.getMtime(), ee.getUpdatedTime()}
+			clog.Infof(ctx, "store %s: mtime updated %v %v", lv.origFname, lv.mtime, lv.updatedTime)
+		}
+		return ee, true
+	} else if ee.getDir() != nil && e.getDir() != nil {
+		// ok if mkdir with the no cmdhash or same cmdhash.
+		if (len(ee.cmdhash) > 0 && len(e.cmdhash) == 0) || bytes.Equal(ee.cmdhash, e.cmdhash) {
+			return ee, true
+		}
+	}
+	// e should replace ee.
+	return e, false
+}
+
 func (d *directory) storeEntry(ctx context.Context, fname string, e *entry) (*entry, string, error) {
 	pe := pathElements{
 		origFname: fname,
@@ -185,88 +276,10 @@ func (d *directory) storeEntry(ctx context.Context, fname string, e *entry) (*en
 				}
 				return e, "", nil
 			}
-			// check whether there is an update from previous entry.
 			ee := v.(*entry)
-			if e == ee {
-				// if storing entry `e` is the same as stored entry `ee`, no need to update.
-				return e, "", nil
-			}
-			eed := ee.digest()
-			// old entry has cmdhash, but new entry has no cmdhash&action (not by Update*).
-			if len(ee.cmdhash) > 0 && len(e.cmdhash) == 0 && e.action.IsZero() {
-				// keep cmdhash and action
-				e.cmdhash = ee.cmdhash
-				e.edgehash = ee.edgehash
-				e.action = ee.action
-				e.local = ee.local
-			}
-			cmdchanged := !bytes.Equal(ee.cmdhash, e.cmdhash)
-			edgechanged := !bytes.Equal(ee.edgehash, e.edgehash)
-			actionchanged := ee.action != e.action
-			if e.isSymlink() && ee.target != e.target {
-				if log.V(1) {
-					// lv is to reduce the number of memory allocations when variables are escaping to heap.
-					lv := struct {
-						origFname         string
-						cmdchanged        bool
-						edgechanged       bool
-						eetarget, etarget string
-					}{pe.origFname, cmdchanged, edgechanged, ee.target, e.target}
-					clog.Infof(ctx, "store %s: cmdchange:%t edgechanged:%t s:%q to %q", lv.origFname, lv.cmdchanged, lv.edgechanged, lv.eetarget, lv.etarget)
-				}
-			} else if !e.d.IsZero() && eed != e.d && eed.SizeBytes != 0 && e.d.SizeBytes != 0 {
-				if log.V(1) {
-					// don't log nil to digest of empty file (size=0)
-					// lv is to reduce the number of memory allocations when variables are escaping to heap.
-					lv := struct {
-						origFname   string
-						cmdchanged  bool
-						edgechanged bool
-						eed, ed     digest.Digest
-					}{pe.origFname, cmdchanged, edgechanged, eed, e.d}
-					clog.Infof(ctx, "store %s: cmdchange:%t edgechanged:%t d:%v to %v", lv.origFname, lv.cmdchanged, lv.edgechanged, lv.eed, lv.ed)
-				}
-			} else if cmdchanged || edgechanged || actionchanged {
-				if log.V(1) {
-					// lv is to reduce the number of memory allocations when variables are escaping to heap.
-					lv := struct {
-						origFname     string
-						cmdchanged    bool
-						edgechanged   bool
-						actionchanged bool
-					}{pe.origFname, cmdchanged, edgechanged, actionchanged}
-					clog.Infof(ctx, "store %s: cmdchange:%t edgechanged:%t actionchange:%t", lv.origFname, lv.cmdchanged, lv.edgechanged, lv.actionchanged)
-				}
-			} else if ee.target == e.target && ee.size == e.size && ee.mode == e.mode && (e.d.IsZero() || eed == e.d) {
-				// no change?
-
-				// if e.d is zero, it may be new local entry
-				// and ee.d has been calculated
-
-				// update mtime and updatedTime.
-				ee.mu.Lock()
-				ee.mtimeUpdated = !ee.mtime.Equal(e.mtime)
-				ee.mtime = e.mtime
-				if ee.updatedTime.Before(e.updatedTime) {
-					ee.updatedTime = e.updatedTime
-				}
-				ee.isChanged = e.isChanged
-				ee.mu.Unlock()
-				if log.V(1) {
-					// lv is to reduce the number of memory allocations when variables are escaping to heap.
-					lv := struct {
-						origFname   string
-						mtime       time.Time
-						updatedTime time.Time
-					}{pe.origFname, ee.getMtime(), ee.getUpdatedTime()}
-					clog.Infof(ctx, "store %s: mtime updated %v %v", lv.origFname, lv.mtime, lv.updatedTime)
-				}
-				return ee, "", nil
-			} else if ee.getDir() != nil && e.getDir() != nil {
-				// ok if mkdir with the no cmdhash or same cmdhash.
-				if (len(ee.cmdhash) > 0 && len(e.cmdhash) == 0) || bytes.Equal(ee.cmdhash, e.cmdhash) {
-					return ee, "", nil
-				}
+			result, keep := shouldKeep(ctx, pe.origFname, ee, e)
+			if keep {
+				return result, "", nil
 			}
 
 			// e should be new value for fname.
