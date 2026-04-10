@@ -995,6 +995,9 @@ func stepLogEntry(ctx context.Context, logger *clog.Logger, step *Step, duration
 		"prev_output": step.metrics.PrevStepOut,
 		"digest":      step.metrics.Digest,
 	}
+	if step.metrics.WorkerPool != "" {
+		logEntry.Labels["worker_pool"] = step.metrics.WorkerPool
+	}
 	if step.metrics.RunTime > 0 {
 		logEntry.Labels["run_secs"] = fmt.Sprintf("%.02f", time.Duration(step.metrics.RunTime).Seconds())
 	}

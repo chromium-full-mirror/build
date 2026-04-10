@@ -15,6 +15,7 @@ import (
 
 	epb "go.chromium.org/build/siso/execute/proto"
 	"go.chromium.org/build/siso/o11y/clog"
+	rbepb "go.chromium.org/build/siso/reapi/proto"
 )
 
 // IntervalMetric is a time duration, but serialized as seconds in JSON.
@@ -90,18 +91,19 @@ type StepMetric struct {
 	ScandepsErr   bool `json:"scandeps_err,omitempty"`   // whether the action failed in scandeps.
 	ClangScandeps bool `json:"clang_scandeps,omitempty"` // whether the action used the clang for scandeps.
 
-	NoExec        bool `json:"no_exec,omitempty"`         // whether the action didn't run any command (i.e. just use handler).
-	IsRemote      bool `json:"is_remote,omitempty"`       // whether the action uses remote result.
-	IsLocal       bool `json:"is_local,omitempty"`        // whether the action uses local result.
-	Sandbox       bool `json:"sandbox,omitempty"`         // whether the action uses sandbox.
-	FastLocal     bool `json:"fast_local,omitempty"`      // whether the action chooses local for fast build.
-	StartLocal    bool `json:"start_local,omitempty"`     // whether the action chooses local for start in incremental build.
-	CacheWrite    bool `json:"cache_write,omitempty"`     // whether the action used cache write feature from local results.
-	CacheWriteErr bool `json:"cache_write_err,omitempty"` // whether the action failed while using cache write feature.
-	Cached        bool `json:"cached,omitempty"`          // whether the action was a cache hit.
-	Fallback      bool `json:"fallback,omitempty"`        // whether the action failed remotely and was retried locally.
-	Err           bool `json:"err,omitempty"`             // whether the action failed.
-	RemoteRetry   int  `json:"remote_retry,omitempty"`    // count of remote retry
+	NoExec        bool   `json:"no_exec,omitempty"`         // whether the action didn't run any command (i.e. just use handler).
+	IsRemote      bool   `json:"is_remote,omitempty"`       // whether the action uses remote result.
+	IsLocal       bool   `json:"is_local,omitempty"`        // whether the action uses local result.
+	Sandbox       bool   `json:"sandbox,omitempty"`         // whether the action uses sandbox.
+	FastLocal     bool   `json:"fast_local,omitempty"`      // whether the action chooses local for fast build.
+	StartLocal    bool   `json:"start_local,omitempty"`     // whether the action chooses local for start in incremental build.
+	CacheWrite    bool   `json:"cache_write,omitempty"`     // whether the action used cache write feature from local results.
+	CacheWriteErr bool   `json:"cache_write_err,omitempty"` // whether the action failed while using cache write feature.
+	Cached        bool   `json:"cached,omitempty"`          // whether the action was a cache hit.
+	Fallback      bool   `json:"fallback,omitempty"`        // whether the action failed remotely and was retried locally.
+	Err           bool   `json:"err,omitempty"`             // whether the action failed.
+	RemoteRetry   int    `json:"remote_retry,omitempty"`    // count of remote retry
+	WorkerPool    string `json:"worker_pool,omitempty"`     // worker pool that executes the action.
 
 	// DepsScanTime is the time it took in calculating deps for cmd inputs.
 	// TODO: set in reproxy mode too
@@ -207,6 +209,18 @@ func (m *StepMetric) done(ctx context.Context, step *Step, buildStart time.Time)
 			m.Oublock = ru.Oublock
 			m.Utime = IntervalMetric(time.Duration(ru.Utime.Seconds)*time.Second + time.Duration(ru.Utime.Nanos)*time.Nanosecond)
 			m.Stime = IntervalMetric(time.Duration(ru.Stime.Seconds)*time.Second + time.Duration(ru.Stime.Nanos)*time.Nanosecond)
+			continue
+		}
+		// Get worker pool for executed action.
+		if !m.Cached {
+			aux := &rbepb.AuxiliaryMetadata{}
+			err = any.UnmarshalTo(aux)
+			if err == nil {
+				if pool := aux.GetPool(); pool != "" {
+					m.WorkerPool = pool
+				}
+				continue
+			}
 		}
 	}
 }
