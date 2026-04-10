@@ -236,6 +236,29 @@ func (hfs *HashFS) SetBuildTargets(ctx context.Context, buildTargets []string, s
 	clog.Infof(ctx, "set build targets=%q", hfs.buildTargets)
 }
 
+// shouldSkipSave reports whether the current state should not be
+// persisted to disk. Each condition is a reason the in-memory state
+// is unreliable or unchanged.
+func (hfs *HashFS) shouldSkipSave() bool {
+	// State matches disk, nothing to write.
+	if hfs.clean.Load() {
+		return true
+	}
+	// State was never fully loaded, saving would lose data.
+	if !hfs.loaded.Load() {
+		return true
+	}
+	// Deferred-digest mode with no journal updates means no changes.
+	if hfs.opt.DeferDigest && hfs.journal.n == 0 {
+		return true
+	}
+	// Tainted files present: state may be corrupted.
+	if len(hfs.taintedFiles) > 0 {
+		return true
+	}
+	return false
+}
+
 // Close closes the HashFS.
 // Persists current state in opt.StateFile.
 func (hfs *HashFS) Close(ctx context.Context) error {
@@ -249,12 +272,7 @@ func (hfs *HashFS) Close(ctx context.Context) error {
 		clog.Warningf(ctx, "Failed to close journal %v", err)
 	}
 	clog.Infof(ctx, "close journal")
-	if hfs.clean.Load() || !hfs.loaded.Load() || (hfs.opt.DeferDigest && hfs.loaded.Load() && hfs.journal.n == 0) || len(hfs.taintedFiles) > 0 {
-		// don't update fs state when there are tainted files.
-		// - if state is clean, state matches between memory and disk, so no need to save
-		// - if state is not loaded, memory state is incomplete, so should not save.
-		// - if defer digest, state is loaded and no updates (i.e. 0 journal entries), no need to save.
-		// - if it uses tainted files, should not save.
+	if hfs.shouldSkipSave() {
 		clog.Warningf(ctx, "not save state clean=%t loaded=%t journal:%d tainted:%d", hfs.clean.Load(), hfs.loaded.Load(), hfs.journal.n, len(hfs.taintedFiles))
 		return nil
 	}
