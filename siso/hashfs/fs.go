@@ -109,6 +109,7 @@ type HashFS struct {
 
 // New creates a HashFS.
 func New(ctx context.Context, opt Option) (*HashFS, error) {
+	defer trace.Begin(ctx, "hashfs.New").End()
 	if opt.OutputLocal == nil {
 		opt.OutputLocal = func(context.Context, string) bool { return false }
 	}

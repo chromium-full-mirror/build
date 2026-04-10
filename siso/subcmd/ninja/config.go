@@ -296,6 +296,8 @@ func (c *Command) initConfigFlags(targets []string) map[string]string {
 // If no Starlark config exists, it returns a default config that runs all steps locally.
 // It also captures `args.gn` content if available.
 func (c *Command) initConfig(ctx context.Context, workspaceRoot string, targets []string) (*buildconfig.Config, error) {
+	defer trace.Begin(ctx, "initConfig").End()
+
 	flags := c.initConfigFlags(targets)
 	if c.configFilename == "" {
 		return buildconfig.NewDefault(flags), nil
@@ -408,6 +410,8 @@ func (c *Command) enableOfflineMode(ctx context.Context) {
 // initDepsLog loads the dependency log file (`.siso_deps`).
 // It will recompact the log if necessary.
 func initDepsLog(ctx context.Context, stateDir string, depsLogFile string) (*ninjabuild.DepsLog, error) {
+	defer trace.Begin(ctx, "initDepsLog").End()
+
 	depsLogPath := filepath.Join(stateDir, depsLogFile)
 	err := os.MkdirAll(filepath.Dir(depsLogPath), 0755)
 	if err != nil {
@@ -425,6 +429,7 @@ func initDepsLog(ctx context.Context, stateDir string, depsLogFile string) (*nin
 // initBuildOpts initializes the `build.Options` struct by collecting
 // various configuration settings and parameters.
 func (c *Command) initBuildOpts(ctx context.Context, projectID string, buildPath *build.Path, config *buildconfig.Config, ds build.DataSource, hashFS *hashfs.HashFS, limits build.Limits, tracer *trace.Tracer, traceExporter *trace.Exporter, logWriters logWriters) build.Options {
+	defer trace.Begin(ctx, "initBuildOpts").End()
 	if !filepath.IsAbs(c.buildPprof) {
 		c.buildPprof = filepath.Join(c.logDir, c.buildPprof)
 	}

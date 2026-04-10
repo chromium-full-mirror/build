@@ -189,6 +189,7 @@ func TestBuild_Trace_remote(t *testing.T) {
 		"process_name":                9,
 		"out/siso/gen/remote/foo.out": 3, // preproc, remote-exec and rbe
 		"out/siso/gen/local/foo.out":  1,
+		"thread_name":                 1,
 	}
 	if diff := cmp.Diff(want, names); diff != "" {
 		t.Errorf("event names diff -want +got:\n%s", diff)

@@ -5,6 +5,7 @@
 package build
 
 import (
+	"context"
 	"sort"
 	"strings"
 	"sync"
@@ -13,7 +14,7 @@ import (
 	"go.chromium.org/build/siso/o11y/trace"
 )
 
-func (b *Builder) traceEvents(tc *trace.Context) []trace.Event {
+func (b *Builder) traceEvents(ctx context.Context, tc *trace.Context) []trace.Event {
 	spans := tc.Spans()
 	if len(spans) == 0 {
 		return nil
@@ -33,7 +34,7 @@ func (b *Builder) traceEvents(tc *trace.Context) []trace.Event {
 			obj = runRemoteSpanEvent(span, attr, b.tracePidRemote)
 		case "rbe:worker":
 			worker, _ := span.Attrs["worker"].(string)
-			workerID := b.tracer.Thread(b.tracePidWorker, worker)
+			workerID := b.tracer.Thread(ctx, b.tracePidWorker, worker)
 			obj = rbeWorkerSpanEvent(span, attr, b.tracePidWorker, workerID)
 		default:
 			if strings.HasPrefix(span.Name, "serv:pool=") {

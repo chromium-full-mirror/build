@@ -439,6 +439,7 @@ func (c *Client) UploadAll(ctx context.Context, ds *digest.Store) (numUploaded i
 
 // CheckWritable checks reapi instance writable permission.
 func (c *Client) CheckWritable(ctx context.Context) error {
+	defer trace.Begin(ctx, "reapi.CheckWritable").End()
 	if c.casConn == nil {
 		return status.Error(codes.FailedPrecondition, "conn is not configured")
 	}

@@ -23,6 +23,7 @@ import (
 
 	"go.chromium.org/build/siso/hashfs"
 	"go.chromium.org/build/siso/o11y/clog"
+	"go.chromium.org/build/siso/o11y/trace"
 	"go.chromium.org/build/siso/ui"
 )
 
@@ -275,6 +276,7 @@ func targetPath(ctx context.Context, g Graph, t Target) string {
 
 // schedule schedules build plans for args from graph into sched.
 func schedule(ctx context.Context, sched *scheduler, graph Graph, args ...string) (retErr error) {
+	defer trace.Begin(ctx, "build.schedule").End()
 	targets, err := graph.Targets(ctx, args...)
 	started := time.Now()
 	clog.Infof(ctx, "schedule targets: %v [%d]: %v", targets, graph.NumTargets(), err)

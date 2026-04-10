@@ -23,6 +23,7 @@ import (
 	"go.chromium.org/build/siso/build/buildconfig"
 	"go.chromium.org/build/siso/hashfs"
 	"go.chromium.org/build/siso/o11y/clog"
+	"go.chromium.org/build/siso/o11y/trace"
 	"go.chromium.org/build/siso/toolsupport/ninjautil"
 )
 
@@ -97,6 +98,7 @@ func (g gnTarget) String() string {
 // NewStepConfig creates new *StepConfig and stores it in .siso_config
 // and .siso_filegroups.
 func NewStepConfig(ctx context.Context, config *buildconfig.Config, p *build.Path, fname, stateDir string) (*StepConfig, error) {
+	defer trace.Begin(ctx, "ninjabuild.NewStepConfig").End()
 	// Use a temporary HashFS for config initialization and updating filegroups.
 	// Config initialization is mostly CPU-bound (loading Starlark scripts, parsing config),
 	// while HashFS initialization is Disk-bound (scanning directory state, computing digests).
@@ -190,6 +192,7 @@ func updateFilegroups(ctx context.Context, config *buildconfig.Config, buildPath
 
 // Load loads build.ninja file specified by fname and returns parsed states.
 func Load(ctx context.Context, fname string, buildPath *build.Path) (*ninjautil.State, error) {
+	defer trace.Begin(ctx, "ninjabuild.Load").End()
 	started := time.Now()
 	state := ninjautil.NewState()
 	state.AddBinding("workspace_root", buildPath.WorkspaceRoot)
@@ -205,6 +208,7 @@ func Load(ctx context.Context, fname string, buildPath *build.Path) (*ninjautil.
 
 // NewGraph creates new Graph from fname (usually "build.ninja") with stepConfig.
 func NewGraph(ctx context.Context, fname string, nstate *ninjautil.State, config *buildconfig.Config, p *build.Path, hashFS *hashfs.HashFS, stepConfig *StepConfig, depsLog *DepsLog) *Graph {
+	defer trace.Begin(ctx, "ninjabuild.NewGraph").End()
 	graph := &Graph{
 		fname: fname,
 

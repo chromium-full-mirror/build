@@ -35,6 +35,7 @@ import (
 	"go.chromium.org/build/siso/auth/cred"
 	"go.chromium.org/build/siso/o11y/clog"
 	"go.chromium.org/build/siso/o11y/iometrics"
+	"go.chromium.org/build/siso/o11y/trace"
 	"go.chromium.org/build/siso/reapi/digest"
 	"go.chromium.org/build/siso/reapi/retry"
 	"go.chromium.org/build/siso/version"
@@ -356,6 +357,7 @@ func DialOptions(keepAliveParams keepalive.ClientParameters) []grpc.DialOption {
 
 // New creates new remote exec API client.
 func New(ctx context.Context, cred cred.Cred, opt Option) (*Client, error) {
+	defer trace.Begin(ctx, "reapi.New").End()
 	if opt.Address == "" {
 		return nil, errors.New("no reapi address")
 	}
@@ -494,14 +496,20 @@ func NewFromConn(ctx context.Context, opt Option, cred cred.Cred, conn, casConn 
 // Init initializes the client by fetching capabilities and negotiating compression.
 // This requires an active connection to the remote execution backend.
 func (c *Client) Init(ctx context.Context) error {
-	if err := c.cred.Wait(); err != nil {
+	defer trace.Begin(ctx, "reapi.Init").End()
+	err := func() error {
+		defer trace.Begin(ctx, "reapi cred.Wait").End()
+		return c.cred.Wait()
+	}()
+	if err != nil {
 		return fmt.Errorf("failed to initialize credentials: %w", err)
 	}
 
 	cc := rpb.NewCapabilitiesClient(c.conn)
 	var capa *rpb.ServerCapabilities
 	// TODO(b/328332495): grpc should retry by service config?
-	err := retry.Do(ctx, func() error {
+	err = retry.Do(ctx, func() error {
+		defer trace.Begin(ctx, "reapi GetCapabilities").End()
 		var err error
 		capa, err = cc.GetCapabilities(ctx, &rpb.GetCapabilitiesRequest{
 			InstanceName: c.opt.Instance,

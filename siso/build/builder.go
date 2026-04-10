@@ -1271,7 +1271,7 @@ func (b *Builder) updateDeps(ctx context.Context, step *Step) error {
 }
 
 func (b *Builder) finalizeTrace(ctx context.Context, tc *trace.Context) {
-	b.tracer.Record(b.traceEvents(tc))
+	b.tracer.Record(b.traceEvents(ctx, tc))
 	b.traceStats.update(tc)
 	b.traceExporter.Export(ctx, tc)
 	b.tracePprof.Add(ctx, tc)

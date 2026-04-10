@@ -20,6 +20,7 @@ import (
 	"go.chromium.org/build/siso/build/buildconfig"
 	"go.chromium.org/build/siso/hashfs"
 	"go.chromium.org/build/siso/o11y/clog"
+	"go.chromium.org/build/siso/o11y/trace"
 	"go.chromium.org/build/siso/toolsupport/ninjautil"
 	"go.chromium.org/build/siso/ui"
 )
@@ -73,6 +74,7 @@ func initNinjaLogWriter(bopts *build.Options, outDir string) error {
 // Even if this assumption failed e.g. soong doesn't have such build rule,
 // Run will rebuild manifest after reading all build.ninja files.
 func CheckManifest(ctx context.Context, filename string, buildPath *build.Path, config *buildconfig.Config, hashFS *hashfs.HashFS, localDepsLog *DepsLog, bopts *build.Options) error {
+	defer trace.Begin(ctx, "ninjabuild.CheckManifest").End()
 	started := time.Now()
 	defer func() {
 		ui.Default.PrintLines("")
@@ -131,6 +133,7 @@ func CheckManifest(ctx context.Context, filename string, buildPath *build.Path, 
 // Run runs a ninja build.
 // It returns build statistics and an error if the build fails.
 func Run(ctx context.Context, graph *Graph, bopts build.Options, targets []string, nopts RunNinjaOpts) (build.Stats, error) {
+	defer trace.Begin(ctx, "ninjabuild.Run").End()
 	err := graph.globals.hashFS.WaitReady(ctx)
 	if err != nil {
 		return build.Stats{}, err
@@ -181,6 +184,7 @@ func Run(ctx context.Context, graph *Graph, bopts build.Options, targets []strin
 }
 
 func rebuildManifest(ctx context.Context, graph *Graph, bopts build.Options) error {
+	defer trace.Begin(ctx, "ninjabuild.rebuildManifest").End()
 	_, err := graph.Targets(ctx, graph.Filename())
 	if err != nil {
 		clog.Warningf(ctx, "don't rebuild manifest: no target for %s: %v", graph.Filename(), err)

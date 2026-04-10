@@ -33,6 +33,7 @@ import (
 	"go.chromium.org/build/siso/hashfs/osfs"
 	pb "go.chromium.org/build/siso/hashfs/proto"
 	"go.chromium.org/build/siso/o11y/clog"
+	"go.chromium.org/build/siso/o11y/trace"
 	"go.chromium.org/build/siso/reapi/digest"
 	"go.chromium.org/build/siso/runtimex"
 	"go.chromium.org/build/siso/toolsupport/artfsutil"
@@ -317,6 +318,7 @@ func loadFile(ctx context.Context, opts Option) ([]byte, error) {
 
 // Load loads a HashFS's state.
 func Load(ctx context.Context, opts Option) (*pb.State, error) {
+	defer trace.Begin(ctx, "hashfs.Load").End()
 	start := time.Now()
 	b, err := loadFile(ctx, opts)
 	if err != nil {
@@ -839,6 +841,7 @@ func (ies *initialEntryStates) info() string {
 
 // SetState sets states to the HashFS.
 func (hfs *HashFS) SetState(ctx context.Context, state *pb.State) error {
+	defer trace.Begin(ctx, "hashfs.SetState").End()
 	start := time.Now()
 
 	octx := ctx // preserve original ctx
@@ -897,6 +900,8 @@ func (hfs *HashFS) SetState(ctx context.Context, state *pb.State) error {
 	// store in background.
 	go func() {
 		ctx := octx // use ctx without logw.
+		ctx = trace.NewThread(ctx, "hashfs.SetState.store")
+		defer trace.Begin(ctx, "hashfs.SetState.store").End()
 		defer close(hfs.setStateCh)
 		// name is sorted in state.Entries.
 

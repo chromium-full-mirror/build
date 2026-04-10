@@ -128,6 +128,8 @@ type contextKeyType int
 const (
 	contextKey contextKeyType = iota
 	spanKey
+	tracerKey
+	tracerTidKey
 )
 
 // NewContext returns new context with a trace context.

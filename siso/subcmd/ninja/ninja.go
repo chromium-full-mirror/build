@@ -315,6 +315,7 @@ func (c *Command) Run(ctx context.Context) (stats build.Stats, finalErr error) {
 		return stats, err
 	}
 	defer tracer.Close(ctx)
+	ctx = trace.TracerContext(ctx, tracer)
 
 	if c.enableCloudLogging {
 		spin := ui.Default.NewSpinner()
@@ -413,6 +414,7 @@ func (c *Command) Run(ctx context.Context) (stats build.Stats, finalErr error) {
 	var eg, reeg errgroup.Group
 	var localDepsLog *ninjabuild.DepsLog
 	eg.Go(func() error {
+		ctx := trace.NewThread(ctx, "initDepsLog")
 		depsLog, err := initDepsLog(ctx, c.stateDir, c.depsLogFile)
 		if err != nil {
 			return err
@@ -430,6 +432,7 @@ func (c *Command) Run(ctx context.Context) (stats build.Stats, finalErr error) {
 			return stats, err
 		}
 		reeg.Go(func() error {
+			ctx := trace.NewThread(ctx, "reapi init")
 			err := reapiClient.Init(ctx)
 			if err != nil {
 				return err
@@ -577,6 +580,7 @@ func (c *Command) Run(ctx context.Context) (stats build.Stats, finalErr error) {
 
 // postRun prints build result messages and returns exit status based on the build stats and the error from Run().
 func (c *Command) postRun(ctx context.Context, stats build.Stats, runErr error) subcommands.ExitStatus {
+	defer trace.Begin(ctx, "postRun").End()
 	d := time.Since(c.started)
 	if c.writeReclientMetricsLogs {
 		if err := c.writeReclientMetrics(d, stats); err != nil {
@@ -712,6 +716,7 @@ func (c *Command) saveFailedTargetsAndCommand(ctx context.Context, err error, ta
 }
 
 func (c *Command) setupHashFS(ctx context.Context, buildPath *build.Path, ds build.DataSource) (*hashfs.HashFS, func([]string, error), error) {
+	defer trace.Begin(ctx, "setupHashFS").End()
 	c.fsopt.DataSource = ds
 	var err error
 	c.fsopt.OutputLocal, err = initOutputLocal(c.outputLocalStrategy)

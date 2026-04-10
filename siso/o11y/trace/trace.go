@@ -90,7 +90,7 @@ func (tm *threadMap) get(name string) int {
 	if ok {
 		return tid
 	}
-	tid = len(tm.m) + sisoTid
+	tid = len(tm.m) + sisoTid + 1
 	tm.m[name] = tid
 	return tid
 }
@@ -226,7 +226,7 @@ func (te *Tracer) Process(ctx context.Context, name string) int64 {
 }
 
 // Thread returns tid for thread name in pid.
-func (te *Tracer) Thread(pid int64, name string) int {
+func (te *Tracer) Thread(ctx context.Context, pid int64, name string) int {
 	if te == nil {
 		return sisoTid
 	}
@@ -237,7 +237,19 @@ func (te *Tracer) Thread(pid int64, name string) int {
 		m = te.threads[i]
 	}
 	te.mu.Unlock()
-	return m.get(name)
+	tid := m.get(name)
+	if tid != sisoTid {
+		te.write(ctx, Event{
+			Name: "thread_name",
+			Ph:   "M",
+			Pid:  pid,
+			Tid:  int64(tid),
+			Args: map[string]any{
+				"name": name,
+			},
+		})
+	}
+	return tid
 }
 
 const (
@@ -249,7 +261,7 @@ const (
 // see https://docs.google.com/document/d/1CvAClvFfyA5R-PhYUmn5OOQtYMH4h6I0nSsKchNAySU/preview
 type Event struct {
 	// The name of the event, as displayed in trace viewer.
-	Name string `json:"name"`
+	Name string `json:"name,omitempty"`
 
 	// The event categories.
 	// This is comma separated list of categories for the event.
@@ -435,6 +447,90 @@ func (te *Tracer) write(ctx context.Context, obj Event) {
 	}
 	te.num++
 	te.w.Write(buf)
+}
+
+// TracerContext sets tracer in ctx.
+// Need for NewThread, Begin.
+func TracerContext(ctx context.Context, te *Tracer) context.Context {
+	return context.WithValue(ctx, tracerKey, te)
+}
+
+// NewThread register new thread name in tracer's main pid.
+func NewThread(ctx context.Context, name string) context.Context {
+	te, ok := ctx.Value(tracerKey).(*Tracer)
+	if !ok {
+		return ctx
+	}
+	tid := te.Thread(ctx, te.mainPid, name)
+	return context.WithValue(ctx, tracerTidKey, tid)
+}
+
+// Region is a region of code whose execution time is traced.
+type Region struct {
+	ctx context.Context
+	te  *Tracer
+	Pid int64
+	Tid int
+}
+
+// Begin starts new region with name.
+func Begin(ctx context.Context, name string) *Region {
+	te, ok := ctx.Value(tracerKey).(*Tracer)
+	if !ok {
+		return nil
+	}
+	return te.Begin(ctx, name, nil)
+}
+
+// Begin starts new region with name.
+func (te *Tracer) Begin(ctx context.Context, name string, region *Region) *Region {
+	if region == nil {
+		region = &Region{}
+	}
+	region.ctx = ctx
+	region.te = te
+	if region.Pid == 0 {
+		region.Pid = te.mainPid
+	}
+	if region.Tid == 0 {
+		region.Tid = sisoTid
+		if v, ok := ctx.Value(tracerTidKey).(int); ok {
+			region.Tid = v
+		} else if span := CurSpan(ctx); span != nil {
+			// semaphore.WaitAcquire sets tid in span.
+			span.mu.Lock()
+			for _, a := range span.attrs {
+				if a.key == "tid" {
+					if v, ok := a.value.(int); ok {
+						region.Tid = v
+						break
+					}
+				}
+			}
+			span.mu.Unlock()
+		}
+	}
+	te.write(ctx, Event{
+		Name: name,
+		Ph:   "B",
+		T:    time.Since(startTime).Microseconds(),
+		Pid:  region.Pid,
+		Tid:  int64(region.Tid),
+	})
+	return region
+}
+
+// End finishes the region.
+func (r *Region) End() {
+	if r == nil {
+		return
+	}
+	r.te.write(r.ctx, Event{
+		Ph:  "E",
+		T:   time.Since(startTime).Microseconds(),
+		Pid: r.Pid,
+		Tid: int64(r.Tid),
+	})
 }
 
 // Record records events.
