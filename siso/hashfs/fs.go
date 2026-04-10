@@ -998,6 +998,61 @@ func (hfs *HashFS) Availables(ctx context.Context, root string, inputs []string)
 	return availables
 }
 
+// escapesRoot reports whether path lies outside the workspace rooted
+// at root.
+func escapesRoot(root, path string) bool {
+	return !strings.HasPrefix(path, root+"/")
+}
+
+// resolveEscapingSymlink follows a symlink chain that escapes root,
+// resolving through external targets (e.g. ../.cipd/pkgs/..), and
+// returns me updated with the final resolved data. The caller must
+// verify that e is a symlink whose first hop escapes root.
+func (hfs *HashFS) resolveEscapingSymlink(ctx context.Context, root, fname string, e *entry, me merkletree.Entry) (merkletree.Entry, error) {
+	name := filepath.Join(root, fname)
+	elink := e
+	for range maxSymlinks {
+		tname := makeFullpath(filepath.Dir(name), elink.target)
+		if log.V(1) {
+			clog.Infof(ctx, "symlink %s -> %s", name, tname)
+		}
+		if !escapesRoot(root, tname) {
+			break
+		}
+		// symlink to outside of workspace (e.g. ../.cipd/pkgs/..)
+		name = tname
+		var ok bool
+		elink, _, _, ok = hfs.directory.lookup(ctx, name)
+		if ok {
+			if log.V(2) {
+				clog.Infof(ctx, "tree cache hit %s", name)
+			}
+		} else {
+			elink = newLocalEntry()
+			elink.init(ctx, name, hfs.executables, hfs.OS)
+			if log.V(1) {
+				clog.Infof(ctx, "tree new entry %s", name)
+			}
+			var err error
+			elink, err = hfs.directory.store(ctx, name, elink)
+			if err != nil {
+				return merkletree.Entry{}, err
+			}
+			hfs.digester.lazyCompute(ctx, name, elink)
+		}
+		if elink.err != nil || !elink.isSymlink() {
+			break
+		}
+	}
+	clog.Infof(ctx, "resolve symlink %s to %s", fname, name)
+	hfs.digester.compute(ctx, name, elink)
+	d := elink.digest()
+	me.Data = digest.NewData(elink.src, d)
+	me.IsExecutable = elink.mode&0111 != 0
+	me.Target = elink.target
+	return me, nil
+}
+
 // Entries gets merkletree entries for inputs at root.
 // it won't return entries symlink escaped from root.
 // root can be an empty string "" when inputs are absolute paths.
@@ -1070,62 +1125,24 @@ func (hfs *HashFS) Entries(ctx context.Context, root string, inputs []string) ([
 			}
 			continue
 		}
-		data := digest.NewData(e.src, d)
-		isExecutable := e.mode&0111 != 0
-		target := e.target
-		if target != "" {
-			var tname string
+		me := merkletree.Entry{
+			Name:         fname,
+			Data:         digest.NewData(e.src, d),
+			IsExecutable: e.mode&0111 != 0,
+			Target:       e.target,
+		}
+		if e.isSymlink() {
 			name := filepath.Join(root, fname)
-			elink := e
-			for range maxSymlinks {
-				tname = makeFullpath(filepath.Dir(name), elink.target)
-				if log.V(1) {
-					clog.Infof(ctx, "symlink %s -> %s", name, tname)
+			tname := makeFullpath(filepath.Dir(name), e.target)
+			if escapesRoot(root, tname) {
+				var err error
+				me, err = hfs.resolveEscapingSymlink(ctx, root, fname, e, me)
+				if err != nil {
+					return nil, err
 				}
-				if strings.HasPrefix(tname, root+"/") {
-					break
-				}
-				// symlink to outside of workspace (e.g. ../.cipd/pkgs/..)
-				name = tname
-				tname = ""
-				var ok bool
-				elink, _, _, ok = hfs.directory.lookup(ctx, name)
-				if ok {
-					if log.V(2) {
-						clog.Infof(ctx, "tree cache hit %s", name)
-					}
-				} else {
-					elink = newLocalEntry()
-					elink.init(ctx, name, hfs.executables, hfs.OS)
-					if log.V(1) {
-						clog.Infof(ctx, "tree new entry %s", name)
-					}
-					var err error
-					elink, err = hfs.directory.store(ctx, name, elink)
-					if err != nil {
-						return nil, err
-					}
-					hfs.digester.lazyCompute(ctx, name, elink)
-				}
-				if elink.err != nil || !elink.isSymlink() {
-					break
-				}
-			}
-			if e != elink {
-				clog.Infof(ctx, "resolve symlink %s to %s", fname, name)
-				target = elink.target
-				hfs.digester.compute(ctx, name, elink)
-				d := elink.digest()
-				data = digest.NewData(elink.src, d)
-				isExecutable = elink.mode&0111 != 0
 			}
 		}
-		entries = append(entries, merkletree.Entry{
-			Name:         fname,
-			Data:         data,
-			IsExecutable: isExecutable,
-			Target:       target,
-		})
+		entries = append(entries, me)
 	}
 	return entries, nil
 }
