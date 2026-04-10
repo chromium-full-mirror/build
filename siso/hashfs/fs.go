@@ -388,6 +388,38 @@ func (hfs *HashFS) dirStoreAndNotify(ctx context.Context, fullname string, e *en
 	return nil
 }
 
+// getOrCreateEntry looks up fname in the directory tree, creating and
+// storing a new local entry from disk if not found.
+// Returns the entry and the resolved fname (symlinks in intermediate
+// path components followed).
+func (hfs *HashFS) getOrCreateEntry(ctx context.Context, fname string) (*entry, string, error) {
+	e, fname, _, ok := hfs.directory.lookup(ctx, fname)
+	if ok {
+		e.mu.Lock()
+		err := e.err
+		e.mu.Unlock()
+		if err != nil {
+			return nil, fname, err
+		}
+		return e, fname, nil
+	}
+	e = newLocalEntry()
+	e.init(ctx, fname, hfs.executables, hfs.OS)
+	if errors.Is(e.err, context.Canceled) {
+		return nil, fname, e.err
+	}
+	e, err := hfs.directory.store(ctx, fname, e)
+	if err != nil {
+		clog.Warningf(ctx, "failed to store %s %s: %v", fname, e, err)
+		return nil, fname, err
+	}
+	if e.err != nil {
+		return nil, fname, e.err
+	}
+	clog.Infof(ctx, "stat new entry %s %s", fname, e)
+	return e, fname, nil
+}
+
 // Stat returns a FileInfo at root/fname.
 func (hfs *HashFS) Stat(ctx context.Context, root, fname string) (FileInfo, error) {
 	return hfs.stat(ctx, root, fname, true)
@@ -496,24 +528,7 @@ func (hfs *HashFS) ReadDir(ctx context.Context, root, name string) (dents []DirE
 		}()
 	}
 	dname := makeFullpath(root, name)
-	e, dname, _, ok := hfs.directory.lookup(ctx, dname)
-	if !ok {
-		e = newLocalEntry()
-		e.init(ctx, dname, hfs.executables, hfs.OS)
-		if errors.Is(e.err, context.Canceled) {
-			return nil, e.err
-		}
-		var err error
-		e, err = hfs.directory.store(ctx, dname, e)
-		if err != nil {
-			clog.Warningf(ctx, "failed to store %s %s: %v", dname, e, err)
-			return nil, err
-		}
-		clog.Infof(ctx, "stat new dir entry %s %s", dname, e)
-	}
-	e.mu.Lock()
-	err = e.err
-	e.mu.Unlock()
+	e, dname, err := hfs.getOrCreateEntry(ctx, dname)
 	if err != nil {
 		return nil, fmt.Errorf("read dir %s: %w", dname, err)
 	}
@@ -561,24 +576,7 @@ func (hfs *HashFS) ReadFile(ctx context.Context, root, fname string) ([]byte, er
 	}
 	fname = makeFullpath(root, fname)
 	span.SetAttr("fname", fname)
-	e, fname, _, ok := hfs.directory.lookup(ctx, fname)
-	if !ok {
-		e = newLocalEntry()
-		e.init(ctx, fname, hfs.executables, hfs.OS)
-		if errors.Is(e.err, context.Canceled) {
-			return nil, e.err
-		}
-		var err error
-		e, err = hfs.directory.store(ctx, fname, e)
-		if err != nil {
-			clog.Warningf(ctx, "failed to store %s %s: %v", fname, e, err)
-			return nil, err
-		}
-		clog.Infof(ctx, "stat new entry %s %s", fname, e)
-	}
-	e.mu.Lock()
-	err := e.err
-	e.mu.Unlock()
+	e, fname, err := hfs.getOrCreateEntry(ctx, fname)
 	if err != nil {
 		return nil, fmt.Errorf("read file %s: %w", fname, err)
 	}
@@ -708,27 +706,7 @@ func (hfs *HashFS) Copy(ctx context.Context, root, src, dst string, mtime time.T
 	hfs.clean.Store(false)
 	srcfname := makeFullpath(root, src)
 	dstfname := makeFullpath(root, dst)
-	e, _, _, ok := hfs.directory.lookup(ctx, srcfname)
-	if !ok {
-		e = newLocalEntry()
-		if log.V(9) {
-			clog.Infof(ctx, "new entry for copy src %s", srcfname)
-		}
-		e.init(ctx, srcfname, hfs.executables, hfs.OS)
-		if errors.Is(e.err, context.Canceled) {
-			return e.err
-		}
-		var err error
-		e, err := hfs.directory.store(ctx, srcfname, e)
-		if err != nil {
-			clog.Warningf(ctx, "failed to store copy src %s: %v", srcfname, err)
-			return err
-		}
-		clog.Infof(ctx, "copy src new entry %s %s", srcfname, e)
-	}
-	e.mu.Lock()
-	err := e.err
-	e.mu.Unlock()
+	e, _, err := hfs.getOrCreateEntry(ctx, srcfname)
 	if err != nil {
 		return err
 	}
