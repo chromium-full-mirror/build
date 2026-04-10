@@ -160,71 +160,69 @@ func (e *entry) init(ctx context.Context, fname string, executables map[string]b
 }
 
 func (e *entry) compute(ctx context.Context, fname string) error {
-	needCompute, doCompute, err := func() (bool, bool, error) {
-		e.mu.Lock()
-		defer e.mu.Unlock()
-		if e.err != nil {
-			return false, false, e.err
-		}
-		if !e.d.IsZero() {
-			return false, false, nil
-		}
-		if e.src == nil {
-			return false, false, nil
-		}
-		doCompute := e.dch == nil
-		if doCompute {
-			e.dch = make(chan struct{})
-		}
-		return true, doCompute, nil
-	}()
-	if !needCompute {
+	// Fast path: already done, errored, or nothing to compute.
+	e.mu.Lock()
+	if e.err != nil {
+		err := e.err
+		e.mu.Unlock()
 		return err
 	}
-	if doCompute {
-		type res struct {
-			data digest.Data
-			err  error
-		}
-		ch := make(chan res, 1)
-		go func() {
-			data, err := localDigest(ctx, e.src, fname)
-			ch <- res{data: data, err: err}
-		}()
-		select {
-		case <-ctx.Done():
-			err := context.Cause(ctx)
-			e.mu.Lock()
-			close(e.dch)
-			e.err = err
-			e.entryErrLogged.Store(false)
-			e.mu.Unlock()
-			return err
-		case r := <-ch:
-			if r.err != nil {
-				e.mu.Lock()
-				close(e.dch)
-				e.err = r.err
-				e.entryErrLogged.Store(false)
-				e.mu.Unlock()
-				return r.err
-			}
-			e.mu.Lock()
-			e.d = r.data.Digest()
-			close(e.dch)
-			e.entryErrLogged.Store(false)
-			e.mu.Unlock()
-		}
+	if !e.d.IsZero() || e.src == nil {
+		e.mu.Unlock()
 		return nil
 	}
+	if e.dch != nil {
+		// Another goroutine is already computing; wait for it.
+		dch := e.dch
+		e.mu.Unlock()
+		select {
+		case <-ctx.Done():
+			return context.Cause(ctx)
+		case <-dch:
+		}
+		e.mu.Lock()
+		defer e.mu.Unlock()
+		return e.err
+	}
+	// We're the first caller: claim the computation.
+	e.dch = make(chan struct{})
+	e.mu.Unlock()
+
+	// Run in a goroutine so we can bail on context cancellation
+	// without blocking on disk I/O.
+	type result struct {
+		data digest.Data
+		err  error
+	}
+	ch := make(chan result, 1)
+	go func() {
+		data, err := localDigest(ctx, e.src, fname)
+		ch <- result{data, err}
+	}()
+
+	var err error
+	var d digest.Digest
 	select {
 	case <-ctx.Done():
-		return context.Cause(ctx)
-	case <-e.dch:
+		err = context.Cause(ctx)
+	case r := <-ch:
+		err = r.err
+		d = r.data.Digest()
 	}
+
+	// Only write e.err on the error path. ReadDir's Range callback
+	// reads ee.err without holding e.mu, so an unconditional write
+	// (even of nil) would race with that read.
 	e.mu.Lock()
-	defer e.mu.Unlock()
-	return e.err
+	if err != nil {
+		e.err = err
+	} else {
+		e.d = d
+	}
+	e.entryErrLogged.Store(false)
+	close(e.dch)
+	e.mu.Unlock()
+	return err
 }
 
 func (e *entry) digest() digest.Digest {
