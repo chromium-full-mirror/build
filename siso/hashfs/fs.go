@@ -394,15 +394,18 @@ func (hfs *HashFS) dirLookup(ctx context.Context, root, fname string) (*entry, s
 	return nil, fname, nil, false
 }
 
-func (hfs *HashFS) dirStoreAndNotify(ctx context.Context, fullname string, e *entry) error {
-	ee, err := hfs.directory.store(ctx, fullname, e)
+// commitEntry persists a mutation: stores the entry in the directory
+// tree, triggers digest computation, notifies observers, and journals.
+func (hfs *HashFS) commitEntry(ctx context.Context, fname string, e *entry) error {
+	ee, err := hfs.directory.store(ctx, fname, e)
 	if err != nil {
 		return err
 	}
-	hfs.digester.lazyCompute(ctx, fullname, ee)
+	hfs.digester.lazyCompute(ctx, fname, ee)
 	for _, f := range hfs.notifies {
-		f(ctx, &FileInfo{fname: fullname, e: ee})
+		f(ctx, &FileInfo{fname: fname, e: ee})
 	}
+	hfs.journalEntry(ctx, fname, ee)
 	return nil
 }
 
@@ -678,13 +681,9 @@ func (hfs *HashFS) WriteFile(ctx context.Context, root, fname string, b []byte, 
 		updatedTime: time.Now(),
 		isChanged:   true,
 	}
-	err := hfs.dirStoreAndNotify(ctx, fname, e)
+	err := hfs.commitEntry(ctx, fname, e)
 	clog.Infof(ctx, "writefile %s x:%t mtime:%s: %v", fname, isExecutable, mtime, err)
-	if err != nil {
-		return err
-	}
-	hfs.journalEntry(ctx, fname, e)
-	return nil
+	return err
 }
 
 // Symlink creates a symlink to target at root/linkpath with mtime and cmdhash, edgehash.
@@ -706,13 +705,9 @@ func (hfs *HashFS) Symlink(ctx context.Context, root, target, linkpath string, m
 		updatedTime: time.Now(),
 		isChanged:   true,
 	}
-	err := hfs.dirStoreAndNotify(ctx, linkfname, e)
+	err := hfs.commitEntry(ctx, linkfname, e)
 	clog.Infof(ctx, "symlink @%s %s -> %s: %v", root, linkpath, target, err)
-	if err != nil {
-		return err
-	}
-	hfs.journalEntry(ctx, linkfname, e)
-	return nil
+	return err
 }
 
 // Copy copies a file from root/src to root/dst with mtime and cmdhash, edgehash.
@@ -759,13 +754,9 @@ func (hfs *HashFS) Copy(ctx context.Context, root, src, dst string, mtime time.T
 		updatedTime: time.Now(),
 		isChanged:   true,
 	}
-	err = hfs.dirStoreAndNotify(ctx, dstfname, newEnt)
-	if err != nil {
-		return err
-	}
-	hfs.journalEntry(ctx, dstfname, newEnt)
-	clog.Infof(ctx, "copy %s to %s", srcfname, dstfname)
-	return nil
+	err = hfs.commitEntry(ctx, dstfname, newEnt)
+	clog.Infof(ctx, "copy %s to %s: %v", srcfname, dstfname, err)
+	return err
 }
 
 // Mkdir makes a directory at root/dirname.
@@ -808,7 +799,13 @@ func (hfs *HashFS) Mkdir(ctx context.Context, root, dirname string, cmdhash, edg
 		updatedTime: time.Now(),
 		isChanged:   true,
 	}
-	err = hfs.dirStoreAndNotify(ctx, dirname, e)
+	ee, err := hfs.directory.store(ctx, dirname, e)
+	if err == nil {
+		hfs.digester.lazyCompute(ctx, dirname, ee)
+		for _, f := range hfs.notifies {
+			f(ctx, &FileInfo{fname: dirname, e: ee})
+		}
+	}
 	if serr, ok := errors.AsType[storeRaceError](err); ok {
 		curEntry, ok := serr.curEntry.(*entry)
 		if ok {
@@ -1263,11 +1260,9 @@ func (hfs *HashFS) Update(ctx context.Context, workspaceRoot string, entries []U
 			}
 			continue // warning already logged
 		}
-		err = hfs.dirStoreAndNotify(ctx, fname, e)
-		if err != nil {
+		if err = hfs.commitEntry(ctx, fname, e); err != nil {
 			return err
 		}
-		hfs.journalEntry(ctx, fname, e)
 		if err := hfs.updateMtimeIfNeeded(ctx, fname, e, ent); err != nil {
 			return err
 		}
