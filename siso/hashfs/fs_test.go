@@ -1756,6 +1756,90 @@ func TestFlusTohHardlink(t *testing.T) {
 	}
 }
 
+// TestFlushHardlinkSameSource tests that flushing a file that shares an
+// inode with another (via hardlink) whose entry source points to itself
+// (e.g. Copy to self with new mtime) does not modify the mtime of the
+// other file sharing the inode.
+func TestFlushHardlinkSameSource(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("no hardlink on windows")
+		return
+	}
+	ctx := t.Context()
+	dir := t.TempDir()
+	dir, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	setupFiles(t, dir, map[string]string{
+		"subdir/original": "some data",
+	})
+	// Create a hardlink so both paths share the same inode.
+	err = os.Link(
+		filepath.Join(dir, "subdir/original"),
+		filepath.Join(dir, "subdir/hardlink"),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	hashFS, err := hashfs.New(ctx, hashfs.Option{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer hashFS.Close(ctx)
+
+	// Stat both files into hashfs. The entry for "subdir/hardlink"
+	// gets src = FileSource("subdir/hardlink"), i.e. source == target.
+	_, err = hashFS.Stat(ctx, dir, "subdir/original")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = hashFS.Stat(ctx, dir, "subdir/hardlink")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	origFi, err := os.Stat(filepath.Join(dir, "subdir/original"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	origMtime := origFi.ModTime()
+
+	// Copy hardlink to itself with a new mtime.
+	// This keeps the entry's source pointing at "subdir/hardlink"
+	// but changes the entry's mtime.
+	time.Sleep(10 * time.Millisecond)
+	now := time.Now()
+	err = hashFS.Copy(ctx, dir, "subdir/hardlink", "subdir/hardlink", now, []byte("cmdhash"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = hashFS.Flush(ctx, dir, []string{"subdir/hardlink"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// The hardlink should have been broken and given the new mtime.
+	hlFi, err := os.Stat(filepath.Join(dir, "subdir/hardlink"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !hlFi.ModTime().Equal(now) {
+		t.Errorf("hardlink mtime = %v, want %v", hlFi.ModTime(), now)
+	}
+
+	// The original file's mtime must NOT have changed.
+	oFi, err := os.Stat(filepath.Join(dir, "subdir/original"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !oFi.ModTime().Equal(origMtime) {
+		t.Errorf("original mtime changed: %v -> %v (hardlink not broken)", origMtime, oFi.ModTime())
+	}
+}
+
 // to test up cog for xattr test, see http://shortn/_m41XtnJUGu
 var (
 	xattrTestDir  = flag.String("xattr_test_dir", "", "workspace dir for TestXattr")

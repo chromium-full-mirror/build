@@ -356,10 +356,9 @@ func (e *entry) flush(ctx context.Context, fname string, osfs *osfs.OSFS, timeou
 	e.mu.Lock()
 	err := e.err
 	e.mu.Unlock()
-	if errors.Is(err, fs.ErrNotExist) {
-		return e.flushRemove(ctx, fname, osfs)
-	}
 	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		return e.flushRemove(ctx, fname, osfs)
 	case e.directory != nil:
 		return e.flushDir(ctx, fname, osfs)
 	case e.isSymlink():
@@ -435,13 +434,10 @@ func (e *entry) flushSymlink(ctx context.Context, fname string, osfs *osfs.OSFS)
 // handling hardlinks, clonefile optimization, and mtime updates.
 func (e *entry) flushRegularFile(ctx context.Context, fname string, osfs *osfs.OSFS, timeout time.Duration) error {
 	started := time.Now()
-	d := e.digest()
 	mtime := e.getMtime()
 
-	fi, err := osfs.Lstat(ctx, fname)
-	// need to remove the file after it reads from data source,
-	// since data source will read from the local disk.
 	var removeReason string
+	fi, err := osfs.Lstat(ctx, fname)
 	if err == nil {
 		if fi.IsDir() {
 			err := &fs.PathError{
@@ -452,134 +448,176 @@ func (e *entry) flushRegularFile(ctx context.Context, fname string, osfs *osfs.O
 			clog.Warningf(ctx, "flush %s: %v", fname, err)
 			return err
 		}
-		if fi.Size() == d.SizeBytes && fi.ModTime().Equal(mtime) {
+		if e.matchesFileInfo(fi) {
 			// TODO: check hash, mode?
 			clog.Infof(ctx, "flush %s: already exist", fname)
 			return nil
 		}
-		if isHardlink(fi) {
-			removeReason = "hardlink"
-		} else if !fi.Mode().IsRegular() {
-			removeReason = fmt.Sprintf("non-regular file %s", fi.Mode())
-		} else if fi.Size() == d.SizeBytes {
-			// check existing file and hashfs entry are identical
-			// or not by checking digest.
-			// if size differs, no need to check and force
-			// to write hashfs entry to the disk.
-			var fileDigest digest.Digest
-			src := osfs.FileSource(fname, fi.Size())
-			ld, err := localDigest(ctx, src, fname)
-			if err == nil {
-				fileDigest = ld.Digest()
-				if fileDigest == d {
-					if log.V(1) {
-						clog.Infof(ctx, "flush %s: already exist - hash match", fname)
-					}
-					if !fi.ModTime().Equal(mtime) {
-						err = osfs.Chtimes(ctx, fname, time.Time{}, mtime)
-					}
-					return err
-				}
+		removeReason = flushRemoveReason(fi)
+		if removeReason == "" {
+			if skip, err := e.flushSkipMatchingDigest(ctx, fname, fi, osfs); skip {
+				return err
 			}
-			clog.Warningf(ctx, "flush %s: exists but mismatch size:%d!=%d mtime:%s!=%s d:%v!=%v", fname, fi.Size(), d.SizeBytes, fi.ModTime(), mtime, fileDigest, d)
-		}
-		if removeReason == "" && fi.Mode()&0200 == 0 {
-			// need to be writable. otherwise os.WriteFile fails with permission denied.
-			err = osfs.Chmod(ctx, fname, fi.Mode()|0200)
-			clog.Warningf(ctx, "flush %s: not writable? %s: %v", fname, fi.Mode(), err)
+			if !isWritable(fi) {
+				// need to be writable. otherwise os.WriteFile fails with permission denied.
+				err = osfs.Chmod(ctx, fname, fi.Mode()|0200)
+				clog.Warningf(ctx, "flush %s: not writable? %s: %v", fname, fi.Mode(), err)
+			}
 		}
 	}
+
 	err = osfs.MkdirAll(ctx, filepath.Dir(fname), 0755)
 	if err != nil {
 		clog.Warningf(ctx, "flush %s: mkdir: %v", fname, err)
 		return fmt.Errorf("failed to create directory for %s: %w", fname, err)
 	}
-	if d.SizeBytes == 0 {
-		if removeReason != "" {
-			err = osfs.Remove(ctx, fname)
-			clog.Infof(ctx, "flush %s: remove %s: %v", fname, removeReason, err)
-		}
-		clog.Infof(ctx, "flush %s: empty file", fname)
-		err := osfs.WriteFile(ctx, fname, nil, 0644)
-		if err != nil {
-			return err
-		}
-		err = osfs.Chtimes(ctx, fname, time.Time{}, mtime)
-		if err != nil {
-			return err
-		}
-		return nil
-	}
-	buf := e.buf
+
+	d := e.digest()
 	removeBeforeWrite := func() {
 		if removeReason != "" {
-			err = osfs.Remove(ctx, fname)
-			clog.Infof(ctx, "flush %s: remove %s: %v", fname, removeReason, err)
+			if err := osfs.Remove(ctx, fname); err != nil {
+				clog.Warningf(ctx, "flush %s: remove %s: %v", fname, removeReason, err)
+			} else {
+				clog.Infof(ctx, "flush %s: remove %s", fname, removeReason)
+			}
 		}
 	}
-	if len(buf) == 0 {
-		if e.d.IsZero() {
-			return fmt.Errorf("no data: retrieve %s: ", fname)
-		}
-		err = func() error {
-			// check if hashfs entry is copy of local file,
-			// i.e. created by hashfs Copy method.
-			// if hashfs entry is set by remote action,
-			// it would not be osfs.FileSource
-			lsrc, ok := osfs.AsFileSource(e.src)
-			type clonefiler interface {
-				Clonefile(context.Context, string, string) error
-			}
-			var osfsany any = osfs
-			osfsc, cok := osfsany.(clonefiler)
-			if ok && cok {
-				if lsrc.Fname == fname {
-					err = osfs.Chmod(ctx, fname, e.mode)
-					return err
-				}
-				removeBeforeWrite()
-				clog.Infof(ctx, "flush %s %s clone from source %s", fname, d, lsrc.Fname)
-				err := osfsc.Clonefile(ctx, lsrc.Fname, fname)
-				if err == nil {
-					err = osfs.Chmod(ctx, fname, e.mode)
-					return err
-				}
-				// clonefile err, fallback to normal copy
-				clog.Warningf(ctx, "clonefile failed: %v", err)
-			}
-			var srcname string
-			if ok {
-				srcname = lsrc.Fname
-			}
-			// write into tmp and rename after remove.
-			// e.src may be the same as fname, but
-			// we may need to remove fname for some reason
-			// (hardlink etc).
-			tmpname := filepath.Join(filepath.Dir(fname), "."+filepath.Base(fname)+".tmp")
-			ctx, cancel := digest.ContextWithTimeout(ctx, e.d)
-			defer cancel()
-			err := retry.Do(ctx, func() error {
-				return osfs.WriteDigestData(ctx, tmpname, e.src, e.mode, timeout)
-			})
-			if err != nil {
-				return fmt.Errorf("flush tmp %s size=%d %s: %w", tmpname, d.SizeBytes, time.Since(started), err)
-			}
-			removeBeforeWrite()
-			clog.Infof(ctx, "flush %s %s from source %s", fname, d, srcname)
-			err = osfs.Rename(ctx, tmpname, fname)
-			return err
-		}()
-	} else {
+	switch {
+	case d.SizeBytes == 0:
+		removeBeforeWrite()
+		clog.Infof(ctx, "flush %s: empty file", fname)
+		err = osfs.WriteFile(ctx, fname, nil, 0644)
+	case len(e.buf) > 0:
 		removeBeforeWrite()
 		clog.Infof(ctx, "flush %s from embedded buf", fname)
-		err = osfs.WriteFile(ctx, fname, buf, e.mode)
+		err = osfs.WriteFile(ctx, fname, e.buf, e.mode)
+	case d.IsZero():
+		return fmt.Errorf("no data: retrieve %s: ", fname)
+	case removeReason == "" && e.isSourceFile(osfs, fname):
+		// Source is the target and the file is a regular file (not a hard
+		// link), so just fix permissions.
+		err = osfs.Chmod(ctx, fname, e.mode)
+	default:
+		err = e.flushWrite(ctx, fname, osfs, started, timeout, removeReason)
 	}
 	if err != nil {
 		return err
 	}
-	err = osfs.Chtimes(ctx, fname, time.Time{}, mtime)
-	if err != nil {
-		return err
+	return osfs.Chtimes(ctx, fname, time.Time{}, mtime)
+}
+
+// isWritable reports whether the file has owner write permission.
+func isWritable(fi os.FileInfo) bool {
+	return fi.Mode()&0200 != 0
+}
+
+// matchesFileInfo reports whether fi has the same size and mtime as the entry.
+func (e *entry) matchesFileInfo(fi os.FileInfo) bool {
+	return fi.Size() == e.digest().SizeBytes && fi.ModTime().Equal(e.getMtime())
+}
+
+// flushSkipMatchingDigest checks whether the file on disk already has the
+// right content (same size, matching digest). Returns (true, err) if the
+// flush can be skipped (with an optional chtimes fix), (false, nil) otherwise.
+// Caller must ensure fi is a regular file and not a hard link.
+func (e *entry) flushSkipMatchingDigest(ctx context.Context, fname string, fi os.FileInfo, osfs *osfs.OSFS) (bool, error) {
+	d := e.digest()
+	if fi.Size() != d.SizeBytes {
+		return false, nil
 	}
-	return nil
+	src := osfs.FileSource(fname, fi.Size())
+	ld, err := localDigest(ctx, src, fname)
+	if err != nil {
+		clog.Warningf(ctx, "flush %s: digest error: %v", fname, err)
+		return false, nil
+	}
+	fileDigest := ld.Digest()
+	if fileDigest != d {
+		mtime := e.getMtime()
+		clog.Warningf(ctx, "flush %s: exists but mismatch size:%d!=%d mtime:%s!=%s d:%v!=%v", fname, fi.Size(), d.SizeBytes, fi.ModTime(), mtime, fileDigest, d)
+		return false, nil
+	}
+	if log.V(1) {
+		clog.Infof(ctx, "flush %s: already exist - hash match", fname)
+	}
+	mtime := e.getMtime()
+	if !fi.ModTime().Equal(mtime) {
+		err = osfs.Chtimes(ctx, fname, time.Time{}, mtime)
+	}
+	return true, err
+}
+
+// flushRemoveReason returns why the existing file must be removed before
+// writing, or "" if no removal is needed.
+func flushRemoveReason(fi os.FileInfo) string {
+	switch {
+	case isHardlink(fi):
+		return "hardlink"
+	case !fi.Mode().IsRegular():
+		return fmt.Sprintf("non-regular file %s", fi.Mode())
+	default:
+		return ""
+	}
+}
+
+// isSourceFile reports whether e.src is a local file at fname,
+// meaning the target already has the right content.
+func (e *entry) isSourceFile(osfs *osfs.OSFS, fname string) bool {
+	lsrc, ok := osfs.AsFileSource(e.src)
+	return ok && lsrc.Fname == fname
+}
+
+// flushWrite writes file data to fname, trying clone first if supported,
+// falling back to tmp+rename.
+func (e *entry) flushWrite(ctx context.Context, fname string, osfs *osfs.OSFS, started time.Time, timeout time.Duration, removeReason string) error {
+	d := e.digest()
+	lsrc, ok := osfs.AsFileSource(e.src)
+
+	// Try clone if the OS supports it and the source is a local file.
+	// Skip when source == target: Clonefile requires distinct paths, and
+	// the tmp+rename path below correctly breaks any hardlink by writing
+	// tmp before removing fname.
+	type clonefiler interface {
+		Clonefile(context.Context, string, string) error
+	}
+	if osfsc, cok := (any)(osfs).(clonefiler); ok && cok && lsrc.Fname != fname {
+		if removeReason != "" {
+			if err := osfs.Remove(ctx, fname); err != nil {
+				clog.Warningf(ctx, "flush %s: remove %s: %v", fname, removeReason, err)
+			} else {
+				clog.Infof(ctx, "flush %s: remove %s", fname, removeReason)
+			}
+		}
+		clog.Infof(ctx, "flush %s %s clone from source %s", fname, d, lsrc.Fname)
+		err := osfsc.Clonefile(ctx, lsrc.Fname, fname)
+		if err == nil {
+			return osfs.Chmod(ctx, fname, e.mode)
+		}
+		clog.Warningf(ctx, "clonefile failed: %v", err)
+	}
+
+	// Copy via tmp file and rename.
+	// Write tmp before removing, since e.src may read from fname.
+	var srcname string
+	if ok {
+		srcname = lsrc.Fname
+	}
+	tmpname := filepath.Join(filepath.Dir(fname), "."+filepath.Base(fname)+".tmp")
+	ctx, cancel := digest.ContextWithTimeout(ctx, e.d)
+	defer cancel()
+	err := retry.Do(ctx, func() error {
+		return osfs.WriteDigestData(ctx, tmpname, e.src, e.mode, timeout)
+	})
+	if err != nil {
+		return fmt.Errorf("flush tmp %s size=%d %s: %w", tmpname, d.SizeBytes, time.Since(started), err)
+	}
+	if removeReason != "" {
+		if err := osfs.Remove(ctx, fname); err != nil {
+			clog.Warningf(ctx, "flush %s: remove %s: %v", fname, removeReason, err)
+		} else {
+			clog.Infof(ctx, "flush %s: remove %s", fname, removeReason)
+		}
+	}
+	clog.Infof(ctx, "flush %s %s from source %s", fname, d, srcname)
+	return osfs.Rename(ctx, tmpname, fname)
 }
