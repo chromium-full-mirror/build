@@ -377,7 +377,7 @@ func (hfs *HashFS) dirLookup(ctx context.Context, root, fname string) (*entry, s
 	if !ok {
 		return nil, fname, nil, false
 	}
-	if e.directory == nil {
+	if !e.isDirectory() {
 		return nil, fname, nil, false
 	}
 	e, dir, resolved, ok := e.directory.lookupEntry(ctx, fname)
@@ -458,7 +458,7 @@ func (hfs *HashFS) stat(ctx context.Context, root, fname string, needCompute boo
 		if err != nil {
 			return FileInfo{}, err
 		}
-		if e.directory != nil {
+		if e.isDirectory() {
 			// directory's mtime has been updated locally
 			// where hashfs doesn't know. e.g. add new file
 			// in the directory by local run.
@@ -558,7 +558,7 @@ func (hfs *HashFS) ReadDir(ctx context.Context, root, name string) (dents []DirE
 		}
 		return nil, SymlinkError{Path: relDname, Target: e.target}
 	}
-	if e.directory == nil {
+	if !e.isDirectory() {
 		return nil, fmt.Errorf("read dir %s: not dir: %w", dname, os.ErrPermission)
 	}
 	// TODO(ukai): fix race in updateDir -> store.
@@ -1118,7 +1118,7 @@ func (hfs *HashFS) Entries(ctx context.Context, root string, inputs []string) ([
 	for i, fname := range inputs {
 		e := ents[i]
 		d := e.digest()
-		if e.err != nil || (d.IsZero() && !e.isSymlink() && e.directory == nil) {
+		if e.err != nil || (d.IsZero() && !e.isSymlink() && !e.isDirectory()) {
 			// TODO(b/435555841): hard fail instead
 			if e.entryErrLogged.CompareAndSwap(false, true) {
 				clog.Warningf(ctx, "missing %s data:%v target:%q: %v", fname, e.d, e.target, e.err)
@@ -1355,7 +1355,7 @@ func (hfs *HashFS) Update(ctx context.Context, workspaceRoot string, entries []U
 			return err
 		}
 		hfs.journalEntry(ctx, fname, e)
-		if e.directory != nil {
+		if e.isDirectory() {
 			err = hfs.OS.Chtimes(ctx, fname, time.Time{}, ent.ModTime)
 			if err != nil {
 				clog.Warningf(ctx, "failed to update dir mtime %s: %v", fname, err)

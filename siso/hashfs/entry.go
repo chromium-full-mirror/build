@@ -332,6 +332,11 @@ func (e *entry) getDir() *directory {
 	return e.directory
 }
 
+// isDirectory returns whether the entry is a directory.
+func (e *entry) isDirectory() bool {
+	return e.directory != nil
+}
+
 // isSymlink returns whether the entry is a symlink.
 func (e *entry) isSymlink() bool {
 	return e.target != ""
@@ -359,7 +364,7 @@ func (e *entry) flush(ctx context.Context, fname string, osfs *osfs.OSFS, timeou
 	switch {
 	case errors.Is(err, fs.ErrNotExist):
 		return e.flushRemove(ctx, fname, osfs)
-	case e.directory != nil:
+	case e.isDirectory():
 		return e.flushDir(ctx, fname, osfs)
 	case e.isSymlink():
 		return e.flushSymlink(ctx, fname, osfs)
