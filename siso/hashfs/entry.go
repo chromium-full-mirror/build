@@ -332,6 +332,22 @@ func (e *entry) getDir() *directory {
 	return e.directory
 }
 
+// applyUpdateMetadata sets the metadata fields from an UpdateEntry.
+// Does not set e.mode. Callers that reuse an existing entry should
+// set it explicitly; callers that reinit from disk get it from init().
+//
+// Caller must hold e.mu or ensure no concurrent access (e.g. newly created entry).
+func (e *entry) applyUpdateMetadata(ent UpdateEntry) {
+	e.mtime = ent.ModTime
+	e.cmdhash = ent.CmdHash
+	e.edgehash = ent.EdgeHash
+	e.action = ent.Action
+	e.local = ent.IsLocal
+	e.updatedTime = ent.UpdatedTime
+	e.isChanged = ent.IsChanged
+	e.entryErrLogged.Store(false)
+}
+
 // isDirectory returns whether the entry is a directory.
 func (e *entry) isDirectory() bool {
 	return e.directory != nil

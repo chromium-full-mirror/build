@@ -1251,125 +1251,129 @@ func (hfs *HashFS) Update(ctx context.Context, workspaceRoot string, entries []U
 		return entries[i].Name < entries[j].Name
 	})
 
-	if hfs.opt.CogFS != nil || hfs.opt.ArtFS != nil {
-		// TODO: pass UpdateEntry so artfs can set mtime?
-		var updates []merkletree.Entry
-		var updateIdx []int
-		var nFromLocals, nNonFiles int
-		for i, ent := range entries {
-			if ent.Entry == nil {
-				// UpdateEntry was captured by RetrieveUpdateEntriesFromLocal
-				// so file already exist on local disk
-				nFromLocals++
-				continue
-			}
-			if ent.Entry.Data.IsZero() {
-				// symlink or dir. handled in usual way.
-				nNonFiles++
-				continue
-			}
-			updateIdx = append(updateIdx, i)
-			updates = append(updates, *ent.Entry)
-		}
-		if len(updates) > 0 {
-			err := hfs.opt.ArtFS.ArtfsInsert(ctx, workspaceRoot, updates)
-			if err != nil {
-				clog.Warningf(ctx, "artfs insert %d under %s: %v", len(updates), workspaceRoot, err)
-			} else {
-				clog.Infof(ctx, "artfs insert %d under %s", len(updates), workspaceRoot)
-				// artfsfs inserted the update, so we can assume
-				// these files exist locally.
-				for _, i := range updateIdx {
-					entries[i].IsLocal = true
-				}
-			}
-		} else {
-			clog.Warningf(ctx, "artfs insert 0 from_local=%d not_file=%d", nFromLocals, nNonFiles)
-		}
-	}
+	hfs.artfsInsertIfAvailable(ctx, workspaceRoot, entries)
 
 	for _, ent := range entries {
 		clog.Infof(ctx, "update %v", ent)
-		fname := filepath.Join(workspaceRoot, ent.Name)
-		fname = filepath.ToSlash(fname)
-		if ent.Entry == nil {
-			// UpdateEntry was captured by RetrieveUpdateEntriesFromLocal
-			// so the entry should exists in hfs.directory.
-			e, _, _, ok := hfs.dirLookup(ctx, workspaceRoot, ent.Name)
-			if !ok {
-				clog.Warningf(ctx, "failed to update: no entry %s", ent.Name)
-				continue
-			}
-			if e.getMtime().Equal(ent.ModTime) || e.getDir() != nil {
-				e.mu.Lock()
-				e.mtime = ent.ModTime
-				e.mode = ent.Mode
-				e.cmdhash = ent.CmdHash
-				e.edgehash = ent.EdgeHash
-				e.action = ent.Action
-				e.local = ent.IsLocal
-				e.updatedTime = ent.UpdatedTime
-				e.isChanged = ent.IsChanged
-				e.entryErrLogged.Store(false)
-				e.mu.Unlock()
-			} else {
-				e = newLocalEntry()
-				e.init(ctx, fname, hfs.executables, hfs.OS)
-				e.mtime = ent.ModTime
-				e.cmdhash = ent.CmdHash
-				e.edgehash = ent.EdgeHash
-				e.action = ent.Action
-				e.local = ent.IsLocal
-				e.updatedTime = ent.UpdatedTime
-				e.isChanged = ent.IsChanged
-			}
-			if errors.Is(e.err, context.Canceled) {
-				return e.err
-			}
-			// notify this output to scandeps.
-			err := hfs.dirStoreAndNotify(ctx, fname, e)
+		fname := filepath.ToSlash(filepath.Join(workspaceRoot, ent.Name))
+		e, err := hfs.resolveUpdateEntry(ctx, workspaceRoot, fname, ent)
+		if e == nil {
 			if err != nil {
 				return err
 			}
-			hfs.journalEntry(ctx, fname, e)
-			if ent.IsLocal && e.isChanged && !e.isSymlink() {
-				// Update mtime for the local entry if it has changed.
-				// Don't update mtime for symlink,
-				// since os.Chtimes updates the mtime of target
-				// and it makes the target invalidated
-				// in .siso_fs_state since mtime doesn't match.
-				err := hfs.OS.Chtimes(ctx, fname, time.Time{}, e.getMtime())
-				if errors.Is(err, fs.ErrNotExist) {
-					clog.Warningf(ctx, "failed to update mtime of %s: %v", fname, err)
-					continue
-				}
-				if err != nil {
-					return fmt.Errorf("failed to update mtime of %s: %w", fname, err)
-				}
-			}
-			continue
+			continue // warning already logged
 		}
-		e := newEntryFromUpdate(ent)
-		err := hfs.dirStoreAndNotify(ctx, fname, e)
+		err = hfs.dirStoreAndNotify(ctx, fname, e)
 		if err != nil {
 			return err
 		}
 		hfs.journalEntry(ctx, fname, e)
-		if e.isDirectory() {
-			err = hfs.OS.Chtimes(ctx, fname, time.Time{}, ent.ModTime)
-			if err != nil {
-				clog.Warningf(ctx, "failed to update dir mtime %s: %v", fname, err)
-			}
-		} else if ent.IsLocal && e.isChanged && !e.isSymlink() {
-			err = hfs.OS.Chtimes(ctx, fname, time.Time{}, e.getMtime())
-			if errors.Is(err, fs.ErrNotExist) {
-				clog.Warningf(ctx, "failed to update mtime of %s: %v", fname, err)
-				continue
-			}
-			if err != nil {
-				return fmt.Errorf("failed to update mtime of %s: %w", fname, err)
+		if err := hfs.updateMtimeIfNeeded(ctx, fname, e, ent); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// artfsInsertIfAvailable inserts file entries into ArtFS/CogFS if available,
+// marking successfully inserted entries as local.
+func (hfs *HashFS) artfsInsertIfAvailable(ctx context.Context, workspaceRoot string, entries []UpdateEntry) {
+	if hfs.opt.CogFS == nil && hfs.opt.ArtFS == nil {
+		return
+	}
+	// TODO: pass UpdateEntry so artfs can set mtime?
+	var updates []merkletree.Entry
+	var updateIdx []int
+	var nFromLocals, nNonFiles int
+	for i, ent := range entries {
+		if ent.Entry == nil {
+			// UpdateEntry was captured by RetrieveUpdateEntriesFromLocal
+			// so file already exist on local disk
+			nFromLocals++
+			continue
+		}
+		if ent.Entry.Data.IsZero() {
+			// symlink or dir. handled in usual way.
+			nNonFiles++
+			continue
+		}
+		updateIdx = append(updateIdx, i)
+		updates = append(updates, *ent.Entry)
+	}
+	if len(updates) > 0 {
+		err := hfs.opt.ArtFS.ArtfsInsert(ctx, workspaceRoot, updates)
+		if err != nil {
+			clog.Warningf(ctx, "artfs insert %d under %s: %v", len(updates), workspaceRoot, err)
+		} else {
+			clog.Infof(ctx, "artfs insert %d under %s", len(updates), workspaceRoot)
+			// artfsfs inserted the update, so we can assume
+			// these files exist locally.
+			for _, i := range updateIdx {
+				entries[i].IsLocal = true
 			}
 		}
+	} else {
+		clog.Warningf(ctx, "artfs insert 0 from_local=%d not_file=%d", nFromLocals, nNonFiles)
+	}
+}
+
+// resolveUpdateEntry returns the entry to store for an UpdateEntry.
+// Returns (nil, nil) if the entry was not found (warning already logged).
+// Returns (nil, err) on fatal errors like context cancellation.
+func (hfs *HashFS) resolveUpdateEntry(ctx context.Context, workspaceRoot, fname string, ent UpdateEntry) (*entry, error) {
+	if ent.Entry != nil {
+		return newEntryFromUpdate(ent), nil
+	}
+	// Entry was captured by RetrieveUpdateEntriesFromLocal,
+	// so look up the existing entry.
+	e, _, _, ok := hfs.dirLookup(ctx, workspaceRoot, ent.Name)
+	if !ok {
+		clog.Warningf(ctx, "failed to update: no entry %s", ent.Name)
+		return nil, nil
+	}
+	if e.getMtime().Equal(ent.ModTime) || e.getDir() != nil {
+		// Mtime unchanged or directory. Reuse existing entry,
+		// including mode from the update.
+		e.mu.Lock()
+		e.applyUpdateMetadata(ent)
+		e.mode = ent.Mode
+		e.mu.Unlock()
+	} else {
+		// Mtime changed on a non-directory, re-init from disk.
+		// Mode comes from init(), not the update.
+		// No lock needed: entry is freshly created, not yet visible.
+		e = newLocalEntry()
+		e.init(ctx, fname, hfs.executables, hfs.OS)
+		e.applyUpdateMetadata(ent)
+	}
+	if errors.Is(e.err, context.Canceled) {
+		return nil, e.err
+	}
+	return e, nil
+}
+
+// updateMtimeIfNeeded updates the mtime on disk after storing an entry.
+// Directories always get mtime updated. Regular local changed files
+// get mtime updated. Symlinks are skipped since os.Chtimes would update
+// the target's mtime, invalidating it in .siso_fs_state.
+func (hfs *HashFS) updateMtimeIfNeeded(ctx context.Context, fname string, e *entry, ent UpdateEntry) error {
+	if e.isDirectory() {
+		err := hfs.OS.Chtimes(ctx, fname, time.Time{}, ent.ModTime)
+		if err != nil {
+			clog.Warningf(ctx, "failed to update dir mtime %s: %v", fname, err)
+		}
+		return nil
+	}
+	if !ent.IsLocal || !e.isChanged || e.isSymlink() {
+		return nil
+	}
+	err := hfs.OS.Chtimes(ctx, fname, time.Time{}, e.getMtime())
+	if errors.Is(err, fs.ErrNotExist) {
+		clog.Warningf(ctx, "failed to update mtime of %s: %v", fname, err)
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("failed to update mtime of %s: %w", fname, err)
 	}
 	return nil
 }
