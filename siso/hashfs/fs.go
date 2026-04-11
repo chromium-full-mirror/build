@@ -1056,11 +1056,23 @@ func (hfs *HashFS) resolveEscapingSymlink(ctx context.Context, root, fname strin
 func (hfs *HashFS) Entries(ctx context.Context, root string, inputs []string) ([]merkletree.Entry, error) {
 	ctx, span := trace.NewSpan(ctx, "fs-entries")
 	defer span.Close(nil)
-	var nwait int
-	var wg sync.WaitGroup
+
+	ents, err := hfs.resolveInputEntries(ctx, root, inputs)
+	if err != nil {
+		return nil, err
+	}
+	return hfs.buildMerkletreeEntries(ctx, root, inputs, ents)
+}
+
+// resolveInputEntries looks up or creates entries for each input,
+// kicks off concurrent digest computation for regular files that
+// need it, and waits for all digests to finish before returning.
+func (hfs *HashFS) resolveInputEntries(ctx context.Context, root string, inputs []string) ([]*entry, error) {
 	ents := make([]*entry, 0, len(inputs))
-	for _, fname := range inputs {
-		fname := makeFullpath(root, fname)
+	var wg sync.WaitGroup
+	var nwait int
+	for _, input := range inputs {
+		fname := makeFullpath(root, input)
 		e, _, _, ok := hfs.directory.lookup(ctx, fname)
 		if ok {
 			if log.V(2) {
@@ -1072,12 +1084,8 @@ func (hfs *HashFS) Entries(ctx context.Context, root string, inputs []string) ([
 				ready := !e.d.IsZero()
 				e.mu.RUnlock()
 				if !ready {
-					wg.Add(1)
+					hfs.startDigest(ctx, fname, e, &wg)
 					nwait++
-					go func() {
-						defer wg.Done()
-						hfs.digester.compute(ctx, fname, e)
-					}()
 				}
 			}
 			continue
@@ -1097,23 +1105,36 @@ func (hfs *HashFS) Entries(ctx context.Context, root string, inputs []string) ([
 			ents = append(ents, e)
 			continue
 		}
-		e = ee
-		ents = append(ents, e)
-		wg.Add(1)
+		ents = append(ents, ee)
+		hfs.startDigest(ctx, fname, ee, &wg)
 		nwait++
-		go func() {
-			defer wg.Done()
-			hfs.digester.compute(ctx, fname, e)
-		}()
 	}
-	// wait ensures all entries have computed the digests.
 	_, wspan := trace.NewSpan(ctx, "fs-entries-wait")
 	wg.Wait()
 	wspan.SetAttr("waits", nwait)
 	wspan.Close(nil)
+	return ents, nil
+}
+
+// startDigest spawns a goroutine that computes the digest for e.
+// The goroutine closure lives in its own function so the caller's
+// loop variable e is not forced onto the heap. Inlining this into
+// resolveInputEntries causes escape analysis to promote e to the
+// heap on every iteration (capturing by ref, assign=true), because
+// the loop reassigns e and the closure could observe any value.
+func (hfs *HashFS) startDigest(ctx context.Context, fname string, e *entry, wg *sync.WaitGroup) {
+	wg.Go(func() {
+		hfs.digester.compute(ctx, fname, e)
+	})
+}
+
+// buildMerkletreeEntries converts resolved entries to merkletree format,
+// filtering entries with errors and resolving symlinks that escape root.
+// inputs are the original relative paths (used for merkletree entry names).
+func (hfs *HashFS) buildMerkletreeEntries(ctx context.Context, root string, inputs []string, ents []*entry) ([]merkletree.Entry, error) {
 	entries := make([]merkletree.Entry, 0, len(inputs))
-	for i, fname := range inputs {
-		e := ents[i]
+	for i, e := range ents {
+		fname := inputs[i]
 		d := e.digest()
 		if e.err != nil || (d.IsZero() && !e.isSymlink() && !e.isDirectory()) {
 			// TODO(b/435555841): hard fail instead
