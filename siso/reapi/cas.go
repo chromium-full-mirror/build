@@ -223,7 +223,7 @@ func (c *Client) getWithByteStream(ctx context.Context, d digest.Digest, name st
 	if log.V(1) {
 		clog.Infof(ctx, "getWithByteStream %s resourceName=%s", d, resourceName)
 	}
-	var buf []byte
+	buf := make([]byte, d.SizeBytes)
 	err := retry.Do(ctx, func() error {
 		ctx, cancel := digest.ContextWithTimeout(ctx, d)
 		defer cancel()
@@ -238,7 +238,6 @@ func (c *Client) getWithByteStream(ctx context.Context, d digest.Digest, name st
 			return err
 		}
 		defer rd.Close()
-		buf = make([]byte, d.SizeBytes)
 		n, err := io.ReadFull(rd, buf)
 		c.m.ReadDone(n, err)
 		if err != nil {
