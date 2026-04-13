@@ -154,7 +154,7 @@ func (fsys *filesystem) ReadDir(ctx context.Context, workspaceRoot, dname string
 				}
 				des, err := hfsys.ReadDir(dname)
 				if err == nil {
-					dents = make([]hashfs.DirEntry, len(des))
+					dents = make([]hashfs.DirEntry, 0, len(des))
 					for _, de := range des {
 						dents = append(dents, de.(hashfs.DirEntry))
 					}
