@@ -33,6 +33,14 @@ import (
 // to protect from thread exhaustion. b/365856347
 var LstatSemaphore = semaphore.New("osfs-lstat", runtimex.NumCPU()*2)
 
+const writeBufSize = 96 * 1024
+
+var bufWriterPool = sync.Pool{
+	New: func() any {
+		return bufio.NewWriterSize(nil, writeBufSize)
+	},
+}
+
 // defaultDigestXattr is default xattr for digest. http://shortn/_8GHggPD2vw
 const defaultDigestXattr = "google.digest.sha256"
 
@@ -319,9 +327,8 @@ func (ofs *OSFS) WriteDigestData(ctx context.Context, name string, src digest.So
 		// If it uses max IOPS, we can write at most 0.12*1024/1.5 =
 		// 81.3KB per IOPS.
 		// Use 96KB buffer to reduce IOPS.
-		// TODO: use sync.Pool?
-		const bufsize = 96 * 1024
-		bufw := bufio.NewWriterSize(&wr, bufsize)
+		bufw := bufWriterPool.Get().(*bufio.Writer)
+		bufw.Reset(&wr)
 		n, err = io.Copy(bufw, &rd)
 		if err != nil {
 			err = fmt.Errorf("failed to call io.Copy, read %d bytes in %s: %w", n, time.Since(started), err)
@@ -330,6 +337,8 @@ func (ofs *OSFS) WriteDigestData(ctx context.Context, name string, src digest.So
 		if err == nil {
 			err = berr
 		}
+		bufw.Reset(nil)
+		bufWriterPool.Put(bufw)
 		cerr := w.Close()
 		if err == nil {
 			err = cerr
