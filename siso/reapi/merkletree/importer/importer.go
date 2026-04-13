@@ -35,7 +35,7 @@ func (Importer) Import(ctx context.Context, dir string, ds *digest.Store) (diges
 		if dir == path {
 			return nil
 		}
-		name := strings.TrimPrefix(path, dir+"/")
+		name := strings.TrimPrefix(filepath.ToSlash(path), dir+"/")
 		if d.IsDir() {
 			if log.V(3) {
 				clog.Infof(ctx, "add dir %s", name)
