@@ -88,8 +88,11 @@ func run(ctx context.Context) error {
 		"-p", "IOAccounting=yes",
 		"-p", "IPAccounting=yes",
 	}
-	m, ok := knownMachineTypes[*machineTypeFlag]
-	if ok {
+	if *machineTypeFlag != "" {
+		m, ok := knownMachineTypes[*machineTypeFlag]
+		if !ok {
+			return fmt.Errorf("unknown machine type is specified. %q", *machineTypeFlag)
+		}
 		fmt.Printf("mimic machine_type: %q (cpu=%d mem=%dGB)\n", *machineTypeFlag, m.CPUs, m.MemGB)
 		if *diskTypeFlag == "" {
 			*diskTypeFlag = m.DefaultDiskType
