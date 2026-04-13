@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"iter"
 	"maps"
 	"path"
 	"slices"
@@ -23,6 +24,7 @@ import (
 	log "github.com/golang/glog"
 	"github.com/google/uuid"
 	"github.com/klauspost/compress/zstd"
+	xsemaphore "golang.org/x/sync/semaphore"
 	bpb "google.golang.org/genproto/googleapis/bytestream"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -463,6 +465,29 @@ type missingBlob struct {
 	Err    error
 }
 
+type missingBlobs struct {
+	mu    sync.Mutex
+	blobs []missingBlob
+}
+
+func (m *missingBlobs) append(mb missingBlob) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.blobs = append(m.blobs, mb)
+}
+
+func (m *missingBlobs) Size() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return len(m.blobs)
+}
+
+func (m *missingBlobs) get() []missingBlob {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.blobs
+}
+
 type missingError struct {
 	Blobs []missingBlob
 }
@@ -546,14 +571,14 @@ func separateBlobs(instance string, blobs []digest.Digest, byteLimit int64) (sma
 // uploadWithBatchUpdateBlobs uploads blobs using BatchUpdateBlobs RPC.
 // The blobs will be bundled into multiple batches that fit in the size limit.
 func (c *Client) uploadWithBatchUpdateBlobs(ctx context.Context, digests []digest.Digest, uploads map[digest.Digest]*uploadOp, ds *digest.Store, byteLimit int64) ([]missingBlob, error) {
-	blobReqs, missingBlobs := blobsToUpload(ctx, digests, ds)
+	blobReqs, missingBlobs := blobsToUpload(ctx, digests, ds, byteLimit)
 
 	// Bundle the blobs to multiple batch requests.
-	batchReqs := createBatchUpdateBlobsRequests(c.opt.Instance, blobReqs, byteLimit)
+	batchReqs := createBatchUpdateBlobsRequests(c.opt.Instance, blobReqs, byteLimit, batchBlobUploadLimit)
 	casClient := rpb.NewContentAddressableStorageClient(c.casConn)
 
 	// TODO(b/273884978): It may be worth trying to send the batch requests in parallel.
-	for _, batchReq := range batchReqs {
+	for batchReq := range batchReqs {
 		var batchResp *rpb.BatchUpdateBlobsResponse
 		checkBlobs := make(map[digest.Digest]bool)
 		for _, req := range batchReq.Requests {
@@ -576,7 +601,7 @@ func (c *Client) uploadWithBatchUpdateBlobs(ctx context.Context, digests []diges
 			data, ok := ds.Get(blob)
 			if !ok {
 				clog.Warningf(ctx, "Not found %s in store", blob)
-				missingBlobs = append(missingBlobs, missingBlob{
+				missingBlobs.append(missingBlob{
 					Digest: blob,
 					Err:    errBlobNotInReq,
 				})
@@ -586,7 +611,7 @@ func (c *Client) uploadWithBatchUpdateBlobs(ctx context.Context, digests []diges
 			if st.Code() != codes.OK {
 				clog.Warningf(ctx, "Failed to batch-update %s: %v", data, st)
 				err := status.Errorf(st.Code(), "batch update blobs: %v", res.Status)
-				missingBlobs = append(missingBlobs, missingBlob{
+				missingBlobs.append(missingBlob{
 					Digest: blob,
 					Err:    err,
 				})
@@ -598,7 +623,7 @@ func (c *Client) uploadWithBatchUpdateBlobs(ctx context.Context, digests []diges
 			c.m.WriteDone(int(res.Digest.SizeBytes), nil)
 			uploads[blob].done(nil)
 		}
-		clog.Infof(ctx, "upload by batch %d->%d blobs (noresp:%d) (missing:%d)", len(batchReq.Requests), len(batchResp.Responses), len(checkBlobs), len(missingBlobs))
+		clog.Infof(ctx, "upload by batch %d->%d blobs (noresp:%d) (missing:%d)", len(batchReq.Requests), len(batchResp.Responses), len(checkBlobs), missingBlobs.Size())
 		if len(checkBlobs) > 0 {
 			// check again if digest is missing in batchResp.
 			checks := slices.Collect(maps.Keys(checkBlobs))
@@ -608,7 +633,7 @@ func (c *Client) uploadWithBatchUpdateBlobs(ctx context.Context, digests []diges
 				clog.Warningf(ctx, "recheck missing %s: %v", checks, err)
 				for _, d := range checks {
 					uploads[d].done(err)
-					missingBlobs = append(missingBlobs, missingBlob{
+					missingBlobs.append(missingBlob{
 						Digest: d,
 						Err:    err,
 					})
@@ -617,7 +642,7 @@ func (c *Client) uploadWithBatchUpdateBlobs(ctx context.Context, digests []diges
 				for _, d := range missings {
 					clog.Warningf(ctx, "recheck missing %s: not uploaded", d)
 					uploads[d].done(errUploadNoResponse)
-					missingBlobs = append(missingBlobs, missingBlob{
+					missingBlobs.append(missingBlob{
 						Digest: d,
 						Err:    errUploadNoResponse,
 					})
@@ -634,93 +659,114 @@ func (c *Client) uploadWithBatchUpdateBlobs(ctx context.Context, digests []diges
 			}
 		}
 	}
-	return missingBlobs, nil
+	return missingBlobs.get(), nil
 }
 
 // blobsToUpload returns a list of blobs to upload by looking up the digest store.
-func blobsToUpload(ctx context.Context, blobs []digest.Digest, ds *digest.Store) ([]*rpb.BatchUpdateBlobsRequest_Request, []missingBlob) {
-	var wg sync.WaitGroup
-	type res struct {
-		err error
-		req *rpb.BatchUpdateBlobsRequest_Request
-	}
-	results := make([]res, len(blobs))
-	for i := range blobs {
-		wg.Add(1)
-		go func(blob digest.Digest, result *res) {
-			defer wg.Done()
-			data, ok := ds.Get(blob)
-			if !ok {
-				result.err = errBlobNotInReq
-				clog.Warningf(ctx, "missing %s to upload: %v", blob, result.err)
-				return
-			}
-			var b []byte
-			err := FileSemaphore.Do(ctx, func(ctx context.Context) error {
-				var err error
-				b, err = digest.DataToBytes(ctx, data)
-				return err
-			})
-			if err != nil {
-				result.err = err
-				clog.Warningf(ctx, "read %s to upload: %v", blob, err)
-				return
-			}
-			result.req = &rpb.BatchUpdateBlobsRequest_Request{
-				Digest: data.Digest().Proto(),
-				Data:   b,
-			}
-		}(blobs[i], &results[i])
-	}
-	wg.Wait()
+func blobsToUpload(ctx context.Context, blobs []digest.Digest, ds *digest.Store, byteLimit int64) (iter.Seq[*rpb.BatchUpdateBlobsRequest_Request], *missingBlobs) {
+	var missings missingBlobs
+	ch := make(chan *rpb.BatchUpdateBlobsRequest_Request)
 
-	var reqs []*rpb.BatchUpdateBlobsRequest_Request
-	var missings []missingBlob
-	for i, result := range results {
-		blob := blobs[i]
-		switch {
-		case result.err != nil:
-			missings = append(missings, missingBlob{
-				Digest: blob,
-				Err:    result.err,
+	go func() {
+		defer close(ch)
+		// allocate for at most 2 BatchUpdateBlobsRequest messages.
+		sema := xsemaphore.NewWeighted(byteLimit * 2)
+		var wg sync.WaitGroup
+		for _, blob := range blobs {
+			err := sema.Acquire(ctx, blob.SizeBytes)
+			if err != nil {
+				missings.append(missingBlob{
+					Digest: blob,
+					Err:    err,
+				})
+				clog.Warningf(ctx, "failed to acquire %d: %v", blob.SizeBytes, err)
+				continue
+			}
+			wg.Go(func() {
+				defer sema.Release(blob.SizeBytes)
+				data, ok := ds.Get(blob)
+				if !ok {
+					missings.append(missingBlob{
+						Digest: blob,
+						Err:    errBlobNotInReq,
+					})
+					clog.Warningf(ctx, "missing %s to upload: %v", blob, errBlobNotInReq)
+					return
+				}
+				var b []byte
+				err := FileSemaphore.Do(ctx, func(ctx context.Context) error {
+					var err error
+					b, err = digest.DataToBytes(ctx, data)
+					return err
+				})
+				if err != nil {
+					missings.append(missingBlob{
+						Digest: blob,
+						Err:    err,
+					})
+					clog.Warningf(ctx, "read %s to upload: %v", blob, err)
+					return
+				}
+				ch <- &rpb.BatchUpdateBlobsRequest_Request{
+					Digest: data.Digest().Proto(),
+					Data:   b,
+				}
 			})
-		case result.req != nil:
-			reqs = append(reqs, result.req)
-			continue
-		default:
-			clog.Errorf(ctx, "lookup of blobs[%d]=%v no error nor req", i, blob)
 		}
-	}
-	return reqs, missings
+		wg.Wait()
+	}()
+	return func(yield func(*rpb.BatchUpdateBlobsRequest_Request) bool) {
+		for req := range ch {
+			if !yield(req) {
+				return
+			}
+		}
+	}, &missings
 }
 
 // createBatchUpdateBlobsRequests bundles blobs into multiple batch requests.
-func createBatchUpdateBlobsRequests(instance string, blobReqs []*rpb.BatchUpdateBlobsRequest_Request, byteLimit int64) []*rpb.BatchUpdateBlobsRequest {
-	var batchReqs []*rpb.BatchUpdateBlobsRequest
+func createBatchUpdateBlobsRequests(instance string, blobReqs iter.Seq[*rpb.BatchUpdateBlobsRequest_Request], byteLimit int64, numLimit int) iter.Seq[*rpb.BatchUpdateBlobsRequest] {
+	return func(yield func(*rpb.BatchUpdateBlobsRequest) bool) {
+		// Initial batch request size without blobs.
+		batchReqNoReqsSize := int64(proto.Size(&rpb.BatchUpdateBlobsRequest{InstanceName: instance}))
+		size := batchReqNoReqsSize
+		var reqs []*rpb.BatchUpdateBlobsRequest_Request
+		for req := range blobReqs {
+			reqs = append(reqs, req)
+			nextSize := size + int64(proto.Size(&rpb.BatchUpdateBlobsRequest{Requests: reqs[len(reqs)-1:]}))
+			switch {
+			case byteLimit > 0 && nextSize > byteLimit:
+				// When the batch request exceeds the size limit, it starts creating a new batch request.
+				if !yield(&rpb.BatchUpdateBlobsRequest{
+					InstanceName: instance,
+					Requests:     reqs[:len(reqs)-1],
+				}) {
+					return
+				}
+				size = batchReqNoReqsSize + nextSize - size
+				reqs = []*rpb.BatchUpdateBlobsRequest_Request{req}
 
-	// Initial batch request size without blobs.
-	batchReqNoReqsSize := int64(proto.Size(&rpb.BatchUpdateBlobsRequest{InstanceName: instance}))
-	size := batchReqNoReqsSize
-
-	lastOffset := 0
-	for i := range blobReqs {
-		size += int64(proto.Size(&rpb.BatchUpdateBlobsRequest{Requests: blobReqs[i : i+1]}))
-		switch {
-		case i == len(blobReqs)-1:
-			fallthrough
-		case i+1 == lastOffset+batchBlobUploadLimit:
-			fallthrough
-		case byteLimit > 0 && size+int64(proto.Size(&rpb.BatchUpdateBlobsRequest{Requests: blobReqs[i+1 : i+2]})) > byteLimit:
-			// When the batch request exceeds the size limit, it starts creating a new batch request.
-			batchReqs = append(batchReqs, &rpb.BatchUpdateBlobsRequest{
+			case len(reqs) == numLimit:
+				// When the batch request exceeds the number of blobs. it start creating a new batch request.
+				if !yield(&rpb.BatchUpdateBlobsRequest{
+					InstanceName: instance,
+					Requests:     reqs,
+				}) {
+					return
+				}
+				size = batchReqNoReqsSize
+				reqs = nil
+			default:
+				size = nextSize
+			}
+		}
+		if len(reqs) > 0 {
+			yield(&rpb.BatchUpdateBlobsRequest{
 				InstanceName: instance,
-				Requests:     blobReqs[lastOffset : i+1],
+				Requests:     reqs,
 			})
-			size = batchReqNoReqsSize
-			lastOffset = i + 1
 		}
 	}
-	return batchReqs
 }
 
 func (c *Client) uploadWithByteStream(ctx context.Context, digests []digest.Digest, uploads map[digest.Digest]*uploadOp, ds *digest.Store) []missingBlob {
