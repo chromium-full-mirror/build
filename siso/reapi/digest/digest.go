@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"io"
 	"slices"
+	"sync"
 	"time"
 
 	rpb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
@@ -24,6 +25,13 @@ import (
 	"go.chromium.org/build/siso/o11y/clog"
 	"go.chromium.org/build/siso/reapi/retry"
 )
+
+var copyBufPool = sync.Pool{
+	New: func() any {
+		buf := make([]byte, 32*1024)
+		return &buf
+	},
+}
 
 // Empty is a digest of empty content.
 var Empty = ofBytes([]byte{})
@@ -46,7 +54,9 @@ func ofBytes(b []byte) Digest {
 // fromReader creates a Digest from io.Reader.
 func fromReader(r io.Reader) (Digest, error) {
 	h := sha256.New()
-	n, err := io.Copy(h, r)
+	bufp := copyBufPool.Get().(*[]byte)
+	n, err := io.CopyBuffer(h, r, *bufp)
+	copyBufPool.Put(bufp)
 	if err != nil {
 		return Digest{}, err
 	}
