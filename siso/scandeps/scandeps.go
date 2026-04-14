@@ -59,7 +59,11 @@ func clangModeFromString(ctx context.Context, s string) clangMode {
 	}
 }
 
+// ErrRequireClangScandeps is an error indicating that the request needs clang scandeps.
 var ErrRequireClangScandeps = errors.New("scandeps: require clang scandeps")
+
+// ErrTooSlow is an error that scandeps took long time.
+var ErrTooSlow = errors.New("scandeps: too slow")
 
 var errForTest error
 
@@ -188,7 +192,7 @@ func (s *ScanDeps) Scan(ctx context.Context, workspaceRoot string, req Request) 
 	for scanner.hasInputs() {
 		dur := time.Since(started)
 		if dur > scanTimeout {
-			return nil, fmt.Errorf("too slow scandeps: dirs:%d %s setup:%s total:%s", len(req.Dirs), scanner.stats(), setupDur, dur)
+			return nil, fmt.Errorf("%w: dirs:%d %s setup:%s total:%s", ErrTooSlow, len(req.Dirs), scanner.stats(), setupDur, dur)
 		}
 		// ctx.Err() requires mutex lock, so not call so often.
 		if time.Since(lastCtxCheck) > 500*time.Millisecond {

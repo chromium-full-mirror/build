@@ -15,6 +15,7 @@ import (
 	"go.chromium.org/build/siso/execute"
 	"go.chromium.org/build/siso/o11y/clog"
 	"go.chromium.org/build/siso/reapi"
+	"go.chromium.org/build/siso/scandeps"
 )
 
 var errNeedPreproc = errors.New("need to preproc")
@@ -87,7 +88,7 @@ func (b *Builder) runRemote(ctx context.Context, step *Step) error {
 		if errors.Is(err, errRemoteExecDisabled) {
 			return b.execLocal(ctx, step)
 		}
-		if errors.Is(err, context.Canceled) {
+		if errors.Is(err, context.Canceled) || errors.Is(ctx.Err(), context.Canceled) {
 			return err
 		}
 		if errors.Is(err, reapi.ErrBadPlatformContainerImage) {
@@ -106,6 +107,9 @@ func (b *Builder) runRemote(ctx context.Context, step *Step) error {
 		default:
 			fallbackReport(fmt.Sprintf("fallback-on-%s", errCode))
 		}
+		if errors.Is(err, context.DeadlineExceeded) {
+			fallbackReport("fallback-on-deadline-exceeded")
+		}
 		if errors.Is(err, errNotRelocatable) {
 			clog.Errorf(ctx, "not relocatable: %v", err)
 			return fmt.Errorf("remote-exec %s failed: %w", step.cmd.ActionDigest(), err)
@@ -115,24 +119,28 @@ func (b *Builder) runRemote(ctx context.Context, step *Step) error {
 			return fmt.Errorf("remote-exec %s failed: %w", step.cmd.ActionDigest(), err)
 		}
 		var eerr execute.ExitError
-		if errors.As(err, &eerr) && len(step.cmd.Stdout())+len(step.cmd.Stderr()) > 0 && b.failures.allowed == 1 {
+		if errors.As(err, &eerr) {
+			// report compile fail early to developers.
+			// If user runs on non-terminal or user sets a
+			// non-default -k, then it implies that they want to
+			// keep going as much as possible and
+			// correct result, rather than fast feedback.
+			preferNoFallbackOnExecErr := len(step.cmd.Stdout())+len(step.cmd.Stderr()) > 0 && b.failures.allowed == 1
 			switch {
 			case eerr.ExitCode == 137:
+				// we still see unexpected SIGKILL (OOM?)
 				fallbackReport("fallback-on-SIGKILL")
-
 			case experiments.Enabled("fallback-on-exec-error", "remote exec %s failed: %v", step.cmd.ActionDigest(), err):
-				fallbackReport("fallback-on-exec-error")
-			default:
-				// report compile fail early to developers.
-				// If user runs on non-terminal or user sets a
-				// non-default -k, then it implies that they want to
-				// keep going as much as possible and
-				// correct result, rather than fast feedback.
+			case preferNoFallbackOnExecErr:
 				return fmt.Errorf("remote-exec %s failed: %w", step.cmd.ActionDigest(), err)
 			}
+			fallbackReport(fmt.Sprintf("fallback-on-exec-error-%d", eerr.ExitCode))
 		}
 		if !b.localFallbackEnabled() {
 			return fmt.Errorf("remote-exec %s failed no-fallback: %w", step.cmd.ActionDigest(), err)
+		}
+		if errors.Is(err, scandeps.ErrTooSlow) {
+			fallbackReport("fallback-on-scandeps-slow")
 		}
 		if errors.Is(err, errFlushOutput) {
 			fallbackReport("fallback-on-output-error")
