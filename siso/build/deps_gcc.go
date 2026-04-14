@@ -101,7 +101,7 @@ func (gcc depsGCC) fixCmdInputs(ctx context.Context, b *Builder, cmd *execute.Cm
 	return inputs, nil
 }
 
-// TODO: use handler?
+// TODO: crbug.com/502431091 - Specify dwo as output in Ninja file.
 func (depsGCC) fixForSplitDwarf(ctx context.Context, cmd *execute.Cmd) {
 	hasSplitDwarf := slices.Contains(cmd.Args, "-gsplit-dwarf")
 	if !hasSplitDwarf {
