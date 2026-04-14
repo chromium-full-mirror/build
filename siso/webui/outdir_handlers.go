@@ -115,7 +115,7 @@ func loadBuildMetrics(metricsPath string) (*buildMetrics, error) {
 		} else if m.StepID != "" {
 			metricsData.StepMetrics = append(metricsData.StepMetrics, &m)
 			metricsData.stepByStepID[m.StepID] = &m
-			metricsData.stepByOutput[m.Output] = &m
+			metricsData.stepByOutput[m.Output()] = &m
 			metricsData.lastStepID = m.StepID
 		} else {
 			return nil, fmt.Errorf("unexpected metric found %v", m)
@@ -560,7 +560,7 @@ func (s *WebuiServer) handleOutdirViewStep(w http.ResponseWriter, r *http.Reques
 	inOtherRevs := make(map[string]build.StepMetric)
 	if outdirInfo != nil {
 		for _, m := range outdirInfo.metrics {
-			if step, ok := m.stepByOutput[stepData.Output]; ok {
+			if step, ok := m.stepByOutput[stepData.Output()]; ok {
 				inOtherRevs[m.Rev] = *step
 			}
 		}
@@ -667,7 +667,7 @@ func (s *WebuiServer) handleOutdirListSteps(w http.ResponseWriter, r *http.Reque
 			if len(rulesWanted) > 0 && !slices.Contains(rulesWanted, m.Rule) {
 				continue
 			}
-			if outputSearch != "" && !strings.Contains(m.Output, outputSearch) {
+			if outputSearch != "" && !strings.Contains(m.Output(), outputSearch) {
 				continue
 			}
 			if view == "localOnly" && !m.IsLocal {

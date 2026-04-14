@@ -970,7 +970,7 @@ func stepLogEntry(ctx context.Context, logger *clog.Logger, step *Step, duration
 		"id":          step.def.String(),
 		"siso_rule":   step.metrics.Rule,
 		"action":      step.metrics.Action,
-		"output":      step.metrics.Output,
+		"output":      step.metrics.Output(),
 		"gn_target":   step.metrics.GNTarget,
 		"cmdhash":     step.metrics.CmdHash,
 		"prev":        step.metrics.PrevStepID,

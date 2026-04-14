@@ -124,17 +124,17 @@ func TestBuild_KeepGoing(t *testing.T) {
 		if m.StepID == "" {
 			continue
 		}
-		switch filepath.Base(m.Output) {
+		switch filepath.Base(m.Output()) {
 		case "out1", "out2":
 			if !m.Err {
-				t.Errorf("%s err=%t; want true", m.Output, m.Err)
+				t.Errorf("%s err=%t; want true", m.Output(), m.Err)
 			}
 		case "out3", "out4", "out5", "out6", "out9", "out10", "out11", "out12":
 			if m.Err {
-				t.Errorf("%s err=%t; want false", m.Output, m.Err)
+				t.Errorf("%s err=%t; want false", m.Output(), m.Err)
 			}
 		default:
-			t.Errorf("unexpected output %q", m.Output)
+			t.Errorf("unexpected output %q", m.Output())
 		}
 	}
 }

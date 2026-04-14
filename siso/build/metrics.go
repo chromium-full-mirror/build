@@ -45,10 +45,10 @@ type StepMetric struct {
 	BuildID string `json:"build_id,omitempty"` // the unique id of the current build (trace)
 	StepID  string `json:"step_id,omitempty"`  // the unique id of this step (top span)
 
-	Rule     string `json:"rule,omitempty"`      // the rule name of the step
-	Action   string `json:"action,omitempty"`    // the action name of the step
-	Output   string `json:"output,omitempty"`    // the name of the first output file of the step
-	GNTarget string `json:"gn_target,omitempty"` // inferred gn target
+	Rule     string   `json:"rule,omitempty"`      // the rule name of the step
+	Action   string   `json:"action,omitempty"`    // the action name of the step
+	Outputs  []string `json:"outputs,omitempty"`   // a list of the output files of the step.
+	GNTarget string   `json:"gn_target,omitempty"` // inferred gn target
 
 	// The ID and name of the first output of the previous step.
 	// The "previous" step is defined as the last step that updated
@@ -149,8 +149,7 @@ type StepMetric struct {
 	// the action completes.
 	ActionEndTime IntervalMetric `json:"action_end,omitempty"`
 
-	Inputs  int `json:"inputs,omitempty"`  // how many input files.
-	Outputs int `json:"outputs,omitempty"` // how many output files.
+	Inputs int `json:"inputs,omitempty"` // how many input files.
 
 	// resource used by local process.
 	MaxRSS  int64          `json:"max_rss,omitempty"` // max rss in local cmd.
@@ -163,11 +162,21 @@ type StepMetric struct {
 	skip bool // whether the step was skipped during the build.
 }
 
+// Output returns the first output from Outputs.
+func (m StepMetric) Output() string {
+	if len(m.Outputs) == 0 {
+		return ""
+	}
+	return m.Outputs[0]
+}
+
 func (m *StepMetric) init(ctx context.Context, b *Builder, step *Step, stepStart time.Time, prevStepOut string) {
 	m.StepID = step.def.String()
 	m.Rule = step.def.RuleName()
 	m.Action = step.def.ActionName()
-	m.Output = b.path.MaybeToWD(ctx, step.def.Outputs(ctx)[0])
+	for _, o := range step.def.Outputs(ctx) {
+		m.Outputs = append(m.Outputs, b.path.MaybeToWD(ctx, o))
+	}
 	m.GNTarget = step.def.Binding("gn_target")
 	m.PrevStepID = step.prevStepID
 	m.PrevStepOut = prevStepOut
@@ -178,7 +187,6 @@ func (m *StepMetric) init(ctx context.Context, b *Builder, step *Step, stepStart
 func (m *StepMetric) done(ctx context.Context, step *Step, buildStart time.Time) {
 	m.WeightedDuration = IntervalMetric(step.getWeightedDuration())
 	m.Inputs = len(step.cmd.Inputs)
-	m.Outputs = len(step.cmd.Outputs)
 
 	m.CmdHash = base64.StdEncoding.EncodeToString(step.cmd.CmdHash)
 	m.Digest = step.cmd.ActionDigest().String()

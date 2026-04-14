@@ -108,13 +108,13 @@ func TestBuild_Restat(t *testing.T) {
 			if m.StepID == "" {
 				continue
 			}
-			switch filepath.Base(m.Output) {
+			switch filepath.Base(m.Output()) {
 			case "foo.out":
 				if m.Err {
-					t.Errorf("%s err=%t; want false", m.Output, m.Err)
+					t.Errorf("%s err=%t; want false", m.Output(), m.Err)
 				}
 			default:
-				t.Errorf("unexpected output %q: %#v", m.Output, m)
+				t.Errorf("unexpected output %q: %#v", m.Output(), m)
 			}
 		}
 	}()
@@ -170,13 +170,13 @@ func TestBuild_Restat(t *testing.T) {
 			if m.StepID == "" {
 				continue
 			}
-			switch filepath.Base(m.Output) {
+			switch filepath.Base(m.Output()) {
 			case "foo.out", "bar.out":
 				if m.Err {
-					t.Errorf("%s err=%t; want false", m.Output, m.Err)
+					t.Errorf("%s err=%t; want false", m.Output(), m.Err)
 				}
 			default:
-				t.Errorf("unexpected output %q", m.Output)
+				t.Errorf("unexpected output %q", m.Output())
 			}
 		}
 	}()
@@ -264,13 +264,13 @@ func TestBuild_Restat_RestatContent(t *testing.T) {
 			if m.StepID == "" {
 				continue
 			}
-			switch filepath.Base(m.Output) {
+			switch filepath.Base(m.Output()) {
 			case "foo.out":
 				if m.Err {
-					t.Errorf("%s err=%t; want false", m.Output, m.Err)
+					t.Errorf("%s err=%t; want false", m.Output(), m.Err)
 				}
 			default:
-				t.Errorf("unexpected output %q: %#v", m.Output, m)
+				t.Errorf("unexpected output %q: %#v", m.Output(), m)
 			}
 		}
 	}()
@@ -326,13 +326,13 @@ func TestBuild_Restat_RestatContent(t *testing.T) {
 			if m.StepID == "" {
 				continue
 			}
-			switch filepath.Base(m.Output) {
+			switch filepath.Base(m.Output()) {
 			case "foo.out", "bar.out":
 				if m.Err {
-					t.Errorf("%s err=%t; want false", m.Output, m.Err)
+					t.Errorf("%s err=%t; want false", m.Output(), m.Err)
 				}
 			default:
-				t.Errorf("unexpected output %q", m.Output)
+				t.Errorf("unexpected output %q", m.Output())
 			}
 		}
 	}()

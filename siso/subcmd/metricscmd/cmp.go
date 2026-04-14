@@ -148,7 +148,7 @@ func outputDiff(m []build.StepMetric) error {
 		ExecTime         build.IntervalMetric `json:"exec"`
 	}{
 		Action:           m[0].Action,
-		Output:           m[0].Output,
+		Output:           m[0].Output(),
 		Ready:            m[0].Ready - m[1].Ready,
 		Start:            m[0].Start - m[1].Start,
 		Duration:         m[0].Duration - m[1].Duration,
@@ -193,7 +193,7 @@ func join(x, y []build.StepMetric) [][]build.StepMetric {
 func indexMap(x []build.StepMetric) map[string]build.StepMetric {
 	r := make(map[string]build.StepMetric)
 	for _, m := range x {
-		output := m.Output
+		output := m.Output()
 		r[output] = m
 	}
 	return r

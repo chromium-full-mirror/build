@@ -137,7 +137,7 @@ func (c *summaryCommand) run(ctx context.Context) error {
 			latest = end
 		}
 		target := &targetMetric{
-			Output: s.Output,
+			Output: s.Output(),
 			Start:  start,
 			End:    end,
 		}
