@@ -15,7 +15,7 @@ import (
 // PathFilter specifies filter rules for action inputs.
 type PathFilter struct {
 	// glob pattern not to use as action inputs from inputs.
-	Excludes []string
+	Excludes []string `json:"excludes,omitempty"`
 
 	// glob pattern to use as action inputs from inputs.
 	Includes []string `json:"includes,omitempty"`
@@ -25,10 +25,7 @@ type PathFilter struct {
 
 // enabled returns true when PathFilter is enabled.
 func (pf *PathFilter) enabled() bool {
-	if pf == nil {
-		return false
-	}
-	return len(pf.Includes) > 0 || len(pf.Excludes) > 0
+	return pf != nil
 }
 
 func (pf *PathFilter) filter(ctx context.Context, name string) func(context.Context, string, bool) bool {
