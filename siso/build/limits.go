@@ -168,10 +168,15 @@ func limitForStep(numCPU int) int {
 
 func limitForRemote(numCPU int) int {
 	limit := remoteLimitFactor * numCPU
-	// Intel Mac has bad performance with a large number of remote actions.
-	if runtime.GOOS == "darwin" && runtime.GOARCH == "amd64" {
-		return min(1000, limit)
+	if runtime.GOOS == "darwin" {
+		// Intel Mac has bad performance with a large number of remote actions.
+		if runtime.GOARCH == "amd64" {
+			return min(1000, limit)
+		}
+		// Apple Silicon has better scalability than Intel.
+		limit *= 8
 	}
+
 	// reclient_helper.py sets the RBE_server_address
 	// https://chromium.googlesource.com/chromium/tools/depot_tools.git/+/e13840bd9a04f464e3bef22afac1976fc15a96a0/reclient_helper.py#138
 	if v := os.Getenv("RBE_server_address"); v != "" {
