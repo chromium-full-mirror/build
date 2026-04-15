@@ -37,6 +37,7 @@ import (
 	"go.chromium.org/build/siso/signals"
 	"go.chromium.org/build/siso/toolsupport/artfsutil"
 	"go.chromium.org/build/siso/toolsupport/cogutil"
+	"go.chromium.org/build/siso/toolsupport/ninjautil"
 	"go.chromium.org/build/siso/toolsupport/soongutil"
 	"go.chromium.org/build/siso/ui"
 )
@@ -186,6 +187,9 @@ func (c *Command) setup(ctx context.Context) (buildPath *build.Path, doneLock fu
 		return nil, nil, nil, err
 	}
 	clog.Infof(ctx, "siso log dir=%s", c.logDir)
+	if !filepath.IsAbs(c.buildPprof) {
+		c.buildPprof = filepath.Join(c.logDir, c.buildPprof)
+	}
 
 	c.cleanupReclientMetrics(ctx)
 
@@ -411,7 +415,39 @@ func (c *Command) Run(ctx context.Context) (stats build.Stats, finalErr error) {
 		return stats, err
 	}
 
+	logWriters, done, err := c.initLogWriters(ctx, buildPath)
+	if err != nil {
+		return stats, err
+	}
+	// It mutates finalErr, hence passing over pointer.
+	defer done(&finalErr)
+
 	var eg, reeg errgroup.Group
+	var nstate *ninjautil.State
+	var needHashFSRefresh bool
+	eg.Go(func() error {
+		ctx := trace.NewThread(ctx, "loadNinjaFiles")
+		// use temporary hashfs to check manifest and load manifest
+		// files.
+		tempHashFS, err := hashfs.New(ctx, hashfs.Option{})
+		if err != nil {
+			return err
+		}
+		defer tempHashFS.Close(ctx)
+		emptyDepsLog := &ninjabuild.DepsLog{}
+		tempDS := build.DataSource{}
+		bopts := c.initBuildOpts(ctx, projectID, buildPath, config, tempDS, tempHashFS, limits, tracer, nil, logWriters)
+		needHashFSRefresh, err = ninjabuild.CheckManifest(ctx, c.fname, buildPath, config, tempHashFS, emptyDepsLog, &bopts)
+		if err != nil {
+			return err
+		}
+		clog.Infof(ctx, "check manifest done")
+		nstate, err = ninjabuild.Load(ctx, c.fname, buildPath)
+		if err != nil {
+			return err
+		}
+		return nil
+	})
 	var localDepsLog *ninjabuild.DepsLog
 	eg.Go(func() error {
 		ctx := trace.NewThread(ctx, "initDepsLog")
@@ -504,17 +540,27 @@ func (c *Command) Run(ctx context.Context) (stats build.Stats, finalErr error) {
 		}
 		defer func() { cleanup(finalErr) }()
 	}
-
-	logWriters, done, err := c.initLogWriters(ctx, buildPath)
-	if err != nil {
-		return stats, err
-	}
-	// It mutates finalErr, hence passing over pointer.
-	defer done(&finalErr)
 	bopts := c.initBuildOpts(ctx, projectID, buildPath, config, ds, hashFS, limits, tracer, traceExporter, logWriters)
-	spin.Start("loading/recompacting deps log")
+
+	spin.Start("loading %s...", c.fname)
 	err = eg.Wait()
 	spin.Stop(err)
+	if needHashFSRefresh {
+		started := time.Now()
+		err := hashFS.WaitReady(ctx)
+		if err != nil {
+			clog.Warningf(ctx, "hashfs error: %v", err)
+			return stats, err
+		}
+		// to avoid unexpected reconcile mtime
+		hashFS.Forget(ctx, buildPath.WorkspaceRoot, []string{buildPath.MaybeFromWD(ctx, "build.ninja.stamp")})
+		err = hashFS.Refresh(ctx)
+		if err != nil {
+			clog.Warningf(ctx, "%s modified. failed to refresh hashfs %s: %v", c.fname, time.Since(started), err)
+			return stats, err
+		}
+		clog.Infof(ctx, "%s modified. refresh hashfs %s", c.fname, time.Since(started))
+	}
 	if localDepsLog != nil {
 		defer localDepsLog.Close()
 	}
@@ -530,11 +576,6 @@ func (c *Command) Run(ctx context.Context) (stats build.Stats, finalErr error) {
 		}
 	}
 
-	err = ninjabuild.CheckManifest(ctx, c.fname, buildPath, config, hashFS, localDepsLog, &bopts)
-	if err != nil {
-		return stats, err
-	}
-
 	spin.Start("load siso config")
 	stepConfig, err := ninjabuild.NewStepConfig(ctx, config, buildPath, c.fname, c.stateDir)
 	if err != nil {
@@ -542,14 +583,6 @@ func (c *Command) Run(ctx context.Context) (stats build.Stats, finalErr error) {
 		return stats, err
 	}
 	spin.Stop(nil)
-	spin.Start("load %s", c.fname)
-	nstate, err := ninjabuild.Load(ctx, c.fname, buildPath)
-	if err != nil {
-		spin.Stop(errors.New(""))
-		return stats, err
-	}
-	spin.Stop(nil)
-
 	graph := ninjabuild.NewGraph(ctx, c.fname, nstate, config, buildPath, hashFS, stepConfig, localDepsLog)
 
 	// Set last failure targets if necessary, and remove the last failed targets file unconditionally.
@@ -776,11 +809,7 @@ func (c *Command) setupHashFS(ctx context.Context, buildPath *build.Path, ds bui
 
 	c.fsopt.FSMonitor = initFSMonitor(ctx, buildPath.WorkspaceRoot)
 
-	spin := ui.Default.NewSpinner()
-	spin.Start("loading fs state")
-
 	hashFS, err := hashfs.New(ctx, *c.fsopt)
-	spin.Stop(err)
 	if err != nil {
 		return nil, nil, err
 	}

@@ -189,6 +189,7 @@ func (hfs *HashFS) WaitReady(ctx context.Context) error {
 	if hfs.setStateCh == nil {
 		return nil
 	}
+	defer trace.Begin(ctx, "hashfs.WaitReady").End()
 	started := time.Now()
 	select {
 	case <-ctx.Done():
@@ -1605,6 +1606,7 @@ func (hfs *HashFS) Flush(ctx context.Context, workspaceRoot string, files []stri
 
 // Refresh refreshes cached file entries.
 func (hfs *HashFS) Refresh(ctx context.Context) error {
+	defer trace.Begin(ctx, "hashfs.Refresh").End()
 	// TODO: optimize?
 	state := hfs.State(ctx)
 	// reset loaded as it reset entry data.
