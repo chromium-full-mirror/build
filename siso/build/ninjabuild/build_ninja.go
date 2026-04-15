@@ -73,21 +73,20 @@ func initNinjaLogWriter(bopts *build.Options, outDir string) error {
 // for build.ninja in main build.ninja file.
 // Even if this assumption failed e.g. soong doesn't have such build rule,
 // Run will rebuild manifest after reading all build.ninja files.
-func CheckManifest(ctx context.Context, filename string, buildPath *build.Path, config *buildconfig.Config, hashFS *hashfs.HashFS, localDepsLog *DepsLog, bopts *build.Options) (bool, error) {
+func CheckManifest(ctx context.Context, filename string, buildPath *build.Path, config *buildconfig.Config, hashFS *hashfs.HashFS, localDepsLog *DepsLog, bopts *build.Options) error {
 	defer trace.Begin(ctx, "ninjabuild.CheckManifest").End()
 	started := time.Now()
 	defer func() {
 		ui.Default.PrintLines("")
 		clog.Infof(ctx, "check build ninja in %s", time.Since(started))
 	}()
-
 	nstate := ninjautil.NewState()
 	p := ninjautil.NewManifestParser(nstate)
 	err := p.LoadSingle(ctx, filename)
 	if err != nil {
 		clog.Warningf(ctx, "check build ninja: load %v", err)
 		// will check later with full build ninja in Run.
-		return false, nil
+		return nil
 	}
 	clog.Infof(ctx, "check build ninja: load file in %s", time.Since(started))
 
@@ -98,7 +97,7 @@ func CheckManifest(ctx context.Context, filename string, buildPath *build.Path, 
 	// so it's the earliest and most accurate place to know the builddir and initialize the log.
 	err = initNinjaLogWriter(bopts, builddir)
 	if err != nil {
-		return false, err
+		return err
 	}
 	clog.Infof(ctx, "check build ninja: initialize ninja log in %s", time.Since(started))
 	// zero step config. no remote exec for gn gen?
@@ -107,22 +106,28 @@ func CheckManifest(ctx context.Context, filename string, buildPath *build.Path, 
 
 	err = rebuildManifest(ctx, graph, *bopts)
 	if errors.Is(err, build.ErrManifestModified) {
-		clog.Warningf(ctx, "rebuild manifest %s: %v", filename, err)
-		return true, nil
+		started := time.Now()
+		err := hashFS.Refresh(ctx)
+		if err != nil {
+			clog.Warningf(ctx, "%s modified. failed to refresh hashfs %s: %v", filename, time.Since(started), err)
+			return err
+		}
+		clog.Infof(ctx, "%s modified. refresh hashfs %s", filename, time.Since(started))
+		return nil
 	}
 	if errors.Is(err, build.ErrNoTarget) {
 		// android soong doesn't have build target for ninja files.
 		// ignore no target error.
 		clog.Infof(ctx, "no target for %q", filename)
-		return false, nil
+		return nil
 	}
 	if err != nil {
 		// failed to build ninja files.
 		// e.g. failed to run `gn gen` b/481012408
 		clog.Warningf(ctx, "check build ninja: rebuild manifest %v", err)
-		return false, err
+		return err
 	}
-	return false, nil
+	return nil
 }
 
 // Run runs a ninja build.

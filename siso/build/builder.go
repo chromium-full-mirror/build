@@ -662,11 +662,11 @@ func (b *Builder) Build(ctx context.Context, name string, args ...string) (err e
 		b.reapiclient.IOMetrics(),
 		// TODO: cache iometrics?
 	})
-	defer b.tracer.Stop()
 	b.tracePidPreproc = b.tracer.Process(ctx, "preproc")
 	b.tracePidLocal = b.tracer.Process(ctx, "local-exec")
 	b.tracePidRemote = b.tracer.Process(ctx, "remote-exec")
 	b.tracePidWorker = b.tracer.Process(ctx, "rbe")
+
 	b.tracePprof.SetMetadata(b.metadata)
 	b.pprofUploader.SetMetadata(ctx, b.metadata)
 	defer func(ctx context.Context) {

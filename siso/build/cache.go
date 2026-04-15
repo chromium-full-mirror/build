@@ -45,17 +45,18 @@ func NewCache(ctx context.Context, opts CacheOptions) (*Cache, error) {
 	clog.Infof(ctx, "cache store=%v read=%t",
 		opts.Store,
 		opts.EnableRead)
-	cache := &Cache{
+	if opts.Store == nil {
+		return nil, errors.New("cache: store is not set")
+	}
+	return &Cache{
 		store:      opts.Store,
 		enableRead: opts.EnableRead,
+
 		// TODO(b/274038010): cache-digest semaphore should share with execute/remotecache?
 		sema: semaphore.New("cache-digest", runtimex.NumCPU()*10),
-		m:    iometrics.New("cache-content"),
-	}
-	if opts.Store == nil {
-		return cache, errors.New("cache: store is not set")
-	}
-	return cache, nil
+
+		m: iometrics.New("cache-content"),
+	}, nil
 }
 
 // GetActionResult gets action result for the cmd from cache.
@@ -111,9 +112,6 @@ func (c *Cache) GetActionResult(ctx context.Context, cmd *execute.Cmd) error {
 }
 
 func (c *Cache) setActionResultStdout(ctx context.Context, cmd *execute.Cmd, result *rpb.ActionResult) error {
-	if c == nil || c.store == nil {
-		return status.Error(codes.NotFound, "cache is not configured")
-	}
 	w := cmd.StdoutWriter()
 	if len(result.StdoutRaw) > 0 {
 		w.Write(result.StdoutRaw)
@@ -132,9 +130,6 @@ func (c *Cache) setActionResultStdout(ctx context.Context, cmd *execute.Cmd, res
 }
 
 func (c *Cache) setActionResultStderr(ctx context.Context, cmd *execute.Cmd, result *rpb.ActionResult) error {
-	if c == nil || c.store == nil {
-		return status.Error(codes.NotFound, "cache is not configured")
-	}
 	w := cmd.StderrWriter()
 	if len(result.StderrRaw) > 0 {
 		w.Write(result.StderrRaw)
