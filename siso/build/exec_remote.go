@@ -17,7 +17,17 @@ import (
 	"go.chromium.org/build/siso/reapi/retry"
 )
 
-func (b *Builder) execRemote(ctx context.Context, step *Step) error {
+// execRemoteRun runs the remote execution phase without post-processing.
+// It handles retry, semaphore acquisition, and recording outputs in hashFS,
+// but does NOT call updateDeps or outputs.
+// Used by runRacing to separate execution from post-processing.
+//
+// uploadCtx controls CAS input uploads; ctx controls execution and
+// retry/semaphore. In the non-racing path both are the same context.
+// In racing mode, uploadCtx is the build context (not canceled by
+// race cancellation) so that shared CAS upload operations are not
+// poisoned when the race goroutine's ctx is canceled.
+func (b *Builder) execRemoteRun(uploadCtx, ctx context.Context, step *Step) error {
 	ctx, span := trace.NewSpan(ctx, "exec-remote")
 	defer span.Close(nil)
 	noFallback := !b.localFallbackEnabled()
@@ -33,7 +43,7 @@ func (b *Builder) execRemote(ctx context.Context, step *Step) error {
 	clog.Infof(ctx, "exec remote %s", step.cmd.Desc)
 	phase := stepRemoteRun
 	var reExecDur time.Duration
-	err := retry.Do(ctx, func() error {
+	return retry.Do(ctx, func() error {
 		step.setPhase(phase.wait())
 		err := b.remoteSema.Do(ctx, step.weight, func(ctx context.Context) error {
 			step.setPhase(phase)
@@ -45,7 +55,7 @@ func (b *Builder) execRemote(ctx context.Context, step *Step) error {
 			b.actionStarted(step)
 			clog.Infof(ctx, "step state: remote exec [%s]", phase)
 			phase = stepRetryRun
-			err := b.remoteExec.Run(ctx, step.cmd)
+			err := b.remoteExec.Run(uploadCtx, ctx, step.cmd)
 			step.setPhase(stepOutput)
 			step.metrics.IsRemote = true
 			result, cached := step.cmd.ActionResult()
@@ -56,7 +66,7 @@ func (b *Builder) execRemote(ctx context.Context, step *Step) error {
 				step.metrics.RemoteRetry++
 				step.cmd.SkipCacheLookup = true
 				step.setPhase(phase)
-				err = b.remoteExec.Run(ctx, step.cmd)
+				err = b.remoteExec.Run(uploadCtx, ctx, step.cmd)
 				step.setPhase(stepOutput)
 				step.metrics.IsRemote = true
 				result, cached = step.cmd.ActionResult()
@@ -100,12 +110,15 @@ func (b *Builder) execRemote(ctx context.Context, step *Step) error {
 		}
 		return err
 	})
-	if err != nil {
+}
+
+func (b *Builder) execRemote(ctx context.Context, step *Step) error {
+	if err := b.execRemoteRun(ctx, ctx, step); err != nil {
 		return err
 	}
 	// need to update deps for remote exec for deps=gcc with depsfile,
 	// or deps=msvc with showIncludes
-	if err = b.updateDeps(ctx, step); err != nil {
+	if err := b.updateDeps(ctx, step); err != nil {
 		return err
 	}
 	return b.outputs(ctx, step)

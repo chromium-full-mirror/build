@@ -171,6 +171,22 @@ type Step struct {
 	state *stepState
 }
 
+// Clone creates a shallow clone of the step with a cloned Cmd
+// and fresh mutable state, suitable for the local racer in racing mode.
+func (s *Step) Clone() *Step {
+	return &Step{
+		idnum:       s.idnum,
+		def:         s.def,
+		weight:      s.weight,
+		outputs:     s.outputs,
+		outputPaths: s.outputPaths,
+		cmd:         s.cmd.Clone(),
+		readyTime:   s.readyTime,
+		startTime:   s.startTime,
+		state:       &stepState{},
+	}
+}
+
 // IDNum is a step identification number.
 func (s *Step) IDNum() int { return s.idnum }
 

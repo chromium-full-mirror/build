@@ -99,6 +99,8 @@ type StepMetric struct {
 	CacheWriteErr bool   `json:"cache_write_err,omitempty"` // whether the action failed while using cache write feature.
 	Cached        bool   `json:"cached,omitempty"`          // whether the action was a cache hit.
 	Fallback      bool   `json:"fallback,omitempty"`        // whether the action failed remotely and was retried locally.
+	Racing        bool   `json:"racing,omitempty"`          // whether the action used racing (local+remote in parallel).
+	RacingWinner  string `json:"racing_winner,omitempty"`   // "local" or "remote" if racing was used.
 	Err           bool   `json:"err,omitempty"`             // whether the action failed.
 	RemoteRetry   int    `json:"remote_retry,omitempty"`    // count of remote retry
 	WorkerPool    string `json:"worker_pool,omitempty"`     // worker pool that executes the action.
@@ -168,6 +170,32 @@ func (m StepMetric) Output() string {
 		return ""
 	}
 	return m.Outputs[0]
+}
+
+// copyExecResult copies execution metrics from a local racing clone back
+// to the original step's metrics. This includes both the fields set
+// during command execution and the fields set by done().
+func (m *StepMetric) copyExecResult(src *StepMetric) {
+	// Fields set by done().
+	m.WeightedDuration = src.WeightedDuration
+	m.Inputs = src.Inputs
+	m.Outputs = src.Outputs
+	m.CmdHash = src.CmdHash
+	m.Digest = src.Digest
+
+	// Fields set during command execution.
+	m.RunTime = src.RunTime
+	m.ExecTime = src.ExecTime
+	m.ActionStartTime = src.ActionStartTime
+	m.Cached = src.Cached
+	m.CacheWrite = src.CacheWrite
+	m.CacheWriteErr = src.CacheWriteErr
+	m.MaxRSS = src.MaxRSS
+	m.Majflt = src.Majflt
+	m.Inblock = src.Inblock
+	m.Oublock = src.Oublock
+	m.Utime = src.Utime
+	m.Stime = src.Stime
 }
 
 func (m *StepMetric) init(ctx context.Context, b *Builder, step *Step, stepStart time.Time, prevStepOut string) {

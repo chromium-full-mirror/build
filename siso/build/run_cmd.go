@@ -28,6 +28,8 @@ func (b *Builder) runStrategy(step *Step) func(context.Context, *Step) error {
 	switch {
 	case step.cmd.Pure && b.allowREProxy(step):
 		return b.runReproxy
+	case step.cmd.Pure && b.allowRemote(step) && b.racingEnabled:
+		return b.runRacing
 	case step.cmd.Pure && b.allowRemote(step):
 		return b.runRemote
 	default:

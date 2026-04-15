@@ -101,6 +101,13 @@ func (b *Builder) treeInput(ctx context.Context, dir, labelSuffix string, fixFn 
 	st = v.(*subtree)
 	err = st.init(ctx, b, dir, files, fixFn)
 	if err != nil {
+		// If our context is still alive but init failed, the
+		// subtree was poisoned by external factors (e.g. a
+		// transient error). Evict it so the next caller gets a
+		// fresh sync.Once.
+		if ctx.Err() == nil {
+			b.trees.CompareAndDelete(dir, st)
+		}
 		return merkletree.TreeEntry{}, err
 	}
 	return merkletree.TreeEntry{

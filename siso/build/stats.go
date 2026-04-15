@@ -62,6 +62,15 @@ func (s *stats) update(ctx context.Context, m *StepMetric, pure bool) {
 	}
 	s.s.RemoteRetry += m.RemoteRetry
 
+	if m.Racing {
+		switch m.RacingWinner {
+		case "local":
+			s.s.RacingLocal++
+		case "remote":
+			s.s.RacingRemote++
+		}
+	}
+
 	if m.ScandepsErr {
 		s.s.ScanDepsFailed++
 	}
@@ -89,6 +98,8 @@ type Stats struct {
 	CacheWrite     int // locally executed actions whose trusted results were uploaded directly to RE
 	CacheWriteErr  int // locally executed actions that failed uploading results directly to RE
 	RemoteRetry    int // accumulated remote retry counts
+	RacingLocal    int // racing steps where local won
+	RacingRemote   int // racing steps where remote won
 	Total          int // total actions that ran during this build
 }
 

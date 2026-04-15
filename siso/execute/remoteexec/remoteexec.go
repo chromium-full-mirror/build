@@ -60,16 +60,29 @@ func (re *RemoteExec) prepareInputs(ctx context.Context, cmd *execute.Cmd) (dige
 	return actionDigest, err
 }
 
-// Run runs a cmd.
-func (re *RemoteExec) Run(ctx context.Context, cmd *execute.Cmd) error {
-	ctx, span := trace.NewSpan(ctx, "remote-exec")
+// Run runs a cmd. uploadCtx is used for CAS input uploads
+// (prepareInputs); execCtx is used for the remote execution RPC.
+// In the non-racing path both contexts are the same. In racing
+// mode, uploadCtx is the build context (survives race cancellation)
+// while execCtx is the race context (canceled when the race decides).
+// This mirrors reclient's approach of using a background context for
+// CAS uploads so that shared upload operations are not poisoned when
+// a racing goroutine's context is canceled.
+func (re *RemoteExec) Run(uploadCtx, execCtx context.Context, cmd *execute.Cmd) error {
+	execCtx, span := trace.NewSpan(execCtx, "remote-exec")
 	defer span.Close(nil)
-	actionDigest, err := re.prepareInputs(ctx, cmd)
+	actionDigest, err := re.prepareInputs(uploadCtx, cmd)
 	if err != nil {
 		return err
 	}
+	// If the execution context was canceled during upload (e.g.
+	// the race was decided while CAS uploads were finishing),
+	// return early without starting remote execution.
+	if execCtx.Err() != nil {
+		return context.Cause(execCtx)
+	}
 
-	cctx, cspan := trace.NewSpan(ctx, "execute-and-wait")
+	cctx, cspan := trace.NewSpan(execCtx, "execute-and-wait")
 	if cmd.Timeout > 0 {
 		var cancel context.CancelFunc
 		cctx, cancel = context.WithTimeoutCause(cctx, cmd.Timeout, fmt.Errorf("remote exec timeout=%v: %w", cmd.Timeout, context.DeadlineExceeded))
@@ -80,16 +93,16 @@ func (re *RemoteExec) Run(ctx context.Context, cmd *execute.Cmd) error {
 		SkipCacheLookup: cmd.SkipCacheLookup,
 	})
 	cspan.Close(nil)
-	clog.Infof(ctx, "digest: %s, skipCacheLookup:%t opName: %s", actionDigest, cmd.SkipCacheLookup, opName)
+	clog.Infof(execCtx, "digest: %s, skipCacheLookup:%t opName: %s", actionDigest, cmd.SkipCacheLookup, opName)
 	if log.V(1) {
-		clog.Infof(ctx, "response: %s", resp)
+		clog.Infof(execCtx, "response: %s", resp)
 	}
 	if err != nil {
-		clog.Warningf(ctx, "digest: %s, err: %v", actionDigest, err)
+		clog.Warningf(execCtx, "digest: %s, err: %v", actionDigest, err)
 	}
 	result := resp.GetResult()
-	re.recordExecuteMetadata(ctx, result, resp.GetCachedResult(), span)
-	return re.processResult(ctx, cmd, result, resp.GetCachedResult(), err)
+	re.recordExecuteMetadata(execCtx, result, resp.GetCachedResult(), span)
+	return re.processResult(execCtx, cmd, result, resp.GetCachedResult(), err)
 }
 
 func (re *RemoteExec) recordExecuteMetadata(ctx context.Context, result *rpb.ActionResult, cached bool, span *trace.Span) {
@@ -227,6 +240,9 @@ func (re *RemoteExec) processResult(ctx context.Context, cmd *execute.Cmd, resul
 		return cmdErr
 	}
 	// update output file only step succeeded.
+	if cmd.SkipRecordOutputs {
+		return nil
+	}
 	return cmd.RecordOutputs(ctx, cmd.HashFS.DataSource(), now)
 }
 

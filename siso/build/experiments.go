@@ -43,6 +43,7 @@ var knownExperiments = map[string]string{
 	"no-fast-deps":                 "",
 	"no-fast-deps-fallback":        "",
 	"prepare-header-only":          "",
+	"racing":                       "",
 	"simulate-remote-cache-misses": "",
 }
 

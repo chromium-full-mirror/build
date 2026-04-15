@@ -196,6 +196,7 @@ type Builder struct {
 
 	fastLocalSema     *semaphore.Semaphore
 	startLocalCounter atomic.Int32
+	racingEnabled     bool
 
 	remoteSema         *semaphore.Prioritized
 	remoteExec         *remoteexec.RemoteExec
@@ -358,6 +359,7 @@ func New(ctx context.Context, graph Graph, opts Options) (_ *Builder, err error)
 		localExec:          le,
 		rewrapSema:         semaphore.NewPrioritized("rewrap", opts.Limits.REWrap),
 		fastLocalSema:      fastLocalSema,
+		racingEnabled:      experiments.Enabled("racing", "racing mode enabled"),
 		remoteSema:         semaphore.NewPrioritized("remoteexec", opts.Limits.Remote),
 		remoteExec:         re,
 		reExecEnable:       opts.REExecEnable,

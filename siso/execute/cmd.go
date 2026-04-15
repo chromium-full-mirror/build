@@ -183,6 +183,12 @@ type Cmd struct {
 	// SkipCacheLookup specifies it won't lookup cache in remote execution.
 	SkipCacheLookup bool
 
+	// SkipRecordOutputs skips recording outputs in hashfs after
+	// remote execution.  Used in racing mode where the caller
+	// records outputs after the race is decided to avoid hashfs
+	// races with the local goroutine's RecordOutputsFromLocal.
+	SkipRecordOutputs bool
+
 	// HashFS is a hash fs that the cmd runs on.
 	HashFS *hashfs.HashFS
 
@@ -263,6 +269,29 @@ type Cmd struct {
 	remoteFallbackError error
 
 	outputResult string
+}
+
+// Clone creates a shallow clone of the Cmd suitable for use as
+// the local racer in racing mode. All public fields are shared (they are
+// read-only during execution), but private mutable state (action result,
+// stdout/stderr buffers, output entries) is freshly initialized so the
+// two racers don't interfere with each other.
+func (c *Cmd) Clone() *Cmd {
+	clone := *c // shallow copy of all fields
+	// Reset mutable state so the clone is independent.
+	clone.preOutputEntries = nil
+	clone.stdoutBuffer = nil
+	clone.stderrBuffer = nil
+	clone.actionDigest = digest.Digest{}
+	clone.actionResult = nil
+	clone.cachedResult = false
+	clone.remoteFallbackResult = nil
+	clone.remoteFallbackError = nil
+	clone.outputResult = ""
+	clone.AuxiliaryOutputDigests = nil
+	// Re-initialize outfiles map from the shared Outputs slice.
+	clone.InitOutputs()
+	return &clone
 }
 
 // String returns an ID of the cmd.
