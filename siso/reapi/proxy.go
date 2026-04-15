@@ -11,11 +11,17 @@ import (
 	"net"
 	"net/url"
 	"os"
+	"sync"
 	"time"
 
 	rpb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+
+	"go.chromium.org/build/siso/o11y/clog"
+	"go.chromium.org/build/siso/reapi/digest"
 )
 
 // Proxy is RE API proxy.
@@ -49,13 +55,22 @@ func (p *Proxy) Serve(ctx context.Context) error {
 	// TODO: set recv msg size based on server capabilities?
 	server := grpc.NewServer(grpc.MaxRecvMsgSize(20 * 1024 * 1024))
 
-	cp := &capabilitiesProxy{client: rpb.NewCapabilitiesClient(p.client.conn)}
+	cp := &capabilitiesProxy{
+		client: rpb.NewCapabilitiesClient(p.client.conn),
+		resps: map[string]*rpb.ServerCapabilities{
+			p.client.opt.Instance: p.client.capabilities,
+		},
+	}
 	rpb.RegisterCapabilitiesServer(server, cp)
 
 	ap := &actionCacheProxy{client: rpb.NewActionCacheClient(p.client.casConn)}
 	rpb.RegisterActionCacheServer(server, ap)
 
-	casp := &contentAddressableStorageProxy{client: rpb.NewContentAddressableStorageClient(p.client.casConn)}
+	casp := &contentAddressableStorageProxy{
+		client:            rpb.NewContentAddressableStorageClient(p.client.casConn),
+		writableInstances: make(map[string]bool),
+	}
+	casp.checkWritable(ctx, p.client)
 	rpb.RegisterContentAddressableStorageServer(server, casp)
 
 	ep := &executionProxy{client: rpb.NewExecutionClient(p.client.conn)}
@@ -98,10 +113,27 @@ func (p *Proxy) Serve(ctx context.Context) error {
 type capabilitiesProxy struct {
 	rpb.UnimplementedCapabilitiesServer
 	client rpb.CapabilitiesClient
+
+	mu    sync.Mutex
+	resps map[string]*rpb.ServerCapabilities
 }
 
 func (cp *capabilitiesProxy) GetCapabilities(ctx context.Context, req *rpb.GetCapabilitiesRequest) (*rpb.ServerCapabilities, error) {
-	return cp.client.GetCapabilities(ctx, req)
+	cp.mu.Lock()
+	resp, ok := cp.resps[req.InstanceName]
+	cp.mu.Unlock()
+	if ok {
+		clog.Infof(ctx, "cached capabilities for %q: %v", req.InstanceName, resp)
+		return resp, nil
+	}
+	resp, err := cp.client.GetCapabilities(ctx, req)
+	if err != nil {
+		return resp, err
+	}
+	cp.mu.Lock()
+	cp.resps[req.InstanceName] = resp
+	cp.mu.Unlock()
+	return resp, nil
 }
 
 type actionCacheProxy struct {
@@ -120,6 +152,21 @@ func (ap *actionCacheProxy) UpdateActionResult(ctx context.Context, req *rpb.Upd
 type contentAddressableStorageProxy struct {
 	rpb.UnimplementedContentAddressableStorageServer
 	client rpb.ContentAddressableStorageClient
+
+	mu                sync.Mutex
+	writableInstances map[string]bool
+}
+
+func (cp *contentAddressableStorageProxy) checkWritable(ctx context.Context, client *Client) {
+	err := client.CheckWritable(ctx)
+	if err != nil {
+		clog.Warningf(ctx, "check writable: %v", err)
+		return
+	}
+	cp.mu.Lock()
+	defer cp.mu.Unlock()
+	cp.writableInstances[client.opt.Instance] = true
+	clog.Infof(ctx, "check writable %q: true", client.opt.Instance)
 }
 
 func (cp *contentAddressableStorageProxy) FindMissingBlobs(ctx context.Context, req *rpb.FindMissingBlobsRequest) (*rpb.FindMissingBlobsResponse, error) {
@@ -127,6 +174,23 @@ func (cp *contentAddressableStorageProxy) FindMissingBlobs(ctx context.Context, 
 }
 
 func (cp *contentAddressableStorageProxy) BatchUpdateBlobs(ctx context.Context, req *rpb.BatchUpdateBlobsRequest) (*rpb.BatchUpdateBlobsResponse, error) {
+	if len(req.Requests) == 1 && digest.FromProto(req.Requests[0].GetDigest()) == digest.Empty && len(req.Requests[0].GetData()) == 0 {
+		cp.mu.Lock()
+		ok := cp.writableInstances[req.InstanceName]
+		cp.mu.Unlock()
+		if ok {
+			clog.Infof(ctx, "cached check writable %q: true", req.InstanceName)
+			return &rpb.BatchUpdateBlobsResponse{
+				Responses: []*rpb.BatchUpdateBlobsResponse_Response{
+					{
+						Digest: req.Requests[0].GetDigest(),
+						Status: status.New(codes.OK, "").Proto(),
+					},
+				},
+			}, nil
+		}
+
+	}
 	return cp.client.BatchUpdateBlobs(ctx, req)
 }
 
