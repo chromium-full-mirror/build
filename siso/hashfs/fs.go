@@ -473,6 +473,11 @@ func (hfs *HashFS) stat(ctx context.Context, root, fname string, needCompute boo
 				// so no need to update mtime.
 				clog.Infof(ctx, "stat hashfs dir %s. doesn't exist in local", fullname)
 				return FileInfo{}, err
+			case errors.Is(err, context.Canceled):
+				// Context canceled is normal during shutdown
+				// or when a racing goroutine loses; not
+				// unexpected.
+				return FileInfo{}, err
 			case err != nil:
 				clog.Warningf(ctx, "unexpected dir stat fail %s: %v", fullname, err)
 				return FileInfo{}, err
@@ -983,6 +988,12 @@ func (hfs *HashFS) ForgetMissings(ctx context.Context, root string, inputs []str
 func (hfs *HashFS) Availables(ctx context.Context, root string, inputs []string) []string {
 	availables := make([]string, 0, len(inputs))
 	for _, fname := range inputs {
+		if ctx.Err() != nil {
+			// Context canceled; return what we have so far
+			// rather than logging warnings for every
+			// remaining input.
+			return availables
+		}
 		_, err := hfs.Stat(ctx, root, fname)
 		if errors.Is(err, fs.ErrNotExist) {
 			// If it doesn't exist in hashfs,
@@ -1436,6 +1447,15 @@ func (hfs *HashFS) RetrieveUpdateEntriesFromLocal(ctx context.Context, root stri
 	ents := make([]UpdateEntry, 0, len(fnames))
 	// invalidate hashfs cache for all fnames and its missing parents.
 	for _, fname := range fnames {
+		// Check context before modifying hashfs.  In racing mode
+		// the context may be canceled when the remote side wins,
+		// and proceeding with a canceled context would delete
+		// hashfs entries (via directory.delete below) without being
+		// able to re-create them (Lstat/Stat will fail on the
+		// canceled context), orphaning entries from concurrent steps.
+		if ctx.Err() != nil {
+			return ents
+		}
 		fullname := makeFullpath(root, fname)
 		lfi, err := hfs.OS.Lstat(ctx, fullname)
 		if errors.Is(err, fs.ErrNotExist) {
@@ -1443,8 +1463,12 @@ func (hfs *HashFS) RetrieveUpdateEntriesFromLocal(ctx context.Context, root stri
 			hfs.directory.delete(ctx, fullname)
 			continue
 		} else if err != nil {
+			// Lstat failed for a reason other than ErrNotExist
+			// (e.g. context canceled). We can't determine the
+			// on-disk state, so skip this file without modifying
+			// hashfs to avoid orphaning entries from concurrent
+			// steps that share the same parent directory.
 			clog.Warningf(ctx, "failed to access local %s: %v", fname, err)
-			hfs.directory.delete(ctx, fullname)
 			continue
 		}
 		if !lfi.IsDir() {
@@ -1456,9 +1480,12 @@ func (hfs *HashFS) RetrieveUpdateEntriesFromLocal(ctx context.Context, root stri
 		pathname := filepath.ToSlash(filepath.Dir(fullname))
 		for {
 			_, lerr := hfs.OS.Lstat(ctx, pathname)
-			if errors.Is(lerr, fs.ErrNotExist) {
-				// if local dir doesn't exist,
-				// no need to invalidate hashfs dir.
+			if lerr != nil {
+				// Can't determine on-disk state (context
+				// canceled, permission error, etc). Stop
+				// clearing to avoid incorrectly deleting
+				// hashfs directory entries, which would
+				// orphan children from concurrent steps.
 				break
 			}
 			_, err = hfs.Stat(ctx, "", pathname)

@@ -289,6 +289,9 @@ func (b *Builder) prepareLocalInputs(ctx context.Context, step *Step) error {
 	}
 	err := b.hashFS.Flush(ctx, step.cmd.WorkspaceRoot, inputs)
 	clog.Infof(ctx, "prepare-local-inputs %d %s: %v", len(inputs), time.Since(start), err)
+	if errors.Is(err, context.Canceled) {
+		return err
+	}
 	// now, all inputs are expected to be on disk.
 	// for reproxy and local, no need to scan deps.
 	// but need to remove missing inputs from cmd.Inputs
