@@ -11,6 +11,8 @@ import (
 	"time"
 )
 
+// sseServer implements an http.Handler for Server-Sent Events.
+// It broadcasts all incoming messages to all currently-connected clients.
 type sseServer struct {
 	// clients stores currently active clients.
 	clients map[chan sseMessage]struct{}
