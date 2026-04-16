@@ -433,17 +433,25 @@ func (c *Command) Run(ctx context.Context) (stats build.Stats, finalErr error) {
 		}
 		reeg.Go(func() error {
 			ctx := trace.NewThread(ctx, "reapi init")
-			err := reapiClient.Init(ctx)
+			err := func() error {
+				defer trace.Begin(ctx, "reapi cred.Wait").End()
+				return credential.Wait()
+			}()
 			if err != nil {
-				return err
+				return fmt.Errorf("failed to initialize credentials: %w", err)
 			}
+			eg, ctx := errgroup.WithContext(ctx)
+			eg.Go(func() error {
+				ctx := trace.NewThread(ctx, "reapi.Init")
+				return reapiClient.Init(ctx)
+			})
 			if c.reExecEnable {
-				err := reapiClient.CheckWritable(ctx)
-				if err != nil {
-					return err
-				}
+				eg.Go(func() error {
+					ctx := trace.NewThread(ctx, "reapi.CheckWritable")
+					return reapiClient.CheckWritable(ctx)
+				})
 			}
-			return nil
+			return eg.Wait()
 		})
 	} else {
 		if c.strictRemote {

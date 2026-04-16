@@ -259,6 +259,7 @@ type Client struct {
 	conn    grpcClientConn
 	casConn grpcClientConn
 
+	mu           sync.Mutex
 	capabilities *rpb.ServerCapabilities
 	apiVersion   *semverpb.SemVer
 
@@ -551,6 +552,8 @@ func (c *Client) Init(ctx context.Context) error {
 			}
 		}
 	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	c.capabilities = capa
 	c.apiVersion = apiVersion
 	return nil
@@ -606,6 +609,8 @@ func (c *Client) APIVersion() *semverpb.SemVer {
 	if c == nil {
 		return nil
 	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	if c.apiVersion != nil {
 		return c.apiVersion
 	}

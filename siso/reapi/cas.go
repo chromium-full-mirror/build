@@ -502,9 +502,11 @@ func (c *Client) upload(ctx context.Context, ds *digest.Store, blobs []digest.Di
 	defer span.Close(nil)
 
 	byteLimit := int64(defaultBatchUpdateByteLimit)
+	c.mu.Lock()
 	if max := c.capabilities.GetCacheCapabilities().GetMaxBatchTotalSizeBytes(); max > 0 {
 		byteLimit = max
 	}
+	c.mu.Unlock()
 
 	// Separate small blobs and large blobs because they are going to use different RPCs.
 	smalls, larges := separateBlobs(c.opt.Instance, blobs, byteLimit)
