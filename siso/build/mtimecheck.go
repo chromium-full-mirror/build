@@ -88,7 +88,7 @@ func (b *Builder) checkUpToDate(ctx context.Context, stepDef StepDef, stepManife
 	if inmtime.After(outmtime) {
 		clog.Infof(ctx, "need: in:%s > out:%s %s: in:%s out:%s", lastIn, out0, inmtime.Sub(outmtime), inmtime, outmtime)
 		span.SetAttr("run-reason", "dirty")
-		fmt.Fprintf(b.explainWriter, "output %s older than most recent input %s: out:%s in:+%s\n", outname, lastInName, outmtime.Format(time.RFC3339), inmtime.Sub(outmtime))
+		fmt.Fprintf(b.explainWriter, "output %s older than most recent input %s: out:%s in:+%s\n", outname, lastInName, outmtime.Format(time.RFC3339Nano), inmtime.Sub(outmtime))
 		return false
 	}
 	if !generator && !bytes.Equal(cmdhash, stepManifest.cmdHash) {
