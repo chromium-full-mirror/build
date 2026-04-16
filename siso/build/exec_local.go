@@ -122,7 +122,6 @@ func (b *Builder) execLocal(ctx context.Context, step *Step) (retErr error) {
 				result.ExecutionMetadata = &rpb.ExecutedActionMetadata{}
 			}
 			result.ExecutionMetadata.QueuedTimestamp = timestamppb.New(queueTime)
-			result.ExecutionMetadata.WorkerStartTimestamp = timestamppb.New(started)
 		}
 		step.metrics.RunTime = IntervalMetric(time.Since(started))
 		step.metrics.done(ctx, step, b.start)

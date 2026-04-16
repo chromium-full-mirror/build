@@ -142,7 +142,7 @@ type StepMetric struct {
 	// WorkerTime is the time measured from when the worker started the process
 	// until the worker completed the process (including input fetch and output upload time and
 	// other miscellaneous overheads that aren't measured individually).
-	WorkerTime IntervalMetric `json:"worker_time,omitempty"`
+	WorkerTime IntervalMetric `json:"worker,omitempty"`
 	// OutputUploadTime is the time spent on uploading action outputs from
 	// the remote worker.
 	// It is set only when using remoteexec strategy and no cache.
@@ -226,13 +226,22 @@ func (m *StepMetric) done(ctx context.Context, step *Step, buildStart time.Time)
 	}
 	md := result.GetExecutionMetadata()
 	if !m.Cached {
-		m.QueueTime = IntervalMetric(md.GetWorkerStartTimestamp().AsTime().Sub(md.GetQueuedTimestamp().AsTime()))
+		var queueEnd time.Time
+		if md.GetWorkerStartTimestamp() == nil {
+			queueEnd = md.GetExecutionStartTimestamp().AsTime()
+		} else {
+			queueEnd = md.GetWorkerStartTimestamp().AsTime()
+		}
+		m.QueueTime = IntervalMetric(queueEnd.Sub(md.GetQueuedTimestamp().AsTime()))
 		m.ExecStartTime = IntervalMetric(md.GetExecutionStartTimestamp().AsTime().Sub(buildStart))
 		m.InputFetchTime = IntervalMetric(md.GetInputFetchCompletedTimestamp().AsTime().Sub(md.GetInputFetchStartTimestamp().AsTime()))
 		m.OutputUploadTime = IntervalMetric(md.GetOutputUploadCompletedTimestamp().AsTime().Sub(md.GetOutputUploadStartTimestamp().AsTime()))
-		m.WorkerTime = IntervalMetric(md.GetWorkerCompletedTimestamp().AsTime().Sub(md.GetWorkerStartTimestamp().AsTime()))
+		m.ExecTime = IntervalMetric(md.GetExecutionCompletedTimestamp().AsTime().Sub(md.GetExecutionStartTimestamp().AsTime()))
+
+		if md.GetWorkerStartTimestamp() != nil && md.GetWorkerCompletedTimestamp() != nil {
+			m.WorkerTime = IntervalMetric(md.GetWorkerCompletedTimestamp().AsTime().Sub(md.GetWorkerStartTimestamp().AsTime()))
+		}
 	}
-	m.ExecTime = IntervalMetric(md.GetExecutionCompletedTimestamp().AsTime().Sub(md.GetExecutionStartTimestamp().AsTime()))
 	for _, any := range md.GetAuxiliaryMetadata() {
 		ru := &epb.Rusage{}
 		err := any.UnmarshalTo(ru)
