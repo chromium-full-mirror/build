@@ -563,7 +563,18 @@ func (s *StepDef) DepsBaseInputs(ctx context.Context, toolInputs []string) []str
 		// TODO: per rule?
 		if filter := s.globals.stepConfig.Scandeps.stepInputsFilter; filter != nil {
 			seen := make(map[string]bool)
-			for _, in := range s.Inputs(ctx) {
+			stepInputs := s.TriggerInputs(ctx)
+			// need to expand phony targets here
+			// but no need to include order-only deps as ExpandedInputs.
+			// TODO: use scandeps to trim down header file dependencies from build graph (indirect expanded inputs?).
+			for _, in := range s.edge.TriggerInputs() {
+				p := s.globals.targetPath(in)
+				if inEdge, ok := in.InEdge(); ok && inEdge.IsPhony() {
+					stepInputs = replacePhony(ctx, s.globals, seen, p, inEdge, s.rule.Debug, stepInputs)
+				}
+			}
+			seen = make(map[string]bool)
+			for _, in := range stepInputs {
 				in = filepath.ToSlash(in)
 				if seen[in] {
 					continue
