@@ -36,6 +36,9 @@ var copyBufPool = sync.Pool{
 // Empty is a digest of empty content.
 var Empty = ofBytes([]byte{})
 
+// EmptyTree is a digest of an empty tree (Tree message with empty root directory).
+var EmptyTree = ofBytes(func() []byte { b, _ := proto.Marshal(&rpb.Tree{Root: &rpb.Directory{}}); return b }())
+
 // Digest is a digest.
 type Digest struct {
 	Hash      string `json:"hash,omitempty"`

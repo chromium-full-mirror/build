@@ -122,6 +122,19 @@ auxiliary outputs:
 foo.d	e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855/0	siso fetch -reapi_instance instance e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855/0 foo.d
 `,
 		},
+		{
+			name:   "emptyAuxiliaryDir",
+			result: cmdOutputResultSUCCESS,
+			rule:   "clang/cxx",
+			auxiliary: map[string]digest.Digest{
+				"bar/": digest.EmptyTree,
+			},
+			want: `SUCCESS:  "./foo.o" CXX foo.o
+build step: cxx "./foo.o"
+siso_rule: clang/cxx
+../../third_party/llvm-build/Release+Asserts/bin/clang++ -c ../../base/base.cc
+`,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx := t.Context()

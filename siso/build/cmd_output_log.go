@@ -219,8 +219,11 @@ func cmdOutput(ctx context.Context, result cmdOutputResult, cmd *execute.Cmd, in
 	res.output = output
 	if len(cmd.AuxiliaryOutputDigests) > 0 {
 		for _, name := range slices.Sorted(maps.Keys(cmd.AuxiliaryOutputDigests)) {
-			digest := cmd.AuxiliaryOutputDigests[name]
-			msg := formatAuxiliaryOutput(name, digest, instance)
+			d := cmd.AuxiliaryOutputDigests[name]
+			if strings.HasSuffix(name, "/") && d == digest.EmptyTree {
+				continue
+			}
+			msg := formatAuxiliaryOutput(name, d, instance)
 			res.auxiliaryOutputs = append(res.auxiliaryOutputs, msg)
 		}
 	}
