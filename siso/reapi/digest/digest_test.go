@@ -50,6 +50,11 @@ func TestDigest(t *testing.T) {
 	if empty.IsZero() {
 		t.Errorf("ofBytes([]byte{}).IsZero() = true, want false")
 	}
+
+	// EmptyTree digest
+	if EmptyTree.SizeBytes != 2 {
+		t.Errorf("EmptyTree.SizeBytes = %v, want 2", EmptyTree.SizeBytes)
+	}
 }
 
 func TestData(t *testing.T) {
