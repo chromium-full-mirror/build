@@ -338,7 +338,7 @@ func (s *StepDef) Depfile(ctx context.Context) string {
 	if depfile == "" {
 		return ""
 	}
-	return s.globals.path.MaybeFromWD(ctx, depfile)
+	return s.globals.path.MaybeFromRelative(ctx, depfile)
 }
 
 // Rspfile returns workspace relative rspfile path or empty if not set.
@@ -347,7 +347,7 @@ func (s *StepDef) Rspfile(ctx context.Context) string {
 	if rspfile == "" {
 		return ""
 	}
-	return s.globals.path.MaybeFromWD(ctx, rspfile)
+	return s.globals.path.MaybeFromRelative(ctx, rspfile)
 }
 
 func edgeSolibs(edge *ninjautil.Edge) iter.Seq[string] {
@@ -388,7 +388,7 @@ func (s *StepDef) Inputs(ctx context.Context) []string {
 		if s.rule.Debug {
 			clog.Infof(ctx, "solib %s", p)
 		}
-		p := globals.path.MaybeFromWD(ctx, p)
+		p := globals.path.MaybeFromRelative(ctx, p)
 		if seen[p] {
 			continue
 		}
@@ -488,7 +488,7 @@ func depInputs(ctx context.Context, s *StepDef) (iter.Seq[string], error) {
 						clog.Warningf(ctx, "unexpected dep id=%d for %q: %v", depID, out, err)
 						continue
 					}
-					in = s.globals.path.MaybeFromWD(ctx, in)
+					in = s.globals.path.MaybeFromRelative(ctx, in)
 					if !yield(in) {
 						return
 					}
@@ -503,7 +503,7 @@ func depInputs(ctx context.Context, s *StepDef) (iter.Seq[string], error) {
 					}
 					dp = &depsPath{
 						path:      in,
-						canonpath: s.globals.path.MaybeFromWD(ctx, in),
+						canonpath: s.globals.path.MaybeFromRelative(ctx, in),
 					}
 					// dp should be the same for depID, so
 					// no need to use compareAndSwap.
@@ -522,7 +522,7 @@ func depInputs(ctx context.Context, s *StepDef) (iter.Seq[string], error) {
 		if depfile == "" {
 			return func(yield func(string) bool) {}, nil
 		}
-		df := s.globals.path.MaybeFromWD(ctx, depfile)
+		df := s.globals.path.MaybeFromRelative(ctx, depfile)
 		if s.edge.Binding("generator") != "" {
 			// e.g. rule gn.
 			// generator runs locally, so believe a local file
@@ -543,7 +543,7 @@ func depInputs(ctx context.Context, s *StepDef) (iter.Seq[string], error) {
 		}
 		return func(yield func(string) bool) {
 			for _, in := range deps {
-				in = s.globals.path.MaybeFromWD(ctx, in)
+				in = s.globals.path.MaybeFromRelative(ctx, in)
 				if !yield(in) {
 					return
 				}
@@ -807,7 +807,7 @@ func (s *StepDef) ExpandedInputs(ctx context.Context) []string {
 		inputs = append(inputs, p)
 	}
 	for p := range edgeSolibs(s.edge) {
-		p = globals.path.MaybeFromWD(ctx, p)
+		p = globals.path.MaybeFromRelative(ctx, p)
 		if seen[p] {
 			continue
 		}
@@ -855,7 +855,7 @@ func (s *StepDef) ExpandedInputs(ctx context.Context) []string {
 	var newInputs []string
 	changed := false
 	for i := 0; i < len(inputs); i++ {
-		inpath := globals.path.MaybeToWD(ctx, inputs[i])
+		inpath := globals.path.MaybeToRelative(ctx, inputs[i])
 		innode, ok := globals.nstate.LookupNodeByPath(inpath)
 		if !ok {
 			newInputs = append(newInputs, inputs[i])
@@ -899,7 +899,7 @@ func (s *StepDef) ExpandedInputs(ctx context.Context) []string {
 		newInputs = append(newInputs, inputs[i])
 		var solibsIns []string
 		for in := range edgeSolibs(er.edge) {
-			in = globals.path.MaybeFromWD(ctx, in)
+			in = globals.path.MaybeFromRelative(ctx, in)
 			if seen[in] {
 				continue
 			}
@@ -1058,12 +1058,12 @@ func (s *StepDef) CheckInputDeps(ctx context.Context, depInputs []string) (bool,
 	depInputs = depInputs[:0]
 	bpath := s.globals.path
 	for in := range deps {
-		depInputs = append(depInputs, bpath.MaybeToWD(ctx, in))
+		depInputs = append(depInputs, bpath.MaybeToRelative(ctx, in))
 	}
 	sort.Strings(depInputs)
 	var outputPath string
 	if len(s.edge.Outputs()) > 0 {
-		out := bpath.MaybeFromWD(ctx, s.edge.Outputs()[0].Path())
+		out := bpath.MaybeFromRelative(ctx, s.edge.Outputs()[0].Path())
 		outputPath = toConfigPath(bpath, out)
 	}
 	v, ok := s.globals.stepConfig.BadDeps[outputPath]

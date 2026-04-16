@@ -196,7 +196,7 @@ func Load(ctx context.Context, fname string, buildPath *build.Path) (*ninjautil.
 	started := time.Now()
 	state := ninjautil.NewState()
 	state.AddBinding("workspace_root", buildPath.WorkspaceRoot)
-	state.AddBinding("working_directory", buildPath.OutDir)
+	state.AddBinding("working_directory", buildPath.BaseDir)
 	p := ninjautil.NewManifestParser(state)
 	err := p.Load(ctx, fname)
 	if err != nil {
@@ -312,7 +312,7 @@ func (g *Graph) initGlobals(ctx context.Context) {
 			clog.Warningf(ctx, "%q already in input_deps", label)
 			continue
 		}
-		target := g.globals.path.MaybeToWD(ctx, strings.TrimSuffix(label, ":inputs"))
+		target := g.globals.path.MaybeToRelative(ctx, strings.TrimSuffix(label, ":inputs"))
 		n, ok := g.globals.nstate.LookupNodeByPath(target)
 		if !ok {
 			clog.Warningf(ctx, "no target for %q (%q)", label, target)
@@ -494,7 +494,7 @@ func (g *globals) targetPath(node *ninjautil.Node) string {
 	}
 	p = node.Path()
 	if !filepath.IsAbs(p) {
-		p = filepath.ToSlash(filepath.Join(g.path.OutDir, p))
+		p = filepath.ToSlash(filepath.Join(g.path.BaseDir, p))
 	}
 	g.targetPaths[node.ID()] = p
 	return p
@@ -588,7 +588,7 @@ func (g *Graph) StepLimits(ctx context.Context) map[string]int {
 func (g *Graph) CleanDead(ctx context.Context) (int, int, error) {
 	started := time.Now()
 	var deads []string
-	dir := filepath.Join(g.globals.path.WorkspaceRoot, g.globals.path.OutDir)
+	dir := g.globals.path.AbsBase()
 	genFiles := g.globals.hashFS.PreviouslyGeneratedFiles()
 	for _, genFile := range genFiles {
 		rel, err := filepath.Rel(dir, genFile)

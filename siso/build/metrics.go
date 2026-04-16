@@ -203,7 +203,7 @@ func (m *StepMetric) init(ctx context.Context, b *Builder, step *Step, stepStart
 	m.Rule = step.def.RuleName()
 	m.Action = step.def.ActionName()
 	for _, o := range step.def.Outputs(ctx) {
-		m.Outputs = append(m.Outputs, b.path.MaybeToWD(ctx, o))
+		m.Outputs = append(m.Outputs, b.path.MaybeToRelative(ctx, o))
 	}
 	m.GNTarget = step.def.Binding("gn_target")
 	m.PrevStepID = step.prevStepID

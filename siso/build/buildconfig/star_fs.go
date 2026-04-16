@@ -54,7 +54,7 @@ type starFSReceiver struct {
 }
 
 func (r starFSReceiver) String() string {
-	return fmt.Sprintf("fs[%s,%s]", r.path.WorkspaceRoot, r.path.OutDir)
+	return fmt.Sprintf("fs[%s,%s]", r.path.WorkspaceRoot, r.path.BaseDir)
 }
 
 func (starFSReceiver) Type() string          { return "fs" }
@@ -149,7 +149,7 @@ func starFSCanonPath(thread *starlark.Thread, fn *starlark.Builtin, args starlar
 	if err != nil {
 		return starlark.None, err
 	}
-	s, err := r.path.FromWD(fname)
+	s, err := r.path.FromRelative(fname)
 	if err != nil {
 		return starlark.None, err
 	}

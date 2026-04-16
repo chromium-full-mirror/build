@@ -52,19 +52,19 @@ func (gcc depsGCC) fixCmdInputs(ctx context.Context, b *Builder, cmd *execute.Cm
 		return nil, err
 	}
 	for i := range params.Files {
-		params.Files[i] = b.path.MaybeFromWD(ctx, params.Files[i])
+		params.Files[i] = b.path.MaybeFromRelative(ctx, params.Files[i])
 	}
 	for i := range params.Dirs {
-		params.Dirs[i] = b.path.MaybeFromWD(ctx, params.Dirs[i])
+		params.Dirs[i] = b.path.MaybeFromRelative(ctx, params.Dirs[i])
 	}
 	for i := range params.QuoteDirs {
-		params.QuoteDirs[i] = b.path.MaybeFromWD(ctx, params.QuoteDirs[i])
+		params.QuoteDirs[i] = b.path.MaybeFromRelative(ctx, params.QuoteDirs[i])
 	}
 	for i := range params.Frameworks {
-		params.Frameworks[i] = b.path.MaybeFromWD(ctx, params.Frameworks[i])
+		params.Frameworks[i] = b.path.MaybeFromRelative(ctx, params.Frameworks[i])
 	}
 	for i := range params.Sysroots {
-		params.Sysroots[i] = b.path.MaybeFromWD(ctx, params.Sysroots[i])
+		params.Sysroots[i] = b.path.MaybeFromRelative(ctx, params.Sysroots[i])
 	}
 	var inputs []string
 	if len(params.Sources) == 0 {
@@ -259,7 +259,7 @@ func (depsGCC) scandeps(ctx context.Context, b *Builder, step *Step) ([]string, 
 }
 
 func (gcc depsGCC) scandepsByClang(ctx context.Context, b *Builder, step *Step) ([]string, error) {
-	cwd := b.path.AbsFromWD(".")
+	cwd := b.path.AbsBase()
 	err := b.prepareLocalInputs(ctx, step)
 	if err != nil {
 		return nil, fmt.Errorf("prepare for gcc deps: %w", err)
@@ -277,7 +277,7 @@ func (gcc depsGCC) scandepsByClang(ctx context.Context, b *Builder, step *Step) 
 		// TODO: need to preserve intermediate dirs
 		// e.g.
 		//  /usr/local/google/home/ukai/src/chromium/src/native_client/toolchain/linux_x86/nacl_x86_glibc/bin/../lib/gcc/x86_64-nacl/4.4.3/../../../../x86_64-nacl/include/stdint.h
-		inpath := b.path.MaybeFromWD(ctx, in)
+		inpath := b.path.MaybeFromRelative(ctx, in)
 		fi, err := b.hashFS.Stat(ctx, b.path.WorkspaceRoot, inpath)
 		if err != nil {
 			clog.Warningf(ctx, "missing inputs? %s: %v", inpath, err)
@@ -303,7 +303,7 @@ func CreateScanDepsRequestGCC(ctx context.Context, p *Path, params scandepsparam
 	// usually error, but can be used for scandeps for cros chroot case.
 	var externals []string
 	canonicalize := func(s string) string {
-		s = p.MaybeFromWD(ctx, s)
+		s = p.MaybeFromRelative(ctx, s)
 		if !filepath.IsLocal(s) {
 			externals = append(externals, s)
 		}

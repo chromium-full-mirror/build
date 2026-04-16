@@ -92,7 +92,7 @@ func (c *Command) initLogWriters(ctx context.Context, buildPath *build.Path) (lo
 	} else {
 		newline = "\r\n"
 	}
-	fmt.Fprintf(writers.failedCommandsWriter, "cd %s%s", filepath.Join(buildPath.WorkspaceRoot, buildPath.OutDir), newline)
+	fmt.Fprintf(writers.failedCommandsWriter, "cd %s%s", buildPath.AbsBase(), newline)
 	// TODO: for reproxy mode, may need to run reproxy for rewrapper commands.
 
 	writers.outputLogWriter, done, err = c.logWriter(ctx, c.outputLogFile)

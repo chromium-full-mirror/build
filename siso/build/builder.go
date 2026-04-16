@@ -498,7 +498,7 @@ func (b *Builder) Build(ctx context.Context, name string, args ...string) (err e
 	if b.rebuildManifest == "" {
 		// record build files in hashfs. b/489164002
 		for _, fname := range b.graph.Filenames() {
-			_, err = b.hashFS.Stat(ctx, filepath.Join(b.path.WorkspaceRoot, b.path.OutDir), fname)
+			_, err = b.hashFS.Stat(ctx, b.path.AbsBase(), fname)
 			if err != nil {
 				clog.Warningf(ctx, "failed to stat build file %q: %v", fname, err)
 			}
@@ -578,7 +578,7 @@ func (b *Builder) Build(ctx context.Context, name string, args ...string) (err e
 
 	var mftime time.Time
 	if b.rebuildManifest != "" {
-		fi, err := b.hashFS.Stat(ctx, b.path.WorkspaceRoot, filepath.Join(b.path.OutDir, b.rebuildManifest))
+		fi, err := b.hashFS.Stat(ctx, b.path.WorkspaceRoot, b.path.MaybeFromRelative(ctx, b.rebuildManifest))
 		if err == nil {
 			mftime = fi.ModTime()
 			clog.Infof(ctx, "manifest %s: %s", b.rebuildManifest, mftime)
@@ -587,7 +587,7 @@ func (b *Builder) Build(ctx context.Context, name string, args ...string) (err e
 	defer func() {
 		stat = b.Stats()
 		if b.rebuildManifest != "" {
-			fi, mferr := b.hashFS.Stat(ctx, b.path.WorkspaceRoot, filepath.Join(b.path.OutDir, b.rebuildManifest))
+			fi, mferr := b.hashFS.Stat(ctx, b.path.WorkspaceRoot, b.path.MaybeFromRelative(ctx, b.rebuildManifest))
 			if mferr != nil {
 				clog.Warningf(ctx, "failed to stat %s: %v", b.rebuildManifest, mferr)
 				err = fmt.Errorf("%w: missing manifest %s: %v", ErrManifest, b.rebuildManifest, mferr)
@@ -869,7 +869,7 @@ func (b *Builder) uploadBuildNinja(ctx context.Context) {
 	started := time.Now()
 	inputs := b.graph.Filenames()
 	inputs = append(inputs, "args.gn")
-	ents, err := b.hashFS.Entries(ctx, filepath.Join(b.path.WorkspaceRoot, b.path.OutDir), inputs)
+	ents, err := b.hashFS.Entries(ctx, b.path.AbsBase(), inputs)
 	if err != nil {
 		clog.Warningf(ctx, "failed to get build files entries: %v", err)
 		return
@@ -1248,7 +1248,7 @@ func (b *Builder) updateDeps(ctx context.Context, step *Step) error {
 	span.SetAttr("updated", updated)
 	canonicalizedDeps := make([]string, 0, len(deps))
 	for _, dep := range deps {
-		canonicalizedDeps = append(canonicalizedDeps, b.path.MaybeFromWD(ctx, dep))
+		canonicalizedDeps = append(canonicalizedDeps, b.path.MaybeFromRelative(ctx, dep))
 	}
 	depsFixCmd(ctx, b, step, canonicalizedDeps)
 	return nil

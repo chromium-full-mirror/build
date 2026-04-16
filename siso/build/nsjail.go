@@ -55,7 +55,7 @@ func newNSJailExecutor(ctx context.Context, b *Builder, executor execute.Executo
 			ExePath:       exePath,
 			JailRootDir:   workDir,
 			WorkspaceRoot: b.path.WorkspaceRoot,
-			WorkDir:       b.path.OutDir,
+			WorkDir:       b.path.BaseDir,
 			OutDir:        outDir,
 		},
 	}, nil

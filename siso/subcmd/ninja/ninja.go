@@ -723,8 +723,8 @@ func (c *Command) setupHashFS(ctx context.Context, buildPath *build.Path, ds bui
 	if err != nil {
 		return nil, nil, err
 	}
-	if c.logDir == "." || c.logDir == filepath.Join(buildPath.WorkspaceRoot, buildPath.OutDir) {
-		cwd := filepath.Join(buildPath.WorkspaceRoot, buildPath.OutDir)
+	if c.logDir == "." || c.logDir == buildPath.AbsBase() {
+		cwd := buildPath.AbsBase()
 		// ignore siso files not to be captured by ReadDir
 		// (i.g. scandeps for -I.)
 		clog.Infof(ctx, "ignore siso files in %s", cwd)
@@ -752,7 +752,7 @@ func (c *Command) setupHashFS(ctx context.Context, buildPath *build.Path, ds bui
 	} else {
 		// expect logDir is outside of workspace.
 		clog.Infof(ctx, "ignore .ninja_log")
-		ninjaLogFname := filepath.Join(buildPath.WorkspaceRoot, buildPath.OutDir, ".ninja_log")
+		ninjaLogFname := buildPath.AbsFromRelative(".ninja_log")
 		c.fsopt.Ignore = func(ctx context.Context, fname string) bool {
 			return fname == ninjaLogFname
 		}

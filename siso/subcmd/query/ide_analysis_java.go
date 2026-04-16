@@ -190,7 +190,7 @@ func (a *ideAnalyzer) appendIndirectJavaBuildableUnits(ctx context.Context, edge
 			path := out.Path()
 			switch filepath.Ext(path) {
 			case ".jar":
-				buf, err := a.hashFS.ReadFile(ctx, a.path.WorkspaceRoot, a.path.MaybeFromWD(ctx, path))
+				buf, err := a.hashFS.ReadFile(ctx, a.path.WorkspaceRoot, a.path.MaybeFromRelative(ctx, path))
 				if err != nil {
 					clog.Warningf(ctx, "not exist generated file %q: %v", path, err)
 					continue
@@ -209,7 +209,7 @@ func (a *ideAnalyzer) appendIndirectJavaBuildableUnits(ctx context.Context, edge
 			path := out.Path()
 			switch filepath.Ext(path) {
 			case ".java", ".jar", ".class":
-				buf, err := a.hashFS.ReadFile(ctx, a.path.WorkspaceRoot, a.path.MaybeFromWD(ctx, path))
+				buf, err := a.hashFS.ReadFile(ctx, a.path.WorkspaceRoot, a.path.MaybeFromRelative(ctx, path))
 				if err != nil {
 					clog.Warningf(ctx, "not exist generated file %q: %v", path, err)
 					continue

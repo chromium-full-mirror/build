@@ -254,7 +254,7 @@ func filesDiff(ctx context.Context, b *Builder, x, opts, y []string, ignorePatte
 			continue
 		}
 		name := pathname
-		pathname = b.path.AbsFromWD(pathname)
+		pathname = b.path.AbsFromRelative(pathname)
 		relname, err := filepath.Rel(b.path.WorkspaceRoot, pathname)
 		if err != nil {
 			errs = append(errs, fmt.Sprintf("%s: rel %v", name, err))

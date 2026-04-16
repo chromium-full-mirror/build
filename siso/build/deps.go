@@ -231,7 +231,7 @@ func checkDeps(ctx context.Context, b *Builder, step *Step, deps []string) error
 			continue
 		}
 		// all dep (== inputs) should exist just after step ran.
-		input := b.path.MaybeFromWD(ctx, dep)
+		input := b.path.MaybeFromRelative(ctx, dep)
 		fi, err := b.hashFS.Stat(ctx, b.path.WorkspaceRoot, input)
 		if errors.Is(err, fs.ErrNotExist) {
 			// file may be read by handler and not found

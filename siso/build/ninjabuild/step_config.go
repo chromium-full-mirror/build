@@ -337,14 +337,14 @@ func (sc *StepConfig) UpdateFilegroups(ctx context.Context, filegroups map[strin
 
 func fromConfigPath(ctx context.Context, p *build.Path, path string) string {
 	if strings.HasPrefix(path, "./") {
-		return p.MaybeFromWD(ctx, path)
+		return p.MaybeFromRelative(ctx, path)
 	}
 	return path
 }
 
 func toConfigPath(p *build.Path, path string) string {
 	path = filepath.ToSlash(path)
-	if after, ok := strings.CutPrefix(path, p.OutDir+"/"); ok {
+	if after, ok := strings.CutPrefix(path, p.BaseDir+"/"); ok {
 		return "./" + after
 	}
 	return path
@@ -354,7 +354,7 @@ func toConfigPath(p *build.Path, path string) string {
 func (sc StepConfig) Lookup(ctx context.Context, bpath *build.Path, edge *ninjautil.Edge) (StepRule, bool) {
 	var out, outConfig string
 	if len(edge.Outputs()) > 0 {
-		out = bpath.MaybeFromWD(ctx, edge.Outputs()[0].Path())
+		out = bpath.MaybeFromRelative(ctx, edge.Outputs()[0].Path())
 		outConfig = toConfigPath(bpath, out)
 	}
 	actionName := edge.RuleName()

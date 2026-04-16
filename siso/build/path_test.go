@@ -10,7 +10,7 @@ import (
 	"testing"
 )
 
-func TestPath_FromWD(t *testing.T) {
+func TestPath_FromRelative(t *testing.T) {
 	dir := t.TempDir()
 	absPath := filepath.Join(t.TempDir(), "test")
 	path := NewPath(dir, "out/siso")
@@ -39,14 +39,14 @@ func TestPath_FromWD(t *testing.T) {
 			want: absPath,
 		},
 	} {
-		got, err := path.FromWD(tc.in)
+		got, err := path.FromRelative(tc.in)
 		if err != nil || got != tc.want {
-			t.Errorf("path.FromWD(%q)=%q, %v; want %q, nil", tc.in, got, err, tc.want)
+			t.Errorf("path.FromRelative(%q)=%q, %v; want %q, nil", tc.in, got, err, tc.want)
 		}
 	}
 }
 
-func TestPath_FromWD_Windows(t *testing.T) {
+func TestPath_FromRelative_Windows(t *testing.T) {
 	if runtime.GOOS != "windows" {
 		t.Skip("These tests are Windows only")
 	}
@@ -79,7 +79,7 @@ func TestPath_FromWD_Windows(t *testing.T) {
 			want: absPath,
 		},
 	} {
-		got, err := path.FromWD(tc.in)
+		got, err := path.FromRelative(tc.in)
 		if err != nil || got != tc.want {
 			t.Errorf("path.FromWD(%q)=%q, %v; want %q, nil", tc.in, got, err, tc.want)
 		}

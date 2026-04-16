@@ -282,7 +282,7 @@ func doBuild(ctx context.Context, graph *Graph, bopts build.Options, nopts RunNi
 		bopts.ResultstoreUploader.HashFS = bopts.HashFS
 		bopts.ResultstoreUploader.REAPIClient = bopts.REAPIClient
 
-		ents, err := bopts.HashFS.Entries(ctx, filepath.Join(bopts.Path.WorkspaceRoot, bopts.Path.OutDir), []string{filepath.Join(stateDir, ".siso_config"), filepath.Join(stateDir, ".siso_filegroups")})
+		ents, err := bopts.HashFS.Entries(ctx, bopts.Path.AbsBase(), []string{filepath.Join(stateDir, ".siso_config"), filepath.Join(stateDir, ".siso_filegroups")})
 		if err != nil {
 			return stats, err
 		}

@@ -257,7 +257,7 @@ func lookupDeps(ctx context.Context, state *ninjautil.State, hashFS *hashfs.Hash
 		// the rule has no deps,depfile.
 		return "", nil, key, depState, ninjautil.ErrNoDepsLog
 	}
-	df := bpath.MaybeFromWD(ctx, depfile)
+	df := bpath.MaybeFromRelative(ctx, depfile)
 	fi, err := hashFS.Stat(ctx, bpath.WorkspaceRoot, df)
 	if err != nil {
 		return "", nil, key, depState, fmt.Errorf("no depfile=%q to build target %q: %w", depfile, target, err)

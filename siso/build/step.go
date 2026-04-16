@@ -479,7 +479,7 @@ func (s *Step) init(ctx context.Context, b *Builder, stepManifest *stepManifest)
 	s.def.EnsureRule(ctx)
 	s.outputPaths = make([]string, 0, len(stepManifest.outputs))
 	for _, out := range stepManifest.outputs {
-		s.outputPaths = append(s.outputPaths, b.path.MaybeToWD(ctx, out))
+		s.outputPaths = append(s.outputPaths, b.path.MaybeToRelative(ctx, out))
 	}
 	s.cmd = newCmd(ctx, b, s.def, stepManifest)
 	if log.V(1) {
@@ -503,7 +503,7 @@ func newCmd(ctx context.Context, b *Builder, stepDef StepDef, stepManifest *step
 	// correctly managed by Siso.
 	// This workaround is needed to make second build as null build.
 	if stepDef.ActionName() == "gn" && len(stepManifest.outputs) == 1 && filepath.Base(stepManifest.outputs[0]) == "build.ninja.stamp" {
-		stepManifest.outputs = append(stepManifest.outputs, b.path.MaybeFromWD(ctx, "build.ninja"))
+		stepManifest.outputs = append(stepManifest.outputs, b.path.MaybeFromRelative(ctx, "build.ninja"))
 	}
 
 	cmd := &execute.Cmd{
@@ -515,7 +515,7 @@ func newCmd(ctx context.Context, b *Builder, stepDef StepDef, stepManifest *step
 		RSPFileContent:          []byte(stepDef.Binding("rspfile_content")),
 		CmdHash:                 stepManifest.cmdHash,
 		WorkspaceRoot:           b.path.WorkspaceRoot, // use step binding?
-		WorkDir:                 b.path.OutDir,
+		WorkDir:                 b.path.BaseDir,
 		Inputs:                  stepInputs(ctx, stepDef),
 		ToolInputs:              stepDef.ToolInputs(ctx),
 		Outputs:                 stepManifest.outputs,
@@ -674,7 +674,7 @@ func (b *Builder) loadEnvfile(ctx context.Context, fname string) []string {
 		// https://ninja-build.org/manual.html#_extra_tools
 		// ninja -t msvc -e ENVFILE -- cl.exe <arguments>
 		//  Where ENVFILE is a binary file that contains an environment block suitable for CreateProcessA() on Windows (i.e. a series of zero-terminated strings that look like NAME=VALUE, followed by an extra zero terminator).
-		buf, err := b.hashFS.ReadFile(ctx, b.path.WorkspaceRoot, b.path.MaybeFromWD(ctx, fname))
+		buf, err := b.hashFS.ReadFile(ctx, b.path.WorkspaceRoot, b.path.MaybeFromRelative(ctx, fname))
 		if err != nil {
 			clog.Warningf(ctx, "failed to load envfile %q: %v", fname, err)
 			return

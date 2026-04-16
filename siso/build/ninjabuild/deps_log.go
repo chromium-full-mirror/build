@@ -65,7 +65,7 @@ type DepsLogKey struct {
 // checkDepsLogState checks deps log state by its output file.
 // TODO(b/374196367): use digest for validity of output.
 func checkDepsLogState(ctx context.Context, hashFS *hashfs.HashFS, bpath *build.Path, key DepsLogKey) (DepsLogState, error) {
-	fname := bpath.MaybeFromWD(ctx, key.Target)
+	fname := bpath.MaybeFromRelative(ctx, key.Target)
 	fi, err := hashFS.Stat(ctx, bpath.WorkspaceRoot, fname)
 	if err != nil {
 		return DepsLogStale, fmt.Errorf("not found deps output %q: %v", key.Target, err)

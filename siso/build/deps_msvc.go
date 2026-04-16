@@ -50,16 +50,16 @@ func (msvc depsMSVC) fixCmdInputs(ctx context.Context, b *Builder, cmd *execute.
 		return nil, err
 	}
 	for i := range params.Files {
-		params.Files[i] = b.path.MaybeFromWD(ctx, params.Files[i])
+		params.Files[i] = b.path.MaybeFromRelative(ctx, params.Files[i])
 	}
 	for i := range params.Dirs {
-		params.Dirs[i] = b.path.MaybeFromWD(ctx, params.Dirs[i])
+		params.Dirs[i] = b.path.MaybeFromRelative(ctx, params.Dirs[i])
 	}
 	for i := range params.QuoteDirs {
-		params.QuoteDirs[i] = b.path.MaybeFromWD(ctx, params.QuoteDirs[i])
+		params.QuoteDirs[i] = b.path.MaybeFromRelative(ctx, params.QuoteDirs[i])
 	}
 	for i := range params.Sysroots {
-		params.Sysroots[i] = b.path.MaybeFromWD(ctx, params.Sysroots[i])
+		params.Sysroots[i] = b.path.MaybeFromRelative(ctx, params.Sysroots[i])
 	}
 	var inputs []string
 	if len(params.Sources) == 0 {
@@ -146,7 +146,7 @@ func (depsMSVC) DepsAfterRun(ctx context.Context, b *Builder, step *Step) ([]str
 			// (for libc++ headers, like `utility`).
 			continue
 		}
-		in = b.path.MaybeToWD(ctx, in)
+		in = b.path.MaybeToRelative(ctx, in)
 		if m[in] {
 			continue
 		}
@@ -359,7 +359,7 @@ func expandCPPCaseSensitiveIncludes(ctx context.Context, b *Builder, files []str
 }
 
 func (depsMSVC) scandepsByClang(ctx context.Context, b *Builder, step *Step) ([]string, error) {
-	cwd := b.path.AbsFromWD(".")
+	cwd := b.path.AbsBase()
 	err := b.prepareLocalInputs(ctx, step)
 	if err != nil {
 		return nil, fmt.Errorf("prepare for msvc deps: %w", err)
@@ -371,7 +371,7 @@ func (depsMSVC) scandepsByClang(ctx context.Context, b *Builder, step *Step) ([]
 	}
 	var inputs []string
 	for _, in := range ins {
-		inpath := b.path.MaybeFromWD(ctx, in)
+		inpath := b.path.MaybeFromRelative(ctx, in)
 		_, err := b.hashFS.Stat(ctx, b.path.WorkspaceRoot, inpath)
 		if err != nil {
 			clog.Warningf(ctx, "missing inputs? %s: %v", inpath, err)
@@ -387,7 +387,7 @@ func CreateScanDepsRequestMSVC(ctx context.Context, p *Path, params scandepspara
 	// externals stores non local paths.
 	var externals []string
 	canonicalize := func(s string) string {
-		s = p.MaybeFromWD(ctx, s)
+		s = p.MaybeFromRelative(ctx, s)
 		if !filepath.IsLocal(s) {
 			externals = append(externals, s)
 		}

@@ -144,8 +144,8 @@ func (c *ideAnalysisCommand) run(ctx context.Context, args []string) error {
 
 func (c *ideAnalysisCommand) analyze(ctx context.Context, buildPath *build.Path, args []string) (*pb.IdeAnalysis, error) {
 	analysis := &pb.IdeAnalysis{
-		BuildOutDir: buildPath.OutDir,
-		WorkingDir:  buildPath.OutDir,
+		BuildOutDir: buildPath.BaseDir,
+		WorkingDir:  buildPath.BaseDir,
 	}
 	if len(args) == 0 {
 		return analysis, errors.New("no target given")
@@ -257,7 +257,7 @@ func (a *ideAnalyzer) analyzeTarget(ctx context.Context, target string) (*pb.Ana
 		// for cxx, we don't compile *.o with
 		// `SISO_EXPERIMENTS=prepare-header-only`, so *.o may not exist.
 		var ok bool
-		nodeEnt, ok = a.fsm[filepath.ToSlash(filepath.Join(a.path.WorkspaceRoot, a.path.OutDir, node.Path()))]
+		nodeEnt, ok = a.fsm[filepath.ToSlash(a.path.AbsFromRelative(node.Path()))]
 		if !ok {
 			result.Status = &pb.AnalysisResult_Status{
 				Code:          pb.AnalysisResult_Status_CODE_BUILD_FAILED,
@@ -288,7 +288,7 @@ func (a *ideAnalyzer) analyzeTarget(ctx context.Context, target string) (*pb.Ana
 			// TODO: check phony's inputs?
 			continue
 		}
-		ent, ok := a.fsm[filepath.ToSlash(filepath.Join(a.path.WorkspaceRoot, a.path.OutDir, input.Path()))]
+		ent, ok := a.fsm[filepath.ToSlash(a.path.AbsFromRelative(input.Path()))]
 		if !ok {
 			result.Status = &pb.AnalysisResult_Status{
 				Code:          pb.AnalysisResult_Status_CODE_BUILD_FAILED,
@@ -398,7 +398,7 @@ func (a *ideAnalyzer) analyzeCPP(ctx context.Context, edge *ninjautil.Edge, resu
 		return result, nil
 	}
 	// scandeps
-	params, err := gccutil.ExtractScanDepsParams(ctx, cmdArgs, nil, a.hashFS.FileSystem(ctx, filepath.Join(a.path.WorkspaceRoot, a.path.OutDir)))
+	params, err := gccutil.ExtractScanDepsParams(ctx, cmdArgs, nil, a.hashFS.FileSystem(ctx, a.path.AbsBase()))
 	if err != nil {
 		result.Status = &pb.AnalysisResult_Status{
 			Code:          pb.AnalysisResult_Status_CODE_BUILD_FAILED,
@@ -407,24 +407,24 @@ func (a *ideAnalyzer) analyzeCPP(ctx context.Context, edge *ninjautil.Edge, resu
 		return result, nil
 	}
 	for i := range params.Sources {
-		params.Sources[i] = a.path.MaybeFromWD(ctx, params.Sources[i])
+		params.Sources[i] = a.path.MaybeFromRelative(ctx, params.Sources[i])
 	}
 	// no need to canonicalize path for Includes.
 	// it should be used as is for `#include "pathname.h"`
 	for i := range params.Files {
-		params.Files[i] = a.path.MaybeFromWD(ctx, params.Files[i])
+		params.Files[i] = a.path.MaybeFromRelative(ctx, params.Files[i])
 	}
 	for i := range params.Dirs {
-		params.Dirs[i] = a.path.MaybeFromWD(ctx, params.Dirs[i])
+		params.Dirs[i] = a.path.MaybeFromRelative(ctx, params.Dirs[i])
 	}
 	for i := range params.QuoteDirs {
-		params.QuoteDirs[i] = a.path.MaybeFromWD(ctx, params.QuoteDirs[i])
+		params.QuoteDirs[i] = a.path.MaybeFromRelative(ctx, params.QuoteDirs[i])
 	}
 	for i := range params.Frameworks {
-		params.Frameworks[i] = a.path.MaybeFromWD(ctx, params.Frameworks[i])
+		params.Frameworks[i] = a.path.MaybeFromRelative(ctx, params.Frameworks[i])
 	}
 	for i := range params.Sysroots {
-		params.Sysroots[i] = a.path.MaybeFromWD(ctx, params.Sysroots[i])
+		params.Sysroots[i] = a.path.MaybeFromRelative(ctx, params.Sysroots[i])
 	}
 	req := scandeps.Request{
 		Defines:    params.Defines,
@@ -450,7 +450,7 @@ func (a *ideAnalyzer) analyzeCPP(ctx context.Context, edge *ninjautil.Edge, resu
 	started = time.Now()
 
 	for _, inc := range incs {
-		incTarget := a.path.MaybeToWD(ctx, inc)
+		incTarget := a.path.MaybeToRelative(ctx, inc)
 		node, ok := a.state.LookupNodeByPath(incTarget)
 		if !ok {
 			clog.Infof(ctx, "not in build graph: %s", incTarget)
@@ -465,7 +465,7 @@ func (a *ideAnalyzer) analyzeCPP(ctx context.Context, edge *ninjautil.Edge, resu
 		var generatedFiles []*pb.GeneratedFile
 		for _, out := range inEdge.Outputs() {
 			path := out.Path()
-			buf, err := a.hashFS.ReadFile(ctx, a.path.WorkspaceRoot, a.path.MaybeFromWD(ctx, path))
+			buf, err := a.hashFS.ReadFile(ctx, a.path.WorkspaceRoot, a.path.MaybeFromRelative(ctx, path))
 			if err != nil {
 				clog.Infof(ctx, "not exist generated file %q: %v", path, err)
 				continue
@@ -561,7 +561,7 @@ func (a *ideAnalyzer) invalidation(ctx context.Context) *pb.Invalidation {
 			},
 		},
 	}
-	buf, err := a.hashFS.ReadFile(ctx, a.path.WorkspaceRoot, filepath.Join(a.path.OutDir, "build.ninja.d"))
+	buf, err := a.hashFS.ReadFile(ctx, a.path.WorkspaceRoot, a.path.MaybeFromRelative(ctx, "build.ninja.d"))
 	if err != nil {
 		clog.Warningf(ctx, "failed to read build.ninja.d: %v", err)
 		return inv
@@ -581,7 +581,7 @@ func (a *ideAnalyzer) invalidation(ctx context.Context) *pb.Invalidation {
 		if filepath.IsLocal(d) {
 			continue
 		}
-		inv.FilePaths = append(inv.FilePaths, filepath.ToSlash(filepath.Join(a.path.OutDir, d)))
+		inv.FilePaths = append(inv.FilePaths, filepath.ToSlash(a.path.MaybeFromRelative(ctx, d)))
 	}
 	return inv
 }

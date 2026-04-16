@@ -301,7 +301,7 @@ func schedule(ctx context.Context, sched *scheduler, graph Graph, args ...string
 	if len(args) > 0 {
 		var targetNames []string
 		for _, t := range targets {
-			targetNames = append(targetNames, sched.path.MaybeToWD(ctx, targetPath(ctx, graph, t)))
+			targetNames = append(targetNames, sched.path.MaybeToRelative(ctx, targetPath(ctx, graph, t)))
 		}
 		if !slices.Equal(args, targetNames) {
 			ui.Default.PrintLines(fmt.Sprintf("target: %q\n    ->  %q\n\n", args, targetNames))
@@ -316,14 +316,14 @@ func schedule(ctx context.Context, sched *scheduler, graph Graph, args ...string
 		switch sched.plan.targets[t].scan {
 		case scanStateNotVisited:
 		case scanStateVisiting:
-			return fmt.Errorf("scan state %q: visiting", sched.path.MaybeToWD(ctx, targetPath(ctx, graph, t)))
+			return fmt.Errorf("scan state %q: visiting", sched.path.MaybeToRelative(ctx, targetPath(ctx, graph, t)))
 		case scanStateDone, scanStateIgnored:
 			continue
 		}
 
 		validationQueue, err = scheduleTarget(ctx, sched, graph, t, nil, sched.prepare, validationQueue)
 		if err != nil {
-			return fmt.Errorf("failed in schedule %s: %w", sched.path.MaybeToWD(ctx, targetPath(ctx, graph, t)), err)
+			return fmt.Errorf("failed in schedule %s: %w", sched.path.MaybeToRelative(ctx, targetPath(ctx, graph, t)), err)
 		}
 	}
 	if !sched.prepare {
@@ -333,13 +333,13 @@ func schedule(ctx context.Context, sched *scheduler, graph Graph, args ...string
 			switch sched.plan.targets[t].scan {
 			case scanStateNotVisited:
 			case scanStateVisiting:
-				return fmt.Errorf("scan state %q: visiting", sched.path.MaybeToWD(ctx, targetPath(ctx, graph, t)))
+				return fmt.Errorf("scan state %q: visiting", sched.path.MaybeToRelative(ctx, targetPath(ctx, graph, t)))
 			case scanStateDone, scanStateIgnored:
 				continue
 			}
 			validationQueue, err = scheduleTarget(ctx, sched, graph, t, nil, false, validationQueue)
 			if err != nil {
-				return fmt.Errorf("failed in schedule %s: %w", sched.path.MaybeToWD(ctx, targetPath(ctx, graph, t)), err)
+				return fmt.Errorf("failed in schedule %s: %w", sched.path.MaybeToRelative(ctx, targetPath(ctx, graph, t)), err)
 			}
 		}
 	}
@@ -376,7 +376,7 @@ func scheduleTarget(ctx context.Context, sched *scheduler, graph Graph, target T
 		}()
 	case scanStateVisiting:
 		return validationQueue, DependencyCycleError{
-			Targets: []string{sched.path.MaybeToWD(ctx, targetPath(ctx, graph, target))},
+			Targets: []string{sched.path.MaybeToRelative(ctx, targetPath(ctx, graph, target))},
 		}
 	case scanStateIgnored:
 		if ignore {
@@ -535,14 +535,14 @@ func scheduleTarget(ctx context.Context, sched *scheduler, graph Graph, target T
 				var cycleErr DependencyCycleError
 				if errors.As(err, &cycleErr) {
 					if len(cycleErr.Targets) <= 1 || cycleErr.Targets[0] != cycleErr.Targets[len(cycleErr.Targets)-1] {
-						cur := sched.path.MaybeToWD(ctx, targetPath(ctx, graph, in))
+						cur := sched.path.MaybeToRelative(ctx, targetPath(ctx, graph, in))
 						cycleErr.Targets = append(cycleErr.Targets, cur)
 					}
 					return validationQueue, cycleErr
 				}
 				var missingErr MissingSourceError
 				if errors.As(err, &missingErr) {
-					cur := sched.path.MaybeToWD(ctx, targetPath(ctx, graph, in))
+					cur := sched.path.MaybeToRelative(ctx, targetPath(ctx, graph, in))
 					missingErr.Deps = append(missingErr.Deps, cur)
 					return validationQueue, missingErr
 				}
@@ -639,10 +639,10 @@ func (s *scheduler) mark(ctx context.Context, graph Graph, target Target, next S
 	if err != nil {
 		var neededBy string
 		if next != nil && len(next.Outputs(ctx)) > 0 {
-			neededBy = s.path.MaybeToWD(ctx, next.Outputs(ctx)[0])
+			neededBy = s.path.MaybeToRelative(ctx, next.Outputs(ctx)[0])
 		}
 		return MissingSourceError{
-			Target:   s.path.MaybeToWD(ctx, fname),
+			Target:   s.path.MaybeToRelative(ctx, fname),
 			NeededBy: neededBy,
 			Err:      err,
 		}
@@ -910,7 +910,7 @@ func (p *plan) dump(ctx context.Context, graph Graph) {
 }
 
 func suggestTargets(ctx context.Context, sched *scheduler, graph Graph, args ...string) []string {
-	rel, err := filepath.Rel(filepath.Join(sched.path.WorkspaceRoot, sched.path.OutDir), sched.path.WorkspaceRoot)
+	rel, err := filepath.Rel(sched.path.AbsBase(), sched.path.WorkspaceRoot)
 	if err != nil {
 		clog.Warningf(ctx, "failed to get rel to workspace: %v", err)
 		return nil
@@ -924,7 +924,7 @@ func suggestTargets(ctx context.Context, sched *scheduler, graph Graph, args ...
 			continue
 		}
 		target := strings.TrimSuffix(arg, "^")
-		_, err = sched.hashFS.Stat(ctx, sched.path.WorkspaceRoot, filepath.Join(sched.path.OutDir, target))
+		_, err = sched.hashFS.Stat(ctx, sched.path.WorkspaceRoot, sched.path.MaybeFromRelative(ctx, target))
 		if err == nil {
 			// just missing ^?
 			target := filepath.ToSlash(target) + "^"

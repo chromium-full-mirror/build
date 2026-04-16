@@ -220,7 +220,7 @@ func newOTELMetricsExporter(ctx context.Context, collectorAddr string) *otlpmetr
 // It returns the properties.
 func (c *Command) buildProperties(ctx context.Context, buildPath *build.Path) resultstore.Properties {
 	properties := resultstore.Properties{}
-	properties.Add("dir", buildPath.OutDir)
+	properties.Add("dir", buildPath.BaseDir)
 	info := cpuinfo()
 	properties.Add("cpu", info)
 	info = gcinfo()
@@ -270,7 +270,7 @@ func (c *Command) setupResultStore(ctx context.Context, projectID string, buildP
 		// TODO(b/329564182): add other files? e.g. siso_output, siso_trace.json etc.
 		if len(files) > 0 {
 			var entsErr error
-			ents, entsErr = hashFS.Entries(ctx, filepath.Join(buildPath.WorkspaceRoot, buildPath.OutDir), files)
+			ents, entsErr = hashFS.Entries(ctx, buildPath.AbsBase(), files)
 			if entsErr != nil {
 				clog.Warningf(ctx, "failed to get entries for %q: %v", files, entsErr)
 			}
