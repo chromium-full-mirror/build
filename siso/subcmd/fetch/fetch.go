@@ -18,6 +18,7 @@ import (
 
 	rpb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
 	"github.com/google/subcommands"
+	"google.golang.org/protobuf/encoding/prototext"
 	"google.golang.org/protobuf/proto"
 
 	"go.chromium.org/build/siso/auth/cred"
@@ -27,7 +28,7 @@ import (
 	"go.chromium.org/build/siso/signals"
 )
 
-const usage = `fetch contents from CAS.
+const usage = `fetch contents from CAS or ActionResult.
 Print contents to stdout, or extract in <dir> for -type dir-extract.
 
  $ siso fetch [-project <project>] [-reapi_instance <instance>] \
@@ -73,6 +74,7 @@ func (c *Command) SetFlags(flagSet *flag.FlagSet) {
   raw: raw content
   command: command message in text proto format
   action: action message in text proto format
+  result: action result message in text proto format
   dir: directory message in text proto format
   tree: tree message in text proto format
   dir-extract: directory message extract to <dir> (if <dir> is specified)
@@ -160,6 +162,17 @@ func (c *Command) run(ctx context.Context) error {
 		pmsg = &rpb.Command{}
 	case "action":
 		pmsg = &rpb.Action{}
+	case "result":
+		ar, err := client.GetActionResult(ctx, d)
+		if err != nil {
+			return fmt.Errorf("failed to get action result for action digest %s. %w", d, err)
+		}
+		fmt.Println(prototext.Format(ar))
+		unknowns := ar.ProtoReflect().GetUnknown()
+		if len(unknowns) > 0 {
+			return fmt.Errorf("unknown fields in marshaled proto: %v", unknowns)
+		}
+		return nil
 	case "dir":
 		pmsg = &rpb.Directory{}
 	case "tree":
