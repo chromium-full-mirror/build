@@ -312,7 +312,7 @@ func TestBuild_Restat_RestatContent(t *testing.T) {
 				if err != nil {
 					t.Logf("%s: err=%v", fname, err)
 				} else {
-					t.Logf("%s: %s", fname, fi.ModTime())
+					t.Logf("%s: mod=%s updated=%s", fname, fi.ModTime(), fi.UpdatedTime())
 				}
 			}
 		}
