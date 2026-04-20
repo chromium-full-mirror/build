@@ -36,19 +36,9 @@ func TestBuild_DepsMSVC(t *testing.T) {
 		opt, graph, cleanup := setupBuild(ctx, t, dir, hashfs.Option{})
 		defer cleanup()
 
-		b, err := build.New(ctx, graph, opt)
+		_, err := ninjabuild.Run(ctx, graph, opt, []string{"all"}, ninjabuild.RunNinjaOpts{})
 		if err != nil {
 			t.Fatal(err)
-		}
-		defer func() {
-			err := b.Close()
-			if err != nil {
-				t.Fatalf("b.Close()=%v; want nil err", err)
-			}
-		}()
-		err = b.Build(ctx, "build", "all")
-		if err != nil {
-			t.Fatalf(`b.Build(ctx, "build", "all")=%v; want nil err`, err)
 		}
 	}()
 
@@ -76,19 +66,9 @@ func TestBuild_DepsMSVC(t *testing.T) {
 		opt, graph, cleanup := setupBuild(ctx, t, dir, hashfs.Option{})
 		defer cleanup()
 
-		b, err := build.New(ctx, graph, opt)
+		_, err := ninjabuild.Run(ctx, graph, opt, []string{"all"}, ninjabuild.RunNinjaOpts{})
 		if err != nil {
 			t.Fatal(err)
-		}
-		defer func() {
-			err := b.Close()
-			if err != nil {
-				t.Fatalf("b.Close()=%v; want nil err", err)
-			}
-		}()
-		err = b.Build(ctx, "build", "all")
-		if err != nil {
-			t.Fatalf(`b.Build(ctx, "build", "all")=%v; want nil err`, err)
 		}
 	}()
 
@@ -149,19 +129,9 @@ Note: including file:   ../../base/other.h
 		defer cleanup()
 		opt.ReproxyAddr = s.Addr()
 
-		b, err := build.New(ctx, graph, opt)
+		_, err := ninjabuild.Run(ctx, graph, opt, []string{"all"}, ninjabuild.RunNinjaOpts{})
 		if err != nil {
 			t.Fatal(err)
-		}
-		defer func() {
-			err := b.Close()
-			if err != nil {
-				t.Fatalf("b.Close()=%v; want nil err", err)
-			}
-		}()
-		err = b.Build(ctx, "build", "all")
-		if err != nil {
-			t.Fatalf(`b.Build(ctx, "build", "all")=%v; want nil err`, err)
 		}
 	}()
 
@@ -215,19 +185,9 @@ Note: including file:   ../../base/other2.h
 		defer cleanup()
 		opt.ReproxyAddr = s.Addr()
 
-		b, err := build.New(ctx, graph, opt)
+		_, err := ninjabuild.Run(ctx, graph, opt, []string{"all"}, ninjabuild.RunNinjaOpts{})
 		if err != nil {
 			t.Fatal(err)
-		}
-		defer func() {
-			err := b.Close()
-			if err != nil {
-				t.Fatalf("b.Close()=%v; want nil err", err)
-			}
-		}()
-		err = b.Build(ctx, "build", "all")
-		if err != nil {
-			t.Fatalf(`b.Build(ctx, "build", "all")=%v; want nil err`, err)
 		}
 	}()
 
@@ -271,19 +231,9 @@ func TestBuild_DepsMSVC_fastlocal(t *testing.T) {
 		opt.REAPIClient = &reapi.Client{}
 		opt.Limits = testLimits
 
-		b, err := build.New(ctx, graph, opt)
+		_, err := ninjabuild.Run(ctx, graph, opt, []string{"all"}, ninjabuild.RunNinjaOpts{})
 		if err != nil {
 			t.Fatal(err)
-		}
-		defer func() {
-			err := b.Close()
-			if err != nil {
-				t.Fatalf("b.Close()=%v; want nil err", err)
-			}
-		}()
-		err = b.Build(ctx, "build", "all")
-		if err != nil {
-			t.Fatalf(`b.Build(ctx, "build", "all")=%v; want nil err`, err)
 		}
 	}()
 
@@ -313,19 +263,9 @@ func TestBuild_DepsMSVC_fastlocal(t *testing.T) {
 		opt.REAPIClient = &reapi.Client{}
 		opt.Limits = testLimits
 
-		b, err := build.New(ctx, graph, opt)
+		_, err := ninjabuild.Run(ctx, graph, opt, []string{"all"}, ninjabuild.RunNinjaOpts{})
 		if err != nil {
 			t.Fatal(err)
-		}
-		defer func() {
-			err := b.Close()
-			if err != nil {
-				t.Fatalf("b.Close()=%v; want nil err", err)
-			}
-		}()
-		err = b.Build(ctx, "build", "all")
-		if err != nil {
-			t.Fatalf(`b.Build(ctx, "build", "all")=%v; want nil err`, err)
 		}
 	}()
 

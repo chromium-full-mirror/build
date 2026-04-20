@@ -41,6 +41,11 @@ func TestBuild_GNGen(t *testing.T) {
 		})
 		defer cleanup()
 
+		err := opt.HashFS.WaitReady(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+
 		manifestOpt := opt
 		manifestOpt.Clobber = false
 		manifestOpt.RebuildManifest = "build.ninja"

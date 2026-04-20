@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"go.chromium.org/build/siso/build"
+	"go.chromium.org/build/siso/build/ninjabuild"
 	"go.chromium.org/build/siso/hashfs"
 )
 
@@ -49,19 +50,9 @@ func TestBuild_Restat(t *testing.T) {
 		opt, graph, cleanup := setupBuild(ctx, t, dir, hashfsOpts)
 		defer cleanup()
 
-		b, err := build.New(ctx, graph, opt)
+		_, err := ninjabuild.Run(ctx, graph, opt, []string{"all"}, ninjabuild.RunNinjaOpts{})
 		if err != nil {
 			t.Fatal(err)
-		}
-		defer func() {
-			err := b.Close()
-			if err != nil {
-				t.Errorf("b.Close()=%v", err)
-			}
-		}()
-		err = b.Build(ctx, "build", "all")
-		if err != nil {
-			t.Fatalf(`b.Build(ctx, "build", "all")=%v; want nil err`, err)
 		}
 		if err := exists("foo.out"); err != nil {
 			t.Errorf("foo.out doesn't exist: %v", err)
@@ -79,22 +70,10 @@ func TestBuild_Restat(t *testing.T) {
 		var metricsBuffer syncBuffer
 		opt.MetricsJSONWriter = &metricsBuffer
 
-		b, err := build.New(ctx, graph, opt)
+		stat, err := ninjabuild.Run(ctx, graph, opt, []string{"all"}, ninjabuild.RunNinjaOpts{})
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer func() {
-			err := b.Close()
-			if err != nil {
-				t.Errorf("b.Close()=%v", err)
-			}
-		}()
-
-		err = b.Build(ctx, "build", "all")
-		if err != nil {
-			t.Fatalf(`b.Build(ctx, "build", "all")=%v; want nil err`, err)
-		}
-		stat := b.Stats()
 		if stat.Skipped != 2 { // all(phony) and bar.out
 			t.Errorf("Skipped=%d; want 2", stat.Skipped)
 		}
@@ -129,21 +108,10 @@ func TestBuild_Restat(t *testing.T) {
 		var metricsBuffer syncBuffer
 		opt.MetricsJSONWriter = &metricsBuffer
 
-		b, err := build.New(ctx, graph, opt)
+		stat, err := ninjabuild.Run(ctx, graph, opt, []string{"all"}, ninjabuild.RunNinjaOpts{})
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer func() {
-			err := b.Close()
-			if err != nil {
-				t.Errorf("b.Close()=%v", err)
-			}
-		}()
-		err = b.Build(ctx, "build", "all")
-		if err != nil {
-			t.Fatalf(`b.Build(ctx, "build", "all")=%v; want nil err`, err)
-		}
-		stat := b.Stats()
 		if stat.Skipped != 1 { // all(phony)
 			t.Errorf("Skipped=%d; want 1", stat.Skipped)
 			for _, fname := range []string{
@@ -205,19 +173,9 @@ func TestBuild_Restat_RestatContent(t *testing.T) {
 		opt, graph, cleanup := setupBuild(ctx, t, dir, hashfsOpts)
 		defer cleanup()
 
-		b, err := build.New(ctx, graph, opt)
+		_, err := ninjabuild.Run(ctx, graph, opt, []string{"all"}, ninjabuild.RunNinjaOpts{})
 		if err != nil {
 			t.Fatal(err)
-		}
-		defer func() {
-			err := b.Close()
-			if err != nil {
-				t.Errorf("b.Close()=%v", err)
-			}
-		}()
-		err = b.Build(ctx, "build", "all")
-		if err != nil {
-			t.Fatalf(`b.Build(ctx, "build", "all")=%v; want nil err`, err)
 		}
 		if err := exists("foo.out"); err != nil {
 			t.Errorf("foo.out doesn't exist: %v", err)
@@ -235,22 +193,10 @@ func TestBuild_Restat_RestatContent(t *testing.T) {
 		var metricsBuffer syncBuffer
 		opt.MetricsJSONWriter = &metricsBuffer
 
-		b, err := build.New(ctx, graph, opt)
+		stat, err := ninjabuild.Run(ctx, graph, opt, []string{"all"}, ninjabuild.RunNinjaOpts{})
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer func() {
-			err := b.Close()
-			if err != nil {
-				t.Errorf("b.Close()=%v", err)
-			}
-		}()
-
-		err = b.Build(ctx, "build", "all")
-		if err != nil {
-			t.Fatalf(`b.Build(ctx, "build", "all")=%v; want nil err`, err)
-		}
-		stat := b.Stats()
 		if stat.Skipped != 2 { // all(phony) and bar.out
 			t.Errorf("Skipped=%d; want 2", stat.Skipped)
 		}
@@ -285,21 +231,10 @@ func TestBuild_Restat_RestatContent(t *testing.T) {
 		var metricsBuffer syncBuffer
 		opt.MetricsJSONWriter = &metricsBuffer
 
-		b, err := build.New(ctx, graph, opt)
+		stat, err := ninjabuild.Run(ctx, graph, opt, []string{"all"}, ninjabuild.RunNinjaOpts{})
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer func() {
-			err := b.Close()
-			if err != nil {
-				t.Errorf("b.Close()=%v", err)
-			}
-		}()
-		err = b.Build(ctx, "build", "all")
-		if err != nil {
-			t.Fatalf(`b.Build(ctx, "build", "all")=%v; want nil err`, err)
-		}
-		stat := b.Stats()
 		if stat.Skipped != 1 { // all(phony)
 			t.Errorf("Skipped=%d; want 1", stat.Skipped)
 			for _, fname := range []string{
@@ -362,19 +297,9 @@ func TestBuild_RestatMultiout(t *testing.T) {
 		opt, graph, cleanup := setupBuild(ctx, t, dir, hashfsOpts)
 		defer cleanup()
 
-		b, err := build.New(ctx, graph, opt)
+		_, err := ninjabuild.Run(ctx, graph, opt, []string{"all"}, ninjabuild.RunNinjaOpts{})
 		if err != nil {
 			t.Fatal(err)
-		}
-		defer func() {
-			err := b.Close()
-			if err != nil {
-				t.Errorf("b.Close()=%v", err)
-			}
-		}()
-		err = b.Build(ctx, "build", "all")
-		if err != nil {
-			t.Fatalf(`b.Build(ctx, "build", "all")=%v; want nil err`, err)
 		}
 		if err := exists("foo.out"); err != nil {
 			t.Errorf("foo.out doesn't exist: %v", err)
@@ -399,22 +324,10 @@ func TestBuild_RestatMultiout(t *testing.T) {
 		t.Logf("second build. touch base/foo.in, expect only foo.out2 is updated and bar.out is updated")
 		opt, graph, cleanup := setupBuild(ctx, t, dir, hashfsOpts)
 		defer cleanup()
-		b, err := build.New(ctx, graph, opt)
+		stat, err := ninjabuild.Run(ctx, graph, opt, []string{"all"}, ninjabuild.RunNinjaOpts{})
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer func() {
-			err := b.Close()
-			if err != nil {
-				t.Errorf("b.Close()=%v", err)
-			}
-		}()
-
-		err = b.Build(ctx, "build", "all")
-		if err != nil {
-			t.Fatalf(`b.Build(ctx, "build", "all")=%v; want nil err`, err)
-		}
-		stat := b.Stats()
 		if stat.Skipped != 1 { // all(phony)
 			t.Errorf("Skipped=%d; want 1", stat.Skipped)
 		}

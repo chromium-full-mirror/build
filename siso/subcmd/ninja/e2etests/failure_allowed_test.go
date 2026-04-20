@@ -26,6 +26,11 @@ func TestBuild_SwallowFailures(t *testing.T) {
 	t.Cleanup(cleanup)
 	opt.FailuresAllowed = 3
 
+	err := opt.HashFS.WaitReady(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	b, err := build.New(ctx, graph, opt)
 	if err != nil {
 		t.Fatal(err)
@@ -59,6 +64,11 @@ func TestBuild_SwallowFailuresLimit(t *testing.T) {
 	opt, graph, cleanup := setupBuild(ctx, t, dir, hashfs.Option{})
 	t.Cleanup(cleanup)
 	opt.FailuresAllowed = 11
+
+	err := opt.HashFS.WaitReady(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	b, err := build.New(ctx, graph, opt)
 	if err != nil {
@@ -95,6 +105,11 @@ func TestBuild_KeepGoing(t *testing.T) {
 	opt.FailuresAllowed = 11
 	var metricsBuffer syncBuffer
 	opt.MetricsJSONWriter = &metricsBuffer
+
+	err := opt.HashFS.WaitReady(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	b, err := build.New(ctx, graph, opt)
 	if err != nil {
