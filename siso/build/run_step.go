@@ -117,10 +117,9 @@ func (b *Builder) runStep(ctx context.Context, step *Step) (err error) {
 
 	step.init(ctx, b, stepManifest)
 	description := stepDescription(step.def)
-	prevStepOut := b.prevStepOut(ctx, step)
 	stepStartLog(ctx, logger, step, description, spanName)
-	step.metrics.init(ctx, b, step, step.startTime, prevStepOut)
-	b.stepSpanInit(ctx, span, step, description, spanName, prevStepOut)
+	step.metrics.init(ctx, b, step, step.startTime)
+	b.stepSpanInit(ctx, span, step, description, spanName)
 
 	ctx, span = trace.NewSpan(ctx, "run-step")
 	defer span.Close(nil)
@@ -232,18 +231,6 @@ func (b *Builder) runStep(ctx context.Context, step *Step) (err error) {
 	return nil
 }
 
-func (b *Builder) prevStepOut(ctx context.Context, step *Step) string {
-	if step.prevStepOut == 0 {
-		return ""
-	}
-	s, err := b.graph.TargetPath(ctx, step.prevStepOut)
-	if err != nil {
-		clog.Warningf(ctx, "failed to get target path: %v", err)
-		return ""
-	}
-	return s
-}
-
 func stepStartLog(ctx context.Context, logger *clog.Logger, step *Step, description, spanName string) {
 	logEntry := logger.Entry(logging.Info, description)
 	logEntry.Labels = map[string]string{
@@ -257,10 +244,9 @@ func stepStartLog(ctx context.Context, logger *clog.Logger, step *Step, descript
 	logger.Log(logEntry)
 }
 
-func (b *Builder) stepSpanInit(ctx context.Context, span *trace.Span, step *Step, description, spanName, prevStepOut string) {
+func (b *Builder) stepSpanInit(ctx context.Context, span *trace.Span, step *Step, description, spanName string) {
 	span.SetAttr("ready_time", time.Since(step.readyTime).Milliseconds())
 	span.SetAttr("prev", step.prevStepID)
-	span.SetAttr("prev_out", prevStepOut)
 	span.SetAttr("queue_time", time.Since(step.queueTime).Milliseconds())
 	span.SetAttr("queue_size", step.queueSize)
 	span.SetAttr("build_id", b.id)

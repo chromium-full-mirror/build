@@ -154,7 +154,6 @@ type Step struct {
 
 	readyTime     time.Time
 	prevStepID    string
-	prevStepOut   Target
 	queueTime     time.Time
 	queueSize     int
 	queueDuration time.Duration
@@ -289,7 +288,6 @@ func (s *Step) ReadyToRun(prev string, out Target) bool {
 	if ready {
 		s.readyTime = time.Now()
 		s.prevStepID = prev
-		s.prevStepOut = out
 	}
 	return ready
 }

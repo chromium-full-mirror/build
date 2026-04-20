@@ -50,11 +50,10 @@ type StepMetric struct {
 	Outputs  []string `json:"outputs,omitempty"`   // a list of the output files of the step.
 	GNTarget string   `json:"gn_target,omitempty"` // inferred gn target
 
-	// The ID and name of the first output of the previous step.
+	// The ID of the previous step.
 	// The "previous" step is defined as the last step that updated
 	// the output that is used as part of this step's inputs.
-	PrevStepID  string `json:"prev,omitempty"`
-	PrevStepOut string `json:"prev_out,omitempty"`
+	PrevStepID string `json:"prev,omitempty"`
 
 	// Ready, Start and Duration are measured by Siso's scheduler,
 	// independently of the measurements provided by the execution
@@ -198,7 +197,7 @@ func (m *StepMetric) copyExecResult(src *StepMetric) {
 	m.Stime = src.Stime
 }
 
-func (m *StepMetric) init(ctx context.Context, b *Builder, step *Step, stepStart time.Time, prevStepOut string) {
+func (m *StepMetric) init(ctx context.Context, b *Builder, step *Step, stepStart time.Time) {
 	m.StepID = step.def.String()
 	m.Rule = step.def.RuleName()
 	m.Action = step.def.ActionName()
@@ -207,7 +206,6 @@ func (m *StepMetric) init(ctx context.Context, b *Builder, step *Step, stepStart
 	}
 	m.GNTarget = step.def.Binding("gn_target")
 	m.PrevStepID = step.prevStepID
-	m.PrevStepOut = prevStepOut
 	m.Ready = IntervalMetric(step.readyTime.Sub(b.start))
 	m.Start = IntervalMetric(stepStart.Sub(step.readyTime))
 }

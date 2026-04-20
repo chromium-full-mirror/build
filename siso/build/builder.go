@@ -969,15 +969,14 @@ func stepLogEntry(ctx context.Context, logger *clog.Logger, step *Step, duration
 		// CacheHit
 	}
 	logEntry.Labels = map[string]string{
-		"id":          step.def.String(),
-		"siso_rule":   step.metrics.Rule,
-		"action":      step.metrics.Action,
-		"output":      step.metrics.Output(),
-		"gn_target":   step.metrics.GNTarget,
-		"cmdhash":     step.metrics.CmdHash,
-		"prev":        step.metrics.PrevStepID,
-		"prev_output": step.metrics.PrevStepOut,
-		"digest":      step.metrics.Digest,
+		"id":        step.def.String(),
+		"siso_rule": step.metrics.Rule,
+		"action":    step.metrics.Action,
+		"output":    step.metrics.Output(),
+		"gn_target": step.metrics.GNTarget,
+		"cmdhash":   step.metrics.CmdHash,
+		"prev":      step.metrics.PrevStepID,
+		"digest":    step.metrics.Digest,
 	}
 	if step.metrics.WorkerPool != "" {
 		logEntry.Labels["worker_pool"] = step.metrics.WorkerPool
