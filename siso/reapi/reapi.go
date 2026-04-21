@@ -383,8 +383,21 @@ func New(ctx context.Context, cred cred.Cred, opt Option) (*Client, error) {
 }
 
 func newConn(ctx context.Context, addr string, cred cred.Cred, opt Option) (grpcClientConn, error) {
+	// Force the gRPC DNS resolver by prefixing "dns:///" when the caller
+	// did not supply a scheme. gtransport.DialPool rides the deprecated
+	// grpc.DialContext path whose default resolver is "passthrough",
+	// which treats the target as a single opaque address. Under
+	// passthrough, the round_robin LB policy in serviceConfig only ever
+	// gets one subchannel per ClientConn, even though DNS returns many
+	// GFE VIPs. "dns:///" forces the DNS resolver regardless of which
+	// dial API sits underneath, so round_robin can fan out one
+	// subchannel per resolved address.
+	endpoint := addr
+	if !strings.Contains(addr, "://") {
+		endpoint = "dns:///" + addr
+	}
 	copts := []option.ClientOption{
-		option.WithEndpoint(addr),
+		option.WithEndpoint(endpoint),
 		option.WithGRPCConnectionPool(opt.ConnPool),
 	}
 	if !isGoogleRBE(addr) {
