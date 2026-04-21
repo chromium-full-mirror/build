@@ -710,7 +710,7 @@ func (c *Command) postRun(ctx context.Context, stats build.Stats, runErr error) 
 		dur = ui.SGR(ui.Bold, dur)
 		msgPrefix = ui.SGR(ui.Green, msgPrefix)
 	}
-	ui.Default.Infof("%6s %s: %d steps - %.02f/s\n", dur, msgPrefix, stats.Done-stats.Skipped, sps)
+	ui.Default.Infof("\n%6s %s: %d steps - %.02f/s\n", dur, msgPrefix, stats.Done-stats.Skipped, sps)
 	return subcommands.ExitSuccess
 
 }
