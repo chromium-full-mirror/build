@@ -35,6 +35,7 @@ type Tracer struct {
 	// number of traces written.
 	num int
 
+	qmu sync.Mutex
 	// pass Event from Record to write.
 	q chan Event
 	// signals to terminate trace writer.
@@ -139,15 +140,30 @@ func (te *Tracer) SetMetadata(metadata metadata.Metadata) {
 	te.metadata = metadata
 }
 
+func (te *Tracer) initQ() bool {
+	te.qmu.Lock()
+	defer te.qmu.Unlock()
+	if te.q != nil {
+		return false
+	}
+	te.q = make(chan Event, 10000)
+	return true
+}
+
+func (te *Tracer) getQ() chan Event {
+	te.qmu.Lock()
+	defer te.qmu.Unlock()
+	return te.q
+}
+
 // Start starts collecting metrics from semaphores and iometrics.
 func (te *Tracer) Start(ctx context.Context, semas []Semaphore, ioms []*iometrics.IOMetrics) bool {
 	if te == nil {
 		return false
 	}
-	if te.q != nil {
+	if !te.initQ() {
 		return false
 	}
-	te.q = make(chan Event, 10000)
 	te.quit = make(chan struct{})
 	te.done = make(chan struct{})
 
@@ -163,6 +179,22 @@ func (te *Tracer) Start(ctx context.Context, semas []Semaphore, ioms []*iometric
 	return true
 }
 
+// Stop stops collecting metrics from semaphores and iometrics.
+func (te *Tracer) Stop() {
+	if te == nil {
+		return
+	}
+	if te.quit != nil {
+		close(te.quit)
+		<-te.done
+		te.quit = nil
+		te.done = nil
+		te.qmu.Lock()
+		te.q = nil
+		te.qmu.Unlock()
+	}
+}
+
 func (te *Tracer) loop(ctx context.Context) {
 	clog.Infof(ctx, "trace loop start")
 	defer close(te.done)
@@ -173,14 +205,15 @@ func (te *Tracer) loop(ctx context.Context) {
 	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()
 	for {
+		teq := te.getQ()
 		select {
 		case <-te.quit:
-			clog.Infof(ctx, "trace loop quit len=%d", len(te.q))
+			clog.Infof(ctx, "trace loop quit len=%d", len(teq))
 			var timeout = time.After(1 * time.Second)
 		quit:
-			for len(te.q) > 0 {
+			for len(teq) > 0 {
 				select {
-				case obj := <-te.q:
+				case obj := <-teq:
 					te.write(ctx, obj)
 				case <-timeout:
 					clog.Warningf(ctx, "timed out")
@@ -193,7 +226,7 @@ func (te *Tracer) loop(ctx context.Context) {
 		case t := <-ticker.C:
 			te.sample(ctx, t)
 
-		case obj := <-te.q:
+		case obj := <-teq:
 			te.write(ctx, obj)
 		}
 	}
@@ -534,6 +567,7 @@ func (r *Region) End() {
 }
 
 // Record records events.
+// Record should be called after Start and before Stop.
 func (te *Tracer) Record(events []Event) {
 	if te == nil {
 		return
@@ -541,20 +575,18 @@ func (te *Tracer) Record(events []Event) {
 	if len(events) == 0 {
 		return
 	}
+	teq := te.getQ()
+	if teq == nil {
+		return
+	}
 	for _, obj := range events {
-		te.q <- obj
+		teq <- obj
 	}
 }
 
 // Close closes tracer.
 func (te *Tracer) Close(ctx context.Context) {
-	if te == nil {
-		return
-	}
-	if te.quit != nil {
-		close(te.quit)
-		<-te.done
-	}
+	te.Stop()
 	clog.Infof(ctx, "trace finalize")
 	te.writeTraceFooter(ctx)
 	if b, ok := te.w.(*bufio.Writer); ok {

@@ -430,10 +430,6 @@ func initDepsLog(ctx context.Context, stateDir string, depsLogFile string) (*nin
 // various configuration settings and parameters.
 func (c *Command) initBuildOpts(ctx context.Context, projectID string, buildPath *build.Path, config *buildconfig.Config, ds build.DataSource, hashFS *hashfs.HashFS, limits build.Limits, tracer *trace.Tracer, traceExporter *trace.Exporter, logWriters logWriters) build.Options {
 	defer trace.Begin(ctx, "initBuildOpts").End()
-	if !filepath.IsAbs(c.buildPprof) {
-		c.buildPprof = filepath.Join(c.logDir, c.buildPprof)
-	}
-	tracer.SetMetadata(config.Metadata)
 	var actionSaltBytes []byte
 	if c.actionSalt != "" {
 		actionSaltBytes = []byte(c.actionSalt)
