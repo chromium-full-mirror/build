@@ -29,6 +29,10 @@ import (
 	"go.chromium.org/build/siso/toolsupport/reclientutil"
 )
 
+// logWriters holds writers for various logs that are written to over the
+// course of the ninja build.
+//
+// Note that there are also other one-off logs that are not held here.
 type logWriters struct {
 	failureSummaryWriter io.Writer
 	failedCommandsWriter io.Writer
@@ -250,18 +254,17 @@ func (c *Command) setupCrashOutput(ctx context.Context) (func(), error) {
 }
 
 func (c *Command) writeInvocationInfo(metricsLabels map[string]string, targets []string) error {
-	invocationLog := metadata.InvocationInfo{
+	j, err := json.Marshal(metadata.InvocationInfo{
 		SisoVersion:   c.version,
 		StartTime:     c.started,
 		BuildID:       c.buildID,
 		Targets:       targets,
 		MetricsLabels: metricsLabels,
-	}
-	j, err := json.Marshal(invocationLog)
+	})
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(c.logDir, metadata.InvocationInfoFilename), j, 0644)
+	return os.WriteFile(filepath.Join(c.logDir, c.invocationJSON), j, 0644)
 }
 
 func (c *Command) cleanupReclientMetrics(ctx context.Context) {

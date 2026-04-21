@@ -122,6 +122,7 @@ type NinjaFlags struct {
 	outputLogFile      string
 	explainFile        string
 	localexecLogFile   string
+	invocationJSON     string
 	metricsJSON        string
 	traceJSON          string
 	buildPprof         string
@@ -231,6 +232,7 @@ func (c *Command) SetFlags(flagSet *flag.FlagSet) {
 	flagSet.StringVar(&c.outputLogFile, "output_log", "siso_output", "output log filename (relative to -log_dir)")
 	flagSet.StringVar(&c.explainFile, "explain_log", "siso_explain", "explain log filename (relative to -log_dir)")
 	flagSet.StringVar(&c.localexecLogFile, "localexec_log", "siso_localexec", "localexec log filename (relative to -log_dir)")
+	flagSet.StringVar(&c.invocationJSON, "invocation_json", "siso_metadata.json", "invocation metadata JSON filename (relative to -log_dir)")
 	flagSet.StringVar(&c.metricsJSON, "metrics_json", "siso_metrics.json", "metrics JSON filename (relative to -log_dir)")
 	flagSet.StringVar(&c.traceJSON, "trace_json", "siso_trace.json", "trace JSON filename (relative to -log_dir)")
 	flagSet.StringVar(&c.buildPprof, "build_pprof", "siso_build.pprof", "build pprof filename (relative to -log_dir)")

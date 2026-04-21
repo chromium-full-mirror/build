@@ -6,12 +6,6 @@ package metadata
 
 import "time"
 
-// InvocationInfoFilename is the filename of the invocation log file.
-// For historical reasons it is called "siso_metadata.json".
-// This file is read by ninjalog_uploader.py.
-// TODO: move to flag in subcmd/ninja/config.go?
-const InvocationInfoFilename = "siso_metadata.json"
-
 // InvocationInfo represents info logged about a ninja build invocation.
 // It is intended to be written at the start of the build, and therefore does not
 // provide information about whether the build succeeded or not.
