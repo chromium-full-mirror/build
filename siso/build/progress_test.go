@@ -6,6 +6,8 @@ package build
 
 import (
 	"context"
+	"math/rand/v2"
+	"slices"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -134,6 +136,163 @@ func TestProgress_WeightedDurationExcludesDoneStep(t *testing.T) {
 			t.Errorf("s1 (done) weight=%v; want 0", w1)
 		}
 	})
+}
+
+// mkTopActive is a helper that returns a stepInfo whose startTime is
+// offset seconds from a fixed epoch. Only step.startTime is read by
+// insertTopActive, so no other Step fields need to be populated.
+func mkTopActive(offsetSec int) *stepInfo {
+	base := time.Unix(1_700_000_000, 0)
+	return &stepInfo{
+		step: &Step{startTime: base.Add(time.Duration(offsetSec) * time.Second)},
+	}
+}
+
+// topActiveOffsets returns the startTime offsets (seconds past epoch)
+// for every entry in p.topActives, so tests can compare against a
+// plain []int literal.
+func topActiveOffsets(p *progress) []int {
+	base := time.Unix(1_700_000_000, 0)
+	out := make([]int, len(p.topActives))
+	for i, s := range p.topActives {
+		out[i] = int(s.step.startTime.Sub(base) / time.Second)
+	}
+	return out
+}
+
+// sortTopActives applies the same ordering update() performs at the
+// end of its filter pass, so per insert tests can assert the K
+// oldest in the order render() sees.
+func sortTopActives(p *progress) {
+	slices.SortFunc(p.topActives, func(a, b *stepInfo) int {
+		return a.step.startTime.Compare(b.step.startTime)
+	})
+}
+
+// TestInsertTopActive_FillInReverseOrder inserts K candidates from
+// newest to oldest while the buffer is below capacity. Each call
+// appends; the update tick sorts the K entry buffer once after the
+// walk, so the result is ascending by startTime.
+func TestInsertTopActive_FillInReverseOrder(t *testing.T) {
+	var p progress
+	for offset := activeItems; offset >= 1; offset-- {
+		p.insertTopActive(mkTopActive(offset))
+	}
+	sortTopActives(&p)
+	want := []int{1, 2, 3, 4, 5}
+	if got := topActiveOffsets(&p); !slices.Equal(got, want) {
+		t.Errorf("topActives offsets=%v; want %v", got, want)
+	}
+}
+
+// TestInsertTopActive_FillInOrder inserts K candidates from oldest to
+// newest while the buffer is below capacity. Each call appends in
+// order, and the update tick sort leaves the result ascending by
+// startTime.
+func TestInsertTopActive_FillInOrder(t *testing.T) {
+	var p progress
+	for offset := 1; offset <= activeItems; offset++ {
+		p.insertTopActive(mkTopActive(offset))
+	}
+	sortTopActives(&p)
+	want := []int{1, 2, 3, 4, 5}
+	if got := topActiveOffsets(&p); !slices.Equal(got, want) {
+		t.Errorf("topActives offsets=%v; want %v", got, want)
+	}
+}
+
+// TestInsertTopActive_DoesNotExceedCap ensures the buffer never grows
+// past activeItems no matter how many candidates are offered.
+func TestInsertTopActive_DoesNotExceedCap(t *testing.T) {
+	var p progress
+	for offset := range activeItems * 3 {
+		p.insertTopActive(mkTopActive(offset))
+	}
+	if got := len(p.topActives); got != activeItems {
+		t.Errorf("len(topActives)=%d; want %d", got, activeItems)
+	}
+}
+
+// TestInsertTopActive_EvictsNewestWhenFull checks that once the buffer
+// is full, a candidate strictly older than the newest of the kept K
+// replaces that slot, so after the update tick sort the K oldest are
+// in ascending age order.
+func TestInsertTopActive_EvictsNewestWhenFull(t *testing.T) {
+	var p progress
+	for _, off := range []int{10, 20, 30, 40, 50} {
+		p.insertTopActive(mkTopActive(off))
+	}
+	// 25 is older than the newest of the kept K (50) and belongs
+	// between 20 and 30 after the tick sort.
+	p.insertTopActive(mkTopActive(25))
+	sortTopActives(&p)
+	want := []int{10, 20, 25, 30, 40}
+	if got := topActiveOffsets(&p); !slices.Equal(got, want) {
+		t.Errorf("topActives offsets=%v; want %v", got, want)
+	}
+}
+
+// TestInsertTopActive_SkipsWhenNotOlder checks that once the buffer is
+// full, a candidate no older than the newest of the kept K is dropped
+// and the buffer is left unchanged.
+func TestInsertTopActive_SkipsWhenNotOlder(t *testing.T) {
+	var p progress
+	for _, off := range []int{10, 20, 30, 40, 50} {
+		p.insertTopActive(mkTopActive(off))
+	}
+	before := topActiveOffsets(&p)
+	// 60 is newer than the newest of the kept K, must be skipped.
+	p.insertTopActive(mkTopActive(60))
+	// 50 ties the newest of the kept K, must also be skipped (strict
+	// older rule).
+	p.insertTopActive(mkTopActive(50))
+	if got := topActiveOffsets(&p); !slices.Equal(got, before) {
+		t.Errorf("topActives offsets=%v; want unchanged %v", got, before)
+	}
+}
+
+// TestInsertTopActive_CandidateOlderThanAll offers a candidate older
+// than every kept entry, so the slot holding the newest of the kept K
+// is replaced and after the update tick sort the candidate leads.
+func TestInsertTopActive_CandidateOlderThanAll(t *testing.T) {
+	var p progress
+	for _, off := range []int{10, 20, 30, 40, 50} {
+		p.insertTopActive(mkTopActive(off))
+	}
+	p.insertTopActive(mkTopActive(1))
+	sortTopActives(&p)
+	want := []int{1, 10, 20, 30, 40}
+	if got := topActiveOffsets(&p); !slices.Equal(got, want) {
+		t.Errorf("topActives offsets=%v; want %v", got, want)
+	}
+}
+
+// TestInsertTopActive_RandomOrderMatchesSort feeds a shuffled stream
+// through insertTopActive, then applies the update tick sort, and
+// checks that the result is identical to sorting all offsets and
+// taking the first K entries (the K oldest).
+func TestInsertTopActive_RandomOrderMatchesSort(t *testing.T) {
+	const n = 200
+	offsets := make([]int, n)
+	for i := range offsets {
+		offsets[i] = i
+	}
+	rng := rand.New(rand.NewPCG(1, 2))
+	rng.Shuffle(n, func(i, j int) { offsets[i], offsets[j] = offsets[j], offsets[i] })
+
+	var p progress
+	for _, off := range offsets {
+		p.insertTopActive(mkTopActive(off))
+	}
+	sortTopActives(&p)
+	got := topActiveOffsets(&p)
+
+	sorted := slices.Clone(offsets)
+	slices.Sort(sorted)
+	want := sorted[:activeItems]
+	if !slices.Equal(got, want) {
+		t.Errorf("topActives offsets=%v; want %v", got, want)
+	}
 }
 
 func TestProgress_NotIsTerminal(t *testing.T) {

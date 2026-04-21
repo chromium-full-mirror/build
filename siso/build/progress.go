@@ -43,10 +43,21 @@ type progress struct {
 	// sequential, so no mutex is needed.
 	rendered bool
 
-	// snapshotBuf is a scratch buffer reused across render() calls
-	// for the p.actives copy, grown as needed. Accessed only from the
-	// update goroutine.
-	snapshotBuf []*stepInfo
+	// topActives holds up to activeItems oldest live steps, sorted
+	// ascending by startTime. update() populates it unsorted as part
+	// of the filter pass, then sorts it once before render() reads
+	// it. Owned by the update goroutine so no mutex is needed.
+	topActives []*stepInfo
+
+	// topActivesNewest is the index in p.topActives of the kept entry
+	// with the largest startTime while update() is populating the K
+	// entry buffer. It gives insertTopActive a single comparison
+	// rejection path in the common case where the candidate is newer
+	// than every kept entry. Owned by the update goroutine so no
+	// mutex is needed. The n == 0 branch in insertTopActive restores
+	// it on the first call of each tick, so no explicit reset is
+	// needed when topActives is cleared above.
+	topActivesNewest int
 
 	// linesBuf is the reusable backing for the terminal frame. start()
 	// pre-sizes it to fit an optional leading "\n", one summary row,
@@ -117,7 +128,14 @@ func (p *progress) update(ctx context.Context, b *Builder) {
 			// Drop every done step from p.actives. A done step left in
 			// the slice would otherwise inflate the divisor for the
 			// weighted duration below (addWeightedDuration drops the
-			// share that lands on a done step).
+			// share that lands on a done step). Fuse the top activeItems
+			// oldest live steps into p.topActives during the same pass,
+			// then sort that K entry buffer once so render() can emit it
+			// without its own O(n log n) sort over p.actives.
+			for i := range p.topActives {
+				p.topActives[i] = nil
+			}
+			p.topActives = p.topActives[:0]
 			n := 0
 			for _, s := range p.actives {
 				if s.step.Done() {
@@ -125,11 +143,15 @@ func (p *progress) update(ctx context.Context, b *Builder) {
 				}
 				p.actives[n] = s
 				n++
+				p.insertTopActive(s)
 			}
 			for i := n; i < len(p.actives); i++ {
 				p.actives[i] = nil
 			}
 			p.actives = p.actives[:n]
+			sort.Slice(p.topActives, func(i, j int) bool {
+				return p.topActives[i].step.startTime.Before(p.topActives[j].step.startTime)
+			})
 			if len(p.actives) > 0 {
 				d := time.Since(lastUpdate)
 				wd := d / time.Duration(len(p.actives))
@@ -140,6 +162,39 @@ func (p *progress) update(ctx context.Context, b *Builder) {
 			}
 			p.mu.Unlock()
 			p.render(b)
+		}
+	}
+}
+
+// insertTopActive keeps p.topActives as the activeItems oldest live
+// steps seen so far this tick. Slots are written in the order the
+// buffer filled; update() sorts the K entry buffer once after the
+// p.actives walk so render() sees the K oldest in age order.
+//
+// p.topActivesNewest tracks the slot holding the newest of the kept
+// K across calls, so the common case (candidate newer than every
+// kept entry, dropped) is a single comparison. On the rare path
+// where a candidate is strictly older than that slot, it replaces
+// the slot and one linear scan over K slots picks the new newest.
+// K is activeItems (5), so per call work is O(1) amortized with no
+// allocation.
+func (p *progress) insertTopActive(s *stepInfo) {
+	switch {
+	case len(p.topActives) < activeItems:
+		// We have empty slots
+		p.topActives = append(p.topActives, s)
+	case s.step.startTime.Before(p.topActives[p.topActivesNewest].step.startTime):
+		// s started before current newest so replace
+		p.topActives[p.topActivesNewest] = s
+	default:
+		// s started later than current newest so ignore
+		return
+	}
+	// Find newest
+	p.topActivesNewest = 0
+	for i := range p.topActives {
+		if p.topActives[i].step.startTime.After(p.topActives[p.topActivesNewest].step.startTime) {
+			p.topActivesNewest = i
 		}
 	}
 }
@@ -160,34 +215,12 @@ func (p *progress) render(b *Builder) {
 		p.mu.Unlock()
 		return
 	}
-	if cap(p.snapshotBuf) < len(p.actives) {
-		p.snapshotBuf = make([]*stepInfo, len(p.actives))
-	} else {
-		p.snapshotBuf = p.snapshotBuf[:len(p.actives)]
-	}
-	copy(p.snapshotBuf, p.actives)
 	pending := p.pendingOutput
 	p.pendingOutput = nil
 	p.mu.Unlock()
-	snapshot := p.snapshotBuf
-	// Release *stepInfo references held in the backing array on exit so
-	// a finished step is not pinned alive until the next tick overwrites
-	// the slot.
-	defer func() {
-		for i := range p.snapshotBuf {
-			p.snapshotBuf[i] = nil
-		}
-		p.snapshotBuf = p.snapshotBuf[:0]
-	}()
-
-	// p.actives is in insertion order, not sorted by startTime. Sort
-	// the snapshot so the oldest K run at the top of the frame.
-	sort.Slice(snapshot, func(i, j int) bool {
-		return snapshot[i].step.startTime.Before(snapshot[j].step.startTime)
-	})
-	if len(snapshot) > activeItems {
-		snapshot = snapshot[:activeItems]
-	}
+	// p.topActives was populated by the update tick immediately before
+	// this call, sorted ascending by startTime and capped at activeItems.
+	snapshot := p.topActives
 
 	summary := p.buildSummary(b)
 	lines := p.appendFrame(p.linesBuf[:0], summary, snapshot, pending)
