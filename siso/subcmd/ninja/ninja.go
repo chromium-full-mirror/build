@@ -605,7 +605,7 @@ func (c *Command) Run(ctx context.Context) (stats build.Stats, finalErr error) {
 	}
 	removeLastFailedTargets(ctx, c.stateDir)
 
-	err = c.writeSisoMetadata(metricsLabels, targets)
+	err = c.writeInvocationInfo(metricsLabels, targets)
 	if err != nil {
 		return stats, err
 	}
