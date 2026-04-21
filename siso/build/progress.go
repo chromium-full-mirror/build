@@ -96,18 +96,30 @@ func (p *progress) update(ctx context.Context, b *Builder) {
 		case <-ticker.C:
 			p.count.Add(1)
 			p.mu.Lock()
-			var si *stepInfo
-			for len(p.actives) > 0 {
-				s := p.actives[0]
+			// Remove every done step from the heap, not just the head.
+			// A done step buried under an older running step would
+			// otherwise linger in p.actives until the older step also
+			// finishes, inflating the divisor for the weighted duration
+			// below (addWeightedDuration drops the share that lands on
+			// a done step).
+			n := 0
+			for _, s := range p.actives {
 				if s.step.Done() {
-					// already finished?
-					heap.Pop(&p.actives)
 					continue
 				}
-				si = s
-				break
+				p.actives[n] = s
+				n++
 			}
+			if n < len(p.actives) {
+				for i := n; i < len(p.actives); i++ {
+					p.actives[i] = nil
+				}
+				p.actives = p.actives[:n]
+				heap.Init(&p.actives)
+			}
+			var si *stepInfo
 			if len(p.actives) > 0 {
+				si = p.actives[0]
 				d := time.Since(lastUpdate)
 				wd := d / time.Duration(len(p.actives))
 				lastUpdate = time.Now()
