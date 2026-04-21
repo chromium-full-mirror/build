@@ -92,7 +92,10 @@ func writeLinesMaxWidth(buf *bytes.Buffer, msgs []string, width int) {
 		}
 		// Truncate in middle if too long, unless terminated with newline.
 		// If printing last message, don't truncate if any newline.
-		if width > 4 && len(msg)+3 > width-1 && ((width-4)/2) < len(msg) &&
+		// Compare against visible length so SGR escape bytes do not
+		// count toward the width budget.
+		vlen := visibleLen(msg)
+		if width > 4 && vlen+3 > width-1 && ((width-4)/2) < vlen &&
 			((i < len(msgs)-1 && !strings.Contains(msg[:len(msg)-1], "\n")) ||
 				(i == len(msgs)-1 && !strings.Contains(msg, "\n"))) {
 			msg = elideMiddle(msg, width)
@@ -201,6 +204,27 @@ func (s SGRCode) String() string {
 // SGR formats s in SGR (select graphic rendition).
 func SGR(n SGRCode, s string) string {
 	return fmt.Sprintf("%s%s%s", n, s, Reset)
+}
+
+// visibleLen returns the number of bytes in s that are not part of an
+// ANSI CSI escape sequence, i.e. the on-screen byte length. Allocation
+// free, intended for hot-path width comparisons.
+func visibleLen(s string) int {
+	n := 0
+	for i := 0; i < len(s); i++ {
+		if s[i] != '\033' {
+			n++
+			continue
+		}
+		if i+1 >= len(s) || s[i+1] != '[' {
+			continue
+		}
+		i += 2
+		for i < len(s) && !unicode.IsLetter(rune(s[i])) {
+			i++
+		}
+	}
+	return n
 }
 
 // StripANSIEscapeCodes strips ANSI escape codes.

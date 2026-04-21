@@ -688,10 +688,18 @@ func (b *Builder) Build(ctx context.Context, name string, args ...string) (err e
 		}
 	}(ctx)
 	pstat := b.plan.stats()
-	b.progress.report("\nbuild start: Ready %d Pending %d", pstat.nready, pstat.npendings)
 	clog.Infof(ctx, "build pendings=%d ready=%d", pstat.npendings, pstat.nready)
-	b.progress.start(ctx, b)
-	defer b.progress.stop()
+	// Manifest rebuild sub-builds are small (typically 1 step), and
+	// their "build start" message, progress frame, and "rebuild manifest
+	// finished" line would flash on screen between "use RBE instance"
+	// and the real build start, leaving cleared rows behind. Only the
+	// top-level build drives the terminal frame.
+	subBuild := b.rebuildManifest != ""
+	if !subBuild {
+		b.progress.report("build start: Ready %d Pending %d", pstat.nready, pstat.npendings)
+		b.progress.start(ctx, b)
+		defer b.progress.stop()
+	}
 
 	if b.clobber {
 		fmt.Fprintf(b.explainWriter, "--clobber is specified\n")
@@ -823,12 +831,29 @@ loop:
 	wg.Wait()
 	close(errch)
 	err = <-errdone
-	if !b.verbose {
-		// replace 2 progress lines.
+	if !subBuild && !b.verbose {
+		// The tick draws a 7 row frame every 100ms (summary + 5 step
+		// rows + trailing blank). The final message below is 1 line,
+		// and PrintLines only clears as many rows as it writes, so
+		// printing "build finished" through it would overwrite only
+		// the summary row and leave the rest of the frame on screen:
+		//
+		//   build finished                  (overwritten)
+		//     2.1s [exec] clang++ foo.cc    (stale)
+		//     1.4s [exec] clang++ bar.cc    (stale)
+		//     0.8s [fetch] libc.a           (stale)
+		//     0.2s [exec] clang++ baz.cc    (stale)
+		//                                   (stale pad row)
+		//                                   (stale trailing blank)
+		//
+		// Stop the tick first so it cannot overdraw us, then
+		// clearFrame wipes all 7 rows before we print.
+		b.progress.stop()
+		b.progress.clearFrame()
 		if err == nil {
-			ui.Default.PrintLines(fmt.Sprintf("%s finished", name), "")
+			ui.Default.PrintLines(fmt.Sprintf("%s finished", name))
 		} else {
-			ui.Default.PrintLines(fmt.Sprintf("%s failed", name), "")
+			ui.Default.PrintLines(fmt.Sprintf("%s failed", name))
 		}
 	}
 	// metrics for full build session, without step_id etc.

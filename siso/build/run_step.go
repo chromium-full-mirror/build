@@ -224,7 +224,7 @@ func (b *Builder) runStep(ctx context.Context, step *Step) (err error) {
 	if len(b.lastFailureTargets) > 0 {
 		out := step.outputPaths[0]
 		if _, ok := b.lastFailureTargets[out]; ok {
-			ui.Default.PrintLines(fmt.Sprintf(ui.SGR(ui.Green, "last failed target fixed: %s\n\n"), out))
+			b.progress.enqueueOutput(ui.SGR(ui.Green, fmt.Sprintf("last failed target fixed: %s", out)) + "\n")
 		}
 	}
 	b.plan.completeStep(ctx, step)

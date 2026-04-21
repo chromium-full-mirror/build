@@ -5,7 +5,6 @@
 package build
 
 import (
-	"container/heap"
 	"context"
 	"fmt"
 	"math"
@@ -21,6 +20,12 @@ import (
 	"go.chromium.org/build/siso/ui"
 )
 
+// activeItems is the number of running steps shown below the summary
+// line on terminal progress. The tick renders a fixed frame of this
+// many rows (padded if fewer steps are running) so PrintLines can
+// redraw the same region in place.
+const activeItems = 5
+
 type progress struct {
 	started    time.Time
 	verbose    bool
@@ -29,10 +34,40 @@ type progress struct {
 	ts         time.Time
 	consoleCmd *execute.Cmd
 
+	// rendered is set true after the first render() has drawn the frame.
+	// The first draw appends below the existing output (startup log,
+	// spinner results, build-start message); subsequent draws redraw in
+	// place. Written by render() on the update goroutine and reset by
+	// stop() on the builder goroutine after the update goroutine has
+	// returned (synchronized via <-p.updateStopped). All accesses are
+	// sequential, so no mutex is needed.
+	rendered bool
+
+	// snapshotBuf is a scratch buffer reused across render() calls
+	// for the p.actives copy, grown as needed. Accessed only from the
+	// update goroutine.
+	snapshotBuf []*stepInfo
+
+	// linesBuf is the reusable backing for the terminal frame. start()
+	// pre-sizes it to fit an optional leading "\n", one summary row,
+	// activeItems step or pad rows, and a trailing blank row. render()
+	// truncates via [:0] each tick and never grows beyond the initial
+	// capacity, so no save-back is needed. Owned by the update goroutine.
+	linesBuf []string
+
+	// pendingOutput holds finished-step output (failure banners and
+	// success-with-warnings) captured by step() in the terminal frame
+	// path. The next render tick clears the frame, prints each entry
+	// so it scrolls into history, then redraws the frame fresh below.
+	// Guarded by mu; appended by worker goroutines, drained by the
+	// update goroutine.
+	pendingOutput []string
+
 	resultstoreUploader *resultstore.Uploader
 
-	actives       activeSteps
+	actives       []*stepInfo
 	done          chan struct{}
+	stopOnce      sync.Once
 	updateStopped chan struct{}
 	count         atomic.Int64
 }
@@ -42,29 +77,13 @@ type stepInfo struct {
 	desc string
 }
 
-type activeSteps []*stepInfo
-
-func (as activeSteps) Len() int           { return len(as) }
-func (as activeSteps) Less(i, j int) bool { return as[i].step.startTime.Before(as[j].step.startTime) }
-func (as activeSteps) Swap(i, j int)      { as[i], as[j] = as[j], as[i] }
-func (as *activeSteps) Push(x any) {
-	(*as) = append(*as, x.(*stepInfo))
-}
-func (as *activeSteps) Pop() any {
-	old := *as
-	n := len(old)
-	s := old[n-1]
-	old[n-1] = nil
-	*as = old[:n-1]
-	return s
-}
-
 func (p *progress) start(ctx context.Context, b *Builder) {
 	p.started = time.Now()
 	p.verbose = b.verbose
 	p.resultstoreUploader = b.resultstoreUploader
 	p.done = make(chan struct{})
 	p.updateStopped = make(chan struct{})
+	p.linesBuf = make([]string, 0, activeItems+3)
 	go p.update(ctx, b)
 }
 
@@ -83,7 +102,6 @@ func (p *progress) finishConsoleCmd() {
 
 func (p *progress) update(ctx context.Context, b *Builder) {
 	lastUpdate := time.Now()
-	lastStepUpdate := time.Now()
 	defer close(p.updateStopped)
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
@@ -96,12 +114,10 @@ func (p *progress) update(ctx context.Context, b *Builder) {
 		case <-ticker.C:
 			p.count.Add(1)
 			p.mu.Lock()
-			// Remove every done step from the heap, not just the head.
-			// A done step buried under an older running step would
-			// otherwise linger in p.actives until the older step also
-			// finishes, inflating the divisor for the weighted duration
-			// below (addWeightedDuration drops the share that lands on
-			// a done step).
+			// Drop every done step from p.actives. A done step left in
+			// the slice would otherwise inflate the divisor for the
+			// weighted duration below (addWeightedDuration drops the
+			// share that lands on a done step).
 			n := 0
 			for _, s := range p.actives {
 				if s.step.Done() {
@@ -110,16 +126,11 @@ func (p *progress) update(ctx context.Context, b *Builder) {
 				p.actives[n] = s
 				n++
 			}
-			if n < len(p.actives) {
-				for i := n; i < len(p.actives); i++ {
-					p.actives[i] = nil
-				}
-				p.actives = p.actives[:n]
-				heap.Init(&p.actives)
+			for i := n; i < len(p.actives); i++ {
+				p.actives[i] = nil
 			}
-			var si *stepInfo
+			p.actives = p.actives[:n]
 			if len(p.actives) > 0 {
-				si = p.actives[0]
 				d := time.Since(lastUpdate)
 				wd := d / time.Duration(len(p.actives))
 				lastUpdate = time.Now()
@@ -127,39 +138,263 @@ func (p *progress) update(ctx context.Context, b *Builder) {
 					s.step.addWeightedDuration(wd)
 				}
 			}
-			consoleOut := p.consoleCmd != nil && p.consoleCmd.ConsoleOut != nil && p.consoleCmd.ConsoleOut.Load()
 			p.mu.Unlock()
-			if !ui.IsTerminal() || b.verbose || consoleOut {
-				continue
-			}
-			if si == nil || si.step == nil {
-				continue
-			}
-			const d = 100 * time.Millisecond
-			if time.Since(lastStepUpdate) < d {
-				continue
-			}
-			lastStepUpdate = time.Now()
-			phase := si.step.phase()
-			dur := si.step.servDuration()
-			var msg string
-			if dur > 0 {
-				msg = fmt.Sprintf("%s[%s]: %s", ui.FormatDuration(dur), phase, si.desc)
-			} else {
-				msg = fmt.Sprintf("[%s]: %s", phase, si.desc)
-			}
-			switch phase {
-			case stepFallbackWait, stepFallbackRun, stepRetryWait, stepRetryRun:
-				msg = ui.SGR(ui.Red, msg)
-			}
-			p.step(b, si.step, msg)
+			p.render(b)
 		}
 	}
 }
 
+// render draws the terminal progress frame: one summary line followed
+// by up to activeItems step lines, each showing that step's
+// servDuration, phase, and description. The frame size is fixed so
+// PrintLines can redraw the same region in place. Non terminal and
+// verbose modes do not render a frame; events handle their own output
+// through progress.step.
+func (p *progress) render(b *Builder) {
+	if !ui.IsTerminal() || p.verbose {
+		return
+	}
+
+	p.mu.Lock()
+	if p.consoleCmd != nil && p.consoleCmd.ConsoleOut != nil && p.consoleCmd.ConsoleOut.Load() {
+		p.mu.Unlock()
+		return
+	}
+	if cap(p.snapshotBuf) < len(p.actives) {
+		p.snapshotBuf = make([]*stepInfo, len(p.actives))
+	} else {
+		p.snapshotBuf = p.snapshotBuf[:len(p.actives)]
+	}
+	copy(p.snapshotBuf, p.actives)
+	pending := p.pendingOutput
+	p.pendingOutput = nil
+	p.mu.Unlock()
+	snapshot := p.snapshotBuf
+	// Release *stepInfo references held in the backing array on exit so
+	// a finished step is not pinned alive until the next tick overwrites
+	// the slot.
+	defer func() {
+		for i := range p.snapshotBuf {
+			p.snapshotBuf[i] = nil
+		}
+		p.snapshotBuf = p.snapshotBuf[:0]
+	}()
+
+	// p.actives is in insertion order, not sorted by startTime. Sort
+	// the snapshot so the oldest K run at the top of the frame.
+	sort.Slice(snapshot, func(i, j int) bool {
+		return snapshot[i].step.startTime.Before(snapshot[j].step.startTime)
+	})
+	if len(snapshot) > activeItems {
+		snapshot = snapshot[:activeItems]
+	}
+
+	summary := p.buildSummary(b)
+	lines := p.appendFrame(p.linesBuf[:0], summary, snapshot, pending)
+	ui.Default.PrintLines(lines...)
+
+	p.mu.Lock()
+	p.ts = time.Now()
+	p.mu.Unlock()
+}
+
+// buildSummary formats the one-line summary at the top of the terminal
+// frame. It also updates p.numLocal (read by run_remote to gate
+// fastLocal acquisition) and reports the plan's live total to
+// b.statusReporter as side effects.
+func (p *progress) buildSummary(b *Builder) string {
+	dur := ui.FormatDuration(time.Since(b.start))
+	stat := b.stats.stats()
+
+	runProgress := func(waits, servs int) string {
+		if waits > 0 {
+			return ui.SGR(ui.BackgroundRed, fmt.Sprintf("%d", waits+servs))
+		}
+		return fmt.Sprintf("%d", servs)
+	}
+	preprocProgress := runProgress(b.preprocSema.NumWaits(), b.preprocSema.NumServs())
+
+	localWaits := b.localSema.NumWaits()
+	localServs := b.localSema.NumServs()
+	for _, pool := range b.poolSemas {
+		localWaits += pool.NumWaits()
+		localServs += pool.NumServs()
+	}
+	// no wait for fastLocalSema since it only use TryAcquire,
+	// so no need to count b.fastLocalSema.NumWaits.
+	// fastLocal step also acquires localSema,
+	// so no need to count b.fastLocalSema.NumServ.
+	p.numLocal.Store(int32(localWaits + localServs))
+	localProgress := runProgress(localWaits, localServs)
+
+	remoteWaits := b.remoteSema.NumWaits() + b.reproxySema.NumWaits() + b.rewrapSema.NumWaits()
+	remoteServs := b.remoteSema.NumServs() + b.reproxySema.NumServs() + b.rewrapSema.NumServs()
+	remoteProgress := runProgress(remoteWaits, remoteServs)
+
+	flushProgress := runProgress(hashfs.FlushSemaphore.NumWaits(), hashfs.FlushSemaphore.NumServs())
+
+	var stepsPerSec string
+	if stat.Done-stat.Skipped > 0 {
+		stepsPerSec = fmt.Sprintf("%.1f/s ", float64(stat.Done-stat.Skipped)/time.Since(p.started).Seconds())
+	}
+	var cacheHitRatio string
+	if stat.Remote+stat.CacheHit > 0 {
+		// Use floor to avoid rounding up to 100% when there are cache misses.
+		cacheHitRatio = fmt.Sprintf("cache:%5.02f%% ", math.Floor(float64(stat.CacheHit)/float64(stat.CacheHit+stat.Remote)*10000)/100.0)
+	}
+	var fallback string
+	if stat.LocalFallback > 0 {
+		fallback = "fallback:" + ui.SGR(ui.BackgroundRed, fmt.Sprintf("%d", stat.LocalFallback)) + " "
+	}
+	var cacheWrite string
+	if stat.CacheWrite > 0 {
+		cacheWrite = fmt.Sprintf("cache-write:%d(err:%d) ", stat.CacheWrite, stat.CacheWriteErr)
+	}
+	var retry string
+	if stat.RemoteRetry > 0 {
+		retry = "retry:" + ui.SGR(ui.BackgroundRed, fmt.Sprintf("%d", stat.RemoteRetry)) + " "
+	}
+	b.statusReporter.PlanHasTotalSteps(stat.Total - stat.Skipped)
+
+	return fmt.Sprintf("[%d/%d] %s pre:%s local:%s remote:%s fetch:%s %s%s%s%s%s",
+		stat.Done-stat.Skipped, stat.Total-stat.Skipped,
+		dur,
+		preprocProgress, localProgress, remoteProgress, flushProgress,
+		stepsPerSec, cacheHitRatio, cacheWrite, fallback, retry,
+	)
+}
+
+// appendFrame builds the terminal frame into lines and returns the
+// extended slice. Layout:
+//
+//	"\n" sentinel telling PrintLines to skip its built-in clear path
+//	summary
+//	activeItems step or pad rows
+//	trailing "\n" so the cursor lands on a blank row below the frame
+//
+// Reconciles the cursor before writing and drains pending into
+// scrollback above the frame as a side effect.
+func (p *progress) appendFrame(lines []string, summary string, snapshot []*stepInfo, pending []string) []string {
+	// Position the cursor at the top of where the new frame will be
+	// drawn. Two cases:
+	//   - a prior frame is on screen: wipe it in place so pending
+	//     output (if any) and the redraw land at the same rows
+	//   - first draw: the cursor may still be mid-line after startup
+	//     text (build-start message, spinner result), so push past it
+	if p.rendered {
+		p.clearFrame()
+	} else {
+		ui.Default.Printf("\n")
+	}
+
+	// Drain queued step output into scrollback above the new frame.
+	// Pending must be flushed after the clear/push above and before
+	// the frame, so it scrolls into history rather than being
+	// overwritten by the frame.
+	if len(pending) > 0 {
+		p.writePending(pending)
+	}
+
+	// Leading "\n" is the sentinel that tells PrintLines we already
+	// own the cursor; without it PrintLines would clear the rows
+	// above and shift the frame upward.
+	lines = append(lines, "\n", summary)
+	for _, si := range snapshot {
+		lines = append(lines, formatStepRow(si))
+	}
+
+	// Pad the step region to a fixed height with " " (not "") because
+	// writeLinesMaxWidth skips empty msgs, which would desync the
+	// clear and write line counts.
+	for range activeItems - len(snapshot) {
+		lines = append(lines, " ")
+	}
+
+	lines = append(lines, "\n")
+	p.rendered = true
+	return lines
+}
+
+// formatStepRow formats one active-step row in the terminal frame:
+// servDuration (or 6 spaces if zero), phase, and description. Rows for
+// fallback or retry phases are colored red.
+func formatStepRow(si *stepInfo) string {
+	phase := si.step.phase()
+	d := si.step.servDuration()
+	durStr := "      "
+	if d > 0 {
+		durStr = fmt.Sprintf("%6s", ui.FormatDuration(d))
+	}
+	msg := fmt.Sprintf("  %s [%s] %s", durStr, phase, si.desc)
+	switch phase {
+	case stepFallbackWait, stepFallbackRun, stepRetryWait, stepRetryRun:
+		msg = ui.SGR(ui.Red, msg)
+	}
+	return msg
+}
+
 func (p *progress) stop() {
-	close(p.done)
+	p.stopOnce.Do(func() {
+		close(p.done)
+	})
 	<-p.updateStopped
+	// Drain output queued after the last render tick (a failure in the
+	// final 100ms would otherwise be lost). Wipe the frame still on
+	// screen, print the queue, and mark rendered=false so the caller's
+	// follow-up clearFrame is a no op and its "<name> finished/failed"
+	// PrintLines lands on the empty line below.
+	p.mu.Lock()
+	pending := p.pendingOutput
+	p.pendingOutput = nil
+	p.mu.Unlock()
+	if len(pending) > 0 {
+		p.clearFrame()
+		p.writePending(pending)
+		p.rendered = false
+	}
+}
+
+// enqueueOutput routes a one-off message (e.g. "last failed target
+// fixed") through the same pending queue as step output so it scrolls
+// into history above the frame instead of clobbering it. In non
+// terminal or verbose mode there is no frame, so it prints directly.
+func (p *progress) enqueueOutput(msg string) {
+	if !ui.IsTerminal() || p.verbose {
+		ui.Default.PrintLines(msg)
+		return
+	}
+	p.mu.Lock()
+	p.pendingOutput = append(p.pendingOutput, msg)
+	p.mu.Unlock()
+}
+
+// writePending writes already-drained pending output to stdout, each
+// entry terminated by "\n" so the cursor lands on a fresh blank line
+// after the last write. Caller is responsible for clearing the frame
+// first (if any) and for whatever follows the cursor.
+func (p *progress) writePending(pending []string) {
+	var buf strings.Builder
+	for _, msg := range pending {
+		buf.WriteString(msg)
+		if !strings.HasSuffix(msg, "\n") {
+			buf.WriteByte('\n')
+		}
+	}
+	ui.Default.Printf("%s", buf.String())
+}
+
+// clearFrame erases the activeItems+2 rows of the terminal frame last
+// drawn by render (the summary line, activeItems step or pad rows, and
+// the trailing blank row), leaving the cursor at the top of that
+// region so the caller can overwrite it with a final message. No op
+// when a terminal frame was never drawn (non terminal UI, verbose
+// mode, or no prior render). Not safe to call while the tick goroutine
+// is still running; the caller must stop() first.
+func (p *progress) clearFrame() {
+	if !ui.IsTerminal() || p.verbose || !p.rendered {
+		return
+	}
+	ui.Default.PrintLines(make([]string, activeItems+2)...)
 }
 
 func (p *progress) report(format string, args ...any) {
@@ -194,10 +429,9 @@ const (
 
 func (p *progress) step(b *Builder, step *Step, s string) {
 	p.mu.Lock()
-	t := p.ts
 	if step != nil {
 		if strings.HasPrefix(s, progressPrefixStart) {
-			heap.Push(&p.actives, &stepInfo{
+			p.actives = append(p.actives, &stepInfo{
 				step: step,
 				desc: step.cmd.Desc,
 			})
@@ -215,30 +449,31 @@ func (p *progress) step(b *Builder, step *Step, s string) {
 				stat.Done-stat.Skipped, stat.Total-stat.Skipped,
 				dur,
 				s))
-		default:
-			// message of progress.update
 		}
 	}
 	var outputResult string
 	if strings.HasPrefix(s, progressPrefixFinish) && step != nil {
 		outputResult = step.cmd.OutputResult()
 	}
-	if ui.IsTerminal() && !p.verbose && outputResult == "" && (time.Since(t) < 30*time.Millisecond || strings.HasPrefix(s, progressPrefixFinish)) {
-		// not output when all conditions below met.
-		//  - terminal
-		//  - not verbose
-		//  - no output result
-		//  - too soon (in 30ms) or finished message
+	if ui.IsTerminal() && !p.verbose {
+		// The tick-driven render() owns the terminal frame. Step
+		// output (failure banners, success-with-warnings) is queued
+		// here and printed by the next render tick above the redrawn
+		// frame so it scrolls into history. The full per-step record
+		// still goes to the output log via run_step.logOutput.
+		if outputResult != "" {
+			msg := fmt.Sprintf("[%d/%d] %s %s\n%s",
+				stat.Done-stat.Skipped, stat.Total-stat.Skipped,
+				dur, s, outputResult)
+			p.mu.Lock()
+			p.pendingOutput = append(p.pendingOutput, msg)
+			p.mu.Unlock()
+		}
 		return
 	}
-	// will output if
-	//  - not terminal
-	//  - verbose mode
-	//  - has output result
-	var lines []string
+	// From here: verbose mode, or non terminal UI (LogUI).
 	msg := s
-	switch {
-	case p.verbose:
+	if p.verbose {
 		if strings.HasPrefix(s, progressPrefixStart) && step != nil {
 			msg = fmt.Sprintf("[%d/%d] %s %s",
 				stat.Done-stat.Skipped, stat.Total-stat.Skipped,
@@ -257,78 +492,8 @@ func (p *progress) step(b *Builder, step *Step, s string) {
 		} else if step == nil {
 			ui.Default.Printf("%s\n", msg)
 		}
-	case ui.IsTerminal():
-		runProgress := func(waits, servs int) string {
-			if waits > 0 {
-				return ui.SGR(ui.BackgroundRed, fmt.Sprintf("%d", waits+servs))
-			}
-			return fmt.Sprintf("%d", servs)
-		}
-		preprocWaits := b.preprocSema.NumWaits()
-		preprocServs := b.preprocSema.NumServs()
-		preprocProgress := runProgress(preprocWaits, preprocServs)
-
-		localWaits := b.localSema.NumWaits()
-		localServs := b.localSema.NumServs()
-		for _, p := range b.poolSemas {
-			localWaits += p.NumWaits()
-			localServs += p.NumServs()
-		}
-		// no wait for fastLocalSema since it only use TryAcquire,
-		// so no need to count b.fastLocalSema.NumWaits.
-		// fastLocal step also acquires localSema,
-		// so no need to count b.fastLocalSema.NumServ.
-		p.numLocal.Store(int32(localWaits + localServs))
-		localProgress := runProgress(localWaits, localServs)
-
-		remoteWaits := b.remoteSema.NumWaits()
-		remoteServs := b.remoteSema.NumServs()
-		remoteWaits += b.reproxySema.NumWaits()
-		remoteServs += b.reproxySema.NumServs()
-		remoteWaits += b.rewrapSema.NumWaits()
-		remoteServs += b.rewrapSema.NumServs()
-		remoteProgress := runProgress(remoteWaits, remoteServs)
-
-		flushWaits := hashfs.FlushSemaphore.NumWaits()
-		flushServs := hashfs.FlushSemaphore.NumServs()
-		flushProgress := runProgress(flushWaits, flushServs)
-
-		var stepsPerSec string
-		if stat.Done-stat.Skipped > 0 {
-			stepsPerSec = fmt.Sprintf("%.1f/s ", float64(stat.Done-stat.Skipped)/time.Since(p.started).Seconds())
-		}
-		var cacheHitRatio string
-		if stat.Remote+stat.CacheHit > 0 {
-			// Use floor to avoid rounding up to 100% when there are cache misses.
-			cacheHitRatio = fmt.Sprintf("cache:%5.02f%% ", math.Floor(float64(stat.CacheHit)/float64(stat.CacheHit+stat.Remote)*10000)/100.0)
-		}
-		var fallback string
-		if stat.LocalFallback > 0 {
-			fallback = "fallback:" + ui.SGR(ui.BackgroundRed, fmt.Sprintf("%d", stat.LocalFallback)) + " "
-		}
-		var CacheWrite string
-		if stat.CacheWrite > 0 {
-			CacheWrite = fmt.Sprintf("cache-write:%d(err:%d) ", stat.CacheWrite, stat.CacheWriteErr)
-		}
-		var retry string
-		if stat.RemoteRetry > 0 {
-			retry = "retry:" + ui.SGR(ui.BackgroundRed, fmt.Sprintf("%d", stat.RemoteRetry)) + " "
-		}
-		if outputResult == "" {
-			lines = append(lines, fmt.Sprintf("pre:%s local:%s remote:%s fetch:%s %s%s%s%s%s",
-				preprocProgress,
-				localProgress,
-				remoteProgress,
-				flushProgress,
-				stepsPerSec,
-				cacheHitRatio,
-				CacheWrite,
-				fallback,
-				retry,
-			))
-		}
-		fallthrough
-	default:
+	} else {
+		var lines []string
 		if step != nil {
 			b.statusReporter.PlanHasTotalSteps(stat.Total - stat.Skipped)
 			msg = fmt.Sprintf("[%d/%d] %s %s",
@@ -336,20 +501,12 @@ func (p *progress) step(b *Builder, step *Step, s string) {
 				dur,
 				s)
 			if outputResult != "" {
-				if !ui.IsTerminal() {
-					outputResult = "\n" + outputResult
-				}
+				outputResult = "\n" + outputResult
 			}
 		}
 		lines = append(lines, msg)
 		if outputResult != "" {
-			if ui.IsTerminal() {
-				// 2 more lines, so outputResult won't
-				// be overwritten by next progress report.
-				lines = append(lines, "\n"+outputResult+"\n", "\n", "\n")
-			} else {
-				lines = append(lines, outputResult+"\n")
-			}
+			lines = append(lines, outputResult+"\n")
 		}
 		ui.Default.PrintLines(lines...)
 	}
@@ -379,10 +536,9 @@ func (p *progress) ActiveSteps() []ActiveStepInfo {
 	copy(actives, p.actives)
 	p.mu.Unlock()
 	now := time.Now()
-	var as []*stepInfo
+	as := actives[:0]
 	for _, s := range actives {
-		phase := s.step.phase().String()
-		if phase == "done" {
+		if s.step.phase().String() == "done" {
 			continue
 		}
 		as = append(as, s)
@@ -393,10 +549,6 @@ func (p *progress) ActiveSteps() []ActiveStepInfo {
 
 	activeSteps := make([]ActiveStepInfo, 0, len(as))
 	for _, s := range as {
-		phase := s.step.phase().String()
-		if phase == "done" {
-			continue
-		}
 		var servDur string
 		if dur := s.step.servDuration(); dur > 0 {
 			servDur = ui.FormatDuration(dur)
@@ -404,7 +556,7 @@ func (p *progress) ActiveSteps() []ActiveStepInfo {
 		activeSteps = append(activeSteps, ActiveStepInfo{
 			ID:      s.step.String(),
 			Desc:    s.desc,
-			Phase:   phase,
+			Phase:   s.step.phase().String(),
 			Dur:     ui.FormatDuration(now.Sub(s.step.startTime)),
 			ServDur: servDur,
 		})

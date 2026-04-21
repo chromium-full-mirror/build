@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"fmt"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -124,7 +125,7 @@ func (t *TermUI) PrintLines(msgs ...string) {
 		// Clear the last N lines, where N is number of msgs
 		// that don't start with \n.
 		for i := range len(msgs) - 1 {
-			if msgs[i][0] == '\n' {
+			if strings.HasPrefix(msgs[i], "\n") {
 				msgs[i] = msgs[i][1:]
 				break
 			}
