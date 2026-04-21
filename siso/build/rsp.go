@@ -63,7 +63,9 @@ func (b *Builder) teardownRSP(ctx context.Context, step *Step) {
 			err := b.hashFS.Flush(ctx, step.cmd.WorkspaceRoot, []string{rsp})
 			if err != nil {
 				clog.Warningf(ctx, "failed to flush %s: %v", rsp, err)
-				ui.Default.Warningf("failed to flush %s: %v\n", rsp, err)
+				if !errors.Is(err, context.Canceled) {
+					ui.Default.Warningf("failed to flush %s: %v\n", rsp, err)
+				}
 			}
 		}
 		return
