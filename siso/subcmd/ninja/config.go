@@ -458,7 +458,7 @@ func (c *Command) initBuildOpts(ctx context.Context, projectID string, buildPath
 		RECacheEnableWrite:    c.reCacheEnableWrite,
 		ReproxyAddr:           c.reproxyAddr,
 		ActionSalt:            actionSaltBytes,
-		OutputLocal:           build.OutputLocalFunc(c.fsopt.OutputLocal),
+		OutputLocal:           build.OutputLocalFunc(c.outputLocal),
 		Cache:                 cache,
 		FailureSummaryWriter:  logWriters.failureSummaryWriter,
 		FailedCommandsWriter:  logWriters.failedCommandsWriter,

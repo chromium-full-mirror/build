@@ -67,6 +67,8 @@ type Command struct {
 	NinjaFlags
 	localCacheOptions
 
+	outputLocal func(context.Context, string) bool
+
 	sisoInfoLog string // abs or relative to logDir
 	startDir    string
 }
@@ -423,6 +425,15 @@ func (c *Command) Run(ctx context.Context) (stats build.Stats, finalErr error) {
 	// It mutates finalErr, hence passing over pointer.
 	defer done(&finalErr)
 
+	// Assign c.outputLocal before launching the errgroup below.
+	// initBuildOpts (loadNinjaFiles goroutine) and setupHashFS (main
+	// goroutine) both read it; previously they raced through
+	// c.fsopt.OutputLocal.
+	c.outputLocal, err = initOutputLocal(c.outputLocalStrategy)
+	if err != nil {
+		return stats, err
+	}
+
 	var eg, reeg errgroup.Group
 	var nstate *ninjautil.State
 	var needHashFSRefresh bool
@@ -761,11 +772,7 @@ func (c *Command) saveFailedTargetsAndCommand(ctx context.Context, err error, ta
 func (c *Command) setupHashFS(ctx context.Context, buildPath *build.Path, ds build.DataSource) (*hashfs.HashFS, func([]string, error), error) {
 	defer trace.Begin(ctx, "setupHashFS").End()
 	c.fsopt.DataSource = ds
-	var err error
-	c.fsopt.OutputLocal, err = initOutputLocal(c.outputLocalStrategy)
-	if err != nil {
-		return nil, nil, err
-	}
+	c.fsopt.OutputLocal = c.outputLocal
 	if c.logDir == "." || c.logDir == buildPath.AbsBase() {
 		cwd := buildPath.AbsBase()
 		// ignore siso files not to be captured by ReadDir
