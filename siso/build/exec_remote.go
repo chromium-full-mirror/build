@@ -18,17 +18,18 @@ import (
 )
 
 // execRemoteRun runs the remote execution phase without post-processing.
-// It handles retry, semaphore acquisition, and recording outputs in hashFS,
-// but does NOT call updateDeps or outputs.
+// It handles retry, semaphore acquisition, and (unless
+// cmd.SkipRecordOutputs is set, as in racing mode) recording outputs
+// in hashFS, but does NOT call updateDeps or outputs.
 // Used by runRacing to separate execution from post-processing.
 //
-// uploadCtx controls CAS input uploads; ctx controls execution and
+// uploadCtx controls CAS input uploads; execCtx controls execution and
 // retry/semaphore. In the non-racing path both are the same context.
 // In racing mode, uploadCtx is the build context (not canceled by
 // race cancellation) so that shared CAS upload operations are not
-// poisoned when the race goroutine's ctx is canceled.
-func (b *Builder) execRemoteRun(uploadCtx, ctx context.Context, step *Step) error {
-	ctx, span := trace.NewSpan(ctx, "exec-remote")
+// poisoned when the race goroutine's execCtx is canceled.
+func (b *Builder) execRemoteRun(uploadCtx, execCtx context.Context, step *Step) error {
+	ctx, span := trace.NewSpan(execCtx, "exec-remote")
 	defer span.Close(nil)
 	noFallback := !b.localFallbackEnabled()
 	var timeout time.Duration
