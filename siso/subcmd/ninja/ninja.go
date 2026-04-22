@@ -192,7 +192,7 @@ func (c *Command) setup(ctx context.Context) (buildPath *build.Path, doneLock fu
 	if !filepath.IsAbs(c.buildPprof) {
 		c.buildPprof = filepath.Join(c.logDir, c.buildPprof)
 	}
-
+	c.rotateSisoResult(ctx)
 	c.cleanupReclientMetrics(ctx)
 
 	resetCrashOutput, err = c.setupCrashOutput(ctx)
@@ -635,6 +635,15 @@ func (c *Command) Run(ctx context.Context) (stats build.Stats, finalErr error) {
 // postRun prints build result messages and returns exit status based on the build stats and the error from Run().
 func (c *Command) postRun(ctx context.Context, stats build.Stats, runErr error) subcommands.ExitStatus {
 	defer trace.Begin(ctx, "postRun").End()
+	var result SisoResult
+	defer func() {
+		err := c.writeSisoResult(result)
+		if err != nil {
+			clog.Errorf(ctx, "write result error: %v", err)
+			return
+		}
+	}()
+
 	d := time.Since(c.started)
 	if c.writeReclientMetricsLogs {
 		if err := c.writeReclientMetrics(d, stats); err != nil {
@@ -652,11 +661,13 @@ func (c *Command) postRun(ctx context.Context, stats build.Stats, runErr error) 
 			ui.Default.Infof("%s Nothing to do.\n", msgPrefix)
 			return subcommands.ExitSuccess
 		}
+		result.Code = int(subcommands.ExitFailure)
 		if _, ok := errors.AsType[flagError](runErr); ok {
 			ui.Default.Errorf("%v\n", runErr)
 		} else if errBuild, ok := errors.AsType[ninjabuild.BuildError](runErr); ok {
 			if errTarget, ok := errors.AsType[build.TargetError](errBuild.Err); ok {
 				msgPrefix := "Schedule Failure"
+				result.Message = fmt.Sprintf("%s: %v", msgPrefix, errTarget)
 				if ui.IsTerminal() {
 					dur = ui.SGR(ui.Bold, dur)
 					msgPrefix = ui.SGR(ui.BackgroundRed, msgPrefix)
@@ -675,6 +686,7 @@ func (c *Command) postRun(ctx context.Context, stats build.Stats, runErr error) 
 			}
 			if errMissingSource, ok := errors.AsType[build.MissingSourceError](errBuild.Err); ok {
 				msgPrefix := "Schedule Failure"
+				result.Message = fmt.Sprintf("%s: %v", msgPrefix, errMissingSource)
 				if ui.IsTerminal() {
 					dur = ui.SGR(ui.Bold, dur)
 					msgPrefix = ui.SGR(ui.BackgroundRed, msgPrefix)
@@ -682,7 +694,19 @@ func (c *Command) postRun(ctx context.Context, stats build.Stats, runErr error) 
 				ui.Default.Errorf("\n%6s %s: %v\n", dur, msgPrefix, errMissingSource)
 				return subcommands.ExitFailure
 			}
+			if errTooManyFallback, ok := errors.AsType[build.TooManyFallbackError](errBuild.Err); ok {
+				msgPrefix := "Infra failure"
+				result.InfraFailure = true
+				result.Message = fmt.Sprintf("%s: %v", msgPrefix, errTooManyFallback)
+				if ui.IsTerminal() {
+					dur = ui.SGR(ui.Bold, dur)
+					msgPrefix = ui.SGR(ui.BackgroundRed, msgPrefix)
+				}
+				ui.Default.Errorf("\n%6s %s: %v\n", dur, msgPrefix, errTooManyFallback)
+				return subcommands.ExitFailure
+			}
 			msgPrefix := "Build Failure"
+			result.Message = fmt.Sprintf("%s: %v", msgPrefix, runErr)
 			if ui.IsTerminal() {
 				dur = ui.SGR(ui.Bold, dur)
 				msgPrefix = ui.SGR(ui.BackgroundRed, msgPrefix)
@@ -705,6 +729,7 @@ func (c *Command) postRun(ctx context.Context, stats build.Stats, runErr error) 
 			ui.Default.Warningf("%s\n", suggest)
 		} else {
 			msgPrefix := "Error"
+			result.Message = fmt.Sprintf("%s: %v", msgPrefix, runErr)
 			if ui.IsTerminal() {
 				msgPrefix = ui.SGR(ui.BackgroundRed, msgPrefix)
 			}

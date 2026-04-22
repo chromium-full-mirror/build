@@ -19,6 +19,8 @@ import (
 // experiment id -> hint for the experiment (to check more details).
 var knownExperiments = map[string]string{
 	"allow-unexpected-rsp-remove": "",
+	"allow-fallback-high":         "",
+	"allow-fallback-low":          "",
 	// check-deps checks deps (e.g. *.d) has source or direct/indirect deps only.
 	"check-deps":                  "",
 	"fail-on-stdouterr":           "",

@@ -43,6 +43,28 @@ type logWriters struct {
 	metricsJSONWriter    io.Writer
 }
 
+// File name of siso result file.
+const sisoResultFilename = "siso_result.json"
+
+// SisoResult contains siso result information.
+type SisoResult struct {
+	Code         int    `json:"code,omitempty"`
+	InfraFailure bool   `json:"infra_failure,omitempty"`
+	Message      string `json:"message,omitempty"`
+}
+
+func (c *Command) rotateSisoResult(ctx context.Context) {
+	rotateFiles(ctx, filepath.Join(c.logDir, sisoResultFilename))
+}
+
+func (c *Command) writeSisoResult(result SisoResult) error {
+	buf, err := json.MarshalIndent(result, "", " ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(c.logDir, sisoResultFilename), buf, 0644)
+}
+
 type cleanupFunc func(*error)
 
 func (c *Command) initLogWriters(ctx context.Context, buildPath *build.Path) (logWriters, cleanupFunc, error) {

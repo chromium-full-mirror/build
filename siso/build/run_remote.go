@@ -21,6 +21,16 @@ import (
 var errNeedPreproc = errors.New("need to preproc")
 var errRemoteExecDisabled = errors.New("remote exec disabled")
 
+// ToomanyFallbackError is an error when it detects too many fallback, exceeding the limit.
+type TooManyFallbackError struct {
+	Fallbacks int64
+	Err       error
+}
+
+func (e TooManyFallbackError) Error() string {
+	return fmt.Sprintf("fallback %d exceeds limits: %v", e.Fallbacks, e.Err)
+}
+
 // runRemote runs step with using remote apis.
 //
 //  1. for initial steps of startLocal, run locally.
@@ -146,6 +156,12 @@ func (b *Builder) runRemote(ctx context.Context, step *Step) error {
 			fallbackReport("fallback-on-output-error")
 		}
 		fallbackReport("fallback-on-other")
+		if n := b.numFallback.Add(1); n >= b.maxFallbackAllowed {
+			return fmt.Errorf("remote-exec %s: %w", step.cmd.ActionDigest(), TooManyFallbackError{
+				Fallbacks: n,
+				Err:       err,
+			})
+		}
 		b.progressStepFallback(step)
 		step.metrics.IsRemote = false
 		step.metrics.Fallback = true

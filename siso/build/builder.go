@@ -247,6 +247,9 @@ type Builder struct {
 
 	failures failures
 
+	numFallback        atomic.Int64
+	maxFallbackAllowed int64
+
 	// ninja debug modes
 	keepRSP     bool
 	keepDepfile bool
@@ -286,7 +289,6 @@ func New(ctx context.Context, graph Graph, opts Options) (_ *Builder, err error)
 	if mw == nil {
 		mw = io.Discard
 	}
-
 	if err := opts.Path.Check(); err != nil {
 		return nil, err
 	}
@@ -313,10 +315,19 @@ func New(ctx context.Context, graph Graph, opts Options) (_ *Builder, err error)
 	if (opts.Limits == Limits{}) {
 		opts.Limits = DefaultLimits(ctx)
 	}
+	// TODO(b/503546538): make it 0 by default.
+	maxFallbackAllowed := int64(math.MaxInt64)
 	switch {
 	case opts.StrictRemote:
 		logger.Infof("strict remote.  no fastlocal, no local fallback")
 		opts.Limits.FastLocal = 0
+		maxFallbackAllowed = 0
+	case experiments.Enabled("allow-fallback-high", ""):
+		maxFallbackAllowed = int64(math.MaxInt64)
+	case experiments.Enabled("allow-fallback-low", ""):
+		maxFallbackAllowed = 4
+	case experiments.Enabled("allow-fallback-unlimited", ""):
+		maxFallbackAllowed = int64(math.MaxInt64)
 	}
 	// On many cores machine, it would hit default max thread limit = 10000.
 	// Usually, it would require 1/3 of stepLimit threads (cache miss case?).
@@ -394,6 +405,7 @@ func New(ctx context.Context, graph Graph, opts Options) (_ *Builder, err error)
 		dryRun:                opts.DryRun,
 		strictRemote:          opts.StrictRemote,
 		failures:              failures{allowed: opts.FailuresAllowed},
+		maxFallbackAllowed:    maxFallbackAllowed,
 		keepRSP:               opts.KeepRSP,
 		keepDepfile:           opts.KeepDepfile,
 		rebuildManifest:       opts.RebuildManifest,
