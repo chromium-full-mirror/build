@@ -16,6 +16,7 @@
         "grpc_pool_size": 0,
         "resource_filters": null,
         "service_resource_labels": true,
+        "universe_domain": "",
         "use_insecure": false
       },
       "metric": {
@@ -38,6 +39,7 @@
         "service_resource_labels": true,
         "skip_create_descriptor": false,
         "sum_of_squared_deviation": false,
+        "universe_domain": "",
         "use_insecure": false
       },
       "project": "test",
@@ -56,6 +58,7 @@
         "compression": "",
         "endpoint": "",
         "grpc_pool_size": 0,
+        "universe_domain": "",
         "use_insecure": false
       },
       "user_agent": ""
@@ -78,6 +81,7 @@
       "http": {
         "config": {
           "enabled": true,
+          "include_attributes": false,
           "path": "/health/config"
         },
         "cors": null,
@@ -86,6 +90,7 @@
         "read_header_timeout": 0,
         "status": {
           "enabled": true,
+          "include_attributes": false,
           "path": "/health/status"
         },
         "tls": null,
