@@ -51,8 +51,22 @@ func New(ctx context.Context, dataDir string) (*ContentAddressableStorage, error
 		}
 	}
 
+	// Wipe any leftover upload temp files from a previous run that may have
+	// crashed mid-upload. Anything still in this directory is, by construction,
+	// an orphan: successful uploads are renamed out, and failed uploads are
+	// removed by UploadWriter's error defers.
 	tmpDir := filepath.Join(dataDir, "tmp")
-	if err := os.Mkdir(tmpDir, 0755); err != nil && !errors.Is(err, fs.ErrExist) {
+	if entries, err := os.ReadDir(tmpDir); err == nil {
+		if len(entries) > 0 {
+			slog.Info("removing leftover upload temp files", "count", len(entries))
+			if err := os.RemoveAll(tmpDir); err != nil {
+				slog.Warn("failed to delete temp dir", "path", tmpDir, "error", err)
+			}
+		}
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		return nil, err
+	}
+	if err := os.Mkdir(tmpDir, 0755); err != nil {
 		return nil, err
 	}
 
