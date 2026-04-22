@@ -284,6 +284,10 @@ func (c *Command) writeInvocationInfo(metricsLabels map[string]string, targets [
 		Targets:       targets,
 		MetricsLabels: metricsLabels,
 		Machine: metadata.MachineInfo{
+			Platform: metadata.PlatformInfo{
+				OS:           runtime.GOOS,
+				Architecture: runtime.GOARCH,
+			},
 			CPU: metadata.CPUInfo{
 				BrandName:    cpuid.CPU.BrandName,
 				VendorString: cpuid.CPU.VendorString,

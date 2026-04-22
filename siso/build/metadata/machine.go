@@ -6,8 +6,24 @@ package metadata
 
 // MachineInfo represents information about the machine that the build was invoked on.
 type MachineInfo struct {
+	// Platform reports platform information of the machine that the build was invoked on.
+	Platform PlatformInfo `json:"platform"`
 	// CPU reports CPU information, e.g. brand name and vendor string.
 	CPU CPUInfo `json:"cpu"`
+}
+
+// PlatformInfo reports platform information of the machine that the build was invoked on.
+type PlatformInfo struct {
+	// OS reports the host's operating system.
+	//
+	// It is populated with similar semantics to the "os" field in the OCI Image Configuration specification.
+	// Hence, consumers SHOULD understand values listed in the Go Language document for GOOS.
+	OS string `json:"os"`
+	// Architecture reports the host's architecture.
+	//
+	// It is populated with similar semantics to the "architecture" field in the OCI Image Configuration specification.
+	// Hence, consumers SHOULD understand values listed in the Go Language document for GOARCH.
+	Architecture string `json:"architecture"`
 }
 
 // CPUInfo reports CPU information.
