@@ -685,7 +685,9 @@ func NewContext(ctx context.Context, rmd *rpb.RequestMetadata) context.Context {
 			ToolVersion: ver.ToolVersion(),
 		}
 	}
-	// Append metadata to the context.
+	// Set metadata on the context, replacing any existing value so that nested
+	// NewContext calls don't accumulate multiple entries (servers such as
+	// Kajiya reject requests with more than one requestmetadata-bin).
 	// See the document for the specification.
 	// https://github.com/bazelbuild/remote-apis/blob/8f539af4b407a4f649707f9632fc2b715c9aa065/build/bazel/remote/execution/v2/remote_execution.proto#L2034-L2045
 	b, err := proto.Marshal(rmd)
@@ -693,9 +695,14 @@ func NewContext(ctx context.Context, rmd *rpb.RequestMetadata) context.Context {
 		clog.Warningf(ctx, "marshal %v: %v", rmd, err)
 		return ctx
 	}
-	return metadata.AppendToOutgoingContext(ctx,
-		"build.bazel.remote.execution.v2.requestmetadata-bin",
-		string(b))
+	md, ok := metadata.FromOutgoingContext(ctx)
+	if !ok {
+		md = metadata.MD{}
+	} else {
+		md = md.Copy()
+	}
+	md.Set("build.bazel.remote.execution.v2.requestmetadata-bin", string(b))
+	return metadata.NewOutgoingContext(ctx, md)
 }
 
 // MetadataFromOutgoingContext returns request metadata in outgoing context.
