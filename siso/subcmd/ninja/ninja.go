@@ -566,6 +566,9 @@ func (c *Command) Run(ctx context.Context) (stats build.Stats, finalErr error) {
 	spin.Start("loading %s...", c.fname)
 	err = eg.Wait()
 	spin.Stop(err)
+	if err != nil {
+		return stats, err
+	}
 	if needHashFSRefresh {
 		started := time.Now()
 		err := hashFS.WaitReady(ctx)
