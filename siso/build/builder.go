@@ -328,6 +328,8 @@ func New(ctx context.Context, graph Graph, opts Options) (_ *Builder, err error)
 		maxFallbackAllowed = 4
 	case experiments.Enabled("allow-fallback-unlimited", ""):
 		maxFallbackAllowed = int64(math.MaxInt64)
+	case experiments.Enabled("no-fallback", ""):
+		maxFallbackAllowed = 0
 	}
 	// On many cores machine, it would hit default max thread limit = 10000.
 	// Usually, it would require 1/3 of stepLimit threads (cache miss case?).
@@ -1302,5 +1304,5 @@ func (b *Builder) ActiveSteps() []ActiveStepInfo {
 }
 
 func (b *Builder) localFallbackEnabled() bool {
-	return !b.strictRemote && !experiments.Enabled("no-fallback", "") && !b.hashFS.OnCog()
+	return !b.strictRemote && b.maxFallbackAllowed > 0 && !b.hashFS.OnCog()
 }

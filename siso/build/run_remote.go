@@ -24,11 +24,15 @@ var errRemoteExecDisabled = errors.New("remote exec disabled")
 // ToomanyFallbackError is an error when it detects too many fallback, exceeding the limit.
 type TooManyFallbackError struct {
 	Fallbacks int64
+	Limit     int64
 	Err       error
 }
 
 func (e TooManyFallbackError) Error() string {
-	return fmt.Sprintf("fallback %d exceeds limits: %v", e.Fallbacks, e.Err)
+	if e.Limit == 0 {
+		return fmt.Sprintf("no-fallback: %v", e.Err)
+	}
+	return fmt.Sprintf("fallback %d exceeds limit %d: %v", e.Fallbacks, e.Limit, e.Err)
 }
 
 // runRemote runs step with using remote apis.
@@ -146,9 +150,6 @@ func (b *Builder) runRemote(ctx context.Context, step *Step) error {
 			}
 			fallbackReport(fmt.Sprintf("fallback-on-exec-error-%d", eerr.ExitCode))
 		}
-		if !b.localFallbackEnabled() {
-			return fmt.Errorf("remote-exec %s failed no-fallback: %w", step.cmd.ActionDigest(), err)
-		}
 		if errors.Is(err, scandeps.ErrTooSlow) {
 			fallbackReport("fallback-on-scandeps-slow")
 		}
@@ -159,6 +160,7 @@ func (b *Builder) runRemote(ctx context.Context, step *Step) error {
 		if n := b.numFallback.Add(1); n >= b.maxFallbackAllowed {
 			return fmt.Errorf("remote-exec %s: %w", step.cmd.ActionDigest(), TooManyFallbackError{
 				Fallbacks: n,
+				Limit:     b.maxFallbackAllowed,
 				Err:       err,
 			})
 		}
