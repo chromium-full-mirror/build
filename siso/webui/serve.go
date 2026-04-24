@@ -414,6 +414,7 @@ func (s *WebuiServer) Serve() int {
 	outdirRouter.HandleFunc("/{outroot}/{outsub}/runbuild/", s.handleRunbuildGet)
 	outdirRouter.HandleFunc("POST /{outroot}/{outsub}/runbuild/", s.handleRunbuildPost)
 	outdirRouter.HandleFunc("/{outroot}/{outsub}/reload", s.handleOutdirReload)
+	outdirRouter.HandleFunc("/{outroot}/{outsub}/watch/", s.handleOutdirWatch)
 	outdirRouter.HandleFunc("/{outroot}/{outsub}/builds/{rev}/logs/{file}", s.handleOutdirViewLog)
 	outdirRouter.HandleFunc("/{outroot}/{outsub}/builds/{rev}/aggregates/", s.handleOutdirAggregates)
 	outdirRouter.HandleFunc("POST /{outroot}/{outsub}/builds/{rev}/steps/{id}/recall/", s.handleOutdirDoRecall)
