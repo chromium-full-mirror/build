@@ -20,7 +20,6 @@ import (
 	"time"
 
 	log "github.com/golang/glog"
-	"github.com/klauspost/cpuid/v2"
 	"google.golang.org/protobuf/encoding/prototext"
 	"google.golang.org/protobuf/proto"
 
@@ -283,16 +282,7 @@ func (c *Command) writeInvocationInfo(metricsLabels map[string]string, targets [
 		BuildID:       c.buildID,
 		Targets:       targets,
 		MetricsLabels: metricsLabels,
-		Machine: metadata.MachineInfo{
-			Platform: metadata.PlatformInfo{
-				OS:           runtime.GOOS,
-				Architecture: runtime.GOARCH,
-			},
-			CPU: metadata.CPUInfo{
-				BrandName:    cpuid.CPU.BrandName,
-				VendorString: cpuid.CPU.VendorString,
-			},
-		},
+		Machine:       metadata.GatherMachineInfo(),
 	})
 	if err != nil {
 		return err

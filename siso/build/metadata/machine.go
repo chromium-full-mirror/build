@@ -4,12 +4,32 @@
 
 package metadata
 
+import (
+	"runtime"
+
+	"github.com/klauspost/cpuid/v2"
+)
+
 // MachineInfo represents information about the machine that the build was invoked on.
 type MachineInfo struct {
 	// Platform reports platform information of the machine that the build was invoked on.
 	Platform PlatformInfo `json:"platform"`
 	// CPU reports CPU information, e.g. brand name and vendor string.
 	CPU CPUInfo `json:"cpu"`
+}
+
+// GatherMachineInfo gathers and returns machine information of the build environment.
+func GatherMachineInfo() MachineInfo {
+	return MachineInfo{
+		Platform: PlatformInfo{
+			OS:           runtime.GOOS,
+			Architecture: runtime.GOARCH,
+		},
+		CPU: CPUInfo{
+			BrandName:    cpuid.CPU.BrandName,
+			VendorString: cpuid.CPU.VendorString,
+		},
+	}
 }
 
 // PlatformInfo reports platform information of the machine that the build was invoked on.
