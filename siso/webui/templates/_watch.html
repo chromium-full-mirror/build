@@ -35,21 +35,38 @@ found in the LICENSE file. */}}
 </aside>
 
 <div class="data-table-container">
+  {{if .watchErr}}
+    <div class="error-message" style="padding: 20px; color: var(--md-sys-color-error);">
+      {{.watchErr}}
+    </div>
+  {{end}}
+
   <table>
     <thead>
       <tr>
         <th scope="col">ID</th>
         <th scope="col">Duration</th>
-        <th scope="col">Status</th>
+        <th scope="col">Status (Phase)</th>
         <th scope="col">Command</th>
       </tr>
     </thead>
     <tbody id="data-table-body">
-      <tr>
-        <td colspan="4" style="text-align: center; padding: 20px;">
-          No active tasks (Skeleton View)
-        </td>
-      </tr>
+      {{if .activeSteps}}
+        {{range .activeSteps}}
+        <tr>
+          <td>{{.ID}}</td>
+          <td>{{.Dur}}</td>
+          <td>{{.Phase}}</td>
+          <td>{{.Desc}}</td>
+        </tr>
+        {{end}}
+      {{else}}
+        <tr>
+          <td colspan="4" style="text-align: center; padding: 20px;">
+            No active tasks found.
+          </td>
+        </tr>
+      {{end}}
     </tbody>
   </table>
 </div>
