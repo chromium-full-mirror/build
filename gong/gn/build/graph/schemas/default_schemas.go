@@ -30,8 +30,10 @@ func (m DefaultMetadata) Outputs() []fs.OutputPath {
 // CxxInfo provides information regarding compilation and linking of C++.
 type CxxInfo struct {
 	DefaultMetadata
-	// Libs specifies libraries to link against (without -l).
-	Libs []string
+	// LibFlags specifies libraries to link against (without -l).
+	LibFlags []string
+	// LibraryFiles specifies compiled libraries for linking.
+	LibraryFiles []fs.OutputPath
 }
 
 type sourceFileType int
@@ -145,7 +147,7 @@ func collectLibs(ctx graph.ResolverContext) ([]string, error) {
 			return nil, fmt.Errorf("failed to collect deps: %w", err)
 		}
 		if ccInfo, ok := dep.Metadata.(CxxInfo); ok {
-			libs = append(libs, ccInfo.Libs...)
+			libs = append(libs, ccInfo.LibFlags...)
 		}
 	}
 	return libs, nil
@@ -302,7 +304,7 @@ var (
 			}
 			return CxxInfo{
 				DefaultMetadata: DefaultMetadata{[]fs.OutputPath{out}},
-				Libs:            nil, // do not propagate libs
+				LibFlags:        nil, // do not propagate libs
 			}, nil
 		},
 	}
@@ -402,7 +404,8 @@ var (
 			}
 			return CxxInfo{
 				DefaultMetadata: DefaultMetadata{[]fs.OutputPath{out}},
-				Libs:            libs,
+				LibFlags:        libs,
+				LibraryFiles:    []fs.OutputPath{out},
 			}, nil
 		},
 	}

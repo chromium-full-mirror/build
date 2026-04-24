@@ -59,3 +59,53 @@ build obj/app: rust_bin ../../main.rs
 		},
 	)
 }
+
+func TestRust_DepOnStaticLibrary(t *testing.T) {
+	runTest(t,
+		map[string]string{
+			"build/BUILDCONFIG.gn": `
+set_default_toolchain("//:tc")`,
+			"BUILD.gn": `
+toolchain("tc") {
+  tool("cxx") { command = "clang++" }
+  tool("alink") { command = "ar" }
+  tool("rust_bin") { command = "rustc" }
+}
+
+static_library("cpp_lib") {
+  sources = [ "cpp/hello.cpp" ]
+}
+
+executable("rust_bin") {
+  crate_root = "rust/main.rs"
+  deps = [ ":cpp_lib" ]
+}`,
+		},
+		map[string]string{
+			"obj/cpp_lib.ninja": `
+output_extension = .a
+output_dir = obj
+target_output_name = libcpp_lib
+target_out_dir = obj
+
+build obj/libcpp_lib.hello.cpp.o: cxx ../../cpp/hello.cpp
+  source_file_part =
+  source_name_part =
+build obj/libcpp_lib.a: alink obj/libcpp_lib.hello.cpp.o
+  arflags =
+`,
+			"obj/rust_bin.ninja": `
+output_dir = obj
+target_output_name = rust_bin
+target_out_dir = obj
+
+build obj/rust_bin: rust_bin ../../rust/main.rs | obj/libcpp_lib.a
+  crate_name = rust_bin
+  crate_type = bin
+  externs =
+  rustdeps = -Clink-arg=obj/libcpp_lib.a
+  rustflags =
+`,
+		},
+	)
+}

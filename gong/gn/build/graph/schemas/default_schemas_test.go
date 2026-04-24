@@ -358,6 +358,9 @@ func TestStaticLibrarySchema_Resolver(t *testing.T) {
 						mustOutputPath(t, "//out/Default/", "obj/libbar.a"),
 					},
 				},
+				LibraryFiles: []fs.OutputPath{
+					mustOutputPath(t, "//out/Default/", "obj/libbar.a"),
+				},
 			},
 			wantTools: []gotToolCall{
 				{
@@ -413,6 +416,9 @@ func TestStaticLibrarySchema_Resolver(t *testing.T) {
 					OutputPaths: []fs.OutputPath{
 						mustOutputPath(t, "//out/Default/", "obj/bar.a"),
 					},
+				},
+				LibraryFiles: []fs.OutputPath{
+					mustOutputPath(t, "//out/Default/", "obj/bar.a"),
 				},
 			},
 			wantTools: []gotToolCall{

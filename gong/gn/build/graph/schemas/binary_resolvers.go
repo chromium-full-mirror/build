@@ -55,9 +55,32 @@ func cExecutableResolver(name string, cInputs []fs.SourceFile, ctx graph.Resolve
 	if err != nil {
 		return nil, err
 	}
+
+	// Maintain a set of link inputs, alongside the actual list of inputs.
+	// We are about to start collecting necessary link inputs from dependencies,
+	// and should skip already-added link inputs from the deps.
+	// (Do not replace with a map to track link inputs, because the link order
+	// needs to be maintained and Go maps have randomized key iteration.)
+	seenLinkInputs := make(map[string]bool)
+	for _, in := range linkInputs {
+		seenLinkInputs[in.Filename()] = true
+	}
+
 	for dep, err := range ctx.ResolvedTargetsFor("deps") {
 		if err != nil {
 			return nil, err
+		}
+		if ccInfo, ok := dep.Metadata.(CxxInfo); ok {
+			for _, lib := range ccInfo.LibraryFiles {
+				libSrc, err := lib.AsSourceFile()
+				if err != nil {
+					return nil, err
+				}
+				if !seenLinkInputs[libSrc.Filename()] {
+					linkInputs = append(linkInputs, libSrc)
+					seenLinkInputs[libSrc.Filename()] = true
+				}
+			}
 		}
 		for _, depOutput := range dep.Metadata.Outputs() {
 			switch path.Ext(depOutput.Path()) {
@@ -66,7 +89,10 @@ func cExecutableResolver(name string, cInputs []fs.SourceFile, ctx graph.Resolve
 				if err != nil {
 					return nil, err
 				}
-				linkInputs = append(linkInputs, linkInput)
+				if !seenLinkInputs[linkInput.Filename()] {
+					linkInputs = append(linkInputs, linkInput)
+					seenLinkInputs[linkInput.Filename()] = true
+				}
 			default:
 				// TODO: check for other dep input types.
 				return nil, NotImplementedError{
@@ -138,6 +164,12 @@ func rustBinaryResolver(name string, isLibrary bool, rsInputs []fs.SourceFile, c
 
 	var externs []string
 	var transitiveRlibs []fs.SourceFile
+	var cLibs []fs.SourceFile
+
+	// The list of -Ldependency=<path> and -Clink-arg=<path> strings
+	// needed to compile this target.
+	var depFlags []string
+
 	for dep, err := range ctx.ResolvedTargetsFor("deps") {
 		if err != nil {
 			return nil, err
@@ -156,9 +188,20 @@ func rustBinaryResolver(name string, isLibrary bool, rsInputs []fs.SourceFile, c
 			// TODO: maybe it's not filename? see test files for why this seems wrong.
 			externs = append(externs, "--extern", fmt.Sprintf("%s=%s", depCrateName, rustLib.OutputRlib.Path()))
 		}
+		if ccInfo, ok := dep.Metadata.(CxxInfo); ok {
+			for _, lib := range ccInfo.LibraryFiles {
+				libSrc, err := lib.AsSourceFile()
+				if err != nil {
+					return nil, err
+				}
+				cLibs = append(cLibs, libSrc)
+				depFlags = append(depFlags, fmt.Sprintf("-Clink-arg=%s", lib.Path()))
+			}
+		}
 	}
 
 	allInputs := append(rsInputs, transitiveRlibs...)
+	allInputs = append(allInputs, cLibs...)
 	tool := "rust_bin"
 	crateType := "bin"
 	outputName := crateName
@@ -177,7 +220,7 @@ func rustBinaryResolver(name string, isLibrary bool, rsInputs []fs.SourceFile, c
 			"crate_type": {crateType},
 			"externs":    externs,
 			"rustflags":  ctx.ConfigValues.Rustflags,
-			"rustdeps":   nil,
+			"rustdeps":   depFlags,
 		}},
 	)
 	if err != nil {
