@@ -21,6 +21,7 @@ type ConfigValues struct {
 	Frameworks     []string
 	WeakFrameworks []string
 	Ldflags        []string
+	Libs           []string
 	Rustflags      []string
 	Rustenv        []string
 	Swiftflags     []string
@@ -62,6 +63,9 @@ func MakeConfigValues(values map[string]ProcessedValue) (ConfigValues, error) {
 		return ConfigValues{}, err
 	}
 	if cv.Ldflags, err = extractStringList(values, "ldflags"); err != nil {
+		return ConfigValues{}, err
+	}
+	if cv.Libs, err = extractStringList(values, "libs"); err != nil {
 		return ConfigValues{}, err
 	}
 	if cv.Rustflags, err = extractStringList(values, "rustflags"); err != nil {
@@ -124,6 +128,7 @@ func (c *ConfigValues) appendValues(appendVals *ConfigValues) {
 	c.Frameworks = append(c.Frameworks, appendVals.Frameworks...)
 	c.WeakFrameworks = append(c.WeakFrameworks, appendVals.WeakFrameworks...)
 	c.Ldflags = append(c.Ldflags, appendVals.Ldflags...)
+	c.Libs = append(c.Libs, appendVals.Libs...)
 	c.Rustflags = append(c.Rustflags, appendVals.Rustflags...)
 	c.Rustenv = append(c.Rustenv, appendVals.Rustenv...)
 	c.Swiftflags = append(c.Swiftflags, appendVals.Swiftflags...)

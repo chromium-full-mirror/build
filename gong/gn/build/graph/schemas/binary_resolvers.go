@@ -51,6 +51,10 @@ func cExecutableResolver(name string, cInputs []fs.SourceFile, ctx graph.Resolve
 		linkInputs = append(linkInputs, linkInput)
 	}
 
+	libs, err := collectLibs(ctx)
+	if err != nil {
+		return nil, err
+	}
 	for dep, err := range ctx.ResolvedTargetsFor("deps") {
 		if err != nil {
 			return nil, err
@@ -80,7 +84,7 @@ func cExecutableResolver(name string, cInputs []fs.SourceFile, ctx graph.Resolve
 		&graph.SimpleExpansions{Elems: map[string][]string{
 			// TODO: fill these out.
 			"ldflags":      ctx.ConfigValues.Ldflags,
-			"libs":         nil,
+			"libs":         formatLibExpansions(libs),
 			"frameworks":   nil,
 			"swiftmodules": nil,
 		}},

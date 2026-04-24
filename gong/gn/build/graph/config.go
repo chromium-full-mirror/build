@@ -25,6 +25,7 @@ var ConfigVars = map[string]TargetVar{
 	"weak_frameworks": StringListVar{},
 	"inputs":          FileListVar{},
 	"ldflags":         StringListVar{},
+	"libs":            StringListVar{},
 	"rustflags":       StringListVar{},
 	"rustenv":         StringListVar{},
 	"swiftflags":      StringListVar{},

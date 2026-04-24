@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"maps"
 	"path"
+	"slices"
 
 	"go.chromium.org/build/gong/gn/build/fs"
 	"go.chromium.org/build/gong/gn/build/graph"
@@ -24,6 +25,13 @@ type DefaultMetadata struct {
 // Outputs returns the output(s) from this target.
 func (m DefaultMetadata) Outputs() []fs.OutputPath {
 	return m.OutputPaths
+}
+
+// CxxInfo provides information regarding compilation and linking of C++.
+type CxxInfo struct {
+	DefaultMetadata
+	// Libs specifies libraries to link against (without -l).
+	Libs []string
 }
 
 type sourceFileType int
@@ -115,6 +123,32 @@ func formatDefines(defines []string) []string {
 		out = append(out, "-D"+d)
 	}
 	return out
+}
+
+// formatLibExpansions returns the libraries with -l prefixed, without escaping or joining.
+func formatLibExpansions(libs []string) []string {
+	if len(libs) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(libs))
+	for _, l := range libs {
+		out = append(out, "-l"+l)
+	}
+	return out
+}
+
+// collectLibs returns all libraries to link against, including those from dependencies.
+func collectLibs(ctx graph.ResolverContext) ([]string, error) {
+	libs := slices.Clone(ctx.ConfigValues.Libs)
+	for dep, err := range ctx.ResolvedTargetsFor("deps") {
+		if err != nil {
+			return nil, fmt.Errorf("failed to collect deps: %w", err)
+		}
+		if ccInfo, ok := dep.Metadata.(CxxInfo); ok {
+			libs = append(libs, ccInfo.Libs...)
+		}
+	}
+	return libs, nil
 }
 
 var (
@@ -246,6 +280,10 @@ var (
 				}
 				linkInputs = append(linkInputs, linkInput)
 			}
+			libs, err := collectLibs(ctx)
+			if err != nil {
+				return nil, err
+			}
 			out, err := ctx.DeclareTool(
 				"solink",
 				fs.SourceFile{},
@@ -254,7 +292,7 @@ var (
 				&graph.SimpleExpansions{Elems: map[string][]string{
 					// TODO: fill these out.
 					"ldflags":      ctx.ConfigValues.Ldflags,
-					"libs":         nil,
+					"libs":         formatLibExpansions(libs),
 					"frameworks":   nil,
 					"swiftmodules": nil,
 				}},
@@ -262,7 +300,10 @@ var (
 			if err != nil {
 				return nil, err
 			}
-			return DefaultMetadata{[]fs.OutputPath{out}}, nil
+			return CxxInfo{
+				DefaultMetadata: DefaultMetadata{[]fs.OutputPath{out}},
+				Libs:            nil, // do not propagate libs
+			}, nil
 		},
 	}
 	SourceSetSchema = graph.Schema{
@@ -342,6 +383,10 @@ var (
 				}
 				linkInputs = append(linkInputs, linkInput)
 			}
+			libs, err := collectLibs(ctx)
+			if err != nil {
+				return nil, err
+			}
 			out, err := ctx.DeclareTool(
 				"alink",
 				fs.SourceFile{},
@@ -355,7 +400,10 @@ var (
 			if err != nil {
 				return nil, err
 			}
-			return DefaultMetadata{[]fs.OutputPath{out}}, nil
+			return CxxInfo{
+				DefaultMetadata: DefaultMetadata{[]fs.OutputPath{out}},
+				Libs:            libs,
+			}, nil
 		},
 	}
 	GroupSchema = graph.Schema{

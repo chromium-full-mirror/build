@@ -332,7 +332,7 @@ func TestStaticLibrarySchema_Resolver(t *testing.T) {
 	for _, tc := range []struct {
 		name      string
 		ctx       graph.ResolverContext
-		want      DefaultMetadata
+		want      CxxInfo
 		wantTools []gotToolCall
 		wantErr   any
 	}{
@@ -352,9 +352,11 @@ func TestStaticLibrarySchema_Resolver(t *testing.T) {
 					},
 				},
 			}),
-			want: DefaultMetadata{
-				OutputPaths: []fs.OutputPath{
-					mustOutputPath(t, "//out/Default/", "obj/libbar.a"),
+			want: CxxInfo{
+				DefaultMetadata: DefaultMetadata{
+					OutputPaths: []fs.OutputPath{
+						mustOutputPath(t, "//out/Default/", "obj/libbar.a"),
+					},
 				},
 			},
 			wantTools: []gotToolCall{
@@ -406,9 +408,11 @@ func TestStaticLibrarySchema_Resolver(t *testing.T) {
 					},
 				},
 			}),
-			want: DefaultMetadata{
-				OutputPaths: []fs.OutputPath{
-					mustOutputPath(t, "//out/Default/", "obj/bar.a"),
+			want: CxxInfo{
+				DefaultMetadata: DefaultMetadata{
+					OutputPaths: []fs.OutputPath{
+						mustOutputPath(t, "//out/Default/", "obj/bar.a"),
+					},
 				},
 			},
 			wantTools: []gotToolCall{
