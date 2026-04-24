@@ -6,6 +6,7 @@ package build
 
 import (
 	"context"
+	"fmt"
 	"math/rand/v2"
 	"slices"
 	"testing"
@@ -15,6 +16,41 @@ import (
 	"go.chromium.org/build/siso/execute"
 	"go.chromium.org/build/siso/ui"
 )
+
+type recordingUI struct {
+	printed    []string
+	printLines [][]string
+}
+
+func (r *recordingUI) PrintLines(msgs ...string) {
+	r.printLines = append(r.printLines, slices.Clone(msgs))
+}
+
+func (r *recordingUI) NewSpinner() ui.Spinner {
+	return noopSpinner{}
+}
+
+func (r *recordingUI) Printf(format string, args ...any) {
+	r.printed = append(r.printed, fmt.Sprintf(format, args...))
+}
+
+func (r *recordingUI) Infof(format string, args ...any) {
+	r.Printf(format, args...)
+}
+
+func (r *recordingUI) Warningf(format string, args ...any) {
+	r.Printf(format, args...)
+}
+
+func (r *recordingUI) Errorf(format string, args ...any) {
+	r.Printf(format, args...)
+}
+
+type noopSpinner struct{}
+
+func (noopSpinner) Start(format string, args ...any) {}
+func (noopSpinner) Stop(err error)                   {}
+func (noopSpinner) Done(format string, args ...any)  {}
 
 // newProgressTestSteps builds three steps in started state with
 // staggered startTimes, suitable for driving the update goroutine
@@ -34,6 +70,75 @@ func newProgressTestSteps() (s0, s1, s2 *Step) {
 	s1 = mkStep("middle", now.Add(-2*time.Second))
 	s2 = mkStep("tail", now.Add(-1*time.Second))
 	return
+}
+
+func TestProgressAppendFrame_NormalRedrawLetsPrintLinesClear(t *testing.T) {
+	currentUI := ui.Default
+	rec := &recordingUI{}
+	ui.Default = rec
+	defer func() { ui.Default = currentUI }()
+
+	p := progress{rendered: true}
+	got := p.appendFrame(nil, "summary", nil, nil)
+
+	if len(got) == 0 || got[0] == "\n" {
+		t.Fatalf("appendFrame returned leading sentinel for normal redraw: %q", got)
+	}
+	if want := activeItems + 2; len(got) != want {
+		t.Fatalf("appendFrame returned %d lines; want %d", len(got), want)
+	}
+	if len(rec.printed) != 0 {
+		t.Fatalf("appendFrame performed separate stdout writes %q; want none on normal redraw", rec.printed)
+	}
+	if !p.rendered {
+		t.Fatal("appendFrame cleared rendered state; want rendered frame to remain active")
+	}
+}
+
+func TestProgressAppendFrame_FirstRenderOwnsCursor(t *testing.T) {
+	currentUI := ui.Default
+	rec := &recordingUI{}
+	ui.Default = rec
+	defer func() { ui.Default = currentUI }()
+
+	var p progress
+	got := p.appendFrame(nil, "summary", nil, nil)
+
+	if len(got) == 0 || got[0] != "\n" {
+		t.Fatalf("appendFrame first render lines=%q; want leading sentinel", got)
+	}
+	if want := activeItems + 3; len(got) != want {
+		t.Fatalf("appendFrame first render returned %d lines; want %d", len(got), want)
+	}
+	if !slices.Equal(rec.printed, []string{"\n"}) {
+		t.Fatalf("appendFrame first render writes=%q; want newline cursor push", rec.printed)
+	}
+	if !p.rendered {
+		t.Fatal("appendFrame did not mark first render as active")
+	}
+}
+
+func TestProgressAppendFrame_PendingOutputOwnsCursor(t *testing.T) {
+	currentUI := ui.Default
+	rec := &recordingUI{}
+	ui.Default = rec
+	defer func() { ui.Default = currentUI }()
+
+	p := progress{rendered: true}
+	got := p.appendFrame(nil, "summary", nil, []string{"finished with warning"})
+
+	if len(got) == 0 || got[0] != "\n" {
+		t.Fatalf("appendFrame pending-output lines=%q; want leading sentinel", got)
+	}
+	if want := activeItems + 3; len(got) != want {
+		t.Fatalf("appendFrame pending-output returned %d lines; want %d", len(got), want)
+	}
+	if !slices.Equal(rec.printed, []string{"finished with warning\n"}) {
+		t.Fatalf("appendFrame pending-output writes=%q; want queued output before redraw", rec.printed)
+	}
+	if !p.rendered {
+		t.Fatal("appendFrame cleared rendered state; want rendered frame to remain active")
+	}
 }
 
 // TestProgress_DoneMiddleStepRemovedFromActives checks that update()

@@ -298,7 +298,16 @@ func (p *progress) buildSummary(b *Builder) string {
 }
 
 // appendFrame builds the terminal frame into lines and returns the
-// extended slice. Layout:
+// extended slice. Normal redraws deliberately omit the leading "\n"
+// sentinel so TermUI.PrintLines combines "clear old frame" and "write
+// new frame" into one stdout write; Windows consoles visibly flicker
+// if the frame is first cleared in a separate write.
+//
+// First renders and renders after pending output still use the sentinel
+// because appendFrame has already positioned the cursor and PrintLines
+// must not clear rows above the frame.
+//
+// Layout when the caller already owns the cursor:
 //
 //	"\n" sentinel telling PrintLines to skip its built-in clear path
 //	summary
@@ -308,15 +317,20 @@ func (p *progress) buildSummary(b *Builder) string {
 // Reconciles the cursor before writing and drains pending into
 // scrollback above the frame as a side effect.
 func (p *progress) appendFrame(lines []string, summary string, snapshot []*stepInfo, pending []string) []string {
-	// Position the cursor at the top of where the new frame will be
-	// drawn. Two cases:
-	//   - a prior frame is on screen: wipe it in place so pending
-	//     output (if any) and the redraw land at the same rows
+	// Position the cursor for cases where PrintLines must not do the
+	// clear itself:
+	//   - pending output: wipe the old frame, print the output into
+	//     scrollback, then draw a fresh frame below it
 	//   - first draw: the cursor may still be mid-line after startup
 	//     text (build-start message, spinner result), so push past it
-	if p.rendered {
+	//
+	// The common no-pending redraw intentionally does nothing here.
+	// PrintLines will clear the previous fixed-height frame and write
+	// the replacement frame in one buffer, which avoids a visible blank
+	// frame on Windows.
+	if p.rendered && len(pending) > 0 {
 		p.clearFrame()
-	} else {
+	} else if !p.rendered {
 		ui.Default.Printf("\n")
 	}
 
@@ -329,9 +343,12 @@ func (p *progress) appendFrame(lines []string, summary string, snapshot []*stepI
 	}
 
 	// Leading "\n" is the sentinel that tells PrintLines we already
-	// own the cursor; without it PrintLines would clear the rows
-	// above and shift the frame upward.
-	lines = append(lines, "\n", summary)
+	// own the cursor. Omit it for normal redraws so PrintLines clears
+	// and writes the frame in one stdout write.
+	if !p.rendered || len(pending) > 0 {
+		lines = append(lines, "\n")
+	}
+	lines = append(lines, summary)
 	for _, si := range snapshot {
 		lines = append(lines, formatStepRow(si))
 	}
