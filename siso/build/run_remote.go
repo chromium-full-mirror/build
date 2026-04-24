@@ -15,6 +15,7 @@ import (
 	"go.chromium.org/build/siso/execute"
 	"go.chromium.org/build/siso/o11y/clog"
 	"go.chromium.org/build/siso/reapi"
+	"go.chromium.org/build/siso/reapi/digest"
 	"go.chromium.org/build/siso/scandeps"
 )
 
@@ -23,6 +24,7 @@ var errRemoteExecDisabled = errors.New("remote exec disabled")
 
 // ToomanyFallbackError is an error when it detects too many fallback, exceeding the limit.
 type TooManyFallbackError struct {
+	Action    digest.Digest
 	Fallbacks int64
 	Limit     int64
 	Err       error
@@ -30,9 +32,9 @@ type TooManyFallbackError struct {
 
 func (e TooManyFallbackError) Error() string {
 	if e.Limit == 0 {
-		return fmt.Sprintf("no-fallback: %v", e.Err)
+		return fmt.Sprintf("%s no-fallback: %v", e.Action, e.Err)
 	}
-	return fmt.Sprintf("fallback %d exceeds limit %d: %v", e.Fallbacks, e.Limit, e.Err)
+	return fmt.Sprintf("%s fallback %d exceeds limit %d: %v", e.Action, e.Fallbacks, e.Limit, e.Err)
 }
 
 // runRemote runs step with using remote apis.
@@ -158,7 +160,8 @@ func (b *Builder) runRemote(ctx context.Context, step *Step) error {
 		}
 		fallbackReport("fallback-on-other")
 		if n := b.numFallback.Add(1); n >= b.maxFallbackAllowed {
-			return fmt.Errorf("remote-exec %s: %w", step.cmd.ActionDigest(), TooManyFallbackError{
+			return fmt.Errorf("remote-exec %w", TooManyFallbackError{
+				Action:    step.cmd.ActionDigest(),
 				Fallbacks: n,
 				Limit:     b.maxFallbackAllowed,
 				Err:       err,
