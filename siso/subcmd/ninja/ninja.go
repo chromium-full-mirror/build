@@ -29,6 +29,7 @@ import (
 	"go.chromium.org/build/siso/auth/cred"
 	"go.chromium.org/build/siso/build"
 	"go.chromium.org/build/siso/build/ninjabuild"
+	"go.chromium.org/build/siso/execute"
 	"go.chromium.org/build/siso/hashfs"
 	"go.chromium.org/build/siso/o11y/clog"
 	"go.chromium.org/build/siso/o11y/monitoring"
@@ -698,15 +699,18 @@ func (c *Command) postRun(ctx context.Context, stats build.Stats, runErr error) 
 				return subcommands.ExitFailure
 			}
 			if errTooManyFallback, ok := errors.AsType[build.TooManyFallbackError](errBuild.Err); ok {
-				msgPrefix := "Infra failure"
-				result.InfraFailure = true
-				result.Message = fmt.Sprintf("%s: %v", msgPrefix, errTooManyFallback)
-				if ui.IsTerminal() {
-					dur = ui.SGR(ui.Bold, dur)
-					msgPrefix = ui.SGR(ui.BackgroundRed, msgPrefix)
+				if _, ok := errors.AsType[execute.ExitError](errTooManyFallback.Err); !ok {
+					msgPrefix := "Infra failure"
+					result.InfraFailure = true
+					result.Message = fmt.Sprintf("%s: %v", msgPrefix, errTooManyFallback)
+					if ui.IsTerminal() {
+						dur = ui.SGR(ui.Bold, dur)
+						msgPrefix = ui.SGR(ui.BackgroundRed, msgPrefix)
+					}
+					ui.Default.Errorf("\n%6s %s: %v\n", dur, msgPrefix, errTooManyFallback)
+					return subcommands.ExitFailure
 				}
-				ui.Default.Errorf("\n%6s %s: %v\n", dur, msgPrefix, errTooManyFallback)
-				return subcommands.ExitFailure
+				// fallthrough if too many fallback with exit error.
 			}
 			msgPrefix := "Build Failure"
 			result.Message = fmt.Sprintf("%s: %v", msgPrefix, runErr)

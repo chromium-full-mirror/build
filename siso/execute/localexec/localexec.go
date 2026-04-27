@@ -55,7 +55,7 @@ func (LocalExec) Run(ctx context.Context, cmd *execute.Cmd) (err error) {
 	clog.Infof(ctx, "localexec: %v duration=%s exit=%d stdout=%d stderr=%d metadata=%s", cmd.Args, duration, res.ExitCode, len(res.StdoutRaw), len(res.StderrRaw), res.ExecutionMetadata)
 
 	if res.ExitCode != 0 {
-		return &execute.ExitError{ExitCode: int(res.ExitCode)}
+		return execute.ExitError{ExitCode: int(res.ExitCode)}
 	}
 	if cmd.HashFS == nil {
 		return nil
