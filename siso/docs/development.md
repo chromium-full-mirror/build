@@ -65,6 +65,8 @@ $ go mod tidy
 $ go generate ./...
 ```
 
+Prefer not to add new module dependencies to reduce third party reliance.
+
 ## How to modify code with kajiya
 
 When modifying code with kajiya, use
