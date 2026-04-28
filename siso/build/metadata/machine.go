@@ -5,9 +5,13 @@
 package metadata
 
 import (
+	"context"
 	"runtime"
 
 	"github.com/klauspost/cpuid/v2"
+
+	"go.chromium.org/build/siso/build/metadata/memory"
+	"go.chromium.org/build/siso/o11y/clog"
 )
 
 // MachineInfo represents information about the machine that the build was invoked on.
@@ -16,10 +20,16 @@ type MachineInfo struct {
 	Platform PlatformInfo `json:"platform"`
 	// CPU reports CPU information, e.g. brand name and vendor string.
 	CPU CPUInfo `json:"cpu"`
+	// Memory reports memory information.
+	Memory MemoryInfo `json:"memory"`
 }
 
 // GatherMachineInfo gathers and returns machine information of the build environment.
-func GatherMachineInfo() MachineInfo {
+func GatherMachineInfo(ctx context.Context) MachineInfo {
+	total, err := memory.Total()
+	if err != nil {
+		clog.Warningf(ctx, "failed to get machine memory: %v", err)
+	}
 	return MachineInfo{
 		Platform: PlatformInfo{
 			OS:           runtime.GOOS,
@@ -28,6 +38,9 @@ func GatherMachineInfo() MachineInfo {
 		CPU: CPUInfo{
 			BrandName:    cpuid.CPU.BrandName,
 			VendorString: cpuid.CPU.VendorString,
+		},
+		Memory: MemoryInfo{
+			Total: total,
 		},
 	}
 }
@@ -52,4 +65,10 @@ type CPUInfo struct {
 	BrandName string `json:"brand"`
 	// VendorString is the raw vendor string reported by the CPU, e.g. "GenuineIntel".
 	VendorString string `json:"vendor"`
+}
+
+// MemoryInfo reports memory information.
+type MemoryInfo struct {
+	// Total is the total amount of memory on the machine in bytes.
+	Total uint64 `json:"total,omitempty"`
 }

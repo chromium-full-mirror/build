@@ -620,7 +620,7 @@ func (c *Command) Run(ctx context.Context) (stats build.Stats, finalErr error) {
 	}
 	removeLastFailedTargets(ctx, c.stateDir)
 
-	err = c.writeInvocationInfo(metricsLabels, targets)
+	err = c.writeInvocationInfo(ctx, metricsLabels, targets)
 	if err != nil {
 		return stats, err
 	}

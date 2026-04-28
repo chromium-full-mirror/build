@@ -275,14 +275,14 @@ func (c *Command) setupCrashOutput(ctx context.Context) (func(), error) {
 	return func() { debug.SetCrashOutput(nil, debug.CrashOptions{}) }, crashFile.Close()
 }
 
-func (c *Command) writeInvocationInfo(metricsLabels map[string]string, targets []string) error {
+func (c *Command) writeInvocationInfo(ctx context.Context, metricsLabels map[string]string, targets []string) error {
 	j, err := json.Marshal(metadata.InvocationInfo{
 		SisoVersion:   c.version,
 		StartTime:     c.started,
 		BuildID:       c.buildID,
 		Targets:       targets,
 		MetricsLabels: metricsLabels,
-		Machine:       metadata.GatherMachineInfo(),
+		Machine:       metadata.GatherMachineInfo(ctx),
 	})
 	if err != nil {
 		return err
