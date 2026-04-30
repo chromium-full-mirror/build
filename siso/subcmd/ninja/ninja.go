@@ -11,6 +11,7 @@ import (
 	"flag"
 	"fmt"
 	"go/version"
+	"io"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -438,6 +439,7 @@ func (c *Command) Run(ctx context.Context) (stats build.Stats, finalErr error) {
 	var eg, reeg errgroup.Group
 	var nstate *ninjautil.State
 	var needHashFSRefresh bool
+	var ninjaLogWriter io.Writer // ninjaLogWriter is used to pass the ninja log writer from CheckManifest to the main thread's bopts to avoid truncation.
 	octx := ctx
 	eg.Go(func() error {
 		ctx := trace.NewThread(octx, "loadNinjaFiles")
@@ -455,6 +457,7 @@ func (c *Command) Run(ctx context.Context) (stats build.Stats, finalErr error) {
 		if err != nil {
 			return err
 		}
+		ninjaLogWriter = bopts.NinjaLogWriter
 		clog.Infof(ctx, "check manifest done")
 		nstate, err = ninjabuild.Load(ctx, c.fname, buildPath)
 		if err != nil {
@@ -570,6 +573,8 @@ func (c *Command) Run(ctx context.Context) (stats build.Stats, finalErr error) {
 	if err != nil {
 		return stats, err
 	}
+	// Reuse the ninja log writer initialized in CheckManifest to avoid overwriting the log.
+	bopts.NinjaLogWriter = ninjaLogWriter
 	if needHashFSRefresh {
 		started := time.Now()
 		err := hashFS.WaitReady(ctx)
