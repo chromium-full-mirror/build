@@ -54,19 +54,67 @@ func (b *Builder) runLocal(ctx context.Context, step *Step) error {
 	return b.execLocal(ctx, step)
 }
 
+// actionStarted is called when the early steps of execution (scandeps, cache
+// query) are started.  Do not report the action started to the frontend.
 func (b *Builder) actionStarted(step *Step) {
 	// actionStarted may be called when fallback/retry.
 	// Do not change ActionStartTime if it's already set.
 	if step.metrics.ActionStartTime == 0 {
-		b.statusReporter.BuildActionStarted(step)
 		step.metrics.ActionStartTime = IntervalMetric(time.Since(b.start))
 	}
 }
 
-func (b *Builder) actionFinished(ctx context.Context, step *Step) {
-	if ctx.Err() != nil {
-		b.statusReporter.BuildActionCanceled(step)
-		return
+// actionStartedTime is called when execution of the action begins.
+// If the start time has not been recorded, set it to the time provided.  This
+// is generally `time.Now()` except in the case of a cache hit, where it is the
+// cacheStartTime.
+//
+// Always report the action started to the frontend, but only once.
+func (b *Builder) actionStartedTime(step *Step, start time.Time) {
+	// actionStarted may be called when fallback/retry.
+	// Do not change ActionStartTime if it's already set.
+	if step.metrics.ActionStartTime == 0 {
+		step.metrics.ActionStartTime = IntervalMetric(start.Sub(b.start))
 	}
-	b.statusReporter.BuildActionFinished(step)
+	step.startReported.Do(func() {
+		b.statusReporter.BuildActionStarted(step, start)
+	})
+}
+
+func (b *Builder) actionFinished(ctx context.Context, step *Step) {
+	step.finishReported.Do(func() {
+		if ctx.Err() != nil {
+			b.statusReporter.BuildActionCanceled(step)
+			return
+		}
+		b.statusReporter.BuildActionFinished(step)
+	})
+}
+
+func (b *Builder) scandepsStarted(step *Step) {
+	b.actionStarted(step)
+	if step.metrics.ScandepsStartTime == 0 {
+		step.metrics.ScandepsStartTime = IntervalMetric(time.Since(b.start))
+	}
+}
+
+func (b *Builder) scandepsFinish(step *Step) {
+	if step.metrics.ScandepsStartTime != 0 {
+		end := time.Since(b.start)
+		step.metrics.ScandepsTime = IntervalMetric(end - time.Duration(step.metrics.ScandepsStartTime))
+	}
+}
+
+func (b *Builder) cacheStarted(step *Step) {
+	b.actionStarted(step)
+	if step.metrics.CacheStartTime == 0 {
+		step.metrics.CacheStartTime = IntervalMetric(time.Since(b.start))
+	}
+}
+
+func (b *Builder) cacheFinish(step *Step) {
+	if step.metrics.CacheStartTime != 0 {
+		end := time.Since(b.start)
+		step.metrics.CacheTime = IntervalMetric(end - time.Duration(step.metrics.CacheStartTime))
+	}
 }

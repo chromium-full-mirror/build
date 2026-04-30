@@ -102,11 +102,11 @@ func (f *Frontend) PlanHasTotalSteps(total int) {
 }
 
 // BuildActionStarted is called when build action started.
-func (f *Frontend) BuildActionStarted(step *build.Step) {
+func (f *Frontend) BuildActionStarted(step *build.Step, when time.Time) {
 	m := &pb.Status{
 		EdgeStarted: &pb.Status_EdgeStarted{
 			Id:        proto.Uint32(uint32(step.IDNum())),
-			StartTime: proto.Uint32(uint32(time.Since(f.startTime).Milliseconds())),
+			StartTime: proto.Uint32(uint32(when.Sub(f.startTime).Milliseconds())),
 			Outputs:   step.Outputs(),
 			Desc:      proto.String(step.Desc()),
 			Command:   proto.String(step.Command()),

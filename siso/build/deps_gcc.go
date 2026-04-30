@@ -180,7 +180,8 @@ func (depsGCC) scandeps(ctx context.Context, b *Builder, step *Step) ([]string, 
 	var ins []string
 	err := b.scanDepsSema.Do(ctx, step.weight, func(ctx context.Context) error {
 		debug := step.def.Binding("debug") == "true"
-		b.actionStarted(step)
+		b.scandepsStarted(step)
+		defer b.scandepsFinish(step)
 		params, err := gccutil.ExtractScanDepsParams(ctx, step.cmd.Args, step.cmd.Env, b.hashFS.FileSystem(ctx, filepath.Join(step.cmd.WorkspaceRoot, step.cmd.WorkDir)))
 		if err != nil {
 			return err

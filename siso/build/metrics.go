@@ -117,6 +117,22 @@ type StepMetric struct {
 	// exec semaphore. ActionStartTime is set within the execution semaphores
 	// (localSema, remoteSema, rewrapSema, etc).
 	ActionStartTime IntervalMetric `json:"action_start,omitempty"`
+
+	// ScandepsStartTime is the time it took since build start until
+	// scandeps starts.
+	ScandepsStartTime IntervalMetric `json:"scandeps_start,omitempty"`
+	// ScandepsTime is the duration measured from the execution strategy
+	// starting the scandeps process until the scandeps process exited.
+	ScandepsTime IntervalMetric `json:"scandeps,omitempty"`
+
+	// CacheStartTime is the time it took since build start until
+	// querying the remote cache starts.
+	CacheStartTime IntervalMetric `json:"cache_start,omitempty"`
+	// CacheTime is the duration measured from the execution strategy
+	// starting the remote cache query until it finishes.  For cache hits,
+	// this includes the time to process the hit.
+	CacheTime IntervalMetric `json:"cache,omitempty"`
+
 	// RunTime is the total duration of the action execution, including
 	// overhead such as uploading / downloading files. Semaphore waiting time
 	// (namely execution semaphores like localSema, remoteSema, rewrapSema, etc)

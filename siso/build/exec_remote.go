@@ -53,7 +53,7 @@ func (b *Builder) execRemoteRun(uploadCtx, execCtx context.Context, step *Step) 
 				b.progressStepRetry(step)
 			}
 			reExecStarted := time.Now()
-			b.actionStarted(step)
+			b.actionStartedTime(step, reExecStarted)
 			clog.Infof(ctx, "step state: remote exec [%s]", phase)
 			phase = stepRetryRun
 			err := b.remoteExec.Run(uploadCtx, ctx, step.cmd)
@@ -128,9 +128,11 @@ func (b *Builder) execRemote(ctx context.Context, step *Step) error {
 func (b *Builder) execRemoteCache(ctx context.Context, step *Step) error {
 	ctx, span := trace.NewSpan(ctx, "exec-remote-cache")
 	defer span.Close(nil)
+	var start time.Time
 	err := b.cacheSema.Do(ctx, func(ctx context.Context) error {
-		start := time.Now()
-		b.actionStarted(step)
+		start = time.Now()
+		b.cacheStarted(step)
+		defer b.cacheFinish(step)
 		err := b.cache.GetActionResult(ctx, step.cmd)
 		if err != nil {
 			return err
@@ -149,14 +151,21 @@ func (b *Builder) execRemoteCache(ctx context.Context, step *Step) error {
 			return errors.New("no output in action result")
 		}
 		b.progressStepCacheHit(step)
-		step.metrics.RunTime = IntervalMetric(time.Since(start))
-		step.metrics.done(ctx, step, b.start)
 		step.metrics.Cached = true
 		return nil
 	})
 	if err != nil {
+		// An error at this point means that we will run this step, so we are still not done.
 		return err
 	}
+
+	// Beyond this point, we should be marking the step done.  Do that as we leave the function.
+	b.actionStartedTime(step, b.start.Add(time.Duration(step.metrics.CacheStartTime)))
+	defer func() {
+		step.metrics.RunTime = IntervalMetric(time.Since(start))
+		step.metrics.done(ctx, step, b.start)
+	}()
+
 	// need to update deps for cache hit for deps=gcc, msvc.
 	// even if cache hit, deps should be updated with gcc depsfile,
 	// or with msvc showIncludes outputs.

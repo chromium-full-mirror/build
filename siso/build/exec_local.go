@@ -95,6 +95,7 @@ func (b *Builder) execLocal(ctx context.Context, step *Step) (retErr error) {
 	}
 
 	queueTime := time.Now()
+	var started time.Time
 	var dur time.Duration
 	step.setPhase(phase.wait())
 	err = sema.Do(ctx, step.weight, func(ctx context.Context) error {
@@ -103,9 +104,9 @@ func (b *Builder) execLocal(ctx context.Context, step *Step) (retErr error) {
 		if step.cmd.Console {
 			b.progress.startConsoleCmd(step.cmd)
 		}
-		started := time.Now()
+		started = time.Now()
 		// local exec might be called as fallback.
-		b.actionStarted(step)
+		b.actionStartedTime(step, started)
 		err := executor.Run(ctx, step.cmd)
 		dur = time.Since(started)
 		step.setPhase(stepOutput)
@@ -123,8 +124,6 @@ func (b *Builder) execLocal(ctx context.Context, step *Step) (retErr error) {
 			}
 			result.ExecutionMetadata.QueuedTimestamp = timestamppb.New(queueTime)
 		}
-		step.metrics.RunTime = IntervalMetric(time.Since(started))
-		step.metrics.done(ctx, step, b.start)
 		return err
 	})
 	if !errors.Is(err, context.Canceled) {
@@ -133,6 +132,11 @@ func (b *Builder) execLocal(ctx context.Context, step *Step) (retErr error) {
 			err = lerr
 		}
 	}
+	// Beyond this point, we should be marking the step done.  Do that as we leave the function.
+	defer func() {
+		step.metrics.RunTime = IntervalMetric(time.Since(started))
+		step.metrics.done(ctx, step, b.start)
+	}()
 	if err != nil {
 		return err
 	}

@@ -38,11 +38,12 @@ func (b *Builder) execReproxy(ctx context.Context, step *Step) error {
 	}
 	step.cmd.RecordPreOutputs(ctx)
 	phase := stepRemoteRun
+	var started time.Time
 	step.setPhase(phase.wait())
 	err = b.reproxySema.Do(ctx, step.weight, func(ctx context.Context) error {
-		started := time.Now()
+		started = time.Now()
 		step.setPhase(phase)
-		b.actionStarted(step)
+		b.actionStartedTime(step, started)
 		clog.Infof(ctx, "step state: remote exec (via reproxy)")
 		maybeDisableLocalFallback(ctx, b, step)
 
@@ -86,10 +87,14 @@ func (b *Builder) execReproxy(ctx context.Context, step *Step) error {
 		if cached {
 			step.metrics.Cached = true
 		}
-		step.metrics.RunTime = IntervalMetric(time.Since(started))
-		step.metrics.done(ctx, step, b.start)
 		return err
 	})
+	// Beyond this point, we should be marking the step done.  Do that as we leave the function.
+	defer func() {
+		step.metrics.RunTime = IntervalMetric(time.Since(started))
+		step.metrics.done(ctx, step, b.start)
+	}()
+
 	if err != nil {
 		return fmt.Errorf("reproxy error: %w", err)
 	}

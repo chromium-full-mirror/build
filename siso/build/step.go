@@ -167,6 +167,12 @@ type Step struct {
 
 	metrics StepMetric
 
+	// Whether we have reported the start of this step via BuildActionStarted()
+	startReported *sync.Once
+
+	// Whether we have reported the finish of this step via BuildActionFinished/Canceled()
+	finishReported *sync.Once
+
 	state *stepState
 }
 
@@ -174,15 +180,17 @@ type Step struct {
 // and fresh mutable state, suitable for the local racer in racing mode.
 func (s *Step) Clone() *Step {
 	return &Step{
-		idnum:       s.idnum,
-		def:         s.def,
-		weight:      s.weight,
-		outputs:     s.outputs,
-		outputPaths: s.outputPaths,
-		cmd:         s.cmd.Clone(),
-		readyTime:   s.readyTime,
-		startTime:   s.startTime,
-		state:       &stepState{},
+		idnum:          s.idnum,
+		def:            s.def,
+		weight:         s.weight,
+		outputs:        s.outputs,
+		outputPaths:    s.outputPaths,
+		cmd:            s.cmd.Clone(),
+		readyTime:      s.readyTime,
+		startTime:      s.startTime,
+		state:          &stepState{},
+		startReported:  s.startReported,
+		finishReported: s.finishReported,
 	}
 }
 
@@ -474,6 +482,8 @@ func (s *Step) useReclient() bool {
 func (s *Step) init(ctx context.Context, b *Builder, stepManifest *stepManifest) {
 	ctx, span := trace.NewSpan(ctx, "step-init")
 	defer span.Close(nil)
+	s.startReported = new(sync.Once)
+	s.finishReported = new(sync.Once)
 	s.def.EnsureRule(ctx)
 	s.outputPaths = make([]string, 0, len(stepManifest.outputs))
 	for _, out := range stepManifest.outputs {

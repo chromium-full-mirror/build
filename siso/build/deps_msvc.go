@@ -216,7 +216,8 @@ func (msvc depsMSVC) depsInputs(ctx context.Context, b *Builder, step *Step) ([]
 func (depsMSVC) scandeps(ctx context.Context, b *Builder, step *Step) ([]string, error) {
 	var ins []string
 	err := b.scanDepsSema.Do(ctx, step.weight, func(ctx context.Context) error {
-		b.actionStarted(step)
+		b.scandepsStarted(step)
+		defer b.scandepsFinish(step)
 		params, err := msvcutil.ExtractScanDepsParams(ctx, step.cmd.Args, step.cmd.Env, b.hashFS.FileSystem(ctx, filepath.Join(step.cmd.WorkspaceRoot, step.cmd.WorkDir)))
 		if err != nil {
 			return err
