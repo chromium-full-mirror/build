@@ -17,6 +17,7 @@ import (
 	"runtime"
 	"runtime/debug"
 	"strings"
+	"sync"
 	"time"
 
 	log "github.com/golang/glog"
@@ -64,6 +65,26 @@ func (c *Command) writeSisoResult(result SisoResult) error {
 	return os.WriteFile(filepath.Join(c.logDir, sisoResultFilename), buf, 0644)
 }
 
+type failureSummaryWriter struct {
+	mu       sync.Mutex
+	filename string
+}
+
+func (w *failureSummaryWriter) Write(data []byte) (int, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	f, err := os.OpenFile(w.filename, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		return 0, err
+	}
+	n, err := f.Write(data)
+	cerr := f.Close()
+	if err == nil {
+		err = cerr
+	}
+	return n, err
+}
+
 type cleanupFunc func(*error)
 
 func (c *Command) initLogWriters(ctx context.Context, buildPath *build.Path) (logWriters, cleanupFunc, error) {
@@ -72,11 +93,11 @@ func (c *Command) initLogWriters(ctx context.Context, buildPath *build.Path) (lo
 	var err error
 	var done cleanupFunc
 
-	writers.failureSummaryWriter, done, err = c.logWriter(ctx, c.failureSummaryFile)
-	if err != nil {
-		return writers, nil, err
+	if fname := c.logFilename(c.failureSummaryFile, ""); fname != "" {
+		writers.failureSummaryWriter = &failureSummaryWriter{
+			filename: fname,
+		}
 	}
-	dones = append(dones, done)
 	dones = append(dones, func(errp *error) {
 		if writers.failureSummaryWriter != nil && *errp != nil {
 			fmt.Fprintf(writers.failureSummaryWriter, "error: %v\n", *errp)
