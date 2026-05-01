@@ -241,6 +241,11 @@ func (hfs *HashFS) SetBuildTargets(ctx context.Context, buildTargets []string, s
 // persisted to disk. Each condition is a reason the in-memory state
 // is unreliable or unchanged.
 func (hfs *HashFS) shouldSkipSave() bool {
+	// is .siso_fs_state doesn't exist, need to save.
+	_, err := os.Stat(hfs.opt.StateFile)
+	if errors.Is(err, fs.ErrNotExist) {
+		return false
+	}
 	// State matches disk, nothing to write.
 	if hfs.clean.Load() {
 		return true
