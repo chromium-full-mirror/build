@@ -5,6 +5,7 @@
 package reapi
 
 import (
+	"bytes"
 	"compress/flate"
 	"context"
 	"errors"
@@ -130,25 +131,102 @@ func (c *Client) resourceName(d digest.Digest) string {
 	return path.Join(c.opt.Instance, "blobs", d.Hash, strconv.FormatInt(d.SizeBytes, 10))
 }
 
-// newDecoder returns a decoder to uncompress blob.
-// For uncompressed blob, it returns a nop closer.
+// probeSize is the largest compressed blob size that takes the sync
+// DecodeAll path.
+const probeSize = 128 * 1024
+
+// freshDecoderThreshold (decompressed bytes) routes blobs at or above
+// this size to a fresh, non-pooled decoder so its window-sized h.b
+// (streaming) or syncStream.dstBuf (sync DecodeAll on a highly
+// compressible blob) can't end up in the pool. Smaller blobs share
+// pool decoders.
+const freshDecoderThreshold = 4 * 1024 * 1024
+
+// zstdDecoderOpts is the shared decoder configuration. Concurrency(1)
+// avoids the per-decoder GOMAXPROCS worker fanout; siso's outer
+// parallelism saturates CPUs. WithDecodeBuffersBelow(probeSize+1)
+// makes the decoder take the sync path for any *bytes.Buffer with
+// Len() <= probeSize.
+var zstdDecoderOpts = []zstd.DOption{
+	zstd.WithDecoderConcurrency(1),
+	zstd.WithDecodeBuffersBelow(probeSize + 1),
+}
+
+var probeBufPool = sync.Pool{
+	New: func() any { return bytes.NewBuffer(make([]byte, 0, probeSize+1)) },
+}
+
 func (c *Client) newDecoder(r io.Reader, d digest.Digest) (io.ReadCloser, error) {
-	if c.useCompressedBlob(d) {
-		switch comp := c.getCompressor(); comp {
-		case rpb.Compressor_ZSTD:
-			dec := c.zstdDecoderPool.Get().(*pooledDecoder)
-			// Only errors if dec was closed.
-			if err := dec.Reset(r); err != nil {
-				return nil, err
-			}
-			return dec, nil
-		case rpb.Compressor_DEFLATE:
-			return flate.NewReader(r), nil
-		default:
-			return nil, fmt.Errorf("unsupported compressor %q", comp)
-		}
+	if !c.useCompressedBlob(d) {
+		return io.NopCloser(r), nil
 	}
-	return io.NopCloser(r), nil
+	switch comp := c.getCompressor(); comp {
+	case rpb.Compressor_ZSTD:
+		buf := probeBufPool.Get().(*bytes.Buffer)
+		buf.Reset()
+		// Read probeSize+1 so a reader holding exactly probeSize bytes
+		// (gRPC delivers EOF only on the read past the last byte) returns
+		// io.EOF here and is detected as fitting.
+		_, err := io.CopyN(buf, r, probeSize+1)
+		var src io.Reader = buf
+		switch {
+		case errors.Is(err, io.EOF):
+			// Entire compressed blob fits in buf. Keeping src as
+			// *bytes.Buffer lets zstd use its sync DecodeAll path for
+			// small decoded blobs.
+		case err == nil:
+			// Probe filled, more data remains. MultiReader replays the
+			// probed bytes and is not a byter, so zstd uses streaming.
+			src = io.MultiReader(buf, r)
+		default:
+			probeBufPool.Put(buf)
+			return nil, err
+		}
+		if d.SizeBytes < freshDecoderThreshold {
+			return c.newPooledBufferedDecoder(src, buf)
+		}
+		sd, err := zstd.NewReader(src, zstdDecoderOpts...)
+		if err != nil {
+			probeBufPool.Put(buf)
+			return nil, err
+		}
+		return &discardableDecoder{Decoder: sd, buf: buf}, nil
+	case rpb.Compressor_DEFLATE:
+		return flate.NewReader(r), nil
+	default:
+		return nil, fmt.Errorf("unsupported compressor %q", comp)
+	}
+}
+
+// newPooledBufferedDecoder takes a pooled decoder, points it at src,
+// and pairs it with the probe buf so the buf is recycled on Close.
+func (c *Client) newPooledBufferedDecoder(src io.Reader, buf *bytes.Buffer) (io.ReadCloser, error) {
+	dec := c.zstdDecoderPool.Get().(*pooledDecoder)
+	if err := dec.Reset(src); err != nil {
+		probeBufPool.Put(buf)
+		return nil, err
+	}
+	return &bufferedDecoder{pooledDecoder: dec, buf: buf}, nil
+}
+
+// discardableDecoder is dropped on Close (not pooled) so the
+// window-sized h.b a streaming frame retains, or the syncStream.dstBuf
+// a highly-compressible sync DecodeAll retains, can't end up in the
+// pool.
+type discardableDecoder struct {
+	*zstd.Decoder
+	// buf is held alive while the MultiReader fed to the decoder still references it.
+	buf *bytes.Buffer
+}
+
+func (s *discardableDecoder) Close() error {
+	if s.buf == nil {
+		return nil
+	}
+	s.Decoder.Close()
+	probeBufPool.Put(s.buf)
+	s.buf = nil
+	return nil
 }
 
 type pooledDecoder struct {
@@ -157,13 +235,30 @@ type pooledDecoder struct {
 }
 
 func (d *pooledDecoder) Close() error {
-	// Removes the reference on the io.Reader
+	// Drop the io.Reader reference held by the decoder.
 	if err := d.Reset(nil); err != nil {
 		d.Decoder.Close()
 		return err
 	}
 	d.pool.Put(d)
 	return nil
+}
+
+// bufferedDecoder pairs a pooled decoder with the probe buf that
+// must outlive the decoder's reads.
+type bufferedDecoder struct {
+	*pooledDecoder
+	buf *bytes.Buffer
+}
+
+func (b *bufferedDecoder) Close() error {
+	if b.buf == nil {
+		return nil
+	}
+	err := b.pooledDecoder.Close()
+	probeBufPool.Put(b.buf)
+	b.buf = nil
+	return err
 }
 
 // Get fetches the content of blob from CAS by digest.

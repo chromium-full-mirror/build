@@ -485,7 +485,7 @@ func newConn(ctx context.Context, addr string, cred cred.Cred, opt Option) (grpc
 func NewFromConn(ctx context.Context, opt Option, cred cred.Cred, conn, casConn grpcClientConn) (*Client, error) {
 	zstdDecoderPool := &sync.Pool{}
 	zstdDecoderPool.New = func() any {
-		d, err := zstd.NewReader(nil)
+		d, err := zstd.NewReader(nil, zstdDecoderOpts...)
 		if err != nil {
 			clog.Fatalf(ctx, "failed to create zstd.Decoder: %v", err)
 		}
