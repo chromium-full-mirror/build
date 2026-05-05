@@ -120,7 +120,7 @@ func (s *Prioritized) WaitAcquire(ctx context.Context, weight int) (context.Cont
 		s.mu.Unlock()
 		s.reqs.Add(1)
 		ctx, servSpan := trace.NewSpan(ctx, s.servSpanName)
-		servSpan.SetAttr("tid", tid)
+		servSpan.SetTid(tid)
 		servSpan.SetAttr("weight", weight)
 		return ctx, s.onServeCompleteFunc(servSpan, tid), nil
 	}
@@ -141,7 +141,7 @@ func (s *Prioritized) WaitAcquire(ctx context.Context, weight int) (context.Cont
 			clog.Infof(ctx, "wait-priority %s for %s (weight: %d)", s.name, dur, weight)
 		}
 		ctx, servSpan := trace.NewSpan(ctx, s.servSpanName)
-		servSpan.SetAttr("tid", tid)
+		servSpan.SetTid(tid)
 		servSpan.SetAttr("weight", weight)
 		return ctx, s.onServeCompleteFunc(servSpan, tid), nil
 	case <-ctx.Done():
@@ -153,7 +153,7 @@ func (s *Prioritized) WaitAcquire(ctx context.Context, weight int) (context.Cont
 			tid := <-req.ready
 			s.reqs.Add(1)
 			ctx, servSpan := trace.NewSpan(ctx, s.servSpanName)
-			servSpan.SetAttr("tid", tid)
+			servSpan.SetTid(tid)
 			servSpan.SetAttr("weight", weight)
 			return ctx, s.onServeCompleteFunc(servSpan, tid), nil
 		}

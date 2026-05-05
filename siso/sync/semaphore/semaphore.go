@@ -74,7 +74,7 @@ func (s *Semaphore) WaitAcquire(ctx context.Context) (context.Context, func(erro
 	case tid := <-s.ch:
 		s.reqs.Add(1)
 		ctx, span := trace.NewSpan(ctx, s.servSpanName)
-		span.SetAttr("tid", tid)
+		span.SetTid(tid)
 		if dur := time.Since(now); dur > 1*time.Second {
 			clog.Infof(ctx, "wait %s for %s", s.name, dur)
 		}
@@ -100,7 +100,7 @@ func (s *Semaphore) TryAcquire(ctx context.Context) (context.Context, func(error
 	case tid := <-s.ch:
 		s.reqs.Add(1)
 		ctx, span := trace.NewSpan(ctx, s.servSpanName)
-		span.SetAttr("tid", tid)
+		span.SetTid(tid)
 		return ctx, func(err error) {
 			st, ok := status.FromError(err)
 			if !ok {

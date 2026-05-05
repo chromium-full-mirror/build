@@ -530,15 +530,10 @@ func (te *Tracer) Begin(ctx context.Context, name string, region *Region) *Regio
 		if v, ok := ctx.Value(tracerTidKey).(int); ok {
 			region.Tid = v
 		} else if span := CurSpan(ctx); span != nil {
-			// semaphore.WaitAcquire sets tid in span.
+			// semaphore.WaitAcquire sets tid via SetTid.
 			span.mu.Lock()
-			for _, a := range span.attrs {
-				if a.key == "tid" {
-					if v, ok := a.value.(int); ok {
-						region.Tid = v
-						break
-					}
-				}
+			if span.hasTid {
+				region.Tid = span.tid
 			}
 			span.mu.Unlock()
 		}

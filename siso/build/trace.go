@@ -92,7 +92,7 @@ func runPreprocSpanEvent(span trace.SpanData, attr spanEventAttr, pid int64) tra
 		Ph:   "X",
 		T:    span.Start.Sub(trace.StartTime()).Microseconds(),
 		Pid:  pid,
-		Tid:  int64(span.Attrs["tid"].(int)),
+		Tid:  int64(span.Tid),
 		Dur:  span.Duration().Microseconds(),
 		Args: map[string]any{
 			"id":          attr.id,
@@ -112,7 +112,7 @@ func runLocalSpanEvent(span trace.SpanData, attr spanEventAttr, pid int64) trace
 		Ph:   "X",
 		T:    span.Start.Sub(trace.StartTime()).Microseconds(),
 		Pid:  pid,
-		Tid:  int64(span.Attrs["tid"].(int)),
+		Tid:  int64(span.Tid),
 		Dur:  span.Duration().Microseconds(),
 		Args: map[string]any{
 			"id":          attr.id,
@@ -132,7 +132,7 @@ func runRemoteSpanEvent(span trace.SpanData, attr spanEventAttr, pid int64) trac
 		Ph:   "X",
 		T:    span.Start.Sub(trace.StartTime()).Microseconds(),
 		Pid:  pid,
-		Tid:  int64(span.Attrs["tid"].(int)),
+		Tid:  int64(span.Tid),
 		Dur:  span.Duration().Microseconds(),
 		Args: map[string]any{
 			"id":          attr.id,

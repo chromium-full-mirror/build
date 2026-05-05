@@ -177,6 +177,8 @@ type Span struct {
 	displayName string
 	start       time.Time
 	end         time.Time
+	tid         int // set via SetTid; tid 0 is a real worker id, hence hasTid.
+	hasTid      bool
 	attrs       []attrKV
 	attrBuf     [2]attrKV // avoid allocation for small number of attrs.
 	status      *spb.Status
@@ -197,6 +199,20 @@ func (s *Span) SetAttr(key string, value any) {
 	s.attrs = append(s.attrs, attrKV{key: key, value: value})
 }
 
+// SetTid records the semaphore thread id for the span. Hoisted out of attrs
+// so most spans skip the per-call map allocation in (*Span).data. serv:*
+// spans feeding the chrome event emitters in build/trace.go must call this;
+// otherwise their events silently emit tid=0.
+func (s *Span) SetTid(tid int) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.tid = tid
+	s.hasTid = true
+}
+
 // Add adds span data as a child of the span and returns it.
 func (s *Span) Add(ctx context.Context, sd SpanData) *Span {
 	if s == nil {
@@ -210,6 +226,12 @@ func (s *Span) Add(ctx context.Context, sd SpanData) *Span {
 	s.mu.Unlock()
 	ss.start = sd.Start
 	ss.end = sd.End
+	// Only copy tid when set; preserve the unset state so the zero value
+	// does not masquerade as worker 0.
+	if sd.HasTid {
+		ss.tid = sd.Tid
+		ss.hasTid = true
+	}
 	var keys []string
 	for key := range sd.Attrs {
 		keys = append(keys, key)
@@ -237,11 +259,20 @@ func (s *Span) protoAttrs() *tracepb.Span_Attributes {
 	if s == nil {
 		return nil
 	}
-	m := make(map[string]*tracepb.AttributeValue, len(s.attrs))
+	n := len(s.attrs)
+	if s.hasTid {
+		n++
+	}
+	m := make(map[string]*tracepb.AttributeValue, n)
 	for _, kv := range s.attrs {
 		av := attrValue(kv.value)
 		if av != nil {
 			m[kv.key] = av
+		}
+	}
+	if s.hasTid {
+		if av := attrValue(s.tid); av != nil {
+			m["tid"] = av
 		}
 	}
 	return &tracepb.Span_Attributes{
@@ -259,14 +290,19 @@ func (s *Span) data() SpanData {
 	if end.IsZero() {
 		end = time.Now()
 	}
-	attrs := make(map[string]any, len(s.attrs))
-	for _, a := range s.attrs {
-		attrs[a.key] = a.value
+	var attrs map[string]any
+	if len(s.attrs) > 0 {
+		attrs = make(map[string]any, len(s.attrs))
+		for _, a := range s.attrs {
+			attrs[a.key] = a.value
+		}
 	}
 	return SpanData{
 		Name:   s.displayName,
 		Start:  s.start,
 		End:    end,
+		Tid:    s.tid,
+		HasTid: s.hasTid,
 		Attrs:  attrs,
 		Status: s.status,
 	}
@@ -361,9 +397,17 @@ func attrValue(v any) *tracepb.AttributeValue {
 
 // SpanData is a span data.
 type SpanData struct {
-	Name   string
-	Start  time.Time
-	End    time.Time
+	Name  string
+	Start time.Time
+	End   time.Time
+	// Tid is the semaphore-assigned thread id, only valid when HasTid is
+	// true. Hoisted out of Attrs so (*Span).data skips the map allocation
+	// and chrome event emitters skip the map lookup. HasTid is needed
+	// because tid 0 is a real worker id.
+	Tid    int
+	HasTid bool
+	// Attrs may be nil when the span had no attributes; readers must not
+	// assign into it without allocating first.
 	Attrs  map[string]any
 	Status *spb.Status
 }
