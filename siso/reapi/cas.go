@@ -282,6 +282,38 @@ func (c *Client) Get(ctx context.Context, d digest.Digest, name string) ([]byte,
 	return c.getWithByteStream(ctx, d, name)
 }
 
+// GetReader returns an io.ReadCloser to stream the blob content from CAS.
+// For small blobs, it fetches the content using BatchReadBlobs and wraps it in a reader.
+// For large blobs, it returns the streaming decoder directly from the ByteStream API.
+// The caller must close the returned reader.
+func (c *Client) GetReader(ctx context.Context, d digest.Digest, name string) (io.ReadCloser, error) {
+	if c == nil {
+		return nil, fmt.Errorf("reapi is not configured")
+	}
+	if d.SizeBytes == 0 {
+		return io.NopCloser(bytes.NewReader(nil)), nil
+	}
+
+	if d.SizeBytes < c.opt.ByteStreamReadThreshold {
+		buf, err := c.getWithBatchReadBlobs(ctx, d, name)
+		if err != nil {
+			return nil, err
+		}
+		return io.NopCloser(bytes.NewReader(buf)), nil
+	}
+
+	resourceName := c.resourceName(d)
+	if log.V(1) {
+		clog.Infof(ctx, "GetReader (ByteStream) %s resourceName=%s", d, resourceName)
+	}
+
+	r, err := bytestreamio.Open(ctx, bpb.NewByteStreamClient(c.casConn), resourceName)
+	if err != nil {
+		return nil, err
+	}
+	return c.newDecoder(r, d)
+}
+
 // getWithBatchReadBlobs fetches the content of blob using BatchReadBlobs rpc of CAS.
 func (c *Client) getWithBatchReadBlobs(ctx context.Context, d digest.Digest, name string) ([]byte, error) {
 	started := time.Now()

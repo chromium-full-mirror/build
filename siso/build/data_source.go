@@ -5,7 +5,6 @@
 package build
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -88,10 +87,9 @@ func (s source) Open(ctx context.Context) (io.ReadCloser, error) {
 		// fallback
 	}
 	if s.dataSource.Client != nil {
-		var buf []byte
-		buf, err = s.dataSource.Client.Get(ctx, s.d, s.fname)
+		r, err := s.dataSource.Client.GetReader(ctx, s.d, s.fname)
 		if err == nil {
-			return io.NopCloser(bytes.NewReader(buf)), nil
+			return r, nil
 		}
 		// fallback
 	}
