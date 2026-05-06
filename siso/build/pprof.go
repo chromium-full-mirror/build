@@ -31,6 +31,11 @@ func newTracePprof(fname string) *tracePprof {
 	}
 }
 
+// Enabled reports whether the pprof tracing is active.
+func (tp *tracePprof) Enabled() bool {
+	return tp != nil && tp.fname != ""
+}
+
 func (tp *tracePprof) Close(ctx context.Context) error {
 	if tp.fname == "" {
 		return nil

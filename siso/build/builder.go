@@ -1292,7 +1292,18 @@ func (b *Builder) updateDeps(ctx context.Context, step *Step) error {
 	return nil
 }
 
+// TraceEnabled reports whether tracing is enabled.
+func (b *Builder) TraceEnabled() bool {
+	if b == nil {
+		return false
+	}
+	return b.tracer.Enabled() || b.traceExporter != nil || b.tracePprof.Enabled()
+}
+
 func (b *Builder) finalizeTrace(ctx context.Context, tc *trace.Context) {
+	if tc == nil {
+		return
+	}
 	b.tracer.Record(b.traceEvents(ctx, tc))
 	b.traceStats.update(tc)
 	b.traceExporter.Export(ctx, tc)

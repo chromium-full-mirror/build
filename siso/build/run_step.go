@@ -53,8 +53,12 @@ func (e StepError) Unwrap() error {
 // can control the flows with the experiment ids, defined in experiments.go.
 func (b *Builder) runStep(ctx context.Context, step *Step) (err error) {
 	step.startTime = time.Now()
-	tc := trace.New(ctx, step.def.String())
-	ctx = trace.NewContext(ctx, tc)
+	var tc *trace.Context
+	if b.TraceEnabled() {
+		tc = trace.New(ctx, step.def.String())
+		ctx = trace.NewContext(ctx, tc)
+	}
+
 	spanName := stepSpanName(step.def)
 	ctx, span := trace.NewSpan(ctx, "step:"+spanName)
 	traceID, spanID := span.ID(b.projectID)

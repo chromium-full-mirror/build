@@ -125,6 +125,11 @@ func NewTracer(ctx context.Context, fname string) (*Tracer, error) {
 	return te, nil
 }
 
+// Enabled reports whether the tracer is active (i.e., writing to a file).
+func (te *Tracer) Enabled() bool {
+	return te != nil && te.fname != ""
+}
+
 var startTime = time.Now()
 
 // StartTime returns start time of tracer.

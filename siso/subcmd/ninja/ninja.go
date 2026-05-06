@@ -191,7 +191,7 @@ func (c *Command) setup(ctx context.Context) (buildPath *build.Path, doneLock fu
 		return nil, nil, nil, err
 	}
 	clog.Infof(ctx, "siso log dir=%s", c.logDir)
-	if !filepath.IsAbs(c.buildPprof) {
+	if c.buildPprof != "" && !filepath.IsAbs(c.buildPprof) {
 		c.buildPprof = filepath.Join(c.logDir, c.buildPprof)
 	}
 	c.rotateSisoResult(ctx)

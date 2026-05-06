@@ -310,6 +310,9 @@ func (s *Span) data() SpanData {
 
 // ID returns trace and span id.
 func (s *Span) ID(projectID string) (trace, span string) {
+	if s == nil || s.t == nil {
+		return "", ""
+	}
 	return path.Join("projects", projectID, "traces", hex.EncodeToString(s.t.traceID[:])), hex.EncodeToString(s.spanID[:])
 }
 
