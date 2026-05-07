@@ -13,14 +13,12 @@ require (
 	golang.org/x/sys v0.43.0
 	google.golang.org/genproto/googleapis/bytestream v0.0.0-20260420184626-e10c466a9529
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260420184626-e10c466a9529
-	google.golang.org/grpc v1.80.0
+	google.golang.org/grpc v1.81.0
 	google.golang.org/protobuf v1.36.11
 )
 
 require (
 	github.com/hashicorp/golang-lru/v2 v2.0.7 // indirect
-	go.opentelemetry.io/otel v1.43.0 // indirect
-	go.opentelemetry.io/otel/sdk/metric v1.43.0 // indirect
 	golang.org/x/exp v0.0.0-20260312153236-7ab1446f8b90 // indirect
 	golang.org/x/net v0.52.0 // indirect
 	golang.org/x/text v0.35.0 // indirect
