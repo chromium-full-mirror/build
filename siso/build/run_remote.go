@@ -112,6 +112,7 @@ func (b *Builder) runRemote(ctx context.Context, step *Step) error {
 		}
 		switch errCode := status.Code(err); errCode {
 		case codes.PermissionDenied,
+			codes.Unauthenticated,
 			codes.InvalidArgument,
 			codes.FailedPrecondition:
 			return fmt.Errorf("remote-exec %s failed: %w", step.cmd.ActionDigest(), err)
