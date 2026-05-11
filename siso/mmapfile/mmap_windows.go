@@ -4,7 +4,7 @@
 
 //go:build windows
 
-package hashfs
+package mmapfile
 
 import (
 	"fmt"
@@ -14,58 +14,54 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-// mmapReadFile maps a file into memory as a read-only byte slice.
-// The returned byte slice is backed by the OS page cache, not the Go heap.
-// The caller must call munmapFile when done with the data.
-func mmapReadFile(path string) ([]byte, error) {
+// Read maps path read-only into memory. The returned slice is page-cache
+// backed and stays valid until Unmap is called. An empty file returns
+// (nil, nil).
+func Read(path string) ([]byte, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, err
 	}
 	defer f.Close()
-
 	fi, err := f.Stat()
 	if err != nil {
 		return nil, err
 	}
 	size := fi.Size()
 	if size == 0 {
-		return nil, fmt.Errorf("file %s is empty", path)
+		return nil, nil
 	}
-
 	h, err := windows.CreateFileMapping(windows.Handle(f.Fd()), nil, windows.PAGE_READONLY, 0, 0, nil)
 	if err != nil {
 		return nil, fmt.Errorf("CreateFileMapping %s: %w", path, err)
 	}
-
 	addr, err := windows.MapViewOfFile(h, windows.FILE_MAP_READ, 0, 0, 0)
 	if err != nil {
 		windows.CloseHandle(h)
 		return nil, fmt.Errorf("MapViewOfFile %s: %w", path, err)
 	}
-
 	// The mapping stays alive until all views are unmapped, so we can
 	// close the mapping handle now.
 	if err := windows.CloseHandle(h); err != nil {
 		windows.UnmapViewOfFile(addr)
 		return nil, fmt.Errorf("CloseHandle %s: %w", path, err)
 	}
-
 	return unsafe.Slice((*byte)(unsafe.Pointer(addr)), int(size)), nil
 }
 
-// munmapFile unmaps a previously mmap'd byte slice.
-func munmapFile(data []byte) error {
+// Unmap releases a mapping returned by Read. A nil/empty slice is a no-op,
+// matching Read's empty-file return.
+func Unmap(data []byte) error {
 	if len(data) == 0 {
 		return nil
 	}
 	return windows.UnmapViewOfFile(uintptr(unsafe.Pointer(&data[0])))
 }
 
-// mmapWriteFile truncates f to the given size and maps it into memory as a
-// read-write byte slice. The caller writes into the returned slice, then
-// calls the returned closer to flush, unmap, and close the file.
-func mmapWriteFile(f *os.File, size int) (data []byte, closer func() error, retErr error) {
+// Write truncates f to size bytes and maps it read-write. The caller
+// writes into the returned slice, then calls closer to flush, unmap, and
+// close f. On any error from the mmap path, f is closed.
+func Write(f *os.File, size int) (data []byte, closer func() error, retErr error) {
 	defer func() {
 		if retErr != nil {
 			f.Close()

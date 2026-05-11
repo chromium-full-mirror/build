@@ -242,6 +242,7 @@ func (g *Graph) StateDir() string {
 // Reload reloads hashfs, filegroups and build.ninja.
 func (g *Graph) Reload(ctx context.Context) error {
 	stateDir := g.globals.stepConfig.StateDir
+	var newState *ninjautil.State
 	eg, ctx := errgroup.WithContext(ctx)
 	eg.Go(func() error {
 		// need to refresh cached entries as `gn gen` updated files
@@ -255,13 +256,14 @@ func (g *Graph) Reload(ctx context.Context) error {
 	})
 	eg.Go(func() error {
 		var err error
-		g.globals.nstate, err = Load(ctx, g.fname, g.globals.path)
+		newState, err = Load(ctx, g.fname, g.globals.path)
 		return err
 	})
 	err := eg.Wait()
 	if err != nil {
 		return err
 	}
+	g.globals.nstate = newState
 	g.reset(ctx)
 	return nil
 }

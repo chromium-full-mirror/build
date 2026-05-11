@@ -6,6 +6,7 @@ package ninjautil
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"golang.org/x/sync/errgroup"
@@ -49,8 +50,9 @@ func (p *ManifestParser) SetWd(wd string) {
 	p.wd = wd
 }
 
-// Load loads the Ninja manifest given an fname.
-func (p *ManifestParser) Load(ctx context.Context, fname string) error {
+// Load loads the Ninja manifest given an fname. Manifest mappings are
+// released before Load returns, on success or failure.
+func (p *ManifestParser) Load(ctx context.Context, fname string) (retErr error) {
 	if p.eg == nil {
 		p.eg, ctx = errgroup.WithContext(ctx)
 		p.sema = make(chan struct{}, loaderConcurrency)
@@ -59,8 +61,12 @@ func (p *ManifestParser) Load(ctx context.Context, fname string) error {
 	p.eg.Go(func() error {
 		return p.loadFile(ctx, fname)
 	})
-	err := p.eg.Wait()
-	if err != nil {
+	defer func() {
+		if cerr := p.state.Close(); cerr != nil {
+			retErr = errors.Join(retErr, fmt.Errorf("release manifest mmaps: %w", cerr))
+		}
+	}()
+	if err := p.eg.Wait(); err != nil {
 		return err
 	}
 	p.state.nodes = p.state.nodeMap.freeze(ctx)
@@ -106,7 +112,7 @@ func (p *ManifestParser) loadFile(ctx context.Context, fname string) error {
 }
 
 // LoadSingle loads the Ninja manifest given an fname, but not loads subninjas.
-func (p *ManifestParser) LoadSingle(ctx context.Context, fname string) error {
+func (p *ManifestParser) LoadSingle(ctx context.Context, fname string) (retErr error) {
 	if p.eg == nil {
 		p.eg, ctx = errgroup.WithContext(ctx)
 		p.sema = make(chan struct{}, loaderConcurrency)
@@ -120,8 +126,12 @@ func (p *ManifestParser) LoadSingle(ctx context.Context, fname string) error {
 		}
 		return fp.parseFile(ctx, fname)
 	})
-	err := p.eg.Wait()
-	if err != nil {
+	defer func() {
+		if cerr := p.state.Close(); cerr != nil {
+			retErr = errors.Join(retErr, fmt.Errorf("release manifest mmaps: %w", cerr))
+		}
+	}()
+	if err := p.eg.Wait(); err != nil {
 		return err
 	}
 	p.state.nodes = p.state.nodeMap.freeze(ctx)

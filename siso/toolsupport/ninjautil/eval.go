@@ -97,8 +97,9 @@ var evalLookupStackPool = sync.Pool{
 	},
 }
 
-// evaluate evaluates val in env.
-// returned []byte will be valid until buf is reset or next evaluate.
+// evaluate evaluates val in env. The returned []byte aliases buf when
+// val.esc > 0 (and is valid until buf is reset or the next evaluate call),
+// or val.v when val.esc == 0.
 func evaluate(env evalEnv, buf *bytes.Buffer, val evalString) ([]byte, error) {
 	if len(val.v) == 0 {
 		return nil, nil

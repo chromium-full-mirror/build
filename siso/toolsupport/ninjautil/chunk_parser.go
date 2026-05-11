@@ -67,6 +67,9 @@ type chunk struct {
 	bindingArena arena[binding]
 	edgePathSlab slab[*Node]
 
+	freezeBytesArena bumpArena[byte]
+	freezeStmtsArena bumpArena[statement]
+
 	// temp env in parseBuild
 	env edgeEnv
 
@@ -100,9 +103,11 @@ func splitIntoChunks(ctx context.Context, buf []byte) []chunk {
 			clog.Infof(ctx, "chunk %d..%d", start, next)
 		}
 		chunks = append(chunks, chunk{
-			buf:   buf,
-			start: start,
-			end:   next,
+			buf:              buf,
+			start:            start,
+			end:              next,
+			freezeBytesArena: bumpArena[byte]{initialBlock: byteArenaInitialBlock, maxBlock: byteArenaMaxBlock},
+			freezeStmtsArena: bumpArena[statement]{initialBlock: statementArenaInitialBlock, maxBlock: statementArenaMaxBlock},
 		})
 		start = next
 	}
@@ -581,7 +586,8 @@ func (ch *chunk) parseBuild(i int) (int, error) {
 
 	i++
 	n := ch.countStatement(i, statementBuildVar)
-	edge.env.set(ch.buf, ch.statements[i:i+n])
+	edgeBuf, edgeStmts := ch.compactBuildStatements(ch.buf, ch.statements[i:i+n])
+	edge.env.set(edgeBuf, edgeStmts)
 	i += n
 	edge.pos = ch.statements[i-1].pos + 1
 	poolName, ok := edge.rawBinding([]byte("pool"))
@@ -663,8 +669,81 @@ func (ch *chunk) parseVarBinding(i int, env evalSetEnv) error {
 		return fmt.Errorf("line:%d invalid var value: %q: %w", lineno(ch.buf, st.s), val.v, err)
 	}
 	val.pos = st.pos
-	env.setVar(name, val)
+	val.v = freezeBytes(&ch.freezeBytesArena, val.v)
+	env.setVar(freezeBytes(&ch.freezeBytesArena, name), val)
 	return nil
+}
+
+// compactBuildStatements copies the byte range covering stmts into the
+// chunk's byte arena and rewrites the statement offsets relative to the
+// new buffer.
+func (ch *chunk) compactBuildStatements(buf []byte, stmts []statement) ([]byte, []statement) {
+	if len(stmts) == 0 {
+		return nil, nil
+	}
+	start := stmts[0].s
+	end := stmts[len(stmts)-1].e
+	out := freezeBytes(&ch.freezeBytesArena, buf[start:end])
+	adj := ch.freezeStmtsArena.alloc(len(stmts))
+	for i, st := range stmts {
+		adj[i] = statement{
+			t:   st.t,
+			s:   st.s - start,
+			v:   st.v - start,
+			e:   st.e - start,
+			pos: st.pos,
+		}
+	}
+	return out, adj
+}
+
+// bumpArena holds a chain of []T blocks. The first block is initialBlock
+// elements; each new block doubles up to maxBlock. A request larger than
+// the next planned block gets an exact-size block.
+type bumpArena[T any] struct {
+	blocks       [][]T
+	initialBlock int
+	maxBlock     int
+}
+
+// alloc returns a sub-slice of n elements that the caller may fill.
+func (a *bumpArena[T]) alloc(n int) []T {
+	if n == 0 {
+		return nil
+	}
+	if k := len(a.blocks); k > 0 {
+		head := &a.blocks[k-1]
+		if cap(*head)-len(*head) >= n {
+			off := len(*head)
+			*head = (*head)[:off+n]
+			return (*head)[off : off+n : off+n]
+		}
+	}
+	var next int
+	if k := len(a.blocks); k > 0 {
+		next = min(2*cap(a.blocks[k-1]), a.maxBlock)
+	} else {
+		next = a.initialBlock
+	}
+	size := max(n, next)
+	blk := make([]T, n, size)
+	a.blocks = append(a.blocks, blk)
+	return a.blocks[len(a.blocks)-1][:n:n]
+}
+
+const (
+	byteArenaInitialBlock      = 256
+	byteArenaMaxBlock          = 64 * 1024
+	statementArenaInitialBlock = 16
+	statementArenaMaxBlock     = 4096
+)
+
+// freezeBytes copies src into a so the result lives independently of src.
+// Free function because Go generics can't add a method only to bumpArena[byte].
+func freezeBytes(a *bumpArena[byte], src []byte) []byte {
+	dst := a.alloc(len(src))
+	copy(dst, src)
+	return dst
 }
 
 // parsePool parses pool statement at statements[i].

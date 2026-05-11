@@ -15,6 +15,7 @@ import (
 	"strings"
 	"sync"
 
+	"go.chromium.org/build/siso/mmapfile"
 	"go.chromium.org/build/siso/scandeps"
 )
 
@@ -71,6 +72,37 @@ type State struct {
 	defaults []*Node
 	// Filenames parsed by the parser (e.g. build.ninja and its subninja etc.)
 	filenames []string
+
+	// mmaps pins file-backed byte slices alive for the lifetime of State,
+	// because Edge.env.buf and binding evalStrings hold sub-slices into them.
+	mmaps [][]byte
+}
+
+// addMmap registers a mmap'd buffer for release on Close.
+func (s *State) addMmap(buf []byte) {
+	if len(buf) == 0 {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.mmaps = append(s.mmaps, buf)
+}
+
+// Close releases any mmap'd manifest buffers still registered on the state.
+// Load and LoadSingle release them automatically, so Close is normally a
+// no-op. Close is idempotent.
+func (s *State) Close() error {
+	s.mu.Lock()
+	mmaps := s.mmaps
+	s.mmaps = nil
+	s.mu.Unlock()
+	var errs []error
+	for _, buf := range mmaps {
+		if err := mmapfile.Unmap(buf); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	return errors.Join(errs...)
 }
 
 // NewState creates new state.

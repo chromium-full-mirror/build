@@ -1062,3 +1062,42 @@ build obj/a.o: cc a.c
 		t.Errorf("Filenames() mismatch (-want +got):\n%s", diff)
 	}
 }
+
+// TestParser_LoadFailureReleasesMmaps verifies that when parse fails after
+// readFile has registered one or more mmaps on State, Load tears them down
+// before returning the error.
+func TestParser_LoadFailureReleasesMmaps(t *testing.T) {
+	ctx := t.Context()
+	dir := t.TempDir()
+
+	// build.ninja parses cleanly through readFile + setup, then the
+	// invalid sub.ninja triggers an error during the include's parse.
+	if err := os.WriteFile(filepath.Join(dir, "build.ninja"), []byte(`
+rule cc
+  command = clang $in -o $out
+
+include sub.ninja
+
+build out: cc src.cc
+`), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "sub.ninja"), []byte(`
+this is not a valid ninja statement
+`), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	state := NewState()
+	p := NewManifestParser(state)
+	p.SetWd(dir)
+	if err := p.Load(ctx, "build.ninja"); err == nil {
+		t.Fatal("Load: want error from invalid sub.ninja, got nil")
+	}
+
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	if len(state.mmaps) != 0 {
+		t.Errorf("after failed Load, state.mmaps has %d mappings; want 0", len(state.mmaps))
+	}
+}

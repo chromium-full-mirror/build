@@ -32,6 +32,7 @@ import (
 
 	"go.chromium.org/build/siso/hashfs/osfs"
 	pb "go.chromium.org/build/siso/hashfs/proto"
+	"go.chromium.org/build/siso/mmapfile"
 	"go.chromium.org/build/siso/o11y/clog"
 	"go.chromium.org/build/siso/o11y/trace"
 	"go.chromium.org/build/siso/reapi/digest"
@@ -249,11 +250,14 @@ func loadFile(ctx context.Context, opts Option) ([]byte, error) {
 	if opts.UseMmap {
 		// Use mmap to read the compressed file. The data is backed by the
 		// OS page cache rather than the Go heap, avoiding a large allocation.
-		data, err := mmapReadFile(opts.StateFile)
+		data, err := mmapfile.Read(opts.StateFile)
 		if err != nil {
 			return nil, err
 		}
-		defer munmapFile(data)
+		if len(data) == 0 {
+			return nil, fmt.Errorf("file %s is empty", opts.StateFile)
+		}
+		defer mmapfile.Unmap(data)
 		compressed = data
 	} else {
 		data, err := os.ReadFile(opts.StateFile)
@@ -1098,7 +1102,7 @@ func saveFile(ctx context.Context, data []byte, opts Option) (retErr error) {
 	if opts.UseMmap {
 		// Mmap the temp file at worst-case size and compress directly
 		// into the mmap'd region, avoiding a heap-allocated output buffer.
-		out, closer, err := mmapWriteFile(f, comp.MaxCompressedSize())
+		out, closer, err := mmapfile.Write(f, comp.MaxCompressedSize())
 		if err != nil {
 			_ = os.Remove(f.Name())
 			return err

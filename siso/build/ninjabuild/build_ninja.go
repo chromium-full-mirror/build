@@ -81,29 +81,14 @@ func CheckManifest(ctx context.Context, filename string, buildPath *build.Path, 
 		clog.Infof(ctx, "check build ninja in %s", time.Since(started))
 	}()
 
-	nstate := ninjautil.NewState()
-	p := ninjautil.NewManifestParser(nstate)
-	err := p.LoadSingle(ctx, filename)
-	if err != nil {
-		clog.Warningf(ctx, "check build ninja: load %v", err)
-		// will check later with full build ninja in Run.
-		return false, nil
-	}
-	clog.Infof(ctx, "check build ninja: load file in %s", time.Since(started))
-
-	builddir := nstate.Binding("builddir")
-	// We initialize ninja_log here instead of at the caller side (ninja.go) because
-	// the location of the .ninja_log depends on the `builddir` binding from the manifest.
-	// CheckManifest is the first place where the top-level manifest is parsed,
-	// so it's the earliest and most accurate place to know the builddir and initialize the log.
-	err = initNinjaLogWriter(bopts, builddir)
+	graph, err := loadCheckGraph(ctx, filename, buildPath, config, hashFS, localDepsLog, bopts, started)
 	if err != nil {
 		return false, err
 	}
-	clog.Infof(ctx, "check build ninja: initialize ninja log in %s", time.Since(started))
-	// zero step config. no remote exec for gn gen?
-	stepConfig := &StepConfig{}
-	graph := NewGraph(ctx, filename, nstate, config, buildPath, hashFS, stepConfig, localDepsLog)
+	if graph == nil {
+		// will check later with full build ninja in Run.
+		return false, nil
+	}
 
 	err = rebuildManifest(ctx, graph, *bopts)
 	if errors.Is(err, build.ErrManifestModified) {
@@ -123,6 +108,32 @@ func CheckManifest(ctx context.Context, filename string, buildPath *build.Path, 
 		return false, err
 	}
 	return false, nil
+}
+
+// loadCheckGraph builds the Graph used by CheckManifest.
+// Returns (nil, nil) when the manifest could not be parsed.
+func loadCheckGraph(ctx context.Context, filename string, buildPath *build.Path, config *buildconfig.Config, hashFS *hashfs.HashFS, localDepsLog *DepsLog, bopts *build.Options, started time.Time) (*Graph, error) {
+	nstate := ninjautil.NewState()
+	p := ninjautil.NewManifestParser(nstate)
+	if err := p.LoadSingle(ctx, filename); err != nil {
+		clog.Warningf(ctx, "check build ninja: load %v", err)
+		return nil, nil
+	}
+	clog.Infof(ctx, "check build ninja: load file in %s", time.Since(started))
+
+	builddir := nstate.Binding("builddir")
+	// We initialize ninja_log here instead of at the caller side (ninja.go) because
+	// the location of the .ninja_log depends on the `builddir` binding from the manifest.
+	// CheckManifest is the first place where the top-level manifest is parsed,
+	// so it's the earliest and most accurate place to know the builddir and initialize the log.
+	if err := initNinjaLogWriter(bopts, builddir); err != nil {
+		return nil, err
+	}
+	clog.Infof(ctx, "check build ninja: initialize ninja log in %s", time.Since(started))
+
+	// zero step config. no remote exec for gn gen?
+	stepConfig := &StepConfig{}
+	return NewGraph(ctx, filename, nstate, config, buildPath, hashFS, stepConfig, localDepsLog), nil
 }
 
 // Run runs a ninja build.

@@ -5,6 +5,7 @@
 package ninjautil
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"testing"
@@ -172,5 +173,152 @@ default all
 				t.Errorf("state.Targets(%q) diff -want +got:\n%s", tc.args, diff)
 			}
 		})
+	}
+}
+
+// TestState_PostCloseAccess verifies that every reader on Edge / fileScope
+// returns the same data after the manifest mappings are released, and that
+// a redundant explicit Close is idempotent.
+func TestState_PostCloseAccess(t *testing.T) {
+	ctx := t.Context()
+	dir := t.TempDir()
+
+	// Cover the paths that hold byte slices into the manifest:
+	//   * top-level fileScope vars (cflags)
+	//   * rule bindings (command, description, rspfile, rspfile_content)
+	//   * per-edge build vars including a recursive $cflags reference
+	//   * subninja with its own scope chain and edge bindings
+	//   * a custom pool referenced from an edge
+	main := `
+cflags = -O2 -Wall
+
+pool slow
+  depth = 1
+
+rule cc
+  command = clang $cflags -c $in -o $out
+  description = CC $out
+  rspfile = $out.rsp
+  rspfile_content = $cflags $in
+
+build out/foo.o: cc src/foo.cc
+  cflags = $cflags -DFEATURE
+build out/bar.o: cc src/bar.cc
+  pool = slow
+
+subninja sub.ninja
+`
+	sub := `
+rule link
+  command = clang++ $ldflags $in -o $out
+  description = LINK $out
+
+ldflags = -lc
+
+build out/prog: link out/foo.o out/bar.o
+  ldflags = $ldflags -lm
+`
+	if err := os.WriteFile(filepath.Join(dir, "build.ninja"), []byte(main), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "sub.ninja"), []byte(sub), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	state := NewState()
+	p := NewManifestParser(state)
+	p.SetWd(dir)
+	if err := p.Load(ctx, "build.ninja"); err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	type Snap struct {
+		Path         string
+		Rule         string
+		Pool         string
+		Cmd          string
+		Desc         string
+		RawCmd       string
+		RawDesc      string
+		RawRsp       string
+		RawRspfile   string
+		UnescapedCmd string
+		CmdHash      []byte
+		PrintOut     string
+	}
+	type edgeRef struct {
+		path string
+		edge *Edge
+	}
+	var edges []edgeRef
+	for _, n := range state.AllNodes() {
+		e, ok := n.InEdge()
+		if !ok || e.IsPhony() {
+			continue
+		}
+		edges = append(edges, edgeRef{path: n.Path(), edge: e})
+	}
+	if len(edges) != 3 {
+		t.Fatalf("expected 3 edges, got %d", len(edges))
+	}
+
+	snapshot := func() []Snap {
+		out := make([]Snap, 0, len(edges))
+		for _, er := range edges {
+			pool := ""
+			if p := er.edge.Pool(); p != nil {
+				pool = p.Name()
+			}
+			var pb bytes.Buffer
+			er.edge.Print(&pb)
+			out = append(out, Snap{
+				Path:         er.path,
+				Rule:         er.edge.RuleName(),
+				Pool:         pool,
+				Cmd:          er.edge.Binding("command"),
+				Desc:         er.edge.Binding("description"),
+				RawCmd:       er.edge.RawBinding("command"),
+				RawDesc:      er.edge.RawBinding("description"),
+				RawRsp:       er.edge.RawBinding("rspfile_content"),
+				RawRspfile:   er.edge.RawBinding("rspfile"),
+				UnescapedCmd: er.edge.UnescapedBinding("command"),
+				CmdHash:      append([]byte(nil), er.edge.CmdHash()...),
+				PrintOut:     pb.String(),
+			})
+		}
+		return out
+	}
+
+	before := snapshot()
+	if err := state.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	after := snapshot()
+
+	if diff := cmp.Diff(before, after); diff != "" {
+		t.Errorf("edge readouts changed after Close (-before +after):\n%s", diff)
+	}
+
+	// Sanity-check the values themselves so a regression that returns
+	// stable-but-wrong data also fails.
+	wantCmd := map[string]string{
+		"out/foo.o": "clang -O2 -Wall -DFEATURE -c src/foo.cc -o out/foo.o",
+		"out/bar.o": "clang -O2 -Wall -c src/bar.cc -o out/bar.o",
+		"out/prog":  "clang++ -lc -lm out/foo.o out/bar.o -o out/prog",
+	}
+	for _, s := range after {
+		if got, want := s.Cmd, wantCmd[s.Path]; got != want {
+			t.Errorf("%s command after Close = %q; want %q", s.Path, got, want)
+		}
+	}
+
+	// Top-level binding lookup also reads from the (now frozen) shardBindings.
+	if got := state.Binding("cflags"); got != "-O2 -Wall" {
+		t.Errorf("state.Binding(cflags) after Close = %q; want %q", got, "-O2 -Wall")
+	}
+
+	// Close is idempotent; calling it again must not error or crash.
+	if err := state.Close(); err != nil {
+		t.Errorf("second Close: %v", err)
 	}
 }
