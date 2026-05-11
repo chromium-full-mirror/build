@@ -703,17 +703,9 @@ func (b *Builder) Build(ctx context.Context, name string, args ...string) (err e
 	}(ctx)
 	pstat := b.plan.stats()
 	clog.Infof(ctx, "build pendings=%d ready=%d", pstat.npendings, pstat.nready)
-	// Manifest rebuild sub-builds are small (typically 1 step), and
-	// their "build start" message, progress frame, and "rebuild manifest
-	// finished" line would flash on screen between "use RBE instance"
-	// and the real build start, leaving cleared rows behind. Only the
-	// top-level build drives the terminal frame.
-	subBuild := b.rebuildManifest != ""
-	if !subBuild {
-		b.progress.report("build start: Ready %d Pending %d", pstat.nready, pstat.npendings)
-		b.progress.start(ctx, b)
-		defer b.progress.stop()
-	}
+	b.progress.report("build start: Ready %d Pending %d", pstat.nready, pstat.npendings)
+	b.progress.start(ctx, b)
+	defer b.progress.stop()
 
 	if b.clobber {
 		fmt.Fprintf(b.explainWriter, "--clobber is specified\n")
@@ -845,7 +837,7 @@ loop:
 	wg.Wait()
 	close(errch)
 	err = <-errdone
-	if !subBuild && !b.verbose {
+	if !b.verbose {
 		// The tick draws a 7 row frame every 100ms (summary + 5 step
 		// rows + trailing blank). The final message below is 1 line,
 		// and PrintLines only clears as many rows as it writes, so
