@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"slices"
 	"sort"
+	"strings"
 	"time"
 
 	log "github.com/golang/glog"
@@ -41,6 +42,7 @@ func (gcc depsGCC) DepsFastCmd(ctx context.Context, b *Builder, cmd *execute.Cmd
 	// sets include dirs + sysroots to ToolInputs.
 	// Inputs will be overridden by deps log data.
 	newCmd.ToolInputs = append(newCmd.ToolInputs, inputs...)
+	gcc.fixForSplitDwarf(ctx, newCmd)
 	return newCmd, nil
 }
 
@@ -97,6 +99,23 @@ func (gcc depsGCC) fixCmdInputs(ctx context.Context, b *Builder, cmd *execute.Cm
 	precomputedDirs = append(precomputedDirs, params.Frameworks...)
 	cmd.TreeInputs = append(cmd.TreeInputs, treeInputs(ctx, fn, precomputedDirs, append(params.Dirs, params.QuoteDirs...))...)
 	return inputs, nil
+}
+
+// TODO: crbug.com/502431091 - Specify dwo as output in Ninja file.
+func (depsGCC) fixForSplitDwarf(ctx context.Context, cmd *execute.Cmd) {
+	hasSplitDwarf := slices.Contains(cmd.Args, "-gsplit-dwarf")
+	if !hasSplitDwarf {
+		return
+	}
+	dwo := ""
+	for _, out := range cmd.Outputs {
+		if before, ok := strings.CutSuffix(out, ".o"); ok { // TODO: or ".obj" for win?
+			dwo = before + ".dwo"
+			continue
+		}
+	}
+	clog.Infof(ctx, "add %s", dwo)
+	cmd.Outputs = uniqueFiles(cmd.Outputs, []string{dwo})
 }
 
 func (depsGCC) DepsAfterRun(ctx context.Context, b *Builder, step *Step) (_ []string, err error) {
@@ -156,6 +175,7 @@ func (gcc depsGCC) DepsCmd(ctx context.Context, b *Builder, step *Step) ([]strin
 		}
 		depsIns = append(depsIns, inputs...)
 	}
+	gcc.fixForSplitDwarf(ctx, step.cmd)
 	return depsIns, err
 }
 
