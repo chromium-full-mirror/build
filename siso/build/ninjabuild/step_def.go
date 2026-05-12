@@ -963,7 +963,7 @@ func (s *StepDef) ExpandedInputs(ctx context.Context) []string {
 }
 
 func replacePhony(ctx context.Context, globals *globals, seen map[string]bool, target string, edge *ninjautil.Edge, debug bool, inputs []string) []string {
-	for _, in := range edge.Inputs() {
+	for _, in := range edge.TriggerInputs() {
 		p := globals.targetPath(in)
 		if seen[p] {
 			continue
