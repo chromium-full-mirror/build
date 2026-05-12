@@ -45,6 +45,17 @@ var depsProcessors = map[string]depsProcessor{
 	"msvc":    depsMSVC{},
 }
 
+// DepfileAddsUnsandboxedFileError is error type when a depfile adds a file as a dep
+// that was not part of the original sandbox. Sandboxed actions can only use depfiles
+// to promote order-only deps to regular implicit deps.
+type DepfileAddsUnsandboxedFileError struct {
+	Input string
+}
+
+func (e DepfileAddsUnsandboxedFileError) Error() string {
+	return fmt.Sprintf("sandboxed action has depfile that adds a dependency that is not listed in its inputs: %q. When sandboxing, depfiles can only be used to promote order-only deps to implicit deps", e.Input)
+}
+
 // depsExpandInputs expands step.cmd.Inputs.
 // result will not contain labels nor non-existing files.
 func depsExpandInputs(ctx context.Context, b *Builder, step *Step) {
@@ -211,6 +222,16 @@ func checkDeps(ctx context.Context, b *Builder, step *Step, deps []string) error
 	if len(step.cmd.Outputs) == 0 {
 		return fmt.Errorf("check deps: no cmd outputs")
 	}
+
+	var ninjaInputs map[string]bool
+	if step.enforceDepfileOnlyPromotes {
+		expInputs := step.def.ExpandedInputs(ctx)
+		ninjaInputs = make(map[string]bool, len(expInputs))
+		for _, in := range expInputs {
+			ninjaInputs[in] = true
+		}
+	}
+
 	var checkInputs []string
 
 	platform := step.cmd.Platform
@@ -232,6 +253,12 @@ func checkDeps(ctx context.Context, b *Builder, step *Step, deps []string) error
 		}
 		// all dep (== inputs) should exist just after step ran.
 		input := b.path.MaybeFromRelative(ctx, dep)
+
+		// Sandboxed actions can only use depfiles to promote order-only to implicit deps
+		if step.enforceDepfileOnlyPromotes && !ninjaInputs[input] {
+			return DepfileAddsUnsandboxedFileError{Input: dep}
+		}
+
 		fi, err := b.hashFS.Stat(ctx, b.path.WorkspaceRoot, input)
 		if errors.Is(err, fs.ErrNotExist) {
 			// file may be read by handler and not found

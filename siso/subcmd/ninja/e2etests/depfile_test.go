@@ -7,9 +7,11 @@ package e2etests
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	rpb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
@@ -137,5 +139,90 @@ func TestBuild_Depfile_AsOutput(t *testing.T) {
 	}
 	if stats.Done != stats.Total || stats.Local != 1 || stats.Total != 1 {
 		t.Errorf("done=%d total=%d local=%d; want done=1 total=1 local=1 %#v", stats.Done, stats.Total, stats.Local, stats)
+	}
+}
+
+func TestBuild_Depfile_SandboxedRestriction(t *testing.T) {
+	if !runInSubProcess(t) {
+		return
+	}
+	if runtime.GOOS != "linux" {
+		t.Skip("skip: no sandbox support on non-linux")
+		return
+	}
+	ctx := t.Context()
+	dir := tempDir(t)
+
+	// Initialize workspace from testdata folder.
+	setupFiles(t, dir, t.Name(), nil)
+
+	runNinjaTest := func(t *testing.T) (build.Stats, error) {
+		t.Helper()
+		opt, graph, cleanup := setupBuild(ctx, t, dir, hashfs.Option{
+			StateFile: ".siso_fs_state",
+		})
+		defer cleanup()
+		return ninjabuild.Run(ctx, graph, opt, nil, ninjabuild.RunNinjaOpts{})
+	}
+
+	t.Logf("-- attempting to build with sandboxing restriction active")
+	stats, err := runNinjaTest(t)
+
+	expectedErr := build.DepfileAddsUnsandboxedFileError{Input: "../../undeclared.h"}
+	if !errors.Is(err, expectedErr) {
+		t.Errorf("got error %v, want %v", err, expectedErr)
+	}
+
+	if stats.Done != 2 || stats.Local != 1 || stats.Total != 2 {
+		t.Errorf("done=%d total=%d local=%d; want done=2 total=2 local=1 %#v", stats.Done, stats.Total, stats.Local, stats)
+	}
+}
+
+func TestBuild_Depfile_SandboxedRestriction_FirstRunWithoutSandboxing(t *testing.T) {
+	if !runInSubProcess(t) {
+		return
+	}
+	if runtime.GOOS != "linux" {
+		t.Skip("skip: no sandbox support on non-linux")
+		return
+	}
+	ctx := t.Context()
+	dir := tempDir(t)
+
+	// Initialize workspace from testdata folder.
+	setupFiles(t, dir, t.Name(), nil)
+
+	runNinjaTest := func(t *testing.T) (build.Stats, error) {
+		t.Helper()
+		opt, graph, cleanup := setupBuild(ctx, t, dir, hashfs.Option{
+			StateFile: ".siso_fs_state",
+		})
+		defer cleanup()
+		return ninjabuild.Run(ctx, graph, opt, nil, ninjabuild.RunNinjaOpts{})
+	}
+
+	t.Logf("-- attempting to build without sandboxing restriction active")
+	stats, err := runNinjaTest(t)
+
+	if err != nil {
+		t.Fatalf("got %v, want nil err", err)
+	}
+	if stats.Done != 2 || stats.Local != 1 || stats.Total != 2 {
+		t.Errorf("done=%d total=%d local=%d; want done=2 total=2 local=1 %#v", stats.Done, stats.Total, stats.Local, stats)
+	}
+
+	modifyFile(t, filepath.Join(dir, "out/siso"), "build.ninja", func(b []byte) []byte {
+		return bytes.ReplaceAll(b, []byte("sandbox_disabled = true"), nil)
+	})
+
+	t.Logf("-- attempting to build with sandboxing restriction active")
+	stats, err = runNinjaTest(t)
+
+	expectedErr := build.DepfileAddsUnsandboxedFileError{Input: "../../undeclared.h"}
+	if !errors.Is(err, expectedErr) {
+		t.Errorf("got error %v, want %v", err, expectedErr)
+	}
+	if stats.Done != 2 || stats.Local != 1 || stats.Total != 2 {
+		t.Errorf("done=%d total=%d local=%d; want done=2 total=2 local=1 %#v", stats.Done, stats.Total, stats.Local, stats)
 	}
 }

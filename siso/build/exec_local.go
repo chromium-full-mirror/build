@@ -68,6 +68,10 @@ func (b *Builder) execLocal(ctx context.Context, step *Step) (retErr error) {
 			}
 		}()
 		step.metrics.Sandbox = true
+		// enforceDepfileOnlyPromotes defaults to true for an nsjail-sandboxed action
+		if sandboxOption["enforce_depfile_only_promotes"] != "false" {
+			step.enforceDepfileOnlyPromotes = true
+		}
 
 	case "file-access-trace":
 		traceExecutor, err := newFileTraceExecutor(ctx, b, executor)
@@ -76,6 +80,11 @@ func (b *Builder) execLocal(ctx context.Context, step *Step) (retErr error) {
 		}
 		executor = traceExecutor
 		logLocalExec = traceExecutor.logLocalExec
+		// Normally, file-access-trace doesn't do any enforcement. But it's the more
+		// convenient sandbox to use in tests, so we allow enabling depfile enforcement.
+		if sandboxOption["enforce_depfile_only_promotes"] == "true" {
+			step.enforceDepfileOnlyPromotes = true
+		}
 	case "":
 		// no sandbox. ignore
 	default:

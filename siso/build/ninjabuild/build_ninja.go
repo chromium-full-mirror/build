@@ -48,6 +48,10 @@ func (b BuildError) Error() string {
 	return b.Err.Error()
 }
 
+func (b BuildError) Unwrap() error {
+	return b.Err
+}
+
 func initNinjaLogWriter(bopts *build.Options, outDir string) error {
 	if bopts.NinjaLogWriter != nil {
 		return nil

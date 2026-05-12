@@ -143,12 +143,13 @@ type Edge struct {
 
 // Step is a build step.
 type Step struct {
-	idnum       int
-	def         StepDef
-	nwaits      int
-	weight      int
-	outputs     []Target
-	outputPaths []string // target name in ninja, i.e. output path relative to wd.
+	idnum                      int
+	def                        StepDef
+	nwaits                     int
+	weight                     int
+	outputs                    []Target
+	outputPaths                []string // target name in ninja, i.e. output path relative to wd.
+	enforceDepfileOnlyPromotes bool
 
 	cmd *execute.Cmd
 
