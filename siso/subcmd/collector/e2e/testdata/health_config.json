@@ -76,6 +76,10 @@
       "endpoint": "localhost:13133",
       "grpc": {
         "endpoint": "localhost:13132",
+        "keepalive": {
+          "enforcement_policy": {},
+          "server_parameters": {}
+        },
         "transport": "tcp"
       },
       "http": {
@@ -87,6 +91,7 @@
         "cors": null,
         "endpoint": "localhost:13133",
         "idle_timeout": 0,
+        "keep_alives_enabled": true,
         "read_header_timeout": 0,
         "status": {
           "enabled": true,
@@ -98,6 +103,7 @@
         "write_timeout": 0
       },
       "idle_timeout": 0,
+      "keep_alives_enabled": true,
       "path": "/",
       "read_header_timeout": 0,
       "response_body": null,
@@ -182,12 +188,18 @@
               "exporter": {
                 "prometheus": {
                   "host": "localhost",
-                  "port": 15154
+                  "port": 15154,
+                  "without_scope_info": true,
+                  "without_type_suffix": true,
+                  "without_units": true
                 }
               }
             }
           }
         ]
+      },
+      "resource": {
+        "schema_url": "https://opentelemetry.io/schemas/1.40.0"
       }
     }
   }

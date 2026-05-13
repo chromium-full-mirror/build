@@ -21,7 +21,7 @@ type otlpFactory struct {
 func (f *otlpFactory) CreateDefaultConfig() component.Config {
 	cfg := f.Factory.CreateDefaultConfig().(*otlpreceiver.Config)
 
-	grpcCfg := cfg.GRPC.GetOrInsertDefault()
+	grpcCfg := cfg.Protocols.GRPC.GetOrInsertDefault()
 	switch {
 	case strings.HasPrefix(f.collectorAddress, "unix:///"):
 		// Submitting unix:/// path will result in error. It needs to be trimmed first.
@@ -32,9 +32,8 @@ func (f *otlpFactory) CreateDefaultConfig() component.Config {
 		grpcCfg.NetAddr.Endpoint = f.collectorAddress
 		grpcCfg.NetAddr.Transport = "tcp"
 	}
-	cfg.GRPC = configoptional.Default(*grpcCfg)
-	// Disable HTTP.
-	cfg.HTTP = configoptional.Optional[otlpreceiver.HTTPConfig]{}
+	cfg.Protocols.GRPC = configoptional.Default(*grpcCfg)
+	cfg.Protocols.HTTP = configoptional.Optional[otlpreceiver.HTTPConfig]{}
 
 	return cfg
 }

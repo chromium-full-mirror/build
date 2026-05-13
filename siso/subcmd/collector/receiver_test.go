@@ -38,7 +38,7 @@ func TestOtlpFactory_CreateDefaultConfig(t *testing.T) {
 			}
 			cfg := f.CreateDefaultConfig().(*otlpreceiver.Config)
 
-			grpcCfg := cfg.GRPC.GetOrInsertDefault()
+			grpcCfg := cfg.Protocols.GRPC.GetOrInsertDefault()
 
 			if got := grpcCfg.NetAddr.Endpoint; got != tc.wantEndpoint {
 				t.Errorf("Endpoint = %q; want %q", got, tc.wantEndpoint)
