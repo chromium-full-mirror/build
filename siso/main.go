@@ -171,9 +171,14 @@ Use "siso flags" to display all flags.
 		if err != nil {
 			log.Fatalf("failed to create cpuprofile file: %v", err)
 		}
+		defer func() {
+			if err := f.Close(); err != nil {
+				log.Errorf("failed to close cpuprofile file: %v", err)
+			}
+		}()
 		err = pprof.StartCPUProfile(f)
 		if err != nil {
-			log.Errorf("failed to start CPU profiler: %v", err)
+			log.Fatalf("failed to start CPU profiler: %v", err)
 		}
 		defer pprof.StopCPUProfile()
 	}
@@ -185,9 +190,12 @@ Use "siso flags" to display all flags.
 			log.Fatalf("failed to create memprofile file: %v", err)
 		}
 		defer func() {
-			err := pprof.WriteHeapProfile(f)
-			if err != nil {
+			runtime.GC()
+			if err := pprof.WriteHeapProfile(f); err != nil {
 				log.Errorf("failed to write heap profile: %v", err)
+			}
+			if err := f.Close(); err != nil {
+				log.Errorf("failed to close memprofile file: %v", err)
 			}
 		}()
 	}
@@ -233,9 +241,8 @@ Use "siso flags" to display all flags.
 		}
 		defer func() {
 			fmt.Fprintf(os.Stderr, "go trace: go tool trace %s\n", traceFile)
-			cerr := f.Close()
-			if cerr != nil {
-				log.Fatalf("Failed to close go trace output file: %v", cerr)
+			if err := f.Close(); err != nil {
+				log.Errorf("Failed to close go trace output file: %v", err)
 			}
 		}()
 		if err := trace.Start(f); err != nil {
