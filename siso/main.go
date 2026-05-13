@@ -12,10 +12,14 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"runtime"
 	"runtime/pprof"
 	"runtime/trace"
+	"strings"
+	"sync/atomic"
 	"syscall"
+	"time"
 
 	log "github.com/golang/glog"
 	"github.com/google/subcommands"
@@ -45,14 +49,16 @@ import (
 )
 
 var (
-	pprofAddr     string
-	cpuprofile    string
-	memprofile    string
-	mutexprofile  string
-	blockprofile  string
-	blockprofRate int
-	mutexprofFrac int
-	traceFile     string
+	pprofAddr          string
+	cpuprofile         string
+	memprofile         string
+	memprofileInterval time.Duration
+	memprofileGC       bool
+	mutexprofile       string
+	blockprofile       string
+	blockprofRate      int
+	mutexprofFrac      int
+	traceFile          string
 )
 
 const versionID = "v1.5.14"
@@ -94,6 +100,8 @@ Use "siso flags" to display all flags.
 	flag.StringVar(&pprofAddr, "pprof_addr", "", `listen address for "go tool pprof". e.g. "localhost:6060"`)
 	flag.StringVar(&cpuprofile, "cpuprofile", "", "write cpu profile to this file")
 	flag.StringVar(&memprofile, "memprofile", "", "write memory profile to this file")
+	flag.DurationVar(&memprofileInterval, "memprofile_interval", 0, `if non-zero, dump heap profiles at this interval to rolling files derived from -memprofile (e.g. "siso-memory.0001.pprof"); the bare -memprofile path is not written.`)
+	flag.BoolVar(&memprofileGC, "memprofile_gc", true, "run runtime.GC() before each heap profile dump for a cleaner inuse view")
 	flag.StringVar(&mutexprofile, "mutexprofile", "", "write mutex profile to this file")
 	flag.StringVar(&blockprofile, "blockprofile", "", "write block profile to this file")
 	flag.IntVar(&blockprofRate, "blockprof_rate", 0, "block profile rate")
@@ -183,21 +191,28 @@ Use "siso flags" to display all flags.
 		defer pprof.StopCPUProfile()
 	}
 
-	// Save a heap profile to disk on exit.
+	// Save a heap profile to disk on exit, or periodically to rolling files.
 	if memprofile != "" {
-		f, err := os.Create(memprofile)
-		if err != nil {
-			log.Fatalf("failed to create memprofile file: %v", err)
+		if memprofileInterval > 0 {
+			stop := startPeriodicMemprofile(memprofile, memprofileInterval, memprofileGC)
+			defer stop()
+		} else {
+			f, err := os.Create(memprofile)
+			if err != nil {
+				log.Fatalf("failed to create memprofile file: %v", err)
+			}
+			defer func() {
+				if memprofileGC {
+					runtime.GC()
+				}
+				if err := pprof.WriteHeapProfile(f); err != nil {
+					log.Errorf("failed to write heap profile: %v", err)
+				}
+				if err := f.Close(); err != nil {
+					log.Errorf("failed to close memprofile file: %v", err)
+				}
+			}()
 		}
-		defer func() {
-			runtime.GC()
-			if err := pprof.WriteHeapProfile(f); err != nil {
-				log.Errorf("failed to write heap profile: %v", err)
-			}
-			if err := f.Close(); err != nil {
-				log.Errorf("failed to close memprofile file: %v", err)
-			}
-		}()
 	}
 
 	// Save a mutex profile to disk on exit.
@@ -286,4 +301,56 @@ Use "siso flags" to display all flags.
 	subcommands.Register(version.Cmd(versionStr), "command-help")
 
 	return int(subcommands.Execute(ctx))
+}
+
+// startPeriodicMemprofile launches a goroutine that writes a heap profile to a
+// rolling file every interval. The base path's extension (if any) is preserved
+// after a 4-digit sequence number, so "/tmp/m.pprof" becomes
+// "/tmp/m.0001.pprof", "/tmp/m.0002.pprof", and so on. The returned function
+// stops the goroutine and writes one final dump.
+func startPeriodicMemprofile(base string, interval time.Duration, gc bool) func() {
+	dir, file := filepath.Split(base)
+	ext := filepath.Ext(file)
+	stem := strings.TrimSuffix(file, ext)
+	var seq atomic.Uint64
+	dump := func() {
+		n := seq.Add(1)
+		path := filepath.Join(dir, fmt.Sprintf("%s.%04d%s", stem, n, ext))
+		f, err := os.Create(path)
+		if err != nil {
+			log.Errorf("failed to create memprofile file %q: %v", path, err)
+			return
+		}
+		defer func() {
+			if err := f.Close(); err != nil {
+				log.Errorf("failed to close memprofile file %q: %v", path, err)
+			}
+		}()
+		if gc {
+			runtime.GC()
+		}
+		if err := pprof.WriteHeapProfile(f); err != nil {
+			log.Errorf("failed to write heap profile to %q: %v", path, err)
+		}
+	}
+	stopCh := make(chan struct{})
+	doneCh := make(chan struct{})
+	go func() {
+		defer close(doneCh)
+		t := time.NewTicker(interval)
+		defer t.Stop()
+		for {
+			select {
+			case <-stopCh:
+				return
+			case <-t.C:
+				dump()
+			}
+		}
+	}()
+	return func() {
+		close(stopCh)
+		<-doneCh
+		dump()
+	}
 }
