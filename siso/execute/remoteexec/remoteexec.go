@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"runtime"
 	"time"
 
 	rpb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
@@ -22,12 +23,11 @@ import (
 	"go.chromium.org/build/siso/reapi/digest"
 	"go.chromium.org/build/siso/reapi/merkletree"
 	_ "go.chromium.org/build/siso/reapi/proto" // for auxiliary metadata
-	"go.chromium.org/build/siso/runtimex"
 	"go.chromium.org/build/siso/sync/semaphore"
 )
 
 // Semaphore enforces a limit on parallel digest calculations to prevent an OOM.
-var Semaphore = semaphore.New("remoteexec-digest", runtimex.NumCPU()*10)
+var Semaphore = semaphore.New("remoteexec-digest", runtime.GOMAXPROCS(0)*10)
 
 // RemoteExec is executor with remote exec API.
 type RemoteExec struct {

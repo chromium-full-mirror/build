@@ -89,7 +89,7 @@ func filterInputFilename(line []byte) bool {
 }
 
 // Semaphore is a semaphore to control concurrent `clang-cl /showIncludes` invocations.
-var Semaphore = semaphore.New("deps-msvc", runtime.NumCPU()*2)
+var Semaphore = semaphore.New("deps-msvc", runtime.GOMAXPROCS(0)*2)
 
 // DepsArgs returns command line args to get deps for args.
 func DepsArgs(args []string) []string {

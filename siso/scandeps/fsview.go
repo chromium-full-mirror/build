@@ -11,6 +11,7 @@ import (
 	"io/fs"
 	"path"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"sort"
 	"strings"
@@ -20,11 +21,10 @@ import (
 
 	"go.chromium.org/build/siso/o11y/clog"
 	"go.chromium.org/build/siso/o11y/trace"
-	"go.chromium.org/build/siso/runtimex"
 	"go.chromium.org/build/siso/sync/semaphore"
 )
 
-var cppScanSema = semaphore.New("cppscan", runtimex.NumCPU())
+var cppScanSema = semaphore.New("cppscan", runtime.GOMAXPROCS(0))
 
 // fsview is a view of filesystem per scandeps process.
 // It will reduce unnecessary contention to filesystem.

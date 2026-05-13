@@ -15,6 +15,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"sort"
 	"strings"
@@ -33,7 +34,6 @@ import (
 	"go.chromium.org/build/siso/o11y/trace"
 	"go.chromium.org/build/siso/reapi/digest"
 	"go.chromium.org/build/siso/reapi/merkletree"
-	"go.chromium.org/build/siso/runtimex"
 	"go.chromium.org/build/siso/sync/semaphore"
 )
 
@@ -43,10 +43,10 @@ const maxSymlinks = 40
 
 // ForgetMissingsSemaphore is a semaphore to control concurrent ForgetMissings.
 // os.Lstat in ForgetMissings would create lots of thread. b/325565625
-var ForgetMissingsSemaphore = semaphore.New("fs-forget", runtimex.NumCPU()*2)
+var ForgetMissingsSemaphore = semaphore.New("fs-forget", runtime.GOMAXPROCS(0)*2)
 
 // FlushSemaphore is a semaphore to control concurrent flushes.
-var FlushSemaphore = semaphore.New("fs-flush", runtimex.NumCPU()*8)
+var FlushSemaphore = semaphore.New("fs-flush", runtime.GOMAXPROCS(0)*8)
 
 func isExecutable(fi fs.FileInfo, fname string, m map[string]bool) bool {
 	if fi.Mode()&0111 != 0 {

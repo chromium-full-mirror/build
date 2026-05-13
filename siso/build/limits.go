@@ -14,7 +14,6 @@ import (
 	"sync"
 
 	"go.chromium.org/build/siso/o11y/clog"
-	"go.chromium.org/build/siso/runtimex"
 	"go.chromium.org/build/siso/ui"
 )
 
@@ -64,7 +63,7 @@ var (
 //	SISO_LIMITS=step=1024,local=8,remote=80
 func DefaultLimits(ctx context.Context) Limits {
 	limitOnce.Do(func() {
-		numCPU := runtimex.NumCPU()
+		numCPU := runtime.GOMAXPROCS(0)
 		stepLimit := limitForStep(numCPU)
 		defaultLimits = Limits{
 			Step:      stepLimit,

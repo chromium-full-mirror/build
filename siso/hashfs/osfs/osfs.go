@@ -25,13 +25,12 @@ import (
 	"go.chromium.org/build/siso/o11y/clog"
 	"go.chromium.org/build/siso/o11y/iometrics"
 	"go.chromium.org/build/siso/reapi/digest"
-	"go.chromium.org/build/siso/runtimex"
 	"go.chromium.org/build/siso/sync/semaphore"
 )
 
 // LstatSemaphore is a semaphore to control concurrent lstat,
 // to protect from thread exhaustion. b/365856347
-var LstatSemaphore = semaphore.New("osfs-lstat", runtimex.NumCPU()*2)
+var LstatSemaphore = semaphore.New("osfs-lstat", runtime.GOMAXPROCS(0)*2)
 
 const writeBufSize = 96 * 1024
 

@@ -52,7 +52,6 @@ import (
 	"go.chromium.org/build/siso/reapi"
 	"go.chromium.org/build/siso/reapi/digest"
 	"go.chromium.org/build/siso/reapi/merkletree"
-	"go.chromium.org/build/siso/runtimex"
 	"go.chromium.org/build/siso/scandeps"
 	"go.chromium.org/build/siso/sync/semaphore"
 	"go.chromium.org/build/siso/toolsupport/gccutil"
@@ -311,7 +310,7 @@ func New(ctx context.Context, graph Graph, opts Options) (_ *Builder, err error)
 		logger.Infof("disable reclient integration")
 	}
 	experiments.ShowOnce()
-	numCPU := runtimex.NumCPU()
+	numCPU := runtime.GOMAXPROCS(0)
 	if (opts.Limits == Limits{}) {
 		opts.Limits = DefaultLimits(ctx)
 	}

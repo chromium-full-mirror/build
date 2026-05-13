@@ -27,7 +27,7 @@ func RBEBuildMetrics(buildID string, version string, dur time.Duration, stats bu
 		ToolVersion:   fmt.Sprintf("siso-%s", version),
 		InvocationIds: []string{buildID},
 		MachineInfo: &pb.MachineInfo{
-			NumCpu:   int64(runtime.NumCPU()),
+			NumCpu:   int64(runtime.GOMAXPROCS(0)),
 			OsFamily: runtime.GOOS,
 			Arch:     runtime.GOARCH,
 		},

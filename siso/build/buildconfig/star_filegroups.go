@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io/fs"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 
@@ -20,7 +21,6 @@ import (
 	"go.chromium.org/build/siso/build"
 	"go.chromium.org/build/siso/hashfs"
 	"go.chromium.org/build/siso/o11y/clog"
-	"go.chromium.org/build/siso/runtimex"
 )
 
 func parseFilegroups(v starlark.Value) (map[string]filegroupUpdater, error) {
@@ -124,7 +124,7 @@ func (cfg *Config) UpdateFilegroups(ctx context.Context, hashFS *hashfs.HashFS, 
 		Filegroups: make(map[string][]string),
 	}
 	eg, ctx := errgroup.WithContext(ctx)
-	eg.SetLimit(runtimex.NumCPU())
+	eg.SetLimit(runtime.GOMAXPROCS(0))
 	var mu sync.Mutex
 	for k, g := range cfg.filegroups {
 		eg.Go(func() error {

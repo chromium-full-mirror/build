@@ -19,7 +19,7 @@ import (
 )
 
 // Semaphore is a semaphore to control concurrent `gcc -M` invocations.
-var Semaphore = semaphore.New("deps-gcc", runtime.NumCPU()*2)
+var Semaphore = semaphore.New("deps-gcc", runtime.GOMAXPROCS(0)*2)
 
 // DepsArgs returns command line args to get deps for args.
 func DepsArgs(args []string) ([]string, error) {

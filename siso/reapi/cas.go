@@ -14,6 +14,7 @@ import (
 	"iter"
 	"maps"
 	"path"
+	"runtime"
 	"slices"
 	"sort"
 	"strconv"
@@ -36,12 +37,11 @@ import (
 	"go.chromium.org/build/siso/reapi/bytestreamio"
 	"go.chromium.org/build/siso/reapi/digest"
 	"go.chromium.org/build/siso/reapi/retry"
-	"go.chromium.org/build/siso/runtimex"
 	"go.chromium.org/build/siso/sync/semaphore"
 )
 
 // FileSemaphore limits concurrent file access to create BatchUpdateBlobgs to protect from runtime thread exhaustion.
-var FileSemaphore = semaphore.New("reapi-cas-file", runtimex.NumCPU())
+var FileSemaphore = semaphore.New("reapi-cas-file", runtime.GOMAXPROCS(0))
 
 const (
 	// defaultBatchUpdateByteLimit is bytes limit for cas BatchUpdateBlobs.

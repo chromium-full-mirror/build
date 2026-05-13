@@ -12,6 +12,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 
 	rpb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
 	"golang.org/x/sync/errgroup"
@@ -20,7 +21,6 @@ import (
 	"go.chromium.org/build/siso/o11y/clog"
 	"go.chromium.org/build/siso/reapi/digest"
 	"go.chromium.org/build/siso/reapi/merkletree"
-	"go.chromium.org/build/siso/runtimex"
 	"go.chromium.org/build/siso/sync/semaphore"
 )
 
@@ -41,7 +41,7 @@ type Exporter struct {
 func New(client Client) *Exporter {
 	return &Exporter{
 		client: client,
-		sema:   semaphore.New("exporter", runtimex.NumCPU()),
+		sema:   semaphore.New("exporter", runtime.GOMAXPROCS(0)),
 	}
 }
 

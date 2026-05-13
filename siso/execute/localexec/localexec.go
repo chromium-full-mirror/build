@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -25,7 +26,6 @@ import (
 	"go.chromium.org/build/siso/execute"
 	epb "go.chromium.org/build/siso/execute/proto"
 	"go.chromium.org/build/siso/o11y/clog"
-	"go.chromium.org/build/siso/runtimex"
 	"go.chromium.org/build/siso/sync/semaphore"
 	"go.chromium.org/build/siso/ui"
 )
@@ -66,7 +66,7 @@ func (LocalExec) Run(ctx context.Context, cmd *execute.Cmd) (err error) {
 }
 
 // fix for http://b/278658064 windows: fork/exec: Not enough memory resources are available to process this command.
-var forkSema = semaphore.New("fork", runtimex.NumCPU())
+var forkSema = semaphore.New("fork", runtime.GOMAXPROCS(0))
 
 func run(ctx context.Context, cmd *execute.Cmd) (*rpb.ActionResult, error) {
 	if len(cmd.Args) == 0 {

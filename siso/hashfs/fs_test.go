@@ -31,7 +31,6 @@ import (
 	"go.chromium.org/build/siso/hashfs/osfs"
 	"go.chromium.org/build/siso/reapi/digest"
 	"go.chromium.org/build/siso/reapi/merkletree"
-	"go.chromium.org/build/siso/runtimex"
 )
 
 func TestStamp(t *testing.T) {
@@ -325,7 +324,7 @@ func TestStat_Race(t *testing.T) {
 	// keep most cpus busy
 	var count atomic.Int64
 	const n = 1000
-	for range runtimex.NumCPU() - 1 {
+	for range runtime.GOMAXPROCS(0) - 1 {
 		eg.Go(func() error {
 			for count.Load() < n {
 				// REQUIRED: In standard Go, async preemption handles this.

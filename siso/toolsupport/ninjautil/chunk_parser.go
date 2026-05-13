@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"maps"
 	"path/filepath"
+	"runtime"
 	"runtime/trace"
 	"strconv"
 	"sync"
@@ -18,7 +19,6 @@ import (
 	log "github.com/golang/glog"
 
 	"go.chromium.org/build/siso/o11y/clog"
-	"go.chromium.org/build/siso/runtimex"
 )
 
 var evalStringsPool = sync.Pool{
@@ -89,7 +89,7 @@ type chunk struct {
 // splitIntoChunks splits buf into chunks.
 func splitIntoChunks(ctx context.Context, buf []byte) []chunk {
 	defer trace.StartRegion(ctx, "ninja.split").End()
-	chunkCount := runtimex.NumCPU()
+	chunkCount := runtime.GOMAXPROCS(0)
 	chunkSize := max(1024*1024, len(buf)/chunkCount+1)
 
 	chunks := make([]chunk, 0, chunkCount)

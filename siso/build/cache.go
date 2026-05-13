@@ -7,6 +7,7 @@ package build
 import (
 	"context"
 	"errors"
+	"runtime"
 	"time"
 
 	rpb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
@@ -20,7 +21,6 @@ import (
 	"go.chromium.org/build/siso/o11y/iometrics"
 	"go.chromium.org/build/siso/o11y/trace"
 	"go.chromium.org/build/siso/reapi/digest"
-	"go.chromium.org/build/siso/runtimex"
 	"go.chromium.org/build/siso/sync/semaphore"
 )
 
@@ -49,7 +49,7 @@ func NewCache(ctx context.Context, opts CacheOptions) (*Cache, error) {
 		store:      opts.Store,
 		enableRead: opts.EnableRead,
 		// TODO(b/274038010): cache-digest semaphore should share with execute/remotecache?
-		sema: semaphore.New("cache-digest", runtimex.NumCPU()*10),
+		sema: semaphore.New("cache-digest", runtime.GOMAXPROCS(0)*10),
 		m:    iometrics.New("cache-content"),
 	}
 	if opts.Store == nil {

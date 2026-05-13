@@ -12,6 +12,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"time"
 
@@ -26,14 +27,13 @@ import (
 	"go.chromium.org/build/siso/o11y/iometrics"
 	"go.chromium.org/build/siso/o11y/trace"
 	"go.chromium.org/build/siso/reapi/digest"
-	"go.chromium.org/build/siso/runtimex"
 	"go.chromium.org/build/siso/sync/semaphore"
 	"go.chromium.org/build/siso/ui"
 )
 
 // localCacheSemaphore is a semaphore to control concurrent lstat,
 // to protect from thread exhaustion. b/490029722
-var localCacheSemaphore = semaphore.New("local-cache", runtimex.NumCPU()*2)
+var localCacheSemaphore = semaphore.New("local-cache", runtime.GOMAXPROCS(0)*2)
 
 // LocalCache implements CacheStore interface with local files.
 type LocalCache struct {

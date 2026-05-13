@@ -36,7 +36,6 @@ import (
 	"go.chromium.org/build/siso/o11y/clog"
 	"go.chromium.org/build/siso/o11y/trace"
 	"go.chromium.org/build/siso/reapi/digest"
-	"go.chromium.org/build/siso/runtimex"
 	"go.chromium.org/build/siso/toolsupport/artfsutil"
 	"go.chromium.org/build/siso/toolsupport/cogutil"
 )
@@ -458,7 +457,7 @@ func (ies *initialEntryStates) prepare(ctx context.Context, state *pb.State) {
 func (ies *initialEntryStates) updateFromDisk(ctx context.Context) ([]string, []string, error) {
 	started := time.Now()
 	eg, ctx := errgroup.WithContext(ctx)
-	eg.SetLimit(runtimex.NumCPU())
+	eg.SetLimit(runtime.GOMAXPROCS(0))
 	for i := range ies.alloc {
 		eg.Go(func() error {
 			if i%1000 == 0 {
@@ -785,7 +784,7 @@ func (ies *initialEntryStates) clean() bool {
 // storeDirs stores dir entries in hfs.
 func (ies *initialEntryStates) storeDirs(ctx context.Context, hfs *HashFS) error {
 	eg, ctx := errgroup.WithContext(ctx)
-	eg.SetLimit(runtimex.NumCPU())
+	eg.SetLimit(runtime.GOMAXPROCS(0))
 	for i := range ies.alloc {
 		es := &ies.alloc[i]
 		if es.ftype != "dir" {
@@ -805,7 +804,7 @@ func (ies *initialEntryStates) storeDirs(ctx context.Context, hfs *HashFS) error
 // storeNonDirs stores non-dir entries (files, symlinks) in hfs.
 func (ies *initialEntryStates) storeNonDirs(ctx context.Context, hfs *HashFS) error {
 	eg, ctx := errgroup.WithContext(ctx)
-	eg.SetLimit(runtimex.NumCPU())
+	eg.SetLimit(runtime.GOMAXPROCS(0))
 	for i := range ies.alloc {
 		es := &ies.alloc[i]
 		switch es.ftype {

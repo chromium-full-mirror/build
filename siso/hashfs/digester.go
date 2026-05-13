@@ -6,18 +6,18 @@ package hashfs
 
 import (
 	"context"
+	"runtime"
 	"sync"
 	"time"
 
 	"go.chromium.org/build/siso/o11y/clog"
 	"go.chromium.org/build/siso/o11y/trace"
 	"go.chromium.org/build/siso/reapi/digest"
-	"go.chromium.org/build/siso/runtimex"
 	"go.chromium.org/build/siso/sync/semaphore"
 )
 
 // DigestSemaphore is a semaphore to control concurrent digest calculation.
-var DigestSemaphore = semaphore.New("file-digest", runtimex.NumCPU())
+var DigestSemaphore = semaphore.New("file-digest", runtime.GOMAXPROCS(0))
 
 // Keep track what files are currently accessed for digest calculation.
 // On Windows, it would fail with ERROR_SHARING_VIOLATION when it
@@ -86,7 +86,7 @@ type digester struct {
 
 func (d *digester) start(ctx context.Context) {
 	defer close(d.done)
-	n := runtimex.NumCPU() - 1
+	n := runtime.GOMAXPROCS(0) - 1
 	if n == 0 {
 		n = 1
 	}

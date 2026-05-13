@@ -12,6 +12,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"time"
@@ -25,7 +26,6 @@ import (
 	pb "go.chromium.org/build/siso/hashfs/proto"
 	"go.chromium.org/build/siso/reapi"
 	"go.chromium.org/build/siso/reapi/digest"
-	"go.chromium.org/build/siso/runtimex"
 	"go.chromium.org/build/siso/signals"
 	"go.chromium.org/build/siso/sync/semaphore"
 )
@@ -77,7 +77,7 @@ func (c *flushCommand) SetFlags(flagSet *flag.FlagSet) {
 }
 
 func (c *flushCommand) Execute(ctx context.Context, flagSet *flag.FlagSet, _ ...any) subcommands.ExitStatus {
-	c.sema = semaphore.New("flush", runtimex.NumCPU())
+	c.sema = semaphore.New("flush", runtime.GOMAXPROCS(0))
 	c.Flags = flagSet
 	err := c.run(ctx)
 	if err != nil {
