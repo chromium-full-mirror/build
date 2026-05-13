@@ -459,6 +459,7 @@ func (c *Command) Run(ctx context.Context) (stats build.Stats, finalErr error) {
 		}
 		ninjaLogWriter = bopts.NinjaLogWriter
 		clog.Infof(ctx, "check manifest done")
+		spin.Start("loading %s...", c.fname)
 		nstate, err = ninjabuild.Load(ctx, c.fname, buildPath)
 		if err != nil {
 			return err
@@ -567,7 +568,6 @@ func (c *Command) Run(ctx context.Context) (stats build.Stats, finalErr error) {
 	}
 	bopts := c.initBuildOpts(ctx, projectID, buildPath, config, ds, hashFS, limits, tracer, traceExporter, logWriters)
 
-	spin.Start("loading %s...", c.fname)
 	err = eg.Wait()
 	spin.Stop(err)
 	if err != nil {
