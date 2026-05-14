@@ -21,8 +21,11 @@ import (
 	"path/filepath"
 	"runtime"
 	"runtime/pprof"
+	"runtime/trace"
 	"strings"
+	"sync/atomic"
 	"syscall"
+	"time"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
@@ -46,6 +49,14 @@ var (
 	enableExecution        = flag.Bool("execution", true, "whether to enable the execution service")
 	pprofAddr              = flag.String("pprof_addr", "", `listen address for "go tool pprof". e.g. "localhost:6060"`)
 	cpuprofile             = flag.String("cpuprofile", "", "write cpu profile to file")
+	memprofile             = flag.String("memprofile", "", "write memory profile to this file")
+	memprofileInterval     = flag.Duration("memprofile_interval", 0, `if non-zero, dump heap profiles at this interval to rolling files derived from -memprofile (e.g. "kajiya-memory.0001.pprof"); the bare -memprofile path is not written.`)
+	memprofileGC           = flag.Bool("memprofile_gc", true, "run runtime.GC() before each heap profile dump for a cleaner inuse view")
+	mutexprofile           = flag.String("mutexprofile", "", "write mutex profile to this file")
+	blockprofile           = flag.String("blockprofile", "", "write block profile to this file")
+	blockprofRate          = flag.Int("blockprof_rate", 0, "block profile rate")
+	mutexprofFrac          = flag.Int("mutexprof_frac", 0, "mutex profile fraction")
+	traceFile              = flag.String("trace", "", `go trace output for "go tool trace"`)
 	tlsCertFile            = flag.String("tls_cert_file", "", "TLS certificate file")
 	tlsKeyFile             = flag.String("tls_key_file", "", "TLS key file")
 	sandboxStrategy        = flag.String("sandbox", "overlayfs", "sandbox strategy to use (one of: files, overlayfs, nested-overlayfs)")
@@ -98,6 +109,19 @@ func run(ctx context.Context) int {
 	// created files and directories will have.
 	blobstore.ResetUmask()
 
+	if *blockprofile != "" && *blockprofRate == 0 {
+		*blockprofRate = 1
+	}
+	if *mutexprofile != "" && *mutexprofFrac == 0 {
+		*mutexprofFrac = 1
+	}
+	if *blockprofRate > 0 {
+		runtime.SetBlockProfileRate(*blockprofRate)
+	}
+	if *mutexprofFrac > 0 {
+		runtime.SetMutexProfileFraction(*mutexprofFrac)
+	}
+
 	// Enable CPU profiling if requested.
 	if *cpuprofile != "" {
 		slog.Info("CPU profile logging to file", "path", *cpuprofile)
@@ -118,6 +142,86 @@ func run(ctx context.Context) int {
 				slog.Error("failed to close CPU profile file", "error", err)
 			}
 		}()
+	}
+
+	// Save a heap profile to disk on exit, or periodically to rolling files.
+	if *memprofile != "" {
+		if *memprofileInterval > 0 {
+			stop := startPeriodicMemprofile(*memprofile, *memprofileInterval, *memprofileGC)
+			defer stop()
+		} else {
+			f, err := os.Create(*memprofile)
+			if err != nil {
+				slog.Error("failed to create memprofile file", "error", err)
+				return 1
+			}
+			defer func() {
+				if *memprofileGC {
+					runtime.GC()
+				}
+				if err := pprof.WriteHeapProfile(f); err != nil {
+					slog.Error("failed to write heap profile", "error", err)
+				}
+				if err := f.Close(); err != nil {
+					slog.Error("failed to close memprofile file", "error", err)
+				}
+			}()
+		}
+	}
+
+	// Save a mutex profile to disk on exit.
+	if *mutexprofile != "" {
+		f, err := os.Create(*mutexprofile)
+		if err != nil {
+			slog.Error("failed to create mutexprofile file", "error", err)
+			return 1
+		}
+		defer func() {
+			if err := pprof.Lookup("mutex").WriteTo(f, 0); err != nil {
+				slog.Error("failed to write mutex profile", "error", err)
+			}
+			if err := f.Close(); err != nil {
+				slog.Error("failed to close mutexprofile file", "error", err)
+			}
+		}()
+	}
+
+	// Save a block profile to disk on exit.
+	if *blockprofile != "" {
+		f, err := os.Create(*blockprofile)
+		if err != nil {
+			slog.Error("failed to create blockprofile file", "error", err)
+			return 1
+		}
+		defer func() {
+			if err := pprof.Lookup("block").WriteTo(f, 0); err != nil {
+				slog.Error("failed to write block profile", "error", err)
+			}
+			if err := f.Close(); err != nil {
+				slog.Error("failed to close blockprofile file", "error", err)
+			}
+		}()
+	}
+
+	// Save a go trace to disk during execution.
+	if *traceFile != "" {
+		slog.Info("enabling go trace", "path", *traceFile)
+		f, err := os.Create(*traceFile)
+		if err != nil {
+			slog.Error("failed to create go trace output file", "error", err)
+			return 1
+		}
+		defer func() {
+			slog.Info("go trace written", "command", fmt.Sprintf("go tool trace %s", *traceFile))
+			if err := f.Close(); err != nil {
+				slog.Error("failed to close go trace output file", "error", err)
+			}
+		}()
+		if err := trace.Start(f); err != nil {
+			slog.Error("failed to start go trace", "error", err)
+			return 1
+		}
+		defer trace.Stop()
 	}
 
 	// Start an HTTP server that can be used to profile Kajiya during runtime if requested.
@@ -278,6 +382,58 @@ func createServer(ctx context.Context, dataDir string) (*grpc.Server, error) {
 	slog.Info("gRPC reflection service registered")
 
 	return s, nil
+}
+
+// startPeriodicMemprofile launches a goroutine that writes a heap profile to a
+// rolling file every interval. The base path's extension (if any) is preserved
+// after a 4-digit sequence number, so "/tmp/m.pprof" becomes
+// "/tmp/m.0001.pprof", "/tmp/m.0002.pprof", and so on. The returned function
+// stops the goroutine and writes one final dump.
+func startPeriodicMemprofile(base string, interval time.Duration, gc bool) func() {
+	dir, file := filepath.Split(base)
+	ext := filepath.Ext(file)
+	stem := strings.TrimSuffix(file, ext)
+	var seq atomic.Uint64
+	dump := func() {
+		n := seq.Add(1)
+		path := filepath.Join(dir, fmt.Sprintf("%s.%04d%s", stem, n, ext))
+		f, err := os.Create(path)
+		if err != nil {
+			slog.Error("failed to create memprofile file", "path", path, "error", err)
+			return
+		}
+		defer func() {
+			if err := f.Close(); err != nil {
+				slog.Error("failed to close memprofile file", "path", path, "error", err)
+			}
+		}()
+		if gc {
+			runtime.GC()
+		}
+		if err := pprof.WriteHeapProfile(f); err != nil {
+			slog.Error("failed to write heap profile", "path", path, "error", err)
+		}
+	}
+	stopCh := make(chan struct{})
+	doneCh := make(chan struct{})
+	go func() {
+		defer close(doneCh)
+		t := time.NewTicker(interval)
+		defer t.Stop()
+		for {
+			select {
+			case <-stopCh:
+				return
+			case <-t.C:
+				dump()
+			}
+		}
+	}()
+	return func() {
+		close(stopCh)
+		<-doneCh
+		dump()
+	}
 }
 
 // HandleInterrupt calls 'fn' in a separate goroutine on SIGTERM or Ctrl+C.
