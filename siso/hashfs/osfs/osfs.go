@@ -51,12 +51,17 @@ type OSFS struct {
 	*iometrics.IOMetrics
 
 	digestXattrName string
+	onCog           bool
 }
 
 // Option is an option for osfs.
 type Option struct {
 	// DigestXattrName is xattr name for digest. When it is set, try to retrieve digest from the xattr.
 	DigestXattrName string
+
+	// OnCog indicates the exec root is on the Cog filesystem.
+	// Enables a stat-before-utimes workaround for b/356987531.
+	OnCog bool
 }
 
 func (o *Option) RegisterFlags(flagSet *flag.FlagSet) {
@@ -78,6 +83,7 @@ func New(ctx context.Context, name string, opt Option) *OSFS {
 	return &OSFS{
 		IOMetrics:       iometrics.New(name),
 		digestXattrName: opt.DigestXattrName,
+		onCog:           opt.OnCog,
 	}
 }
 
@@ -101,8 +107,10 @@ func (ofs *OSFS) Chmod(ctx context.Context, name string, mode fs.FileMode) error
 // Chtimes changes the access and modification times of the named file.
 func (ofs *OSFS) Chtimes(ctx context.Context, name string, atime, mtime time.Time) error {
 	started := time.Now()
-	// workaround for cog utimes bug. b/356987531
-	_, _ = os.Stat(name)
+	if ofs.onCog {
+		// workaround for cog utimes bug. b/356987531
+		_, _ = os.Stat(name)
+	}
 
 	err := os.Chtimes(name, atime, mtime)
 	ofs.OpsDone(err)
