@@ -190,7 +190,11 @@ func LoadAction(actionDigest digest.Digest, cas *blobstore.ContentAddressableSto
 	if filepath.FromSlash(ka.WorkingDir) != filepath.Clean(ka.WorkingDir) {
 		return nil, fmt.Errorf("working directory is not a clean path, wanted %q, got %q", filepath.Clean(ka.WorkingDir), filepath.FromSlash(cmd.WorkingDirectory))
 	}
-	if _, ok := ka.InputTrie.Get([]byte(ka.WorkingDir + "/")); !ok {
+	wdLookup := ka.WorkingDir + "/"
+	if ka.WorkingDir == "." {
+		wdLookup = ""
+	}
+	if _, ok := ka.InputTrie.Get([]byte(wdLookup)); !ok {
 		return nil, fmt.Errorf("working directory %q not found in input root", ka.WorkingDir)
 	}
 
@@ -199,14 +203,20 @@ func LoadAction(actionDigest digest.Digest, cas *blobstore.ContentAddressableSto
 		if len(cmd.OutputPaths) == 1 && cmd.OutputPaths[0] == "" {
 			ka.CaptureWholeTree = true
 		} else {
-			ka.addOutputsToTrie(cmd.OutputPaths, Unknown)
+			if err := ka.addOutputsToTrie(cmd.OutputPaths, Unknown); err != nil {
+				return nil, err
+			}
 		}
 	} else { // REAPI v2.0 (deprecated)
 		if len(cmd.OutputDirectories) == 1 && cmd.OutputDirectories[0] == "" { //nolint:staticcheck
 			ka.CaptureWholeTree = true
 		} else {
-			ka.addOutputsToTrie(cmd.OutputDirectories, Directory) //nolint:staticcheck
-			ka.addOutputsToTrie(cmd.OutputFiles, File)            //nolint:staticcheck
+			if err := ka.addOutputsToTrie(cmd.OutputDirectories, Directory); err != nil { //nolint:staticcheck
+				return nil, err
+			}
+			if err := ka.addOutputsToTrie(cmd.OutputFiles, File); err != nil { //nolint:staticcheck
+				return nil, err
+			}
 		}
 	}
 
@@ -230,16 +240,22 @@ func (ka *Action) addOutputsToTrie(outputs []string, ft FileType) error {
 		}
 		prevName = path
 
-		if strings.HasPrefix(path, "/") || strings.HasSuffix(path, "/") || path != filepath.Clean(path) || path == "." {
-			return fmt.Errorf("invalid output path %q (has a leading or trailing slash, or is not clean)", path)
+		if strings.HasPrefix(path, "/") || strings.HasSuffix(path, "/") {
+			return fmt.Errorf("invalid output path %q (has a leading or trailing slash)", path)
+		}
+		if path != filepath.ToSlash(filepath.Clean(path)) || path == "." {
+			return fmt.Errorf("invalid output path %q (is not clean)", path)
 		}
 
-		path = filepath.Join(ka.WorkingDir, path)
+		path = filepath.ToSlash(filepath.Join(ka.WorkingDir, path))
 		if !filepath.IsLocal(path) {
 			return fmt.Errorf("output path %q escapes the input root", path)
 		}
-		parentPath, parent, _ := ka.InputTrie.Root().LongestPrefix([]byte(path))
-		if !bytes.HasSuffix(parentPath, []byte("/")) {
+		parentPath, parent, ok := ka.InputTrie.Root().LongestPrefix([]byte(path))
+		if !ok {
+			return fmt.Errorf("no parent directory found for output path %q", path)
+		}
+		if len(parentPath) > 0 && !bytes.HasSuffix(parentPath, []byte("/")) {
 			return fmt.Errorf("parent path %q does not end with a slash", parentPath)
 		}
 		pathInParent := strings.TrimPrefix(path, string(parentPath))
@@ -267,8 +283,10 @@ func treeToTrie(cas *blobstore.ContentAddressableStorage, rootDigest *repb.Diges
 	trieBuilder := iradix.New[*KajiyaDirectory]().Txn()
 	var missingBlobs []digest.Digest
 
-	// Iteratively add directories to the trie.
-	dirQueue = append(dirQueue, &repb.DirectoryNode{Digest: rootDigest, Name: "./"})
+	// Iteratively add directories to the trie. The root directory is keyed
+	// with the empty string so that LongestPrefix lookups for any path under
+	// the input root can resolve back to it.
+	dirQueue = append(dirQueue, &repb.DirectoryNode{Digest: rootDigest, Name: ""})
 	for len(dirQueue) > 0 {
 		dirNode := dirQueue[0]
 		dirQueue = dirQueue[1:]
@@ -393,9 +411,14 @@ func treeToTrie(cas *blobstore.ContentAddressableStorage, rootDigest *repb.Diges
 			dirQueue = append(dirQueue, subDir)
 		}
 
-		// Add the directory to the trie. Ensure that the directory name ends with a slash,
-		// so that we can prefix-match paths safely in the trie later.
-		if _, didUpdate := trieBuilder.Insert([]byte(filepath.ToSlash(dirNode.Name)+"/"), &kd); didUpdate {
+		// Add the directory to the trie. The root directory uses the empty key;
+		// all other directory names get a trailing slash so that we can prefix-
+		// match paths safely in the trie later.
+		key := dirNode.Name
+		if key != "" {
+			key = filepath.ToSlash(key) + "/"
+		}
+		if _, didUpdate := trieBuilder.Insert([]byte(key), &kd); didUpdate {
 			return nil, fmt.Errorf("duplicate directory name in tree %q", dirNode.Name)
 		}
 	}
