@@ -249,8 +249,12 @@ func (sb *Sandbox) UploadOutputs(action *model.Action, actionResult *repb.Action
 			lfi, err = os.Lstat(fullPath)
 			if err != nil {
 				if errors.Is(err, fs.ErrNotExist) {
-					// Ignore non-existing output files.
-					slog.Warn("ignoring missing output", "path", fullPath)
+					// Ignore non-existing output files. Suppress the log for
+					// clang-crashreports, which is almost never present.
+					if filepath.Base(outputPath.Name) != "clang-crashreports" {
+						slog.Warn("ignoring missing output", "path", fullPath)
+					}
+					err = nil
 					continue
 				}
 				return true
@@ -262,6 +266,7 @@ func (sb *Sandbox) UploadOutputs(action *model.Action, actionResult *repb.Action
 				if err != nil {
 					// Ignore dangling symlinks.
 					slog.Warn("ignoring dangling symlink output", "path", fullPath)
+					err = nil
 					continue
 				}
 				if fi.Mode().IsDir() {
