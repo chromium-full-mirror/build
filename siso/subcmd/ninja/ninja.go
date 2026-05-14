@@ -39,7 +39,6 @@ import (
 	"go.chromium.org/build/siso/signals"
 	"go.chromium.org/build/siso/toolsupport/artfsutil"
 	"go.chromium.org/build/siso/toolsupport/cogutil"
-	"go.chromium.org/build/siso/toolsupport/ninjautil"
 	"go.chromium.org/build/siso/toolsupport/soongutil"
 	"go.chromium.org/build/siso/ui"
 )
@@ -437,17 +436,20 @@ func (c *Command) Run(ctx context.Context) (stats build.Stats, finalErr error) {
 	}
 
 	var eg, reeg errgroup.Group
-	var nstate *ninjautil.State
 	var needHashFSRefresh bool
 	var ninjaLogWriter io.Writer // ninjaLogWriter is used to pass the ninja log writer from CheckManifest to the main thread's bopts to avoid truncation.
 	octx := ctx
-	eg.Go(func() error {
-		ctx := trace.NewThread(octx, "loadNinjaFiles")
+
+	// When check manifest is done including regenerating manifest, it's ready to start loading Ninja files. This channel is used to start ninja loading
+	checkManifestDone := make(chan error)
+	go func() {
+		ctx := trace.NewThread(octx, "checkManifest")
 		// use temporary hashfs to check manifest and load manifest
 		// files.
 		tempHashFS, err := hashfs.New(ctx, hashfs.Option{})
 		if err != nil {
-			return err
+			checkManifestDone <- err
+			return
 		}
 		defer tempHashFS.Close(ctx)
 		emptyDepsLog := &ninjabuild.DepsLog{}
@@ -455,17 +457,13 @@ func (c *Command) Run(ctx context.Context) (stats build.Stats, finalErr error) {
 		bopts := c.initBuildOpts(ctx, projectID, buildPath, config, tempDS, tempHashFS, limits, tracer, nil, logWriters)
 		needHashFSRefresh, err = ninjabuild.CheckManifest(ctx, c.fname, buildPath, config, tempHashFS, emptyDepsLog, &bopts)
 		if err != nil {
-			return err
+			checkManifestDone <- err
+			return
 		}
 		ninjaLogWriter = bopts.NinjaLogWriter
 		clog.Infof(ctx, "check manifest done")
-		spin.Start("loading %s...", c.fname)
-		nstate, err = ninjabuild.Load(ctx, c.fname, buildPath)
-		if err != nil {
-			return err
-		}
-		return nil
-	})
+		checkManifestDone <- nil
+	}()
 	var localDepsLog *ninjabuild.DepsLog
 	eg.Go(func() error {
 		ctx := trace.NewThread(octx, "initDepsLog")
@@ -568,6 +566,15 @@ func (c *Command) Run(ctx context.Context) (stats build.Stats, finalErr error) {
 	}
 	bopts := c.initBuildOpts(ctx, projectID, buildPath, config, ds, hashFS, limits, tracer, traceExporter, logWriters)
 
+	err = <-checkManifestDone
+	if err != nil {
+		return stats, err
+	}
+	spin.Start("loading %s...", c.fname)
+	nstate, err := ninjabuild.Load(ctx, c.fname, buildPath)
+	if err != nil {
+		return stats, err
+	}
 	err = eg.Wait()
 	spin.Stop(err)
 	if err != nil {
