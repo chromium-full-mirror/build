@@ -56,33 +56,38 @@ type OSFS struct {
 
 // Option is an option for osfs.
 type Option struct {
-	// DigestXattrName is xattr name for digest. When it is set, try to retrieve digest from the xattr.
+	// DigestXattrName is xattr name for digest. If empty, defaults
+	// to google.digest.sha256 on Cog/ArtFS and stays empty elsewhere;
+	// set explicitly to opt in on other filesystems that publish it.
 	DigestXattrName string
 
 	// OnCog indicates the exec root is on the Cog filesystem.
 	// Enables a stat-before-utimes workaround for b/356987531.
 	OnCog bool
+
+	// OnArtFS indicates the exec root is on the ArtFS filesystem.
+	OnArtFS bool
 }
 
 func (o *Option) RegisterFlags(flagSet *flag.FlagSet) {
-	var xattrname string
-	if xattr.XATTR_SUPPORTED {
-		xattrname = defaultDigestXattr
-	}
-	flagSet.StringVar(&o.DigestXattrName, "fs_digest_xattr", xattrname, "xatr for sha256 digest")
+	flagSet.StringVar(&o.DigestXattrName, "fs_digest_xattr", "", "xattr for sha256 digest; empty enables the default on Cog/ArtFS only")
 }
 
 // New creates new OSFS.
 func New(ctx context.Context, name string, opt Option) *OSFS {
-	if !xattr.XATTR_SUPPORTED {
-		opt.DigestXattrName = ""
+	digestXattrName := opt.DigestXattrName
+	if digestXattrName == "" && xattr.XATTR_SUPPORTED && (opt.OnCog || opt.OnArtFS) {
+		digestXattrName = defaultDigestXattr
 	}
-	if opt.DigestXattrName != "" {
-		clog.Infof(ctx, "use xattr %s for file digest", opt.DigestXattrName)
+	if !xattr.XATTR_SUPPORTED {
+		digestXattrName = ""
+	}
+	if digestXattrName != "" {
+		clog.Infof(ctx, "use xattr %s for file digest", digestXattrName)
 	}
 	return &OSFS{
 		IOMetrics:       iometrics.New(name),
-		digestXattrName: opt.DigestXattrName,
+		digestXattrName: digestXattrName,
 		onCog:           opt.OnCog,
 	}
 }

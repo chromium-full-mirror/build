@@ -117,6 +117,7 @@ func New(ctx context.Context, opt Option) (*HashFS, error) {
 		opt.DataSource = noDataSource{}
 	}
 	opt.OSFSOption.OnCog = opt.CogFS != nil
+	opt.OSFSOption.OnArtFS = opt.ArtFS != nil
 	fsys := &HashFS{
 		opt:       opt,
 		directory: &directory{isRoot: true},
