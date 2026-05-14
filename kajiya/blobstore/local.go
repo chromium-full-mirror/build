@@ -34,7 +34,8 @@ type ContentAddressableStorage struct {
 }
 
 // New creates a new local CAS. The data directory is created if it does not exist.
-func New(ctx context.Context, dataDir string) (*ContentAddressableStorage, error) {
+// If skipValidation is true, the CAS will not validate the integrity of existing blobs on startup.
+func New(ctx context.Context, dataDir string, skipValidation bool) (*ContentAddressableStorage, error) {
 	if dataDir == "" {
 		return nil, fmt.Errorf("data directory must be specified")
 	}
@@ -77,16 +78,23 @@ func New(ctx context.Context, dataDir string) (*ContentAddressableStorage, error
 		return nil, fmt.Errorf("empty blob did not have expected hash: got %s, wanted %s", d, digest.Empty)
 	}
 
-	now := time.Now()
-	count, size, err := cas.validate(ctx)
-	dur := time.Since(now)
-	slog.Info("validated blobs in CAS",
-		"count", count,
-		"size", fmt.Sprintf("%d MiB", size/1024/1024),
-		"duration", dur,
-		"hash_speed", fmt.Sprintf("%.2f MiB/s", float64(size)/dur.Seconds()/1024/1024))
+	if !skipValidation {
+		now := time.Now()
+		count, size, err := cas.validate(ctx)
+		dur := time.Since(now)
+		slog.Info("validated blobs in CAS",
+			"count", count,
+			"size", fmt.Sprintf("%d MiB", size/1024/1024),
+			"duration", dur,
+			"hash_speed", fmt.Sprintf("%.2f MiB/s", float64(size)/dur.Seconds()/1024/1024))
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		slog.Warn("skipping CAS validation on startup")
+	}
 
-	return cas, err
+	return cas, nil
 }
 
 // isValidSubdir returns true if the given subdirectory name is valid inside the CAS data directory.

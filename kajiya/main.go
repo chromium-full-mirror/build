@@ -52,6 +52,7 @@ var (
 	quiet                  = flag.Bool("quiet", false, "if true, print only warnings and errors in log output")
 	maxRecvMsgSize         = flag.Int("max_recv_msg_size", 0, "maximum size of a single gRPC message that can be received")
 	maxBatchTotalSizeBytes = flag.Int64("max_batch_total_size_bytes", 0, "maximum combined total size of blobs in batch requests (0 means unlimited)")
+	skipCASValidation      = flag.Bool("skip_cas_validation", false, "skip CAS integrity validation on startup (faster startup, but won't detect corrupted blobs)")
 
 	sb localexec.SandboxStrategy
 )
@@ -227,7 +228,7 @@ func createServer(ctx context.Context, dataDir string) (*grpc.Server, error) {
 
 	// Create a CAS backed by a local filesystem.
 	casDir := filepath.Join(dataDir, "cas")
-	cas, err := blobstore.New(ctx, casDir)
+	cas, err := blobstore.New(ctx, casDir, *skipCASValidation)
 	if err != nil {
 		return nil, err
 	}

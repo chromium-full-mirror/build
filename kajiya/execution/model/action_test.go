@@ -31,7 +31,7 @@ func putProto(t *testing.T, cas *blobstore.ContentAddressableStorage, m proto.Me
 // newCAS returns a fresh CAS rooted in t.TempDir().
 func newCAS(t *testing.T) *blobstore.ContentAddressableStorage {
 	t.Helper()
-	cas, err := blobstore.New(t.Context(), t.TempDir())
+	cas, err := blobstore.New(t.Context(), t.TempDir(), false)
 	if err != nil {
 		t.Fatalf("blobstore.New: %v", err)
 	}

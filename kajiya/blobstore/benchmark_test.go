@@ -30,7 +30,7 @@ func setupBenchmark(ctx context.Context, t testing.TB) (bspb.ByteStreamClient, *
 
 	// Setup CAS.
 	dataDir := t.TempDir()
-	cas, err := New(ctx, dataDir)
+	cas, err := New(ctx, dataDir, false)
 	if err != nil {
 		t.Fatalf("Failed to create CAS: %v", err)
 	}
