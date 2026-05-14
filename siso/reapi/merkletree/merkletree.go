@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 
 	rpb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
 	"google.golang.org/protobuf/proto"
@@ -35,6 +36,8 @@ type MerkleTree struct {
 	// build. The assumption is that traversal is sequential. A measurement
 	// showed 161172 "cache hits" during a build of the `base` target.
 	lastDir dirstate
+
+	pooled bool
 }
 
 // New creates new merkle tree with digest store.
@@ -45,6 +48,40 @@ func New(store *digest.Store) *MerkleTree {
 		},
 		store: store,
 	}
+}
+
+var merkleTreePool = sync.Pool{
+	New: func() any {
+		return &MerkleTree{
+			m: make(map[string]*rpb.Directory),
+		}
+	},
+}
+
+// NewPooled returns a MerkleTree from the pool.
+// Call Release when done to return it; defer is the typical usage.
+func NewPooled(store *digest.Store) *MerkleTree {
+	m := merkleTreePool.Get().(*MerkleTree)
+	m.store = store
+	m.lastDir = dirstate{}
+	m.pooled = true
+	m.m[""] = &rpb.Directory{}
+	return m
+}
+
+// Release returns the MerkleTree to the pool.
+// The MerkleTree must not be used after calling Release.
+// Release is idempotent: calls after the first are no-ops, and it is a
+// no-op for MerkleTrees created via New.
+func (m *MerkleTree) Release() {
+	if !m.pooled {
+		return
+	}
+	clear(m.m)
+	m.store = nil
+	m.lastDir = dirstate{}
+	m.pooled = false
+	merkleTreePool.Put(m)
 }
 
 // Entry is an entry in the tree.

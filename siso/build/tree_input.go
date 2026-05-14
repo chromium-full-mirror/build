@@ -151,7 +151,8 @@ func (st *subtree) init(ctx context.Context, b *Builder, dir string, files []str
 		}
 		// keep digest in tree in st.ds
 		ds := digest.NewStore()
-		mt := merkletree.New(ds)
+		mt := merkletree.NewPooled(ds)
+		defer mt.Release()
 		for _, ent := range ents {
 			err := mt.Set(ent)
 			if err != nil {

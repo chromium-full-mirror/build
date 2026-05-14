@@ -947,7 +947,8 @@ func (b *Builder) uploadBuildNinja(ctx context.Context) {
 		return
 	}
 	ds := digest.NewStore()
-	tree := merkletree.New(ds)
+	tree := merkletree.NewPooled(ds)
+	defer tree.Release()
 	for _, ent := range ents {
 		err := tree.Set(ent)
 		if err != nil {

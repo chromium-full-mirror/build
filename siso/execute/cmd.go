@@ -618,7 +618,8 @@ func (c *Cmd) inputTree(ctx context.Context) ([]merkletree.Entry, error) {
 
 // treeDigest returns a digest for the Merkle tree entries.
 func treeDigest(ctx context.Context, subtrees []merkletree.TreeEntry, entries []merkletree.Entry, ds *digest.Store) (digest.Digest, error) {
-	t := merkletree.New(ds)
+	t := merkletree.NewPooled(ds)
+	defer t.Release()
 	for _, subtree := range subtrees {
 		if log.V(2) {
 			clog.Infof(ctx, "input subtree: %#v", subtree)
