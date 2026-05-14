@@ -131,6 +131,19 @@ func New(ctx context.Context, fsys fs.FS, req Request) (_ *NSJail, err error) {
 			"/dev",
 		}
 	}
+	if paths := os.Getenv("SISO_NSJAIL_PUBLIC_DIRS"); paths != "" {
+		seen := make(map[string]bool)
+		for _, path := range filepath.SplitList(paths) {
+			if !filepath.IsAbs(path) {
+				path = filepath.Join(req.WorkspaceRoot, req.WorkDir, path)
+			}
+			if seen[path] {
+				continue
+			}
+			seen[path] = true
+			req.PublicDirs = append(req.PublicDirs, path)
+		}
+	}
 	for _, dir := range req.PublicDirs {
 		jail.config.Mount = append(jail.config.Mount, &pb.MountPt{
 			Src:    proto.String(dir),
@@ -243,10 +256,21 @@ func (j *NSJail) ExecRoot() string {
 // Args creates nsjail config to run args and returns command line to run args under nsjail.
 func (j *NSJail) Args(ctx context.Context, args ...string) ([]string, error) {
 	config := proto.CloneOf(j.config)
+	arg0 := args[0]
+	if !filepath.IsAbs(arg0) && !strings.ContainsRune(arg0, filepath.Separator) {
+		exePath, err := exec.LookPath(arg0)
+		if err != nil {
+			return nil, fmt.Errorf("failed to lookpath %q: %v", arg0, err)
+		}
+		arg0 = exePath
+	}
+
 	config.ExecBin = &pb.Exe{
-		Path: proto.String(args[0]),
+		Path: proto.String(arg0),
+		Arg0: proto.String(args[0]),
 		Arg:  args[1:],
 	}
+
 	configData, err := prototext.MarshalOptions{
 		Multiline: true,
 		Indent:    " ",
@@ -255,7 +279,7 @@ func (j *NSJail) Args(ctx context.Context, args ...string) ([]string, error) {
 		return nil, err
 	}
 	configPath := filepath.Join(j.dir, "nsjail.config")
-	err = os.WriteFile(configPath, configData, 0755)
+	err = os.WriteFile(configPath, configData, 0644)
 	if err != nil {
 		return nil, err
 	}
