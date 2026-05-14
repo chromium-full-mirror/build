@@ -55,7 +55,7 @@ func TestDirectoryLookup_Symlink(t *testing.T) {
 	symlinkName := filepath.Join(filepath.Dir(filepath.Dir(fileName)), "MacOSX13.3.sdk")
 	setupSymlink(symlinkName, "MacOSX.sdk")
 
-	d := &directory{}
+	d := &directory{isRoot: true}
 	osfs := osfs.New(ctx, "fs", osfs.Option{})
 
 	fname := filepath.Join(dir, symlinkName)

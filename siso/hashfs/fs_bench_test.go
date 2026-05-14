@@ -14,8 +14,12 @@ import (
 
 func BenchmarkDirectoryLookup(b *testing.B) {
 	ctx := b.Context()
-	root := &directory{}
+	root := &directory{isRoot: true}
 	dir := b.TempDir()
+	dir, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		b.Fatal(err)
+	}
 	fname := filepath.Join(dir, "gen")
 	b.Run("miss", func(b *testing.B) {
 		b.ReportAllocs()
@@ -44,8 +48,12 @@ func BenchmarkDirectoryLookup(b *testing.B) {
 // fs_test.go is external test, but this is internal test.
 func TestDirectoryLookup(t *testing.T) {
 	ctx := t.Context()
-	root := &directory{}
+	root := &directory{isRoot: true}
 	dir := t.TempDir()
+	dir, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
 	fname := filepath.Join(dir, "gen")
 
 	t.Run("miss", func(t *testing.T) {
