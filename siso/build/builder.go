@@ -298,8 +298,13 @@ func New(ctx context.Context, graph Graph, opts Options) (_ *Builder, err error)
 	var re *remoteexec.RemoteExec
 	var pe *reproxyexec.REProxyExec
 	if opts.REAPIClient != nil {
+		if opts.RECacheEnableWrite && !opts.REAPIClient.UpdateActionResultEnabled() {
+			return nil, fmt.Errorf("reapi doesn't support UpdateActionResult, required for --re_cache_enable_write")
+		}
+
 		logger.Infof("enable built-in remote exec")
 		re = remoteexec.New(ctx, opts.REAPIClient)
+
 	} else {
 		logger.Infof("disable built-in remote exec")
 	}

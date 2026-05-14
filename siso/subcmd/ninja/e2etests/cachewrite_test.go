@@ -45,6 +45,10 @@ func TestBuild_CacheWrite(t *testing.T) {
 		}
 	}()
 	ds.Client = reapitest.New(ctx, t, fakere)
+	err := ds.Client.Init(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
 	ds.Cache = ds.Client.CacheStore()
 
 	// Setup isolated new ninja runs with global RE

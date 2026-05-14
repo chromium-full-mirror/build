@@ -605,6 +605,16 @@ func (c *Client) GetActionResult(ctx context.Context, d digest.Digest) (*rpb.Act
 	return result, err
 }
 
+// UpdateActionResultEnabled reports whether UpdateActionResult is supported or not.
+func (c *Client) UpdateActionResultEnabled() bool {
+	if c == nil {
+		return false
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.capabilities.GetCacheCapabilities().GetActionCacheUpdateCapabilities().GetUpdateEnabled()
+}
+
 // UpdateActionResult updates the action result by the digest.
 func (c *Client) UpdateActionResult(ctx context.Context, d digest.Digest, result *rpb.ActionResult) error {
 	client := rpb.NewActionCacheClient(c.casConn)
