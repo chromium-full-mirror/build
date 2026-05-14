@@ -53,6 +53,7 @@ var (
 	maxRecvMsgSize         = flag.Int("max_recv_msg_size", 0, "maximum size of a single gRPC message that can be received")
 	maxBatchTotalSizeBytes = flag.Int64("max_batch_total_size_bytes", 0, "maximum combined total size of blobs in batch requests (0 means unlimited)")
 	skipCASValidation      = flag.Bool("skip_cas_validation", false, "skip CAS integrity validation on startup (faster startup, but won't detect corrupted blobs)")
+	allowHostFS            = flag.Bool("allow_host_fs", false, "allow actions without a container image to run with access to the host filesystem")
 
 	sb localexec.SandboxStrategy
 )
@@ -258,7 +259,7 @@ func createServer(ctx context.Context, dataDir string) (*grpc.Server, error) {
 	// Execution service.
 	if *enableExecution {
 		execDir := filepath.Join(dataDir, "exec")
-		executor, err := localexec.New(execDir, cas, sb)
+		executor, err := localexec.New(execDir, cas, sb, *allowHostFS)
 		if err != nil {
 			return nil, err
 		}

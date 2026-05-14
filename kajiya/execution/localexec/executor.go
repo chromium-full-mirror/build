@@ -35,13 +35,11 @@ type Executor struct {
 	sandboxBase     string
 	sandboxStrategy SandboxStrategy
 	trees           *TreeRepository
+	allowHostFS     bool
 }
 
 // New creates a new Executor.
-// baseDir is a directory used to store temporary files required during execution, such as
-// sandbox directories.
-// cas is the ContentAddressableStorage to use for fetching and uploading blobs.
-func New(baseDir string, cas *blobstore.ContentAddressableStorage, sb SandboxStrategy) (*Executor, error) {
+func New(baseDir string, cas *blobstore.ContentAddressableStorage, sb SandboxStrategy, allowHostFS bool) (*Executor, error) {
 	if baseDir == "" {
 		return nil, fmt.Errorf("baseDir must be set")
 	}
@@ -109,6 +107,7 @@ func New(baseDir string, cas *blobstore.ContentAddressableStorage, sb SandboxStr
 		sandboxBase:     sandboxBase,
 		sandboxStrategy: sb,
 		trees:           trees,
+		allowHostFS:     allowHostFS,
 	}, nil
 }
 
@@ -253,23 +252,28 @@ func (e *Executor) buildNsjailArgs(sb *Sandbox, imageDir string, action *model.A
 // This includes the case where we ran the command, and it exited with an exit code != 0.
 // However, if something went wrong during preparation or while spawning the process, an error is returned.
 func (e *Executor) executeCommand(sb *Sandbox, action *model.Action) (*repb.ActionResult, error) {
+	if action.ContainerImage == "" && !e.allowHostFS {
+		return nil, fmt.Errorf("action has no container image and --allow_host_fs is not set; refusing to expose host filesystem")
+	}
+	if action.ContainerImage != "" && e.nsjailPath == "" {
+		return nil, fmt.Errorf("action requires container image, but nsjail is not available")
+	}
+
 	var args []string
 
 	if e.nsjailPath != "" {
-		// Prepare the container image for the action.
-		imageDir, err := e.images.FetchImage(action.ContainerImage)
-		if err != nil {
-			return nil, fmt.Errorf("failed to fetch container image: %w", err)
+		// Prepare the container image for the action, if one is specified.
+		var imageDir string
+		if action.ContainerImage != "" {
+			var err error
+			imageDir, err = e.images.FetchImage(action.ContainerImage)
+			if err != nil {
+				return nil, fmt.Errorf("failed to fetch container image: %w", err)
+			}
 		}
 
 		// If nsjail is available, we use it to sandbox the command.
 		args = e.buildNsjailArgs(sb, imageDir, action)
-	} else {
-		// Otherwise, we just run the command directly on the host.
-		// However, we can only do this if the action doesn't require a container image.
-		if action.ContainerImage != "" {
-			return nil, fmt.Errorf("action requires container image, but nsjail is not available")
-		}
 	}
 
 	args = append(args, action.Args...)
