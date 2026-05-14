@@ -81,6 +81,9 @@ type Prioritized struct {
 
 	waits atomic.Int64
 	reqs  atomic.Int64
+
+	waitStat stat
+	servStat stat
 }
 
 // NewPrioritized creates a new priority semaphore with a name and capacity.
@@ -117,12 +120,13 @@ func (s *Prioritized) WaitAcquire(ctx context.Context, weight int) (context.Cont
 		tid := s.freeTIDs[len(s.freeTIDs)-1]
 		s.freeTIDs = s.freeTIDs[:len(s.freeTIDs)-1]
 		s.used++
+		s.waitStat.update(time.Since(now), false)
 		s.mu.Unlock()
 		s.reqs.Add(1)
 		ctx, servSpan := trace.NewSpan(ctx, s.servSpanName)
 		servSpan.SetTid(tid)
 		servSpan.SetAttr("weight", weight)
-		return ctx, s.onServeCompleteFunc(servSpan, tid), nil
+		return ctx, s.onServeCompleteFunc(servSpan, tid, time.Now()), nil
 	}
 
 	// Otherwise, wait in the priority queue.
@@ -137,13 +141,15 @@ func (s *Prioritized) WaitAcquire(ctx context.Context, weight int) (context.Cont
 	case tid := <-req.ready:
 		// Acquired the semaphore.
 		s.reqs.Add(1)
-		if dur := time.Since(now); dur > 1*time.Second {
+		dur := time.Since(now)
+		if dur > 1*time.Second {
 			clog.Infof(ctx, "wait-priority %s for %s (weight: %d)", s.name, dur, weight)
 		}
+		s.waitStat.update(dur, false)
 		ctx, servSpan := trace.NewSpan(ctx, s.servSpanName)
 		servSpan.SetTid(tid)
 		servSpan.SetAttr("weight", weight)
-		return ctx, s.onServeCompleteFunc(servSpan, tid), nil
+		return ctx, s.onServeCompleteFunc(servSpan, tid, time.Now()), nil
 	case <-ctx.Done():
 		oerr := context.Cause(ctx)
 		// Attempt to atomically cancel the request.
@@ -152,10 +158,11 @@ func (s *Prioritized) WaitAcquire(ctx context.Context, weight int) (context.Cont
 			// Block until the ready signal is sent to maintain invariants.
 			tid := <-req.ready
 			s.reqs.Add(1)
+			s.waitStat.update(time.Since(now), false)
 			ctx, servSpan := trace.NewSpan(ctx, s.servSpanName)
 			servSpan.SetTid(tid)
 			servSpan.SetAttr("weight", weight)
-			return ctx, s.onServeCompleteFunc(servSpan, tid), nil
+			return ctx, s.onServeCompleteFunc(servSpan, tid, time.Now()), nil
 		}
 
 		// We successfully canceled. Remove from the queue.
@@ -163,12 +170,13 @@ func (s *Prioritized) WaitAcquire(ctx context.Context, weight int) (context.Cont
 		if req.index != -1 {
 			heap.Remove(&s.pq, req.index)
 		}
+		s.waitStat.update(time.Since(now), true)
 		s.mu.Unlock()
 		return ctx, func(error) {}, oerr
 	}
 }
 
-func (s *Prioritized) onServeCompleteFunc(servSpan *trace.Span, tid int) func(error) {
+func (s *Prioritized) onServeCompleteFunc(servSpan *trace.Span, tid int, t time.Time) func(error) {
 	return func(err error) {
 		if servSpan != nil {
 			st, ok := status.FromError(err)
@@ -177,6 +185,7 @@ func (s *Prioritized) onServeCompleteFunc(servSpan *trace.Span, tid int) func(er
 			}
 			servSpan.Close(st.Proto())
 		}
+		s.servStat.update(time.Since(t), err != nil)
 		s.privateRelease(tid)
 	}
 }
@@ -243,4 +252,12 @@ func (s *Prioritized) Do(ctx context.Context, weight int, f func(ctx context.Con
 
 	err = f(ctx)
 	return err
+}
+
+// Stat returns semaphore stat.
+func (s *Prioritized) Stat() Stat {
+	if s == nil {
+		return Stat{}
+	}
+	return newStat(s.name, &s.waitStat, &s.servStat)
 }

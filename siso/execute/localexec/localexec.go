@@ -66,7 +66,7 @@ func (LocalExec) Run(ctx context.Context, cmd *execute.Cmd) (err error) {
 }
 
 // fix for http://b/278658064 windows: fork/exec: Not enough memory resources are available to process this command.
-var forkSema = semaphore.New("fork", runtime.GOMAXPROCS(0))
+var ForkSema = semaphore.New("fork", runtime.GOMAXPROCS(0))
 
 func run(ctx context.Context, cmd *execute.Cmd) (*rpb.ActionResult, error) {
 	if len(cmd.Args) == 0 {
@@ -168,7 +168,7 @@ func run(ctx context.Context, cmd *execute.Cmd) (*rpb.ActionResult, error) {
 
 	var ru *epb.Rusage
 	var err error
-	err = forkSema.Do(ctx, func(ctx context.Context) error {
+	err = ForkSema.Do(ctx, func(ctx context.Context) error {
 		return c.Start()
 	})
 	if err == nil {

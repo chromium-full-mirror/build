@@ -32,6 +32,7 @@ type Monitorable interface {
 	NumServs() int
 	NumWaits() int
 	NumRequests() int
+	Stat() (wait, serv Stat)
 }
 
 // Semaphore is a semaphore.
@@ -44,6 +45,9 @@ type Semaphore struct {
 
 	waits atomic.Int64
 	reqs  atomic.Int64
+
+	waitStat stat
+	servStat stat
 }
 
 // New creates a new semaphore with name and capacity.
@@ -75,18 +79,23 @@ func (s *Semaphore) WaitAcquire(ctx context.Context) (context.Context, func(erro
 		s.reqs.Add(1)
 		ctx, span := trace.NewSpan(ctx, s.servSpanName)
 		span.SetTid(tid)
-		if dur := time.Since(now); dur > 1*time.Second {
+		dur := time.Since(now)
+		if dur > 1*time.Second {
 			clog.Infof(ctx, "wait %s for %s", s.name, dur)
 		}
+		s.waitStat.update(dur, false)
+		now = time.Now()
 		return ctx, func(err error) {
 			st, ok := status.FromError(err)
 			if !ok {
 				st = status.FromContextError(err)
 			}
 			span.Close(st.Proto())
+			s.servStat.update(time.Since(now), err != nil)
 			s.ch <- tid
 		}, nil
 	case <-ctx.Done():
+		s.waitStat.update(time.Since(now), true)
 		return ctx, func(error) {}, context.Cause(ctx)
 	}
 }
@@ -96,17 +105,21 @@ var errNotAvailable = errors.New("semaphore: not available")
 // TryAcquire acquires a semaphore if available, or return error.
 // It returns a context for acquired semaphore and func to release it.
 func (s *Semaphore) TryAcquire(ctx context.Context) (context.Context, func(error), error) {
+	now := time.Now()
 	select {
 	case tid := <-s.ch:
 		s.reqs.Add(1)
+		s.waitStat.update(time.Since(now), false)
 		ctx, span := trace.NewSpan(ctx, s.servSpanName)
 		span.SetTid(tid)
+		now = time.Now()
 		return ctx, func(err error) {
 			st, ok := status.FromError(err)
 			if !ok {
 				st = status.FromContextError(err)
 			}
 			span.Close(st.Proto())
+			s.servStat.update(time.Since(now), err != nil)
 			s.ch <- tid
 		}, nil
 	default:
@@ -149,4 +162,12 @@ func (s *Semaphore) Do(ctx context.Context, f func(ctx context.Context) error) (
 	defer func() { done(err) }()
 	err = f(ctx)
 	return err
+}
+
+// Stat returns semaphore stat.
+func (s *Semaphore) Stat() Stat {
+	if s == nil {
+		return Stat{}
+	}
+	return newStat(s.name, &s.waitStat, &s.servStat)
 }

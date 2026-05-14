@@ -24,7 +24,7 @@ import (
 	"go.chromium.org/build/siso/sync/semaphore"
 )
 
-var cppScanSema = semaphore.New("cppscan", runtime.GOMAXPROCS(0))
+var CPPScanSema = semaphore.New("cppscan", runtime.GOMAXPROCS(0))
 
 // fsview is a view of filesystem per scandeps process.
 // It will reduce unnecessary contention to filesystem.
@@ -219,7 +219,7 @@ func (fv *fsview) scanFile(ctx context.Context, fname string) (*scanResult, erro
 	}
 	var includes []string
 	var defines map[string][]string
-	err = cppScanSema.Do(ctx, func(ctx context.Context) error {
+	err = CPPScanSema.Do(ctx, func(ctx context.Context) error {
 		var err error
 		includes, defines, err = CPPScan(ctx, fname, buf)
 		return err

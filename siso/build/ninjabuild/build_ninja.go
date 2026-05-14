@@ -11,7 +11,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -21,6 +20,7 @@ import (
 	"go.chromium.org/build/siso/hashfs"
 	"go.chromium.org/build/siso/o11y/clog"
 	"go.chromium.org/build/siso/o11y/trace"
+	"go.chromium.org/build/siso/sync/semaphore"
 	"go.chromium.org/build/siso/toolsupport/ninjautil"
 	"go.chromium.org/build/siso/ui"
 )
@@ -218,33 +218,20 @@ func rebuildManifest(ctx context.Context, graph *Graph, bopts build.Options) err
 	return err
 }
 
-type semaTrace struct {
-	name                     string
-	n, nerr                  int
-	waitAvg, servAvg         time.Duration
-	waitBuckets, servBuckets [7]int
-}
-
-func dumpResourceUsageTable(semaTraces map[string]semaTrace) string {
-	var semaNames []string
-	for key := range semaTraces {
-		semaNames = append(semaNames, key)
-	}
-	sort.Strings(semaNames)
+func dumpResourceUsageTable(semaStats []semaphore.Stat) string {
 	var lsb, usb strings.Builder
 	var needToShow bool
 	ltw := tabwriter.NewWriter(&lsb, 10, 8, 1, ' ', tabwriter.AlignRight)
 	utw := tabwriter.NewWriter(&usb, 10, 8, 1, ' ', tabwriter.AlignRight)
 	fmt.Fprintf(ltw, "resource/capa\tused(err)\twait-avg\t|   s m |\tserv-avg\t|   s m |\t\n")
 	fmt.Fprintf(utw, "resource/capa\tused(err)\twait-avg\t|   s m |\tserv-avg\t|   s m |\t\n")
-	for _, key := range semaNames {
-		t := semaTraces[key]
-		fmt.Fprintf(ltw, "%s\t%d(%d)\t%s\t%s\t%s\t%s\t\n", t.name, t.n, t.nerr, t.waitAvg.Round(time.Millisecond), histogram(t.waitBuckets), t.servAvg.Round(time.Millisecond), histogram(t.servBuckets))
+	for _, t := range semaStats {
+		fmt.Fprintf(ltw, "%s\t%d(%d)\t%s\t%s\t%s\t%s\t\n", t.Name, t.N, t.NErr, t.WaitAvg().Round(time.Millisecond), histogram(t.WaitBuckets), t.ServAvg().Round(time.Millisecond), histogram(t.ServBuckets))
 		// bucket 5 = [1m,10m)
 		// bucket 6 = [10m,*)
-		if t.waitBuckets[5] > 0 || t.waitBuckets[6] > 0 || t.servBuckets[5] > 0 || t.servBuckets[6] > 0 {
+		if t.WaitBuckets[5] > 0 || t.WaitBuckets[6] > 0 || t.ServBuckets[5] > 0 || t.ServBuckets[6] > 0 {
 			needToShow = true
-			fmt.Fprintf(utw, "%s\t%d(%d)\t%s\t%s\t%s\t%s\t\n", t.name, t.n, t.nerr, ui.FormatDuration(t.waitAvg), histogram(t.waitBuckets), ui.FormatDuration(t.servAvg), histogram(t.servBuckets))
+			fmt.Fprintf(utw, "%s\t%d(%d)\t%s\t%s\t%s\t%s\t\n", t.Name, t.N, t.NErr, ui.FormatDuration(t.WaitAvg()), histogram(t.WaitBuckets), ui.FormatDuration(t.ServAvg()), histogram(t.ServBuckets))
 		}
 	}
 	ltw.Flush()
@@ -351,71 +338,13 @@ func doBuild(ctx context.Context, graph *Graph, bopts build.Options, nopts RunNi
 		}
 	}
 
-	semaTraces := make(map[string]semaTrace)
 	tstats := b.TraceStats()
-	var rbeWorker, rbeExec *build.TraceStat
 	for _, ts := range tstats {
 		clog.Infof(ctx, "%s: n=%d avg=%s max=%s", ts.Name, ts.N, ts.Avg(), ts.Max)
-		switch {
-		case strings.HasPrefix(ts.Name, "wait:"):
-			name := strings.TrimPrefix(ts.Name, "wait:")
-			t := semaTraces[name]
-			t.name = name
-			t.n = ts.N
-			t.waitAvg = ts.Avg()
-			t.waitBuckets = ts.Buckets
-			semaTraces[name] = t
-		case strings.HasPrefix(ts.Name, "serv:"):
-			name := strings.TrimPrefix(ts.Name, "serv:")
-			t := semaTraces[name]
-			t.name = name
-			t.n = ts.N
-			t.nerr = ts.NErr
-			t.servAvg = ts.Avg()
-			t.servBuckets = ts.Buckets
-			semaTraces[name] = t
-		case ts.Name == "rbe:queue":
-			name := "rbe:sched"
-			t := semaTraces[name]
-			t.name = name
-			t.n = ts.N
-			t.nerr = ts.NErr
-			t.waitAvg = ts.Avg()
-			t.waitBuckets = ts.Buckets
-			semaTraces[name] = t
-		case ts.Name == "rbe:worker":
-			rbeWorker = ts
-		case ts.Name == "rbe:exec":
-			rbeExec = ts
-		}
 	}
-	if rbeWorker != nil {
-		name := "rbe:sched"
-		t := semaTraces[name]
-		t.name = name
-		t.servAvg = rbeWorker.Avg()
-		t.servBuckets = rbeWorker.Buckets
-		semaTraces[name] = t
-	}
-	if rbeWorker != nil && rbeExec != nil {
-		name := "rbe:worker"
-		t := semaTraces[name]
-		t.name = name
-		t.n = rbeExec.N
-		t.waitAvg = rbeWorker.Avg() - rbeExec.Avg()
-		// number of waits would not be correct with this calculation
-		// because it just uses counts in buckets.
-		// not sure how we can measure actual waiting time in buckets,
-		// but this would provide enough estimated values.
-		for i := range rbeWorker.Buckets {
-			t.waitBuckets[i] = rbeWorker.Buckets[i] - rbeExec.Buckets[i]
-		}
-		t.servAvg = rbeExec.Avg()
-		t.servBuckets = rbeExec.Buckets
-		semaTraces[name] = t
-	}
-	if len(semaTraces) > 0 {
-		rut := dumpResourceUsageTable(semaTraces)
+	semaStats := b.SemaStats()
+	if len(semaStats) > 0 {
+		rut := dumpResourceUsageTable(semaStats)
 		clog.Infof(ctx, "resource usage table:\n%s", rut)
 		if bopts.ResultstoreUploader != nil {
 			bopts.ResultstoreUploader.AddBuildLog(rut + "\n")

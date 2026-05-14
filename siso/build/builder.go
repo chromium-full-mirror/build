@@ -204,6 +204,9 @@ type Builder struct {
 	reCacheEnableWrite bool
 	reapiclient        *reapi.Client
 
+	reStatMu                  sync.Mutex
+	reSchedStat, reWorkerStat semaphore.Stat
+
 	reproxySema *semaphore.Prioritized
 	reproxyExec *reproxyexec.REProxyExec
 
@@ -386,6 +389,8 @@ func New(ctx context.Context, graph Graph, opts Options) (_ *Builder, err error)
 		reproxySema:        semaphore.NewPrioritized("reproxyexec", opts.Limits.Remote),
 		actionSalt:         opts.ActionSalt,
 		reapiclient:        opts.REAPIClient,
+		reSchedStat:        semaphore.Stat{Name: "re:sched"},
+		reWorkerStat:       semaphore.Stat{Name: "re:worker"},
 
 		outputLocal:           opts.OutputLocal,
 		cacheSema:             semaphore.New("cache", opts.Limits.Cache),
@@ -450,6 +455,38 @@ func (b *Builder) Stats() Stats {
 // TraceStats returns trace stats of the builder.
 func (b *Builder) TraceStats() []*TraceStat {
 	return b.traceStats.get()
+}
+
+// SemaStats returns semaphore stats of the builder.
+func (b *Builder) SemaStats() []semaphore.Stat {
+	stats := []semaphore.Stat{
+		b.cache.sema.Stat(),
+		b.cacheSema.Stat(),
+		scandeps.CPPScanSema.Stat(),
+		b.fastLocalSema.Stat(),
+		hashfs.DigestSemaphore.Stat(),
+		localexec.ForkSema.Stat(),
+		hashfs.FlushSemaphore.Stat(),
+		b.localSema.Stat(),
+		osfs.LstatSemaphore.Stat(),
+	}
+	for _, name := range slices.Sorted(maps.Keys(b.poolSemas)) {
+		stats = append(stats, b.poolSemas[name].Stat())
+	}
+	stats = append(stats,
+		b.preprocSema.Stat(),
+		b.reSchedStat,
+		b.reWorkerStat,
+		reapi.FileSemaphore.Stat(),
+		remoteexec.Semaphore.Stat(), // remoteexec-digest
+		b.rewrapSema.Stat(),
+		b.remoteSema.Stat(),
+		b.reproxySema.Stat(),
+		b.scanDepsSema.Stat(),
+	)
+	return slices.DeleteFunc(stats, func(s semaphore.Stat) bool {
+		return s.Name == "" || s.N == 0
+	})
 }
 
 // ErrManifest is an error to indicate manifest error.

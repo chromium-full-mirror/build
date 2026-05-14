@@ -9,6 +9,7 @@ import (
 	"errors"
 	"time"
 
+	rpb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -60,6 +61,9 @@ func (b *Builder) execRemoteRun(uploadCtx, execCtx context.Context, step *Step) 
 			step.setPhase(stepOutput)
 			step.metrics.IsRemote = true
 			result, cached := step.cmd.ActionResult()
+			if !cached {
+				b.updateREStat(result, err)
+			}
 			if err == nil && !validateRemoteActionResult(result) {
 				clog.Errorf(ctx, "no outputs in action result. retry without cache lookup. b/350360391")
 				res := cmdOutput(ctx, cmdOutputResultRETRY, step.cmd, b.reapiclient.Instance(), step.def.Binding("command"), step.def.RuleName(), err)
@@ -71,6 +75,9 @@ func (b *Builder) execRemoteRun(uploadCtx, execCtx context.Context, step *Step) 
 				step.setPhase(stepOutput)
 				step.metrics.IsRemote = true
 				result, cached = step.cmd.ActionResult()
+				if !cached {
+					b.updateREStat(result, err)
+				}
 				if err == nil && !validateRemoteActionResult(result) {
 					clog.Errorf(ctx, "no outputs in action result again. b/350360391")
 				}
@@ -111,6 +118,42 @@ func (b *Builder) execRemoteRun(uploadCtx, execCtx context.Context, step *Step) 
 		}
 		return err
 	})
+}
+
+func (b *Builder) updateREStat(result *rpb.ActionResult, err error) {
+	md := result.GetExecutionMetadata()
+	if md == nil {
+		return
+	}
+	var queueDur, workerDur, inputDur, execDur, outputDur time.Duration
+	queued := md.GetQueuedTimestamp()
+	workerStarted := md.GetWorkerStartTimestamp()
+	if queued != nil && workerStarted != nil {
+		queueDur = workerStarted.AsTime().Sub(queued.AsTime())
+	}
+	workerCompleted := md.GetWorkerCompletedTimestamp()
+	if workerStarted != nil && workerCompleted != nil {
+		workerDur = workerCompleted.AsTime().Sub(workerStarted.AsTime())
+	}
+	inputFetchStarted := md.GetInputFetchStartTimestamp()
+	inputFetchCompleted := md.GetInputFetchCompletedTimestamp()
+	if inputFetchStarted != nil && inputFetchCompleted != nil {
+		inputDur = inputFetchCompleted.AsTime().Sub(inputFetchStarted.AsTime())
+	}
+	execStarted := md.GetExecutionStartTimestamp()
+	execCompleted := md.GetExecutionCompletedTimestamp()
+	if execStarted != nil && execCompleted != nil {
+		execDur = execCompleted.AsTime().Sub(execStarted.AsTime())
+	}
+	outputUploadStarted := md.GetOutputUploadStartTimestamp()
+	outputUploadCompleted := md.GetOutputUploadCompletedTimestamp()
+	if outputUploadStarted != nil && outputUploadCompleted != nil {
+		outputDur = outputUploadCompleted.AsTime().Sub(outputUploadStarted.AsTime())
+	}
+	b.reStatMu.Lock()
+	defer b.reStatMu.Unlock()
+	b.reSchedStat.Update(queueDur, workerDur, err != nil)
+	b.reWorkerStat.Update(inputDur+outputDur, execDur, err != nil)
 }
 
 func (b *Builder) execRemote(ctx context.Context, step *Step) error {
