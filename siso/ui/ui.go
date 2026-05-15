@@ -229,25 +229,39 @@ func visibleLen(s string) int {
 
 // StripANSIEscapeCodes strips ANSI escape codes.
 func StripANSIEscapeCodes(s string) string {
+	// Fast path: no escape sequences at all, return the input unchanged.
+	if !strings.Contains(s, "\033") {
+		return s
+	}
 	var sb strings.Builder
-	for i := 0; i < len(s); i++ {
+	sb.Grow(len(s))
+	for i := 0; i < len(s); {
+		// Copy the run of plain bytes up to the next escape in one Write.
 		if s[i] != '\033' {
-			// not an escape code.
-			sb.WriteByte(s[i])
-			continue
+			j := strings.IndexByte(s[i:], '\033')
+			if j < 0 {
+				sb.WriteString(s[i:])
+				break
+			}
+			sb.WriteString(s[i : i+j])
+			i += j
 		}
-		// Only strip CSIs for now.
+		// s[i] is the escape char.
 		if i+1 >= len(s) {
 			break
 		}
 		if s[i+1] != '[' {
-			// Not a CSI.
+			// Not a CSI; drop the lone escape and continue.
+			i++
 			continue
 		}
 		i += 2
-
-		// Loop while current char is NOT an ASCII letter.
+		// Skip params/intermediate bytes until an ASCII letter (the
+		// CSI's final byte), then drop the letter too.
 		for i < len(s) && !unicode.IsLetter(rune(s[i])) {
+			i++
+		}
+		if i < len(s) {
 			i++
 		}
 	}
