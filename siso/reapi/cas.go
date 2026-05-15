@@ -26,6 +26,7 @@ import (
 	log "github.com/golang/glog"
 	"github.com/google/uuid"
 	"github.com/klauspost/compress/zstd"
+	"golang.org/x/sync/errgroup"
 	xsemaphore "golang.org/x/sync/semaphore"
 	bpb "google.golang.org/genproto/googleapis/bytestream"
 	"google.golang.org/grpc/codes"
@@ -50,6 +51,15 @@ const (
 	// batchBlobUploadLimit is max number of blobs in BatchUpdateBlobs.
 	batchBlobUploadLimit = 1000
 )
+
+// uploadConcurrency is the per-UploadAll cap for batch and stream RPCs.
+// Defaults to 1 (serial) so callers must opt into parallel upload.
+func (c *Client) uploadConcurrency() int {
+	if c.opt.UploadConcurrency > 0 {
+		return c.opt.UploadConcurrency
+	}
+	return 1
+}
 
 func selectCompressor(serverSupported []rpb.Compressor_Value) rpb.Compressor_Value {
 	if len(serverSupported) == 0 {
@@ -706,89 +716,101 @@ func (c *Client) uploadWithBatchUpdateBlobs(ctx context.Context, digests []diges
 	batchReqs := createBatchUpdateBlobsRequests(c.opt.Instance, blobReqs, byteLimit, batchBlobUploadLimit)
 	casClient := rpb.NewContentAddressableStorageClient(c.casConn)
 
-	// TODO(b/273884978): It may be worth trying to send the batch requests in parallel.
+	eg, gctx := errgroup.WithContext(ctx)
+	eg.SetLimit(c.uploadConcurrency())
 	for batchReq := range batchReqs {
-		var batchResp *rpb.BatchUpdateBlobsResponse
-		checkBlobs := make(map[digest.Digest]bool)
-		for _, req := range batchReq.Requests {
-			checkBlobs[digest.FromProto(req.Digest)] = true
-		}
-		// TODO(b/328332495): grpc should retry by service config?
-		err := retry.Do(ctx, func() error {
-			var err error
-			batchResp, err = casClient.BatchUpdateBlobs(ctx, batchReq)
-			return err
+		eg.Go(func() error {
+			return c.processBatchUpdateBlobsReq(gctx, casClient, batchReq, uploads, ds, missingBlobs)
 		})
-		if err != nil {
-			c.m.WriteDone(0, err)
-			return nil, status.Errorf(status.Code(err), "batch update blobs: %v", err)
-		}
-
-		for _, res := range batchResp.Responses {
-			blob := digest.FromProto(res.Digest)
-			delete(checkBlobs, blob)
-			data, ok := ds.Get(blob)
-			if !ok {
-				clog.Warningf(ctx, "Not found %s in store", blob)
-				missingBlobs.append(missingBlob{
-					Digest: blob,
-					Err:    errBlobNotInReq,
-				})
-				continue
-			}
-			st := status.FromProto(res.GetStatus())
-			if st.Code() != codes.OK {
-				clog.Warningf(ctx, "Failed to batch-update %s: %v", data, st)
-				err := status.Errorf(st.Code(), "batch update blobs: %v", res.Status)
-				missingBlobs.append(missingBlob{
-					Digest: blob,
-					Err:    err,
-				})
-				c.m.WriteDone(int(res.Digest.SizeBytes), err)
-				uploads[blob].done(err)
-				continue
-			}
-			clog.Infof(ctx, "uploaded in batch: %s", data)
-			c.m.WriteDone(int(res.Digest.SizeBytes), nil)
-			uploads[blob].done(nil)
-		}
-		clog.Infof(ctx, "upload by batch %d->%d blobs (noresp:%d) (missing:%d)", len(batchReq.Requests), len(batchResp.Responses), len(checkBlobs), missingBlobs.Size())
-		if len(checkBlobs) > 0 {
-			// check again if digest is missing in batchResp.
-			checks := slices.Collect(maps.Keys(checkBlobs))
-			clog.Warningf(ctx, "batch no response for %s", checks)
-			missings, err := c.Missing(ctx, checks)
-			if err != nil {
-				clog.Warningf(ctx, "recheck missing %s: %v", checks, err)
-				for _, d := range checks {
-					uploads[d].done(err)
-					missingBlobs.append(missingBlob{
-						Digest: d,
-						Err:    err,
-					})
-				}
-			} else {
-				for _, d := range missings {
-					clog.Warningf(ctx, "recheck missing %s: not uploaded", d)
-					uploads[d].done(errUploadNoResponse)
-					missingBlobs.append(missingBlob{
-						Digest: d,
-						Err:    errUploadNoResponse,
-					})
-					delete(checkBlobs, d)
-				}
-				// checkBlobs has blobs that are not reported
-				// in BatchUpdateBlobsResponse, but not reported
-				// as missing by FindMissing, so we can believe
-				// them exists in CAS.
-				for d := range checkBlobs {
-					clog.Warningf(ctx, "recheck missing %s: exists", d)
-					uploads[d].done(nil)
-				}
-			}
-		}
+	}
+	if err := eg.Wait(); err != nil {
+		return nil, err
 	}
 	return missingBlobs.get(), nil
+}
+
+// processBatchUpdateBlobsReq sends one BatchUpdateBlobs RPC and reconciles the response.
+func (c *Client) processBatchUpdateBlobsReq(ctx context.Context, casClient rpb.ContentAddressableStorageClient, batchReq *rpb.BatchUpdateBlobsRequest, uploads map[digest.Digest]*uploadOp, ds *digest.Store, missingBlobs *missingBlobs) error {
+	var batchResp *rpb.BatchUpdateBlobsResponse
+	checkBlobs := make(map[digest.Digest]bool)
+	for _, req := range batchReq.Requests {
+		checkBlobs[digest.FromProto(req.Digest)] = true
+	}
+	// TODO(b/328332495): grpc should retry by service config?
+	err := retry.Do(ctx, func() error {
+		var err error
+		batchResp, err = casClient.BatchUpdateBlobs(ctx, batchReq)
+		return err
+	})
+	if err != nil {
+		c.m.WriteDone(0, err)
+		return status.Errorf(status.Code(err), "batch update blobs: %v", err)
+	}
+
+	for _, res := range batchResp.Responses {
+		blob := digest.FromProto(res.Digest)
+		delete(checkBlobs, blob)
+		data, ok := ds.Get(blob)
+		if !ok {
+			clog.Warningf(ctx, "Not found %s in store", blob)
+			missingBlobs.append(missingBlob{
+				Digest: blob,
+				Err:    errBlobNotInReq,
+			})
+			continue
+		}
+		st := status.FromProto(res.GetStatus())
+		if st.Code() != codes.OK {
+			clog.Warningf(ctx, "Failed to batch-update %s: %v", data, st)
+			err := status.Errorf(st.Code(), "batch update blobs: %v", res.Status)
+			missingBlobs.append(missingBlob{
+				Digest: blob,
+				Err:    err,
+			})
+			c.m.WriteDone(int(res.Digest.SizeBytes), err)
+			uploads[blob].done(err)
+			continue
+		}
+		clog.Infof(ctx, "uploaded in batch: %s", data)
+		c.m.WriteDone(int(res.Digest.SizeBytes), nil)
+		uploads[blob].done(nil)
+	}
+	clog.Infof(ctx, "upload by batch %d->%d blobs (noresp:%d) (missing:%d)", len(batchReq.Requests), len(batchResp.Responses), len(checkBlobs), missingBlobs.Size())
+	if len(checkBlobs) == 0 {
+		return nil
+	}
+	// check again if digest is missing in batchResp.
+	checks := slices.Collect(maps.Keys(checkBlobs))
+	clog.Warningf(ctx, "batch no response for %s", checks)
+	missings, err := c.Missing(ctx, checks)
+	if err != nil {
+		clog.Warningf(ctx, "recheck missing %s: %v", checks, err)
+		for _, d := range checks {
+			uploads[d].done(err)
+			missingBlobs.append(missingBlob{
+				Digest: d,
+				Err:    err,
+			})
+		}
+		return nil
+	}
+	for _, d := range missings {
+		clog.Warningf(ctx, "recheck missing %s: not uploaded", d)
+		uploads[d].done(errUploadNoResponse)
+		missingBlobs.append(missingBlob{
+			Digest: d,
+			Err:    errUploadNoResponse,
+		})
+		delete(checkBlobs, d)
+	}
+	// checkBlobs has blobs that are not reported in BatchUpdateBlobsResponse,
+	// but not reported as missing by FindMissing, so we can believe them
+	// exists in CAS.
+	for d := range checkBlobs {
+		clog.Warningf(ctx, "recheck missing %s: exists", d)
+		uploads[d].done(nil)
+	}
+	return nil
 }
 
 // blobsToUpload returns a list of blobs to upload by looking up the digest store.
@@ -901,83 +923,93 @@ func createBatchUpdateBlobsRequests(instance string, blobReqs iter.Seq[*rpb.Batc
 func (c *Client) uploadWithByteStream(ctx context.Context, digests []digest.Digest, uploads map[digest.Digest]*uploadOp, ds *digest.Store) []missingBlob {
 	clog.Infof(ctx, "upload by streaming %d", len(digests))
 
-	var missingBlobs []missingBlob
 	bsClient := bpb.NewByteStreamClient(c.casConn)
-	for _, d := range digests {
-		started := time.Now()
-		data, ok := ds.Get(d)
-		if !ok {
-			clog.Warningf(ctx, "Not found %s in store", d)
-			missingBlobs = append(missingBlobs, missingBlob{
-				Digest: d,
-				Err:    errBlobNotInReq,
-			})
-			continue
-		}
-		err := retry.Do(ctx, func() error {
-			ctx, cancel := digest.ContextWithTimeout(ctx, d)
-			defer cancel()
-			rd, err := data.Open(ctx)
-			if err != nil {
-				return err
-			}
-			defer rd.Close()
-			resourceName := c.uploadResourceName(d)
-			if log.V(1) {
-				clog.Infof(ctx, "put %s", resourceName)
-			}
-			wr, err := bytestreamio.Create(ctx, bsClient, c.uploadResourceName(d), data.String())
-			if err != nil {
-				return err
-			}
-			cwr, err := c.newEncoder(wr, d)
-			if err != nil {
-				wr.Close()
-				return err
-			}
-			_, err = io.Copy(cwr, rd)
-			if err != nil {
-				cwr.Close()
-				wr.Close()
-				return err
-			}
-			err = cwr.Close()
-			if err != nil {
-				wr.Close()
-				return err
-			}
-			err = wr.Close()
-			if err != nil {
-				// Some REAPI backends may return non-standard
-				// committed size, or error in CloseAndRecv.
-				// Check it by FindMissingBlobs API to see if
-				// the blob is already uploaded or not.
-				ds, merr := c.Missing(ctx, []digest.Digest{d})
-				if merr == nil && len(ds) == 0 {
-					clog.Infof(ctx, "bytestreamio.Create: %v -> %v exists in CAS", err, d)
-					err = nil
-				} else {
-					clog.Warningf(ctx, "bytestreamio.Create: %v -> missing %v, %v", err, ds, merr)
-					err = status.Errorf(codes.Internal, "%v", err)
-				}
-			}
-			return err
-		})
-		c.m.WriteDone(int(d.SizeBytes), err)
-		uploads[d].done(err)
-		if err != nil {
-			clog.Warningf(ctx, "Failed to stream %s in %s: %v", data, time.Since(started), err)
-			missingBlobs = append(missingBlobs, missingBlob{
-				Digest: d,
-				Err:    err,
-			})
-			continue
-		}
-		clog.Infof(ctx, "uploaded streaming %s in %s err=%v", data, time.Since(started), err)
+	var (
+		mu      sync.Mutex
+		missing []missingBlob
+	)
+	addMissing := func(mb missingBlob) {
+		mu.Lock()
+		missing = append(missing, mb)
+		mu.Unlock()
 	}
-	clog.Infof(ctx, "uploaded by streaming %d blobs (missing:%d)", len(digests), len(missingBlobs))
 
-	return missingBlobs
+	eg, gctx := errgroup.WithContext(ctx)
+	eg.SetLimit(c.uploadConcurrency())
+	for _, d := range digests {
+		eg.Go(func() error {
+			c.streamOneBlob(gctx, bsClient, d, uploads, ds, addMissing)
+			return nil
+		})
+	}
+	_ = eg.Wait()
+	clog.Infof(ctx, "uploaded by streaming %d blobs (missing:%d)", len(digests), len(missing))
+	return missing
+}
+
+// streamOneBlob uploads one blob via ByteStream; errors go to addMissing, not propagated.
+func (c *Client) streamOneBlob(ctx context.Context, bsClient bpb.ByteStreamClient, d digest.Digest, uploads map[digest.Digest]*uploadOp, ds *digest.Store, addMissing func(missingBlob)) {
+	started := time.Now()
+	data, ok := ds.Get(d)
+	if !ok {
+		clog.Warningf(ctx, "Not found %s in store", d)
+		addMissing(missingBlob{Digest: d, Err: errBlobNotInReq})
+		return
+	}
+	err := retry.Do(ctx, func() error {
+		ctx, cancel := digest.ContextWithTimeout(ctx, d)
+		defer cancel()
+		rd, err := data.Open(ctx)
+		if err != nil {
+			return err
+		}
+		defer rd.Close()
+		if log.V(1) {
+			clog.Infof(ctx, "put %s", c.uploadResourceName(d))
+		}
+		wr, err := bytestreamio.Create(ctx, bsClient, c.uploadResourceName(d), data.String())
+		if err != nil {
+			return err
+		}
+		cwr, err := c.newEncoder(wr, d)
+		if err != nil {
+			wr.Close()
+			return err
+		}
+		_, err = io.Copy(cwr, rd)
+		if err != nil {
+			cwr.Close()
+			wr.Close()
+			return err
+		}
+		err = cwr.Close()
+		if err != nil {
+			wr.Close()
+			return err
+		}
+		err = wr.Close()
+		if err != nil {
+			// Some REAPI backends may return non-standard committed size,
+			// or error in CloseAndRecv. Check via FindMissingBlobs whether
+			// the blob is already uploaded or not.
+			ds, merr := c.Missing(ctx, []digest.Digest{d})
+			if merr == nil && len(ds) == 0 {
+				clog.Infof(ctx, "bytestreamio.Create: %v -> %v exists in CAS", err, d)
+				return nil
+			}
+			clog.Warningf(ctx, "bytestreamio.Create: %v -> missing %v, %v", err, ds, merr)
+			return status.Errorf(codes.Internal, "%v", err)
+		}
+		return nil
+	})
+	c.m.WriteDone(int(d.SizeBytes), err)
+	uploads[d].done(err)
+	if err != nil {
+		clog.Warningf(ctx, "Failed to stream %s in %s: %v", data, time.Since(started), err)
+		addMissing(missingBlob{Digest: d, Err: err})
+		return
+	}
+	clog.Infof(ctx, "uploaded streaming %s in %s", data, time.Since(started))
 }
 
 // resourceName constructs a resource name for uploading the blob identified by the digest.

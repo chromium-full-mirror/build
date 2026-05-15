@@ -14,6 +14,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -194,7 +195,11 @@ func (c *Command) run(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to get cas credential: %w", err)
 	}
-	casClient, err := reapi.New(ctx, ccred, *c.casopt)
+	// isolate uploads a handful of targets concurrently and each target's
+	// upload set is large; enable per-UploadAll parallel batch/stream RPCs.
+	casopt := *c.casopt
+	casopt.UploadConcurrency = max(32, runtime.GOMAXPROCS(0)*4)
+	casClient, err := reapi.New(ctx, ccred, casopt)
 	if err == nil {
 		err = casClient.Init(ctx)
 	}

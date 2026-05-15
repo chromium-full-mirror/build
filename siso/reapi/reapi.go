@@ -87,6 +87,11 @@ type Option struct {
 	// default to use high api version advertised by the server
 	// capabilities.
 	REAPIVersion string
+
+	// UploadConcurrency caps in-flight upload RPCs per UploadAll call.
+	// Zero (default) means serial; set to max(32, GOMAXPROCS*4) or similar
+	// for callers that benefit from parallel upload (e.g. `siso isolate`).
+	UploadConcurrency int
 }
 
 // Envs returns environment flags for reapi.
