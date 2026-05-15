@@ -6,6 +6,7 @@ package e2etests
 
 import (
 	"bytes"
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -311,8 +312,9 @@ func TestBuild_SymlinkSourceDangling(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, err = runNinjaTest(t)
-	if err == nil {
-		t.Errorf("ninja succeeded; want schedule error")
+	var missingSourceErr build.MissingSourceError
+	if !errors.As(err, &missingSourceErr) {
+		t.Errorf("unexpected error = %v; want MissingSourceError", err)
 	}
 }
 
