@@ -10,7 +10,6 @@ import (
 
 	"github.com/klauspost/cpuid/v2"
 
-	"go.chromium.org/build/siso/build/metadata/cpu"
 	"go.chromium.org/build/siso/build/metadata/memory"
 	"go.chromium.org/build/siso/o11y/clog"
 )
@@ -37,9 +36,10 @@ func GatherMachineInfo(ctx context.Context) MachineInfo {
 			Architecture: runtime.GOARCH,
 		},
 		CPU: CPUInfo{
-			BrandName:    cpuid.CPU.BrandName,
-			VendorString: cpuid.CPU.VendorString,
-			LogicalCores: cpu.LogicalCores(),
+			BrandName:     cpuid.CPU.BrandName,
+			VendorString:  cpuid.CPU.VendorString,
+			LogicalCores:  cpuid.CPU.LogicalCores,
+			PhysicalCores: cpuid.CPU.PhysicalCores,
 		},
 		Memory: MemoryInfo{
 			Total: total,
@@ -69,6 +69,8 @@ type CPUInfo struct {
 	VendorString string `json:"vendor"`
 	// LogicalCores is the number of logical cores usable by the current process.
 	LogicalCores int `json:"logical_cores"`
+	// PhysicalCores is the number of physical cores on the machine.
+	PhysicalCores int `json:"physical_cores"`
 }
 
 // MemoryInfo reports memory information.
