@@ -10,6 +10,7 @@ import (
 
 	"github.com/klauspost/cpuid/v2"
 
+	"go.chromium.org/build/siso/build/metadata/cpu"
 	"go.chromium.org/build/siso/build/metadata/memory"
 	"go.chromium.org/build/siso/o11y/clog"
 )
@@ -38,6 +39,7 @@ func GatherMachineInfo(ctx context.Context) MachineInfo {
 		CPU: CPUInfo{
 			BrandName:    cpuid.CPU.BrandName,
 			VendorString: cpuid.CPU.VendorString,
+			LogicalCores: cpu.LogicalCores(),
 		},
 		Memory: MemoryInfo{
 			Total: total,
@@ -65,6 +67,8 @@ type CPUInfo struct {
 	BrandName string `json:"brand"`
 	// VendorString is the raw vendor string reported by the CPU, e.g. "GenuineIntel".
 	VendorString string `json:"vendor"`
+	// LogicalCores is the number of logical cores usable by the current process.
+	LogicalCores int `json:"logical_cores"`
 }
 
 // MemoryInfo reports memory information.
