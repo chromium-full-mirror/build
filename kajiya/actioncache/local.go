@@ -32,12 +32,28 @@ import (
 // ActionCache is a simple action cache implementation that stores ActionResults on the local disk.
 type ActionCache struct {
 	dataDir string                               // directory where the action results are stored
+	sharded bool                                 // whether action results are placed under {00, 01, ..., ff} subdirs
 	syncer  singleflight.Group                   // synchronization mechanism to prevent concurrent puts of the same action
 	cas     *blobstore.ContentAddressableStorage // CAS for validating referenced blobs
 }
 
-// New creates a new local ActionCache. The data directory is created if it does not exist.
+// Options configures a local ActionCache.
+type Options struct {
+	// Sharded enables a two-level on-disk layout where action results are
+	// placed under subdirectories named by the first byte of their hash
+	// ({00, 01, ..., ff}). Recommended for production where the cache may
+	// hold many results; the zero value (no sharding) avoids 256 mkdir
+	// calls and is cheaper for short-lived caches (e.g. in tests).
+	Sharded bool
+}
+
+// New creates a new local ActionCache with default options. The data directory is created if it does not exist.
 func New(ctx context.Context, dataDir string, cas *blobstore.ContentAddressableStorage) (*ActionCache, error) {
+	return NewWithOpts(ctx, dataDir, cas, Options{})
+}
+
+// NewWithOpts creates a new local ActionCache. The data directory is created if it does not exist.
+func NewWithOpts(ctx context.Context, dataDir string, cas *blobstore.ContentAddressableStorage, opts Options) (*ActionCache, error) {
 	if dataDir == "" {
 		return nil, fmt.Errorf("data directory must be specified")
 	}
@@ -46,16 +62,14 @@ func New(ctx context.Context, dataDir string, cas *blobstore.ContentAddressableS
 		return nil, err
 	}
 
-	// Create subdirectories {00, 01, ..., ff} for sharding by hash prefix.
-	for i := range 256 {
-		err := os.Mkdir(filepath.Join(dataDir, fmt.Sprintf("%02x", i)), 0755)
-		if err != nil && !errors.Is(err, fs.ErrExist) {
-			return nil, err
-		}
+	// Ensure that our data directory has the correct layout.
+	if _, err := blobstore.EnsureLayout(dataDir, opts.Sharded); err != nil {
+		return nil, fmt.Errorf("migrating action cache layout: %w", err)
 	}
 
 	ac := &ActionCache{
 		dataDir: dataDir,
+		sharded: opts.Sharded,
 		cas:     cas,
 	}
 
@@ -72,8 +86,11 @@ func New(ctx context.Context, dataDir string, cas *blobstore.ContentAddressableS
 
 // isValidSubdir returns true if the given subdirectory name is valid inside the data directory.
 // The provided path must be relative to the data directory.
-func isValidSubdir(s string) bool {
-	return s == "." || (len(s) == 2 && digest.IsHex(s[0]) && digest.IsHex(s[1]))
+func (c *ActionCache) isValidSubdir(s string) bool {
+	if s == "." {
+		return true
+	}
+	return c.sharded && len(s) == 2 && digest.IsHex(s[0]) && digest.IsHex(s[1])
 }
 
 // validateCache checks that all actions in the cache are valid.
@@ -96,7 +113,7 @@ func (c *ActionCache) validate(ctx context.Context) (count int, blobs []digest.D
 			if err != nil {
 				return err
 			}
-			if isValidSubdir(relPath) {
+			if c.isValidSubdir(relPath) {
 				return nil
 			}
 			return fmt.Errorf("unexpected subdirectory %s", path)
@@ -218,7 +235,10 @@ func (c *ActionCache) validateAction(d digest.Digest) (blobs []digest.Digest, er
 
 // path returns the path to the file with digest d in the action cache.
 func (c *ActionCache) path(d digest.Digest) string {
-	return filepath.Join(c.dataDir, d.Hash[:2], d.Hash)
+	if c.sharded {
+		return filepath.Join(c.dataDir, d.Hash[:2], d.Hash)
+	}
+	return filepath.Join(c.dataDir, d.Hash)
 }
 
 // Get returns the cached ActionResult for the given digest.

@@ -28,14 +28,32 @@ import (
 type ContentAddressableStorage struct {
 	dataDir string
 	tmpDir  string
+	sharded bool
 
 	// Synchronization mechanism to prevent concurrent puts of the same blob.
 	putSyncer singleflight.Group
 }
 
-// New creates a new local CAS. The data directory is created if it does not exist.
-// If skipValidation is true, the CAS will not validate the integrity of existing blobs on startup.
-func New(ctx context.Context, dataDir string, skipValidation bool) (*ContentAddressableStorage, error) {
+// Options configures a local CAS.
+type Options struct {
+	// Sharded enables a two-level on-disk layout where blobs are placed under
+	// subdirectories named by the first byte of their hash ({00, 01, ..., ff}).
+	// Recommended for production where the CAS may hold many blobs; the
+	// zero value (no sharding) avoids 256 mkdir calls and is cheaper for
+	// short-lived caches (e.g. in tests).
+	Sharded bool
+
+	// SkipValidation skips re-hashing all existing blobs on startup.
+	SkipValidation bool
+}
+
+// New creates a new local CAS with default options. The data directory is created if it does not exist.
+func New(ctx context.Context, dataDir string) (*ContentAddressableStorage, error) {
+	return NewWithOpts(ctx, dataDir, Options{})
+}
+
+// NewWithOpts creates a new local CAS. The data directory is created if it does not exist.
+func NewWithOpts(ctx context.Context, dataDir string, opts Options) (*ContentAddressableStorage, error) {
 	if dataDir == "" {
 		return nil, fmt.Errorf("data directory must be specified")
 	}
@@ -44,12 +62,9 @@ func New(ctx context.Context, dataDir string, skipValidation bool) (*ContentAddr
 		return nil, err
 	}
 
-	// Create subdirectories {00, 01, ..., ff} for sharding by hash prefix.
-	for i := range 256 {
-		err := os.Mkdir(filepath.Join(dataDir, fmt.Sprintf("%02x", i)), 0755)
-		if err != nil && !errors.Is(err, fs.ErrExist) {
-			return nil, err
-		}
+	// Ensure that our data directory has the correct layout.
+	if _, err := EnsureLayout(dataDir, opts.Sharded); err != nil {
+		return nil, fmt.Errorf("ensuring CAS directory layout: %w", err)
 	}
 
 	// Wipe any leftover upload temp files from a previous run that may have crashed mid-upload.
@@ -64,6 +79,7 @@ func New(ctx context.Context, dataDir string, skipValidation bool) (*ContentAddr
 	cas := &ContentAddressableStorage{
 		dataDir: dataDir,
 		tmpDir:  tmpDir,
+		sharded: opts.Sharded,
 	}
 
 	// Ensure that we have the "empty blob" present in the CAS.
@@ -78,7 +94,7 @@ func New(ctx context.Context, dataDir string, skipValidation bool) (*ContentAddr
 		return nil, fmt.Errorf("empty blob did not have expected hash: got %s, wanted %s", d, digest.Empty)
 	}
 
-	if !skipValidation {
+	if !opts.SkipValidation {
 		now := time.Now()
 		count, size, err := cas.validate(ctx)
 		dur := time.Since(now)
@@ -99,9 +115,11 @@ func New(ctx context.Context, dataDir string, skipValidation bool) (*ContentAddr
 
 // isValidSubdir returns true if the given subdirectory name is valid inside the CAS data directory.
 // The provided path must be relative to the data directory.
-func isValidSubdir(s string) bool {
-	return s == "." || s == "tmp" ||
-		(len(s) == 2 && digest.IsHex(s[0]) && digest.IsHex(s[1]))
+func (c *ContentAddressableStorage) isValidSubdir(s string) bool {
+	if s == "." || s == "tmp" {
+		return true
+	}
+	return c.sharded && len(s) == 2 && digest.IsHex(s[0]) && digest.IsHex(s[1])
 }
 
 // validate checks that all files in the CAS are valid and returns the number of found blobs.
@@ -122,7 +140,7 @@ func (c *ContentAddressableStorage) validate(ctx context.Context) (count int, si
 			if err != nil {
 				return err
 			}
-			if isValidSubdir(relPath) {
+			if c.isValidSubdir(relPath) {
 				return nil
 			}
 			return fmt.Errorf("unexpected subdirectory %s", path)
@@ -187,7 +205,10 @@ func (c *ContentAddressableStorage) validate(ctx context.Context) (count int, si
 
 // Path returns the path to the file with digest d in the CAS.
 func (c *ContentAddressableStorage) Path(d digest.Digest) string {
-	return filepath.Join(c.dataDir, d.Hash[:2], d.Hash)
+	if c.sharded {
+		return filepath.Join(c.dataDir, d.Hash[:2], d.Hash)
+	}
+	return filepath.Join(c.dataDir, d.Hash)
 }
 
 // Stat returns os.FileInfo for the requested digest if it exists.

@@ -98,7 +98,7 @@ func TestFuseOverlayWritePermission(t *testing.T) {
 
 	// --- CAS -------------------------------------------------------------
 	casDir := t.TempDir()
-	cas, err := blobstore.New(ctx, casDir, false)
+	cas, err := blobstore.New(ctx, casDir)
 	if err != nil {
 		t.Fatalf("blobstore.New: %v", err)
 	}
@@ -270,7 +270,7 @@ func BenchmarkFuseE2E(b *testing.B) {
 		benchmarkRandomSeed = int64(0x4b414a495941) // "KAJIYA"
 	)
 	ctx := b.Context()
-	cas, err := blobstore.New(ctx, filepath.Join(b.TempDir(), "cas"), false)
+	cas, err := blobstore.New(ctx, filepath.Join(b.TempDir(), "cas"))
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -454,7 +454,7 @@ func TestFuseSandboxDirLayout(t *testing.T) {
 
 	ctx := t.Context()
 	casDir := t.TempDir()
-	cas, err := blobstore.New(ctx, casDir, false)
+	cas, err := blobstore.New(ctx, casDir)
 	if err != nil {
 		t.Fatalf("blobstore.New: %v", err)
 	}
@@ -527,7 +527,7 @@ func TestFuseOutputInodeLeak(t *testing.T) {
 
 	ctx := t.Context()
 	casDir := t.TempDir()
-	cas, err := blobstore.New(ctx, casDir, false)
+	cas, err := blobstore.New(ctx, casDir)
 	if err != nil {
 		t.Fatalf("blobstore.New: %v", err)
 	}
@@ -637,7 +637,7 @@ func TestFuseConcurrentRegisterSandbox(t *testing.T) {
 
 	ctx := t.Context()
 	casDir := t.TempDir()
-	cas, err := blobstore.New(ctx, casDir, false)
+	cas, err := blobstore.New(ctx, casDir)
 	if err != nil {
 		t.Fatalf("blobstore.New: %v", err)
 	}

@@ -58,7 +58,7 @@ func BenchmarkExecuteE2E(b *testing.B) {
 				baseDir := b.TempDir()
 
 				// Create CAS.
-				cas, err := blobstore.New(ctx, filepath.Join(baseDir, "cas"), true)
+				cas, err := blobstore.New(ctx, filepath.Join(baseDir, "cas"))
 				if err != nil {
 					b.Fatal(err)
 				}

@@ -72,7 +72,7 @@ func setupTest(ctx context.Context, t testing.TB, cfg server.Config) (bspb.ByteS
 
 	// Setup CAS.
 	dataDir := t.TempDir()
-	cas, err := New(ctx, dataDir, false)
+	cas, err := New(ctx, dataDir)
 	if err != nil {
 		t.Fatalf("Failed to create CAS: %v", err)
 	}

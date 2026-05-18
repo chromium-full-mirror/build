@@ -21,8 +21,8 @@ var (
 	// HashFn is the digest function used.
 	HashFn = crypto.SHA256
 
-	// hashHexLen is the length of the hex-encoded hash.
-	hashHexLen = hex.EncodedLen(HashFn.Size())
+	// HashHexLen is the length of the hex-encoded hash.
+	HashHexLen = hex.EncodedLen(HashFn.Size())
 
 	// Empty is the digest of the empty blob.
 	Empty = FromBlob([]byte{})
@@ -70,8 +70,8 @@ func New(hash string, size int64) (Digest, error) {
 	if size < 0 {
 		return Empty, fmt.Errorf("expected non-negative size, got %d", size)
 	}
-	if len(hash) != hashHexLen {
-		return Empty, fmt.Errorf("hash %q has invalid length %d, expected %d", hash, len(hash), hashHexLen)
+	if len(hash) != HashHexLen {
+		return Empty, fmt.Errorf("hash %q has invalid length %d, expected %d", hash, len(hash), HashHexLen)
 	}
 	for i := range len(hash) {
 		if !IsHex(hash[i]) {

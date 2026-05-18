@@ -339,7 +339,10 @@ func createServer(ctx context.Context, dataDir string) (*grpc.Server, func(), er
 
 	// Create a CAS backed by a local filesystem.
 	casDir := filepath.Join(dataDir, "cas")
-	cas, err := blobstore.New(ctx, casDir, *skipCASValidation)
+	cas, err := blobstore.NewWithOpts(ctx, casDir, blobstore.Options{
+		Sharded:        true,
+		SkipValidation: *skipCASValidation,
+	})
 	if err != nil {
 		return nil, cleanup, err
 	}
@@ -352,7 +355,9 @@ func createServer(ctx context.Context, dataDir string) (*grpc.Server, func(), er
 	var ac *actioncache.ActionCache
 	if *enableCache {
 		acDir := filepath.Join(dataDir, "ac")
-		ac, err = actioncache.New(ctx, acDir, cas)
+		ac, err = actioncache.NewWithOpts(ctx, acDir, cas, actioncache.Options{
+			Sharded: true,
+		})
 		if err != nil {
 			return nil, cleanup, err
 		}
