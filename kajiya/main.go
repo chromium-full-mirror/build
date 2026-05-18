@@ -59,7 +59,7 @@ var (
 	traceFile              = flag.String("trace", "", `go trace output for "go tool trace"`)
 	tlsCertFile            = flag.String("tls_cert_file", "", "TLS certificate file")
 	tlsKeyFile             = flag.String("tls_key_file", "", "TLS key file")
-	sandboxStrategy        = flag.String("sandbox", "overlayfs", "sandbox strategy to use (one of: files, overlayfs, nested-overlayfs)")
+	sandboxStrategy        = flag.String("sandbox", "overlayfs", "sandbox strategy to use (one of: files, overlayfs, nested-overlayfs, fuse)")
 	quiet                  = flag.Bool("quiet", false, "if true, print only warnings and errors in log output")
 	maxRecvMsgSize         = flag.Int("max_recv_msg_size", 0, "maximum size of a single gRPC message that can be received")
 	maxBatchTotalSizeBytes = flag.Int64("max_batch_total_size_bytes", 0, "maximum combined total size of blobs in batch requests (0 means unlimited)")
@@ -99,6 +99,8 @@ func run(ctx context.Context) int {
 		sb = localexec.OverlayFS
 	} else if *sandboxStrategy == "nested-overlayfs" && runtime.GOOS == "linux" {
 		sb = localexec.NestedOverlayFS
+	} else if *sandboxStrategy == "fuse" && runtime.GOOS == "linux" {
+		sb = localexec.FuseFS
 	} else {
 		slog.Error("invalid sandbox strategy", "name", *sandboxStrategy)
 		flag.Usage()
@@ -264,11 +266,12 @@ func run(ctx context.Context) int {
 	slog.Info("gRPC listening", "address", listener.Addr())
 
 	// Create the gRPC server and register the services.
-	grpcServer, err := createServer(ctx, *dataDir)
+	grpcServer, cleanupServer, err := createServer(ctx, *dataDir)
 	if err != nil {
 		slog.Error("failed to create server", "error", err)
 		return 1
 	}
+	defer cleanupServer()
 
 	// Handle interrupts gracefully.
 	HandleInterrupt(func() {
@@ -296,10 +299,13 @@ func parseAddress(addr string) (string, string) {
 }
 
 // createServer creates a new gRPC server and registers the services.
-func createServer(ctx context.Context, dataDir string) (*grpc.Server, error) {
+// The returned cleanup function must be called on shutdown to release resources.
+func createServer(ctx context.Context, dataDir string) (*grpc.Server, func(), error) {
+	cleanup := func() {}
+
 	// If either the cert or key file is specified, both must be.
 	if (*tlsCertFile == "") != (*tlsKeyFile == "") {
-		return nil, fmt.Errorf("both --tls_cert_file and --tls_key_file must be specified")
+		return nil, cleanup, fmt.Errorf("both --tls_cert_file and --tls_key_file must be specified")
 	}
 
 	cfg := server.Config{
@@ -320,7 +326,7 @@ func createServer(ctx context.Context, dataDir string) (*grpc.Server, error) {
 		slog.Info("using TLS", "cert", filepath.Base(*tlsCertFile), "key", filepath.Base(*tlsKeyFile))
 		creds, err := credentials.NewServerTLSFromFile(*tlsCertFile, *tlsKeyFile)
 		if err != nil {
-			return nil, fmt.Errorf("failed to load TLS certificate and key: %v", err)
+			return nil, cleanup, fmt.Errorf("failed to load TLS certificate and key: %v", err)
 		}
 		opts = append(opts, grpc.Creds(creds))
 	}
@@ -335,7 +341,7 @@ func createServer(ctx context.Context, dataDir string) (*grpc.Server, error) {
 	casDir := filepath.Join(dataDir, "cas")
 	cas, err := blobstore.New(ctx, casDir, *skipCASValidation)
 	if err != nil {
-		return nil, err
+		return nil, cleanup, err
 	}
 
 	// CAS service.
@@ -348,12 +354,12 @@ func createServer(ctx context.Context, dataDir string) (*grpc.Server, error) {
 		acDir := filepath.Join(dataDir, "ac")
 		ac, err = actioncache.New(ctx, acDir, cas)
 		if err != nil {
-			return nil, err
+			return nil, cleanup, err
 		}
 
 		err = actioncache.Register(s, ac, cas)
 		if err != nil {
-			return nil, err
+			return nil, cleanup, err
 		}
 		slog.Info("action cache service registered")
 	} else {
@@ -365,12 +371,17 @@ func createServer(ctx context.Context, dataDir string) (*grpc.Server, error) {
 		execDir := filepath.Join(dataDir, "exec")
 		executor, err := localexec.New(execDir, cas, sb, *allowHostFS)
 		if err != nil {
-			return nil, err
+			return nil, cleanup, err
+		}
+		cleanup = func() {
+			if err := executor.Close(); err != nil {
+				slog.Error("failed to close executor", "error", err)
+			}
 		}
 
 		err = execution.Register(s, executor, ac, cas)
 		if err != nil {
-			return nil, err
+			return nil, cleanup, err
 		}
 		slog.Info("execution service registered")
 	} else {
@@ -381,7 +392,7 @@ func createServer(ctx context.Context, dataDir string) (*grpc.Server, error) {
 	reflection.Register(s)
 	slog.Info("gRPC reflection service registered")
 
-	return s, nil
+	return s, cleanup, nil
 }
 
 // startPeriodicMemprofile launches a goroutine that writes a heap profile to a

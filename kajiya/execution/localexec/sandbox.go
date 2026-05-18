@@ -43,6 +43,12 @@ const (
 	// sandbox to amortized O(n), with n = number of input directories, under the assumption
 	// that most actions share the majority of their input dirs.
 	NestedOverlayFS
+
+	// FuseFS mounts a FUSE filesystem for the lifetime of the Kajiya process that serves
+	// CAS files on demand as a virtual directory tree. For each action, the input tree is
+	// registered as a dynamic subtree in the FUSE mount (no file materialization at all).
+	// Overlayfs is mounted on top for write redirection, same as the OverlayFS strategy.
+	FuseFS
 )
 
 // Sandbox manages the sandbox environment for an action.
@@ -60,6 +66,10 @@ type Sandbox struct {
 	overlayUpperDir string
 	overlayWorkDir  string
 	extraNsjailArgs []string
+
+	// FuseFS-specific machinery. Nil for non-FUSE strategies.
+	fuse          *fuseBackend
+	fuseSandboxID string
 }
 
 // Id returns a unique identifier for the mount point of a directory. This is used to construct
@@ -95,50 +105,97 @@ func (sb *Sandbox) Prepare(action *model.Action) (err error) {
 		if err = os.Mkdir(sb.overlayWorkDir, 0755); err != nil {
 			return fmt.Errorf("failed to create overlay work directory: %w", err)
 		}
-	}
-
-	action.InputTrie.Root().Walk(func(k []byte, dir *model.KajiyaDirectory) bool {
-		// Create the directory in the sandbox.
-		switch sb.strategy {
-		case Files:
-			dirPath := filepath.Join(sb.sandboxDir, string(k))
-			if err = MaterializeDirectory(sb.cas, dirPath, dir, true); err != nil {
-				return true
-			}
-		case OverlayFS:
-			dirPath := filepath.Join(sb.overlayLowerDir, string(k))
-			if err = MaterializeDirectory(sb.cas, dirPath, dir, true); err != nil {
-				return true
-			}
-		case NestedOverlayFS:
-			mntTarget := filepath.Join("/mnt", string(k))
-			mntLowerDir := sb.trees.Path(dir.Digest)
-			mntUpperDir := filepath.Join(sb.overlayUpperDir, mountID(dir))
-			if err = os.Mkdir(mntUpperDir, 0755); err != nil {
-				return true
-			}
-			mntWorkDir := filepath.Join(sb.overlayWorkDir, mountID(dir))
-			if err = os.Mkdir(mntWorkDir, 0755); err != nil {
-				return true
-			}
-
-			sb.extraNsjailArgs = append(
-				sb.extraNsjailArgs,
-				"--mount",
-				fmt.Sprintf("overlay:%s:overlay:lowerdir=%s,upperdir=%s,workdir=%s,userxattr,index=off,xino=off,volatile",
-					mntTarget,
-					mntLowerDir,
-					mntUpperDir,
-					mntWorkDir,
-				),
-			)
+	case FuseFS:
+		// Create upper and work directories for overlayfs. The lower directory
+		// is served by the FUSE filesystem, so no materialization is needed.
+		sb.overlayUpperDir = filepath.Join(sb.sandboxDir, "upper")
+		if err = os.Mkdir(sb.overlayUpperDir, 0755); err != nil {
+			return fmt.Errorf("failed to create overlay upper directory: %w", err)
+		}
+		sb.overlayWorkDir = filepath.Join(sb.sandboxDir, "work")
+		if err = os.Mkdir(sb.overlayWorkDir, 0755); err != nil {
+			return fmt.Errorf("failed to create overlay work directory: %w", err)
 		}
 
-		return false
-	})
+		// Register the input tree with the FUSE filesystem. This creates the
+		// entire directory tree as virtual inodes backed by CAS -- no files
+		// are materialized on disk.
+		sb.fuseSandboxID = filepath.Base(sb.sandboxDir)
+		sb.overlayLowerDir, err = sb.fuse.RegisterSandbox(
+			sb.fuseSandboxID, action.InputTrie, sb.cas)
+		if err != nil {
+			return fmt.Errorf("failed to register sandbox with FUSE: %w", err)
+		}
 
-	if err != nil {
-		return err
+		// Create output parent directories in the overlayfs upper layer.
+		// The FUSE lower layer only serves immutable CAS content; output
+		// directory structure is per-action and belongs in the upper layer.
+		action.InputTrie.Root().Walk(func(k []byte, dir *model.KajiyaDirectory) bool {
+			if len(dir.Outputs) == 0 {
+				return false
+			}
+			dirPath := filepath.Join(sb.overlayUpperDir, string(k))
+			if err = os.MkdirAll(dirPath, 0755); err != nil {
+				err = fmt.Errorf("failed to create output parent in upper layer: %w", err)
+				return true
+			}
+			if err = CreateOutputDirectories(dirPath, dir); err != nil {
+				return true
+			}
+			return false
+		})
+		if err != nil {
+			return err
+		}
+
+	}
+
+	// FuseFS handles the entire input tree via FUSE inodes, so we skip
+	// the materialization walk.
+	if sb.strategy != FuseFS {
+		action.InputTrie.Root().Walk(func(k []byte, dir *model.KajiyaDirectory) bool {
+			// Create the directory in the sandbox.
+			switch sb.strategy {
+			case Files:
+				dirPath := filepath.Join(sb.sandboxDir, string(k))
+				if err = MaterializeDirectory(sb.cas, dirPath, dir, true); err != nil {
+					return true
+				}
+			case OverlayFS:
+				dirPath := filepath.Join(sb.overlayLowerDir, string(k))
+				if err = MaterializeDirectory(sb.cas, dirPath, dir, true); err != nil {
+					return true
+				}
+			case NestedOverlayFS:
+				mntTarget := filepath.Join("/mnt", string(k))
+				mntLowerDir := sb.trees.Path(dir.Digest)
+				mntUpperDir := filepath.Join(sb.overlayUpperDir, mountID(dir))
+				if err = os.Mkdir(mntUpperDir, 0755); err != nil {
+					return true
+				}
+				mntWorkDir := filepath.Join(sb.overlayWorkDir, mountID(dir))
+				if err = os.Mkdir(mntWorkDir, 0755); err != nil {
+					return true
+				}
+
+				sb.extraNsjailArgs = append(
+					sb.extraNsjailArgs,
+					"--mount",
+					fmt.Sprintf("overlay:%s:overlay:lowerdir=%s,upperdir=%s,workdir=%s,userxattr,index=off,xino=off,volatile",
+						mntTarget,
+						mntLowerDir,
+						mntUpperDir,
+						mntWorkDir,
+					),
+				)
+			}
+
+			return false
+		})
+
+		if err != nil {
+			return err
+		}
 	}
 
 	switch sb.strategy {
@@ -148,7 +205,7 @@ func (sb *Sandbox) Prepare(action *model.Action) (err error) {
 			"--bindmount",
 			fmt.Sprintf("%s:%s", sb.sandboxDir, "/mnt"),
 		)
-	case OverlayFS:
+	case OverlayFS, FuseFS:
 		sb.extraNsjailArgs = append(
 			sb.extraNsjailArgs,
 			"--mount",
@@ -234,7 +291,7 @@ func (sb *Sandbox) UploadOutputs(action *model.Action, actionResult *repb.Action
 			switch sb.strategy {
 			case Files:
 				fullPath = filepath.Join(sb.sandboxDir, string(k), outputPath.Name)
-			case OverlayFS:
+			case OverlayFS, FuseFS:
 				fullPath = filepath.Join(sb.overlayUpperDir, string(k), outputPath.Name)
 			case NestedOverlayFS:
 				fullPath = filepath.Join(sb.overlayUpperDir, mountID(dir), outputPath.Name)

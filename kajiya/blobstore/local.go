@@ -185,14 +185,14 @@ func (c *ContentAddressableStorage) validate(ctx context.Context) (count int, si
 	return count, size, nil
 }
 
-// path returns the path to the file with digest d in the CAS.
-func (c *ContentAddressableStorage) path(d digest.Digest) string {
+// Path returns the path to the file with digest d in the CAS.
+func (c *ContentAddressableStorage) Path(d digest.Digest) string {
 	return filepath.Join(c.dataDir, d.Hash[:2], d.Hash)
 }
 
 // Stat returns os.FileInfo for the requested digest if it exists.
 func (c *ContentAddressableStorage) Stat(d digest.Digest) (os.FileInfo, error) {
-	p := c.path(d)
+	p := c.Path(d)
 
 	fi, err := os.Lstat(p)
 	if err != nil {
@@ -228,7 +228,7 @@ func (c *ContentAddressableStorage) Has(d digest.Digest) bool {
 // The offset must be non-negative and no larger than the file size.
 // A limit of 0 means no limit, and a limit that's larger than the file size is truncated to the file size.
 func (c *ContentAddressableStorage) Open(d digest.Digest, offset int64, limit int64) (io.ReadCloser, error) {
-	p := c.path(d)
+	p := c.Path(d)
 
 	f, err := os.Open(p)
 	if err != nil {
@@ -284,7 +284,7 @@ func (c *ContentAddressableStorage) Put(data []byte) (digest.Digest, error) {
 		}
 
 		// Add the file to the CAS.
-		if err := atomicio.WriteFile(c.path(d), data); err != nil {
+		if err := atomicio.WriteFile(c.Path(d), data); err != nil {
 			return nil, err
 		}
 		return nil, nil
@@ -305,7 +305,7 @@ func (c *ContentAddressableStorage) Adopt(d digest.Digest, srcPath string) error
 		}
 
 		// Move the file into the CAS.
-		if err := os.Rename(srcPath, c.path(d)); err != nil {
+		if err := os.Rename(srcPath, c.Path(d)); err != nil {
 			return nil, err
 		}
 		return nil, nil
@@ -317,7 +317,7 @@ func (c *ContentAddressableStorage) Adopt(d digest.Digest, srcPath string) error
 // If the operating system supports cloning files via copy-on-write semantics,
 // the file is cloned instead of hard linked.
 func (c *ContentAddressableStorage) LinkTo(d digest.Digest, path string) error {
-	if err := FastCopy(c.path(d), path); err != nil {
+	if err := FastCopy(c.Path(d), path); err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			return &MissingBlobsError{Blobs: []digest.Digest{d}}
 		}
@@ -328,7 +328,7 @@ func (c *ContentAddressableStorage) LinkTo(d digest.Digest, path string) error {
 
 // Delete removes a file with digest d from the CAS.
 func (c *ContentAddressableStorage) Delete(d digest.Digest) error {
-	p := c.path(d)
+	p := c.Path(d)
 	err := os.Remove(p)
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return err

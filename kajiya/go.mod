@@ -7,6 +7,7 @@ require (
 	github.com/bazelbuild/remote-apis v0.0.0-20260331222004-becdd8f9ff81
 	github.com/google/go-cmp v0.7.0
 	github.com/google/uuid v1.6.0
+	github.com/hanwen/go-fuse/v2 v2.10.1
 	github.com/hashicorp/go-immutable-radix/v2 v2.1.0
 	github.com/klauspost/compress v1.18.6
 	golang.org/x/sync v0.20.0

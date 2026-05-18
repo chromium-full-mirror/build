@@ -36,6 +36,11 @@ type Executor struct {
 	sandboxStrategy SandboxStrategy
 	trees           *TreeRepository
 	allowHostFS     bool
+
+	// FuseFS-specific machinery. Only set when sandboxStrategy == FuseFS.
+	// Lifecycle (mount + register/unregister + unmount) is owned entirely
+	// by this struct so non-FUSE strategies can leave it nil.
+	fuse *fuseBackend
 }
 
 // New creates a new Executor.
@@ -60,9 +65,8 @@ func New(baseDir string, cas *blobstore.ContentAddressableStorage, sb SandboxStr
 		return nil, fmt.Errorf("failed to create image repository: %w", err)
 	}
 
-	// Create the base directory for sandboxes.
-	sandboxBase := filepath.Join(baseDir, "tmp")
 	// Remove any existing sandboxes that might have been left over from a previous run.
+	sandboxBase := filepath.Join(baseDir, "tmp")
 	if dirs, err := os.ReadDir(sandboxBase); err == nil || errors.Is(err, fs.ErrNotExist) {
 		for _, d := range dirs {
 			deleteSandbox(filepath.Join(sandboxBase, d.Name()))
@@ -73,6 +77,8 @@ func New(baseDir string, cas *blobstore.ContentAddressableStorage, sb SandboxStr
 	} else {
 		return nil, fmt.Errorf("failed to read sandbox base directory: %w", err)
 	}
+
+	// Create the base directory for sandboxes.
 	if err := os.Mkdir(sandboxBase, 0755); err != nil && !errors.Is(err, fs.ErrExist) {
 		return nil, fmt.Errorf("failed to create sandbox base %q: %w", sandboxBase, err)
 	}
@@ -100,6 +106,20 @@ func New(baseDir string, cas *blobstore.ContentAddressableStorage, sb SandboxStr
 		}
 	}
 
+	// Mount the CAS-backed FUSE filesystem. Only the FuseFS strategy uses
+	// it; other strategies clean up any leftover mount/mountpoint from a
+	// previous FuseFS run so it doesn't accumulate.
+	fuseMountpoint := filepath.Join(baseDir, "fuse")
+	var fuseBE *fuseBackend
+	if sb == FuseFS {
+		fuseBE, err = newFuseBackend(fuseMountpoint)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		cleanFuseMountpoint(fuseMountpoint)
+	}
+
 	return &Executor{
 		cas:             cas,
 		images:          images,
@@ -108,7 +128,13 @@ func New(baseDir string, cas *blobstore.ContentAddressableStorage, sb SandboxStr
 		sandboxStrategy: sb,
 		trees:           trees,
 		allowHostFS:     allowHostFS,
+		fuse:            fuseBE,
 	}, nil
+}
+
+// Close cleans up resources held by the Executor. Must be called on shutdown.
+func (e *Executor) Close() error {
+	return e.fuse.Close()
 }
 
 // Execute executes the given action and returns the result.
@@ -118,13 +144,21 @@ func (e *Executor) Execute(action *model.Action) (*repb.ActionResult, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to create sandbox directory: %w", err)
 	}
-	defer deleteSandbox(sandboxDir)
+	defer func() {
+		// Deregister the FUSE sandbox before deleting the sandbox directory,
+		// so the kernel doesn't try to access inodes that are being removed.
+		if e.fuse != nil {
+			e.fuse.UnregisterSandbox(filepath.Base(sandboxDir))
+		}
+		deleteSandbox(sandboxDir)
+	}()
 
 	sb := &Sandbox{
 		cas:        e.cas,
 		trees:      e.trees,
 		sandboxDir: sandboxDir,
 		strategy:   e.sandboxStrategy,
+		fuse:       e.fuse,
 	}
 
 	// Stage the input files and directories into the sandbox.
