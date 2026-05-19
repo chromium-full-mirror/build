@@ -74,7 +74,7 @@ func New(ctx context.Context, fname string, flags map[string]string, repos map[s
 	loader := &repoLoader{
 		ctx:         ctx,
 		repos:       repos,
-		predeclared: builtinModule(ctx),
+		predeclared: builtinModule(),
 	}
 
 	thread := &starlark.Thread{

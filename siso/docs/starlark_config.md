@@ -352,12 +352,6 @@ All inputs should be ready to use (via `ctx.fs`).
 
 `@builtin` provides builtin modules/functions.
 
-### [@builtin//checkout.star](../build/buildconfig/checkout.star)
-provide `checkout`.
-
- * `git` struct:
-   * `origin` string: origin URL
-
 ### [@builtin//encoding.star](../build/buildconfig/encoding.star)
 provide [`json`](https://pkg.go.dev/go.starlark.net/lib/json)
 
