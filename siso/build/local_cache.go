@@ -131,7 +131,7 @@ func (c *LocalCache) SetActionResult(ctx context.Context, d digest.Digest, ar *r
 			}
 			// Write to a temporary file first before renaming to perform an atomic
 			// write.
-			tmp := fname + ".tmp"
+			tmp := fname + ".siso_tmp"
 			err = os.WriteFile(tmp, b, 0644)
 			c.m.WriteDone(len(b), err)
 			if err != nil {
@@ -201,7 +201,7 @@ func (c *LocalCache) SetContent(ctx context.Context, d digest.Digest, fname stri
 			}
 			// Write to a temporary file first before renaming to perform an atomic
 			// write.
-			tmp := cname + ".tmp"
+			tmp := cname + ".siso_tmp"
 			w, err := os.Create(tmp)
 			if err != nil {
 				c.m.WriteDone(0, err)

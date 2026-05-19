@@ -282,7 +282,7 @@ func (e *entry) updateDir(ctx context.Context, hfs *HashFS, dname string) []stri
 			// don't scan temporary file by readdir.
 			// it may cause race on windows.
 			// b/294318963 b/381947692
-			if strings.HasSuffix(name, ".tmp") || strings.HasPrefix(name, ".tempfile.") {
+			if strings.HasSuffix(name, ".tmp") || strings.HasPrefix(name, ".tempfile.") || strings.HasSuffix(name, ".siso_tmp") {
 				continue
 			}
 			if hfs.opt.Ignore(ctx, filepath.Join(dname, name)) {
@@ -302,7 +302,7 @@ func (e *entry) updateDir(ctx context.Context, hfs *HashFS, dname string) []stri
 			// don't scan temporary file by readdir.
 			// it may cause race on windows.
 			// b/294318963 b/381947692
-			if strings.HasSuffix(name, ".tmp") || strings.HasPrefix(name, ".tempfile.") {
+			if strings.HasSuffix(name, ".tmp") || strings.HasPrefix(name, ".tempfile.") || strings.HasSuffix(name, ".siso_tmp") {
 				continue
 			}
 			if hfs.opt.Ignore(ctx, filepath.Join(dname, name)) {
@@ -623,7 +623,7 @@ func (e *entry) flushWrite(ctx context.Context, fname string, osfs *osfs.OSFS, s
 	if ok {
 		srcname = lsrc.Fname
 	}
-	tmpname := filepath.Join(filepath.Dir(fname), "."+filepath.Base(fname)+".tmp")
+	tmpname := filepath.Join(filepath.Dir(fname), "."+filepath.Base(fname)+".siso_tmp")
 	ctx, cancel := digest.ContextWithTimeout(ctx, e.d)
 	defer cancel()
 	err := retry.Do(ctx, func() error {
