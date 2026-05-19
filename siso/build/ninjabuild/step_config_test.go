@@ -167,3 +167,176 @@ build build.ninja: phony
 		t.Errorf("Lookup(ctx, path, edge)=%v, %v; want (rule.Remote, true)", rule, ok)
 	}
 }
+
+func TestStepConfigLookup_NinjaProperties(t *testing.T) {
+	ctx := t.Context()
+	dir := t.TempDir()
+	path := build.NewPath(dir, "out/siso")
+	err := os.MkdirAll(filepath.Join(dir, "out/siso"), 0755)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = os.WriteFile(filepath.Join(dir, "out/siso/build.ninja"), []byte(`
+rule cxx
+  command = g++ -c ${in} -o ${out}
+  siso_remote = true
+  siso_platform_ref = custom_ref
+  siso_timeout = 2m
+
+rule link
+  command = ld ${in} -o ${out}
+  siso_remote = false
+
+rule other
+  command = echo ${in} > ${out}
+  siso_remote = true
+  siso_platform_ref = custom_ref
+  siso_timeout = 5m
+
+rule cxx_simple
+  command = g++ -c ${in} -o ${out}
+
+build obj/foo.o: cxx ../../foo.cc
+build bin/app: link obj/foo.o
+build out/out.txt: other
+
+build obj/bar.o: cxx_simple ../../bar.cc
+  siso_remote = true
+  siso_platform_ref = custom_ref
+  siso_timeout = 3m
+`), 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
+	state := ninjautil.NewState()
+	p := ninjautil.NewManifestParser(state)
+	err = p.Load(ctx, filepath.Join(dir, "out/siso/build.ninja"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	sc := StepConfig{
+		Platforms: map[string]map[string]string{
+			"default": {
+				"container-image": "default-image",
+			},
+			"custom_ref": {
+				"container-image": "custom-image",
+			},
+		},
+		Rules: []*StepRule{
+			{
+				Name:       "cxx_rule",
+				ActionName: "cxx",
+				Remote:     false,
+			},
+			{
+				Name:        "link_rule",
+				ActionName:  "link",
+				Remote:      true,
+				PlatformRef: "default",
+			},
+		},
+	}
+	err = sc.Init(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Logf("Test case 1: cxx_rule. Starlark rule has Remote = false, but ninja file has siso_remote = true, siso_platform_ref = custom_ref, siso_timeout = 2m.")
+	{
+		node, ok := state.LookupNodeByPath("obj/foo.o")
+		if !ok {
+			t.Fatal("obj/foo.o not found")
+		}
+		edge, ok := node.InEdge()
+		if !ok {
+			t.Fatal("no inEdge for obj/foo.o")
+		}
+		rule, ok := sc.Lookup(ctx, path, edge)
+		if !ok {
+			t.Errorf("Lookup for obj/foo.o failed")
+		}
+		if !rule.Remote {
+			t.Errorf("obj/foo.o rule.Remote = false, want true")
+		}
+		if rule.Timeout != "2m" {
+			t.Errorf("obj/foo.o rule.Timeout = %q, want %q", rule.Timeout, "2m")
+		}
+		if rule.Platform["container-image"] != "custom-image" {
+			t.Errorf("obj/foo.o rule.Platform[\"container-image\"] = %q, want %q", rule.Platform["container-image"], "custom-image")
+		}
+	}
+
+	t.Logf("Test case 2: link_rule. Starlark rule has Remote = true, but ninja file has siso_remote = false.")
+	{
+		node, ok := state.LookupNodeByPath("bin/app")
+		if !ok {
+			t.Fatal("bin/app not found")
+		}
+		edge, ok := node.InEdge()
+		if !ok {
+			t.Fatal("no inEdge for bin/app")
+		}
+		rule, ok := sc.Lookup(ctx, path, edge)
+		if !ok {
+			t.Errorf("Lookup for bin/app failed")
+		}
+		if rule.Remote {
+			t.Errorf("bin/app rule.Remote = true, want false")
+		}
+		if len(rule.Platform) != 0 {
+			t.Errorf("bin/app rule.Platform = %v, want empty", rule.Platform)
+		}
+	}
+
+	t.Logf("Test case 3: other rule. No matching starlark rule, but ninja file has siso_remote = true, siso_platform_ref = custom_ref, siso_timeout = 5m.")
+	{
+		node, ok := state.LookupNodeByPath("out/out.txt")
+		if !ok {
+			t.Fatal("out/out.txt not found")
+		}
+		edge, ok := node.InEdge()
+		if !ok {
+			t.Fatal("no inEdge for out/out.txt")
+		}
+		rule, ok := sc.Lookup(ctx, path, edge)
+		if !ok {
+			t.Errorf("Lookup for out/out.txt failed")
+		}
+		if !rule.Remote {
+			t.Errorf("out/out.txt rule.Remote = false, want true")
+		}
+		if rule.Timeout != "5m" {
+			t.Errorf("out/out.txt rule.Timeout = %q, want %q", rule.Timeout, "5m")
+		}
+		if rule.Platform["container-image"] != "custom-image" {
+			t.Errorf("out/out.txt rule.Platform[\"container-image\"] = %q, want %q", rule.Platform["container-image"], "custom-image")
+		}
+	}
+
+	t.Logf("Test case 4: cxx_simple_rule. No starlark config, and ninja has siso properties on the build statement.")
+	{
+		node, ok := state.LookupNodeByPath("obj/bar.o")
+		if !ok {
+			t.Fatal("obj/bar.o not found")
+		}
+		edge, ok := node.InEdge()
+		if !ok {
+			t.Fatal("no inEdge for obj/bar.o")
+		}
+		rule, ok := sc.Lookup(ctx, path, edge)
+		if !ok {
+			t.Errorf("Lookup for obj/bar.o failed")
+		}
+		if !rule.Remote {
+			t.Errorf("obj/bar.o rule.Remote = false, want true")
+		}
+		if rule.Timeout != "3m" {
+			t.Errorf("obj/bar.o rule.Timeout = %q, want %q", rule.Timeout, "3m")
+		}
+		if rule.Platform["container-image"] != "custom-image" {
+			t.Errorf("obj/bar.o rule.Platform[\"container-image\"] = %q, want %q", rule.Platform["container-image"], "custom-image")
+		}
+	}
+}

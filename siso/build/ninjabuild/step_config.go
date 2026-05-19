@@ -376,6 +376,10 @@ func (sc StepConfig) Lookup(ctx context.Context, bpath *build.Path, edge *ninjau
 		clog.Infof(ctx, "lookup action:%s out:%s args0:%s", actionName, out, args0)
 	}
 
+	sisoRemote := edge.Binding("siso_remote")
+	sisoPlatformRef := edge.Binding("siso_platform_ref")
+	sisoTimeout := edge.Binding("siso_timeout")
+
 loop:
 	for _, c := range sc.Rules {
 		if c.actionRE != nil {
@@ -404,12 +408,25 @@ loop:
 		rule := *c
 		rule.actionRE = nil
 		opt := rule.OutputsMap[outConfig]
+
+		if sisoRemote != "" {
+			rule.Remote = (sisoRemote == "true")
+			if !rule.Remote {
+				rule.Platform = nil
+			}
+		}
+		if sisoTimeout != "" {
+			rule.Timeout = sisoTimeout
+		}
+
 		if rule.Remote {
 			if len(rule.Platform) == 0 {
 				rule.Platform = make(map[string]string)
 			}
 			ref := "default"
-			if opt.PlatformRef != "" {
+			if sisoPlatformRef != "" {
+				ref = sisoPlatformRef
+			} else if opt.PlatformRef != "" {
 				ref = opt.PlatformRef
 			} else if rule.PlatformRef != "" {
 				ref = rule.PlatformRef
@@ -468,6 +485,39 @@ loop:
 		}
 		return rule, !c.Impure
 	}
+
+	if sisoRemote != "" || sisoPlatformRef != "" || sisoTimeout != "" {
+		clog.Infof(ctx, "miss, but configured in ninja: actionName:%q out:%q args0:%q", actionName, out, args0)
+		rule := StepRule{
+			Name: "ninja:" + actionName,
+		}
+		if sisoRemote != "" {
+			rule.Remote = (sisoRemote == "true")
+		}
+		if sisoTimeout != "" {
+			rule.Timeout = sisoTimeout
+		}
+		if rule.Remote {
+			if len(rule.Platform) == 0 {
+				rule.Platform = make(map[string]string)
+			}
+			ref := "default"
+			if sisoPlatformRef != "" {
+				ref = sisoPlatformRef
+			}
+			p := sc.Platforms[ref]
+			for k, v := range p {
+				if _, ok := rule.Platform[k]; !ok {
+					rule.Platform[k] = v
+				}
+			}
+		}
+		if bool(log.V(1)) || rule.Debug {
+			clog.Infof(ctx, "hit ninja properties %s actionName:%q out:%q args0:%q -> remote:%t timeout:%q platform:%v", rule.Name, actionName, outConfig, args0, rule.Remote, rule.Timeout, rule.Platform)
+		}
+		return rule, true
+	}
+
 	clog.Infof(ctx, "miss actionName:%q out:%q args0:%q", actionName, out, args0)
 	return StepRule{}, false
 }
