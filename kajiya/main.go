@@ -59,7 +59,7 @@ var (
 	traceFile              = flag.String("trace", "", `go trace output for "go tool trace"`)
 	tlsCertFile            = flag.String("tls_cert_file", "", "TLS certificate file")
 	tlsKeyFile             = flag.String("tls_key_file", "", "TLS key file")
-	sandboxStrategy        = flag.String("sandbox", "overlayfs", "sandbox strategy to use (one of: files, overlayfs, nested-overlayfs, fuse)")
+	sandboxStrategy        = flag.String("sandbox", defaultSandboxStrategy(), "sandbox strategy to use (one of: files, overlayfs, nested-overlayfs, fuse)")
 	quiet                  = flag.Bool("quiet", false, "if true, print only warnings and errors in log output")
 	maxRecvMsgSize         = flag.Int("max_recv_msg_size", 0, "maximum size of a single gRPC message that can be received")
 	maxBatchTotalSizeBytes = flag.Int64("max_batch_total_size_bytes", 0, "maximum combined total size of blobs in batch requests (0 means unlimited)")
@@ -75,6 +75,21 @@ func getDefaultDataDir() string {
 		return ""
 	}
 	return filepath.Join(cacheDir, "kajiya")
+}
+
+// defaultSandboxStrategy returns the best available sandbox strategy for the
+// current platform.
+func defaultSandboxStrategy() string {
+	if runtime.GOOS != "linux" {
+		return "files"
+	}
+
+	if f, err := os.OpenFile("/dev/fuse", os.O_RDWR, 0); err == nil {
+		_ = f.Close()
+		return "fuse"
+	}
+
+	return "overlayfs"
 }
 
 func main() {
