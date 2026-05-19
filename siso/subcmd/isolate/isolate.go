@@ -40,9 +40,9 @@ import (
 
 const usage = `isolate uploads and computes tree digest for each targets.
 
- $ siso isolate [-project <project>] [-reapi_instance <instance>] \
+ $ siso isolate [-project <project>] [-src_cas_instance <instance>] \
     -C <dir> \
-    -cas_instance projects/<cas project>/instances/<instance> \
+    -dst_cas_instance projects/<cas project>/instances/<instance> \
     -dump_json <output json path> \
     <target> ...
 
@@ -72,8 +72,8 @@ type Command struct {
 	Flags     *flag.FlagSet
 	authOpts  cred.Options
 	projectID string
-	reopt     *reapi.Option
-	casopt    *reapi.Option
+	srcreopt  *reapi.Option
+	dstreopt  *reapi.Option
 
 	outDir ninjabuild.DirFlag
 
@@ -88,11 +88,14 @@ type Command struct {
 
 func (c *Command) SetFlags(flagSet *flag.FlagSet) {
 	flagSet.StringVar(&c.projectID, "project", os.Getenv("SISO_PROJECT"), "cloud project ID. can be set by $SISO_PROJECT")
-	c.reopt = new(reapi.Option)
-	c.reopt.RegisterFlags(flagSet, reapi.Envs("REAPI"))
-	c.casopt = new(reapi.Option)
-	c.casopt.Prefix = "cas"
-	c.casopt.RegisterFlags(flagSet, reapi.Envs("DEST_CASS"))
+	c.srcreopt = new(reapi.Option)
+	c.srcreopt.Prefix = "src_cas"
+	c.srcreopt.RegisterFlags(flagSet, reapi.Envs("SRC_CAS"))
+
+	c.dstreopt = new(reapi.Option)
+	c.dstreopt.Prefix = "dst_cas"
+	c.dstreopt.RegisterFlags(flagSet, reapi.Envs("DST_CAS"))
+	flagSet.StringVar(&c.dstreopt.Instance, "cas_instance", "", "alias of -dst_cas_instance for backward compatibility")
 
 	c.outDir.RegisterFlags(flagSet)
 
@@ -141,16 +144,16 @@ func (c *Command) run(ctx context.Context) error {
 	if len(c.jobID) > 1024 {
 		return fmt.Errorf("-job_id length %d must be less than 1024", len(c.jobID))
 	}
-	projectID := c.reopt.UpdateProjectID(c.projectID)
-	err = c.reopt.CheckValid()
+	projectID := c.srcreopt.UpdateProjectID(c.projectID)
+	err = c.srcreopt.CheckValid()
 	if err != nil {
-		return fmt.Errorf("reapi option is invalid: %w", err)
+		return fmt.Errorf("reapi option for src cas is invalid: %w", err)
 	}
 	spin := ui.Default.NewSpinner()
 	var credential cred.Cred
-	if c.reopt.NeedCred() || c.enableCloudLogging {
+	if c.srcreopt.NeedCred() || c.enableCloudLogging {
 		spin.Start("init credentials")
-		credential, err = cred.New(ctx, c.reopt.ServiceURI(), c.authOpts)
+		credential, err = cred.New(ctx, c.srcreopt.ServiceURI(), c.authOpts)
 		if err != nil {
 			spin.Stop(errors.New(""))
 			return err
@@ -172,44 +175,44 @@ func (c *Command) run(ctx context.Context) error {
 		}
 	}
 
-	ui.Default.Printf("use %s\n", c.reopt)
+	ui.Default.Printf("use %s\n", c.srcreopt)
 	ctx = reapi.NewContext(ctx, nil)
-	client, err := reapi.New(ctx, credential, *c.reopt)
+	client, err := reapi.New(ctx, credential, *c.srcreopt)
 	if err == nil {
 		err = client.Init(ctx)
 	}
 	if err != nil {
-		return fmt.Errorf("failed to initialize reapi client: %w", err)
+		return fmt.Errorf("failed to initialize reapi client for src cas: %w", err)
 	}
 	defer func() {
 		err := client.Close()
 		if err != nil {
-			clog.Errorf(ctx, "close reapi client: %v", err)
+			clog.Errorf(ctx, "close reapi client for src cas: %v", err)
 		}
 	}()
 	artifactStore := client.CacheStore()
 
-	ui.Default.PrintLines(fmt.Sprintf("target cas instance: %s\n", c.casopt.Instance))
+	ui.Default.PrintLines(fmt.Sprintf("target cas instance: %s\n", c.dstreopt.Instance))
 
-	ccred, err := c.casCred(ctx)
+	ccred, err := c.dstCASCred(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to get cas credential: %w", err)
+		return fmt.Errorf("failed to get credential for dst cas: %w", err)
 	}
 	// isolate uploads a handful of targets concurrently and each target's
 	// upload set is large; enable per-UploadAll parallel batch/stream RPCs.
-	casopt := *c.casopt
-	casopt.UploadConcurrency = max(32, runtime.GOMAXPROCS(0)*4)
-	casClient, err := reapi.New(ctx, ccred, casopt)
+	dstreopt := *c.dstreopt
+	dstreopt.UploadConcurrency = max(32, runtime.GOMAXPROCS(0)*4)
+	casClient, err := reapi.New(ctx, ccred, dstreopt)
 	if err == nil {
 		err = casClient.Init(ctx)
 	}
 	if err != nil {
-		return fmt.Errorf("failed to initialize cas client: %w", err)
+		return fmt.Errorf("failed to initialize reapi client for dst cas: %w", err)
 	}
 	defer func() {
 		err := casClient.Close()
 		if err != nil {
-			clog.Errorf(ctx, "close cas client: %v", err)
+			clog.Errorf(ctx, "close reapi client dst cas: %v", err)
 		}
 	}()
 
@@ -283,15 +286,15 @@ func (c *Command) initWorkdirs(ctx context.Context) (string, string, error) {
 	return workspaceRoot, outDir, err
 }
 
-func (c *Command) casCred(ctx context.Context) (cred.Cred, error) {
-	if c.casopt.Instance == "default_instance" || c.casopt.Instance == "" {
-		return cred.Cred{}, fmt.Errorf("-cas_instance must be set")
+func (c *Command) dstCASCred(ctx context.Context) (cred.Cred, error) {
+	if c.dstreopt.Instance == "default_instance" || c.dstreopt.Instance == "" {
+		return cred.Cred{}, fmt.Errorf("-dst_cas_instance must be set")
 	}
-	if !strings.HasPrefix(c.casopt.Instance, "projects/") {
+	if !strings.HasPrefix(c.dstreopt.Instance, "projects/") {
 		return cred.Cred{}, fmt.Errorf(
-			"-cas_instance must be in projects/<project>/instances/<instance> format. got %q", c.casopt.Instance)
+			"-dst_cas_instance must be in projects/<project>/instances/<instance> format. got %q", c.dstreopt.Instance)
 	}
-	project := strings.Split(c.casopt.Instance, "/")[1]
+	project := strings.Split(c.dstreopt.Instance, "/")[1]
 	// Use Swarming specific authentication mechanism.
 	authOpts := cred.AuthOpts("luci-auth",
 		"context",
@@ -300,7 +303,7 @@ func (c *Command) casCred(ctx context.Context) (cred.Cred, error) {
 		"--act-via-realm",
 		fmt.Sprintf("@internal:%s/cas-read-write", project),
 	)
-	return cred.New(ctx, c.casopt.ServiceURI(), authOpts)
+	return cred.New(ctx, c.dstreopt.ServiceURI(), authOpts)
 }
 
 func upload(ctx context.Context, workspaceRoot, outDir string, hashFS *hashfs.HashFS, casClient *reapi.Client, target string) (digest.Digest, error) {

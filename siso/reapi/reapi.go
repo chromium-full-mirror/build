@@ -43,6 +43,12 @@ import (
 
 // Option contains options of remote exec API.
 type Option struct {
+	// Prefix is used to distinguish client.
+	// If empty, "reapi" is used as prefix.
+	// Usually it uses Address as endpoint,
+	// and optionally CASAddress as endpoint for cas operation,
+	// if it is explicitly specified by the flag.
+	// If Prefix contains "cas", CASAddress will not be used.
 	Prefix     string
 	Address    string
 	CASAddress string
@@ -110,6 +116,8 @@ func Envs(t string) map[string]string {
 }
 
 // RegisterFlags registers flags on the option.
+// Note: if Prefix contains "cas", it would only be used for cas,
+// so not register additional cas address flags.
 func (o *Option) RegisterFlags(fs *flag.FlagSet, envs map[string]string) {
 	var purpose string
 	if o.Prefix == "" {
@@ -122,8 +130,10 @@ func (o *Option) RegisterFlags(fs *flag.FlagSet, envs map[string]string) {
 		addr = "remotebuildexecution.googleapis.com:443"
 	}
 	fs.StringVar(&o.Address, o.Prefix+"_address", addr, "reapi address"+purpose)
-	cas_addr := envs["SISO_REAPI_CAS_ADDRESS"]
-	fs.StringVar(&o.CASAddress, o.Prefix+"_cas_address", cas_addr, "reapi cas address"+purpose+" (if empty, share conn with "+o.Prefix+"_address)")
+	if !strings.Contains(o.Prefix, "cas") {
+		casAddr := envs["SISO_REAPI_CAS_ADDRESS"]
+		fs.StringVar(&o.CASAddress, o.Prefix+"_cas_address", casAddr, "reapi cas address"+purpose+" (if empty, share conn with "+o.Prefix+"_address)")
+	}
 	instance, ok := envs["SISO_REAPI_INSTANCE"]
 	if !ok {
 		instance = "default_instance"
