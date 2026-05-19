@@ -26,14 +26,19 @@ type ImageRepository struct {
 	// Base directory for all images
 	baseDir string
 
-	// Path to the `docker` executable.
+	// Path to the `docker` executable. May be empty if docker isn't installed;
+	// in that case, FetchImage returns an error and actions without a container
+	// image still work.
 	dockerPath string
+	dockerErr  error
 
 	// Synchronization mechanism to prevent multiple concurrent downloads of the same image.
 	imageGroup singleflight.Group
 }
 
 // NewImageRepository creates a new image repository with the given base directory.
+// A missing docker executable is not a fatal error: we only need docker when an
+// action actually requests a container image, so we defer the failure to FetchImage.
 func NewImageRepository(baseDir string) (*ImageRepository, error) {
 	if baseDir == "" {
 		return nil, fmt.Errorf("baseDir must not be empty")
@@ -43,20 +48,21 @@ func NewImageRepository(baseDir string) (*ImageRepository, error) {
 		return nil, fmt.Errorf("failed to create directory %q: %w", baseDir, err)
 	}
 
-	dockerPath, err := exec.LookPath("docker")
-	if err != nil {
-		return nil, fmt.Errorf("failed to find docker executable: %w", err)
-	}
-
+	dockerPath, dockerErr := exec.LookPath("docker")
 	return &ImageRepository{
 		baseDir:    baseDir,
 		dockerPath: dockerPath,
+		dockerErr:  dockerErr,
 	}, nil
 }
 
 // FetchImage fetches the container image for the given action and extracts it into the image directory.
 // It returns the path to the extracted image.
 func (r *ImageRepository) FetchImage(containerImage string) (string, error) {
+	if r.dockerPath == "" {
+		return "", fmt.Errorf("container image requested, but docker executable is not available: %w", r.dockerErr)
+	}
+
 	// Verify that the image URL starts with "docker://" and strip it.
 	if !strings.HasPrefix(containerImage, "docker://") {
 		return "", fmt.Errorf("container image URL %q must start with docker://", containerImage)
