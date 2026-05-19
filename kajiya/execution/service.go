@@ -108,14 +108,22 @@ func (s *Service) Execute(request *repb.ExecuteRequest, executeServer repb.Execu
 		duration := time.Since(start)
 		if err != nil {
 			var mberr *blobstore.MissingBlobsError
-			if errors.As(err, &mberr) {
+			var iaerr *model.InvalidActionError
+			switch {
+			case errors.As(err, &mberr):
 				err = formatMissingBlobsError(mberr)
-			} else if _, ok := status.FromError(err); !ok {
-				// Any error that reaches this point and is not already a gRPC status is an
-				// unexpected internal error and not due to client input. We wrap it in a
-				// status error with the Internal code to ensure we signal this condition
-				// correctly to the client.
-				err = status.Errorf(codes.Internal, "failed to execute action: %v", err)
+			case errors.As(err, &iaerr):
+				// Client-supplied Action/Command was malformed or unsupported on
+				// this server. Use InvalidArgument so clients do not retry.
+				err = status.Error(codes.InvalidArgument, iaerr.Error())
+			default:
+				if _, ok := status.FromError(err); !ok {
+					// Any error that reaches this point and is not already a gRPC status is an
+					// unexpected internal error and not due to client input. We wrap it in a
+					// status error with the Internal code to ensure we signal this condition
+					// correctly to the client.
+					err = status.Errorf(codes.Internal, "failed to execute action: %v", err)
+				}
 			}
 			slog.Error("Execute", "action", request.ActionDigest, "duration", duration, "error", err)
 		} else {

@@ -41,6 +41,20 @@ type KajiyaSymlink struct {
 	Target string
 }
 
+// InvalidActionError indicates that the client-supplied Action or Command
+// was malformed or contained a value the server cannot handle (e.g. an output
+// path that is not valid on this server's filesystem). Callers wrap this into
+// codes.InvalidArgument so clients do not retry the request.
+type InvalidActionError struct {
+	msg string
+}
+
+func (e *InvalidActionError) Error() string { return e.msg }
+
+func invalidActionErrorf(format string, args ...any) error {
+	return &InvalidActionError{msg: fmt.Sprintf(format, args...)}
+}
+
 // FileType specifies whether an output file is a file, directory, or unknown type.
 type FileType int
 
@@ -115,7 +129,7 @@ func LoadAction(actionDigest digest.Digest, cas *blobstore.ContentAddressableSto
 	if action.Timeout != nil {
 		err := action.Timeout.CheckValid()
 		if err != nil {
-			return nil, fmt.Errorf("timeout is not a valid duration: %w", err)
+			return nil, invalidActionErrorf("timeout is not a valid duration: %v", err)
 		}
 		ka.Timeout = action.Timeout.AsDuration()
 	}
@@ -135,7 +149,7 @@ func LoadAction(actionDigest digest.Digest, cas *blobstore.ContentAddressableSto
 	prevName := ""
 	for _, v := range cmd.EnvironmentVariables {
 		if v.Name <= prevName {
-			return nil, fmt.Errorf("environment variable names must be sorted and unique, but %q <= %q", v.Name, prevName)
+			return nil, invalidActionErrorf("environment variable names must be sorted and unique, but %q <= %q", v.Name, prevName)
 		}
 		prevName = v.Name
 
@@ -157,7 +171,7 @@ func LoadAction(actionDigest digest.Digest, cas *blobstore.ContentAddressableSto
 		for _, prop := range p.Properties {
 			// Note: Duplicate property names are explicitly allowed in the spec.
 			if prop.Name < prevName {
-				return nil, fmt.Errorf("platform properties must be sorted by name, but %q < %q", prop.Name, prevName)
+				return nil, invalidActionErrorf("platform properties must be sorted by name, but %q < %q", prop.Name, prevName)
 			}
 			prevName = prop.Name
 
@@ -167,7 +181,7 @@ func LoadAction(actionDigest digest.Digest, cas *blobstore.ContentAddressableSto
 
 	if containerImages, ok := ka.Platform["container-image"]; ok {
 		if len(containerImages) != 1 {
-			return nil, fmt.Errorf("platform property container-image must have exactly one value, but got %d", len(containerImages))
+			return nil, invalidActionErrorf("platform property container-image must have exactly one value, but got %d", len(containerImages))
 		}
 		ka.ContainerImage = containerImages[0]
 	}
@@ -188,14 +202,14 @@ func LoadAction(actionDigest digest.Digest, cas *blobstore.ContentAddressableSto
 		ka.WorkingDir = "."
 	}
 	if filepath.FromSlash(ka.WorkingDir) != filepath.Clean(ka.WorkingDir) {
-		return nil, fmt.Errorf("working directory is not a clean path, wanted %q, got %q", filepath.Clean(ka.WorkingDir), filepath.FromSlash(cmd.WorkingDirectory))
+		return nil, invalidActionErrorf("working directory is not a clean path, wanted %q, got %q", filepath.Clean(ka.WorkingDir), filepath.FromSlash(cmd.WorkingDirectory))
 	}
 	wdLookup := ka.WorkingDir + "/"
 	if ka.WorkingDir == "." {
 		wdLookup = ""
 	}
 	if _, ok := ka.InputTrie.Get([]byte(wdLookup)); !ok {
-		return nil, fmt.Errorf("working directory %q not found in input root", ka.WorkingDir)
+		return nil, invalidActionErrorf("working directory %q not found in input root", ka.WorkingDir)
 	}
 
 	// Add the output paths to our trie.
@@ -222,7 +236,7 @@ func LoadAction(actionDigest digest.Digest, cas *blobstore.ContentAddressableSto
 
 	// TODO: not implemented yet
 	if ka.CaptureWholeTree {
-		return nil, fmt.Errorf("capturing the whole output tree is not supported yet")
+		return nil, invalidActionErrorf("capturing the whole output tree is not supported yet")
 	}
 
 	return ka, nil
@@ -236,27 +250,27 @@ func (ka *Action) addOutputsToTrie(outputs []string, ft FileType) error {
 	prevName := ""
 	for _, path := range outputs {
 		if path <= prevName {
-			return fmt.Errorf("output paths must be sorted and unique, but %q <= %q", path, prevName)
+			return invalidActionErrorf("output paths must be sorted and unique, but %q <= %q", path, prevName)
 		}
 		prevName = path
 
 		if strings.HasPrefix(path, "/") || strings.HasSuffix(path, "/") {
-			return fmt.Errorf("invalid output path %q (has a leading or trailing slash)", path)
+			return invalidActionErrorf("invalid output path %q (has a leading or trailing slash)", path)
 		}
 		if path != filepath.ToSlash(filepath.Clean(path)) || path == "." {
-			return fmt.Errorf("invalid output path %q (is not clean)", path)
+			return invalidActionErrorf("invalid output path %q (is not clean)", path)
 		}
 
 		path = filepath.ToSlash(filepath.Join(ka.WorkingDir, path))
 		if !filepath.IsLocal(path) {
-			return fmt.Errorf("output path %q escapes the input root", path)
+			return invalidActionErrorf("output path %q is not a valid local path", path)
 		}
 		parentPath, parent, ok := ka.InputTrie.Root().LongestPrefix([]byte(path))
 		if !ok {
-			return fmt.Errorf("no parent directory found for output path %q", path)
+			return invalidActionErrorf("no parent directory found for output path %q", path)
 		}
 		if len(parentPath) > 0 && !bytes.HasSuffix(parentPath, []byte("/")) {
-			return fmt.Errorf("parent path %q does not end with a slash", parentPath)
+			return invalidActionErrorf("parent path %q does not end with a slash", parentPath)
 		}
 		pathInParent := strings.TrimPrefix(path, string(parentPath))
 		parent.Outputs = append(parent.Outputs, KajiyaOutput{Name: pathInParent, Type: ft})
@@ -307,7 +321,7 @@ func treeToTrie(cas *blobstore.ContentAddressableStorage, rootDigest *repb.Diges
 		}
 		unixMode, err := convertUnixMode(dir.GetNodeProperties().GetUnixMode().GetValue(), true)
 		if err != nil {
-			return nil, fmt.Errorf("directory %q: %w", dirNode.Name, err)
+			return nil, invalidActionErrorf("directory %q: %v", dirNode.Name, err)
 		}
 		kd := KajiyaDirectory{
 			Digest:   dirDigest,
@@ -323,16 +337,16 @@ func treeToTrie(cas *blobstore.ContentAddressableStorage, rootDigest *repb.Diges
 		prevName := ""
 		for _, file := range dir.Files {
 			if file.Name <= prevName {
-				return nil, fmt.Errorf("file names must be sorted and unique, but %q <= %q", file.Name, prevName)
+				return nil, invalidActionErrorf("file names must be sorted and unique, but %q <= %q", file.Name, prevName)
 			}
 			prevName = file.Name
 
 			// Validate the file name.
 			if file.Name == "" {
-				return nil, fmt.Errorf("file name must not be empty")
+				return nil, invalidActionErrorf("file name must not be empty")
 			}
 			if strings.IndexByte(file.Name, '/') >= 0 {
-				return nil, fmt.Errorf("file name %q contains path separators", file.Name)
+				return nil, invalidActionErrorf("file name %q contains path separators", file.Name)
 			}
 
 			// Check if the file is present in the CAS.
@@ -347,7 +361,7 @@ func treeToTrie(cas *blobstore.ContentAddressableStorage, rootDigest *repb.Diges
 			// Construct a KajiyaFile for this file and add it to the directory.
 			unixMode, err := convertUnixMode(file.GetNodeProperties().GetUnixMode().GetValue(), file.IsExecutable)
 			if err != nil {
-				return nil, fmt.Errorf("file %q: %w", file.Name, err)
+				return nil, invalidActionErrorf("file %q: %v", file.Name, err)
 			}
 			kf := KajiyaFile{
 				Name:     file.Name,
@@ -363,25 +377,25 @@ func treeToTrie(cas *blobstore.ContentAddressableStorage, rootDigest *repb.Diges
 		prevName = ""
 		for _, symlink := range dir.Symlinks {
 			if symlink.Name <= prevName {
-				return nil, fmt.Errorf("symlink names must be sorted and unique, but %q <= %q", symlink.Name, prevName)
+				return nil, invalidActionErrorf("symlink names must be sorted and unique, but %q <= %q", symlink.Name, prevName)
 			}
 			prevName = symlink.Name
 
 			// Validate the symlink name and target.
 			if symlink.Name == "" {
-				return nil, fmt.Errorf("symlink name must not be empty")
+				return nil, invalidActionErrorf("symlink name must not be empty")
 			}
 			if strings.IndexByte(symlink.Name, '/') >= 0 {
-				return nil, fmt.Errorf("symlink name %q contains path separators", symlink.Name)
+				return nil, invalidActionErrorf("symlink name %q contains path separators", symlink.Name)
 			}
 			if filepath.IsAbs(symlink.Target) {
-				return nil, fmt.Errorf("symlink %q points to absolute path %q", symlink.Name, symlink.Target)
+				return nil, invalidActionErrorf("symlink %q points to absolute path %q", symlink.Name, symlink.Target)
 			}
 			if symlink.GetNodeProperties().GetMtime() != nil {
-				return nil, fmt.Errorf("symlink %q specifies an mtime, which is unsupported", symlink.Name)
+				return nil, invalidActionErrorf("symlink %q specifies an mtime, which is unsupported", symlink.Name)
 			}
 			if symlink.GetNodeProperties().GetUnixMode() != nil {
-				return nil, fmt.Errorf("symlink %q specifies a unix mode, which is unsupported", symlink.Name)
+				return nil, invalidActionErrorf("symlink %q specifies a unix mode, which is unsupported", symlink.Name)
 			}
 			kd.Symlinks = append(kd.Symlinks, KajiyaSymlink{
 				Name:   symlink.Name,
@@ -392,16 +406,16 @@ func treeToTrie(cas *blobstore.ContentAddressableStorage, rootDigest *repb.Diges
 		prevName = ""
 		for _, subDir := range dir.Directories {
 			if subDir.Name <= prevName {
-				return nil, fmt.Errorf("directory names must be sorted and unique, but %q <= %q", subDir.Name, prevName)
+				return nil, invalidActionErrorf("directory names must be sorted and unique, but %q <= %q", subDir.Name, prevName)
 			}
 			prevName = subDir.Name
 
 			// Validate the subdirectory name and target.
 			if subDir.Name == "" {
-				return nil, fmt.Errorf("directory name must not be empty")
+				return nil, invalidActionErrorf("directory name must not be empty")
 			}
 			if strings.IndexByte(subDir.Name, '/') >= 0 {
-				return nil, fmt.Errorf("directory name %q contains path separators", subDir.Name)
+				return nil, invalidActionErrorf("directory name %q contains path separators", subDir.Name)
 			}
 
 			kd.Dirs = append(kd.Dirs, subDir.Name)
@@ -419,7 +433,7 @@ func treeToTrie(cas *blobstore.ContentAddressableStorage, rootDigest *repb.Diges
 			key = filepath.ToSlash(key) + "/"
 		}
 		if _, didUpdate := trieBuilder.Insert([]byte(key), &kd); didUpdate {
-			return nil, fmt.Errorf("duplicate directory name in tree %q", dirNode.Name)
+			return nil, invalidActionErrorf("duplicate directory name in tree %q", dirNode.Name)
 		}
 	}
 

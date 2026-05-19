@@ -5,6 +5,8 @@
 package model
 
 import (
+	"errors"
+	"runtime"
 	"testing"
 
 	repb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
@@ -211,8 +213,10 @@ func TestLoadAction_OutputUnderWorkingDir(t *testing.T) {
 }
 
 // TestLoadAction_OutputErrorPropagates verifies that errors from
-// addOutputsToTrie surface from LoadAction. We construct an output path that
-// escapes the input root, which is rejected by the IsLocal check.
+// addOutputsToTrie surface from LoadAction as *InvalidActionError, so the
+// gRPC layer can map them to codes.InvalidArgument rather than retriable
+// codes.Internal. We use an output path that escapes the input root, which
+// is rejected by the IsLocal check on every OS.
 func TestLoadAction_OutputErrorPropagates(t *testing.T) {
 	cas := newCAS(t)
 	b := &inputRootBuilder{t: t, cas: cas}
@@ -224,7 +228,49 @@ func TestLoadAction_OutputErrorPropagates(t *testing.T) {
 	}
 	actionDigest := uploadAction(t, cas, cmd, rootDigest)
 
-	if _, err := LoadAction(actionDigest, cas); err == nil {
+	_, err := LoadAction(actionDigest, cas)
+	if err == nil {
 		t.Fatal("LoadAction succeeded; want error for escaping output path")
+	}
+	var iaerr *InvalidActionError
+	if !errors.As(err, &iaerr) {
+		t.Errorf("LoadAction err = %T (%v); want *InvalidActionError", err, err)
+	}
+}
+
+// TestLoadAction_WindowsReservedOutputName is a regression test for the
+// case where an output path's basename is a Windows DOS reserved name. The
+// production trigger was a chromium build action declaring "aux.out" on
+// Windows Server bots, which filepath.IsLocal rejects. Pre-fix that
+// rejection bubbled up as codes.Internal and triggered Siso's retry loop,
+// causing a multi-minute hang on Windows CI.
+//
+// We use the bare basename "aux" because the with-extension form is
+// rejected only on Windows versions whose RtlIsDosDeviceName_U still
+// flags "aux.<ext>" (e.g. Windows Server 2019, Windows 10); Windows 11
+// allows it. The bare basename is rejected on every Windows version.
+// On non-Windows hosts filepath.IsLocal does not consider DOS names
+// reserved, so the action loads cleanly; the test is skipped there.
+func TestLoadAction_WindowsReservedOutputName(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("filepath.IsLocal only flags DOS reserved names on Windows")
+	}
+	cas := newCAS(t)
+	b := &inputRootBuilder{t: t, cas: cas}
+	rootDigest := b.dir([]string{"main.go"}, nil)
+
+	cmd := &repb.Command{
+		Arguments:   []string{"compile"},
+		OutputPaths: []string{"aux"},
+	}
+	actionDigest := uploadAction(t, cas, cmd, rootDigest)
+
+	_, err := LoadAction(actionDigest, cas)
+	if err == nil {
+		t.Fatal("LoadAction succeeded; want error for DOS-reserved output path on Windows")
+	}
+	var iaerr *InvalidActionError
+	if !errors.As(err, &iaerr) {
+		t.Errorf("LoadAction err = %T (%v); want *InvalidActionError", err, err)
 	}
 }
