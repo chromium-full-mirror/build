@@ -9,7 +9,9 @@ load("@builtin//struct.star", "module")
 def __cxx(ctx, cmd):
     ctx.actions.fix(
         auxiliary_log_output_files = [
-            ctx.fs.canonpath("./aux.out"),
+            # Do not call the output file "aux.out"! This is a reserved file
+            # name on Windows 10 and lower, causing the test to fail on LUCI.
+            ctx.fs.canonpath("./debug.out"),
             ctx.fs.canonpath("./aux_missing.out"),
         ],
         auxiliary_log_output_dirs = [

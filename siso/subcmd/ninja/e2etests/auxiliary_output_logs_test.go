@@ -81,7 +81,7 @@ func TestBuild_Auxiliary_Remote(t *testing.T) {
 			outContent := []byte("out-content")
 			outDigest := digest.FromBytes("out.o", outContent)
 			auxContent := []byte("aux-content")
-			auxDigest := digest.FromBytes("aux.out", auxContent)
+			auxDigest := digest.FromBytes("debug.out", auxContent)
 
 			auxDirFileContent := []byte("aux-dir-file-content")
 			auxTree := &rpb.Tree{Root: &rpb.Directory{
@@ -110,7 +110,7 @@ func TestBuild_Auxiliary_Remote(t *testing.T) {
 								Digest: outDigest.Digest().Proto(),
 							},
 							{
-								Path:   "aux.out",
+								Path:   "debug.out",
 								Digest: auxDigest.Digest().Proto(),
 							},
 						},
@@ -135,9 +135,9 @@ func TestBuild_Auxiliary_Remote(t *testing.T) {
 			}
 
 			wantAux := fmt.Sprintf(`auxiliary outputs:
-out/siso/aux.out	%s	siso fetch -reapi_instance testinstance %s out/siso/aux.out
 out/siso/aux_dir/	%s	siso fetch -reapi_instance testinstance -type=tree-extract %s out/siso/aux_dir/
-`, auxDigest.Digest(), auxDigest.Digest(), auxTreeDigest.Digest(), auxTreeDigest.Digest())
+out/siso/debug.out	%s	siso fetch -reapi_instance testinstance %s out/siso/debug.out
+`, auxTreeDigest.Digest(), auxTreeDigest.Digest(), auxDigest.Digest(), auxDigest.Digest())
 			if !strings.Contains(outputLog.String(), wantAux) {
 				t.Errorf("output log missing expected auxiliary outputs:\n%s\n\ngot:\n%s", wantAux, outputLog.String())
 			}
