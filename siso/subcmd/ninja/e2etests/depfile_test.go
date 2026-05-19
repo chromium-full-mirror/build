@@ -168,7 +168,7 @@ func TestBuild_Depfile_SandboxedRestriction(t *testing.T) {
 	t.Logf("-- attempting to build with sandboxing restriction active")
 	stats, err := runNinjaTest(t)
 
-	expectedErr := build.DepfileAddsUnsandboxedFileError{Input: "../../undeclared.h"}
+	expectedErr := build.DepfileAddsUnsandboxedFileError{Inputs: []string{"../../undeclared.h"}}
 	if !errors.Is(err, expectedErr) {
 		t.Errorf("got error %v, want %v", err, expectedErr)
 	}
@@ -218,10 +218,46 @@ func TestBuild_Depfile_SandboxedRestriction_FirstRunWithoutSandboxing(t *testing
 	t.Logf("-- attempting to build with sandboxing restriction active")
 	stats, err = runNinjaTest(t)
 
-	expectedErr := build.DepfileAddsUnsandboxedFileError{Input: "../../undeclared.h"}
+	expectedErr := build.DepfileAddsUnsandboxedFileError{Inputs: []string{"../../undeclared.h"}}
 	if !errors.Is(err, expectedErr) {
 		t.Errorf("got error %v, want %v", err, expectedErr)
 	}
+	if stats.Done != 2 || stats.Local != 1 || stats.Total != 2 {
+		t.Errorf("done=%d total=%d local=%d; want done=2 total=2 local=1 %#v", stats.Done, stats.Total, stats.Local, stats)
+	}
+}
+
+func TestBuild_Depfile_SandboxedRestriction_Multiple(t *testing.T) {
+	if !runInSubProcess(t) {
+		return
+	}
+	if runtime.GOOS != "linux" {
+		t.Skip("skip: no sandbox support on non-linux")
+		return
+	}
+	ctx := t.Context()
+	dir := tempDir(t)
+
+	// Initialize workspace from testdata folder.
+	setupFiles(t, dir, t.Name(), nil)
+
+	runNinjaTest := func(t *testing.T) (build.Stats, error) {
+		t.Helper()
+		opt, graph, cleanup := setupBuild(ctx, t, dir, hashfs.Option{
+			StateFile: ".siso_fs_state",
+		})
+		defer cleanup()
+		return ninjabuild.Run(ctx, graph, opt, nil, ninjabuild.RunNinjaOpts{})
+	}
+
+	t.Logf("-- attempting to build with sandboxing restriction active")
+	stats, err := runNinjaTest(t)
+
+	expectedErr := build.DepfileAddsUnsandboxedFileError{Inputs: []string{"../../undeclared.h", "../../undeclared2.h"}}
+	if !errors.Is(err, expectedErr) {
+		t.Errorf("got error %v, want %v", err, expectedErr)
+	}
+
 	if stats.Done != 2 || stats.Local != 1 || stats.Total != 2 {
 		t.Errorf("done=%d total=%d local=%d; want done=2 total=2 local=1 %#v", stats.Done, stats.Total, stats.Local, stats)
 	}

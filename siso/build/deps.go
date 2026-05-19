@@ -49,11 +49,19 @@ var depsProcessors = map[string]depsProcessor{
 // that was not part of the original sandbox. Sandboxed actions can only use depfiles
 // to promote order-only deps to regular implicit deps.
 type DepfileAddsUnsandboxedFileError struct {
-	Input string
+	Inputs []string
 }
 
 func (e DepfileAddsUnsandboxedFileError) Error() string {
-	return fmt.Sprintf("sandboxed action has depfile that adds a dependency that is not listed in its inputs: %q. When sandboxing, depfiles can only be used to promote order-only deps to implicit deps", e.Input)
+	return fmt.Sprintf("sandboxed action has depfile that adds dependencies that are not listed in its inputs. When sandboxing, depfiles can only be used to promote order-only deps to implicit deps. The files are:\n  %s", strings.Join(e.Inputs, "\n  "))
+}
+
+func (e DepfileAddsUnsandboxedFileError) Is(target error) bool {
+	t, ok := target.(DepfileAddsUnsandboxedFileError)
+	if !ok {
+		return false
+	}
+	return slices.Equal(e.Inputs, t.Inputs)
 }
 
 // depsExpandInputs expands step.cmd.Inputs.
@@ -233,6 +241,7 @@ func checkDeps(ctx context.Context, b *Builder, step *Step, deps []string) error
 	}
 
 	var checkInputs []string
+	var unsandboxed []string
 
 	platform := step.cmd.Platform
 	if step.useReclient() && step.cmd.REProxyConfig != nil {
@@ -256,7 +265,8 @@ func checkDeps(ctx context.Context, b *Builder, step *Step, deps []string) error
 
 		// Sandboxed actions can only use depfiles to promote order-only to implicit deps
 		if step.enforceDepfileOnlyPromotes && !ninjaInputs[input] {
-			return DepfileAddsUnsandboxedFileError{Input: dep}
+			unsandboxed = append(unsandboxed, dep)
+			continue
 		}
 
 		fi, err := b.hashFS.Stat(ctx, b.path.WorkspaceRoot, input)
@@ -284,6 +294,10 @@ func checkDeps(ctx context.Context, b *Builder, step *Step, deps []string) error
 			continue
 		}
 		checkInputs = append(checkInputs, input)
+	}
+	if len(unsandboxed) > 0 {
+		slices.Sort(unsandboxed)
+		return DepfileAddsUnsandboxedFileError{Inputs: unsandboxed}
 	}
 	if experiments.Enabled("check-deps", "") || experiments.Enabled("fail-on-bad-deps", "") {
 		unknownBadDep, err := step.def.CheckInputDeps(ctx, checkInputs)
