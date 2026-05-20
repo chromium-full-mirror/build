@@ -1063,6 +1063,12 @@ func stepLogEntry(ctx context.Context, logger *clog.Logger, step *Step, duration
 	if step.metrics.WorkerTime > 0 {
 		logEntry.Labels["worker_secs"] = fmt.Sprintf("%.02f", time.Duration(step.metrics.WorkerTime).Seconds())
 	}
+	if step.metrics.QueueTime > 0 {
+		logEntry.Labels["queue_secs"] = fmt.Sprintf("%.02f", time.Duration(step.metrics.QueueTime).Seconds())
+	}
+	if step.metrics.DepsScanTime > 0 {
+		logEntry.Labels["depsscan_secs"] = fmt.Sprintf("%.02f", time.Duration(step.metrics.DepsScanTime).Seconds())
+	}
 	if step.metrics.NoExec {
 		logEntry.Labels["no_exec"] = "true"
 	}
