@@ -4,7 +4,7 @@
 
 //go:build windows
 
-package memory
+package host
 
 import (
 	"fmt"
@@ -26,7 +26,7 @@ type memoryStatusEx struct {
 	ullAvailExtendedVirtual uint64
 }
 
-func total() (uint64, error) {
+func memoryTotal() (uint64, error) {
 	kernel32 := windows.NewLazySystemDLL("kernel32.dll")
 	procGlobalMemoryStatusEx := kernel32.NewProc("GlobalMemoryStatusEx")
 

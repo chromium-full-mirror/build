@@ -4,13 +4,13 @@
 
 //go:build darwin
 
-package memory
+package host
 
 import (
 	"golang.org/x/sys/unix"
 )
 
-func total() (uint64, error) {
+func memoryTotal() (uint64, error) {
 	val, err := unix.SysctlUint64("hw.memsize")
 	if err != nil {
 		return 0, err

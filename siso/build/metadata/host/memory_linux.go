@@ -4,7 +4,7 @@
 
 //go:build linux
 
-package memory
+package host
 
 import (
 	"bufio"
@@ -14,7 +14,7 @@ import (
 	"strings"
 )
 
-func total() (uint64, error) {
+func memoryTotal() (uint64, error) {
 	file, err := os.Open("/proc/meminfo")
 	if err != nil {
 		return 0, err

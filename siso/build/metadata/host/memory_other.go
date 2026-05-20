@@ -4,10 +4,10 @@
 
 //go:build !linux && !darwin && !windows
 
-package memory
+package host
 
 import "fmt"
 
-func total() (uint64, error) {
+func memoryTotal() (uint64, error) {
 	return 0, fmt.Errorf("not implemented on this platform")
 }

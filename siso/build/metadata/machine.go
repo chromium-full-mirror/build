@@ -6,11 +6,12 @@ package metadata
 
 import (
 	"context"
+	"errors"
 	"runtime"
 
 	"github.com/klauspost/cpuid/v2"
 
-	"go.chromium.org/build/siso/build/metadata/memory"
+	"go.chromium.org/build/siso/build/metadata/host"
 	"go.chromium.org/build/siso/o11y/clog"
 )
 
@@ -26,14 +27,21 @@ type MachineInfo struct {
 
 // GatherMachineInfo gathers and returns machine information of the build environment.
 func GatherMachineInfo(ctx context.Context) MachineInfo {
-	total, err := memory.Total()
+	total, err := host.MemoryTotal()
 	if err != nil {
 		clog.Warningf(ctx, "failed to get machine memory: %v", err)
 	}
+	osVersion, err := host.OSVersion()
+	if errors.Is(err, host.ErrUnsupportedOS) {
+		osVersion = ""
+	} else {
+		clog.Warningf(ctx, "failed to get os version: %v", err)
+	}
 	return MachineInfo{
 		Platform: PlatformInfo{
-			OS:           runtime.GOOS,
 			Architecture: runtime.GOARCH,
+			OS:           runtime.GOOS,
+			OSVersion:    osVersion,
 		},
 		CPU: CPUInfo{
 			BrandName:     cpuid.CPU.BrandName,
@@ -49,16 +57,21 @@ func GatherMachineInfo(ctx context.Context) MachineInfo {
 
 // PlatformInfo reports platform information of the machine that the build was invoked on.
 type PlatformInfo struct {
-	// OS reports the host's operating system.
-	//
-	// It is populated with similar semantics to the "os" field in the OCI Image Configuration specification.
-	// Hence, consumers SHOULD understand values listed in the Go Language document for GOOS.
-	OS string `json:"os"`
 	// Architecture reports the host's architecture.
 	//
 	// It is populated with similar semantics to the "architecture" field in the OCI Image Configuration specification.
 	// Hence, consumers SHOULD understand values listed in the Go Language document for GOARCH.
 	Architecture string `json:"architecture"`
+	// OS reports the host's operating system.
+	//
+	// It is populated with similar semantics to the "os" field in the OCI Image Configuration specification.
+	// Hence, consumers SHOULD understand values listed in the Go Language document for GOOS.
+	OS string `json:"os"`
+	// OSVersion reports the host operating system's version.
+	//
+	// It is populated with an arbitrary version string for macOS and Windows hosts.
+	// This will be unset for Linux hosts, however this is subject to change.
+	OSVersion string `json:"os_version,omitempty"`
 }
 
 // CPUInfo reports CPU information.
