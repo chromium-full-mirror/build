@@ -136,3 +136,21 @@ func TestStepSpanName(t *testing.T) {
 		})
 	}
 }
+
+func TestStepMetrics(t *testing.T) {
+	m := StepMetric{
+		BuildID: "my-build-id",
+		StepID:  "my-step-id",
+		Utime:   IntervalMetric(5 * time.Second),
+		Stime:   IntervalMetric(2 * time.Second),
+		Majflt:  42,
+	}
+
+	s := NewStepForTest(1, fakeStepDef{})
+	s.SetMetricsForTest(m)
+
+	got := s.Metrics()
+	if got.BuildID != m.BuildID || got.StepID != m.StepID || got.Utime != m.Utime || got.Stime != m.Stime || got.Majflt != m.Majflt {
+		t.Errorf("s.Metrics()=%+v; want=%+v", got, m)
+	}
+}

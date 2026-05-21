@@ -198,6 +198,11 @@ func (s *Step) Clone() *Step {
 // IDNum is a step identification number.
 func (s *Step) IDNum() int { return s.idnum }
 
+// Metrics is the collection of metrics for the step.
+func (s *Step) Metrics() StepMetric {
+	return s.metrics
+}
+
 // Desc returns step's description.
 func (s *Step) Desc() string {
 	return s.cmd.Desc
@@ -206,6 +211,26 @@ func (s *Step) Desc() string {
 // Command returns step's command line.
 func (s *Step) Command() string {
 	return s.def.Binding("command")
+}
+
+// Binding returns binding value of the step for name.
+func (s *Step) Binding(name string) string {
+	return s.def.Binding(name)
+}
+
+// NewStepForTest returns a Step initialized for external package testing.
+func NewStepForTest(idnum int, def StepDef) *Step {
+	return &Step{
+		idnum: idnum,
+		def:   def,
+		cmd:   &execute.Cmd{},
+		state: &stepState{},
+	}
+}
+
+// SetMetricsForTest sets the StepMetric of the step for external package testing.
+func (s *Step) SetMetricsForTest(metrics StepMetric) {
+	s.metrics = metrics
 }
 
 // Outputs returns step's outputs (target name in ninja, i.e. output path relative to wd.)

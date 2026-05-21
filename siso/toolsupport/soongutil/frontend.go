@@ -9,6 +9,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -135,27 +136,43 @@ func (f *Frontend) BuildActionFinished(step *build.Step) {
 			sb.WriteByte('\n')
 		}
 	}
+	met := step.Metrics()
 	m := &pb.Status{
 		EdgeFinished: &pb.Status_EdgeFinished{
-			Id:      proto.Uint32(uint32(step.IDNum())),
-			EndTime: proto.Uint32(uint32(time.Since(f.startTime).Milliseconds())),
-			Status:  proto.Int32(step.ExitCode()),
-			Output:  proto.String(sb.String()),
+			Id:              proto.Uint32(uint32(step.IDNum())),
+			EndTime:         proto.Uint32(uint32(time.Since(f.startTime).Milliseconds())),
+			Status:          proto.Int32(step.ExitCode()),
+			Output:          proto.String(sb.String()),
+			UserTime:        proto.Uint32(uint32(time.Duration(met.Utime).Milliseconds())),
+			SystemTime:      proto.Uint32(uint32(time.Duration(met.Stime).Milliseconds())),
+			MaxRssKb:        proto.Uint64(maxRSSKB(met)),
+			MajorPageFaults: proto.Uint64(uint64(met.Majflt)),
 			// TODO: pass more info?
 		},
+	}
+	if tags := step.Binding("tags"); tags != "" {
+		m.EdgeFinished.Tags = proto.String(tags)
 	}
 	f.ch <- m
 }
 
 // BuildActionCanceled is called when build action canceled.
 func (f *Frontend) BuildActionCanceled(step *build.Step) {
+	met := step.Metrics()
 	m := &pb.Status{
 		EdgeFinished: &pb.Status_EdgeFinished{
-			Id:       proto.Uint32(uint32(step.IDNum())),
-			EndTime:  proto.Uint32(uint32(time.Since(f.startTime).Milliseconds())),
-			Status:   proto.Int32(-1),
-			Canceled: proto.Bool(true),
+			Id:              proto.Uint32(uint32(step.IDNum())),
+			EndTime:         proto.Uint32(uint32(time.Since(f.startTime).Milliseconds())),
+			Status:          proto.Int32(-1),
+			Canceled:        proto.Bool(true),
+			UserTime:        proto.Uint32(uint32(time.Duration(met.Utime).Milliseconds())),
+			SystemTime:      proto.Uint32(uint32(time.Duration(met.Stime).Milliseconds())),
+			MaxRssKb:        proto.Uint64(maxRSSKB(met)),
+			MajorPageFaults: proto.Uint64(uint64(met.Majflt)),
 		},
+	}
+	if tags := step.Binding("tags"); tags != "" {
+		m.EdgeFinished.Tags = proto.String(tags)
 	}
 	f.ch <- m
 }
@@ -251,4 +268,12 @@ func (f *Frontend) Warningf(format string, args ...any) {
 // Errorf reports error level.
 func (f *Frontend) Errorf(format string, args ...any) {
 	f.message(pb.Status_Message_ERROR, fmt.Sprintf(format, args...))
+}
+
+func maxRSSKB(met build.StepMetric) uint64 {
+	maxRss := met.MaxRSS
+	if met.IsLocal && runtime.GOOS == "darwin" {
+		return uint64(maxRss / 1024)
+	}
+	return uint64(maxRss)
 }
