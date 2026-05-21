@@ -85,7 +85,8 @@ To land the change,
 
 1.  Create a CL for kajiya change and siso change.
     It can be built with `go.work`, but may fail without `go.work` if
-    kajiya API is incompatible. In this case, add `No-WithoutGoWork` CL footer.
+    kajiya API is incompatible. In this case, add `No-Without-Go-Work`
+    CL footer.
 2.  Once landed:
     1. In siso, run `go get go.chromium.org/build/kajiya@latest` to update
        kajiya dependency for siso.
