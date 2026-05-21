@@ -31,6 +31,7 @@ import (
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdkresource "go.opentelemetry.io/otel/sdk/resource"
 	semconv "go.opentelemetry.io/otel/semconv/v1.37.0"
+	"go.opentelemetry.io/otel/trace"
 	mrpb "google.golang.org/genproto/googleapis/api/monitoredres"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -448,6 +449,36 @@ func (l *Logger) log(e logging.Entry) {
 
 		rec.SetBody(toOtelValue(e.Payload))
 
+		ctx := context.Background()
+		var otelTraceID trace.TraceID
+		var otelSpanID trace.SpanID
+		var err error
+
+		if l.trace != "" {
+			traceIDHex := l.trace
+			if idx := strings.LastIndex(l.trace, "/"); idx != -1 {
+				traceIDHex = l.trace[idx+1:]
+			}
+			otelTraceID, err = trace.TraceIDFromHex(traceIDHex)
+			if err != nil {
+				glog.Warningf("failed to parse trace ID %q: %v", traceIDHex, err)
+			}
+		}
+		if l.spanID != "" {
+			otelSpanID, err = trace.SpanIDFromHex(l.spanID)
+			if err != nil {
+				glog.Warningf("failed to parse span ID %q: %v", l.spanID, err)
+			}
+		}
+
+		if otelTraceID.IsValid() && otelSpanID.IsValid() {
+			sc := trace.NewSpanContext(trace.SpanContextConfig{
+				TraceID: otelTraceID,
+				SpanID:  otelSpanID,
+			})
+			ctx = trace.ContextWithSpanContext(ctx, sc)
+		}
+
 		var attrs []otelog.KeyValue
 		for k, v := range e.Labels {
 			attrs = append(attrs, otelog.String(k, v))
@@ -468,9 +499,13 @@ func (l *Logger) log(e logging.Entry) {
 
 		// Magic name overriding key.
 		// https://github.com/GoogleCloudPlatform/opentelemetry-operations-go/blob/b50231bb7ac2630d764dea1fe6dc269121eab82f/exporter/collector/logs.go#L60
-		attrs = append(attrs, otelog.String("gcp.log_name", "siso.log"))
+		logName := "siso.log"
+		if e.HTTPRequest != nil {
+			logName = "siso.step"
+		}
+		attrs = append(attrs, otelog.String("gcp.log_name", logName))
 		rec.AddAttributes(attrs...)
-		l.otelLogger.Emit(context.Background(), rec)
+		l.otelLogger.Emit(ctx, rec)
 		return
 	}
 
