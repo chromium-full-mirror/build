@@ -68,7 +68,7 @@ const (
 )
 
 // chromium recipe module expects this string.
-const ninjaNoWorkToDo = "ninja: no work to do.\n\n"
+const ninjaNoWorkToDo = "ninja: no work to do.\n"
 
 // OutputLocalFunc is a function to determine the file should be downloaded or not.
 type OutputLocalFunc func(context.Context, string) bool
@@ -602,7 +602,7 @@ func (b *Builder) Build(ctx context.Context, name string, args ...string) (err e
 	stat := b.Stats()
 	if stat.Total == 0 {
 		clog.Infof(ctx, "nothing to build for %q", args)
-		ui.Default.PrintLines(ninjaNoWorkToDo)
+		fmt.Printf("\r%s", ninjaNoWorkToDo)
 		return nil
 	}
 
@@ -662,7 +662,7 @@ func (b *Builder) Build(ctx context.Context, name string, args ...string) (err e
 		}
 		clog.Infof(ctx, "build %s %s: %v", time.Since(started), time.Since(b.start), err)
 		if stat.Skipped == stat.Total {
-			ui.Default.PrintLines(ninjaNoWorkToDo)
+			fmt.Printf("\r%s", ninjaNoWorkToDo)
 			return
 		}
 		fsstat := b.hashFS.OS.Stats()

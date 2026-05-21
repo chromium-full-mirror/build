@@ -674,7 +674,7 @@ func (c *Command) postRun(ctx context.Context, stats build.Stats, runErr error) 
 			if ui.IsTerminal() {
 				msgPrefix = ui.SGR(ui.Green, msgPrefix)
 			}
-			ui.Default.Infof("%s Nothing to do.\n", msgPrefix)
+			fmt.Printf("%s Nothing to do.\n", msgPrefix)
 			return subcommands.ExitSuccess
 		}
 		result.Code = int(subcommands.ExitFailure)
