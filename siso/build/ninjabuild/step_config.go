@@ -376,9 +376,9 @@ func (sc StepConfig) Lookup(ctx context.Context, bpath *build.Path, edge *ninjau
 		clog.Infof(ctx, "lookup action:%s out:%s args0:%s", actionName, out, args0)
 	}
 
-	sisoRemote := edge.Binding("siso_remote")
-	sisoPlatformRef := edge.Binding("siso_platform_ref")
-	sisoTimeout := edge.Binding("siso_timeout")
+	remoteBinding := edge.Binding("remote_enabled")
+	platformRefBinding := edge.Binding("remote_platform_ref")
+	timeoutBinding := edge.Binding("remote_timeout")
 
 loop:
 	for _, c := range sc.Rules {
@@ -409,14 +409,14 @@ loop:
 		rule.actionRE = nil
 		opt := rule.OutputsMap[outConfig]
 
-		if sisoRemote != "" {
-			rule.Remote = (sisoRemote == "true")
+		if remoteBinding != "" {
+			rule.Remote = (remoteBinding == "true")
 			if !rule.Remote {
 				rule.Platform = nil
 			}
 		}
-		if sisoTimeout != "" {
-			rule.Timeout = sisoTimeout
+		if timeoutBinding != "" {
+			rule.Timeout = timeoutBinding
 		}
 
 		if rule.Remote {
@@ -424,8 +424,8 @@ loop:
 				rule.Platform = make(map[string]string)
 			}
 			ref := "default"
-			if sisoPlatformRef != "" {
-				ref = sisoPlatformRef
+			if platformRefBinding != "" {
+				ref = platformRefBinding
 			} else if opt.PlatformRef != "" {
 				ref = opt.PlatformRef
 			} else if rule.PlatformRef != "" {
@@ -486,24 +486,24 @@ loop:
 		return rule, !c.Impure
 	}
 
-	if sisoRemote != "" || sisoPlatformRef != "" || sisoTimeout != "" {
+	if remoteBinding != "" || platformRefBinding != "" || timeoutBinding != "" {
 		clog.Infof(ctx, "miss, but configured in ninja: actionName:%q out:%q args0:%q", actionName, out, args0)
 		rule := StepRule{
 			Name: "ninja:" + actionName,
 		}
-		if sisoRemote != "" {
-			rule.Remote = (sisoRemote == "true")
+		if remoteBinding != "" {
+			rule.Remote = (remoteBinding == "true")
 		}
-		if sisoTimeout != "" {
-			rule.Timeout = sisoTimeout
+		if timeoutBinding != "" {
+			rule.Timeout = timeoutBinding
 		}
 		if rule.Remote {
 			if len(rule.Platform) == 0 {
 				rule.Platform = make(map[string]string)
 			}
 			ref := "default"
-			if sisoPlatformRef != "" {
-				ref = sisoPlatformRef
+			if platformRefBinding != "" {
+				ref = platformRefBinding
 			}
 			p := sc.Platforms[ref]
 			for k, v := range p {

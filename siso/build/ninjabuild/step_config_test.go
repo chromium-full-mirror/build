@@ -179,19 +179,19 @@ func TestStepConfigLookup_NinjaProperties(t *testing.T) {
 	err = os.WriteFile(filepath.Join(dir, "out/siso/build.ninja"), []byte(`
 rule cxx
   command = g++ -c ${in} -o ${out}
-  siso_remote = true
-  siso_platform_ref = custom_ref
-  siso_timeout = 2m
+  remote_enabled = true
+  remote_platform_ref = custom_ref
+  remote_timeout = 2m
 
 rule link
   command = ld ${in} -o ${out}
-  siso_remote = false
+  remote_enabled = false
 
 rule other
   command = echo ${in} > ${out}
-  siso_remote = true
-  siso_platform_ref = custom_ref
-  siso_timeout = 5m
+  remote_enabled = true
+  remote_platform_ref = custom_ref
+  remote_timeout = 5m
 
 rule cxx_simple
   command = g++ -c ${in} -o ${out}
@@ -201,9 +201,9 @@ build bin/app: link obj/foo.o
 build out/out.txt: other
 
 build obj/bar.o: cxx_simple ../../bar.cc
-  siso_remote = true
-  siso_platform_ref = custom_ref
-  siso_timeout = 3m
+  remote_enabled = true
+  remote_platform_ref = custom_ref
+  remote_timeout = 3m
 `), 0644)
 	if err != nil {
 		t.Fatal(err)
@@ -243,7 +243,7 @@ build obj/bar.o: cxx_simple ../../bar.cc
 		t.Fatal(err)
 	}
 
-	t.Logf("Test case 1: cxx_rule. Starlark rule has Remote = false, but ninja file has siso_remote = true, siso_platform_ref = custom_ref, siso_timeout = 2m.")
+	t.Logf("Test case 1: cxx_rule. Starlark rule has Remote = false, but ninja file has remote_enabled = true, remote_platform_ref = custom_ref, remote_timeout = 2m.")
 	{
 		node, ok := state.LookupNodeByPath("obj/foo.o")
 		if !ok {
@@ -268,7 +268,7 @@ build obj/bar.o: cxx_simple ../../bar.cc
 		}
 	}
 
-	t.Logf("Test case 2: link_rule. Starlark rule has Remote = true, but ninja file has siso_remote = false.")
+	t.Logf("Test case 2: link_rule. Starlark rule has Remote = true, but ninja file has remote_enabled = false.")
 	{
 		node, ok := state.LookupNodeByPath("bin/app")
 		if !ok {
@@ -290,7 +290,7 @@ build obj/bar.o: cxx_simple ../../bar.cc
 		}
 	}
 
-	t.Logf("Test case 3: other rule. No matching starlark rule, but ninja file has siso_remote = true, siso_platform_ref = custom_ref, siso_timeout = 5m.")
+	t.Logf("Test case 3: other rule. No matching starlark rule, but ninja file has remote_enabled = true, remote_platform_ref = custom_ref, remote_timeout = 5m.")
 	{
 		node, ok := state.LookupNodeByPath("out/out.txt")
 		if !ok {
@@ -315,7 +315,7 @@ build obj/bar.o: cxx_simple ../../bar.cc
 		}
 	}
 
-	t.Logf("Test case 4: cxx_simple_rule. No starlark config, and ninja has siso properties on the build statement.")
+	t.Logf("Test case 4: cxx_simple_rule. No starlark config, and ninja has remote_enabled = true, remote_platform_ref = custom_ref, remote_timeout = 3m on the build statement.")
 	{
 		node, ok := state.LookupNodeByPath("obj/bar.o")
 		if !ok {
