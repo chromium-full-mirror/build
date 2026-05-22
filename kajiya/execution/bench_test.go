@@ -12,8 +12,10 @@ import (
 	"io"
 	"log/slog"
 	"net"
+	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -37,8 +39,12 @@ const benchBufSize = 4 * 1024 * 1024
 //	go test -bench=BenchmarkExecuteE2E -cpuprofile=cpu.prof -benchtime=100x ./execution/
 //	go tool pprof cpu.prof
 func BenchmarkExecuteE2E(b *testing.B) {
-	if _, err := exec.LookPath("nsjail"); err != nil {
+	nsjailPath, err := exec.LookPath("nsjail")
+	if err != nil {
 		b.Skip("nsjail not found in PATH")
+	}
+	if output, err := exec.Command(nsjailPath, "--quiet", "--chroot", "/", "--cwd", "/", "--disable_rlimits", "--", "/bin/true").CombinedOutput(); err != nil {
+		b.Skipf("nsjail unavailable for sandboxed execution: %v: %s", err, bytes.TrimSpace(output))
 	}
 
 	// Suppress INFO/WARN logs that interfere with benchmark output.
@@ -51,66 +57,85 @@ func BenchmarkExecuteE2E(b *testing.B) {
 		{"overlay", localexec.OverlayFS},
 		{"fuse", localexec.FuseFS},
 	} {
-		for _, numFiles := range []int{100, 1000, 5000} {
-			name := fmt.Sprintf("%s/files=%d", strategy.name, numFiles)
-			b.Run(name, func(b *testing.B) {
-				ctx := b.Context()
-				baseDir := b.TempDir()
+		b.Run(strategy.name, func(b *testing.B) {
+			if strategy.s == localexec.FuseFS {
+				skipIfFuseUnavailable(b)
+			}
 
-				// Create CAS.
-				cas, err := blobstore.New(ctx, filepath.Join(baseDir, "cas"))
-				if err != nil {
-					b.Fatal(err)
-				}
+			for _, numFiles := range []int{100, 1000, 5000} {
+				b.Run(fmt.Sprintf("files=%d", numFiles), func(b *testing.B) {
+					ctx := b.Context()
+					baseDir := b.TempDir()
 
-				// Create executor.
-				executor, err := localexec.New(filepath.Join(baseDir, "exec"), cas, strategy.s, false)
-				if err != nil {
-					b.Fatal(err)
-				}
-				b.Cleanup(func() { executor.Close() })
-
-				// Start in-memory gRPC server with Execution service (no action cache).
-				lis := bufconn.Listen(benchBufSize)
-				srv := grpc.NewServer()
-				if err := Register(srv, executor, nil, cas); err != nil {
-					b.Fatal(err)
-				}
-				go func() { _ = srv.Serve(lis) }()
-				b.Cleanup(func() { srv.Stop(); lis.Close() })
-
-				// Create gRPC client.
-				conn, err := grpc.NewClient("passthrough://bufnet",
-					grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
-						return lis.Dial()
-					}),
-					grpc.WithTransportCredentials(insecure.NewCredentials()),
-				)
-				if err != nil {
-					b.Fatal(err)
-				}
-				b.Cleanup(func() { conn.Close() })
-				client := repb.NewExecutionClient(conn)
-
-				// Upload action protos to CAS: 3 nesting levels, 4 outputs of 100KB.
-				actionDigest := putBenchProtos(b, cas, numFiles, 3, 4, 100<<10)
-
-				b.ReportAllocs()
-				b.ResetTimer()
-
-				// Run GOMAXPROCS goroutines, each sending Execute RPCs in a loop.
-				b.RunParallel(func(pb *testing.PB) {
-					for pb.Next() {
-						executeOne(b, ctx, client, actionDigest)
+					// Create CAS.
+					cas, err := blobstore.New(ctx, filepath.Join(baseDir, "cas"))
+					if err != nil {
+						b.Fatal(err)
 					}
+
+					// Create executor.
+					executor, err := localexec.New(filepath.Join(baseDir, "exec"), cas, strategy.s, true)
+					if err != nil {
+						b.Fatal(err)
+					}
+					b.Cleanup(func() { executor.Close() })
+
+					// Start in-memory gRPC server with Execution service (no action cache).
+					lis := bufconn.Listen(benchBufSize)
+					srv := grpc.NewServer()
+					if err := Register(srv, executor, nil, cas); err != nil {
+						b.Fatal(err)
+					}
+					go func() { _ = srv.Serve(lis) }()
+					b.Cleanup(func() { srv.Stop(); lis.Close() })
+
+					// Create gRPC client.
+					conn, err := grpc.NewClient("passthrough://bufnet",
+						grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
+							return lis.Dial()
+						}),
+						grpc.WithTransportCredentials(insecure.NewCredentials()),
+					)
+					if err != nil {
+						b.Fatal(err)
+					}
+					b.Cleanup(func() { conn.Close() })
+					client := repb.NewExecutionClient(conn)
+
+					// Upload action protos to CAS: 3 nesting levels, 4 outputs of 100KB.
+					actionDigest := putBenchProtos(b, cas, numFiles, 3, 4, 100<<10)
+
+					b.ReportAllocs()
+					b.ResetTimer()
+
+					// Run GOMAXPROCS goroutines, each sending Execute RPCs in a loop.
+					b.RunParallel(func(pb *testing.PB) {
+						for pb.Next() {
+							executeOne(b, ctx, cas, client, actionDigest)
+						}
+					})
 				})
-			})
-		}
+			}
+		})
 	}
 }
 
+func skipIfFuseUnavailable(b *testing.B) {
+	b.Helper()
+
+	if runtime.GOOS != "linux" {
+		b.Skip("FuseFS is only supported on Linux")
+	}
+
+	fuse, err := os.OpenFile("/dev/fuse", os.O_WRONLY, 0)
+	if err != nil {
+		b.Skipf("FUSE device is not writable: %v", err)
+	}
+	_ = fuse.Close()
+}
+
 // executeOne sends a single Execute RPC and drains the response stream.
-func executeOne(b *testing.B, ctx context.Context, client repb.ExecutionClient, actionDigest digest.Digest) {
+func executeOne(b *testing.B, ctx context.Context, cas *blobstore.ContentAddressableStorage, client repb.ExecutionClient, actionDigest digest.Digest) {
 	b.Helper()
 	stream, err := client.Execute(ctx, &repb.ExecuteRequest{
 		ActionDigest:    actionDigest.ToProto(),
@@ -135,7 +160,22 @@ func executeOne(b *testing.B, ctx context.Context, client repb.ExecutionClient, 
 			b.Fatal(err)
 		}
 		if resp.Result.ExitCode != 0 {
-			b.Fatalf("action exited with code %d", resp.Result.ExitCode)
+			stderr := resp.Result.StderrRaw
+			if len(stderr) == 0 && resp.Result.StderrDigest != nil {
+				d, err := digest.NewFromProto(resp.Result.StderrDigest)
+				if err != nil {
+					b.Fatalf("action exited with code %d; stderr digest invalid: %v", resp.Result.ExitCode, err)
+				}
+				blob, err := cas.Get(d)
+				if err != nil {
+					b.Fatalf("action exited with code %d; fetching stderr from CAS failed: %v", resp.Result.ExitCode, err)
+				}
+				stderr = blob
+			}
+			if len(stderr) != 0 {
+				b.Fatalf("action exited with code %d, stderr: %s", resp.Result.ExitCode, bytes.TrimSpace(stderr))
+			}
+			b.Fatalf("action exited with code %d (no stderr)", resp.Result.ExitCode)
 		}
 		return
 	}
