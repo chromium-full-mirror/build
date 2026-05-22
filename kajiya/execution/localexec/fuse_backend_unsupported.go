@@ -25,7 +25,7 @@ func (b *fuseBackend) Close() error {
 	return nil
 }
 
-func (b *fuseBackend) RegisterSandbox(string, *model.DirectoryTrie, *blobstore.ContentAddressableStorage) (string, error) {
+func (b *fuseBackend) RegisterSandbox(string, *model.DirectoryTrie, *blobstore.ContentAddressableStorage, *AccessRecorder) (string, error) {
 	return "", errors.New("FuseFS is only supported on Linux")
 }
 

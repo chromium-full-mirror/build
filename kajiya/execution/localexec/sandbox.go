@@ -70,6 +70,10 @@ type Sandbox struct {
 	// FuseFS-specific machinery. Nil for non-FUSE strategies.
 	fuse          *fuseBackend
 	fuseSandboxID string
+
+	// Input tracing recorder. When non-nil, file opens through the FUSE
+	// layer are recorded for reporting as auxiliary metadata.
+	recorder *AccessRecorder
 }
 
 // Id returns a unique identifier for the mount point of a directory. This is used to construct
@@ -122,7 +126,7 @@ func (sb *Sandbox) Prepare(action *model.Action) (err error) {
 		// are materialized on disk.
 		sb.fuseSandboxID = filepath.Base(sb.sandboxDir)
 		sb.overlayLowerDir, err = sb.fuse.RegisterSandbox(
-			sb.fuseSandboxID, action.InputTrie, sb.cas)
+			sb.fuseSandboxID, action.InputTrie, sb.cas, sb.recorder)
 		if err != nil {
 			return fmt.Errorf("failed to register sandbox with FUSE: %w", err)
 		}

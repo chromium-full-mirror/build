@@ -65,6 +65,7 @@ var (
 	maxBatchTotalSizeBytes = flag.Int64("max_batch_total_size_bytes", 0, "maximum combined total size of blobs in batch requests (0 means unlimited)")
 	skipCASValidation      = flag.Bool("skip_cas_validation", false, "skip CAS integrity validation on startup (faster startup, but won't detect corrupted blobs)")
 	allowHostFS            = flag.Bool("allow_host_fs", false, "allow actions without a container image to run with access to the host filesystem")
+	traceInputs            = flag.Bool("trace_inputs", false, "trace which input files each action opens and report as auxiliary metadata (FuseFS sandbox only)")
 
 	sb localexec.SandboxStrategy
 )
@@ -389,7 +390,7 @@ func createServer(ctx context.Context, dataDir string) (*grpc.Server, func(), er
 	// Execution service.
 	if *enableExecution {
 		execDir := filepath.Join(dataDir, "exec")
-		executor, err := localexec.New(execDir, cas, sb, *allowHostFS)
+		executor, err := localexec.New(execDir, cas, sb, *allowHostFS, *traceInputs)
 		if err != nil {
 			return nil, cleanup, err
 		}

@@ -36,6 +36,7 @@ type Executor struct {
 	sandboxStrategy SandboxStrategy
 	trees           *TreeRepository
 	allowHostFS     bool
+	traceInputs     bool
 
 	// FuseFS-specific machinery. Only set when sandboxStrategy == FuseFS.
 	// Lifecycle (mount + register/unregister + unmount) is owned entirely
@@ -44,7 +45,7 @@ type Executor struct {
 }
 
 // New creates a new Executor.
-func New(baseDir string, cas *blobstore.ContentAddressableStorage, sb SandboxStrategy, allowHostFS bool) (*Executor, error) {
+func New(baseDir string, cas *blobstore.ContentAddressableStorage, sb SandboxStrategy, allowHostFS bool, traceInputs bool) (*Executor, error) {
 	if baseDir == "" {
 		return nil, fmt.Errorf("baseDir must be set")
 	}
@@ -120,12 +121,18 @@ func New(baseDir string, cas *blobstore.ContentAddressableStorage, sb SandboxStr
 		cleanFuseMountpoint(fuseMountpoint)
 	}
 
+	if traceInputs && sb != FuseFS {
+		slog.Warn("--trace_inputs is only supported with the FuseFS sandbox strategy; ignoring")
+		traceInputs = false
+	}
+
 	return &Executor{
 		cas:             cas,
 		images:          images,
 		nsjailPath:      nsjailPath,
 		sandboxBase:     sandboxBase,
 		sandboxStrategy: sb,
+		traceInputs:     traceInputs,
 		trees:           trees,
 		allowHostFS:     allowHostFS,
 		fuse:            fuseBE,
@@ -153,12 +160,18 @@ func (e *Executor) Execute(action *model.Action) (*repb.ActionResult, error) {
 		deleteSandbox(sandboxDir)
 	}()
 
+	var recorder *AccessRecorder
+	if e.traceInputs {
+		recorder = NewAccessRecorder()
+	}
+
 	sb := &Sandbox{
 		cas:        e.cas,
 		trees:      e.trees,
 		sandboxDir: sandboxDir,
 		strategy:   e.sandboxStrategy,
 		fuse:       e.fuse,
+		recorder:   recorder,
 	}
 
 	// Stage the input files and directories into the sandbox.
@@ -180,6 +193,13 @@ func (e *Executor) Execute(action *model.Action) (*repb.ActionResult, error) {
 	// Go through all output files and directories and upload them to the CAS.
 	if err := sb.UploadOutputs(action, actionResult); err != nil {
 		return nil, fmt.Errorf("failed to upload outputs: %w", err)
+	}
+
+	// Attach observed input paths to the action result as auxiliary metadata.
+	if recorder != nil {
+		if err := attachObservedInputs(actionResult, recorder); err != nil {
+			return nil, fmt.Errorf("failed to attach observed inputs: %w", err)
+		}
 	}
 
 	return actionResult, nil

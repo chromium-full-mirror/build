@@ -69,7 +69,7 @@ func (r *CASRoot) Getattr(ctx context.Context, fh fs.FileHandle, out *fuse.AttrO
 // for the given InputTrie. File contents are served directly from CAS on
 // demand. Returns the on-disk path within the FUSE mount to use as the
 // overlayfs lower directory.
-func (r *CASRoot) RegisterSandbox(sandboxID string, trie *model.DirectoryTrie, cas *blobstore.ContentAddressableStorage, fuseMountpoint string) (string, error) {
+func (r *CASRoot) RegisterSandbox(sandboxID string, trie *model.DirectoryTrie, cas *blobstore.ContentAddressableStorage, fuseMountpoint string, recorder *AccessRecorder) (string, error) {
 	ctx := context.Background()
 
 	// Map from trie path to inode for building the tree.
@@ -96,12 +96,12 @@ func (r *CASRoot) RegisterSandbox(sandboxID string, trie *model.DirectoryTrie, c
 			return true
 		}
 
-		// Check if we already have a cached inode subtree for this directory
-		// digest. If so, reuse it: all files, symlinks, and subdirectories
-		// are already children of the cached inode, so we only need to wire
-		// up the inodes map for the trie walk.
+		// When tracing is disabled, check if we already have a cached inode
+		// subtree for this directory digest. If so, reuse it: all files,
+		// symlinks, and subdirectories are already children of the cached
+		// inode, so we only need to wire up the inodes map for the trie walk.
 		digestKey := dir.Digest.Hash
-		if digestKey != "" && dirInode != sandboxInode {
+		if recorder == nil && digestKey != "" && dirInode != sandboxInode {
 			if cached, ok := r.dirInodes.Load(digestKey); ok {
 				cachedInode := cached.(*fs.Inode)
 
@@ -147,13 +147,15 @@ func (r *CASRoot) RegisterSandbox(sandboxID string, trie *model.DirectoryTrie, c
 			dirOps.attr = dirAttr(dir)
 		}
 
-		// Add files. When inode caching is enabled, reuse existing inodes
-		// for CAS files that are already known from other sandboxes, so the
-		// kernel's page cache is shared across actions.
+		// Add files. When tracing is disabled, reuse shared inodes so the
+		// kernel's page cache is shared across actions. When tracing is
+		// enabled, create per-sandbox inodes so each carries the recorder
+		// and input-root-relative path.
 		for _, f := range dir.Files {
 			casPath := cas.Path(f.Digest)
-			newInode := dirInode.NewPersistentInode(ctx, &casFile{
-				casPath: casPath,
+			cf := casFile{
+				casPath:  casPath,
+				recorder: recorder,
 				attr: fuse.Attr{
 					Mode:      uint32(f.UnixMode),
 					Size:      uint64(f.Digest.Size),
@@ -161,12 +163,24 @@ func (r *CASRoot) RegisterSandbox(sandboxID string, trie *model.DirectoryTrie, c
 					Mtime:     uint64(f.Mtime.Unix()),
 					Mtimensec: uint32(f.Mtime.Nanosecond()),
 				},
-			}, fs.StableAttr{Mode: syscall.S_IFREG})
-			// Use LoadOrStore to avoid a TOCTOU race: if another
-			// goroutine already cached an inode for this CAS path,
-			// reuse it so the kernel shares page cache across sandboxes.
-			actual, _ := r.fileInodes.LoadOrStore(casPath, newInode)
-			dirInode.AddChild(f.Name, actual.(*fs.Inode), true)
+			}
+			// When tracing, record the file path relative to the input
+			// root so we can report back which input files were accessed
+			// by the action.
+			if recorder != nil {
+				cf.inputPath = path.Join(trieDir, f.Name)
+			}
+			fileInode := dirInode.NewPersistentInode(ctx, &cf, fs.StableAttr{Mode: syscall.S_IFREG})
+			// When not tracing, the casFile has no per-sandbox state, so
+			// cache it for reuse by future sandboxes. This lets the kernel
+			// share page cache entries for the file across sandboxes. Use
+			// LoadOrStore to avoid a TOCTOU race: if another goroutine
+			// already cached an inode for this CAS path, reuse it.
+			if recorder == nil {
+				cached, _ := r.fileInodes.LoadOrStore(casPath, fileInode)
+				fileInode = cached.(*fs.Inode)
+			}
+			dirInode.AddChild(f.Name, fileInode, true)
 		}
 
 		// Add symlinks.
@@ -193,7 +207,9 @@ func (r *CASRoot) RegisterSandbox(sandboxID string, trie *model.DirectoryTrie, c
 		}
 
 		// Cache this directory subtree for reuse by future sandboxes.
-		if digestKey != "" && dirInode != sandboxInode {
+		// When tracing, don't cache: the subtree contains per-sandbox
+		// file inodes with recorders that must not be reused.
+		if recorder == nil && digestKey != "" && dirInode != sandboxInode {
 			r.dirInodes.Store(digestKey, dirInode)
 		}
 
@@ -275,6 +291,9 @@ type casFile struct {
 	fs.Inode
 	casPath string
 	attr    fuse.Attr
+	// When non-nil, Open calls are recorded for input tracing.
+	recorder  *AccessRecorder
+	inputPath string // path relative to input root, e.g. "src/hello.cc"
 }
 
 var _ = (fs.NodeGetattrer)((*casFile)(nil))
@@ -286,6 +305,9 @@ func (f *casFile) Getattr(ctx context.Context, fh fs.FileHandle, out *fuse.AttrO
 }
 
 func (f *casFile) Open(ctx context.Context, flags uint32) (fs.FileHandle, uint32, syscall.Errno) {
+	if f.recorder != nil {
+		f.recorder.Record(f.inputPath)
+	}
 	fd, err := syscall.Open(f.casPath, syscall.O_RDONLY, 0)
 	if err != nil {
 		return nil, 0, fs.ToErrno(err)

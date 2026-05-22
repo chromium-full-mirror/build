@@ -118,7 +118,7 @@ func TestFuseOverlayWritePermission(t *testing.T) {
 	// --- register sandbox ------------------------------------------------
 	trie := buildTestTrie(t, cas)
 	sandboxID := "test-sandbox"
-	lowerDir, err := root.RegisterSandbox(sandboxID, trie, cas, fuseMountpoint)
+	lowerDir, err := root.RegisterSandbox(sandboxID, trie, cas, fuseMountpoint, nil)
 	if err != nil {
 		t.Fatalf("RegisterSandbox: %v", err)
 	}
@@ -289,7 +289,7 @@ func BenchmarkFuseE2E(b *testing.B) {
 		}
 	})
 
-	warmupLowerDir, err := root.RegisterSandbox("bench-warmup", trie, cas, fuseMountpoint)
+	warmupLowerDir, err := root.RegisterSandbox("bench-warmup", trie, cas, fuseMountpoint, nil)
 	if err != nil {
 		b.Fatalf("RegisterSandbox: %v", err)
 	}
@@ -305,7 +305,7 @@ func BenchmarkFuseE2E(b *testing.B) {
 		for pb.Next() {
 			actionID := actionIDs.Add(1)
 			sandboxID := fmt.Sprintf("bench-action-%d", actionID)
-			lowerDir, err := root.RegisterSandbox(sandboxID, trie, cas, fuseMountpoint)
+			lowerDir, err := root.RegisterSandbox(sandboxID, trie, cas, fuseMountpoint, nil)
 			if err != nil {
 				b.Fatalf("RegisterSandbox(%s): %v", sandboxID, err)
 			}
@@ -468,7 +468,7 @@ func TestFuseSandboxDirLayout(t *testing.T) {
 
 	trie := buildTestTrie(t, cas)
 	sandboxID := "layout-test"
-	lowerDir, err := root.RegisterSandbox(sandboxID, trie, cas, fuseMountpoint)
+	lowerDir, err := root.RegisterSandbox(sandboxID, trie, cas, fuseMountpoint, nil)
 	if err != nil {
 		t.Fatalf("RegisterSandbox: %v", err)
 	}
@@ -579,7 +579,7 @@ func TestFuseOutputInodeLeak(t *testing.T) {
 
 	// Register sandbox A. This populates the dirInodes cache for sharedDigest
 	// and calls createOutputInodes, which creates "gen_a/" under the shared inode.
-	lowerA, err := root.RegisterSandbox("sandbox-a", trieA, cas, fuseMountpoint)
+	lowerA, err := root.RegisterSandbox("sandbox-a", trieA, cas, fuseMountpoint, nil)
 	if err != nil {
 		t.Fatalf("RegisterSandbox(a): %v", err)
 	}
@@ -587,7 +587,7 @@ func TestFuseOutputInodeLeak(t *testing.T) {
 
 	// Register sandbox B. This hits the dirInodes cache and calls
 	// createOutputInodes on the SAME shared inode, creating "gen_b/".
-	lowerB, err := root.RegisterSandbox("sandbox-b", trieB, cas, fuseMountpoint)
+	lowerB, err := root.RegisterSandbox("sandbox-b", trieB, cas, fuseMountpoint, nil)
 	if err != nil {
 		t.Fatalf("RegisterSandbox(b): %v", err)
 	}
@@ -662,7 +662,7 @@ func TestFuseConcurrentRegisterSandbox(t *testing.T) {
 	for i := range numSandboxes {
 		wg.Go(func() {
 			sandboxID := fmt.Sprintf("concurrent-%d", i)
-			lowerDir, err := root.RegisterSandbox(sandboxID, trie, cas, fuseMountpoint)
+			lowerDir, err := root.RegisterSandbox(sandboxID, trie, cas, fuseMountpoint, nil)
 			if err != nil {
 				errs[i] = fmt.Errorf("RegisterSandbox(%s): %v", sandboxID, err)
 				return
@@ -693,4 +693,70 @@ func TestFuseConcurrentRegisterSandbox(t *testing.T) {
 		})
 	}
 	wg.Wait()
+}
+
+// TestFuseTracedSandbox verifies that file opens are recorded when a
+// sandbox is registered with an AccessRecorder, and that non-traced
+// sandboxes are unaffected.
+func TestFuseTracedSandbox(t *testing.T) {
+	if _, err := exec.LookPath("fusermount3"); err != nil {
+		t.Skip("fusermount3 not found in PATH")
+	}
+
+	ctx := t.Context()
+	casDir := t.TempDir()
+	cas, err := blobstore.New(ctx, casDir)
+	if err != nil {
+		t.Fatalf("blobstore.New: %v", err)
+	}
+
+	fuseMountpoint := t.TempDir()
+	root, server, err := MountCASFS(fuseMountpoint)
+	if err != nil {
+		t.Fatalf("MountCASFS: %v", err)
+	}
+	t.Cleanup(func() {
+		root.Close()
+		server.Unmount()
+	})
+
+	trie := buildTestTrie(t, cas)
+
+	// Register a traced sandbox.
+	recorder := NewAccessRecorder()
+	lowerDir, err := root.RegisterSandbox("traced", trie, cas, fuseMountpoint, recorder)
+	if err != nil {
+		t.Fatalf("RegisterSandbox(traced): %v", err)
+	}
+	t.Cleanup(func() { root.UnregisterSandbox("traced") })
+
+	// Register a non-traced sandbox (nil recorder).
+	lowerDirUntraced, err := root.RegisterSandbox("untraced", trie, cas, fuseMountpoint, nil)
+	if err != nil {
+		t.Fatalf("RegisterSandbox(untraced): %v", err)
+	}
+	t.Cleanup(func() { root.UnregisterSandbox("untraced") })
+
+	// Read a file through the traced sandbox.
+	data, err := os.ReadFile(filepath.Join(lowerDir, "src", "hello.cc"))
+	if err != nil {
+		t.Fatalf("ReadFile(traced): %v", err)
+	}
+	if got, want := string(data), "int main() { return 0; }\n"; got != want {
+		t.Fatalf("content = %q, want %q", got, want)
+	}
+
+	// Read through the untraced sandbox — should not affect the recorder.
+	if _, err := os.ReadFile(filepath.Join(lowerDirUntraced, "src", "hello.cc")); err != nil {
+		t.Fatalf("ReadFile(untraced): %v", err)
+	}
+
+	// Verify the recorder captured exactly the one file we opened.
+	inputs := recorder.ObservedInputs()
+	if got, want := len(inputs), 1; got != want {
+		t.Fatalf("ObservedInputs() returned %d entries, want %d: %v", got, want, inputs)
+	}
+	if got, want := inputs[0], "src/hello.cc"; got != want {
+		t.Errorf("ObservedInputs()[0] = %q, want %q", got, want)
+	}
 }

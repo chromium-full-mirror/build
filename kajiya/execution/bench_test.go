@@ -74,7 +74,7 @@ func BenchmarkExecuteE2E(b *testing.B) {
 					}
 
 					// Create executor.
-					executor, err := localexec.New(filepath.Join(baseDir, "exec"), cas, strategy.s, true)
+					executor, err := localexec.New(filepath.Join(baseDir, "exec"), cas, strategy.s, true, false)
 					if err != nil {
 						b.Fatal(err)
 					}
