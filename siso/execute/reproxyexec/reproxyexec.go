@@ -19,12 +19,12 @@ import (
 	lpb "github.com/bazelbuild/reclient/api/log"
 	ppb "github.com/bazelbuild/reclient/api/proxy"
 	cpb "github.com/bazelbuild/remote-apis-sdks/go/api/command"
-	"github.com/bazelbuild/remote-apis-sdks/go/pkg/command"
 	"github.com/bazelbuild/remote-apis-sdks/go/pkg/retry"
 	rpb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"go.chromium.org/build/siso/execute"
 	"go.chromium.org/build/siso/hashfs/osfs"
@@ -287,7 +287,7 @@ func createRequest(ctx context.Context, cmd *execute.Cmd, execTimeout, reclientT
 	}
 
 	md := &ppb.Metadata{EventTimes: map[string]*cpb.TimeInterval{
-		wrapperOverheadKey: {From: command.TimeToProto(time.Now())},
+		wrapperOverheadKey: {From: timestamppb.Now()},
 	}}
 	md.Environment = os.Environ()
 
