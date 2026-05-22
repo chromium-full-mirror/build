@@ -18,3 +18,8 @@ func MemoryTotal() (uint64, error) {
 func OSVersion() (string, error) {
 	return osVersion()
 }
+
+// KernelVersion returns the kernel version.
+func KernelVersion() (string, error) {
+	return kernelVersion()
+}

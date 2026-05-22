@@ -37,11 +37,18 @@ func GatherMachineInfo(ctx context.Context) MachineInfo {
 	} else {
 		clog.Warningf(ctx, "failed to get os version: %v", err)
 	}
+	kernelVersion, err := host.KernelVersion()
+	if errors.Is(err, host.ErrUnsupportedOS) {
+		kernelVersion = ""
+	} else {
+		clog.Warningf(ctx, "failed to get kernel version: %v", err)
+	}
 	return MachineInfo{
 		Platform: PlatformInfo{
-			Architecture: runtime.GOARCH,
-			OS:           runtime.GOOS,
-			OSVersion:    osVersion,
+			Architecture:  runtime.GOARCH,
+			OS:            runtime.GOOS,
+			OSVersion:     osVersion,
+			KernelVersion: kernelVersion,
 		},
 		CPU: CPUInfo{
 			BrandName:     cpuid.CPU.BrandName,
@@ -72,6 +79,10 @@ type PlatformInfo struct {
 	// It is populated with an arbitrary version string for macOS and Windows hosts.
 	// This will be unset for Linux hosts, however this is subject to change.
 	OSVersion string `json:"os_version,omitempty"`
+	// KernelVersion reports the host operating system's kernel version.
+	//
+	// This is currently only populated for Linux hosts.
+	KernelVersion string `json:"kernel_version,omitempty"`
 }
 
 // CPUInfo reports CPU information.
