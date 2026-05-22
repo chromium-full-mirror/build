@@ -19,7 +19,3 @@ func osVersion() (string, error) {
 	// NOTE: Be aware that Windows 11 reports Major=10, but Build >= 22000
 	return fmt.Sprintf("%d.%d.%d", osvi.MajorVersion, osvi.MinorVersion, osvi.BuildNumber), nil
 }
-
-func kernelVersion() (string, error) {
-	return "", ErrUnsupportedOS
-}

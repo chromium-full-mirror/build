@@ -12,10 +12,6 @@ import (
 )
 
 func osVersion() (string, error) {
-	return "", ErrUnsupportedOS
-}
-
-func kernelVersion() (string, error) {
 	data, err := os.ReadFile("/proc/sys/kernel/osrelease")
 	if err != nil {
 		return "", err

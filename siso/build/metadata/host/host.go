@@ -14,12 +14,7 @@ func MemoryTotal() (uint64, error) {
 	return memoryTotal()
 }
 
-// OSVersion returns the operating system version.
+// OSVersion returns the operating system version, or any other meaningful versioning identifier of the running system.
 func OSVersion() (string, error) {
 	return osVersion()
-}
-
-// KernelVersion returns the kernel version.
-func KernelVersion() (string, error) {
-	return kernelVersion()
 }

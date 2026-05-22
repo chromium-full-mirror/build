@@ -9,7 +9,3 @@ package host
 func osVersion() (string, error) {
 	return "", ErrUnsupportedOS
 }
-
-func kernelVersion() (string, error) {
-	return "", ErrUnsupportedOS
-}

@@ -37,18 +37,11 @@ func GatherMachineInfo(ctx context.Context) MachineInfo {
 	} else {
 		clog.Warningf(ctx, "failed to get os version: %v", err)
 	}
-	kernelVersion, err := host.KernelVersion()
-	if errors.Is(err, host.ErrUnsupportedOS) {
-		kernelVersion = ""
-	} else {
-		clog.Warningf(ctx, "failed to get kernel version: %v", err)
-	}
 	return MachineInfo{
 		Platform: PlatformInfo{
-			Architecture:  runtime.GOARCH,
-			OS:            runtime.GOOS,
-			OSVersion:     osVersion,
-			KernelVersion: kernelVersion,
+			Architecture: runtime.GOARCH,
+			OS:           runtime.GOOS,
+			OSVersion:    osVersion,
 		},
 		CPU: CPUInfo{
 			BrandName:     cpuid.CPU.BrandName,
@@ -64,25 +57,15 @@ func GatherMachineInfo(ctx context.Context) MachineInfo {
 
 // PlatformInfo reports platform information of the machine that the build was invoked on.
 type PlatformInfo struct {
-	// Architecture reports the host's architecture.
-	//
-	// It is populated with similar semantics to the "architecture" field in the OCI Image Configuration specification.
-	// Hence, consumers SHOULD understand values listed in the Go Language document for GOARCH.
+	// Architecture is the host's architecture (uses standard GOARCH values).
 	Architecture string `json:"architecture"`
-	// OS reports the host's operating system.
-	//
-	// It is populated with similar semantics to the "os" field in the OCI Image Configuration specification.
-	// Hence, consumers SHOULD understand values listed in the Go Language document for GOOS.
+
+	// OS is the host's operating system (uses standard GOOS values).
 	OS string `json:"os"`
-	// OSVersion reports the host operating system's version.
-	//
-	// It is populated with an arbitrary version string for macOS and Windows hosts.
-	// This will be unset for Linux hosts, however this is subject to change.
+
+	// OSVersion is the version of the running system.
+	// For macOS and Windows, this is the OS version. For Linux, it's the kernel version.
 	OSVersion string `json:"os_version,omitempty"`
-	// KernelVersion reports the host operating system's kernel version.
-	//
-	// This is currently only populated for Linux hosts.
-	KernelVersion string `json:"kernel_version,omitempty"`
 }
 
 // CPUInfo reports CPU information.

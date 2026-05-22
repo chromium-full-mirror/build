@@ -21,7 +21,3 @@ func osVersion() (string, error) {
 	}
 	return strings.TrimSpace(out.String()), nil
 }
-
-func kernelVersion() (string, error) {
-	return "", ErrUnsupportedOS
-}
