@@ -9,9 +9,11 @@ package localexec
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"path"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -23,6 +25,8 @@ import (
 	"go.chromium.org/build/kajiya/blobstore"
 	"go.chromium.org/build/kajiya/execution/model"
 )
+
+const pipeUserPagesSoftPath = "/proc/sys/fs/pipe-user-pages-soft"
 
 // fuseOwner holds the UID/GID that all FUSE inodes report as their owner.
 // This must be the UID/GID of the process that runs Kajiya, so that the
@@ -328,12 +332,46 @@ func (s *casSymlink) Getattr(ctx context.Context, fh fs.FileHandle, out *fuse.At
 	return 0
 }
 
+func pipeUserPagesSoftLimit(path string) (int64, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return 0, err
+	}
+
+	limit, err := strconv.ParseInt(strings.TrimSpace(string(data)), 10, 64)
+	if err != nil {
+		return 0, err
+	}
+	return limit, nil
+}
+
+func disableSpliceForPipeSoftLimit(path string) bool {
+	limit, err := pipeUserPagesSoftLimit(path)
+	if err != nil {
+		slog.Warn("disabling FUSE splice because pipe-user-pages-soft could not be read",
+			"path", path,
+			"error", err)
+		return true
+	}
+
+	if limit == 0 {
+		return false
+	}
+
+	slog.Warn("disabling FUSE splice because pipe-user-pages-soft is set",
+		"path", path,
+		"limit_pages", limit,
+		"hint", "set fs.pipe-user-pages-soft=0 to keep FUSE splice enabled")
+	return true
+}
+
 // MountCASFS mounts the CAS-backed FUSE filesystem at the given mountpoint.
 // The returned server must be unmounted via server.Unmount() on shutdown.
 func MountCASFS(mountpoint string) (*CASRoot, *fuse.Server, error) {
 	root := &CASRoot{
 		sandboxes: make(map[string]*fs.Inode),
 	}
+	disableSplice := disableSpliceForPipeSoftLimit(pipeUserPagesSoftPath)
 
 	// CAS files are immutable and the directory tree is static per-sandbox,
 	// so we use very long cache timeouts to avoid unnecessary kernel→userspace
@@ -357,6 +395,12 @@ func MountCASFS(mountpoint string) (*CASRoot, *fuse.Server, error) {
 			// which avoids round-trips from overlayfs checking for
 			// user.overlay.opaque on lower-layer directories.
 			DisableXAttrs: true,
+			// Conditionally disable the splice fast path based on the
+			// pipe-user-pages-soft limit. When set to "unlimited", the
+			// splice fast path can be used safely, otherwise it is
+			// disabled to prevent F_SETPIPE_SZ failures under heavy
+			// parallel reads.
+			DisableSplice: disableSplice,
 			// Use 1 MiB buffers to reduce kernel-userspace round-trips
 			// for large file reads.
 			MaxWrite:     1 << 20,
