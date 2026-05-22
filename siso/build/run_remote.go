@@ -37,6 +37,95 @@ func (e TooManyFallbackError) Error() string {
 	return fmt.Sprintf("%s fallback %d exceeds limit %d: %v", e.Action, e.Fallbacks, e.Limit, e.Err)
 }
 
+func (b *Builder) remoteClaimFallbackIfAllowed(ctx context.Context, step *Step, err error) (bool, error) {
+	output := step.outputPaths[0]
+	var fallbackReported bool
+	fallbackReport := func(category string) {
+		if fallbackReported {
+			return
+		}
+		clog.Errorf(ctx, "%s: remote-exec %s failed, fallback to local: %q siso_config=%q, gn_target=%q: %v", category, step.cmd.ActionDigest(), output, step.def.RuleName(), step.def.Binding("gn_target"), err)
+		fallbackReported = true
+	}
+	if errors.Is(err, context.Canceled) || errors.Is(ctx.Err(), context.Canceled) {
+		return false, err
+	}
+	if errors.Is(err, reapi.ErrBadPlatformContainerImage) {
+		return false, fmt.Errorf("remote-exec %s failed: %w", step.cmd.ActionDigest(), err)
+	}
+	switch errCode := status.Code(err); errCode {
+	case codes.PermissionDenied,
+		codes.Unauthenticated,
+		codes.InvalidArgument,
+		codes.FailedPrecondition:
+		return false, fmt.Errorf("remote-exec %s failed: %w", step.cmd.ActionDigest(), err)
+	case codes.Canceled:
+		if errors.Is(ctx.Err(), context.Canceled) {
+			return false, fmt.Errorf("remote-exec %s canceled: %w", step.cmd.ActionDigest(), err)
+		}
+	case codes.Unknown:
+	default:
+		fallbackReport(fmt.Sprintf("fallback-on-%s", errCode))
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		fallbackReport("fallback-on-deadline-exceeded")
+	}
+	if errors.Is(err, errNotRelocatable) {
+		clog.Errorf(ctx, "not relocatable: %v", err)
+		return false, fmt.Errorf("remote-exec %s failed: %w", step.cmd.ActionDigest(), err)
+	}
+	if errors.Is(err, errNotInsideWorkspace) {
+		clog.Errorf(ctx, "not remote executable: %v\nUse `use_system_inputs` or put them inside workspace", err)
+		return false, fmt.Errorf("remote-exec %s failed: %w", step.cmd.ActionDigest(), err)
+	}
+	var eerr execute.ExitError
+	if errors.As(err, &eerr) {
+		// report compile fail early to developers.
+		// If user runs on non-terminal or user sets a
+		// non-default -k, then it implies that they want to
+		// keep going as much as possible and
+		// correct result, rather than fast feedback.
+		preferNoFallbackOnExecErr := len(step.cmd.Stdout())+len(step.cmd.Stderr()) > 0 && b.failures.allowed == 1
+		switch {
+		case eerr.ExitCode == 137:
+			// we still see unexpected SIGKILL (OOM?)
+			fallbackReport("fallback-on-SIGKILL")
+		case experiments.Enabled("fallback-on-exec-error", "remote exec %s failed: %v", step.cmd.ActionDigest(), err):
+		case preferNoFallbackOnExecErr:
+			return false, fmt.Errorf("remote-exec %s failed: %w", step.cmd.ActionDigest(), err)
+		}
+		fallbackReport(fmt.Sprintf("fallback-on-exec-error-%d", eerr.ExitCode))
+	}
+	if errors.Is(err, scandeps.ErrTooSlow) {
+		fallbackReport("fallback-on-scandeps-slow")
+	}
+	if errors.Is(err, errFlushOutput) {
+		fallbackReport("fallback-on-output-error")
+	}
+	fallbackReport("fallback-on-other")
+	if n := b.numFallback.Add(1); n >= b.maxFallbackAllowed {
+		return false, fmt.Errorf("remote-exec %w", TooManyFallbackError{
+			Action:    step.cmd.ActionDigest(),
+			Fallbacks: n,
+			Limit:     b.maxFallbackAllowed,
+			Err:       err,
+		})
+	}
+	return true, nil
+}
+
+func (b *Builder) setupFallback(ctx context.Context, step *Step, err error) {
+	b.progressStepFallback(step)
+	step.metrics.IsRemote = false
+	step.metrics.Fallback = true
+	res := cmdOutput(ctx, cmdOutputResultFALLBACK, step.cmd, b.reapiclient.Instance(), step.def.Binding("command"), step.def.RuleName(), err)
+	b.logOutput(res, false)
+	// Preserve remote action result and error.
+	ar, _ := step.cmd.ActionResult()
+	step.cmd.SetRemoteFallbackResult(ar, err)
+	step.cmd.AuxiliaryOutputDigests = nil
+}
+
 // runRemote runs step with using remote apis.
 //
 //  1. for initial steps of startLocal, run locally.
@@ -92,91 +181,14 @@ func (b *Builder) runRemote(ctx context.Context, step *Step) error {
 		err = b.runRemoteStep(ctx, step, needCheckCache && cacheCheck)
 	}
 	if err != nil {
-		output := step.outputPaths[0]
-		var fallbackReported bool
-		fallbackReport := func(category string) {
-			if fallbackReported {
-				return
-			}
-			clog.Errorf(ctx, "%s: remote-exec %s failed, fallback to local: %q siso_config=%q, gn_target=%q: %v", category, step.cmd.ActionDigest(), output, step.def.RuleName(), step.def.Binding("gn_target"), err)
-			fallbackReported = true
-		}
 		if errors.Is(err, errRemoteExecDisabled) {
 			return b.execLocal(ctx, step)
 		}
-		if errors.Is(err, context.Canceled) || errors.Is(ctx.Err(), context.Canceled) {
-			return err
+		ok, ferr := b.remoteClaimFallbackIfAllowed(ctx, step, err)
+		if !ok {
+			return ferr
 		}
-		if errors.Is(err, reapi.ErrBadPlatformContainerImage) {
-			return fmt.Errorf("remote-exec %s failed: %w", step.cmd.ActionDigest(), err)
-		}
-		switch errCode := status.Code(err); errCode {
-		case codes.PermissionDenied,
-			codes.Unauthenticated,
-			codes.InvalidArgument,
-			codes.FailedPrecondition:
-			return fmt.Errorf("remote-exec %s failed: %w", step.cmd.ActionDigest(), err)
-		case codes.Canceled:
-			if errors.Is(ctx.Err(), context.Canceled) {
-				return fmt.Errorf("remote-exec %s canceled: %w", step.cmd.ActionDigest(), err)
-			}
-		case codes.Unknown:
-		default:
-			fallbackReport(fmt.Sprintf("fallback-on-%s", errCode))
-		}
-		if errors.Is(err, context.DeadlineExceeded) {
-			fallbackReport("fallback-on-deadline-exceeded")
-		}
-		if errors.Is(err, errNotRelocatable) {
-			clog.Errorf(ctx, "not relocatable: %v", err)
-			return fmt.Errorf("remote-exec %s failed: %w", step.cmd.ActionDigest(), err)
-		}
-		if errors.Is(err, errNotInsideWorkspace) {
-			clog.Errorf(ctx, "not remote executable: %v\nUse `use_system_inputs` or put them inside workspace", err)
-			return fmt.Errorf("remote-exec %s failed: %w", step.cmd.ActionDigest(), err)
-		}
-		var eerr execute.ExitError
-		if errors.As(err, &eerr) {
-			// report compile fail early to developers.
-			// If user runs on non-terminal or user sets a
-			// non-default -k, then it implies that they want to
-			// keep going as much as possible and
-			// correct result, rather than fast feedback.
-			preferNoFallbackOnExecErr := len(step.cmd.Stdout())+len(step.cmd.Stderr()) > 0 && b.failures.allowed == 1
-			switch {
-			case eerr.ExitCode == 137:
-				// we still see unexpected SIGKILL (OOM?)
-				fallbackReport("fallback-on-SIGKILL")
-			case experiments.Enabled("fallback-on-exec-error", "remote exec %s failed: %v", step.cmd.ActionDigest(), err):
-			case preferNoFallbackOnExecErr:
-				return fmt.Errorf("remote-exec %s failed: %w", step.cmd.ActionDigest(), err)
-			}
-			fallbackReport(fmt.Sprintf("fallback-on-exec-error-%d", eerr.ExitCode))
-		}
-		if errors.Is(err, scandeps.ErrTooSlow) {
-			fallbackReport("fallback-on-scandeps-slow")
-		}
-		if errors.Is(err, errFlushOutput) {
-			fallbackReport("fallback-on-output-error")
-		}
-		fallbackReport("fallback-on-other")
-		if n := b.numFallback.Add(1); n >= b.maxFallbackAllowed {
-			return fmt.Errorf("remote-exec %w", TooManyFallbackError{
-				Action:    step.cmd.ActionDigest(),
-				Fallbacks: n,
-				Limit:     b.maxFallbackAllowed,
-				Err:       err,
-			})
-		}
-		b.progressStepFallback(step)
-		step.metrics.IsRemote = false
-		step.metrics.Fallback = true
-		res := cmdOutput(ctx, cmdOutputResultFALLBACK, step.cmd, b.reapiclient.Instance(), step.def.Binding("command"), step.def.RuleName(), err)
-		b.logOutput(res, false)
-		// Preserve remote action result and error.
-		ar, _ := step.cmd.ActionResult()
-		step.cmd.SetRemoteFallbackResult(ar, err)
-		step.cmd.AuxiliaryOutputDigests = nil
+		b.setupFallback(ctx, step, err)
 		err = b.execLocal(ctx, step)
 		if err != nil {
 			return err

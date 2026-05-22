@@ -22,6 +22,7 @@ const (
 	raceRemote raceResultType = iota
 	raceLocal
 	raceCanceled
+	raceRemoteFallback
 )
 
 type raceResult struct {
@@ -87,6 +88,16 @@ func (b *Builder) runRacing(ctx context.Context, step *Step) error {
 			ch <- raceResult{resultType: raceCanceled, err: err}
 			return
 		}
+		if err != nil {
+			ok, ferr := b.remoteClaimFallbackIfAllowed(ctx, step, err)
+			if !ok {
+				ch <- raceResult{resultType: raceRemote, err: ferr}
+				return
+			}
+			b.setupFallback(ctx, step, err)
+			ch <- raceResult{resultType: raceRemoteFallback, err: err}
+			return
+		}
 		ch <- raceResult{resultType: raceRemote, err: err}
 	}()
 
@@ -101,20 +112,29 @@ func (b *Builder) runRacing(ctx context.Context, step *Step) error {
 	}()
 
 	// Wait for the first non-canceled result.
-	winner := <-ch
-	if winner.resultType == raceCanceled {
+	first := <-ch
+
+	// Determine the winner.
+	var winner raceResult
+	switch first.resultType {
+	case raceCanceled:
 		// First result was a cancellation (e.g. couldn't acquire
 		// semaphore, or gRPC canceled from shared CAS upload).
 		// Wait for the second result instead.
 		winner = <-ch
 		// Both goroutines have now sent their results;
 		// defer raceCancel() handles cleanup.
-	} else {
+	case raceRemoteFallback:
+		// Remote failed, and we are falling back to local.
+		// Do not cancel local, wait for it to finish.
+		winner = <-ch
+	default:
 		// Cancel the loser.
 		raceCancel()
 		// Wait for the second goroutine to finish before returning,
 		// so we don't leak goroutines that hold semaphore slots.
 		<-ch
+		winner = first
 	}
 
 	switch winner.resultType {
@@ -140,7 +160,11 @@ func (b *Builder) runRacing(ctx context.Context, step *Step) error {
 		step.metrics.RacingWinner = "local"
 		step.metrics.IsRemote = false
 		step.metrics.IsLocal = true
-		clog.Infof(ctx, "racing: local won")
+		if step.metrics.Fallback {
+			clog.Infof(ctx, "racing: local fallback finished")
+		} else {
+			clog.Infof(ctx, "racing: local won")
+		}
 		if winner.err != nil {
 			return winner.err
 		}
