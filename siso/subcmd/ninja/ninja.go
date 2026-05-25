@@ -884,6 +884,18 @@ func (c *Command) setupHashFS(ctx context.Context, buildPath *build.Path, ds bui
 		return nil, nil, err
 	}
 	close := func(targets []string, err error) {
+		if c.fsopt.ArtFS != nil {
+			cerr := c.fsopt.ArtFS.Close()
+			if cerr != nil {
+				clog.Errorf(ctx, "close artfs: %v", cerr)
+			}
+		}
+		if c.fsopt.CartFS != nil {
+			cerr := c.fsopt.CartFS.Close()
+			if cerr != nil {
+				clog.Errorf(ctx, "close cartfs: %v", cerr)
+			}
+		}
 		shouldSetTargets := !c.dryRun && c.subtool == "" && !c.prepare && err == nil
 		hashFS.SetBuildTargets(ctx, targets, shouldSetTargets)
 		cerr := hashFS.Close(ctx)
