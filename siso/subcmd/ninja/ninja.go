@@ -38,6 +38,7 @@ import (
 	"go.chromium.org/build/siso/reapi"
 	"go.chromium.org/build/siso/signals"
 	"go.chromium.org/build/siso/toolsupport/artfsutil"
+	"go.chromium.org/build/siso/toolsupport/cartfsutil"
 	"go.chromium.org/build/siso/toolsupport/cogutil"
 	"go.chromium.org/build/siso/toolsupport/soongutil"
 	"go.chromium.org/build/siso/ui"
@@ -866,6 +867,14 @@ func (c *Command) setupHashFS(ctx context.Context, buildPath *build.Path, ds bui
 		}
 		ui.Default.PrintLines(ui.SGR(ui.Yellow, "build on artfs\n"))
 		c.fsopt.ArtFS = artfs
+	}
+	if c.cartfsDir != "" && c.cartfsEndpoint != "" {
+		cartfs, err := cartfsutil.New(ctx, c.cartfsDir, c.cartfsEndpoint)
+		if err != nil {
+			return nil, nil, err
+		}
+		ui.Default.PrintLines(ui.SGR(ui.Yellow, "build on cartfs\n"))
+		c.fsopt.CartFS = cartfs
 	}
 
 	c.fsopt.FSMonitor = initFSMonitor(ctx, buildPath.WorkspaceRoot)

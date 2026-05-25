@@ -35,6 +35,7 @@ import (
 	"go.chromium.org/build/siso/reapi/digest"
 	"go.chromium.org/build/siso/reapi/merkletree"
 	"go.chromium.org/build/siso/sync/semaphore"
+	"go.chromium.org/build/siso/toolsupport/cartfsutil"
 )
 
 // Linux imposes a limit of at most 40 symlinks in any one path lookup.
@@ -118,6 +119,7 @@ func New(ctx context.Context, opt Option) (*HashFS, error) {
 	}
 	opt.OSFSOption.OnCog = opt.CogFS != nil
 	opt.OSFSOption.OnArtFS = opt.ArtFS != nil
+	// TODO(b/513044090): pass opt.CartFS to retrieve digest from cartfs
 	fsys := &HashFS{
 		opt:       opt,
 		directory: &directory{isRoot: true},
@@ -1288,8 +1290,12 @@ func (hfs *HashFS) Update(ctx context.Context, workspaceRoot string, entries []U
 		return entries[i].Name < entries[j].Name
 	})
 
-	hfs.artfsInsertIfAvailable(ctx, workspaceRoot, entries)
-
+	if hfs.opt.ArtFS != nil {
+		hfs.artfsInsert(ctx, workspaceRoot, entries)
+	}
+	if hfs.opt.CartFS != nil {
+		hfs.cartfsRegister(ctx, workspaceRoot, entries)
+	}
 	for _, ent := range entries {
 		clog.Infof(ctx, "update %v", ent)
 		fname := filepath.ToSlash(filepath.Join(workspaceRoot, ent.Name))
@@ -1310,12 +1316,9 @@ func (hfs *HashFS) Update(ctx context.Context, workspaceRoot string, entries []U
 	return nil
 }
 
-// artfsInsertIfAvailable inserts file entries into ArtFS/CogFS if available,
+// artfsInsert inserts file entries into ArtFS.
 // marking successfully inserted entries as local.
-func (hfs *HashFS) artfsInsertIfAvailable(ctx context.Context, workspaceRoot string, entries []UpdateEntry) {
-	if hfs.opt.CogFS == nil && hfs.opt.ArtFS == nil {
-		return
-	}
+func (hfs *HashFS) artfsInsert(ctx context.Context, workspaceRoot string, entries []UpdateEntry) {
 	// TODO: pass UpdateEntry so artfs can set mtime?
 	var updates []merkletree.Entry
 	var updateIdx []int
@@ -1349,6 +1352,51 @@ func (hfs *HashFS) artfsInsertIfAvailable(ctx context.Context, workspaceRoot str
 		}
 	} else {
 		clog.Warningf(ctx, "artfs insert 0 from_local=%d not_file=%d", nFromLocals, nNonFiles)
+	}
+}
+
+// cartfsRegister registers file entries into Cartfs.
+// marking successfully inserted entries as local.
+func (hfs *HashFS) cartfsRegister(ctx context.Context, workspaceRoot string, entries []UpdateEntry) {
+	// TODO: pass UpdateEntry so artfs can set mtime?
+	var updates []*cartfsutil.Registration
+	var updateIdx []int
+	var nFromLocals, nNonFiles int
+	for i, ent := range entries {
+		if ent.Entry == nil {
+			// UpdateEntry was captured by RetrieveUpdateEntriesFromLocal
+			// so file already exist on local disk
+			nFromLocals++
+			continue
+		}
+		if ent.Entry.Data.IsZero() {
+			// symlink or dir. handled in usual way.
+			nNonFiles++
+			continue
+		}
+		updateIdx = append(updateIdx, i)
+		updates = append(updates, &cartfsutil.Registration{
+			Entry: *ent.Entry,
+		})
+	}
+	if len(updates) > 0 {
+		err := hfs.opt.CartFS.RegisterFiles(ctx, workspaceRoot, updates)
+		if err != nil {
+			clog.Warningf(ctx, "cartfs register %d under %s: %v", len(updates), workspaceRoot, err)
+		} else {
+			clog.Infof(ctx, "cartfs register %d under %s", len(updates), workspaceRoot)
+			// cartfsfs registered the update, so we can assume
+			// these files exist locally.
+			for ui, ei := range updateIdx {
+				if updates[ui].Err != nil {
+					clog.Warningf(ctx, "cartfs register %q: %v", updates[ui].Entry.Name, updates[ui].Err)
+					continue
+				}
+				entries[ei].IsLocal = true
+			}
+		}
+	} else {
+		clog.Warningf(ctx, "cartfs register 0 from_local=%d not_file=%d", nFromLocals, nNonFiles)
 	}
 }
 

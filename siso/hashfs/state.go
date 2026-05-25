@@ -37,6 +37,7 @@ import (
 	"go.chromium.org/build/siso/o11y/trace"
 	"go.chromium.org/build/siso/reapi/digest"
 	"go.chromium.org/build/siso/toolsupport/artfsutil"
+	"go.chromium.org/build/siso/toolsupport/cartfsutil"
 	"go.chromium.org/build/siso/toolsupport/cogutil"
 )
 
@@ -78,6 +79,7 @@ type Option struct {
 	Ignore      IgnoreFunc
 	CogFS       *cogutil.Client
 	ArtFS       *artfsutil.Client
+	CartFS      *cartfsutil.Client
 
 	SetStateLogger io.Writer // capture SetState log for test
 }
