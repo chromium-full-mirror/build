@@ -9,13 +9,14 @@ import (
 	"net"
 	"testing"
 
-	repb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
 	semverpb "github.com/bazelbuild/remote-apis/build/bazel/semver"
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/test/bufconn"
 	"google.golang.org/protobuf/testing/protocmp"
+
+	repb "go.chromium.org/build/remote-apis/build/bazel/remote/execution/v2"
 
 	"go.chromium.org/build/kajiya/server"
 )

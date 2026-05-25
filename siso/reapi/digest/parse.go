@@ -10,8 +10,9 @@ import (
 	"regexp"
 	"strconv"
 
-	rpb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
 	"google.golang.org/protobuf/encoding/prototext"
+
+	rpb "go.chromium.org/build/remote-apis/build/bazel/remote/execution/v2"
 )
 
 var digestPattern = regexp.MustCompile(`^([0-9a-fA-F]{64})/([0-9]+)$`)

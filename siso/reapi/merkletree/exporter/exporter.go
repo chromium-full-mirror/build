@@ -14,9 +14,10 @@ import (
 	"path/filepath"
 	"runtime"
 
-	rpb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/protobuf/proto"
+
+	rpb "go.chromium.org/build/remote-apis/build/bazel/remote/execution/v2"
 
 	"go.chromium.org/build/siso/o11y/clog"
 	"go.chromium.org/build/siso/reapi/digest"

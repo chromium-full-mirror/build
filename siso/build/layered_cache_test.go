@@ -9,8 +9,9 @@ import (
 	"io"
 	"testing"
 
-	rpb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
 	"google.golang.org/protobuf/proto"
+
+	rpb "go.chromium.org/build/remote-apis/build/bazel/remote/execution/v2"
 
 	"go.chromium.org/build/siso/build/cachestore"
 	"go.chromium.org/build/siso/reapi/digest"

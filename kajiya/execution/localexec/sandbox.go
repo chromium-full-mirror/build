@@ -12,9 +12,10 @@ import (
 	"os"
 	"path/filepath"
 
-	repb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
 	errpb "google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/protobuf/proto"
+
+	repb "go.chromium.org/build/remote-apis/build/bazel/remote/execution/v2"
 
 	"go.chromium.org/build/kajiya/blobstore"
 	"go.chromium.org/build/kajiya/digest"

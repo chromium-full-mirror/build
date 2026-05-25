@@ -9,8 +9,9 @@ import (
 	"runtime"
 	"testing"
 
-	repb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
 	"google.golang.org/protobuf/proto"
+
+	repb "go.chromium.org/build/remote-apis/build/bazel/remote/execution/v2"
 
 	"go.chromium.org/build/kajiya/blobstore"
 	"go.chromium.org/build/kajiya/digest"

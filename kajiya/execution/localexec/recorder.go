@@ -8,9 +8,10 @@ import (
 	"sort"
 	"sync"
 
-	repb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
 	"google.golang.org/protobuf/types/known/anypb"
 	"google.golang.org/protobuf/types/known/structpb"
+
+	repb "go.chromium.org/build/remote-apis/build/bazel/remote/execution/v2"
 )
 
 // AccessRecorder collects the set of input file paths opened during a single

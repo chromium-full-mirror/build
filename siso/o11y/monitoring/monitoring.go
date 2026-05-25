@@ -12,7 +12,6 @@ import (
 	"sync"
 	"time"
 
-	rpb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
@@ -21,6 +20,8 @@ import (
 	semconv "go.opentelemetry.io/otel/semconv/v1.20.0"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+
+	rpb "go.chromium.org/build/remote-apis/build/bazel/remote/execution/v2"
 
 	"go.chromium.org/build/siso/o11y/clog"
 )

@@ -19,7 +19,6 @@ import (
 	"sync"
 	"time"
 
-	rpb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
 	semverpb "github.com/bazelbuild/remote-apis/build/bazel/semver"
 	"github.com/klauspost/compress/zstd"
 	"google.golang.org/api/option"
@@ -31,6 +30,8 @@ import (
 	"google.golang.org/grpc/keepalive"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/proto"
+
+	rpb "go.chromium.org/build/remote-apis/build/bazel/remote/execution/v2"
 
 	"go.chromium.org/build/siso/auth/cred"
 	"go.chromium.org/build/siso/o11y/clog"

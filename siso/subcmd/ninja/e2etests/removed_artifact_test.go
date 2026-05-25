@@ -10,7 +10,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	rpb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
+	rpb "go.chromium.org/build/remote-apis/build/bazel/remote/execution/v2"
 
 	"go.chromium.org/build/siso/build"
 	"go.chromium.org/build/siso/build/ninjabuild"

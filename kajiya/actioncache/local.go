@@ -19,10 +19,11 @@ import (
 	"sync"
 	"time"
 
-	repb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/singleflight"
 	"google.golang.org/protobuf/proto"
+
+	repb "go.chromium.org/build/remote-apis/build/bazel/remote/execution/v2"
 
 	"go.chromium.org/build/kajiya/atomicio"
 	"go.chromium.org/build/kajiya/blobstore"

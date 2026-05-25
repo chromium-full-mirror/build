@@ -9,8 +9,9 @@ import (
 	"fmt"
 	"io"
 
-	rpb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
 	bpb "google.golang.org/genproto/googleapis/bytestream"
+
+	rpb "go.chromium.org/build/remote-apis/build/bazel/remote/execution/v2"
 
 	"go.chromium.org/build/siso/o11y/clog"
 	"go.chromium.org/build/siso/reapi/bytestreamio"

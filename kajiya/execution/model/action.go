@@ -14,9 +14,10 @@ import (
 	"strings"
 	"time"
 
-	repb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
 	"github.com/google/uuid"
 	iradix "github.com/hashicorp/go-immutable-radix/v2"
+
+	repb "go.chromium.org/build/remote-apis/build/bazel/remote/execution/v2"
 
 	"go.chromium.org/build/kajiya/blobstore"
 	"go.chromium.org/build/kajiya/digest"
