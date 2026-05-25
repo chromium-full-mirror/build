@@ -69,17 +69,15 @@ func newServer(ctx context.Context, t *testing.T, fake *Fake) *testServer {
 	if err != nil {
 		t.Fatal(err)
 	}
-	s.cleanups = append(s.cleanups, func() {
-		err := lis.Close()
-		if err != nil {
-			t.Error(err)
-		}
-	})
 	s.addr = lis.Addr().String()
 	t.Logf("fake reapi at %s", s.addr)
 
 	dir := t.TempDir()
 	serv := grpc.NewServer()
+	s.cleanups = append(s.cleanups, func() {
+		serv.Stop()
+	})
+
 	cfg := server.Config{}
 	capabilities.Register(serv, cfg)
 
