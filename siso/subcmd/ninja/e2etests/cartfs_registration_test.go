@@ -129,15 +129,14 @@ func fakeCartfsClient(ctx context.Context, t *testing.T, fake *fakeCartfsServer)
 	t.Logf("fake cartfs at %s", addr)
 	serv := grpc.NewServer()
 	cartfspb.RegisterCartfsServer(serv, fake)
+	done := make(chan error)
 	go func() {
-		err := serv.Serve(lis)
-		t.Logf("serve finished: %v", err)
+		done <- serv.Serve(lis)
 	}()
 	t.Cleanup(func() {
-		err := lis.Close()
-		if err != nil {
-			t.Error(err)
-		}
+		serv.Stop()
+		err := <-done
+		t.Logf("-- server finished: %v", err)
 	})
 
 	client, err := cartfsutil.New(ctx, fake.dir, addr)
