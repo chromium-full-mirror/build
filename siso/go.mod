@@ -16,7 +16,6 @@ require (
 	github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/metric v0.56.0
 	github.com/Microsoft/go-winio v0.6.2
 	github.com/bazelbuild/reclient/api v0.0.0-20240617160057-89d6134e48e5
-	github.com/bazelbuild/remote-apis v0.0.0-20260331222004-becdd8f9ff81
 	github.com/bazelbuild/remote-apis-sdks v0.0.0-20260407143901-84dfd170da83
 	github.com/golang/glog v1.2.5
 	github.com/google/go-cmp v0.7.0
@@ -28,7 +27,8 @@ require (
 	github.com/open-telemetry/opentelemetry-collector-contrib/exporter/googlecloudexporter v0.152.0
 	github.com/open-telemetry/opentelemetry-collector-contrib/extension/healthcheckv2extension v0.152.0
 	github.com/pkg/xattr v0.4.12
-	go.chromium.org/build/kajiya v0.0.0-20260518063737-e766a3f55476
+	go.chromium.org/build/kajiya v0.0.0-20260525075854-5ac828095bad
+	go.chromium.org/build/remote-apis v0.0.0-20260525075854-5ac828095bad
 	go.opentelemetry.io/collector/component v1.58.0
 	go.opentelemetry.io/collector/config/configoptional v1.58.0
 	go.opentelemetry.io/collector/confmap v1.58.0
@@ -136,7 +136,6 @@ require (
 	github.com/tklauser/go-sysconf v0.3.16 // indirect
 	github.com/tklauser/numcpus v0.11.0 // indirect
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect
-	go.chromium.org/build/remote-apis v0.0.0-20260525071113-d31648fc2dc5 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/collector v0.152.0 // indirect
 	go.opentelemetry.io/collector/client v1.58.0 // indirect

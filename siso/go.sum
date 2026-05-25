@@ -40,8 +40,6 @@ github.com/Microsoft/go-winio v0.6.2 h1:F2VQgta7ecxGYO8k3ZZz3RS8fVIXVxONVUPlNERo
 github.com/Microsoft/go-winio v0.6.2/go.mod h1:yd8OoFMLzJbo9gZq8j5qaps8bJ9aShtEA8Ipt1oGCvU=
 github.com/bazelbuild/reclient/api v0.0.0-20240617160057-89d6134e48e5 h1:jTwaklotVViFK4qpM7oZFqu+NbSV1iyTEhrbzkna0eU=
 github.com/bazelbuild/reclient/api v0.0.0-20240617160057-89d6134e48e5/go.mod h1:6lTiY/RAaAXZO04mHlX/TpZVDuW2L424AaMLZa7pqU8=
-github.com/bazelbuild/remote-apis v0.0.0-20260331222004-becdd8f9ff81 h1:vAHLeMHi+CywqDw5V/s5mHj1ahkhYMRtRFqWe18F0kc=
-github.com/bazelbuild/remote-apis v0.0.0-20260331222004-becdd8f9ff81/go.mod h1:7Tyi5f5+hG+6LwC0X/G/EjCQS4ZYJUcpY0geSsU2NAw=
 github.com/bazelbuild/remote-apis-sdks v0.0.0-20260407143901-84dfd170da83 h1:nyCBaUDbu2kyb5B9TpyPVH/GIRweI8ECwHhvdWkmhLg=
 github.com/bazelbuild/remote-apis-sdks v0.0.0-20260407143901-84dfd170da83/go.mod h1:TJlbnIaiJQr3pgZ+EBscj/bpu9wBawCHcqd+YAgumOs=
 github.com/beorn7/perks v1.0.1 h1:VlbKKnNfV8bJzeqoa4cOKqO6bYr3WgKZxO8Z16+hsOM=
@@ -239,10 +237,10 @@ github.com/tklauser/numcpus v0.11.0 h1:nSTwhKH5e1dMNsCdVBukSZrURJRoHbSEQjdEbY+9R
 github.com/tklauser/numcpus v0.11.0/go.mod h1:z+LwcLq54uWZTX0u/bGobaV34u6V7KNlTZejzM6/3MQ=
 github.com/yusufpapurcu/wmi v1.2.4 h1:zFUKzehAFReQwLys1b/iSMl+JQGSCSjtVqQn9bBrPo0=
 github.com/yusufpapurcu/wmi v1.2.4/go.mod h1:SBZ9tNy3G9/m5Oi98Zks0QjeHVDvuK0qfxQmPyzfmi0=
-go.chromium.org/build/kajiya v0.0.0-20260518063737-e766a3f55476 h1:pRoMNmv8C2P/7qZijnPkSUS390b2jYwLrxDHq9Pb6D4=
-go.chromium.org/build/kajiya v0.0.0-20260518063737-e766a3f55476/go.mod h1:fMT4onPKCZx0EAHsGvpzLDU7aD83ClRm/dWvVM4ECl0=
-go.chromium.org/build/remote-apis v0.0.0-20260525071113-d31648fc2dc5 h1:WfMBDDQWFRpFBsiziwG4xMPvBGzkNvtqIOEMpdJUXTQ=
-go.chromium.org/build/remote-apis v0.0.0-20260525071113-d31648fc2dc5/go.mod h1:n+j5hrijpYFFJvRD3Z+DlKZ3xM62WtZ2QprzfdGi5h4=
+go.chromium.org/build/kajiya v0.0.0-20260525075854-5ac828095bad h1:yymzw5kZrGcMLoWQyw3LZIBuwIDKIa7kAhY4cqNDoXQ=
+go.chromium.org/build/kajiya v0.0.0-20260525075854-5ac828095bad/go.mod h1:33zhuNC3HOnvFnPFJ3uR7gGiNxqen7NdsRmMxv60L2Y=
+go.chromium.org/build/remote-apis v0.0.0-20260525075854-5ac828095bad h1:SwAQBbw/wy3WqBU5sr0JN6t9cGJv967hJX+gjquNBB4=
+go.chromium.org/build/remote-apis v0.0.0-20260525075854-5ac828095bad/go.mod h1:n+j5hrijpYFFJvRD3Z+DlKZ3xM62WtZ2QprzfdGi5h4=
 go.opencensus.io v0.24.0 h1:y73uSU6J157QMP2kn2r30vwW1A2W2WFwSCGnAVxeaD0=
 go.opencensus.io v0.24.0/go.mod h1:vNK8G9p7aAivkbmorf4v+7Hgx+Zs0yY+0fOtgBfjQKo=
 go.opentelemetry.io/auto/sdk v1.2.1 h1:jXsnJ4Lmnqd11kwkBV2LgLoFMZKizbCi5fNZ/ipaZ64=

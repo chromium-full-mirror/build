@@ -1,7 +1,5 @@
 cloud.google.com/go/longrunning v1.0.0 h1:lwzWEYD8+NkYV7dhexOz6kmlvajZA70+bW/xMhRVVdY=
 cloud.google.com/go/longrunning v1.0.0/go.mod h1:8nqFBPOO1U/XkhWl0I19AMZEphrHi73VNABIpKYaTwM=
-github.com/bazelbuild/remote-apis v0.0.0-20260331222004-becdd8f9ff81 h1:vAHLeMHi+CywqDw5V/s5mHj1ahkhYMRtRFqWe18F0kc=
-github.com/bazelbuild/remote-apis v0.0.0-20260331222004-becdd8f9ff81/go.mod h1:7Tyi5f5+hG+6LwC0X/G/EjCQS4ZYJUcpY0geSsU2NAw=
 github.com/cespare/xxhash/v2 v2.3.0 h1:UL815xU9SqsFlibzuggzjXhog7bL6oX9BbNZnL2UFvs=
 github.com/cespare/xxhash/v2 v2.3.0/go.mod h1:VGX0DQ3Q6kWi7AoAeZDth3/j3BFtOZR5XLFGgcrjCOs=
 github.com/go-logr/logr v1.4.3 h1:CjnDlHq8ikf6E492q6eKboGOC0T8CDaOvkHCIg8idEI=
@@ -28,8 +26,8 @@ github.com/kylelemons/godebug v1.1.0 h1:RPNrshWIDI6G2gRW9EHilWtl7Z6Sb1BR0xunSBf0
 github.com/kylelemons/godebug v1.1.0/go.mod h1:9/0rRGxNHcop5bhtWyNeEfOS8JIWk580+fNqagV/RAw=
 github.com/moby/sys/mountinfo v0.7.2 h1:1shs6aH5s4o5H2zQLn796ADW1wMrIwHsyJ2v9KouLrg=
 github.com/moby/sys/mountinfo v0.7.2/go.mod h1:1YOa8w8Ih7uW0wALDUgT1dTTSBrZ+HiBLGws92L2RU4=
-go.chromium.org/build/remote-apis v0.0.0-20260525073051-aef56a35d0f9 h1:yx6NNNV8OQTwoCeufQqgedU12JCYciLP1ZlZZofL+Eg=
-go.chromium.org/build/remote-apis v0.0.0-20260525073051-aef56a35d0f9/go.mod h1:n+j5hrijpYFFJvRD3Z+DlKZ3xM62WtZ2QprzfdGi5h4=
+go.chromium.org/build/remote-apis v0.0.0-20260525075854-5ac828095bad h1:SwAQBbw/wy3WqBU5sr0JN6t9cGJv967hJX+gjquNBB4=
+go.chromium.org/build/remote-apis v0.0.0-20260525075854-5ac828095bad/go.mod h1:n+j5hrijpYFFJvRD3Z+DlKZ3xM62WtZ2QprzfdGi5h4=
 go.opentelemetry.io/auto/sdk v1.2.1 h1:jXsnJ4Lmnqd11kwkBV2LgLoFMZKizbCi5fNZ/ipaZ64=
 go.opentelemetry.io/auto/sdk v1.2.1/go.mod h1:KRTj+aOaElaLi+wW1kO/DZRXwkF4C5xPbEe3ZiIhN7Y=
 go.opentelemetry.io/otel v1.43.0 h1:mYIM03dnh5zfN7HautFE4ieIig9amkNANT+xcVxAj9I=
