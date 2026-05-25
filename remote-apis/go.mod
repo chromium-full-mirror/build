@@ -1,5 +1,4 @@
-// module go.chromium.org/build/remote-apis
-module github.com/bazelbuild/remote-apis
+module go.chromium.org/build/remote-apis
 
 go 1.26.3
 
