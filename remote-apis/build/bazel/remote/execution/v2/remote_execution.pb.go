@@ -8,7 +8,7 @@ package remoteexecution
 
 import (
 	longrunningpb "cloud.google.com/go/longrunning/autogen/longrunningpb"
-	semver "github.com/bazelbuild/remote-apis/build/bazel/semver"
+	semver "go.chromium.org/build/remote-apis/build/bazel/semver"
 	_ "google.golang.org/genproto/googleapis/api/annotations"
 	status "google.golang.org/genproto/googleapis/rpc/status"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"

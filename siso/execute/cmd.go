@@ -20,11 +20,11 @@ import (
 	"sync/atomic"
 	"time"
 
-	semverpb "github.com/bazelbuild/remote-apis/build/bazel/semver"
 	log "github.com/golang/glog"
 	"google.golang.org/protobuf/types/known/durationpb"
 
 	rpb "go.chromium.org/build/remote-apis/build/bazel/remote/execution/v2"
+	semverpb "go.chromium.org/build/remote-apis/build/bazel/semver"
 
 	"go.chromium.org/build/siso/hashfs"
 	"go.chromium.org/build/siso/o11y/clog"

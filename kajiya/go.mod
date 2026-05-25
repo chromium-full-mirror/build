@@ -20,6 +20,7 @@ require (
 
 require (
 	github.com/hashicorp/golang-lru/v2 v2.0.7 // indirect
+	go.chromium.org/build/remote-apis v0.0.0-20260525073051-aef56a35d0f9 // indirect
 	golang.org/x/exp v0.0.0-20260312153236-7ab1446f8b90 // indirect
 	golang.org/x/net v0.52.0 // indirect
 	golang.org/x/text v0.35.0 // indirect

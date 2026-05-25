@@ -9,10 +9,10 @@ import (
 	"context"
 	"log/slog"
 
-	semverpb "github.com/bazelbuild/remote-apis/build/bazel/semver"
 	"google.golang.org/grpc"
 
 	repb "go.chromium.org/build/remote-apis/build/bazel/remote/execution/v2"
+	semverpb "go.chromium.org/build/remote-apis/build/bazel/semver"
 
 	"go.chromium.org/build/kajiya/server"
 )

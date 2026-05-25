@@ -9,7 +9,6 @@ import (
 	"net"
 	"testing"
 
-	semverpb "github.com/bazelbuild/remote-apis/build/bazel/semver"
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -17,6 +16,7 @@ import (
 	"google.golang.org/protobuf/testing/protocmp"
 
 	repb "go.chromium.org/build/remote-apis/build/bazel/remote/execution/v2"
+	semverpb "go.chromium.org/build/remote-apis/build/bazel/semver"
 
 	"go.chromium.org/build/kajiya/server"
 )
