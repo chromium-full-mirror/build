@@ -472,6 +472,8 @@ const (
 	progressPrefixCacheHit   = "c "
 	progressPrefixStart      = "S "
 	progressPrefixFinish     = "F "
+	progressPrefixError      = "E "
+	progressPrefixCanceled   = "- "
 	progressPrefixCacheWrite = "W "
 	progressPrefixRetry      = "r "
 	progressPrefixFallback   = "f "

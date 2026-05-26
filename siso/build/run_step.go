@@ -52,7 +52,7 @@ func (e StepError) Unwrap() error {
 //   - run cmd
 //
 // can control the flows with the experiment ids, defined in experiments.go.
-func (b *Builder) runStep(ctx context.Context, step *Step) (err error) {
+func (b *Builder) runStep(ctx context.Context, step *Step) (retErr error) {
 	step.startTime = time.Now()
 	var tc *trace.Context
 	if b.TraceEnabled() {
@@ -72,15 +72,15 @@ func (b *Builder) runStep(ctx context.Context, step *Step) (err error) {
 		if r := recover(); r != nil {
 			panic(r) // re-throw panic, handled in *Builder.Build.
 		}
-		if errors.Is(err, context.Canceled) {
-			span.Close(status.FromContextError(err).Proto())
+		if errors.Is(retErr, context.Canceled) {
+			span.Close(status.FromContextError(retErr).Proto())
 			return
 		}
-		if err != nil {
+		if retErr != nil {
 			step.metrics.Err = true
-			st, ok := status.FromError(err)
+			st, ok := status.FromError(retErr)
 			if !ok {
-				st = status.FromContextError(err)
+				st = status.FromContextError(retErr)
 			}
 			span.Close(st.Proto())
 		} else {
@@ -91,15 +91,15 @@ func (b *Builder) runStep(ctx context.Context, step *Step) (err error) {
 			duration := step.endTime.Sub(step.startTime)
 			step.metrics.Duration = IntervalMetric(duration)
 			step.metrics.ActionEndTime = IntervalMetric(step.endTime.Sub(b.start))
-			step.metrics.Err = err != nil
-			stepLogEntry(ctx, logger, step, duration, err)
+			step.metrics.Err = retErr != nil
+			stepLogEntry(ctx, logger, step, duration, retErr)
 			b.recordMetrics(ctx, step.metrics)
 			b.recordNinjaLogs(ctx, step)
-			b.recordCloudMonitoringActionMetrics(ctx, step, err)
+			b.recordCloudMonitoringActionMetrics(ctx, step, retErr)
 			b.stats.update(ctx, &step.metrics, step.cmd.Pure)
 			b.finalizeTrace(ctx, tc)
-			b.outputFailureSummary(ctx, step, err)
-			b.outputFailedCommands(ctx, step, err)
+			b.outputFailureSummary(ctx, step, retErr)
+			b.outputFailedCommands(ctx, step, retErr)
 		}
 		// unref for GC to reclaim memory.
 		step.cmd = nil
@@ -148,7 +148,16 @@ func (b *Builder) runStep(ctx context.Context, step *Step) (err error) {
 	}
 
 	b.progressStepStarted(step)
-	defer b.progressStepFinished(step)
+	defer func() {
+		switch {
+		case errors.Is(retErr, context.Canceled):
+			b.progressStepCanceled(step)
+		case retErr != nil:
+			b.progressStepError(step)
+		default:
+			b.progressStepFinished(step)
+		}
+	}()
 
 	step.setPhase(stepHandler)
 	exited, err := b.handleStep(ctx, step)
@@ -177,7 +186,7 @@ func (b *Builder) runStep(ctx context.Context, step *Step) (err error) {
 		return fmt.Errorf("failed to setup rsp: %s: %w", step, err)
 	}
 	defer func() {
-		if err != nil && !errors.Is(err, context.Canceled) {
+		if retErr != nil && !errors.Is(retErr, context.Canceled) {
 			// force flush to disk
 			ferr := b.hashFS.Flush(ctx, step.cmd.WorkspaceRoot, []string{step.cmd.RSPFile})
 			clog.Warningf(ctx, "failed to exec %v: preserve rsp=%s flush:%v", err, step.cmd.RSPFile, ferr)
