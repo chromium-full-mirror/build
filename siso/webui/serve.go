@@ -40,6 +40,15 @@ var (
 	combinedCSS         = ""
 	combinedCSSChecksum = uint32(0)
 	combinedCSSPathRe   = regexp.MustCompile(`/combined.(\d+).css`)
+
+	// sisoStateHeuristics lists files that when present inside an output subdirectory under 'out/',
+	// strongly indicate that the subdirectory represents an active build configuration (rather than
+	// flat/intermediate outputs like 'soong' or 'target' under AOSP's 'out/' folder).
+	sisoStateHeuristics = []string{
+		"siso_metrics.json",
+		".siso_deps",
+		"build.ninja",
+	}
 	// baseFunctions provides global functions to the HTML template files.
 	baseFunctions = template.FuncMap{
 		"pathEscape": func(s string) string {
@@ -149,6 +158,7 @@ type WebuiServer struct {
 	sseServer         *sseServer
 	workspaceRoot     string
 	defaultOutdir     string
+	defaultManifest   string
 	defaultOutdirRoot string
 	defaultOutdirSub  string
 	outsubs           []string
@@ -330,6 +340,7 @@ func NewServer(ctx context.Context, cfg ServerConfig) (*WebuiServer, error) {
 		sseServer:        newSseServer(),
 		workspaceRoot:    workspaceRoot,
 		defaultOutdir:    outDir,
+		defaultManifest:  cfg.ManifestPath,
 		outdirMetrics:    make(map[string]*outdirInfo),
 		port:             cfg.Port,
 	}
@@ -361,6 +372,16 @@ func NewServer(ctx context.Context, cfg ServerConfig) (*WebuiServer, error) {
 			return nil, fmt.Errorf("failed to stat outdir %s: %w", match, err)
 		}
 		if m.IsDir() {
+			// Skip directories that do not heuristically look like build configuration directories.
+			entries, err := os.ReadDir(match)
+			if err != nil {
+				continue
+			}
+			if !slices.ContainsFunc(entries, func(entry fs.DirEntry) bool {
+				return slices.Contains(sisoStateHeuristics, entry.Name())
+			}) {
+				continue
+			}
 			outsub, err := filepath.Rel(filepath.Join(s.workspaceRoot, defaultOutdirInfo.outRoot), match)
 			if err != nil {
 				return nil, fmt.Errorf("failed to make %s workspace relative: %w", match, err)

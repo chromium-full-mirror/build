@@ -26,6 +26,10 @@ import (
 
 const (
 	DefaultItemsPerPage = 100
+
+	// flatOutsub is a virtual sub-directory path segment used in URLs to route and match
+	// flat (single-level) output directories (like AOSP's "out") under Go's mux routing (e.g. /out/_/builds/...)
+	flatOutsub = "_"
 )
 
 type outdirInfo struct {
@@ -186,10 +190,15 @@ func loadOutdirInfo(workspaceRoot, outDir, manifestPath string) (*outdirInfo, er
 
 	// TODO(b/361703735): make sure this works on windows? https://chromium-review.googlesource.com/c/infra/infra/+/5803123/comment/502308d3_ac05bf91/
 	outRoot, outSub := filepath.Split(execRel)
-	if outRoot == "" || strings.Contains(outSub, "/") {
-		return nil, fmt.Errorf("outdir must match pattern `workspace/outroot/outsub`, others are not supported yet")
+	if outRoot == "" {
+		outRoot = outSub
+		outSub = flatOutsub
+	} else {
+		if strings.Contains(outSub, "/") {
+			return nil, fmt.Errorf("outdir must match pattern `workspace/outroot/outsub`, others are not supported yet")
+		}
+		outRoot = filepath.Clean(outRoot)
 	}
-	outRoot = filepath.Clean(outRoot)
 
 	outdirInfo := &outdirInfo{
 		path:         outDir,
@@ -217,8 +226,6 @@ func loadOutdirInfo(workspaceRoot, outDir, manifestPath string) (*outdirInfo, er
 	}
 
 	// Then load revisions if available.
-	// Always return error if loading any fails.
-	// TODO(b/349287453): consider tolerate fail, so frontend can show error?
 	revPaths, err := filepath.Glob(filepath.Join(outDir, "siso_metrics.*.json"))
 	if err != nil {
 		return nil, fmt.Errorf("failed to glob revs: %w", err)
@@ -232,7 +239,9 @@ func loadOutdirInfo(workspaceRoot, outDir, manifestPath string) (*outdirInfo, er
 		}
 		revMetrics, err := loadBuildMetrics(revPath)
 		if err != nil {
-			return nil, fmt.Errorf("failed to load %s: %w", revPath, err)
+			// TODO(b/349287453): show error in frontend as well?
+			fmt.Fprintf(os.Stderr, "ignoring invalid rev metrics %s: %v\n", revPath, err)
+			continue
 		}
 		outdirInfo.metrics = append(outdirInfo.metrics, revMetrics)
 	}
@@ -241,14 +250,25 @@ func loadOutdirInfo(workspaceRoot, outDir, manifestPath string) (*outdirInfo, er
 
 // getOutdirForRequest lazy-loads outdir for the request, returning cached result if possible.
 func (s *WebuiServer) getOutdirForRequest(r *http.Request) (*outdirInfo, error) {
-	abs := filepath.Join(s.workspaceRoot, r.PathValue("outroot"), r.PathValue("outsub"))
+	outroot := r.PathValue("outroot")
+	outsub := r.PathValue("outsub")
+	abs := filepath.Join(s.workspaceRoot, outroot, outsub)
+	if outsub == flatOutsub {
+		abs = filepath.Join(s.workspaceRoot, outroot)
+	}
 	s.metricsMu.Lock()
 	defer s.metricsMu.Unlock()
 	outdirInfo, ok := s.outdirMetrics[abs]
 	if !ok {
 		var err error
-		// TODO: support override manifest path (i.e. other than build.ninja?)
-		outdirInfo, err = loadOutdirInfo(s.workspaceRoot, abs, "build.ninja")
+		// For output directories with custom manifest paths (e.g. flat output directories),
+		// use the manifest path specified by -f instead of falling back to the hardcoded "build.ninja".
+		// TODO: refactor to generic manifest path resolution logic?
+		manifestPath := "build.ninja"
+		if abs == filepath.Join(s.workspaceRoot, s.defaultOutdir) {
+			manifestPath = s.defaultManifest
+		}
+		outdirInfo, err = loadOutdirInfo(s.workspaceRoot, abs, manifestPath)
 		if err != nil {
 			return nil, fmt.Errorf("couldn't load outdir %s: %w", abs, err)
 		}
