@@ -27,25 +27,24 @@ type Client struct {
 }
 
 // New creates new cartfs client mounted at dir.
-func New(ctx context.Context, dir, endpoint string) (*Client, error) {
-	dir, err := filepath.Abs(dir)
-	if err != nil {
-		return nil, err
-	}
-	dir, err = filepath.EvalSymlinks(dir)
-	if err != nil {
-		return nil, err
-	}
+func New(ctx context.Context, endpoint string) (*Client, error) {
 	conn, err := grpc.NewClient(endpoint, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		clog.Warningf(ctx, "cartfs: failed to dial to cartfs server %s: %v", endpoint, err)
 		return nil, err
 	}
-	clog.Infof(ctx, "cartfs on %s connected to %s", dir, endpoint)
+	clog.Infof(ctx, "cartfs connected to %s", endpoint)
+	client := cartfspb.NewCartfsClient(conn)
+	resp, err := client.GetState(ctx, &cartfspb.GetStateRequest{})
+	if err != nil {
+		conn.Close()
+		return nil, fmt.Errorf("failed to get cartfs state: %w", err)
+	}
+	clog.Infof(ctx, "cartfs state: %v", resp)
 	c := &Client{
-		dir:    dir,
+		dir:    resp.MountPoint,
 		conn:   conn,
-		client: cartfspb.NewCartfsClient(conn),
+		client: client,
 	}
 	return c, nil
 }

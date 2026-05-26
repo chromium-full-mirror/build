@@ -140,11 +140,18 @@ func fakeCartfsClient(ctx context.Context, t *testing.T, fake *fakeCartfsServer)
 		t.Logf("-- server finished: %v", err)
 	})
 
-	client, err := cartfsutil.New(ctx, fake.dir, addr)
+	client, err := cartfsutil.New(ctx, addr)
 	if err != nil {
 		t.Fatal(err)
 	}
 	return client
+}
+
+func (f *fakeCartfsServer) GetState(ctx context.Context, req *cartfspb.GetStateRequest) (*cartfspb.GetStateResponse, error) {
+	return &cartfspb.GetStateResponse{
+		State:      cartfspb.CartfsState_STATE_RUNNING,
+		MountPoint: f.dir,
+	}, nil
 }
 
 func (f *fakeCartfsServer) RegisterFiles(ctx context.Context, req *cartfspb.RegisterFilesRequest) (*cartfspb.RegisterFilesResponse, error) {

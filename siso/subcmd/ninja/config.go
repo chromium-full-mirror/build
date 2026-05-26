@@ -137,7 +137,6 @@ type NinjaFlags struct {
 	artfsDir      string
 	artfsEndpoint string
 
-	cartfsDir      string
 	cartfsEndpoint string
 
 	enableCloudLogging          bool
@@ -256,8 +255,8 @@ func (c *Command) SetFlags(flagSet *flag.FlagSet) {
 	flagSet.StringVar(&c.artfsDir, "artfs_dir", "", "artfs mount point")
 	flagSet.StringVar(&c.artfsEndpoint, "artfs_endpoint", "localhost:65001", "artfs server endpoint")
 
-	flagSet.StringVar(&c.cartfsDir, "cartfs_dir", "", "cartfs mount point")
-	flagSet.StringVar(&c.cartfsEndpoint, "cartfs_endpoint", "localhost:65001", "cartfs server endpoint")
+	// TODO(b/513044090): discover cartfs endpoint automatically?
+	flagSet.StringVar(&c.cartfsEndpoint, "cartfs_endpoint", "", "cartfs server endpoint. e.g. localhost:65001")
 
 	flagSet.DurationVar(&c.traceThreshold, "trace_threshold", 1*time.Minute, "threshold for trace record")
 	flagSet.DurationVar(&c.traceSpanThreshold, "trace_span_threshold", 100*time.Millisecond, "theshold for trace span record")

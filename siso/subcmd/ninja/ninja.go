@@ -868,8 +868,8 @@ func (c *Command) setupHashFS(ctx context.Context, buildPath *build.Path, ds bui
 		ui.Default.PrintLines(ui.SGR(ui.Yellow, "build on artfs\n"))
 		c.fsopt.ArtFS = artfs
 	}
-	if c.cartfsDir != "" && c.cartfsEndpoint != "" {
-		cartfs, err := cartfsutil.New(ctx, c.cartfsDir, c.cartfsEndpoint)
+	if c.cartfsEndpoint != "" {
+		cartfs, err := cartfsutil.New(ctx, c.cartfsEndpoint)
 		if err != nil {
 			return nil, nil, err
 		}
