@@ -44,3 +44,5 @@ func (depsDepfile) DepsCmd(ctx context.Context, b *Builder, step *Step) ([]strin
 	step.cmd.Pure = false
 	return step.cmd.Inputs, nil
 }
+
+func (depsDepfile) DepsClean(ctx context.Context, b *Builder, step *Step, err error) {}

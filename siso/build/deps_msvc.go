@@ -427,3 +427,5 @@ func CreateScanDepsRequestMSVC(ctx context.Context, p *Path, params scandepspara
 	}
 	return req, nil
 }
+
+func (depsMSVC) DepsClean(ctx context.Context, b *Builder, step *Step, err error) {}

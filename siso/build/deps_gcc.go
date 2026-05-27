@@ -124,21 +124,6 @@ func (depsGCC) DepsAfterRun(ctx context.Context, b *Builder, step *Step) (_ []st
 	if step.cmd.Deps != "gcc" {
 		return nil, fmt.Errorf("gcc-deps; unexpected deps=%q %s", step.cmd.Deps, step)
 	}
-	defer func() {
-		// don't remove depfile if it is used as output.
-		if slices.Contains(step.cmd.Outputs, step.cmd.Depfile) {
-			return
-		}
-		if err != nil {
-			clog.Warningf(ctx, "preserve depfile=%q: %v", step.cmd.Depfile, err)
-			return
-		}
-		if !b.keepDepfile {
-			b.hashFS.Remove(ctx, step.cmd.WorkspaceRoot, step.cmd.Depfile)
-		}
-
-		b.hashFS.Flush(ctx, step.cmd.WorkspaceRoot, []string{step.cmd.Depfile})
-	}()
 	buf, err := b.hashFS.ReadFile(ctx, step.cmd.WorkspaceRoot, step.cmd.Depfile)
 	if err != nil {
 		return nil, fmt.Errorf("gcc-deps: failed to get depfile %q of %s: %w", step.cmd.Depfile, step, err)
@@ -392,4 +377,19 @@ func CreateScanDepsRequestGCC(ctx context.Context, p *Path, params scandepsparam
 		Timeout:    timeout,
 	}
 	return req, workspaceRoot, nil
+}
+
+func (depsGCC) DepsClean(ctx context.Context, b *Builder, step *Step, err error) {
+	// don't remove depfile if it is used as output.
+	if slices.Contains(step.cmd.Outputs, step.cmd.Depfile) {
+		return
+	}
+	if err != nil {
+		clog.Warningf(ctx, "preserve depfile=%q: %v", step.cmd.Depfile, err)
+		return
+	}
+	if !b.keepDepfile {
+		b.hashFS.Remove(ctx, step.cmd.WorkspaceRoot, step.cmd.Depfile)
+	}
+	b.hashFS.Flush(ctx, step.cmd.WorkspaceRoot, []string{step.cmd.Depfile})
 }

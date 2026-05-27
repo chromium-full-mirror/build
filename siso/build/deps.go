@@ -37,6 +37,9 @@ type depsProcessor interface {
 	// collects deps after cmd run.
 	// paths are relative to the out dir.
 	DepsAfterRun(context.Context, *Builder, *Step) ([]string, error)
+
+	// cleans up deps file.
+	DepsClean(context.Context, *Builder, *Step, error)
 }
 
 var depsProcessors = map[string]depsProcessor{
@@ -186,6 +189,14 @@ func depsAfterRun(ctx context.Context, b *Builder, step *Step) ([]string, error)
 		return nil, err
 	}
 	return deps, nil
+}
+
+func depsClean(ctx context.Context, b *Builder, step *Step, err error) {
+	ds, found := depsProcessors[step.cmd.Deps]
+	if !found {
+		return
+	}
+	ds.DepsClean(ctx, b, step, err)
 }
 
 func checkDepsExist(ctx context.Context, b *Builder, depsIns []string) error {

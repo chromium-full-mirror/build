@@ -150,12 +150,18 @@ func (b *Builder) execLocal(ctx context.Context, step *Step) (retErr error) {
 	if err != nil {
 		return err
 	}
-	b.cacheWrite(ctx, step)
 	err = b.updateDeps(ctx, step)
 	if err != nil {
 		return err
 	}
-	return b.checkLocalOutputs(ctx, step)
+	err = b.checkLocalOutputs(ctx, step)
+	if err != nil {
+		return err
+	}
+	b.cacheWrite(ctx, step)
+	// TODO: check error for cacheWrite?
+	// TODO: record for two phase caching
+	return nil
 	// no need to call b.outputs, as all outputs are already on disk
 	// so no need to flush.
 }
