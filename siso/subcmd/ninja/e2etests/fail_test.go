@@ -23,6 +23,7 @@ import (
 	"go.chromium.org/build/siso/hashfs"
 	"go.chromium.org/build/siso/reapi/digest"
 	"go.chromium.org/build/siso/reapi/reapitest"
+	"go.chromium.org/build/siso/ui"
 )
 
 func TestBuild_Fail_Reproxy(t *testing.T) {
@@ -99,12 +100,25 @@ func TestBuild_Fail_Reproxy(t *testing.T) {
 			}, nil
 		},
 	}
+
+	var stdout, stderr bytes.Buffer
+	ui.Default = ui.LogUI{
+		Stdout: &stdout,
+		Stderr: &stderr,
+	}
+	t.Cleanup(func() {
+		ui.Default = ui.LogUI{}
+	})
 	stats, err = runNinjaTest(t, fakereErr)
 	if err == nil {
 		t.Fatalf("ninja succeeded, but want err")
 	}
 	if stats.Done != 1 || stats.Fail != 1 || stats.Remote != 1 {
 		t.Fatalf("ninja stats done=%d Fail=%d Remote=%d; want done=1 Fail=1 Remote=1", stats.Done, stats.Fail, stats.Remote)
+	}
+	outString := stdout.String() + stderr.String()
+	if !strings.Contains(outString, "FAILED:") || !strings.Contains(outString, "reproxy error") {
+		t.Errorf("ninja output missing `FAILED:` or `reproxy error`\nstdout:\n%s\nstderr:\n%s", stdout.String(), stderr.String())
 	}
 
 	t.Logf("rerun ninja, should fail again")
@@ -224,6 +238,14 @@ func TestBuild_Fail_Remote(t *testing.T) {
 			}, nil
 		},
 	}
+	var stdout, stderr bytes.Buffer
+	ui.Default = ui.LogUI{
+		Stdout: &stdout,
+		Stderr: &stderr,
+	}
+	t.Cleanup(func() {
+		ui.Default = ui.LogUI{}
+	})
 	stats, err = runNinjaTest(t, fakereErr, &failureSummary, &outputLog)
 	if err == nil {
 		t.Fatalf("ninja succeeded, but want err; stats=%#v", stats)
@@ -240,6 +262,10 @@ func TestBuild_Fail_Remote(t *testing.T) {
 		t.Errorf("ninja output_log=%q; want 'reapi error'", outputLog.String())
 	}
 	outputLog.Reset()
+	outString := stdout.String() + stderr.String()
+	if !strings.Contains(outString, "FAILED:") || !strings.Contains(outString, "reapi error") {
+		t.Errorf("ninja output missing `FAILED:` or `reapi error`\nstdout:\n%s\nstderr:\n%s", stdout.String(), stderr.String())
+	}
 
 	t.Logf("rerun ninja, should fail again")
 	stats, err = runNinjaTest(t, fakereErr, &failureSummary, &outputLog)
