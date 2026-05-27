@@ -1273,18 +1273,6 @@ func (b *Builder) progressStepFinished(step *Step) {
 	b.progress.step(b, step, progressPrefixFinish+step.cmd.Desc)
 }
 
-// progressStepFinished shows progress of the error step.
-func (b *Builder) progressStepError(step *Step) {
-	step.setPhase(stepDone)
-	b.progress.step(b, step, progressPrefixError+step.cmd.Desc)
-}
-
-// progressStepFinished shows progress of the canceled step.
-func (b *Builder) progressStepCanceled(step *Step) {
-	step.setPhase(stepDone)
-	b.progress.step(b, step, progressPrefixCanceled+step.cmd.Desc)
-}
-
 // progressStepRetry shows progress of the retried step.
 func (b *Builder) progressStepRetry(step *Step) {
 	b.progress.step(b, step, progressPrefixRetry+step.cmd.Desc)
