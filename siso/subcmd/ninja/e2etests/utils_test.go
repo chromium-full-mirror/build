@@ -251,6 +251,18 @@ func (w *syncBuffer) Write(data []byte) (int, error) {
 	return w.buf.Write(data)
 }
 
+func (w *syncBuffer) String() string {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.buf.String()
+}
+
+func (w *syncBuffer) Bytes() []byte {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.buf.Bytes()
+}
+
 func setupBuild(ctx context.Context, t *testing.T, dir string, fsopt hashfs.Option) (build.Options, *ninjabuild.Graph, func()) {
 	t.Helper()
 	var cleanups []func()

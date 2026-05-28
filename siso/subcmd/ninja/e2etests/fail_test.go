@@ -101,7 +101,7 @@ func TestBuild_Fail_Reproxy(t *testing.T) {
 		},
 	}
 
-	var stdout, stderr bytes.Buffer
+	var stdout, stderr syncBuffer
 	ui.Default = ui.LogUI{
 		Stdout: &stdout,
 		Stderr: &stderr,
@@ -238,7 +238,7 @@ func TestBuild_Fail_Remote(t *testing.T) {
 			}, nil
 		},
 	}
-	var stdout, stderr bytes.Buffer
+	var stdout, stderr syncBuffer
 	ui.Default = ui.LogUI{
 		Stdout: &stdout,
 		Stderr: &stderr,
