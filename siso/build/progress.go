@@ -472,6 +472,8 @@ const (
 	progressPrefixCacheHit   = "c "
 	progressPrefixStart      = "S "
 	progressPrefixFinish     = "F "
+	progressPrefixError      = "E "
+	progressPrefixCanceled   = "- "
 	progressPrefixCacheWrite = "W "
 	progressPrefixRetry      = "r "
 	progressPrefixFallback   = "f "
@@ -494,6 +496,7 @@ func (p *progress) step(b *Builder, step *Step, s string) {
 		switch {
 		case strings.HasPrefix(s, progressPrefixStart),
 			strings.HasPrefix(s, progressPrefixFinish),
+			strings.HasPrefix(s, progressPrefixError),
 			strings.HasPrefix(s, progressPrefixCacheHit):
 			p.resultstoreUploader.AddBuildLog(fmt.Sprintf("[%d/%d] %s %s\n",
 				stat.Done-stat.Skipped, stat.Total-stat.Skipped,
@@ -502,7 +505,7 @@ func (p *progress) step(b *Builder, step *Step, s string) {
 		}
 	}
 	var outputResult string
-	if strings.HasPrefix(s, progressPrefixFinish) && step != nil {
+	if (strings.HasPrefix(s, progressPrefixFinish) || strings.HasPrefix(s, progressPrefixError)) && step != nil {
 		outputResult = step.cmd.OutputResult()
 	}
 	if ui.IsTerminal() && !p.verbose {
@@ -530,7 +533,7 @@ func (p *progress) step(b *Builder, step *Step, s string) {
 				dur,
 				step.def.Binding("command"))
 			ui.Default.Printf("%s\n", msg)
-		} else if strings.HasPrefix(s, progressPrefixFinish) && step != nil {
+		} else if (strings.HasPrefix(s, progressPrefixFinish) || strings.HasPrefix(s, progressPrefixError)) && step != nil {
 			msg = fmt.Sprintf("[%d/%d] %s %s",
 				stat.Done-stat.Skipped, stat.Total-stat.Skipped,
 				dur,
