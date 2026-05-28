@@ -30,7 +30,26 @@
       header directly. For example, `foo.h^` will be treated as `foo.cc^`.
   * Requested in [crbug.com/396522989](https://crbug.com/396522989)
 
-## Supports `phony_output` rule variable
+## Ninja file syntax changes
+
+### Supports variables to configure remote execution
+
+`remote_enabled`, `remote_platform_ref`, and `remote_timeout` can be used to control how the action
+is run remotely. They can be specified on either a ninja `rule` or `build`. They have the same effect
+as the fields with similar names in the StepConfig.
+
+Note that upstream ninja will error out on seeing these extra bindings. But the android fork of
+ninja has an exception to ignore them.
+
+### sandbox_disabled
+
+`sandbox_disabled = true` can be used to disable sandboxing for a specific rule in an otherwise
+action-sandbox-enabled build. (see StepConfig.sandbox)
+
+Note that upstream ninja will error out on seeing this extra binding. But the android fork of
+ninja also implements sandboxing and this sandbox_disabled binding.
+
+### Supports `phony_output` rule variable
 
   * **Ninja:** Doesn't have `phony_output`. But, Android's forked Ninja has a patch for the rule variable. See also [here](https://android.googlesource.com/platform/external/ninja/+/2ddc376cc3c5531db80899ce757861fac7a531b9/doc/manual.asciidoc#819)
   * **Siso:** Supports the variable for Android builds.
