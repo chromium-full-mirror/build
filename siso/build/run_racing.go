@@ -165,14 +165,21 @@ func (b *Builder) runRacing(ctx context.Context, step *Step) error {
 		} else {
 			clog.Infof(ctx, "racing: local won")
 		}
-		if winner.err != nil {
-			return winner.err
+		// Copy stdout/stderr and action result even if it failed,
+		// so the caller can report the failure details.
+		if stdout := localStep.cmd.Stdout(); len(stdout) > 0 {
+			step.cmd.StdoutWriter().Write(stdout)
 		}
-		// execLocal already called updateDeps, cacheWrite, and
-		// checkLocalOutputs on localStep. Copy the results back.
+		if stderr := localStep.cmd.Stderr(); len(stderr) > 0 {
+			step.cmd.StderrWriter().Write(stderr)
+		}
 		step.metrics.copyExecResult(&localStep.metrics)
 		result, cached := localStep.cmd.ActionResult()
 		step.cmd.SetActionResult(result, cached)
+
+		if winner.err != nil {
+			return winner.err
+		}
 		// Local outputs are already on disk — no need to call
 		// b.outputs(), b.updateDeps(), or b.checkLocalOutputs()
 		// since execLocal already did all of that on localStep.
