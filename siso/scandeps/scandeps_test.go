@@ -895,3 +895,59 @@ func TestScanDeps_SymlinkFile(t *testing.T) {
 	}
 
 }
+
+func TestScanDeps_MacroDefinedIncludeFlag(t *testing.T) {
+	ctx := t.Context()
+	dir := tempDir(t)
+	for fname, content := range map[string]string{
+		"config.h": `
+#define RGX_BVNC_CORE_HEADER "cores/rgxcore_71.2.2448.1212.h"
+`,
+		"foo.cc": `
+#include RGX_BVNC_CORE_HEADER
+`,
+		"cores/rgxcore_71.2.2448.1212.h": "",
+	} {
+		fname := filepath.Join(dir, fname)
+		err := os.MkdirAll(filepath.Dir(fname), 0755)
+		if err != nil {
+			t.Fatal(err)
+		}
+		err = os.WriteFile(fname, []byte(content), 0644)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	inputDeps := map[string][]string{}
+	hashFS, err := hashfs.New(ctx, hashfs.Option{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	scanDeps := New(ctx, hashFS, Options{InputDeps: inputDeps})
+
+	req := Request{
+		Sources: []string{
+			"foo.cc",
+		},
+		Dirs: []string{
+			".",
+		},
+		Includes: []string{
+			"config.h",
+		},
+	}
+	got, err := scanDeps.Scan(ctx, dir, req)
+	if err != nil {
+		t.Errorf("scandeps()=%v, %v; want nil err", got, err)
+	}
+	want := []string{
+		".",
+		"config.h",
+		"cores",
+		"cores/rgxcore_71.2.2448.1212.h",
+		"foo.cc",
+	}
+	if diff := cmp.Diff(want, got, cmpopts.SortSlices(func(a, b string) bool { return a < b })); diff != "" {
+		t.Errorf("scandeps diff -want +got:\n%s", diff)
+	}
+}
