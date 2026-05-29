@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"hash/maphash"
+	"slices"
 	"strings"
 	"time"
 
@@ -154,11 +155,15 @@ func (s *ScanDeps) Scan(ctx context.Context, workspaceRoot string, req Request) 
 	defer scanner.Close()
 	scanner.setMacros(req.Defines)
 
-	for _, s := range req.Includes {
-		scanner.addInclude(ctx, s)
-	}
-	for _, s := range req.Sources {
+	// scanner.addSource is stack, and need to parse include (i.e.
+	// include file by -include on command line) before source file
+	// to get macro definition in include may be needed for include
+	// in source file. b/481105408
+	for _, s := range slices.Backward(req.Sources) {
 		scanner.addSource(ctx, s)
+	}
+	for _, s := range slices.Backward(req.Includes) {
+		scanner.addInclude(ctx, s)
 	}
 	for _, dir := range req.Dirs {
 		if strings.HasSuffix(dir, ".hmap") && scanner.addHmap(ctx, dir) {

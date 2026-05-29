@@ -163,13 +163,19 @@ func (s *scanner) Close() {
 }
 
 func (s *scanner) pushInputs(ins ...string) {
-	s.inputs = append(s.inputs, "") // "" will trigger popDir
 	for i := len(ins) - 1; i >= 0; i-- {
 		s.inputs = append(s.inputs, ins[i])
 	}
 }
 
-func (s *scanner) pushMacroInputs(ins ...string) {
+func (s *scanner) pushInputsWithDir(ctx context.Context, dir string, ins ...string) {
+	s.pushDir(ctx, dir)
+	s.inputs = append(s.inputs, "") // "" will trigger popDir
+	s.pushInputs(ins...)
+}
+
+func (s *scanner) pushMacroInputs(ctx context.Context, dir string, ins ...string) {
+	s.pushDir(ctx, dir)
 	s.inputs = append(s.inputs, "") // pop dir
 	// only include macro again. i.e. no need to include non-macro path.
 	for i := len(ins) - 1; i >= 0; i-- {
@@ -241,9 +247,8 @@ func (s *scanner) addInclude(ctx context.Context, fname string) {
 
 func (s *scanner) addSource(ctx context.Context, fname string) {
 	// add dir and include as if #include "basename".
-	s.pushDir(ctx, filepath.ToSlash(filepath.Dir(fname)))
 	base := filepath.Base(fname)
-	s.pushInputs(`"` + base + `"`)
+	s.pushInputsWithDir(ctx, filepath.ToSlash(filepath.Dir(fname)), `"`+base+`"`)
 	if log.V(1) {
 		clog.Infof(ctx, "source %q", fname)
 	}
@@ -343,9 +348,8 @@ func (s *scanner) find(ctx context.Context, name string) (string, error) {
 		dirIndex := s.pt.Index(".")
 		s.macroCheck(ctx, dirIndex, rel, incpath, sr.includes)
 		dir := path.Dir(incpath)
-		s.pushDir(ctx, dir)
 		s.updateMacros(sr.defines)
-		s.pushInputs(sr.includes...)
+		s.pushInputsWithDir(ctx, dir, sr.includes...)
 		return incpath, nil
 	}
 
@@ -387,17 +391,15 @@ func (s *scanner) find(ctx context.Context, name string) (string, error) {
 			// `#include "xx"` in incpath may include "xx"
 			// from the dir of incpath.
 			dir := path.Dir(incpath)
-			s.pushDir(ctx, dir)
-
 			if log.V(1) {
 				clog.Infof(ctx, "find %s -> includes:%q defines:%q", incpath, sr.includes, sr.defines)
 			}
 
 			s.updateMacros(sr.defines)
 			if i >= qi && i < mi {
-				s.pushMacroInputs(sr.includes...)
+				s.pushMacroInputs(ctx, dir, sr.includes...)
 			} else {
-				s.pushInputs(sr.includes...)
+				s.pushInputsWithDir(ctx, dir, sr.includes...)
 			}
 			if i > mi {
 				s.nameDirs[name] += i - mi
@@ -435,14 +437,12 @@ func (s *scanner) find(ctx context.Context, name string) (string, error) {
 				// `#include "xx"` in incpath may include "xx"
 				// from the dir of incpath.
 				dir := path.Dir(incpath)
-				s.pushDir(ctx, dir)
-
 				if log.V(1) {
 					clog.Infof(ctx, "find %s -> includes:%q defines:%q", incpath, sr.includes, sr.defines)
 				}
 
 				s.updateMacros(sr.defines)
-				s.pushInputs(sr.includes...)
+				s.pushInputsWithDir(ctx, dir, sr.includes...)
 				return incpath, nil
 			}
 		}
