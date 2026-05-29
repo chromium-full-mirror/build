@@ -8,10 +8,13 @@ for configuration to apply to
 specified by `-load` flag at startup time.
 Default is `@config//main.star` (`//build/config/siso/main.star`).
 
-The starlark script should provide
+The starlark script should provide an
 [init function to register handlers and step configs](#Initialization).
 In the starlark script, `load` can load from current directory,
 [@builtin](#builtin) or [@config](#config).
+
+Adding a top level `strict_config = True` variable will add extra
+validity checks on the config.
 
 The starlark script will be evaluated at
 [initialization phase](#Initialization)

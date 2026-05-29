@@ -138,3 +138,53 @@ build all: phony exe
 		}
 	}
 }
+
+func TestNewStepConfig_RejectUnknownKeys(t *testing.T) {
+	ctx := t.Context()
+	dir := t.TempDir()
+	err := os.MkdirAll(filepath.Join(dir, "build/config/siso"), 0755)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = os.WriteFile(filepath.Join(dir, "build/config/siso/main.star"), []byte(`
+load("@builtin//struct.star", "module")
+
+strict_config = True
+
+def init(ctx):
+  return module(
+    "config",
+    step_config = '{"unknown_key_test": "value"}',
+    filegroups = {},
+    handlers = {},
+  )
+`), 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
+	config, err := buildconfig.New(ctx, "@config//main.star", map[string]string{}, map[string]fs.FS{
+		"config":           os.DirFS(filepath.Join(dir, "build/config/siso")),
+		"config_overrides": os.DirFS(filepath.Join(dir, ".siso_remote")),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = os.MkdirAll(filepath.Join(dir, "out/siso"), 0755)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(filepath.Join(dir, "out/siso"))
+	path := build.NewPath(dir, "out/siso")
+
+	err = os.WriteFile(filepath.Join(dir, "out/siso/build.ninja"), []byte(`
+build all: phony
+`), 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = NewStepConfig(ctx, config, path, "build.ninja", ".")
+	if err == nil {
+		t.Error("NewStepConfig succeeded with unknown keys, but should have failed")
+	}
+}

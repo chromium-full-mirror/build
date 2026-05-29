@@ -25,6 +25,7 @@ import (
 )
 
 const configEntryPoint = "init"
+const strictConfigVar = "strict_config"
 
 // Config is a build config.
 type Config struct {
@@ -135,7 +136,7 @@ func (e HandlerError) Unwrap() error {
 }
 
 // Init initializes config by running `init`.
-func (cfg *Config) Init(ctx context.Context, hashFS *hashfs.HashFS, buildPath *build.Path) (string, error) {
+func (cfg *Config) Init(ctx context.Context, hashFS *hashfs.HashFS, buildPath *build.Path) (string, bool, error) {
 	// Clear fscache to read updated contents after `gn gen`.
 	cfg.fscache = &fscache{m: make(map[string][]byte)}
 
@@ -143,12 +144,21 @@ func (cfg *Config) Init(ctx context.Context, hashFS *hashfs.HashFS, buildPath *b
 		// Default config with no Starlark: all steps run locally.
 		cfg.handlers = new(starlark.Dict)
 		cfg.filegroups = make(map[string]filegroupUpdater)
-		return "{}", nil
+		return "{}", false, nil
+	}
+
+	strictVal, ok := cfg.globals[strictConfigVar]
+	strict := false
+	if ok {
+		if strictVal != starlark.True && strictVal != starlark.False {
+			return "", false, fmt.Errorf("%s must be True or false", strictConfigVar)
+		}
+		strict = (strictVal == starlark.True)
 	}
 
 	fun, ok := cfg.globals[configEntryPoint]
 	if !ok {
-		return "", fmt.Errorf("no %s", configEntryPoint)
+		return "", false, fmt.Errorf("no %s", configEntryPoint)
 	}
 	thread := &starlark.Thread{
 		Name: configEntryPoint,
@@ -174,42 +184,42 @@ func (cfg *Config) Init(ctx context.Context, hashFS *hashfs.HashFS, buildPath *b
 		var eerr *starlark.EvalError
 		if errors.As(err, &eerr) {
 			clog.Warningf(ctx, "stacktrace:\n%s", eerr.Backtrace())
-			return "", HandlerError{entry: configEntryPoint, fn: fun, err: eerr}
+			return "", false, HandlerError{entry: configEntryPoint, fn: fun, err: eerr}
 		}
-		return "", fmt.Errorf("failed to run %s: %w", configEntryPoint, err)
+		return "", false, fmt.Errorf("failed to run %s: %w", configEntryPoint, err)
 	}
 	m, ok := ret.(*starlarkstruct.Module)
 	if !ok {
-		return "", fmt.Errorf("%s returned %s, want module", configEntryPoint, ret.Type())
+		return "", false, fmt.Errorf("%s returned %s, want module", configEntryPoint, ret.Type())
 	}
 	h, err := m.Attr("handlers")
 	if err != nil {
-		return "", fmt.Errorf("no handlers in %v: %w", ret, err)
+		return "", false, fmt.Errorf("no handlers in %v: %w", ret, err)
 	}
 	handlers, ok := h.(*starlark.Dict)
 	if !ok {
-		return "", fmt.Errorf("handlers %v, want dict", h)
+		return "", false, fmt.Errorf("handlers %v, want dict", h)
 	}
 	cfg.handlers = handlers
 
 	fg, err := m.Attr("filegroups")
 	if err != nil {
-		return "", fmt.Errorf("no filegroups in %v: %w", ret, err)
+		return "", false, fmt.Errorf("no filegroups in %v: %w", ret, err)
 	}
 	cfg.filegroups, err = parseFilegroups(fg)
 	if err != nil {
-		return "", fmt.Errorf("bad filegroups: %w", err)
+		return "", false, fmt.Errorf("bad filegroups: %w", err)
 	}
 
 	stepConfig, err := m.Attr("step_config")
 	if err != nil {
-		return "", fmt.Errorf("no step_config in %v: %w", ret, err)
+		return "", false, fmt.Errorf("no step_config in %v: %w", ret, err)
 	}
 	s, ok := starlark.AsString(stepConfig)
 	if !ok {
-		return "", fmt.Errorf("%s returned %s, want string", configEntryPoint, ret.Type())
+		return "", false, fmt.Errorf("%s returned %s, want string", configEntryPoint, ret.Type())
 	}
-	return s, nil
+	return s, strict, nil
 }
 
 // Func returns a function for the handler name.

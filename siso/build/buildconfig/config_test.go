@@ -59,7 +59,7 @@ func TestConfig(t *testing.T) {
 				}
 			}()
 			bpath := build.NewPath("/root", "out/Default")
-			_, err = cfg.Init(ctx, fs, bpath)
+			_, _, err = cfg.Init(ctx, fs, bpath)
 			if err != nil {
 				t.Errorf(`cfg.Init()=%v; want nil error`, err)
 			}
@@ -98,7 +98,7 @@ func TestConfigHandler(t *testing.T) {
 		}
 	}()
 	bpath := build.NewPath("/root", "out/Default")
-	_, err = cfg.Init(ctx, fs, bpath)
+	_, _, err = cfg.Init(ctx, fs, bpath)
 	if err != nil {
 		t.Errorf(`cfg.Init()=%v; want nil error`, err)
 	}
@@ -147,7 +147,7 @@ func TestGNStar(t *testing.T) {
 	if err != nil {
 		t.Fatalf("metadata set = %v; want nil err", err)
 	}
-	_, err = cfg.Init(ctx, hfs, bpath)
+	_, _, err = cfg.Init(ctx, hfs, bpath)
 	if err != nil {
 		t.Errorf("cfg.Init()=%v; want nil error", err)
 	}

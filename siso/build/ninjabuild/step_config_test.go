@@ -340,3 +340,56 @@ build obj/bar.o: cxx_simple ../../bar.cc
 		}
 	}
 }
+
+func TestStepConfigInit_PlatformRefValidation(t *testing.T) {
+	ctx := t.Context()
+
+	// Case 1: valid config
+	sc := &StepConfig{
+		Platforms: map[string]map[string]string{
+			"default": {"OS": "linux"},
+		},
+		Rules: []*StepRule{
+			{
+				Name:          "cxx",
+				CommandPrefix: "g++",
+				PlatformRef:   "default",
+			},
+		},
+	}
+	if err := sc.Init(ctx); err != nil {
+		t.Errorf("Init failed with valid platform_ref: %v", err)
+	}
+
+	// Case 2: invalid platform_ref in rule
+	scInvalidRule := &StepConfig{
+		Rules: []*StepRule{
+			{
+				Name:          "cxx",
+				CommandPrefix: "g++",
+				PlatformRef:   "missing_platform",
+			},
+		},
+	}
+	if err := scInvalidRule.Init(ctx); err == nil {
+		t.Error("Init succeeded with invalid platform_ref in rule, but should have failed")
+	}
+
+	// Case 3: invalid platform_ref in outputs_map
+	scInvalidOutputsMap := &StepConfig{
+		Rules: []*StepRule{
+			{
+				Name:          "cxx",
+				CommandPrefix: "g++",
+				OutputsMap: map[string]StepDeps{
+					"foo.o": {
+						PlatformRef: "missing_platform",
+					},
+				},
+			},
+		},
+	}
+	if err := scInvalidOutputsMap.Init(ctx); err == nil {
+		t.Error("Init succeeded with invalid platform_ref in outputs_map, but should have failed")
+	}
+}

@@ -308,6 +308,18 @@ func (sc *StepConfig) Init(ctx context.Context) error {
 			clog.Errorf(ctx, "Failed to init rule %q: %v", rule.Name, err)
 			return fmt.Errorf("failed to init rule %q: %w", rule.Name, err)
 		}
+		if rule.PlatformRef != "" {
+			if _, ok := sc.Platforms[rule.PlatformRef]; !ok {
+				return fmt.Errorf("platform_ref %q in rule %q not found in platforms", rule.PlatformRef, rule.Name)
+			}
+		}
+		for optName, opt := range rule.OutputsMap {
+			if opt.PlatformRef != "" {
+				if _, ok := sc.Platforms[opt.PlatformRef]; !ok {
+					return fmt.Errorf("platform_ref %q in outputs_map %q of rule %q not found in platforms", opt.PlatformRef, optName, rule.Name)
+				}
+			}
+		}
 	}
 	if sc.Scandeps == nil {
 		sc.Scandeps = &ScandepsConfig{

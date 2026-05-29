@@ -108,16 +108,21 @@ func NewStepConfig(ctx context.Context, config *buildconfig.Config, p *build.Pat
 	if err != nil {
 		return nil, err
 	}
-	s, err := config.Init(ctx, tempHashFS, p)
+	s, strict, err := config.Init(ctx, tempHashFS, p)
 	if err != nil {
 		return nil, err
 	}
 	stepConfig := &StepConfig{}
-	err = json.Unmarshal([]byte(s), stepConfig)
+	dec := json.NewDecoder(strings.NewReader(s))
+	if strict {
+		dec.DisallowUnknownFields()
+	}
+	err = dec.Decode(stepConfig)
 	if err != nil {
 		clog.Errorf(ctx, "Failed to parse init output:\n%s", s)
 		return nil, fmt.Errorf("failed to parse init output: %w", err)
 	}
+
 	clog.Infof(ctx, "loaded %d platforms / %d input deps / %d rules", len(stepConfig.Platforms), len(stepConfig.InputDeps), len(stepConfig.Rules))
 	stepConfig.StateDir = stateDir
 	err = stepConfig.Init(ctx)
