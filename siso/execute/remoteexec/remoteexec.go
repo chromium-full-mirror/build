@@ -69,18 +69,21 @@ func (re *RemoteExec) prepareInputs(ctx context.Context, cmd *execute.Cmd) (dige
 // This mirrors reclient's approach of using a background context for
 // CAS uploads so that shared upload operations are not poisoned when
 // a racing goroutine's context is canceled.
-func (re *RemoteExec) Run(uploadCtx, execCtx context.Context, cmd *execute.Cmd) error {
+// Execute runs the remote command and waits for completion.
+// It does not download outputs or stdout/stderr.
+// It returns the ActionResult, whether it was cached, and any execution error.
+func (re *RemoteExec) Execute(uploadCtx, execCtx context.Context, cmd *execute.Cmd) (*rpb.ActionResult, bool, error) {
 	execCtx, span := trace.NewSpan(execCtx, "remote-exec")
 	defer span.Close(nil)
 	actionDigest, err := re.prepareInputs(uploadCtx, cmd)
 	if err != nil {
-		return err
+		return nil, false, err
 	}
 	// If the execution context was canceled during upload (e.g.
 	// the race was decided while CAS uploads were finishing),
 	// return early without starting remote execution.
 	if execCtx.Err() != nil {
-		return context.Cause(execCtx)
+		return nil, false, context.Cause(execCtx)
 	}
 
 	cctx, cspan := trace.NewSpan(execCtx, "execute-and-wait")
@@ -103,7 +106,23 @@ func (re *RemoteExec) Run(uploadCtx, execCtx context.Context, cmd *execute.Cmd) 
 	}
 	result := resp.GetResult()
 	re.recordExecuteMetadata(execCtx, result, resp.GetCachedResult(), span)
-	return re.processResult(execCtx, cmd, result, resp.GetCachedResult(), err)
+	if result != nil {
+		cmd.SetActionResult(result, resp.GetCachedResult())
+	}
+	return result, resp.GetCachedResult(), err
+}
+
+// Run runs a cmd. uploadCtx is used for CAS input uploads
+// (prepareInputs); execCtx is used for the remote execution RPC.
+// In the non-racing path both contexts are the same. In racing
+// mode, uploadCtx is the build context (survives race cancellation)
+// while execCtx is the race context (canceled when the race decides).
+// This mirrors reclient's approach of using a background context for
+// CAS uploads so that shared upload operations are not poisoned when
+// a racing goroutine's context is canceled.
+func (re *RemoteExec) Run(uploadCtx, execCtx context.Context, cmd *execute.Cmd) error {
+	result, cached, err := re.Execute(uploadCtx, execCtx, cmd)
+	return re.ProcessResult(execCtx, cmd, result, cached, err)
 }
 
 func (re *RemoteExec) recordExecuteMetadata(ctx context.Context, result *rpb.ActionResult, cached bool, span *trace.Span) {
@@ -173,7 +192,8 @@ func (re *RemoteExec) recordExecuteMetadata(ctx context.Context, result *rpb.Act
 	}
 }
 
-func (re *RemoteExec) processResult(ctx context.Context, cmd *execute.Cmd, result *rpb.ActionResult, cached bool, err error) error {
+// ProcessResult downloads the results from the remote step (outputs, stdout, stderr) and places them.
+func (re *RemoteExec) ProcessResult(ctx context.Context, cmd *execute.Cmd, result *rpb.ActionResult, cached bool, err error) error {
 	if result.GetExitCode() == 0 && err == nil {
 		clog.Infof(ctx, "exit=%d cache=%t", result.GetExitCode(), cached)
 	} else {

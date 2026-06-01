@@ -12,6 +12,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"go.chromium.org/build/siso/execute"
 	"go.chromium.org/build/siso/o11y/clog"
 	"go.chromium.org/build/siso/o11y/trace"
 )
@@ -83,10 +84,15 @@ func (b *Builder) runRacing(ctx context.Context, step *Step) error {
 		// race decides. Use ctx for CAS uploads so they survive
 		// race cancellation and don't poison shared upload
 		// operations used by other steps (reclient-style).
-		err := b.execRemoteRun(ctx, raceCtx, step)
+		err := b.execRemoteExecute(ctx, raceCtx, step)
 		if isContextCanceledErr(err) {
 			ch <- raceResult{resultType: raceCanceled, err: err}
 			return
+		}
+		if err == nil {
+			if result, _ := step.cmd.ActionResult(); result != nil && result.GetExitCode() != 0 {
+				err = execute.ExitError{ExitCode: int(result.GetExitCode())}
+			}
 		}
 		if err != nil {
 			ok, ferr := b.remoteClaimFallbackIfAllowed(ctx, step, err)
@@ -141,12 +147,22 @@ func (b *Builder) runRacing(ctx context.Context, step *Step) error {
 	case raceRemote:
 		step.metrics.RacingWinner = "remote"
 		clog.Infof(ctx, "racing: remote won")
-		if winner.err != nil {
-			return winner.err
+
+		// The remote racer won (or failed irrecoverably).
+		// Download outputs and stdout/stderr now.
+		downloadErr := b.execRemoteDownload(ctx, step, winner.err)
+		if downloadErr != nil {
+			return downloadErr
 		}
-		// The loser (local) has been canceled and drained, but its
-		// RecordOutputsFromLocal may have overwritten the remote's
-		// CAS-backed hashFS entries.  Re-record the remote outputs
+
+		// The loser (local) has been canceled and drained, but it might have
+		// already deleted or modified the local output files before being killed.
+		// Forget the cached outputs in HashFS so that Siso doesn't assume the
+		// outputs are still "local-ready" (up-to-date) on the local disk.
+		// This forces Siso to download/verify them during b.outputs().
+		step.cmd.HashFS.Forget(ctx, step.cmd.WorkspaceRoot, step.cmd.Outputs)
+
+		// Re-record the remote outputs
 		// so that updateDeps and outputs see the correct state.
 		if err := step.cmd.RecordOutputs(ctx, step.cmd.HashFS.DataSource(), time.Now()); err != nil {
 			return err

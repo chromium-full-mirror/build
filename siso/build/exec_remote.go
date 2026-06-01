@@ -19,19 +19,17 @@ import (
 	"go.chromium.org/build/siso/reapi/retry"
 )
 
-// execRemoteRun runs the remote execution phase without post-processing.
-// It handles retry, semaphore acquisition, and (unless
-// cmd.SkipRecordOutputs is set, as in racing mode) recording outputs
-// in hashFS, but does NOT call updateDeps or outputs.
-// Used by runRacing to separate execution from post-processing.
+// execRemoteExecute runs the remote execution phase without post-processing.
+// It handles retry, semaphore acquisition, and remote execution,
+// but does NOT download outputs or stdout/stderr.
 //
 // uploadCtx controls CAS input uploads; execCtx controls execution and
 // retry/semaphore. In the non-racing path both are the same context.
 // In racing mode, uploadCtx is the build context (not canceled by
 // race cancellation) so that shared CAS upload operations are not
 // poisoned when the race goroutine's execCtx is canceled.
-func (b *Builder) execRemoteRun(uploadCtx, execCtx context.Context, step *Step) error {
-	ctx, span := trace.NewSpan(execCtx, "exec-remote")
+func (b *Builder) execRemoteExecute(uploadCtx, execCtx context.Context, step *Step) error {
+	ctx, span := trace.NewSpan(execCtx, "exec-remote-execute")
 	defer span.Close(nil)
 	noFallback := !b.localFallbackEnabled()
 	var timeout time.Duration
@@ -43,7 +41,7 @@ func (b *Builder) execRemoteRun(uploadCtx, execCtx context.Context, step *Step) 
 		timeout = step.cmd.Timeout * 4
 	}
 	step.cmd.RecordPreOutputs(ctx)
-	clog.Infof(ctx, "exec remote %s", step.cmd.Desc)
+	clog.Infof(ctx, "exec remote execute %s", step.cmd.Desc)
 	phase := stepRemoteRun
 	var reExecDur time.Duration
 	return retry.Do(ctx, func() error {
@@ -58,10 +56,9 @@ func (b *Builder) execRemoteRun(uploadCtx, execCtx context.Context, step *Step) 
 			b.actionStartedTime(step, reExecStarted)
 			clog.Infof(ctx, "step state: remote exec [%s]", phase)
 			phase = stepRetryRun
-			err := b.remoteExec.Run(uploadCtx, ctx, step.cmd)
+			result, cached, err := b.remoteExec.Execute(uploadCtx, ctx, step.cmd)
 			step.setPhase(stepOutput)
 			step.metrics.IsRemote = true
-			result, cached := step.cmd.ActionResult()
 			if !cached {
 				b.updateREStat(result, err)
 			}
@@ -72,10 +69,9 @@ func (b *Builder) execRemoteRun(uploadCtx, execCtx context.Context, step *Step) 
 				step.metrics.RemoteRetry++
 				step.cmd.SkipCacheLookup = true
 				step.setPhase(phase)
-				err = b.remoteExec.Run(uploadCtx, ctx, step.cmd)
+				result, cached, err = b.remoteExec.Execute(uploadCtx, ctx, step.cmd)
 				step.setPhase(stepOutput)
 				step.metrics.IsRemote = true
-				result, cached = step.cmd.ActionResult()
 				if !cached {
 					b.updateREStat(result, err)
 				}
@@ -121,6 +117,14 @@ func (b *Builder) execRemoteRun(uploadCtx, execCtx context.Context, step *Step) 
 	})
 }
 
+// execRemoteDownload downloads the results from the remote execution.
+func (b *Builder) execRemoteDownload(ctx context.Context, step *Step, execErr error) error {
+	ctx, span := trace.NewSpan(ctx, "exec-remote-download")
+	defer span.Close(nil)
+	result, cached := step.cmd.ActionResult()
+	return b.remoteExec.ProcessResult(ctx, step.cmd, result, cached, execErr)
+}
+
 func (b *Builder) updateREStat(result *rpb.ActionResult, err error) {
 	md := result.GetExecutionMetadata()
 	if md == nil {
@@ -158,8 +162,10 @@ func (b *Builder) updateREStat(result *rpb.ActionResult, err error) {
 }
 
 func (b *Builder) execRemote(ctx context.Context, step *Step) error {
-	if err := b.execRemoteRun(ctx, ctx, step); err != nil {
-		return err
+	execErr := b.execRemoteExecute(ctx, ctx, step)
+	downloadErr := b.execRemoteDownload(ctx, step, execErr)
+	if downloadErr != nil {
+		return downloadErr
 	}
 	// need to update deps for remote exec for deps=gcc with depsfile,
 	// or deps=msvc with showIncludes
