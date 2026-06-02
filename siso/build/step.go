@@ -193,6 +193,7 @@ func (s *Step) Clone() *Step {
 		state:          &stepState{},
 		startReported:  s.startReported,
 		finishReported: s.finishReported,
+		metrics:        s.metrics,
 	}
 }
 
