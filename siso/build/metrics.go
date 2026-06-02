@@ -105,6 +105,9 @@ type StepMetric struct {
 	WorkerPool    string `json:"worker_pool,omitempty"`     // worker pool that executes the action.
 
 	// DepsScanTime is the time it took in calculating deps for cmd inputs.
+	// Semaphore waiting time is included, which does not count towards ActionStartTime.
+	// Use ScandepsTime instead if semaphore waiting time should be excluded,
+	// or a measurement that starts within ActionStartTime is required.
 	// TODO: set in reproxy mode too
 	DepsScanTime IntervalMetric `json:"depsscan,omitempty"`
 
@@ -123,6 +126,8 @@ type StepMetric struct {
 	ScandepsStartTime IntervalMetric `json:"scandeps_start,omitempty"`
 	// ScandepsTime is the duration measured from the execution strategy
 	// starting the scandeps process until the scandeps process exited.
+	// Semaphore waiting time is excluded.
+	// Use DepsScanTime instead if semaphore waiting time is desired.
 	ScandepsTime IntervalMetric `json:"scandeps,omitempty"`
 
 	// CacheStartTime is the time it took since build start until
