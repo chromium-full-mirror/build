@@ -73,12 +73,14 @@ func AuthOpts(credHelperPath string, args ...string) Options {
 			Type: "google-application-default",
 			login: func(ctx context.Context) error {
 				cmd := exec.CommandContext(ctx, "gcloud", "auth", "application-default", "login")
+				cmd.Stdin = os.Stdin
 				cmd.Stdout = os.Stdout
 				cmd.Stderr = os.Stderr
 				return cmd.Run()
 			},
 			logout: func(ctx context.Context) error {
 				cmd := exec.CommandContext(ctx, "gcloud", "auth", "application-default", "revoke")
+				cmd.Stdin = os.Stdin
 				cmd.Stdout = os.Stdout
 				cmd.Stderr = os.Stderr
 				return cmd.Run()
@@ -97,6 +99,7 @@ func AuthOpts(credHelperPath string, args ...string) Options {
 		tokenSource = &luciAuthTokenSource{luciAuthPath: credHelperPath, contextArgs: args}
 		login = func(ctx context.Context) error {
 			cmd := exec.CommandContext(ctx, credHelperPath, "login", "--scopes", "https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/cloud-platform")
+			cmd.Stdin = os.Stdin
 			cmd.Stdout = os.Stdout
 			cmd.Stderr = os.Stderr
 			err := cmd.Run()
@@ -107,6 +110,7 @@ func AuthOpts(credHelperPath string, args ...string) Options {
 		}
 		logout = func(ctx context.Context) error {
 			cmd := exec.CommandContext(ctx, credHelperPath, "logout", "--scopes", "https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/cloud-platform")
+			cmd.Stdin = os.Stdin
 			cmd.Stdout = os.Stdout
 			cmd.Stderr = os.Stderr
 			return cmd.Run()
@@ -115,12 +119,14 @@ func AuthOpts(credHelperPath string, args ...string) Options {
 		tokenSource = gcloudTokenSource{}
 		login = func(ctx context.Context) error {
 			cmd := exec.CommandContext(ctx, credHelperPath, "auth", "login", "--update-adc")
+			cmd.Stdin = os.Stdin
 			cmd.Stdout = os.Stdout
 			cmd.Stderr = os.Stderr
 			return cmd.Run()
 		}
 		logout = func(ctx context.Context) error {
 			cmd := exec.CommandContext(ctx, credHelperPath, "auth", "revoke")
+			cmd.Stdin = os.Stdin
 			cmd.Stdout = os.Stdout
 			cmd.Stderr = os.Stderr
 			return cmd.Run()
@@ -133,6 +139,7 @@ func AuthOpts(credHelperPath string, args ...string) Options {
 			login = func(ctx context.Context) error {
 				fmt.Printf("running gcert\n")
 				cmd := exec.CommandContext(ctx, "gcert")
+				cmd.Stdin = os.Stdin
 				cmd.Stdout = os.Stdout
 				cmd.Stderr = os.Stderr
 				return cmd.Run()
@@ -140,6 +147,7 @@ func AuthOpts(credHelperPath string, args ...string) Options {
 			logout = func(ctx context.Context) error {
 				fmt.Printf("running gcertdestroy\n")
 				cmd := exec.CommandContext(ctx, "gcertdestroy")
+				cmd.Stdin = os.Stdin
 				cmd.Stdout = os.Stdout
 				cmd.Stderr = os.Stderr
 				return cmd.Run()
@@ -173,7 +181,7 @@ func (o Options) Logout(ctx context.Context) error {
 // It ensures that the user is logged in and returns an error otherwise.
 func New(ctx context.Context, uri string, opts Options) (Cred, error) {
 	if opts.Type == "" {
-		return Cred{}, fmt.Errorf(`empty credential helper. need to set credential helper path, "luci-auth", "gcloud" or "google-application-default" in SISO_CREDENTIAL_HELPER`)
+		return Cred{}, fmt.Errorf(`empty credential helper. need to set credential helper path, "luci-auth" or "google-application-default" in SISO_CREDENTIAL_HELPER`)
 	}
 	if opts.TokenSource == nil {
 		return Cred{Type: opts.Type}, nil

@@ -48,7 +48,7 @@ Siso supports the `luci-auth` command line tool by
 Note: `luci-auth` might not be available for non Googlers. You'll get "This app
 is blocked" error in auth flow. e.g. https://crbug.com/412384614 .
 
-In this case, try `gcloud` instead.
+In this case, try `google-application-default` instead.
 
 ### Gcloud
 
@@ -58,6 +58,7 @@ sdk](https://cloud.google.com/sdk/gcloud#download_and_install_the).
 
 Note: `gcloud` may not be available for Googlers.
 See [go/siso-auth](http://go/siso-auth).
+Use `google-application-default` instead.
 
 ### Google Application Default Credentials
 
@@ -72,14 +73,14 @@ profiler, cloud tracing, resultstore etc. So,credential helper should return
 valid Google OAuth2 access token for `{"uri":"https://*.googleapis.com/"}`, if
 you use these cloud services.
 
-`luci-auth`, `gcloud` and `google-application-default` are also for Google
+`luci-auth` and `google-application-default` are also for Google
 platform, so it can be used for Google RBE and Google cloud platform.
 
 If you're using a non-Google RE API backend, you'll need to use a credential
 helper (or insecure, mTLS) for your RE API backend.
 
-`siso login` only works for `luci-auth` or `gcloud`.  credential helper will
-need its own login flow.
+`siso login` only works for `luci-auth` or `google-application-default`.
+credential helper will need its own login flow.
 
 ## Check auth status
 

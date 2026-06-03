@@ -47,11 +47,7 @@ func DefaultCredentialHelper() string {
 	if err == nil {
 		return path
 	}
-	path, err = exec.LookPath("gcloud")
-	if err == nil {
-		return path
-	}
-	return ""
+	return "google-application-default"
 }
 
 func checkIfGoogleCredHelperExists() bool {
