@@ -22,6 +22,54 @@ import (
 	"go.chromium.org/build/siso/reapi/digest"
 )
 
+// errReader returns err on every Read.
+type errReader struct{ err error }
+
+func (r errReader) Read([]byte) (int, error) { return 0, r.err }
+
+func TestExpectEOF(t *testing.T) {
+	sentinel := errors.New("read failed")
+	for _, tc := range []struct {
+		name     string
+		r        io.Reader
+		wantEOF  bool  // expectEOF should report a clean EOF (nil)
+		wantErrs error // if non-nil, expectEOF's error must match via errors.Is
+	}{
+		{
+			name:    "clean EOF",
+			r:       bytes.NewReader(nil),
+			wantEOF: true,
+		},
+		{
+			name: "trailing data",
+			r:    bytes.NewReader([]byte("x")),
+		},
+		{
+			name:     "read error",
+			r:        errReader{err: sentinel},
+			wantErrs: sentinel,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := expectEOF(tc.r)
+			switch {
+			case tc.wantEOF:
+				if err != nil {
+					t.Errorf("expectEOF=%v; want nil", err)
+				}
+			case tc.wantErrs != nil:
+				if !errors.Is(err, tc.wantErrs) {
+					t.Errorf("expectEOF=%v; want %v", err, tc.wantErrs)
+				}
+			default:
+				if err == nil {
+					t.Errorf("expectEOF=nil; want trailing-data error")
+				}
+			}
+		})
+	}
+}
+
 func TestCreateBatchUpdateBlobsRequests(t *testing.T) {
 	ctx := t.Context()
 	rnd := rand.NewChaCha8([32]byte{})

@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"strings"
 	"time"
 
@@ -112,6 +113,23 @@ retryLoop:
 					err = status.Errorf(codes.Internal, "op %s response bad type %T: %v", op.GetName(), op.GetResponse(), err)
 					clog.Warningf(ctx, "action digest: %s failed %v", req.ActionDigest, err)
 					return err
+				}
+				// Drain the stream so grpc observes the server's
+				// trailing metadata and EOF, producing a clean
+				// close instead of Canceled when the caller's
+				// context is eventually cancelled. The operation is
+				// already done, so we expect io.EOF next; anything
+				// else is unexpected.
+				for {
+					_, rerr := stream.Recv()
+					if errors.Is(rerr, io.EOF) {
+						break
+					}
+					if rerr != nil {
+						clog.Warningf(ctx, "unexpected error draining exec stream for %s: %v", opName, rerr)
+						break
+					}
+					clog.Warningf(ctx, "unexpected message draining exec stream for %s after op done", opName)
 				}
 				return erespErr(ctx, resp)
 			}

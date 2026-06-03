@@ -127,7 +127,8 @@ func New(ctx context.Context, t *testing.T, fake *Fake) *reapi.Client {
 }
 
 // NewWithOption starts new fake reapi grpc server with reapi option and returns reapi client.
-func NewWithOption(ctx context.Context, t *testing.T, fake *Fake, opt reapi.Option) *reapi.Client {
+// Extra grpc.DialOption values are forwarded to the client connection.
+func NewWithOption(ctx context.Context, t *testing.T, fake *Fake, opt reapi.Option, dialOpts ...grpc.DialOption) *reapi.Client {
 	t.Helper()
 	s := newServer(ctx, t, fake)
 	t.Cleanup(s.Close)
@@ -135,7 +136,8 @@ func NewWithOption(ctx context.Context, t *testing.T, fake *Fake, opt reapi.Opti
 	if opt.Instance == "" {
 		opt.Instance = "projects/siso-test/instances/default_instance"
 	}
-	conn, err := grpc.NewClient(s.addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	dialOpts = append([]grpc.DialOption{grpc.WithTransportCredentials(insecure.NewCredentials())}, dialOpts...)
+	conn, err := grpc.NewClient(s.addr, dialOpts...)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -5,6 +5,7 @@
 package reapi
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"io"
@@ -90,6 +91,7 @@ func (c CacheStore) Source(_ context.Context, d digest.Digest, fname string) dig
 type digestSourceReader struct {
 	r      io.ReadCloser
 	n      int
+	size   int64
 	c      *Client
 	cancel context.CancelFunc
 }
@@ -101,12 +103,18 @@ func (r *digestSourceReader) Read(buf []byte) (int, error) {
 }
 
 func (r *digestSourceReader) Close() error {
-	err := r.r.Close()
-	r.c.m.ReadDone(r.n, err)
+	// On a partial read the consumer gave up early, so skip the EOF check
+	// and cancel directly instead of draining a possibly large residual.
+	var eofErr error
+	if int64(r.n) == r.size {
+		eofErr = expectEOF(r.r)
+	}
+	closeErr := r.r.Close()
+	r.c.m.ReadDone(r.n, cmp.Or(closeErr, eofErr))
 	if r.cancel != nil {
 		r.cancel()
 	}
-	return err
+	return closeErr
 }
 
 type digestSource struct {
@@ -133,7 +141,7 @@ func (s digestSource) Open(ctx context.Context) (io.ReadCloser, error) {
 		s.c.m.ReadDone(0, err)
 		return nil, err
 	}
-	return &digestSourceReader{r: rd, c: s.c, cancel: cancel}, err
+	return &digestSourceReader{r: rd, size: s.d.SizeBytes, c: s.c, cancel: cancel}, err
 }
 
 func (s digestSource) String() string {

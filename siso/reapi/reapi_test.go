@@ -10,18 +10,24 @@ import (
 	"fmt"
 	"math/rand"
 	"net"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
+	"cloud.google.com/go/longrunning/autogen/longrunningpb"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/keepalive"
 	"google.golang.org/grpc/reflection"
+	"google.golang.org/grpc/stats"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/anypb"
 
 	rpb "go.chromium.org/build/remote-apis/build/bazel/remote/execution/v2"
 
+	"go.chromium.org/build/siso/auth/cred"
 	"go.chromium.org/build/siso/reapi"
 	"go.chromium.org/build/siso/reapi/digest"
 	"go.chromium.org/build/siso/reapi/reapitest"
@@ -242,5 +248,146 @@ func TestUploadAllWithCompression(t *testing.T) {
 	b, err = cl.Get(ctx, ld.Digest(), ld.String())
 	if !bytes.Equal(b, largeBlob) || err != nil {
 		t.Errorf("cl.Get()=_,%v: want _,nil", err)
+	}
+}
+
+// canceledCounter is a minimal grpc stats handler that counts RPCs
+// completing with codes.Canceled, without depending on any
+// siso-specific metrics infrastructure.
+type canceledCounter struct {
+	canceled atomic.Int64
+	wg       sync.WaitGroup
+}
+
+func (c *canceledCounter) TagRPC(ctx context.Context, _ *stats.RPCTagInfo) context.Context {
+	c.wg.Add(1)
+	return ctx
+}
+func (c *canceledCounter) HandleRPC(_ context.Context, s stats.RPCStats) {
+	if end, ok := s.(*stats.End); ok {
+		if end.Error != nil && status.Code(end.Error) == codes.Canceled {
+			c.canceled.Add(1)
+		}
+		c.wg.Done()
+	}
+}
+func (c *canceledCounter) TagConn(ctx context.Context, _ *stats.ConnTagInfo) context.Context {
+	return ctx
+}
+func (c *canceledCounter) HandleConn(context.Context, stats.ConnStats) {}
+
+// fakeExecServer sends one pending op then one done op.
+// Used by TestExecuteStream_NoCanceledOnSuccess.
+type fakeExecServer struct {
+	rpb.UnimplementedExecutionServer
+}
+
+func (s *fakeExecServer) Execute(_ *rpb.ExecuteRequest, stream rpb.Execution_ExecuteServer) error {
+	mdAny, _ := anypb.New(&rpb.ExecuteOperationMetadata{
+		Stage: rpb.ExecutionStage_QUEUED,
+	})
+	if err := stream.Send(&longrunningpb.Operation{
+		Name:     "op/1",
+		Done:     false,
+		Metadata: mdAny,
+	}); err != nil {
+		return err
+	}
+	respAny, _ := anypb.New(&rpb.ExecuteResponse{
+		Result: &rpb.ActionResult{ExitCode: 0},
+	})
+	return stream.Send(&longrunningpb.Operation{
+		Name:   "op/1",
+		Done:   true,
+		Result: &longrunningpb.Operation_Response{Response: respAny},
+	})
+}
+
+// TestExecuteStream_NoCanceledOnSuccess verifies that a successful
+// Execute call does not report Canceled to the server. Without the
+// stream drain, the caller's deferred context cancel tears the stream
+// down before grpc observes the server's trailing EOF.
+func TestExecuteStream_NoCanceledOnSuccess(t *testing.T) {
+	ctx := t.Context()
+
+	lis, err := net.Listen("tcp", "localhost:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := grpc.NewServer()
+	rpb.RegisterExecutionServer(srv, &fakeExecServer{})
+	go srv.Serve(lis)
+	t.Cleanup(srv.Stop)
+
+	cc := &canceledCounter{}
+	conn, err := grpc.NewClient(lis.Addr().String(),
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithStatsHandler(cc),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { conn.Close() })
+
+	cl, err := reapi.NewFromConn(ctx, reapi.Option{
+		Instance:       "test",
+		KeepExecStream: true,
+	}, cred.Cred{}, conn, conn)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	execCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	_, _, err = cl.ExecuteAndWait(execCtx, &rpb.ExecuteRequest{
+		ActionDigest:    &rpb.Digest{Hash: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"},
+		SkipCacheLookup: true,
+	})
+	// Cancel after the call returns. Without the drain fix, this
+	// tears down the stream as Canceled.
+	cancel()
+	if err != nil {
+		t.Fatalf("ExecuteAndWait: %v", err)
+	}
+
+	cc.wg.Wait()
+
+	if got := cc.canceled.Load(); got != 0 {
+		t.Errorf("Execute completed with %d Canceled errors, want 0", got)
+	}
+}
+
+// TestByteStreamRead_NoCanceledOnSuccess verifies that a successful
+// ByteStream.Read (via Client.Get on a blob routed through ByteStream)
+// does not report Canceled to the server. Without the stream drain,
+// the context cancel after io.ReadFull tears the stream down before
+// grpc observes EOF.
+func TestByteStreamRead_NoCanceledOnSuccess(t *testing.T) {
+	ctx := t.Context()
+
+	cc := &canceledCounter{}
+	cl := reapitest.NewWithOption(ctx, t, &reapitest.Fake{}, reapi.Option{
+		ByteStreamReadThreshold: 1,
+	}, grpc.WithStatsHandler(cc))
+
+	blob := []byte("test blob for bytestream read")
+	ds := digest.NewStore()
+	d := digest.FromBytes("test-blob", blob)
+	ds.Set(d)
+	if _, err := cl.UploadAll(ctx, ds); err != nil {
+		t.Fatalf("UploadAll: %v", err)
+	}
+
+	got, err := cl.Get(ctx, d.Digest(), "test-blob")
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if !bytes.Equal(got, blob) {
+		t.Fatalf("Get returned wrong data")
+	}
+
+	cc.wg.Wait()
+
+	if got := cc.canceled.Load(); got != 0 {
+		t.Errorf("ByteStream.Read completed with %d Canceled errors, want 0", got)
 	}
 }

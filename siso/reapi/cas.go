@@ -356,6 +356,21 @@ func (c *Client) getWithBatchReadBlobs(ctx context.Context, d digest.Digest, nam
 	return resp.Responses[0].Data, nil
 }
 
+// expectEOF verifies that r yields no more data before EOF. After a blob of
+// known size has been fully read, the stream must be at EOF; a trailing byte
+// means the server sent more than the digest declares, i.e. a blob that does
+// not match the requested digest.
+func expectEOF(r io.Reader) error {
+	switch n, err := io.CopyN(io.Discard, r, 1); {
+	case n > 0:
+		return errors.New("stream has trailing data past digest size")
+	case errors.Is(err, io.EOF):
+		return nil
+	default:
+		return err
+	}
+}
+
 // getWithByteStream fetches the content of blob using the ByteStream API
 func (c *Client) getWithByteStream(ctx context.Context, d digest.Digest, name string) ([]byte, error) {
 	started := time.Now()
@@ -382,6 +397,9 @@ func (c *Client) getWithByteStream(ctx context.Context, d digest.Digest, name st
 		c.m.ReadDone(n, err)
 		if err != nil {
 			return err
+		}
+		if err := expectEOF(rd); err != nil {
+			clog.Warningf(ctx, "blob %s for %s: %v", d, name, err)
 		}
 		return nil
 	})
