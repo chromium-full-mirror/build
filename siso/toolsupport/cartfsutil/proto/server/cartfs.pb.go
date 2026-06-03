@@ -638,14 +638,19 @@ func (x *GetDigestResponse) GetSize() uint64 {
 
 type FileRegistrationInfo struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// The full path of the file from the root of the cartfs mount.
+	// Path of the file within the CartFs mount point.
+	// Both relative (e.g., "a/b/c") and leading slash paths (e.g., "/a/b/c")
+	// are supported and strictly resolved relative to the VFS mount root.
+	// Parent directory traversals (..) are rejected for safety.
 	Path string `protobuf:"bytes,1,opt,name=path,proto3" json:"path,omitempty"`
 	// The hash of the file.  Currently this is a sha256 hash.
 	Hash string `protobuf:"bytes,2,opt,name=hash,proto3" json:"hash,omitempty"`
 	// The size of the file in bytes.
 	Size uint64 `protobuf:"varint,3,opt,name=size,proto3" json:"size,omitempty"`
 	// The urgency with which the content should be pulled from the remote CAS.
-	Urgency       ContentPullUrgency `protobuf:"varint,4,opt,name=urgency,proto3,enum=cartfs.ContentPullUrgency" json:"urgency,omitempty"`
+	Urgency ContentPullUrgency `protobuf:"varint,4,opt,name=urgency,proto3,enum=cartfs.ContentPullUrgency" json:"urgency,omitempty"`
+	// Whether the file is executable.
+	IsExecutable  bool `protobuf:"varint,5,opt,name=is_executable,json=isExecutable,proto3" json:"is_executable,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -706,6 +711,13 @@ func (x *FileRegistrationInfo) GetUrgency() ContentPullUrgency {
 		return x.Urgency
 	}
 	return ContentPullUrgency_CONTENT_PULL_URGENCY_UNSPECIFIED
+}
+
+func (x *FileRegistrationInfo) GetIsExecutable() bool {
+	if x != nil {
+		return x.IsExecutable
+	}
+	return false
 }
 
 type RegisterFilesRequest struct {
@@ -848,6 +860,141 @@ func (x *RegisterFilesResponse) GetErrors() []*RegistrationError {
 	return nil
 }
 
+type CreateWorkspaceRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// GoB repo name, e.g. googleplex-android/platform/manifest.
+	// TODO - myriamanis: Ensure it's working for repo url as well as GoB repo name.
+	RepoId          string `protobuf:"bytes,1,opt,name=repo_id,json=repoId,proto3" json:"repo_id,omitempty"`
+	RefOrCommitHash string `protobuf:"bytes,2,opt,name=ref_or_commit_hash,json=refOrCommitHash,proto3" json:"ref_or_commit_hash,omitempty"`
+	// e.g. projects/git-workspaces-rbe-614681/instances/default_instance.
+	RbeCasInstance string `protobuf:"bytes,3,opt,name=rbe_cas_instance,json=rbeCasInstance,proto3" json:"rbe_cas_instance,omitempty"`
+	// The name of the workspace.
+	WorkspaceName string `protobuf:"bytes,4,opt,name=workspace_name,json=workspaceName,proto3" json:"workspace_name,omitempty"`
+	// If set, will attempt to materialise from repo manifest file in the commit identified
+	// by `repo_id` and `ref_or_commit_hash`.
+	ManifestFilePath string `protobuf:"bytes,5,opt,name=manifest_file_path,json=manifestFilePath,proto3" json:"manifest_file_path,omitempty"`
+	// Workspace context fields
+	Uid           uint32 `protobuf:"varint,6,opt,name=uid,proto3" json:"uid,omitempty"`
+	Gid           uint32 `protobuf:"varint,7,opt,name=gid,proto3" json:"gid,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CreateWorkspaceRequest) Reset() {
+	*x = CreateWorkspaceRequest{}
+	mi := &file_proto_server_cartfs_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CreateWorkspaceRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CreateWorkspaceRequest) ProtoMessage() {}
+
+func (x *CreateWorkspaceRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_server_cartfs_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CreateWorkspaceRequest.ProtoReflect.Descriptor instead.
+func (*CreateWorkspaceRequest) Descriptor() ([]byte, []int) {
+	return file_proto_server_cartfs_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *CreateWorkspaceRequest) GetRepoId() string {
+	if x != nil {
+		return x.RepoId
+	}
+	return ""
+}
+
+func (x *CreateWorkspaceRequest) GetRefOrCommitHash() string {
+	if x != nil {
+		return x.RefOrCommitHash
+	}
+	return ""
+}
+
+func (x *CreateWorkspaceRequest) GetRbeCasInstance() string {
+	if x != nil {
+		return x.RbeCasInstance
+	}
+	return ""
+}
+
+func (x *CreateWorkspaceRequest) GetWorkspaceName() string {
+	if x != nil {
+		return x.WorkspaceName
+	}
+	return ""
+}
+
+func (x *CreateWorkspaceRequest) GetManifestFilePath() string {
+	if x != nil {
+		return x.ManifestFilePath
+	}
+	return ""
+}
+
+func (x *CreateWorkspaceRequest) GetUid() uint32 {
+	if x != nil {
+		return x.Uid
+	}
+	return 0
+}
+
+func (x *CreateWorkspaceRequest) GetGid() uint32 {
+	if x != nil {
+		return x.Gid
+	}
+	return 0
+}
+
+type CreateWorkspaceResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CreateWorkspaceResponse) Reset() {
+	*x = CreateWorkspaceResponse{}
+	mi := &file_proto_server_cartfs_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CreateWorkspaceResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CreateWorkspaceResponse) ProtoMessage() {}
+
+func (x *CreateWorkspaceResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_server_cartfs_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CreateWorkspaceResponse.ProtoReflect.Descriptor instead.
+func (*CreateWorkspaceResponse) Descriptor() ([]byte, []int) {
+	return file_proto_server_cartfs_proto_rawDescGZIP(), []int{15}
+}
+
 var File_proto_server_cartfs_proto protoreflect.FileDescriptor
 
 const file_proto_server_cartfs_proto_rawDesc = "" +
@@ -879,19 +1026,29 @@ const file_proto_server_cartfs_proto_rawDesc = "" +
 	"identifier\";\n" +
 	"\x11GetDigestResponse\x12\x12\n" +
 	"\x04hash\x18\x01 \x01(\tR\x04hash\x12\x12\n" +
-	"\x04size\x18\x02 \x01(\x04R\x04size\"\x88\x01\n" +
+	"\x04size\x18\x02 \x01(\x04R\x04size\"\xad\x01\n" +
 	"\x14FileRegistrationInfo\x12\x12\n" +
 	"\x04path\x18\x01 \x01(\tR\x04path\x12\x12\n" +
 	"\x04hash\x18\x02 \x01(\tR\x04hash\x12\x12\n" +
 	"\x04size\x18\x03 \x01(\x04R\x04size\x124\n" +
-	"\aurgency\x18\x04 \x01(\x0e2\x1a.cartfs.ContentPullUrgencyR\aurgency\"Z\n" +
+	"\aurgency\x18\x04 \x01(\x0e2\x1a.cartfs.ContentPullUrgencyR\aurgency\x12#\n" +
+	"\ris_executable\x18\x05 \x01(\bR\fisExecutable\"Z\n" +
 	"\x14RegisterFilesRequest\x12B\n" +
 	"\rregistrations\x18\x01 \x03(\v2\x1c.cartfs.FileRegistrationInfoR\rregistrations\"L\n" +
 	"\x11RegistrationError\x12\x12\n" +
 	"\x04path\x18\x01 \x01(\tR\x04path\x12#\n" +
 	"\rerror_message\x18\x02 \x01(\tR\ferrorMessage\"J\n" +
 	"\x15RegisterFilesResponse\x121\n" +
-	"\x06errors\x18\x01 \x03(\v2\x19.cartfs.RegistrationErrorR\x06errors*x\n" +
+	"\x06errors\x18\x01 \x03(\v2\x19.cartfs.RegistrationErrorR\x06errors\"\x81\x02\n" +
+	"\x16CreateWorkspaceRequest\x12\x17\n" +
+	"\arepo_id\x18\x01 \x01(\tR\x06repoId\x12+\n" +
+	"\x12ref_or_commit_hash\x18\x02 \x01(\tR\x0frefOrCommitHash\x12(\n" +
+	"\x10rbe_cas_instance\x18\x03 \x01(\tR\x0erbeCasInstance\x12%\n" +
+	"\x0eworkspace_name\x18\x04 \x01(\tR\rworkspaceName\x12,\n" +
+	"\x12manifest_file_path\x18\x05 \x01(\tR\x10manifestFilePath\x12\x10\n" +
+	"\x03uid\x18\x06 \x01(\rR\x03uid\x12\x10\n" +
+	"\x03gid\x18\a \x01(\rR\x03gid\"\x19\n" +
+	"\x17CreateWorkspaceResponse*x\n" +
 	"\vCartfsState\x12\x15\n" +
 	"\x11STATE_UNSPECIFIED\x10\x00\x12\x15\n" +
 	"\x11STATE_STARTING_UP\x10\x01\x12\x11\n" +
@@ -902,7 +1059,7 @@ const file_proto_server_cartfs_proto_rawDesc = "" +
 	" CONTENT_PULL_URGENCY_UNSPECIFIED\x10\x00\x12\"\n" +
 	"\x1eCONTENT_PULL_URGENCY_IMMEDIATE\x10\x01\x12\x1f\n" +
 	"\x1bCONTENT_PULL_URGENCY_QUEUED\x10\x02\x12\"\n" +
-	"\x1eCONTENT_PULL_URGENCY_ON_ACCESS\x10\x032\xe2\x05\n" +
+	"\x1eCONTENT_PULL_URGENCY_ON_ACCESS\x10\x032\xb8\x06\n" +
 	"\x06Cartfs\x12N\n" +
 	"\rCopyDirectory\x12\x1c.cartfs.CopyDirectoryRequest\x1a\x1d.cartfs.CopyDirectoryResponse\"\x00\x12?\n" +
 	"\bAuditLog\x12\x17.cartfs.AuditLogRequest\x1a\x18.cartfs.AuditLogResponse\"\x00\x12?\n" +
@@ -912,7 +1069,8 @@ const file_proto_server_cartfs_proto_rawDesc = "" +
 	"\rRegisterFiles\x12\x1c.cartfs.RegisterFilesRequest\x1a\x1d.cartfs.RegisterFilesResponse\"\x00\x12L\n" +
 	"\x0fStartTapSession\x12\x1e.cartfs.StartTapSessionRequest\x1a\x15.cartfs.TapEventBatch\"\x000\x01\x12W\n" +
 	"\x10FinishTapSession\x12\x1f.cartfs.FinishTapSessionRequest\x1a .cartfs.FinishTapSessionResponse\"\x00\x12x\n" +
-	"\x1bExcludeProcessGroupFromTaps\x12*.cartfs.ExcludeProcessGroupFromTapsRequest\x1a+.cartfs.ExcludeProcessGroupFromTapsResponse\"\x00B@Z>go.chromium.org/build/siso/toolsupport/cartfsutil/proto/serverb\x06proto3"
+	"\x1bExcludeProcessGroupFromTaps\x12*.cartfs.ExcludeProcessGroupFromTapsRequest\x1a+.cartfs.ExcludeProcessGroupFromTapsResponse\"\x00\x12T\n" +
+	"\x0fCreateWorkspace\x12\x1e.cartfs.CreateWorkspaceRequest\x1a\x1f.cartfs.CreateWorkspaceResponse\"\x00B@Z>go.chromium.org/build/siso/toolsupport/cartfsutil/proto/serverb\x06proto3"
 
 var (
 	file_proto_server_cartfs_proto_rawDescOnce sync.Once
@@ -927,7 +1085,7 @@ func file_proto_server_cartfs_proto_rawDescGZIP() []byte {
 }
 
 var file_proto_server_cartfs_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_proto_server_cartfs_proto_msgTypes = make([]protoimpl.MessageInfo, 14)
+var file_proto_server_cartfs_proto_msgTypes = make([]protoimpl.MessageInfo, 16)
 var file_proto_server_cartfs_proto_goTypes = []any{
 	(CartfsState)(0),                            // 0: cartfs.CartfsState
 	(ContentPullUrgency)(0),                     // 1: cartfs.ContentPullUrgency
@@ -945,12 +1103,14 @@ var file_proto_server_cartfs_proto_goTypes = []any{
 	(*RegisterFilesRequest)(nil),                // 13: cartfs.RegisterFilesRequest
 	(*RegistrationError)(nil),                   // 14: cartfs.RegistrationError
 	(*RegisterFilesResponse)(nil),               // 15: cartfs.RegisterFilesResponse
-	(*StartTapSessionRequest)(nil),              // 16: cartfs.StartTapSessionRequest
-	(*FinishTapSessionRequest)(nil),             // 17: cartfs.FinishTapSessionRequest
-	(*ExcludeProcessGroupFromTapsRequest)(nil),  // 18: cartfs.ExcludeProcessGroupFromTapsRequest
-	(*TapEventBatch)(nil),                       // 19: cartfs.TapEventBatch
-	(*FinishTapSessionResponse)(nil),            // 20: cartfs.FinishTapSessionResponse
-	(*ExcludeProcessGroupFromTapsResponse)(nil), // 21: cartfs.ExcludeProcessGroupFromTapsResponse
+	(*CreateWorkspaceRequest)(nil),              // 16: cartfs.CreateWorkspaceRequest
+	(*CreateWorkspaceResponse)(nil),             // 17: cartfs.CreateWorkspaceResponse
+	(*StartTapSessionRequest)(nil),              // 18: cartfs.StartTapSessionRequest
+	(*FinishTapSessionRequest)(nil),             // 19: cartfs.FinishTapSessionRequest
+	(*ExcludeProcessGroupFromTapsRequest)(nil),  // 20: cartfs.ExcludeProcessGroupFromTapsRequest
+	(*TapEventBatch)(nil),                       // 21: cartfs.TapEventBatch
+	(*FinishTapSessionResponse)(nil),            // 22: cartfs.FinishTapSessionResponse
+	(*ExcludeProcessGroupFromTapsResponse)(nil), // 23: cartfs.ExcludeProcessGroupFromTapsResponse
 }
 var file_proto_server_cartfs_proto_depIdxs = []int32{
 	0,  // 0: cartfs.GetStateResponse.state:type_name -> cartfs.CartfsState
@@ -963,20 +1123,22 @@ var file_proto_server_cartfs_proto_depIdxs = []int32{
 	8,  // 7: cartfs.Cartfs.LocalCASStatus:input_type -> cartfs.LocalCASStatusRequest
 	10, // 8: cartfs.Cartfs.GetDigest:input_type -> cartfs.GetDigestRequest
 	13, // 9: cartfs.Cartfs.RegisterFiles:input_type -> cartfs.RegisterFilesRequest
-	16, // 10: cartfs.Cartfs.StartTapSession:input_type -> cartfs.StartTapSessionRequest
-	17, // 11: cartfs.Cartfs.FinishTapSession:input_type -> cartfs.FinishTapSessionRequest
-	18, // 12: cartfs.Cartfs.ExcludeProcessGroupFromTaps:input_type -> cartfs.ExcludeProcessGroupFromTapsRequest
-	2,  // 13: cartfs.Cartfs.CopyDirectory:output_type -> cartfs.CopyDirectoryResponse
-	5,  // 14: cartfs.Cartfs.AuditLog:output_type -> cartfs.AuditLogResponse
-	7,  // 15: cartfs.Cartfs.GetState:output_type -> cartfs.GetStateResponse
-	9,  // 16: cartfs.Cartfs.LocalCASStatus:output_type -> cartfs.LocalCASStatusResponse
-	11, // 17: cartfs.Cartfs.GetDigest:output_type -> cartfs.GetDigestResponse
-	15, // 18: cartfs.Cartfs.RegisterFiles:output_type -> cartfs.RegisterFilesResponse
-	19, // 19: cartfs.Cartfs.StartTapSession:output_type -> cartfs.TapEventBatch
-	20, // 20: cartfs.Cartfs.FinishTapSession:output_type -> cartfs.FinishTapSessionResponse
-	21, // 21: cartfs.Cartfs.ExcludeProcessGroupFromTaps:output_type -> cartfs.ExcludeProcessGroupFromTapsResponse
-	13, // [13:22] is the sub-list for method output_type
-	4,  // [4:13] is the sub-list for method input_type
+	18, // 10: cartfs.Cartfs.StartTapSession:input_type -> cartfs.StartTapSessionRequest
+	19, // 11: cartfs.Cartfs.FinishTapSession:input_type -> cartfs.FinishTapSessionRequest
+	20, // 12: cartfs.Cartfs.ExcludeProcessGroupFromTaps:input_type -> cartfs.ExcludeProcessGroupFromTapsRequest
+	16, // 13: cartfs.Cartfs.CreateWorkspace:input_type -> cartfs.CreateWorkspaceRequest
+	2,  // 14: cartfs.Cartfs.CopyDirectory:output_type -> cartfs.CopyDirectoryResponse
+	5,  // 15: cartfs.Cartfs.AuditLog:output_type -> cartfs.AuditLogResponse
+	7,  // 16: cartfs.Cartfs.GetState:output_type -> cartfs.GetStateResponse
+	9,  // 17: cartfs.Cartfs.LocalCASStatus:output_type -> cartfs.LocalCASStatusResponse
+	11, // 18: cartfs.Cartfs.GetDigest:output_type -> cartfs.GetDigestResponse
+	15, // 19: cartfs.Cartfs.RegisterFiles:output_type -> cartfs.RegisterFilesResponse
+	21, // 20: cartfs.Cartfs.StartTapSession:output_type -> cartfs.TapEventBatch
+	22, // 21: cartfs.Cartfs.FinishTapSession:output_type -> cartfs.FinishTapSessionResponse
+	23, // 22: cartfs.Cartfs.ExcludeProcessGroupFromTaps:output_type -> cartfs.ExcludeProcessGroupFromTapsResponse
+	17, // 23: cartfs.Cartfs.CreateWorkspace:output_type -> cartfs.CreateWorkspaceResponse
+	14, // [14:24] is the sub-list for method output_type
+	4,  // [4:14] is the sub-list for method input_type
 	4,  // [4:4] is the sub-list for extension type_name
 	4,  // [4:4] is the sub-list for extension extendee
 	0,  // [0:4] is the sub-list for field type_name
@@ -998,7 +1160,7 @@ func file_proto_server_cartfs_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_server_cartfs_proto_rawDesc), len(file_proto_server_cartfs_proto_rawDesc)),
 			NumEnums:      2,
-			NumMessages:   14,
+			NumMessages:   16,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

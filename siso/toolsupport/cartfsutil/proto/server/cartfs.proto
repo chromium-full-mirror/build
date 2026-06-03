@@ -2,9 +2,9 @@ syntax = "proto3";
 
 package cartfs;
 
-import "proto/server/tap.proto";
-
 option go_package = "go.chromium.org/build/siso/toolsupport/cartfsutil/proto/server";
+
+import "proto/server/tap.proto";
 
 service Cartfs {
     // Copy a directory and its contents.
@@ -40,6 +40,9 @@ service Cartfs {
 
     // Excludes a process group from having tap events created for it.
     rpc ExcludeProcessGroupFromTaps(ExcludeProcessGroupFromTapsRequest) returns (ExcludeProcessGroupFromTapsResponse) {}
+
+    // Creates a new workspace.
+    rpc CreateWorkspace(CreateWorkspaceRequest) returns (CreateWorkspaceResponse) {}
 }
 
 enum CartfsState {
@@ -110,7 +113,10 @@ enum ContentPullUrgency {
 }
 
 message FileRegistrationInfo {
-    // The full path of the file from the root of the cartfs mount.
+    // Path of the file within the CartFs mount point.
+    // Both relative (e.g., "a/b/c") and leading slash paths (e.g., "/a/b/c")
+    // are supported and strictly resolved relative to the VFS mount root.
+    // Parent directory traversals (..) are rejected for safety.
     string path = 1;
     // The hash of the file.  Currently this is a sha256 hash.
     string hash = 2;
@@ -118,6 +124,8 @@ message FileRegistrationInfo {
     uint64 size = 3;
     // The urgency with which the content should be pulled from the remote CAS.
     ContentPullUrgency urgency = 4;
+    // Whether the file is executable.
+    bool is_executable = 5;
 }
 
 message RegisterFilesRequest {
@@ -132,3 +140,24 @@ message RegistrationError {
 message RegisterFilesResponse {
     repeated RegistrationError errors = 1;
 }
+
+message CreateWorkspaceRequest {
+    // GoB repo name, e.g. googleplex-android/platform/manifest.
+    // TODO - myriamanis: Ensure it's working for repo url as well as GoB repo name.
+    string repo_id = 1;
+    string ref_or_commit_hash = 2;
+    // e.g. projects/git-workspaces-rbe-614681/instances/default_instance.
+    string rbe_cas_instance = 3;
+    // The name of the workspace.
+    string workspace_name = 4;
+    // If set, will attempt to materialise from repo manifest file in the commit identified
+    // by `repo_id` and `ref_or_commit_hash`. 
+    string manifest_file_path = 5;
+
+    // Workspace context fields
+    uint32 uid = 6;
+    uint32 gid = 7;
+}
+
+message CreateWorkspaceResponse {}
+

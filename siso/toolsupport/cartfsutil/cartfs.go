@@ -99,10 +99,11 @@ func (c *Client) RegisterFiles(ctx context.Context, dir string, entries []*Regis
 			urgency = cartfspb.ContentPullUrgency_CONTENT_PULL_URGENCY_ON_ACCESS
 		}
 		req.Registrations = append(req.Registrations, &cartfspb.FileRegistrationInfo{
-			Path:    relpath,
-			Hash:    d.Hash,
-			Size:    uint64(d.SizeBytes),
-			Urgency: urgency,
+			Path:         relpath,
+			Hash:         d.Hash,
+			Size:         uint64(d.SizeBytes),
+			Urgency:      urgency,
+			IsExecutable: ent.Entry.IsExecutable,
 		})
 	}
 	resp, err := c.client.RegisterFiles(ctx, req)

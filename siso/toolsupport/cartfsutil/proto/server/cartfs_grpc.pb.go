@@ -28,6 +28,7 @@ const (
 	Cartfs_StartTapSession_FullMethodName             = "/cartfs.Cartfs/StartTapSession"
 	Cartfs_FinishTapSession_FullMethodName            = "/cartfs.Cartfs/FinishTapSession"
 	Cartfs_ExcludeProcessGroupFromTaps_FullMethodName = "/cartfs.Cartfs/ExcludeProcessGroupFromTaps"
+	Cartfs_CreateWorkspace_FullMethodName             = "/cartfs.Cartfs/CreateWorkspace"
 )
 
 // CartfsClient is the client API for Cartfs service.
@@ -59,6 +60,8 @@ type CartfsClient interface {
 	FinishTapSession(ctx context.Context, in *FinishTapSessionRequest, opts ...grpc.CallOption) (*FinishTapSessionResponse, error)
 	// Excludes a process group from having tap events created for it.
 	ExcludeProcessGroupFromTaps(ctx context.Context, in *ExcludeProcessGroupFromTapsRequest, opts ...grpc.CallOption) (*ExcludeProcessGroupFromTapsResponse, error)
+	// Creates a new workspace.
+	CreateWorkspace(ctx context.Context, in *CreateWorkspaceRequest, opts ...grpc.CallOption) (*CreateWorkspaceResponse, error)
 }
 
 type cartfsClient struct {
@@ -168,6 +171,16 @@ func (c *cartfsClient) ExcludeProcessGroupFromTaps(ctx context.Context, in *Excl
 	return out, nil
 }
 
+func (c *cartfsClient) CreateWorkspace(ctx context.Context, in *CreateWorkspaceRequest, opts ...grpc.CallOption) (*CreateWorkspaceResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CreateWorkspaceResponse)
+	err := c.cc.Invoke(ctx, Cartfs_CreateWorkspace_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // CartfsServer is the server API for Cartfs service.
 // All implementations must embed UnimplementedCartfsServer
 // for forward compatibility.
@@ -197,6 +210,8 @@ type CartfsServer interface {
 	FinishTapSession(context.Context, *FinishTapSessionRequest) (*FinishTapSessionResponse, error)
 	// Excludes a process group from having tap events created for it.
 	ExcludeProcessGroupFromTaps(context.Context, *ExcludeProcessGroupFromTapsRequest) (*ExcludeProcessGroupFromTapsResponse, error)
+	// Creates a new workspace.
+	CreateWorkspace(context.Context, *CreateWorkspaceRequest) (*CreateWorkspaceResponse, error)
 	mustEmbedUnimplementedCartfsServer()
 }
 
@@ -233,6 +248,9 @@ func (UnimplementedCartfsServer) FinishTapSession(context.Context, *FinishTapSes
 }
 func (UnimplementedCartfsServer) ExcludeProcessGroupFromTaps(context.Context, *ExcludeProcessGroupFromTapsRequest) (*ExcludeProcessGroupFromTapsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ExcludeProcessGroupFromTaps not implemented")
+}
+func (UnimplementedCartfsServer) CreateWorkspace(context.Context, *CreateWorkspaceRequest) (*CreateWorkspaceResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CreateWorkspace not implemented")
 }
 func (UnimplementedCartfsServer) mustEmbedUnimplementedCartfsServer() {}
 func (UnimplementedCartfsServer) testEmbeddedByValue()                {}
@@ -410,6 +428,24 @@ func _Cartfs_ExcludeProcessGroupFromTaps_Handler(srv interface{}, ctx context.Co
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Cartfs_CreateWorkspace_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateWorkspaceRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CartfsServer).CreateWorkspace(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Cartfs_CreateWorkspace_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CartfsServer).CreateWorkspace(ctx, req.(*CreateWorkspaceRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Cartfs_ServiceDesc is the grpc.ServiceDesc for Cartfs service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -448,6 +484,10 @@ var Cartfs_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ExcludeProcessGroupFromTaps",
 			Handler:    _Cartfs_ExcludeProcessGroupFromTaps_Handler,
+		},
+		{
+			MethodName: "CreateWorkspace",
+			Handler:    _Cartfs_CreateWorkspace_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{
