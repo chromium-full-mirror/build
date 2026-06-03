@@ -11,6 +11,7 @@ import (
 	"maps"
 	"path"
 	"slices"
+	"strings"
 
 	"go.chromium.org/build/gong/gn/build/fs"
 	"go.chromium.org/build/gong/gn/build/graph"
@@ -34,6 +35,8 @@ type CxxInfo struct {
 	LibFlags []string
 	// LibraryFiles specifies compiled libraries for linking.
 	LibraryFiles []fs.OutputPath
+	// Frameworks specifies frameworks to link against.
+	Frameworks []string
 }
 
 type sourceFileType int
@@ -139,6 +142,19 @@ func formatLibExpansions(libs []string) []string {
 	return out
 }
 
+// formatFrameworkExpansions returns the frameworks formatted into Apple linker flags, without escaping or joining.
+func formatFrameworkExpansions(frameworks []string) []string {
+	if len(frameworks) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(frameworks)*2)
+	for _, f := range frameworks {
+		name, _ := strings.CutSuffix(f, ".framework")
+		out = append(out, "-framework", name)
+	}
+	return out
+}
+
 // collectLibs returns all libraries to link against, including those from dependencies.
 func collectLibs(ctx graph.ResolverContext) ([]string, error) {
 	libs := slices.Clone(ctx.ConfigValues.Libs)
@@ -151,6 +167,20 @@ func collectLibs(ctx graph.ResolverContext) ([]string, error) {
 		}
 	}
 	return libs, nil
+}
+
+// collectFrameworks returns all frameworks to link against, including those from dependencies.
+func collectFrameworks(ctx graph.ResolverContext) ([]string, error) {
+	frameworks := slices.Clone(ctx.ConfigValues.Frameworks)
+	for dep, err := range ctx.ResolvedTargetsFor("deps") {
+		if err != nil {
+			return nil, fmt.Errorf("failed to collect deps: %w", err)
+		}
+		if ccInfo, ok := dep.Metadata.(CxxInfo); ok {
+			frameworks = append(frameworks, ccInfo.Frameworks...)
+		}
+	}
+	return frameworks, nil
 }
 
 var (
@@ -286,6 +316,10 @@ var (
 			if err != nil {
 				return nil, err
 			}
+			frameworks, err := collectFrameworks(ctx)
+			if err != nil {
+				return nil, err
+			}
 			out, err := ctx.DeclareTool(
 				"solink",
 				fs.SourceFile{},
@@ -295,7 +329,7 @@ var (
 					// TODO: fill these out.
 					"ldflags":      ctx.ConfigValues.Ldflags,
 					"libs":         formatLibExpansions(libs),
-					"frameworks":   nil,
+					"frameworks":   formatFrameworkExpansions(frameworks),
 					"swiftmodules": nil,
 				}},
 			)
@@ -305,6 +339,7 @@ var (
 			return CxxInfo{
 				DefaultMetadata: DefaultMetadata{[]fs.OutputPath{out}},
 				LibFlags:        nil, // do not propagate libs
+				Frameworks:      nil, // do not propagate frameworks
 			}, nil
 		},
 	}
@@ -389,6 +424,10 @@ var (
 			if err != nil {
 				return nil, err
 			}
+			frameworks, err := collectFrameworks(ctx)
+			if err != nil {
+				return nil, err
+			}
 			out, err := ctx.DeclareTool(
 				"alink",
 				fs.SourceFile{},
@@ -406,6 +445,7 @@ var (
 				DefaultMetadata: DefaultMetadata{[]fs.OutputPath{out}},
 				LibFlags:        libs,
 				LibraryFiles:    []fs.OutputPath{out},
+				Frameworks:      frameworks,
 			}, nil
 		},
 	}

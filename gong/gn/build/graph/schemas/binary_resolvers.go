@@ -55,6 +55,10 @@ func cExecutableResolver(name string, cInputs []fs.SourceFile, ctx graph.Resolve
 	if err != nil {
 		return nil, err
 	}
+	frameworks, err := collectFrameworks(ctx)
+	if err != nil {
+		return nil, err
+	}
 
 	// Maintain a set of link inputs, alongside the actual list of inputs.
 	// We are about to start collecting necessary link inputs from dependencies,
@@ -111,7 +115,7 @@ func cExecutableResolver(name string, cInputs []fs.SourceFile, ctx graph.Resolve
 			// TODO: fill these out.
 			"ldflags":      ctx.ConfigValues.Ldflags,
 			"libs":         formatLibExpansions(libs),
-			"frameworks":   nil,
+			"frameworks":   formatFrameworkExpansions(frameworks),
 			"swiftmodules": nil,
 		}},
 	)

@@ -62,3 +62,24 @@ func (e SubstitutionFormatError) Message() string { return "Invalid substitution
 func (e SubstitutionFormatError) HelpText() string {
 	return fmt.Sprintf("Don't recognize the substitution pattern starting with %q.", e.invalidPart)
 }
+
+// FrameworkMissingExtension is returned when a framework input is invalid.
+type FrameworkMissingExtension struct {
+	resolve.OriginValue
+	framework string
+}
+
+// Error returns the error string.
+func (e FrameworkMissingExtension) Error() string {
+	return fmt.Sprintf("framework missing extension: %q", e.framework)
+}
+
+// Message returns the user-facing error message.
+func (e FrameworkMissingExtension) Message() string {
+	return `This frameworks value is wrong. All listed frameworks names must not include any
+path component and have ".framework" extension.`
+}
+
+// HelpText returns the user-facing error help text.
+// It returns an empty string because there is no detailed help text for this error.
+func (FrameworkMissingExtension) HelpText() string { return "" }

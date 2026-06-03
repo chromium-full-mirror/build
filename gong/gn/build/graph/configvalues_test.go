@@ -5,6 +5,7 @@
 package graph
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -89,5 +90,16 @@ func TestAppendConfigs_EmptyAllocations(t *testing.T) {
 
 	if allocs != 0 {
 		t.Errorf("allocs=%f; want 0", allocs)
+	}
+}
+
+func TestMakeConfigValues_InvalidFramework(t *testing.T) {
+	_, err := MakeConfigValues(map[string]ProcessedValue{
+		"frameworks": StringListValue{list: []string{"Foundation"}},
+	})
+
+	var wantErr *FrameworkMissingExtension
+	if !errors.As(err, &wantErr) {
+		t.Fatalf("MakeConfigValues(_)=_,%v (%T); want %T err", err, err, wantErr)
 	}
 }

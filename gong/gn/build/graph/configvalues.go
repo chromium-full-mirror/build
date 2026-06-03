@@ -5,7 +5,10 @@
 package graph
 
 import (
+	"strings"
+
 	"go.chromium.org/build/gong/gn/build/fs"
+	"go.chromium.org/build/gong/gn/resolve"
 )
 
 // ConfigValues holds GN config() values.
@@ -56,10 +59,10 @@ func MakeConfigValues(values map[string]ProcessedValue) (ConfigValues, error) {
 	if cv.Defines, err = extractStringList(values, "defines"); err != nil {
 		return ConfigValues{}, err
 	}
-	if cv.Frameworks, err = extractStringList(values, "frameworks"); err != nil {
+	if cv.Frameworks, err = extractFrameworkList(values, "frameworks"); err != nil {
 		return ConfigValues{}, err
 	}
-	if cv.WeakFrameworks, err = extractStringList(values, "weak_frameworks"); err != nil {
+	if cv.WeakFrameworks, err = extractFrameworkList(values, "weak_frameworks"); err != nil {
 		return ConfigValues{}, err
 	}
 	if cv.Ldflags, err = extractStringList(values, "ldflags"); err != nil {
@@ -88,6 +91,27 @@ func extractStringList(values map[string]ProcessedValue, key string) ([]string, 
 		slv, err := ProcessedValueAs[StringListValue](v)
 		if err != nil {
 			return nil, err
+		}
+		return slv.list, nil
+	}
+	return nil, nil
+}
+
+// extractFrameworkList is the same as extractStringList, but also validates framework values.
+func extractFrameworkList(values map[string]ProcessedValue, key string) ([]string, error) {
+	if v, ok := values[key]; ok {
+		slv, err := ProcessedValueAs[StringListValue](v)
+		if err != nil {
+			return nil, err
+		}
+		// All strings must end with ".framework".
+		for _, str := range slv.list {
+			if !strings.HasSuffix(str, ".framework") {
+				return nil, &FrameworkMissingExtension{
+					OriginValue: resolve.OriginValue{Value: v.value()},
+					framework:   str,
+				}
+			}
 		}
 		return slv.list, nil
 	}

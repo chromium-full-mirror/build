@@ -347,3 +347,100 @@ build obj/libbaz.a: alink obj/libbaz.libbaz.cc.o
 		},
 	)
 }
+
+func TestCxx_FrameworkPropagation(t *testing.T) {
+	runTest(t,
+		map[string]string{
+			"build/BUILDCONFIG.gn": `
+set_default_toolchain("//:tc")`,
+			"BUILD.gn": `
+toolchain("tc") {
+  tool("cxx") { command = "clang++" }
+  tool("solink") { command = "ld -shared" }
+  tool("link") { command = "ld" }
+  tool("alink") { command = "ar" }
+}
+
+executable("app") {
+  sources = [ "main.cc" ]
+  deps = [ ":foo", ":bar" ]
+}
+
+shared_library("foo") {
+  sources = [ "libfoo.cc" ]
+  deps = [ ":baz" ]
+  frameworks = [ "SystemConfiguration.framework" ]
+}
+
+static_library("bar") {
+  sources = [ "libbar.cc" ]
+  deps = [ ":baz" ]
+  frameworks = [ "Security.framework" ]
+}
+
+static_library("baz") {
+  sources = [ "libbaz.cc" ]
+  frameworks = [ "Foundation.framework" ]
+}`,
+			"main.cc":   "",
+			"libfoo.cc": "",
+			"libbar.cc": "",
+			"libbaz.cc": "",
+		},
+		map[string]string{
+			"obj/app.ninja": `
+output_dir = obj
+target_output_name = app
+target_out_dir = obj
+
+build obj/app.main.cc.o: cxx ../../main.cc
+  source_file_part =
+  source_name_part =
+build obj/app: link obj/app.main.cc.o obj/libfoo.so obj/libbar.a
+  frameworks = -framework Security -framework Foundation
+  ldflags =
+  libs =
+  swiftmodules =
+`,
+			"obj/foo.ninja": `
+output_extension = .so
+output_dir = obj
+target_output_name = libfoo
+target_out_dir = obj
+
+build obj/libfoo.libfoo.cc.o: cxx ../../libfoo.cc
+  source_file_part =
+  source_name_part =
+build obj/libfoo.so: solink obj/libfoo.libfoo.cc.o
+  frameworks = -framework SystemConfiguration -framework Foundation
+  ldflags =
+  libs =
+  swiftmodules =
+`,
+			"obj/bar.ninja": `
+output_extension = .a
+output_dir = obj
+target_output_name = libbar
+target_out_dir = obj
+
+build obj/libbar.libbar.cc.o: cxx ../../libbar.cc
+  source_file_part =
+  source_name_part =
+build obj/libbar.a: alink obj/libbar.libbar.cc.o
+  arflags =
+`,
+			"obj/baz.ninja": `
+output_extension = .a
+output_dir = obj
+target_output_name = libbaz
+target_out_dir = obj
+
+build obj/libbaz.libbaz.cc.o: cxx ../../libbaz.cc
+  source_file_part =
+  source_name_part =
+build obj/libbaz.a: alink obj/libbaz.libbaz.cc.o
+  arflags =
+`,
+		},
+	)
+}
