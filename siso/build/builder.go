@@ -1070,6 +1070,12 @@ func stepLogEntry(ctx context.Context, logger *clog.Logger, step *Step, duration
 	if step.metrics.ScandepsTime > 0 {
 		logEntry.Labels["scandeps_secs"] = fmt.Sprintf("%.02f", time.Duration(step.metrics.ScandepsTime).Seconds())
 	}
+	if step.metrics.MaterializeInputsTime > 0 {
+		logEntry.Labels["materialize_inputs_secs"] = fmt.Sprintf("%.02f", time.Duration(step.metrics.MaterializeInputsTime).Seconds())
+	}
+	if step.metrics.MaterializeOutputsTime > 0 {
+		logEntry.Labels["materialize_outputs_secs"] = fmt.Sprintf("%.02f", time.Duration(step.metrics.MaterializeOutputsTime).Seconds())
+	}
 	if step.metrics.NoExec {
 		logEntry.Labels["no_exec"] = "true"
 	}
@@ -1248,7 +1254,9 @@ func (b *Builder) outputs(ctx context.Context, step *Step) error {
 		})
 	}
 	if len(localOutputs) > 0 {
+		start := time.Now()
 		err := b.hashFS.Flush(ctx, step.cmd.WorkspaceRoot, localOutputs)
+		step.metrics.MaterializeOutputsTime = IntervalMetric(time.Since(start))
 		if err != nil {
 			return fmt.Errorf("%w: %w", errFlushOutput, err)
 		}

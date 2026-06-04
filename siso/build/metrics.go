@@ -138,6 +138,15 @@ type StepMetric struct {
 	// this includes the time to process the hit.
 	CacheTime IntervalMetric `json:"cache,omitempty"`
 
+	// MaterializeInputsTime is the time it took to materialize inputs to disk
+	// that were required by the step.
+	MaterializeInputsTime IntervalMetric `json:"materialize_inputs,omitempty"`
+	// MaterializeOutputsTime is the time it took to materialize outputs to disk
+	// by the step.
+	// These could be remote files from CAS, or local in-memory files from a
+	// step handler, etc.
+	MaterializeOutputsTime IntervalMetric `json:"materialize_outputs,omitempty"`
+
 	// RunTime is the total duration of the action execution, including
 	// overhead such as uploading / downloading files. Semaphore waiting time
 	// (namely execution semaphores like localSema, remoteSema, rewrapSema, etc)

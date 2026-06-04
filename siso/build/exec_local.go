@@ -308,6 +308,7 @@ func (b *Builder) prepareLocalInputs(ctx context.Context, step *Step) error {
 	}
 	err := b.hashFS.Flush(ctx, step.cmd.WorkspaceRoot, inputs)
 	clog.Infof(ctx, "prepare-local-inputs %d %s: %v", len(inputs), time.Since(start), err)
+	step.metrics.MaterializeInputsTime = IntervalMetric(time.Since(start))
 	if errors.Is(err, context.Canceled) {
 		return err
 	}
