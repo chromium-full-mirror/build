@@ -22,6 +22,7 @@ var FunctionMap = map[string]resolve.FunctionInfo{
 	"group":                 targetFunction{schema: &schemas.GroupSchema},
 	"import":                importFunction{},
 	"len":                   lenFunction{},
+	"print":                 printFunction{},
 	"rebase_path":           rebasePathFunction{},
 	"rust_library":          targetFunction{schema: &schemas.RustLibrarySchema},
 	"set_default_toolchain": setDefaultToolchainFunction{},

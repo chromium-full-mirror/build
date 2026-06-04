@@ -47,6 +47,9 @@ type BuildSettings struct {
 	// It is expected that the root .gn file defines a `buildconfig` variable
 	// that points to the location of the build config file.
 	BuildConfigFile fs.SourceFile
+	// PrintCallback overrides the behavior of the print() function.
+	// If nil, output will be printed to the console.
+	PrintCallback func(string)
 }
 
 // FullPath returns the full absolute OS path corresponding to the given
