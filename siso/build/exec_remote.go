@@ -31,7 +31,7 @@ import (
 func (b *Builder) execRemoteExecute(uploadCtx, execCtx context.Context, step *Step) error {
 	ctx, span := trace.NewSpan(execCtx, "exec-remote-execute")
 	defer span.Close(nil)
-	noFallback := !b.localFallbackEnabled()
+	noFallback := !b.localFallbackEnabled(step)
 	var timeout time.Duration
 	if noFallback {
 		// In no-fallback mode, remote execution will be tried 4 times at most.

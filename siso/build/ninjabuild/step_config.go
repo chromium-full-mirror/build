@@ -101,6 +101,9 @@ type StepRule struct {
 
 	// Remote marks the step is remote executable.
 	Remote bool `json:"remote,omitempty"`
+	// StrictRemote forces strict remote execution for matched steps.
+	// i.e. no fastlocal, no local fallback.
+	StrictRemote bool `json:"strict_remote,omitempty"`
 	// RemoteWrapper is a wrapper used in remote execution.
 	// TODO: put RemoteWrapper in Platform["siso:remote_wrapper"]
 	RemoteWrapper string `json:"remote_wrapper,omitempty"`

@@ -141,7 +141,8 @@ func (b *Builder) runRemote(ctx context.Context, step *Step) error {
 	preprocErr := errNeedPreproc
 	needCheckCache := true
 	cacheCheck := b.cache != nil && b.reCacheEnableRead
-	startLocal := b.startLocalCounter.Add(-1) >= 0
+	strictRemote := step.def.Binding("strict_remote") == "true"
+	startLocal := !strictRemote && b.startLocalCounter.Add(-1) >= 0
 	if startLocal {
 		// no cacheCheck as startlocal for incremental build
 		// will build modified code, and not expect cache hit (?)
@@ -149,7 +150,7 @@ func (b *Builder) runRemote(ctx context.Context, step *Step) error {
 		err := b.execLocal(ctx, step)
 		step.metrics.StartLocal = true
 		return err
-	} else if b.fastLocalSema != nil && int(b.progress.numLocal.Load()) < b.fastLocalSema.Capacity() {
+	} else if !strictRemote && b.fastLocalSema != nil && int(b.progress.numLocal.Load()) < b.fastLocalSema.Capacity() {
 		// TODO: skip check cache when step is too new and can't expect cache hit?
 		if cacheCheck {
 			clog.Infof(ctx, "check cache before fast local")

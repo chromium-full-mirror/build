@@ -1375,6 +1375,9 @@ func (b *Builder) ActiveSteps() []ActiveStepInfo {
 	return b.progress.ActiveSteps()
 }
 
-func (b *Builder) localFallbackEnabled() bool {
+func (b *Builder) localFallbackEnabled(step *Step) bool {
+	if step != nil && step.def.Binding("strict_remote") == "true" {
+		return false
+	}
 	return !b.strictRemote && b.maxFallbackAllowed > 0 && !b.hashFS.OnCog()
 }

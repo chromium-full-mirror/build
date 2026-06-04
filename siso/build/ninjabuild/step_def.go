@@ -286,6 +286,11 @@ func (s *StepDef) Binding(name string) string {
 	case "gn_target":
 		return s.globals.gnTargets[s.edge].String()
 
+	case "strict_remote":
+		if s.rule.StrictRemote {
+			return "true"
+		}
+		return ""
 	case "use_remote_exec_wrapper":
 		if s.rule.UseRemoteExecWrapper {
 			return "true"

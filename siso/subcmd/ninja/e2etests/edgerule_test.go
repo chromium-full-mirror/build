@@ -7,7 +7,9 @@ package e2etests
 import (
 	"bytes"
 	"fmt"
+	"os"
 	"path"
+	"path/filepath"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -564,5 +566,118 @@ func TestBuild_EdgeRule_stamp_solibs(t *testing.T) {
 	}
 	if stats.NoExec != 0 || stats.Local != 0 || stats.Remote != 1 || stats.Done != 4 || stats.Total != 4 {
 		t.Logf("no_exec=%d local=%d remote=%d done=%d total=%d; want no_exec=0 local=0 remote=1 done=total=4", stats.NoExec, stats.Local, stats.Remote, stats.Done, stats.Total)
+	}
+}
+
+func TestBuild_EdgeRule_StrictRemote(t *testing.T) {
+	if !runInSubProcess(t) {
+		return
+	}
+	ctx := t.Context()
+	dir := tempDir(t)
+
+	runNinjaTest := func(t *testing.T, ds build.DataSource) (build.Stats, error) {
+		t.Helper()
+		opt, graph, cleanup := setupBuild(ctx, t, dir, hashfs.Option{
+			StateFile:  ".siso_fs_state",
+			DataSource: ds,
+		})
+		defer cleanup()
+		opt.REAPIClient = ds.Client
+		// Enable StartLocal to try to run it locally first.
+		opt.Limits.StartLocal = 5
+		return ninjabuild.Run(ctx, graph, opt, nil, ninjabuild.RunNinjaOpts{})
+	}
+
+	writeFile := func(t *testing.T, fname, content string) {
+		t.Helper()
+		err := os.MkdirAll(filepath.Dir(fname), 0755)
+		if err != nil {
+			t.Fatal(err)
+		}
+		err = os.WriteFile(fname, []byte(content), 0644)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	writeFile(t, filepath.Join(dir, "build/config/siso/main.star"), `
+load("@builtin//encoding.star", "json")
+load("@builtin//struct.star", "module")
+
+def init(ctx):
+    step_config = {
+        "rules": [
+            {
+                "name": "cxx/compile",
+                "action": "cxx",
+                "remote": True,
+                "strict_remote": True,
+                "platform": {
+                    "container-image": "docker://gcr.io/test/test",
+                },
+            },
+        ],
+    }
+    return module(
+        "config",
+        step_config = json.encode(step_config),
+        filegroups = {},
+        handlers = {},
+    )
+`)
+	writeFile(t, filepath.Join(dir, "out/siso/build.ninja"), `
+rule cxx
+  command = echo cxx > ${out}
+
+build obj/foo.o: cxx ../../foo.cc
+build all: phony obj/foo.o
+build build.ninja: phony
+`)
+	writeFile(t, filepath.Join(dir, "foo.cc"), "int a;")
+
+	remoteExecuted := false
+	fakere := &reapitest.Fake{
+		ExecuteFunc: func(fakere *reapitest.Fake, action *rpb.Action) (*rpb.ActionResult, error) {
+			remoteExecuted = true
+			d, err := fakere.Put(ctx, []byte("remote output"))
+			if err != nil {
+				return nil, err
+			}
+			return &rpb.ActionResult{
+				ExitCode: 0,
+				OutputFiles: []*rpb.OutputFile{
+					{
+						Path:   "obj/foo.o",
+						Digest: d,
+					},
+				},
+			}, nil
+		},
+	}
+
+	var ds build.DataSource
+	defer func() {
+		err := ds.Close(ctx)
+		if err != nil {
+			t.Error(err)
+		}
+	}()
+	ds.Client = reapitest.New(ctx, t, fakere)
+	ds.Cache = ds.Client.CacheStore()
+
+	stats, err := runNinjaTest(t, ds)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !remoteExecuted {
+		t.Errorf("Step was not executed remotely even though strict_remote was set.")
+	}
+	if stats.Remote != 1 {
+		t.Errorf("stats.Remote = %d; want 1. stats: %#v", stats.Remote, stats)
+	}
+	if stats.Local != 0 {
+		t.Errorf("stats.Local = %d; want 0 (should bypass StartLocal). stats: %#v", stats.Local, stats)
 	}
 }

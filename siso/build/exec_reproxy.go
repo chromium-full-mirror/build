@@ -139,7 +139,7 @@ func maybeDisableLocalFallback(ctx context.Context, b *Builder, step *Step) {
 	// CompileErrorRatioAlert checks remote failure/local success case. So it
 	// needs to do local fallback on Reproxy side. However, all local executions
 	// need to be handled at Siso layer.
-	if !b.localFallbackEnabled() && strings.ToUpper(step.cmd.REProxyConfig.ExecStrategy) == ppb.ExecutionStrategy_REMOTE_LOCAL_FALLBACK.String() {
+	if !b.localFallbackEnabled(step) && strings.ToUpper(step.cmd.REProxyConfig.ExecStrategy) == ppb.ExecutionStrategy_REMOTE_LOCAL_FALLBACK.String() {
 		if log.V(1) {
 			clog.Infof(ctx, "overriding reproxy REMOTE_LOCAL_FALLBACK to REMOTE")
 		}

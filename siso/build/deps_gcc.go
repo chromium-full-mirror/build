@@ -201,7 +201,7 @@ func (depsGCC) scandeps(ctx context.Context, b *Builder, step *Step) ([]string, 
 		}
 
 		timeout := step.cmd.Timeout
-		if !b.localFallbackEnabled() {
+		if !b.localFallbackEnabled(step) {
 			// no-fallback has longer timeout for scandeps
 			timeout = 2 * timeout
 		}

@@ -393,3 +393,59 @@ func TestStepConfigInit_PlatformRefValidation(t *testing.T) {
 		t.Error("Init succeeded with invalid platform_ref in outputs_map, but should have failed")
 	}
 }
+
+func TestStepConfigLookup_StrictRemote(t *testing.T) {
+	ctx := t.Context()
+	dir := t.TempDir()
+	path := build.NewPath(dir, "out/siso")
+	err := os.MkdirAll(filepath.Join(dir, "out/siso"), 0755)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = os.WriteFile(filepath.Join(dir, "out/siso/build.ninja"), []byte(`
+rule cxx
+  command = g++ -c ${in} -o ${out}
+
+build obj/foo.o: cxx ../../foo.cc
+`), 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
+	state := ninjautil.NewState()
+	p := ninjautil.NewManifestParser(state)
+	err = p.Load(ctx, filepath.Join(dir, "out/siso/build.ninja"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	sc := StepConfig{
+		Rules: []*StepRule{
+			{
+				Name:         "cxx_rule",
+				ActionName:   "cxx",
+				Remote:       true,
+				StrictRemote: true,
+			},
+		},
+	}
+	err = sc.Init(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	node, ok := state.LookupNodeByPath("obj/foo.o")
+	if !ok {
+		t.Fatal("obj/foo.o not found")
+	}
+	edge, ok := node.InEdge()
+	if !ok {
+		t.Fatal("no inEdge for obj/foo.o")
+	}
+	rule, ok := sc.Lookup(ctx, path, edge)
+	if !ok {
+		t.Errorf("Lookup for obj/foo.o failed")
+	}
+	if !rule.StrictRemote {
+		t.Errorf("obj/foo.o rule.StrictRemote = false, want true")
+	}
+}

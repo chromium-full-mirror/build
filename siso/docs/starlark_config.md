@@ -233,6 +233,7 @@ to register handlers and step configs.
           * `platform_ref`: reference to platform properties
           * `platform`: additional platform properties
           * `remote`: use remote exec or not
+          * `strict_remote`: force strict remote execution (i.e. no fastlocal, no local fallback) for the step.
           * `remote_wrapper`: a wrapper command used in remote execution
           * `remote_command`: args[0] will be replaced with remote_command.
           * `remote_inputs`
