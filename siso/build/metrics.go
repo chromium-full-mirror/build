@@ -24,19 +24,17 @@ type IntervalMetric time.Duration
 // MarshalJSON marshals the IntervalMetric as float64 of seconds.
 func (i IntervalMetric) MarshalJSON() ([]byte, error) {
 	d := time.Duration(i)
-	// Reduce precesion to make siso_metrics.json smaller.
-	sec := strconv.FormatFloat(d.Seconds(), 'f', 2, 64)
-	return []byte(sec), nil
+	return []byte(strconv.FormatInt(d.Nanoseconds(), 10)), nil
 }
 
-// UnmarshalJSON unmarshals float64 of seconds as an IntervalMetric.
+// UnmarshalJSON unmarshals int64 of seconds as an IntervalMetric.
 func (i *IntervalMetric) UnmarshalJSON(b []byte) error {
-	var secs float64
-	err := json.Unmarshal(b, &secs)
+	var nanosecs int64
+	err := json.Unmarshal(b, &nanosecs)
 	if err != nil {
 		return err
 	}
-	*i = IntervalMetric(time.Duration(int64(secs * 1e9)))
+	*i = IntervalMetric(time.Duration(nanosecs))
 	return nil
 }
 
