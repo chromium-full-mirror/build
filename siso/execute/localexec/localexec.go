@@ -17,6 +17,7 @@ import (
 	"runtime"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 
 	"google.golang.org/protobuf/types/known/anypb"
@@ -78,7 +79,28 @@ func (LocalExec) Run(ctx context.Context, cmd *execute.Cmd) (err error) {
 // fix for http://b/278658064 windows: fork/exec: Not enough memory resources are available to process this command.
 var ForkSema = semaphore.New("fork", runtime.GOMAXPROCS(0))
 
+// run runs cmd, retrying with bounded backoff when starting the process
+// fails with ETXTBSY, i.e. a write-mode fd to the executable is transiently
+// open somewhere (https://github.com/golang/go/issues/22315).
 func run(ctx context.Context, cmd *execute.Cmd) (*rpb.ActionResult, error) {
+	backoff := 10 * time.Millisecond
+	for {
+		res, err := runOnce(ctx, cmd)
+		if err == nil || !errors.Is(err, syscall.ETXTBSY) || backoff > 320*time.Millisecond {
+			// success, non-ETXTBSY error, or budget exhausted.
+			return res, err
+		}
+		clog.Warningf(ctx, "ETXTBSY starting %s; retrying in %s", cmd.Args[0], backoff)
+		select {
+		case <-time.After(backoff):
+		case <-ctx.Done():
+			return res, context.Cause(ctx)
+		}
+		backoff *= 2
+	}
+}
+
+func runOnce(ctx context.Context, cmd *execute.Cmd) (*rpb.ActionResult, error) {
 	if len(cmd.Args) == 0 {
 		return nil, fmt.Errorf("no arguments in the command. ID: %s", cmd.ID)
 	}

@@ -211,9 +211,14 @@ func (ofs *OSFS) Symlink(ctx context.Context, oldname, newname string) error {
 }
 
 // WriteFile writes data to the named file, creating it if necessary.
+//
+// Executables are written directly, even though the write-mode fd briefly
+// makes them un-execable on Linux: ETXTBSY at exec time is handled by
+// retry in localexec (see localexec.run), which also covers writers
+// outside siso's control. https://github.com/golang/go/issues/22315
 func (ofs *OSFS) WriteFile(ctx context.Context, name string, data []byte, perm fs.FileMode) error {
 	started := time.Now()
-	err := writeFile(name, data, perm)
+	err := os.WriteFile(name, data, perm)
 	ofs.WriteDone(len(data), err)
 	if dur := time.Since(started); dur > 1*time.Minute {
 		logSlow(ctx, name, dur, err)
@@ -329,7 +334,7 @@ func (ofs *OSFS) WriteDigestData(ctx context.Context, name string, src digest.So
 		}
 		defer r.Close()
 		rd.r = r
-		w, err := openForWrite(name, perm)
+		w, err := os.OpenFile(name, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, perm)
 		if err != nil {
 			return err
 		}

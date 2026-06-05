@@ -25,7 +25,6 @@ import (
 	"github.com/google/subcommands"
 
 	"go.chromium.org/build/siso/auth/cred"
-	"go.chromium.org/build/siso/hashfs/osfs"
 	"go.chromium.org/build/siso/subcmd/auth"
 	"go.chromium.org/build/siso/subcmd/collector"
 	"go.chromium.org/build/siso/subcmd/fetch"
@@ -295,7 +294,6 @@ Use "siso flags" to display all flags.
 	subcommands.Register(scandeps.Cmd(), "debugging")
 
 	subcommands.Register(collector.Cmd(authOpts, versionID), "internal-helper")
-	subcommands.Register(osfs.HelperCmd(), "internal-helper")
 	subcommands.Register(spawnhelper.Cmd(), "internal-helper")
 
 	subcommands.Register(subcommands.FlagsCommand(), "command-help")
