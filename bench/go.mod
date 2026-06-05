@@ -1,11 +1,11 @@
 module go.chromium.org/build/bench
 
-go 1.26.3
+go 1.26.4
 
 require (
 	github.com/google/go-cmp v0.7.0
 	github.com/klauspost/cpuid/v2 v2.3.0
-	github.com/shirou/gopsutil/v4 v4.26.3
+	github.com/shirou/gopsutil/v4 v4.26.5
 )
 
 require (

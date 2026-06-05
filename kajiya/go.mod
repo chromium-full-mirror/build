@@ -1,6 +1,6 @@
 module go.chromium.org/build/kajiya
 
-go 1.26.3
+go 1.26.4
 
 require (
 	cloud.google.com/go/longrunning v1.0.0
@@ -9,12 +9,12 @@ require (
 	github.com/hanwen/go-fuse/v2 v2.10.1
 	github.com/hashicorp/go-immutable-radix/v2 v2.1.0
 	github.com/klauspost/compress v1.18.6
-	go.chromium.org/build/remote-apis v0.0.0-20260525075854-5ac828095bad
+	go.chromium.org/build/remote-apis v0.0.0-20260604082012-633997ad07f1
 	golang.org/x/sync v0.20.0
-	golang.org/x/sys v0.44.0
-	google.golang.org/genproto/googleapis/bytestream v0.0.0-20260511170946-3700d4141b60
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20260511170946-3700d4141b60
-	google.golang.org/grpc v1.81.0
+	golang.org/x/sys v0.45.0
+	google.golang.org/genproto/googleapis/bytestream v0.0.0-20260526163538-3dc84a4a5aaa
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20260526163538-3dc84a4a5aaa
+	google.golang.org/grpc v1.81.1
 	google.golang.org/protobuf v1.36.11
 )
 
