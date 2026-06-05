@@ -75,22 +75,37 @@ func depsExpandInputs(ctx context.Context, b *Builder, step *Step) {
 
 	fsys := b.hashFS.FileSystem(ctx, filepath.Join(step.cmd.WorkspaceRoot, step.cmd.WorkDir))
 
-	// deps=gcc,msvc with sources doesn't need to expand inputs.
+	oldlen := len(step.cmd.Inputs)
+	var expanded []string
+	// deps=gcc,msvc with sources doesn't need to expand inputs,
+	// but need to use DepsBaseInputs to get expand phony in build graph inputs.
+	includeOrderOnly := false
+	sandbox, _ := selectSandbox(ctx, step)
+	if sandbox == "nsjail" {
+		// for nsjail sandbox, we need to include order-only files.
+		// action will use subset of inputs and record them in depfile.
+		includeOrderOnly = true
+	}
 	switch step.cmd.Deps {
 	case "gcc":
 		params, err := gccutil.ExtractScanDepsParams(ctx, step.cmd.Args, step.cmd.Env, fsys)
 		if err == nil && len(params.Sources) > 0 {
-			return
+			expanded = step.def.DepsBaseInputs(ctx, step.cmd.ToolInputs, includeOrderOnly)
+		} else {
+			clog.Infof(ctx, "failed to extract scandeps param source=%d: %v", len(params.Sources), err)
+			expanded = step.def.ExpandedInputs(ctx)
 		}
 	case "msvc":
 		params, err := msvcutil.ExtractScanDepsParams(ctx, step.cmd.Args, step.cmd.Env, fsys)
 		if err == nil && len(params.Sources) > 0 {
-			return
+			expanded = step.def.DepsBaseInputs(ctx, step.cmd.ToolInputs, includeOrderOnly)
+		} else {
+			clog.Infof(ctx, "failed to extract scandeps param source=%d: %v", len(params.Sources), err)
+			expanded = step.def.ExpandedInputs(ctx)
 		}
+	default:
+		expanded = step.def.ExpandedInputs(ctx)
 	}
-
-	oldlen := len(step.cmd.Inputs)
-	expanded := step.def.ExpandedInputs(ctx)
 	inputs := make([]string, 0, oldlen+len(expanded))
 	seen := make(map[string]bool)
 	for _, in := range step.cmd.Inputs {
@@ -152,7 +167,8 @@ func depsCmd(ctx context.Context, b *Builder, step *Step) error {
 	ds, found := depsProcessors[step.cmd.Deps]
 	if found {
 		start := time.Now()
-		stepInputs := step.def.DepsBaseInputs(ctx, step.cmd.ToolInputs)
+		includeOrderOnly := false
+		stepInputs := step.def.DepsBaseInputs(ctx, step.cmd.ToolInputs, includeOrderOnly)
 		depsIns, err := ds.DepsCmd(ctx, b, step)
 		depsIns = step.def.ExpandedCaseSensitives(ctx, depsIns)
 		inputs := uniqueFiles(stepInputs, depsIns)

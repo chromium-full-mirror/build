@@ -558,47 +558,63 @@ func depInputs(ctx context.Context, s *StepDef) (iter.Seq[string], error) {
 	return func(yield func(string) bool) {}, nil
 }
 
-// DepsBaseInputs returns inputs of the step, which will be combined with scandeps results.
-func (s *StepDef) DepsBaseInputs(ctx context.Context, toolInputs []string) []string {
+// DepsBaseInputs returns inputs of the step.
+// If includeOrderOnly is false, it will be combined with scandeps results.
+// If includeOrderOnly is true, it will be trimmed down by scandeps results, or depfile.
+func (s *StepDef) DepsBaseInputs(ctx context.Context, toolInputs []string, includeOrderOnly bool) []string {
 	var inputs []string
-	switch s.Binding("deps") {
-	case "gcc", "msvc":
-		// always use toolInputs.
-		inputs = append(inputs, toolInputs...)
-		// TODO: per rule?
-		if filter := s.globals.stepConfig.Scandeps.stepInputsFilter; filter != nil {
-			seen := make(map[string]bool)
-			stepInputs := s.TriggerInputs(ctx)
-			// need to expand phony targets here
-			// but no need to include order-only deps as ExpandedInputs.
-			// TODO: use scandeps to trim down header file dependencies from build graph (indirect expanded inputs?).
-			for _, in := range s.edge.TriggerInputs() {
-				p := s.globals.targetPath(in)
-				if inEdge, ok := in.InEdge(); ok && inEdge.IsPhony() {
-					stepInputs = replacePhony(ctx, s.globals, seen, p, inEdge, s.rule.Debug, stepInputs)
-				}
+	// always use toolInputs.
+	if s.rule.Debug {
+		clog.Infof(ctx, "deps base tool inputs: %q order_only=%t", toolInputs, includeOrderOnly)
+	}
+	inputs = append(inputs, toolInputs...)
+	// TODO: per rule?
+	filter := s.globals.stepConfig.Scandeps.stepInputsFilter
+	seen := make(map[string]bool)
+	var stepInputs []string
+	var nodes []*ninjautil.Node
+	// need to expand phony targets here
+	if includeOrderOnly {
+		stepInputs = s.Inputs(ctx)
+		nodes = s.edge.Inputs()
+	} else {
+		stepInputs = s.TriggerInputs(ctx)
+		nodes = s.edge.TriggerInputs()
+	}
+	for _, in := range nodes {
+		p := s.globals.targetPath(in)
+		if inEdge, ok := in.InEdge(); ok && inEdge.IsPhony() {
+			stepInputs = replacePhony(ctx, s.globals, seen, p, inEdge, s.rule.Debug, stepInputs)
+			if s.rule.Debug {
+				clog.Infof(ctx, "deps base input: expand phony %q", in)
 			}
-			seen = make(map[string]bool)
-			for _, in := range stepInputs {
-				in = filepath.ToSlash(in)
-				if seen[in] {
-					continue
+		} else {
+			if s.rule.Debug {
+				if !ok {
+					clog.Infof(ctx, "deps base inputs: ignore no inEdge %q", in)
+				} else {
+					clog.Infof(ctx, "deps base inputs: not phony %q", in)
 				}
-				seen[in] = true
-				if !filter(ctx, in, s.rule.Debug) {
-					if s.rule.Debug {
-						clog.Infof(ctx, "deps base inputs ignored: %s", in)
-					}
-					continue
-				}
-				if s.rule.Debug {
-					clog.Infof(ctx, "deps base inputs preserve %s", in)
-				}
-				inputs = append(inputs, in)
 			}
 		}
-	default:
-		inputs = s.Inputs(ctx) // use ToolInputs?
+	}
+	seen = make(map[string]bool)
+	for _, in := range stepInputs {
+		in = filepath.ToSlash(in)
+		if seen[in] {
+			continue
+		}
+		seen[in] = true
+		if !filter(ctx, in, s.rule.Debug) {
+			if s.rule.Debug {
+				clog.Infof(ctx, "deps base inputs ignored: %s", in)
+			}
+			continue
+		}
+		if s.rule.Debug {
+			clog.Infof(ctx, "deps base inputs preserve %s", in)
+		}
+		inputs = append(inputs, in)
 	}
 	return inputs
 }

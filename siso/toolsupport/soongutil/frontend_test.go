@@ -50,7 +50,9 @@ func (fakeStepDef) TriggerInputs(context.Context) []string { return nil }
 func (fakeStepDef) DepInputs(context.Context) (iter.Seq[string], error) {
 	return func(yield func(string) bool) {}, nil
 }
-func (fakeStepDef) DepsBaseInputs(ctx context.Context, inputs []string) []string     { return inputs }
+func (fakeStepDef) DepsBaseInputs(ctx context.Context, inputs []string, includeOrderOnly bool) []string {
+	return inputs
+}
 func (fakeStepDef) ToolInputs(context.Context) []string                              { return nil }
 func (fakeStepDef) ExpandedCaseSensitives(ctx context.Context, in []string) []string { return in }
 func (fakeStepDef) ExpandedInputs(ctx context.Context) []string                      { return nil }

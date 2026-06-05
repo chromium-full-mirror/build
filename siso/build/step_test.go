@@ -53,7 +53,7 @@ func (fakeStepDef) DepInputs(context.Context) (iter.Seq[string], error) {
 	return func(yield func(string) bool) {}, nil
 }
 
-func (fakeStepDef) DepsBaseInputs(ctx context.Context, inputs []string) []string {
+func (fakeStepDef) DepsBaseInputs(ctx context.Context, inputs []string, includeOrderOnly bool) []string {
 	return inputs
 }
 

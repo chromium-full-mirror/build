@@ -76,8 +76,9 @@ type StepDef interface {
 	DepInputs(context.Context) (iter.Seq[string], error)
 
 	// DepsBaseInputs returns inputs of the step, which will be combined
-	// with scandeps results.
-	DepsBaseInputs(context.Context, []string) []string
+	// with scandeps results (bool arg false),
+	// or will be trimmed down by scandeps results (bool arg true).
+	DepsBaseInputs(context.Context, []string, bool) []string
 
 	// ToolInputs returns tool inputs of the step.
 	// ToolInputs is added to deps inputs.

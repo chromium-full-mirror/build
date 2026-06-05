@@ -10,8 +10,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"testing"
+
+	"google.golang.org/protobuf/encoding/prototext"
 
 	rpb "go.chromium.org/build/remote-apis/build/bazel/remote/execution/v2"
 
@@ -21,6 +24,7 @@ import (
 	"go.chromium.org/build/siso/reapi/reapitest"
 	"go.chromium.org/build/siso/toolsupport/makeutil"
 	"go.chromium.org/build/siso/toolsupport/ninjautil"
+	nsjailpb "go.chromium.org/build/siso/toolsupport/nsjailutil/proto"
 )
 
 func TestBuild_Deps_Incremental(t *testing.T) {
@@ -324,4 +328,58 @@ func TestBuild_Deps_Stale(t *testing.T) {
 	if err != nil {
 		t.Errorf("checkDeps %v", err)
 	}
+}
+
+func TestBuild_Deps_SandboxPhonyExpand(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("sandbox is only available on linux")
+	}
+	if !runInSubProcess(t) {
+		return
+	}
+	ctx := t.Context()
+	dir := tempDir(t)
+
+	runNinja := func(t *testing.T) (build.Stats, error) {
+		t.Helper()
+		opt, graph, cleanup := setupBuild(ctx, t, dir, hashfs.Option{
+			StateFile: ".siso_fs_state",
+		})
+		defer cleanup()
+		return ninjabuild.Run(ctx, graph, opt, nil, ninjabuild.RunNinjaOpts{})
+	}
+
+	setupFiles(t, dir, t.Name(), nil)
+	stats, err := runNinja(t)
+	if err != nil {
+		t.Fatalf("ninja err: %v", err)
+	}
+	if stats.Done != stats.Total || stats.Total != 3 {
+		t.Errorf("done=%d total=%d; want done=total=3", stats.Done, stats.Total)
+	}
+	buf, err := os.ReadFile(filepath.Join(dir, "out/siso/nsjail.config"))
+	if err != nil {
+		t.Fatalf("read nsjail.config: %v", err)
+	}
+	config := &nsjailpb.NsJailConfig{}
+	err = prototext.Unmarshal(buf, config)
+	if err != nil {
+		t.Fatalf("unmarshal nsjail.config: %v\n%s", err, buf)
+	}
+	if !slices.ContainsFunc(config.Mount, func(mount *nsjailpb.MountPt) bool {
+		return mount.GetDst() == "/src/toybox"
+	}) {
+		t.Errorf("missing toybox\n%s", buf)
+	}
+	if !slices.ContainsFunc(config.Mount, func(mount *nsjailpb.MountPt) bool {
+		return mount.GetDst() == "/src/in.1"
+	}) {
+		t.Errorf("missing in.1 (order_only phony)\n%s", buf)
+	}
+	if !slices.ContainsFunc(config.Mount, func(mount *nsjailpb.MountPt) bool {
+		return mount.GetDst() == "/src/in.2"
+	}) {
+		t.Errorf("missing in.2 (order_only phony)\n%s", buf)
+	}
+
 }

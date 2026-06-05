@@ -286,7 +286,7 @@ type ScandepsConfig struct {
 	// in addition to scandeps results and tool_inputs.
 	// If not set, all step inputs will be discarded and scandeps results
 	// and tool_inputs are used.
-	StepInputs       *PathFilter `json:"step_inputs,omitempty"`
+	StepInputs       PathFilter `json:"step_inputs"`
 	stepInputsFilter func(context.Context, string, bool) bool
 }
 
@@ -335,9 +335,7 @@ func (sc *StepConfig) Init(ctx context.Context) error {
 	if len(sc.InputsRequiringClangScandeps) > 0 || sc.ClangScandeps != "" {
 		return fmt.Errorf("inputs_requiring_clang_scandeps and clang_scandeps is deprecated. just use scandeps")
 	}
-	if sc.Scandeps.StepInputs.enabled() {
-		sc.Scandeps.stepInputsFilter = sc.Scandeps.StepInputs.filter(ctx, "scandeps.step_inputs")
-	}
+	sc.Scandeps.stepInputsFilter = sc.Scandeps.StepInputs.filter(ctx, "scandeps.step_inputs")
 	if sc.InputDeps == nil {
 		sc.InputDeps = make(map[string][]string)
 	}
