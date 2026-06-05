@@ -18,16 +18,16 @@ import (
 	rbepb "go.chromium.org/build/siso/reapi/proto"
 )
 
-// IntervalMetric is a time duration, but serialized as seconds in JSON.
+// IntervalMetric is a time duration, but serialized as nanoseconds in JSON.
 type IntervalMetric time.Duration
 
-// MarshalJSON marshals the IntervalMetric as float64 of seconds.
+// MarshalJSON marshals the IntervalMetric as int64 of nanoseconds.
 func (i IntervalMetric) MarshalJSON() ([]byte, error) {
 	d := time.Duration(i)
 	return []byte(strconv.FormatInt(d.Nanoseconds(), 10)), nil
 }
 
-// UnmarshalJSON unmarshals int64 of seconds as an IntervalMetric.
+// UnmarshalJSON unmarshals int64 of nanoseconds as an IntervalMetric.
 func (i *IntervalMetric) UnmarshalJSON(b []byte) error {
 	var nanosecs int64
 	err := json.Unmarshal(b, &nanosecs)
