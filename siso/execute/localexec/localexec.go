@@ -46,7 +46,16 @@ func Run(ctx context.Context, cmd *execute.Cmd) error {
 
 // Run runs a cmd.
 func (LocalExec) Run(ctx context.Context, cmd *execute.Cmd) (err error) {
-	res, err := run(ctx, cmd)
+	var res *rpb.ActionResult
+	if cmd.Console {
+		// Console actions need real stdin and output teed to the terminal, so
+		// they always run in-process rather than through the spawn helper.
+		res, err = run(ctx, cmd)
+	} else {
+		// Otherwise prefer the out-of-process spawn helper so the large-heap
+		// siso process never fork()s (a no-op direct exec on non-unix).
+		res, err = runViaHelper(ctx, cmd)
+	}
 	if err != nil {
 		return err
 	}

@@ -42,7 +42,10 @@ func runInSubProcess(t *testing.T) bool {
 		t.Fatalf("could not get executable: %v", err)
 	}
 
-	args := []string{"-test.run=^" + t.Name() + "$"}
+	// -siso-test-serial is the recursion guard; it must precede any forwarded
+	// argument, because flag parsing stops at the first non-flag argument and
+	// an unparsed guard means infinite re-exec (fork bomb).
+	args := []string{"-test.run=^" + t.Name() + "$", "-siso-test-serial"}
 	skipNext := false
 
 	// We must selectively forward flags from the parent `go test` runner to the subprocess:
@@ -99,8 +102,6 @@ func runInSubProcess(t *testing.T) bool {
 			args = append(args, arg)
 		}
 	}
-
-	args = append(args, "-siso-test-serial")
 
 	cmd := exec.CommandContext(t.Context(), exe, args...)
 	out, err := cmd.CombinedOutput()

@@ -31,6 +31,7 @@ import (
 	"go.chromium.org/build/siso/build"
 	"go.chromium.org/build/siso/build/ninjabuild"
 	"go.chromium.org/build/siso/execute"
+	"go.chromium.org/build/siso/execute/localexec"
 	"go.chromium.org/build/siso/hashfs"
 	"go.chromium.org/build/siso/o11y/clog"
 	"go.chromium.org/build/siso/o11y/monitoring"
@@ -310,6 +311,16 @@ func (c *Command) Run(ctx context.Context) (stats build.Stats, finalErr error) {
 	}
 	defer doneLock()
 	defer resetCrashOutput()
+
+	// Start the spawn helper now, while siso's heap is still small so its launch
+	// fork is cheap. Rotate its previous log first (the helper creates a fresh
+	// one), keeping it in step with the other siso_* logs. No-op on platforms that
+	// don't use the helper.
+	spawnHelperLog := filepath.Join(c.logDir, "siso_spawn_helper")
+	rotateFiles(ctx, spawnHelperLog)
+	if err := localexec.StartHelper(ctx, spawnHelperLog); err != nil {
+		return stats, err
+	}
 
 	limits := c.computeLimits(ctx)
 	projectID := c.reopt.UpdateProjectID(c.projectID)

@@ -41,6 +41,7 @@ import (
 	"go.chromium.org/build/siso/subcmd/report"
 	"go.chromium.org/build/siso/subcmd/sandbox"
 	"go.chromium.org/build/siso/subcmd/scandeps"
+	"go.chromium.org/build/siso/subcmd/spawnhelper"
 	"go.chromium.org/build/siso/subcmd/version"
 	"go.chromium.org/build/siso/subcmd/webui"
 	"go.chromium.org/build/siso/ui"
@@ -295,6 +296,7 @@ Use "siso flags" to display all flags.
 
 	subcommands.Register(collector.Cmd(authOpts, versionID), "internal-helper")
 	subcommands.Register(osfs.HelperCmd(), "internal-helper")
+	subcommands.Register(spawnhelper.Cmd(), "internal-helper")
 
 	subcommands.Register(subcommands.FlagsCommand(), "command-help")
 	subcommands.Register(subcommands.HelpCommand(), "command-help")
