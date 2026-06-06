@@ -47,7 +47,7 @@ const maxSymlinks = 40
 var ForgetMissingsSemaphore = semaphore.New("fs-forget", runtime.GOMAXPROCS(0)*2)
 
 // FlushSemaphore is a semaphore to control concurrent flushes.
-var FlushSemaphore = semaphore.New("fs-flush", runtime.GOMAXPROCS(0)*8)
+var FlushSemaphore = semaphore.New("fs-flush", min(runtime.GOMAXPROCS(0)*8, 200))
 
 func isExecutable(fi fs.FileInfo, fname string, m map[string]bool) bool {
 	if fi.Mode()&0111 != 0 {

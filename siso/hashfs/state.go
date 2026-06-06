@@ -92,7 +92,7 @@ func (o *Option) RegisterFlags(flagSet *flag.FlagSet) {
 	flagSet.BoolVar(&o.UseMmap, "fs_state_mmap", true, "use memory-mapped I/O for state file reads/writes")
 	flagSet.BoolVar(&o.KeepTainted, "fs_keep_tainted", false, "keep manually modified generated file")
 	flagSet.BoolVar(&o.DeferDigest, "fs_defer_digest", false, "defer digest calculation")
-	flagSet.DurationVar(&o.MinFlushTimeout, "fs_min_flush_timeout", 10*time.Second, "minimum timeout for flush. ignored if it is shorter than 10s")
+	flagSet.DurationVar(&o.MinFlushTimeout, "fs_min_flush_timeout", 30*time.Second, "minimum timeout for flush. ignored if it is shorter than 10s")
 	o.OSFSOption.RegisterFlags(flagSet)
 }
 
