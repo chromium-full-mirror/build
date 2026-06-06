@@ -160,7 +160,10 @@ func (b *Builder) runRacing(ctx context.Context, step *Step) error {
 		// Forget the cached outputs in HashFS so that Siso doesn't assume the
 		// outputs are still "local-ready" (up-to-date) on the local disk.
 		// This forces Siso to download/verify them during b.outputs().
-		step.cmd.HashFS.Forget(ctx, step.cmd.WorkspaceRoot, step.cmd.Outputs)
+		// If the local step did not begin running the command, we do not need to flush.
+		if !localStep.cmdRunTime.IsZero() {
+			step.cmd.HashFS.Forget(ctx, step.cmd.WorkspaceRoot, step.cmd.AllOutputs())
+		}
 
 		// Re-record the remote outputs
 		// so that updateDeps and outputs see the correct state.

@@ -117,6 +117,7 @@ func (b *Builder) execLocal(ctx context.Context, step *Step) (retErr error) {
 		started = time.Now()
 		// local exec might be called as fallback.
 		b.actionStartedTime(step, started)
+		step.cmdRunTime = started
 		err := executor.Run(ctx, step.cmd)
 		dur = time.Since(started)
 		step.setPhase(stepOutput)

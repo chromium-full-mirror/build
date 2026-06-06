@@ -165,6 +165,10 @@ type Step struct {
 	// There might be other semaphore throttling for local exec, scandeps, remote exec.
 	startTime time.Time
 
+	// cmdRunTime is set immediately prior to calling `Run` on local
+	// steps, indicating that the command has begun executing.
+	cmdRunTime time.Time
+
 	// endTime is the time that the step ends.
 	endTime time.Time
 
