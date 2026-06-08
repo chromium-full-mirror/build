@@ -36,6 +36,7 @@ import (
 	"go.chromium.org/build/siso/auth/cred"
 	"go.chromium.org/build/siso/o11y/clog"
 	"go.chromium.org/build/siso/o11y/iometrics"
+	"go.chromium.org/build/siso/o11y/monitoring"
 	"go.chromium.org/build/siso/o11y/trace"
 	"go.chromium.org/build/siso/reapi/digest"
 	"go.chromium.org/build/siso/reapi/retry"
@@ -368,6 +369,9 @@ func DialOptions(keepAliveParams keepalive.ClientParameters) []grpc.DialOption {
 		grpc.WithDisableServiceConfig(),
 		// no retry for ActionCache
 		grpc.WithDefaultServiceConfig(serviceConfig),
+		// Tracks per-conn HTTP/2 active streams and per-RPC stage
+		// durations into OTel histograms for the bytestream.* dashboard.
+		grpc.WithStatsHandler(monitoring.BytestreamStatsHandler()),
 	)
 	return dopts
 }

@@ -125,6 +125,10 @@ func SetupViews(ctx context.Context, version, rbeProject string, labels map[stri
 		return nil, err
 	}
 
+	if err := setupBytestreamMetrics(); err != nil {
+		return nil, err
+	}
+
 	views := []smetric.View{
 		func(i smetric.Instrument) (smetric.Stream, bool) {
 			s := smetric.Stream{Name: i.Name, Description: i.Description, Unit: i.Unit}
@@ -145,6 +149,15 @@ func SetupViews(ctx context.Context, version, rbeProject string, labels map[stri
 				}
 			case "build.count":
 				s.Aggregation = smetric.AggregationSum{}
+			case "bytestream.read.ttfb",
+				"bytestream.read.transport_pick",
+				"bytestream.read.client_queue",
+				"bytestream.read.server_setup",
+				"bytestream.read.server_fetch",
+				"bytestream.read.body_download":
+				s.Aggregation = smetric.AggregationExplicitBucketHistogram{
+					Boundaries: bytestreamHistogramBuckets,
+				}
 			default:
 				return s, false
 			}
