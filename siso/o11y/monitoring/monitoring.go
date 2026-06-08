@@ -47,6 +47,9 @@ var (
 	buildLatency metric.Float64Histogram
 	// buildCount is a metric for tracking the number of builds.
 	buildCount metric.Int64Counter
+	// reapiCancellations counts watchdog-triggered cancellations of
+	// REAPI RPCs, tagged by call and reason.
+	reapiCancellations metric.Int64Counter
 
 	// mu protects updating staticMetricLabels.
 	mu sync.Mutex
@@ -125,6 +128,15 @@ func SetupViews(ctx context.Context, version, rbeProject string, labels map[stri
 		return nil, err
 	}
 
+	reapiCancellations, err = meter.Int64Counter(
+		"reapi.cancellations",
+		metric.WithDescription("Watchdog-triggered cancellations of REAPI RPCs (call=which RPC, reason=which watchdog)."),
+		metric.WithUnit("{event}"),
+	)
+	if err != nil {
+		return nil, err
+	}
+
 	if err := setupBytestreamMetrics(); err != nil {
 		return nil, err
 	}
@@ -147,7 +159,7 @@ func SetupViews(ctx context.Context, version, rbeProject string, labels map[stri
 				s.Aggregation = smetric.AggregationExplicitBucketHistogram{
 					Boundaries: []float64{1, 10, 60, 120, 300, 600, 1200, 2400, 3000, 3600, 4200, 4800, 5400, 6000, 6600, 7200, 9000, 10800, 12600, 14400},
 				}
-			case "build.count":
+			case "build.count", "reapi.cancellations":
 				s.Aggregation = smetric.AggregationSum{}
 			case "bytestream.read.ttfb",
 				"bytestream.read.transport_pick",
@@ -189,6 +201,21 @@ func NewMetricProvider(ctx context.Context, metricsProject, rbeProject string, e
 		smetric.WithView(views...),
 	)
 	return meterProvider, nil
+}
+
+// RecordCancellation increments the reapi.cancellations counter.
+// call: the RPC (e.g. "bytestream-read", "cache-check").
+// reason: which watchdog fired (e.g. "pre_first_byte", "no_ops").
+func RecordCancellation(ctx context.Context, call, reason string) {
+	if reapiCancellations == nil {
+		return
+	}
+	attrs := append([]attribute.KeyValue(nil), staticMetricLabels...)
+	attrs = append(attrs,
+		attribute.String("call", call),
+		attribute.String("reason", reason),
+	)
+	reapiCancellations.Add(ctx, 1, metric.WithAttributes(attrs...))
 }
 
 // ExportActionMetrics exports metrics for one log record to OpenTelemetry.

@@ -24,6 +24,7 @@ import (
 
 	"go.chromium.org/build/siso/o11y/clog"
 	"go.chromium.org/build/siso/o11y/iometrics"
+	"go.chromium.org/build/siso/o11y/monitoring"
 	"go.chromium.org/build/siso/reapi/digest"
 	"go.chromium.org/build/siso/reapi/firstbyte"
 	"go.chromium.org/build/siso/sync/semaphore"
@@ -343,6 +344,7 @@ func (ofs *OSFS) WriteDigestData(ctx context.Context, name string, src digest.So
 			case <-ctx.Done():
 				return
 			case <-time.After(fbt):
+				monitoring.RecordCancellation(ctx, "bytestream-read", "pre_first_byte")
 				cancel(status.Errorf(codes.Aborted, "no first byte in %s: %s", fbt, time.Since(started)))
 			}
 		}()
@@ -360,6 +362,7 @@ func (ofs *OSFS) WriteDigestData(ctx context.Context, name string, src digest.So
 			}
 			ops, bytes, dur := rd.stats()
 			if prevOps == ops || prevBytes == bytes {
+				monitoring.RecordCancellation(ctx, "bytestream-read", "no_ops")
 				cancel(status.Errorf(codes.Aborted, "no ops in %s: ops=%d bytes=%d dur=%s %s", timeout, ops, bytes, dur, time.Since(started)))
 				return
 			}

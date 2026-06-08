@@ -662,6 +662,7 @@ func (c *Client) GetActionResult(ctx context.Context, d digest.Digest) (*rpb.Act
 			c.m.OpsDone(err)
 			return result, err
 		}
+		monitoring.RecordCancellation(ctx, "cache-check", "pre_first_byte")
 	}
 	result, err := client.GetActionResult(ctx, req)
 	c.m.OpsDone(err)
