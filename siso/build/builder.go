@@ -1070,6 +1070,9 @@ func stepLogEntry(ctx context.Context, logger *clog.Logger, step *Step, duration
 	if step.metrics.ScandepsTime > 0 {
 		logEntry.Labels["scandeps_secs"] = fmt.Sprintf("%.02f", time.Duration(step.metrics.ScandepsTime).Seconds())
 	}
+	if step.metrics.CacheTime > 0 {
+		logEntry.Labels["cache_secs"] = fmt.Sprintf("%.02f", time.Duration(step.metrics.CacheTime).Seconds())
+	}
 	if step.metrics.MaterializeInputsTime > 0 {
 		logEntry.Labels["materialize_inputs_secs"] = fmt.Sprintf("%.02f", time.Duration(step.metrics.MaterializeInputsTime).Seconds())
 	}
