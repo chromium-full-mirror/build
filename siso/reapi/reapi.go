@@ -23,11 +23,13 @@ import (
 	"google.golang.org/api/option"
 	gtransport "google.golang.org/api/transport/grpc"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/encoding/gzip"
 	"google.golang.org/grpc/keepalive"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 
 	rpb "go.chromium.org/build/remote-apis/build/bazel/remote/execution/v2"
@@ -617,13 +619,51 @@ func (c *Client) Proto(ctx context.Context, d digest.Digest, p proto.Message) er
 	return proto.Unmarshal(b, p)
 }
 
+// GetActionResultTimeout caps a single GetActionResult attempt.
+// Picked at the observed p95 of OK responses (~1.2s on chrome
+// cache-warm); past p95 is pathological, cancel-and-retry on a
+// fresh stream beats waiting toward the 10s service-config deadline.
+// Applied to attempt 0 only; retries run to the natural 10s deadline.
+// Set to 0 to disable.
+var GetActionResultTimeout = 1200 * time.Millisecond
+
+// keepFirstAttempt reports whether to return the first GetActionResult
+// attempt or fall back to a retry. The deadline can fire in the gap
+// between the call returning and this check, so a completed attempt
+// (success or final error) is kept; we fall back only when our own
+// timeout actually cut the call off with DeadlineExceeded.
+func keepFirstAttempt(callCtx context.Context, timeoutCause, callErr error) bool {
+	cutByOurTimeout := errors.Is(context.Cause(callCtx), timeoutCause) &&
+		status.Code(callErr) == codes.DeadlineExceeded
+	return !cutByOurTimeout
+}
+
 // GetActionResult gets the action result by the digest.
 func (c *Client) GetActionResult(ctx context.Context, d digest.Digest) (*rpb.ActionResult, error) {
 	client := rpb.NewActionCacheClient(c.casConn)
-	result, err := client.GetActionResult(ctx, &rpb.GetActionResultRequest{
+	req := &rpb.GetActionResultRequest{
 		InstanceName: c.opt.Instance,
 		ActionDigest: d.Proto(),
-	})
+	}
+	// Attempt 0 runs under a short deadline so a stalled lookup
+	// doesn't sit the full 10s service-config deadline. Only our
+	// synthetic Aborted cause triggers the fallback attempt; any
+	// other error is returned as-is, since gRPC method-config retry
+	// (Aborted/Internal/ResourceExhausted/Unavailable/Unknown, up to
+	// 5 attempts) already covered the transport-level retries.
+	if GetActionResultTimeout > 0 {
+		cause := status.Error(codes.Aborted, "GetActionResult first-byte timeout")
+		callCtx, cancel := context.WithTimeoutCause(ctx, GetActionResultTimeout, cause)
+		result, err := client.GetActionResult(callCtx, req)
+		// Decide before cancel() overwrites the deadline cause.
+		keep := keepFirstAttempt(callCtx, cause, err)
+		cancel()
+		if keep {
+			c.m.OpsDone(err)
+			return result, err
+		}
+	}
+	result, err := client.GetActionResult(ctx, req)
 	c.m.OpsDone(err)
 	return result, err
 }

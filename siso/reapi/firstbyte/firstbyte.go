@@ -29,8 +29,11 @@ package firstbyte
 import (
 	"context"
 	"sync"
+	"time"
 
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/stats"
+	"google.golang.org/grpc/status"
 )
 
 // Signal is the one-shot first-byte notification.
@@ -102,3 +105,39 @@ func (handler) HandleConn(context.Context, stats.ConnStats) {}
 // mechanism. Method-agnostic: any RPC reaching InPayload counts as
 // "data flowing".
 var Handler stats.Handler = handler{}
+
+// Watchdog runs f on a derived ctx that is cancelled with codes.Aborted
+// if no gRPC InPayload event fires within timeout. Returns f's error,
+// or the watchdog's Aborted cause if it fired. Pair with retry.Do for
+// the cancelled attempt to be retried on a fresh stream:
+//
+//	err := retry.Do(ctx, func() error {
+//	    return firstbyte.Watchdog(ctx, 5*time.Second, "GetActionResult", func(ctx context.Context) error {
+//	        _, err := client.GetActionResult(ctx, req)
+//	        return err
+//	    })
+//	})
+//
+// timeout <= 0 disables the watchdog (f runs against ctx unchanged).
+func Watchdog(ctx context.Context, timeout time.Duration, label string, f func(context.Context) error) error {
+	if timeout <= 0 {
+		return f(ctx)
+	}
+	ctx, sig := WithSignal(ctx)
+	ctx, cancel := context.WithCancelCause(ctx)
+	defer cancel(context.Canceled)
+	started := time.Now()
+	go func() {
+		select {
+		case <-sig.Fired():
+		case <-ctx.Done():
+		case <-time.After(timeout):
+			cancel(status.Errorf(codes.Aborted, "%s no first byte in %s: %s", label, timeout, time.Since(started)))
+		}
+	}()
+	err := f(ctx)
+	if ctx.Err() != nil {
+		err = context.Cause(ctx)
+	}
+	return err
+}
