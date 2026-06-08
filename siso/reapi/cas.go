@@ -312,17 +312,12 @@ func (c *Client) GetReader(ctx context.Context, d digest.Digest, name string) (i
 		}
 		return io.NopCloser(bytes.NewReader(buf)), nil
 	}
-
-	resourceName := c.resourceName(d)
-	if log.V(1) {
-		clog.Infof(ctx, "GetReader (ByteStream) %s resourceName=%s", d, resourceName)
+	src := digestSource{
+		c:     c,
+		d:     d,
+		fname: name,
 	}
-
-	r, err := bytestreamio.Open(ctx, bpb.NewByteStreamClient(c.casConn), resourceName)
-	if err != nil {
-		return nil, err
-	}
-	return c.newDecoder(r, d)
+	return src.Open(ctx)
 }
 
 // getWithBatchReadBlobs fetches the content of blob using BatchReadBlobs rpc of CAS.

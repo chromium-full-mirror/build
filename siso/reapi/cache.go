@@ -99,6 +99,9 @@ type digestSourceReader struct {
 func (r *digestSourceReader) Read(buf []byte) (int, error) {
 	n, err := r.r.Read(buf)
 	r.n += n
+	if err == io.EOF && int64(r.n) != r.size {
+		err = io.ErrUnexpectedEOF
+	}
 	return n, err
 }
 
