@@ -626,8 +626,19 @@ func (e *entry) flushWrite(ctx context.Context, fname string, osfs *osfs.OSFS, s
 	tmpname := filepath.Join(filepath.Dir(fname), "."+filepath.Base(fname)+".siso_tmp")
 	ctx, cancel := digest.ContextWithTimeout(ctx, e.d)
 	defer cancel()
+	// Skip the first-byte watchdog for local FileSource: no gRPC
+	// InPayload event can fire and a slow local copy would be falsely
+	// aborted. Otherwise cancel only attempt 0; retry attempts skip
+	// the watchdog so a persistently slow source isn't thrashed.
+	_, srcIsLocal := osfs.AsFileSource(e.src)
+	attempt := 0
 	err := retry.Do(ctx, func() error {
-		return osfs.WriteDigestData(ctx, tmpname, e.src, e.mode, timeout)
+		callCtx := ctx
+		if attempt == 0 && !srcIsLocal {
+			callCtx = osfs.WithFirstByteTimeout(ctx, 5*time.Second)
+		}
+		attempt++
+		return osfs.WriteDigestData(callCtx, tmpname, e.src, e.mode, timeout)
 	})
 	if err != nil {
 		return fmt.Errorf("flush tmp %s size=%d %s: %w", tmpname, d.SizeBytes, time.Since(started), err)

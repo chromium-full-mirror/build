@@ -25,6 +25,7 @@ import (
 	"go.chromium.org/build/siso/o11y/clog"
 	"go.chromium.org/build/siso/o11y/iometrics"
 	"go.chromium.org/build/siso/reapi/digest"
+	"go.chromium.org/build/siso/reapi/firstbyte"
 	"go.chromium.org/build/siso/sync/semaphore"
 )
 
@@ -300,14 +301,53 @@ func (w *measuringWriter) bytesPerSec() float64 {
 	return float64(w.bytes) / w.dur.Seconds()
 }
 
+type firstByteTimeoutCtxKey struct{}
+
+// WithFirstByteTimeout opts a single WriteDigestData call into the
+// pre-first-byte watchdog with the given duration. Without this on
+// ctx, no watchdog runs.
+func (*OSFS) WithFirstByteTimeout(ctx context.Context, d time.Duration) context.Context {
+	return context.WithValue(ctx, firstByteTimeoutCtxKey{}, d)
+}
+
+func firstByteTimeoutFromCtx(ctx context.Context) (time.Duration, bool) {
+	d, ok := ctx.Value(firstByteTimeoutCtxKey{}).(time.Duration)
+	return d, ok
+}
+
 // WriteDigestData writes digest source into the named file.
 func (ofs *OSFS) WriteDigestData(ctx context.Context, name string, src digest.Source, perm fs.FileMode, timeout time.Duration) error {
 	started := time.Now()
 	var n int64
 	var rd measuringReader
 	var wr measuringWriter
+	// fbSig.Fired() closes on the gRPC InPayload event (true
+	// wire-level first byte), so reads done inside Open() -- e.g.
+	// newDecoder's zstd probe -- don't affect the watchdog. Non-gRPC
+	// sources (local file, in-memory bytes) never fire but also never
+	// stall long enough to matter.
+	ctx, fbSig := firstbyte.WithSignal(ctx)
+	// cancel() below cancels the derived ctx, not callerCtx, so
+	// callerCtx.Err() != nil means the caller canceled, not a watchdog.
+	callerCtx := ctx
 	ctx, cancel := context.WithCancelCause(ctx)
 	defer cancel(context.Canceled)
+
+	// Pre-first-byte watchdog only fires if the caller opted in via
+	// WithFirstByteTimeout. Default is no watchdog.
+	if fbt, ok := firstByteTimeoutFromCtx(ctx); ok && fbt > 0 {
+		go func() {
+			select {
+			case <-fbSig.Fired():
+				return
+			case <-ctx.Done():
+				return
+			case <-time.After(fbt):
+				cancel(status.Errorf(codes.Aborted, "no first byte in %s: %s", fbt, time.Since(started)))
+			}
+		}()
+	}
+
 	go func() {
 		// watchdog for reader.
 		// if no operations in timeout, abort the operations.
@@ -362,7 +402,14 @@ func (ofs *OSFS) WriteDigestData(ctx context.Context, name string, src digest.So
 		}
 		return err
 	}()
-	if ctx.Err() != nil {
+	// Caller cancellation must surface even on a successful copy, else
+	// flushWrite renames/Chtimes after the caller gave up. A watchdog that
+	// fired while the copy still completed is a success, not Aborted; only
+	// surface its cause when io.Copy actually failed.
+	switch {
+	case callerCtx.Err() != nil:
+		err = context.Cause(callerCtx)
+	case err != nil && ctx.Err() != nil:
 		err = context.Cause(ctx)
 	}
 	ofs.WriteDone(int(n), err)

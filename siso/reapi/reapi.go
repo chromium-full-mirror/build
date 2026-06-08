@@ -39,6 +39,7 @@ import (
 	"go.chromium.org/build/siso/o11y/monitoring"
 	"go.chromium.org/build/siso/o11y/trace"
 	"go.chromium.org/build/siso/reapi/digest"
+	"go.chromium.org/build/siso/reapi/firstbyte"
 	"go.chromium.org/build/siso/reapi/retry"
 	"go.chromium.org/build/siso/version"
 )
@@ -369,9 +370,11 @@ func DialOptions(keepAliveParams keepalive.ClientParameters) []grpc.DialOption {
 		grpc.WithDisableServiceConfig(),
 		// no retry for ActionCache
 		grpc.WithDefaultServiceConfig(serviceConfig),
-		// Tracks per-conn HTTP/2 active streams and per-RPC stage
-		// durations into OTel histograms for the bytestream.* dashboard.
+		// active streams and per-RPC stages into bytestream.* histograms
 		grpc.WithStatsHandler(monitoring.BytestreamStatsHandler()),
+		// closes firstbyte.Signal on first InPayload (used by hashfs's
+		// pre-first-byte watchdog)
+		grpc.WithStatsHandler(firstbyte.Handler),
 	)
 	return dopts
 }
