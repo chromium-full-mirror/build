@@ -651,6 +651,7 @@ func (c *Client) GetActionResult(ctx context.Context, d digest.Digest) (*rpb.Act
 	// other error is returned as-is, since gRPC method-config retry
 	// (Aborted/Internal/ResourceExhausted/Unavailable/Unknown, up to
 	// 5 attempts) already covered the transport-level retries.
+	retried := false
 	if GetActionResultTimeout > 0 {
 		cause := status.Error(codes.Aborted, "GetActionResult first-byte timeout")
 		callCtx, cancel := context.WithTimeoutCause(ctx, GetActionResultTimeout, cause)
@@ -663,8 +664,13 @@ func (c *Client) GetActionResult(ctx context.Context, d digest.Digest) (*rpb.Act
 			return result, err
 		}
 		monitoring.RecordCancellation(ctx, "cache-check", "pre_first_byte")
+		retried = true
 	}
+	start := time.Now()
 	result, err := client.GetActionResult(ctx, req)
+	if retried {
+		monitoring.RecordRetryDuration(ctx, "cache-check", time.Since(start), err)
+	}
 	c.m.OpsDone(err)
 	return result, err
 }

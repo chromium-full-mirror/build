@@ -50,6 +50,10 @@ var (
 	// reapiCancellations counts watchdog-triggered cancellations of
 	// REAPI RPCs, tagged by call and reason.
 	reapiCancellations metric.Int64Counter
+	// reapiRetryDuration records latency and outcome of a retry that
+	// followed a watchdog cancellation, so the cancel+retry payoff is
+	// observable (call=which RPC, outcome=ok|err).
+	reapiRetryDuration metric.Float64Histogram
 
 	// mu protects updating staticMetricLabels.
 	mu sync.Mutex
@@ -137,6 +141,15 @@ func SetupViews(ctx context.Context, version, rbeProject string, labels map[stri
 		return nil, err
 	}
 
+	reapiRetryDuration, err = meter.Float64Histogram(
+		"reapi.retry.duration",
+		metric.WithDescription("Latency of a retry following a watchdog cancellation (call=which RPC, outcome=ok|err)."),
+		metric.WithUnit("s"),
+	)
+	if err != nil {
+		return nil, err
+	}
+
 	if err := setupBytestreamMetrics(); err != nil {
 		return nil, err
 	}
@@ -161,6 +174,10 @@ func SetupViews(ctx context.Context, version, rbeProject string, labels map[stri
 				}
 			case "build.count", "reapi.cancellations":
 				s.Aggregation = smetric.AggregationSum{}
+			case "reapi.retry.duration":
+				s.Aggregation = smetric.AggregationExplicitBucketHistogram{
+					Boundaries: []float64{0.05, 0.1, 0.25, 0.5, 0.75, 1, 2.5, 5, 7.5, 10, 30},
+				}
 			case "bytestream.read.ttfb",
 				"bytestream.read.transport_pick",
 				"bytestream.read.client_queue",
@@ -216,6 +233,24 @@ func RecordCancellation(ctx context.Context, call, reason string) {
 		attribute.String("reason", reason),
 	)
 	reapiCancellations.Add(ctx, 1, metric.WithAttributes(attrs...))
+}
+
+// RecordRetryDuration records the latency and outcome of a retry that
+// followed a watchdog cancellation. call: "cache-check", "bytestream-read".
+func RecordRetryDuration(ctx context.Context, call string, d time.Duration, err error) {
+	if reapiRetryDuration == nil {
+		return
+	}
+	outcome := "ok"
+	if err != nil {
+		outcome = "err"
+	}
+	attrs := append([]attribute.KeyValue(nil), staticMetricLabels...)
+	attrs = append(attrs,
+		attribute.String("call", call),
+		attribute.String("outcome", outcome),
+	)
+	reapiRetryDuration.Record(ctx, d.Seconds(), metric.WithAttributes(attrs...))
 }
 
 // ExportActionMetrics exports metrics for one log record to OpenTelemetry.

@@ -18,9 +18,12 @@ import (
 	"time"
 
 	log "github.com/golang/glog"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	"go.chromium.org/build/siso/hashfs/osfs"
 	"go.chromium.org/build/siso/o11y/clog"
+	"go.chromium.org/build/siso/o11y/monitoring"
 	"go.chromium.org/build/siso/reapi/digest"
 	"go.chromium.org/build/siso/reapi/retry"
 )
@@ -632,13 +635,24 @@ func (e *entry) flushWrite(ctx context.Context, fname string, osfs *osfs.OSFS, s
 	// the watchdog so a persistently slow source isn't thrashed.
 	_, srcIsLocal := osfs.AsFileSource(e.src)
 	attempt := 0
+	// Record retry duration only for a retry that follows a watchdog
+	// cancellation (codes.Aborted on the prior attempt). A plain retryable
+	// gRPC error (e.g. Unavailable) before the watchdog fires would otherwise
+	// be miscounted as a bytestream-read first-byte stall.
+	retryAfterWatchdog := false
 	err := retry.Do(ctx, func() error {
 		callCtx := ctx
 		if attempt == 0 && !srcIsLocal {
 			callCtx = osfs.WithFirstByteTimeout(ctx, 5*time.Second)
 		}
 		attempt++
-		return osfs.WriteDigestData(callCtx, tmpname, e.src, e.mode, timeout)
+		start := time.Now()
+		werr := osfs.WriteDigestData(callCtx, tmpname, e.src, e.mode, timeout)
+		if retryAfterWatchdog {
+			monitoring.RecordRetryDuration(ctx, "bytestream-read", time.Since(start), werr)
+		}
+		retryAfterWatchdog = status.Code(werr) == codes.Aborted
+		return werr
 	})
 	if err != nil {
 		return fmt.Errorf("flush tmp %s size=%d %s: %w", tmpname, d.SizeBytes, time.Since(started), err)
