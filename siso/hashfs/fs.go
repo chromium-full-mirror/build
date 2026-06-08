@@ -453,7 +453,12 @@ func (hfs *HashFS) getOrCreateEntry(ctx context.Context, fname string) (*entry, 
 
 // Stat returns a FileInfo at root/fname.
 func (hfs *HashFS) Stat(ctx context.Context, root, fname string) (FileInfo, error) {
-	return hfs.stat(ctx, root, fname, true)
+	start := time.Now()
+	fi, err := hfs.stat(ctx, root, fname, true)
+	if time.Since(start) > 100*time.Millisecond {
+		clog.Infof(ctx, "Stat slow: %s/%s took %s", root, fname, time.Since(start))
+	}
+	return fi, err
 }
 
 func (hfs *HashFS) stat(ctx context.Context, root, fname string, needCompute bool) (FileInfo, error) {
@@ -928,7 +933,12 @@ func (hfs *HashFS) ForgetMissingsInDir(ctx context.Context, root, dir string) {
 		}
 		needCheck = append(needCheck, fname)
 	}
+	start := time.Now()
 	err := ForgetMissingsSemaphore.Do(ctx, func(ctx context.Context) error {
+		acquired := time.Now()
+		if acquired.Sub(start) > 100*time.Millisecond {
+			clog.Infof(ctx, "ForgetMissingsInDir ForgetMissingsSemaphore acquire took %s for %d checks", acquired.Sub(start), len(needCheck))
+		}
 		for _, fname := range needCheck {
 			fullname := makeFullpath(root, fname)
 			_, err := hfs.OS.Lstat(ctx, fullname)
@@ -940,6 +950,9 @@ func (hfs *HashFS) ForgetMissingsInDir(ctx context.Context, root, dir string) {
 		}
 		return nil
 	})
+	if time.Since(start) > 500*time.Millisecond {
+		clog.Infof(ctx, "ForgetMissingsInDir total took %s (checks=%d)", time.Since(start), len(needCheck))
+	}
 	if err != nil {
 		clog.Warningf(ctx, "forget missings in dir: %v", err)
 	}
@@ -969,7 +982,12 @@ func (hfs *HashFS) ForgetMissings(ctx context.Context, root string, inputs []str
 		needCheck = append(needCheck, fname)
 	}
 
+	start := time.Now()
 	err := ForgetMissingsSemaphore.Do(ctx, func(ctx context.Context) error {
+		acquired := time.Now()
+		if acquired.Sub(start) > 100*time.Millisecond {
+			clog.Infof(ctx, "ForgetMissings ForgetMissingsSemaphore acquire took %s for %d checks", acquired.Sub(start), len(needCheck))
+		}
 		for _, fname := range needCheck {
 			fullname := makeFullpath(root, fname)
 			_, err := hfs.OS.Lstat(ctx, fullname)
@@ -988,6 +1006,9 @@ func (hfs *HashFS) ForgetMissings(ctx context.Context, root string, inputs []str
 		}
 		return nil
 	})
+	if time.Since(start) > 500*time.Millisecond {
+		clog.Infof(ctx, "ForgetMissings total took %s (checks=%d)", time.Since(start), len(needCheck))
+	}
 	if err != nil {
 		clog.Warningf(ctx, "forget missings: %v", err)
 	}
@@ -1278,6 +1299,12 @@ func newEntryFromUpdate(ent UpdateEntry) *entry {
 func (hfs *HashFS) Update(ctx context.Context, workspaceRoot string, entries []UpdateEntry) error {
 	ctx, span := trace.NewSpan(ctx, "fs-update")
 	defer span.Close(nil)
+	start := time.Now()
+	defer func() {
+		if time.Since(start) > 100*time.Millisecond {
+			clog.Infof(ctx, "HashFS.Update took %s for %d entries", time.Since(start), len(entries))
+		}
+	}()
 	select {
 	case <-ctx.Done():
 		return context.Cause(ctx)
@@ -1291,10 +1318,14 @@ func (hfs *HashFS) Update(ctx context.Context, workspaceRoot string, entries []U
 	})
 
 	if hfs.opt.ArtFS != nil {
+		start := time.Now()
 		hfs.artfsInsert(ctx, workspaceRoot, entries)
+		clog.Infof(ctx, "artfsInsert took %s for %d entries", time.Since(start), len(entries))
 	}
 	if hfs.opt.CartFS != nil {
+		start := time.Now()
 		hfs.cartfsRegister(ctx, workspaceRoot, entries)
+		clog.Infof(ctx, "cartfsRegister took %s for %d entries", time.Since(start), len(entries))
 	}
 	for _, ent := range entries {
 		clog.Infof(ctx, "update %v", ent)
@@ -1501,6 +1532,7 @@ func (hfs *HashFS) RetrieveUpdateEntriesFromLocal(ctx context.Context, root stri
 	defer span.Close(nil)
 
 	ents := make([]UpdateEntry, 0, len(fnames))
+	start := time.Now()
 	// invalidate hashfs cache for all fnames and its missing parents.
 	for _, fname := range fnames {
 		// Check context before modifying hashfs.  In racing mode
@@ -1566,6 +1598,10 @@ func (hfs *HashFS) RetrieveUpdateEntriesFromLocal(ctx context.Context, root stri
 		}
 		ents = append(ents, ent)
 	}
+	if time.Since(start) > 500*time.Millisecond {
+		clog.Infof(ctx, "RetrieveUpdateEntriesFromLocal stage 1 took %s for %d files", time.Since(start), len(fnames))
+	}
+	start = time.Now()
 	// capture hashfs for all fnames after all missing entries, parents
 	// are invalidated in the above loop.
 	for i, ent := range ents {
@@ -1580,6 +1616,9 @@ func (hfs *HashFS) RetrieveUpdateEntriesFromLocal(ctx context.Context, root stri
 			ent.IsChanged = fi.IsChanged()
 			ents[i] = ent
 		}
+	}
+	if time.Since(start) > 500*time.Millisecond {
+		clog.Infof(ctx, "RetrieveUpdateEntriesFromLocal stage 2 took %s for %d files", time.Since(start), len(ents))
 	}
 	return ents
 }
