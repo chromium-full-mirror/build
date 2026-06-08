@@ -59,24 +59,24 @@ type StepMetric struct {
 
 	// Ready is the time it took since build start until the action became
 	// ready for execution (= all inputs are available).
-	Ready IntervalMetric `json:"ready,omitempty"`
+	Ready IntervalMetric `json:"ready_nanos,omitempty"`
 	// Start is the time it took until Siso's scheduler was ready to work
 	// on the step (concurrency limited by stepSema) and pass it to an
 	// execution strategy.
-	Start IntervalMetric `json:"start,omitempty"`
+	Start IntervalMetric `json:"start_nanos,omitempty"`
 	// Duration is the time it took for the action to do its job, measured
 	// from start of work until it is completed.
 	// It includes siso-overhead (preproc etc) and command executon
 	// (RunTime).
 	// for full build metric, it's duration to process all scheduled steps.
-	Duration IntervalMetric `json:"duration,omitempty"`
+	Duration IntervalMetric `json:"duration_nanos,omitempty"`
 
 	// WeightedDuration is an estimate of the "true duration" of the action
 	// that tries to accommodate for the impact of other actions running in
 	// parallel. It is calculated by summing up small slices of time (~100ms)
 	// while the action is running, where each slice's duration is divided by
 	// the number of concurrently running actions at that point in time.
-	WeightedDuration IntervalMetric `json:"weighted_duration,omitempty"`
+	WeightedDuration IntervalMetric `json:"weighted_duration_nanos,omitempty"`
 
 	// The hash of the command-line of the build step.
 	CmdHash string `json:"cmdhash,omitempty"`
@@ -107,7 +107,7 @@ type StepMetric struct {
 	// Use ScandepsTime instead if semaphore waiting time should be excluded,
 	// or a measurement that starts within ActionStartTime is required.
 	// TODO: set in reproxy mode too
-	DepsScanTime IntervalMetric `json:"depsscan,omitempty"`
+	DepsScanTime IntervalMetric `json:"depsscan_nanos,omitempty"`
 
 	// RunTime, QueueTime and ExecTime are measured by the execution
 	// strategies in execution metadata of result.
@@ -117,76 +117,76 @@ type StepMetric struct {
 	// may happen and there might be internal waiting time. e.g. remote
 	// exec semaphore. ActionStartTime is set within the execution semaphores
 	// (localSema, remoteSema, rewrapSema, etc).
-	ActionStartTime IntervalMetric `json:"action_start,omitempty"`
+	ActionStartTime IntervalMetric `json:"action_start_nanos,omitempty"`
 
 	// ScandepsStartTime is the time it took since build start until
 	// scandeps starts.
-	ScandepsStartTime IntervalMetric `json:"scandeps_start,omitempty"`
+	ScandepsStartTime IntervalMetric `json:"scandeps_start_nanos,omitempty"`
 	// ScandepsTime is the duration measured from the execution strategy
 	// starting the scandeps process until the scandeps process exited.
 	// Semaphore waiting time is excluded.
 	// Use DepsScanTime instead if semaphore waiting time is desired.
-	ScandepsTime IntervalMetric `json:"scandeps,omitempty"`
+	ScandepsTime IntervalMetric `json:"scandeps_nanos,omitempty"`
 
 	// CacheStartTime is the time it took since build start until
 	// querying the remote cache starts.
-	CacheStartTime IntervalMetric `json:"cache_start,omitempty"`
+	CacheStartTime IntervalMetric `json:"cache_start_nanos,omitempty"`
 	// CacheTime is the duration measured from the execution strategy
 	// starting the remote cache query until it finishes.  For cache hits,
 	// this includes the time to process the hit.
-	CacheTime IntervalMetric `json:"cache,omitempty"`
+	CacheTime IntervalMetric `json:"cache_nanos,omitempty"`
 
 	// MaterializeInputsTime is the time it took to materialize inputs to disk
 	// that were required by the step.
-	MaterializeInputsTime IntervalMetric `json:"materialize_inputs,omitempty"`
+	MaterializeInputsTime IntervalMetric `json:"materialize_inputs_nanos,omitempty"`
 	// MaterializeOutputsTime is the time it took to materialize outputs to disk
 	// by the step.
 	// These could be remote files from CAS, or local in-memory files from a
 	// step handler, etc.
-	MaterializeOutputsTime IntervalMetric `json:"materialize_outputs,omitempty"`
+	MaterializeOutputsTime IntervalMetric `json:"materialize_outputs_nanos,omitempty"`
 
 	// RunTime is the total duration of the action execution, including
 	// overhead such as uploading / downloading files. Semaphore waiting time
 	// (namely execution semaphores like localSema, remoteSema, rewrapSema, etc)
 	//  is not included.
-	RunTime IntervalMetric `json:"run,omitempty"`
+	RunTime IntervalMetric `json:"run_nanos,omitempty"`
 	// QueueTime is the time it took until the worker could begin executing
 	// the action.
 	// TODO: set in reproxy mode too
-	QueueTime IntervalMetric `json:"queue,omitempty"`
+	QueueTime IntervalMetric `json:"queue_nanos,omitempty"`
 	// ExecStartTime is set if the action was not cached, containing the time
 	// measured when the execution strategy started the process.
-	ExecStartTime IntervalMetric `json:"exec_start,omitempty"`
+	ExecStartTime IntervalMetric `json:"exec_start_nanos,omitempty"`
 	// InputFetchTime is the time spent on downloading action inputs to the remote
 	// worker.
 	// It is set only when using remoteexec strategy and no cache.
 	// TODO: Measure input fetch time for localexec.
-	InputFetchTime IntervalMetric `json:"input_fetch,omitempty"`
+	InputFetchTime IntervalMetric `json:"input_fetch_nanos,omitempty"`
 	// ExecTime is the time measured from the execution strategy starting
 	// the process until the process exited.
-	ExecTime IntervalMetric `json:"exec,omitempty"`
+	ExecTime IntervalMetric `json:"exec_nanos,omitempty"`
 
 	// WorkerTime is the time measured from when the worker started the process
 	// until the worker completed the process (including input fetch and output upload time and
 	// other miscellaneous overheads that aren't measured individually).
-	WorkerTime IntervalMetric `json:"worker,omitempty"`
+	WorkerTime IntervalMetric `json:"worker_nanos,omitempty"`
 	// OutputUploadTime is the time spent on uploading action outputs from
 	// the remote worker.
 	// It is set only when using remoteexec strategy and no cache.
-	OutputUploadTime IntervalMetric `json:"output_upload,omitempty"`
+	OutputUploadTime IntervalMetric `json:"output_upload_nanos,omitempty"`
 	// ActionEndTime is the time it took since build start until
 	// the action completes.
-	ActionEndTime IntervalMetric `json:"action_end,omitempty"`
+	ActionEndTime IntervalMetric `json:"action_end_nanos,omitempty"`
 
 	Inputs int `json:"inputs,omitempty"` // how many input files.
 
 	// resource used by local process.
-	MaxRSS  int64          `json:"max_rss,omitempty"` // max rss in local cmd.
-	Majflt  int64          `json:"majflt,omitempty"`  // major page faults
-	Inblock int64          `json:"inblock,omitempty"` // block input operations.
-	Oublock int64          `json:"oublock,omitempty"` // block output operations.
-	Utime   IntervalMetric `json:"utime,omitempty"`   // user CPU time used for local cmd.
-	Stime   IntervalMetric `json:"stime,omitempty"`   // system CPU time used for local cmd.
+	MaxRSS  int64          `json:"max_rss,omitempty"`     // max rss in local cmd.
+	Majflt  int64          `json:"majflt,omitempty"`      // major page faults
+	Inblock int64          `json:"inblock,omitempty"`     // block input operations.
+	Oublock int64          `json:"oublock,omitempty"`     // block output operations.
+	Utime   IntervalMetric `json:"utime_nanos,omitempty"` // user CPU time used for local cmd.
+	Stime   IntervalMetric `json:"stime_nanos,omitempty"` // system CPU time used for local cmd.
 
 	skip bool // whether the step was skipped during the build.
 }

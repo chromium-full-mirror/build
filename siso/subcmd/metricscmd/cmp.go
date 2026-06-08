@@ -139,13 +139,13 @@ func outputDiff(m []build.StepMetric) error {
 		Rule   string `json:"rule,omitempty"`
 		Output string `json:"output"`
 
-		Ready            build.IntervalMetric `json:"ready"`
-		Start            build.IntervalMetric `json:"start"`
-		Duration         build.IntervalMetric `json:"duration"`
-		WeightedDuration build.IntervalMetric `json:"weighted_duration"`
-		RunTime          build.IntervalMetric `json:"run"`
-		QueueTime        build.IntervalMetric `json:"queue"`
-		ExecTime         build.IntervalMetric `json:"exec"`
+		Ready            build.IntervalMetric `json:"ready_nanos"`
+		Start            build.IntervalMetric `json:"start_nanos"`
+		Duration         build.IntervalMetric `json:"duration_nanos"`
+		WeightedDuration build.IntervalMetric `json:"weighted_duration_nanos"`
+		RunTime          build.IntervalMetric `json:"run_nanos"`
+		QueueTime        build.IntervalMetric `json:"queue_nanos"`
+		ExecTime         build.IntervalMetric `json:"exec_nanos"`
 	}{
 		Action:           m[0].Action,
 		Output:           m[0].Output(),
