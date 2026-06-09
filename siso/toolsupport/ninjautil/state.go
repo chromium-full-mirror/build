@@ -212,6 +212,7 @@ func (s *State) Targets(args []string) ([]*Node, error) {
 	}
 	var errs []error
 	nodes := make([]*Node, 0, len(args))
+	resolvedSeen := make(map[*Node]struct{})
 	for _, t := range args {
 		t := filepath.ToSlash(filepath.Clean(t))
 		if strings.HasSuffix(t, "^") {
@@ -238,7 +239,8 @@ func (s *State) Targets(args []string) ([]*Node, error) {
 				if len(outputs) == 0 {
 					return nil, fmt.Errorf("out edge of %q has no output", t)
 				}
-				nodes = append(nodes, outputs[0])
+				resolved := s.resolvePhony(outputs[0], resolvedSeen)
+				nodes = append(nodes, resolved...)
 			}
 			continue
 		}
@@ -250,6 +252,26 @@ func (s *State) Targets(args []string) ([]*Node, error) {
 		nodes = append(nodes, n)
 	}
 	return nodes, errors.Join(errs...)
+}
+
+func (s *State) resolvePhony(n *Node, seen map[*Node]struct{}) []*Node {
+	if _, ok := seen[n]; ok {
+		return nil
+	}
+	seen[n] = struct{}{}
+
+	inEdge, ok := n.InEdge()
+	if !ok || !inEdge.IsPhony() {
+		return []*Node{n}
+	}
+
+	var realNodes []*Node
+	for _, outEdge := range n.OutEdges() {
+		for _, outNode := range outEdge.Outputs() {
+			realNodes = append(realNodes, s.resolvePhony(outNode, seen)...)
+		}
+	}
+	return realNodes
 }
 
 // Special syntax: "foo.cc^" means "the first output of foo.cc".

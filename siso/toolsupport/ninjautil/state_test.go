@@ -148,6 +148,26 @@ default all
 			args:  []string{"../../foo/foo_util.h^"},
 			want:  []string{"obj/foo.o"},
 		},
+		{
+			name: "phony_resolver",
+			input: `
+rule cxx
+  command = clang++ -c ${in} ${out}
+
+build inputdeps: phony ../../foo/foo.cc
+build web_navigation.cc: cxx inputdeps
+`,
+			args: []string{"../../foo/foo.cc^"},
+			want: []string{"web_navigation.cc"},
+		},
+		{
+			name: "phony_resolver_no_real",
+			input: `
+build phony1: phony ../../foo/foo.cc
+build phony2: phony phony1
+`,
+			args: []string{"../../foo/foo.cc^"},
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx := t.Context()
