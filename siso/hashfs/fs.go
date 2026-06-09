@@ -456,11 +456,46 @@ func (hfs *HashFS) Stat(ctx context.Context, root, fname string) (FileInfo, erro
 	return hfs.stat(ctx, root, fname, true)
 }
 
+// statTracer tracks the execution time of each step in HashFS.stat.
+// It uses fixed-size arrays to avoid heap allocations in the fast path (when total time < 200ms),
+// preventing regressions in allocation tests like TestStatAllocs.
+type statTracer struct {
+	start     time.Time
+	stepStart time.Time
+	names     [10]string
+	durs      [10]time.Duration
+	count     int
+}
+
+func (t *statTracer) record(name string) {
+	if t.count < len(t.names) {
+		t.names[t.count] = name
+		t.durs[t.count] = time.Since(t.stepStart)
+		t.count++
+	}
+	t.stepStart = time.Now()
+}
+
 func (hfs *HashFS) stat(ctx context.Context, root, fname string, needCompute bool) (FileInfo, error) {
+	var tracer statTracer
+	tracer.start = time.Now()
+	tracer.stepStart = tracer.start
+	defer func(t *statTracer) {
+		total := time.Since(t.start)
+		if total > 200*time.Millisecond {
+			var parts []string
+			for i := range t.count {
+				parts = append(parts, fmt.Sprintf("%s:%s", t.names[i], t.durs[i]))
+			}
+			clog.Infof(ctx, "stat slow %s/%s: total %s, steps: %s", root, fname, total, strings.Join(parts, ", "))
+		}
+	}(&tracer)
+
 	if log.V(1) {
 		clog.Infof(ctx, "stat @%s %s", root, fname)
 	}
 	e, fname, dir, ok := hfs.dirLookup(ctx, root, fname)
+	tracer.record("dirLookup")
 	if log.V(1) {
 		clog.Infof(ctx, "stat @%s -> %s", root, fname)
 	}
@@ -477,6 +512,7 @@ func (hfs *HashFS) stat(ctx context.Context, root, fname string, needCompute boo
 			// in the directory by local run.
 			fullname := makeFullpath(root, fname)
 			lfi, err := hfs.OS.Lstat(ctx, fullname)
+			tracer.record("lstat")
 			switch {
 			case errors.Is(err, fs.ErrNotExist):
 				// virtually created dir in hashfs,
@@ -495,6 +531,7 @@ func (hfs *HashFS) stat(ctx context.Context, root, fname string, needCompute boo
 				mtime := lfi.ModTime()
 				// adjust for clock stepback by NTP
 				err = waitUntilModTime(ctx, fullname, mtime)
+				tracer.record("waitUntilModTime")
 				if err != nil {
 					return FileInfo{}, err
 				}
@@ -515,6 +552,7 @@ func (hfs *HashFS) stat(ctx context.Context, root, fname string, needCompute boo
 	fullname := makeFullpath(root, fname)
 	e = newLocalEntry()
 	e.init(ctx, fullname, hfs.executables, hfs.OS)
+	tracer.record("init")
 	if log.V(1) {
 		clog.Infof(ctx, "stat new entry %s %s", fullname, e)
 	}
@@ -530,6 +568,7 @@ func (hfs *HashFS) stat(ctx context.Context, root, fname string, needCompute boo
 	} else {
 		e, err = hfs.directory.store(ctx, fullname, e)
 	}
+	tracer.record("store")
 	if err != nil {
 		clog.Warningf(ctx, "failed to store %s %s in %s: %v", fullname, e, dir, err)
 		return FileInfo{}, err
@@ -539,6 +578,7 @@ func (hfs *HashFS) stat(ctx context.Context, root, fname string, needCompute boo
 	}
 	if needCompute {
 		hfs.digester.lazyCompute(ctx, fullname, e)
+		tracer.record("lazyCompute")
 	}
 	return FileInfo{root: root, fname: fname, e: e}, nil
 }
