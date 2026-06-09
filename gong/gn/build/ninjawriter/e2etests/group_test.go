@@ -91,10 +91,8 @@ build $:app: phony obj/app
 
 build all: phony $
     obj/libfoo.a $
-    obj/libbar.a $` +
-				// TODO: this duplication is wrong, fix it.
-				`
-    obj/libfoo.a $
+    obj/libbar.a $
+    phony/my_group $
     obj/app
 
 default all
