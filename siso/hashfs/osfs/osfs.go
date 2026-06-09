@@ -151,7 +151,7 @@ func (ofs *OSFS) Lstat(ctx context.Context, fname string) (fs.FileInfo, error) {
 		return err
 	})
 	ofs.OpsDone(err)
-	if dur := time.Since(started); dur > 10*time.Second {
+	if dur := time.Since(started); dur > 1*time.Minute {
 		logSlow(ctx, fname, dur, err)
 	}
 	return fi, err

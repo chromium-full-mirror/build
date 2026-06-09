@@ -1128,8 +1128,6 @@ func (c *Cmd) computeOutputEntries(entries []hashfs.UpdateEntry, updatedTime tim
 
 // RecordOutputsFromLocal records cmd's outputs from local disk in hashfs.
 func (c *Cmd) RecordOutputsFromLocal(ctx context.Context, now time.Time) error {
-	start := time.Now()
-	clog.Infof(ctx, "RecordOutputsFromLocal start: %s", c.ID)
 	if c.ExecRootInJailDir != "" {
 		// TODO: reconcile output dirs?
 		outputs := slices.Clone(c.Outputs)
@@ -1197,7 +1195,6 @@ func (c *Cmd) RecordOutputsFromLocal(ctx context.Context, now time.Time) error {
 		}
 	}
 	if c.Restat {
-		resetStart := time.Now()
 		pre := make(map[string]hashfs.UpdateEntry)
 		for _, ent := range c.preOutputEntries {
 			pre[ent.Name] = ent
@@ -1227,11 +1224,7 @@ func (c *Cmd) RecordOutputsFromLocal(ctx context.Context, now time.Time) error {
 			}
 			clog.Warningf(ctx, "restat: changed but not modified %q %s %s->%s", ent.Name, ent.Entry.Data.Digest(), pent.ModTime, ent.ModTime)
 		}
-		if time.Since(resetStart) > 50*time.Millisecond {
-			clog.Infof(ctx, "RecordOutputsFromLocal restat check took %s", time.Since(resetStart))
-		}
 	}
-	clog.Infof(ctx, "RecordOutputsFromLocal completed: %s, total=%s", c.ID, time.Since(start))
 	return nil
 }
 
