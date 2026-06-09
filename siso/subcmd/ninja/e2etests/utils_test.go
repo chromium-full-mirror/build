@@ -170,6 +170,7 @@ func setupFiles(t *testing.T, dir, name string, deletes []string) {
 // gen takes old content and returns new content.
 func modifyFile(t *testing.T, dir, name string, gen func([]byte) []byte) {
 	t.Helper()
+	oldTime := time.Now()
 	t.Logf("-- modify %s", name)
 	fullname := filepath.Join(dir, name)
 	fi, err := os.Stat(fullname)
@@ -194,7 +195,7 @@ func modifyFile(t *testing.T, dir, name string, gen func([]byte) []byte) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if fi.ModTime().Equal(nfi.ModTime()) {
+		if fi.ModTime().Equal(nfi.ModTime()) || oldTime.Equal(nfi.ModTime()) {
 			time.Sleep(1 * time.Millisecond)
 			continue
 		}
