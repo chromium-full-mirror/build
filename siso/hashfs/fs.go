@@ -1534,6 +1534,8 @@ func (hfs *HashFS) RetrieveUpdateEntriesFromLocal(ctx context.Context, root stri
 	ents := make([]UpdateEntry, 0, len(fnames))
 	start := time.Now()
 	// invalidate hashfs cache for all fnames and its missing parents.
+	// Keep track of visited parent directories to avoid redundant Lstat/Stat/delete operations.
+	visitedDirs := make(map[string]struct{})
 	for _, fname := range fnames {
 		// Check context before modifying hashfs.  In racing mode
 		// the context may be canceled when the remote side wins,
@@ -1567,6 +1569,10 @@ func (hfs *HashFS) RetrieveUpdateEntriesFromLocal(ctx context.Context, root stri
 		// clear negative cache in parent directories
 		pathname := filepath.ToSlash(filepath.Dir(fullname))
 		for {
+			// Skip if the directory has already been processed in this call.
+			if _, ok := visitedDirs[pathname]; ok {
+				break
+			}
 			_, lerr := hfs.OS.Lstat(ctx, pathname)
 			if lerr != nil {
 				// Can't determine on-disk state (context
@@ -1577,6 +1583,7 @@ func (hfs *HashFS) RetrieveUpdateEntriesFromLocal(ctx context.Context, root stri
 				break
 			}
 			_, err = hfs.Stat(ctx, "", pathname)
+			visitedDirs[pathname] = struct{}{}
 			if errors.Is(err, lerr) {
 				// if err matches with local err,
 				// no need to invalidate hashfs dir.

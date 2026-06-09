@@ -2741,3 +2741,57 @@ func TestForget_UnexpectedRemoveRspFileUnderSymlinkDir(t *testing.T) {
 	}()
 
 }
+
+// TestRetrieveUpdateEntriesFromLocal_SharedParent verifies that RetrieveUpdateEntriesFromLocal
+// correctly retrieves all entries even when multiple files share the same parent directories,
+// triggering the visitedDirs optimization to skip redundant parent directory invalidation.
+func TestRetrieveUpdateEntriesFromLocal_SharedParent(t *testing.T) {
+	ctx := t.Context()
+	dir := t.TempDir()
+	dir, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	opt := hashfs.Option{}
+	hfs, err := hashfs.New(ctx, opt)
+	if err != nil {
+		t.Fatalf("New=%v", err)
+	}
+	defer func() {
+		err := hfs.Close(ctx)
+		if err != nil {
+			t.Fatalf("hfs.Close=%v", err)
+		}
+	}()
+
+	setupFiles(t, dir, map[string]string{
+		"out/foo/a.txt":   "a",
+		"out/foo/b.txt":   "b",
+		"out/foo/c/d.txt": "d",
+	})
+
+	fnames := []string{
+		"out/foo/a.txt",
+		"out/foo/b.txt",
+		"out/foo/c/d.txt",
+	}
+
+	ents := hfs.RetrieveUpdateEntriesFromLocal(ctx, dir, fnames)
+	if len(ents) != len(fnames) {
+		t.Errorf("RetrieveUpdateEntriesFromLocal returned %d entries; want %d", len(ents), len(fnames))
+	}
+
+	for _, fname := range fnames {
+		found := false
+		for _, ent := range ents {
+			if ent.Name == filepath.ToSlash(fname) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("entry for %s not found in returned entries", fname)
+		}
+	}
+}
