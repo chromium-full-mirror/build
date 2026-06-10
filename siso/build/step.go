@@ -351,6 +351,12 @@ func (s *Step) String() string {
 	return s.def.String()
 }
 
+// stepPhase is a named phase of a step.
+// It's used for multiple purposes:
+//  1. Named display of a step's state in the progress ui via [stepPhase.String].
+//  2. Accumulating time the step waited on something, using FooWait and FooRun pairs.
+//     In [stepState.SetPhase], if a phase matches a known "wait" phase we start
+//     measuring time until a non-wait phase.
 type stepPhase int
 
 const (
