@@ -193,6 +193,7 @@ func (b *Builder) runRacing(ctx context.Context, step *Step) error {
 			step.cmd.StderrWriter().Write(stderr)
 		}
 		step.metrics.copyExecResult(&localStep.metrics)
+		step.state.copyExecResult(localStep.state)
 		result, cached := localStep.cmd.ActionResult()
 		step.cmd.SetActionResult(result, cached)
 

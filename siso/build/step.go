@@ -314,6 +314,19 @@ func (s *stepState) WaitDuration() time.Duration {
 	return dur
 }
 
+// copyExecResult copies stepState metrics from a local racing clone back
+// to the original stepState's metrics.
+func (s *stepState) copyExecResult(src *stepState) {
+	s.mu.Lock()
+	src.mu.Lock()
+	defer s.mu.Unlock()
+	defer src.mu.Unlock()
+	s.phase = src.phase
+	s.weightedDuration = src.weightedDuration
+	s.waitStart = src.waitStart
+	s.waitDuration = src.waitDuration
+}
+
 // NumWaits returns number of waits for the step.
 func (s *Step) NumWaits() int {
 	return s.nwaits
