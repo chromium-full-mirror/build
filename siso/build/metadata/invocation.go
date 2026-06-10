@@ -21,6 +21,8 @@ type InvocationInfo struct {
 	// MetricsLabels are arbitrary labels for the build.
 	// These can include RBE metrics labels, as well as other user-defined labels.
 	MetricsLabels map[string]string `json:"metrics_labels,omitempty"`
+	// EnabledExperiments are enabled experimental features.
+	EnabledExperiments []string `json:"enabled_experiments,omitempty"`
 	// Machine reports machine information.
 	Machine MachineInfo `json:"machine"`
 }

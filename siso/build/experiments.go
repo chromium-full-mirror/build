@@ -69,6 +69,20 @@ func SetExperimentForTest(v string) {
 	experiments.set(v)
 }
 
+// EnabledExperiments returns a list of enabled experimental features.
+func EnabledExperiments() []string {
+	experiments.init()
+	if len(experiments.m) == 0 {
+		return nil
+	}
+	keys := make([]string, 0, len(experiments.m))
+	for key := range experiments.m {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
 const experimentEnv = "SISO_EXPERIMENTS"
 
 func (e *Experiments) init() {

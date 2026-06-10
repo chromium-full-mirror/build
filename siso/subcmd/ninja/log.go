@@ -298,12 +298,13 @@ func (c *Command) setupCrashOutput(ctx context.Context) (func(), error) {
 
 func (c *Command) writeInvocationInfo(ctx context.Context, metricsLabels map[string]string, targets []string) error {
 	j, err := json.Marshal(metadata.InvocationInfo{
-		SisoVersion:   c.version,
-		StartTime:     c.started,
-		BuildID:       c.buildID,
-		Targets:       targets,
-		MetricsLabels: metricsLabels,
-		Machine:       metadata.GatherMachineInfo(ctx),
+		SisoVersion:        c.version,
+		StartTime:          c.started,
+		BuildID:            c.buildID,
+		Targets:            targets,
+		MetricsLabels:      metricsLabels,
+		EnabledExperiments: build.EnabledExperiments(),
+		Machine:            metadata.GatherMachineInfo(ctx),
 	})
 	if err != nil {
 		return err
