@@ -1527,10 +1527,34 @@ func (hfs *HashFS) updateMtimeIfNeeded(ctx context.Context, fname string, e *ent
 }
 
 // RetrieveUpdateEntries gets UpdateEntry for fnames at root.
+//
+// It skips only fnames that are absent from BOTH the hashFS cache and local
+// disk. Such a name contributes nothing to the snapshot anyway (Entries drops
+// entries whose stat errored), and statting+storing it here would install a
+// negative (ErrNotExist) entry in the shared hashFS. In racing mode that races
+// a concurrent local racer producing the same output and poisons its entry — in
+// particular the depfile, which carries no cmdhash and so is unprotected in
+// shouldKeep — surfacing as a spurious "failed to get depfile". A name hashFS
+// already has an entry for (e.g. a remote output left in hashFS/CAS but not
+// materialized locally) is kept, so its cached digest stays in the snapshot that
+// RecordPreOutputs feeds to restat_content (used by the racing remote winner in
+// runRacing, which records outputs even though SkipRecordOutputs is set).
 func (hfs *HashFS) RetrieveUpdateEntries(ctx context.Context, root string, fnames []string) []UpdateEntry {
 	ctx, span := trace.NewSpan(ctx, "fs-update-entries")
 	defer span.Close(nil)
-	ents, err := hfs.Entries(ctx, root, fnames)
+	existing := make([]string, 0, len(fnames))
+	for _, fname := range fnames {
+		fullname := makeFullpath(root, fname)
+		if _, _, _, ok := hfs.directory.lookup(ctx, fullname); ok {
+			// cached in hashFS (maybe a remote output not on local disk).
+			existing = append(existing, fname)
+			continue
+		}
+		if _, err := hfs.OS.Lstat(ctx, fullname); err == nil {
+			existing = append(existing, fname)
+		}
+	}
+	ents, err := hfs.Entries(ctx, root, existing)
 	if err != nil {
 		clog.Warningf(ctx, "failed to get entries: %v", err)
 	}

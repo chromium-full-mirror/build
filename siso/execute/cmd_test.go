@@ -6,6 +6,8 @@ package execute
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -233,3 +235,88 @@ func (mockDataSource) Source(ctx context.Context, d digest.Digest, name string) 
 }
 
 func (mockDataSource) Close(ctx context.Context) error { return nil }
+
+// TestRecordPreOutputs verifies the pre-execution output snapshot for a racing
+// remote racer (SkipRecordOutputs set, sharing hashFS with the local racer):
+//
+//   - Outputs that already exist on disk must be snapshotted, so that when the
+//     remote side wins, runRacing's RecordOutputs can compare pre/post content
+//     and honor restat_content. (My earlier fix skipped the snapshot entirely
+//     and regressed this.)
+//   - Outputs that do not exist yet must NOT be recorded as negative hashFS
+//     entries: doing so races the local racer producing the same file and
+//     poisons the cmdhash-less depfile, surfacing as a spurious
+//     "failed to get depfile". (The original code regressed this.)
+//
+// This test fails for both wrong implementations and passes only for the
+// existing-only snapshot.
+func TestRecordPreOutputs(t *testing.T) {
+	ctx := t.Context()
+	dir := t.TempDir()
+	dir, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, "out"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	hashFS, err := hashfs.New(ctx, hashfs.Option{})
+	if err != nil {
+		t.Fatalf("hashfs.New: %v", err)
+	}
+	defer hashFS.Close(ctx)
+
+	// Three outputs the racing remote racer snapshots before execution:
+	//   onDisk     - already materialized on local disk (a rebuild)
+	//   hashfsOnly - left only in hashFS/CAS by a prior remote result, not on disk
+	//   depfile    - absent from both disk and hashFS (a fresh action)
+	onDisk := "out/ondisk.o"
+	hashfsOnly := "out/remote.o"
+	depfile := "out/foo.o.d"
+	if err := os.WriteFile(filepath.Join(dir, onDisk), []byte("old object"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	rd := digest.Digest{Hash: "remotehash", SizeBytes: 7}
+	if err := hashFS.Update(ctx, dir, []hashfs.UpdateEntry{{
+		Name:    hashfsOnly,
+		Entry:   &merkletree.Entry{Name: hashfsOnly, Data: digest.NewData(nil, rd)},
+		Mode:    0o644,
+		CmdHash: []byte("cmdhash"),
+	}}); err != nil {
+		t.Fatalf("Update(%q): %v", hashfsOnly, err)
+	}
+
+	cmd := &Cmd{
+		WorkspaceRoot:     dir,
+		Outputs:           []string{onDisk, hashfsOnly},
+		Depfile:           depfile,
+		HashFS:            hashFS,
+		SkipRecordOutputs: true, // the racing remote racer
+	}
+
+	cmd.RecordPreOutputs(ctx)
+
+	// (1) restat: both the on-disk output and the hashFS-only (cached, not
+	// materialized locally) output must be in the snapshot, so a later
+	// RecordOutputs can compare pre/post content. Dropping either dirties
+	// downstream steps under restat_content.
+	got := map[string]bool{}
+	for _, e := range cmd.preOutputEntries {
+		got[e.Name] = true
+	}
+	for _, want := range []string{onDisk, hashfsOnly} {
+		if !got[want] {
+			t.Errorf("preOutputEntries missing %q; restat_content snapshot lost (have %v)", want, got)
+		}
+	}
+
+	// (2) no poison: the depfile is absent from both disk and hashFS, so it must
+	// not be recorded as a negative hashFS entry. After the command writes it,
+	// reading it back must succeed.
+	if err := os.WriteFile(filepath.Join(dir, depfile), []byte("foo.o: foo.c\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := hashFS.ReadFile(ctx, dir, depfile); err != nil {
+		t.Errorf("ReadFile(%q) after RecordPreOutputs = %v; want success (absent output must not be poisoned)", depfile, err)
+	}
+}
