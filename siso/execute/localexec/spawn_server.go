@@ -48,6 +48,14 @@ func serve(ctx context.Context, conn *spawnConn, logger *log.Logger) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
+	// Become a child subreaper so descendants orphaned mid-action reparent to
+	// this helper, letting drainGroup/cancelGroup reap them via wait4(-pgid)
+	// instead of relying on init. Non-fatal: without it, those orphans reparent
+	// to init, which reaps them on any normal (non-PID-1) host.
+	if err := becomeSubreaper(); err != nil {
+		logger.Printf("become child subreaper: %v", err)
+	}
+
 	// Unblock recv() if ctx is cancelled (e.g. SIGTERM).
 	go func() {
 		<-ctx.Done()

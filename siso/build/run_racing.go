@@ -42,7 +42,7 @@ func (b *Builder) runRacing(ctx context.Context, step *Step) error {
 
 	preprocErr := preprocCmd(ctx, b, step)
 	if preprocErr != nil {
-		// Can't determine inputs for remote — just run locally.
+		// Can't determine inputs for remote - just run locally.
 		clog.Infof(ctx, "racing: preproc failed, local only: %v", preprocErr)
 		return b.execLocal(ctx, step)
 	}
@@ -58,7 +58,7 @@ func (b *Builder) runRacing(ctx context.Context, step *Step) error {
 	}
 
 	if !b.reExecEnable {
-		// Remote execution disabled — just run locally.
+		// Remote execution disabled - just run locally.
 		return b.execLocal(ctx, step)
 	}
 
@@ -76,7 +76,7 @@ func (b *Builder) runRacing(ctx context.Context, step *Step) error {
 	defer raceCancel()
 	ch := make(chan raceResult, 2)
 
-	// Remote goroutine — only the execution phase (no updateDeps/outputs).
+	// Remote goroutine - only the execution phase (no updateDeps/outputs).
 	// Post-processing runs after the race is decided to avoid hashFS
 	// races with the local goroutine's RecordOutputsFromLocal.
 	go func() {
@@ -107,7 +107,7 @@ func (b *Builder) runRacing(ctx context.Context, step *Step) error {
 		ch <- raceResult{resultType: raceRemote, err: err}
 	}()
 
-	// Local goroutine — full execLocal (including post-processing).
+	// Local goroutine - full execLocal (including post-processing).
 	go func() {
 		err := b.execLocal(raceCtx, localStep)
 		if isContextCanceledErr(err) {
@@ -155,8 +155,10 @@ func (b *Builder) runRacing(ctx context.Context, step *Step) error {
 			return downloadErr
 		}
 
-		// The loser (local) has been canceled and drained, but it might have
-		// already deleted or modified the local output files before being killed.
+		// The loser (local) has been canceled and drained - on cancellation
+		// localexec kills the action's whole process group and waits until it is
+		// empty, so nothing is still writing - but it might have already deleted
+		// or modified the local output files before being killed.
 		// Forget the cached outputs in HashFS so that Siso doesn't assume the
 		// outputs are still "local-ready" (up-to-date) on the local disk.
 		// This forces Siso to download/verify them during b.outputs().
@@ -200,13 +202,13 @@ func (b *Builder) runRacing(ctx context.Context, step *Step) error {
 		if winner.err != nil {
 			return winner.err
 		}
-		// Local outputs are already on disk — no need to call
+		// Local outputs are already on disk - no need to call
 		// b.outputs(), b.updateDeps(), or b.checkLocalOutputs()
 		// since execLocal already did all of that on localStep.
 		return nil
 
 	default:
-		// Both were canceled — parent context was canceled.
+		// Both were canceled - parent context was canceled.
 		clog.Warningf(ctx, "racing: both sides canceled")
 		return winner.err
 	}

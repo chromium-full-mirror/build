@@ -15,7 +15,6 @@ import (
 	"os/exec"
 	"sync"
 	"syscall"
-	"time"
 
 	"google.golang.org/protobuf/types/known/anypb"
 
@@ -23,10 +22,6 @@ import (
 
 	epb "go.chromium.org/build/siso/execute/proto"
 )
-
-// cancelGrace bounds how long Run waits for a cancelled action's final result
-// before giving up on a wedged helper (a dead socket fails Run immediately).
-const cancelGrace = 10 * time.Second
 
 // spawnReply is one demultiplexed reply for a pending Run: either the "result"
 // Any wrapping an rpb.ActionResult (SpawnResult) or an error (SpawnError, or a
@@ -182,25 +177,25 @@ func (c *client) Run(ctx context.Context, req *epb.SpawnRequest) (*rpb.ActionRes
 		// signalling here would risk a pid-reuse race.
 		cancel := &epb.SpawnMessage{Id: id, Payload: &epb.SpawnMessage_Cancel{Cancel: &epb.SpawnCancel{}}}
 		if err := c.conn.send(cancel); err != nil {
-			// Socket is dead; readLoop's failAll will also fail this Run, but don't
-			// wait out cancelGrace for a reply that can't arrive. A late failAll send
-			// to the cap-1 ch after we return is buffered and harmlessly discarded.
+			// Socket is dead; readLoop's failAll will also fail this Run. A late
+			// failAll send to the cap-1 ch after we return is harmlessly discarded.
 			c.mu.Lock()
 			delete(c.pending, id)
 			c.mu.Unlock()
 			return nil, fmt.Errorf("send cancel after ctx done: %w", err)
 		}
-		select {
-		case reply := <-ch:
-			return decodeReply(reply)
-		case <-time.After(cancelGrace):
-			// Helper wedged but socket still open: stop waiting and drop the
-			// pending entry so a late reply is discarded.
-			c.mu.Lock()
-			delete(c.pending, id)
-			c.mu.Unlock()
-			return nil, fmt.Errorf("no response %s after cancel: %w", cancelGrace, ctx.Err())
+		reply := <-ch
+		res, err := decodeReply(reply)
+		if err != nil {
+			// We initiated this cancellation (our ctx ended), so the helper's
+			// reply is the cancelled action. Its error crossed the wire as a
+			// string, losing the context.Canceled identity; return the real cause
+			// instead so callers' errors.Is(err, context.Canceled) matches, as on
+			// the in-process path. A success that raced the cancel is still
+			// honored.
+			return nil, context.Cause(ctx)
 		}
+		return res, nil
 	}
 }
 

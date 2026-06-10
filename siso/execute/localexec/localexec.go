@@ -16,7 +16,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"sync"
-	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -100,36 +99,44 @@ func run(ctx context.Context, cmd *execute.Cmd) (*rpb.ActionResult, error) {
 	}
 }
 
+// envDuration returns the duration parsed from environment variable name, or def
+// if it is unset or unparsable. Lets the spawn helper (a separate process) pick up
+// a test-shortened timing value via the inherited environment.
+func envDuration(name string, def time.Duration) time.Duration {
+	if v := os.Getenv(name); v != "" {
+		if d, err := time.ParseDuration(v); err == nil {
+			return d
+		}
+	}
+	return def
+}
+
 func runOnce(ctx context.Context, cmd *execute.Cmd) (*rpb.ActionResult, error) {
 	if len(cmd.Args) == 0 {
 		return nil, fmt.Errorf("no arguments in the command. ID: %s", cmd.ID)
 	}
-	var done atomic.Bool
 	c := exec.CommandContext(ctx, cmd.Args[0], cmd.Args[1:]...)
-	c.Cancel = func() error {
-		// Cancel is called when interrupted.
-		// send interrupt signal, so cmd could perform
-		// cleanup task, such as remove temp files.
-		// note: it won't send signal on Windows, but
-		// cmd would receive CTRL_C_EVENT or CTRL_BREAK_EVENT
-		// on console process group?
-		// https://github.com/golang/go/issues/6720
-		if c.Process == nil {
-			clog.Warningf(ctx, "cancel before process start?")
-			return errors.New("cancel on not-started process")
+	if cmd.Console {
+		// Console actions stay in siso's foreground group (else terminal reads
+		// stop them with SIGTTIN), so cancel sends SIGINT to just the direct
+		// child rather than the process group.
+		c.Cancel = func() error {
+			err := c.Process.Signal(os.Interrupt)
+			clog.Warningf(ctx, "send interrupt to pid=%d: %v", c.Process.Pid, err)
+			return err
 		}
-		err := c.Process.Signal(os.Interrupt)
-		clog.Warningf(ctx, "send interrupt to pid=%d: %v", c.Process.Pid, err)
-		// allow 1 second for cleanup task.
-		time.Sleep(1 * time.Second)
-		if done.Load() {
-			return os.ErrProcessDone
+	} else {
+		// Run the action as the leader of its own process group, so that
+		// cancellation and post-exit reaping reach every descendant, not just
+		// the direct child (no-ops on Windows).
+		setProcGroup(c)
+		c.Cancel = func() error {
+			return cancelGroup(ctx, c)
 		}
-		// still running?
-		err = c.Process.Kill()
-		clog.Warningf(ctx, "send kill to pid=%d: %v", c.Process.Pid, err)
-		return err
 	}
+	// Bound Wait so a leaked background child holding the stdout/stderr pipes
+	// can't block it; the deferred drainGroup kills such children afterwards.
+	c.WaitDelay = waitDelay
 	c.Env = cmd.Env
 	c.Dir = filepath.Join(cmd.WorkspaceRoot, cmd.WorkDir)
 	c.Stdout = cmd.StdoutWriter()
@@ -208,7 +215,25 @@ func runOnce(ctx context.Context, cmd *execute.Cmd) (*rpb.ActionResult, error) {
 			oomScoreAdj(ctx, c.Process.Pid, *cmd.OOMScoreAdj)
 		}
 		err = c.Wait()
-		done.Store(true)
+		if !cmd.Console {
+			// Synchronously kill and reap the action's whole process group (pgid ==
+			// pid because of setProcGroup), so runOnce never returns while a
+			// descendant could still be writing outputs. drained reports whether the
+			// group actually emptied (reached ESRCH).
+			drained := drainGroup(ctx, c.Process.Pid)
+			if errors.Is(err, exec.ErrWaitDelay) && drained {
+				// The action exited successfully, but a leaked background child held
+				// its stdout/stderr pipe open past WaitDelay. Suppress the error only
+				// now that the drain proved the group is empty: an in-group leak is
+				// dead, so the success is real. If the group could not be drained (a
+				// wedged or D-state member), keep the error rather than record
+				// outputs that something might still be writing. A setsid escapee
+				// that left the group is invisible to kill(-pgid), so a pipe holder
+				// that escaped is still reported as success - the documented escapee
+				// gap (PID namespaces would be needed to contain it).
+				err = nil
+			}
+		}
 	}
 	if err == nil {
 		ru = rusage(c)

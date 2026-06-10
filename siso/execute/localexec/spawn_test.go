@@ -147,8 +147,11 @@ func TestRunViaHelperCancel(t *testing.T) {
 
 	select {
 	case err := <-done:
-		if err == nil {
-			t.Errorf("err = nil, want a cancellation error")
+		// The cancellation must surface as context.Canceled, not a generic error:
+		// the helper's reply crosses the wire as a string, so the client restores
+		// the real cause (see Run's ctx.Done path) to match the in-process path.
+		if !errors.Is(err, context.Canceled) {
+			t.Errorf("err = %v, want context.Canceled", err)
 		}
 		if elapsed := time.Since(start); elapsed > 10*time.Second {
 			t.Errorf("cancellation took %v, want it to be prompt", elapsed)
