@@ -335,6 +335,16 @@ func (e *entry) getDir() *directory {
 	return e.directory
 }
 
+// isGenerated reports whether this entry is owned by a build step.
+func (e *entry) isGenerated() bool {
+	if e == nil {
+		return false
+	}
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	return e.isChanged || len(e.cmdhash) > 0 || len(e.edgehash) > 0 || !e.action.IsZero()
+}
+
 // applyUpdateMetadata sets the metadata fields from an UpdateEntry.
 // Does not set e.mode. Callers that reuse an existing entry should
 // set it explicitly; callers that reinit from disk get it from init().

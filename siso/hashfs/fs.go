@@ -932,6 +932,16 @@ func (hfs *HashFS) Forget(ctx context.Context, root string, inputs []string) {
 	}
 }
 
+// ForgetOutputs forgets cached entries for exact outputs under root.
+// Unlike Forget, it drops directory subtrees because output directories are
+// owned by the step being invalidated.
+func (hfs *HashFS) ForgetOutputs(ctx context.Context, root string, outputs []string) {
+	for _, fname := range outputs {
+		fullname := makeFullpath(root, fname)
+		hfs.directory.deleteForce(ctx, fullname)
+	}
+}
+
 // ForgetMissingsInDir forgets cached entry under root/dir if it isn't
 // generated files/dirs by any steps and doesn't exist on local disk.
 // It is used for a step that removes files under a dir. b/350662100
@@ -944,12 +954,19 @@ func (hfs *HashFS) ForgetMissingsInDir(ctx context.Context, root, dir string) {
 		inputs = inputs[:len(inputs)-1]
 		fi, err := hfs.Stat(ctx, root, fname)
 		if errors.Is(err, fs.ErrNotExist) {
-			// If it doesn't exist in hashfs,
-			// no need to check more.
+			// Stat reports the path gone on local disk. If it is a cached
+			// directory, Stat does not drop children, so prune any stale
+			// non-generated leaves while keeping directory nodes anchored for
+			// concurrent child stores.
+			fullname := makeFullpath(root, fname)
+			hfs.directory.deleteNotGenerated(ctx, fullname)
 			continue
 		}
 		if err == nil {
 			if fi.IsDir() {
+				// Descend even into generated directories: a generated output dir
+				// (cmdhash-stamped) can still hold children the step removed on
+				// disk, which this reconcile must prune (b/350662100).
 				dents, err := hfs.ReadDir(ctx, root, fname)
 				if err != nil {
 					clog.Warningf(ctx, "readdir failed for %q: %v", fname, err)
@@ -960,9 +977,10 @@ func (hfs *HashFS) ForgetMissingsInDir(ctx context.Context, root, dir string) {
 					inputs = append(inputs, filepath.ToSlash(filepath.Join(fname, dent.Name())))
 				}
 			}
-			if fi.IsChanged() {
-				// it is explicitly generated file/dir,
-				// no need to check more.
+			if fi.e.isGenerated() {
+				// The entry itself is generated (owned by a step); keep it (don't
+				// add to the prune list). Its non-generated removed children were
+				// still queued above.
 				continue
 			}
 		}
@@ -974,7 +992,10 @@ func (hfs *HashFS) ForgetMissingsInDir(ctx context.Context, root, dir string) {
 			_, err := hfs.OS.Lstat(ctx, fullname)
 			if errors.Is(err, fs.ErrNotExist) {
 				clog.Infof(ctx, "forget missing %s", fullname)
-				hfs.directory.delete(ctx, fullname)
+				// Proven gone on disk (Lstat ErrNotExist): prune stale
+				// non-generated entries, but keep directory nodes anchored for
+				// concurrent child stores.
+				hfs.directory.deleteNotGenerated(ctx, fullname)
 				continue
 			}
 		}
@@ -1015,7 +1036,11 @@ func (hfs *HashFS) ForgetMissings(ctx context.Context, root string, inputs []str
 			_, err := hfs.OS.Lstat(ctx, fullname)
 			if errors.Is(err, fs.ErrNotExist) {
 				clog.Infof(ctx, "forget missing %s", fullname)
-				hfs.directory.delete(ctx, fullname)
+				// Proven gone on disk (Lstat ErrNotExist): drop the whole stale
+				// subtree. The child-preserving delete never evicts a directory
+				// node, so it would leave a removed populated dir's children
+				// reachable.
+				hfs.directory.deleteForce(ctx, fullname)
 				continue
 			}
 			fi, err := hfs.Stat(ctx, root, fname)
@@ -1558,7 +1583,12 @@ func (hfs *HashFS) RetrieveUpdateEntriesFromLocal(ctx context.Context, root stri
 		lfi, err := hfs.OS.Lstat(ctx, fullname)
 		if errors.Is(err, fs.ErrNotExist) {
 			clog.Warningf(ctx, "missing local %s: %v", fname, err)
-			hfs.directory.delete(ctx, fullname)
+			// The path itself is gone on disk, so any cached subtree under it is
+			// stale and must go - force-remove it. The child-preserving delete is
+			// only correct for ancestor negative-cache clearing below (where the
+			// parent still exists on disk); here it would early-return on a
+			// populated directory and leave deleted children reachable.
+			hfs.directory.deleteForce(ctx, fullname)
 			continue
 		} else if err != nil {
 			// Lstat failed for a reason other than ErrNotExist
@@ -1570,9 +1600,11 @@ func (hfs *HashFS) RetrieveUpdateEntriesFromLocal(ctx context.Context, root stri
 			continue
 		}
 		if !lfi.IsDir() {
-			// forget old entries unless dir.
-			// need to keep dir to keep other files in the dir.
-			hfs.directory.delete(ctx, fullname)
+			// The path is now a regular file. Force-remove any stale entry,
+			// including a cached directory subtree, so it can be re-recorded as
+			// the file; the child-preserving delete would leave the stale
+			// directory behind (ReadFile would then fail with "no src").
+			hfs.directory.deleteForce(ctx, fullname)
 		}
 		// clear negative cache in parent directories
 		pathname := filepath.ToSlash(filepath.Dir(fullname))
@@ -1597,6 +1629,9 @@ func (hfs *HashFS) RetrieveUpdateEntriesFromLocal(ctx context.Context, root stri
 				// no need to invalidate hashfs dir.
 				break
 			}
+			// Clearing a parent's stale negative cache; delete never evicts a
+			// directory node (a concurrent step may have recorded, or be recording,
+			// a sibling under it), only a non-directory (negative) entry.
 			hfs.directory.delete(ctx, pathname)
 			parent := filepath.ToSlash(filepath.Dir(pathname))
 			if parent == pathname || parent == "/" || parent == "" || parent == "." {

@@ -164,7 +164,7 @@ func (b *Builder) runRacing(ctx context.Context, step *Step) error {
 		// This forces Siso to download/verify them during b.outputs().
 		// If the local step did not begin running the command, we do not need to flush.
 		if !localStep.cmdRunTime.IsZero() {
-			step.cmd.HashFS.Forget(ctx, step.cmd.WorkspaceRoot, step.cmd.AllOutputs())
+			step.cmd.HashFS.ForgetOutputs(ctx, step.cmd.WorkspaceRoot, step.cmd.AllOutputs())
 		}
 
 		// Re-record the remote outputs

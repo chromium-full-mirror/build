@@ -544,12 +544,95 @@ func storeNextDir(ctx context.Context, d *directory, pe pathElements, elem strin
 	return d, target, false
 }
 
+// deleteNotGenerated prunes a missing path at fname. A directory entry (generated
+// or not) is always recursed into - keeping the directory node anchored and pruning
+// only its non-generated leaves - so a missing generated output dir's stale
+// non-generated children are still removed. Only a non-generated leaf is removed.
+// The generated check applies to leaves, not directories. Keeping the directory
+// node anchored avoids orphaning a concurrent store that has published a directory
+// node but not yet stored its child entry.
+func (d *directory) deleteNotGenerated(ctx context.Context, fname string) {
+	e, _, dir, ok := d.lookup(ctx, fname)
+	if !ok || e == nil {
+		return
+	}
+	if sub := e.getDir(); sub != nil {
+		sub.deleteNotGeneratedLeaves(ctx, fname)
+		return
+	}
+	if e.isGenerated() {
+		return
+	}
+	if dir != nil {
+		dir.m.CompareAndDelete(filepath.Base(fname), e)
+	}
+}
+
+func (d *directory) deleteNotGeneratedLeaves(ctx context.Context, dirname string) {
+	d.m.Range(func(k, v any) bool {
+		name := k.(string)
+		e := v.(*entry)
+		fname := filepath.ToSlash(filepath.Join(dirname, name))
+		// Recurse into any directory (generated or not) before the generated
+		// check, so stale non-generated descendants under a generated subdir are
+		// still pruned while the directory node stays anchored.
+		if sub := e.getDir(); sub != nil {
+			sub.deleteNotGeneratedLeaves(ctx, fname)
+			return true
+		}
+		if e.isGenerated() {
+			return true
+		}
+		clog.Infof(ctx, "forget missing %s", fname)
+		d.m.CompareAndDelete(name, e)
+		return true
+	})
+}
+
+// delete forgets the cache entry at fname from its parent directory, but never
+// evicts a directory node - empty or populated. Evicting one would orphan its
+// children, which may be entries owned by other (possibly concurrent) steps - e.g.
+// a racing remote-won is_local=false output, or a sibling being published right now
+// in the window where storeNextDir has created the dir node but the child has not
+// been stored under it yet - and surface as a spurious "missing outputs"/"failed to
+// get depfile". (An emptiness check is inherently racy against that publish-then-
+// store window, so we don't even try; we just never touch directory nodes.) This is
+// the right default for cache invalidation: clearing a parent's negative cache,
+// forgetting inputs. Real directory removal goes through deleteForce (a path whose
+// own on-disk state is stale - removed, or type-changed to a file) or RemoveAll.
 func (d *directory) delete(ctx context.Context, fname string) {
 	_, _, dir, ok := d.lookup(ctx, fname)
 	if !ok || dir == nil {
-		clog.Warningf(ctx, "delete %q: lookup filed", fname)
+		// Path isn't cached - nothing to do.
 		return
 	}
 	name := filepath.Base(fname)
-	dir.m.Delete(name)
+	v, vok := dir.m.Load(name)
+	if !vok {
+		return
+	}
+	e := v.(*entry)
+	if e.getDir() != nil {
+		return // never evict a directory node; deleteForce/RemoveAll do that.
+	}
+	// Non-directory (negative cache / file / symlink): CompareAndDelete so a
+	// concurrent upgrade of a negative entry into a directory, or a re-store
+	// (storeNextDir), is never clobbered.
+	dir.m.CompareAndDelete(name, e)
+}
+
+// deleteForce removes the entry at fname unconditionally, including a directory
+// node that still has children. It is for invalidating a path whose own on-disk
+// state is stale - in particular one whose type changed from a directory to a
+// regular file - where the cached directory subtree must go so the path can be
+// re-recorded as the file. Using the child-preserving delete there would leave
+// the stale directory entry behind (ReadFile then fails with "no src" and the
+// new file is still treated as a directory).
+func (d *directory) deleteForce(ctx context.Context, fname string) {
+	_, _, dir, ok := d.lookup(ctx, fname)
+	if !ok || dir == nil {
+		// Path isn't cached - nothing to do.
+		return
+	}
+	dir.m.Delete(filepath.Base(fname))
 }
