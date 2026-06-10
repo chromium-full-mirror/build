@@ -204,7 +204,6 @@ func (m StepMetric) Output() string {
 // during command execution and the fields set by done().
 func (m *StepMetric) copyExecResult(src *StepMetric) {
 	// Fields set by done().
-	m.WeightedDuration = src.WeightedDuration
 	m.Inputs = src.Inputs
 	m.Outputs = src.Outputs
 	m.CmdHash = src.CmdHash

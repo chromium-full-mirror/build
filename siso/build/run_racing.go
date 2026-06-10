@@ -194,8 +194,7 @@ func (b *Builder) runRacing(ctx context.Context, step *Step) error {
 		if stderr := localStep.cmd.Stderr(); len(stderr) > 0 {
 			step.cmd.StderrWriter().Write(stderr)
 		}
-		step.metrics.copyExecResult(&localStep.metrics)
-		step.state.copyExecResult(localStep.state)
+		step.adoptRacingLocalResult(localStep)
 		result, cached := localStep.cmd.ActionResult()
 		step.cmd.SetActionResult(result, cached)
 
@@ -212,6 +211,16 @@ func (b *Builder) runRacing(ctx context.Context, step *Step) error {
 		clog.Warningf(ctx, "racing: both sides canceled")
 		return winner.err
 	}
+}
+
+// adoptRacingLocalResult copies the local racer clone's execution result
+// back onto the original step after the local side wins a race. The
+// weighted duration is derived from the original step, which is the one
+// the progress ticker accumulated it on.
+func (step *Step) adoptRacingLocalResult(localStep *Step) {
+	step.metrics.copyExecResult(&localStep.metrics)
+	step.state.copyExecResult(localStep.state)
+	step.metrics.WeightedDuration = IntervalMetric(step.getWeightedDuration())
 }
 
 // isContextCanceledErr reports whether err wraps context.Canceled or

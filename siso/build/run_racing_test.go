@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"testing"
+	"time"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -16,6 +17,40 @@ import (
 	"go.chromium.org/build/siso/execute"
 	"go.chromium.org/build/siso/reapi/digest"
 )
+
+// TestAdoptRacingLocalResultPreservesWeightedDuration checks that a local
+// race win keeps the original step's accumulated weighted duration rather
+// than overwriting it with the never-ticked clone's zero value.
+func TestAdoptRacingLocalResultPreservesWeightedDuration(t *testing.T) {
+	const want = 5 * time.Second
+
+	step := &Step{
+		cmd:     &execute.Cmd{},
+		state:   &stepState{},
+		metrics: StepMetric{},
+	}
+	// The progress ticker only accumulates onto the original step, and
+	// done() records it into the metrics.
+	step.addWeightedDuration(want)
+	step.metrics.WeightedDuration = IntervalMetric(step.getWeightedDuration())
+
+	// The clone is never registered with the ticker, so its weighted
+	// duration is zero.
+	localStep := step.Clone()
+	localStep.metrics.WeightedDuration = IntervalMetric(localStep.getWeightedDuration())
+	if got := localStep.getWeightedDuration(); got != 0 {
+		t.Fatalf("clone weighted duration = %v, want 0 (clone is never ticked)", got)
+	}
+
+	step.adoptRacingLocalResult(localStep)
+
+	if got := step.getWeightedDuration(); got != want {
+		t.Errorf("step.state.weightedDuration = %v, want %v", got, want)
+	}
+	if got := time.Duration(step.metrics.WeightedDuration); got != want {
+		t.Errorf("step.metrics.WeightedDuration = %v, want %v", got, want)
+	}
+}
 
 func TestIsContextCanceledErr(t *testing.T) {
 	tests := []struct {

@@ -314,15 +314,15 @@ func (s *stepState) WaitDuration() time.Duration {
 	return dur
 }
 
-// copyExecResult copies stepState metrics from a local racing clone back
-// to the original stepState's metrics.
+// copyExecResult copies stepState fields from a local racing clone back
+// to the original stepState. weightedDuration is excluded: it is
+// progress-owned and only accumulated on the original step.
 func (s *stepState) copyExecResult(src *stepState) {
 	s.mu.Lock()
 	src.mu.Lock()
 	defer s.mu.Unlock()
 	defer src.mu.Unlock()
 	s.phase = src.phase
-	s.weightedDuration = src.weightedDuration
 	s.waitStart = src.waitStart
 	s.waitDuration = src.waitDuration
 }
