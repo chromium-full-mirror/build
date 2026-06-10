@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sync/atomic"
 
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/protobuf/proto"
@@ -46,20 +47,43 @@ func New(client Client) *Exporter {
 	}
 }
 
+// Stats is exported stats.
+type Stats struct {
+	NumFiles, NumSymlinks, NumDirs int64
+	TotalBytes                     int64
+}
+
+type statsCollector struct {
+	numFiles, numSymlinks, numDirs atomic.Int64
+	totalBytes                     atomic.Int64
+}
+
+func (s *statsCollector) Stats() Stats {
+	return Stats{
+		NumFiles:    s.numFiles.Load(),
+		NumSymlinks: s.numSymlinks.Load(),
+		NumDirs:     s.numDirs.Load(),
+		TotalBytes:  s.totalBytes.Load(),
+	}
+}
+
 // Export exports directory identified by the digest to the dir recursively.
 // If w is given, it will show the directory entries without extracting
 // into dir.
-func (e *Exporter) Export(ctx context.Context, dir string, d digest.Digest, w io.Writer) error {
+func (e *Exporter) Export(ctx context.Context, dir string, d digest.Digest, w io.Writer) (Stats, error) {
+	var stats statsCollector
 	e.eg.Go(func() error {
 		return e.sema.Do(ctx, func(ctx context.Context) error {
-			return e.exportDir(ctx, dir, d, w)
+			return e.exportDir(ctx, dir, d, w, &stats)
 		})
 	})
-	return e.eg.Wait()
+	err := e.eg.Wait()
+	return stats.Stats(), err
 }
 
-func (e *Exporter) exportDir(ctx context.Context, dir string, d digest.Digest, w io.Writer) error {
+func (e *Exporter) exportDir(ctx context.Context, dir string, d digest.Digest, w io.Writer, stats *statsCollector) error {
 	clog.Infof(ctx, "export dir: %s %s", dir, d)
+	stats.numDirs.Add(1)
 	if w == nil {
 		err := os.MkdirAll(dir, 0755)
 		if err != nil {
@@ -80,20 +104,21 @@ func (e *Exporter) exportDir(ctx context.Context, dir string, d digest.Digest, w
 	for _, f := range curdir.Files {
 		e.eg.Go(func() error {
 			return e.sema.Do(ctx, func(ctx context.Context) error {
-				return e.exportFile(ctx, filepath.Join(dir, f.Name), digest.FromProto(f.Digest), f.IsExecutable, w)
+				return e.exportFile(ctx, filepath.Join(dir, f.Name), digest.FromProto(f.Digest), f.IsExecutable, w, stats)
 			})
 		})
 	}
 	for _, subdir := range curdir.Directories {
 		e.eg.Go(func() error {
 			return e.sema.Do(ctx, func(ctx context.Context) error {
-				return e.exportDir(ctx, filepath.Join(dir, subdir.Name), digest.FromProto(subdir.Digest), w)
+				return e.exportDir(ctx, filepath.Join(dir, subdir.Name), digest.FromProto(subdir.Digest), w, stats)
 			})
 		})
 	}
 	for _, s := range curdir.Symlinks {
 		fname := filepath.Join(dir, s.Name)
 		clog.Infof(ctx, "symlink %s -> %s", fname, s.Target)
+		stats.numSymlinks.Add(1)
 		if w == nil {
 			err := os.Symlink(s.Target, fname)
 			if err != nil {
@@ -106,8 +131,10 @@ func (e *Exporter) exportDir(ctx context.Context, dir string, d digest.Digest, w
 	return nil
 }
 
-func (e *Exporter) exportFile(ctx context.Context, fname string, d digest.Digest, isExecutable bool, w io.Writer) error {
+func (e *Exporter) exportFile(ctx context.Context, fname string, d digest.Digest, isExecutable bool, w io.Writer, stats *statsCollector) error {
 	clog.Infof(ctx, "file:%s %s x:%t", fname, d, isExecutable)
+	stats.numFiles.Add(1)
+	stats.totalBytes.Add(d.SizeBytes)
 	if w != nil {
 		if isExecutable {
 			fmt.Fprintf(w, "%s\t%s\texecutable\n", fname, d)

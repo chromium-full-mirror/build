@@ -199,7 +199,7 @@ func (c *Command) run(ctx context.Context) error {
 			return fmt.Errorf("failed to unmarshal %s as %T: %w", d, pmsg, err)
 		}
 		exporter := exporter.New(client)
-		err = exporter.Export(ctx, dir, d, w)
+		_, err = exporter.Export(ctx, dir, d, w)
 		if err != nil {
 			return fmt.Errorf("error from exporter.Export: %w", err)
 		}

@@ -35,6 +35,7 @@ import (
 	"go.chromium.org/build/siso/reapi/merkletree/importer"
 	rbepb "go.chromium.org/build/siso/reapi/proto"
 	"go.chromium.org/build/siso/signals"
+	"go.chromium.org/build/siso/ui"
 
 	_ "embed"
 )
@@ -208,11 +209,14 @@ func (c *Command) run(ctx context.Context) error {
 		return err
 	}
 
+	fetchStarted := time.Now()
 	e := exporter.New(client)
-	err = e.Export(ctx, "root", digest.FromProto(action.InputRootDigest), nil)
+	stats, err := e.Export(ctx, "root", digest.FromProto(action.InputRootDigest), nil)
 	if err != nil {
 		return err
 	}
+	fmt.Printf("input root %s\n", digest.FromProto(action.InputRootDigest))
+	fmt.Printf("  dirs=%d symlinks=%d files=%d %s in %s\n", stats.NumDirs, stats.NumSymlinks, stats.NumFiles, ui.NumBytes(stats.TotalBytes), time.Since(fetchStarted))
 
 	result, err := client.GetActionResult(ctx, actionDigest)
 	switch status.Code(err) {
