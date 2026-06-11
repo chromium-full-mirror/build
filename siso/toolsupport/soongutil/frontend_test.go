@@ -9,7 +9,6 @@ import (
 	"context"
 	"fmt"
 	"iter"
-	"runtime"
 	"testing"
 	"time"
 
@@ -271,12 +270,7 @@ func TestFrontendEdgeFinishedMetrics(t *testing.T) {
 			if ef.GetMajorPageFaults() != tc.wantMajflt {
 				t.Errorf("ef.GetMajorPageFaults()=%d; want=%d", ef.GetMajorPageFaults(), tc.wantMajflt)
 			}
-			var wantMaxRss uint64
-			if tc.isLocal && runtime.GOOS == "darwin" {
-				wantMaxRss = uint64(tc.maxRss / 1024)
-			} else {
-				wantMaxRss = uint64(tc.maxRss)
-			}
+			wantMaxRss := uint64(tc.maxRss / 1024)
 			if ef.GetMaxRssKb() != wantMaxRss {
 				t.Errorf("ef.GetMaxRssKb()=%d; want=%d", ef.GetMaxRssKb(), wantMaxRss)
 			}
@@ -363,12 +357,7 @@ func TestFrontendEdgeCanceledMetrics(t *testing.T) {
 			if ef.GetMajorPageFaults() != tc.wantMajflt {
 				t.Errorf("ef.GetMajorPageFaults()=%d; want=%d", ef.GetMajorPageFaults(), tc.wantMajflt)
 			}
-			var wantMaxRss uint64
-			if tc.isLocal && runtime.GOOS == "darwin" {
-				wantMaxRss = uint64(tc.maxRss / 1024)
-			} else {
-				wantMaxRss = uint64(tc.maxRss)
-			}
+			wantMaxRss := uint64(tc.maxRss / 1024)
 			if ef.GetMaxRssKb() != wantMaxRss {
 				t.Errorf("ef.GetMaxRssKb()=%d; want=%d", ef.GetMaxRssKb(), wantMaxRss)
 			}

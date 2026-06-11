@@ -7,6 +7,7 @@
 package trace
 
 import (
+	"runtime"
 	"syscall"
 	"time"
 )
@@ -39,8 +40,12 @@ func (u *usageRecord) sample(pid int64, t time.Time) []Event {
 	}
 	ret = append(ret, o)
 	o.Name = "mem"
+	maxrss := rusage.Maxrss
+	if runtime.GOOS == "linux" {
+		maxrss *= 1024
+	}
 	o.Args = map[string]any{
-		"maxrss": rusage.Maxrss,
+		"maxrss": maxrss,
 	}
 	ret = append(ret, o)
 	o.Name = "io"

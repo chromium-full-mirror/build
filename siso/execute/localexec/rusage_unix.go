@@ -8,6 +8,7 @@ package localexec
 
 import (
 	"os/exec"
+	"runtime"
 	"syscall"
 	"time"
 
@@ -16,10 +17,27 @@ import (
 	epb "go.chromium.org/build/siso/execute/proto"
 )
 
-func rusage(cmd *exec.Cmd) *epb.Rusage {
-	if u, ok := cmd.ProcessState.SysUsage().(*syscall.Rusage); ok {
+type rusageTracker struct {
+	cmd *exec.Cmd
+}
+
+func newRusageTracker(cmd *exec.Cmd) *rusageTracker {
+	return &rusageTracker{cmd: cmd}
+}
+
+func (t *rusageTracker) Close() {}
+
+func (t *rusageTracker) Rusage() *epb.Rusage {
+	if t.cmd.ProcessState == nil {
+		return nil
+	}
+	if u, ok := t.cmd.ProcessState.SysUsage().(*syscall.Rusage); ok {
+		maxRss := u.Maxrss
+		if runtime.GOOS == "linux" {
+			maxRss *= 1024
+		}
 		return &epb.Rusage{
-			MaxRss:  u.Maxrss,
+			MaxRss:  maxRss,
 			Majflt:  u.Majflt,
 			Inblock: u.Inblock,
 			Oublock: u.Oublock,

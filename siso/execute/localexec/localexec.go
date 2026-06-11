@@ -207,10 +207,12 @@ func runOnce(ctx context.Context, cmd *execute.Cmd) (*rpb.ActionResult, error) {
 
 	var ru *epb.Rusage
 	var err error
+	var tracker *rusageTracker
 	err = ForkSema.Do(ctx, func(ctx context.Context) error {
 		return c.Start()
 	})
 	if err == nil {
+		tracker = newRusageTracker(c)
 		if cmd.OOMScoreAdj != nil {
 			oomScoreAdj(ctx, c.Process.Pid, *cmd.OOMScoreAdj)
 		}
@@ -235,8 +237,9 @@ func runOnce(ctx context.Context, cmd *execute.Cmd) (*rpb.ActionResult, error) {
 			}
 		}
 	}
-	if err == nil {
-		ru = rusage(c)
+	if tracker != nil {
+		ru = tracker.Rusage()
+		tracker.Close()
 	}
 	if cmd.Console {
 		consoleCancel()

@@ -9,7 +9,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -271,9 +270,5 @@ func (f *Frontend) Errorf(format string, args ...any) {
 }
 
 func maxRSSKB(met build.StepMetric) uint64 {
-	maxRss := met.MaxRSS
-	if met.IsLocal && runtime.GOOS == "darwin" {
-		return uint64(maxRss / 1024)
-	}
-	return uint64(maxRss)
+	return uint64(met.MaxRSS / 1024)
 }
