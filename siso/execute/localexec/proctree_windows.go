@@ -9,17 +9,16 @@ package localexec
 import (
 	"context"
 	"os/exec"
-	"time"
 
 	"go.chromium.org/build/siso/o11y/clog"
 )
 
 // Windows has no unix process groups, so these are no-op/direct-child stubs;
-// descendants of a cancelled action aren't tracked (Job Objects: follow-up).
-
-// waitDelay bounds exec.Cmd.Wait; read from SISO_LOCALEXEC_WAITDELAY so tests can
-// shorten it.
-var waitDelay = envDuration("SISO_LOCALEXEC_WAITDELAY", 10*time.Second)
+// descendants of a cancelled action aren't tracked. The follow-up is a Job
+// Object (JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE + wait for
+// JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO, as Bazel does) to give the cancellation
+// path cancelGroup/drainGroup parity; the completion path needs nothing - it
+// waits for stdout/stderr EOF like Ninja, see runOnce.
 
 func setProcGroup(c *exec.Cmd) {}
 
@@ -35,7 +34,6 @@ func cancelGroup(ctx context.Context, c *exec.Cmd) error {
 	return err
 }
 
-// drainGroup is a no-op stub here (Job Objects would be the equivalent): it can't
-// kill a leaked child, so it returns false - a leaked-pipe ErrWaitDelay must not be
-// treated as a clean exit on Windows.
-func drainGroup(ctx context.Context, pgid int) bool { return false }
+// drainGroup is a no-op stub here: without Job Objects there is nothing to
+// sweep a finished action's leftovers with.
+func drainGroup(ctx context.Context, pgid int) {}

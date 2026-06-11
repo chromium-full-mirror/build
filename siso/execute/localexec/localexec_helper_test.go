@@ -33,10 +33,6 @@ func TestMain(m *testing.M) {
 		_ = ServeSpawnHelper(context.Background(), connFD, log.New(os.Stderr, "", log.LstdFlags))
 		os.Exit(0)
 	}
-	// Shorten waitDelay for the whole test binary (the helper inherits this env at
-	// launch) so leaked-pipe ErrWaitDelay tests fire quickly instead of waiting the
-	// full production delay. Only the leaked-stdout cases ever hit it.
-	os.Setenv("SISO_LOCALEXEC_WAITDELAY", "500ms")
 	// Production won't auto-launch under `go test`, so launch one explicitly; the
 	// re-exec is safe here because this binary dispatches the subcommand above.
 	exe, err := os.Executable()

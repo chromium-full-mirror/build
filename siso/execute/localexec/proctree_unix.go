@@ -46,14 +46,6 @@ const (
 	drainTimeout = 1 * time.Second
 )
 
-// waitDelay bounds exec.Cmd.Wait after the process exits or is canceled, so a
-// leaked child holding stdout/stderr can't block it. Generous on purpose: an
-// ordinary slow shutdown (e.g. on overloaded/swapping CI) should not trip
-// ErrWaitDelay before the child closes the pipe; the synchronous drainGroup is
-// what actually kills a leaked in-group child. Read from SISO_LOCALEXEC_WAITDELAY
-// so tests (whose spawn helper is a separate process) can shorten it.
-var waitDelay = envDuration("SISO_LOCALEXEC_WAITDELAY", 10*time.Second)
-
 // setProcGroup makes the action its own process group leader (pgid == pid),
 // applied by the runtime between fork and exec.
 func setProcGroup(c *exec.Cmd) {
@@ -118,14 +110,12 @@ func cancelGroup(ctx context.Context, c *exec.Cmd) error {
 	return nil
 }
 
-// drainGroup SIGKILLs the process group and reaps every member until none remain,
-// returning true once the group is empty (ESRCH) and false if it gave up at
-// drainTimeout with a member it couldn't clear. It is called synchronously after
-// Cmd.Wait has reaped the group leader (the action's direct child), so wait4(-pgid)
-// here only ever reaps the descendants the subreaper reparented to us, never the
-// leader. The bool lets the caller suppress a leaked-pipe ErrWaitDelay only when the
-// group provably drained.
-func drainGroup(ctx context.Context, pgid int) bool {
+// drainGroup SIGKILLs the process group and reaps every member until none remain
+// (kill(-pgid) reaches ESRCH) or it gives up at drainTimeout with a member it
+// couldn't clear. It is called synchronously after Cmd.Wait has reaped the group
+// leader (the action's direct child), so wait4(-pgid) here only ever reaps the
+// descendants the subreaper reparented to us, never the leader.
+func drainGroup(ctx context.Context, pgid int) {
 	deadline := time.Now().Add(drainTimeout)
 	for {
 		// Reap reparented descendants so their zombies stop keeping kill(-pgid)
@@ -136,7 +126,7 @@ func drainGroup(ctx context.Context, pgid int) bool {
 		reapReparented(pgid)
 		err := syscall.Kill(-pgid, syscall.SIGKILL)
 		if groupGone(err) {
-			return true // ESRCH: group empty.
+			return // ESRCH: group empty.
 		}
 		// err == nil: members remain (and were signalled). Any other error - e.g.
 		// EPERM for a descendant that changed its real UID - means a member we
@@ -150,7 +140,7 @@ func drainGroup(ctx context.Context, pgid int) bool {
 			// sleep. These need PID namespaces to truly contain; give up rather
 			// than hang the build (and so the helper still replies for the action).
 			clog.Warningf(ctx, "drainGroup pgid=%d: gave up after %s (last kill: %v); likely a setsid escapee, a uid-changed, or a D-state descendant left an uncollectable group member", pgid, drainTimeout, err)
-			return false
+			return
 		}
 		time.Sleep(killInterval)
 	}

@@ -41,10 +41,13 @@ sh -c 'echo $$ > pids/$$; exec sleep 300' &
 sh -c 'sh -c "echo \$\$ > pids/\$\$; exec sleep 300" &' &
 exec sleep 300`
 
-	// scriptLeak backgrounds a child that inherits the action's stdout pipe
-	// and outlives it, then exits successfully right away.
+	// scriptLeak backgrounds a child that inherits the action's stdout pipe and
+	// outlives it briefly (the EOF barrier must wait for it), plus a child that
+	// detaches from the pipes and would outlive it by minutes (the post-EOF
+	// sweep must kill it), then exits successfully right away.
 	scriptLeak = `echo $$ > pgid
-sh -c 'echo $$ > pids/$$; exec sleep 300' &
+sh -c 'echo $$ > pids/$$; exec sleep 0.5' &
+sh -c 'echo $$ > pids/$$; exec sleep 300' >/dev/null 2>&1 &
 exit 0`
 
 	// scriptFast finishes almost immediately and spawns nothing.
@@ -122,15 +125,16 @@ func readPidDir(dir string) []int {
 	return pids
 }
 
-// waitForTree polls until the action in dir has recorded its own pid and n
-// descendant pids, so a test can act once the whole tree is provably running.
-// Returns 0, nil on timeout. Must not t.Fatal: it runs in stress goroutines.
-func waitForTree(dir string, n int) (pid int, pids []int) {
+// waitForTree polls until the action in dir has recorded its own pid and both
+// descendant pids (scriptTree and scriptLeak each spawn exactly two), so a test
+// can act once the whole tree is provably running. Returns 0, nil on timeout.
+// Must not t.Fatal: it runs in stress goroutines.
+func waitForTree(dir string) (pid int, pids []int) {
 	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
 		pid = readPidFile(filepath.Join(dir, "pgid"))
 		pids = readPidDir(filepath.Join(dir, "pids"))
-		if pid > 0 && len(pids) >= n {
+		if pid > 0 && len(pids) >= 2 {
 			return pid, pids
 		}
 		time.Sleep(5 * time.Millisecond)
@@ -165,7 +169,7 @@ func TestActionKillsOrphanedGrandchild(t *testing.T) {
 		done <- err
 	}()
 
-	pid, pids := waitForTree(dir, 2)
+	pid, pids := waitForTree(dir)
 	if pid == 0 {
 		t.Fatal("action did not record its pid and 2 descendant pids in time")
 	}
@@ -211,14 +215,17 @@ func TestCancelGroupReportsProcessDoneAfterExit(t *testing.T) {
 	}
 }
 
-// TestActionDoesNotHangOnLeakedStdout verifies that an action that exits
-// successfully but leaks a background child holding its stdout pipe (a) does
-// not hang the run, (b) is still reported as exit 0, and (c) has the leaked
-// child killed before the run returns.
-func TestActionDoesNotHangOnLeakedStdout(t *testing.T) {
+// TestActionWaitsForLeakedStdoutHolder verifies the completion contract on an
+// action that exits successfully but leaks background children: the run (a)
+// returns exit 0 only after the child holding the stdout pipe has exited on
+// its own (the EOF barrier; it must not be killed early), (b) does not wait
+// for the fully detached child, which the post-EOF drainGroup sweep kills
+// instead, and (c) leaves no descendant behind either way.
+func TestActionWaitsForLeakedStdoutHolder(t *testing.T) {
 	requirePS(t)
 	cmd, dir := newTreeAction(t, scriptLeak)
 
+	start := time.Now()
 	type result struct {
 		res *rpb.ActionResult
 		err error
@@ -229,9 +236,9 @@ func TestActionDoesNotHangOnLeakedStdout(t *testing.T) {
 		done <- result{res: res, err: err}
 	}()
 
-	pid, pids := waitForTree(dir, 1)
+	pid, pids := waitForTree(dir)
 	if pid == 0 {
-		t.Fatal("action did not record its pid and a descendant pid in time")
+		t.Fatal("action did not record its pid and 2 descendant pids in time")
 	}
 	t.Cleanup(func() { killTree(pid) })
 
@@ -243,13 +250,19 @@ func TestActionDoesNotHangOnLeakedStdout(t *testing.T) {
 		if got, want := r.res.ExitCode, int32(0); got != want {
 			t.Errorf("exit code = %d, want %d", got, want)
 		}
+		// The holder keeps the action's stdout open while it sleeps 0.5s;
+		// returning earlier would mean the EOF barrier was cut short and the
+		// holder was killed while it could still have been writing outputs.
+		if elapsed := time.Since(start); elapsed < 450*time.Millisecond {
+			t.Errorf("run returned after %v, want >= ~500ms: it must wait for the stdout-holding child to exit", elapsed)
+		}
 	case <-time.After(30 * time.Second):
-		t.Fatal("runViaHelper hung on an exited action whose leaked child holds its stdout pipe")
+		t.Fatal("runViaHelper hung; want it to return once the stdout-holding child exits, without waiting for the detached child")
 	}
 
 	for _, p := range pids {
 		if !processGone(p) {
-			t.Errorf("leaked child pid %d still alive after the action exited, want gone", p)
+			t.Errorf("leaked child pid %d still alive after the action completed, want gone", p)
 		}
 	}
 }
@@ -360,25 +373,22 @@ func TestDrainGroupGivesUpOnUnreapableZombie(t *testing.T) {
 		t.Fatalf("kill C %d: %v", cPid, err)
 	}
 
-	done := make(chan bool, 1)
+	done := make(chan struct{})
 	go func() {
-		done <- drainGroup(t.Context(), pgid)
+		drainGroup(t.Context(), pgid)
+		close(done)
 	}()
 	select {
-	case drained := <-done:
-		if drained {
-			t.Error("drainGroup returned true (drained); want false - the group still holds an unreapable zombie")
-		}
+	case <-done:
 	case <-time.After(3 * time.Second):
 		t.Fatal("drainGroup did not return; it hung on an unreapable zombie left by a setsid escapee")
 	}
 }
 
-// TestDrainGroupReportsDrained verifies the success side of drainGroup's bool: an
-// ordinary in-group leaked child is killed and reaped, so drainGroup returns true.
-// That true is what lets runOnce suppress a leaked-pipe ErrWaitDelay as a real
-// success (instead of failing a harmless same-group leak under overload).
-func TestDrainGroupReportsDrained(t *testing.T) {
+// TestDrainGroupReapsLeakedChild verifies drainGroup's success path: an
+// ordinary in-group leaked child is killed and reaped, so the sweep after a
+// completed action leaves nothing of its process group behind.
+func TestDrainGroupReapsLeakedChild(t *testing.T) {
 	requirePS(t)
 	if runtime.GOOS != "linux" {
 		t.Skip("subreaper reparenting is Linux-only")
@@ -403,9 +413,7 @@ func TestDrainGroupReportsDrained(t *testing.T) {
 	cPid := readPidFileWait(t, cFile)
 	t.Cleanup(func() { _ = syscall.Kill(cPid, syscall.SIGKILL) })
 
-	if drained := drainGroup(t.Context(), pgid); !drained {
-		t.Error("drainGroup returned false; want true - an in-group child should drain")
-	}
+	drainGroup(t.Context(), pgid)
 	if !processGone(cPid) {
 		t.Errorf("in-group child %d still alive after drainGroup; want gone", cPid)
 	}
@@ -501,7 +509,7 @@ func TestProcessTreeStress(t *testing.T) {
 			switch shape {
 			case 0:
 				// Cancel mid-run, once the whole tree is provably running.
-				pid, pids = waitForTree(dir, 2)
+				pid, pids = waitForTree(dir)
 				if pid == 0 {
 					t.Errorf("action %d (shape %d): tree did not come up in time", i, shape)
 					return
@@ -510,7 +518,7 @@ func TestProcessTreeStress(t *testing.T) {
 				cancel()
 			case 1:
 				// Never cancelled; the action exits 0 on its own.
-				pid, pids = waitForTree(dir, 1)
+				pid, pids = waitForTree(dir)
 				if pid == 0 {
 					t.Errorf("action %d (shape %d): tree did not come up in time", i, shape)
 					return
