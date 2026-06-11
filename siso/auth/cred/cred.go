@@ -17,6 +17,7 @@ import (
 	"sync"
 
 	"golang.org/x/oauth2"
+	"golang.org/x/oauth2/google"
 	"google.golang.org/api/option"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
@@ -180,8 +181,28 @@ func (o Options) Logout(ctx context.Context) error {
 // New creates a Cred using LUCI auth's default options.
 // It ensures that the user is logged in and returns an error otherwise.
 func New(ctx context.Context, uri string, opts Options) (Cred, error) {
-	if opts.Type == "" {
+	switch opts.Type {
+	case "":
 		return Cred{}, fmt.Errorf(`empty credential helper. need to set credential helper path, "luci-auth" or "google-application-default" in SISO_CREDENTIAL_HELPER`)
+	case "google-application-default":
+		adc, err := google.FindDefaultCredentials(ctx, "https://www.googleapis.com/auth/cloud-platform")
+		if err != nil {
+			return Cred{}, err
+		}
+		// TODO: context aware token source - https://github.com/golang/oauth2/issues/262
+		errch := make(chan error, 1)
+		go func() {
+			_, err = adc.TokenSource.Token()
+			errch <- err
+		}()
+		select {
+		case <-ctx.Done():
+			return Cred{}, context.Cause(ctx)
+		case err = <-errch:
+			if err != nil {
+				return Cred{}, fmt.Errorf("google-application-default credential found, but invalid token\n on cloudtop, you need to run `gcloud application-default login`:\n %w", err)
+			}
+		}
 	}
 	if opts.TokenSource == nil {
 		return Cred{Type: opts.Type}, nil
