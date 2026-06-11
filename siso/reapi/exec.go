@@ -52,7 +52,9 @@ func (c *Client) ExecuteAndWait(ctx context.Context, req *rpb.ExecuteRequest, op
 	execClient := rpb.NewExecutionClient(c.conn)
 	var err error
 	pctx := ctx
-	var backoff retry.ExponentialBackoff
+	backoff := retry.ExponentialBackoff{
+		MaxRetries: c.opt.MaxRetries,
+	}
 retryLoop:
 	for i := 0; ; i++ {
 		err = func() error {

@@ -44,7 +44,11 @@ func (b *Builder) execRemoteExecute(uploadCtx, execCtx context.Context, step *St
 	clog.Infof(ctx, "exec remote execute %s", step.cmd.Desc)
 	phase := stepRemoteRun
 	var reExecDur time.Duration
-	return retry.Do(ctx, func() error {
+	var maxRetries int
+	if b.reapiclient != nil {
+		maxRetries = b.reapiclient.MaxRetries()
+	}
+	return retry.DoWithMaxRetries(ctx, maxRetries, func() error {
 		step.setPhase(phase.wait())
 		err := b.remoteSema.Do(ctx, step.weight, func(ctx context.Context) error {
 			step.setPhase(phase)

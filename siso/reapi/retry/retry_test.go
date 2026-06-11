@@ -81,3 +81,18 @@ func TestDo_AuthError(t *testing.T) {
 		t.Errorf("called=%d; want 2", called)
 	}
 }
+
+func TestDo_ResourceExhausted(t *testing.T) {
+	ctx := t.Context()
+	called := 0
+	err := retry.Do(ctx, func() error {
+		called++
+		return status.Error(codes.ResourceExhausted, "resource exhausted")
+	})
+	if code := status.Code(err); code != codes.ResourceExhausted {
+		t.Errorf("retry.Do=%v; want %v", err, codes.ResourceExhausted)
+	}
+	if called != 1 {
+		t.Errorf("called=%d; want 1", called)
+	}
+}

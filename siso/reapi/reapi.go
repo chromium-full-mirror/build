@@ -103,6 +103,9 @@ type Option struct {
 	// Zero (default) means serial; set to max(32, GOMAXPROCS*4) or similar
 	// for callers that benefit from parallel upload (e.g. `siso isolate`).
 	UploadConcurrency int
+
+	// MaxRetries is the maximum number of retries for retriable errors.
+	MaxRetries int
 }
 
 // Envs returns environment flags for reapi.
@@ -804,4 +807,9 @@ func MetadataFromOutgoingContext(ctx context.Context) (*rpb.RequestMetadata, boo
 		return nil, false
 	}
 	return rmd, true
+}
+
+// MaxRetries returns the configured maximum number of retries.
+func (c *Client) MaxRetries() int {
+	return c.opt.MaxRetries
 }

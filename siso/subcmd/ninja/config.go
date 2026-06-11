@@ -129,6 +129,7 @@ type NinjaFlags struct {
 
 	fsopt              *hashfs.Option
 	reopt              *reapi.Option
+	maxRBERetries      int
 	reExecEnable       bool
 	reCacheEnableRead  bool
 	reCacheEnableWrite bool
@@ -242,6 +243,7 @@ func (c *Command) SetFlags(flagSet *flag.FlagSet) {
 
 	c.reopt = new(reapi.Option)
 	c.reopt.RegisterFlags(flagSet, reapi.Envs("REAPI"))
+	flagSet.IntVar(&c.maxRBERetries, "max_rbe_retries", 10, "max RBE retries")
 	flagSet.BoolVar(&c.reExecEnable, "re_exec_enable", true, "remote exec enable")
 	flagSet.BoolVar(&c.reCacheEnableRead, "re_cache_enable_read", true, "remote exec cache enable read")
 	flagSet.BoolVar(&c.reCacheEnableWrite, "re_cache_enable_write", false, "remote exec cache allow local trusted uploads")

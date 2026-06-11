@@ -465,6 +465,7 @@ func (c *Command) Run(ctx context.Context) (stats build.Stats, finalErr error) {
 	if err := c.reopt.CheckValid(); err == nil {
 		ui.Default.Infof("use %s\n", c.reopt)
 		ctx = reapi.NewContext(ctx, nil)
+		c.reopt.MaxRetries = c.maxRBERetries
 		reapiClient, err = reapi.New(ctx, credential, *c.reopt)
 		if err != nil {
 			return stats, err

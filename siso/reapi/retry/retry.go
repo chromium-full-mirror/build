@@ -19,6 +19,8 @@ import (
 
 // ExponentialBackoff handles exponential backoff.
 type ExponentialBackoff struct {
+	MaxRetries int
+
 	started time.Time
 	retries int
 	delay   time.Duration
@@ -37,8 +39,7 @@ func (b *ExponentialBackoff) retriableError(err error) bool {
 
 	// https://github.com/bazelbuild/bazel/blob/7.1.1/src/main/java/com/google/devtools/build/lib/remote/RemoteRetrier.java#L47
 	switch st.Code() {
-	case codes.ResourceExhausted,
-		codes.Internal,
+	case codes.Internal,
 		codes.Unavailable,
 		codes.Aborted:
 		return true
@@ -78,7 +79,10 @@ func (b *ExponentialBackoff) Next(ctx context.Context, err error) (time.Duration
 	if err == nil {
 		return 0, nil
 	}
-	const maxRetries = 10
+	maxRetries := b.MaxRetries
+	if maxRetries <= 0 {
+		maxRetries = 10
+	}
 	const multiplier = 2
 	const baseDelay = 200 * time.Millisecond
 	const maxDelay = float64(10 * time.Second)
@@ -109,7 +113,12 @@ func (b *ExponentialBackoff) Next(ctx context.Context, err error) (time.Duration
 
 // Do calls function `f` and retries with exponential backoff for errors that are known to be retriable.
 func Do(ctx context.Context, f func() error) error {
-	var backoff ExponentialBackoff
+	return DoWithMaxRetries(ctx, 0, f)
+}
+
+// DoWithMaxRetries calls function `f` and retries with exponential backoff up to maxRetries.
+func DoWithMaxRetries(ctx context.Context, maxRetries int, f func() error) error {
+	backoff := ExponentialBackoff{MaxRetries: maxRetries}
 	for {
 		err := f()
 		delay, err := backoff.Next(ctx, err)
