@@ -28,6 +28,8 @@ package firstbyte
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"sync"
 	"time"
 
@@ -106,6 +108,26 @@ func (handler) HandleConn(context.Context, stats.ConnStats) {}
 // "data flowing".
 var Handler stats.Handler = handler{}
 
+// ErrNoFirstByte is the cause the watchdog cancels with when no first byte arrives in time.
+var ErrNoFirstByte = errors.New("no first byte")
+
+// watchdogError wraps ErrNoFirstByte and reports codes.Aborted via GRPCStatus.
+type watchdogError struct {
+	label   string
+	timeout time.Duration
+	elapsed time.Duration
+}
+
+func (e *watchdogError) Error() string {
+	return fmt.Sprintf("%s %v in %s: %s", e.label, ErrNoFirstByte, e.timeout, e.elapsed)
+}
+
+func (e *watchdogError) Unwrap() error { return ErrNoFirstByte }
+
+func (e *watchdogError) GRPCStatus() *status.Status {
+	return status.New(codes.Aborted, e.Error())
+}
+
 // Watchdog runs f on a derived ctx that is cancelled with codes.Aborted
 // if no gRPC InPayload event fires within timeout. Returns f's error,
 // or the watchdog's Aborted cause if it fired. Pair with retry.Do for
@@ -132,7 +154,7 @@ func Watchdog(ctx context.Context, timeout time.Duration, label string, f func(c
 		case <-sig.Fired():
 		case <-ctx.Done():
 		case <-time.After(timeout):
-			cancel(status.Errorf(codes.Aborted, "%s no first byte in %s: %s", label, timeout, time.Since(started)))
+			cancel(&watchdogError{label: label, timeout: timeout, elapsed: time.Since(started)})
 		}
 	}()
 	err := f(ctx)

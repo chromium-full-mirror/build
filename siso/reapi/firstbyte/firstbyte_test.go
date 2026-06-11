@@ -7,9 +7,9 @@ package firstbyte
 import (
 	"context"
 	"errors"
-	"strings"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"google.golang.org/grpc/codes"
@@ -100,59 +100,67 @@ func TestHandler_OnlyInPayloadFires(t *testing.T) {
 // Watchdog returns f's error unchanged if the call completes before
 // timeout (here: instantly).
 func TestWatchdog_PassThroughOnImmediateReturn(t *testing.T) {
-	sentinel := errors.New("inner error")
-	err := Watchdog(t.Context(), 50*time.Millisecond, "test", func(context.Context) error {
-		return sentinel
+	synctest.Test(t, func(t *testing.T) {
+		sentinel := errors.New("inner error")
+		err := Watchdog(t.Context(), 50*time.Millisecond, "test", func(context.Context) error {
+			return sentinel
+		})
+		if !errors.Is(err, sentinel) {
+			t.Errorf("err = %v, want %v", err, sentinel)
+		}
 	})
-	if !errors.Is(err, sentinel) {
-		t.Errorf("err = %v, want %v", err, sentinel)
-	}
 }
 
 // Watchdog cancels with codes.Aborted if f blocks past timeout and the
 // signal never fires.
 func TestWatchdog_FiresOnStall(t *testing.T) {
-	err := Watchdog(t.Context(), 30*time.Millisecond, "test", func(ctx context.Context) error {
-		<-ctx.Done()
-		return ctx.Err()
+	synctest.Test(t, func(t *testing.T) {
+		err := Watchdog(t.Context(), 30*time.Millisecond, "test", func(ctx context.Context) error {
+			<-ctx.Done()
+			return ctx.Err()
+		})
+		if err == nil {
+			t.Fatal("nil err on stalled call")
+		}
+		if !errors.Is(err, ErrNoFirstByte) {
+			t.Errorf("err is not a watchdog cancellation: %v", err)
+		}
+		if got := status.Code(err); got != codes.Aborted {
+			t.Errorf("status code = %v, want Aborted", got)
+		}
 	})
-	if err == nil {
-		t.Fatal("nil err on stalled call")
-	}
-	if !strings.Contains(err.Error(), "no first byte in 30ms") {
-		t.Errorf("err lacks watchdog tag: %v", err)
-	}
-	if got := status.Code(err); got != codes.Aborted {
-		t.Errorf("status code = %v, want Aborted", got)
-	}
 }
 
 // Watchdog stays quiet if the firstbyte signal fires (the production
 // trigger is a gRPC InPayload event picked up by Handler).
 func TestWatchdog_StandsDownOnSignal(t *testing.T) {
-	// 50ms timeout; we fire the signal at 10ms via TagRPC+InPayload.
-	err := Watchdog(t.Context(), 50*time.Millisecond, "test", func(ctx context.Context) error {
-		h := Handler
-		rpcCtx := h.TagRPC(ctx, &stats.RPCTagInfo{FullMethodName: "/x/y"})
-		time.Sleep(10 * time.Millisecond)
-		h.HandleRPC(rpcCtx, &stats.InPayload{})
-		// Now stall longer than the watchdog timeout would have allowed.
-		time.Sleep(100 * time.Millisecond)
-		return nil
+	synctest.Test(t, func(t *testing.T) {
+		// 50ms timeout; fire the signal at 10ms via TagRPC+InPayload.
+		err := Watchdog(t.Context(), 50*time.Millisecond, "test", func(ctx context.Context) error {
+			h := Handler
+			rpcCtx := h.TagRPC(ctx, &stats.RPCTagInfo{FullMethodName: "/x/y"})
+			time.Sleep(10 * time.Millisecond)
+			h.HandleRPC(rpcCtx, &stats.InPayload{})
+			// Stall past where the watchdog timeout would have fired.
+			time.Sleep(100 * time.Millisecond)
+			return nil
+		})
+		if err != nil {
+			t.Errorf("err = %v, want nil (signal stood down the watchdog)", err)
+		}
 	})
-	if err != nil {
-		t.Errorf("err = %v, want nil (signal stood down the watchdog)", err)
-	}
 }
 
 // timeout <= 0 disables the watchdog entirely: f's ctx is the caller's
 // ctx and a long-running f returns its own error/result unchanged.
 func TestWatchdog_Disabled(t *testing.T) {
-	sentinel := errors.New("inner result")
-	err := Watchdog(t.Context(), 0, "test", func(context.Context) error {
-		return sentinel
+	synctest.Test(t, func(t *testing.T) {
+		sentinel := errors.New("inner result")
+		err := Watchdog(t.Context(), 0, "test", func(context.Context) error {
+			return sentinel
+		})
+		if !errors.Is(err, sentinel) {
+			t.Errorf("err = %v, want %v", err, sentinel)
+		}
 	})
-	if !errors.Is(err, sentinel) {
-		t.Errorf("err = %v, want %v", err, sentinel)
-	}
 }
