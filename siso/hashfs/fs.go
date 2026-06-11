@@ -119,7 +119,7 @@ func New(ctx context.Context, opt Option) (*HashFS, error) {
 	}
 	opt.OSFSOption.OnCog = opt.CogFS != nil
 	opt.OSFSOption.OnArtFS = opt.ArtFS != nil
-	// TODO(b/513044090): pass opt.CartFS to retrieve digest from cartfs
+	opt.OSFSOption.CartFS = opt.CartFS
 	fsys := &HashFS{
 		opt:       opt,
 		directory: &directory{isRoot: true},

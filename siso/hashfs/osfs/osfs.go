@@ -28,6 +28,7 @@ import (
 	"go.chromium.org/build/siso/reapi/digest"
 	"go.chromium.org/build/siso/reapi/firstbyte"
 	"go.chromium.org/build/siso/sync/semaphore"
+	"go.chromium.org/build/siso/toolsupport/cartfsutil"
 )
 
 // LstatSemaphore is a semaphore to control concurrent lstat,
@@ -59,7 +60,8 @@ type OSFS struct {
 // Option is an option for osfs.
 type Option struct {
 	// DigestXattrName is xattr name for digest. If empty, defaults
-	// to google.digest.sha256 on Cog/ArtFS and stays empty elsewhere;
+	// to google.digest.sha256 on Cog/ArtFS/CartFS
+	// and stays empty elsewhere;
 	// set explicitly to opt in on other filesystems that publish it.
 	DigestXattrName string
 
@@ -69,16 +71,20 @@ type Option struct {
 
 	// OnArtFS indicates the exec root is on the ArtFS filesystem.
 	OnArtFS bool
+
+	// CartFS is client of CartFS.
+	// TODO(b/513044090): decide xattr or GetDigest API.
+	CartFS *cartfsutil.Client
 }
 
 func (o *Option) RegisterFlags(flagSet *flag.FlagSet) {
-	flagSet.StringVar(&o.DigestXattrName, "fs_digest_xattr", "", "xattr for sha256 digest; empty enables the default on Cog/ArtFS only")
+	flagSet.StringVar(&o.DigestXattrName, "fs_digest_xattr", "", "xattr for sha256 digest; empty enables the default on Cog/ArtFS/CartFS only")
 }
 
 // New creates new OSFS.
 func New(ctx context.Context, name string, opt Option) *OSFS {
 	digestXattrName := opt.DigestXattrName
-	if digestXattrName == "" && xattr.XATTR_SUPPORTED && (opt.OnCog || opt.OnArtFS) {
+	if digestXattrName == "" && xattr.XATTR_SUPPORTED && (opt.OnCog || opt.OnArtFS || opt.CartFS != nil) {
 		digestXattrName = defaultDigestXattr
 	}
 	if !xattr.XATTR_SUPPORTED {
