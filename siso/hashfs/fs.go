@@ -348,6 +348,11 @@ func (hfs *HashFS) OnCog() bool {
 	return hfs.opt.CogFS != nil
 }
 
+// OnCartFS returns whether it is on CartFS or not.
+func (hfs *HashFS) OnCartFS() bool {
+	return hfs.opt.CartFS != nil
+}
+
 func needPathClean(names ...string) bool {
 	for _, name := range names {
 		// even on windows, we use /-path in hashfs.
@@ -1359,7 +1364,9 @@ func (hfs *HashFS) Update(ctx context.Context, workspaceRoot string, entries []U
 		hfs.artfsInsert(ctx, workspaceRoot, entries)
 	}
 	if hfs.opt.CartFS != nil {
-		hfs.cartfsRegister(ctx, workspaceRoot, entries)
+		start := time.Now()
+		hfs.cartfsRegister(ctx, workspaceRoot, entries, cartfsutil.UrgencyOnAccess)
+		clog.Infof(ctx, "cartfsRegister took %s for %d entries", time.Since(start), len(entries))
 	}
 	for _, ent := range entries {
 		clog.Infof(ctx, "update %v", ent)
@@ -1422,7 +1429,14 @@ func (hfs *HashFS) artfsInsert(ctx context.Context, workspaceRoot string, entrie
 
 // cartfsRegister registers file entries into Cartfs.
 // marking successfully inserted entries as local.
-func (hfs *HashFS) cartfsRegister(ctx context.Context, workspaceRoot string, entries []UpdateEntry) {
+func (hfs *HashFS) cartfsRegister(ctx context.Context, workspaceRoot string, entries []UpdateEntry, urgency cartfsutil.Urgency) {
+	start := time.Now()
+	var numUpdates int
+	defer func() {
+		clog.Infof(ctx, "cartfsRegister took %v for %d entries (registered=%d, urgency=%v)",
+			time.Since(start), len(entries), numUpdates, urgency)
+	}()
+
 	// TODO: pass UpdateEntry so artfs can set mtime?
 	var updates []*cartfsutil.Registration
 	var updateIdx []int
@@ -1441,10 +1455,12 @@ func (hfs *HashFS) cartfsRegister(ctx context.Context, workspaceRoot string, ent
 		}
 		updateIdx = append(updateIdx, i)
 		updates = append(updates, &cartfsutil.Registration{
-			Entry: *ent.Entry,
+			Entry:   *ent.Entry,
+			Urgency: urgency,
 		})
 	}
 	if len(updates) > 0 {
+		numUpdates = len(updates)
 		err := hfs.opt.CartFS.RegisterFiles(ctx, workspaceRoot, updates)
 		if err != nil {
 			clog.Warningf(ctx, "cartfs register %d under %s: %v", len(updates), workspaceRoot, err)
@@ -1720,6 +1736,8 @@ func (hfs *HashFS) Flush(ctx context.Context, workspaceRoot string, files []stri
 	ctx, span := trace.NewSpan(ctx, "flush")
 	defer span.Close(nil)
 	eg, ctx := errgroup.WithContext(ctx)
+	var localEntries []UpdateEntry
+
 	for _, file := range files {
 		fname := makeFullpath(workspaceRoot, file)
 		e, _, _, ok := hfs.directory.lookup(ctx, fname)
@@ -1736,6 +1754,17 @@ func (hfs *HashFS) Flush(ctx context.Context, workspaceRoot string, files []stri
 					clog.Infof(ctx, "flush %s local ready", fname)
 				}
 				e.mu.Lock()
+				if hfs.opt.CartFS != nil && !e.d.IsZero() {
+					localEntries = append(localEntries, UpdateEntry{
+						Name: file,
+						Entry: &merkletree.Entry{
+							Name:         file,
+							Data:         digest.NewData(e.src, e.d),
+							IsExecutable: e.mode&0111 != 0,
+						},
+						// TODO: set other properties in cartfs?
+					})
+				}
 				if e.mtimeUpdated && !e.isSymlink() {
 					// mtime was updated after entry sets mtime from the local disk.
 					// Don't update mtime for symlink,
@@ -1788,6 +1817,9 @@ func (hfs *HashFS) Flush(ctx context.Context, workspaceRoot string, files []stri
 			}
 			return err
 		})
+	}
+	if hfs.opt.CartFS != nil {
+		hfs.cartfsRegister(ctx, workspaceRoot, localEntries, cartfsutil.UrgencyImmediate)
 	}
 	return eg.Wait()
 }

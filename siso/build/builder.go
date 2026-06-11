@@ -1230,7 +1230,7 @@ func (b *Builder) outputs(ctx context.Context, step *Step) error {
 			changed: fi.IsChanged(),
 		})
 	}
-	if len(localOutputs) > 0 {
+	if len(localOutputs) > 0 && !b.hashFS.OnCartFS() {
 		start := time.Now()
 		err := b.hashFS.Flush(ctx, step.cmd.WorkspaceRoot, localOutputs)
 		step.metrics.MaterializeOutputsTime = IntervalMetric(time.Since(start))

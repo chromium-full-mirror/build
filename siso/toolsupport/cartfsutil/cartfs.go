@@ -59,11 +59,22 @@ func (c *Client) Close() error {
 	return conn.Close()
 }
 
+// Urgency specifies urgency to register a file.
+type Urgency int
+
+const (
+	urgencyUnspecified Urgency = iota
+	UrgencyImmediate
+	UrgencyOnAccess
+)
+
 // Registration is a registration for a file.
 type Registration struct {
 	Entry   merkletree.Entry
-	Urgency cartfspb.ContentPullUrgency
-	Err     error
+	Urgency Urgency
+
+	// result of RegisterFiles
+	Err error
 }
 
 // RegisterFiles registers entries at dir.
@@ -84,18 +95,28 @@ func (c *Client) RegisterFiles(ctx context.Context, dir string, entries []*Regis
 			clog.Infof(ctx, "cartfs entry %q %q -> %q: %v", dir, ent.Entry.Name, relpath, err)
 		}
 		if err != nil {
-			clog.Warningf(ctx, "cartfs: out of dir: %s", ent.Entry.Name)
+			ent.Err = fmt.Errorf("cartfs: out of dir: %s", ent.Entry.Name)
+			clog.Warningf(ctx, "%v", ent.Err)
 			continue
 		}
 		if !filepath.IsLocal(relpath) {
-			clog.Warningf(ctx, "cartfs: out of dir: %s", ent.Entry.Name)
+			ent.Err = fmt.Errorf("cartfs: out of dir: %s", ent.Entry.Name)
+			clog.Warningf(ctx, "%v", ent.Err)
 			continue
 		}
 		relpath = filepath.ToSlash(relpath)
 		m[relpath] = ent
 		d := ent.Entry.Data.Digest()
-		urgency := ent.Urgency
-		if urgency == cartfspb.ContentPullUrgency_CONTENT_PULL_URGENCY_UNSPECIFIED {
+		if d.IsZero() {
+			ent.Err = fmt.Errorf("cartfs: empty digest: %s", ent.Entry.Name)
+			clog.Warningf(ctx, "%v", ent.Err)
+			continue
+		}
+		urgency := cartfspb.ContentPullUrgency_CONTENT_PULL_URGENCY_ON_ACCESS
+		switch ent.Urgency {
+		case UrgencyImmediate:
+			urgency = cartfspb.ContentPullUrgency_CONTENT_PULL_URGENCY_IMMEDIATE
+		case UrgencyOnAccess:
 			urgency = cartfspb.ContentPullUrgency_CONTENT_PULL_URGENCY_ON_ACCESS
 		}
 		req.Registrations = append(req.Registrations, &cartfspb.FileRegistrationInfo{
