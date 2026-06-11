@@ -260,7 +260,6 @@ to register handlers and step configs.
              * `msvc`: use `clang-cl /showIncludes`
              * `depfile`: depfile variable of the step
              * `none`: ignore deps variable in ninja
-          * `no_fast_deps`: disable fast-deps.
           * `output_local`: force download/outputs to local disk
           * `ignore_extra_input_pattern`: regexp to allow if it is used,
              but not listed in inputs.
@@ -319,6 +318,8 @@ All inputs should be ready to use (via `ctx.fs`).
       * `rspfile_content`: rspfile_content for the step.
       * `reproxy_config`: [`REProxyConfig`](../execute/cmd.go) in json-encoded format.
       * `reconcile_outputdirs`: reconcile directories to detect file removals in dirs after local step executions.
+      * `auxiliary_log_output_files`: additional output files, that siso explicitly logs digest of.
+      * `auxiliary_log_output_dirs`: additional output dirs, that siso explicitly logs digest of.
     * `write`: write file
       * `fname`: filename
       * `content`: content
@@ -327,6 +328,7 @@ All inputs should be ready to use (via `ctx.fs`).
       * `src`: src filename
       * `dst`: dst filename
       * `recursive`: recursive copy?
+      * `ignore_missing_intermediates`: ignore missing intermediates.
     * `symlink`: create symlink
       * `target`: symlnk target
       * `linkpath`: symlink path.
