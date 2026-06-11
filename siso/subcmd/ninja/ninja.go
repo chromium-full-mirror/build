@@ -35,7 +35,6 @@ import (
 	"go.chromium.org/build/siso/o11y/trace"
 	"go.chromium.org/build/siso/reapi"
 	"go.chromium.org/build/siso/signals"
-	"go.chromium.org/build/siso/toolsupport/artfsutil"
 	"go.chromium.org/build/siso/toolsupport/cartfsutil"
 	"go.chromium.org/build/siso/toolsupport/cogutil"
 	"go.chromium.org/build/siso/toolsupport/soongutil"
@@ -846,14 +845,6 @@ func (c *Command) setupHashFS(ctx context.Context, buildPath *build.Path, ds bui
 		ui.Default.PrintLines(ui.SGR(ui.Yellow, fmt.Sprintf("build in cog: %s\n", cogfs.Info())))
 		c.fsopt.CogFS = cogfs
 	}
-	if c.artfsDir != "" && c.artfsEndpoint != "" {
-		artfs, err := artfsutil.New(ctx, c.artfsDir, c.artfsEndpoint)
-		if err != nil {
-			return nil, nil, err
-		}
-		ui.Default.PrintLines(ui.SGR(ui.Yellow, "build on artfs\n"))
-		c.fsopt.ArtFS = artfs
-	}
 	if c.cartfsEndpoint != "" {
 		cartfs, err := cartfsutil.New(ctx, c.cartfsEndpoint)
 		if err != nil {
@@ -870,12 +861,6 @@ func (c *Command) setupHashFS(ctx context.Context, buildPath *build.Path, ds bui
 		return nil, nil, err
 	}
 	close := func(targets []string, err error) {
-		if c.fsopt.ArtFS != nil {
-			cerr := c.fsopt.ArtFS.Close()
-			if cerr != nil {
-				clog.Errorf(ctx, "close artfs: %v", cerr)
-			}
-		}
 		if c.fsopt.CartFS != nil {
 			cerr := c.fsopt.CartFS.Close()
 			if cerr != nil {

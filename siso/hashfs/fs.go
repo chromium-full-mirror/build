@@ -118,7 +118,6 @@ func New(ctx context.Context, opt Option) (*HashFS, error) {
 		opt.DataSource = noDataSource{}
 	}
 	opt.OSFSOption.OnCog = opt.CogFS != nil
-	opt.OSFSOption.OnArtFS = opt.ArtFS != nil
 	opt.OSFSOption.CartFS = opt.CartFS
 	fsys := &HashFS{
 		opt:       opt,
@@ -1360,9 +1359,6 @@ func (hfs *HashFS) Update(ctx context.Context, workspaceRoot string, entries []U
 		return entries[i].Name < entries[j].Name
 	})
 
-	if hfs.opt.ArtFS != nil {
-		hfs.artfsInsert(ctx, workspaceRoot, entries)
-	}
 	if hfs.opt.CartFS != nil {
 		start := time.Now()
 		hfs.cartfsRegister(ctx, workspaceRoot, entries, cartfsutil.UrgencyOnAccess)
@@ -1386,45 +1382,6 @@ func (hfs *HashFS) Update(ctx context.Context, workspaceRoot string, entries []U
 		}
 	}
 	return nil
-}
-
-// artfsInsert inserts file entries into ArtFS.
-// marking successfully inserted entries as local.
-func (hfs *HashFS) artfsInsert(ctx context.Context, workspaceRoot string, entries []UpdateEntry) {
-	// TODO: pass UpdateEntry so artfs can set mtime?
-	var updates []merkletree.Entry
-	var updateIdx []int
-	var nFromLocals, nNonFiles int
-	for i, ent := range entries {
-		if ent.Entry == nil {
-			// UpdateEntry was captured by RetrieveUpdateEntriesFromLocal
-			// so file already exist on local disk
-			nFromLocals++
-			continue
-		}
-		if ent.Entry.Data.IsZero() {
-			// symlink or dir. handled in usual way.
-			nNonFiles++
-			continue
-		}
-		updateIdx = append(updateIdx, i)
-		updates = append(updates, *ent.Entry)
-	}
-	if len(updates) > 0 {
-		err := hfs.opt.ArtFS.ArtfsInsert(ctx, workspaceRoot, updates)
-		if err != nil {
-			clog.Warningf(ctx, "artfs insert %d under %s: %v", len(updates), workspaceRoot, err)
-		} else {
-			clog.Infof(ctx, "artfs insert %d under %s", len(updates), workspaceRoot)
-			// artfsfs inserted the update, so we can assume
-			// these files exist locally.
-			for _, i := range updateIdx {
-				entries[i].IsLocal = true
-			}
-		}
-	} else {
-		clog.Warningf(ctx, "artfs insert 0 from_local=%d not_file=%d", nFromLocals, nNonFiles)
-	}
 }
 
 // cartfsRegister registers file entries into Cartfs.

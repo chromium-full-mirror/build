@@ -134,9 +134,6 @@ type NinjaFlags struct {
 	reCacheEnableWrite bool
 	reproxyAddr        string
 
-	artfsDir      string
-	artfsEndpoint string
-
 	cartfsEndpoint string
 
 	enableCloudLogging          bool
@@ -251,9 +248,6 @@ func (c *Command) SetFlags(flagSet *flag.FlagSet) {
 	// reclient_helper.py sets the RBE_server_address
 	// https://chromium.googlesource.com/chromium/tools/depot_tools.git/+/e13840bd9a04f464e3bef22afac1976fc15a96a0/reclient_helper.py#138
 	c.reproxyAddr = os.Getenv("RBE_server_address")
-
-	flagSet.StringVar(&c.artfsDir, "artfs_dir", "", "artfs mount point")
-	flagSet.StringVar(&c.artfsEndpoint, "artfs_endpoint", "localhost:65001", "artfs server endpoint")
 
 	// TODO(b/513044090): discover cartfs endpoint automatically?
 	flagSet.StringVar(&c.cartfsEndpoint, "cartfs_endpoint", "", "cartfs server endpoint. e.g. localhost:65001")
