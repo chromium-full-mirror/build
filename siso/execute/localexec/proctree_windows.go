@@ -14,11 +14,10 @@ import (
 )
 
 // Windows has no unix process groups, so these are no-op/direct-child stubs;
-// descendants of a cancelled action aren't tracked. The follow-up is a Job
-// Object (JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE + wait for
-// JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO, as Bazel does) to give the cancellation
-// path cancelGroup/drainGroup parity; the completion path needs nothing - it
-// waits for stdout/stderr EOF like Ninja, see runOnce.
+// descendants of a cancelled action aren't tracked. Follow-up: a Job Object
+// (kill-on-close + wait for ACTIVE_PROCESS_ZERO, as Bazel does) would give the
+// cancellation path cancelGroup/drainGroup parity; completion needs nothing -
+// it waits for stdout/stderr EOF like Ninja, see runOnce.
 
 func setProcGroup(c *exec.Cmd) {}
 
@@ -26,14 +25,11 @@ func setProcGroup(c *exec.Cmd) {}
 func cancelGroup(ctx context.Context, c *exec.Cmd) error {
 	err := c.Process.Kill()
 	clog.Warningf(ctx, "send kill to pid=%d: %v", c.Process.Pid, err)
-	// Return err verbatim: nil when we actually killed a live child, so os/exec
-	// reports the cancellation (c.ctx.Err()); os.ErrProcessDone when the child had
-	// already exited, so os/exec keeps the action's real exit status instead of
-	// injecting context.Canceled over a successful exit (see watchCtx/Wait). This
-	// matches the unix cancelGroup's ESRCH handling.
+	// Return err verbatim: nil when we killed a live child (os/exec reports the
+	// cancellation), os.ErrProcessDone when it had already exited (os/exec keeps
+	// the real exit status). Matches the unix cancelGroup's ESRCH handling.
 	return err
 }
 
-// drainGroup is a no-op stub here: without Job Objects there is nothing to
-// sweep a finished action's leftovers with.
+// drainGroup is a no-op stub: without Job Objects there is nothing to sweep with.
 func drainGroup(ctx context.Context, pgid int) {}

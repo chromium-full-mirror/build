@@ -187,12 +187,10 @@ func (c *client) Run(ctx context.Context, req *epb.SpawnRequest) (*rpb.ActionRes
 		reply := <-ch
 		res, err := decodeReply(reply)
 		if err != nil {
-			// We initiated this cancellation (our ctx ended), so the helper's
-			// reply is the cancelled action. Its error crossed the wire as a
-			// string, losing the context.Canceled identity; return the real cause
-			// instead so callers' errors.Is(err, context.Canceled) matches, as on
-			// the in-process path. A success that raced the cancel is still
-			// honored.
+			// The helper's error crossed the wire as a string, losing the
+			// context.Canceled identity; return the real cause so errors.Is
+			// matches like on the in-process path. A success that raced the
+			// cancel is still honored.
 			return nil, context.Cause(ctx)
 		}
 		return res, nil

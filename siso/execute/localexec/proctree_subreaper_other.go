@@ -6,10 +6,9 @@
 
 package localexec
 
-// becomeSubreaper is a no-op outside Linux: there is no PR_SET_CHILD_SUBREAPER
-// equivalent. Orphaned descendants reparent to init/launchd, which reaps them,
-// and kill(-pgid) returns ESRCH once only (skippable) zombies remain - so
-// drainGroup terminates without needing to reap them ourselves.
+// becomeSubreaper is a no-op outside Linux (no PR_SET_CHILD_SUBREAPER
+// equivalent): orphaned descendants reparent to init/launchd, which reaps them,
+// so kill(-pgid) still reaches ESRCH and drainGroup terminates.
 func becomeSubreaper() error {
 	return nil
 }

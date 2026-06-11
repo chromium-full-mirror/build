@@ -142,11 +142,9 @@ func waitForTree(dir string) (pid int, pids []int) {
 	return 0, nil
 }
 
-// killTree SIGKILLs the action's process group so a failing run doesn't litter the
-// machine with 300s sleeps. Non-console actions lead their own group (pgid == action
-// pid, see setProcGroup) and these scripts keep every descendant in it (none call
-// setsid), so one kill(-pgid) reaps the whole tree without risking a reused
-// individual descendant pid.
+// killTree SIGKILLs the action's process group (pgid == action pid, and these
+// scripts never setsid) so a failing run doesn't litter the machine with 300s
+// sleeps.
 func killTree(pgid int) {
 	if pgid > 0 {
 		_ = syscall.Kill(-pgid, syscall.SIGKILL)
@@ -193,11 +191,9 @@ func TestActionKillsOrphanedGrandchild(t *testing.T) {
 }
 
 // TestCancelGroupReportsProcessDoneAfterExit verifies that cancelling an action
-// whose process group has already fully exited reports os.ErrProcessDone, not nil.
-// os/exec's watchCtx injects c.ctx.Err() (context.Canceled) when Cancel returns nil
-// even on a clean exit, and Wait then reports it over the action's real exit status;
-// returning os.ErrProcessDone tells os/exec the process already finished so the
-// successful exit wins and callers don't skip output recording.
+// whose process group has already exited reports os.ErrProcessDone, not nil:
+// os/exec turns a nil Cancel return into context.Canceled even over a clean
+// exit, and callers would then skip output recording.
 func TestCancelGroupReportsProcessDoneAfterExit(t *testing.T) {
 	c := exec.Command("sh", "-c", "exit 0")
 	setProcGroup(c)

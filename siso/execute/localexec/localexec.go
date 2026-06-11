@@ -123,18 +123,13 @@ func runOnce(ctx context.Context, cmd *execute.Cmd) (*rpb.ActionResult, error) {
 		}
 	}
 	// Completion contract, same as Ninja's: the step is done when the direct
-	// child has exited AND its stdout/stderr pipes hit EOF, i.e. once every
-	// descendant that kept the inherited fds has finished. The EOF wait is a
-	// deliberate correctness barrier - a descendant the action didn't wait for
-	// may still be writing outputs, and Chromium's action corpus was written
-	// against this behavior. WaitDelay is intentionally left zero: bounding the
-	// wait can only fail a slow-but-fine straggler (the v1.5.17 Windows CI
-	// regression) or SIGKILL it and record truncated outputs as success. An
-	// action that detaches a pipe-holding daemon hangs the step loudly, exactly
-	// as it always has under Ninja. (Bazel instead kills all survivors at
-	// main-child exit - but that only works because it redirects action output
-	// to files, never depending on descendants for capture; don't adopt one
-	// half of that design without the other.)
+	// child has exited AND its stdout/stderr pipes hit EOF, i.e. when every
+	// descendant holding the inherited fds has finished - a descendant the
+	// action didn't wait for may still be writing outputs. WaitDelay stays zero
+	// on purpose: bounding the wait can only fail a slow straggler (the v1.5.17
+	// Windows CI regression) or kill it and record truncated outputs as
+	// success. (Bazel kills survivors at main-child exit instead, which is only
+	// safe because it captures output via files, not pipes.)
 	c.Env = cmd.Env
 	c.Dir = filepath.Join(cmd.WorkspaceRoot, cmd.WorkDir)
 	c.Stdout = cmd.StdoutWriter()
@@ -216,13 +211,11 @@ func runOnce(ctx context.Context, cmd *execute.Cmd) (*rpb.ActionResult, error) {
 		}
 		err = c.Wait()
 		if !cmd.Console {
-			// Post-EOF hygiene: kill and reap whatever is left of the action's
-			// process group (pgid == pid because of setProcGroup). Anything still
-			// alive in-group already closed its pipe fds - it didn't block the EOF
-			// wait above - so it is a half-detached leftover, not an output writer;
-			// sweeping it is what Swarming's task containment did anyway. A proper
-			// daemon (setsid) intentionally escapes the sweep. On the cancellation
-			// path this is the authoritative reap after cancelGroup's group kill.
+			// Sweep the action's process group (pgid == pid, see setProcGroup).
+			// Anything alive in-group at EOF already closed its pipe fds, so it
+			// is a half-detached leftover, not an output writer; setsid daemons
+			// intentionally escape. On cancellation this is the authoritative
+			// reap after cancelGroup's group kill.
 			drainGroup(ctx, c.Process.Pid)
 		}
 	}
