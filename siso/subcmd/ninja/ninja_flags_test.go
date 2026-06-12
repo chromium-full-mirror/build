@@ -13,23 +13,20 @@ import (
 
 func TestParseFlagsFully(t *testing.T) {
 	for _, tc := range []struct {
-		name              string
-		args              []string
-		want              []string
-		wantDebug         debugMode
-		wantMaxRBERetries int
+		name      string
+		args      []string
+		want      []string
+		wantDebug debugMode
 	}{
 		{
-			name:              "simple",
-			args:              []string{"-C", "out/siso"},
-			want:              nil,
-			wantMaxRBERetries: 10,
+			name: "simple",
+			args: []string{"-C", "out/siso"},
+			want: nil,
 		},
 		{
-			name:              "target",
-			args:              []string{"-C", "out/siso", "-project", "rbe-chrome-untrusted", "chrome"},
-			want:              []string{"chrome"},
-			wantMaxRBERetries: 10,
+			name: "target",
+			args: []string{"-C", "out/siso", "-project", "rbe-chrome-untrusted", "chrome"},
+			want: []string{"chrome"},
 		},
 		{
 			name: "after-flag",
@@ -38,12 +35,6 @@ func TestParseFlagsFully(t *testing.T) {
 			wantDebug: debugMode{
 				Explain: true,
 			},
-			wantMaxRBERetries: 10,
-		},
-		{
-			name:              "max_rbe_retries",
-			args:              []string{"-C", "out/siso", "-max_rbe_retries", "5"},
-			wantMaxRBERetries: 5,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -63,9 +54,6 @@ func TestParseFlagsFully(t *testing.T) {
 			}
 			if diff := cmp.Diff(tc.wantDebug, c.debugMode); diff != "" {
 				t.Errorf("debugMode diff -want +got:\n%s", diff)
-			}
-			if c.maxRBERetries != tc.wantMaxRBERetries {
-				t.Errorf("maxRBERetries = %d; want %d", c.maxRBERetries, tc.wantMaxRBERetries)
 			}
 		})
 	}

@@ -181,6 +181,12 @@ func (o *Option) RegisterFlags(fs *flag.FlagSet, envs map[string]string) {
 	if o.Prefix == "reapi" {
 		fs.IntVar(&o.ExecutionPriority, o.Prefix+"_priority", 0, "reapi priority for action executions"+purpose+". The semantics and supported values depend on the backend")
 	}
+	fs.IntVar(&o.MaxRetries, o.Prefix+"_max_retries", 10, "max retries for remote execution")
+	if o.Prefix == "reapi" {
+		// for temporary backward compatible for android
+		// TODO: remove it.
+		fs.IntVar(&o.MaxRetries, "max_rbe_retries", 10, "alias of --reapi_max_retries.")
+	}
 }
 
 func isGoogleRBE(address string) bool {
