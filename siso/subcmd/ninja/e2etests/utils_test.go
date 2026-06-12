@@ -300,6 +300,10 @@ func setupBuild(ctx context.Context, t *testing.T, dir string, fsopt hashfs.Opti
 	if err != nil {
 		t.Fatal(err)
 	}
+	err = hashFS.WaitReady(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
 	cleanups = append(cleanups, func() {
 		err := hashFS.Close(ctx)
 		if err != nil {
