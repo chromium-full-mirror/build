@@ -5,20 +5,16 @@
 package e2etests
 
 import (
-	"context"
 	"errors"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"testing"
 
-	pb "github.com/bazelbuild/reclient/api/proxy"
-	cpb "github.com/bazelbuild/remote-apis-sdks/go/api/command"
 	"github.com/google/go-cmp/cmp"
 
 	"go.chromium.org/build/siso/build"
 	"go.chromium.org/build/siso/build/ninjabuild"
-	"go.chromium.org/build/siso/execute/reproxyexec/reproxytest"
 	"go.chromium.org/build/siso/hashfs"
 	"go.chromium.org/build/siso/reapi"
 )
@@ -83,125 +79,6 @@ func TestBuild_DepsMSVC(t *testing.T) {
 		want := []string{
 			"../../base/foo.h",
 			"../../other/other.h",
-			"../../base/foo.cc",
-		}
-		if diff := cmp.Diff(want, deps); diff != "" {
-			t.Errorf("deps for foo.o: diff -want +got:\n%s", diff)
-		}
-	}()
-}
-
-func TestBuild_DepsMSVC_Reproxy(t *testing.T) {
-	if !runInSubProcess(t) {
-		return
-	}
-	ctx := t.Context()
-	dir := tempDir(t)
-	func() {
-		t.Logf("first build")
-		setupFiles(t, dir, t.Name(), nil)
-		s := reproxytest.NewServer(ctx, t, &reproxytest.Fake{
-			RunCommandFunc: func(ctx context.Context, req *pb.RunRequest) (*pb.RunResponse, error) {
-				err := os.WriteFile(filepath.Join(dir, "out/siso/foo.o"), nil, 0644)
-				if err != nil {
-					return &pb.RunResponse{
-						Stderr: []byte(err.Error()),
-						Result: &cpb.CommandResult{
-							Status:   cpb.CommandResultStatus_LOCAL_ERROR,
-							ExitCode: 1,
-						},
-					}, nil
-				}
-				return &pb.RunResponse{
-					Result: &cpb.CommandResult{
-						Status: cpb.CommandResultStatus_SUCCESS,
-					},
-					Stdout: []byte(`
-Note: including file: ../../base/foo.h
-Note: including file:   ../../base/other.h
-`),
-				}, nil
-			},
-		})
-		defer s.Close()
-
-		opt, graph, cleanup := setupBuild(ctx, t, dir, hashfs.Option{})
-		defer cleanup()
-		opt.ReproxyAddr = s.Addr()
-
-		_, err := ninjabuild.Run(ctx, graph, opt, []string{"all"}, ninjabuild.RunNinjaOpts{})
-		if err != nil {
-			t.Fatal(err)
-		}
-	}()
-
-	func() {
-		t.Logf("first_check_deps")
-		depsLog, cleanup := openDepsLog(ctx, t, dir)
-		defer cleanup()
-		deps, mtime, err := depsLog.RetrievePaths(ctx, "foo.o")
-		if err != nil {
-			t.Fatalf(`depsLog.RetrievePaths(ctx, "foo.o")=%v, %v, %v; want nil err`, deps, mtime, err)
-		}
-		want := []string{
-			"../../base/foo.h",
-			"../../base/other.h",
-			"../../base/foo.cc",
-		}
-		if diff := cmp.Diff(want, deps); diff != "" {
-			t.Errorf("deps for foo.o: diff -want +got:\n%s", diff)
-		}
-	}()
-
-	func() {
-		t.Logf("second build")
-		setupFiles(t, dir, t.Name()+"_second", []string{"base/other.h"})
-		s := reproxytest.NewServer(ctx, t, &reproxytest.Fake{
-			RunCommandFunc: func(ctx context.Context, req *pb.RunRequest) (*pb.RunResponse, error) {
-				err := os.WriteFile(filepath.Join(dir, "out/siso/foo.o"), nil, 0644)
-				if err != nil {
-					return &pb.RunResponse{
-						Stderr: []byte(err.Error()),
-						Result: &cpb.CommandResult{
-							Status:   cpb.CommandResultStatus_LOCAL_ERROR,
-							ExitCode: 1,
-						},
-					}, nil
-				}
-				return &pb.RunResponse{
-					Result: &cpb.CommandResult{
-						Status: cpb.CommandResultStatus_SUCCESS,
-					},
-					Stdout: []byte(`
-Note: including file: ../../base/foo.h
-Note: including file:   ../../base/other2.h
-`),
-				}, nil
-			},
-		})
-		defer s.Close()
-
-		opt, graph, cleanup := setupBuild(ctx, t, dir, hashfs.Option{})
-		defer cleanup()
-		opt.ReproxyAddr = s.Addr()
-
-		_, err := ninjabuild.Run(ctx, graph, opt, []string{"all"}, ninjabuild.RunNinjaOpts{})
-		if err != nil {
-			t.Fatal(err)
-		}
-	}()
-
-	func() {
-		t.Logf("second_check_deps")
-		depsLog, cleanup := openDepsLog(ctx, t, dir)
-		defer cleanup()
-		deps, mtime, err := depsLog.RetrievePaths(ctx, "foo.o")
-		if err != nil {
-			t.Fatalf(`depsLog.RetrievePaths(ctx, "foo.o")=%v, %v, %v; want nil err`, deps, mtime, err)
-		}
-		want := []string{
-			"../../base/foo.h",
-			"../../base/other2.h",
 			"../../base/foo.cc",
 		}
 		if diff := cmp.Diff(want, deps); diff != "" {

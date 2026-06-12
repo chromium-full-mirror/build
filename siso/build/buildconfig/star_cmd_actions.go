@@ -6,7 +6,6 @@ package buildconfig
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -64,7 +63,7 @@ func (starCmdValue) Freeze()               {}
 func (starCmdValue) Truth() starlark.Bool  { return starlark.True }
 func (starCmdValue) Hash() (uint32, error) { return 0, errors.New("execute.Cmd is not hashable") }
 
-// Starlark function `actions.fix(inputs, tool_inputs, outputs, args, reproxy_config)`
+// Starlark function `actions.fix(inputs, tool_inputs, outputs, args)`
 // to fix the command's inputs/outputs/args in the context.
 func starActionsFix(thread *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
 	log.V(1).Infof("actions.fix args=%s kwargs=%s", args, kwargs)
@@ -75,7 +74,6 @@ func starActionsFix(thread *starlark.Thread, fn *starlark.Builtin, args starlark
 	var inputsValue, toolInputsValue, outputsValue starlark.Value
 	var cmdArgsValue starlark.Value
 	var rspfileContentValue starlark.Value
-	var reproxyConfigValue starlark.Value
 	var reconcileOutputdirsValue starlark.Value
 	var auxiliaryLogOutputFilesValue starlark.Value
 	var auxiliaryLogOutputDirsValue starlark.Value
@@ -85,7 +83,6 @@ func starActionsFix(thread *starlark.Thread, fn *starlark.Builtin, args starlark
 		"outputs?", &outputsValue,
 		"args?", &cmdArgsValue,
 		"rspfile_content?", &rspfileContentValue,
-		"reproxy_config?", &reproxyConfigValue,
 		"reconcile_outputdirs?", &reconcileOutputdirsValue,
 		"auxiliary_log_output_files?", &auxiliaryLogOutputFilesValue,
 		"auxiliary_log_output_dirs?", &auxiliaryLogOutputDirsValue)
@@ -143,13 +140,6 @@ func starActionsFix(thread *starlark.Thread, fn *starlark.Builtin, args starlark
 			rspfileContent = starlark.Bytes(v)
 		}
 	}
-	var reproxyConfigJSON string
-	if reproxyConfigValue != nil && reproxyConfigValue != starlark.None {
-		reproxyConfigJSON, ok = starlark.AsString(reproxyConfigValue)
-		if !ok {
-			return starlark.None, fmt.Errorf("reproxy_config is not a string")
-		}
-	}
 	var reconcileOutputdirs []string
 	if reconcileOutputdirsValue != nil {
 		reconcileOutputdirs, err = unpackList(reconcileOutputdirsValue)
@@ -177,12 +167,6 @@ func starActionsFix(thread *starlark.Thread, fn *starlark.Builtin, args starlark
 	}
 	if rspfileContentValue != nil {
 		c.cmd.RSPFileContent = []byte(rspfileContent)
-	}
-	if reproxyConfigValue != nil {
-		err := json.Unmarshal([]byte(reproxyConfigJSON), &c.cmd.REProxyConfig)
-		if err != nil {
-			return starlark.None, fmt.Errorf("failed to parse reproxy_config: %w", err)
-		}
 	}
 	if reconcileOutputdirs != nil {
 		c.cmd.ReconcileOutputdirs = reconcileOutputdirs

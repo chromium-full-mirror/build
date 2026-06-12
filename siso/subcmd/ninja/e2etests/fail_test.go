@@ -6,143 +6,18 @@ package e2etests
 
 import (
 	"bytes"
-	"context"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
-
-	pb "github.com/bazelbuild/reclient/api/proxy"
-	cpb "github.com/bazelbuild/remote-apis-sdks/go/api/command"
 
 	rpb "go.chromium.org/build/remote-apis/build/bazel/remote/execution/v2"
 
 	"go.chromium.org/build/siso/build"
 	"go.chromium.org/build/siso/build/ninjabuild"
-	"go.chromium.org/build/siso/execute/reproxyexec/reproxytest"
 	"go.chromium.org/build/siso/hashfs"
 	"go.chromium.org/build/siso/reapi/digest"
 	"go.chromium.org/build/siso/reapi/reapitest"
 	"go.chromium.org/build/siso/ui"
 )
-
-func TestBuild_Fail_Reproxy(t *testing.T) {
-	if !runInSubProcess(t) {
-		return
-	}
-	ctx := t.Context()
-	dir := tempDir(t)
-
-	runNinjaTest := func(t *testing.T, refake *reproxytest.Fake) (build.Stats, error) {
-		t.Helper()
-		s := reproxytest.NewServer(ctx, t, refake)
-		defer s.Close()
-
-		opt, graph, cleanup := setupBuild(ctx, t, dir, hashfs.Option{
-			StateFile: ".siso_fs_state",
-		})
-		defer cleanup()
-		opt.ReproxyAddr = s.Addr()
-		return ninjabuild.Run(ctx, graph, opt, nil, ninjabuild.RunNinjaOpts{})
-	}
-
-	t.Logf("first build")
-	setupFiles(t, dir, t.Name(), nil)
-	fakereSuccess := &reproxytest.Fake{
-		RunCommandFunc: func(ctx context.Context, req *pb.RunRequest) (*pb.RunResponse, error) {
-			err := os.WriteFile(filepath.Join(dir, "out/siso/gen/foo.srcjar"), nil, 0644)
-			if err != nil {
-				return &pb.RunResponse{
-					Stderr: []byte(err.Error()),
-					Result: &cpb.CommandResult{
-						Status:   cpb.CommandResultStatus_LOCAL_ERROR,
-						ExitCode: 1,
-					},
-				}, nil
-			}
-			return &pb.RunResponse{
-				Result: &cpb.CommandResult{
-					Status: cpb.CommandResultStatus_SUCCESS,
-				},
-			}, nil
-		},
-	}
-	stats, err := runNinjaTest(t, fakereSuccess)
-	if err != nil {
-		t.Fatalf("ninja %v; want nil err", err)
-	}
-	if stats.Done != 3 || stats.NoExec != 1 || stats.Remote != 1 || stats.Skipped != 1 {
-		t.Fatalf("ninja stats done=%d NoExec=%d Remote=%d Skipped=%d; want done=3 NoExec=1 Remote=1 Skipped=1", stats.Done, stats.NoExec, stats.Remote, stats.Skipped)
-	}
-
-	t.Logf("first confirm no-op")
-	stats, err = runNinjaTest(t, fakereSuccess)
-	if err != nil {
-		t.Fatalf("ninja %v; want nil err", err)
-	}
-	if stats.Done != 3 || stats.Skipped != 3 || stats.Remote != 0 || stats.Local != 0 || stats.NoExec != 0 {
-		t.Fatalf("ninja confirm no-op error? stats=%#v", stats)
-	}
-
-	t.Logf("make bad foo.txt and fail gen/foo.srcjar")
-	modifyFile(t, dir, "foo.txt", func([]byte) []byte {
-		return []byte("error")
-	})
-
-	fakereErr := &reproxytest.Fake{
-		RunCommandFunc: func(ctx context.Context, req *pb.RunRequest) (*pb.RunResponse, error) {
-			return &pb.RunResponse{
-				Stderr: []byte("reproxy error"),
-				Result: &cpb.CommandResult{
-					Status:   cpb.CommandResultStatus_LOCAL_ERROR,
-					ExitCode: 1,
-				},
-			}, nil
-		},
-	}
-
-	var stdout, stderr syncBuffer
-	ui.Default = ui.LogUI{
-		Stdout: &stdout,
-		Stderr: &stderr,
-	}
-	t.Cleanup(func() {
-		ui.Default = ui.LogUI{}
-	})
-	stats, err = runNinjaTest(t, fakereErr)
-	if err == nil {
-		t.Fatalf("ninja succeeded, but want err")
-	}
-	if stats.Done != 1 || stats.Fail != 1 || stats.Remote != 1 {
-		t.Fatalf("ninja stats done=%d Fail=%d Remote=%d; want done=1 Fail=1 Remote=1", stats.Done, stats.Fail, stats.Remote)
-	}
-	outString := stdout.String() + stderr.String()
-	if !strings.Contains(outString, "FAILED:") || !strings.Contains(outString, "reproxy error") {
-		t.Errorf("ninja output missing `FAILED:` or `reproxy error`\nstdout:\n%s\nstderr:\n%s", stdout.String(), stderr.String())
-	}
-
-	t.Logf("rerun ninja, should fail again")
-	stats, err = runNinjaTest(t, fakereErr)
-	if err == nil {
-		t.Fatalf("ninja succeeded, but want err")
-	}
-	if stats.Done != 1 || stats.Fail != 1 || stats.Remote != 1 {
-		t.Fatalf("ninja stats done=%d Fail=%d Remote=%d; want done=1 Fail=1 Remote=1", stats.Done, stats.Fail, stats.Remote)
-	}
-
-	t.Logf("-- fix foo.txt")
-	modifyFile(t, dir, "foo.txt", func([]byte) []byte {
-		return []byte("ok")
-	})
-
-	stats, err = runNinjaTest(t, fakereSuccess)
-	if err != nil {
-		t.Fatalf("ninja %v; want nil err", err)
-	}
-	if stats.Done != 3 || stats.NoExec != 1 || stats.Remote != 1 || stats.Skipped != 1 {
-		t.Fatalf("ninja stats done=%d NoExec=%d Remote=%d Skipped=%d; want done=3 NoExec=1 Remote=1 Skipped=1", stats.Done, stats.NoExec, stats.Remote, stats.Skipped)
-	}
-}
 
 func TestBuild_Fail_Remote(t *testing.T) {
 	if !runInSubProcess(t) {

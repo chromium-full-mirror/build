@@ -20,7 +20,6 @@ import (
 	rpb "go.chromium.org/build/remote-apis/build/bazel/remote/execution/v2"
 
 	"go.chromium.org/build/siso/execute"
-	"go.chromium.org/build/siso/execute/reproxyexec"
 	"go.chromium.org/build/siso/o11y/clog"
 	"go.chromium.org/build/siso/o11y/trace"
 	"go.chromium.org/build/siso/reapi/digest"
@@ -93,9 +92,6 @@ type StepDef interface {
 	// RemoteInputs maps file used in remote to file exists on local.
 	// path in remote action -> local path
 	RemoteInputs() map[string]string
-
-	// REProxyConfig returns configuration options for using reproxy.
-	REProxyConfig() *execute.REProxyConfig
 
 	// CheckInputDeps checks dep can be found in its direct/indirect inputs.
 	// Returns true if it is unknown bad deps, false otherwise.
@@ -525,12 +521,6 @@ func stepBacktraces(ctx context.Context, step *Step) []string {
 	return locs
 }
 
-// useReclient returns true if the step uses Reclient via rewrapper or reproxy.
-// A step with reclient doesn't need to collect dependencies and check action result caches on Siso side.
-func (s *Step) useReclient() bool {
-	return s.def.Binding("use_remote_exec_wrapper") != "" || s.cmd.REProxyConfig != nil
-}
-
 func (s *Step) init(ctx context.Context, b *Builder, stepManifest *stepManifest) {
 	ctx, span := trace.NewSpan(ctx, "step-init")
 	defer span.Close(nil)
@@ -593,13 +583,11 @@ func newCmd(ctx context.Context, b *Builder, stepDef StepDef, stepManifest *step
 
 		HashFS: b.hashFS,
 
-		REAPIVersion:  b.reapiclient.APIVersion(),
-		Platform:      stepDef.Platform(),
-		RemoteWrapper: stepDef.Binding("remote_wrapper"),
-		RemoteCommand: stepDef.Binding("remote_command"),
-		RemoteInputs:  stepDef.RemoteInputs(),
-		// always copy REProxyConfig, allows safe mutation via cmd.action.fix.
-		REProxyConfig:   stepDef.REProxyConfig().Copy(),
+		REAPIVersion:    b.reapiclient.APIVersion(),
+		Platform:        stepDef.Platform(),
+		RemoteWrapper:   stepDef.Binding("remote_wrapper"),
+		RemoteCommand:   stepDef.Binding("remote_command"),
+		RemoteInputs:    stepDef.RemoteInputs(),
 		CanonicalizeDir: stepDef.Binding("canonicalize_dir") != "false",
 
 		// TODO(b/266518906): enable DoNotCache for read-only client
@@ -627,7 +615,6 @@ func newCmd(ctx context.Context, b *Builder, stepDef StepDef, stepManifest *step
 		cmd.RemoteWrapper = ""
 		cmd.RemoteCommand = ""
 		cmd.RemoteInputs = nil
-		cmd.REProxyConfig = nil
 	} else if experiments.Enabled("gvisor", "Force gVisor") {
 		if len(cmd.Platform) == 0 {
 			cmd.Platform = map[string]string{}
@@ -706,12 +693,6 @@ func validateRemoteActionResult(result *rpb.ActionResult) bool {
 		return false
 	}
 
-	// When the action runs locally, Reproxy doesn't add outputs to the result.
-	// Then, the next condition will pass which ends up with retring the same action.
-	switch result.GetExecutionMetadata().GetWorker() {
-	case reproxyexec.WorkerNameFallback, reproxyexec.WorkerNameRacingLocal, reproxyexec.WorkerNameLocal:
-		return true
-	}
 	if result.ExitCode == 0 && len(result.GetOutputFiles()) == 0 {
 		// succeeded result should have at least one output. b/350360391
 		return false

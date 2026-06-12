@@ -353,7 +353,7 @@ func (c *Command) Run(ctx context.Context) (stats build.Stats, finalErr error) {
 		}
 		metricsLabels[kv[0]] = kv[1]
 	}
-	if c.enableCloudMonitoring && c.reproxyAddr == "" {
+	if c.enableCloudMonitoring {
 		metricsProject := projectID
 		if c.metricsProject != "" {
 			metricsProject = c.metricsProject
@@ -496,7 +496,7 @@ func (c *Command) Run(ctx context.Context) (stats build.Stats, finalErr error) {
 		if c.strictRemote {
 			return stats, flagError{err: fmt.Errorf("no reapi specified, but remote is requested as --strict_remote: %w", err)}
 		}
-		if c.remoteJobs > 0 && c.reproxyAddr == "" {
+		if c.remoteJobs > 0 {
 			return stats, flagError{err: fmt.Errorf("no reapi specified, but remote is requested as --remote_jobs=%d: %w", c.remoteJobs, err)}
 		}
 	}

@@ -15,19 +15,11 @@ func (b *Builder) allowRemote(step *Step) bool {
 	return (b.remoteExec != nil && len(step.cmd.Platform) > 0)
 }
 
-func (b *Builder) allowREProxy(step *Step) bool {
-	// Criteria for REProxy:
-	// - Allow reproxy if available and command has reproxy config set.
-	return (b.reproxyExec.Enabled() && step.cmd.REProxyConfig != nil)
-}
-
 func (b *Builder) runStrategy(step *Step) func(context.Context, *Step) error {
-	// Check criteria for allowRemote and allowREProxy
+	// Check criteria for allowRemote.
 	// If the command doesn't meet either criteria, fallback to local.
 	// Any further validation should be done in the exec handler, not here.
 	switch {
-	case step.cmd.Pure && b.allowREProxy(step):
-		return b.runReproxy
 	case step.cmd.Pure && b.allowRemote(step) && b.racingEnabled:
 		return b.runRacing
 	case step.cmd.Pure && b.allowRemote(step):
@@ -35,13 +27,6 @@ func (b *Builder) runStrategy(step *Step) func(context.Context, *Step) error {
 	default:
 		return b.runLocal
 	}
-}
-
-func (b *Builder) runReproxy(ctx context.Context, step *Step) error {
-	dedupInputs(ctx, step.cmd)
-	// TODO: b/297807325 - Siso relies on Reproxy's local fallback for
-	// monitoring at this moment. So, Siso shouldn't try local fallback.
-	return b.execReproxy(ctx, step)
 }
 
 func (b *Builder) runLocal(ctx context.Context, step *Step) error {

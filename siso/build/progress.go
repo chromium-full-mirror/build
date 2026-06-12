@@ -260,8 +260,8 @@ func (p *progress) buildSummary(b *Builder) string {
 	p.numLocal.Store(int32(localWaits + localServs))
 	localProgress := runProgress(localWaits, localServs)
 
-	remoteWaits := b.remoteSema.NumWaits() + b.reproxySema.NumWaits() + b.rewrapSema.NumWaits()
-	remoteServs := b.remoteSema.NumServs() + b.reproxySema.NumServs() + b.rewrapSema.NumServs()
+	remoteWaits := b.remoteSema.NumWaits() + b.rewrapSema.NumWaits()
+	remoteServs := b.remoteSema.NumServs() + b.rewrapSema.NumServs()
 	remoteProgress := runProgress(remoteWaits, remoteServs)
 
 	flushProgress := runProgress(hashfs.FlushSemaphore.NumWaits(), hashfs.FlushSemaphore.NumServs())

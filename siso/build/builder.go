@@ -41,7 +41,6 @@ import (
 	"go.chromium.org/build/siso/execute"
 	"go.chromium.org/build/siso/execute/localexec"
 	"go.chromium.org/build/siso/execute/remoteexec"
-	"go.chromium.org/build/siso/execute/reproxyexec"
 	"go.chromium.org/build/siso/hashfs"
 	"go.chromium.org/build/siso/hashfs/osfs"
 	"go.chromium.org/build/siso/o11y/clog"
@@ -88,7 +87,6 @@ type Options struct {
 	REExecEnable       bool
 	RECacheEnableRead  bool
 	RECacheEnableWrite bool
-	ReproxyAddr        string
 	ActionSalt         []byte
 
 	OutputLocal          OutputLocalFunc
@@ -208,9 +206,6 @@ type Builder struct {
 	reStatMu                  sync.Mutex
 	reSchedStat, reWorkerStat semaphore.Stat
 
-	reproxySema *semaphore.Prioritized
-	reproxyExec *reproxyexec.REProxyExec
-
 	actionSalt []byte
 
 	outputLocal OutputLocalFunc
@@ -300,7 +295,6 @@ func New(ctx context.Context, graph Graph, opts Options) (_ *Builder, err error)
 	}
 	var le localexec.LocalExec
 	var re *remoteexec.RemoteExec
-	var pe *reproxyexec.REProxyExec
 	if opts.REAPIClient != nil {
 		if opts.RECacheEnableWrite && !opts.REAPIClient.UpdateActionResultEnabled() {
 			return nil, fmt.Errorf("reapi doesn't support UpdateActionResult, required for --re_cache_enable_write")
@@ -311,12 +305,6 @@ func New(ctx context.Context, graph Graph, opts Options) (_ *Builder, err error)
 
 	} else {
 		logger.Infof("disable built-in remote exec")
-	}
-	pe = reproxyexec.New(ctx, opts.ReproxyAddr)
-	if pe.Enabled() {
-		logger.Infof("enable reclient integration: addr=%s", opts.ReproxyAddr)
-	} else {
-		logger.Infof("disable reclient integration")
 	}
 	experiments.ShowOnce()
 	numCPU := runtime.GOMAXPROCS(0)
@@ -386,8 +374,6 @@ func New(ctx context.Context, graph Graph, opts Options) (_ *Builder, err error)
 		reExecEnable:       opts.REExecEnable,
 		reCacheEnableRead:  opts.RECacheEnableRead || experiments.Enabled("simulate-remote-cache-misses", "simulate cache miss"),
 		reCacheEnableWrite: opts.RECacheEnableWrite,
-		reproxyExec:        pe,
-		reproxySema:        semaphore.NewPrioritized("reproxyexec", opts.Limits.Remote),
 		actionSalt:         opts.ActionSalt,
 		reapiclient:        opts.REAPIClient,
 		reSchedStat:        semaphore.Stat{Name: "re:sched"},
@@ -442,10 +428,7 @@ func New(ctx context.Context, graph Graph, opts Options) (_ *Builder, err error)
 
 // Close cleans up the builder.
 func (b *Builder) Close() error {
-	if b.reproxyExec == nil {
-		return nil
-	}
-	return b.reproxyExec.Close()
+	return nil
 }
 
 // Stats returns stats of the builder.
@@ -482,7 +465,6 @@ func (b *Builder) SemaStats() []semaphore.Stat {
 		remoteexec.Semaphore.Stat(), // remoteexec-digest
 		b.rewrapSema.Stat(),
 		b.remoteSema.Stat(),
-		b.reproxySema.Stat(),
 		b.scanDepsSema.Stat(),
 	)
 	return slices.DeleteFunc(stats, func(s semaphore.Stat) bool {
@@ -658,26 +640,20 @@ func (b *Builder) Build(ctx context.Context, name string, args ...string) (err e
 				restat.ROps, restat.RErrs, ui.NumBytes(restat.RBytes),
 				restat.WOps, restat.WErrs, ui.NumBytes(restat.WBytes))
 		}
-		if !b.reproxyExec.Used() {
-			// this stats will be shown by reproxy shutdown.
-			msg := fmt.Sprintf("\nlocal:%d remote:%d cache:%d cache-write:%d(err:%d) fallback:%d retry:%d skip:%d\n",
-				stat.Local+stat.NoExec, stat.Remote, stat.CacheHit, stat.CacheWrite, stat.CacheWriteErr, stat.LocalFallback, stat.RemoteRetry, stat.Skipped) +
-				depsStatLine +
-				restatLine +
-				fsstatLine + "\n"
-			ui.Default.PrintLines("\n", msg)
-			if b.resultstoreUploader != nil {
-				b.resultstoreUploader.AddBuildLog(msg + "\n")
-			}
-		} else {
-			ui.Default.PrintLines("\n", "\n")
+		msg := fmt.Sprintf("\nlocal:%d remote:%d cache:%d cache-write:%d(err:%d) fallback:%d retry:%d skip:%d\n",
+			stat.Local+stat.NoExec, stat.Remote, stat.CacheHit, stat.CacheWrite, stat.CacheWriteErr, stat.LocalFallback, stat.RemoteRetry, stat.Skipped) +
+			depsStatLine +
+			restatLine +
+			fsstatLine + "\n"
+		ui.Default.PrintLines("\n", msg)
+		if b.resultstoreUploader != nil {
+			b.resultstoreUploader.AddBuildLog(msg + "\n")
 		}
 	}()
 	semas := []trace.Semaphore{
 		b.cache.sema,
 		b.localSema,
 		b.remoteSema,
-		b.reproxySema,
 		b.rewrapSema,
 		b.stepSema,
 		hashfs.FlushSemaphore,

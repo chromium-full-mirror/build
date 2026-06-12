@@ -5,22 +5,12 @@
 package e2etests
 
 import (
-	"context"
-	"fmt"
-	"os"
-	"path/filepath"
-	"runtime"
-	"slices"
 	"testing"
-
-	pb "github.com/bazelbuild/reclient/api/proxy"
-	cpb "github.com/bazelbuild/remote-apis-sdks/go/api/command"
 
 	rpb "go.chromium.org/build/remote-apis/build/bazel/remote/execution/v2"
 
 	"go.chromium.org/build/siso/build"
 	"go.chromium.org/build/siso/build/ninjabuild"
-	"go.chromium.org/build/siso/execute/reproxyexec/reproxytest"
 	"go.chromium.org/build/siso/hashfs"
 	"go.chromium.org/build/siso/reapi/digest"
 	"go.chromium.org/build/siso/reapi/reapitest"
@@ -79,64 +69,6 @@ func TestBuild_CrossWindows_Remote(t *testing.T) {
 						Path:   "gen/foo.out",
 						Digest: digest.Empty.Proto(),
 					},
-				},
-			}, nil
-		},
-	}
-	_, err := runNinjaTest(t, fakere)
-	if err != nil {
-		t.Fatalf("ninja %v; want nil err", err)
-	}
-}
-
-// tools/cp is passed via toolchain_inputs from windows to make it executable.
-func TestBuild_CrossWindows_Reproxy(t *testing.T) {
-	if !runInSubProcess(t) {
-		return
-	}
-	ctx := t.Context()
-	dir := tempDir(t)
-
-	runNinjaTest := func(t *testing.T, refake *reproxytest.Fake) (build.Stats, error) {
-		t.Helper()
-		s := reproxytest.NewServer(ctx, t, refake)
-		defer s.Close()
-
-		opt, graph, cleanup := setupBuild(ctx, t, dir, hashfs.Option{
-			StateFile: ".siso_fs_state",
-		})
-		defer cleanup()
-		opt.ReproxyAddr = s.Addr()
-		return ninjabuild.Run(ctx, graph, opt, nil, ninjabuild.RunNinjaOpts{})
-	}
-
-	setupFiles(t, dir, t.Name(), nil)
-	fakere := &reproxytest.Fake{
-		RunCommandFunc: func(ctx context.Context, req *pb.RunRequest) (*pb.RunResponse, error) {
-			if runtime.GOOS == "windows" && !slices.Equal(req.GetToolchainInputs(), []string{"tools/cp"}) {
-				return &pb.RunResponse{
-					Stderr: []byte("../../tools/cp: Permission denied\n"),
-					Result: &cpb.CommandResult{
-						Status:   cpb.CommandResultStatus_NON_ZERO_EXIT,
-						ExitCode: 1,
-						Msg:      fmt.Sprintf("tools/cp is not in toolchain_inputs: %q", req.GetToolchainInputs()),
-					},
-				}, nil
-			}
-			err := os.WriteFile(filepath.Join(dir, "out/siso/gen/foo.out"), nil, 0644)
-			if err != nil {
-				return &pb.RunResponse{
-					Stderr: []byte(err.Error()),
-					Result: &cpb.CommandResult{
-						Status:   cpb.CommandResultStatus_NON_ZERO_EXIT,
-						ExitCode: 1,
-						Msg:      fmt.Sprintf("failed to create gen/foo.out: %v", err),
-					},
-				}, nil
-			}
-			return &pb.RunResponse{
-				Result: &cpb.CommandResult{
-					Status: cpb.CommandResultStatus_SUCCESS,
 				},
 			}, nil
 		},

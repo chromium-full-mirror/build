@@ -30,7 +30,7 @@ func (b *Builder) traceEvents(ctx context.Context, tc *trace.Context) []trace.Ev
 			obj = runPreprocSpanEvent(span, attr, b.tracePidPreproc)
 		case "serv:localexec":
 			obj = runLocalSpanEvent(span, attr, b.tracePidLocal)
-		case "serv:remoteexec", "serv:reproxyexec", "serv:rewrap":
+		case "serv:remoteexec", "serv:rewrap":
 			obj = runRemoteSpanEvent(span, attr, b.tracePidRemote)
 		case "rbe:worker":
 			worker, _ := span.Attrs["worker"].(string)

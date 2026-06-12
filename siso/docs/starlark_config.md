@@ -246,10 +246,6 @@ to register handlers and step configs.
              as it assumes those are platform container image.
           * `use_remote_exec_wrapper`: true if gomacc/rewrapper is used,
              so it runs locally without using deps/file trace.
-          * `reproxy_config`: [`REProxyConfig`](../execute/cmd.go) if reproxy is used.
-             the following RBE environment variables override the flags specified in the config:
-             `RBE_exec_strategy`, `RBE_server_address`.
-             See also https://github.com/bazelbuild/reclient/blob/main/docs/cmd-line-flags.md#rewrapper for more details.
           * `timeout`: duration of the step remote execution.
              See also `Timeout` field on [StepRule](../build/ninjabuild/step_config.go).
           * `exec_timeout`: duration of the action timeout of the step remote execution.
@@ -316,7 +312,6 @@ All inputs should be ready to use (via `ctx.fs`).
       * `outputs`: output pathnames. note: ignored in `cleandead`.
       * `args`: args for the step
       * `rspfile_content`: rspfile_content for the step.
-      * `reproxy_config`: [`REProxyConfig`](../execute/cmd.go) in json-encoded format.
       * `reconcile_outputdirs`: reconcile directories to detect file removals in dirs after local step executions.
       * `auxiliary_log_output_files`: additional output files, that siso explicitly logs digest of.
       * `auxiliary_log_output_dirs`: additional output dirs, that siso explicitly logs digest of.

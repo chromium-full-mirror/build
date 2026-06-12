@@ -19,7 +19,6 @@ import (
 	log "github.com/golang/glog"
 
 	"go.chromium.org/build/siso/build"
-	"go.chromium.org/build/siso/execute"
 	"go.chromium.org/build/siso/hashfs"
 	"go.chromium.org/build/siso/o11y/clog"
 	"go.chromium.org/build/siso/toolsupport/ninjautil"
@@ -127,8 +126,6 @@ type StepRule struct {
 	// - run locally but more parallelism
 	// - no file access trace
 	UseRemoteExecWrapper bool `json:"use_remote_exec_wrapper,omitempty"`
-	// REProxyConfig specifies configuration options for using reproxy.
-	REProxyConfig *execute.REProxyConfig `json:"reproxy_config,omitempty"`
 
 	// Timeout specifies time duration for the remote execution call of the step.
 	// This covers the remote execution overheads that are not covered by

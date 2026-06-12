@@ -106,7 +106,6 @@ type StepMetric struct {
 	// Semaphore waiting time is included, which does not count towards ActionStartTime.
 	// Use ScandepsTime instead if semaphore waiting time should be excluded,
 	// or a measurement that starts within ActionStartTime is required.
-	// TODO: set in reproxy mode too
 	DepsScanTime IntervalMetric `json:"depsscan_nanos,omitempty"`
 
 	// RunTime, QueueTime and ExecTime are measured by the execution
@@ -152,7 +151,6 @@ type StepMetric struct {
 	RunTime IntervalMetric `json:"run_nanos,omitempty"`
 	// QueueTime is the time it took until the worker could begin executing
 	// the action.
-	// TODO: set in reproxy mode too
 	QueueTime IntervalMetric `json:"queue_nanos,omitempty"`
 	// ExecStartTime is set if the action was not cached, containing the time
 	// measured when the execution strategy started the process.

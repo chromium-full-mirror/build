@@ -2,8 +2,8 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-load("@builtin//path.star", "path")
 load("@builtin//encoding.star", "json")
+load("@builtin//path.star", "path")
 load("@builtin//struct.star", "module")
 
 def __cxx(ctx, cmd):
@@ -39,11 +39,6 @@ def init(ctx):
     }
     return module(
         "config",
-        reproxy_config = {
-            "platform": {
-                "OSFamily": "Linux",
-            },
-        },
         step_config = json.encode(step_config),
         filegroups = {},
         handlers = {

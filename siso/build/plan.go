@@ -958,7 +958,7 @@ func suggestTargets(ctx context.Context, sched *scheduler, graph Graph, args ...
 	return suggests
 }
 
-// prepare all output directories for local process and reproxy,
+// prepare all output directories for local process,
 // to minimize mkdir operations.
 // if we create out dirs before each action concurrently,
 // need to check the dir many times and worry about race.

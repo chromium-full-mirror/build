@@ -29,6 +29,7 @@ func (c *Command) checkResourceLimits(ctx context.Context, limits build.Limits) 
 	case c.offline:
 	case c.remoteJobs > 0:
 		// reproxy grpc client+server, scandeps server client+server
+		// TODO: can we reduce multiplier?
 		nfile += uint64(c.remoteJobs) * 4
 	default:
 		nfile += uint64(limits.Remote) * 4

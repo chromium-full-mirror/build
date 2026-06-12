@@ -133,7 +133,6 @@ type NinjaFlags struct {
 	reExecEnable       bool
 	reCacheEnableRead  bool
 	reCacheEnableWrite bool
-	reproxyAddr        string
 
 	cartfsEndpoint string
 
@@ -247,9 +246,6 @@ func (c *Command) SetFlags(flagSet *flag.FlagSet) {
 	flagSet.BoolVar(&c.reExecEnable, "re_exec_enable", true, "remote exec enable")
 	flagSet.BoolVar(&c.reCacheEnableRead, "re_cache_enable_read", true, "remote exec cache enable read")
 	flagSet.BoolVar(&c.reCacheEnableWrite, "re_cache_enable_write", false, "remote exec cache allow local trusted uploads")
-	// reclient_helper.py sets the RBE_server_address
-	// https://chromium.googlesource.com/chromium/tools/depot_tools.git/+/e13840bd9a04f464e3bef22afac1976fc15a96a0/reclient_helper.py#138
-	c.reproxyAddr = os.Getenv("RBE_server_address")
 
 	// TODO(b/513044090): discover cartfs endpoint automatically?
 	flagSet.StringVar(&c.cartfsEndpoint, "cartfs_endpoint", "", "cartfs server endpoint. e.g. localhost:65001")
@@ -407,7 +403,6 @@ func (c *Command) enableOfflineMode(ctx context.Context) {
 	c.enableCloudProfiler = false
 	c.enableCloudTrace = false
 	c.enableCloudMonitoring = false
-	c.reproxyAddr = ""
 }
 
 // initDepsLog loads the dependency log file (`.siso_deps`).
@@ -457,7 +452,6 @@ func (c *Command) initBuildOpts(ctx context.Context, projectID string, buildPath
 		REExecEnable:          c.reExecEnable,
 		RECacheEnableRead:     c.reCacheEnableRead,
 		RECacheEnableWrite:    c.reCacheEnableWrite,
-		ReproxyAddr:           c.reproxyAddr,
 		ActionSalt:            actionSaltBytes,
 		OutputLocal:           build.OutputLocalFunc(c.outputLocal),
 		Cache:                 cache,

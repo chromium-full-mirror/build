@@ -91,7 +91,6 @@ func (c *Cache) GetActionResult(ctx context.Context, cmd *execute.Cmd) error {
 	}
 
 	// copy the action result into cmd.
-	cmd.SetActionDigest(d)
 	cmd.SetActionResult(result, true)
 	err = c.setActionResultStdout(ctx, cmd, result)
 	if err != nil {
