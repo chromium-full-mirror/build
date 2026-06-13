@@ -865,7 +865,21 @@ func (c *Cmd) entriesFromResult(ctx context.Context, ds hashfs.DataSource, updat
 				Data:         digest.NewData(ds.Source(ctx, d, fname), d),
 				IsExecutable: f.IsExecutable,
 			},
-			Mode:        mode,
+			Mode: mode,
+			// ModTime must be the record time, never an mtime served by
+			// the backend (e.g. REAPI NodeProperties.mtime): the cache-hit
+			// path's self-healing for outputs removed from disk behind
+			// siso's back relies on it moving forward. A same-digest
+			// cache hit keeps the stale local-ready hashfs entry, and only
+			// the mtime change makes Flush attempt a chtimes that trips
+			// over the missing file, demoting the hit to a cache miss
+			// whose remote re-execution forgets and re-records the
+			// outputs. With an unchanged mtime, Flush would silently
+			// succeed without re-materializing the file. If served mtimes
+			// are ever honored here, the cache-hit path needs the same
+			// ForgetOutputs-before-RecordOutputs as ProcessResult (then
+			// cheap: with matching mtimes the flush is a single lstat via
+			// matchesFileInfo). (see b/522434556)
 			ModTime:     updatedTime,
 			Action:      c.actionDigest,
 			UpdatedTime: updatedTime,
