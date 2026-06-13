@@ -168,3 +168,127 @@ func TestBuild_RemovedArtifactOutputLocalMinimum(t *testing.T) {
 		t.Errorf("done=%d total=%d remote=%d local=%d skipped=%d; done=total=2 remote=0 local=1 skipped=1; %#v", stats.Done, stats.Total, stats.Remote, stats.Local, stats.Skipped, stats)
 	}
 }
+
+// TestBuild_RemovedArtifactRacing checks that a racing build self-heals
+// when an output recorded as local-ready in .siso_fs_state has been
+// removed from disk behind siso's back (e.g. by a pre-build cleanup
+// step) and the remote racer wins before the local racer starts the
+// command. b/522434556
+//
+// The build graph has a slow local-only step (slow.out) that occupies
+// the single local semaphore slot, so the racing step's local racer
+// is still waiting for the semaphore when the remote racer wins and
+// must not rely on the stale local-ready hashfs entry for remote.out.
+func TestBuild_RemovedArtifactRacing(t *testing.T) {
+	if !runInSubProcess(t) {
+		return
+	}
+	ctx := t.Context()
+	dir := tempDir(t)
+
+	fakere := &reapitest.Fake{
+		ExecuteFunc: func(fakere *reapitest.Fake, action *rpb.Action) (*rpb.ActionResult, error) {
+			return &rpb.ActionResult{
+				ExitCode: 0,
+				OutputFiles: []*rpb.OutputFile{
+					{
+						Path:   "remote.out",
+						Digest: digest.Empty.Proto(),
+					},
+				},
+			}, nil
+		},
+	}
+
+	var ds build.DataSource
+	defer func() {
+		err := ds.Close(ctx)
+		if err != nil {
+			t.Error(err)
+		}
+	}()
+	ds.Client = reapitest.New(ctx, t, fakere)
+	err := ds.Client.Init(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ds.Cache = ds.Client.CacheStore()
+
+	// runBuild runs a full build of "all". prepare, if set, runs after
+	// setupBuild loaded .siso_fs_state but before the build starts, to
+	// simulate state changing behind siso's back.
+	runBuild := func(t *testing.T, prepare func()) (build.Stats, error) {
+		t.Helper()
+		opt, graph, cleanup := setupBuild(ctx, t, dir, hashfs.Option{
+			StateFile:   ".siso_fs_state",
+			DataSource:  ds,
+			OutputLocal: func(context.Context, string) bool { return true },
+		})
+		defer cleanup()
+		bcache, err := build.NewCache(ctx, build.CacheOptions{
+			Store:      ds.Cache,
+			EnableRead: true,
+		})
+		if err != nil {
+			return build.Stats{}, err
+		}
+		opt.Cache = bcache
+		opt.RECacheEnableRead = true
+		opt.RECacheEnableWrite = true
+		opt.REAPIClient = ds.Client
+		opt.OutputLocal = func(context.Context, string) bool { return true }
+		opt.REExecEnable = true
+		opt.FailuresAllowed = 0
+		// One local slot, so slow.out starves the racing step's local racer.
+		opt.Limits.Local = 1
+		if prepare != nil {
+			prepare()
+		}
+		return ninjabuild.Run(ctx, graph, opt, []string{"all"}, ninjabuild.RunNinjaOpts{})
+	}
+
+	setupFiles(t, dir, t.Name(), nil)
+
+	t.Logf("-- first build")
+	stats, err := runBuild(t, nil)
+	if err != nil {
+		t.Fatalf("first build %v: want nil err", err)
+	}
+	if stats.Done != stats.Total || stats.Total != 4 {
+		t.Errorf("done=%d total=%d; want done=total=4; %#v", stats.Done, stats.Total, stats)
+	}
+
+	build.SetExperimentForTest("racing")
+	defer build.SetExperimentForTest("")
+
+	t.Logf("-- second build with racing + remote.out removed behind siso's back")
+	// Touch foo.txt so remote.out and slow.out become dirty.
+	touchFile(t, dir, "foo.txt")
+	stats, err = runBuild(t, func() {
+		// Remove remote.out after hashfs.SetState loaded .siso_fs_state,
+		// so its hashfs entry stays local-ready while the file is gone.
+		err := os.Remove(filepath.Join(dir, "out/siso/remote.out"))
+		if err != nil {
+			t.Fatal(err)
+		}
+	})
+	if err != nil {
+		t.Fatalf("second build %v: want nil err; %#v", err, stats)
+	}
+	t.Logf("second build stats: %#v", stats)
+	for _, out := range []string{"remote.out", "slow.out", "out"} {
+		_, err = os.Stat(filepath.Join(dir, "out/siso", out))
+		if err != nil {
+			t.Errorf("missing %s after racing build: %v", out, err)
+		}
+	}
+
+	t.Logf("-- third build. expect null build")
+	stats, err = runBuild(t, nil)
+	if err != nil {
+		t.Fatalf("third build %v: want nil err", err)
+	}
+	if stats.Skipped != stats.Total || stats.Total != 4 {
+		t.Errorf("skipped=%d total=%d; want skipped=total=4; %#v", stats.Skipped, stats.Total, stats)
+	}
+}

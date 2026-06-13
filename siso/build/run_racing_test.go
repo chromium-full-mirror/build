@@ -8,14 +8,22 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	rpb "go.chromium.org/build/remote-apis/build/bazel/remote/execution/v2"
+
 	"go.chromium.org/build/siso/execute"
+	"go.chromium.org/build/siso/hashfs"
 	"go.chromium.org/build/siso/reapi/digest"
+	"go.chromium.org/build/siso/reapi/merkletree"
+	"go.chromium.org/build/siso/reapi/reapitest"
 )
 
 // TestAdoptRacingLocalResultPreservesWeightedDuration checks that a local
@@ -265,5 +273,212 @@ func TestRemoteClaimFallbackIfAllowed(t *testing.T) {
 				tt.checkErr(t, err)
 			}
 		})
+	}
+}
+
+// TestRunRacing_StaleLocalReadyOutput checks that a racing remote win
+// self-heals a stale local-ready hashfs entry whose file was removed from
+// disk behind siso's back (e.g. by a pre-build cleanup step after
+// .siso_fs_state was loaded). b/522434556
+//
+// The scenario:
+//  1. hashfs has a local-ready entry for stubs.jar (lready closed),
+//     but the file is missing on disk.
+//  2. The remote cache hit for the step fails to flush (chtimes on the
+//     missing file), so runRacing treats it as a cache miss and races.
+//  3. The only local semaphore slot is held by the test, so the local
+//     racer never starts the command (cmdRunTime stays zero) and the
+//     remote racer wins.
+//  4. runRacing must forget the stale entry so that b.outputs()
+//     re-materializes stubs.jar from CAS instead of failing with
+//     "failed to flush outputs to local".
+func TestRunRacing_StaleLocalReadyOutput(t *testing.T) {
+	ctx := t.Context()
+	dir := t.TempDir()
+	dir, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	content := []byte("stubs content")
+	fakere := &reapitest.Fake{
+		ExecuteFunc: func(fakere *reapitest.Fake, action *rpb.Action) (*rpb.ActionResult, error) {
+			dg, err := fakere.Put(ctx, content)
+			if err != nil {
+				return nil, err
+			}
+			return &rpb.ActionResult{
+				ExitCode: 0,
+				OutputFiles: []*rpb.OutputFile{
+					{
+						Path:   "stubs.jar",
+						Digest: dg,
+					},
+				},
+			}, nil
+		},
+	}
+	reclient := reapitest.New(ctx, t, fakere)
+
+	cachestore, err := NewLocalCache(filepath.Join(dir, ".siso_cache"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var ds DataSource
+	ds.Client = reclient
+	ds.Cache = cachestore
+	defer func() {
+		err := ds.Close(ctx)
+		if err != nil {
+			t.Error(err)
+		}
+	}()
+
+	hashFS, err := hashfs.New(ctx, hashfs.Option{
+		DataSource: ds,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer hashFS.Close(ctx)
+
+	// Simulate .siso_fs_state retention: a local-ready entry (lready
+	// closed because the file exists on disk) with an old mtime.
+	stubsPath := filepath.Join(dir, "stubs.jar")
+	err = os.WriteFile(stubsPath, content, 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldTime := time.Now().Add(-1 * time.Hour)
+	err = os.Chtimes(stubsPath, oldTime, oldTime)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cmd := &execute.Cmd{
+		Args:          []string{"clang", "-o", "stubs.jar"},
+		Outputs:       []string{"stubs.jar"},
+		WorkspaceRoot: dir,
+		HashFS:        hashFS,
+		Platform:      map[string]string{"container-image": "docker://ubuntu"},
+		Pure:          true,
+		CmdHash:       []byte("cmdhash"),
+	}
+	cmd.InitOutputs()
+	actionDigest, err := cmd.Digest(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = hashFS.Update(ctx, dir, []hashfs.UpdateEntry{
+		{
+			Name: "stubs.jar",
+			Entry: &merkletree.Entry{
+				Name: "stubs.jar",
+				Data: digest.FromBytes("stubs.jar", content),
+			},
+			IsLocal:     true,
+			Mode:        0644,
+			ModTime:     oldTime,
+			CmdHash:     cmd.CmdHash,
+			Action:      actionDigest,
+			UpdatedTime: oldTime,
+			IsChanged:   false,
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Remove the file behind hashfs' back. The entry remains local-ready.
+	err = os.Remove(stubsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Prepare a remote cache hit with the same content but a newer mtime,
+	// so that the cache-hit flush attempts chtimes on the missing file.
+	dg, err := fakere.Put(ctx, content)
+	if err != nil {
+		t.Fatal(err)
+	}
+	actionResult := &rpb.ActionResult{
+		ExitCode: 0,
+		OutputFiles: []*rpb.OutputFile{
+			{
+				Path:   "stubs.jar",
+				Digest: dg,
+			},
+		},
+	}
+	err = cachestore.SetActionResult(ctx, actionDigest, actionResult)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = cachestore.SetContent(ctx, digest.FromProto(dg), "stubs.jar", content)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cache, err := NewCache(ctx, CacheOptions{
+		Store:      cachestore,
+		EnableRead: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	opts := Options{
+		Path:              NewPath(dir, "out/siso"),
+		HashFS:            hashFS,
+		REAPIClient:       reclient,
+		REExecEnable:      true,
+		RECacheEnableRead: true,
+		Cache:             cache,
+		Limits: Limits{
+			Step:    10,
+			Local:   1,
+			Remote:  10,
+			Preproc: 10,
+			Cache:   10,
+		},
+		OutputLocal: func(context.Context, string) bool { return true },
+	}
+	graph := fakeGraph{}
+	b, err := New(ctx, graph, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	step := &Step{
+		outputPaths:    []string{"stubs.jar"},
+		cmd:            cmd,
+		weight:         1,
+		state:          &stepState{},
+		startReported:  new(sync.Once),
+		finishReported: new(sync.Once),
+		def: fakeStepDef{
+			actionName: "clang",
+			outputs:    []string{"stubs.jar"},
+		},
+	}
+
+	// Hold the only local semaphore slot so the local racer can never
+	// start the command and the remote racer deterministically wins.
+	err = b.localSema.Do(ctx, 1, func(ctx context.Context) error {
+		return b.runRacing(ctx, step)
+	})
+	if err != nil {
+		t.Fatalf("runRacing=%v; want nil err", err)
+	}
+	if got, want := step.metrics.RacingWinner, "remote"; got != want {
+		t.Errorf("RacingWinner=%q; want %q", got, want)
+	}
+	got, err := os.ReadFile(stubsPath)
+	if err != nil {
+		t.Fatalf("stubs.jar not re-materialized on disk: %v", err)
+	}
+	if string(got) != string(content) {
+		t.Errorf("stubs.jar content=%q; want %q", got, content)
 	}
 }

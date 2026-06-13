@@ -159,13 +159,14 @@ func (b *Builder) runRacing(ctx context.Context, step *Step) error {
 		// localexec kills the action's whole process group and waits until it is
 		// empty, so nothing is still writing - but it might have already deleted
 		// or modified the local output files before being killed.
+		// Even when the local racer never started the command, hashFS may
+		// hold a stale local-ready entry for an output that was removed
+		// from disk behind siso's back (e.g. by a pre-build cleanup step
+		// after .siso_fs_state was loaded). b/522434556
 		// Forget the cached outputs in HashFS so that Siso doesn't assume the
 		// outputs are still "local-ready" (up-to-date) on the local disk.
 		// This forces Siso to download/verify them during b.outputs().
-		// If the local step did not begin running the command, we do not need to flush.
-		if !localStep.cmdRunTime.IsZero() {
-			step.cmd.HashFS.ForgetOutputs(ctx, step.cmd.WorkspaceRoot, step.cmd.AllOutputs())
-		}
+		step.cmd.HashFS.ForgetOutputs(ctx, step.cmd.WorkspaceRoot, step.cmd.AllOutputs())
 
 		// Re-record the remote outputs
 		// so that updateDeps and outputs see the correct state.
