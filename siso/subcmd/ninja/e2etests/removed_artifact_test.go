@@ -220,8 +220,9 @@ func TestBuild_RemovedArtifactRacing(t *testing.T) {
 	runBuild := func(t *testing.T, prepare func()) (build.Stats, error) {
 		t.Helper()
 		opt, graph, cleanup := setupBuild(ctx, t, dir, hashfs.Option{
-			StateFile:  ".siso_fs_state",
-			DataSource: ds,
+			StateFile:   ".siso_fs_state",
+			DataSource:  ds,
+			OutputLocal: func(context.Context, string) bool { return true },
 		})
 		defer cleanup()
 		bcache, err := build.NewCache(ctx, build.CacheOptions{
@@ -235,7 +236,6 @@ func TestBuild_RemovedArtifactRacing(t *testing.T) {
 		opt.RECacheEnableRead = true
 		opt.RECacheEnableWrite = true
 		opt.REAPIClient = ds.Client
-		opt.OutputLocal = func(context.Context, string) bool { return true }
 		opt.REExecEnable = true
 		opt.FailuresAllowed = 0
 		// One local slot, so slow.out starves the racing step's local racer.
@@ -353,12 +353,12 @@ func TestBuild_RemovedArtifactRestatContent(t *testing.T) {
 	runBuild := func(t *testing.T, prepare func()) (build.Stats, error) {
 		t.Helper()
 		opt, graph, cleanup := setupBuild(ctx, t, dir, hashfs.Option{
-			StateFile:  ".siso_fs_state",
-			DataSource: ds,
+			StateFile:   ".siso_fs_state",
+			DataSource:  ds,
+			OutputLocal: func(context.Context, string) bool { return true },
 		})
 		defer cleanup()
 		opt.REAPIClient = ds.Client
-		opt.OutputLocal = func(context.Context, string) bool { return true }
 		opt.REExecEnable = true
 		opt.FailuresAllowed = 0
 		if prepare != nil {

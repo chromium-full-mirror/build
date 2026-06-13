@@ -133,44 +133,42 @@ func (b *Builder) checkUpToDate(ctx context.Context, stepDef StepDef, stepManife
 		// explain once at the beginning of the build.
 		return false
 	}
-	if b.outputLocal != nil {
-		numOuts := len(stepManifest.outputs)
-		depFile := stepDef.Depfile(ctx)
-		if depFile != "" {
-			numOuts++
+	numOuts := len(stepManifest.outputs)
+	depFile := stepDef.Depfile(ctx)
+	if depFile != "" {
+		numOuts++
+	}
+	localOutputs := make([]string, 0, numOuts)
+	seen := make(map[string]bool)
+	for _, outPath := range stepManifest.outputs {
+		if seen[outPath] {
+			continue
 		}
-		localOutputs := make([]string, 0, numOuts)
-		seen := make(map[string]bool)
-		for _, outPath := range stepManifest.outputs {
-			if seen[outPath] {
-				continue
-			}
-			seen[outPath] = true
-			if !b.outputLocal(ctx, outPath) {
-				continue
-			}
-			localOutputs = append(localOutputs, outPath)
+		seen[outPath] = true
+		if !b.hashFS.NeedFlush(ctx, b.path.WorkspaceRoot, outPath) {
+			continue
 		}
-		if depFile != "" {
-			switch stepDef.Binding("deps") {
-			case "gcc", "msvc":
-			default:
-				if b.outputLocal(ctx, depFile) {
-					localOutputs = append(localOutputs, depFile)
-				}
+		localOutputs = append(localOutputs, outPath)
+	}
+	if depFile != "" {
+		switch stepDef.Binding("deps") {
+		case "gcc", "msvc":
+		default:
+			if b.hashFS.NeedFlush(ctx, b.path.WorkspaceRoot, depFile) {
+				localOutputs = append(localOutputs, depFile)
 			}
 		}
-		if len(localOutputs) > 0 {
-			err := b.hashFS.Flush(ctx, b.path.WorkspaceRoot, localOutputs)
-			if err != nil {
-				clog.Infof(ctx, "need: no local outputs %q: %v", localOutputs, err)
-				span.SetAttr("run-reason", "missing-local-outputs")
-				fmt.Fprintf(b.explainWriter, "output %s flush error %s: %v", outname, localOutputs, err)
-				return false
-			}
-			if log.V(1) {
-				clog.Infof(ctx, "flush all outputs %s", localOutputs)
-			}
+	}
+	if len(localOutputs) > 0 {
+		err := b.hashFS.Flush(ctx, b.path.WorkspaceRoot, localOutputs)
+		if err != nil {
+			clog.Infof(ctx, "need: no local outputs %q: %v", localOutputs, err)
+			span.SetAttr("run-reason", "missing-local-outputs")
+			fmt.Fprintf(b.explainWriter, "output %s flush error %s: %v\n", outname, localOutputs, err)
+			return false
+		}
+		if log.V(1) {
+			clog.Infof(ctx, "flush all outputs %s", localOutputs)
 		}
 	}
 

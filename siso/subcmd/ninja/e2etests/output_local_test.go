@@ -46,7 +46,6 @@ func TestBuild_OutputLocal(t *testing.T) {
 		})
 		defer cleanup()
 		opt.REAPIClient = ds.Client
-		opt.OutputLocal = func(context.Context, string) bool { return outputLocal }
 		return ninjabuild.Run(ctx, graph, opt, nil, ninjabuild.RunNinjaOpts{})
 	}
 	setupFiles(t, dir, t.Name(), nil)

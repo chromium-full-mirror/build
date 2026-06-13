@@ -105,7 +105,6 @@ func TestBuild_Deps_Incremental(t *testing.T) {
 		opt.Cache = bcache
 		opt.RECacheEnableRead = true
 		opt.REAPIClient = ds.Client
-		opt.OutputLocal = func(context.Context, string) bool { return true }
 		return ninjabuild.Run(ctx, graph, opt, nil, ninjabuild.RunNinjaOpts{})
 	}
 	setupFiles(t, dir, t.Name(), nil)

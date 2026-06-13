@@ -70,9 +70,6 @@ const (
 // chromium recipe module expects this string.
 const ninjaNoWorkToDo = "ninja: no work to do.\n"
 
-// OutputLocalFunc is a function to determine the file should be downloaded or not.
-type OutputLocalFunc func(context.Context, string) bool
-
 // Options is builder options.
 type Options struct {
 	JobID     string
@@ -89,7 +86,6 @@ type Options struct {
 	RECacheEnableWrite bool
 	ActionSalt         []byte
 
-	OutputLocal          OutputLocalFunc
 	Cache                *Cache
 	NinjaLogWriter       io.Writer
 	FailureSummaryWriter io.Writer
@@ -207,8 +203,6 @@ type Builder struct {
 	reSchedStat, reWorkerStat semaphore.Stat
 
 	actionSalt []byte
-
-	outputLocal OutputLocalFunc
 
 	cacheSema *semaphore.Semaphore
 	cache     *Cache
@@ -379,7 +373,6 @@ func New(ctx context.Context, graph Graph, opts Options) (_ *Builder, err error)
 		reSchedStat:        semaphore.Stat{Name: "re:sched"},
 		reWorkerStat:       semaphore.Stat{Name: "re:worker"},
 
-		outputLocal:           opts.OutputLocal,
 		cacheSema:             semaphore.New("cache", opts.Limits.Cache),
 		cache:                 opts.Cache,
 		failureSummaryWriter:  opts.FailureSummaryWriter,
@@ -1163,7 +1156,7 @@ func (b *Builder) outputs(ctx context.Context, step *Step) error {
 		if !filepath.IsAbs(fullOut) {
 			fullOut = filepath.Join(step.cmd.WorkspaceRoot, out)
 		}
-		if b.outputLocal != nil && b.outputLocal(ctx, out) {
+		if b.hashFS.NeedFlush(ctx, step.cmd.WorkspaceRoot, out) {
 			localOutputs = append(localOutputs, out)
 			local = true
 		} else {

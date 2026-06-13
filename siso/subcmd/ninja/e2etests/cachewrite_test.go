@@ -73,7 +73,6 @@ func TestBuild_CacheWrite(t *testing.T) {
 		opt.RECacheEnableRead = true
 		opt.RECacheEnableWrite = true
 		opt.REAPIClient = ds.Client
-		opt.OutputLocal = func(context.Context, string) bool { return true }
 		opt.REExecEnable = isRemote
 		opt.FailuresAllowed = 0
 

@@ -336,7 +336,8 @@ func TestRunRacing_StaleLocalReadyOutput(t *testing.T) {
 	}()
 
 	hashFS, err := hashfs.New(ctx, hashfs.Option{
-		DataSource: ds,
+		DataSource:  ds,
+		OutputLocal: func(context.Context, string) bool { return true },
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -443,7 +444,6 @@ func TestRunRacing_StaleLocalReadyOutput(t *testing.T) {
 			Preproc: 10,
 			Cache:   10,
 		},
-		OutputLocal: func(context.Context, string) bool { return true },
 	}
 	graph := fakeGraph{}
 	b, err := New(ctx, graph, opts)
@@ -535,7 +535,8 @@ func TestRunRacing_RemoteWinFlushFailureFallsBackToLocal(t *testing.T) {
 	}()
 
 	hashFS, err := hashfs.New(ctx, hashfs.Option{
-		DataSource: ds,
+		DataSource:  ds,
+		OutputLocal: func(context.Context, string) bool { return true },
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -567,7 +568,6 @@ func TestRunRacing_RemoteWinFlushFailureFallsBackToLocal(t *testing.T) {
 			Preproc: 10,
 			Cache:   10,
 		},
-		OutputLocal: func(context.Context, string) bool { return true },
 	}
 	graph := fakeGraph{}
 	b, err := New(ctx, graph, opts)

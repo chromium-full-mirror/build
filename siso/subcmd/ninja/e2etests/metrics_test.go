@@ -85,15 +85,15 @@ func TestBuild_Metrics(t *testing.T) {
 	ds.Cache = ds.Client.CacheStore()
 
 	opt, graph, cleanup := setupBuild(ctx, t, dir, hashfs.Option{
-		StateFile:  ".siso_fs_state",
-		DataSource: ds,
+		StateFile:   ".siso_fs_state",
+		DataSource:  ds,
+		OutputLocal: func(context.Context, string) bool { return true },
 	})
 	defer cleanup()
 
 	opt.REAPIClient = ds.Client
 	opt.RECacheEnableRead = true
 	opt.RECacheEnableWrite = false
-	opt.OutputLocal = func(context.Context, string) bool { return true }
 
 	var metricsBuffer syncBuffer
 	opt.MetricsJSONWriter = &metricsBuffer
