@@ -220,9 +220,8 @@ func TestBuild_RemovedArtifactRacing(t *testing.T) {
 	runBuild := func(t *testing.T, prepare func()) (build.Stats, error) {
 		t.Helper()
 		opt, graph, cleanup := setupBuild(ctx, t, dir, hashfs.Option{
-			StateFile:   ".siso_fs_state",
-			DataSource:  ds,
-			OutputLocal: func(context.Context, string) bool { return true },
+			StateFile:  ".siso_fs_state",
+			DataSource: ds,
 		})
 		defer cleanup()
 		bcache, err := build.NewCache(ctx, build.CacheOptions{
@@ -290,5 +289,115 @@ func TestBuild_RemovedArtifactRacing(t *testing.T) {
 	}
 	if stats.Skipped != stats.Total || stats.Total != 4 {
 		t.Errorf("skipped=%d total=%d; want skipped=total=4; %#v", stats.Skipped, stats.Total, stats)
+	}
+}
+
+// TestBuild_RemovedArtifactRestatContent checks that a non-racing remote
+// execution self-heals when an output recorded as local-ready in
+// .siso_fs_state has been removed from disk behind siso's back (e.g. by
+// a pre-build cleanup step) and the step has restat_content with
+// content-identical outputs.
+//
+// In that case computeOutputEntries preserves the previous mtime, so
+// hashfs keeps the stale local-ready entry with mtimeUpdated=false and
+// Flush silently does nothing: the step succeeds without the output
+// ever being re-materialized on disk. Unlike the default path, no
+// chtimes failure (and thus no local fallback) ever fires. b/522434556
+func TestBuild_RemovedArtifactRestatContent(t *testing.T) {
+	if !runInSubProcess(t) {
+		return
+	}
+	ctx := t.Context()
+	dir := tempDir(t)
+
+	// Same content as tools/action.py writes; must be non-empty since
+	// restat_content treats empty outputs as always changed.
+	content := []byte("hello\n")
+	fakere := &reapitest.Fake{
+		ExecuteFunc: func(fakere *reapitest.Fake, action *rpb.Action) (*rpb.ActionResult, error) {
+			dg, err := fakere.Put(ctx, content)
+			if err != nil {
+				return nil, err
+			}
+			return &rpb.ActionResult{
+				ExitCode: 0,
+				OutputFiles: []*rpb.OutputFile{
+					{
+						Path:   "remote.out",
+						Digest: dg,
+					},
+				},
+			}, nil
+		},
+	}
+
+	var ds build.DataSource
+	defer func() {
+		err := ds.Close(ctx)
+		if err != nil {
+			t.Error(err)
+		}
+	}()
+	ds.Client = reapitest.New(ctx, t, fakere)
+	err := ds.Client.Init(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ds.Cache = ds.Client.CacheStore()
+
+	// runBuild runs a full build of "all". prepare, if set, runs after
+	// setupBuild loaded .siso_fs_state but before the build starts, to
+	// simulate state changing behind siso's back. Cache read stays
+	// disabled so the step deterministically goes through execRemote
+	// and its RecordPreOutputs/restat_content handling.
+	runBuild := func(t *testing.T, prepare func()) (build.Stats, error) {
+		t.Helper()
+		opt, graph, cleanup := setupBuild(ctx, t, dir, hashfs.Option{
+			StateFile:  ".siso_fs_state",
+			DataSource: ds,
+		})
+		defer cleanup()
+		opt.REAPIClient = ds.Client
+		opt.OutputLocal = func(context.Context, string) bool { return true }
+		opt.REExecEnable = true
+		opt.FailuresAllowed = 0
+		if prepare != nil {
+			prepare()
+		}
+		return ninjabuild.Run(ctx, graph, opt, []string{"all"}, ninjabuild.RunNinjaOpts{})
+	}
+
+	setupFiles(t, dir, t.Name(), nil)
+
+	t.Logf("-- first build")
+	stats, err := runBuild(t, nil)
+	if err != nil {
+		t.Fatalf("first build %v: want nil err", err)
+	}
+	if stats.Done != stats.Total || stats.Total != 3 {
+		t.Errorf("done=%d total=%d; want done=total=3; %#v", stats.Done, stats.Total, stats)
+	}
+
+	t.Logf("-- second build with remote.out removed behind siso's back")
+	// Touch foo.txt so remote.out becomes dirty but its content (and
+	// therefore the restat_content digest) stays the same.
+	touchFile(t, dir, "foo.txt")
+	stats, err = runBuild(t, func() {
+		// Remove remote.out after hashfs.SetState loaded .siso_fs_state,
+		// so its hashfs entry stays local-ready while the file is gone.
+		err := os.Remove(filepath.Join(dir, "out/siso/remote.out"))
+		if err != nil {
+			t.Fatal(err)
+		}
+	})
+	if err != nil {
+		t.Fatalf("second build %v: want nil err; %#v", err, stats)
+	}
+	t.Logf("second build stats: %#v", stats)
+	for _, out := range []string{"remote.out", "out"} {
+		_, err = os.Stat(filepath.Join(dir, "out/siso", out))
+		if err != nil {
+			t.Errorf("missing %s after build: %v", out, err)
+		}
 	}
 }

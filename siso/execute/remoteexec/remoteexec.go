@@ -264,6 +264,14 @@ func (re *RemoteExec) ProcessResult(ctx context.Context, cmd *execute.Cmd, resul
 	if cmd.SkipRecordOutputs {
 		return nil
 	}
+	// hashfs may hold a stale local-ready entry for an output that was
+	// removed from disk behind Siso's back after .siso_fs_state was loaded.
+	// If the remote result has the same digest, the stale entry would be
+	// kept as-is, and with restat_content also the same mtime, so Flush
+	// would silently skip re-materializing the missing file. Forget the
+	// outputs so that re-recording them gives the entries a CAS-backed
+	// source and Flush verifies them against the local disk.
+	cmd.HashFS.ForgetOutputs(ctx, cmd.WorkspaceRoot, cmd.AllOutputs())
 	return cmd.RecordOutputs(ctx, cmd.HashFS.DataSource(), now)
 }
 
