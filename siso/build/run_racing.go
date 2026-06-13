@@ -33,7 +33,9 @@ type raceResult struct {
 
 // runRacing runs a step with local and remote execution in parallel.
 // Whichever finishes first wins; the loser is cancelled.
-// If either side fails, the step fails immediately (no cross-fallback).
+// If the remote side fails (during execution or while flushing its
+// outputs to the local disk), it falls back to local execution when
+// remoteClaimFallbackIfAllowed permits; otherwise the step fails.
 func (b *Builder) runRacing(ctx context.Context, step *Step) error {
 	ctx, span := trace.NewSpan(ctx, "racing")
 	defer span.Close(nil)
@@ -176,7 +178,20 @@ func (b *Builder) runRacing(ctx context.Context, step *Step) error {
 		if err := b.updateDeps(ctx, step); err != nil {
 			return err
 		}
-		return b.outputs(ctx, step)
+		err := b.outputs(ctx, step)
+		if errors.Is(err, errFlushOutput) {
+			// Flushing the remote outputs to the local disk failed
+			// (e.g. a blob is missing from CAS). Fall back to local
+			// execution to regenerate the outputs, like runRemote does.
+			ok, ferr := b.remoteClaimFallbackIfAllowed(ctx, step, err)
+			if !ok {
+				return ferr
+			}
+			clog.Warningf(ctx, "racing: remote won, but flush failed, fallback to local: %v", err)
+			b.setupFallback(ctx, step, err)
+			return b.execLocal(ctx, step)
+		}
+		return err
 
 	case raceLocal:
 		step.metrics.RacingWinner = "local"
