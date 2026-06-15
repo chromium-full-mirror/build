@@ -251,6 +251,7 @@ func New(ctx context.Context, client *logging.Client, logID, accessLogID string,
 		otelLogger:   otelLogger,
 		otelProvider: otelProvider,
 		otelGRPCConn: otelGRPCConn,
+		started:      time.Now(),
 	}
 	if otelLogger != nil {
 		glog.Infof("OTEL logging is ready: %s", logger.URL())
@@ -317,6 +318,8 @@ type Logger struct {
 	otelLogger   otelog.Logger
 	otelProvider *sdklog.LoggerProvider
 	otelGRPCConn *grpc.ClientConn
+
+	started time.Time
 }
 
 func newOtelCollectorClient(ctx context.Context, collectorAddr string, res *mrpb.MonitoredResource) (*grpc.ClientConn, *sdklog.LoggerProvider, otelog.Logger, error) {
@@ -368,10 +371,18 @@ func (l *Logger) URL() string {
 	if l == nil {
 		return ""
 	}
+	if l.res == nil {
+		return ""
+	}
 	// we use generic_task resource type, and it identifies the task
 	// by task_id.
 	// https://cloud.google.com/logging/docs/api/v2/resource-list
-	return fmt.Sprintf("https://console.cloud.google.com/logs/viewer?project=%s&resource=%s/task_id/%s", l.res.Labels["project_id"], l.res.Type, l.res.Labels["task_id"])
+	if l.started.IsZero() {
+		return fmt.Sprintf("https://console.cloud.google.com/logs/viewer?project=%s&resource=%s/task_id/%s", l.res.Labels["project_id"], l.res.Type, l.res.Labels["task_id"])
+	}
+	start := l.started.Add(-5 * time.Minute).UTC().Format(time.RFC3339)
+	end := l.started.Add(24 * time.Hour).UTC().Format(time.RFC3339)
+	return fmt.Sprintf("https://console.cloud.google.com/logs/viewer?project=%s&resource=%s/task_id/%s&startTime=%s&endTime=%s", l.res.Labels["project_id"], l.res.Type, l.res.Labels["task_id"], start, end)
 }
 
 // Span returns a sub logger for the trace span.
@@ -382,6 +393,7 @@ func (l *Logger) Span(trace, spanID string, labels map[string]string) *Logger {
 			trace:     trace,
 			spanID:    spanID,
 			labels:    labels,
+			started:   time.Now(),
 		}
 	}
 	return &Logger{
@@ -397,6 +409,7 @@ func (l *Logger) Span(trace, spanID string, labels map[string]string) *Logger {
 		otelLogger:   l.otelLogger,
 		otelProvider: l.otelProvider,
 		otelGRPCConn: l.otelGRPCConn,
+		started:      l.started,
 	}
 }
 
