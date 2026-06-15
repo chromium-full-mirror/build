@@ -33,7 +33,7 @@ import (
 
 // LstatSemaphore is a semaphore to control concurrent lstat,
 // to protect from thread exhaustion. b/365856347
-var LstatSemaphore = semaphore.New("osfs-lstat", runtime.GOMAXPROCS(0)*2)
+var LstatSemaphore = semaphore.New("osfs-lstat", runtime.GOMAXPROCS(0)*4)
 
 const writeBufSize = 96 * 1024
 
