@@ -22,6 +22,7 @@ import (
 
 	"go.chromium.org/build/siso/execute"
 	"go.chromium.org/build/siso/hashfs"
+	"go.chromium.org/build/siso/reapi"
 	"go.chromium.org/build/siso/reapi/digest"
 	"go.chromium.org/build/siso/reapi/merkletree"
 	"go.chromium.org/build/siso/reapi/reapitest"
@@ -277,6 +278,99 @@ func TestRemoteClaimFallbackIfAllowed(t *testing.T) {
 	}
 }
 
+// racingTestEnv bundles the scaffolding shared by the runRacing tests:
+// a temp dir, a fake REAPI client, a local cache store, and a hashfs
+// with OutputLocal enabled.
+type racingTestEnv struct {
+	dir        string
+	reclient   *reapi.Client
+	cachestore *LocalCache
+	hashFS     *hashfs.HashFS
+}
+
+func newRacingTestEnv(t *testing.T, fakere *reapitest.Fake) *racingTestEnv {
+	t.Helper()
+	ctx := t.Context()
+	// t.Context() is canceled before t.Cleanup functions run.
+	cleanupCtx := context.WithoutCancel(ctx)
+	dir := t.TempDir()
+	dir, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reclient := reapitest.New(ctx, t, fakere)
+	cachestore, err := NewLocalCache(filepath.Join(dir, ".siso_cache"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var ds DataSource
+	ds.Client = reclient
+	ds.Cache = cachestore
+	t.Cleanup(func() {
+		err := ds.Close(cleanupCtx)
+		if err != nil {
+			t.Error(err)
+		}
+	})
+	hashFS, err := hashfs.New(ctx, hashfs.Option{
+		DataSource:  ds,
+		OutputLocal: func(context.Context, string) bool { return true },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { hashFS.Close(cleanupCtx) })
+	return &racingTestEnv{
+		dir:        dir,
+		reclient:   reclient,
+		cachestore: cachestore,
+		hashFS:     hashFS,
+	}
+}
+
+// newBuilder creates a Builder with the racing test defaults
+// (one local slot so the test controls who wins the race);
+// mod, if non-nil, adjusts the options before the Builder is created.
+func (env *racingTestEnv) newBuilder(t *testing.T, mod func(*Options)) *Builder {
+	t.Helper()
+	opts := Options{
+		Path:         NewPath(env.dir, "out/siso"),
+		HashFS:       env.hashFS,
+		REAPIClient:  env.reclient,
+		REExecEnable: true,
+		Limits: Limits{
+			Step:    10,
+			Local:   1,
+			Remote:  10,
+			Preproc: 10,
+			Cache:   10,
+		},
+	}
+	if mod != nil {
+		mod(&opts)
+	}
+	b, err := New(t.Context(), fakeGraph{}, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return b
+}
+
+func newRacingTestStep(cmd *execute.Cmd, outputs []string) *Step {
+	return &Step{
+		outputPaths:    outputs,
+		cmd:            cmd,
+		weight:         1,
+		state:          &stepState{},
+		startReported:  new(sync.Once),
+		finishReported: new(sync.Once),
+		def: fakeStepDef{
+			actionName: "clang",
+			outputs:    outputs,
+		},
+	}
+}
+
 // TestRunRacing_StaleLocalReadyOutput checks that a racing remote win
 // self-heals a stale local-ready hashfs entry whose file was removed from
 // disk behind siso's back (e.g. by a pre-build cleanup step after
@@ -295,12 +389,6 @@ func TestRemoteClaimFallbackIfAllowed(t *testing.T) {
 //     "failed to flush outputs to local".
 func TestRunRacing_StaleLocalReadyOutput(t *testing.T) {
 	ctx := t.Context()
-	dir := t.TempDir()
-	dir, err := filepath.EvalSymlinks(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-
 	content := []byte("stubs content")
 	fakere := &reapitest.Fake{
 		ExecuteFunc: func(fakere *reapitest.Fake, action *rpb.Action) (*rpb.ActionResult, error) {
@@ -319,35 +407,14 @@ func TestRunRacing_StaleLocalReadyOutput(t *testing.T) {
 			}, nil
 		},
 	}
-	reclient := reapitest.New(ctx, t, fakere)
-
-	cachestore, err := NewLocalCache(filepath.Join(dir, ".siso_cache"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	var ds DataSource
-	ds.Client = reclient
-	ds.Cache = cachestore
-	defer func() {
-		err := ds.Close(ctx)
-		if err != nil {
-			t.Error(err)
-		}
-	}()
-
-	hashFS, err := hashfs.New(ctx, hashfs.Option{
-		DataSource:  ds,
-		OutputLocal: func(context.Context, string) bool { return true },
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer hashFS.Close(ctx)
+	env := newRacingTestEnv(t, fakere)
+	dir := env.dir
+	hashFS := env.hashFS
 
 	// Simulate .siso_fs_state retention: a local-ready entry (lready
 	// closed because the file exists on disk) with an old mtime.
 	stubsPath := filepath.Join(dir, "stubs.jar")
-	err = os.WriteFile(stubsPath, content, 0644)
+	err := os.WriteFile(stubsPath, content, 0644)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -413,56 +480,29 @@ func TestRunRacing_StaleLocalReadyOutput(t *testing.T) {
 			},
 		},
 	}
-	err = cachestore.SetActionResult(ctx, actionDigest, actionResult)
+	err = env.cachestore.SetActionResult(ctx, actionDigest, actionResult)
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = cachestore.SetContent(ctx, digest.FromProto(dg), "stubs.jar", content)
+	err = env.cachestore.SetContent(ctx, digest.FromProto(dg), "stubs.jar", content)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	cache, err := NewCache(ctx, CacheOptions{
-		Store:      cachestore,
+		Store:      env.cachestore,
 		EnableRead: true,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	opts := Options{
-		Path:              NewPath(dir, "out/siso"),
-		HashFS:            hashFS,
-		REAPIClient:       reclient,
-		REExecEnable:      true,
-		RECacheEnableRead: true,
-		Cache:             cache,
-		Limits: Limits{
-			Step:    10,
-			Local:   1,
-			Remote:  10,
-			Preproc: 10,
-			Cache:   10,
-		},
-	}
-	graph := fakeGraph{}
-	b, err := New(ctx, graph, opts)
-	if err != nil {
-		t.Fatal(err)
-	}
+	b := env.newBuilder(t, func(opts *Options) {
+		opts.RECacheEnableRead = true
+		opts.Cache = cache
+	})
 
-	step := &Step{
-		outputPaths:    []string{"stubs.jar"},
-		cmd:            cmd,
-		weight:         1,
-		state:          &stepState{},
-		startReported:  new(sync.Once),
-		finishReported: new(sync.Once),
-		def: fakeStepDef{
-			actionName: "clang",
-			outputs:    []string{"stubs.jar"},
-		},
-	}
+	step := newRacingTestStep(cmd, []string{"stubs.jar"})
 
 	// Hold the only local semaphore slot so the local racer can never
 	// start the command and the remote racer deterministically wins.
@@ -494,12 +534,6 @@ func TestRunRacing_RemoteWinFlushFailureFallsBackToLocal(t *testing.T) {
 		t.Skip("test runs /bin/sh")
 	}
 	ctx := t.Context()
-	dir := t.TempDir()
-	dir, err := filepath.EvalSymlinks(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-
 	content := []byte("stubs content")
 	// The remote action result references the digest of content, but the
 	// blob is never uploaded to CAS, so flushing the remote outputs to
@@ -518,30 +552,8 @@ func TestRunRacing_RemoteWinFlushFailureFallsBackToLocal(t *testing.T) {
 			}, nil
 		},
 	}
-	reclient := reapitest.New(ctx, t, fakere)
-
-	cachestore, err := NewLocalCache(filepath.Join(dir, ".siso_cache"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	var ds DataSource
-	ds.Client = reclient
-	ds.Cache = cachestore
-	defer func() {
-		err := ds.Close(ctx)
-		if err != nil {
-			t.Error(err)
-		}
-	}()
-
-	hashFS, err := hashfs.New(ctx, hashfs.Option{
-		DataSource:  ds,
-		OutputLocal: func(context.Context, string) bool { return true },
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer hashFS.Close(ctx)
+	env := newRacingTestEnv(t, fakere)
+	dir := env.dir
 
 	// The local command sleeps so that the remote racer reliably wins,
 	// then writes the expected content when run as the fallback.
@@ -549,46 +561,17 @@ func TestRunRacing_RemoteWinFlushFailureFallsBackToLocal(t *testing.T) {
 		Args:          []string{"/bin/sh", "-c", "sleep 2; printf 'stubs content' > stubs.jar"},
 		Outputs:       []string{"stubs.jar"},
 		WorkspaceRoot: dir,
-		HashFS:        hashFS,
+		HashFS:        env.hashFS,
 		Platform:      map[string]string{"container-image": "docker://ubuntu"},
 		Pure:          true,
 		CmdHash:       []byte("cmdhash"),
 	}
 	cmd.InitOutputs()
 
-	opts := Options{
-		Path:         NewPath(dir, "out/siso"),
-		HashFS:       hashFS,
-		REAPIClient:  reclient,
-		REExecEnable: true,
-		Limits: Limits{
-			Step:    10,
-			Local:   1,
-			Remote:  10,
-			Preproc: 10,
-			Cache:   10,
-		},
-	}
-	graph := fakeGraph{}
-	b, err := New(ctx, graph, opts)
-	if err != nil {
-		t.Fatal(err)
-	}
+	b := env.newBuilder(t, nil)
+	step := newRacingTestStep(cmd, []string{"stubs.jar"})
 
-	step := &Step{
-		outputPaths:    []string{"stubs.jar"},
-		cmd:            cmd,
-		weight:         1,
-		state:          &stepState{},
-		startReported:  new(sync.Once),
-		finishReported: new(sync.Once),
-		def: fakeStepDef{
-			actionName: "clang",
-			outputs:    []string{"stubs.jar"},
-		},
-	}
-
-	err = b.runRacing(ctx, step)
+	err := b.runRacing(ctx, step)
 	if err != nil {
 		t.Fatalf("runRacing=%v; want nil err (local fallback)", err)
 	}
