@@ -390,9 +390,8 @@ type entryState struct {
 	ent *pb.Entry      // file entry state at the last build.
 	et  entryStateType // indicate mtime difference from local disk
 
-	ftype string    // valid if "dir","symlink" or "file"
-	e     entry     // file entry data
-	dir   directory // used if ftype="dir"
+	ftype string // valid if "dir","symlink" or "file"
+	e     entry  // file entry data
 
 	prevGenerated bool // if file is generated output of build step.
 	tainted       bool // if file is generated, but modified locally.
@@ -602,8 +601,8 @@ func (ies *initialEntryStates) initStateEntry(ctx context.Context, es *entryStat
 		mode |= fs.ModeSymlink
 	} else {
 		es.ftype = "dir"
-		// directory
-		dir = &es.dir
+		// Only dir entries need a child map.
+		dir = &directory{}
 		mode |= fs.ModeDir
 	}
 	updatedTime := time.Unix(0, es.ent.UpdatedTime)
