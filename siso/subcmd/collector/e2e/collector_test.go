@@ -9,17 +9,27 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strconv"
-	"strings"
 	"testing"
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+)
+
+// siso-owned settings the rendered /health/config must report back. testProject
+// is supplied to the collector at launch; the rest mirror config.yaml.
+const (
+	testProject    = "test"
+	metricPrefix   = "workload.googleapis.com/siso"
+	defaultLogName = "opentelemetry.io/collector-exported-log"
+	otlpReceiver   = "otlp"
+	gceExporter    = "googlecloud"
 )
 
 // e2e test takes around 5 second to complete.
@@ -53,10 +63,11 @@ func buildSiso(t *testing.T) string {
 }
 
 func testCollectorTCP(t *testing.T, sisoBin string) {
-	otelPort := "4317"
+	// Bind the otlp receiver to a free port so concurrent runs don't collide.
+	otlpAddr := freeAddr(t)
 
 	// 1. Start collector
-	baseURL := startCollector(t, sisoBin, "localhost:"+otelPort, otelPort)
+	baseURL := startCollector(t, sisoBin, otlpAddr)
 
 	// 2. Verify Status
 	t.Run("Status", func(t *testing.T) {
@@ -65,7 +76,7 @@ func testCollectorTCP(t *testing.T, sisoBin string) {
 
 	// 3. Verify Config
 	t.Run("Config", func(t *testing.T) {
-		verifyConfig(t, baseURL, "localhost:4317", "tcp")
+		verifyConfig(t, baseURL, otlpAddr, "tcp")
 	})
 }
 
@@ -108,21 +119,31 @@ func testCollectorUnix(t *testing.T, sisoBin string) {
 	})
 }
 
-func startCollector(t *testing.T, sisoBin, collectorAddr string, extraPorts ...string) string {
+// startCollector launches "siso collector" with its otlp receiver on otlpAddr
+// and returns the health-check HTTP base URL once the collector is healthy.
+func startCollector(t *testing.T, sisoBin, otlpAddr string) string {
 	t.Helper()
-	healthPort := "13133"
-	killProcessOnPort(t, healthPort)
-	killProcessOnPort(t, "15154")
-	for _, p := range extraPorts {
-		killProcessOnPort(t, p)
-	}
+
+	// Pick free ports for the health and internal-metrics listeners. Their
+	// production defaults (13133/13132/15154) are fixed, so without overrides
+	// a second collector on the same host fails to bind and never reports
+	// healthy. Allocate them in one batch so they're guaranteed distinct.
+	ports := freePorts(t, 3)
+	healthAddr := loopbackAddr(ports[0])
+	healthGRPC := loopbackAddr(ports[1])
+	metricsPort := ports[2]
 
 	cmd := exec.Command(sisoBin, "collector",
-		"-project=test",
-		"-collector_address="+collectorAddr,
+		"-project="+testProject,
+		"-collector_address="+otlpAddr,
 		"-insecure",
 	)
-	cmd.Env = append(os.Environ(), "SISO_CREDENTIAL_HELPER=mTLS")
+	cmd.Env = append(os.Environ(),
+		"SISO_CREDENTIAL_HELPER=mTLS",
+		"SISO_COLLECTOR_HEALTH_ENDPOINT="+healthAddr,
+		"SISO_COLLECTOR_HEALTH_GRPC_ENDPOINT="+healthGRPC,
+		"SISO_COLLECTOR_METRICS_PORT="+strconv.Itoa(metricsPort),
+	)
 
 	var buf bytes.Buffer
 	cmd.Stdout = &buf
@@ -140,9 +161,9 @@ func startCollector(t *testing.T, sisoBin, collectorAddr string, extraPorts ...s
 		}
 	})
 
-	baseURL := "http://localhost:" + healthPort
+	baseURL := "http://" + healthAddr
 	if err := waitForHealth(baseURL+"/health/status", 10*time.Second); err != nil {
-		t.Fatalf("collector failed to become healthy: %v", err)
+		t.Fatalf("collector failed to become healthy: %v\noutput:\n%s", err, buf.String())
 	}
 	return baseURL
 }
@@ -172,6 +193,11 @@ func verifyStatus(t *testing.T, baseURL string) {
 	checkGolden(t, got, goldenPath)
 }
 
+// verifyConfig checks the fields of the rendered collector config that siso
+// actually controls: the otlp receiver wired from -collector_address, the
+// googlecloud exporter settings from config.yaml, and the telemetry pipelines.
+// The rest of the rendered config is upstream collector defaults and is left
+// unchecked so a dependency bump can't break this test for no real reason.
 func verifyConfig(t *testing.T, baseURL, expectedEndpoint, expectedTransport string) {
 	t.Helper()
 	resp, err := http.Get(baseURL + "/health/config")
@@ -184,46 +210,106 @@ func verifyConfig(t *testing.T, baseURL, expectedEndpoint, expectedTransport str
 		t.Fatalf("failed to read body: %v", err)
 	}
 
-	var got map[string]any
-	if err := json.Unmarshal(body, &got); err != nil {
+	var cfg struct {
+		Receivers struct {
+			OTLP struct {
+				Protocols struct {
+					GRPC struct {
+						Endpoint  string `json:"endpoint"`
+						Transport string `json:"transport"`
+					} `json:"grpc"`
+				} `json:"protocols"`
+			} `json:"otlp"`
+		} `json:"receivers"`
+		Exporters struct {
+			GoogleCloud struct {
+				Project string `json:"project"`
+				Log     struct {
+					DefaultLogName string `json:"default_log_name"`
+				} `json:"log"`
+				Metric struct {
+					Prefix string `json:"prefix"`
+				} `json:"metric"`
+			} `json:"googlecloud"`
+		} `json:"exporters"`
+		Service struct {
+			Pipelines map[string]struct {
+				Receivers []string `json:"receivers"`
+				Exporters []string `json:"exporters"`
+			} `json:"pipelines"`
+		} `json:"service"`
+	}
+	if err := json.Unmarshal(body, &cfg); err != nil {
 		t.Fatalf("failed to unmarshal config: %v", err)
 	}
 
-	// Navigate to receivers.otlp.protocols.grpc
-	receivers, ok := got["receivers"].(map[string]any)
-	if !ok {
-		t.Fatalf("config missing 'receivers'")
+	grpc := cfg.Receivers.OTLP.Protocols.GRPC
+	if grpc.Endpoint != expectedEndpoint {
+		t.Errorf("otlp endpoint = %q, want %q", grpc.Endpoint, expectedEndpoint)
 	}
-	otlp, ok := receivers["otlp"].(map[string]any)
-	if !ok {
-		t.Fatalf("config missing 'otlp'")
-	}
-	protocols, ok := otlp["protocols"].(map[string]any)
-	if !ok {
-		t.Fatalf("config missing 'protocols'")
-	}
-	grpcCfg, ok := protocols["grpc"].(map[string]any)
-	if !ok {
-		t.Fatalf("config missing 'grpc'")
+	if grpc.Transport != expectedTransport {
+		t.Errorf("otlp transport = %q, want %q", grpc.Transport, expectedTransport)
 	}
 
-	endpoint, _ := grpcCfg["endpoint"].(string)
-	transport, _ := grpcCfg["transport"].(string)
-
-	if endpoint != expectedEndpoint {
-		t.Errorf("expected endpoint %q, got %q", expectedEndpoint, endpoint)
+	gce := cfg.Exporters.GoogleCloud
+	if gce.Project != testProject {
+		t.Errorf("googlecloud project = %q, want %q", gce.Project, testProject)
 	}
-	if transport != expectedTransport {
-		t.Errorf("expected transport %q, got %q", expectedTransport, transport)
+	if gce.Metric.Prefix != metricPrefix {
+		t.Errorf("googlecloud metric prefix = %q, want %q", gce.Metric.Prefix, metricPrefix)
+	}
+	if gce.Log.DefaultLogName != defaultLogName {
+		t.Errorf("googlecloud log default_log_name = %q, want %q", gce.Log.DefaultLogName, defaultLogName)
 	}
 
-	// Scrub to match golden
-	// Golden expects localhost:4317 and tcp
-	grpcCfg["endpoint"] = "localhost:4317"
-	grpcCfg["transport"] = "tcp"
+	// Every telemetry signal must flow otlp -> googlecloud.
+	for _, signal := range []string{"traces", "metrics", "logs"} {
+		p, ok := cfg.Service.Pipelines[signal]
+		if !ok {
+			t.Errorf("missing %q pipeline", signal)
+			continue
+		}
+		if diff := cmp.Diff([]string{otlpReceiver}, p.Receivers); diff != "" {
+			t.Errorf("%q pipeline receivers mismatch (-want +got):\n%s", signal, diff)
+		}
+		if diff := cmp.Diff([]string{gceExporter}, p.Exporters); diff != "" {
+			t.Errorf("%q pipeline exporters mismatch (-want +got):\n%s", signal, diff)
+		}
+	}
+}
 
-	goldenPath := filepath.Join("testdata", "health_config.json")
-	checkGolden(t, got, goldenPath)
+func loopbackAddr(port int) string {
+	return "127.0.0.1:" + strconv.Itoa(port)
+}
+
+// freeAddr returns a "127.0.0.1:<port>" loopback address whose port is free.
+func freeAddr(t *testing.T) string {
+	t.Helper()
+	return loopbackAddr(freePorts(t, 1)[0])
+}
+
+// freePorts reserves n distinct free loopback TCP ports and returns them. Every
+// listener is held open until all n are chosen, so the kernel cannot hand the
+// same port out twice; they are then closed for the collector to bind. A port
+// could still be taken in the gap before the collector binds it, but ephemeral
+// ports make that vanishingly unlikely, unlike the fixed ports the daemon
+// defaults to. Only TCP is probed because every collector listener is TCP.
+func freePorts(t *testing.T, n int) []int {
+	t.Helper()
+	listeners := make([]net.Listener, 0, n)
+	ports := make([]int, 0, n)
+	for range n {
+		l, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatalf("failed to allocate free port: %v", err)
+		}
+		listeners = append(listeners, l)
+		ports = append(ports, l.Addr().(*net.TCPAddr).Port)
+	}
+	for _, l := range listeners {
+		l.Close()
+	}
+	return ports
 }
 
 func waitForHealth(url string, timeout time.Duration) error {
@@ -274,64 +360,5 @@ func checkGolden(t *testing.T, got any, goldenPath string) {
 
 	if diff := cmp.Diff(want, got); diff != "" {
 		t.Errorf("Mismatch (-want +got):\n%s", diff)
-	}
-}
-
-func killProcessOnPort(t *testing.T, port string) {
-	t.Helper()
-	if runtime.GOOS == "windows" {
-		out, err := exec.Command("netstat", "-aon").Output()
-		if err != nil {
-			t.Logf("netstat failed: %v", err)
-			return
-		}
-		lines := strings.Split(string(out), "\n")
-		target := "127.0.0.1:" + port
-
-		for _, line := range lines {
-			parts := strings.Fields(line)
-			if len(parts) < 5 {
-				continue
-			}
-			// Proto Local Address Foreign Address State PID
-			// TCP    127.0.0.1:13133   0.0.0.0:0       LISTENING     34228
-			// parts[1] is local address.
-			if parts[1] == target {
-				// PID is the last element.
-				pid := parts[len(parts)-1]
-				if pid != "0" {
-					// Kill the very first non 0 process we find.
-					err := exec.Command("taskkill", "/F", "/T", "/PID", pid).Run()
-					if err != nil {
-						t.Logf("Failed to kill PID %s: %v", pid, err)
-					} else {
-						t.Logf("Killed PID %s on port %s", pid, port)
-					}
-					return
-				}
-			}
-		}
-		return
-	}
-	// lsof -t -i:PORT returns PIDs.
-	out, err := exec.Command("lsof", "-t", "-i:"+port).Output()
-	if err != nil {
-		// Likely no process found (exit code 1).
-		return
-	}
-	pidStr := strings.Fields(string(out))[0]
-
-	pid, err := strconv.Atoi(pidStr)
-	if err != nil {
-		return
-	}
-	proc, err := os.FindProcess(pid)
-	if err != nil {
-		return
-	}
-	if err := proc.Kill(); err != nil {
-		t.Logf("Failed to kill PID %d: %v", pid, err)
-	} else {
-		t.Logf("Killed PID %d on port %s", pid, port)
 	}
 }

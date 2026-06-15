@@ -4,6 +4,10 @@
 
 # This is collector config for siso.
 # See https://opentelemetry.io/docs/collector/configuration/ for more details.
+#
+# The health-check and internal-metrics listen addresses default to fixed ports
+# but can be overridden via environment variables so that multiple collectors
+# (e.g. parallel e2e tests) can run on one host without port collisions.
 receivers:
   otlp:
     protocols:
@@ -24,7 +28,7 @@ service:
             exporter:
               prometheus:
                 host: "localhost"
-                port: 15154
+                port: ${env:SISO_COLLECTOR_METRICS_PORT:-15154}
   pipelines:
     traces:
       receivers: [otlp]
@@ -48,7 +52,7 @@ extensions:
       include_recoverable_errors: true
       recovery_duration: 5m
     http:
-      endpoint: "localhost:13133"
+      endpoint: "${env:SISO_COLLECTOR_HEALTH_ENDPOINT:-localhost:13133}"
       status:
         enabled: true
         path: "/health/status"
@@ -56,5 +60,5 @@ extensions:
         enabled: true
         path: "/health/config"
     grpc:
-      endpoint: "localhost:13132"
+      endpoint: "${env:SISO_COLLECTOR_HEALTH_GRPC_ENDPOINT:-localhost:13132}"
       transport: "tcp"
