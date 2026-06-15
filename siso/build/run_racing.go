@@ -33,8 +33,9 @@ type raceResult struct {
 
 // runRacing runs a step with local and remote execution in parallel.
 // Whichever finishes first wins; the loser is cancelled.
-// If the remote side fails (during execution or while flushing its
-// outputs to the local disk), it falls back to local execution when
+// If the remote side fails (during execution or while post-processing
+// its result: downloading outputs, updating deps, or flushing outputs
+// to the local disk), it falls back to local execution when
 // remoteClaimFallbackIfAllowed permits; otherwise the step fails.
 func (b *Builder) runRacing(ctx context.Context, step *Step) error {
 	ctx, span := trace.NewSpan(ctx, "racing")
@@ -150,13 +151,21 @@ func (b *Builder) runRacing(ctx context.Context, step *Step) error {
 		step.metrics.RacingWinner = "remote"
 		clog.Infof(ctx, "racing: remote won")
 
-		// The remote racer won (or failed irrecoverably).
-		// Download outputs and stdout/stderr now.
-		downloadErr := b.execRemoteDownload(ctx, step, winner.err)
-		if downloadErr != nil {
-			return downloadErr
+		if winner.err != nil {
+			// The remote goroutine already ran remoteClaimFallbackIfAllowed
+			// and was denied fallback. Fetch stdout/stderr for the failure
+			// report and fail the step.
+			return b.execRemoteDownload(ctx, step, winner.err)
 		}
 
+		// Post-process the remote result. Any failure here (downloading
+		// outputs, updating deps, missing outputs, or flushing outputs to
+		// the local disk) falls back to local execution, like runRemote does.
+
+		// Download outputs and stdout/stderr now.
+		if err := b.execRemoteDownload(ctx, step, nil); err != nil {
+			return b.fallbackLocal(ctx, step, err)
+		}
 		// The loser (local) has been canceled and drained - on cancellation
 		// localexec kills the action's whole process group and waits until it is
 		// empty, so nothing is still writing - but it might have already deleted
@@ -169,23 +178,20 @@ func (b *Builder) runRacing(ctx context.Context, step *Step) error {
 		// outputs are still "local-ready" (up-to-date) on the local disk.
 		// This forces Siso to download/verify them during b.outputs().
 		step.cmd.HashFS.ForgetOutputs(ctx, step.cmd.WorkspaceRoot, step.cmd.AllOutputs())
-
-		// Re-record the remote outputs
-		// so that updateDeps and outputs see the correct state.
+		// Re-record the remote outputs so that updateDeps and b.outputs
+		// see the correct state.
 		if err := step.cmd.RecordOutputs(ctx, step.cmd.HashFS.DataSource(), time.Now()); err != nil {
-			return err
-		}
-		if err := b.updateDeps(ctx, step); err != nil {
-			return err
-		}
-		err := b.outputs(ctx, step)
-		if errors.Is(err, errFlushOutput) {
-			// Flushing the remote outputs to the local disk failed
-			// (e.g. a blob is missing from CAS). Fall back to local
-			// execution to regenerate the outputs, like runRemote does.
 			return b.fallbackLocal(ctx, step, err)
 		}
-		return err
+		// Update deps from the remote result (gcc depsfile / msvc showIncludes).
+		if err := b.updateDeps(ctx, step); err != nil {
+			return b.fallbackLocal(ctx, step, err)
+		}
+		// Flush the outputs to the local disk.
+		if err := b.outputs(ctx, step); err != nil {
+			return b.fallbackLocal(ctx, step, err)
+		}
+		return nil
 
 	case raceLocal:
 		step.metrics.RacingWinner = "local"
