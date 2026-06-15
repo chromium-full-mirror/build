@@ -141,8 +141,9 @@ Use "siso flags" to display all flags.
 		}
 	}()
 
+	authOpts := cred.AuthOpts(credHelper)
 	if printVersion {
-		return int(version.Cmd(versionStr).Execute(ctx, flag.CommandLine))
+		return int(version.Cmd(versionStr, authOpts).Execute(ctx, flag.CommandLine))
 	}
 	if blockprofile != "" && blockprofRate == 0 {
 		blockprofRate = 1
@@ -270,7 +271,6 @@ Use "siso flags" to display all flags.
 	ui.Init()
 	defer ui.Restore()
 
-	authOpts := cred.AuthOpts(credHelper)
 	subcommands.Register(ninja.Cmd(authOpts, versionID), "")
 
 	subcommands.Register(recall.Cmd(authOpts), "reapi")
@@ -298,7 +298,7 @@ Use "siso flags" to display all flags.
 
 	subcommands.Register(subcommands.FlagsCommand(), "command-help")
 	subcommands.Register(subcommands.HelpCommand(), "command-help")
-	subcommands.Register(version.Cmd(versionStr), "command-help")
+	subcommands.Register(version.Cmd(versionStr, authOpts), "command-help")
 
 	return int(subcommands.Execute(ctx))
 }

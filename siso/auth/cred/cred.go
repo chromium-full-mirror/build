@@ -261,6 +261,29 @@ func (c Cred) ClientOptions() []option.ClientOption {
 	}
 }
 
+// AuthorizationHeader returns authorization header for http request.
+func (c Cred) AuthorizationHeader(ctx context.Context) string {
+	tokenSource := c.tokenSource
+	if tokenSource != nil && c.Type == "google-application-default" {
+		adc, err := google.FindDefaultCredentials(ctx, "https://www.googleapis.com/auth/cloud-platform")
+		if err != nil {
+			clog.Warningf(ctx, "failed to get adc: %v", err)
+			return ""
+		}
+		tokenSource = adc.TokenSource
+	}
+	if tokenSource == nil {
+		clog.Warningf(ctx, "no tokenSource %q", c.Type)
+		return ""
+	}
+	token, err := tokenSource.Token()
+	if err != nil {
+		clog.Warningf(ctx, "failed to get token: %v", err)
+		return ""
+	}
+	return fmt.Sprintf("Bearer %s", token.AccessToken)
+}
+
 type lazyCredWrapper struct {
 	opts Options
 	uri  string

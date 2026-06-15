@@ -16,22 +16,27 @@ import (
 	"io"
 	"maps"
 	"net/http"
+	"net/url"
 	"os"
+	"path"
 	"slices"
 	"strings"
 	"time"
 
 	"github.com/google/subcommands"
 
+	"go.chromium.org/build/siso/auth/cred"
+	"go.chromium.org/build/siso/o11y/clog"
 	"go.chromium.org/build/siso/version"
 )
 
 const cipdServiceURL = "https://chrome-infra-packages.appspot.com"
 
 // Cmd returns the Command for the `version` subcommand.
-func Cmd(ver string) *Command {
+func Cmd(ver string, authOpts cred.Options) *Command {
 	return &Command{
-		version: ver,
+		version:  ver,
+		authOpts: authOpts,
 	}
 }
 
@@ -49,7 +54,9 @@ func (*Command) Usage() string {
 
 // Command implements version subcommand.
 type Command struct {
-	version string
+	version  string
+	authOpts cred.Options
+
 	cipdURL string
 	online  bool
 }
@@ -126,9 +133,9 @@ func (c *Command) Execute(ctx context.Context, flagSet *flag.FlagSet, _ ...any) 
 		fmt.Fprintf(os.Stderr, "unknown git_repository: %s\n", repo)
 		return 0
 	}
-	sisoCommit, err := getSisoCommit(ctx, repo, dir, rev)
+	sisoCommit, err := c.sisoCommit(ctx, repo, dir, rev)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "failed to get siso commit in infra.git@%s: %v\n", rev, err)
+		fmt.Fprintf(os.Stderr, "failed to get siso commit in %s.git@%s: %v\n", path.Base(repo), rev, err)
 		return 0
 	}
 	fmt.Println(sisoCommit)
@@ -221,12 +228,37 @@ func (c commit) String() string {
 	return fmt.Sprintf("%s %s\n %s by %s", c.revision[:10], c.summary, c.date.Format(time.RFC3339), c.author)
 }
 
-func getSisoCommit(ctx context.Context, repo, dir, rev string) (commit, error) {
+func authenticatedURL(repoURL string) string {
+	u, err := url.Parse(repoURL)
+	if err != nil {
+		return repoURL
+	}
+	if !strings.HasPrefix(u.Path, "/a/") && u.Path != "/a" {
+		u.Path = "/a" + u.Path
+	}
+	return u.String()
+}
+
+func (c *Command) sisoCommit(ctx context.Context, repo, dir, rev string) (commit, error) {
+	var authHeader string
+	credential, err := cred.New(ctx, repo, c.authOpts)
+	if err != nil {
+		clog.Warningf(ctx, "failed to init cred: %v", err)
+	} else {
+		authHeader = credential.AuthorizationHeader(ctx)
+		if authHeader != "" {
+			repo = authenticatedURL(repo)
+		}
+	}
 	sisoLogURL := fmt.Sprintf("%s/+log/%s/%s?format=JSON", repo, rev, dir)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, sisoLogURL, nil)
 	if err != nil {
 		return commit{}, nil
 	}
+	if authHeader != "" {
+		req.Header.Add("Authorization", authHeader)
+	}
+
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return commit{}, err
