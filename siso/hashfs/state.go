@@ -781,19 +781,27 @@ func (ies *initialEntryStates) clean() bool {
 	return ies.nnew.Load() == 0 && ies.nnotexist.Load() == 0 && ies.nfail.Load() == 0 && ies.ninvalidate.Load() == 0 && len(ies.missingOutputs) == 0 && len(ies.missingDigests) == 0
 }
 
-// storeDirs stores dir entries in hfs.
-func (ies *initialEntryStates) storeDirs(ctx context.Context, hfs *HashFS) error {
+// storeEntries stores every entry for which keep(ftype) is true, splitting
+// ies.alloc into one chunk per worker.
+func (ies *initialEntryStates) storeEntries(ctx context.Context, hfs *HashFS, keep func(ftype string) bool) error {
 	eg, ctx := errgroup.WithContext(ctx)
-	eg.SetLimit(runtime.GOMAXPROCS(0))
-	for i := range ies.alloc {
-		es := &ies.alloc[i]
-		if es.ftype != "dir" {
-			continue
-		}
+	n := len(ies.alloc)
+	nworkers := min(runtime.GOMAXPROCS(0), n)
+	if nworkers < 1 {
+		return nil
+	}
+	chunk := (n + nworkers - 1) / nworkers
+	for start := 0; start < n; start += chunk {
+		end := min(start+chunk, n)
 		eg.Go(func() error {
-			_, err := hfs.directory.store(ctx, es.ent.Name, &es.e)
-			if err != nil {
-				return fmt.Errorf("failed to store dir %q: %w", es.ent.Name, err)
+			for i := start; i < end; i++ {
+				es := &ies.alloc[i]
+				if !keep(es.ftype) {
+					continue
+				}
+				if _, err := hfs.directory.store(ctx, es.ent.Name, &es.e); err != nil {
+					return fmt.Errorf("failed to store %s %q: %w", es.ftype, es.ent.Name, err)
+				}
 			}
 			return nil
 		})
@@ -801,24 +809,16 @@ func (ies *initialEntryStates) storeDirs(ctx context.Context, hfs *HashFS) error
 	return eg.Wait()
 }
 
+// storeDirs stores dir entries in hfs.
+func (ies *initialEntryStates) storeDirs(ctx context.Context, hfs *HashFS) error {
+	return ies.storeEntries(ctx, hfs, func(ftype string) bool { return ftype == "dir" })
+}
+
 // storeNonDirs stores non-dir entries (files, symlinks) in hfs.
 func (ies *initialEntryStates) storeNonDirs(ctx context.Context, hfs *HashFS) error {
-	eg, ctx := errgroup.WithContext(ctx)
-	eg.SetLimit(runtime.GOMAXPROCS(0))
-	for i := range ies.alloc {
-		es := &ies.alloc[i]
-		switch es.ftype {
-		case "symlink", "file":
-			eg.Go(func() error {
-				_, err := hfs.directory.store(ctx, es.ent.Name, &es.e)
-				if err != nil {
-					return fmt.Errorf("failed to store %s %q: %w", es.ftype, es.ent.Name, err)
-				}
-				return nil
-			})
-		}
-	}
-	return eg.Wait()
+	return ies.storeEntries(ctx, hfs, func(ftype string) bool {
+		return ftype == "symlink" || ftype == "file"
+	})
 }
 
 // triggerDigestCalculation triggers digest calculation for missing digest files.
