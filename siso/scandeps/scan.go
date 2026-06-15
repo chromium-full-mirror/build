@@ -149,6 +149,12 @@ type scanResult struct {
 	err error
 }
 
+func (s *scanResult) String() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return fmt.Sprintf("done=%t includes=%q defines=%q symlinkTargets=%q: %v", s.done, s.includes, s.defines, s.symlinkTargets, s.err)
+}
+
 func (fsys *filesystem) scanner(ctx context.Context, workspaceRoot string, inputDeps map[string][]string, precomputedTrees []string) *scanner {
 	s := scannerPool.Get().(*scanner)
 	s.reset(fsys, workspaceRoot, inputDeps, precomputedTrees)
