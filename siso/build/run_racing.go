@@ -183,13 +183,7 @@ func (b *Builder) runRacing(ctx context.Context, step *Step) error {
 			// Flushing the remote outputs to the local disk failed
 			// (e.g. a blob is missing from CAS). Fall back to local
 			// execution to regenerate the outputs, like runRemote does.
-			ok, ferr := b.remoteClaimFallbackIfAllowed(ctx, step, err)
-			if !ok {
-				return ferr
-			}
-			clog.Warningf(ctx, "racing: remote won, but flush failed, fallback to local: %v", err)
-			b.setupFallback(ctx, step, err)
-			return b.execLocal(ctx, step)
+			return b.fallbackLocal(ctx, step, err)
 		}
 		return err
 

@@ -114,6 +114,18 @@ func (b *Builder) remoteClaimFallbackIfAllowed(ctx context.Context, step *Step, 
 	return true, nil
 }
 
+// fallbackLocal falls back to local execution after remote failure err
+// if remoteClaimFallbackIfAllowed permits; otherwise it returns the
+// step failure error.
+func (b *Builder) fallbackLocal(ctx context.Context, step *Step, err error) error {
+	ok, ferr := b.remoteClaimFallbackIfAllowed(ctx, step, err)
+	if !ok {
+		return ferr
+	}
+	b.setupFallback(ctx, step, err)
+	return b.execLocal(ctx, step)
+}
+
 func (b *Builder) setupFallback(ctx context.Context, step *Step, err error) {
 	b.progressStepFallback(step)
 	step.metrics.IsRemote = false
@@ -185,17 +197,9 @@ func (b *Builder) runRemote(ctx context.Context, step *Step) error {
 		if errors.Is(err, errRemoteExecDisabled) {
 			return b.execLocal(ctx, step)
 		}
-		ok, ferr := b.remoteClaimFallbackIfAllowed(ctx, step, err)
-		if !ok {
-			return ferr
-		}
-		b.setupFallback(ctx, step, err)
-		err = b.execLocal(ctx, step)
-		if err != nil {
-			return err
-		}
+		return b.fallbackLocal(ctx, step, err)
 	}
-	return err
+	return nil
 }
 
 func (b *Builder) runRemoteStep(ctx context.Context, step *Step, cacheCheck bool) error {
