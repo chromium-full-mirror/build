@@ -581,7 +581,11 @@ func createLargeBenchmarkState(tb testing.TB, numEntries int) *pb.State {
 		".svg", ".png", ".txt",
 	}
 
-	const prefix = "/home/user/chromium/src/"
+	// Root the synthetic paths at a real temp directory. The children never
+	// exist, so SetState's updateFromDisk lstat is a fast ENOENT on every OS.
+	// A fixed absolute prefix is not portable: on macOS /home is an autofs
+	// automount, so stat'ing paths under /home/... blocks in the automounter.
+	prefix := tb.TempDir() + "/"
 
 	// Pre-generate hash pools with realistic reuse rates from real data:
 	//   CmdHash:  ~90k unique values shared across ~178k entries (49% reuse)
@@ -786,4 +790,27 @@ func BenchmarkCompression(b *testing.B) {
 			})
 		}
 	})
+}
+
+// BenchmarkSetStateLoad loads a large, Chromium-like fs state into a fresh
+// HashFS, as build startup does.
+func BenchmarkSetStateLoad(b *testing.B) {
+	state := createLargeBenchmarkState(b, 400000)
+	ctx := b.Context()
+	b.ReportAllocs()
+	var keep *hashfs.HashFS
+	for b.Loop() {
+		hfs, err := hashfs.New(ctx, hashfs.Option{})
+		if err != nil {
+			b.Fatal(err)
+		}
+		if err := hfs.SetState(ctx, state); err != nil {
+			b.Fatal(err)
+		}
+		if err := hfs.WaitReady(ctx); err != nil {
+			b.Fatal(err)
+		}
+		keep = hfs
+	}
+	runtime.KeepAlive(keep)
 }
