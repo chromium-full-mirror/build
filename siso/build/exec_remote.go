@@ -180,13 +180,15 @@ func (b *Builder) execRemote(ctx context.Context, step *Step) error {
 }
 
 func (b *Builder) execRemoteCache(ctx context.Context, step *Step) error {
-	ctx, span := trace.NewSpan(ctx, "exec-remote-cache")
+	ctx, span := trace.NewSpan(ctx, spanExecRemoteCache)
 	defer span.Close(nil)
+	var runSpan *trace.Span
 	var start time.Time
 	err := b.cacheSema.Do(ctx, func(ctx context.Context) error {
 		start = time.Now()
-		b.cacheStarted(step)
-		defer b.cacheFinish(step)
+		b.actionStartedSilent(step)
+		ctx, runSpan = trace.NewSpan(ctx, spanExecRemoteCacheCheck)
+		defer runSpan.Close(nil)
 		err := b.cache.GetActionResult(ctx, step.cmd)
 		if err != nil {
 			return err
@@ -214,7 +216,15 @@ func (b *Builder) execRemoteCache(ctx context.Context, step *Step) error {
 	}
 
 	// Beyond this point, we should be marking the step done.  Do that as we leave the function.
-	b.actionStartedTime(step, b.start.Add(time.Duration(step.metrics.CacheStartTime)))
+	// TODO(b/520207778): Refactor actionStartedTime. Better to decide "real start time"
+	// at the end of step so that it's easier to understand how the metrics are decided.
+	// Otherwise, need to manually trace every execution strategy to understand how metrics
+	// are decided for each step which is error-prone.
+	actionStarted := start
+	if runSpan != nil {
+		actionStarted = runSpan.Start()
+	}
+	b.actionStartedTime(step, actionStarted)
 	defer func() {
 		step.metrics.RunTime = IntervalMetric(time.Since(start))
 		step.metrics.done(ctx, step, b.start)

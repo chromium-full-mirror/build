@@ -18,6 +18,15 @@ import (
 	rbepb "go.chromium.org/build/siso/reapi/proto"
 )
 
+// Span names used for metric purposes.
+const (
+	// Total span for remote cache.
+	spanExecRemoteCache = "exec-remote-cache"
+	// Child span of [spanExecRemoteCache] measuring starting the remote cache query until it
+	// finishes, i.e. excludes cacheSema wait time.
+	spanExecRemoteCacheCheck = "exec-remote-cache-check"
+)
+
 // IntervalMetric is a time duration, but serialized as nanoseconds in JSON.
 type IntervalMetric time.Duration
 

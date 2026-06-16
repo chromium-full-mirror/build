@@ -89,9 +89,23 @@ func (b *Builder) runStep(ctx context.Context, step *Step) (retErr error) {
 		if !step.metrics.skip {
 			step.endTime = time.Now()
 			duration := step.endTime.Sub(step.startTime)
+			// Most metrics are manually measured within each execution strategy,
+			// here are some top-level metrics.
 			step.metrics.Duration = IntervalMetric(duration)
 			step.metrics.ActionEndTime = IntervalMetric(step.endTime.Sub(b.start))
 			step.metrics.Err = retErr != nil
+			// Some timings are measured using spans instead, extrapolate those
+			// into the step metrics now.
+			if tc != nil {
+				for _, s := range tc.Spans() {
+					switch s.Name {
+					case spanExecRemoteCacheCheck:
+						step.metrics.CacheTime = IntervalMetric(s.Duration())
+						step.metrics.CacheStartTime = IntervalMetric(s.Start.Sub(b.start))
+					}
+				}
+			}
+			// Other metrics.
 			stepLogEntry(ctx, logger, step, duration, retErr)
 			b.recordMetrics(ctx, step.metrics)
 			b.recordNinjaLogs(ctx, step)

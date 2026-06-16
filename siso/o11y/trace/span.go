@@ -255,6 +255,11 @@ func (s *Span) Close(st *spb.Status) {
 	s.status = st
 }
 
+// Start reads the span start time.
+func (s *Span) Start() time.Time {
+	return s.start
+}
+
 func (s *Span) protoAttrs() *tracepb.Span_Attributes {
 	if s == nil {
 		return nil
