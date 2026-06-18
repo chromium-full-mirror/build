@@ -110,16 +110,32 @@ var (
 	errUploadNoResponse  = errors.New("upload no response")
 )
 
-func (c *Client) useCompressedBlob(d digest.Digest) bool {
-	if c.opt.compressor == rpb.Compressor_IDENTITY {
-		return false
+// compressor returns a compressor for ByteStream Read/Write APIs.
+func (c *Client) compressor(d digest.Digest) rpb.Compressor_Value {
+	if d.SizeBytes < c.opt.CompressedBlob {
+		return rpb.Compressor_IDENTITY
 	}
-	return d.SizeBytes >= c.opt.CompressedBlob
+	return c.opt.compressor
 }
 
-// getCompressor returns a compressor for ByteStream Read/Write APIs.
-func (c *Client) getCompressor() rpb.Compressor_Value {
-	return c.opt.compressor
+// compressorForBatchUpdate returns a compressor for BatchUpdateBlobs API.
+func (c *Client) compressorForBatchUpdate(d digest.Digest) rpb.Compressor_Value {
+	if d.SizeBytes < c.opt.BatchCompressedBlob {
+		return rpb.Compressor_IDENTITY
+	}
+	return c.opt.compressorForBatchUpdateBlobs
+}
+
+// acceptableCompressors returns acceptable compressors for BatchReadBlobs API.
+// If blob-level compression is disabled or the blob is too small, it returns nil.
+func (c *Client) acceptableCompressors(d digest.Digest) []rpb.Compressor_Value {
+	if c.opt.BatchCompressedBlob == 0 || d.SizeBytes < c.opt.BatchCompressedBlob {
+		return nil
+	}
+	return []rpb.Compressor_Value{
+		rpb.Compressor_ZSTD,
+		rpb.Compressor_DEFLATE,
+	}
 }
 
 // resourceName constructs a resource name for reading the blob identified by the digest.
@@ -134,9 +150,9 @@ func (c *Client) getCompressor() rpb.Compressor_Value {
 // See also the API document.
 // https://github.com/bazelbuild/remote-apis/blob/64cc5e9e422c93e1d7f0545a146fd84fcc0e8b47/build/bazel/remote/execution/v2/remote_execution.proto#L285-L292
 func (c *Client) resourceName(d digest.Digest) string {
-	if c.useCompressedBlob(d) {
+	if compressor := c.compressor(d); compressor != rpb.Compressor_IDENTITY {
 		return path.Join(c.opt.Instance, "compressed-blobs",
-			strings.ToLower(c.getCompressor().String()),
+			strings.ToLower(compressor.String()),
 			d.Hash, strconv.FormatInt(d.SizeBytes, 10))
 	}
 	return path.Join(c.opt.Instance, "blobs", d.Hash, strconv.FormatInt(d.SizeBytes, 10))
@@ -168,10 +184,14 @@ var probeBufPool = sync.Pool{
 }
 
 func (c *Client) newDecoder(r io.Reader, d digest.Digest) (io.ReadCloser, error) {
-	if !c.useCompressedBlob(d) {
+	return c.newDecoderForCompressor(r, d, c.compressor(d))
+}
+
+// newDecoderForCompressor returns a decoder for the given compressor value.
+func (c *Client) newDecoderForCompressor(r io.Reader, d digest.Digest, compressor rpb.Compressor_Value) (io.ReadCloser, error) {
+	switch compressor {
+	case rpb.Compressor_IDENTITY:
 		return io.NopCloser(r), nil
-	}
-	switch comp := c.getCompressor(); comp {
 	case rpb.Compressor_ZSTD:
 		buf := probeBufPool.Get().(*bytes.Buffer)
 		buf.Reset()
@@ -205,7 +225,7 @@ func (c *Client) newDecoder(r io.Reader, d digest.Digest) (io.ReadCloser, error)
 	case rpb.Compressor_DEFLATE:
 		return flate.NewReader(r), nil
 	default:
-		return nil, fmt.Errorf("unsupported compressor %q", comp)
+		return nil, fmt.Errorf("unsupported compressor %q", compressor)
 	}
 }
 
@@ -331,8 +351,9 @@ func (c *Client) getWithBatchReadBlobs(ctx context.Context, d digest.Digest, nam
 	err := retry.Do(ctx, func() error {
 		var err error
 		resp, err = casClient.BatchReadBlobs(ctx, &rpb.BatchReadBlobsRequest{
-			InstanceName: c.opt.Instance,
-			Digests:      []*rpb.Digest{d.Proto()},
+			InstanceName:          c.opt.Instance,
+			Digests:               []*rpb.Digest{d.Proto()},
+			AcceptableCompressors: c.acceptableCompressors(d),
 		})
 		return err
 	})
@@ -344,11 +365,30 @@ func (c *Client) getWithBatchReadBlobs(ctx context.Context, d digest.Digest, nam
 		c.m.ReadDone(0, err)
 		return nil, fmt.Errorf("failed to read blobs %s for %s in %s: responses=%d", d, name, time.Since(started), len(resp.Responses))
 	}
-	c.m.ReadDone(len(resp.Responses[0].Data), err)
-	if int64(len(resp.Responses[0].Data)) != d.SizeBytes {
-		return nil, fmt.Errorf("failed to read blobs %s for %s in %s: size mismatch got=%d", d, name, time.Since(started), len(resp.Responses[0].Data))
+	data, err := c.decodeForBatchRead(d, resp.Responses[0].Data, resp.Responses[0].Compressor)
+	if err != nil {
+		c.m.ReadDone(0, err)
+		return nil, fmt.Errorf("failed to decompress blobs %s for %s in %s: %w", d, name, time.Since(started), err)
 	}
-	return resp.Responses[0].Data, nil
+	c.m.ReadDone(len(data), nil)
+	return data, nil
+}
+
+// decodeForBatchRead decompresses data from a BatchReadBlobs response.
+func (c *Client) decodeForBatchRead(d digest.Digest, data []byte, compressor rpb.Compressor_Value) ([]byte, error) {
+	r, err := c.newDecoderForCompressor(bytes.NewReader(data), d, compressor)
+	if err != nil {
+		return nil, err
+	}
+	defer r.Close()
+	buf := make([]byte, d.SizeBytes)
+	if _, err := io.ReadFull(r, buf); err != nil {
+		return nil, err
+	}
+	if err := expectEOF(r); err != nil {
+		return nil, fmt.Errorf("decompressed data exceeds expected size %d", d.SizeBytes)
+	}
+	return buf, nil
 }
 
 // expectEOF verifies that r yields no more data before EOF. After a blob of
@@ -724,7 +764,7 @@ func separateBlobs(instance string, blobs []digest.Digest, byteLimit int64) (sma
 // uploadWithBatchUpdateBlobs uploads blobs using BatchUpdateBlobs RPC.
 // The blobs will be bundled into multiple batches that fit in the size limit.
 func (c *Client) uploadWithBatchUpdateBlobs(ctx context.Context, digests []digest.Digest, uploads map[digest.Digest]*uploadOp, ds *digest.Store, byteLimit int64) ([]missingBlob, error) {
-	blobReqs, missingBlobs := blobsToUpload(ctx, digests, ds, byteLimit)
+	blobReqs, missingBlobs := c.blobsToUpload(ctx, digests, ds, byteLimit)
 
 	// Bundle the blobs to multiple batch requests.
 	batchReqs := createBatchUpdateBlobsRequests(c.opt.Instance, blobReqs, byteLimit, batchBlobUploadLimit)
@@ -828,7 +868,7 @@ func (c *Client) processBatchUpdateBlobsReq(ctx context.Context, casClient rpb.C
 }
 
 // blobsToUpload returns a list of blobs to upload by looking up the digest store.
-func blobsToUpload(ctx context.Context, blobs []digest.Digest, ds *digest.Store, byteLimit int64) (iter.Seq[*rpb.BatchUpdateBlobsRequest_Request], *missingBlobs) {
+func (c *Client) blobsToUpload(ctx context.Context, blobs []digest.Digest, ds *digest.Store, byteLimit int64) (iter.Seq[*rpb.BatchUpdateBlobsRequest_Request], *missingBlobs) {
 	var missings missingBlobs
 	ch := make(chan *rpb.BatchUpdateBlobsRequest_Request)
 
@@ -858,10 +898,10 @@ func blobsToUpload(ctx context.Context, blobs []digest.Digest, ds *digest.Store,
 					clog.Warningf(ctx, "missing %s to upload: %v", blob, errBlobNotInReq)
 					return
 				}
-				var b []byte
+				var req *rpb.BatchUpdateBlobsRequest_Request
 				err := FileSemaphore.Do(ctx, func(ctx context.Context) error {
 					var err error
-					b, err = digest.DataToBytes(ctx, data)
+					req, err = c.encodeForBatchUpload(ctx, data)
 					return err
 				})
 				if err != nil {
@@ -872,10 +912,7 @@ func blobsToUpload(ctx context.Context, blobs []digest.Digest, ds *digest.Store,
 					clog.Warningf(ctx, "read %s to upload: %v", blob, err)
 					return
 				}
-				ch <- &rpb.BatchUpdateBlobsRequest_Request{
-					Digest: data.Digest().Proto(),
-					Data:   b,
-				}
+				ch <- req
 			})
 		}
 		wg.Wait()
@@ -889,18 +926,57 @@ func blobsToUpload(ctx context.Context, blobs []digest.Digest, ds *digest.Store,
 	}, &missings
 }
 
+// encodeForBatchUpload reads blob data and optionally compresses it for batch upload.
+func (c *Client) encodeForBatchUpload(ctx context.Context, data digest.Data) (*rpb.BatchUpdateBlobsRequest_Request, error) {
+	d := data.Digest()
+	compressor := c.compressorForBatchUpdate(d)
+	b, err := digest.DataToBytes(ctx, data)
+	if err != nil {
+		return nil, err
+	}
+	if compressor == rpb.Compressor_IDENTITY {
+		return &rpb.BatchUpdateBlobsRequest_Request{
+			Digest: d.Proto(),
+			Data:   b,
+		}, nil
+	}
+	var buf bytes.Buffer
+	w, err := newEncoderForCompressor(&buf, compressor)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := w.Write(b); err != nil {
+		w.Close()
+		return nil, err
+	}
+	if err := w.Close(); err != nil {
+		return nil, err
+	}
+	return &rpb.BatchUpdateBlobsRequest_Request{
+		Digest:     d.Proto(),
+		Data:       buf.Bytes(),
+		Compressor: compressor,
+	}, nil
+}
+
 // createBatchUpdateBlobsRequests bundles blobs into multiple batch requests.
 func createBatchUpdateBlobsRequests(instance string, blobReqs iter.Seq[*rpb.BatchUpdateBlobsRequest_Request], byteLimit int64, numLimit int) iter.Seq[*rpb.BatchUpdateBlobsRequest] {
 	return func(yield func(*rpb.BatchUpdateBlobsRequest) bool) {
 		// Initial batch request size without blobs.
 		batchReqNoReqsSize := int64(proto.Size(&rpb.BatchUpdateBlobsRequest{InstanceName: instance}))
 		size := batchReqNoReqsSize
+		// totalSizeBytes tracks the sum of uncompressed Digest.SizeBytes
+		// in the current batch. Some backends interpret
+		// MaxBatchTotalSizeBytes as this sum rather than the proto size,
+		// so both constraints must be satisfied.
+		var totalSizeBytes int64
 		var reqs []*rpb.BatchUpdateBlobsRequest_Request
 		for req := range blobReqs {
 			reqs = append(reqs, req)
 			nextSize := size + int64(proto.Size(&rpb.BatchUpdateBlobsRequest{Requests: reqs[len(reqs)-1:]}))
+			nextTotalSizeBytes := totalSizeBytes + req.Digest.SizeBytes
 			switch {
-			case byteLimit > 0 && nextSize > byteLimit:
+			case byteLimit > 0 && (nextSize > byteLimit || nextTotalSizeBytes > byteLimit):
 				// When the batch request exceeds the size limit, it starts creating a new batch request.
 				if !yield(&rpb.BatchUpdateBlobsRequest{
 					InstanceName: instance,
@@ -909,6 +985,7 @@ func createBatchUpdateBlobsRequests(instance string, blobReqs iter.Seq[*rpb.Batc
 					return
 				}
 				size = batchReqNoReqsSize + nextSize - size
+				totalSizeBytes = req.Digest.SizeBytes
 				reqs = []*rpb.BatchUpdateBlobsRequest_Request{req}
 
 			case len(reqs) == numLimit:
@@ -920,9 +997,11 @@ func createBatchUpdateBlobsRequests(instance string, blobReqs iter.Seq[*rpb.Batc
 					return
 				}
 				size = batchReqNoReqsSize
+				totalSizeBytes = 0
 				reqs = nil
 			default:
 				size = nextSize
+				totalSizeBytes = nextTotalSizeBytes
 			}
 		}
 		if len(reqs) > 0 {
@@ -1038,10 +1117,10 @@ func (c *Client) streamOneBlob(ctx context.Context, bsClient bpb.ByteStreamClien
 // See also the API document.
 // https://github.com/bazelbuild/remote-apis/blob/64cc5e9e422c93e1d7f0545a146fd84fcc0e8b47/build/bazel/remote/execution/v2/remote_execution.proto#L211-L239
 func (c *Client) uploadResourceName(d digest.Digest) string {
-	if c.useCompressedBlob(d) {
+	if compressor := c.compressor(d); compressor != rpb.Compressor_IDENTITY {
 		return path.Join(c.opt.Instance, "uploads", uuid.New().String(),
 			"compressed-blobs",
-			strings.ToLower(c.getCompressor().String()),
+			strings.ToLower(compressor.String()),
 			d.Hash,
 			strconv.FormatInt(d.SizeBytes, 10))
 	}
@@ -1057,17 +1136,21 @@ func (c *Client) FileURI(d digest.Digest) string {
 // newEncoder returns an encoder to compress blob.
 // For uncompressed blob, it returns a nop closer.
 func (c *Client) newEncoder(w io.Writer, d digest.Digest) (io.WriteCloser, error) {
-	if c.useCompressedBlob(d) {
-		switch comp := c.getCompressor(); comp {
-		case rpb.Compressor_ZSTD:
-			return zstd.NewWriter(w)
-		case rpb.Compressor_DEFLATE:
-			return flate.NewWriter(w, flate.DefaultCompression)
-		default:
-			return nil, fmt.Errorf("unsupported compressor %q", comp)
-		}
+	return newEncoderForCompressor(w, c.compressor(d))
+}
+
+// newEncoderForCompressor returns an encoder for the given compressor value.
+func newEncoderForCompressor(w io.Writer, compressor rpb.Compressor_Value) (io.WriteCloser, error) {
+	switch compressor {
+	case rpb.Compressor_IDENTITY:
+		return nopWriteCloser{w}, nil
+	case rpb.Compressor_ZSTD:
+		return zstd.NewWriter(w)
+	case rpb.Compressor_DEFLATE:
+		return flate.NewWriter(w, flate.DefaultCompression)
+	default:
+		return nil, fmt.Errorf("unsupported compressor %q", compressor)
 	}
-	return nopWriteCloser{w}, nil
 }
 
 type nopWriteCloser struct {

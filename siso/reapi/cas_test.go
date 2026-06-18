@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"math/rand/v2"
+	"slices"
 	"sync"
 	"testing"
 
@@ -89,7 +90,8 @@ func TestCreateBatchUpdateBlobsRequests(t *testing.T) {
 	}
 	sizeLimit := int64(10 * 1024 * 1024)
 	numLimit := 10
-	blobsReqs, missingBlobs := blobsToUpload(ctx, ds.List(), ds, sizeLimit)
+	c := &Client{}
+	blobsReqs, missingBlobs := c.blobsToUpload(ctx, ds.List(), ds, sizeLimit)
 	batchReqs := createBatchUpdateBlobsRequests("projects/test/instances/default_instannce", blobsReqs, sizeLimit, numLimit)
 	nBatches := 0
 	for batchReq := range batchReqs {
@@ -523,5 +525,65 @@ func TestNewDecoder_DoubleCloseDiscardable(t *testing.T) {
 	}
 	if err := rd.Close(); err != nil {
 		t.Errorf("second Close should be a safe no-op; got %v", err)
+	}
+}
+
+func TestCreateBatchUpdateBlobsRequestsWithCompression(t *testing.T) {
+	ctx := t.Context()
+	rnd := rand.NewChaCha8([32]byte{})
+	ds := digest.NewStore()
+	testdata := func(s string, n int64) digest.Data {
+		buf := make([]byte, n)
+		rnd.Read(buf)
+		return digest.FromBytes(s, buf)
+	}
+	ds.Set(testdata("data 0", 1023))
+	ds.Set(testdata("data 1", 1024))
+	ds.Set(testdata("data 2", 1025))
+	uploadOps := make(map[digest.Digest]*uploadOp)
+	for _, d := range ds.List() {
+		uploadOps[d] = newUploadOp()
+	}
+	sizeLimit := int64(3*1024 - 1)
+	numLimit := 10
+	c := &Client{
+		opt: Option{
+			BatchCompressedBlob:           1024,
+			compressorForBatchUpdateBlobs: rpb.Compressor_ZSTD,
+		},
+	}
+	blobsReqsTemp, missingBlobs := c.blobsToUpload(ctx, ds.List(), ds, sizeLimit)
+	blobsReqsSlice := slices.Collect(blobsReqsTemp)
+	numBlobsReqs := len(blobsReqsSlice)
+	blobsReqs := slices.Values(blobsReqsSlice)
+	batchReqs := createBatchUpdateBlobsRequests("projects/test/instances/default_instannce", blobsReqs, sizeLimit, numLimit)
+	var blobsPerBatch []int
+	numCompressedBlobs := 0
+	for batchReq := range batchReqs {
+		blobsPerBatch = append(blobsPerBatch, len(batchReq.Requests))
+		for _, req := range batchReq.Requests {
+			if req.Compressor == rpb.Compressor_ZSTD {
+				numCompressedBlobs++
+			}
+		}
+	}
+	numBatches := len(blobsPerBatch)
+	if numBlobsReqs != 3 {
+		t.Errorf("numBlobsReqs=%d, want=3", numBlobsReqs)
+	}
+	if numBatches != 2 {
+		t.Errorf("numBatches=%d, want=2", numBatches)
+	}
+	if blobsPerBatch[0] != 2 {
+		t.Errorf("blobsPerBatch[0]=%d, want=2", blobsPerBatch[0])
+	}
+	if blobsPerBatch[1] != 1 {
+		t.Errorf("blobsPerBatch[1]=%d, want=1", blobsPerBatch[1])
+	}
+	if numCompressedBlobs != 2 {
+		t.Errorf("numCompressedBlobs=%d, want=2", numCompressedBlobs)
+	}
+	if m := missingBlobs.Size(); m != 0 {
+		t.Errorf("missingBlobs=%d; want=0", m)
 	}
 }

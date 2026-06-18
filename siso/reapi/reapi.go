@@ -78,8 +78,14 @@ type Option struct {
 
 	// use compressed blobs if server supports compressed blobs and size is bigger than this.
 	CompressedBlob int64
+	// use compressed blobs in BatchUpdateBlobs if server supports it and size is bigger than this.
+	// 0 means disabled.
+	BatchCompressedBlob int64
 	// compressor for ByteStream Read/Write APIs.
 	compressor rpb.Compressor_Value
+	// compressor for BatchUpdateBlobs API.
+	compressorForBatchUpdateBlobs rpb.Compressor_Value
+
 	// Threshold that decides whether to use ByteStream API (compression-aware)
 	// instead of BatchReadBlobs if blob size is bigger than this.
 	ByteStreamReadThreshold int64
@@ -174,6 +180,8 @@ func (o *Option) RegisterFlags(fs *flag.FlagSet, envs map[string]string) {
 	fs.StringVar(&o.TLSCACert, o.Prefix+"_tls_ca_cert", os.Getenv("RBE_tls_ca_cert"), "Load TLS CA certificates from this file to connect to the RE api service. default can be set by $RBE_tls_ca_cert")
 
 	fs.Int64Var(&o.CompressedBlob, o.Prefix+"_compress_blob", 1024, "use compressed blobs if server supports compressed blobs and size is bigger than this. specify 0 to disable blob-level compression."+purpose)
+
+	fs.Int64Var(&o.BatchCompressedBlob, o.Prefix+"_batch_compress_blob", 0, "use compressed blobs in BatchUpdateBlobs if server supports it and size is bigger than this. specify 0 to disable."+purpose)
 
 	fs.Int64Var(&o.ByteStreamReadThreshold, o.Prefix+"_byte_stream_read_threshold", 2*1024*1024, "if blob size >= threshold, use ByteStream API (compression-aware)"+purpose)
 
@@ -439,6 +447,11 @@ func New(ctx context.Context, cred cred.Cred, opt Option) (*Client, error) {
 	if isGoogleRBE(opt.Address) && opt.Instance == "" {
 		return nil, errors.New("no reapi instance")
 	}
+	if opt.EnableGRPCCompression && (opt.CompressedBlob != 0 || opt.BatchCompressedBlob != 0) {
+		opt.CompressedBlob = 0
+		opt.BatchCompressedBlob = 0
+		clog.Warningf(ctx, "disabling blob compression because grpc compression is enabled")
+	}
 	clog.Infof(ctx, "address: %q instance: %q", opt.Address, opt.Instance)
 	conn, err := newConn(ctx, opt.Address, cred, opt)
 	if err != nil {
@@ -492,10 +505,6 @@ func newConn(ctx context.Context, addr string, cred cred.Cred, opt Option) (grpc
 	}
 	if opt.EnableGRPCCompression {
 		dopts = append(dopts, grpc.WithDefaultCallOptions(grpc.UseCompressor(gzip.Name)))
-		if opt.CompressedBlob != 0 {
-			opt.CompressedBlob = 0
-			clog.Warningf(ctx, "disabling blob compression because grpc compression is enabled")
-		}
 	}
 	var conn grpcClientConn
 	var err error
@@ -625,6 +634,14 @@ func (c *Client) Init(ctx context.Context) error {
 			clog.Infof(ctx, "compressed-blobs/%s for > %d", strings.ToLower(c.opt.compressor.String()), c.opt.CompressedBlob)
 		} else {
 			clog.Infof(ctx, "compressed-blobs is not supported")
+		}
+	}
+	if c.opt.BatchCompressedBlob > 0 {
+		c.opt.compressorForBatchUpdateBlobs = selectCompressor(capa.GetCacheCapabilities().GetSupportedBatchUpdateCompressors())
+		if c.opt.compressorForBatchUpdateBlobs != rpb.Compressor_IDENTITY {
+			clog.Infof(ctx, "batch-update-blobs/%s for > %d", strings.ToLower(c.opt.compressorForBatchUpdateBlobs.String()), c.opt.BatchCompressedBlob)
+		} else {
+			clog.Infof(ctx, "batch-update-blobs compression is not supported")
 		}
 	}
 	clog.Infof(ctx, "byte stream read threshold: %d", c.opt.ByteStreamReadThreshold)
