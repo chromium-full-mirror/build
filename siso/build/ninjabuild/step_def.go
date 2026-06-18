@@ -866,7 +866,7 @@ func (s *StepDef) ExpandedInputs(ctx context.Context) []string {
 		// works even if indirect inputs see/ignore the inputs.
 		iseen := make(map[string]bool)
 		maps.Copy(iseen, seen)
-		filter := s.rule.IndirectInputs.filter(ctx, "indirect_inputs")
+		filter := s.rule.IndirectInputs.Filter(ctx, "indirect_inputs")
 		for _, in := range s.edge.Inputs() {
 			edge, ok := in.InEdge()
 			if !ok {

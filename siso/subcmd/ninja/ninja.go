@@ -416,7 +416,7 @@ func (c *Command) Run(ctx context.Context) (stats build.Stats, finalErr error) {
 	// initBuildOpts (loadNinjaFiles goroutine) and setupHashFS (main
 	// goroutine) both read it; previously they raced through
 	// c.fsopt.OutputLocal.
-	c.outputLocal, err = initOutputLocal(c.outputLocalStrategy)
+	c.outputLocal, err = initOutputLocal(ctx, c.outputLocalStrategy)
 	if err != nil {
 		return stats, err
 	}

@@ -276,6 +276,10 @@ to register handlers and step configs.
 
 path_filter is used for `scandeps.step_inputs` and `indirect_inputs`.
 
+ * `patterns`: A list of [glob patterns](#glob-pattern).
+    If pattern starts with '!', handle it as excludes. otherwise incldues.
+    If `patterns` is set, it will ignore `excludes` and `includes`.
+
  * `excludes`: A list of [glob patterns](#glob-pattern).
    Any input path that matches a pattern
    in this list is excluded. `excludes` are processed before `includes`.
@@ -291,7 +295,9 @@ in`includes` (and is not excluded by `excludes`).
 
 ### glob pattern
 
+ * If a pattern starts with `!`, it works as excludes.
  * If a pattern contains `/`, it is matched against the full path of an input.
+ * If a pattern ends with `/**`, it it matched aagaint the directory prefix.
  * Otherwise, the pattern is matched against the basename of the input's path.
  * The matching logic is equivalent to Go's [path.Match](https://pkg.go.dev/path#Match).
 

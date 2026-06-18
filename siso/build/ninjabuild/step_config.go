@@ -332,7 +332,7 @@ func (sc *StepConfig) Init(ctx context.Context) error {
 	if len(sc.InputsRequiringClangScandeps) > 0 || sc.ClangScandeps != "" {
 		return fmt.Errorf("inputs_requiring_clang_scandeps and clang_scandeps is deprecated. just use scandeps")
 	}
-	sc.Scandeps.stepInputsFilter = sc.Scandeps.StepInputs.filter(ctx, "scandeps.step_inputs")
+	sc.Scandeps.stepInputsFilter = sc.Scandeps.StepInputs.Filter(ctx, "scandeps.step_inputs")
 	if sc.InputDeps == nil {
 		sc.InputDeps = make(map[string][]string)
 	}

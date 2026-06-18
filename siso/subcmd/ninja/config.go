@@ -6,6 +6,7 @@ package ninja
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -211,7 +212,7 @@ func (c *Command) SetFlags(flagSet *flag.FlagSet) {
 	flagSet.BoolVar(&c.cacheEnableRead, "cache_enable_read", true, "cache enable read")
 
 	flagSet.StringVar(&c.configFilename, "load", "@config//main.star", "config filename (@config// is --config_repo_dir)")
-	flagSet.StringVar(&c.outputLocalStrategy, "output_local_strategy", "full", `strategy for output_local. "full": download all outputs. "greedy": downloads most outputs except intermediate objs. "minimum": downloads as few as possible`)
+	flagSet.StringVar(&c.outputLocalStrategy, "output_local_strategy", "full", `strategy for output_local. "full": download all outputs. "greedy": downloads most outputs except intermediate objs. "minimum": downloads as few as possible "pathfilter:<path_filter>": use path filter "patterns:<pattern-list>": colon-separated pathfilter's patterns`)
 	flagSet.StringVar(&c.depsLogFile, "deps_log", ".siso_deps", "deps log filename (relative to -C, -state_dir)")
 
 	flagSet.StringVar(&c.stateDir, "state_dir", "", "state directory (relative to -C) [default: same dir as build.ninja]")
@@ -488,7 +489,29 @@ func defaultCacheDir() string {
 // initOutputLocal returns a function that determines whether a given file
 // should be outputted locally based on the chosen strategy. This is used to
 // control which files are downloaded from the remote cache.
-func initOutputLocal(outputLocalStrategy string) (func(context.Context, string) bool, error) {
+func initOutputLocal(ctx context.Context, outputLocalStrategy string) (func(context.Context, string) bool, error) {
+	filter, ok := strings.CutPrefix(outputLocalStrategy, "pathfilter:")
+	if ok {
+		var pathFilter ninjabuild.PathFilter
+		err := json.Unmarshal([]byte(filter), &pathFilter)
+		if err != nil {
+			return nil, fmt.Errorf("wrong pathfilter json %q: %w", filter, err)
+		}
+		f := pathFilter.Filter(ctx, "output_local_strategy")
+		return func(ctx context.Context, fname string) bool {
+			return f(ctx, fname, false)
+		}, nil
+	}
+	filter, ok = strings.CutPrefix(outputLocalStrategy, "patterns:")
+	if ok {
+		pathFilter := ninjabuild.PathFilter{
+			Patterns: strings.Split(filter, ":"),
+		}
+		f := pathFilter.Filter(ctx, "output_local_strategy")
+		return func(ctx context.Context, fname string) bool {
+			return f(ctx, fname, false)
+		}, nil
+	}
 	switch outputLocalStrategy {
 	case "full":
 		return func(context.Context, string) bool { return true }, nil
