@@ -20,6 +20,7 @@ import (
 	log "github.com/golang/glog"
 	"github.com/google/subcommands"
 	"go.opentelemetry.io/otel"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -395,6 +396,13 @@ func (c *Command) Run(ctx context.Context) (stats build.Stats, finalErr error) {
 			closeDuration := time.Since(closeStart)
 			clog.Infof(ctx, "cloud trace shutdown took: %s", closeDuration)
 		}()
+		// reapi (set below) uses this provider to propagate trace context to
+		// RBE via grpc-trace-bin. Always sample so every RBE RPC is recorded
+		// server-side. It has no exporter on purpose: the spans only carry
+		// context to the server, they are not exported as client-side traces.
+		tp := sdktrace.NewTracerProvider(sdktrace.WithSampler(sdktrace.AlwaysSample()))
+		defer func() { _ = tp.Shutdown(ctx) }()
+		c.reopt.TracerProvider = tp
 	}
 	// upload build pprof
 

@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/klauspost/compress/zstd"
+	oteltrace "go.opentelemetry.io/otel/trace"
 	"google.golang.org/api/option"
 	gtransport "google.golang.org/api/transport/grpc"
 	"google.golang.org/grpc"
@@ -27,8 +28,10 @@ import (
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/encoding/gzip"
+	grpcexpotel "google.golang.org/grpc/experimental/opentelemetry"
 	"google.golang.org/grpc/keepalive"
 	"google.golang.org/grpc/metadata"
+	grpcotel "google.golang.org/grpc/stats/opentelemetry"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 
@@ -106,6 +109,17 @@ type Option struct {
 
 	// MaxRetries is the maximum number of retries for retriable errors.
 	MaxRetries int
+
+	// TracerProvider, when non-nil, enables grpc-native OpenTelemetry tracing:
+	// each RPC propagates its context via grpc-trace-bin for server-side
+	// recording (e.g. Dapper). Nil leaves the connection untraced.
+	TracerProvider oteltrace.TracerProvider
+
+	// TraceCookie, when non-empty, is attached as the `cookie` gRPC metadata
+	// header on every RPC to this backend (to force server-side trace
+	// sampling, e.g. Dapper). Scoped to this connection so it never reaches a
+	// non-RBE gRPC service.
+	TraceCookie string
 }
 
 // Envs returns environment flags for reapi.
@@ -176,6 +190,8 @@ func (o *Option) RegisterFlags(fs *flag.FlagSet, envs map[string]string) {
 	fs.BoolVar(&o.KeepAliveParams.PermitWithoutStream, o.Prefix+"_grpc_keepalive_permit_without_stream", false, "grpc keepalive permit without stream"+purpose)
 
 	fs.StringVar(&o.REAPIVersion, o.Prefix+"_version_to_use", "", "specify re api version to use, in format of v<major>.<minor>. e.g. v2.0")
+
+	fs.StringVar(&o.TraceCookie, o.Prefix+"_trace_cookie", "", "if set, sent as the `cookie` gRPC metadata header on every RPC to this backend, to force server-side trace sampling (e.g. Dapper)"+purpose)
 
 	// Flags only supported for "execution".
 	if o.Prefix == "reapi" {
@@ -390,6 +406,30 @@ func DialOptions(keepAliveParams keepalive.ClientParameters) []grpc.DialOption {
 	return dopts
 }
 
+// tracingDialOption installs grpc-native OpenTelemetry tracing that propagates
+// each RPC's context to the server via the grpc-trace-bin header using tp.
+func tracingDialOption(tp oteltrace.TracerProvider) grpc.DialOption {
+	return grpcotel.DialOption(grpcotel.Options{
+		TraceOptions: grpcexpotel.TraceOptions{
+			TracerProvider:    tp,
+			TextMapPropagator: grpcotel.GRPCTraceBinPropagator{},
+		},
+	})
+}
+
+// cookieInterceptors return unary and stream client interceptors that attach
+// cookie as the `cookie` gRPC metadata header to every RPC on the connection.
+// Scoping it here keeps the (debug) cookie off any non-RBE gRPC service.
+func cookieInterceptors(cookie string) (grpc.UnaryClientInterceptor, grpc.StreamClientInterceptor) {
+	unary := func(ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
+		return invoker(metadata.AppendToOutgoingContext(ctx, "cookie", cookie), method, req, reply, cc, opts...)
+	}
+	stream := func(ctx context.Context, desc *grpc.StreamDesc, cc *grpc.ClientConn, method string, streamer grpc.Streamer, opts ...grpc.CallOption) (grpc.ClientStream, error) {
+		return streamer(metadata.AppendToOutgoingContext(ctx, "cookie", cookie), desc, cc, method, opts...)
+	}
+	return unary, stream
+}
+
 // New creates new remote exec API client.
 func New(ctx context.Context, cred cred.Cred, opt Option) (*Client, error) {
 	defer trace.Begin(ctx, "reapi.New").End()
@@ -440,6 +480,16 @@ func newConn(ctx context.Context, addr string, cred cred.Cred, opt Option) (grpc
 		copts = append(copts, option.WithoutAuthentication())
 	}
 	dopts := DialOptions(opt.KeepAliveParams)
+	if opt.TracerProvider != nil {
+		// Disable the default google.golang.org/api telemetry handler so this
+		// is the sole writer of grpc-trace-bin.
+		copts = append(copts, option.WithTelemetryDisabled())
+		dopts = append(dopts, tracingDialOption(opt.TracerProvider))
+	}
+	if opt.TraceCookie != "" {
+		unary, stream := cookieInterceptors(opt.TraceCookie)
+		dopts = append(dopts, grpc.WithChainUnaryInterceptor(unary), grpc.WithChainStreamInterceptor(stream))
+	}
 	if opt.EnableGRPCCompression {
 		dopts = append(dopts, grpc.WithDefaultCallOptions(grpc.UseCompressor(gzip.Name)))
 		if opt.CompressedBlob != 0 {
@@ -764,6 +814,18 @@ func UseOutputPaths(apiVer *semverpb.SemVer) bool {
 
 // NewContext returns new context with request metadata.
 func NewContext(ctx context.Context, rmd *rpb.RequestMetadata) context.Context {
+	// Carry the current trace span (if any) as an OpenTelemetry span context so
+	// RBE RPCs join that span's trace server-side (e.g. Dapper). Inert without a
+	// configured TracerProvider; see Option.TracerProvider.
+	if sp := trace.CurSpan(ctx); sp != nil {
+		if tid, sid, ok := sp.RawIDs(); ok {
+			ctx = oteltrace.ContextWithSpanContext(ctx, oteltrace.NewSpanContext(oteltrace.SpanContextConfig{
+				TraceID:    tid,
+				SpanID:     sid,
+				TraceFlags: oteltrace.FlagsSampled,
+			}))
+		}
+	}
 	if rmd == nil {
 		rmd = &rpb.RequestMetadata{}
 	}
