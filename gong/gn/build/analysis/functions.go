@@ -30,6 +30,7 @@ var FunctionMap = map[string]resolve.FunctionInfo{
 	"set_defaults":          setDefaultsFunction{},
 	"shared_library":        targetFunction{schema: &schemas.SharedLibrarySchema},
 	"static_library":        targetFunction{schema: &schemas.StaticLibrarySchema},
+	"string_join":           stringJoinFunction{},
 	"string_replace":        stringReplaceFunction{},
 	"string_split":          stringSplitFunction{},
 	"template":              templateFunction{},

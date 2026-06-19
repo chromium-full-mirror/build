@@ -1,0 +1,68 @@
+# Copyright 2026 The Chromium Authors
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+# No elements in the list and empty separator.
+assert(string_join("", []) == "")
+
+# No elements in the list.
+assert(string_join(" ", []) == "")
+
+# One element in the list.
+assert(string_join("|", ["a"]) == "a")
+
+# Multiple elements in the list.
+assert(string_join(" ", ["a", "b", "c"]) == "a b c")
+
+# Multi-character separator.
+assert(string_join("-.", ["a", "b", "c"]) == "a-.b-.c")
+
+# Empty separator.
+assert(string_join("", ["x", "y", "z"]) == "xyz")
+
+# Empty string list elements.
+assert(string_join("x", ["", "", ""]) == "xx")
+
+# Empty string list elements and separator
+assert(string_join("", ["", "", ""]) == "")
+
+# Verify usage errors are detected.
+assert_failure("Wrong number of arguments to string_join().", "Expecting exactly two. usage: string_join(separator, strings)") {
+  string_join()
+}
+
+assert_failure("Wrong number of arguments to string_join().", "Expecting exactly two. usage: string_join(separator, strings)") {
+  string_join(["oops"])
+}
+
+assert_failure("Wrong number of arguments to string_join().", "Expecting exactly two. usage: string_join(separator, strings)") {
+  string_join("kk", [], "oops")
+}
+
+# Argument types.
+assert_failure("separator in string_join(separator, strings) is not a string", "Expecting separator argument to be a string.") {
+  string_join(1, [])
+}
+
+assert_failure("strings in string_join(separator, strings) is not a list", "Expecting strings argument to be a list.") {
+  string_join("kk", "oops")
+}
+
+assert_failure("separator in string_join(separator, strings) is not a string", "Expecting separator argument to be a string.") {
+  string_join(["oops"], [])
+}
+
+# TODO: need to fix type error message
+assert_failure("This is not a 1. Instead I see a integer = true") {
+  string_join("kk", [1])
+}
+
+# TODO: need to fix type error message
+assert_failure("This is not a 1. Instead I see a integer = true") {
+  string_join("kk", ["hello", 1])
+}
+
+# TODO: need to fix type error message
+assert_failure("This is not a []. Instead I see a list = true") {
+  string_join("kk", ["hello", []])
+}
