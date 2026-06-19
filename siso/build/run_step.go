@@ -99,6 +99,11 @@ func (b *Builder) runStep(ctx context.Context, step *Step) (retErr error) {
 			if tc != nil {
 				for _, s := range tc.Spans() {
 					switch s.Name {
+					case spanDepsCmd:
+						step.metrics.DepsScanTime = IntervalMetric(s.Start.Sub(b.start))
+					case spanScandepsRun:
+						step.metrics.ScandepsTime = IntervalMetric(s.Duration())
+						step.metrics.ScandepsStartTime = IntervalMetric(s.Start.Sub(b.start))
 					case spanExecRemoteCacheCheck:
 						step.metrics.CacheTime = IntervalMetric(s.Duration())
 						step.metrics.CacheStartTime = IntervalMetric(s.Start.Sub(b.start))

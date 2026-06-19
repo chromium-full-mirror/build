@@ -159,10 +159,9 @@ func depsFixCmd(ctx context.Context, b *Builder, step *Step, deps []string) {
 }
 
 func depsCmd(ctx context.Context, b *Builder, step *Step) error {
-	started := time.Now()
-	defer func() {
-		step.metrics.DepsScanTime = IntervalMetric(time.Since(started))
-	}()
+	// TODO: change name?
+	ctx, span := trace.NewSpan(ctx, spanDepsCmd)
+	defer span.Close(nil)
 
 	ds, found := depsProcessors[step.cmd.Deps]
 	if found {

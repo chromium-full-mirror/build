@@ -20,6 +20,14 @@ import (
 
 // Span names used for metric purposes.
 const (
+	// Total span for step preproc.
+	spanPreproc = "preproc"
+	// Child span of [spanPreproc] for depsCmd.
+	// This is a temporary name and is subject to change, do not rely on this.
+	spanDepsCmd = "deps-cmd"
+	// Child span of [spanDepsCmd] measuring after acquiring the scandeps semaphore.
+	spanScandepsRun = "scandeps-run"
+
 	// Total span for remote cache.
 	spanExecRemoteCache = "exec-remote-cache"
 	// Child span of [spanExecRemoteCache] measuring starting the remote cache query until it
@@ -115,6 +123,7 @@ type StepMetric struct {
 	// Semaphore waiting time is included, which does not count towards ActionStartTime.
 	// Use ScandepsTime instead if semaphore waiting time should be excluded,
 	// or a measurement that starts within ActionStartTime is required.
+	// TODO: not accurate name as it covers all of depsCmd, change name?
 	DepsScanTime IntervalMetric `json:"depsscan_nanos,omitempty"`
 
 	// RunTime, QueueTime and ExecTime are measured by the execution

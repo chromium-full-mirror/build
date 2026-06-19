@@ -7,6 +7,8 @@ package build
 import (
 	"context"
 	"time"
+
+	"go.chromium.org/build/siso/o11y/trace"
 )
 
 func (b *Builder) allowRemote(step *Step) bool {
@@ -76,16 +78,16 @@ func (b *Builder) actionFinished(ctx context.Context, step *Step) {
 	})
 }
 
-func (b *Builder) scandepsStarted(step *Step) {
+// scandepsStarted exists as a common function for scandeps methods (gcc, msvc)
+// to call when the scandeps semaphore is acquired.
+//
+// Mark the step as started internally (if not already marked started),
+// but don't present the step started to the frontend yet because this is still
+// early stages of execution; see [Builder.actionStartedSilent].
+//
+// Returns a trace context and span to cover the scandeps execution.
+// This span should be closed when scandeps is finished.
+func (b *Builder) scandepsStarted(ctx context.Context, step *Step) (context.Context, *trace.Span) {
 	b.actionStartedSilent(step)
-	if step.metrics.ScandepsStartTime == 0 {
-		step.metrics.ScandepsStartTime = IntervalMetric(time.Since(b.start))
-	}
-}
-
-func (b *Builder) scandepsFinish(step *Step) {
-	if step.metrics.ScandepsStartTime != 0 {
-		end := time.Since(b.start)
-		step.metrics.ScandepsTime = IntervalMetric(end - time.Duration(step.metrics.ScandepsStartTime))
-	}
+	return trace.NewSpan(ctx, spanScandepsRun)
 }
