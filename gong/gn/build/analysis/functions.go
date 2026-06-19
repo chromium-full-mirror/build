@@ -19,6 +19,7 @@ var FunctionMap = map[string]resolve.FunctionInfo{
 	"executable":            targetFunction{schema: &schemas.ExecutableSchema},
 	"filter_exclude":        filterExcludeFunction{},
 	"filter_include":        filterIncludeFunction{},
+	"getenv":                getenvFunction{},
 	"group":                 targetFunction{schema: &schemas.GroupSchema},
 	"import":                importFunction{},
 	"len":                   lenFunction{},
