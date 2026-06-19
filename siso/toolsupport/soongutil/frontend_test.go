@@ -64,6 +64,7 @@ func (fakeStepDef) AuxiliaryLogOutputDirs(context.Context) []string             
 func (fakeStepDef) LocalOutputs(context.Context) []string                            { return nil }
 func (fakeStepDef) Pure() bool                                                       { return false }
 func (fakeStepDef) Platform() map[string]string                                      { return nil }
+func (fakeStepDef) IsRemoteRule() bool                                               { return false }
 func (fakeStepDef) Sandbox() map[string]string                                       { return nil }
 func (fakeStepDef) RecordDeps(context.Context, string, time.Time, digest.Digest, []string) (bool, error) {
 	return false, nil

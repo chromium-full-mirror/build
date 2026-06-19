@@ -86,6 +86,7 @@ type Options struct {
 	RECacheEnableWrite bool
 	ActionSalt         []byte
 
+	LocallyNeeded        *LocallyNeededSet
 	Cache                *Cache
 	NinjaLogWriter       io.Writer
 	FailureSummaryWriter io.Writer
@@ -203,6 +204,8 @@ type Builder struct {
 	reSchedStat, reWorkerStat semaphore.Stat
 
 	actionSalt []byte
+
+	locallyNeeded *LocallyNeededSet
 
 	cacheSema *semaphore.Semaphore
 	cache     *Cache
@@ -378,6 +381,7 @@ func New(ctx context.Context, graph Graph, opts Options) (_ *Builder, err error)
 		reSchedStat:        semaphore.Stat{Name: "re:sched"},
 		reWorkerStat:       semaphore.Stat{Name: "re:worker"},
 
+		locallyNeeded:         opts.LocallyNeeded,
 		cacheSema:             semaphore.New("cache", opts.Limits.Cache),
 		cache:                 opts.Cache,
 		twoPhaseCachingSema:   semaphore.New("cache-check", opts.Limits.Cache),
@@ -559,11 +563,12 @@ func (b *Builder) Build(ctx context.Context, name string, args ...string) (err e
 		}
 	}
 	schedOpts := schedulerOption{
-		NumTargets:   b.graph.NumTargets(),
-		Path:         b.path,
-		HashFS:       b.hashFS,
-		Prepare:      b.prepare,
-		KnownWeights: knownTargetWeights,
+		NumTargets:    b.graph.NumTargets(),
+		Path:          b.path,
+		HashFS:        b.hashFS,
+		Prepare:       b.prepare,
+		KnownWeights:  knownTargetWeights,
+		LocallyNeeded: b.locallyNeeded,
 	}
 	sched := newScheduler(ctx, schedOpts)
 	err = schedule(ctx, sched, b.graph, args...)

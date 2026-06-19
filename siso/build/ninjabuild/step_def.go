@@ -1204,6 +1204,12 @@ func (s *StepDef) Platform() map[string]string {
 	return s.rule.Platform
 }
 
+// IsRemoteRule reports whether the step is declared remote-executable
+// in the siso stepconfig.
+func (s *StepDef) IsRemoteRule() bool {
+	return s.rule.Remote
+}
+
 // Sandbox returns properties for action sandboxing.
 func (s *StepDef) Sandbox() map[string]string {
 	// disable sandbox for impure step, inputs/outputs are not fully specified.

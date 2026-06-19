@@ -17,6 +17,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	log "github.com/golang/glog"
@@ -155,6 +156,61 @@ func (s scanState) String() string {
 	}
 }
 
+// LocallyNeededSet records the remote outputs a local step will read, so
+// -output_local_strategy=graph materializes just those. The scheduler fills it
+// at plan finalization (add); the hashfs OutputLocal predicate reads it (the
+// OutputLocal method, backed by Has).
+//
+// Keys are hashfs.MakeFullpath form: both add and Has go through MakeFullpath,
+// so they agree even when a target path is itself absolute.
+//
+// Until Freeze, Has returns false. The state load predicate is consulted
+// before the scheduler can fill the set; returning false keeps the CAS-only
+// outputs a prior graph build left off disk valid across invocations, instead
+// of forgetting them and re-running their producers. A genuinely-needed
+// missing output is still re-materialized at build time by the mtimecheck
+// skip-flush (or re-run if its CAS blob is gone). Freeze publishes the map.
+type LocallyNeededSet struct {
+	m     map[string]bool
+	ready atomic.Bool
+}
+
+// NewLocallyNeededSet returns an empty, not-yet-ready set.
+func NewLocallyNeededSet() *LocallyNeededSet {
+	return &LocallyNeededSet{m: make(map[string]bool)}
+}
+
+// OutputLocal is the hashfs OutputLocal predicate face. Bind it
+// (set.OutputLocal) so the predicate and the scheduler share this exact set.
+func (s *LocallyNeededSet) OutputLocal(_ context.Context, path string) bool {
+	return s.Has(path)
+}
+
+// Has reports whether path (hashfs.MakeFullpath form) is locally-needed. It
+// returns false until the set is frozen (see the type doc); a nil set (no
+// graph strategy) returns true.
+func (s *LocallyNeededSet) Has(path string) bool {
+	if s == nil {
+		return true
+	}
+	if !s.ready.Load() {
+		return false
+	}
+	return s.m[path]
+}
+
+// add records a locally-needed path (hashfs.MakeFullpath form). Single-
+// threaded classifier use only, before Freeze.
+func (s *LocallyNeededSet) add(path string) {
+	s.m[path] = true
+}
+
+// Freeze publishes the map; after it, Has reads the map instead of the
+// not-yet-frozen default (false).
+func (s *LocallyNeededSet) Freeze() {
+	s.ready.Store(true)
+}
+
 type targetInfo struct {
 	// scanState of the target.
 	scan scanState
@@ -164,6 +220,9 @@ type targetInfo struct {
 	source bool
 	// true if the target is generated output.
 	output bool
+	// true if explicitly requested; graph materializes a requested output
+	// even when an edge sibling has consumers.
+	requested bool
 	// true if the target is phony_output.
 	phonyOutput bool
 	// pointer to Step.
@@ -238,6 +297,10 @@ type schedulerOption struct {
 	Prepare      bool
 	EnableTrace  bool
 	KnownWeights map[Target]int
+
+	// LocallyNeeded, if non-nil, is filled at plan finalization with the
+	// outputs a downstream local step consumes. Must be unfrozen when passed.
+	LocallyNeeded *LocallyNeededSet
 }
 
 // scheduler creates a plan.
@@ -248,6 +311,8 @@ type scheduler struct {
 	actionOutputDirs ensureActionOutputDirs
 
 	plan *plan
+
+	locallyNeeded *LocallyNeededSet
 
 	// number of steps scheduled.
 	total int
@@ -307,6 +372,13 @@ func schedule(ctx context.Context, sched *scheduler, graph Graph, args ...string
 			ui.Default.PrintLines(fmt.Sprintf("target: %q\n    ->  %q\n\n", args, targetNames))
 		}
 	}
+	// Mark requested outputs so the graph classifier materializes them per
+	// output (a requested target need not be a leaf). Safe here: nothing else
+	// touches plan.targets yet.
+	for _, t := range targets {
+		sched.plan.targets[t].requested = true
+	}
+
 	sched.actionOutputDirs.init()
 	go sched.actionOutputDirs.run(ctx, sched.path)
 
@@ -343,7 +415,7 @@ func schedule(ctx context.Context, sched *scheduler, graph Graph, args ...string
 			}
 		}
 	}
-	return sched.finish(ctx, started)
+	return sched.finish(ctx, started, graph)
 }
 
 // DependencyCycleError is error type for dependency cycle.
@@ -618,10 +690,79 @@ func newScheduler(ctx context.Context, opt schedulerOption) *scheduler {
 			targets:       targets,
 			targetsSorted: make([]Target, 0, opt.NumTargets),
 		},
+		locallyNeeded:     opt.LocallyNeeded,
 		prepare:           opt.Prepare,
 		prepareHeaderOnly: prepareHeaderOnly,
 		enableTrace:       opt.EnableTrace,
 	}
+}
+
+// classifyLocallyNeeded fills s.locallyNeeded for -output_local_strategy=graph:
+// the remote outputs a local step will read, keyed in hashfs.MakeFullpath form.
+// The caller runs it only when locallyNeeded != nil.
+//
+// Handler-added outputs aren't in the graph yet; they fall back to the Lstat
+// check in Builder.outputs.
+func (s *scheduler) classifyLocallyNeeded(ctx context.Context, graph Graph) {
+	set := s.locallyNeeded
+	var root string
+	if s.path != nil {
+		root = s.path.WorkspaceRoot
+	}
+	// Per output, in reverse topological order: an output is locally-needed if
+	// it is an explicitly requested target, if a local (non-phony, non-remote)
+	// consumer reads it from disk, or if it feeds a phony/remote consumer that
+	// reaches a local one (reaches[c]; over-marks through remote consumers,
+	// wasting only bandwidth). Per output, not per step: keeps a compile's .o
+	// while dropping its unconsumed .dwo sibling, and keeps a requested output
+	// even when an edge sibling has consumers. reaches is indexed by dense
+	// Step.idnum (a slice, not a map).
+	reaches := make([]bool, s.total+1)
+	for _, primary := range slices.Backward(s.plan.targetsSorted) {
+		info := &s.plan.targets[primary]
+		step := info.step
+		if step == nil || info.edge == nil {
+			continue
+		}
+		// IsRemoteRule reads rule.Remote, zero until EnsureRule runs.
+		step.def.EnsureRule(ctx)
+		isRemote := step.def.IsRemoteRule()
+
+		anyNeeded := false
+		for _, o := range info.edge.Outputs {
+			needed := s.plan.targets[o].requested
+			for _, c := range s.plan.targets[o].waits {
+				if needed {
+					break
+				}
+				if c == nil || c.def == nil {
+					continue
+				}
+				// Local consumer, or a phony/remote one that reaches.
+				if (!c.def.IsPhony() && !c.def.IsRemoteRule()) || reaches[c.idnum] {
+					needed = true
+				}
+			}
+			if !needed {
+				continue
+			}
+			anyNeeded = true
+			if !isRemote {
+				continue
+			}
+			// Key as NeedFlush will: MakeFullpath, not a bare Join (it
+			// handles an already-absolute target path).
+			path, err := graph.TargetPath(ctx, o)
+			if err != nil {
+				clog.Warningf(ctx, "graph classify: TargetPath for output %v: %v", o, err)
+				continue
+			}
+			set.add(hashfs.MakeFullpath(root, path))
+		}
+		reaches[step.idnum] = anyNeeded
+	}
+	set.Freeze()
+	clog.Infof(ctx, "schedule: locally-needed outputs %d of %d steps", len(set.m), s.total)
 }
 
 // mark marks target (workspace relative) as source file.
@@ -657,7 +798,7 @@ func (s *scheduler) progressReport(format string, args ...any) {
 }
 
 // finish finishes the scheduling.
-func (s *scheduler) finish(ctx context.Context, started time.Time) error {
+func (s *scheduler) finish(ctx context.Context, started time.Time, graph Graph) error {
 	s.plan.mu.Lock()
 	defer s.plan.mu.Unlock()
 
@@ -695,6 +836,12 @@ func (s *scheduler) finish(ctx context.Context, started time.Time) error {
 			}
 			s.plan.addReady(step)
 		}
+	}
+
+	// graph strategy only (locallyNeeded is nil otherwise): classify
+	// locally-needed outputs before freeing targetsSorted.
+	if s.locallyNeeded != nil {
+		s.classifyLocallyNeeded(ctx, graph)
 	}
 
 	// free up s.plan.targetsSorted since it's not necessary anymore.

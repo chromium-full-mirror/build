@@ -112,6 +112,10 @@ type NinjaFlags struct {
 
 	outputLocalStrategy string
 
+	// locallyNeeded is non-nil only for the "graph" strategy; the scheduler
+	// fills it and the OutputLocal closure reads it.
+	locallyNeeded *build.LocallyNeededSet
+
 	depsLogFile string
 
 	stateDir string
@@ -212,7 +216,7 @@ func (c *Command) SetFlags(flagSet *flag.FlagSet) {
 	flagSet.BoolVar(&c.cacheEnableRead, "cache_enable_read", true, "cache enable read")
 
 	flagSet.StringVar(&c.configFilename, "load", "@config//main.star", "config filename (@config// is --config_repo_dir)")
-	flagSet.StringVar(&c.outputLocalStrategy, "output_local_strategy", "full", `strategy for output_local. "full": download all outputs. "greedy": downloads most outputs except intermediate objs. "minimum": downloads as few as possible "pathfilter:<path_filter>": use path filter "patterns:<pattern-list>": colon-separated pathfilter's patterns`)
+	flagSet.StringVar(&c.outputLocalStrategy, "output_local_strategy", "full", `strategy for output_local. "full": download all outputs. "greedy": downloads most outputs except intermediate objs. "minimum": downloads as few as possible. "graph": downloads only remote outputs that a local step will consume, decided at schedule time from the dep graph, spreading downloads over the compile burst. "pathfilter:<path_filter>": use path filter. "patterns:<pattern-list>": colon-separated pathfilter's patterns`)
 	flagSet.StringVar(&c.depsLogFile, "deps_log", ".siso_deps", "deps log filename (relative to -C, -state_dir)")
 
 	flagSet.StringVar(&c.stateDir, "state_dir", "", "state directory (relative to -C) [default: same dir as build.ninja]")
@@ -452,6 +456,7 @@ func (c *Command) initBuildOpts(ctx context.Context, projectID string, buildPath
 		RECacheEnableRead:     c.reCacheEnableRead,
 		RECacheEnableWrite:    c.reCacheEnableWrite,
 		ActionSalt:            actionSaltBytes,
+		LocallyNeeded:         c.locallyNeeded,
 		Cache:                 cache,
 		FailureSummaryWriter:  logWriters.failureSummaryWriter,
 		FailedCommandsWriter:  logWriters.failedCommandsWriter,
@@ -486,9 +491,10 @@ func defaultCacheDir() string {
 	return filepath.Join(d, "siso")
 }
 
-// initOutputLocal returns a function that determines whether a given file
-// should be outputted locally based on the chosen strategy. This is used to
-// control which files are downloaded from the remote cache.
+// initOutputLocal returns the predicate for the chosen output_local strategy
+// (which outputs to write to local disk vs leave in the cache). The "graph"
+// strategy is stateful (the scheduler fills a set the predicate reads) and is
+// handled by the caller, not here.
 func initOutputLocal(ctx context.Context, outputLocalStrategy string) (func(context.Context, string) bool, error) {
 	filter, ok := strings.CutPrefix(outputLocalStrategy, "pathfilter:")
 	if ok {
@@ -538,7 +544,7 @@ func initOutputLocal(ctx context.Context, outputLocalStrategy string) (func(cont
 			return false
 		}, nil
 	default:
-		return nil, fmt.Errorf("unknown output local strategy: %q. should be full/greedy/minimum", outputLocalStrategy)
+		return nil, fmt.Errorf("unknown output local strategy: %q. should be full/greedy/minimum/graph", outputLocalStrategy)
 	}
 }
 

@@ -120,6 +120,12 @@ type StepDef interface {
 	// Platform returns platform properties for remote execution.
 	Platform() map[string]string
 
+	// IsRemoteRule reports whether the step is declared remote-executable in
+	// the stepconfig (the static rule.Remote flag). Unlike Platform(), it is
+	// stable from scheduling on, even when Platform() is cleared at runtime
+	// (pool=console, scandeps fallback).
+	IsRemoteRule() bool
+
 	// Sandbox returns properties for action sandboxing.
 	Sandbox() map[string]string
 

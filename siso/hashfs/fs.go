@@ -382,6 +382,13 @@ func makeFullpath(root, fname string) string {
 	return filepath.ToSlash(filepath.Join(root, fname))
 }
 
+// MakeFullpath returns the absolute, slash-cleaned path NeedFlush hands the
+// OutputLocal predicate, so callers that pre-compute predicate keys (the graph
+// classifier) use the same form.
+func MakeFullpath(root, fname string) string {
+	return makeFullpath(root, fname)
+}
+
 func (hfs *HashFS) dirLookup(ctx context.Context, root, fname string) (*entry, string, *directory, bool) {
 	if filepath.IsAbs(fname) {
 		return hfs.directory.lookup(ctx, filepath.ToSlash(fname))
