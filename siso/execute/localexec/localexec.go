@@ -59,6 +59,11 @@ func (LocalExec) Run(ctx context.Context, cmd *execute.Cmd) (err error) {
 	if err != nil {
 		return err
 	}
+	if ctx.Err() != nil && res != nil && res.ExitCode == 0 {
+		// if we canceled, handle it as failed action.
+		clog.Infof(ctx, "localExec canceled. set exit_code=1")
+		res.ExitCode = 1
+	}
 	cmd.SetActionResult(res, false)
 
 	duration := res.ExecutionMetadata.ExecutionCompletedTimestamp.AsTime().Sub(res.ExecutionMetadata.ExecutionStartTimestamp.AsTime())

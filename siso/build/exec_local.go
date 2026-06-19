@@ -246,6 +246,10 @@ func (b *Builder) allowCacheWrite(step *Step) bool {
 // Note: currently does not work with layered cache and blocks on digest calculation
 // Note: local step does not fail if cache-write fails but error and metrics are logged
 func (b *Builder) cacheWrite(ctx context.Context, step *Step) {
+	if ctx.Err() != nil {
+		clog.Infof(ctx, "ignore cache write: %v", ctx.Err())
+		return
+	}
 	if !b.allowCacheWrite(step) {
 		clog.Infof(ctx, "no cache write")
 		return
