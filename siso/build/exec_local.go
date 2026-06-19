@@ -13,6 +13,8 @@ import (
 	"time"
 
 	log "github.com/golang/glog"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
@@ -27,8 +29,21 @@ import (
 func (b *Builder) execLocal(ctx context.Context, step *Step) (retErr error) {
 	ctx, span := trace.NewSpan(ctx, "exec-local")
 	defer span.Close(nil)
-	clog.Infof(ctx, "exec local %s", step.cmd.Desc)
-
+	sandbox, sandboxOption := b.selectSandbox(ctx, step)
+	clog.Infof(ctx, "exec local %s sandbox:%s", step.cmd.Desc, sandbox)
+	if sandbox == "two-phase-caching" {
+		// TODO: no two phase caching when rewrapper is used?
+		step.setPhase(stepCacheCheck)
+		err := b.twoPhaseCachingLookup(ctx, step)
+		if err == nil {
+			return nil
+		}
+		switch status.Code(err) {
+		case codes.PermissionDenied, codes.Unimplemented:
+			return fmt.Errorf("two phase cache unsupported: %w", err)
+		}
+		clog.Infof(ctx, "two phase cache: %v", err)
+	}
 	step.setPhase(stepInput)
 	err := b.prepareLocalInputs(ctx, step)
 	if err != nil && !experiments.Enabled("ignore-missing-local-inputs", "step %s missing inputs: %v", step, err) {
@@ -47,9 +62,8 @@ func (b *Builder) execLocal(ctx context.Context, step *Step) (retErr error) {
 	}
 	phase := stepLocalRun
 	var executor execute.Executor = b.localExec
-	logLocalExec := b.logLocalExec
 
-	switch sandbox, sandboxOption := selectSandbox(ctx, step); sandbox {
+	switch sandbox {
 	case "nsjail":
 		stateMessagePrefix = "nsjail "
 		nsjailExecutor, err := newNSJailExecutor(ctx, b, executor, sandboxOption)
@@ -57,7 +71,6 @@ func (b *Builder) execLocal(ctx context.Context, step *Step) (retErr error) {
 			return fmt.Errorf("unable to perform nsjail: %w", err)
 		}
 		executor = nsjailExecutor
-		logLocalExec = nsjailExecutor.logLocalExec
 		defer func() {
 			if retErr != nil {
 				clog.Warningf(ctx, "failed to run nsjail: %v", retErr)
@@ -80,12 +93,21 @@ func (b *Builder) execLocal(ctx context.Context, step *Step) (retErr error) {
 			return fmt.Errorf("unable to perform file-access-trace: %w", err)
 		}
 		executor = traceExecutor
-		logLocalExec = traceExecutor.logLocalExec
 		// Normally, file-access-trace doesn't do any enforcement. But it's the more
 		// convenient sandbox to use in tests, so we allow enabling depfile enforcement.
 		if sandboxOption["enforce_depfile_only_promotes"] == "true" {
 			step.enforceDepfileOnlyPromotes = true
 		}
+	case "two-phase-caching":
+		twoPhaseCachingExecutor, err := b.tapFactory.New(ctx, b, executor)
+		if err != nil {
+			return fmt.Errorf("unable to perform tap: %w", err)
+		}
+		executor = twoPhaseCachingExecutor
+		if sandboxOption["enforce_depfile_only_promotes"] == "true" {
+			step.enforceDepfileOnlyPromotes = true
+		}
+
 	case "":
 		// no sandbox. ignore
 	default:
@@ -137,6 +159,12 @@ func (b *Builder) execLocal(ctx context.Context, step *Step) (retErr error) {
 		return err
 	})
 	if !errors.Is(err, context.Canceled) {
+		logLocalExec := b.logLocalExec
+		if le, ok := executor.(interface {
+			logLocalExec(context.Context, *Step, time.Duration) error
+		}); ok {
+			logLocalExec = le.logLocalExec
+		}
 		lerr := logLocalExec(ctx, step, dur)
 		if err == nil {
 			err = lerr
@@ -158,18 +186,27 @@ func (b *Builder) execLocal(ctx context.Context, step *Step) (retErr error) {
 	if err != nil {
 		return err
 	}
+	// TODO: two phase caching -> remote exec to populate action cache?
 	b.cacheWrite(ctx, step)
 	// TODO: check error for cacheWrite?
-	// TODO: record for two phase caching
+	if step.metrics.TwoPhaseCachingKey != "" {
+		err := b.twoPhaseCachingAdd(ctx, step.metrics.TwoPhaseCachingKey, step)
+		if err != nil {
+			clog.Warningf(ctx, "two phase caching: add %v", err)
+		}
+	}
 	return nil
 	// no need to call b.outputs, as all outputs are already on disk
 	// so no need to flush.
 }
 
-func selectSandbox(ctx context.Context, step *Step) (string, map[string]string) {
+func (b *Builder) selectSandbox(ctx context.Context, step *Step) (string, map[string]string) {
 	sandbox := step.def.Sandbox()
 	if sandbox["backend"] != "" {
 		return sandbox["backend"], sandbox
+	}
+	if b.allowTwoPhaseCaching(step) {
+		return "two-phase-caching", nil
 	}
 	enableTrace := experiments.Enabled("file-access-trace", "enable file access-trace")
 	if !enableTrace {
@@ -192,20 +229,27 @@ func selectSandbox(ctx context.Context, step *Step) (string, map[string]string) 
 	return "file-access-trace", nil
 }
 
+func (b *Builder) allowCacheWrite(step *Step) bool {
+	// Cache write must be enabled
+	if b.reapiclient == nil || !b.reCacheEnableWrite {
+		return false
+	}
+	// step must have pure inputs/outputs
+	if !step.cmd.Pure {
+		return false
+	}
+	// Upload if remotable steps or two phase caching
+	return b.allowRemote(step) || b.allowTwoPhaseCaching(step)
+}
+
 // Uploads and sets local execution result in RE if builder is trusted
 // Note: currently does not work with layered cache and blocks on digest calculation
 // Note: local step does not fail if cache-write fails but error and metrics are logged
 func (b *Builder) cacheWrite(ctx context.Context, step *Step) {
-	// Cache write must be enabled and step must have pure inputs/outputs
-	if b.reapiclient == nil || !b.reCacheEnableWrite || !step.cmd.Pure {
+	if !b.allowCacheWrite(step) {
+		clog.Infof(ctx, "no cache write")
 		return
 	}
-
-	// Upload only remotable steps
-	if !b.allowRemote(step) {
-		return
-	}
-
 	err := func() error {
 		ctx, span := trace.NewSpan(ctx, "cache-write")
 		defer span.Close(nil)
@@ -223,6 +267,7 @@ func (b *Builder) cacheWrite(ctx context.Context, step *Step) {
 			clog.Warningf(ctx, "failed to compute digest for trusted local upload: %v", err)
 			return err
 		}
+		step.metrics.Digest = actionDigest.String()
 
 		var metadata *rpb.ExecutedActionMetadata
 		if md := result.GetExecutionMetadata(); md != nil {
@@ -257,6 +302,9 @@ func (b *Builder) cacheWrite(ctx context.Context, step *Step) {
 		if len(result.GetStdoutRaw()) != 0 && result.GetStdoutDigest() == nil {
 			stdoutDigest := digest.FromBytes("stdout", result.GetStdoutRaw())
 			result.StdoutDigest = stdoutDigest.Digest().Proto()
+			if log.V(1) {
+				clog.Infof(ctx, "stdout digest %s", stdoutDigest.Digest())
+			}
 			ds.Set(stdoutDigest)
 		}
 		result.StdoutRaw = nil
@@ -265,6 +313,9 @@ func (b *Builder) cacheWrite(ctx context.Context, step *Step) {
 		if len(result.GetStderrRaw()) != 0 && result.GetStderrDigest() == nil {
 			stderrDigest := digest.FromBytes("stderr", result.GetStderrRaw())
 			result.StderrDigest = stderrDigest.Digest().Proto()
+			if log.V(1) {
+				clog.Infof(ctx, "stderr digest %s", stderrDigest.Digest())
+			}
 			ds.Set(stderrDigest)
 		}
 		result.StderrRaw = nil
@@ -272,6 +323,13 @@ func (b *Builder) cacheWrite(ctx context.Context, step *Step) {
 		// Set the outputs on the result
 		execute.ResultFromEntries(ctx, result, cmd.WorkDir, outputEntries)
 		for _, entry := range outputEntries {
+			if log.V(1) {
+				clog.Infof(ctx, "output entry: %q %s", entry.Name, entry.Data.Digest())
+			}
+			if entry.Data.Digest().IsZero() {
+				clog.Warningf(ctx, "ignore output entry: %q", entry.Name)
+				continue
+			}
 			ds.Set(entry.Data)
 		}
 

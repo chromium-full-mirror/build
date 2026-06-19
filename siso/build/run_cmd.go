@@ -17,6 +17,24 @@ func (b *Builder) allowRemote(step *Step) bool {
 	return (b.remoteExec != nil && len(step.cmd.Platform) > 0)
 }
 
+func (b *Builder) allowTwoPhaseCaching(step *Step) bool {
+	if !experiments.Enabled("two-phase-caching", "") {
+		return false
+	}
+	if b.actionCacheMap == nil {
+		return false
+	}
+	if b.tapFactory == nil {
+		return false
+	}
+	if step.def.Binding("generator") != "" {
+		// gn gen step fails?
+		// err: error in depfile "out/tpc/build.ninja.d": deps input "clang_x64_for_rust_host_build_tools/gen/build/modules/linux/module.modulemap" is output
+		return false
+	}
+	return true
+}
+
 func (b *Builder) runStrategy(step *Step) func(context.Context, *Step) error {
 	// Check criteria for allowRemote.
 	// If the command doesn't meet either criteria, fallback to local.

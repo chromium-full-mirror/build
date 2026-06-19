@@ -207,6 +207,11 @@ type Builder struct {
 	cacheSema *semaphore.Semaphore
 	cache     *Cache
 
+	// two phase caching
+	twoPhaseCachingSema *semaphore.Semaphore
+	actionCacheMap      actionCacheMap
+	tapFactory          tapFactory
+
 	explainWriter        io.Writer
 	ninjaLogWriter       io.Writer
 	failureSummaryWriter io.Writer
@@ -375,6 +380,7 @@ func New(ctx context.Context, graph Graph, opts Options) (_ *Builder, err error)
 
 		cacheSema:             semaphore.New("cache", opts.Limits.Cache),
 		cache:                 opts.Cache,
+		twoPhaseCachingSema:   semaphore.New("cache-check", opts.Limits.Cache),
 		failureSummaryWriter:  opts.FailureSummaryWriter,
 		failedCommandsWriter:  opts.FailedCommandsWriter,
 		outputLogWriter:       opts.OutputLogWriter,
@@ -416,6 +422,27 @@ func New(ctx context.Context, graph Graph, opts Options) (_ *Builder, err error)
 	if experiments.Enabled("ignore-missing-out-in-depfile", "ignore missing out error in depfile") {
 		makeutil.IgnoreMissingOut = true
 	}
+	if experiments.Enabled("two-phase-caching", "") {
+		if b.reapiclient != nil {
+			if experiments.Enabled("two-phase-caching-local-action-cache-map", "") {
+				cacheDir, err := os.UserCacheDir()
+				if err != nil {
+					return nil, err
+				}
+				b.actionCacheMap = localActionCacheMap{
+					dir:         filepath.Join(cacheDir, "siso/action_cache_map"),
+					reapiclient: b.reapiclient,
+				}
+			} else {
+				b.actionCacheMap = b.reapiclient.ActionCacheMap()
+			}
+			tf, err := newExternalTapFactory()
+			if err != nil {
+				return nil, err
+			}
+			b.tapFactory = tf
+		}
+	}
 	return b, nil
 }
 
@@ -439,6 +466,7 @@ func (b *Builder) SemaStats() []semaphore.Stat {
 	stats := []semaphore.Stat{
 		b.cache.sema.Stat(),
 		b.cacheSema.Stat(),
+		b.twoPhaseCachingSema.Stat(),
 		scandeps.CPPScanSema.Stat(),
 		b.fastLocalSema.Stat(),
 		hashfs.DigestSemaphore.Stat(),
@@ -645,6 +673,8 @@ func (b *Builder) Build(ctx context.Context, name string, args ...string) (err e
 	}()
 	semas := []trace.Semaphore{
 		b.cache.sema,
+		b.cacheSema,
+		b.twoPhaseCachingSema,
 		b.localSema,
 		b.remoteSema,
 		b.rewrapSema,

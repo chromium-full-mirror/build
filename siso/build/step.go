@@ -372,6 +372,7 @@ const (
 	stepRetryWait
 	stepRetryRun
 	stepOutput
+	stepCacheCheck
 	stepCacheWrite
 	stepCacheWriteWait
 	stepDone
@@ -411,6 +412,8 @@ func (s stepPhase) String() string {
 		return "retry"
 	case stepOutput:
 		return "output"
+	case stepCacheCheck:
+		return "cache-check"
 	case stepCacheWrite:
 		return "cache-write"
 	case stepCacheWriteWait:

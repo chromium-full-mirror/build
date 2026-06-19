@@ -103,7 +103,8 @@ func (n *nsjailExecutor) Run(ctx context.Context, cmd *execute.Cmd) (err error) 
 	return nil
 }
 
-func (n *nsjailExecutor) logLocalExec(ctx context.Context, step *Step, dur time.Duration) error {
+func (n *nsjailExecutor) logLocalExec(ctx context.Context, step *Step, dur time.Duration) error { //nolint:unparam
+
 	command := step.def.Binding("command")
 	if len(command) > 256 {
 		command = command[:256] + " ..."

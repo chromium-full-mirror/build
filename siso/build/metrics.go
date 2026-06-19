@@ -162,6 +162,11 @@ type StepMetric struct {
 	// step handler, etc.
 	MaterializeOutputsTime IntervalMetric `json:"materialize_outputs_nanos,omitempty"`
 
+	// Cache lookup key for two phase caching.
+	TwoPhaseCachingKey string `json:"two_phase_caching_key,omitempty"`
+	// Number of actions checked for two phase caching.
+	TwoPhaseCachingActions int `json:"two_phase_caching_actions,omitempty"`
+
 	// RunTime is the total duration of the action execution, including
 	// overhead such as uploading / downloading files. Semaphore waiting time
 	// (namely execution semaphores like localSema, remoteSema, rewrapSema, etc)
