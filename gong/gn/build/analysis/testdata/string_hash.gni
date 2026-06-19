@@ -1,0 +1,30 @@
+# Copyright 2026 The Chromium Authors
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+# Verify hashes of strings.
+assert(string_hash("abc") == "ba7816bf")
+assert(string_hash("") == "e3b0c442")
+assert(string_hash("hello") == "2cf24dba")
+
+# Verify error handling for incorrect number of arguments.
+assert_failure("Wrong number of arguments to string_hash().", "Expecting exactly one. usage: string_hash(string)") {
+  string_hash()
+}
+
+assert_failure("Wrong number of arguments to string_hash().", "Expecting exactly one. usage: string_hash(string)") {
+  string_hash("a", "b")
+}
+
+# Verify error handling for incorrect argument types.
+assert_failure("argument of string_hash is not a string", "Expecting argument to be a string.") {
+  string_hash(123)
+}
+
+assert_failure("argument of string_hash is not a string", "Expecting argument to be a string.") {
+  string_hash(["a"])
+}
+
+assert_failure("argument of string_hash is not a string", "Expecting argument to be a string.") {
+  string_hash(true)
+}
