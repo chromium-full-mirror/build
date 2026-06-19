@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"syscall"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -98,6 +99,9 @@ func (b *Builder) remoteClaimFallbackIfAllowed(ctx context.Context, step *Step, 
 	}
 	if errors.Is(err, scandeps.ErrTooSlow) {
 		fallbackReport("fallback-on-scandeps-slow")
+	}
+	if errors.Is(err, syscall.ENOSPC) {
+		return false, fmt.Errorf("remote-exec %s failed: out-of-disk-space: %w", step.cmd.ActionDigest(), err)
 	}
 	if errors.Is(err, errFlushOutput) {
 		fallbackReport("fallback-on-output-error")
