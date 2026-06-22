@@ -752,7 +752,7 @@ func (c *Command) postRun(ctx context.Context, stats build.Stats, runErr error) 
 			if ui.IsTerminal() {
 				msgPrefix = ui.SGR(ui.BackgroundRed, msgPrefix)
 			}
-			if status.Code(runErr) == codes.Unavailable {
+			if reapiErr, ok := errors.AsType[reapi.DialError](runErr); ok && status.Code(reapiErr.Err) == codes.Unavailable {
 				ui.Default.Errorf("\n%6s %s: could not connect to backend. If you want to build offline, pass `-o` or `--offline`\n %v\n", ui.FormatDuration(time.Since(c.started)), msgPrefix, runErr)
 			} else {
 				ui.Default.Errorf("\n%6s %s: %v\n", ui.FormatDuration(time.Since(c.started)), msgPrefix, runErr)

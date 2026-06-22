@@ -438,14 +438,27 @@ func cookieInterceptors(cookie string) (grpc.UnaryClientInterceptor, grpc.Stream
 	return unary, stream
 }
 
+// DialError is reapi dial error.
+type DialError struct {
+	Err error
+}
+
+func (e DialError) Error() string {
+	return fmt.Sprintf("%v", e.Err)
+}
+
+func (e DialError) Unwrap() error {
+	return e.Err
+}
+
 // New creates new remote exec API client.
 func New(ctx context.Context, cred cred.Cred, opt Option) (*Client, error) {
 	defer trace.Begin(ctx, "reapi.New").End()
 	if opt.Address == "" {
-		return nil, errors.New("no reapi address")
+		return nil, DialError{Err: errors.New("no reapi address")}
 	}
 	if isGoogleRBE(opt.Address) && opt.Instance == "" {
-		return nil, errors.New("no reapi instance")
+		return nil, DialError{Err: errors.New("no reapi instance")}
 	}
 	if opt.EnableGRPCCompression && (opt.CompressedBlob != 0 || opt.BatchCompressedBlob != 0) {
 		opt.CompressedBlob = 0
@@ -455,7 +468,7 @@ func New(ctx context.Context, cred cred.Cred, opt Option) (*Client, error) {
 	clog.Infof(ctx, "address: %q instance: %q", opt.Address, opt.Instance)
 	conn, err := newConn(ctx, opt.Address, cred, opt)
 	if err != nil {
-		return nil, err
+		return nil, DialError{Err: err}
 	}
 	casConn := conn
 	if opt.CASAddress != "" {
@@ -463,7 +476,7 @@ func New(ctx context.Context, cred cred.Cred, opt Option) (*Client, error) {
 		casConn, err = newConn(ctx, opt.CASAddress, cred, opt)
 		if err != nil {
 			conn.Close()
-			return nil, err
+			return nil, DialError{Err: err}
 		}
 	}
 	return NewFromConn(ctx, opt, cred, conn, casConn)
