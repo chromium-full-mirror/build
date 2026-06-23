@@ -522,9 +522,8 @@ func (e *entry) flushRegularFile(ctx context.Context, fname string, osfs *osfs.O
 		clog.Infof(ctx, "flush %s: empty file", fname)
 		err = osfs.WriteFile(ctx, fname, nil, 0644)
 	case len(e.buf) > 0:
-		removeBeforeWrite()
 		clog.Infof(ctx, "flush %s from embedded buf", fname)
-		err = osfs.WriteFile(ctx, fname, e.buf, e.mode)
+		err = writeFileAtomic(ctx, fname, osfs, e.buf, e.mode, removeReason)
 	case d.IsZero():
 		return fmt.Errorf("no data: retrieve %s: ", fname)
 	case removeReason == "" && e.isSourceFile(osfs, fname):
@@ -599,6 +598,26 @@ func flushRemoveReason(fi os.FileInfo) string {
 func (e *entry) isSourceFile(osfs *osfs.OSFS, fname string) bool {
 	lsrc, ok := osfs.AsFileSource(e.src)
 	return ok && lsrc.Fname == fname
+}
+
+// writeFileAtomic writes data to fname via a temp file and rename, so a
+// concurrent reader or an interrupted flush never observes a truncated or
+// partially-written file. rename atomically replaces an existing regular file
+// (including a hardlink). A non-regular dst (removeReason != "") is removed
+// first, mirroring flushWrite, since rename can't replace a directory.
+func writeFileAtomic(ctx context.Context, fname string, osfs *osfs.OSFS, data []byte, perm fs.FileMode, removeReason string) error {
+	tmpname := filepath.Join(filepath.Dir(fname), "."+filepath.Base(fname)+".siso_tmp")
+	if err := osfs.WriteFile(ctx, tmpname, data, perm); err != nil {
+		return err
+	}
+	if removeReason != "" {
+		if err := osfs.Remove(ctx, fname); err != nil {
+			clog.Warningf(ctx, "flush %s: remove %s: %v", fname, removeReason, err)
+		} else {
+			clog.Infof(ctx, "flush %s: remove %s", fname, removeReason)
+		}
+	}
+	return osfs.Rename(ctx, tmpname, fname)
 }
 
 // flushWrite writes file data to fname, trying clone first if supported,
