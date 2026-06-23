@@ -82,7 +82,7 @@ func writeInlineTarget(w io.Writer, t *graph.Target, buildSettings *environment.
 	for _, output := range t.Resolution.Metadata.Outputs() {
 		outputPaths = append(outputPaths, escapeStringNinja(output.Path()))
 	}
-	_, err := fmt.Fprintf(w, "build phony/%s: phony %s", escapeStringNinja(t.Label().Name), strings.Join(outputPaths, " "))
+	_, err := fmt.Fprintf(w, "build %s: phony %s", escapeStringNinja(phonyTargetPath(t)), strings.Join(outputPaths, " "))
 	if err != nil {
 		return err
 	}

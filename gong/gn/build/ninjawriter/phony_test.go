@@ -181,7 +181,7 @@ build b$:bar: phony foo.o
 
 build all: phony $
     foo.o $
-    phony/bar
+    phony/b/bar
 
 default all
 `,

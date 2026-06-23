@@ -334,3 +334,60 @@ build outfile.txt: _rule | ../../tools/script.py ../../src/input.txt
 		})
 	}
 }
+
+func TestWriteTarget_Inline(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		labelDir  string
+		labelName string
+		outputs   []string
+		want      string
+	}{
+		{
+			name:      "phonyroot",
+			labelDir:  "//",
+			labelName: "root_target",
+			outputs:   []string{"obj/root_target.o"},
+			want:      "build phony/root_target: phony obj/root_target.o",
+		},
+		{
+			name:      "phonysubdir",
+			labelDir:  "//foo/bar",
+			labelName: "baz",
+			outputs:   []string{"obj/foo/bar/baz.o"},
+			want:      "build phony/foo/bar/baz: phony obj/foo/bar/baz.o",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			outDir := mustSourceDir(t, "/my/builddir/out/Default")
+			var outFiles []fs.OutputPath
+			for _, out := range tc.outputs {
+				outFiles = append(outFiles, fs.MakeOutputPath(outDir, out))
+			}
+			target := &graph.Target{
+				Resolution: graph.Resolution{
+					Label: environment.Label{
+						Dir:  mustSourceDir(t, tc.labelDir),
+						Name: tc.labelName,
+					},
+					Metadata: mockMetadata{
+						outFiles: outFiles,
+					},
+				},
+			}
+
+			bs := &environment.BuildSettings{
+				RootPath: "/my/builddir/",
+				BuildDir: outDir,
+			}
+
+			var sb strings.Builder
+			if err := writeTarget(&sb, target, bs); err != nil {
+				t.Fatalf("writeTarget()=%v; want nil err", err)
+			}
+			if diff := cmp.Diff(tc.want, sb.String()); diff != "" {
+				t.Errorf("writeTarget() mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}

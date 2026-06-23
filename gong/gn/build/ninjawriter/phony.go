@@ -238,7 +238,7 @@ func writePhonyAndAllRules(out io.Writer, targets []*graph.Target, buildSettings
 		outputs := target.Resolution.Metadata.Outputs()
 		if len(outputs) > 0 {
 			if len(target.Resolution.Actions) == 0 {
-				fmt.Fprintf(out, " $\n    phony/%s", escapeStringNinja(target.Resolution.Label.Name))
+				fmt.Fprintf(out, " $\n    %s", escapeStringNinja(phonyTargetPath(target)))
 			} else {
 				fmt.Fprintf(out, " $\n    %s", escapeStringNinja(outputs[0].Path()))
 			}
@@ -278,4 +278,10 @@ func writePhonyRule(out io.Writer, t *graph.Target, phonyName string) {
 		fmt.Fprintf(out, " %s", strings.Join(escapedDeps, " "))
 	}
 	fmt.Fprintln(out)
+}
+
+// phonyTargetPath returns the phony target path for a target, e.g. "phony/a/foo" for "//a:foo".
+func phonyTargetPath(t *graph.Target) string {
+	targetAsPath := strings.TrimPrefix(t.Resolution.Label.Dir.Path(), "//")
+	return path.Join("phony", targetAsPath, t.Resolution.Label.Name)
 }
