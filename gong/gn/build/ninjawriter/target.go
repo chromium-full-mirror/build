@@ -64,13 +64,17 @@ func writeTarget(w io.Writer, t *graph.Target, buildSettings *environment.BuildS
 	//
 	// We can apply a heuristic of writing a target as a subninja, only if that target
 	// has graph.RunToolAction declarations with expansions.
-	if slices.ContainsFunc(t.Resolution.Actions, func(action graph.Action) bool {
+	if isInlineTarget(t) {
+		return writeInlineTarget(w, t, buildSettings)
+	}
+	return writeSubninjaTarget(w, t, buildSettings)
+}
+
+func isInlineTarget(t *graph.Target) bool {
+	return !slices.ContainsFunc(t.Resolution.Actions, func(action graph.Action) bool {
 		toolAction, ok := action.(graph.RunToolAction)
 		return ok && toolAction.Expansions != nil
-	}) {
-		return writeSubninjaTarget(w, t, buildSettings)
-	}
-	return writeInlineTarget(w, t, buildSettings)
+	})
 }
 
 func writeInlineTarget(w io.Writer, t *graph.Target, buildSettings *environment.BuildSettings) error {

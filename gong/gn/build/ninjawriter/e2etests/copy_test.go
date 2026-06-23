@@ -39,7 +39,7 @@ build my_copy: phony obj/{{source_out_dir}}/{{source_name_part}}.out obj/{{sourc
 build $:my_copy: phony obj/{{source_out_dir}}/{{source_name_part}}.out obj/{{source_out_dir}}/{{source_name_part}}.out
 
 build all: phony $
-    obj/{{source_out_dir}}/{{source_name_part}}.out
+    phony/my_copy
 
 default all
 `,

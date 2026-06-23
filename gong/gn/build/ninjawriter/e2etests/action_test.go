@@ -36,10 +36,8 @@ subninja toolchain.ninja
 build foo: phony obj/gen/foo.out
 build $:foo: phony obj/gen/foo.out
 
-build all: phony $` +
-				// TODO: should be phony/foo instead of obj/gen/foo.out
-				`
-    obj/gen/foo.out
+build all: phony $
+    phony/foo
 
 default all
 `,
@@ -88,10 +86,8 @@ subninja toolchain.ninja
 build multi_output: phony obj/gen/output1.txt obj/gen/output2.txt
 build $:multi_output: phony obj/gen/output1.txt obj/gen/output2.txt
 
-build all: phony $` +
-				// TODO: should be phony/multi_output instead of obj/gen/output1.txt
-				`
-    obj/gen/output1.txt
+build all: phony $
+    phony/multi_output
 
 default all
 `,
@@ -139,7 +135,7 @@ build foo: phony obj/gen/foo.out
 build $:foo: phony obj/gen/foo.out
 
 build all: phony $
-    obj/gen/foo.out
+    phony/foo
 
 default all
 `,

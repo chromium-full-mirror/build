@@ -32,13 +32,24 @@ func TestWritePhonyAndAllRules(t *testing.T) {
 		for _, out := range outputs {
 			outFiles = append(outFiles, fs.MakeOutputPath(outDir, out))
 		}
+		var processedActions []graph.Action
+		for _, a := range actions {
+			if ta, ok := a.(graph.RunToolAction); ok {
+				if ta.Expansions == nil {
+					ta.Expansions = &graph.SimpleExpansions{}
+				}
+				processedActions = append(processedActions, ta)
+			} else {
+				processedActions = append(processedActions, a)
+			}
+		}
 		t := &graph.Target{
 			Resolution: graph.Resolution{
 				Label: environment.Label{Dir: mustDir(t, dir), Name: name},
 				Metadata: mockMetadata{
 					outFiles: outFiles,
 				},
-				Actions: actions,
+				Actions: processedActions,
 			},
 		}
 		return t

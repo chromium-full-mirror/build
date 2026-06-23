@@ -222,22 +222,20 @@ func writePhonyAndAllRules(out io.Writer, targets []*graph.Target, buildSettings
 	for _, target := range targets {
 		// The "all" rule consists of the "dependency output" of each target,
 		// i.e. what file "should be used to express a dependency on" the target.
-		// We don't yet have a way of determining this (and it seems necessary
+		// We don't have a way of determining this exactly (which seems necessary
 		// for implementing || order only deps), so until it's implemented:
 		// - Aggregator targets like group() contribute their phony node
 		//   if they have at least one output.
 		//   Ninja treats empty phony targets as always dirty, so we still
 		//   must check for the output count.
-		// - For other targets default to the first output, which is mostly
+		// - Other ("binary") targets default to the first output, which is mostly
 		//   correct except for rust_proc_macro and shared_library:
 		//   https://source.chromium.org/gn/gn/+/main:src/gn/target.cc;l=1000;drc=fa9dacd8eff0bbec4a542c69907659cdd3db8989
 		// TODO: fix this once we can determine "dependency outputs".
 		// TODO: fix this for rust_proc_macro and shared_library.
-		// TODO: right now action() and copy() don't produce phony, but they should too
-		// https://source.chromium.org/gn/gn/+/main:src/gn/target.cc;l=971-974;drc=fa9dacd8eff0bbec4a542c69907659cdd3db8989
 		outputs := target.Resolution.Metadata.Outputs()
 		if len(outputs) > 0 {
-			if len(target.Resolution.Actions) == 0 {
+			if isInlineTarget(target) {
 				fmt.Fprintf(out, " $\n    %s", escapeStringNinja(phonyTargetPath(target)))
 			} else {
 				fmt.Fprintf(out, " $\n    %s", escapeStringNinja(outputs[0].Path()))
