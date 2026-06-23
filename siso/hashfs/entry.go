@@ -293,7 +293,7 @@ func (e *entry) updateDir(ctx context.Context, hfs *HashFS, dname string) []stri
 			}
 			wg.Go(func() {
 				// update entry in e.directory.
-				_, err := hfs.stat(ctx, dname, name, false, false)
+				_, err := hfs.stat(ctx, dname, name, statOpts{})
 				if err != nil {
 					clog.Warningf(ctx, "updateDir stat %s: %v", name, err)
 				}
@@ -312,7 +312,7 @@ func (e *entry) updateDir(ctx context.Context, hfs *HashFS, dname string) []stri
 				continue
 			}
 			// update entry in e.directory.
-			_, err := hfs.stat(ctx, dname, name, false, false)
+			_, err := hfs.stat(ctx, dname, name, statOpts{})
 			if err != nil {
 				clog.Warningf(ctx, "updateDir stat %s: %v", name, err)
 			}

@@ -464,18 +464,21 @@ func (hfs *HashFS) getOrCreateEntry(ctx context.Context, fname string) (*entry, 
 	return e, fname, nil
 }
 
-// Stat returns a FileInfo at root/fname.
-func (hfs *HashFS) Stat(ctx context.Context, root, fname string) (FileInfo, error) {
-	return hfs.stat(ctx, root, fname, true, false)
+// statOpts controls optional behaviors of HashFS.stat.
+type statOpts struct {
+	needCompute         bool // queue a digest compute for a new entry
+	skipDirMtimeRefresh bool // skip dir cache-hit mtime-refresh Lstat (StatIfExists)
 }
 
-// StatIfExists is like Stat but skips the mtime-refresh Lstat on cache hits
-// for directories. Use this when only existence/type is needed, not a fresh
-// mtime/size: the entry is still populated on first touch, and cached-negative
-// entries still return ErrNotExist, but repeated checks against the same
-// cached dir avoid a per-call Lstat.
+// Stat returns a FileInfo at root/fname.
+func (hfs *HashFS) Stat(ctx context.Context, root, fname string) (FileInfo, error) {
+	return hfs.stat(ctx, root, fname, statOpts{needCompute: true})
+}
+
+// StatIfExists is like Stat but skips the dir cache-hit mtime-refresh Lstat.
+// Use when only existence/type is needed, not a fresh mtime/size.
 func (hfs *HashFS) StatIfExists(ctx context.Context, root, fname string) (FileInfo, error) {
-	return hfs.stat(ctx, root, fname, true, true)
+	return hfs.stat(ctx, root, fname, statOpts{needCompute: true, skipDirMtimeRefresh: true})
 }
 
 // statTracer tracks the execution time of each step in HashFS.stat.
@@ -499,9 +502,8 @@ func (t *statTracer) record(name string) {
 }
 
 // stat looks up or creates the hashfs entry for root/fname.
-// If skipDirMtimeRefresh is true, cache hits on directory entries skip the
-// per-call Lstat that would otherwise refresh e.mtime from disk.
-func (hfs *HashFS) stat(ctx context.Context, root, fname string, needCompute bool, skipDirMtimeRefresh bool) (FileInfo, error) {
+// See statOpts for the optional directory-Lstat short-circuits.
+func (hfs *HashFS) stat(ctx context.Context, root, fname string, opts statOpts) (FileInfo, error) {
 	var tracer statTracer
 	tracer.start = time.Now()
 	tracer.stepStart = tracer.start
@@ -526,7 +528,7 @@ func (hfs *HashFS) stat(ctx context.Context, root, fname string, needCompute boo
 		clog.Infof(ctx, "stat @%s -> %s", root, fname)
 	}
 	if ok {
-		e, err := hfs.statHit(ctx, root, fname, e, skipDirMtimeRefresh, &tracer)
+		e, err := hfs.statHit(ctx, root, fname, e, opts, &tracer)
 		if err != nil {
 			return FileInfo{}, err
 		}
@@ -536,7 +538,7 @@ func (hfs *HashFS) stat(ctx context.Context, root, fname string, needCompute boo
 	fullname := makeFullpath(root, fname)
 	for {
 		ev, err, _ := hfs.singleflight.Do(fullname, func() (any, error) {
-			return hfs.statNewEntry(ctx, root, fname, fullname, needCompute, skipDirMtimeRefresh, &tracer)
+			return hfs.statNewEntry(ctx, root, fname, fullname, opts, &tracer)
 		})
 		if ctx.Err() == nil && (errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)) {
 			// if singleflight one was canceled, but current ctx is still active, retry.
@@ -552,7 +554,7 @@ func (hfs *HashFS) stat(ctx context.Context, root, fname string, needCompute boo
 	return FileInfo{root: root, fname: fname, e: e}, nil
 }
 
-func (hfs *HashFS) statHit(ctx context.Context, root, fname string, e *entry, skipDirMtimeRefresh bool, tracer *statTracer) (*entry, error) {
+func (hfs *HashFS) statHit(ctx context.Context, root, fname string, e *entry, opts statOpts, tracer *statTracer) (*entry, error) {
 	e.mu.Lock()
 	err := e.err
 	e.mu.Unlock()
@@ -560,9 +562,8 @@ func (hfs *HashFS) statHit(ctx context.Context, root, fname string, e *entry, sk
 		return nil, err
 	}
 	if e.isDirectory() {
-		if skipDirMtimeRefresh {
-			// An existence-only caller opted out via StatIfExists, so
-			// skip the mtime-refresh Lstat below.
+		if opts.skipDirMtimeRefresh {
+			// Skip the refresh Lstat: existence-only caller (StatIfExists).
 			return e, nil
 		}
 		// directory's mtime has been updated locally
@@ -608,7 +609,7 @@ func (hfs *HashFS) statHit(ctx context.Context, root, fname string, e *entry, sk
 	return e, nil
 }
 
-func (hfs *HashFS) statNewEntry(ctx context.Context, root, fname, fullname string, needCompute bool, skipDirMtimeRefresh bool, tracer *statTracer) (*entry, error) {
+func (hfs *HashFS) statNewEntry(ctx context.Context, root, fname, fullname string, opts statOpts, tracer *statTracer) (*entry, error) {
 	// check again for racing singlefight statNewEntry.
 	e, fname, dir, ok := hfs.dirLookup(ctx, root, fname)
 	tracer.record("dirLookup")
@@ -616,7 +617,7 @@ func (hfs *HashFS) statNewEntry(ctx context.Context, root, fname, fullname strin
 		clog.Infof(ctx, "stat @%s -> %s", root, fname)
 	}
 	if ok {
-		return hfs.statHit(ctx, root, fname, e, skipDirMtimeRefresh, tracer)
+		return hfs.statHit(ctx, root, fname, e, opts, tracer)
 	}
 	e = newLocalEntry()
 	e.init(ctx, fullname, hfs.executables, hfs.OS)
@@ -644,7 +645,7 @@ func (hfs *HashFS) statNewEntry(ctx context.Context, root, fname, fullname strin
 	if e.err != nil {
 		return e, e.err
 	}
-	if needCompute {
+	if opts.needCompute {
 		hfs.digester.lazyCompute(ctx, fullname, e)
 		tracer.record("lazyCompute")
 	}
