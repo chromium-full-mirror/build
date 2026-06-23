@@ -275,6 +275,17 @@ func (fsys FileSystem) Lstat(name string) (fs.FileInfo, error) {
 // i.e. Even if err != nil, fs.FileInfo may be valid for Visited or
 // VisitedPaths, so can get intermediate symlinks's FileInfo.
 func (fsys FileSystem) Stat(name string) (fs.FileInfo, error) {
+	return fsys.statWith(name, fsys.hashFS.Stat)
+}
+
+// StatIfExists is like Stat but routes through HashFS.StatIfExists,
+// skipping the mtime-refresh Lstat for cached directory entries.
+// Use when only existence/type (and optionally VisitedPaths) is needed.
+func (fsys FileSystem) StatIfExists(name string) (fs.FileInfo, error) {
+	return fsys.statWith(name, fsys.hashFS.StatIfExists)
+}
+
+func (fsys FileSystem) statWith(name string, statFn func(context.Context, string, string) (FileInfo, error)) (fs.FileInfo, error) {
 	pathname := name
 	var fis []FileInfo
 	for range maxSymlinks {
@@ -285,7 +296,7 @@ func (fsys FileSystem) Stat(name string) (fs.FileInfo, error) {
 		if log.V(1) {
 			clog.Infof(fsys.ctx, "fsys stat %q %q", root, name)
 		}
-		fi, err := fsys.hashFS.Stat(fsys.ctx, root, name)
+		fi, err := statFn(fsys.ctx, root, name)
 		if err != nil {
 			return FileInfo{
 					root:  root,

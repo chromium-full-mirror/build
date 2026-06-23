@@ -588,6 +588,57 @@ func TestStat_Dir(t *testing.T) {
 	}
 }
 
+// TestStatIfExists_DirVanished: StatIfExists trusts a cached dir entry and
+// reports it exists (skips the refresh Lstat); Stat re-Lstats and returns
+// ErrNotExist. resolveSymlinkForInputDeps (the only caller) needs only
+// existence, and its subtree is additive to per-file inputs.
+func TestStatIfExists_DirVanished(t *testing.T) {
+	ctx := t.Context()
+	dir := t.TempDir()
+	dir, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hfs, err := hashfs.New(ctx, hashfs.Option{})
+	if err != nil {
+		t.Fatalf("New=%v", err)
+	}
+	defer func() {
+		if err := hfs.Close(ctx); err != nil {
+			t.Fatalf("hfs.Close=%v", err)
+		}
+	}()
+
+	dirname := "out/siso/gen"
+	cmdhash := sha256.Sum256([]byte("command line"))
+	if err := hfs.Mkdir(ctx, dir, dirname, cmdhash[:], nil); err != nil {
+		t.Fatalf("Mkdir(ctx, %q, %q)=%v; want nil err", dir, dirname, err)
+	}
+	// Populate the cache entry for the directory.
+	if _, err := hfs.Stat(ctx, dir, dirname); err != nil {
+		t.Fatalf("Stat(ctx, %q, %q)=_, %v; want nil err", dir, dirname, err)
+	}
+	// Remove the directory from disk behind hashfs's back, leaving the
+	// in-memory entry as a directory not present on disk.
+	if err := os.RemoveAll(filepath.Join(dir, dirname)); err != nil {
+		t.Fatalf("RemoveAll=%v", err)
+	}
+
+	// StatIfExists trusts the cached directory entry: it skips the
+	// mtime-refresh Lstat and reports the directory as existing.
+	fi, err := hfs.StatIfExists(ctx, dir, dirname)
+	if err != nil {
+		t.Errorf("StatIfExists(ctx, %q, %q)=_, %v; want nil err", dir, dirname, err)
+	} else if !fi.IsDir() {
+		t.Errorf("StatIfExists(ctx, %q, %q).IsDir()=false; want true", dir, dirname)
+	}
+
+	// Stat re-Lstats and observes the directory is gone from disk.
+	if _, err := hfs.Stat(ctx, dir, dirname); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("Stat(ctx, %q, %q)=_, %v; want %v", dir, dirname, err, fs.ErrNotExist)
+	}
+}
+
 func TestStat_Symlink_FileInfoPath(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skipf("no symlink on windows")

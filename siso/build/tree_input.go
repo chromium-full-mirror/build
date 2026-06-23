@@ -60,7 +60,9 @@ func treeInputs(ctx context.Context, fn func(context.Context, string) (merkletre
 
 func (b *Builder) resolveSymlinkForInputDeps(ctx context.Context, dir, labelSuffix string, inputDeps map[string][]string) (string, []string, error) {
 	fsys := b.hashFS.FileSystem(ctx, b.path.WorkspaceRoot)
-	fi, err := fsys.Stat(dir)
+	// Existence + visited-symlink chain only; StatIfExists skips the
+	// per-call dir mtime-refresh Lstat (~2.3M/build on chrome).
+	fi, err := fsys.StatIfExists(dir)
 	if log.V(1) {
 		clog.Infof(ctx, "input deps stat %q: %v", dir, err)
 	}
