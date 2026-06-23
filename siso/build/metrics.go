@@ -9,6 +9,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"strconv"
+	"strings"
 	"time"
 
 	log "github.com/golang/glog"
@@ -34,6 +35,19 @@ const (
 	// finishes, i.e. excludes cacheSema wait time.
 	spanExecRemoteCacheCheck = "exec-remote-cache-check"
 )
+
+// shouldLogSpan returns whether this is a span that should be logged for metric purposes.
+func shouldLogSpan(name string) bool {
+	kind, _, _ := strings.Cut(name, "/")
+	return strings.HasPrefix(kind, "step:")
+}
+
+// MetricSpan is span timing logged for metric purposes.
+type MetricSpan struct {
+	Name          string `json:"name"`
+	StartNanos    int64  `json:"start_ns"`
+	DurationNanos int64  `json:"duration_ns"`
+}
 
 // IntervalMetric is a time duration, but serialized as nanoseconds in JSON.
 type IntervalMetric time.Duration
@@ -118,6 +132,8 @@ type StepMetric struct {
 	Err           bool   `json:"err,omitempty"`             // whether the action failed.
 	RemoteRetry   int    `json:"remote_retry,omitempty"`    // count of remote retry
 	WorkerPool    string `json:"worker_pool,omitempty"`     // worker pool that executes the action.
+
+	Spans []MetricSpan `json:"spans,omitempty"`
 
 	// DepsScanTime is the time it took in calculating deps for cmd inputs.
 	// Semaphore waiting time is included, which does not count towards ActionStartTime.

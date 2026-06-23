@@ -97,7 +97,15 @@ func (b *Builder) runStep(ctx context.Context, step *Step) (retErr error) {
 			// Some timings are measured using spans instead, extrapolate those
 			// into the step metrics now.
 			if tc != nil {
+				var metricSpans []MetricSpan
 				for _, s := range tc.Spans() {
+					if shouldLogSpan(s.Name) {
+						metricSpans = append(metricSpans, MetricSpan{
+							Name:          s.Name,
+							StartNanos:    s.Start.Sub(b.start).Nanoseconds(),
+							DurationNanos: s.Duration().Nanoseconds(),
+						})
+					}
 					switch s.Name {
 					case spanDepsCmd:
 						step.metrics.DepsScanTime = IntervalMetric(s.Start.Sub(b.start))
@@ -109,6 +117,7 @@ func (b *Builder) runStep(ctx context.Context, step *Step) (retErr error) {
 						step.metrics.CacheStartTime = IntervalMetric(s.Start.Sub(b.start))
 					}
 				}
+				step.metrics.Spans = metricSpans
 			}
 			// Other metrics.
 			stepLogEntry(ctx, logger, step, duration, retErr)
