@@ -171,10 +171,17 @@ func RebasePath(input string, destDir SourceDir, sourceRoot string) (string, err
 // ResolvePath resolves source file or directory relative to some given source root.
 // (This does not have to be the source root of the build tree.)
 func ResolvePath(input, sourceRoot string) string {
+	if input == "" {
+		return ""
+	}
 	if !IsPathSourceAbsolute(input) {
-		// TODO: handle windows properly like ResolvePath in filesystem_utils.cc does
+		if len(input) > 2 && input[2] == ':' {
+			// Windows path, strip the leading slash.
+			return input[1:]
+		}
 		return input
 	}
+	// Make sure to strip the double-leading slash for source-relative paths.
 	return filepath.ToSlash(path.Join(sourceRoot, strings.TrimPrefix(input, "//")))
 }
 

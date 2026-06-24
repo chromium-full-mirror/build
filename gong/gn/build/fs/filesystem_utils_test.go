@@ -443,6 +443,33 @@ func TestRebasePath_Windows(t *testing.T) {
 	}
 }
 
+func TestResolvePath(t *testing.T) {
+	for _, tc := range []struct {
+		input      string
+		sourceRoot string
+		want       string
+	}{
+		{input: "", want: ""},
+		// No source root, Unix style path. Remains unchanged.
+		{input: "/x/y", want: "/x/y"},
+		// No source root, Windows style path. Leading / stripped regardless of platform.
+		{input: "/C:/x/y", want: "C:/x/y"},
+		{input: "/C:/", want: "C:/"},
+		// Source root resolves //.
+		{input: "//foo/bar", want: "foo/bar"},
+		{input: "//foo/bar", sourceRoot: "/src", want: "/src/foo/bar"},
+		{input: "//foo/bar", sourceRoot: "C:/src", want: "C:/src/foo/bar"},
+	} {
+		t.Run(tc.input, func(t *testing.T) {
+			t.Parallel()
+			p := ResolvePath(tc.input, tc.sourceRoot)
+			if p != tc.want {
+				t.Errorf("ResolvePath(%q, %q)=%s; want=%v", tc.input, tc.sourceRoot, p, tc.want)
+			}
+		})
+	}
+}
+
 func TestDirectoryWithNoLastSlash(t *testing.T) {
 	for _, tc := range []struct {
 		path string
