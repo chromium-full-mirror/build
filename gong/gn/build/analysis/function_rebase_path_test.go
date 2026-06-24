@@ -256,7 +256,7 @@ func TestRebasePathFunction(t *testing.T) {
 				resolve.NewOriginlessStringValue("//"),
 			},
 			curDir:  mustDir(t, "//foo/"),
-			wantErr: "empty directory path",
+			wantErr: &resolve.ValueError{},
 		},
 		{
 			name: "relative input with current_base",

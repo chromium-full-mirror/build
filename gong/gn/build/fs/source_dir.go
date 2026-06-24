@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 	"unique"
+
+	"go.chromium.org/build/gong/gn/resolve"
 )
 
 // SourceDir represents a directory within the source tree. Source dirs begin and end in
@@ -150,8 +152,11 @@ func (d SourceDir) ResolveRelativeFile(path string) (SourceFile, error) {
 	// because both ResolveRelativeDir and this function should then rely on that common
 	// function.
 	if path == "" {
-		// TODO: switch to concrete error type
-		return SourceFile{}, fmt.Errorf("empty file path")
+		// TODO: port ValidateResolveInput
+		return SourceFile{}, resolve.ValueError{
+			Msg:  "Empty file path.",
+			Help: "You can't use empty strings as file paths.",
+		}
 	}
 	norm := NormalizePath(path)
 
@@ -173,8 +178,11 @@ func (d SourceDir) ResolveRelativeDir(path string) (SourceDir, error) {
 	// because both ResolveRelativeFile and this function should then rely on that common
 	// function.
 	if path == "" {
-		// TODO: switch to concrete error type
-		return SourceDir{}, fmt.Errorf("empty directory path")
+		// TODO: port ValidateResolveInput
+		return SourceDir{}, resolve.ValueError{
+			Msg:  "Empty directory path.",
+			Help: "You can't use empty strings as directories.",
+		}
 	}
 
 	// Handle source-absolute paths and system-absolute paths.

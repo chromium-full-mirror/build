@@ -16,6 +16,11 @@ type BooleanValue struct {
 	value  bool
 }
 
+// NewBooleanValueAt creates a boolean value at the provided origin.
+func NewBooleanValueAt(origin parse.Node, value bool) *BooleanValue {
+	return &BooleanValue{origin, value}
+}
+
 func (v *BooleanValue) valueType() ValueType {
 	return ValueTypeBoolean
 }
