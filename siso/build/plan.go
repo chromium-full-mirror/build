@@ -884,7 +884,15 @@ func (s *scheduler) addStep(ctx context.Context, step *Step, graph Graph, target
 		// don't add output for phony targets. https://crbug.com/1517575
 		for _, output := range step.outputs {
 			s.plan.targets[output].output = true
-			s.actionOutputDirs.ensure(targetPath(ctx, graph, output))
+			tp := targetPath(ctx, graph, output)
+			// Clear a stale file sitting where a dir output now lives, so
+			// the action can create its directory there.
+			if IsDirTarget(tp) {
+				if err := s.hashFS.ClearStaleFileForDirOutput(ctx, s.path.WorkspaceRoot, DirTargetPath(tp)); err != nil {
+					clog.Warningf(ctx, "clear stale file for dir output %s: %v", tp, err)
+				}
+			}
+			s.actionOutputDirs.ensure(tp)
 		}
 	}
 	if log.V(1) {
@@ -1138,7 +1146,10 @@ func (e *ensureActionOutputDirs) run(ctx context.Context, path *Path) {
 			if !ok {
 				return
 			}
-			dir := filepath.ToSlash(filepath.Dir(fname))
+			// Make the parent of each output, not the output itself: a dir
+			// output is the action's to create, like a file. DirTargetPath
+			// strips the trailing slash so a dir target yields its parent.
+			dir := filepath.ToSlash(filepath.Dir(DirTargetPath(fname)))
 			if !filepath.IsAbs(dir) {
 				dir = filepath.ToSlash(filepath.Join(path.WorkspaceRoot, dir))
 			}

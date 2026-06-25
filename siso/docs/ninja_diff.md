@@ -54,6 +54,13 @@ ninja also implements sandboxing and this sandbox_disabled binding.
   * **Ninja:** Doesn't have `phony_output`. But, Android's forked Ninja has a patch for the rule variable. See also [here](https://android.googlesource.com/platform/external/ninja/+/2ddc376cc3c5531db80899ce757861fac7a531b9/doc/manual.asciidoc#819)
   * **Siso:** Supports the variable for Android builds.
 
+### Directory inputs and outputs
+
+A `build` target ending in `/` (e.g. `gen/`) denotes a directory: an action can
+declare a whole tree as an input or output instead of listing every file. Only
+one step may produce a directory tree, and consumers depend on the whole tree;
+Siso rejects an output produced under another step's directory output.
+
 ## Concurrent builds for the same build directory
 
   * **Ninja:** Allows multiple build invocations to run for the same build

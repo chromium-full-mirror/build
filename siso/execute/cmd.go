@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"runtime"
 	"slices"
@@ -100,6 +101,9 @@ type Cmd struct {
 
 	// Outputs are output files of the cmd, relative to WorkspaceRoot.
 	Outputs []string
+
+	// OutputDirs are output directories of the cmd, relative to WorkspaceRoot.
+	OutputDirs []string
 
 	// ReconcileOutputdirs are output directories where the cmd would
 	// modify files/dirs, invisible to build graph.
@@ -220,6 +224,11 @@ type Cmd struct {
 
 	actionResult *rpb.ActionResult
 
+	// dirOutputsExpanded guards expandDirOutputs against re-entry: it mutates
+	// actionResult in place and a second call would double-append each tree's
+	// files. Reset in Clone and SetActionResult.
+	dirOutputsExpanded bool
+
 	// actionResult is cached result if cachedResult is true.
 	cachedResult bool
 
@@ -247,6 +256,7 @@ func (c *Cmd) Clone() *Cmd {
 	clone.stderrBuffer = nil
 	clone.actionDigest = digest.Digest{}
 	clone.actionResult = nil
+	clone.dirOutputsExpanded = false
 	clone.cachedResult = false
 	clone.remoteFallbackResult = nil
 	clone.remoteFallbackError = nil
@@ -270,6 +280,9 @@ func (c *Cmd) InitOutputs() {
 	for _, out := range c.Outputs {
 		c.outfiles[out] = true
 	}
+	for _, out := range c.OutputDirs {
+		c.outfiles[out] = true
+	}
 }
 
 // AllInputs returns all inputs of the cmd.
@@ -283,15 +296,89 @@ func (c *Cmd) AllInputs() []string {
 	return inputs
 }
 
-// AllOutputs returns all outputs of the cmd.
+// DeclaredOutputs returns the step's declared output targets: file outputs
+// and directory outputs, excluding the depfile (a deps side-channel).
+func (c *Cmd) DeclaredOutputs() []string {
+	if len(c.OutputDirs) == 0 {
+		return c.Outputs
+	}
+	outputs := make([]string, 0, len(c.Outputs)+len(c.OutputDirs))
+	outputs = append(outputs, c.Outputs...)
+	outputs = append(outputs, c.OutputDirs...)
+	return outputs
+}
+
+// AllOutputs returns the declared outputs plus the depfile (the on-disk set
+// for the capture/flush/record paths).
 func (c *Cmd) AllOutputs() []string {
+	decl := c.DeclaredOutputs()
+	if c.Depfile == "" {
+		return decl
+	}
+	// Fresh slice: decl may alias c.Outputs, so appending must not write into
+	// c.Outputs' backing array.
+	outputs := make([]string, 0, len(decl)+1)
+	outputs = append(outputs, decl...)
+	outputs = append(outputs, c.Depfile)
+	return outputs
+}
+
+// FlushOutputs returns the on-disk targets to flush after the step: file
+// outputs as-is, directory outputs marked with a trailing slash, plus the
+// depfile. The trailing slash tells HashFS.Flush to materialize a directory
+// target's whole tree; a plain file output that merely resolves to a directory
+// (e.g. a legacy directory-valued "copy" output) is flushed as-is so its
+// contents stay in hashfs and build-without-the-bytes is preserved.
+func (c *Cmd) FlushOutputs() []string {
+	outputs := make([]string, 0, len(c.Outputs)+len(c.OutputDirs)+1)
+	outputs = append(outputs, c.Outputs...)
+	for _, dir := range c.OutputDirs {
+		outputs = append(outputs, dir+"/")
+	}
+	if c.Depfile != "" {
+		outputs = append(outputs, c.Depfile)
+	}
+	return outputs
+}
+
+// FileOutputsWithDepfile returns the file outputs plus the depfile, excluding
+// directory outputs. With no depfile it aliases c.Outputs; callers must not
+// mutate the result.
+func (c *Cmd) FileOutputsWithDepfile() []string {
 	if c.Depfile == "" {
 		return c.Outputs
 	}
-	outputs := make([]string, len(c.Outputs)+1)
-	copy(outputs, c.Outputs)
-	outputs[len(outputs)-1] = c.Depfile
-	return outputs
+	return append(slices.Clone(c.Outputs), c.Depfile)
+}
+
+// OutermostPaths dedups paths and drops any nested under another path in the
+// set (by path.Dir), preserving input order. Paths must use forward slashes.
+// So a directory carries its whole subtree as one unit, which the jail-capture
+// rename and cleandead both rely on.
+func OutermostPaths(paths []string) []string {
+	set := make(map[string]bool, len(paths))
+	for _, p := range paths {
+		set[p] = true
+	}
+	var out []string
+	seen := make(map[string]bool, len(paths))
+	for _, p := range paths {
+		if seen[p] {
+			continue
+		}
+		seen[p] = true
+		nested := false
+		for d := path.Dir(p); d != "." && d != "/" && d != ""; d = path.Dir(d) {
+			if set[d] {
+				nested = true
+				break
+			}
+		}
+		if !nested {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 // remoteArgsWithWrapper returns arguments to the remote command.
@@ -539,6 +626,13 @@ func (c *Cmd) inputTree(ctx context.Context) ([]merkletree.Entry, error) {
 	revm := map[string][]string{}
 	reins := make([]string, 0, len(c.RemoteInputs))
 	for r, l := range c.RemoteInputs {
+		if strings.HasSuffix(l, "/") {
+			// A trailing-slash directory value is expanded into its files by
+			// HashFS.Entries below, after which this directory-keyed reverse
+			// map no longer matches and the remap is silently dropped. Reject
+			// directory values explicitly instead.
+			return nil, fmt.Errorf("remote_inputs value %q for %q is a directory; directory values are not supported", l, r)
+		}
 		reins = append(reins, l)
 		revm[l] = append(revm[l], r)
 	}
@@ -743,11 +837,11 @@ func (c *Cmd) commandDigest(ctx context.Context, ds *digest.Store) (digest.Diges
 	}
 
 	outFiles = make([]string, 0, len(c.Outputs)+1+len(c.AuxiliaryLogOutputFiles))
-	outFiles = process(outFiles, c.AllOutputs()...)
+	outFiles = process(outFiles, c.FileOutputsWithDepfile()...)
 	outFiles = process(outFiles, c.AuxiliaryLogOutputFiles...)
 	sort.Strings(outFiles)
 
-	outDirs = make([]string, 0, len(c.AuxiliaryLogOutputDirs))
+	outDirs = process(outDirs, c.OutputDirs...)
 	outDirs = process(outDirs, c.AuxiliaryLogOutputDirs...)
 	sort.Strings(outDirs)
 	args, err := c.remoteArgsWithWrapper()
@@ -810,6 +904,10 @@ func (c *Cmd) commandDigest(ctx context.Context, ds *digest.Store) (digest.Diges
 func (c *Cmd) SetActionResult(result *rpb.ActionResult, cached bool) {
 	c.actionResult = result
 	c.cachedResult = cached
+	// A new result must be flattened afresh: without this, a cmd whose cache
+	// probe expanded a result then fell back to execution would record the
+	// fresh result's directory outputs as empty.
+	c.dirOutputsExpanded = false
 }
 
 // ActionResult returns the action result of the cmd.
@@ -840,6 +938,22 @@ func (c *Cmd) IsAuxiliary(name string) bool {
 	return false
 }
 
+// isOutputFile reports whether fname is a declared output or under a declared
+// output directory (c.outfiles holds both from InitOutputs). fname must use
+// forward slashes: path.Dir (not filepath.Dir) keeps the lookup keys
+// slash-formed on Windows.
+func (c *Cmd) isOutputFile(fname string) bool {
+	if c.outfiles[fname] {
+		return true
+	}
+	for dir := path.Dir(fname); dir != "." && dir != "/" && dir != ""; dir = path.Dir(dir) {
+		if c.outfiles[dir] {
+			return true
+		}
+	}
+	return false
+}
+
 // entriesFromResult returns output file entries and additional entries for the cmd and result.
 // output file entries will be recorded with cmdhash.
 // additional output file entries will be recorded without cmdhash.
@@ -849,7 +963,7 @@ func (c *Cmd) entriesFromResult(ctx context.Context, ds hashfs.DataSource, updat
 			continue
 		}
 		fname := filepath.ToSlash(filepath.Join(c.WorkDir, f.Path))
-		if c.IsAuxiliary(fname) && !c.outfiles[fname] {
+		if c.IsAuxiliary(fname) && !c.isOutputFile(fname) {
 			continue
 		}
 
@@ -885,7 +999,7 @@ func (c *Cmd) entriesFromResult(ctx context.Context, ds hashfs.DataSource, updat
 			UpdatedTime: updatedTime,
 			IsChanged:   true,
 		}
-		if !c.outfiles[fname] {
+		if !c.isOutputFile(fname) {
 			// don't set cmdhash
 			additionalEntries = append(additionalEntries, ent)
 			continue
@@ -898,7 +1012,7 @@ func (c *Cmd) entriesFromResult(ctx context.Context, ds hashfs.DataSource, updat
 			continue
 		}
 		fname := filepath.ToSlash(filepath.Join(c.WorkDir, s.Path))
-		if c.IsAuxiliary(fname) && !c.outfiles[fname] {
+		if c.IsAuxiliary(fname) && !c.isOutputFile(fname) {
 			continue
 		}
 
@@ -920,7 +1034,7 @@ func (c *Cmd) entriesFromResult(ctx context.Context, ds hashfs.DataSource, updat
 	for _, d := range c.actionResult.GetOutputDirectories() {
 		// It just needs to add the directories here because it assumes that they have already been expanded by ninja State.
 		dname := filepath.ToSlash(filepath.Join(c.WorkDir, d.Path))
-		if c.IsAuxiliary(dname) && !c.outfiles[dname] {
+		if c.IsAuxiliary(dname) && !c.isOutputFile(dname) {
 			continue
 		}
 
@@ -950,8 +1064,80 @@ func (c *Cmd) RecordPreOutputs(ctx context.Context) {
 	c.preOutputEntries = c.HashFS.RetrieveUpdateEntries(ctx, c.WorkspaceRoot, c.AllOutputs())
 }
 
+// expandDirOutputs flattens each directory output in the action result in
+// place, fetching its RBE Tree and replacing the bare directory node with the
+// files, symlinks, and subdir nodes it contains, so entriesFromResult records
+// its contents. A fetch/parse failure is returned (not swallowed) so the step
+// fails loudly rather than recording an empty directory.
+func (c *Cmd) expandDirOutputs(ctx context.Context, ds hashfs.DataSource) error {
+	if c.actionResult == nil || len(c.actionResult.GetOutputDirectories()) == 0 {
+		return nil
+	}
+	if c.dirOutputsExpanded {
+		return nil
+	}
+	c.dirOutputsExpanded = true
+	files := c.actionResult.GetOutputFiles()
+	symlinks := c.actionResult.GetOutputSymlinks()
+	var dirs []*rpb.OutputDirectory
+	for _, d := range c.actionResult.GetOutputDirectories() {
+		dname := filepath.ToSlash(filepath.Join(c.WorkDir, d.GetPath()))
+		// Auxiliary-only directories are kept for their Tree digest but are
+		// not build graph outputs, so don't expand them. One that is also a
+		// declared output is a real output: expand it.
+		if c.IsAuxiliary(dname) && !c.isOutputFile(dname) {
+			dirs = append(dirs, d)
+			continue
+		}
+		treeDigest := digest.FromProto(d.GetTreeDigest())
+		b, err := digest.DataToBytes(ctx, digest.NewData(ds.Source(ctx, treeDigest, d.GetPath()), treeDigest))
+		if err != nil {
+			return fmt.Errorf("fetch tree for dir output %s %s: %w", d.GetPath(), treeDigest, err)
+		}
+		store := digest.NewStore()
+		root, err := reapi.ParseTree(ctx, b, store)
+		if err != nil {
+			return fmt.Errorf("parse tree for dir output %s %s: %w", d.GetPath(), treeDigest, err)
+		}
+		dfiles, dsymlinks, ddirs := merkletree.Traverse(ctx, d.GetPath(), root, store)
+		// merkletree.Traverse joins with the OS separator; REAPI output paths
+		// (and the hashfs keys they feed) are always forward-slash, so
+		// normalize for Windows.
+		for _, f := range dfiles {
+			f.Path = filepath.ToSlash(f.Path)
+		}
+		for _, s := range dsymlinks {
+			s.Path = filepath.ToSlash(s.Path)
+		}
+		for _, dd := range ddirs {
+			dd.Path = filepath.ToSlash(dd.Path)
+		}
+		files = append(files, dfiles...)
+		symlinks = append(symlinks, dsymlinks...)
+		// Keep the root node and the subdir nodes so entriesFromResult
+		// records a cmdhash entry for the directory and each subdirectory.
+		dirs = append(dirs, d)
+		dirs = append(dirs, ddirs...)
+	}
+	c.actionResult.OutputFiles = files
+	c.actionResult.OutputSymlinks = symlinks
+	c.actionResult.OutputDirectories = dirs
+	return nil
+}
+
 // RecordOutputs records cmd's outputs from action result in hashfs.
 func (c *Cmd) RecordOutputs(ctx context.Context, ds hashfs.DataSource, now time.Time) error {
+	if err := c.expandDirOutputs(ctx, ds); err != nil {
+		return fmt.Errorf("failed to expand directory outputs: %w", err)
+	}
+	// Replace, not merge: drop any previously recorded subtree for each
+	// directory output so a member removed from the new tree does not linger.
+	// HashFS.Update only upserts; the local path avoids stale members by
+	// reading disk truth, so the remote/cache path needs this explicit prune.
+	// ForgetOutputs (not Forget) because a directory output is owned by this
+	// step: Forget is child-preserving and never evicts a directory node, so it
+	// would leave the old members in place.
+	c.HashFS.ForgetOutputs(ctx, c.WorkspaceRoot, c.OutputDirs)
 	entries, additionalEntries := c.entriesFromResult(ctx, ds, now)
 	clog.Infof(ctx, "output entries %d+%d", len(entries), len(additionalEntries))
 	entries = c.computeOutputEntries(entries, now, c.CmdHash)
@@ -1000,7 +1186,12 @@ func retrieveLocalOutputEntries(ctx context.Context, hfs *hashfs.HashFS, root st
 	return hfs.RetrieveUpdateEntriesFromLocal(ctx, root, inputs)
 }
 
-func updateLocalOutputDir(ctx context.Context, hfs *hashfs.HashFS, root, dir string, outputs map[string]hashfs.UpdateEntry) (err error) {
+// updateLocalOutputDir records a locally produced directory output's contents
+// in hashfs, tagging every entry with the producing step's cmdhash. The tag is
+// what makes the subtree survive a state reload as generated output: an
+// untagged directory is dropped by initDir, and an untagged file is reconciled
+// as a source rather than an output.
+func updateLocalOutputDir(ctx context.Context, hfs *hashfs.HashFS, root, dir string, cmdhash []byte, outputs map[string]hashfs.UpdateEntry) (err error) {
 	started := time.Now()
 	defer func() {
 		if err != nil {
@@ -1046,6 +1237,9 @@ func updateLocalOutputDir(ctx context.Context, hfs *hashfs.HashFS, root, dir str
 	if len(ents) == 0 {
 		return nil
 	}
+	for i := range ents {
+		ents[i].CmdHash = cmdhash
+	}
 	return hfs.Update(ctx, root, ents)
 }
 
@@ -1066,6 +1260,12 @@ func (c *Cmd) computeOutputEntries(entries []hashfs.UpdateEntry, updatedTime tim
 	var output string
 	if len(c.Outputs) > 0 {
 		output = c.Outputs[0]
+	} else if len(c.OutputDirs) > 0 {
+		// Dir-only output: attach the edge hash to the declared directory, not
+		// to entries[0] (a flattened child); outputMtime reads the edge hash
+		// from the declared output, and an empty one silently disables
+		// edge-change detection.
+		output = c.OutputDirs[0]
 	}
 	ret := make([]hashfs.UpdateEntry, 0, len(entries))
 	// Set cmdhash, updatedTime.
@@ -1102,35 +1302,43 @@ func (c *Cmd) computeOutputEntries(entries []hashfs.UpdateEntry, updatedTime tim
 	return ret
 }
 
+// renameFromJail moves a captured output from the nsjail exec root to its
+// workspace location. A directory destination may already hold the previous
+// build's files, and os.Rename onto a non-empty directory fails with
+// ENOTEMPTY, so remove the destination first. File outputs rename directly.
+func renameFromJail(jailPath, destPath string) error {
+	if fi, err := os.Lstat(jailPath); err == nil && fi.IsDir() {
+		if err := os.RemoveAll(destPath); err != nil {
+			return err
+		}
+	}
+	return os.Rename(jailPath, destPath)
+}
+
 // RecordOutputsFromLocal records cmd's outputs from local disk in hashfs.
 func (c *Cmd) RecordOutputsFromLocal(ctx context.Context, now time.Time) error {
 	if c.ExecRootInJailDir != "" {
 		// TODO: reconcile output dirs?
-		outputs := slices.Clone(c.Outputs)
-		if c.Depfile != "" && !c.outfiles[c.Depfile] {
-			outputs = append(outputs, c.Depfile)
-		}
-		for _, output := range outputs {
+		// OutermostPaths drops entries nested under a directory output:
+		// renaming the ancestor moves the whole subtree, so a nested rename
+		// would fail (source gone) or clobber a sibling already moved in.
+		for _, output := range OutermostPaths(c.AllOutputs()) {
 			outputInJail := filepath.Join(c.ExecRootInJailDir, output)
 			outputAbs := filepath.Join(c.WorkspaceRoot, output)
 			if log.V(1) {
 				clog.Infof(ctx, "capture output from jail %q -> %q", outputInJail, outputAbs)
 			}
-			err := os.Rename(outputInJail, outputAbs)
-			if err != nil {
+			if err := renameFromJail(outputInJail, outputAbs); err != nil {
 				return err
 			}
 		}
-
 	}
 	for _, dir := range c.ReconcileOutputdirs {
 		c.HashFS.ForgetMissingsInDir(ctx, c.WorkspaceRoot, dir)
 	}
+	// AllOutputs includes the depfile, which is never in c.outfiles.
 	var additionalFiles []string
-	if c.Depfile != "" && !c.outfiles[c.Depfile] {
-		additionalFiles = append(additionalFiles, c.Depfile)
-	}
-	for _, out := range c.Outputs {
+	for _, out := range c.AllOutputs() {
 		if !c.outfiles[out] {
 			additionalFiles = append(additionalFiles, out)
 		}
@@ -1165,7 +1373,7 @@ func (c *Cmd) RecordOutputsFromLocal(ctx context.Context, now time.Time) error {
 		}
 		// If output is dir, forget non-outputs under dir and retrieve
 		// from local disk.
-		err := updateLocalOutputDir(ctx, c.HashFS, c.WorkspaceRoot, ent.Name, outputs)
+		err := updateLocalOutputDir(ctx, c.HashFS, c.WorkspaceRoot, ent.Name, c.CmdHash, outputs)
 		if err != nil {
 			return fmt.Errorf("failed to update hashfs from local dir %q: %w", ent.Name, err)
 		}

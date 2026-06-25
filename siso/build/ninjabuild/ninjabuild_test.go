@@ -14,8 +14,54 @@ import (
 
 	"go.chromium.org/build/siso/build"
 	"go.chromium.org/build/siso/build/buildconfig"
+	"go.chromium.org/build/siso/execute"
 	"go.chromium.org/build/siso/hashfs"
 )
+
+// TestOutermostPaths_Cleandead exercises execute.OutermostPaths on cleandead inputs: a directory output must carry its whole subtree as one unit.
+func TestOutermostPaths_Cleandead(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		in   []string
+		want []string
+	}{
+		{
+			name: "directory contents not judged individually",
+			in:   []string{"gen/foo", "gen/foo/a.o", "gen/foo/sub/b.o"},
+			want: []string{"gen/foo"},
+		},
+		{
+			// A sibling file output sorts between the directory root and its
+			// contents ('.' 0x2E < '/' 0x2F); the skip prefix must not reset
+			// and expose gen/foo/a.o to individual judgement.
+			name: "interleaved sibling does not expose dir contents",
+			in:   []string{"gen/foo", "gen/foo.stamp", "gen/foo/a.o", "gen/foo/sub/b.o"},
+			want: []string{"gen/foo", "gen/foo.stamp"},
+		},
+		{
+			name: "independent siblings all judged",
+			in:   []string{"a.o", "b.o", "c.o"},
+			want: []string{"a.o", "b.o", "c.o"},
+		},
+		{
+			name: "two directory outputs side by side",
+			in:   []string{"gen/a", "gen/a/x", "gen/b", "gen/b/y"},
+			want: []string{"gen/a", "gen/b"},
+		},
+		{
+			name: "sibling with char above slash sorts after subtree",
+			in:   []string{"gen/foo", "gen/foo/a.o", "gen/foo0"},
+			want: []string{"gen/foo", "gen/foo0"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := execute.OutermostPaths(tc.in)
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Errorf("OutermostPaths(%v) (-want +got):\n%s", tc.in, diff)
+			}
+		})
+	}
+}
 
 func TestTargets(t *testing.T) {
 	ctx := t.Context()

@@ -21,9 +21,13 @@ func (c *Client) FetchTree(ctx context.Context, dirname string, d digest.Digest,
 	if err != nil {
 		return nil, err
 	}
+	return ParseTree(ctx, b, ds)
+}
+
+// ParseTree unmarshals a serialized rpb.Tree, registers its child directories in ds, and returns the root directory.
+func ParseTree(ctx context.Context, b []byte, ds *digest.Store) (*rpb.Directory, error) {
 	tree := &rpb.Tree{}
-	err = proto.Unmarshal(b, tree)
-	if err != nil {
+	if err := proto.Unmarshal(b, tree); err != nil {
 		return nil, err
 	}
 	for _, c := range tree.Children {

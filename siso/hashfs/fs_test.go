@@ -2198,6 +2198,167 @@ func TestMkdirFlush_mtime(t *testing.T) {
 	}
 }
 
+// TestFlushDir_ExpandsChildren verifies flushing a directory entry materializes
+// its children to disk, not just the directory node, so a remote directory
+// output whose contents are still in CAS lands fully for a local consumer.
+func TestFlushDir_ExpandsChildren(t *testing.T) {
+	ctx := t.Context()
+	dir := t.TempDir()
+	dir, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hfs, err := hashfs.New(ctx, hashfs.Option{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer hfs.Close(ctx)
+	if err := hfs.WaitReady(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	h := sha256.New()
+	h.Write([]byte("dir output step"))
+	cmdhash := h.Sum(nil)
+	now := time.Now()
+
+	mkFile := func(name, content string) hashfs.UpdateEntry {
+		return hashfs.UpdateEntry{
+			Name:        name,
+			Entry:       &merkletree.Entry{Name: name, Data: digest.FromBytes(name, []byte(content))},
+			Mode:        0644,
+			ModTime:     now,
+			CmdHash:     cmdhash,
+			UpdatedTime: now,
+			IsChanged:   true,
+		}
+	}
+	mkDir := func(name string) hashfs.UpdateEntry {
+		return hashfs.UpdateEntry{
+			Name:        name,
+			Entry:       &merkletree.Entry{Name: name},
+			Mode:        fs.ModeDir | 0755,
+			ModTime:     now,
+			CmdHash:     cmdhash,
+			UpdatedTime: now,
+			IsChanged:   true,
+		}
+	}
+	entries := []hashfs.UpdateEntry{
+		mkDir("gen"),
+		mkFile("gen/a", "AAA"),
+		mkDir("gen/sub"),
+		mkFile("gen/sub/b", "BBB"),
+	}
+	if err := hfs.Update(ctx, dir, entries); err != nil {
+		t.Fatal(err)
+	}
+
+	// Precondition: children are recorded in hashfs but not on disk.
+	for _, rel := range []string{"gen/a", "gen/sub/b"} {
+		if _, err := os.Lstat(filepath.Join(dir, rel)); err == nil {
+			t.Fatalf("precondition: %q already on disk", rel)
+		}
+	}
+
+	// Flush only the directory target (trailing slash); its children must
+	// come with it.
+	if err := hfs.Flush(ctx, dir, []string{"gen/"}); err != nil {
+		t.Fatalf("Flush(gen/)=%v", err)
+	}
+
+	for _, tc := range []struct{ rel, want string }{
+		{"gen/a", "AAA"},
+		{"gen/sub/b", "BBB"},
+	} {
+		got, err := os.ReadFile(filepath.Join(dir, tc.rel))
+		if err != nil {
+			t.Errorf("flushed dir child %q not on disk: %v", tc.rel, err)
+			continue
+		}
+		if string(got) != tc.want {
+			t.Errorf("%q = %q; want %q", tc.rel, got, tc.want)
+		}
+	}
+}
+
+// TestFlushDir_PinsMtime verifies Flush re-pins each materialized directory's
+// mtime to its recorded value. Writing members into a directory bumps the
+// directory's on-disk mtime, so without the post-flush re-pin the directory
+// would mismatch its .siso_fs_state mtime on reload and be spuriously
+// invalidated, forcing a needless rebuild.
+func TestFlushDir_PinsMtime(t *testing.T) {
+	ctx := t.Context()
+	dir := t.TempDir()
+	dir, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hfs, err := hashfs.New(ctx, hashfs.Option{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer hfs.Close(ctx)
+	if err := hfs.WaitReady(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	h := sha256.New()
+	h.Write([]byte("dir output step"))
+	cmdhash := h.Sum(nil)
+	// A clearly-past recorded mtime: if the re-pin is skipped, the member
+	// writes leave each directory at ~now, an hour away from this value.
+	recorded := time.Now().Add(-time.Hour)
+
+	mkFile := func(name, content string) hashfs.UpdateEntry {
+		return hashfs.UpdateEntry{
+			Name:        name,
+			Entry:       &merkletree.Entry{Name: name, Data: digest.FromBytes(name, []byte(content))},
+			Mode:        0644,
+			ModTime:     recorded,
+			CmdHash:     cmdhash,
+			UpdatedTime: recorded,
+			IsChanged:   true,
+		}
+	}
+	mkDir := func(name string) hashfs.UpdateEntry {
+		return hashfs.UpdateEntry{
+			Name:        name,
+			Entry:       &merkletree.Entry{Name: name},
+			Mode:        fs.ModeDir | 0755,
+			ModTime:     recorded,
+			CmdHash:     cmdhash,
+			UpdatedTime: recorded,
+			IsChanged:   true,
+		}
+	}
+	if err := hfs.Update(ctx, dir, []hashfs.UpdateEntry{
+		mkDir("gen"),
+		mkFile("gen/a", "AAA"),
+		mkDir("gen/sub"),
+		mkFile("gen/sub/b", "BBB"),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := hfs.Flush(ctx, dir, []string{"gen/"}); err != nil {
+		t.Fatalf("Flush(gen/)=%v", err)
+	}
+
+	// Both the root and the subdirectory had members written into them, so
+	// both must be re-pinned to the recorded mtime, not the wall-clock time
+	// of the member writes.
+	for _, rel := range []string{"gen", "gen/sub"} {
+		fi, err := os.Lstat(filepath.Join(dir, rel))
+		if err != nil {
+			t.Fatalf("Lstat(%q)=%v", rel, err)
+		}
+		if !fi.ModTime().Equal(recorded) {
+			t.Errorf("flushed dir %q mtime = %v; want recorded %v (member writes bumped it and the post-flush re-pin did not restore it)", rel, fi.ModTime(), recorded)
+		}
+	}
+}
+
 func TestWriteEmptyFlush(t *testing.T) {
 	ctx := t.Context()
 

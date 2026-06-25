@@ -170,8 +170,8 @@ type Builder struct {
 	plan  *plan
 	stats *stats
 
-	// record target's state.
-	targets sync.Map
+	// record target's state, keyed by clean (slash-normalized) target path.
+	targets targetMap
 
 	stepSema *semaphore.Semaphore
 
@@ -987,10 +987,14 @@ func (b *Builder) recordNinjaLogs(ctx context.Context, s *Step) {
 	}
 
 	// Remove prefixed working directory path from Outputs.
-	outputs := make([]string, 0, len(s.cmd.Outputs))
+	outputs := make([]string, 0, len(s.cmd.Outputs)+len(s.cmd.OutputDirs))
 	outDir := s.cmd.WorkDir + "/"
 	for _, output := range s.cmd.Outputs {
 		outputs = append(outputs, strings.TrimPrefix(output, outDir))
+	}
+	for _, output := range s.cmd.OutputDirs {
+		// Re-append trailing "/" to match ninja's target name convention.
+		outputs = append(outputs, strings.TrimPrefix(output, outDir)+"/")
 	}
 	ninjautil.WriteNinjaLogEntries(ctx, b.ninjaLogWriter, start, end, s.endTime, outputs, s.cmd.Args)
 }
@@ -1163,7 +1167,9 @@ func (b *Builder) outputs(ctx context.Context, step *Step) error {
 			// for deps=gcc,msvc, ninja will record it in
 			// deps log and remove depfile.
 		default:
-			outputs = append(outputs, step.cmd.Depfile)
+			// Clone first: outputs may share cmd.Outputs' backing array
+			// (spare capacity), so a bare append could corrupt it.
+			outputs = append(slices.Clone(outputs), step.cmd.Depfile)
 		}
 	}
 
@@ -1210,7 +1216,7 @@ func (b *Builder) outputs(ctx context.Context, step *Step) error {
 			b.targets.Store(out, targetState{
 				dirtyErr: err,
 			})
-			reqOut := slices.Contains(defOutputs, out)
+			reqOut := isRequiredOutput(out, defOutputs)
 			if reqOut {
 				if experiments.Enabled("ignore-missing-outputs", "") {
 					b.hashFS.AddMissingOutput(ctx, step.cmd.WorkspaceRoot, out)
@@ -1233,6 +1239,48 @@ func (b *Builder) outputs(ctx context.Context, step *Step) error {
 			mtime:   fi.ModTime(),
 			changed: fi.IsChanged(),
 		})
+	}
+	// Process directory outputs. A missing dir output is treated like a
+	// missing file output: hard-fail when declared (required), warn otherwise.
+	dirFsys := b.hashFS.FileSystem(ctx, step.cmd.WorkspaceRoot)
+	for _, dir := range step.cmd.OutputDirs {
+		targetKey := dir
+		fi, err := b.hashFS.Stat(ctx, step.cmd.WorkspaceRoot, dir)
+		if err != nil {
+			b.targets.Store(targetKey, targetState{
+				dirtyErr: err,
+			})
+			if isRequiredOutput(dir, defOutputs) {
+				if experiments.Enabled("ignore-missing-outputs", "") {
+					b.hashFS.AddMissingOutput(ctx, step.cmd.WorkspaceRoot, dir)
+				} else {
+					return fmt.Errorf("missing dir output %s: %w", dir, err)
+				}
+			}
+			clog.Warningf(ctx, "missing dir output %s: %v", dir, err)
+			continue
+		}
+		mtime, walkErr := effectiveMtime(dirFsys, dir, fi.ModTime(), true)
+		if walkErr != nil {
+			// Can't fully read the output: hard-fail if required, else warn.
+			if isRequiredOutput(dir, defOutputs) && !experiments.Enabled("ignore-missing-outputs", "") {
+				return fmt.Errorf("walk dir output %s: %w", dir, walkErr)
+			}
+			clog.Warningf(ctx, "walk dir output %s: %v", dir, walkErr)
+		}
+		b.targets.Store(targetKey, targetState{
+			mtime:   mtime,
+			changed: fi.IsChanged(),
+		})
+		// Flush only when output_local wants it (NeedFlush); otherwise
+		// consumers materialize the tree on demand. Don't test disk presence:
+		// an output_local=false dir output never lands locally.
+		local := b.hashFS.NeedFlush(ctx, step.cmd.WorkspaceRoot, dir)
+		if local {
+			// Trailing slash marks a declared directory target so Flush
+			// materializes its whole tree, not just the directory node.
+			localOutputs = append(localOutputs, dir+"/")
+		}
 	}
 	if len(localOutputs) > 0 && !b.hashFS.OnCartFS() {
 		start := time.Now()
@@ -1297,6 +1345,10 @@ func (b *Builder) updateDeps(ctx context.Context, step *Step) error {
 	ctx, span := trace.NewSpan(ctx, "update-deps")
 	defer span.Close(nil)
 	if len(step.cmd.Outputs) == 0 {
+		// A directory-only edge cannot carry a depfile or deps.
+		if step.cmd.Deps != "" || step.cmd.Depfile != "" {
+			return fmt.Errorf("update deps: %s declares deps=%q depfile=%q but has only directory outputs %v; deps require a file output to key on", step, step.cmd.Deps, step.cmd.Depfile, step.cmd.OutputDirs)
+		}
 		clog.Warningf(ctx, "update deps: no outputs")
 		return nil
 	}

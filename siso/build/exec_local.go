@@ -295,13 +295,6 @@ func (b *Builder) cacheWrite(ctx context.Context, step *Step) {
 			ExecutionMetadata: metadata,
 		}
 
-		// Retrieve and compute output digests from HashFS on the action
-		hashFS := b.hashFS
-		outputEntries, err := hashFS.Entries(ctx, cmd.WorkspaceRoot, cmd.AllOutputs())
-		if err != nil {
-			return err
-		}
-
 		// Convert rawStdout to digest since RE spec v2 prohibits inlining
 		if len(result.GetStdoutRaw()) != 0 && result.GetStdoutDigest() == nil {
 			stdoutDigest := digest.FromBytes("stdout", result.GetStdoutRaw())
@@ -324,17 +317,10 @@ func (b *Builder) cacheWrite(ctx context.Context, step *Step) {
 		}
 		result.StderrRaw = nil
 
-		// Set the outputs on the result
-		execute.ResultFromEntries(ctx, result, cmd.WorkDir, outputEntries)
-		for _, entry := range outputEntries {
-			if log.V(1) {
-				clog.Infof(ctx, "output entry: %q %s", entry.Name, entry.Data.Digest())
-			}
-			if entry.Data.Digest().IsZero() {
-				clog.Warningf(ctx, "ignore output entry: %q", entry.Name)
-				continue
-			}
-			ds.Set(entry.Data)
+		// Populate output files (and a real tree per directory output) from
+		// the command's typed outputs, recording their blobs in ds.
+		if err := cmd.SetResultOutputs(ctx, result, ds); err != nil {
+			return err
 		}
 
 		step.setPhase(phase.wait())
@@ -401,7 +387,7 @@ func (b *Builder) prepareLocalInputs(ctx context.Context, step *Step) error {
 func (b *Builder) checkLocalOutputs(ctx context.Context, step *Step) error {
 	ctx, span := trace.NewSpan(ctx, "capture-local-outputs")
 	defer span.Close(nil)
-	span.SetAttr("outputs", len(step.cmd.Outputs))
+	span.SetAttr("outputs", len(step.cmd.Outputs)+len(step.cmd.OutputDirs))
 	result, _ := step.cmd.ActionResult()
 	if result.GetExitCode() != 0 {
 		return nil
@@ -413,10 +399,11 @@ func (b *Builder) checkLocalOutputs(ctx context.Context, step *Step) error {
 
 	defOutputs := step.def.Outputs(ctx)
 
-	for _, out := range step.cmd.Outputs {
+	// Check declared outputs only; the depfile is not declared (updateDeps handles it).
+	for _, out := range step.cmd.DeclaredOutputs() {
 		_, err := step.cmd.HashFS.Stat(ctx, step.cmd.WorkspaceRoot, out)
 		if err != nil {
-			required := slices.Contains(defOutputs, out)
+			required := isRequiredOutput(out, defOutputs)
 			if !required {
 				clog.Warningf(ctx, "ignore missing outputs %s: %v", out, err)
 				continue
@@ -432,6 +419,16 @@ func (b *Builder) checkLocalOutputs(ctx context.Context, step *Step) error {
 	// don't set result.OutputFiles etc to lazily calculate digest
 	// for outputs. b/311312613
 	return nil
+}
+
+// isRequiredOutput reports whether out is a declared (required) output. It
+// matches both slash forms since defOutputs keeps a dir target's trailing
+// slash while out (from cmd.AllOutputs) has it stripped.
+func isRequiredOutput(out string, defOutputs []string) bool {
+	if slices.Contains(defOutputs, out) {
+		return true
+	}
+	return slices.Contains(defOutputs, out+"/")
 }
 
 func (b *Builder) logLocalExec(ctx context.Context, step *Step, dur time.Duration) error {

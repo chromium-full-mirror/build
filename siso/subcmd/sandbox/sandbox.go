@@ -21,6 +21,7 @@ import (
 	"go.chromium.org/build/siso/execute/localexec"
 	"go.chromium.org/build/siso/hashfs"
 	"go.chromium.org/build/siso/o11y/clog"
+	"go.chromium.org/build/siso/reapi/digest"
 	"go.chromium.org/build/siso/toolsupport/nsjailutil"
 )
 
@@ -142,12 +143,11 @@ func (c *Command) run(ctx context.Context) error {
 		return err
 	}
 	result, _ := cmd.ActionResult()
-	outputEntries, err := hashFS.Entries(ctx, cmd.WorkspaceRoot, cmd.AllOutputs())
-	if err != nil {
+	// Populate the result's outputs. The store is throwaway: this debug tool
+	// prints the result, it does not upload the blobs.
+	if err := cmd.SetResultOutputs(ctx, result, digest.NewStore()); err != nil {
 		return err
 	}
-	// Set the outputs on the result
-	execute.ResultFromEntries(ctx, result, cmd.WorkDir, outputEntries)
 
 	buf, err := prototext.MarshalOptions{
 		Multiline: true,

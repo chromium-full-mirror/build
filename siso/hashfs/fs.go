@@ -14,6 +14,7 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"runtime"
 	"slices"
@@ -105,6 +106,13 @@ type HashFS struct {
 	// records missing outputs to make hashfs non-clean when missing
 	// outputs exists, so trigger rebuilds b/374179435
 	missingOutputs sync.Map
+
+	// dirInputCache memoizes expandDirInputs results within a build, keyed by
+	// the directory's full path -> []string of its files.
+	dirInputCache sync.Map
+	// dirInputCached gates invalidation so builds with no directory inputs pay
+	// only an atomic load.
+	dirInputCached atomic.Bool
 }
 
 // New creates a HashFS.
@@ -574,8 +582,16 @@ func (hfs *HashFS) statHit(ctx context.Context, root, fname string, e *entry, op
 		tracer.record("lstat")
 		switch {
 		case errors.Is(err, fs.ErrNotExist):
-			// virtually created dir in hashfs,
-			// so no need to update mtime.
+			// A build-without-bytes directory output (recorded from an action,
+			// not local) lives in CAS, not on disk, so report it present. A
+			// directory with no action digest stays reported missing.
+			e.mu.Lock()
+			buildWithoutBytes := !e.local && len(e.cmdhash) > 0 && !e.action.IsZero()
+			e.mu.Unlock()
+			if buildWithoutBytes {
+				return e, nil
+			}
+			// virtually created dir in hashfs, so no need to update mtime.
 			clog.Infof(ctx, "stat hashfs dir %s. doesn't exist in local", fullname)
 			return e, err
 		case errors.Is(err, context.Canceled):
@@ -806,6 +822,9 @@ func (hfs *HashFS) WriteFile(ctx context.Context, root, fname string, b []byte, 
 		isChanged:   true,
 	}
 	err := hfs.commitEntry(ctx, fname, e)
+	if err == nil {
+		hfs.invalidateDirInputCache(fname)
+	}
 	clog.Infof(ctx, "writefile %s x:%t mtime:%s: %v", fname, isExecutable, mtime, err)
 	return err
 }
@@ -830,6 +849,9 @@ func (hfs *HashFS) Symlink(ctx context.Context, root, target, linkpath string, m
 		isChanged:   true,
 	}
 	err := hfs.commitEntry(ctx, linkfname, e)
+	if err == nil {
+		hfs.invalidateDirInputCache(linkfname)
+	}
 	clog.Infof(ctx, "symlink @%s %s -> %s: %v", root, linkpath, target, err)
 	return err
 }
@@ -879,6 +901,9 @@ func (hfs *HashFS) Copy(ctx context.Context, root, src, dst string, mtime time.T
 		isChanged:   true,
 	}
 	err = hfs.commitEntry(ctx, dstfname, newEnt)
+	if err == nil {
+		hfs.invalidateDirInputCache(dstfname)
+	}
 	clog.Infof(ctx, "copy %s to %s: %v", srcfname, dstfname, err)
 	return err
 }
@@ -943,6 +968,7 @@ func (hfs *HashFS) Mkdir(ctx context.Context, root, dirname string, cmdhash, edg
 	if err != nil {
 		return err
 	}
+	hfs.invalidateDirInputCache(dirname)
 	if len(cmdhash) > 0 {
 		hfs.journalEntry(ctx, dirname, e)
 	}
@@ -963,6 +989,7 @@ func (hfs *HashFS) Remove(ctx context.Context, root, fname string) error {
 		err:    fs.ErrNotExist,
 	}
 	_, err := hfs.directory.store(ctx, fname, e)
+	hfs.invalidateDirInputCache(fname)
 	clog.Infof(ctx, "remove %s: %v", fname, err)
 	return err
 }
@@ -986,10 +1013,54 @@ func (hfs *HashFS) RemoveAll(ctx context.Context, root, name string) error {
 		err:    err,
 	}
 	_, err = hfs.directory.store(ctx, name, e)
+	hfs.invalidateDirInputCache(name)
 	e.mu.Lock()
 	eErr := e.err
 	e.mu.Unlock()
 	clog.Infof(ctx, "removeAll %s [%v]: %v", name, eErr, err)
+	return err
+}
+
+// ClearStaleFileForDirOutput removes name (and its hashfs subtree) when a
+// previous build left a non-directory where a directory output is now
+// declared, so the action can create its directory there.
+//
+// The reverse (a directory where a file output is now declared) is NOT handled:
+// a directory-valued output produced without the trailing-slash convention is
+// also recorded as a directory, so a directory entry under a non-slash target
+// is ambiguous; clearing it is the producing rule's responsibility.
+func (hfs *HashFS) ClearStaleFileForDirOutput(ctx context.Context, root, name string) error {
+	fullpath := makeFullpath(root, name)
+	stale := false
+	if e, _, _, ok := hfs.directory.lookup(ctx, fullpath); ok {
+		e.mu.Lock()
+		recorded := e.err == nil
+		isDir := recorded && e.isDirectory()
+		e.mu.Unlock()
+		switch {
+		case isDir:
+			return nil
+		case recorded:
+			stale = true
+		}
+	}
+	if !stale {
+		// No usable in-memory record (reset state, version bump, or a file
+		// produced outside siso): a non-directory on disk is still stale and
+		// would make MkdirAll fail ENOTDIR.
+		if fi, err := hfs.OS.Lstat(ctx, fullpath); err == nil && !fi.IsDir() {
+			stale = true
+		}
+	}
+	if !stale {
+		return nil
+	}
+	clog.Warningf(ctx, "directory output %s was a file in a previous build; removing stale file", name)
+	err := hfs.RemoveAll(ctx, root, name)
+	if errors.Is(err, fs.ErrNotExist) {
+		// ErrNotExist is the intended post-state here, not a failure.
+		return nil
+	}
 	return err
 }
 
@@ -998,6 +1069,7 @@ func (hfs *HashFS) Forget(ctx context.Context, root string, inputs []string) {
 	for _, fname := range inputs {
 		fullname := makeFullpath(root, fname)
 		hfs.directory.delete(ctx, fullname)
+		hfs.invalidateDirInputCache(fullname)
 	}
 }
 
@@ -1015,6 +1087,7 @@ func (hfs *HashFS) ForgetOutputs(ctx context.Context, root string, outputs []str
 // generated files/dirs by any steps and doesn't exist on local disk.
 // It is used for a step that removes files under a dir. b/350662100
 func (hfs *HashFS) ForgetMissingsInDir(ctx context.Context, root, dir string) {
+	hfs.invalidateDirInputCache(makeFullpath(root, dir))
 	inputs := []string{dir}
 	var needCheck []string
 	for len(inputs) > 0 {
@@ -1110,6 +1183,7 @@ func (hfs *HashFS) ForgetMissings(ctx context.Context, root string, inputs []str
 				// node, so it would leave a removed populated dir's children
 				// reachable.
 				hfs.directory.deleteForce(ctx, fullname)
+				hfs.invalidateDirInputCache(fullname)
 				continue
 			}
 			fi, err := hfs.Stat(ctx, root, fname)
@@ -1212,11 +1286,124 @@ func (hfs *HashFS) Entries(ctx context.Context, root string, inputs []string) ([
 	ctx, span := trace.NewSpan(ctx, "fs-entries")
 	defer span.Close(nil)
 
+	inputs = hfs.expandDirInputs(ctx, root, inputs)
 	ents, err := hfs.resolveInputEntries(ctx, root, inputs)
 	if err != nil {
 		return nil, err
 	}
 	return hfs.buildMerkletreeEntries(ctx, root, inputs, ents)
+}
+
+// expandDirInputs replaces each trailing-slash directory-target input with the
+// files it contains, recursively, because REAPI input trees are built from
+// files. Inputs without a trailing slash are returned unchanged.
+func (hfs *HashFS) expandDirInputs(ctx context.Context, root string, inputs []string) []string {
+	hasDir := false
+	for _, in := range inputs {
+		if strings.HasSuffix(in, "/") {
+			hasDir = true
+			break
+		}
+	}
+	if !hasDir {
+		return inputs
+	}
+	fsys := hfs.FileSystem(ctx, root)
+	expanded := make([]string, 0, len(inputs))
+	for _, input := range inputs {
+		if !strings.HasSuffix(input, "/") {
+			expanded = append(expanded, input)
+			continue
+		}
+		dir := strings.TrimSuffix(input, "/")
+		cacheKey := makeFullpath(root, dir)
+		if v, ok := hfs.dirInputCache.Load(cacheKey); ok {
+			expanded = append(expanded, v.([]string)...)
+			continue
+		}
+		var files, subdirs []string
+		expandDirInputsWalks.Add(1)
+		err := fs.WalkDir(fsys, dir, func(p string, d fs.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if d.IsDir() {
+				if p != dir {
+					subdirs = append(subdirs, p)
+				}
+				return nil
+			}
+			files = append(files, p)
+			return nil
+		})
+		if err != nil {
+			// Fall back to the directory path so resolveInputEntries surfaces
+			// the missing/erroring entry.
+			clog.Warningf(ctx, "expand dir input %s: %v", input, err)
+			expanded = append(expanded, dir)
+			continue
+		}
+		if len(files) == 0 {
+			// Keep the bare dir so an empty directory input is still
+			// represented in the input tree. Not cached: re-walking is cheap.
+			expanded = append(expanded, dir)
+			continue
+		}
+		// Also represent empty subdirectories (those with no file beneath
+		// them) so a remote action's input tree matches local disk; the output
+		// side preserves empty dirs too (see dirOutputTree). Mark every
+		// directory that holds a file, then keep the rest.
+		if len(subdirs) > 0 {
+			withFile := make(map[string]bool, len(files))
+			for _, f := range files {
+				for pd := path.Dir(f); len(pd) > len(dir); pd = path.Dir(pd) {
+					if withFile[pd] {
+						break
+					}
+					withFile[pd] = true
+				}
+			}
+			for _, sd := range subdirs {
+				if !withFile[sd] {
+					files = append(files, sd)
+				}
+			}
+		}
+		// files is built fresh per walk and never mutated, so it is safe to
+		// share from the cache.
+		hfs.dirInputCache.Store(cacheKey, files)
+		hfs.dirInputCached.Store(true)
+		expanded = append(expanded, files...)
+	}
+	return expanded
+}
+
+// expandDirInputsWalks counts directory-input tree walks done by
+// expandDirInputs; it backs the tests that verify the once-per-build walk.
+var expandDirInputsWalks atomic.Int64
+
+// invalidateDirInputCache drops cached directory-input expansions whose
+// directory overlaps any of the mutated full paths.
+func (hfs *HashFS) invalidateDirInputCache(fullpaths ...string) {
+	if !hfs.dirInputCached.Load() {
+		return
+	}
+	hfs.dirInputCache.Range(func(k, _ any) bool {
+		dir := k.(string)
+		for _, p := range fullpaths {
+			if p == dir || pathHasPrefix(p, dir) || pathHasPrefix(dir, p) {
+				hfs.dirInputCache.Delete(dir)
+				break
+			}
+		}
+		return true
+	})
+}
+
+// pathHasPrefix reports whether p is at or under the directory prefix
+// (component-aware: "a/b" is under "a", "a/bc" is not).
+func pathHasPrefix(p, prefix string) bool {
+	return strings.HasPrefix(p, prefix+"/")
 }
 
 // resolveInputEntries looks up or creates entries for each input,
@@ -1402,7 +1589,10 @@ func newEntryFromUpdate(ent UpdateEntry) *entry {
 		e.target = ent.Entry.Target
 	default: // directory
 		e.mode |= fs.ModeDir
-		e.local = true
+		// Respect IsLocal like the regular-file case: a remote dir output
+		// (output_local=false) lives only in CAS and must reload as
+		// build-without-bytes, not as a missing output-needed file.
+		e.local = ent.IsLocal
 		e.directory = &directory{}
 	}
 	return e
@@ -1429,6 +1619,8 @@ func (hfs *HashFS) Update(ctx context.Context, workspaceRoot string, entries []U
 		hfs.cartfsRegister(ctx, workspaceRoot, entries, cartfsutil.UrgencyOnAccess)
 		clog.Infof(ctx, "cartfsRegister took %s for %d entries", time.Since(start), len(entries))
 	}
+
+	committed := make([]string, 0, len(entries))
 	for _, ent := range entries {
 		clog.Infof(ctx, "update %v", ent)
 		fname := filepath.ToSlash(filepath.Join(workspaceRoot, ent.Name))
@@ -1445,7 +1637,12 @@ func (hfs *HashFS) Update(ctx context.Context, workspaceRoot string, entries []U
 		if err := hfs.updateMtimeIfNeeded(ctx, fname, e, ent); err != nil {
 			return err
 		}
+		committed = append(committed, fname)
 	}
+	// A committed output can add a file under a cached directory input; drop
+	// the stale expansions. Batched over all committed paths so a many-output
+	// action does not rescan the cache per file.
+	hfs.invalidateDirInputCache(committed...)
 	return nil
 }
 
@@ -1751,21 +1948,104 @@ func (hfs *HashFS) NeedFlush(ctx context.Context, workspaceRoot, fname string) b
 	return hfs.opt.OutputLocal(ctx, makeFullpath(workspaceRoot, fname))
 }
 
+// expandFlushDirs expands each declared directory target (a path with a
+// trailing slash) into the directory plus all its descendants, so flushing a
+// directory target materializes its whole tree to disk (flushDir alone only
+// creates the directory node).
+//
+// Only trailing-slash paths are expanded. A path that resolves to a directory
+// but was declared as a plain file output (e.g. a legacy "copy" of a directory
+// tree) is flushed as-is: its descendants stay in hashfs and are not written to
+// local disk, preserving build-without-the-bytes for those outputs.
+func (hfs *HashFS) expandFlushDirs(ctx context.Context, workspaceRoot string, files []string) []string {
+	var expanded []string
+	// Dedup: a duplicate path would block the Flush loop on an already-drained
+	// e.lready channel (and can trigger a redundant second flush).
+	seen := make(map[string]bool)
+	add := func(p string) {
+		if seen[p] {
+			return
+		}
+		seen[p] = true
+		expanded = append(expanded, p)
+	}
+	// Walk the in-memory hashfs tree, not fs.WalkDir over FileSystem: the
+	// directory being flushed may not exist on local disk yet, so WalkDir's
+	// initial stat would fail to recognize it and never descend.
+	var walk func(rel string)
+	walk = func(rel string) {
+		if seen[rel] {
+			// Guards against unbounded recursion if the in-memory tree ever
+			// presents a cycle, and skips redundant re-walks.
+			return
+		}
+		add(rel)
+		dents, err := hfs.ReadDir(ctx, workspaceRoot, rel)
+		if err != nil {
+			clog.Warningf(ctx, "expand flush dir %s: %v", rel, err)
+			return
+		}
+		for _, de := range dents {
+			child := filepath.ToSlash(filepath.Join(rel, de.Name()))
+			if de.IsDir() {
+				walk(child)
+			} else {
+				add(child)
+			}
+		}
+	}
+	for _, file := range files {
+		if !strings.HasSuffix(file, "/") {
+			// Not a declared directory target. Flush as-is, even if it happens
+			// to resolve to a directory on disk.
+			add(file)
+			continue
+		}
+		dir := strings.TrimSuffix(file, "/")
+		fname := makeFullpath(workspaceRoot, dir)
+		e, _, _, ok := hfs.directory.lookup(ctx, fname)
+		if !ok || !e.isDirectory() {
+			add(dir)
+			continue
+		}
+		walk(dir)
+	}
+	// Returning expanded (not files) also dedups a caller's duplicate paths
+	// when no directory was expanded.
+	return expanded
+}
+
+// flushedDirEntry pairs a materialized directory with its entry so Flush can
+// re-pin the directory's mtime after all of its members are written.
+type flushedDirEntry struct {
+	fname string
+	e     *entry
+}
+
 // Flush flushes cached information for files under workspaceRoot to local disk.
 func (hfs *HashFS) Flush(ctx context.Context, workspaceRoot string, files []string) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	ctx, span := trace.NewSpan(ctx, "flush")
 	defer span.Close(nil)
+	files = hfs.expandFlushDirs(ctx, workspaceRoot, files)
+	// errgroup.WithContext cancels its derived ctx once eg.Wait returns; keep
+	// the pre-errgroup ctx for the post-flush directory mtime re-pin below.
+	flushCtx := ctx
 	eg, ctx := errgroup.WithContext(ctx)
 	var localEntries []UpdateEntry
-
+	var flushedDirs []flushedDirEntry
 	for _, file := range files {
 		fname := makeFullpath(workspaceRoot, file)
 		e, _, _, ok := hfs.directory.lookup(ctx, fname)
 		if !ok {
 			// If it doesn't exist in memory, just use local disk as is.
 			continue
+		}
+		if e.isDirectory() {
+			// flushDir pins this directory's mtime, but writing members into
+			// it afterward re-bumps it on disk; record it for the re-pin below.
+			flushedDirs = append(flushedDirs, flushedDirEntry{fname: fname, e: e})
 		}
 		select {
 		case need := <-e.lready:
@@ -1843,7 +2123,21 @@ func (hfs *HashFS) Flush(ctx context.Context, workspaceRoot string, files []stri
 	if hfs.opt.CartFS != nil {
 		hfs.cartfsRegister(ctx, workspaceRoot, localEntries, cartfsutil.UrgencyImmediate)
 	}
-	return eg.Wait()
+	if err := eg.Wait(); err != nil {
+		return err
+	}
+	// flushDir pins each directory's mtime to its recorded value, but writing
+	// members into a directory re-bumps it on disk afterward. Re-pin every
+	// flushed directory now that all members are written, so it stays
+	// consistent with .siso_fs_state and isn't invalidated on reload. This
+	// mirrors the file mtime pin in flushRegularFile.
+	for _, d := range flushedDirs {
+		mtime := d.e.getMtime()
+		if err := hfs.OS.Chtimes(flushCtx, d.fname, time.Time{}, mtime); err != nil {
+			clog.Warningf(flushCtx, "flush re-pin dir mtime %s: %v", d.fname, err)
+		}
+	}
+	return nil
 }
 
 // Refresh refreshes cached file entries.
@@ -1854,6 +2148,10 @@ func (hfs *HashFS) Refresh(ctx context.Context) error {
 	// reset loaded as it reset entry data.
 	hfs.loaded.Store(false)
 	hfs.directory = &directory{isRoot: true}
+	// The tree is rebuilt from state, so any memoized directory-input
+	// expansion is detached from it; drop the cache and its gate.
+	hfs.dirInputCache.Clear()
+	hfs.dirInputCached.Store(false)
 	err := hfs.SetState(ctx, state)
 	werr := hfs.WaitReady(ctx)
 	if err != nil {

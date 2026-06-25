@@ -7,6 +7,7 @@ package hashfs_test
 import (
 	"bytes"
 	"compress/gzip"
+	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
@@ -529,6 +530,305 @@ func TestState_Symlink(t *testing.T) {
 			t.Errorf("target=%q; want=%q", fi.Target(), "target.1")
 		}
 	}()
+}
+
+// TestState_DirOutput_ReloadPreservesCmdHash verifies that after save/load of a
+// directory output's state, every entry (root dir, subdir, inner files) is
+// present and still carries the CmdHash marking it a generated output.
+//
+// The CmdHash gates reconciliation (initFile/initDir, handleBeforeLocal,
+// handleAfterLocal); if it regresses, stale or tainted inner files silently
+// survive across builds. This drives the entries directly, as the remote path
+// does; the local path is covered by e2e TestBuild_DirOutputLocalReloadCmdHash.
+func TestState_DirOutput_ReloadPreservesCmdHash(t *testing.T) {
+	ctx := t.Context()
+
+	dir := t.TempDir()
+	dir, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	opts := hashfs.Option{
+		StateFile:     filepath.Join(dir, ".siso_fs_state"),
+		CompressLevel: 3,
+	}
+
+	// Materialize the tree on disk so reconciliation does not invalidate the
+	// entries for a missing local file.
+	subdir := filepath.Join(dir, "gendir/sub")
+	if err := os.MkdirAll(subdir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	helloPath := filepath.Join(dir, "gendir/hello.txt")
+	nestedPath := filepath.Join(dir, "gendir/sub/nested.txt")
+	if err := os.WriteFile(helloPath, []byte("hello"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(nestedPath, []byte("nested"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	mtime := time.Now()
+	h := sha256.New()
+	fmt.Fprint(h, "dir output step")
+	cmdhash := h.Sum(nil)
+	actionDg := digest.FromBytes("action digest", []byte("action proto")).Digest()
+
+	helloData := digest.FromBytes("gendir/hello.txt", []byte("hello"))
+	nestedData := digest.FromBytes("gendir/sub/nested.txt", []byte("nested"))
+
+	entries := []merkletree.Entry{
+		{Name: "gendir"},
+		{Name: "gendir/sub"},
+		{
+			Name: "gendir/hello.txt",
+			Data: helloData,
+		},
+		{
+			Name: "gendir/sub/nested.txt",
+			Data: nestedData,
+		},
+	}
+
+	func() {
+		hashFS, err := hashfs.New(ctx, opts)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() {
+			if err := hashFS.Close(ctx); err != nil {
+				t.Errorf("close=%v", err)
+			}
+		}()
+		if err := hashFS.WaitReady(ctx); err != nil {
+			t.Fatalf("WaitReady=%v; want nil", err)
+		}
+		if err := update(ctx, hashFS, dir, entries, mtime, cmdhash, actionDg); err != nil {
+			t.Fatalf("update=%v; want nil", err)
+		}
+	}()
+
+	st, err := hashfs.Load(ctx, opts)
+	if err != nil {
+		t.Fatalf("Load=%v; want nil", err)
+	}
+	m := hashfs.StateMap(st)
+	for _, rel := range []string{"gendir", "gendir/sub", "gendir/hello.txt", "gendir/sub/nested.txt"} {
+		key := filepath.ToSlash(filepath.Join(dir, rel))
+		ent, ok := m[key]
+		if !ok {
+			t.Errorf("%s entry not present after reload", rel)
+			continue
+		}
+		if !bytes.Equal(ent.CmdHash, cmdhash) {
+			t.Errorf("%s CmdHash=%x; want %x (inner dir-output entries must keep cmdhash for reconciliation)", rel, ent.CmdHash, cmdhash)
+		}
+	}
+}
+
+// TestState_DirOutput_StaleInnerFileReconcile verifies reload reconcile of an
+// inner dir-output file externally modified on disk (mtime newer than recorded),
+// across both modes:
+//
+//   - Default (KeepTainted=false): the stale entry is not trusted; a later Stat
+//     reflects disk truth, not the recorded mtime.
+//   - KeepTainted=true: the cmdhash tag keeps the generated member as tainted
+//     (mtime advanced, cmdhash preserved); an untagged member would be dropped,
+//     so the tag is load-bearing.
+func TestState_DirOutput_StaleInnerFileReconcile(t *testing.T) {
+	ctx := t.Context()
+
+	// setup records a cmdhash-tagged member, rewrites it on disk with a newer
+	// mtime (the drift the reconcile must notice), then reloads with keepTainted.
+	setup := func(t *testing.T, keepTainted bool) (*hashfs.HashFS, string, []byte, time.Time) {
+		t.Helper()
+		dir := t.TempDir()
+		dir, err := filepath.EvalSymlinks(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		opts := hashfs.Option{
+			StateFile:     filepath.Join(dir, ".siso_fs_state"),
+			CompressLevel: 3,
+			KeepTainted:   keepTainted,
+		}
+		if err := os.MkdirAll(filepath.Join(dir, "gendir"), 0755); err != nil {
+			t.Fatal(err)
+		}
+		innerPath := filepath.Join(dir, "gendir/hello.txt")
+		if err := os.WriteFile(innerPath, []byte("original"), 0644); err != nil {
+			t.Fatal(err)
+		}
+		recordedMtime := time.Now().Add(-1 * time.Hour).Truncate(time.Second)
+		if err := os.Chtimes(innerPath, recordedMtime, recordedMtime); err != nil {
+			t.Fatal(err)
+		}
+
+		h := sha256.New()
+		fmt.Fprint(h, "dir output step")
+		cmdhash := h.Sum(nil)
+		actionDg := digest.FromBytes("action digest", []byte("action proto")).Digest()
+		recordedData := digest.FromBytes("gendir/hello.txt", []byte("original"))
+
+		func() {
+			hashFS, err := hashfs.New(ctx, opts)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() {
+				if err := hashFS.Close(ctx); err != nil {
+					t.Errorf("close=%v", err)
+				}
+			}()
+			if err := hashFS.WaitReady(ctx); err != nil {
+				t.Fatalf("WaitReady=%v; want nil", err)
+			}
+			if err := update(ctx, hashFS, dir, []merkletree.Entry{
+				{Name: "gendir"},
+				{Name: "gendir/hello.txt", Data: recordedData},
+			}, recordedMtime, cmdhash, actionDg); err != nil {
+				t.Fatalf("update=%v; want nil", err)
+			}
+		}()
+
+		// recordedMtime+1h, so the disk mtime is unambiguously newer.
+		newMtime := recordedMtime.Add(1 * time.Hour)
+		if err := os.WriteFile(innerPath, []byte("modified"), 0644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chtimes(innerPath, newMtime, newMtime); err != nil {
+			t.Fatal(err)
+		}
+
+		hashFS2, err := hashfs.New(ctx, opts)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { hashFS2.Close(ctx) })
+		if err := hashFS2.WaitReady(ctx); err != nil {
+			t.Fatalf("WaitReady=%v; want nil", err)
+		}
+		return hashFS2, dir, cmdhash, newMtime
+	}
+
+	// Default mode: the stale member is not trusted. A Stat reflects disk
+	// truth; dropping the entry entirely is equally acceptable.
+	t.Run("DefaultInvalidates", func(t *testing.T) {
+		hashFS2, dir, _, newMtime := setup(t, false)
+		fi, err := hashFS2.Stat(ctx, dir, "gendir/hello.txt")
+		if err != nil {
+			if os.IsNotExist(err) {
+				return
+			}
+			t.Fatalf("Stat=%v; want nil or NotExist", err)
+		}
+		if !fi.ModTime().Equal(newMtime) {
+			t.Errorf("post-reload mtime=%v; want %v (disk mtime; reload must not trust the stale recorded mtime)", fi.ModTime(), newMtime)
+		}
+	})
+
+	// KeepTainted mode: the cmdhash tag keeps the generated member as tainted
+	// (mtime advanced, cmdhash preserved) instead of dropping it; an untagged
+	// member would be invalidated, so the tag is load-bearing.
+	t.Run("KeepTaintedPreservesCmdHash", func(t *testing.T) {
+		hashFS2, dir, cmdhash, newMtime := setup(t, true)
+		fi, err := hashFS2.Stat(ctx, dir, "gendir/hello.txt")
+		if err != nil {
+			t.Fatalf("Stat=%v; want nil (a kept-tainted generated entry must survive, not be dropped)", err)
+		}
+		if !fi.ModTime().Equal(newMtime) {
+			t.Errorf("kept-tainted mtime=%v; want %v (disk drift must be reflected)", fi.ModTime(), newMtime)
+		}
+		m := hashfs.StateMap(hashFS2.State(ctx))
+		ent, ok := m[filepath.ToSlash(filepath.Join(dir, "gendir/hello.txt"))]
+		if !ok {
+			t.Fatalf("gendir/hello.txt absent from state; a kept-tainted generated entry must survive reload")
+		}
+		if !bytes.Equal(ent.GetCmdHash(), cmdhash) {
+			t.Errorf("CmdHash=%x; want %x (the tag that keeps the member as generated output)", ent.GetCmdHash(), cmdhash)
+		}
+	})
+}
+
+// TestState_DirOutput_BuildWithoutBytesReload verifies a directory output
+// recorded build-without-bytes (output_local=false: subtree in CAS, only the
+// root on disk) survives save/reload with every entry present and unchanged;
+// otherwise a consumer's directory input looks changed and re-runs.
+func TestState_DirOutput_BuildWithoutBytesReload(t *testing.T) {
+	ctx := t.Context()
+	dir := t.TempDir()
+	dir, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	opts := hashfs.Option{
+		StateFile:   filepath.Join(dir, ".siso_fs_state"),
+		OutputLocal: func(context.Context, string) bool { return false },
+	}
+	// Only the declared output root exists on disk (ensureActionOutputDirs
+	// pre-creates it); the subtree stays in CAS.
+	if err := os.MkdirAll(filepath.Join(dir, "gendir"), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	mtime := time.Now()
+	h := sha256.New()
+	fmt.Fprint(h, "dir output step")
+	cmdhash := h.Sum(nil)
+	actionDg := digest.FromBytes("action digest", []byte("action proto")).Digest()
+
+	entries := []merkletree.Entry{
+		{Name: "gendir"},
+		{Name: "gendir/sub"},
+		{Name: "gendir/hello.txt", Data: digest.FromBytes("gendir/hello.txt", []byte("hello"))},
+		{Name: "gendir/sub/nested.txt", Data: digest.FromBytes("gendir/sub/nested.txt", []byte("nested"))},
+	}
+	want := []string{"gendir", "gendir/sub", "gendir/hello.txt", "gendir/sub/nested.txt"}
+
+	func() {
+		hashFS, err := hashfs.New(ctx, opts)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() {
+			if err := hashFS.Close(ctx); err != nil {
+				t.Errorf("close=%v", err)
+			}
+		}()
+		if err := hashFS.WaitReady(ctx); err != nil {
+			t.Fatalf("WaitReady=%v", err)
+		}
+		if err := update(ctx, hashFS, dir, entries, mtime, cmdhash, actionDg); err != nil {
+			t.Fatalf("update=%v", err)
+		}
+	}()
+
+	// Reload many times: the concurrent storeDirs store can race a parent
+	// directory against its child and orphan the subtree (the race the
+	// directory.store fix closes). That race is timing-dependent, so a
+	// single reload would catch a regression only about half the time.
+	for i := range 50 {
+		hashFS2, err := hashfs.New(ctx, opts)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := hashFS2.WaitReady(ctx); err != nil {
+			t.Fatalf("WaitReady=%v", err)
+		}
+		for _, rel := range want {
+			fi, err := hashFS2.Stat(ctx, dir, rel)
+			if err != nil {
+				t.Fatalf("reload %d: %s dropped: %v; a build-without-bytes directory output (output_local=false) must keep every entry across reload even though it is not on local disk", i, rel, err)
+			}
+			if fi.IsChanged() {
+				t.Fatalf("reload %d: %s reloaded as changed; an unchanged build-without-bytes directory output must reload not-changed so the consumer is not re-triggered", i, rel)
+			}
+		}
+		if err := hashFS2.Close(ctx); err != nil {
+			t.Errorf("reload %d: close=%v", i, err)
+		}
+	}
 }
 
 // createLargeBenchmarkState builds a protobuf state that approximates real

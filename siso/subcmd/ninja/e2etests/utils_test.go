@@ -242,6 +242,17 @@ func touchFile(t *testing.T, dir, name string) {
 	}
 }
 
+// readFile returns the content of the file at path, failing the test if it
+// cannot be read.
+func readFile(t *testing.T, path string) string {
+	t.Helper()
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read %s: %v", path, err)
+	}
+	return string(b)
+}
+
 type syncBuffer struct {
 	mu  sync.Mutex
 	buf bytes.Buffer

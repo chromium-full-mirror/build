@@ -525,7 +525,9 @@ func initOutputLocal(ctx context.Context, outputLocalStrategy string) (func(cont
 		return func(ctx context.Context, fname string) bool {
 			// Note: d. wil be downloaded to get deps anyway,
 			// but will not be written to disk.
-			switch filepath.Ext(fname) {
+			// Strip a dir output's trailing slash; the same output is probed
+			// both with and without it, and filepath.Ext is slash-sensitive.
+			switch filepath.Ext(strings.TrimSuffix(fname, "/")) {
 			case ".o", ".obj", ".a", ".d", ".stamp", ".pcm":
 				return false
 			}
@@ -537,7 +539,8 @@ func initOutputLocal(ctx context.Context, outputLocalStrategy string) (func(cont
 			// .h,/.hxx/.hpp/.inc/.c/.cc/.cxx/.cpp/.m/.mm for gcc deps or msvc showIncludes
 			// .json/.js/.ts for tsconfig.json, .js for grit etc.
 			// .py for protobuf py etc.
-			switch filepath.Ext(fname) {
+			// Strip a directory output's trailing slash (see "greedy").
+			switch filepath.Ext(strings.TrimSuffix(fname, "/")) {
 			case ".h", ".hxx", ".hpp", ".inc", ".c", ".cc", "cxx", ".cpp", ".m", ".mm", ".json", ".js", ".ts", ".py":
 				return true
 			}

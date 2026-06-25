@@ -21,6 +21,7 @@ import (
 
 	"go.chromium.org/build/siso/build"
 	"go.chromium.org/build/siso/build/buildconfig"
+	"go.chromium.org/build/siso/execute"
 	"go.chromium.org/build/siso/hashfs"
 	"go.chromium.org/build/siso/o11y/clog"
 	"go.chromium.org/build/siso/o11y/trace"
@@ -499,9 +500,14 @@ func (g *globals) targetPath(node *ninjautil.Node) string {
 	if p != "" {
 		return p
 	}
-	p = node.Path()
+	raw := node.Path()
+	p = raw
 	if !filepath.IsAbs(p) {
 		p = filepath.ToSlash(filepath.Join(g.path.BaseDir, p))
+	}
+	// filepath.Join strips a directory target's trailing slash; re-append it.
+	if strings.HasSuffix(raw, "/") && !strings.HasSuffix(p, "/") {
+		p += "/"
 	}
 	g.targetPaths[node.ID()] = p
 	return p
@@ -597,22 +603,33 @@ func (g *Graph) CleanDead(ctx context.Context) (int, int, error) {
 	var deads []string
 	dir := g.globals.path.AbsBase()
 	genFiles := g.globals.hashFS.PreviouslyGeneratedFiles()
+
+	// Normalize generated files to workspace-relative slash paths, dropping
+	// any that escape the out dir (e.g. through a symlinked directory;
+	// b/336667052).
+	rels := make([]string, 0, len(genFiles))
 	for _, genFile := range genFiles {
 		rel, err := filepath.Rel(dir, genFile)
 		if err != nil {
 			return len(deads), len(genFiles), err
 		}
 		if !filepath.IsLocal(rel) {
-			// genFile may not be in out dir via symlink dir,
-			// then we should not remove the file.
-			// b/336667052
 			clog.Warningf(ctx, "skip generated file not in out dir: %s", genFile)
 			continue
 		}
-		rel = filepath.ToSlash(rel)
+		rels = append(rels, filepath.ToSlash(rel))
+	}
+
+	// Judge only the outermost entries: a directory output is owned as a
+	// unit, so its contents must never be judged on their own. RemoveAll on
+	// a dead root takes its whole subtree. Sort only for deterministic deads.
+	slices.Sort(rels)
+	for _, rel := range execute.OutermostPaths(rels) {
 		if g.isDead(rel) {
 			deads = append(deads, rel)
-			err := g.globals.hashFS.Remove(ctx, dir, rel)
+			// RemoveAll so a dead dir output goes with its contents; a plain
+			// Remove would fail on a non-empty directory.
+			err := g.globals.hashFS.RemoveAll(ctx, dir, rel)
 			if err != nil {
 				return len(deads), len(genFiles), err
 			}
@@ -640,7 +657,13 @@ func (g *Graph) CleanDead(ctx context.Context) (int, int, error) {
 func (g *Graph) isDead(fname string) bool {
 	n, ok := g.globals.nstate.LookupNodeByPath(fname)
 	if !ok {
-		return true
+		// Directory-output nodes are keyed with a trailing slash ("gen/")
+		// but reach here slash-stripped ("gen"). Retry the slash form so a
+		// referenced dir node is not reported dead and RemoveAll'd.
+		n, ok = g.globals.nstate.LookupNodeByPath(fname + "/")
+		if !ok {
+			return true
+		}
 	}
 	_, ok = n.InEdge()
 	outs := n.OutEdges()

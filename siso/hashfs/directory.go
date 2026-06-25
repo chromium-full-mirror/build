@@ -240,7 +240,13 @@ func shouldKeep(ctx context.Context, origFname string, ee, e *entry) (*entry, bo
 			return ee, true
 		}
 	}
-	// e should replace ee.
+	// e should replace ee. If ee is an intermediate directory (no cmdhash)
+	// and a real dir output e lands on it, carry ee's children into e: e's
+	// fresh empty dir would orphan them, and a build-without-bytes dir output
+	// has no local disk to recover them from.
+	if ee.getDir() != nil && e.getDir() != nil && len(ee.cmdhash) == 0 {
+		e.directory = ee.getDir()
+	}
 	return e, false
 }
 

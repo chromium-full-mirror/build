@@ -199,9 +199,9 @@ func (b *Builder) runStep(ctx context.Context, step *Step) (retErr error) {
 	} else if exited {
 		// store handler generated outputs to local disk.
 		// better to upload to CAS, or store in fs_state?
-		clog.Infof(ctx, "outputs[handler] %d", len(step.cmd.Outputs))
+		clog.Infof(ctx, "outputs[handler] %d", len(step.cmd.Outputs)+len(step.cmd.OutputDirs))
 		start := time.Now()
-		err = b.hashFS.Flush(ctx, step.cmd.WorkspaceRoot, step.cmd.Outputs)
+		err = b.hashFS.Flush(ctx, step.cmd.WorkspaceRoot, step.cmd.FlushOutputs())
 		step.metrics.MaterializeOutputsTime = IntervalMetric(time.Since(start))
 		if err == nil {
 			b.plan.completeStep(ctx, step)

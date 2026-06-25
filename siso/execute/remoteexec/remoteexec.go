@@ -9,7 +9,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"path/filepath"
 	"runtime"
 	"time"
 
@@ -22,7 +21,6 @@ import (
 	"go.chromium.org/build/siso/o11y/trace"
 	"go.chromium.org/build/siso/reapi"
 	"go.chromium.org/build/siso/reapi/digest"
-	"go.chromium.org/build/siso/reapi/merkletree"
 	_ "go.chromium.org/build/siso/reapi/proto" // for auxiliary metadata
 	"go.chromium.org/build/siso/sync/semaphore"
 )
@@ -210,31 +208,9 @@ func (re *RemoteExec) ProcessResult(ctx context.Context, cmd *execute.Cmd, resul
 	// Record auxiliary outputs logs (e.g. crash reports) for debugging.
 	cmd.RecordAuxiliaryOutputDigests(ctx, result)
 
-	files := result.GetOutputFiles()
-	symlinks := result.GetOutputSymlinks()
-	var dirs []*rpb.OutputDirectory
-	for _, d := range result.GetOutputDirectories() {
-		dname := filepath.ToSlash(filepath.Join(cmd.WorkDir, d.GetPath()))
-		// Auxiliary directories don't need to be expanded/flattened.
-		// We only need the Tree digest for logging, and they are not used as inputs for other steps.
-		if cmd.IsAuxiliary(dname) {
-			dirs = append(dirs, d)
-			continue
-		}
-		ds := digest.NewStore()
-		outdir, derr := re.client.FetchTree(ctx, d.GetPath(), digest.FromProto(d.GetTreeDigest()), ds)
-		if derr != nil {
-			clog.Errorf(ctx, "Failed to fetch tree %s %s: %v", d.GetPath(), d.GetTreeDigest(), derr)
-			continue
-		}
-		dfiles, dsymlinks, ddirs := merkletree.Traverse(ctx, d.GetPath(), outdir, ds)
-		files = append(files, dfiles...)
-		symlinks = append(symlinks, dsymlinks...)
-		dirs = append(dirs, ddirs...)
-	}
-	result.OutputFiles = files
-	result.OutputSymlinks = symlinks
-	result.OutputDirectories = dirs
+	// Leave the raw result as-is: a dir output's Tree is flattened when the
+	// result is recorded (cmd.RecordOutputs -> expandDirOutputs), the single
+	// path every result flows through. Expanding here would duplicate that.
 	cmd.SetActionResult(result, cached)
 	if len(result.GetStdoutRaw()) > 0 {
 		cmd.StdoutWriter().Write(result.GetStdoutRaw())

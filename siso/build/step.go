@@ -577,7 +577,8 @@ func newCmd(ctx context.Context, b *Builder, stepDef StepDef, stepManifest *step
 		WorkDir:                 b.path.BaseDir,
 		Inputs:                  stepInputs(ctx, stepDef),
 		ToolInputs:              stepDef.ToolInputs(ctx),
-		Outputs:                 stepManifest.outputs,
+		Outputs:                 stepFileOutputs(stepManifest.outputs),
+		OutputDirs:              stepDirOutputs(stepManifest.outputs),
 		EdgeHash:                stepManifest.edgeHash,
 		UseSystemInput:          stepDef.Binding("use_system_input") != "",
 		Deps:                    stepDef.Binding("deps"),
@@ -613,6 +614,7 @@ func newCmd(ctx context.Context, b *Builder, stepDef StepDef, stepManifest *step
 	if stepDef.Binding("phony_output") != "" {
 		clog.Infof(ctx, "phony_output: no outputs by cmd")
 		cmd.Outputs = nil
+		cmd.OutputDirs = nil
 	}
 	if envfile := stepDef.Binding("envfile"); envfile != "" {
 		cmd.Env = b.loadEnvfile(ctx, envfile)
@@ -689,6 +691,28 @@ func stepInputs(ctx context.Context, stepDef StepDef) []string {
 	return inputs
 }
 
+// stepFileOutputs returns file outputs (non-directory) with paths as-is.
+func stepFileOutputs(outputs []string) []string {
+	var files []string
+	for _, out := range outputs {
+		if !IsDirTarget(out) {
+			files = append(files, out)
+		}
+	}
+	return files
+}
+
+// stepDirOutputs returns directory outputs with trailing slash stripped.
+func stepDirOutputs(outputs []string) []string {
+	var dirs []string
+	for _, out := range outputs {
+		if IsDirTarget(out) {
+			dirs = append(dirs, DirTargetPath(out))
+		}
+	}
+	return dirs
+}
+
 func stepDescription(stepDef StepDef) string {
 	s := stepDef.Binding("description")
 	if s != "" {
@@ -702,8 +726,10 @@ func validateRemoteActionResult(result *rpb.ActionResult) bool {
 		return false
 	}
 
-	if result.ExitCode == 0 && len(result.GetOutputFiles()) == 0 {
+	if result.ExitCode == 0 && len(result.GetOutputFiles()) == 0 && len(result.GetOutputDirectories()) == 0 {
 		// succeeded result should have at least one output. b/350360391
+		// A dir-only output has no OutputFiles but does have an
+		// OutputDirectory, so accept that too (else it re-executes every build).
 		return false
 	}
 	return true
