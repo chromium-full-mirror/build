@@ -87,12 +87,15 @@ func TestDo_ResourceExhausted(t *testing.T) {
 	called := 0
 	err := retry.Do(ctx, func() error {
 		called++
-		return status.Error(codes.ResourceExhausted, "resource exhausted")
+		if called == 1 {
+			return status.Error(codes.ResourceExhausted, "resource exhausted")
+		}
+		return nil
 	})
-	if code := status.Code(err); code != codes.ResourceExhausted {
-		t.Errorf("retry.Do=%v; want %v", err, codes.ResourceExhausted)
+	if err != nil {
+		t.Errorf("retry.Do=%v; want nil", err)
 	}
-	if called != 1 {
-		t.Errorf("called=%d; want 1", called)
+	if called != 2 {
+		t.Errorf("called=%d; want 2", called)
 	}
 }
