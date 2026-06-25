@@ -115,6 +115,10 @@ func (b *Builder) runStep(ctx context.Context, step *Step) (retErr error) {
 					case spanExecRemoteCacheCheck:
 						step.metrics.CacheTime = IntervalMetric(s.Duration())
 						step.metrics.CacheStartTime = IntervalMetric(s.Start.Sub(b.start))
+					case spanMaterializeInputs:
+						step.metrics.MaterializeInputsTime = IntervalMetric(s.Duration())
+					case spanMaterializeOutputs:
+						step.metrics.MaterializeOutputsTime = IntervalMetric(s.Duration())
 					}
 				}
 				step.metrics.Spans = metricSpans
@@ -200,9 +204,9 @@ func (b *Builder) runStep(ctx context.Context, step *Step) (retErr error) {
 		// store handler generated outputs to local disk.
 		// better to upload to CAS, or store in fs_state?
 		clog.Infof(ctx, "outputs[handler] %d", len(step.cmd.Outputs)+len(step.cmd.OutputDirs))
-		start := time.Now()
+		_, mspan := trace.NewSpan(ctx, spanMaterializeOutputs)
 		err = b.hashFS.Flush(ctx, step.cmd.WorkspaceRoot, step.cmd.FlushOutputs())
-		step.metrics.MaterializeOutputsTime = IntervalMetric(time.Since(start))
+		mspan.Close(nil)
 		if err == nil {
 			b.plan.completeStep(ctx, step)
 			return nil

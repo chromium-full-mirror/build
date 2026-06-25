@@ -1283,9 +1283,9 @@ func (b *Builder) outputs(ctx context.Context, step *Step) error {
 		}
 	}
 	if len(localOutputs) > 0 && !b.hashFS.OnCartFS() {
-		start := time.Now()
+		_, mspan := trace.NewSpan(ctx, spanMaterializeOutputs)
 		err := b.hashFS.Flush(ctx, step.cmd.WorkspaceRoot, localOutputs)
-		step.metrics.MaterializeOutputsTime = IntervalMetric(time.Since(start))
+		mspan.Close(nil)
 		if err != nil {
 			return fmt.Errorf("%w: %w", errFlushOutput, err)
 		}

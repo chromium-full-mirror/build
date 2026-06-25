@@ -34,12 +34,27 @@ const (
 	// Child span of [spanExecRemoteCache] measuring starting the remote cache query until it
 	// finishes, i.e. excludes cacheSema wait time.
 	spanExecRemoteCacheCheck = "exec-remote-cache-check"
+
+	// Span for time it took to materialize inputs to disk
+	// that were required by the step.
+	spanMaterializeInputs = "materialize-inputs"
+	// Span for time it took to materialize outputs to disk
+	// that were required by the step.
+	spanMaterializeOutputs = "materialize-outputs"
 )
 
 // shouldLogSpan returns whether this is a span that should be logged for metric purposes.
 func shouldLogSpan(name string) bool {
 	kind, _, _ := strings.Cut(name, "/")
-	return strings.HasPrefix(kind, "step:")
+	if strings.HasPrefix(kind, "step:") {
+		return true
+	}
+	switch kind {
+	case spanMaterializeInputs,
+		spanMaterializeOutputs:
+		return true
+	}
+	return false
 }
 
 // MetricSpan is span timing logged for metric purposes.
@@ -171,11 +186,17 @@ type StepMetric struct {
 
 	// MaterializeInputsTime is the time it took to materialize inputs to disk
 	// that were required by the step.
+	//
+	// Deprecated: Being migrated to spans, as this provides granularity
+	// as to when the materialize is being called.
 	MaterializeInputsTime IntervalMetric `json:"materialize_inputs_nanos,omitempty"`
 	// MaterializeOutputsTime is the time it took to materialize outputs to disk
 	// by the step.
 	// These could be remote files from CAS, or local in-memory files from a
 	// step handler, etc.
+	//
+	// Deprecated: Being migrated to spans, as this provides granularity
+	// as to when the materialize is being called.
 	MaterializeOutputsTime IntervalMetric `json:"materialize_outputs_nanos,omitempty"`
 
 	// Cache lookup key for two phase caching.

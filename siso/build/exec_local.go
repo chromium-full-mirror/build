@@ -354,9 +354,10 @@ func (b *Builder) prepareLocalInputs(ctx context.Context, step *Step) error {
 	if log.V(1) {
 		clog.Infof(ctx, "prepare-local-inputs %d", len(inputs))
 	}
+	_, mspan := trace.NewSpan(ctx, spanMaterializeInputs)
 	err := b.hashFS.Flush(ctx, step.cmd.WorkspaceRoot, inputs)
+	mspan.Close(nil)
 	clog.Infof(ctx, "prepare-local-inputs %d %s: %v", len(inputs), time.Since(start), err)
-	step.metrics.MaterializeInputsTime = IntervalMetric(time.Since(start))
 	if errors.Is(err, context.Canceled) {
 		return err
 	}

@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -123,13 +124,10 @@ func TestBuild_Metrics(t *testing.T) {
 		if m.StepID == "" {
 			continue
 		}
-		if len(m.Spans) != 1 {
-			t.Errorf("%s len(m.Spans)=%d; want 1", m.Output(), len(m.Spans))
-		} else {
-			// Only "step:" span is logged right now.
-			if !strings.HasPrefix(m.Spans[0].Name, "step:") {
-				t.Errorf(`%s span %q; want "step:" span`, m.Output(), m.Spans[0].Name)
-			}
+		if !slices.ContainsFunc(m.Spans, func(span build.MetricSpan) bool {
+			return strings.HasPrefix(span.Name, "step:")
+		}) {
+			t.Errorf(`%s spans %v; want "step:" span`, m.Output(), m.Spans)
 		}
 		switch filepath.Base(m.Output()) {
 		case "local":
