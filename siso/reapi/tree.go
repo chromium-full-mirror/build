@@ -6,6 +6,7 @@ package reapi
 
 import (
 	"context"
+	"errors"
 
 	"google.golang.org/protobuf/proto"
 
@@ -37,6 +38,9 @@ func ParseTree(ctx context.Context, b []byte, ds *digest.Store) (*rpb.Directory,
 			continue
 		}
 		ds.Set(d)
+	}
+	if tree.Root == nil {
+		return nil, errors.New("tree root is nil")
 	}
 	return tree.Root, nil
 }
