@@ -89,6 +89,16 @@ func (s *scanner) stats() string {
 		s.slowest, s.slowestDur)
 }
 
+// includedBitmapPool reuses the *bitmap.Bitmap that scanner.find
+// allocates per unique include name (~30M allocs per cache-cold
+// build). Bitmaps are Clear'd before reuse, preserving cap.
+var includedBitmapPool = sync.Pool{
+	New: func() any {
+		b := bitmap.Bitmap{}
+		return &b
+	},
+}
+
 func (s *scanner) reset(fsys *filesystem, workspaceRoot string, inputDeps map[string][]string, precomputedTrees []string) {
 	s.pt.Reset()
 	s.fsview.reset(fsys, workspaceRoot, inputDeps, precomputedTrees)
@@ -96,6 +106,10 @@ func (s *scanner) reset(fsys *filesystem, workspaceRoot string, inputDeps map[st
 	s.maxDirstack = 0
 	s.inputs = s.inputs[:0]
 	clear(s.macros)
+	for _, b := range s.included {
+		b.Clear()
+		includedBitmapPool.Put(b)
+	}
 	clear(s.included)
 	clear(s.macroUsed)
 	clear(s.macroInclude)
@@ -336,7 +350,7 @@ func (s *scanner) find(ctx context.Context, name string) (string, error) {
 	name = name[1 : len(name)-1]
 	included, ok := s.included[name]
 	if !ok {
-		included = &bitmap.Bitmap{}
+		included = includedBitmapPool.Get().(*bitmap.Bitmap)
 		s.included[name] = included
 	}
 	if filepath.IsAbs(name) {
