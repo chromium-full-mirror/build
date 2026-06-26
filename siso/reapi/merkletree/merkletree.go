@@ -162,14 +162,16 @@ func (m *MerkleTree) Set(entry Entry) error {
 		dir:  m.RootDirectory(),
 	}
 	rest := fname
-	// Try to use the cached directory state if possible.
+	// Try to reuse the cached directory state. Hand-check the prefix
+	// and '/' separator instead of CutPrefix(fname, name+"/"), whose
+	// concatenation allocates per call (~18M allocs per cache-cold build).
 	var found bool
 	if m.lastDir.dir != nil && !strings.Contains(fname, "..") {
-		var after string
-		after, found = strings.CutPrefix(fname, m.lastDir.name+"/")
-		if found {
+		ln := len(m.lastDir.name)
+		if len(fname) > ln && fname[ln] == '/' && fname[:ln] == m.lastDir.name {
 			cur = m.lastDir
-			rest = after
+			rest = fname[ln+1:]
+			found = true
 		}
 	}
 	if !found {
