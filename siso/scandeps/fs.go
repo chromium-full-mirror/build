@@ -33,9 +33,12 @@ type filesystem struct {
 
 	hmaps sync.Map // hmap path -> *hmapresult
 
-	// shard by maphash to reduce lock contention
-	symtab  [256]sync.Map  // for incname, macros
-	pathtab [4096]sync.Map // for pathname
+	// sharded by maphash to reduce lock contention. A typed
+	// map[string]string + RWMutex avoids boxing string keys into
+	// interface{}, which a sync.Map does per access (~104M allocs
+	// per cache-cold build, top of the alloc profile).
+	symtab  [256]internShard  // for incname, macros
+	pathtab [4096]internShard // for pathname
 	seed    maphash.Seed
 }
 
@@ -189,17 +192,47 @@ func (fsys *filesystem) ReadDir(ctx context.Context, workspaceRoot, dname string
 	return &dc.m, dc.symlinkTargets, nil
 }
 
+// internShard is one shard of a typed string interning table. The
+// typed map avoids the per-access interface-boxing allocation a
+// sync.Map would pay on the hot scandeps intern paths.
+type internShard struct {
+	mu sync.RWMutex
+	m  map[string]string
+}
+
+// get returns the canonical interned string for v, storing it on first
+// sight. clone controls whether v is cloned before storing; pass false
+// for callers holding a stable Go string (e.g. filepath.Base/Dir).
+func (s *internShard) get(v string, clone bool) string {
+	s.mu.RLock()
+	if existing, ok := s.m[v]; ok {
+		s.mu.RUnlock()
+		return existing
+	}
+	s.mu.RUnlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if existing, ok := s.m[v]; ok {
+		return existing
+	}
+	if s.m == nil {
+		s.m = make(map[string]string)
+	}
+	if clone {
+		v = strings.Clone(v)
+	}
+	s.m[v] = v
+	return v
+}
+
 func (fsys *filesystem) intern(v string) string {
-	v = strings.Clone(v)
 	i := int(maphash.String(fsys.seed, v) % uint64(len(fsys.symtab)))
-	vv, _ := fsys.symtab[i].LoadOrStore(v, v)
-	return vv.(string)
+	return fsys.symtab[i].get(v, true)
 }
 
 func (fsys *filesystem) pathIntern(v string) string {
 	i := int(maphash.String(fsys.seed, v) % uint64(len(fsys.pathtab)))
-	vv, _ := fsys.pathtab[i].LoadOrStore(v, v)
-	return vv.(string)
+	return fsys.pathtab[i].get(v, false)
 }
 
 func (fsys *filesystem) getDir(workspaceRoot, dname string) (exist, ok bool) {
