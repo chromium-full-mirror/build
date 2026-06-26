@@ -480,7 +480,7 @@ func (m *MerkleTree) mergeDir(ctx context.Context, dirname string, dir *rpb.Dire
 func (m *MerkleTree) buildTree(ctx context.Context, curdir *rpb.Directory, dirname string) (*rpb.Digest, error) {
 	// directory should not have duplicate name.
 	// http://b/124693412
-	names := map[string]proto.Message{}
+	names := make(map[string]proto.Message, len(curdir.Files)+len(curdir.Symlinks)+len(curdir.Directories))
 	var files []*rpb.FileNode
 	for _, f := range curdir.Files {
 		p, found := names[f.Name]
