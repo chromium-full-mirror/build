@@ -242,6 +242,14 @@ func (m *MerkleTree) Set(entry Entry) error {
 		var err error
 		cur, err = m.setDir(cur, name)
 		if err != nil {
+			// setDir only returns ErrPrecomputedSubTree, which every
+			// caller errors.Is-checks and ignores. Return it bare;
+			// wrapping it interpolates fname and allocates a string
+			// per input descending into a precomputed subtree, all
+			// discarded.
+			if errors.Is(err, ErrPrecomputedSubTree) {
+				return err
+			}
 			return fmt.Errorf("set %s: %w", fname, err)
 		}
 	}
