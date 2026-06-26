@@ -802,6 +802,13 @@ func (s *StepDef) expandLabels(ctx context.Context, inputs []string) []string {
 	return expanded
 }
 
+// seenSetPool pools the map[string]bool dedup scratches used by
+// ExpandedInputs (~60k calls per build, ~1k entries each). Callers
+// must clear the map before returning it to the pool.
+var seenSetPool = sync.Pool{
+	New: func() any { return make(map[string]bool, 1024) },
+}
+
 // ExpandedInputs returns expanded inputs
 //   - Include indirect inputs.
 //   - Add solibs for input (to execute the executable).
@@ -818,9 +825,13 @@ func (s *StepDef) ExpandedInputs(ctx context.Context) []string {
 	}
 	// it takes too much memory in later build stages.
 	// keep Inputs as is, and expand them when calculating digest ?
-	seen := make(map[string]bool)
+	seen := seenSetPool.Get().(map[string]bool)
+	defer func() {
+		clear(seen)
+		seenSetPool.Put(seen)
+	}()
 	var phonyEdges []*ninjautil.Edge
-	var inputs []string
+	inputs := make([]string, 0, 2*len(s.edge.Inputs()))
 	globals := s.globals
 	for _, in := range s.edge.Inputs() {
 		p := globals.targetPath(in)
@@ -867,7 +878,11 @@ func (s *StepDef) ExpandedInputs(ctx context.Context) []string {
 		}
 		// need to use different seen, so that replaces/accumulates
 		// works even if indirect inputs see/ignore the inputs.
-		iseen := make(map[string]bool)
+		iseen := seenSetPool.Get().(map[string]bool)
+		defer func() {
+			clear(iseen)
+			seenSetPool.Put(iseen)
+		}()
 		maps.Copy(iseen, seen)
 		filter := s.rule.IndirectInputs.Filter(ctx, "indirect_inputs")
 		for _, in := range s.edge.Inputs() {
