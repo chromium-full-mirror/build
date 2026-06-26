@@ -362,17 +362,30 @@ func (fv *fsview) setFile(fname string, sr *scanResult) {
 }
 
 func (fv *fsview) markVisited(visits ...string) {
-	stack := slices.Clone(visits)
-	for len(stack) > 0 {
-		n := len(stack) - 1
-		v := stack[n]
-		stack = stack[:n]
-
+	// Walk visits directly without cloning; only spill into pending
+	// when a node has inputDeps to chase. Most files have none, so
+	// most calls allocate nothing.
+	var pending []string
+	for _, v := range visits {
 		if fv.visited[v] {
 			continue
 		}
 		fv.visited[v] = true
-		stack = append(stack, fv.inputDeps[v]...)
+		if deps := fv.inputDeps[v]; len(deps) > 0 {
+			pending = append(pending, deps...)
+		}
+	}
+	for len(pending) > 0 {
+		n := len(pending) - 1
+		v := pending[n]
+		pending = pending[:n]
+		if fv.visited[v] {
+			continue
+		}
+		fv.visited[v] = true
+		if deps := fv.inputDeps[v]; len(deps) > 0 {
+			pending = append(pending, deps...)
+		}
 	}
 }
 
