@@ -1909,8 +1909,13 @@ func (hfs *HashFS) RetrieveUpdateEntriesFromLocal(ctx context.Context, root stri
 	}
 	// capture hashfs for all fnames after all missing entries, parents
 	// are invalidated in the above loop.
+	//
+	// needCompute=false: only cmdhash/edgehash/action/updatedTime/
+	// isChanged are read below, none needing a digest. The following
+	// Update replaces this entry, so digesting it here would just be a
+	// duplicate open+read of a file Update digests again.
 	for i, ent := range ents {
-		fi, err := hfs.Stat(ctx, root, ent.Name)
+		fi, err := hfs.stat(ctx, root, ent.Name, statOpts{needCompute: false})
 		if err != nil {
 			clog.Warningf(ctx, "failed to stat after invalidate %s: %v", ent.Name, err)
 		} else {
