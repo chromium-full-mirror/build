@@ -85,8 +85,7 @@ const (
 )
 
 func (fv *fsview) addDir(ctx context.Context, dir string, searchPath searchPathType) {
-	dirheaders := dir + ":headers"
-	if _, ok := fv.inputDeps[dirheaders]; ok {
+	if _, ok := fv.fs.headersDirs[dir]; ok {
 		// use precomputed subtree for this directory,
 		// so no need to handle this dir.
 		return

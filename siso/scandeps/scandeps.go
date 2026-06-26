@@ -96,6 +96,15 @@ func New(ctx context.Context, hashfs *hashfs.HashFS, opts Options) *ScanDeps {
 	for _, i := range opts.InputsRequiringClangScandeps {
 		s.inputsRequiringClangScandeps[i] = true
 	}
+	// Pre-index ":headers" InputDeps keys by directory so fsview.addDir
+	// avoids the dir+":headers" concatenation per call.
+	headersDirs := make(map[string]struct{})
+	for k := range opts.InputDeps {
+		if dir, ok := strings.CutSuffix(k, ":headers"); ok {
+			headersDirs[dir] = struct{}{}
+		}
+	}
+	s.fs.headersDirs = headersDirs
 	hashfs.Notify(s.fs.update)
 	return s
 }

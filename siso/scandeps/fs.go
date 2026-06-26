@@ -40,6 +40,12 @@ type filesystem struct {
 	symtab  [256]internShard  // for incname, macros
 	pathtab [4096]internShard // for pathname
 	seed    maphash.Seed
+
+	// headersDirs holds the directories with a ":headers" entry in
+	// InputDeps, so addDir looks up by dir instead of building
+	// dir+":headers" per call (~17M string allocs per cache-cold
+	// build). Read-only after ScanDeps.New, so no lock is needed.
+	headersDirs map[string]struct{}
 }
 
 type dircache struct {
