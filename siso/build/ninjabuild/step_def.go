@@ -48,9 +48,11 @@ type StepDef struct {
 	rule      StepRule
 	pure      bool
 
-	// from depfile/depslog
-	deps   iter.Seq[string] // workspace relative
-	deperr error
+	// from depfile/depslog, parsed once under depsOnce so concurrent
+	// callers (inputMtime, step.Inputs) share a single depfile read.
+	depsOnce sync.Once
+	deps     iter.Seq[string] // workspace relative
+	deperr   error
 
 	envfile string // for ninja -t msvc -e <envfile> --
 
@@ -440,13 +442,14 @@ func (s *StepDef) TriggerInputs(ctx context.Context) []string {
 	return targets
 }
 
-// DepInputs returns inputs stored in depfile / depslog.
+// DepInputs returns inputs stored in depfile / depslog. The parse runs
+// once per StepDef; concurrent callers share the result via depsOnce.
 func (s *StepDef) DepInputs(ctx context.Context) (iter.Seq[string], error) {
 	ctx, span := trace.NewSpan(ctx, "stepdef-dep-inputs")
 	defer span.Close(nil)
-	if s.deps == nil && s.deperr == nil {
+	s.depsOnce.Do(func() {
 		s.deps, s.deperr = depInputs(ctx, s)
-	}
+	})
 	return s.deps, s.deperr
 }
 
@@ -711,7 +714,7 @@ func fixInputs(ctx context.Context, stepDef *StepDef, inputs, excludes []string)
 }
 
 // ExpandedCaseSensitives returns expanded filenames if platform is case-sensitive.
-func (s StepDef) ExpandedCaseSensitives(ctx context.Context, inputs []string) []string {
+func (s *StepDef) ExpandedCaseSensitives(ctx context.Context, inputs []string) []string {
 	if s.Platform()["OSFamily"] == "Windows" {
 		// Nothing to do on case-insensitive platform.
 		return inputs
