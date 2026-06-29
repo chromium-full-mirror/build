@@ -30,13 +30,14 @@ import (
 )
 
 const usage = `fetch contents from CAS or ActionResult.
-Print contents to stdout, or extract in <dir> for -type dir-extract.
+Print contents to stdout, or extract in <dir> for -type *-extract.
 
  $ siso fetch [-project <project>] [-reapi_instance <instance>] \
           [-type <type>] \
           <digest> [<dir>]
  $ siso fetch [-type <type>] \
   bytesteam://<endpoint>/projects/<project>/instances/<instance>/blobs/<digest>
+
 `
 
 // Cmd returns the Command for the `fetch` subcommand provided by this package.
@@ -82,6 +83,7 @@ func (c *Command) SetFlags(flagSet *flag.FlagSet) {
                or list (if <dir> is not specified)
   tree-extract: tree message extract to <dir> (if <dir> is specified)
                or list (if <dir> is not specified)
+  action-list: actions associated with two phase cache key.
 `)
 }
 
@@ -228,6 +230,15 @@ func (c *Command) run(ctx context.Context) error {
 		err = exporter.ExportTree(ctx, dir, d, w)
 		if err != nil {
 			return fmt.Errorf("error from exporter.ExportTree: %w", err)
+		}
+		return nil
+	case "action-list":
+		for action, err := range client.ActionCacheMap().List(ctx, d.String()) {
+			if err != nil {
+				return fmt.Errorf("failed to list actions for %s: %v", d.String(), err)
+			}
+			fmt.Println(action)
+			fmt.Println()
 		}
 		return nil
 	default:
