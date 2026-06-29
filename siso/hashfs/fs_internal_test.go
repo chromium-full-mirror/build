@@ -10,9 +10,61 @@ import (
 	"runtime"
 	"slices"
 	"testing"
+	"time"
 
 	"go.chromium.org/build/siso/hashfs/osfs"
+	"go.chromium.org/build/siso/reapi/digest"
 )
+
+// TestReadFileStaleSizeDigest: when an entry's size is stale (the file grew),
+// ReadFull fills the stale-size buffer and returns without checking EOF, so the
+// inline digest covers only the prefix and suppresses the full-file digest.
+// e.d must not be set from a partial read.
+func TestReadFileStaleSizeDigest(t *testing.T) {
+	ctx := t.Context()
+	dir := t.TempDir()
+	hfs, err := New(ctx, Option{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	fname := filepath.Join(dir, "gen.h")
+	const prefix = "old small content"
+	const grown = prefix + " plus appended bytes the stale entry never saw"
+	if err := os.WriteFile(fname, []byte(prefix), 0644); err != nil {
+		t.Fatal(err)
+	}
+	// Avoid init's waitUntilModTime sleeping on a just-written file.
+	past := time.Now().Add(-2 * time.Second)
+	if err := os.Chtimes(fname, past, past); err != nil {
+		t.Fatal(err)
+	}
+	// A digestless entry capturing the old (small) size.
+	e := newLocalEntry()
+	e.init(ctx, fname, hfs.executables, hfs.OS)
+	if _, err := hfs.directory.store(ctx, fname, e); err != nil {
+		t.Fatal(err)
+	}
+	// File grows on disk without a hashfs update.
+	if err := os.WriteFile(fname, []byte(grown), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := hfs.ReadFile(ctx, dir, "gen.h"); err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	e2, _, _, ok := hfs.directory.lookup(ctx, fname)
+	if !ok {
+		t.Fatal("entry vanished after ReadFile")
+	}
+	// ReadFile must never persist the stale-size prefix digest (it would
+	// suppress lazyCompute and leave a wrong digest). Valid: zero (deferred)
+	// or the full-file digest; the prefix digest is the bug.
+	got := e2.digest()
+	prefixDigest := digest.FromBytes(fname, []byte(prefix)).Digest()
+	fullDigest := digest.FromBytes(fname, []byte(grown)).Digest()
+	if !got.IsZero() && got != fullDigest {
+		t.Fatalf("ReadFile stored digest %v; want zero (deferred) or full %v, not the stale prefix %v", got, fullDigest, prefixDigest)
+	}
+}
 
 func TestDirectoryLookup_Symlink(t *testing.T) {
 	if runtime.GOOS == "windows" {

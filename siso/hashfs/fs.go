@@ -728,6 +728,13 @@ func (hfs *HashFS) ReadDir(ctx context.Context, root, name string) (dents []DirE
 	return ents, nil
 }
 
+// probeAtEOF reports whether rd is exhausted: a one-byte read returns 0 bytes at io.EOF (a byte with io.EOF means data remains).
+func probeAtEOF(rd io.Reader) bool {
+	var b [1]byte
+	n, err := rd.Read(b[:])
+	return n == 0 && err == io.EOF
+}
+
 // ReadFile reads a contents of root/fname.
 func (hfs *HashFS) ReadFile(ctx context.Context, root, fname string) ([]byte, error) {
 	ctx, span := trace.NewSpan(ctx, "read-file")
@@ -786,7 +793,23 @@ func (hfs *HashFS) ReadFile(ctx context.Context, root, fname string) ([]byte, er
 	if log.V(1) {
 		clog.Infof(ctx, "readfile(disk) %s: %v", fname, err)
 	}
-	// async compute digest.
+	// If buf is the whole file (probeAtEOF), digest it now to save the async
+	// reopen+reread; a stale e.size leaves more on disk, so defer to lazyCompute.
+	// noLazyForTests is honored here too, matching lazyCompute.
+	if err == nil && (noLazyForTests == nil || !noLazyForTests[fname]) && probeAtEOF(rd) {
+		e.mu.RLock()
+		needDigest := e.d.IsZero()
+		e.mu.RUnlock()
+		if needDigest {
+			d := digest.FromBytes(fname, buf).Digest()
+			e.mu.Lock()
+			if e.d.IsZero() {
+				e.d = d
+			}
+			e.mu.Unlock()
+		}
+		return buf, err
+	}
 	hfs.digester.lazyCompute(ctx, fname, e)
 	return buf, err
 }
