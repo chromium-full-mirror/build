@@ -505,6 +505,8 @@ func (c *Command) Run(ctx context.Context) (stats build.Stats, finalErr error) {
 			}
 			return eg.Wait()
 		})
+	} else if v := os.Getenv("RBE_server_address"); v != "" {
+		ui.Default.Infof("use reproxy %s\n", v)
 	} else {
 		if c.strictRemote {
 			return stats, flagError{err: fmt.Errorf("no reapi specified, but remote is requested as --strict_remote: %w", err)}
