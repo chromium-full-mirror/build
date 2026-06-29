@@ -16,6 +16,60 @@ import (
 	"go.chromium.org/build/siso/reapi/digest"
 )
 
+// TestStatMtimeDeferDigestGate: StatMtime skips the digest queue only in
+// non-defer mode (where reload repairs missing digests). In -fs_defer_digest
+// mode it must queue the digest, or the digestless input lands in
+// missing_digests, keeps IsClean false, and disables fast-nop.
+func TestStatMtimeDeferDigestGate(t *testing.T) {
+	ctx := t.Context()
+	check := func(t *testing.T, deferDigest, wantDigest bool) {
+		dir := t.TempDir()
+		hfs, err := New(ctx, Option{DeferDigest: deferDigest})
+		if err != nil {
+			t.Fatal(err)
+		}
+		fname := filepath.Join(dir, "gen.h")
+		const body = "header contents"
+		if err := os.WriteFile(fname, []byte(body), 0644); err != nil {
+			t.Fatal(err)
+		}
+		past := time.Now().Add(-2 * time.Second)
+		if err := os.Chtimes(fname, past, past); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := hfs.StatMtime(ctx, dir, "gen.h"); err != nil {
+			t.Fatal(err)
+		}
+		// hashfs keys its directory tree by forward-slash paths (filepath.ToSlash),
+		// so the lookup key must match on Windows where filepath.Join yields backslashes.
+		e, _, _, ok := hfs.directory.lookup(ctx, filepath.ToSlash(fname))
+		if !ok {
+			t.Fatal("entry missing after StatMtime")
+		}
+		want := digest.FromBytes(fname, []byte(body)).Digest()
+		if !wantDigest {
+			// Close drains pending digests in non-defer mode, so a still-zero
+			// digest after it proves StatMtime skipped the queue (not "not yet").
+			if err := hfs.Close(ctx); err != nil {
+				t.Fatal(err)
+			}
+			if got := e.digest(); !got.IsZero() {
+				t.Fatalf("non-defer StatMtime queued a digest %v; want digestless", got)
+			}
+			return
+		}
+		deadline := time.Now().Add(2 * time.Second)
+		for e.digest() != want {
+			if time.Now().After(deadline) {
+				t.Fatalf("defer StatMtime left the input digestless; got %v want %v", e.digest(), want)
+			}
+			runtime.Gosched()
+		}
+	}
+	t.Run("non-defer-skips", func(t *testing.T) { check(t, false, false) })
+	t.Run("defer-queues", func(t *testing.T) { check(t, true, true) })
+}
+
 // TestReadFileStaleSizeDigest: when an entry's size is stale (the file grew),
 // ReadFull fills the stale-size buffer and returns without checking EOF, so the
 // inline digest covers only the prefix and suppresses the full-file digest.

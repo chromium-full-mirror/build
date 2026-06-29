@@ -285,6 +285,12 @@ func (fsys FileSystem) StatIfExists(name string) (fs.FileInfo, error) {
 	return fsys.statWith(name, fsys.hashFS.StatIfExists)
 }
 
+// StatMtime is like Stat but does not queue a digest for new entries.
+// Use when only mtime, size, cmdhash, or isChanged is needed.
+func (fsys FileSystem) StatMtime(name string) (fs.FileInfo, error) {
+	return fsys.statWith(name, fsys.hashFS.StatMtime)
+}
+
 func (fsys FileSystem) statWith(name string, statFn func(context.Context, string, string) (FileInfo, error)) (fs.FileInfo, error) {
 	pathname := name
 	var fis []FileInfo

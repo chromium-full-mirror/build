@@ -292,7 +292,7 @@ func inputMtime(ctx context.Context, b *Builder, stepDef StepDef) (string, time.
 			changed = ts.changed
 		} else {
 			fsys := b.hashFS.FileSystem(ctx, b.path.WorkspaceRoot)
-			fi, err := fsys.Stat(lookupPath)
+			fi, err := fsys.StatMtime(lookupPath)
 			if log.V(1) {
 				clog.Infof(ctx, "input %q -> %v", in, err)
 			}

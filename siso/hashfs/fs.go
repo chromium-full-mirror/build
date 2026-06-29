@@ -509,6 +509,15 @@ func (t *statTracer) record(name string) {
 	t.stepStart = time.Now()
 }
 
+// StatMtime is like Stat but does not queue a digest for new entries.
+// Use when only mtime, size, cmdhash, or isChanged is needed: a queued
+// digest would race a later Update that replaces the entry, forcing a
+// second read on the replacement.
+// In -fs_defer_digest mode it queues the digest anyway, since reload repairs missing digests only in non-defer mode and a digestless input disables fast-nop.
+func (hfs *HashFS) StatMtime(ctx context.Context, root, fname string) (FileInfo, error) {
+	return hfs.stat(ctx, root, fname, statOpts{needCompute: hfs.opt.DeferDigest})
+}
+
 // stat looks up or creates the hashfs entry for root/fname.
 // See statOpts for the optional directory-Lstat short-circuits.
 func (hfs *HashFS) stat(ctx context.Context, root, fname string, opts statOpts) (FileInfo, error) {
