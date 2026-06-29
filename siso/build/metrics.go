@@ -50,7 +50,9 @@ func shouldLogSpan(name string) bool {
 		return true
 	}
 	switch kind {
-	case spanMaterializeInputs,
+	case spanScandepsRun,
+		spanExecRemoteCacheCheck,
+		spanMaterializeInputs,
 		spanMaterializeOutputs:
 		return true
 	}
