@@ -214,7 +214,10 @@ func (fv *fsview) scanFile(ctx context.Context, fname string) (*scanResult, erro
 		clog.Infof(ctx, "scanFile readfile: %s %s %v", fname, visited, err)
 	}
 	if err != nil {
-		return sr, sr.err
+		// Return an isolated empty result, not the shared un-done sr: a
+		// coalesced sibling may re-scan sr under sr.mu, so handing it back for
+		// an unlocked read would race. The shared sr stays un-done for retry.
+		return &scanResult{}, nil
 	}
 	var includes []string
 	var defines map[string][]string
@@ -223,6 +226,11 @@ func (fv *fsview) scanFile(ctx context.Context, fname string) (*scanResult, erro
 		includes, defines, err = CPPScan(ctx, fname, buf)
 		return err
 	})
+	if err != nil && ctx.Err() != nil {
+		// Caller's context was canceled: transient. Don't poison the shared
+		// scanResult; leave it un-done so another live scan retries.
+		return sr, err
+	}
 	sr.err = err
 	sr.includes = make([]string, 0, len(includes))
 	for _, incname := range includes {
@@ -317,7 +325,8 @@ func (fv *fsview) scanResult(ctx context.Context, incpath string) (*scanResult, 
 		return nil, fs.ErrInvalid
 	}
 	sr = &scanResult{}
-	fv.setFile(incpath, sr)
+	// adopt the shared winner so racing fsviews read the file once.
+	sr = fv.setFile(incpath, sr)
 	if strings.Contains(incpath, ".framework/Headers/") {
 		fv.setDir(path.Dir(incpath), true)
 	}
@@ -355,9 +364,12 @@ func (fv *fsview) getFile(fname string) (*scanResult, bool) {
 	return sr, true
 }
 
-func (fv *fsview) setFile(fname string, sr *scanResult) {
-	fv.files[fname] = sr
-	fv.fs.setFile(fv.workspaceRoot, fname, sr)
+// setFile delegates to filesystem.setFile and caches the shared winner;
+// callers must use the returned value.
+func (fv *fsview) setFile(fname string, sr *scanResult) *scanResult {
+	actual := fv.fs.setFile(fv.workspaceRoot, fname, sr)
+	fv.files[fname] = actual
+	return actual
 }
 
 func (fv *fsview) markVisited(visits ...string) {

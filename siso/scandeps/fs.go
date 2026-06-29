@@ -273,10 +273,30 @@ func (fsys *filesystem) getFile(workspaceRoot, fname string) (*scanResult, bool)
 	return sr, true
 }
 
-func (fsys *filesystem) setFile(workspaceRoot, fname string, sr *scanResult) {
+// setFile caches sr for fname and returns the shared winner; racing callers
+// must adopt the return. sr == nil is a negative (not-found) entry: a real
+// *scanResult wins over nil and nil never overwrites one, so a regular-file
+// scan never adopts a nil and nil-derefs.
+func (fsys *filesystem) setFile(workspaceRoot, fname string, sr *scanResult) *scanResult {
 	v, _ := fsys.files.LoadOrStore(filepath.Base(fname), new(sync.Map))
 	m := v.(*sync.Map)
-	m.Store(filepath.ToSlash(filepath.Join(workspaceRoot, fname)), sr)
+	key := filepath.ToSlash(filepath.Join(workspaceRoot, fname))
+	if sr == nil {
+		actual, _ := m.LoadOrStore(key, sr)
+		return actual.(*scanResult)
+	}
+	for {
+		actual, loaded := m.LoadOrStore(key, sr)
+		if !loaded {
+			return sr
+		}
+		if cur := actual.(*scanResult); cur != nil {
+			return cur
+		}
+		if m.CompareAndSwap(key, actual, sr) {
+			return sr
+		}
+	}
 }
 
 type hmapresult struct {
