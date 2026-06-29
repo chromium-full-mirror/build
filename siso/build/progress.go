@@ -15,7 +15,6 @@ import (
 	"time"
 
 	"go.chromium.org/build/siso/execute"
-	"go.chromium.org/build/siso/hashfs"
 	"go.chromium.org/build/siso/o11y/resultstore"
 	"go.chromium.org/build/siso/ui"
 )
@@ -264,7 +263,8 @@ func (p *progress) buildSummary(b *Builder) string {
 	remoteServs := b.remoteSema.NumServs() + b.rewrapSema.NumServs()
 	remoteProgress := runProgress(remoteWaits, remoteServs)
 
-	flushProgress := runProgress(hashfs.FlushSemaphore.NumWaits(), hashfs.FlushSemaphore.NumServs())
+	flushGate := b.hashFS.ActiveFlushGate()
+	flushProgress := runProgress(flushGate.NumWaits(), flushGate.NumServs())
 
 	var stepsPerSec string
 	if stat.Done-stat.Skipped > 0 {

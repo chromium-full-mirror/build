@@ -36,6 +36,7 @@ import (
 	"go.chromium.org/build/siso/o11y/trace"
 	"go.chromium.org/build/siso/reapi/digest"
 	"go.chromium.org/build/siso/reapi/merkletree"
+	"go.chromium.org/build/siso/resource"
 	"go.chromium.org/build/siso/sync/semaphore"
 	"go.chromium.org/build/siso/toolsupport/cartfsutil"
 )
@@ -48,8 +49,38 @@ const maxSymlinks = 40
 // os.Lstat in ForgetMissings would create lots of thread. b/325565625
 var ForgetMissingsSemaphore = semaphore.New("fs-forget", runtime.GOMAXPROCS(0)*2)
 
-// FlushSemaphore is a semaphore to control concurrent flushes.
+// FlushSemaphore is the static gate on concurrent flushes. It is the
+// default unless the adaptive-flush experiment installs an adaptive
+// Option.FlushGate (see ActiveFlushGate).
 var FlushSemaphore = semaphore.New("fs-flush", max(runtime.GOMAXPROCS(0)*8, 200))
+
+// FlushGater is the read-only behaviour shared by the static
+// FlushSemaphore and the adaptive resource.Network gate, used by the
+// progress display and the resource-usage stats table.
+type FlushGater interface {
+	trace.Semaphore
+	Stat() semaphore.Stat
+}
+
+// ActiveFlushGate reports the flush admission mechanism in use: the
+// adaptive Gradient2 gate when the adaptive-flush experiment set
+// opt.FlushGate, otherwise the static FlushSemaphore.
+func (hfs *HashFS) ActiveFlushGate() FlushGater {
+	if hfs.opt.FlushGate != nil {
+		return hfs.opt.FlushGate
+	}
+	return FlushSemaphore
+}
+
+// acquireFlush admits one flush through the active gate: the adaptive
+// resource.Network when installed, otherwise the static FlushSemaphore.
+// Both expose the same release(error) callback.
+func acquireFlush(ctx context.Context, gate *resource.Network) (context.Context, func(error), error) {
+	if gate != nil {
+		return gate.Acquire(ctx)
+	}
+	return FlushSemaphore.WaitAcquire(ctx)
+}
 
 func isExecutable(fi fs.FileInfo, fname string, m map[string]bool) bool {
 	if fi.Mode()&0111 != 0 {
@@ -2135,14 +2166,14 @@ func (hfs *HashFS) Flush(ctx context.Context, workspaceRoot string, files []stri
 			return fmt.Errorf("flush wait local-ready %s: %w", fname, context.Cause(ctx))
 		}
 		hfs.digester.compute(ctx, fname, e)
-		ctx, done, err := FlushSemaphore.WaitAcquire(ctx)
+		ctx, done, err := acquireFlush(ctx, hfs.opt.FlushGate)
 		if err != nil {
 			// flush failed, so may need to flush again.
 			select {
 			case e.lready <- true:
 			default:
 			}
-			return fmt.Errorf("flush semaphore %s: %w", fname, err)
+			return fmt.Errorf("flush admission %s: %w", fname, err)
 		}
 		eg.Go(func() (err error) {
 			defer func() { done(err) }()

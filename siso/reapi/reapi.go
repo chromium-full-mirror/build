@@ -31,6 +31,7 @@ import (
 	grpcexpotel "google.golang.org/grpc/experimental/opentelemetry"
 	"google.golang.org/grpc/keepalive"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/stats"
 	grpcotel "google.golang.org/grpc/stats/opentelemetry"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
@@ -101,6 +102,11 @@ type Option struct {
 
 	ConnPool        int
 	KeepAliveParams keepalive.ClientParameters
+
+	// StatsHandler, if non-nil, is wired into every gRPC ClientConn via
+	// grpc.WithStatsHandler. Used by the resource package to sample TTFB
+	// for the adaptive flush gate.
+	StatsHandler stats.Handler
 
 	// RE API version to use by siso, in format of v<major>.<minor>
 	// e.g. "v2.0".
@@ -510,6 +516,9 @@ func newConn(ctx context.Context, addr string, cred cred.Cred, opt Option) (grpc
 	if opt.TraceCookie != "" {
 		unary, stream := cookieInterceptors(opt.TraceCookie)
 		dopts = append(dopts, grpc.WithChainUnaryInterceptor(unary), grpc.WithChainStreamInterceptor(stream))
+	}
+	if opt.StatsHandler != nil {
+		dopts = append(dopts, grpc.WithStatsHandler(opt.StatsHandler))
 	}
 	if opt.EnableGRPCCompression {
 		dopts = append(dopts, grpc.WithDefaultCallOptions(grpc.UseCompressor(gzip.Name)))

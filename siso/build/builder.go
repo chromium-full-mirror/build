@@ -475,7 +475,7 @@ func (b *Builder) SemaStats() []semaphore.Stat {
 		b.fastLocalSema.Stat(),
 		hashfs.DigestSemaphore.Stat(),
 		localexec.ForkSema.Stat(),
-		hashfs.FlushSemaphore.Stat(),
+		b.hashFS.ActiveFlushGate().Stat(),
 		b.localSema.Stat(),
 		osfs.LstatSemaphore.Stat(),
 	}
@@ -684,7 +684,7 @@ func (b *Builder) Build(ctx context.Context, name string, args ...string) (err e
 		b.remoteSema,
 		b.rewrapSema,
 		b.stepSema,
-		hashfs.FlushSemaphore,
+		b.hashFS.ActiveFlushGate(),
 		hashfs.ForgetMissingsSemaphore,
 		osfs.LstatSemaphore,
 		localCacheSemaphore,

@@ -18,6 +18,12 @@ import (
 
 // experiment id -> hint for the experiment (to check more details).
 var knownExperiments = map[string]string{
+	// adaptive-flush replaces the static FlushSemaphore with the
+	// adaptive Gradient2 flush admission gate (resource.Network).
+	"adaptive-flush": "use the adaptive Gradient2 flush admission gate instead of the static flush semaphore",
+	// adaptive-flush-trace additionally writes the gate's debug
+	// artifacts (siso_network_gate.csv + /tmp/siso_flush_gate.txt).
+	"adaptive-flush-trace":        "write the adaptive flush gate debug trace (network_gate.csv + flush gate dump)",
 	"allow-unexpected-rsp-remove": "",
 	"allow-fallback-high":         "",
 	"allow-fallback-low":          "",

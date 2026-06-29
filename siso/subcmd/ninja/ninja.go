@@ -13,6 +13,8 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -35,6 +37,7 @@ import (
 	"go.chromium.org/build/siso/o11y/monitoring"
 	"go.chromium.org/build/siso/o11y/trace"
 	"go.chromium.org/build/siso/reapi"
+	"go.chromium.org/build/siso/resource"
 	"go.chromium.org/build/siso/signals"
 	"go.chromium.org/build/siso/toolsupport/cartfsutil"
 	"go.chromium.org/build/siso/toolsupport/cogutil"
@@ -254,6 +257,53 @@ func (c *Command) initCredentials(ctx context.Context) (cred.Cred, error) {
 		return cred.Cred{}, err
 	}
 	return credential, nil
+}
+
+// enableAdaptiveFlushGate installs the adaptive flush gate and its TTFB
+// stats handler. The returned stop func (defer it) closes the gate, logs
+// its operating point, and flushes any trace files.
+func (c *Command) enableAdaptiveFlushGate(ctx context.Context) func() {
+	// Seed at the static cap so it isn't throttled below the default.
+	gate := resource.NewNetwork("fs-flush",
+		hashfs.FlushSemaphore.Capacity(), // initial
+		max(runtime.GOMAXPROCS(0)*2, 16), // floor
+		1<<20,                            // ceiling
+	)
+	c.fsopt.FlushGate = gate
+	c.reopt.StatsHandler = resource.NewStatsHandler(gate)
+
+	var traceCSV *os.File
+	if slices.Contains(build.EnabledExperiments(), "adaptive-flush-trace") {
+		// cwd is already the build output dir (set by c.setup).
+		if f, err := os.Create("siso_network_gate.csv"); err == nil {
+			fmt.Fprintln(f, "ms,N,in_flight_peak,ttfb_p50_ms,baseline_ms,samples,decision")
+			gate.SetTraceWriter(f)
+			traceCSV = f
+		} else {
+			clog.Warningf(ctx, "network gate trace: create: %v", err)
+		}
+	}
+
+	return func() {
+		gate.Close() // stop the controller before closing the trace sinks
+		clog.Infof(ctx, "flush gate %q: final cap=%d peak in-flight=%d requests=%d",
+			gate.Name(), gate.Capacity(), gate.MaxInFlight(), gate.NumRequests())
+		if traceCSV != nil {
+			traceCSV.Close()
+			dumpFlushGate(ctx, gate)
+		}
+	}
+}
+
+// dumpFlushGate writes the Gradient2 summary to a debug file.
+func dumpFlushGate(ctx context.Context, gate *resource.Network) {
+	f, err := os.Create("/tmp/siso_flush_gate.txt")
+	if err != nil {
+		clog.Warningf(ctx, "dump flush gate stats: create: %v", err)
+		return
+	}
+	defer f.Close()
+	gate.Dump(f)
 }
 
 // Exposed for e2e testing. To be reevaluated.
@@ -479,6 +529,10 @@ func (c *Command) Run(ctx context.Context) (stats build.Stats, finalErr error) {
 	if err := c.reopt.CheckValid(); err == nil {
 		ui.Default.Infof("use %s\n", c.reopt)
 		ctx = reapi.NewContext(ctx, nil)
+		if slices.Contains(build.EnabledExperiments(), "adaptive-flush") {
+			stop := c.enableAdaptiveFlushGate(ctx)
+			defer stop()
+		}
 		reapiClient, err = reapi.New(ctx, credential, *c.reopt)
 		if err != nil {
 			return stats, err

@@ -31,7 +31,34 @@ import (
 	"go.chromium.org/build/siso/hashfs/osfs"
 	"go.chromium.org/build/siso/reapi/digest"
 	"go.chromium.org/build/siso/reapi/merkletree"
+	"go.chromium.org/build/siso/resource"
 )
+
+func TestActiveFlushGate(t *testing.T) {
+	ctx := t.Context()
+
+	// Default: no adaptive gate installed, so the static semaphore.
+	hfs, err := hashfs.New(ctx, hashfs.Option{})
+	if err != nil {
+		t.Fatalf("hashfs.New(...)=_, %v; want nil err", err)
+	}
+	defer hfs.Close(ctx)
+	if got := hfs.ActiveFlushGate(); got != hashfs.FlushSemaphore {
+		t.Errorf("ActiveFlushGate() with no FlushGate = %v; want the static FlushSemaphore", got)
+	}
+
+	// With the adaptive-flush experiment, the installed gate is used.
+	gate := resource.NewNetwork("fs-flush", 16, 4, 1<<20)
+	defer gate.Close()
+	hfsGate, err := hashfs.New(ctx, hashfs.Option{FlushGate: gate})
+	if err != nil {
+		t.Fatalf("hashfs.New(... FlushGate)=_, %v; want nil err", err)
+	}
+	defer hfsGate.Close(ctx)
+	if got := hfsGate.ActiveFlushGate(); got != gate {
+		t.Errorf("ActiveFlushGate() with FlushGate set = %v; want the installed gate", got)
+	}
+}
 
 func TestStamp(t *testing.T) {
 	t.Parallel()

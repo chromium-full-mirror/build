@@ -36,6 +36,7 @@ import (
 	"go.chromium.org/build/siso/o11y/clog"
 	"go.chromium.org/build/siso/o11y/trace"
 	"go.chromium.org/build/siso/reapi/digest"
+	"go.chromium.org/build/siso/resource"
 	"go.chromium.org/build/siso/toolsupport/cartfsutil"
 	"go.chromium.org/build/siso/toolsupport/cogutil"
 )
@@ -68,6 +69,12 @@ type Option struct {
 	DeferDigest bool // defer digest calculation to speed up nop build.
 
 	MinFlushTimeout time.Duration // minimum timeout to flush operation (>= 10s)
+
+	// FlushGate, when non-nil, is the adaptive flush admission gate
+	// used instead of the static FlushSemaphore. Set by subcmd/ninja
+	// only when the adaptive-flush experiment is enabled; nil keeps
+	// the static semaphore.
+	FlushGate *resource.Network
 
 	OSFSOption osfs.Option
 
