@@ -208,8 +208,91 @@ func Load(ctx context.Context, fname string, buildPath *build.Path) (*ninjautil.
 	if err != nil {
 		return nil, fmt.Errorf("failed to load %s: %w", fname, err)
 	}
+	if err := validateDirOutputs(state); err != nil {
+		return nil, err
+	}
 	clog.Infof(ctx, "load %s %s", fname, time.Since(started))
 	return state, nil
+}
+
+// validateDirOutputs rejects a graph where any output is nested under a
+// directory output, even from the same step: a directory output owns its whole
+// tree, so its members must not be declared as separate outputs.
+func validateDirOutputs(state *ninjautil.State) error {
+	// No directory outputs: nothing to check, and no node scan.
+	dirNodes := state.DirOutputs()
+	if len(dirNodes) == 0 {
+		return nil
+	}
+	// Index the directory-output paths in a byte-trie so each node is matched
+	// against all of them in one prefix walk.
+	root := &dirTrieNode{}
+	for _, d := range dirNodes {
+		root.insert(d.Path())
+	}
+	numNodes := state.NumNodes()
+	for id := range numNodes {
+		n, ok := state.LookupNode(id)
+		if !ok {
+			continue
+		}
+		// Only an output (a node with a producing edge) can overlap a dir
+		// output; a source under one is left alone.
+		if _, ok := n.InEdge(); !ok {
+			continue
+		}
+		if dirPath := root.containingDir(n.Path()); dirPath != "" {
+			return fmt.Errorf("output %q is declared under directory output %q; a directory output owns its whole tree, so its members must not be declared as separate outputs", n.Path(), dirPath)
+		}
+	}
+	return nil
+}
+
+// dirTrieNode is a byte-trie over directory-output paths (each ending in "/").
+type dirTrieNode struct {
+	b        byte
+	children []*dirTrieNode
+	isDir    bool // a directory output ends at this node
+}
+
+func (t *dirTrieNode) child(b byte) *dirTrieNode {
+	for _, c := range t.children {
+		if c.b == b {
+			return c
+		}
+	}
+	return nil
+}
+
+func (t *dirTrieNode) insert(path string) {
+	cur := t
+	for i := range len(path) {
+		next := cur.child(path[i])
+		if next == nil {
+			next = &dirTrieNode{b: path[i]}
+			cur.children = append(cur.children, next)
+		}
+		cur = next
+	}
+	cur.isDir = true
+}
+
+// containingDir returns a directory output (path ends in "/") that strictly
+// contains p, or "" if none.
+func (t *dirTrieNode) containingDir(p string) string {
+	cur := t
+	for i := range len(p) {
+		next := cur.child(p[i])
+		if next == nil {
+			return ""
+		}
+		cur = next
+		if cur.isDir && i+1 < len(p) {
+			// p[:i+1] reached a dir-output terminal, so it strictly contains p.
+			return p[:i+1]
+		}
+	}
+	return ""
 }
 
 // NewGraph creates new Graph from fname (usually "build.ninja") with stepConfig.

@@ -61,6 +61,9 @@ type State struct {
 	// nodeMap is used during parse and lookup by path, and freeze it in nodes.
 	nodeMap *nodeMap
 	nodes   []*Node
+	// dirOutputs are output nodes whose path ends in "/", collected during
+	// freeze so callers need not rescan.
+	dirOutputs []*Node
 
 	scope *fileScope
 
@@ -162,6 +165,12 @@ func (s *State) LookupNode(id int) (*Node, bool) {
 func (s *State) LookupNodeByPath(path string) (*Node, bool) {
 	n, ok := s.nodeMap.lookup(path)
 	return n, ok
+}
+
+// DirOutputs returns the directory-output nodes (path ends in "/"), collected
+// during parse. Empty for builds with none, so callers can skip a node scan.
+func (s *State) DirOutputs() []*Node {
+	return s.dirOutputs
 }
 
 // AllNodes returns all nodes.

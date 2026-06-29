@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -17,6 +18,132 @@ import (
 	"go.chromium.org/build/siso/execute"
 	"go.chromium.org/build/siso/hashfs"
 )
+
+// TestLoad_RejectsNestedDirOutput verifies Load errors when one step produces
+// an output nested under another step's directory output. Only a single
+// producer of a whole directory tree is supported, not a merge of producers.
+func TestLoad_RejectsNestedDirOutput(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		manifest string
+	}{
+		{
+			name: "different_producer",
+			// gendir produces the whole tree gen/; gen produces a file nested
+			// inside it. A second producer inside the tree is unsupported.
+			manifest: `
+rule gendir
+  command = mkdir -p ${out}
+rule gen
+  command = touch ${out}
+
+build gen/: gendir
+build gen/foo.txt: gen
+build all: phony gen/ gen/foo.txt
+`,
+		},
+		{
+			name: "same_producer",
+			// One step declares gen/ and a file inside it. The directory output
+			// already owns its whole tree, so a member must not be declared as
+			// its own output even by the same step.
+			manifest: `
+rule gendir
+  command = mkdir -p ${out} && touch ${out}foo.txt
+
+build gen/ gen/foo.txt: gendir
+build all: phony gen/
+`,
+		},
+		{
+			name: "nested_dir_output",
+			// a nested directory output is itself an output inside gen/.
+			manifest: `
+rule gendir
+  command = mkdir -p ${out}
+
+build gen/: gendir
+build gen/sub/: gendir
+build all: phony gen/ gen/sub/
+`,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := t.Context()
+			dir := t.TempDir()
+			if err := os.MkdirAll(filepath.Join(dir, "out/siso"), 0755); err != nil {
+				t.Fatal(err)
+			}
+			t.Chdir(filepath.Join(dir, "out/siso"))
+			path := build.NewPath(dir, "out/siso")
+			if err := os.WriteFile(filepath.Join(dir, "out/siso/build.ninja"), []byte(tc.manifest), 0644); err != nil {
+				t.Fatal(err)
+			}
+			_, err := Load(ctx, "build.ninja", path)
+			if err == nil {
+				t.Fatal("Load succeeded; want error for an output nested under a directory output")
+			}
+			if !strings.Contains(err.Error(), "directory output") {
+				t.Errorf("Load error = %v; want it to flag the directory-output overlap", err)
+			}
+		})
+	}
+}
+
+// TestLoad_AllowsValidDirOutputs verifies Load accepts the supported directory
+// output shapes, so the nesting check is not over-broad: a consumer depends on
+// the whole tree, and a sibling sharing a path prefix is not "inside" the tree.
+func TestLoad_AllowsValidDirOutputs(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		manifest string
+	}{
+		{
+			name: "consumer_depends_on_whole_tree",
+			// gendir owns gen/; cp consumes the whole tree, not a member.
+			manifest: `
+rule gendir
+  command = mkdir -p ${out}
+rule cp
+  command = cp -r ${in} ${out}
+
+build gen/: gendir
+build out.txt: cp gen/
+build all: phony out.txt
+`,
+		},
+		{
+			name: "sibling_shares_prefix",
+			// generated.txt shares the "gen" prefix but is not under gen/.
+			manifest: `
+rule gendir
+  command = mkdir -p ${out}
+rule gen
+  command = touch ${out}
+
+build gen/: gendir
+build generated.txt: gen
+build all: phony gen/ generated.txt
+`,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := t.Context()
+			dir := t.TempDir()
+			if err := os.MkdirAll(filepath.Join(dir, "out/siso"), 0755); err != nil {
+				t.Fatal(err)
+			}
+			t.Chdir(filepath.Join(dir, "out/siso"))
+			path := build.NewPath(dir, "out/siso")
+			if err := os.WriteFile(filepath.Join(dir, "out/siso/build.ninja"), []byte(tc.manifest), 0644); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := Load(ctx, "build.ninja", path); err != nil {
+				t.Errorf("Load() = %v; want success for a valid directory-output graph", err)
+			}
+		})
+	}
+}
 
 // TestOutermostPaths_Cleandead exercises execute.OutermostPaths on cleandead inputs: a directory output must carry its whole subtree as one unit.
 func TestOutermostPaths_Cleandead(t *testing.T) {

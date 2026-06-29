@@ -68,7 +68,7 @@ func (p *ManifestParser) Load(ctx context.Context, fname string) (retErr error) 
 	if err := p.eg.Wait(); err != nil {
 		return err
 	}
-	p.state.nodes = p.state.nodeMap.freeze(ctx)
+	p.state.nodes, p.state.dirOutputs = p.state.nodeMap.freeze(ctx)
 	for _, edge := range p.state.edges {
 		for _, in := range edge.inputs {
 			if in.outs == nil {
@@ -133,7 +133,7 @@ func (p *ManifestParser) LoadSingle(ctx context.Context, fname string) (retErr e
 	if err := p.eg.Wait(); err != nil {
 		return err
 	}
-	p.state.nodes = p.state.nodeMap.freeze(ctx)
+	p.state.nodes, p.state.dirOutputs = p.state.nodeMap.freeze(ctx)
 	for _, edge := range p.state.edges {
 		for _, in := range edge.inputs {
 			if in.outs == nil {
