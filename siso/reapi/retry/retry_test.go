@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"testing"
-	"time"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -67,11 +66,13 @@ func TestDo_RetriableError(t *testing.T) {
 }
 
 func TestDo_AuthError(t *testing.T) {
-	ctx, cancel := context.WithTimeout(t.Context(), 1*time.Second)
-	defer cancel()
+	ctx := t.Context()
 	called := 0
 	err := retry.Do(ctx, func() error {
 		called++
+		if called > 2 {
+			return context.DeadlineExceeded
+		}
 		return status.Error(codes.PermissionDenied, "permission denied")
 	})
 	if code := status.Code(err); code != codes.PermissionDenied {
