@@ -771,11 +771,11 @@ func (s *scheduler) mark(ctx context.Context, graph Graph, target Target, next S
 	if err != nil {
 		return err
 	}
-	fi, err := s.hashFS.Stat(ctx, s.path.WorkspaceRoot, fname)
+	fi, err := s.hashFS.StatMtime(ctx, s.path.WorkspaceRoot, fname)
 	if err == nil && fi.Target() != "" {
 		// resolve symlink for source file.
 		fsys := s.hashFS.FileSystem(ctx, s.path.WorkspaceRoot)
-		_, err = fsys.Stat(fname)
+		_, err = fsys.StatMtime(fname)
 	}
 	if err != nil {
 		var neededBy string

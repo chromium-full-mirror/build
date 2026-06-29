@@ -150,8 +150,19 @@ func TestBuild_Local_Inputs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("hashfs load err: %v", err)
 	}
-	if !slices.Equal(st.MissingDigests, []string{fname}) {
-		t.Errorf("missing_digests=%q; want=%q", st.MissingDigests, []string{fname})
+	// All three source inputs land in missing_digests: mark uses
+	// StatMtime (no compute queue) and these python-action inputs are
+	// not reached by scandeps, so no digest runs before state save.
+	want := []string{
+		filepath.ToSlash(filepath.Join(dir, "test/input0")),
+		filepath.ToSlash(filepath.Join(dir, "test/input1")),
+		fname, // test/input2, SetNoLazyForTest'd
+	}
+	got := slices.Clone(st.MissingDigests)
+	slices.Sort(got)
+	slices.Sort(want)
+	if !slices.Equal(got, want) {
+		t.Errorf("missing_digests=%q; want=%q", got, want)
 	}
 
 	t.Logf("-- confirm no-op")
