@@ -79,15 +79,11 @@ func getDefaultDataDir() string {
 }
 
 // defaultSandboxStrategy returns the best available sandbox strategy for the
-// current platform.
+// current platform. On Linux it defaults to overlayfs rather than fuse, which
+// is affected by a FUSE kernel bug.
 func defaultSandboxStrategy() string {
 	if runtime.GOOS != "linux" {
 		return "files"
-	}
-
-	if f, err := os.OpenFile("/dev/fuse", os.O_RDWR, 0); err == nil {
-		_ = f.Close()
-		return "fuse"
 	}
 
 	return "overlayfs"
