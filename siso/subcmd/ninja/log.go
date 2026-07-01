@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"runtime/debug"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -155,8 +156,8 @@ func (c *Command) initLogWriters(ctx context.Context, buildPath *build.Path) (lo
 	dones = append(dones, done)
 
 	return writers, func(err *error) {
-		for i := len(dones) - 1; i >= 0; i-- {
-			dones[i](err)
+		for _, done := range slices.Backward(dones) {
+			done(err)
 		}
 	}, nil
 }

@@ -12,6 +12,7 @@ import (
 	"net"
 	"path"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -113,8 +114,8 @@ func newServer(ctx context.Context, t *testing.T, fake *Fake) *testServer {
 }
 
 func (s *testServer) Close() {
-	for i := len(s.cleanups) - 1; i >= 0; i-- {
-		s.cleanups[i]()
+	for _, cleanup := range slices.Backward(s.cleanups) {
+		cleanup()
 	}
 	s.addr = ""
 	s.cleanups = nil

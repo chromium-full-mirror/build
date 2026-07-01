@@ -183,8 +183,8 @@ func (s *scanner) Close() {
 }
 
 func (s *scanner) pushInputs(ins ...string) {
-	for i := len(ins) - 1; i >= 0; i-- {
-		s.inputs = append(s.inputs, ins[i])
+	for _, in := range slices.Backward(ins) {
+		s.inputs = append(s.inputs, in)
 	}
 }
 
@@ -198,9 +198,9 @@ func (s *scanner) pushMacroInputs(ctx context.Context, dir string, ins ...string
 	s.pushDir(ctx, dir)
 	s.inputs = append(s.inputs, "") // pop dir
 	// only include macro again. i.e. no need to include non-macro path.
-	for i := len(ins) - 1; i >= 0; i-- {
-		if isMacro(ins[i]) {
-			s.inputs = append(s.inputs, ins[i])
+	for _, in := range slices.Backward(ins) {
+		if isMacro(in) {
+			s.inputs = append(s.inputs, in)
 		}
 	}
 }
@@ -375,8 +375,8 @@ func (s *scanner) find(ctx context.Context, name string) (string, error) {
 
 	ds := s.ds[:0]
 	if form == '"' {
-		for i := len(s.dirstack) - 1; i >= 0; i-- {
-			ds = append(ds, s.dirstack[i])
+		for _, d := range slices.Backward(s.dirstack) {
+			ds = append(ds, d)
 		}
 		ds = append(ds, s.fsview.quotePaths...)
 	}

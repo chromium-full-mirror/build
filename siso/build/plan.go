@@ -803,8 +803,7 @@ func (s *scheduler) finish(ctx context.Context, started time.Time, graph Graph) 
 	defer s.plan.mu.Unlock()
 
 	// Propagate and accumulate weights in reverse topological order.
-	for i := len(s.plan.targetsSorted) - 1; i >= 0; i-- {
-		t := s.plan.targetsSorted[i]
+	for _, t := range slices.Backward(s.plan.targetsSorted) {
 		curTarget := &s.plan.targets[t]
 		if len(curTarget.waits) == 0 {
 			curTarget.criticalPathWeight = curTarget.weight
