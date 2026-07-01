@@ -1,6 +1,8 @@
---- build/bazel/remote/execution/v2/remote_execution.proto	2024-09-26 03:13:55
-+++ build/bazel/remote/execution/v2/remote_execution.proto	2026-04-24 13:10:57
-@@ -193,6 +193,65 @@
+diff --git a/build/bazel/remote/execution/v2/remote_execution.proto b/build/bazel/remote/execution/v2/remote_execution.proto
+index 8fa3859..aefda05 100644
+--- a/build/bazel/remote/execution/v2/remote_execution.proto
++++ b/build/bazel/remote/execution/v2/remote_execution.proto
+@@ -193,6 +193,65 @@ service ActionCache {
    rpc UpdateActionResult(UpdateActionResultRequest) returns (ActionResult) {
      option (google.api.http) = { put: "/v2/{instance_name=**}/actionResults/{action_digest.hash}/{action_digest.size_bytes}" body: "action_result" };
    }
@@ -64,12 +66,13 @@
 +//    };
 +  }
  }
-
+ 
  // The CAS (content-addressable storage) is used to store the inputs to and
-@@ -1648,6 +1707,84 @@
+@@ -1775,6 +1834,84 @@ message UpdateActionResultRequest {
+   DigestFunction.Value digest_function = 5;
  }
-
- // A request message for
+ 
++// A request message for
 +// [ActionCache.AddActionLookup][build.bazel.remote.execution.v2.ActionCache.AddActionLookup].
 +message AddActionLookupRequest {
 +  // The instance of the execution system to operate against. A server may
@@ -147,7 +150,6 @@
 +  string next_page_token = 2;
 +}
 +
-+// A request message for
+ // A request message for
  // [ContentAddressableStorage.FindMissingBlobs][build.bazel.remote.execution.v2.ContentAddressableStorage.FindMissingBlobs].
  message FindMissingBlobsRequest {
-   // The instance of the execution system to operate against. A server may

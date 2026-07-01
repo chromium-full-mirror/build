@@ -122,7 +122,7 @@ const file_build_bazel_semver_semver_proto_rawDesc = "" +
 	"\n" +
 	"prerelease\x18\x04 \x01(\tR\n" +
 	"prereleaseBt\n" +
-	"\x12build.bazel.semverB\vSemverProtoP\x01Z4github.com/bazelbuild/remote-apis/build/bazel/semver\xa2\x02\x03SMV\xaa\x02\x12Build.Bazel.Semverb\x06proto3"
+	"\x12build.bazel.semverB\vSemverProtoP\x01Z4go.chromium.org/build/remote-apis/build/bazel/semver\xa2\x02\x03SMV\xaa\x02\x12Build.Bazel.Semverb\x06proto3"
 
 var (
 	file_build_bazel_semver_semver_proto_rawDescOnce sync.Once
