@@ -186,13 +186,17 @@ func (b *Builder) execLocal(ctx context.Context, step *Step) (retErr error) {
 	if err != nil {
 		return err
 	}
-	// TODO: two phase caching -> remote exec to populate action cache?
-	b.cacheWrite(ctx, step)
-	// TODO: check error for cacheWrite?
 	if step.metrics.TwoPhaseCachingKey != "" {
-		err := b.twoPhaseCachingAdd(ctx, step.metrics.TwoPhaseCachingKey, step)
+		err := b.twoPhaseCaching.Add(ctx, step.metrics.TwoPhaseCachingKey, step)
 		if err != nil {
 			clog.Warningf(ctx, "two phase caching: add %v", err)
+		}
+	} else {
+		err := b.cacheWrite(ctx, step)
+		if errors.Is(err, errNoCacheWrite) {
+			clog.Infof(ctx, "cache write ignored: %v", err)
+		} else if err != nil {
+			clog.Warningf(ctx, "cache write failed: %v", err)
 		}
 	}
 	return nil
@@ -242,17 +246,17 @@ func (b *Builder) allowCacheWrite(step *Step) bool {
 	return b.allowRemote(step) || b.allowTwoPhaseCaching(step)
 }
 
+var errNoCacheWrite = errors.New("no cache write")
+
 // Uploads and sets local execution result in RE if builder is trusted
 // Note: currently does not work with layered cache and blocks on digest calculation
 // Note: local step does not fail if cache-write fails but error and metrics are logged
-func (b *Builder) cacheWrite(ctx context.Context, step *Step) {
+func (b *Builder) cacheWrite(ctx context.Context, step *Step) error {
 	if ctx.Err() != nil {
-		clog.Infof(ctx, "ignore cache write: %v", ctx.Err())
-		return
+		return fmt.Errorf("%w: %w", errNoCacheWrite, context.Cause(ctx))
 	}
 	if !b.allowCacheWrite(step) {
-		clog.Infof(ctx, "no cache write")
-		return
+		return errNoCacheWrite
 	}
 	err := func() error {
 		ctx, span := trace.NewSpan(ctx, "cache-write")
@@ -341,8 +345,8 @@ func (b *Builder) cacheWrite(ctx context.Context, step *Step) {
 		b.progressStepCacheWrite(step)
 	} else {
 		step.metrics.CacheWriteErr = true
-		clog.Warningf(ctx, "cache write failed %s: %v", step.cmd.Desc, err)
 	}
+	return err
 }
 
 func (b *Builder) prepareLocalInputs(ctx context.Context, step *Step) error {

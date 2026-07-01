@@ -212,7 +212,7 @@ type Builder struct {
 
 	// two phase caching
 	twoPhaseCachingSema *semaphore.Semaphore
-	actionCacheMap      actionCacheMap
+	twoPhaseCaching     twoPhaseCaching
 	tapFactory          tapFactory
 
 	explainWriter        io.Writer
@@ -427,19 +427,23 @@ func New(ctx context.Context, graph Graph, opts Options) (_ *Builder, err error)
 		makeutil.IgnoreMissingOut = true
 	}
 	if experiments.Enabled("two-phase-caching", "") {
+		// TODO: add abfs twoPhaseCaching.
 		if b.reapiclient != nil {
+			rt := reapiTwoPhaseCaching{b: b}
 			if experiments.Enabled("two-phase-caching-local-action-cache-map", "") {
 				cacheDir, err := os.UserCacheDir()
 				if err != nil {
 					return nil, err
 				}
-				b.actionCacheMap = localActionCacheMap{
+				rt.actionCacheMap = localActionCacheMap{
 					dir:         filepath.Join(cacheDir, "siso/action_cache_map"),
 					reapiclient: b.reapiclient,
 				}
 			} else {
-				b.actionCacheMap = b.reapiclient.ActionCacheMap()
+				rt.actionCacheMap = b.reapiclient.ActionCacheMap()
 			}
+			b.twoPhaseCaching = rt
+			// TODO: support cartfs tapping
 			tf, err := newExternalTapFactory()
 			if err != nil {
 				return nil, err

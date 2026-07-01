@@ -21,7 +21,7 @@ func (b *Builder) allowTwoPhaseCaching(step *Step) bool {
 	if !experiments.Enabled("two-phase-caching", "") {
 		return false
 	}
-	if b.actionCacheMap == nil {
+	if b.twoPhaseCaching == nil {
 		return false
 	}
 	if b.tapFactory == nil {

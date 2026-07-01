@@ -6,6 +6,7 @@ package build
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"slices"
@@ -21,6 +22,19 @@ import (
 	"go.chromium.org/build/siso/reapi/merkletree"
 )
 
+type twoPhaseCaching interface {
+	// ComputeLookupKey computes two phase cache lookup key for the step.
+	ComputeLookupKey(ctx context.Context, step *Step) (string, error)
+
+	// Check checks two phase caching for the step using lookupKey.
+	// return nil when cache hit and populated outputs.
+	// return non-nil error otherwise.
+	Check(ctx context.Context, lookupKey string, step *Step) error
+
+	// Add adds two phase caching for the step with lookupKey.
+	Add(ctx context.Context, lookupKey string, step *Step) error
+}
+
 func (b *Builder) twoPhaseCachingLookup(ctx context.Context, step *Step) error {
 	ctx, span := trace.NewSpan(ctx, "twophasecaching-lookup")
 	defer span.Close(nil)
@@ -29,42 +43,51 @@ func (b *Builder) twoPhaseCachingLookup(ctx context.Context, step *Step) error {
 	step.cmd.CanonicalizeDir = false
 
 	err := b.twoPhaseCachingSema.Do(ctx, func(ctx context.Context) error {
-		lookupKey, err := b.computePartialActionDigest(ctx, step)
+		lookupKey, err := b.twoPhaseCaching.ComputeLookupKey(ctx, step)
 		if err != nil {
 			return err
 		}
-		step.metrics.TwoPhaseCachingKey = lookupKey.String()
-		return b.checkTwoPhaseCaching(ctx, step, lookupKey.String())
+		step.metrics.TwoPhaseCachingKey = lookupKey
+		return b.twoPhaseCaching.Check(ctx, lookupKey, step)
 	})
 	return err
 }
 
-func (b *Builder) computePartialActionDigest(ctx context.Context, step *Step) (digest.Digest, error) {
+type reapiTwoPhaseCaching struct {
+	b              *Builder
+	actionCacheMap actionCacheMap
+}
+
+func (reapiTwoPhaseCaching) ComputeLookupKey(ctx context.Context, step *Step) (string, error) {
 	pcmd := step.cmd.Clone()
 	pcmd.Inputs = step.def.TriggerInputs(ctx)
 	pcmd.Pure = true // not pure, but to make calculate digest.
-	return pcmd.Digest(ctx, nil)
+	d, err := pcmd.Digest(ctx, nil)
+	if err != nil {
+		return "", err
+	}
+	return d.String(), nil
 }
 
-func (b *Builder) checkTwoPhaseCaching(ctx context.Context, step *Step, lookupKey string) error {
+func (rt reapiTwoPhaseCaching) Check(ctx context.Context, lookupKey string, step *Step) error {
 	if log.V(1) {
 		clog.Infof(ctx, "two phase cache: lookup=%s", lookupKey)
 	}
 	ocmd := step.cmd
 	started := time.Now()
-	step.metrics.CacheStartTime = IntervalMetric(started.Sub(b.start))
+	step.metrics.CacheStartTime = IntervalMetric(started.Sub(rt.b.start))
 	defer func() {
 		step.metrics.CacheTime = IntervalMetric(time.Since(started))
 	}()
 
 	nactions := 0
-	for action, err := range b.actionCacheMap.List(ctx, lookupKey) {
+	for action, err := range rt.actionCacheMap.List(ctx, lookupKey) {
 		nactions++
 		if err != nil {
 			step.cmd = ocmd
 			return fmt.Errorf("list actions: %w", err)
 		}
-		inputs, outputs, err := b.matchAction(ctx, step, action)
+		inputs, outputs, err := rt.matchAction(ctx, step, action)
 		if err != nil {
 			clog.Infof(ctx, "mismatch action %s: %v", action, err)
 			continue
@@ -89,7 +112,7 @@ func (b *Builder) checkTwoPhaseCaching(ctx context.Context, step *Step, lookupKe
 			clog.Infof(ctx, "outputs %q", step.cmd.Outputs)
 		}
 		step.cmd.Pure = true
-		err = b.execRemoteCache(ctx, step)
+		err = rt.b.execRemoteCache(ctx, step)
 		if err != nil {
 			// cache miss
 			clog.Warningf(ctx, "cache miss: %v", err)
@@ -108,14 +131,14 @@ func (b *Builder) checkTwoPhaseCaching(ctx context.Context, step *Step, lookupKe
 	return fmt.Errorf("cache miss %d for %s", nactions, lookupKey)
 }
 
-func (b *Builder) matchAction(ctx context.Context, step *Step, action *rpb.Action) (inputs, outputs []string, retErr error) {
+func (rt reapiTwoPhaseCaching) matchAction(ctx context.Context, step *Step, action *rpb.Action) (inputs, outputs []string, retErr error) {
 	ctx, span := trace.NewSpan(ctx, "twophasecaching-match-action")
 	defer span.Close(nil)
 	// TODO: check by digest, and fetch only if digest mismatch?
 	// if match digest, outputs should be the same in action.
 	cmdDigest := digest.FromProto(action.GetCommandDigest())
 	cmd := &rpb.Command{}
-	err := b.reapiclient.Proto(ctx, cmdDigest, cmd)
+	err := rt.b.reapiclient.Proto(ctx, cmdDigest, cmd)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to fetch command for %s: %w", cmdDigest, err)
 	}
@@ -129,26 +152,26 @@ func (b *Builder) matchAction(ctx context.Context, step *Step, action *rpb.Actio
 	// TODO: check environment variables
 
 	for _, output := range cmd.GetOutputFiles() { //nolint:staticcheck // existing deprecation
-		outputs = append(outputs, b.path.MaybeFromRelative(ctx, output))
+		outputs = append(outputs, rt.b.path.MaybeFromRelative(ctx, output))
 	}
 	for _, output := range cmd.GetOutputPaths() {
-		outputs = append(outputs, b.path.MaybeFromRelative(ctx, output))
+		outputs = append(outputs, rt.b.path.MaybeFromRelative(ctx, output))
 	}
 
 	// check input root
 	inputRootDigest := digest.FromProto(action.GetInputRootDigest())
-	inputs, err = b.matchInputRoot(ctx, inputRootDigest)
+	inputs, err = rt.matchInputRoot(ctx, inputRootDigest)
 	if err != nil {
 		return nil, nil, fmt.Errorf("input_root mismatch with %s: %w", inputRootDigest, err)
 	}
 	return inputs, outputs, nil
 }
 
-func (b *Builder) matchInputRoot(ctx context.Context, inputRootDigest digest.Digest) ([]string, error) {
+func (rt reapiTwoPhaseCaching) matchInputRoot(ctx context.Context, inputRootDigest digest.Digest) ([]string, error) {
 	ctx, span := trace.NewSpan(ctx, "twophasecaching-match-input-root")
 	defer span.Close(nil)
 	var inputs []string
-	err := b.reapiclient.WalkDir(ctx, inputRootDigest, func(dname string, dir *rpb.Directory) error {
+	err := rt.b.reapiclient.WalkDir(ctx, inputRootDigest, func(dname string, dir *rpb.Directory) error {
 		if log.V(2) {
 			clog.Infof(ctx, "walkdir dir %q: %v", dname, dir)
 		}
@@ -182,7 +205,7 @@ func (b *Builder) matchInputRoot(ctx context.Context, inputRootDigest digest.Dig
 			clog.Infof(ctx, "walkdir check %q", names)
 		}
 		// entries from workspace root to get symlink correctly.
-		ents, err := b.hashFS.Entries(ctx, b.path.WorkspaceRoot, names)
+		ents, err := rt.b.hashFS.Entries(ctx, rt.b.path.WorkspaceRoot, names)
 		if err != nil {
 			return fmt.Errorf("entries: %w", err)
 		}
@@ -234,10 +257,18 @@ func (b *Builder) matchInputRoot(ctx context.Context, inputRootDigest digest.Dig
 	return inputs, nil
 }
 
-func (b *Builder) twoPhaseCachingAdd(ctx context.Context, lookupKey string, step *Step) error {
+func (rt reapiTwoPhaseCaching) Add(ctx context.Context, lookupKey string, step *Step) error {
 	ctx, span := trace.NewSpan(ctx, "twophasecaching-add-action-in-cache")
 	defer span.Close(nil)
+	err := rt.b.cacheWrite(ctx, step)
+	if errors.Is(err, errNoCacheWrite) {
+		clog.Infof(ctx, "two phase cache: write ignored %s: %v", lookupKey, err)
+		return err
+	} else if err != nil {
+		clog.Warningf(ctx, "two phase cache: write failed %s: %v", lookupKey, err)
+		return err
+	}
 	// associate action to lookupKey.
 	clog.Infof(ctx, "two phase cache: add lookup=%s action=%s", lookupKey, step.cmd.ActionDigest())
-	return b.actionCacheMap.Add(ctx, lookupKey, step.cmd.ActionDigest())
+	return rt.actionCacheMap.Add(ctx, lookupKey, step.cmd.ActionDigest())
 }
