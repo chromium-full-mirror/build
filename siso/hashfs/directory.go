@@ -163,6 +163,14 @@ func shouldKeep(ctx context.Context, origFname string, ee, e *entry) (*entry, bo
 		// if storing entry `e` is the same as stored entry `ee`, no need to update.
 		return e, true
 	}
+	// A build-without-the-bytes output must not be evicted by a local-disk
+	// miss: a not-local file or directory lives only in CAS, and a symlink's
+	// target lives inline in the entry (symlinks are always recorded local,
+	// yet may be absent from disk). Explicit removals don't set diskMiss and
+	// still evict.
+	if e.diskMiss && ee.err == nil && len(ee.cmdhash) > 0 && (!ee.local || ee.isSymlink()) {
+		return ee, true
+	}
 	eed := ee.digest()
 	// old entry has cmdhash, but new entry has no cmdhash&action (not by Update*).
 	if len(ee.cmdhash) > 0 && len(e.cmdhash) == 0 && e.action.IsZero() {

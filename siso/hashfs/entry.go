@@ -58,6 +58,9 @@ type entry struct {
 
 	// local indicates the file is generated locally.
 	local bool
+	// diskMiss indicates this negative entry came from a local-disk probe
+	// (init found the path absent), as opposed to an explicit removal.
+	diskMiss bool
 	// isChanged indicates the file is changed in the session.
 	isChanged bool
 	// isMissingChecked indicates the file is checked in ForgetMissings.
@@ -112,6 +115,7 @@ func (e *entry) init(ctx context.Context, fname string, executables map[string]b
 			clog.Infof(ctx, "not exist %s", fname)
 		}
 		e.err = err
+		e.diskMiss = true
 		return
 	}
 	if err != nil {
