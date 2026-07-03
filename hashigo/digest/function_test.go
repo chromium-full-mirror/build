@@ -70,6 +70,12 @@ func TestKnownVectors(t *testing.T) {
 		{rpb.DigestFunction_SHA384, "abc", "cb00753f45a35e8bb5a03d699ac65007272c32ab0eded1631a8b605a43ff5bed8086072ba1e7cc2358baeca134c825a7"},
 		{rpb.DigestFunction_SHA512, "", "cf83e1357eefb8bdf1542850d66d8007d620e4050b5715dc83f4a921d36ce9ce47d0d13c5d85f2b0ff8318d2877eec2f63b931bd47417a81a538327af927da3e"},
 		{rpb.DigestFunction_SHA512, "abc", "ddaf35a193617abacc417349ae20413112e6fa4e89a97ea20a9eeee64b55d39a2192992a274fc1a836ba3c23a3feebbd454d4423643ce80e2a9ac94fa54ca49f"},
+		// MurmurHash3 x64_128 (seed 0), cross-checked against the C reference
+		// via the twmb/murmur3 test corpus; hex is h1 (big-endian) || h2.
+		{rpb.DigestFunction_MURMUR3, "", "00000000000000000000000000000000"},
+		{rpb.DigestFunction_MURMUR3, "hello", "cbd8a7b341bd9b025b1e906a48ae1d19"},
+		{rpb.DigestFunction_MURMUR3, "hello, world", "342fac623a5ebc8e4cdcbc079642414d"},
+		{rpb.DigestFunction_MURMUR3, "The quick brown fox jumps over the lazy dog.", "cd99481f9ee902c9695da1a38987b6e7"},
 	} {
 		fn, err := Lookup(tc.fn)
 		if err != nil {
@@ -108,6 +114,7 @@ func TestParseFunction(t *testing.T) {
 		{"md5", rpb.DigestFunction_MD5, false},
 		{"sha384", rpb.DigestFunction_SHA384, false},
 		{"sha512", rpb.DigestFunction_SHA512, false},
+		{"murmur3", rpb.DigestFunction_MURMUR3, false},
 		{"unknown", rpb.DigestFunction_UNKNOWN, true}, // an enum, but not a function.
 		{"bogus", rpb.DigestFunction_UNKNOWN, true},   // not an enum.
 	} {
@@ -156,6 +163,7 @@ func TestResourceNameSegment(t *testing.T) {
 		{rpb.DigestFunction_SHA256, ""},
 		{rpb.DigestFunction_SHA1, ""}, // omitted, inferred by length.
 		{rpb.DigestFunction_MD5, ""},
+		{rpb.DigestFunction_MURMUR3, ""},
 		{rpb.DigestFunction_SHA384, ""},
 		{rpb.DigestFunction_SHA512, ""},
 		{rpb.DigestFunction_GITSHA1, "gitsha1"},
@@ -229,7 +237,7 @@ func TestInferOmitted(t *testing.T) {
 	}{
 		{64, rpb.DigestFunction_SHA256},
 		{40, rpb.DigestFunction_SHA1},
-		{32, rpb.DigestFunction_MD5},
+		{32, rpb.DigestFunction_MD5}, // collision with MURMUR3 resolved to MD5.
 		{96, rpb.DigestFunction_SHA384},
 		{128, rpb.DigestFunction_SHA512},
 		{7, rpb.DigestFunction_SHA256}, // no match falls back to SHA-256.
@@ -240,9 +248,40 @@ func TestInferOmitted(t *testing.T) {
 	}
 }
 
+func TestInferOmittedFrom(t *testing.T) {
+	mustLookup := func(v rpb.DigestFunction_Value) Function {
+		fn, err := Lookup(v)
+		if err != nil {
+			t.Fatalf("Lookup(%v): %v", v, err)
+		}
+		return fn
+	}
+	murmur3Fn := mustLookup(rpb.DigestFunction_MURMUR3)
+	blake3Fn := mustLookup(rpb.DigestFunction_BLAKE3)
+	advertised := []Function{SHA256, murmur3Fn, blake3Fn}
+	for _, tc := range []struct {
+		hexLen int
+		want   rpb.DigestFunction_Value
+		wantOK bool
+	}{
+		{32, rpb.DigestFunction_MURMUR3, true},  // resolves to MURMUR3, not global MD5 preference.
+		{64, rpb.DigestFunction_SHA256, true},   // BLAKE3 is also 64 hex but never omits its segment.
+		{40, rpb.DigestFunction_UNKNOWN, false}, // SHA1 not advertised.
+	} {
+		fn, ok := InferOmittedFrom(advertised, tc.hexLen)
+		if ok != tc.wantOK {
+			t.Errorf("InferOmittedFrom(advertised, %d) ok = %v, want %v", tc.hexLen, ok, tc.wantOK)
+			continue
+		}
+		if ok && fn.Value() != tc.want {
+			t.Errorf("InferOmittedFrom(advertised, %d) = %v, want %v", tc.hexLen, fn.Value(), tc.want)
+		}
+	}
+}
+
 func TestSupportedFunctions(t *testing.T) {
 	fns := SupportedFunctions()
-	if got, want := len(fns), 7; got != want {
+	if got, want := len(fns), 8; got != want {
 		t.Errorf("len(SupportedFunctions()) = %d, want %d", got, want)
 	}
 	if got, want := fns[0], rpb.DigestFunction_SHA256; got != want {

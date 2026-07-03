@@ -19,6 +19,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/twmb/murmur3"
 	"github.com/zeebo/blake3"
 	"google.golang.org/protobuf/proto"
 
@@ -64,6 +65,9 @@ var registry = func() map[rpb.DigestFunction_Value]*hasher {
 		rpb.DigestFunction_MD5:     {fn: rpb.DigestFunction_MD5, newHash: md5.New, sum: sumMD5, omitSegment: true},
 		rpb.DigestFunction_SHA384:  {fn: rpb.DigestFunction_SHA384, newHash: sha512.New384, sum: sumSHA384, omitSegment: true},
 		rpb.DigestFunction_SHA512:  {fn: rpb.DigestFunction_SHA512, newHash: sha512.New, sum: sumSHA512, omitSegment: true},
+		// MurmurHash3 x64_128. The 16-byte digest is the library's canonical
+		// serialization: the two 64-bit halves h1 then h2, each big-endian.
+		rpb.DigestFunction_MURMUR3: {fn: rpb.DigestFunction_MURMUR3, newHash: func() hash.Hash { return murmur3.New128() }, omitSegment: true},
 	}
 	for _, h := range r {
 		h.name = strings.ToLower(h.fn.String())
