@@ -11,7 +11,7 @@ linters:
   enable:
     - copyloopvar
     - errorlint
-    - gomodguard
+    - gomodguard_v2
     - intrange
     - misspell
     - modernize
