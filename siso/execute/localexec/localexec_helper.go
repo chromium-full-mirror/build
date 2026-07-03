@@ -28,12 +28,16 @@ var helper atomic.Pointer[client]
 // it once, early, while siso's heap is still small. logFile names the file the helper
 // writes its diagnostics to; the caller rotates any previous one and the helper
 // creates it fresh.
-func StartHelper(ctx context.Context, logFile string) error {
-	exe, err := os.Executable()
-	if err != nil {
-		return fmt.Errorf("spawn helper: %w", err)
+func StartHelper(ctx context.Context, helperCommand, logFile string) error {
+	args := []string{helperCommand}
+	if helperCommand == "" {
+		exe, err := os.Executable()
+		if err != nil {
+			return fmt.Errorf("spawn helper: %w", err)
+		}
+		args = []string{exe, "spawn-helper"}
 	}
-	c, err := launch(exe, logFile)
+	c, err := launch(args, logFile)
 	if err != nil {
 		return fmt.Errorf("spawn helper: %w", err)
 	}

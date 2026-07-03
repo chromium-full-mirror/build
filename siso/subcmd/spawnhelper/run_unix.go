@@ -22,7 +22,7 @@ import (
 
 func (c *Command) Execute(ctx context.Context, _ *flag.FlagSet, _ ...any) subcommands.ExitStatus {
 	if c.connFD <= 0 {
-		fmt.Fprintln(os.Stderr, "spawn-helper: -conn-fd is required")
+		fmt.Fprintln(os.Stderr, "spawn-helper: -conn_fd is required")
 		return subcommands.ExitUsageError
 	}
 

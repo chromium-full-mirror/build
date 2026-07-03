@@ -36,8 +36,8 @@ actions, to avoid fork()ing its large heap.
 }
 
 func (c *Command) SetFlags(f *flag.FlagSet) {
-	f.IntVar(&c.connFD, "conn-fd", 0, "inherited socketpair fd to serve the spawn protocol on")
-	f.StringVar(&c.logFile, "log-file", "", "file for the helper's diagnostics (default: stderr)")
+	f.IntVar(&c.connFD, "conn_fd", 0, "inherited socketpair fd to serve the spawn protocol on")
+	f.StringVar(&c.logFile, "log_file", "", "file for the helper's diagnostics (default: stderr)")
 }
 
 var _ subcommands.Command = (*Command)(nil)

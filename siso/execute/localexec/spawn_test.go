@@ -176,7 +176,7 @@ func TestHelperExitsOnConnClose(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	c, err := launch(exe, "")
+	c, err := launch([]string{exe, "spawn-helper"}, "")
 	if err != nil {
 		t.Fatalf("launch: %v", err)
 	}
@@ -255,7 +255,7 @@ func TestHelperDeathUnblocksRun(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	c, err := launch(exe, "")
+	c, err := launch([]string{exe, "spawn-helper"}, "")
 	if err != nil {
 		t.Fatalf("launch: %v", err)
 	}
@@ -300,7 +300,7 @@ func TestHelperDrainsOnConnClose(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	c, err := launch(exe, "")
+	c, err := launch([]string{exe, "spawn-helper"}, "")
 	if err != nil {
 		t.Fatalf("launch: %v", err)
 	}
@@ -355,7 +355,7 @@ func TestLaunchSetsOwnProcessGroup(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	c, err := launch(exe, "")
+	c, err := launch([]string{exe, "spawn-helper"}, "")
 	if err != nil {
 		t.Fatalf("launch: %v", err)
 	}

@@ -26,7 +26,7 @@ func TestMain(m *testing.M) {
 		}
 		connFD := 0
 		for j := i + 1; j < len(os.Args)-1; j++ {
-			if os.Args[j] == "-conn-fd" {
+			if os.Args[j] == "-conn_fd" {
 				connFD, _ = strconv.Atoi(os.Args[j+1])
 			}
 		}
@@ -37,7 +37,7 @@ func TestMain(m *testing.M) {
 	// re-exec is safe here because this binary dispatches the subcommand above.
 	exe, err := os.Executable()
 	if err == nil {
-		if c, lerr := launch(exe, ""); lerr == nil {
+		if c, lerr := launch([]string{exe, "spawn-helper"}, ""); lerr == nil {
 			helper.Store(c)
 		}
 	}

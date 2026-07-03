@@ -106,6 +106,8 @@ type NinjaFlags struct {
 	localJobs  int
 	fname      string
 
+	spawnHelper string
+
 	cacheEnableRead bool
 
 	configFilename string
@@ -211,6 +213,8 @@ func (c *Command) SetFlags(flagSet *flag.FlagSet) {
 	flagSet.IntVar(&c.localJobs, "local_jobs", 0, "run N local jobs in parallel. when the value is no positive, the default will be computed based on # of CPUs.")
 	flagSet.IntVar(&c.remoteJobs, "remote_jobs", 0, "run N remote jobs in parallel. when the value is no positive, the default will be computed based on # of CPUs.")
 	flagSet.StringVar(&c.fname, "f", "build.ninja", "input build manifest filename (relative to -C)")
+
+	flagSet.StringVar(&c.spawnHelper, "spawn_helper", "", "command name of external spawn helper. use builtin spawn helper if empty.")
 
 	c.setLocalCacheFlags(flagSet)
 	flagSet.BoolVar(&c.cacheEnableRead, "cache_enable_read", true, "cache enable read")

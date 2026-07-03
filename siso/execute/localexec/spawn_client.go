@@ -43,10 +43,10 @@ type client struct {
 	dead    error // set once the connection fails; later Runs fail fast
 }
 
-// launch re-execs executable (the siso binary) as `spawn-helper -conn-fd 3`,
-// handing it one end of a unix socketpair. Run it while siso's heap is small.
+// launch executes args with `-conn_fd 3`, handing it one end of a unix
+// socketpair. Run it while siso's heap is small.
 // logFile, if non-empty, is forwarded so the helper writes its diagnostics there.
-func launch(executable, logFile string) (*client, error) {
+func launch(args []string, logFile string) (*client, error) {
 	// Hold ForkLock and set close-on-exec so a concurrent fork+exec doesn't leak
 	// these fds; ExtraFiles re-clears CLOEXEC on the child's inherited copy.
 	syscall.ForkLock.RLock()
@@ -65,11 +65,11 @@ func launch(executable, logFile string) (*client, error) {
 	// it open, siso's own conn would never see EOF when the helper died.
 	defer child.Close()
 
-	args := []string{"spawn-helper", "-conn-fd", "3"}
+	args = append(args, "-conn_fd", "3")
 	if logFile != "" {
-		args = append(args, "-log-file", logFile)
+		args = append(args, "-log_file", logFile)
 	}
-	cmd := exec.Command(executable, args...)
+	cmd := exec.Command(args[0], args[1:]...)
 	cmd.Stdout = os.Stderr // helper fatal/panic output goes to siso's stderr
 	cmd.Stderr = os.Stderr
 	cmd.ExtraFiles = []*os.File{child} // becomes fd 3 in the helper
