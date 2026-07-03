@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -17,6 +18,8 @@ import (
 	"go.chromium.org/build/siso/build/buildconfig"
 	"go.chromium.org/build/siso/execute"
 	"go.chromium.org/build/siso/hashfs"
+	pb "go.chromium.org/build/siso/hashfs/proto"
+	"go.chromium.org/build/siso/reapi/digest"
 )
 
 // TestLoad_RejectsNestedDirOutput verifies Load errors when one step produces
@@ -187,6 +190,141 @@ func TestOutermostPaths_Cleandead(t *testing.T) {
 				t.Errorf("OutermostPaths(%v) (-want +got):\n%s", tc.in, diff)
 			}
 		})
+	}
+}
+
+// TestCleanDead_LeavesUndeletableDeadOutput verifies dead-output cleanup is
+// best-effort: a dead file whose removal fails (e.g. held open by another
+// process on Windows, or an unwritable parent here) is left behind with a
+// warning, while other dead files are still removed and the build proceeds.
+func TestCleanDead_LeavesUndeletableDeadOutput(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("read-only directories do not block child removal on windows")
+	}
+	if os.Geteuid() == 0 {
+		t.Skip("root bypasses directory write permissions")
+	}
+	ctx := t.Context()
+	dir := t.TempDir()
+	dir, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, "build/config/siso"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "build/config/siso/main.star"), []byte(`
+load("@builtin//struct.star", "module")
+
+def init(ctx):
+  return module(
+    "config",
+    step_config = "{}",
+    filegroups = {},
+    handlers = {},
+  )
+`), 0644); err != nil {
+		t.Fatal(err)
+	}
+	config, err := buildconfig.New(ctx, "@config//main.star", map[string]string{}, map[string]fs.FS{
+		"config":           os.DirFS(filepath.Join(dir, "build/config/siso")),
+		"config_overrides": os.DirFS(filepath.Join(dir, ".siso_remote")),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	outDir := filepath.Join(dir, "out/siso")
+	if err := os.MkdirAll(filepath.Join(outDir, "gen"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(outDir)
+	path := build.NewPath(dir, "out/siso")
+	if err := os.WriteFile(filepath.Join(outDir, "build.ninja"), []byte(`
+rule touch
+  command = touch ${out}
+
+build foo.o: touch foo.cc
+`), 0644); err != nil {
+		t.Fatal(err)
+	}
+	hashFS, err := hashfs.New(ctx, hashfs.Option{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := hashFS.Close(ctx); err != nil {
+			t.Errorf("hashFS.Close=%v", err)
+		}
+	})
+
+	// Two dead generated files from a previous build: one in the read-only
+	// out dir root (removal fails), one in a writable subdir (removal works).
+	var entries []*pb.Entry
+	for name, content := range map[string]string{
+		"dead.o":      "dead",
+		"gen/dead2.o": "dead2",
+	} {
+		fname := filepath.Join(outDir, name)
+		if err := os.WriteFile(fname, []byte(content), 0644); err != nil {
+			t.Fatal(err)
+		}
+		fi, err := os.Lstat(fname)
+		if err != nil {
+			t.Fatal(err)
+		}
+		d := digest.FromBytes(name, []byte(content)).Digest()
+		entries = append(entries, &pb.Entry{
+			Id:      &pb.FileID{ModTime: fi.ModTime().UnixNano()},
+			Name:    filepath.ToSlash(fname),
+			Digest:  &pb.Digest{Hash: d.Hash, SizeBytes: d.SizeBytes},
+			CmdHash: []byte("cmdhash"),
+		})
+	}
+	if err := hashFS.SetState(ctx, &pb.State{Entries: entries}); err != nil {
+		t.Fatal(err)
+	}
+
+	depsLog, err := NewDepsLog(ctx, ".siso_deps")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if err := depsLog.Close(); err != nil {
+			t.Error(err)
+		}
+	}()
+	stepConfig, err := NewStepConfig(ctx, config, path, "build.ninja", ".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	nstate, err := Load(ctx, "build.ninja", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	g := NewGraph(ctx, "build.ninja", nstate, config, path, hashFS, stepConfig, depsLog)
+
+	// Make dead.o undeletable via its read-only parent.
+	if err := os.Chmod(outDir, 0555); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if err := os.Chmod(outDir, 0755); err != nil {
+			t.Error(err)
+		}
+	}()
+
+	n, total, err := g.CleanDead(ctx)
+	if err != nil {
+		t.Fatalf("CleanDead=%d, %d, %v; want nil error (an undeletable dead output must not fail the build)", n, total, err)
+	}
+	if got, want := n, 1; got != want {
+		t.Errorf("CleanDead removed %d; want %d", got, want)
+	}
+	if _, err := os.Lstat(filepath.Join(outDir, "dead.o")); err != nil {
+		t.Errorf("Lstat(dead.o)=%v; want the undeletable dead file left in place", err)
+	}
+	if _, err := os.Lstat(filepath.Join(outDir, "gen/dead2.o")); !os.IsNotExist(err) {
+		t.Errorf("Lstat(gen/dead2.o) err=%v; want not-exist (the deletable dead file is still removed)", err)
 	}
 }
 

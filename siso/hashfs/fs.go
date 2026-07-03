@@ -1065,23 +1065,27 @@ func (hfs *HashFS) RemoveAll(ctx context.Context, root, name string) error {
 	}
 	hfs.clean.Store(false)
 	name = makeFullpath(root, name)
-	err := os.RemoveAll(name)
-	if err == nil {
-		err = fs.ErrNotExist
+	removeErr := os.RemoveAll(name)
+	// The in-memory entry records the post-state: the path no longer exists.
+	// This is distinct from what we return to the caller: a failed on-disk
+	// removal must surface, not be masked by the entry bookkeeping below.
+	entryErr := removeErr
+	if entryErr == nil {
+		entryErr = fs.ErrNotExist
 	}
 	lready := make(chan bool, 1)
 	lready <- true
 	e := &entry{
 		lready: lready,
-		err:    err,
+		err:    entryErr,
 	}
-	_, err = hfs.directory.store(ctx, name, e)
+	_, storeErr := hfs.directory.store(ctx, name, e)
 	hfs.invalidateDirInputCache(name)
-	e.mu.Lock()
-	eErr := e.err
-	e.mu.Unlock()
-	clog.Infof(ctx, "removeAll %s [%v]: %v", name, eErr, err)
-	return err
+	clog.Infof(ctx, "removeAll %s: %v", name, removeErr)
+	if removeErr != nil {
+		return removeErr
+	}
+	return storeErr
 }
 
 // ClearStaleFileForDirOutput removes name (and its hashfs subtree) when a
@@ -1119,12 +1123,7 @@ func (hfs *HashFS) ClearStaleFileForDirOutput(ctx context.Context, root, name st
 		return nil
 	}
 	clog.Warningf(ctx, "directory output %s was a file in a previous build; removing stale file", name)
-	err := hfs.RemoveAll(ctx, root, name)
-	if errors.Is(err, fs.ErrNotExist) {
-		// ErrNotExist is the intended post-state here, not a failure.
-		return nil
-	}
-	return err
+	return hfs.RemoveAll(ctx, root, name)
 }
 
 // Forget forgets cached entry for inputs under root.

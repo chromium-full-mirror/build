@@ -709,13 +709,17 @@ func (g *Graph) CleanDead(ctx context.Context) (int, int, error) {
 	slices.Sort(rels)
 	for _, rel := range execute.OutermostPaths(rels) {
 		if g.isDead(rel) {
-			deads = append(deads, rel)
 			// RemoveAll so a dead dir output goes with its contents; a plain
 			// Remove would fail on a non-empty directory.
 			err := g.globals.hashFS.RemoveAll(ctx, dir, rel)
 			if err != nil {
-				return len(deads), len(genFiles), err
+				// Best-effort: a dead output that can't be removed (e.g. held
+				// open by another process on Windows) is left behind rather
+				// than failing the build.
+				clog.Warningf(ctx, "cleandead: leave %s: %v", rel, err)
+				continue
 			}
+			deads = append(deads, rel)
 			clog.Infof(ctx, "deadfile %s", rel)
 		}
 	}
