@@ -54,6 +54,10 @@ func TestKnownVectors(t *testing.T) {
 		{rpb.DigestFunction_SHA256, "abc", "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"},
 		{rpb.DigestFunction_SHA1, "", "da39a3ee5e6b4b0d3255bfef95601890afd80709"},
 		{rpb.DigestFunction_SHA1, "abc", "a9993e364706816aba3e25717850c26c9cd0d89d"},
+		// BLAKE3 vectors cross-checked against lukechampine.com/blake3 (an
+		// implementation independent of the zeebo/blake3 dependency).
+		{rpb.DigestFunction_BLAKE3, "", "af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262"},
+		{rpb.DigestFunction_BLAKE3, "abc", "6437b3ac38465133ffb63b75273a8db548c558465d79db03fd359c6cd5bd9d85"},
 		// GITSHA-1 vectors cross-checked with `git hash-object --stdin`.
 		{rpb.DigestFunction_GITSHA1, "", "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391"},
 		{rpb.DigestFunction_GITSHA1, "abc", "f2ba8f84ab5c1bce84a7b441cb1959cfc7093b7f"},
@@ -92,6 +96,7 @@ func TestParseFunction(t *testing.T) {
 		{"SHA256", rpb.DigestFunction_SHA256, false},
 		{"sha1", rpb.DigestFunction_SHA1, false},
 		{"gitsha1", rpb.DigestFunction_GITSHA1, false},
+		{"blake3", rpb.DigestFunction_BLAKE3, false},
 		{"unknown", rpb.DigestFunction_UNKNOWN, true}, // an enum, but not a function.
 		{"bogus", rpb.DigestFunction_UNKNOWN, true},   // not an enum.
 	} {
@@ -140,6 +145,7 @@ func TestResourceNameSegment(t *testing.T) {
 		{rpb.DigestFunction_SHA256, ""},
 		{rpb.DigestFunction_SHA1, ""}, // omitted, inferred by length.
 		{rpb.DigestFunction_GITSHA1, "gitsha1"},
+		{rpb.DigestFunction_BLAKE3, "blake3"},
 	} {
 		fn, err := Lookup(tc.fn)
 		if err != nil {
@@ -152,6 +158,20 @@ func TestResourceNameSegment(t *testing.T) {
 }
 
 func TestMatches(t *testing.T) {
+	blake3Fn, err := Lookup(rpb.DigestFunction_BLAKE3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !blake3Fn.Matches(rpb.DigestFunction_BLAKE3) {
+		t.Errorf("blake3.Matches(BLAKE3) = false, want true")
+	}
+	if blake3Fn.Matches(rpb.DigestFunction_SHA256) {
+		t.Errorf("blake3.Matches(SHA256) = true, want false")
+	}
+	if blake3Fn.Matches(rpb.DigestFunction_UNKNOWN) { // UNKNOWN canonicalizes to sha256.
+		t.Errorf("blake3.Matches(UNKNOWN) = true, want false")
+	}
+
 	if !SHA256.Matches(rpb.DigestFunction_UNKNOWN) { // UNKNOWN canonicalizes to sha256.
 		t.Errorf("SHA256.Matches(UNKNOWN) = false, want true")
 	}
@@ -205,7 +225,7 @@ func TestInferOmitted(t *testing.T) {
 
 func TestSupportedFunctions(t *testing.T) {
 	fns := SupportedFunctions()
-	if got, want := len(fns), 3; got != want {
+	if got, want := len(fns), 4; got != want {
 		t.Errorf("len(SupportedFunctions()) = %d, want %d", got, want)
 	}
 	if got, want := fns[0], rpb.DigestFunction_SHA256; got != want {

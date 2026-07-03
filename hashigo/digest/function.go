@@ -17,6 +17,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/zeebo/blake3"
 	"google.golang.org/protobuf/proto"
 
 	rpb "go.chromium.org/build/remote-apis/build/bazel/remote/execution/v2"
@@ -39,6 +40,7 @@ type hasher struct {
 // the hash state on the stack instead of heap-allocating a hash.Hash.
 func sumSHA256(b []byte) string { s := sha256.Sum256(b); return hex.EncodeToString(s[:]) }
 func sumSHA1(b []byte) string   { s := sha1.Sum(b); return hex.EncodeToString(s[:]) }
+func sumBLAKE3(b []byte) string { s := blake3.Sum256(b); return hex.EncodeToString(s[:]) }
 
 // registry maps each supported digest function to its hasher. Per the REAPI
 // grammar the {digest_function} resource-name segment MUST be omitted for MD5,
@@ -53,6 +55,7 @@ var registry = func() map[rpb.DigestFunction_Value]*hasher {
 		rpb.DigestFunction_SHA256:  {fn: rpb.DigestFunction_SHA256, newHash: sha256.New, sum: sumSHA256, omitSegment: true},
 		rpb.DigestFunction_SHA1:    {fn: rpb.DigestFunction_SHA1, newHash: sha1.New, sum: sumSHA1, omitSegment: true},
 		rpb.DigestFunction_GITSHA1: {fn: rpb.DigestFunction_GITSHA1, newHash: sha1.New, gitFraming: true},
+		rpb.DigestFunction_BLAKE3:  {fn: rpb.DigestFunction_BLAKE3, newHash: func() hash.Hash { return blake3.New() }, sum: sumBLAKE3},
 	}
 	for _, h := range r {
 		h.name = strings.ToLower(h.fn.String())
