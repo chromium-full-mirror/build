@@ -12,14 +12,49 @@
 // Siso uses "path/filepath" for OS-native path operations; this package
 // replaces the ad-hoc filepath.ToSlash + filepath.Join patterns used for
 // build-relative paths throughout the codebase.
+//
+// JoinRoot memoizes results in a process-global cache; siso runs one
+// build per process, so the cache is never reset.
 package path
 
 import (
+	"hash/maphash"
 	stdpath "path"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 )
+
+// joinCacheShards is the shard count of the JoinRoot cache. It is a power
+// of two so a rel hash selects its shard with a bit mask.
+const (
+	joinCacheShards = 64
+	joinCacheMask   = joinCacheShards - 1
+)
+
+type joinKey struct {
+	root, rel string
+}
+
+// joinShard is one shard of the JoinRoot cache: an RWMutex-protected
+// plain map. Sharded maps keep warm reads contention-free without
+// sync.Map's atomic overhead.
+type joinShard struct {
+	mu sync.RWMutex
+	m  map[joinKey]Path
+	// roots interns root key strings: one build uses one workspace root.
+	roots map[string]string
+}
+
+var (
+	joinShards   [joinCacheShards]joinShard
+	joinHashSeed = maphash.MakeSeed()
+)
+
+func joinShardFor(rel string) *joinShard {
+	return &joinShards[maphash.String(joinHashSeed, rel)&joinCacheMask]
+}
 
 // Path is a forward-slash-separated, cleaned path string.
 //
@@ -243,6 +278,9 @@ func (p Path) OSPath() string {
 // filepath.ToSlash(filepath.Join(root, fname)) pattern. rel may carry
 // un-cleaned segments from untrusted sources; JoinRoot normalizes them
 // so downstream lookups match.
+//
+// Results are memoized: a build calls JoinRoot many times over a small
+// set of distinct (root, rel) pairs.
 func JoinRoot(root string, rel Path) Path {
 	if rel.IsAbs() {
 		return rel
@@ -256,19 +294,48 @@ func JoinRoot(root string, rel Path) Path {
 	if rel == "." {
 		return New(root)
 	}
-	if runtime.GOOS != "windows" {
-		// On Unix, root already uses forward slashes.
-		r := root
-		var s string
-		if r[len(r)-1] == '/' {
-			s = r + string(rel)
-		} else {
-			s = r + "/" + string(rel)
-		}
-		return cleanSlashPath(s)
+	k := joinKey{root, string(rel)}
+	s := joinShardFor(k.rel)
+	s.mu.RLock()
+	if p, ok := s.m[k]; ok {
+		s.mu.RUnlock()
+		return p
 	}
-	// On Windows, normalize the root's backslashes.
-	return New(filepath.Join(root, string(rel)))
+	s.mu.RUnlock()
+	var p Path
+	if runtime.GOOS != "windows" {
+		r := root
+		var str string
+		if r[len(r)-1] == '/' {
+			str = r + string(rel)
+		} else {
+			str = r + "/" + string(rel)
+		}
+		p = cleanSlashPath(str)
+	} else {
+		p = New(filepath.Join(root, string(rel)))
+	}
+	s.mu.Lock()
+	if existing, ok := s.m[k]; ok {
+		s.mu.Unlock()
+		return existing
+	}
+	if s.m == nil {
+		// Allocated lazily; reading a nil map on the hit path is safe.
+		s.m = make(map[joinKey]Path)
+		s.roots = make(map[string]string)
+	}
+	// Clone the key strings so a cache entry never pins a larger buffer
+	// they may be sliced from; root repeats across entries, so intern it
+	// per shard instead of cloning each time.
+	iroot, ok := s.roots[k.root]
+	if !ok {
+		iroot = strings.Clone(k.root)
+		s.roots[iroot] = iroot
+	}
+	s.m[joinKey{iroot, strings.Clone(k.rel)}] = p
+	s.mu.Unlock()
+	return p
 }
 
 // Strings converts a slice of Paths to a slice of strings.

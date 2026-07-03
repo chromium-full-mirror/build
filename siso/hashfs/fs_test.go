@@ -463,6 +463,9 @@ func TestStatAllocs(t *testing.T) {
 	allocBase := 0.0
 	if runtime.GOOS == "windows" {
 		// TODO(ukai): why it has allocations on windows only?
+		// The JoinRoot cache can bring the warm path to zero, so this
+		// is an upper bound, not an expected value; both subtests
+		// assert avg <= allocBase.
 		allocBase = 4.0
 	}
 
@@ -495,8 +498,8 @@ func TestStatAllocs(t *testing.T) {
 				t.Fatalf("hfs.Stat(ctx,%q,%q)=%v; want %v", dir, fname, err, fs.ErrNotExist)
 			}
 		})
-		if avg != allocBase+0 {
-			t.Errorf("alloc=%f; want %f", avg, allocBase+0)
+		if avg > allocBase+0 {
+			t.Errorf("alloc=%f; want <= %f", avg, allocBase+0)
 		}
 	})
 

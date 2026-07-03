@@ -5,6 +5,8 @@
 package path
 
 import (
+	"fmt"
+	"sync"
 	"testing"
 )
 
@@ -377,13 +379,70 @@ func BenchmarkJoinPath(b *testing.B) {
 	}
 }
 
-func BenchmarkJoinRoot(b *testing.B) {
+// BenchmarkJoinRootHit measures the warm cache-hit path: the same
+// (root, rel) pair every iteration, so all but the first lookup hit the
+// cache. This is the dominant case in a build (~1M hits per unique pair).
+func BenchmarkJoinRootHit(b *testing.B) {
 	root := "/home/user/chromium/src"
 	rel := Path("out/Debug/obj/base/allocator/allocator.o")
 	b.ReportAllocs()
 	for b.Loop() {
 		_ = JoinRoot(root, rel)
 	}
+}
+
+// BenchmarkJoinRootMiss measures the cold cache-miss path: the join, the
+// clean, and the store. A bounded set of distinct rels is cycled, and the
+// cache is reset (untimed) each time the set is exhausted, so every
+// iteration stays on the miss path while retained memory stays bounded by
+// setSize rather than by b.N.
+func BenchmarkJoinRootMiss(b *testing.B) {
+	const root = "/home/user/chromium/src"
+	const setSize = 4096
+	rels := make([]Path, setSize)
+	for i := range rels {
+		rels[i] = Path(fmt.Sprintf("out/Default/obj/pkg%d/file%d.o", i/32, i))
+	}
+	b.ReportAllocs()
+	i := setSize // force a reset (and thus a full set of misses) on entry
+	for b.Loop() {
+		if i == setSize {
+			i = 0
+			b.StopTimer()
+			for s := range joinShards {
+				joinShards[s].mu.Lock()
+				clear(joinShards[s].m)
+				joinShards[s].mu.Unlock()
+			}
+			b.StartTimer()
+		}
+		_ = JoinRoot(root, rels[i])
+		i++
+	}
+}
+
+func TestJoinRootCacheConcurrent(t *testing.T) {
+	const root = "/home/user/chromium/src"
+	rels := make([]Path, 2048)
+	for i := range rels {
+		rels[i] = Path(fmt.Sprintf("out/Default/obj/pkg%d/file%d.o", i/32, i))
+	}
+	var wg sync.WaitGroup
+	for range 16 {
+		wg.Go(func() {
+			for range 4 {
+				for _, rel := range rels {
+					p := JoinRoot(root, rel)
+					want := Path(root + "/" + string(rel))
+					if p != want {
+						t.Errorf("JoinRoot(%q, %q) = %q, want %q", root, rel, p, want)
+						return
+					}
+				}
+			}
+		})
+	}
+	wg.Wait()
 }
 
 func BenchmarkHasPrefix(b *testing.B) {
