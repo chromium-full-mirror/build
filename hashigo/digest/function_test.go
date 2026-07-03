@@ -65,6 +65,11 @@ func TestKnownVectors(t *testing.T) {
 		// MD5 (RFC 1321 test suite).
 		{rpb.DigestFunction_MD5, "", "d41d8cd98f00b204e9800998ecf8427e"},
 		{rpb.DigestFunction_MD5, "abc", "900150983cd24fb0d6963f7d28e17f72"},
+		// SHA-384 / SHA-512 (FIPS 180-4 example vectors).
+		{rpb.DigestFunction_SHA384, "", "38b060a751ac96384cd9327eb1b1e36a21fdb71114be07434c0cc7bf63f6e1da274edebfe76f65fbd51ad2f14898b95b"},
+		{rpb.DigestFunction_SHA384, "abc", "cb00753f45a35e8bb5a03d699ac65007272c32ab0eded1631a8b605a43ff5bed8086072ba1e7cc2358baeca134c825a7"},
+		{rpb.DigestFunction_SHA512, "", "cf83e1357eefb8bdf1542850d66d8007d620e4050b5715dc83f4a921d36ce9ce47d0d13c5d85f2b0ff8318d2877eec2f63b931bd47417a81a538327af927da3e"},
+		{rpb.DigestFunction_SHA512, "abc", "ddaf35a193617abacc417349ae20413112e6fa4e89a97ea20a9eeee64b55d39a2192992a274fc1a836ba3c23a3feebbd454d4423643ce80e2a9ac94fa54ca49f"},
 	} {
 		fn, err := Lookup(tc.fn)
 		if err != nil {
@@ -101,6 +106,8 @@ func TestParseFunction(t *testing.T) {
 		{"gitsha1", rpb.DigestFunction_GITSHA1, false},
 		{"blake3", rpb.DigestFunction_BLAKE3, false},
 		{"md5", rpb.DigestFunction_MD5, false},
+		{"sha384", rpb.DigestFunction_SHA384, false},
+		{"sha512", rpb.DigestFunction_SHA512, false},
 		{"unknown", rpb.DigestFunction_UNKNOWN, true}, // an enum, but not a function.
 		{"bogus", rpb.DigestFunction_UNKNOWN, true},   // not an enum.
 	} {
@@ -149,6 +156,8 @@ func TestResourceNameSegment(t *testing.T) {
 		{rpb.DigestFunction_SHA256, ""},
 		{rpb.DigestFunction_SHA1, ""}, // omitted, inferred by length.
 		{rpb.DigestFunction_MD5, ""},
+		{rpb.DigestFunction_SHA384, ""},
+		{rpb.DigestFunction_SHA512, ""},
 		{rpb.DigestFunction_GITSHA1, "gitsha1"},
 		{rpb.DigestFunction_BLAKE3, "blake3"},
 	} {
@@ -221,6 +230,8 @@ func TestInferOmitted(t *testing.T) {
 		{64, rpb.DigestFunction_SHA256},
 		{40, rpb.DigestFunction_SHA1},
 		{32, rpb.DigestFunction_MD5},
+		{96, rpb.DigestFunction_SHA384},
+		{128, rpb.DigestFunction_SHA512},
 		{7, rpb.DigestFunction_SHA256}, // no match falls back to SHA-256.
 	} {
 		if got := InferOmitted(tc.hexLen).Value(); got != tc.want {
@@ -231,7 +242,7 @@ func TestInferOmitted(t *testing.T) {
 
 func TestSupportedFunctions(t *testing.T) {
 	fns := SupportedFunctions()
-	if got, want := len(fns), 5; got != want {
+	if got, want := len(fns), 7; got != want {
 		t.Errorf("len(SupportedFunctions()) = %d, want %d", got, want)
 	}
 	if got, want := fns[0], rpb.DigestFunction_SHA256; got != want {

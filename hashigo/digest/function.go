@@ -8,6 +8,7 @@ import (
 	"crypto/md5"
 	"crypto/sha1"
 	"crypto/sha256"
+	"crypto/sha512"
 	"encoding/hex"
 	"fmt"
 	"hash"
@@ -42,6 +43,8 @@ type hasher struct {
 func sumSHA256(b []byte) string { s := sha256.Sum256(b); return hex.EncodeToString(s[:]) }
 func sumSHA1(b []byte) string   { s := sha1.Sum(b); return hex.EncodeToString(s[:]) }
 func sumMD5(b []byte) string    { s := md5.Sum(b); return hex.EncodeToString(s[:]) }
+func sumSHA384(b []byte) string { s := sha512.Sum384(b); return hex.EncodeToString(s[:]) }
+func sumSHA512(b []byte) string { s := sha512.Sum512(b); return hex.EncodeToString(s[:]) }
 func sumBLAKE3(b []byte) string { s := blake3.Sum256(b); return hex.EncodeToString(s[:]) }
 
 // registry maps each supported digest function to its hasher. Per the REAPI
@@ -59,6 +62,8 @@ var registry = func() map[rpb.DigestFunction_Value]*hasher {
 		rpb.DigestFunction_GITSHA1: {fn: rpb.DigestFunction_GITSHA1, newHash: sha1.New, gitFraming: true},
 		rpb.DigestFunction_BLAKE3:  {fn: rpb.DigestFunction_BLAKE3, newHash: func() hash.Hash { return blake3.New() }, sum: sumBLAKE3},
 		rpb.DigestFunction_MD5:     {fn: rpb.DigestFunction_MD5, newHash: md5.New, sum: sumMD5, omitSegment: true},
+		rpb.DigestFunction_SHA384:  {fn: rpb.DigestFunction_SHA384, newHash: sha512.New384, sum: sumSHA384, omitSegment: true},
+		rpb.DigestFunction_SHA512:  {fn: rpb.DigestFunction_SHA512, newHash: sha512.New, sum: sumSHA512, omitSegment: true},
 	}
 	for _, h := range r {
 		h.name = strings.ToLower(h.fn.String())
