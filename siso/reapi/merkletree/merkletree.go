@@ -216,6 +216,14 @@ func (m *MerkleTree) Set(entry Entry) error {
 			if m.store != nil {
 				m.store.Set(entry.Data)
 			}
+			// A duplicate FileNode with this name may be appended here.
+			// The REAPI Directory invariant (no two nodes share a name)
+			// is enforced in buildTree, which collapses identical re-Sets
+			// and errors on conflicting ones (different digest or
+			// executable bit). Checking for an existing FileNode here
+			// would add per-Set work to this hot path (a linear scan or a
+			// per-directory map, both allocating) without changing the
+			// built proto.
 			cur.dir.Files = append(cur.dir.Files, &rpb.FileNode{
 				Name:         name,
 				Digest:       entry.Data.Digest().Proto(),
@@ -487,8 +495,11 @@ func (m *MerkleTree) mergeDir(ctx context.Context, dirname string, dir *rpb.Dire
 
 // buildtree builds tree at curdir, which is located as dirname.
 func (m *MerkleTree) buildTree(ctx context.Context, curdir *rpb.Directory, dirname string) (*rpb.Digest, error) {
-	// directory should not have duplicate name.
-	// http://b/124693412
+	// A Directory must not carry two nodes sharing one name (REAPI
+	// invariant, http://b/124693412): identical re-entries collapse to
+	// one, conflicting entries are an error. Exception: a directory
+	// sharing a name with a symlink is skipped (the symlink wins); see
+	// TestBuildDuplicateSymlinkDir.
 	names := make(map[string]proto.Message, len(curdir.Files)+len(curdir.Symlinks)+len(curdir.Directories))
 	var files []*rpb.FileNode
 	for _, f := range curdir.Files {

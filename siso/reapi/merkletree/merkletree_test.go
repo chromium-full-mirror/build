@@ -552,6 +552,22 @@ func TestBuildDuplicateError(t *testing.T) {
 			},
 		},
 		{
+			// same name and digest, conflicting executable bit.
+			desc: "dup file-file exec-bit",
+			ents: []Entry{
+				{
+					Name:         "dir/file1",
+					Data:         digest.FromBytes("file1", []byte("file1")),
+					IsExecutable: false,
+				},
+				{
+					Name:         "dir/file1",
+					Data:         digest.FromBytes("file1", []byte("file1")),
+					IsExecutable: true,
+				},
+			},
+		},
+		{
 			desc: "dup file-symlink",
 			ents: []Entry{
 				{
@@ -592,6 +608,57 @@ func TestBuildDuplicateError(t *testing.T) {
 				t.Errorf("mt.Build()=%v, nil, want=error", d)
 			}
 		})
+	}
+}
+
+// TestBuildDuplicateFileIdempotent pins the REAPI Directory invariant that a
+// built directory carries at most one node per name. Set appends a FileNode
+// per call, so setting an identical file entry twice leaves two nodes in the
+// in-progress tree; Build must collapse them to exactly one in the serialized
+// (on-the-wire) Directory proto. A regression here (e.g. dropping the buildTree
+// dedup) would emit an invalid Directory and silently corrupt the action.
+func TestBuildDuplicateFileIdempotent(t *testing.T) {
+	ctx := t.Context()
+	ds := digest.NewStore()
+	mt := New(ds)
+
+	data := digest.FromBytes("f content", []byte("f content"))
+	ent := Entry{Name: "dir/f", Data: data, IsExecutable: true}
+
+	// Set the identical entry twice.
+	for i := range 2 {
+		if err := mt.Set(ent); err != nil {
+			t.Fatalf("mt.Set #%d=%v; want nil", i, err)
+		}
+	}
+
+	root, err := mt.Build(ctx)
+	if err != nil {
+		t.Fatalf("mt.Build()=_, %v; want nil", err)
+	}
+
+	// Inspect the serialized Directory proto that becomes the action input,
+	// not the in-memory tree, so the assertion covers what is uploaded.
+	rootDir, err := openDir(ctx, ds, root)
+	if err != nil {
+		t.Fatalf("openDir(root)=_, %v; want nil", err)
+	}
+	dirDigest, _, err := getDigest(rootDir, "dir")
+	if err != nil {
+		t.Fatalf("getDigest(root, %q)=_, _, %v; want nil", "dir", err)
+	}
+	subDir, err := openDir(ctx, ds, dirDigest)
+	if err != nil {
+		t.Fatalf("openDir(dir)=_, %v; want nil", err)
+	}
+	if got := len(subDir.Files); got != 1 {
+		t.Fatalf("built dir has %d FileNodes named %q; want exactly 1: %v", got, "f", subDir.Files)
+	}
+	if got := subDir.Files[0].Name; got != "f" {
+		t.Errorf("built FileNode name=%q; want %q", got, "f")
+	}
+	if !subDir.Files[0].IsExecutable {
+		t.Errorf("built FileNode IsExecutable=false; want true")
 	}
 }
 
