@@ -169,6 +169,7 @@ func TestResourceNameSegment(t *testing.T) {
 		{rpb.DigestFunction_VSO, ""},
 		{rpb.DigestFunction_GITSHA1, "gitsha1"},
 		{rpb.DigestFunction_BLAKE3, "blake3"},
+		{rpb.DigestFunction_SHA256TREE, "sha256tree"},
 	} {
 		fn, err := Lookup(tc.fn)
 		if err != nil {
@@ -283,7 +284,7 @@ func TestInferOmittedFrom(t *testing.T) {
 
 func TestSupportedFunctions(t *testing.T) {
 	fns := SupportedFunctions()
-	if got, want := len(fns), 9; got != want {
+	if got, want := len(fns), 10; got != want {
 		t.Errorf("len(SupportedFunctions()) = %d, want %d", got, want)
 	}
 	if got, want := fns[0], rpb.DigestFunction_SHA256; got != want {
