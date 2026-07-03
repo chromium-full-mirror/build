@@ -18,6 +18,7 @@ import (
 
 	"go.chromium.org/build/siso/o11y/clog"
 	"go.chromium.org/build/siso/o11y/trace"
+	"go.chromium.org/build/siso/path"
 	"go.chromium.org/build/siso/reapi/digest"
 	"go.chromium.org/build/siso/reapi/merkletree"
 )
@@ -98,12 +99,12 @@ func (rt reapiTwoPhaseCaching) Check(ctx context.Context, lookupKey string, step
 		}
 		step.cmd = ocmd.Clone()
 		// use the same inputs, outputs as action.
-		step.cmd.Inputs = inputs
-		step.cmd.Outputs = outputs
+		step.cmd.Inputs = path.Paths(inputs)
+		step.cmd.Outputs = path.Paths(outputs)
 		if step.cmd.Depfile != "" {
 			// but need to delete depfile from outputs.
 			// depfile is added in AllOutputs.
-			step.cmd.Outputs = slices.DeleteFunc(step.cmd.Outputs, func(s string) bool {
+			step.cmd.Outputs = slices.DeleteFunc(step.cmd.Outputs, func(s path.Path) bool {
 				return s == step.cmd.Depfile
 			})
 		}
@@ -146,7 +147,7 @@ func (rt reapiTwoPhaseCaching) matchAction(ctx context.Context, step *Step, acti
 	if !slices.Equal(step.cmd.Args, cmd.GetArguments()) {
 		return nil, nil, fmt.Errorf("arguments mismatch with %s", cmdDigest)
 	}
-	if step.cmd.WorkDir != cmd.GetWorkingDirectory() {
+	if string(step.cmd.WorkDir) != cmd.GetWorkingDirectory() {
 		return nil, nil, fmt.Errorf("working_dir mismatch %q != %q", step.cmd.WorkDir, cmd.GetWorkingDirectory())
 	}
 	// TODO: check environment variables
@@ -181,7 +182,7 @@ func (rt reapiTwoPhaseCaching) matchInputRoot(ctx context.Context, inputRootDige
 			name := filepath.ToSlash(filepath.Join(dname, file.Name))
 			names = append(names, name)
 			m[name] = merkletree.Entry{
-				Name:         name,
+				Name:         path.Path(name),
 				Data:         digest.NewData(nil, digest.FromProto(file.Digest)),
 				IsExecutable: file.IsExecutable,
 			}
@@ -190,14 +191,14 @@ func (rt reapiTwoPhaseCaching) matchInputRoot(ctx context.Context, inputRootDige
 			name := filepath.ToSlash(filepath.Join(dname, dir.Name))
 			names = append(names, name)
 			m[name] = merkletree.Entry{
-				Name: name,
+				Name: path.Path(name),
 			}
 		}
 		for _, symlink := range dir.Symlinks {
 			name := filepath.ToSlash(filepath.Join(dname, symlink.Name))
 			names = append(names, name)
 			m[name] = merkletree.Entry{
-				Name:   name,
+				Name:   path.Path(name),
 				Target: symlink.Target,
 			}
 		}
@@ -205,7 +206,7 @@ func (rt reapiTwoPhaseCaching) matchInputRoot(ctx context.Context, inputRootDige
 			clog.Infof(ctx, "walkdir check %q", names)
 		}
 		// entries from workspace root to get symlink correctly.
-		ents, err := rt.b.hashFS.Entries(ctx, rt.b.path.WorkspaceRoot, names)
+		ents, err := rt.b.hashFS.Entries(ctx, rt.b.path.WorkspaceRoot, path.Paths(names))
 		if err != nil {
 			return fmt.Errorf("entries: %w", err)
 		}
@@ -216,7 +217,7 @@ func (rt reapiTwoPhaseCaching) matchInputRoot(ctx context.Context, inputRootDige
 			return fmt.Errorf("missing some entries locally (local:%d, expected:%d)", len(ents), len(names))
 		}
 		for _, ent := range ents {
-			e, ok := m[ent.Name]
+			e, ok := m[string(ent.Name)]
 			if !ok {
 				return fmt.Errorf("missing %s in %s", ent.Name, dname)
 			}

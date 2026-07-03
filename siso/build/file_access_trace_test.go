@@ -14,7 +14,7 @@ import (
 )
 
 // TestFilesDiff_DirTargetCoversDescendants verifies filesDiff treats files
-// traced under a declared directory target as expected, not as undeclared
+// traced under a declared directory artifact as expected, not as undeclared
 // extras. A directory is declared as one unit but the syscall trace reports
 // each descendant; without directory awareness every descendant becomes an add
 // and the directory a del, marking a pure directory-I/O step impure.

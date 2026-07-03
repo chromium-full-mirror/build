@@ -21,6 +21,7 @@ import (
 	"go.chromium.org/build/siso/build"
 	"go.chromium.org/build/siso/hashfs"
 	"go.chromium.org/build/siso/o11y/clog"
+	sisopath "go.chromium.org/build/siso/path"
 	"go.chromium.org/build/siso/toolsupport/ninjautil"
 )
 
@@ -345,27 +346,28 @@ func (sc *StepConfig) UpdateFilegroups(ctx context.Context, filegroups map[strin
 	return nil
 }
 
-func fromConfigPath(ctx context.Context, p *build.Path, path string) string {
-	if strings.HasPrefix(path, "./") {
-		return p.MaybeFromRelative(ctx, path)
+func fromConfigPath(ctx context.Context, p *build.Path, s string) sisopath.Path {
+	if strings.HasPrefix(s, "./") {
+		return sisopath.New(p.MaybeFromRelative(ctx, s))
 	}
-	return path
+	return sisopath.FromClean(s)
 }
 
-func toConfigPath(p *build.Path, path string) string {
-	path = filepath.ToSlash(path)
-	if after, ok := strings.CutPrefix(path, p.BaseDir+"/"); ok {
+func toConfigPath(p *build.Path, pp sisopath.Path) string {
+	s := filepath.ToSlash(string(pp))
+	if after, ok := strings.CutPrefix(s, p.BaseDir+"/"); ok {
 		return "./" + after
 	}
-	return path
+	return s
 }
 
 // Lookup returns a step rule for the edge.
 func (sc StepConfig) Lookup(ctx context.Context, bpath *build.Path, edge *ninjautil.Edge) (StepRule, bool) {
-	var out, outConfig string
+	var outPath sisopath.Path
+	var outConfig string
 	if len(edge.Outputs()) > 0 {
-		out = bpath.MaybeFromRelative(ctx, edge.Outputs()[0].Path())
-		outConfig = toConfigPath(bpath, out)
+		outPath = sisopath.New(bpath.MaybeFromRelative(ctx, edge.Outputs()[0].Path()))
+		outConfig = toConfigPath(bpath, outPath)
 	}
 	actionName := edge.RuleName()
 	command := edge.RawBinding("command")
@@ -383,7 +385,7 @@ func (sc StepConfig) Lookup(ctx context.Context, bpath *build.Path, edge *ninjau
 		}
 	}
 	if log.V(1) {
-		clog.Infof(ctx, "lookup action:%s out:%s args0:%s", actionName, out, args0)
+		clog.Infof(ctx, "lookup action:%s out:%s args0:%s", actionName, outPath, args0)
 	}
 
 	remoteBinding := edge.Binding("remote_enabled")
@@ -460,15 +462,13 @@ loop:
 		inputs = append(inputs, rule.Inputs...)
 		inputs = append(inputs, opt.Inputs...)
 		for i := range inputs {
-			inputs[i] = fromConfigPath(ctx, bpath, inputs[i])
+			inputs[i] = string(fromConfigPath(ctx, bpath, inputs[i]))
 		}
 		rule.Inputs = inputs
 		if len(rule.RemoteInputs) > 0 {
 			m := make(map[string]string)
 			for k, v := range rule.RemoteInputs {
-				k = fromConfigPath(ctx, bpath, k)
-				v = fromConfigPath(ctx, bpath, v)
-				m[k] = v
+				m[string(fromConfigPath(ctx, bpath, k))] = string(fromConfigPath(ctx, bpath, v))
 			}
 			rule.RemoteInputs = m
 		}
@@ -476,15 +476,15 @@ loop:
 		outputs = append(outputs, rule.Outputs...)
 		outputs = append(outputs, opt.Outputs...)
 		for i := range outputs {
-			outputs[i] = fromConfigPath(ctx, bpath, outputs[i])
+			outputs[i] = string(fromConfigPath(ctx, bpath, outputs[i]))
 		}
 		rule.Outputs = outputs
 
 		for i := range rule.AuxiliaryLogOutputFiles {
-			rule.AuxiliaryLogOutputFiles[i] = fromConfigPath(ctx, bpath, rule.AuxiliaryLogOutputFiles[i])
+			rule.AuxiliaryLogOutputFiles[i] = string(fromConfigPath(ctx, bpath, rule.AuxiliaryLogOutputFiles[i]))
 		}
 		for i := range rule.AuxiliaryLogOutputDirs {
-			rule.AuxiliaryLogOutputDirs[i] = fromConfigPath(ctx, bpath, rule.AuxiliaryLogOutputDirs[i])
+			rule.AuxiliaryLogOutputDirs[i] = string(fromConfigPath(ctx, bpath, rule.AuxiliaryLogOutputDirs[i]))
 		}
 
 		if len(opt.Platform) > 0 {
@@ -497,7 +497,7 @@ loop:
 	}
 
 	if remoteBinding != "" || platformRefBinding != "" || timeoutBinding != "" {
-		clog.Infof(ctx, "miss, but configured in ninja: actionName:%q out:%q args0:%q", actionName, out, args0)
+		clog.Infof(ctx, "miss, but configured in ninja: actionName:%q out:%q args0:%q", actionName, outPath, args0)
 		rule := StepRule{
 			Name: "ninja:" + actionName,
 		}
@@ -528,7 +528,7 @@ loop:
 		return rule, true
 	}
 
-	clog.Infof(ctx, "miss actionName:%q out:%q args0:%q", actionName, out, args0)
+	clog.Infof(ctx, "miss actionName:%q out:%q args0:%q", actionName, outPath, args0)
 	return StepRule{}, false
 }
 
@@ -538,49 +538,57 @@ type depPathPair struct{ dep, path string }
 var knownMissingInputs sync.Map // {path or depPathPair} -> true
 
 // ExpandInputs expands inputs, and returns paths separated by slash.
-func (sc StepConfig) ExpandInputs(ctx context.Context, p *build.Path, hashFS *hashfs.HashFS, paths []string) []string {
-	seen := make(map[string]bool)
-	var expanded []string
+func (sc StepConfig) ExpandInputs(ctx context.Context, p *build.Path, hashFS *hashfs.HashFS, paths []sisopath.Path) []sisopath.Path {
+	seen := make(map[sisopath.Path]bool)
+	var expanded []sisopath.Path
 	for i := 0; i < len(paths); i++ {
-		path := paths[i]
-		if seen[path] {
+		pp := paths[i]
+		if seen[pp] {
 			continue
 		}
-		seen[path] = true
-		if !strings.Contains(path, ":") {
-			_, err := hashFS.Stat(ctx, p.WorkspaceRoot, path)
+		seen[pp] = true
+		if !strings.Contains(string(pp), ":") {
+			_, err := hashFS.Stat(ctx, p.WorkspaceRoot, pp)
 			if err != nil {
-				if _, loaded := knownMissingInputs.LoadOrStore(path, true); !loaded {
+				if _, loaded := knownMissingInputs.LoadOrStore(pp, true); !loaded {
 					// TODO(b/271783311): hard error for bad config
-					clog.Warningf(ctx, "missing inputs %s", path)
+					clog.Warningf(ctx, "missing inputs %s", pp)
 				}
 			} else {
-				expanded = append(expanded, filepath.ToSlash(path))
+				expanded = append(expanded, pp)
 			}
 		}
-		path = toConfigPath(p, path)
-		deps, ok := sc.InputDeps[path]
+		configPath := toConfigPath(p, pp)
+		deps, ok := sc.InputDeps[configPath]
 		if ok {
 			if log.V(1) {
-				clog.Infof(ctx, "input-deps expand %s", path)
+				clog.Infof(ctx, "input-deps expand %s", configPath)
 			}
 			for _, dep := range deps {
-				dep := fromConfigPath(ctx, p, dep)
-				if strings.Contains(dep, ":") {
-					paths = append(paths, dep)
+				depPath := fromConfigPath(ctx, p, dep)
+				if strings.Contains(string(depPath), ":") {
+					paths = append(paths, depPath)
 					continue
 				}
-				_, err := hashFS.Stat(ctx, p.WorkspaceRoot, dep)
+				_, err := hashFS.Stat(ctx, p.WorkspaceRoot, depPath)
 				if err != nil {
-					if _, loaded := knownMissingInputs.LoadOrStore(depPathPair{dep, path}, true); !loaded {
-						clog.Warningf(ctx, "missing file in input-dep %s (from %s): %v", dep, path, err)
+					if _, loaded := knownMissingInputs.LoadOrStore(depPathPair{dep, configPath}, true); !loaded {
+						clog.Warningf(ctx, "missing file in input-dep %s (from %s): %v", depPath, configPath, err)
 					}
 					continue
 				}
-				paths = append(paths, dep)
+				paths = append(paths, depPath)
 			}
 		}
 	}
-	sort.Strings(expanded)
+	slices.SortFunc(expanded, func(a, b sisopath.Path) int {
+		if a < b {
+			return -1
+		}
+		if a > b {
+			return 1
+		}
+		return 0
+	})
 	return expanded
 }

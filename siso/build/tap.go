@@ -17,6 +17,7 @@ import (
 
 	"go.chromium.org/build/siso/execute"
 	"go.chromium.org/build/siso/o11y/clog"
+	"go.chromium.org/build/siso/path"
 )
 
 type tapFactory interface {
@@ -82,8 +83,8 @@ func (t *externalTapExecutor) Run(ctx context.Context, cmd *execute.Cmd) error {
 		return err
 	}
 	cmd.SetActionResult(newCmd.ActionResult())
-	t.origInputs = cmd.Inputs
-	t.origOutputs = cmd.Outputs
+	t.origInputs = path.Strings(cmd.Inputs)
+	t.origOutputs = path.Strings(cmd.Outputs)
 	t.inputs, t.outputs, err = t.postProcess(ctx, tapLogFile.Name(), cmd)
 	if err == nil {
 		cmd.Pure = true
@@ -115,7 +116,7 @@ func (t *externalTapExecutor) postProcess(ctx context.Context, tapLogFileName st
 	// TODO: just use detected inputs?
 	seen := make(map[string]bool)
 	for _, input := range cmd.AllInputs() {
-		seen[input] = true
+		seen[string(input)] = true
 	}
 	for _, input := range tapData.Reads {
 		rel, err := filepath.Rel(t.b.path.WorkspaceRoot, input)
@@ -126,7 +127,7 @@ func (t *externalTapExecutor) postProcess(ctx context.Context, tapLogFileName st
 		if !filepath.IsLocal(rel) {
 			continue
 		}
-		_, err = t.b.hashFS.Stat(ctx, t.b.path.WorkspaceRoot, rel)
+		_, err = t.b.hashFS.Stat(ctx, t.b.path.WorkspaceRoot, path.New(rel))
 		if errors.Is(err, fs.ErrNotExist) {
 			continue
 		}
@@ -135,14 +136,14 @@ func (t *externalTapExecutor) postProcess(ctx context.Context, tapLogFileName st
 			continue
 		}
 		seen[rel] = true
-		cmd.Inputs = append(cmd.Inputs, rel)
+		cmd.Inputs = append(cmd.Inputs, path.New(rel))
 	}
 	clear(seen)
 	// need to use both original outputs and detected outputs.
 	// it might not detect output for restat action.
 	// it might detect unspecified outputs.
 	for _, output := range cmd.AllOutputs() {
-		seen[output] = true
+		seen[string(output)] = true
 	}
 	for _, output := range tapData.Writes {
 		rel, err := filepath.Rel(t.b.path.WorkspaceRoot, output)
@@ -153,7 +154,7 @@ func (t *externalTapExecutor) postProcess(ctx context.Context, tapLogFileName st
 		if !filepath.IsLocal(rel) {
 			continue
 		}
-		fi, err := t.b.hashFS.Stat(ctx, t.b.path.WorkspaceRoot, rel)
+		fi, err := t.b.hashFS.Stat(ctx, t.b.path.WorkspaceRoot, path.New(rel))
 		if err != nil {
 			continue
 		}
@@ -168,7 +169,7 @@ func (t *externalTapExecutor) postProcess(ctx context.Context, tapLogFileName st
 			continue
 		}
 		seen[rel] = true
-		cmd.Outputs = append(cmd.Outputs, rel)
+		cmd.Outputs = append(cmd.Outputs, path.New(rel))
 	}
 	// TODO: handle deletes
 	for _, del := range tapData.Deletes {
@@ -180,7 +181,7 @@ func (t *externalTapExecutor) postProcess(ctx context.Context, tapLogFileName st
 		if !filepath.IsLocal(rel) {
 			continue
 		}
-		_, err = t.b.hashFS.Stat(ctx, t.b.path.WorkspaceRoot, rel)
+		_, err = t.b.hashFS.Stat(ctx, t.b.path.WorkspaceRoot, path.New(rel))
 		if errors.Is(err, fs.ErrNotExist) {
 			continue
 		}

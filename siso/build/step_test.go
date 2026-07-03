@@ -13,14 +13,15 @@ import (
 	"time"
 
 	"go.chromium.org/build/siso/execute"
+	"go.chromium.org/build/siso/path"
 	"go.chromium.org/build/siso/reapi/digest"
 )
 
 type fakeStepDef struct {
 	actionName     string
 	command        string
-	outputs        []string
-	expandedInputs func(context.Context) []string
+	outputs        []path.Path
+	expandedInputs func(context.Context) []path.Path
 }
 
 func (f fakeStepDef) String() string { return fmt.Sprintf("%#v", f) }
@@ -43,49 +44,49 @@ func (f fakeStepDef) Binding(b string) string {
 	return ""
 }
 
-func (f fakeStepDef) Depfile(context.Context) string { return "" }
-func (f fakeStepDef) Rspfile(context.Context) string { return "" }
+func (f fakeStepDef) Depfile(context.Context) path.Path { return "" }
+func (f fakeStepDef) Rspfile(context.Context) path.Path { return "" }
 
-func (fakeStepDef) Inputs(context.Context) []string        { return nil }
-func (fakeStepDef) TriggerInputs(context.Context) []string { return nil }
+func (fakeStepDef) Inputs(context.Context) []path.Path        { return nil }
+func (fakeStepDef) TriggerInputs(context.Context) []path.Path { return nil }
 
-func (fakeStepDef) DepInputs(context.Context) (iter.Seq[string], error) {
-	return func(yield func(string) bool) {}, nil
+func (fakeStepDef) DepInputs(context.Context) (iter.Seq[path.Path], error) {
+	return func(yield func(path.Path) bool) {}, nil
 }
 
-func (fakeStepDef) DepsBaseInputs(ctx context.Context, inputs []string, includeOrderOnly bool) []string {
+func (fakeStepDef) DepsBaseInputs(ctx context.Context, inputs []path.Path, includeOrderOnly bool) []path.Path {
 	return inputs
 }
 
-func (fakeStepDef) ToolInputs(context.Context) []string { return nil }
-func (fakeStepDef) ExpandedCaseSensitives(ctx context.Context, in []string) []string {
+func (fakeStepDef) ToolInputs(context.Context) []path.Path { return nil }
+func (fakeStepDef) ExpandedCaseSensitives(ctx context.Context, in []path.Path) []path.Path {
 	return in
 }
-func (f fakeStepDef) ExpandedInputs(ctx context.Context) []string {
+func (f fakeStepDef) ExpandedInputs(ctx context.Context) []path.Path {
 	if f.expandedInputs == nil {
 		return nil
 	}
 	return f.expandedInputs(ctx)
 }
 
-func (fakeStepDef) RemoteInputs() map[string]string { return nil }
+func (fakeStepDef) RemoteInputs() map[path.Path]path.Path { return nil }
 
-func (fakeStepDef) CheckInputDeps(context.Context, []string) (bool, error) { return false, nil }
+func (fakeStepDef) CheckInputDeps(context.Context, []path.Path) (bool, error) { return false, nil }
 
 func (fakeStepDef) Handle(context.Context, *execute.Cmd) error { return nil }
 
-func (f fakeStepDef) Outputs(context.Context) []string {
+func (f fakeStepDef) Outputs(context.Context) []path.Path {
 	return f.outputs
 }
 
-func (fakeStepDef) AuxiliaryLogOutputFiles(context.Context) []string { return nil }
-func (fakeStepDef) AuxiliaryLogOutputDirs(context.Context) []string  { return nil }
+func (fakeStepDef) AuxiliaryLogOutputFiles(context.Context) []path.Path { return nil }
+func (fakeStepDef) AuxiliaryLogOutputDirs(context.Context) []path.Path  { return nil }
 
-func (fakeStepDef) LocalOutputs(context.Context) []string { return nil }
-func (fakeStepDef) Pure() bool                            { return false }
-func (fakeStepDef) Platform() map[string]string           { return nil }
-func (fakeStepDef) IsRemoteRule() bool                    { return false }
-func (fakeStepDef) Sandbox() map[string]string            { return nil }
+func (fakeStepDef) LocalOutputs(context.Context) []path.Path { return nil }
+func (fakeStepDef) Pure() bool                               { return false }
+func (fakeStepDef) Platform() map[string]string              { return nil }
+func (fakeStepDef) IsRemoteRule() bool                       { return false }
+func (fakeStepDef) Sandbox() map[string]string               { return nil }
 func (fakeStepDef) RecordDeps(context.Context, string, time.Time, digest.Digest, []string) (bool, error) {
 	return false, nil
 }

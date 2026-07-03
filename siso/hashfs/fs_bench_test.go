@@ -16,6 +16,7 @@ import (
 	log "github.com/golang/glog"
 
 	"go.chromium.org/build/siso/hashfs/osfs"
+	"go.chromium.org/build/siso/path"
 	"go.chromium.org/build/siso/reapi/digest"
 )
 
@@ -101,7 +102,7 @@ func BenchmarkDirectoryLookup(b *testing.B) {
 	if err != nil {
 		b.Fatal(err)
 	}
-	fname := filepath.Join(dir, "gen")
+	fname := path.New(filepath.Join(dir, "gen"))
 	b.Run("miss", func(b *testing.B) {
 		b.ReportAllocs()
 		for b.Loop() {
@@ -135,7 +136,7 @@ func TestDirectoryLookup(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	fname := filepath.Join(dir, "gen")
+	fname := path.New(filepath.Join(dir, "gen"))
 
 	t.Run("miss", func(t *testing.T) {
 		num := 1000

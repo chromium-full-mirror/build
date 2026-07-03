@@ -14,6 +14,7 @@ import (
 
 	"go.chromium.org/build/siso/build"
 	"go.chromium.org/build/siso/hashfs"
+	"go.chromium.org/build/siso/path"
 	"go.chromium.org/build/siso/toolsupport/ninjautil"
 )
 
@@ -91,14 +92,14 @@ func TestStepConfigExpandInputs(t *testing.T) {
 		},
 	}
 
-	got := sc.ExpandInputs(ctx, p, hashFS, []string{
+	got := sc.ExpandInputs(ctx, p, hashFS, []path.Path{
 		"foo/bar",
 		"out/Default/gen/out",
 		"component:component",
 		"extra/file",
 	})
 
-	want := []string{
+	want := []path.Path{
 		"base/base.h",
 		"component/a/1",
 		"component/a/2",

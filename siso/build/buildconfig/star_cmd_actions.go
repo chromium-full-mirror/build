@@ -20,6 +20,7 @@ import (
 
 	"go.chromium.org/build/siso/execute"
 	"go.chromium.org/build/siso/o11y/clog"
+	"go.chromium.org/build/siso/path"
 )
 
 // starCmdActions returns actions, which contains
@@ -148,19 +149,19 @@ func starActionsFix(thread *starlark.Thread, fn *starlark.Builtin, args starlark
 		}
 	}
 	if inputsValue != nil {
-		c.cmd.Inputs = uniqueList(inputs)
+		c.cmd.Inputs = path.Paths(uniqueList(inputs))
 	}
 	if toolInputsValue != nil {
-		c.cmd.ToolInputs = uniqueList(toolInputs)
+		c.cmd.ToolInputs = path.Paths(uniqueList(toolInputs))
 	}
 	if outputsValue != nil {
-		c.cmd.Outputs = uniqueList(outputs)
+		c.cmd.Outputs = path.Paths(uniqueList(outputs))
 	}
 	if auxiliaryLogOutputFilesValue != nil {
-		c.cmd.AuxiliaryLogOutputFiles = uniqueList(auxiliaryLogOutputFiles)
+		c.cmd.AuxiliaryLogOutputFiles = path.Paths(uniqueList(auxiliaryLogOutputFiles))
 	}
 	if auxiliaryLogOutputDirsValue != nil {
-		c.cmd.AuxiliaryLogOutputDirs = uniqueList(auxiliaryLogOutputDirs)
+		c.cmd.AuxiliaryLogOutputDirs = path.Paths(uniqueList(auxiliaryLogOutputDirs))
 	}
 	if cmdArgsValue != nil {
 		c.cmd.Args = cmdArgs
@@ -169,7 +170,7 @@ func starActionsFix(thread *starlark.Thread, fn *starlark.Builtin, args starlark
 		c.cmd.RSPFileContent = []byte(rspfileContent)
 	}
 	if reconcileOutputdirs != nil {
-		c.cmd.ReconcileOutputdirs = reconcileOutputdirs
+		c.cmd.ReconcileOutputdirs = path.Paths(reconcileOutputdirs)
 	}
 	return starlark.None, nil
 }
@@ -188,7 +189,7 @@ func starActionsWrite(thread *starlark.Thread, fn *starlark.Builtin, args starla
 	if err != nil {
 		return starlark.None, err
 	}
-	err = c.cmd.HashFS.WriteFile(c.ctx, c.cmd.WorkspaceRoot, fname, []byte(string(content)), isExecutable, time.Now(), c.cmd.CmdHash, c.cmd.EdgeHash)
+	err = c.cmd.HashFS.WriteFile(c.ctx, c.cmd.WorkspaceRoot, path.New(fname), []byte(string(content)), isExecutable, time.Now(), c.cmd.CmdHash, c.cmd.EdgeHash)
 	return starlark.None, err
 }
 
@@ -214,11 +215,11 @@ func starActionsCopy(thread *starlark.Thread, fn *starlark.Builtin, args starlar
 		// Until when we find legid use case of remove, just remove
 		// target dir of copy, as it would be ok to use copy
 		// to replace a directory hierarchy.
-		err = c.cmd.HashFS.RemoveAll(c.ctx, c.cmd.WorkspaceRoot, dst)
+		err = c.cmd.HashFS.RemoveAll(c.ctx, c.cmd.WorkspaceRoot, path.New(dst))
 		if err != nil {
 			return starlark.None, err
 		}
-		_, err = c.cmd.HashFS.Stat(c.ctx, c.cmd.WorkspaceRoot, src)
+		_, err = c.cmd.HashFS.Stat(c.ctx, c.cmd.WorkspaceRoot, path.New(src))
 		if err != nil {
 			// toplevel src must exist even if ignore_missing_intermediates.
 			// it would be build graph error.
@@ -227,10 +228,10 @@ func starActionsCopy(thread *starlark.Thread, fn *starlark.Builtin, args starlar
 		var files []string
 		files, err = actionsCopyRecursively(c.ctx, c.cmd, src, dst, time.Now(), c.cmd.CmdHash, c.cmd.EdgeHash, ignoreMissingIntermediates)
 		if err == nil && len(files) > 0 {
-			err = c.cmd.HashFS.Flush(c.ctx, c.cmd.WorkspaceRoot, files)
+			err = c.cmd.HashFS.Flush(c.ctx, c.cmd.WorkspaceRoot, path.Paths(files))
 		}
 	} else {
-		err = c.cmd.HashFS.Copy(c.ctx, c.cmd.WorkspaceRoot, src, dst, time.Now(), c.cmd.CmdHash, c.cmd.EdgeHash)
+		err = c.cmd.HashFS.Copy(c.ctx, c.cmd.WorkspaceRoot, path.New(src), path.New(dst), time.Now(), c.cmd.CmdHash, c.cmd.EdgeHash)
 	}
 	return starlark.None, err
 }
@@ -240,7 +241,7 @@ func starActionsCopy(thread *starlark.Thread, fn *starlark.Builtin, args starlar
 // if src is a directory, it recurrsively calls itself without cmdhash.
 // if src is a file, it just copies the file.
 func actionsCopyRecursively(ctx context.Context, cmd *execute.Cmd, src, dst string, t time.Time, cmdhash, edgehash []byte, ignoreMissingIntermediates bool) ([]string, error) {
-	fi, err := cmd.HashFS.Stat(ctx, cmd.WorkspaceRoot, src)
+	fi, err := cmd.HashFS.Stat(ctx, cmd.WorkspaceRoot, path.New(src))
 	if ignoreMissingIntermediates && errors.Is(err, fs.ErrNotExist) {
 		clog.Warningf(ctx, "copy src not exists %s: %v", src, err)
 		// just ignores
@@ -250,7 +251,7 @@ func actionsCopyRecursively(ctx context.Context, cmd *execute.Cmd, src, dst stri
 		return nil, err
 	}
 	if fi.IsDir() {
-		ents, err := cmd.HashFS.ReadDir(ctx, cmd.WorkspaceRoot, src)
+		ents, err := cmd.HashFS.ReadDir(ctx, cmd.WorkspaceRoot, path.New(src))
 		if ignoreMissingIntermediates && errors.Is(err, fs.ErrNotExist) {
 			// hashfs Stat exists, but ReadDir may detect missing dir on local disk.
 			clog.Warningf(ctx, "copy src not exists %s: %v", src, err)
@@ -259,7 +260,7 @@ func actionsCopyRecursively(ctx context.Context, cmd *execute.Cmd, src, dst stri
 		if err != nil {
 			return nil, err
 		}
-		err = cmd.HashFS.Mkdir(ctx, cmd.WorkspaceRoot, dst, cmdhash, edgehash)
+		err = cmd.HashFS.Mkdir(ctx, cmd.WorkspaceRoot, path.New(dst), cmdhash, edgehash)
 		if err != nil {
 			return nil, err
 		}
@@ -278,7 +279,7 @@ func actionsCopyRecursively(ctx context.Context, cmd *execute.Cmd, src, dst stri
 		}
 		return files, nil
 	}
-	err = cmd.HashFS.Copy(ctx, cmd.WorkspaceRoot, src, dst, t, cmdhash, edgehash)
+	err = cmd.HashFS.Copy(ctx, cmd.WorkspaceRoot, path.New(src), path.New(dst), t, cmdhash, edgehash)
 	if ignoreMissingIntermediates && errors.Is(err, fs.ErrNotExist) {
 		clog.Warningf(ctx, "copy src not exists %s: %v", src, err)
 		// just ignores
@@ -287,7 +288,7 @@ func actionsCopyRecursively(ctx context.Context, cmd *execute.Cmd, src, dst stri
 	if err != nil {
 		return nil, err
 	}
-	if cmd.HashFS.NeedFlush(ctx, cmd.WorkspaceRoot, dst) {
+	if cmd.HashFS.NeedFlush(ctx, cmd.WorkspaceRoot, path.New(dst)) {
 		return []string{dst}, nil
 	}
 	return nil, nil
@@ -305,7 +306,7 @@ func starActionsSymlink(thread *starlark.Thread, fn *starlark.Builtin, args star
 	if err != nil {
 		return starlark.None, err
 	}
-	err = c.cmd.HashFS.Symlink(c.ctx, c.cmd.WorkspaceRoot, target, linkpath, time.Now(), c.cmd.CmdHash, c.cmd.EdgeHash)
+	err = c.cmd.HashFS.Symlink(c.ctx, c.cmd.WorkspaceRoot, target, path.New(linkpath), time.Now(), c.cmd.CmdHash, c.cmd.EdgeHash)
 	return starlark.None, err
 }
 
@@ -336,7 +337,7 @@ func starActionsExit(thread *starlark.Thread, fn *starlark.Builtin, args starlar
 	if err != nil {
 		return starlark.None, err
 	}
-	execute.ResultFromEntries(c.ctx, result, c.cmd.WorkDir, entries)
+	execute.ResultFromEntries(c.ctx, result, string(c.cmd.WorkDir), entries)
 	c.cmd.SetActionResult(result, false)
 	return starlark.None, nil
 }

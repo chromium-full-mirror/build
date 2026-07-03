@@ -23,6 +23,7 @@ import (
 	rpb "go.chromium.org/build/remote-apis/build/bazel/remote/execution/v2"
 
 	"go.chromium.org/build/siso/o11y/clog"
+	"go.chromium.org/build/siso/path"
 	"go.chromium.org/build/siso/reapi/digest"
 )
 
@@ -94,7 +95,7 @@ type Entry struct {
 	//  - 'dir2/'
 	//  - 'dir2/file'
 	// error if name goes out to root.
-	Name string
+	Name path.Path
 
 	// Data is entry's content. `nil` for directories and symlinks.
 	Data digest.Data
@@ -144,14 +145,13 @@ type dirstate struct {
 // Set sets an entry.
 // It may return ErrAbsPath/ErrAmbigFileSymlink/ErrBadPath as error.
 func (m *MerkleTree) Set(entry Entry) error {
-	fname := entry.Name
+	fname := string(entry.Name)
 	if entry.Target != "" && !entry.Data.IsZero() {
 		return fmt.Errorf("set %s: %w", fname, ErrAmbigFileSymlink)
 	}
 	if filepath.IsAbs(fname) || strings.HasPrefix(fname, "/") || strings.HasPrefix(fname, `\`) {
 		return fmt.Errorf("set %s: %w", fname, ErrAbsPath)
 	}
-	fname = filepath.ToSlash(fname)
 	if entry.IsDir() || entry.Target != "" {
 		if _, exists := m.m[fname]; exists {
 			return nil
@@ -286,7 +286,7 @@ func (m *MerkleTree) setDir(cur dirstate, name string) (dirstate, error) {
 type TreeEntry struct {
 	// Name is relative path from root dir.
 	// Name should not end with "." or "..".
-	Name string
+	Name path.Path
 
 	// Digest is the digest of this sub tree.
 	Digest digest.Digest
@@ -301,14 +301,13 @@ type TreeEntry struct {
 // SetTree sets a subtree entry.
 // It may return ErrAbsPath/ErrBadPath/ErrBadTree as error.
 func (m *MerkleTree) SetTree(tentry TreeEntry) error {
-	dname := tentry.Name
+	dname := string(tentry.Name)
 	if tentry.Digest.IsZero() {
 		return fmt.Errorf("setTree %s: %w", dname, ErrBadTree)
 	}
 	if filepath.IsAbs(dname) || strings.HasPrefix(dname, "/") || strings.HasPrefix(dname, `\`) {
 		return fmt.Errorf("setTree %s: %w", dname, ErrAbsPath)
 	}
-	dname = filepath.ToSlash(dname)
 	_, exists := m.m[dname]
 	if exists {
 		return fmt.Errorf("setTree %s: %w", dname, ErrPrecomputedSubTree)

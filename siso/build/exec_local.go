@@ -23,6 +23,7 @@ import (
 	"go.chromium.org/build/siso/execute"
 	"go.chromium.org/build/siso/o11y/clog"
 	"go.chromium.org/build/siso/o11y/trace"
+	"go.chromium.org/build/siso/path"
 	"go.chromium.org/build/siso/reapi/digest"
 )
 
@@ -429,7 +430,7 @@ func (b *Builder) checkLocalOutputs(ctx context.Context, step *Step) error {
 // isRequiredOutput reports whether out is a declared (required) output. It
 // matches both slash forms since defOutputs keeps a dir target's trailing
 // slash while out (from cmd.AllOutputs) has it stripped.
-func isRequiredOutput(out string, defOutputs []string) bool {
+func isRequiredOutput(out path.Path, defOutputs []path.Path) bool {
 	if slices.Contains(defOutputs, out) {
 		return true
 	}
@@ -444,7 +445,7 @@ func (b *Builder) logLocalExec(ctx context.Context, step *Step, dur time.Duratio
 	allOutputs := step.cmd.AllOutputs()
 	var output string
 	if len(allOutputs) > 0 {
-		output = allOutputs[0]
+		output = string(allOutputs[0])
 	}
 	var buf bytes.Buffer
 	fmt.Fprintf(&buf, `cmd: %s pure:%t/unknown restat:%t %s

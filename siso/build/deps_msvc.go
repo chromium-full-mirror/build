@@ -20,6 +20,7 @@ import (
 	"go.chromium.org/build/siso/execute"
 	"go.chromium.org/build/siso/o11y/clog"
 	"go.chromium.org/build/siso/o11y/trace"
+	"go.chromium.org/build/siso/path"
 	"go.chromium.org/build/siso/reapi/merkletree"
 	"go.chromium.org/build/siso/scandeps"
 	"go.chromium.org/build/siso/toolsupport/msvcutil"
@@ -40,12 +41,12 @@ func (msvc depsMSVC) DepsFastCmd(ctx context.Context, b *Builder, cmd *execute.C
 	}
 	// set include dirs + sysroots to ToolInputs
 	// Inputs will be overridden by deps log data.
-	newCmd.ToolInputs = append(newCmd.ToolInputs, inputs...)
+	newCmd.ToolInputs = append(newCmd.ToolInputs, path.Paths(inputs)...)
 	return newCmd, nil
 }
 
 func (msvc depsMSVC) fixCmdInputs(ctx context.Context, b *Builder, cmd *execute.Cmd) ([]string, error) {
-	params, err := msvcutil.ExtractScanDepsParams(ctx, cmd.Args, cmd.Env, b.hashFS.FileSystem(ctx, filepath.Join(cmd.WorkspaceRoot, cmd.WorkDir)))
+	params, err := msvcutil.ExtractScanDepsParams(ctx, cmd.Args, cmd.Env, b.hashFS.FileSystem(ctx, filepath.Join(cmd.WorkspaceRoot, string(cmd.WorkDir))))
 	if err != nil {
 		return nil, err
 	}
@@ -65,7 +66,7 @@ func (msvc depsMSVC) fixCmdInputs(ctx context.Context, b *Builder, cmd *execute.
 	if len(params.Sources) == 0 {
 		// If ExtractScanDepsParams doesn't return Sources, such action uses inputs from ninja build file directly, as the action doesn't need include scanning.
 		// e.g. clang modules, rust and etc.
-		inputs = slices.Clone(cmd.Inputs)
+		inputs = path.Strings(cmd.Inputs)
 	}
 	// Include files detected by command line. i.e. sanitizer ignore lists.
 	// These would not be in depsfile, different from Sources.
@@ -133,7 +134,8 @@ func (depsMSVC) DepsAfterRun(ctx context.Context, b *Builder, step *Step) ([]str
 	// cmd.Inputs may include unnecessary inputs that may break
 	// confirm no-op b/307834469
 	for _, in := range step.cmd.Inputs {
-		if !basenames[filepath.Base(in)] {
+		ins := string(in)
+		if !basenames[filepath.Base(ins)] {
 			// include basename matched files only.
 			// other files/dirs may add unnecessary deps
 			// and break no-op check.
@@ -146,12 +148,12 @@ func (depsMSVC) DepsAfterRun(ctx context.Context, b *Builder, step *Step) ([]str
 			// (for libc++ headers, like `utility`).
 			continue
 		}
-		in = b.path.MaybeToRelative(ctx, in)
-		if m[in] {
+		inwd := b.path.MaybeToRelative(ctx, ins)
+		if m[inwd] {
 			continue
 		}
-		m[in] = true
-		deps = append(deps, in)
+		m[inwd] = true
+		deps = append(deps, inwd)
 	}
 
 	err := checkDeps(ctx, b, step, deps)
@@ -178,7 +180,7 @@ func (depsMSVC) DepsAfterRun(ctx context.Context, b *Builder, step *Step) ([]str
 	return deps, nil
 }
 
-func (msvc depsMSVC) DepsCmd(ctx context.Context, b *Builder, step *Step) ([]string, error) {
+func (msvc depsMSVC) DepsCmd(ctx context.Context, b *Builder, step *Step) ([]path.Path, error) {
 	depsIns, err := msvc.depsInputs(ctx, b, step)
 	if err != nil {
 		return nil, err
@@ -193,7 +195,7 @@ func (msvc depsMSVC) DepsCmd(ctx context.Context, b *Builder, step *Step) ([]str
 		}
 		depsIns = append(depsIns, inputs...)
 	}
-	return depsIns, err
+	return path.Paths(depsIns), err
 }
 
 func (msvc depsMSVC) depsInputs(ctx context.Context, b *Builder, step *Step) ([]string, error) {
@@ -218,7 +220,7 @@ func (depsMSVC) scandeps(ctx context.Context, b *Builder, step *Step) ([]string,
 	err := b.scanDepsSema.Do(ctx, step.weight, func(ctx context.Context) error {
 		ctx, span := b.scandepsStarted(ctx, step)
 		defer span.Close(nil)
-		params, err := msvcutil.ExtractScanDepsParams(ctx, step.cmd.Args, step.cmd.Env, b.hashFS.FileSystem(ctx, filepath.Join(step.cmd.WorkspaceRoot, step.cmd.WorkDir)))
+		params, err := msvcutil.ExtractScanDepsParams(ctx, step.cmd.Args, step.cmd.Env, b.hashFS.FileSystem(ctx, filepath.Join(step.cmd.WorkspaceRoot, string(step.cmd.WorkDir))))
 		if err != nil {
 			return err
 		}
@@ -242,7 +244,10 @@ func (depsMSVC) scandeps(ctx context.Context, b *Builder, step *Step) ([]string,
 			clog.Infof(ctx, "scandeps req=%#v", req)
 		}
 		started := time.Now()
-		ins, err = b.scanDeps.Scan(ctx, b.path.WorkspaceRoot, req)
+		scanResults, err := b.scanDeps.Scan(ctx, b.path.WorkspaceRoot, req)
+		if err == nil {
+			ins = path.Strings(scanResults)
+		}
 		if log.V(1) {
 			clog.Infof(ctx, "scandeps %d %s: %v", len(ins), time.Since(started), err)
 		}
@@ -304,7 +309,7 @@ func expandCPPCaseSensitiveIncludes(ctx context.Context, b *Builder, files []str
 		inc = strings.ToLower(filepath.ToSlash(filepath.Join(filepath.Base(filepath.Dir(f)), filepath.Base(f))))
 		includePaths[inc] = append(includePaths[inc], filepath.ToSlash(filepath.Dir(filepath.Dir(f))))
 
-		buf, err := b.hashFS.ReadFile(ctx, b.path.WorkspaceRoot, f)
+		buf, err := b.hashFS.ReadFile(ctx, b.path.WorkspaceRoot, path.New(f))
 		if err != nil {
 			clog.Warningf(ctx, "expand cs: failed to read %s: %v", f, err)
 			continue
@@ -373,7 +378,7 @@ func (depsMSVC) scandepsByClang(ctx context.Context, b *Builder, step *Step) ([]
 	var inputs []string
 	for _, in := range ins {
 		inpath := b.path.MaybeFromRelative(ctx, in)
-		_, err := b.hashFS.Stat(ctx, b.path.WorkspaceRoot, inpath)
+		_, err := b.hashFS.Stat(ctx, b.path.WorkspaceRoot, path.New(inpath))
 		if err != nil {
 			clog.Warningf(ctx, "missing inputs? %s: %v", inpath, err)
 			continue
@@ -387,30 +392,31 @@ func (depsMSVC) scandepsByClang(ctx context.Context, b *Builder, step *Step) ([]
 func CreateScanDepsRequestMSVC(ctx context.Context, p *Path, params scandepsparams.ScanDepsParams, platform map[string]string, allowExternals bool, timeout time.Duration) (scandeps.Request, error) {
 	// externals stores non local paths.
 	var externals []string
-	canonicalize := func(s string) string {
-		s = p.MaybeFromRelative(ctx, s)
-		if !filepath.IsLocal(s) {
-			externals = append(externals, s)
+	canonicalize := func(s string) path.Path {
+		pp := path.New(p.MaybeFromRelative(ctx, s))
+		if !filepath.IsLocal(string(pp)) {
+			externals = append(externals, string(pp))
 		}
-		return s
+		return pp
 	}
-	for i, s := range params.Sources {
-		params.Sources[i] = canonicalize(s)
+	canonicalizeAll := func(ss []string) []path.Path {
+		ps := make([]path.Path, len(ss))
+		for i, s := range ss {
+			ps[i] = canonicalize(s)
+		}
+		return ps
 	}
+	sources := canonicalizeAll(params.Sources)
 	// no need to canonicalize path for Includes.
 	// it should be used as is for `#include "pathname.h"`
+	includes := path.Paths(params.Includes)
+	// Also canonicalize Files for the caller (used outside the Request).
 	for i, s := range params.Files {
-		params.Files[i] = canonicalize(s)
+		params.Files[i] = string(canonicalize(s))
 	}
-	for i, s := range params.Dirs {
-		params.Dirs[i] = canonicalize(s)
-	}
-	for i, s := range params.QuoteDirs {
-		params.QuoteDirs[i] = canonicalize(s)
-	}
-	for i, s := range params.Sysroots {
-		params.Sysroots[i] = canonicalize(s)
-	}
+	dirs := canonicalizeAll(params.Dirs)
+	quoteDirs := canonicalizeAll(params.QuoteDirs)
+	sysroots := canonicalizeAll(params.Sysroots)
 
 	if len(externals) > 0 && !allowExternals {
 		v := externals[:min(len(externals), 5)]
@@ -418,11 +424,11 @@ func CreateScanDepsRequestMSVC(ctx context.Context, p *Path, params scandepspara
 	}
 	req := scandeps.Request{
 		Defines:   params.Defines,
-		Sources:   params.Sources,
-		Includes:  params.Includes,
-		Dirs:      params.Dirs,
-		QuoteDirs: params.QuoteDirs,
-		Sysroots:  params.Sysroots,
+		Sources:   sources,
+		Includes:  includes,
+		Dirs:      dirs,
+		QuoteDirs: quoteDirs,
+		Sysroots:  sysroots,
 		Timeout:   timeout,
 	}
 	return req, nil

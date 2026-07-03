@@ -5,14 +5,17 @@
 package hashfs
 
 import (
+	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
 	"go.chromium.org/build/siso/hashfs/osfs"
+	"go.chromium.org/build/siso/path"
 	"go.chromium.org/build/siso/reapi/digest"
 )
 
@@ -42,7 +45,7 @@ func TestStatMtimeDeferDigestGate(t *testing.T) {
 		}
 		// hashfs keys its directory tree by forward-slash paths (filepath.ToSlash),
 		// so the lookup key must match on Windows where filepath.Join yields backslashes.
-		e, _, _, ok := hfs.directory.lookup(ctx, filepath.ToSlash(fname))
+		e, _, _, ok := hfs.directory.lookup(ctx, path.Path(filepath.ToSlash(fname)))
 		if !ok {
 			t.Fatal("entry missing after StatMtime")
 		}
@@ -95,7 +98,7 @@ func TestReadFileStaleSizeDigest(t *testing.T) {
 	// A digestless entry capturing the old (small) size.
 	e := newLocalEntry()
 	e.init(ctx, fname, hfs.executables, hfs.OS)
-	if _, err := hfs.directory.store(ctx, fname, e); err != nil {
+	if _, err := hfs.directory.store(ctx, path.Path(fname), e); err != nil {
 		t.Fatal(err)
 	}
 	// File grows on disk without a hashfs update.
@@ -105,7 +108,7 @@ func TestReadFileStaleSizeDigest(t *testing.T) {
 	if _, err := hfs.ReadFile(ctx, dir, "gen.h"); err != nil {
 		t.Fatalf("ReadFile: %v", err)
 	}
-	e2, _, _, ok := hfs.directory.lookup(ctx, fname)
+	e2, _, _, ok := hfs.directory.lookup(ctx, path.Path(fname))
 	if !ok {
 		t.Fatal("entry vanished after ReadFile")
 	}
@@ -166,57 +169,57 @@ func TestDirectoryLookup_Symlink(t *testing.T) {
 	osfs := osfs.New(ctx, "fs", osfs.Option{})
 
 	fname := filepath.Join(dir, symlinkName)
-	_, _, _, ok := d.lookup(ctx, fname)
+	_, _, _, ok := d.lookup(ctx, path.New(fname))
 	if ok {
 		t.Fatalf("d.lookup(ctx, %q): %t; want false", fname, ok)
 	}
 	e := newLocalEntry()
 	e.init(ctx, fname, nil, osfs)
-	_, err = d.store(ctx, fname, e)
+	_, err = d.store(ctx, path.New(fname), e)
 	if err != nil {
 		t.Fatalf("d.store(ctx, %q) %v; want nil err", fname, err)
 	}
 
 	fname = filepath.Join(dir, fileName)
-	_, _, _, ok = d.lookup(ctx, fname)
+	_, _, _, ok = d.lookup(ctx, path.New(fname))
 	if ok {
 		t.Fatalf("d.lookup(ctx, %q): %t; want false", fname, ok)
 	}
 	e = newLocalEntry()
 	e.init(ctx, fname, nil, osfs)
-	_, err = d.store(ctx, fname, e)
+	_, err = d.store(ctx, path.New(fname), e)
 	if err != nil {
 		t.Fatalf("d.store(ctx, %q) %v; want nil err", fname, err)
 	}
 
 	t.Log(fname)
-	_, _, _, ok = d.lookup(ctx, fname)
+	_, _, _, ok = d.lookup(ctx, path.New(fname))
 	if !ok {
 		t.Fatalf("d.lookup(ctx, %q) %t; want true", fname, ok)
 	}
 	fname = filepath.Dir(fname)
 	t.Log(fname)
-	_, _, _, ok = d.lookup(ctx, fname)
+	_, _, _, ok = d.lookup(ctx, path.New(fname))
 	if !ok {
 		t.Fatalf("d.lookup(ctx, %q) %t; want true", fname, ok)
 	}
 
 	fname = filepath.Join(dir, symlinkName)
 	t.Log(fname)
-	_, _, _, ok = d.lookup(ctx, fname)
+	_, _, _, ok = d.lookup(ctx, path.New(fname))
 	if !ok {
 		t.Fatalf("d.lookup(ctx, %q) %t; want true", fname, ok)
 	}
 	fname = filepath.Join(fname, "somefile")
 	t.Log(fname)
-	_, _, _, ok = d.lookup(ctx, fname)
+	_, _, _, ok = d.lookup(ctx, path.New(fname))
 	if !ok {
 		t.Fatalf("d.lookup(ctx, %q) %t; want true", fname, ok)
 	}
 }
 
 // TestExpandFlushDirs_DedupesNestedDirs verifies expandFlushDirs does not emit a
-// path twice for overlapping directory targets (a directory and a nested one
+// path twice for overlapping directory artifacts (a directory and a nested one
 // inside it); a duplicate makes the Flush loop block on a drained e.lready channel.
 func TestExpandFlushDirs_DedupesNestedDirs(t *testing.T) {
 	ctx := t.Context()
@@ -342,6 +345,33 @@ func TestClearStaleFileForDirOutput(t *testing.T) {
 	}
 }
 
+// TestDirectoryLookupSymlink_DrivePath pins symlink resolution through a
+// drive-absolute path: "C:" must stay the first path element (no "/"
+// sentinel), or the Windows resolve-path join is malformed.
+func TestDirectoryLookupSymlink_DrivePath(t *testing.T) {
+	ctx := t.Context()
+	d := &directory{isRoot: true}
+
+	file := newLocalEntry()
+	file.mode = 0644
+	if _, err := d.store(ctx, path.Path("C:/a/b/f"), file); err != nil {
+		t.Fatalf("store file: %v", err)
+	}
+	link := newLocalEntry()
+	link.mode = 0644 | fs.ModeSymlink
+	link.target = "b"
+	if _, err := d.store(ctx, path.Path("C:/a/link"), link); err != nil {
+		t.Fatalf("store link: %v", err)
+	}
+	got, _, _, ok := d.lookup(ctx, path.Path("C:/a/link/f"))
+	if !ok {
+		t.Fatalf("lookup(C:/a/link/f) failed; want resolution through the symlink")
+	}
+	if got != file {
+		t.Fatalf("lookup(C:/a/link/f) = %v, want the stored file entry", got)
+	}
+}
+
 func TestExpandDirInputs_EmptyDir(t *testing.T) {
 	ctx := t.Context()
 	root := t.TempDir()
@@ -386,5 +416,31 @@ func TestExpandDirInputs_EmptyDir(t *testing.T) {
 	// A non-empty directory input still expands to its files.
 	if !has("full/a.txt") {
 		t.Errorf("expandDirInputs did not expand non-empty dir: got %v", got)
+	}
+}
+
+// TestEscapingSymlinkNameKeyForm locks the key form for the names computed
+// in buildMerkletreeEntries and resolveEscapingSymlink. Both sites join the
+// OS-native workspace root with a workspace-relative Path and use the result
+// as an hfs.directory key, which is always forward-slash: the join must
+// normalize (path.JoinRoot), not concatenate with the OS separator, or on
+// Windows the key keeps backslashes and silently stops matching the
+// directory. The escape sites must also produce the same key form as every
+// other makeFullpath call site so stores and lookups agree.
+func TestEscapingSymlinkNameKeyForm(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "ws") // OS-native: backslashes on Windows.
+	for _, fname := range []path.Path{
+		"out/gen/foo.h",
+		"a/b/c",
+		"./out/foo", // leading dot segment
+		"out//dup",  // duplicate slash, as untrusted include directives produce
+	} {
+		name := path.JoinRoot(root, fname) // the form the escape sites use.
+		if strings.ContainsRune(string(name), '\\') {
+			t.Errorf("JoinRoot(%q, %q) = %q contains a backslash; violates the Path forward-slash invariant", root, fname, name)
+		}
+		if got := makeFullpath(root, fname); got != name {
+			t.Errorf("makeFullpath(%q, %q) = %q; JoinRoot = %q; want equal", root, fname, got, name)
+		}
 	}
 }

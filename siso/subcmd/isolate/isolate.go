@@ -31,6 +31,7 @@ import (
 	"go.chromium.org/build/siso/build/ninjabuild"
 	"go.chromium.org/build/siso/hashfs"
 	"go.chromium.org/build/siso/o11y/clog"
+	"go.chromium.org/build/siso/path"
 	"go.chromium.org/build/siso/reapi"
 	"go.chromium.org/build/siso/reapi/digest"
 	"go.chromium.org/build/siso/reapi/merkletree"
@@ -336,7 +337,7 @@ func upload(ctx context.Context, workspaceRoot, outDir string, hashFS *hashfs.Ha
 		}
 		// Expand directory entries.
 		pathname := filepath.ToSlash(filepath.Join(outDir, fname))
-		fi, err := hashFS.Stat(ctx, workspaceRoot, pathname)
+		fi, err := hashFS.Stat(ctx, workspaceRoot, path.Path(pathname))
 		if err != nil {
 			return digest.Digest{}, err
 		}
@@ -369,7 +370,7 @@ func upload(ctx context.Context, workspaceRoot, outDir string, hashFS *hashfs.Ha
 		if strings.HasSuffix(pathname, ".pyc") {
 			continue
 		}
-		ents, err := hashFS.Entries(ctx, workspaceRoot, []string{pathname})
+		ents, err := hashFS.Entries(ctx, workspaceRoot, []path.Path{path.Path(pathname)})
 		if err != nil {
 			return digest.Digest{}, err
 		}

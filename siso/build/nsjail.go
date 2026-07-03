@@ -17,6 +17,7 @@ import (
 
 	"go.chromium.org/build/siso/execute"
 	"go.chromium.org/build/siso/o11y/clog"
+	"go.chromium.org/build/siso/path"
 	"go.chromium.org/build/siso/toolsupport/nsjailutil"
 )
 
@@ -75,8 +76,8 @@ func (n *nsjailExecutor) Close() error {
 func (n *nsjailExecutor) Run(ctx context.Context, cmd *execute.Cmd) (err error) {
 	fsys := n.b.hashFS.FileSystem(ctx, "/")
 	req := n.req
-	req.Inputs = cmd.AllInputs()
-	req.Outputs = cmd.AllOutputs()
+	req.Inputs = path.Strings(cmd.AllInputs())
+	req.Outputs = path.Strings(cmd.AllOutputs())
 	jail, err := nsjailutil.New(ctx, fsys, req)
 	if err != nil {
 		return err
@@ -112,7 +113,7 @@ func (n *nsjailExecutor) logLocalExec(ctx context.Context, step *Step, dur time.
 	allOutputs := step.cmd.AllOutputs()
 	var output string
 	if len(allOutputs) > 0 {
-		output = allOutputs[0]
+		output = string(allOutputs[0])
 	}
 	var buf bytes.Buffer
 	fmt.Fprintf(&buf, `cmd: %s pure:%t/nsjail restat:%t %s

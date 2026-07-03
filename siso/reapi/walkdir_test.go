@@ -11,6 +11,7 @@ import (
 
 	rpb "go.chromium.org/build/remote-apis/build/bazel/remote/execution/v2"
 
+	"go.chromium.org/build/siso/path"
 	"go.chromium.org/build/siso/reapi/digest"
 	"go.chromium.org/build/siso/reapi/merkletree"
 	"go.chromium.org/build/siso/reapi/reapitest"
@@ -27,7 +28,7 @@ func TestWalkDir(t *testing.T) {
 		"subdir2/subdir2.1/file1",
 	} {
 		tree.Set(merkletree.Entry{
-			Name: s,
+			Name: path.Path(s),
 			Data: digest.FromBytes("empty", nil),
 		})
 	}

@@ -19,6 +19,7 @@ import (
 	rpb "go.chromium.org/build/remote-apis/build/bazel/remote/execution/v2"
 
 	"go.chromium.org/build/siso/hashfs"
+	"go.chromium.org/build/siso/path"
 	"go.chromium.org/build/siso/reapi/digest"
 	"go.chromium.org/build/siso/reapi/merkletree"
 )
@@ -176,16 +177,16 @@ func TestEntriesFromResult_Auxiliary(t *testing.T) {
 
 	cmd := &Cmd{
 		WorkDir: "out/Default",
-		Outputs: []string{
+		Outputs: []path.Path{
 			"out/Default/main.o",
 		},
-		AuxiliaryLogOutputFiles: []string{
+		AuxiliaryLogOutputFiles: []path.Path{
 			"out/Default/aux.d",
 		},
-		AuxiliaryLogOutputDirs: []string{
+		AuxiliaryLogOutputDirs: []path.Path{
 			"out/Default/aux_dir",
 		},
-		outfiles: map[string]bool{
+		outfiles: map[path.Path]bool{
 			"out/Default/main.o": true,
 		},
 		actionResult: &rpb.ActionResult{
@@ -244,10 +245,10 @@ func TestEntriesFromResult_DirOutput(t *testing.T) {
 
 	cmd := &Cmd{
 		WorkDir: "out/Default",
-		OutputDirs: []string{
+		OutputDirs: []path.Path{
 			"out/Default/gendir",
 		},
-		outfiles: map[string]bool{
+		outfiles: map[path.Path]bool{
 			"out/Default/gendir": true,
 		},
 		CmdHash: []byte("test-cmd-hash"),
@@ -327,10 +328,10 @@ func TestEntriesFromResult_DirOutput_SubdirsHaveCmdHash(t *testing.T) {
 
 	cmd := &Cmd{
 		WorkDir: "out/Default",
-		OutputDirs: []string{
+		OutputDirs: []path.Path{
 			"out/Default/gendir",
 		},
-		outfiles: map[string]bool{
+		outfiles: map[path.Path]bool{
 			"out/Default/gendir": true,
 		},
 		CmdHash: []byte("test-cmd-hash"),
@@ -358,10 +359,10 @@ func TestEntriesFromResult_DirOutput_SubdirsHaveCmdHash(t *testing.T) {
 		"out/Default/gendir/sub/deep": false,
 	}
 	for i := range entries {
-		if _, ok := want[entries[i].Name]; !ok {
+		if _, ok := want[string(entries[i].Name)]; !ok {
 			continue
 		}
-		want[entries[i].Name] = true
+		want[string(entries[i].Name)] = true
 		if len(entries[i].CmdHash) == 0 {
 			t.Errorf("%s CmdHash is empty; want non-empty", entries[i].Name)
 		}
@@ -382,10 +383,10 @@ func TestEntriesFromResult_DirOutput_SymlinkInside(t *testing.T) {
 
 	cmd := &Cmd{
 		WorkDir: "out/Default",
-		OutputDirs: []string{
+		OutputDirs: []path.Path{
 			"out/Default/gendir",
 		},
-		outfiles: map[string]bool{
+		outfiles: map[path.Path]bool{
 			"out/Default/gendir": true,
 		},
 		CmdHash: []byte("test-cmd-hash"),
@@ -428,7 +429,7 @@ func TestEntriesFromResult_DirOutput_SymlinkInside(t *testing.T) {
 
 func TestIsOutputFile(t *testing.T) {
 	cmd := &Cmd{
-		outfiles: map[string]bool{
+		outfiles: map[path.Path]bool{
 			"out/Default/main.o": true,
 			"out/Default/gendir": true,
 		},
@@ -450,7 +451,7 @@ func TestIsOutputFile(t *testing.T) {
 		{name: "empty path", path: "", want: false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			got := cmd.isOutputFile(tc.path)
+			got := cmd.isOutputFile(path.Path(tc.path))
 			if got != tc.want {
 				t.Errorf("isOutputFile(%q) = %v; want %v", tc.path, got, tc.want)
 			}
@@ -462,7 +463,7 @@ func TestIsOutputFile(t *testing.T) {
 // Regression guard: c.outfiles keys are forward-slash, so a filepath.Dir walk would fail to match parents on Windows (Linux can't prove this alone, since the two are identical there).
 func TestIsOutputFile_ForwardSlashSemantics(t *testing.T) {
 	cmd := &Cmd{
-		outfiles: map[string]bool{
+		outfiles: map[path.Path]bool{
 			"out/Default/gendir": true,
 		},
 	}
@@ -521,8 +522,8 @@ func TestRecordPreOutputs(t *testing.T) {
 	}
 	rd := digest.Digest{Hash: "remotehash", SizeBytes: 7}
 	if err := hashFS.Update(ctx, dir, []hashfs.UpdateEntry{{
-		Name:    hashfsOnly,
-		Entry:   &merkletree.Entry{Name: hashfsOnly, Data: digest.NewData(nil, rd)},
+		Name:    path.Path(hashfsOnly),
+		Entry:   &merkletree.Entry{Name: path.Path(hashfsOnly), Data: digest.NewData(nil, rd)},
 		Mode:    0o644,
 		CmdHash: []byte("cmdhash"),
 	}}); err != nil {
@@ -531,8 +532,8 @@ func TestRecordPreOutputs(t *testing.T) {
 
 	cmd := &Cmd{
 		WorkspaceRoot:     dir,
-		Outputs:           []string{onDisk, hashfsOnly},
-		Depfile:           depfile,
+		Outputs:           []path.Path{path.Path(onDisk), path.Path(hashfsOnly)},
+		Depfile:           path.Path(depfile),
 		HashFS:            hashFS,
 		SkipRecordOutputs: true, // the racing remote racer
 	}
@@ -545,7 +546,7 @@ func TestRecordPreOutputs(t *testing.T) {
 	// downstream steps under restat_content.
 	got := map[string]bool{}
 	for _, e := range cmd.preOutputEntries {
-		got[e.Name] = true
+		got[string(e.Name)] = true
 	}
 	for _, want := range []string{onDisk, hashfsOnly} {
 		if !got[want] {
@@ -559,7 +560,7 @@ func TestRecordPreOutputs(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, depfile), []byte("foo.o: foo.c\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := hashFS.ReadFile(ctx, dir, depfile); err != nil {
+	if _, err := hashFS.ReadFile(ctx, dir, path.Path(depfile)); err != nil {
 		t.Errorf("ReadFile(%q) after RecordPreOutputs = %v; want success (absent output must not be poisoned)", depfile, err)
 	}
 }
@@ -573,9 +574,9 @@ func TestEntriesFromResult_DirOutput_AuxiliaryInnerFile(t *testing.T) {
 	d1 := digest.Digest{Hash: "hash1", SizeBytes: 5}
 	cmd := &Cmd{
 		WorkDir:                 "out/Default",
-		OutputDirs:              []string{"out/Default/gendir"},
-		AuxiliaryLogOutputFiles: []string{"out/Default/gendir/info.json"},
-		outfiles: map[string]bool{
+		OutputDirs:              []path.Path{"out/Default/gendir"},
+		AuxiliaryLogOutputFiles: []path.Path{"out/Default/gendir/info.json"},
+		outfiles: map[path.Path]bool{
 			"out/Default/gendir": true,
 		},
 		CmdHash: []byte("test-cmd-hash"),
@@ -632,7 +633,7 @@ func TestRecordOutputsFromLocal_JailDepfile(t *testing.T) {
 	c := &Cmd{
 		WorkspaceRoot:     root,
 		ExecRootInJailDir: jail,
-		Outputs:           []string{"foo.o"},
+		Outputs:           []path.Path{"foo.o"},
 		Depfile:           "foo.o.d",
 		HashFS:            hashFS,
 	}
@@ -681,7 +682,7 @@ func TestRecordOutputsFromLocal_JailDepfileAlsoOutput(t *testing.T) {
 	c := &Cmd{
 		WorkspaceRoot:     root,
 		ExecRootInJailDir: jail,
-		Outputs:           []string{"foo.o", "foo.o.d"},
+		Outputs:           []path.Path{"foo.o", "foo.o.d"},
 		Depfile:           "foo.o.d",
 		HashFS:            hashFS,
 	}
@@ -705,7 +706,7 @@ func TestRecordOutputsFromLocal_JailDepfileAlsoOutput(t *testing.T) {
 func TestComputeOutputEntries_DirOnlyEdgeHash(t *testing.T) {
 	c := &Cmd{
 		WorkDir:    "out/Default",
-		OutputDirs: []string{"out/Default/gen"},
+		OutputDirs: []path.Path{"out/Default/gen"},
 		EdgeHash:   []byte("edge-hash"),
 		CmdHash:    []byte("cmd-hash"),
 	}
@@ -717,7 +718,7 @@ func TestComputeOutputEntries_DirOnlyEdgeHash(t *testing.T) {
 	got := c.computeOutputEntries(entries, time.Unix(2000, 0), c.CmdHash)
 	byName := make(map[string]hashfs.UpdateEntry, len(got))
 	for _, e := range got {
-		byName[e.Name] = e
+		byName[string(e.Name)] = e
 	}
 	if string(byName["out/Default/gen"].EdgeHash) != string(c.EdgeHash) {
 		t.Errorf("dir output entry EdgeHash=%q; want %q (edge hash must be on the declared dir output; otherwise outputMtime reads empty and edge changes are missed)", byName["out/Default/gen"].EdgeHash, c.EdgeHash)
@@ -767,7 +768,7 @@ func TestRecordOutputs_DirTreeReplacesStaleMembers(t *testing.T) {
 	c := &Cmd{
 		WorkspaceRoot: root,
 		HashFS:        hashFS,
-		OutputDirs:    []string{"gen"},
+		OutputDirs:    []path.Path{"gen"},
 		CmdHash:       []byte("cmd"),
 		EdgeHash:      []byte("edge"),
 	}
@@ -816,7 +817,7 @@ func TestInputTree_RejectsDirectoryRemoteInput(t *testing.T) {
 		WorkspaceRoot: root,
 		WorkDir:       "out/siso",
 		HashFS:        hashFS,
-		RemoteInputs: map[string]string{
+		RemoteInputs: map[path.Path]path.Path{
 			"remote/extracted/": "obj/extracted/",
 		},
 	}
@@ -839,34 +840,34 @@ func TestDeclaredOutputsAndAllOutputs(t *testing.T) {
 	}{
 		{
 			name:         "files only",
-			cmd:          Cmd{Outputs: []string{"a.o", "b.o"}},
+			cmd:          Cmd{Outputs: []path.Path{"a.o", "b.o"}},
 			wantDeclared: []string{"a.o", "b.o"},
 			wantAll:      []string{"a.o", "b.o"},
 		},
 		{
 			name:         "files and dirs",
-			cmd:          Cmd{Outputs: []string{"a.o"}, OutputDirs: []string{"gen"}},
+			cmd:          Cmd{Outputs: []path.Path{"a.o"}, OutputDirs: []path.Path{"gen"}},
 			wantDeclared: []string{"a.o", "gen"},
 			wantAll:      []string{"a.o", "gen"},
 		},
 		{
 			name:         "files and depfile",
-			cmd:          Cmd{Outputs: []string{"a.o"}, Depfile: "a.o.d"},
+			cmd:          Cmd{Outputs: []path.Path{"a.o"}, Depfile: "a.o.d"},
 			wantDeclared: []string{"a.o"},
 			wantAll:      []string{"a.o", "a.o.d"},
 		},
 		{
 			name:         "files dirs and depfile",
-			cmd:          Cmd{Outputs: []string{"a.o"}, OutputDirs: []string{"gen"}, Depfile: "a.o.d"},
+			cmd:          Cmd{Outputs: []path.Path{"a.o"}, OutputDirs: []path.Path{"gen"}, Depfile: "a.o.d"},
 			wantDeclared: []string{"a.o", "gen"},
 			wantAll:      []string{"a.o", "gen", "a.o.d"},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			if diff := cmp.Diff(tc.wantDeclared, tc.cmd.DeclaredOutputs()); diff != "" {
+			if diff := cmp.Diff(tc.wantDeclared, path.Strings(tc.cmd.DeclaredOutputs())); diff != "" {
 				t.Errorf("DeclaredOutputs (-want +got):\n%s", diff)
 			}
-			if diff := cmp.Diff(tc.wantAll, tc.cmd.AllOutputs()); diff != "" {
+			if diff := cmp.Diff(tc.wantAll, path.Strings(tc.cmd.AllOutputs())); diff != "" {
 				t.Errorf("AllOutputs (-want +got):\n%s", diff)
 			}
 		})
@@ -875,7 +876,7 @@ func TestDeclaredOutputsAndAllOutputs(t *testing.T) {
 
 // TestAllOutputsNoAlias verifies AllOutputs does not write the depfile into Outputs' backing array (which can have spare capacity from stepFileOutputs).
 func TestAllOutputsNoAlias(t *testing.T) {
-	outputs := make([]string, 1, 4) // len 1, cap 4: spare capacity
+	outputs := make([]path.Path, 1, 4) // len 1, cap 4: spare capacity
 	outputs[0] = "a.o"
 	c := Cmd{Outputs: outputs, Depfile: "a.o.d"}
 	_ = c.AllOutputs()
@@ -961,8 +962,8 @@ func TestOutermostPaths(t *testing.T) {
 		{"interleaved sibling", []string{"gen/foo", "gen/foo.stamp", "gen/foo/a.o"}, []string{"gen/foo", "gen/foo.stamp"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			got := OutermostPaths(tc.in)
-			if diff := cmp.Diff(tc.want, got, cmpopts.EquateEmpty()); diff != "" {
+			got := OutermostPaths(path.Paths(tc.in))
+			if diff := cmp.Diff(tc.want, path.Strings(got), cmpopts.EquateEmpty()); diff != "" {
 				t.Errorf("OutermostPaths(%v) mismatch (-want +got):\n%s", tc.in, diff)
 			}
 		})
@@ -1004,8 +1005,8 @@ func TestRecordOutputsFromLocal_JailNestedDirOutput(t *testing.T) {
 	c := &Cmd{
 		WorkspaceRoot:     root,
 		ExecRootInJailDir: jail,
-		Outputs:           []string{"gen/foo.h"},
-		OutputDirs:        []string{"gen"},
+		Outputs:           []path.Path{"gen/foo.h"},
+		OutputDirs:        []path.Path{"gen"},
 		HashFS:            hashFS,
 	}
 	c.InitOutputs()

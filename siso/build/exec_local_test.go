@@ -4,7 +4,11 @@
 
 package build
 
-import "testing"
+import (
+	"testing"
+
+	"go.chromium.org/build/siso/path"
+)
 
 // TestIsRequiredOutput verifies directory outputs are classified as required even though def.Outputs keeps trailing slashes while cmd.AllOutputs strips them.
 func TestIsRequiredOutput(t *testing.T) {
@@ -46,7 +50,7 @@ func TestIsRequiredOutput(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			got := isRequiredOutput(tc.out, tc.defOutputs)
+			got := isRequiredOutput(path.Path(tc.out), path.Paths(tc.defOutputs))
 			if got != tc.want {
 				t.Errorf("isRequiredOutput(%q, %v) = %v; want %v",
 					tc.out, tc.defOutputs, got, tc.want)

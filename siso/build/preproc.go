@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"go.chromium.org/build/siso/o11y/trace"
+	"go.chromium.org/build/siso/path"
 )
 
 func preprocCmd(ctx context.Context, b *Builder, step *Step) error {
@@ -49,6 +50,26 @@ func uniqueFiles(inputsList ...[]string) []string {
 		}
 	}
 	r := make([]string, len(inputs))
+	copy(r, inputs)
+	return r
+}
+
+func uniquePathFiles(inputsList ...[]path.Path) []path.Path {
+	seen := make(map[path.Path]bool)
+	var inputs []path.Path
+	for _, ins := range inputsList {
+		for _, in := range ins {
+			if in == "" {
+				continue
+			}
+			if seen[in] {
+				continue
+			}
+			seen[in] = true
+			inputs = append(inputs, in)
+		}
+	}
+	r := make([]path.Path, len(inputs))
 	copy(r, inputs)
 	return r
 }

@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"go.chromium.org/build/siso/path"
 	"go.chromium.org/build/siso/reapi/digest"
 	"go.chromium.org/build/siso/reapi/merkletree"
 )
@@ -43,7 +44,7 @@ func TestDirectoryDeleteKeepsPopulatedDir(t *testing.T) {
 	// A concurrent racing step recorded a remote-won output (is_local=false,
 	// digest only -- not written to local disk) under outdir/. This creates a
 	// virtual "outdir" dir node in hashfs holding the sibling entry.
-	sibling := "outdir/sibling.o"
+	sibling := path.Path("outdir/sibling.o")
 	sd := digest.Digest{Hash: "siblinghash", SizeBytes: 4}
 	err = hfs.Update(ctx, dir, []UpdateEntry{{
 		Name:    sibling,
@@ -62,7 +63,7 @@ func TestDirectoryDeleteKeepsPopulatedDir(t *testing.T) {
 	// negative-cache clearing does while a different step records its own local
 	// output in outdir/: directory.delete on the parent dir node, which keeps a
 	// populated directory.
-	hfs.directory.delete(ctx, filepath.ToSlash(filepath.Join(dir, "outdir")))
+	hfs.directory.delete(ctx, path.Path(filepath.ToSlash(filepath.Join(dir, "outdir"))))
 
 	// The remote-won sibling must survive: deleting a populated dir node is
 	// never a valid cache invalidation.
@@ -99,7 +100,7 @@ func TestDirectoryDeleteKeepsEmptyDir(t *testing.T) {
 	// local disk) to create out/sub, then force-remove the child so out/sub is an
 	// empty directory node that exists only in hashfs (not on disk). A surviving
 	// Stat(out/sub) therefore proves the entry itself was not evicted.
-	child := "out/sub/child"
+	child := path.Path("out/sub/child")
 	cd := digest.Digest{Hash: "childhash", SizeBytes: 4}
 	err = hfs.Update(ctx, dir, []UpdateEntry{{
 		Name:    child,
@@ -110,8 +111,8 @@ func TestDirectoryDeleteKeepsEmptyDir(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Update(%q): %v", child, err)
 	}
-	hfs.directory.deleteForce(ctx, filepath.ToSlash(filepath.Join(dir, child)))
-	outSub := filepath.ToSlash(filepath.Join(dir, "out/sub"))
+	hfs.directory.deleteForce(ctx, path.Path(filepath.ToSlash(filepath.Join(dir, string(child)))))
+	outSub := path.Path(filepath.ToSlash(filepath.Join(dir, "out/sub")))
 	if e, _, _, ok := hfs.directory.lookup(ctx, outSub); !ok || e == nil || e.getDir() == nil {
 		t.Fatalf("precondition: out/sub is not an empty in-memory dir node (ok=%v)", ok)
 	}
@@ -156,7 +157,7 @@ func TestForgetMissingsInDir_PrunesUnderMissingGeneratedDir(t *testing.T) {
 			}}); err != nil {
 				t.Fatalf("Update(out/gendir): %v", err)
 			}
-			stale := "out/gendir/stale"
+			stale := path.Path("out/gendir/stale")
 			sd := digest.Digest{Hash: "stalehash", SizeBytes: 4}
 			if err := hfs.Update(ctx, dir, []UpdateEntry{{
 				Name:  stale,
@@ -165,18 +166,18 @@ func TestForgetMissingsInDir_PrunesUnderMissingGeneratedDir(t *testing.T) {
 			}}); err != nil {
 				t.Fatalf("Update(%q): %v", stale, err)
 			}
-			staleFull := filepath.ToSlash(filepath.Join(dir, stale))
+			staleFull := path.Path(filepath.ToSlash(filepath.Join(dir, string(stale))))
 			if _, _, _, ok := hfs.directory.lookup(ctx, staleFull); !ok {
 				t.Fatalf("precondition: %s not in hashfs", stale)
 			}
 
-			hfs.ForgetMissingsInDir(ctx, dir, target)
+			hfs.ForgetMissingsInDir(ctx, dir, path.Path(target))
 
 			if _, _, _, ok := hfs.directory.lookup(ctx, staleFull); ok {
 				t.Errorf("ForgetMissingsInDir(%q) left stale child %s reachable under a missing generated dir", target, stale)
 			}
 			// The generated dir node itself stays anchored (never unlinked).
-			genFull := filepath.ToSlash(filepath.Join(dir, "out/gendir"))
+			genFull := path.Path(filepath.ToSlash(filepath.Join(dir, "out/gendir")))
 			if e, _, _, ok := hfs.directory.lookup(ctx, genFull); !ok || e.getDir() == nil {
 				t.Errorf("ForgetMissingsInDir(%q) evicted the generated dir node out/gendir (ok=%v); want it preserved", target, ok)
 			}
@@ -217,7 +218,7 @@ func TestForgetMissingsInDir_ReconcilesGeneratedDir(t *testing.T) {
 		t.Fatalf("Update(out/gendir): %v", err)
 	}
 	// A non-generated file the step removed: cached under gendir, gone on disk.
-	stale := "out/gendir/stale"
+	stale := path.Path("out/gendir/stale")
 	sd := digest.Digest{Hash: "stalehash", SizeBytes: 4}
 	if err := hfs.Update(ctx, dir, []UpdateEntry{{
 		Name:  stale,
@@ -226,7 +227,7 @@ func TestForgetMissingsInDir_ReconcilesGeneratedDir(t *testing.T) {
 	}}); err != nil {
 		t.Fatalf("Update(%q): %v", stale, err)
 	}
-	staleFull := filepath.ToSlash(filepath.Join(dir, stale))
+	staleFull := path.Path(filepath.ToSlash(filepath.Join(dir, string(stale))))
 	if _, _, _, ok := hfs.directory.lookup(ctx, staleFull); !ok {
 		t.Fatalf("precondition: %s not in hashfs", stale)
 	}
@@ -254,7 +255,7 @@ func TestForgetOutputsDropsOutputDirChildren(t *testing.T) {
 	}
 	defer hfs.Close(ctx)
 
-	child := "out/sub/child"
+	child := path.Path("out/sub/child")
 	cd := digest.Digest{Hash: "childhash", SizeBytes: 4}
 	err = hfs.Update(ctx, dir, []UpdateEntry{{
 		Name:    child,
@@ -265,12 +266,12 @@ func TestForgetOutputsDropsOutputDirChildren(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Update(%q): %v", child, err)
 	}
-	childFull := filepath.ToSlash(filepath.Join(dir, child))
+	childFull := path.Path(filepath.ToSlash(filepath.Join(dir, string(child))))
 	if _, _, _, ok := hfs.directory.lookup(ctx, childFull); !ok {
 		t.Fatalf("precondition: %s not in hashfs", child)
 	}
 
-	hfs.ForgetOutputs(ctx, dir, []string{"out"})
+	hfs.ForgetOutputs(ctx, dir, []path.Path{"out"})
 
 	if _, _, _, ok := hfs.directory.lookup(ctx, childFull); ok {
 		t.Errorf("ForgetOutputs(out) left stale child %s reachable", child)
@@ -304,7 +305,7 @@ func TestRetrieveUpdateEntriesFromLocal_RemovedDirDropsChildren(t *testing.T) {
 	// hashfs caches out/sub as a populated directory (here via a recorded child,
 	// not written to local disk), but out/sub does not exist on local disk - the
 	// action that produced it removed it.
-	child := "out/sub/child"
+	child := path.Path("out/sub/child")
 	cd := digest.Digest{Hash: "childhash", SizeBytes: 4}
 	err = hfs.Update(ctx, dir, []UpdateEntry{{
 		Name:    child,
@@ -321,7 +322,7 @@ func TestRetrieveUpdateEntriesFromLocal_RemovedDirDropsChildren(t *testing.T) {
 
 	// Record local outputs as RecordOutputsFromLocal does: out/sub is gone on disk
 	// (ErrNotExist for the path itself), so its stale cached subtree must go.
-	hfs.RetrieveUpdateEntriesFromLocal(ctx, dir, []string{"out/sub"})
+	hfs.RetrieveUpdateEntriesFromLocal(ctx, dir, []path.Path{"out/sub"})
 
 	// The cached child must no longer be reachable: out/sub was removed, so a Stat
 	// of out/sub/child must report it gone, not return the stale entry.
@@ -394,7 +395,7 @@ func TestForgetMissingsInDir_KeepsEmptyDirNode(t *testing.T) {
 	}
 	defer hfs.Close(ctx)
 
-	child := "out/sub/child"
+	child := path.Path("out/sub/child")
 	cd := digest.Digest{Hash: "childhash", SizeBytes: 4}
 	err = hfs.Update(ctx, dir, []UpdateEntry{{
 		Name:    child,
@@ -405,8 +406,8 @@ func TestForgetMissingsInDir_KeepsEmptyDirNode(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Update(%q): %v", child, err)
 	}
-	hfs.directory.deleteForce(ctx, filepath.ToSlash(filepath.Join(dir, child)))
-	outSub := filepath.ToSlash(filepath.Join(dir, "out/sub"))
+	hfs.directory.deleteForce(ctx, path.Path(filepath.ToSlash(filepath.Join(dir, string(child)))))
+	outSub := path.Path(filepath.ToSlash(filepath.Join(dir, "out/sub")))
 	if e, _, _, ok := hfs.directory.lookup(ctx, outSub); !ok || e == nil || e.getDir() == nil {
 		t.Fatalf("precondition: out/sub is not an empty in-memory dir node (ok=%v)", ok)
 	}
@@ -443,7 +444,7 @@ func TestForgetMissingsInDir_KeepsGeneratedDescendant(t *testing.T) {
 
 	// A generated (IsChanged), remote-won output under out/sub, not on local disk.
 	// The intermediate out and out/sub dir nodes are isChanged=false.
-	gen := "out/sub/gen.o"
+	gen := path.Path("out/sub/gen.o")
 	gd := digest.Digest{Hash: "genhash", SizeBytes: 5}
 	err = hfs.Update(ctx, dir, []UpdateEntry{{
 		Name:      gen,
@@ -455,7 +456,7 @@ func TestForgetMissingsInDir_KeepsGeneratedDescendant(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Update(%q): %v", gen, err)
 	}
-	genFull := filepath.ToSlash(filepath.Join(dir, gen))
+	genFull := path.Path(filepath.ToSlash(filepath.Join(dir, string(gen))))
 	if _, _, _, ok := hfs.directory.lookup(ctx, genFull); !ok {
 		t.Fatalf("precondition: generated %s not in hashfs", gen)
 	}
@@ -485,7 +486,7 @@ func TestForgetMissingsInDir_KeepsUnchangedGeneratedDescendant(t *testing.T) {
 	}
 	defer hfs.Close(ctx)
 
-	gen := "out/sub/gen.o"
+	gen := path.Path("out/sub/gen.o")
 	gd := digest.Digest{Hash: "genhash", SizeBytes: 5}
 	err = hfs.Update(ctx, dir, []UpdateEntry{{
 		Name:    gen,
@@ -496,7 +497,7 @@ func TestForgetMissingsInDir_KeepsUnchangedGeneratedDescendant(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Update(%q): %v", gen, err)
 	}
-	genFull := filepath.ToSlash(filepath.Join(dir, gen))
+	genFull := path.Path(filepath.ToSlash(filepath.Join(dir, string(gen))))
 	if _, _, _, ok := hfs.directory.lookup(ctx, genFull); !ok {
 		t.Fatalf("precondition: generated %s not in hashfs", gen)
 	}
@@ -553,7 +554,7 @@ func TestDirectoryDelete_DirReplacedByFile(t *testing.T) {
 	}
 
 	// Record the local output, as RecordOutputsFromLocal does.
-	ents := hfs.RetrieveUpdateEntriesFromLocal(ctx, dir, []string{"out/p"})
+	ents := hfs.RetrieveUpdateEntriesFromLocal(ctx, dir, []path.Path{"out/p"})
 	if err := hfs.Update(ctx, dir, ents); err != nil {
 		t.Fatalf("Update(out/p): %v", err)
 	}

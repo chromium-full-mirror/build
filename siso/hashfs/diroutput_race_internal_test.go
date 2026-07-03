@@ -9,6 +9,7 @@ import (
 	"io/fs"
 	"testing"
 
+	"go.chromium.org/build/siso/path"
 	"go.chromium.org/build/siso/reapi/digest"
 	"go.chromium.org/build/siso/reapi/merkletree"
 )
@@ -58,13 +59,13 @@ func TestShouldKeep_DiskMissDoesNotEvictBuildWithoutBytes(t *testing.T) {
 		return e
 	}
 
-	present := func(ctx context.Context, t *testing.T, hfs *HashFS, root, name string) bool {
+	present := func(ctx context.Context, t *testing.T, hfs *HashFS, root string, name path.Path) bool {
 		t.Helper()
 		_, err := hfs.Stat(ctx, root, name)
 		return err == nil
 	}
 
-	presentDir := func(ctx context.Context, t *testing.T, hfs *HashFS, root, name string) bool {
+	presentDir := func(ctx context.Context, t *testing.T, hfs *HashFS, root string, name path.Path) bool {
 		t.Helper()
 		fi, err := hfs.Stat(ctx, root, name)
 		return err == nil && fi.IsDir()

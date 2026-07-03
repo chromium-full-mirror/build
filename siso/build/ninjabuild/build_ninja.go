@@ -20,6 +20,7 @@ import (
 	"go.chromium.org/build/siso/hashfs"
 	"go.chromium.org/build/siso/o11y/clog"
 	"go.chromium.org/build/siso/o11y/trace"
+	sisopath "go.chromium.org/build/siso/path"
 	"go.chromium.org/build/siso/sync/semaphore"
 	"go.chromium.org/build/siso/toolsupport/ninjautil"
 	"go.chromium.org/build/siso/ui"
@@ -279,7 +280,7 @@ func doBuild(ctx context.Context, graph *Graph, bopts build.Options, nopts RunNi
 		bopts.ResultstoreUploader.HashFS = bopts.HashFS
 		bopts.ResultstoreUploader.REAPIClient = bopts.REAPIClient
 
-		ents, err := bopts.HashFS.Entries(ctx, bopts.Path.AbsBase(), []string{filepath.Join(stateDir, ".siso_config"), filepath.Join(stateDir, ".siso_filegroups")})
+		ents, err := bopts.HashFS.Entries(ctx, bopts.Path.AbsBase(), []sisopath.Path{sisopath.New(filepath.Join(stateDir, ".siso_config")), sisopath.New(filepath.Join(stateDir, ".siso_filegroups"))})
 		if err != nil {
 			return stats, err
 		}

@@ -14,6 +14,7 @@ import (
 	"go.chromium.org/build/siso/build"
 	"go.chromium.org/build/siso/build/ninjabuild"
 	"go.chromium.org/build/siso/hashfs"
+	"go.chromium.org/build/siso/path"
 )
 
 // Test restat=1 behavior.
@@ -120,7 +121,7 @@ func TestBuild_Restat(t *testing.T) {
 				"out/siso/foo.out",
 				"out/siso/bar.out",
 			} {
-				fi, err := opt.HashFS.Stat(ctx, dir, fname)
+				fi, err := opt.HashFS.Stat(ctx, dir, path.New(fname))
 				if err != nil {
 					t.Logf("%s: err=%v", fname, err)
 				} else {
@@ -243,7 +244,7 @@ func TestBuild_Restat_RestatContent(t *testing.T) {
 				"out/siso/foo.out",
 				"out/siso/bar.out",
 			} {
-				fi, err := opt.HashFS.Stat(ctx, dir, fname)
+				fi, err := opt.HashFS.Stat(ctx, dir, path.New(fname))
 				if err != nil {
 					t.Logf("%s: err=%v", fname, err)
 				} else {

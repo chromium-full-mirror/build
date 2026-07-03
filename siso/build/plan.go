@@ -25,6 +25,7 @@ import (
 	"go.chromium.org/build/siso/hashfs"
 	"go.chromium.org/build/siso/o11y/clog"
 	"go.chromium.org/build/siso/o11y/trace"
+	"go.chromium.org/build/siso/path"
 	"go.chromium.org/build/siso/ui"
 )
 
@@ -331,12 +332,12 @@ type scheduler struct {
 	enableTrace bool
 }
 
-func targetPath(ctx context.Context, g Graph, t Target) string {
+func targetPath(ctx context.Context, g Graph, t Target) path.Path {
 	p, err := g.TargetPath(ctx, t)
 	if err != nil {
-		return fmt.Sprint(err)
+		return path.FromClean(fmt.Sprint(err))
 	}
-	return p
+	return path.FromClean(p)
 }
 
 // schedule schedules build plans for args from graph into sched.
@@ -366,7 +367,7 @@ func schedule(ctx context.Context, sched *scheduler, graph Graph, args ...string
 	if len(args) > 0 {
 		var targetNames []string
 		for _, t := range targets {
-			targetNames = append(targetNames, sched.path.MaybeToRelative(ctx, targetPath(ctx, graph, t)))
+			targetNames = append(targetNames, sched.path.MaybeToRelative(ctx, string(targetPath(ctx, graph, t))))
 		}
 		if !slices.Equal(args, targetNames) {
 			ui.Default.PrintLines(fmt.Sprintf("target: %q\n    ->  %q\n\n", args, targetNames))
@@ -388,14 +389,14 @@ func schedule(ctx context.Context, sched *scheduler, graph Graph, args ...string
 		switch sched.plan.targets[t].scan {
 		case scanStateNotVisited:
 		case scanStateVisiting:
-			return fmt.Errorf("scan state %q: visiting", sched.path.MaybeToRelative(ctx, targetPath(ctx, graph, t)))
+			return fmt.Errorf("scan state %q: visiting", sched.path.MaybeToRelative(ctx, string(targetPath(ctx, graph, t))))
 		case scanStateDone, scanStateIgnored:
 			continue
 		}
 
 		validationQueue, err = scheduleTarget(ctx, sched, graph, t, nil, sched.prepare, validationQueue)
 		if err != nil {
-			return fmt.Errorf("failed in schedule %s: %w", sched.path.MaybeToRelative(ctx, targetPath(ctx, graph, t)), err)
+			return fmt.Errorf("failed in schedule %s: %w", sched.path.MaybeToRelative(ctx, string(targetPath(ctx, graph, t))), err)
 		}
 	}
 	if !sched.prepare {
@@ -405,13 +406,13 @@ func schedule(ctx context.Context, sched *scheduler, graph Graph, args ...string
 			switch sched.plan.targets[t].scan {
 			case scanStateNotVisited:
 			case scanStateVisiting:
-				return fmt.Errorf("scan state %q: visiting", sched.path.MaybeToRelative(ctx, targetPath(ctx, graph, t)))
+				return fmt.Errorf("scan state %q: visiting", sched.path.MaybeToRelative(ctx, string(targetPath(ctx, graph, t))))
 			case scanStateDone, scanStateIgnored:
 				continue
 			}
 			validationQueue, err = scheduleTarget(ctx, sched, graph, t, nil, false, validationQueue)
 			if err != nil {
-				return fmt.Errorf("failed in schedule %s: %w", sched.path.MaybeToRelative(ctx, targetPath(ctx, graph, t)), err)
+				return fmt.Errorf("failed in schedule %s: %w", sched.path.MaybeToRelative(ctx, string(targetPath(ctx, graph, t))), err)
 			}
 		}
 	}
@@ -448,7 +449,7 @@ func scheduleTarget(ctx context.Context, sched *scheduler, graph Graph, target T
 		}()
 	case scanStateVisiting:
 		return validationQueue, DependencyCycleError{
-			Targets: []string{sched.path.MaybeToRelative(ctx, targetPath(ctx, graph, target))},
+			Targets: []string{sched.path.MaybeToRelative(ctx, string(targetPath(ctx, graph, target)))},
 		}
 	case scanStateIgnored:
 		if ignore {
@@ -607,14 +608,14 @@ func scheduleTarget(ctx context.Context, sched *scheduler, graph Graph, target T
 				var cycleErr DependencyCycleError
 				if errors.As(err, &cycleErr) {
 					if len(cycleErr.Targets) <= 1 || cycleErr.Targets[0] != cycleErr.Targets[len(cycleErr.Targets)-1] {
-						cur := sched.path.MaybeToRelative(ctx, targetPath(ctx, graph, in))
+						cur := sched.path.MaybeToRelative(ctx, string(targetPath(ctx, graph, in)))
 						cycleErr.Targets = append(cycleErr.Targets, cur)
 					}
 					return validationQueue, cycleErr
 				}
 				var missingErr MissingSourceError
 				if errors.As(err, &missingErr) {
-					cur := sched.path.MaybeToRelative(ctx, targetPath(ctx, graph, in))
+					cur := sched.path.MaybeToRelative(ctx, string(targetPath(ctx, graph, in)))
 					missingErr.Deps = append(missingErr.Deps, cur)
 					return validationQueue, missingErr
 				}
@@ -771,7 +772,7 @@ func (s *scheduler) mark(ctx context.Context, graph Graph, target Target, next S
 	if err != nil {
 		return err
 	}
-	fi, err := s.hashFS.StatMtime(ctx, s.path.WorkspaceRoot, fname)
+	fi, err := s.hashFS.StatMtime(ctx, s.path.WorkspaceRoot, path.New(fname))
 	if err == nil && fi.Target() != "" {
 		// resolve symlink for source file.
 		fsys := s.hashFS.FileSystem(ctx, s.path.WorkspaceRoot)
@@ -780,7 +781,7 @@ func (s *scheduler) mark(ctx context.Context, graph Graph, target Target, next S
 	if err != nil {
 		var neededBy string
 		if next != nil && len(next.Outputs(ctx)) > 0 {
-			neededBy = s.path.MaybeToRelative(ctx, next.Outputs(ctx)[0])
+			neededBy = s.path.MaybeToRelative(ctx, string(next.Outputs(ctx)[0]))
 		}
 		return MissingSourceError{
 			Target:   s.path.MaybeToRelative(ctx, fname),
@@ -886,8 +887,8 @@ func (s *scheduler) addStep(ctx context.Context, step *Step, graph Graph, target
 			tp := targetPath(ctx, graph, output)
 			// Clear a stale file sitting where a dir output now lives, so
 			// the action can create its directory there.
-			if IsDirTarget(tp) {
-				if err := s.hashFS.ClearStaleFileForDirOutput(ctx, s.path.WorkspaceRoot, DirTargetPath(tp)); err != nil {
+			if IsDirTarget(string(tp)) {
+				if err := s.hashFS.ClearStaleFileForDirOutput(ctx, s.path.WorkspaceRoot, DirTargetPath(string(tp))); err != nil {
 					clog.Warningf(ctx, "clear stale file for dir output %s: %v", tp, err)
 				}
 			}
@@ -1047,11 +1048,12 @@ func (p *plan) dump(ctx context.Context, graph Graph) {
 	}
 	for _, s := range steps {
 		for _, o := range s.def.Outputs(ctx) {
-			if !waits[o] {
+			os := string(o)
+			if !waits[os] {
 				clog.Infof(ctx, "step %s output:%s no trigger", s, o)
 				continue
 			}
-			delete(waits, o)
+			delete(waits, os)
 		}
 	}
 	outs := make([]string, 0, len(waits))
@@ -1078,20 +1080,20 @@ func suggestTargets(ctx context.Context, sched *scheduler, graph Graph, args ...
 			continue
 		}
 		target := strings.TrimSuffix(arg, "^")
-		_, err = sched.hashFS.Stat(ctx, sched.path.WorkspaceRoot, sched.path.MaybeFromRelative(ctx, target))
+		_, err = sched.hashFS.Stat(ctx, sched.path.WorkspaceRoot, path.New(sched.path.MaybeFromRelative(ctx, target)))
 		if err == nil {
 			// just missing ^?
-			target := filepath.ToSlash(target) + "^"
+			target := string(path.New(target)) + "^"
 			_, err = graph.Targets(ctx, target)
 			if err == nil {
 				suggests = append(suggests, target)
 				continue
 			}
 		}
-		_, err = sched.hashFS.Stat(ctx, sched.path.WorkspaceRoot, target)
+		_, err = sched.hashFS.Stat(ctx, sched.path.WorkspaceRoot, path.New(target))
 		if err == nil {
 			// wrong relative dir?
-			target := filepath.ToSlash(filepath.Join(rel, target) + "^")
+			target := filepath.Join(rel, target) + "^"
 			_, err = graph.Targets(ctx, target)
 			if err == nil {
 				suggests = append(suggests, target)
@@ -1120,19 +1122,19 @@ func suggestTargets(ctx context.Context, sched *scheduler, graph Graph, args ...
 // gn: https://crbug.com/gn/461698357
 // soong: b/461917619
 type ensureActionOutputDirs struct {
-	req       chan string
+	req       chan path.Path
 	done      chan error
 	err       error
-	knownDirs map[string]struct{}
+	knownDirs map[path.Path]struct{}
 }
 
 func (e *ensureActionOutputDirs) init() {
-	e.req = make(chan string, 1000)
+	e.req = make(chan path.Path, 1000)
 	e.done = make(chan error)
-	e.knownDirs = make(map[string]struct{})
+	e.knownDirs = make(map[path.Path]struct{})
 }
 
-func (e *ensureActionOutputDirs) run(ctx context.Context, path *Path) {
+func (e *ensureActionOutputDirs) run(ctx context.Context, bpath *Path) {
 	defer func() {
 		e.done <- e.err
 	}()
@@ -1148,28 +1150,28 @@ func (e *ensureActionOutputDirs) run(ctx context.Context, path *Path) {
 			// Make the parent of each output, not the output itself: a dir
 			// output is the action's to create, like a file. DirTargetPath
 			// strips the trailing slash so a dir target yields its parent.
-			dir := filepath.ToSlash(filepath.Dir(DirTargetPath(fname)))
-			if !filepath.IsAbs(dir) {
-				dir = filepath.ToSlash(filepath.Join(path.WorkspaceRoot, dir))
+			dir := path.New(DirTargetPath(string(fname))).Dir()
+			if !dir.IsAbs() {
+				dir = path.JoinRoot(bpath.WorkspaceRoot, dir)
 			}
 			_, found := e.knownDirs[dir]
 			if found {
 				continue
 			}
-			err := os.MkdirAll(dir, 0755)
+			err := os.MkdirAll(dir.OSPath(), 0755)
 			if err != nil && e.err == nil {
 				e.err = err
 				continue
 			}
 			e.knownDirs[dir] = struct{}{}
-			dir = filepath.ToSlash(filepath.Dir(dir))
+			dir = dir.Dir()
 			for {
 				_, found := e.knownDirs[dir]
 				if found {
 					break
 				}
 				e.knownDirs[dir] = struct{}{}
-				pdir := filepath.ToSlash(filepath.Dir(dir))
+				pdir := dir.Dir()
 				if pdir == dir {
 					break
 				}
@@ -1179,7 +1181,7 @@ func (e *ensureActionOutputDirs) run(ctx context.Context, path *Path) {
 	}
 }
 
-func (e *ensureActionOutputDirs) ensure(fname string) {
+func (e *ensureActionOutputDirs) ensure(fname path.Path) {
 	e.req <- fname
 }
 

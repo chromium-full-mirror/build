@@ -16,6 +16,7 @@ import (
 
 	"go.chromium.org/build/siso/execute"
 	"go.chromium.org/build/siso/hashfs"
+	"go.chromium.org/build/siso/path"
 	"go.chromium.org/build/siso/reapi/merkletree"
 )
 
@@ -157,7 +158,7 @@ func TestDepsGCCFixCmdInputs_ios(t *testing.T) {
 				t.Logf("tree of %s: not found: %v", dir, err)
 				return merkletree.TreeEntry{}, err
 			}
-			return merkletree.TreeEntry{Name: dir}, nil
+			return merkletree.TreeEntry{Name: path.Path(dir)}, nil
 		},
 	}
 
@@ -285,7 +286,7 @@ func TestDepsGCCFixCmdInputs_chromeos(t *testing.T) {
 				t.Logf("tree of %s: not found: %v", dir, err)
 				return merkletree.TreeEntry{}, err
 			}
-			return merkletree.TreeEntry{Name: resolveddir}, nil
+			return merkletree.TreeEntry{Name: path.Path(resolveddir)}, nil
 		},
 	}
 

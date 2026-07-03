@@ -63,7 +63,7 @@ func runViaHelper(ctx context.Context, cmd *execute.Cmd) (*rpb.ActionResult, err
 		Args:          cmd.Args,
 		Env:           cmd.Env,
 		WorkspaceRoot: cmd.WorkspaceRoot,
-		WorkDir:       cmd.WorkDir,
+		WorkDir:       string(cmd.WorkDir),
 		OomScoreAdj:   oomScoreAdj,
 	}
 	res, err := c.Run(ctx, req)

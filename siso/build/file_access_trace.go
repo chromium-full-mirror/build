@@ -10,7 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path"
+	stdpath "path"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -22,6 +22,7 @@ import (
 	"go.chromium.org/build/siso/execute"
 	"go.chromium.org/build/siso/o11y/clog"
 	"go.chromium.org/build/siso/o11y/trace"
+	"go.chromium.org/build/siso/path"
 	"go.chromium.org/build/siso/toolsupport/straceutil"
 )
 
@@ -42,7 +43,7 @@ func newFileTraceExecutor(ctx context.Context, b *Builder, executor execute.Exec
 }
 
 func (f *fileTraceExecutor) Run(ctx context.Context, cmd *execute.Cmd) error {
-	st := straceutil.New(ctx, cmd.ID, cmd.Args, cmd.WorkDir)
+	st := straceutil.New(ctx, cmd.ID, cmd.Args, string(cmd.WorkDir))
 	cmd.StdoutWriter()
 	cmd.StderrWriter()
 	newCmd := &execute.Cmd{}
@@ -94,8 +95,8 @@ func (f *fileTraceExecutor) checkTrace(ctx context.Context, step *Step, dur time
 		command = command[:256] + "..."
 	}
 	// TODO: collect files in precomputed trees too.
-	allInputs := step.cmd.AllInputs()
-	allOutputs := step.cmd.AllOutputs()
+	allInputs := path.Strings(step.cmd.AllInputs())
+	allOutputs := path.Strings(step.cmd.AllOutputs())
 	var output string
 	if len(allOutputs) > 0 {
 		output = allOutputs[0]
@@ -275,17 +276,17 @@ func filesDiff(ctx context.Context, b *Builder, x, opts, y []string, ignorePatte
 			seen[relname] = stateDetected
 			continue
 		}
-		// A traced file under a declared directory target is expected, not
+		// A traced file under a declared directory artifact is expected, not
 		// an extra (the dir is declared as a unit). Mark the covering
 		// directory detected and skip the file.
 		if covered := func() bool {
-			for d := path.Dir(relname); d != "." && d != "/"; d = path.Dir(d) {
-				s, ok := seen[d]
+			for d := path.New(relname).Dir(); d != "." && d != "/"; d = d.Dir() {
+				s, ok := seen[string(d)]
 				if !ok {
 					continue
 				}
 				if s == stateRequired || s == stateOptional {
-					seen[d] = stateDetected
+					seen[string(d)] = stateDetected
 				}
 				return true
 			}
@@ -293,7 +294,7 @@ func filesDiff(ctx context.Context, b *Builder, x, opts, y []string, ignorePatte
 		}(); covered {
 			continue
 		}
-		fi, err := b.hashFS.Stat(ctx, b.path.WorkspaceRoot, relname)
+		fi, err := b.hashFS.Stat(ctx, b.path.WorkspaceRoot, path.New(relname))
 		if errors.Is(err, os.ErrNotExist) {
 			if log.V(1) {
 				clog.Infof(ctx, "%s: stat %v", name, err)
@@ -310,7 +311,7 @@ func filesDiff(ctx context.Context, b *Builder, x, opts, y []string, ignorePatte
 		adds = append(adds, relname)
 		seen[relname] = stateUsed
 		if target := fi.Target(); target != "" {
-			target := path.Join(path.Dir(relname), filepath.ToSlash(target))
+			target := stdpath.Join(stdpath.Dir(relname), filepath.ToSlash(target))
 			s, ok := seen[target]
 			if ok {
 				if s == stateRequired {

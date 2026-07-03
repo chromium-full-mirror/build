@@ -211,12 +211,12 @@ func cmdOutput(ctx context.Context, result cmdOutputResult, cmd *execute.Cmd, in
 	}
 	var output string
 	if len(cmd.Outputs) > 0 {
-		output = cmd.Outputs[0]
+		output = string(cmd.Outputs[0])
 	} else if len(cmd.OutputDirs) > 0 {
 		// Dir-only step: show the directory so the log line is not empty.
-		output = cmd.OutputDirs[0]
+		output = string(cmd.OutputDirs[0])
 	}
-	if after, ok := strings.CutPrefix(output, cmd.WorkDir+"/"); ok {
+	if after, ok := strings.CutPrefix(output, string(cmd.WorkDir)+"/"); ok {
 		output = "./" + after
 	}
 	res.output = output

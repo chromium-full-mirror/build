@@ -6,7 +6,7 @@ package build
 
 import "strings"
 
-// IsDirTarget reports whether path is a directory target (trailing slash).
+// IsDirTarget reports whether path is a directory artifact (trailing slash).
 func IsDirTarget(path string) bool {
 	return strings.HasSuffix(path, "/")
 }

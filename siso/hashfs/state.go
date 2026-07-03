@@ -35,6 +35,7 @@ import (
 	"go.chromium.org/build/siso/mmapfile"
 	"go.chromium.org/build/siso/o11y/clog"
 	"go.chromium.org/build/siso/o11y/trace"
+	"go.chromium.org/build/siso/path"
 	"go.chromium.org/build/siso/reapi/digest"
 	"go.chromium.org/build/siso/resource"
 	"go.chromium.org/build/siso/toolsupport/cartfsutil"
@@ -460,7 +461,7 @@ func (ies *initialEntryStates) prepare(ctx context.Context, state *pb.State) {
 
 // updateFromDisk updates file entries from *pb.State and local disk
 // and returns previouslyGeneratedFiles and taintedFiles.
-func (ies *initialEntryStates) updateFromDisk(ctx context.Context) ([]string, []string, error) {
+func (ies *initialEntryStates) updateFromDisk(ctx context.Context) ([]path.Path, []string, error) {
 	started := time.Now()
 	eg, ctx := errgroup.WithContext(ctx)
 	eg.SetLimit(runtime.GOMAXPROCS(0))
@@ -482,11 +483,12 @@ func (ies *initialEntryStates) updateFromDisk(ctx context.Context) ([]string, []
 	if err != nil {
 		return nil, nil, err
 	}
-	var previouslyGeneratedFiles, taintedFiles []string
+	var previouslyGeneratedFiles []path.Path
+	var taintedFiles []string
 	for i := range ies.alloc {
 		es := &ies.alloc[i]
 		if es.prevGenerated {
-			previouslyGeneratedFiles = append(previouslyGeneratedFiles, es.ent.Name)
+			previouslyGeneratedFiles = append(previouslyGeneratedFiles, path.Path(es.ent.Name))
 		}
 		if es.tainted {
 			taintedFiles = append(taintedFiles, es.ent.Name)
@@ -805,7 +807,7 @@ func (ies *initialEntryStates) storeEntries(ctx context.Context, hfs *HashFS, ke
 				if !keep(es.ftype) {
 					continue
 				}
-				if _, err := hfs.directory.store(ctx, es.ent.Name, &es.e); err != nil {
+				if _, err := hfs.directory.store(ctx, path.Path(es.ent.Name), &es.e); err != nil {
 					return fmt.Errorf("failed to store %s %q: %w", es.ftype, es.ent.Name, err)
 				}
 			}
@@ -831,7 +833,7 @@ func (ies *initialEntryStates) storeNonDirs(ctx context.Context, hfs *HashFS) er
 func (ies *initialEntryStates) triggerDigestCalculation(ctx context.Context, hfs *HashFS) {
 	start := time.Now()
 	for _, fname := range ies.missingDigests {
-		hfs.Stat(ctx, "", fname) // access and trigger lazy digest calculation
+		hfs.Stat(ctx, "", path.Path(fname)) // access and trigger lazy digest calculation
 	}
 	clog.Infof(ctx, "set missing_digests=%d: %s", len(ies.missingDigests), time.Since(start))
 }

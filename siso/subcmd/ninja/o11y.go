@@ -43,6 +43,7 @@ import (
 	"go.chromium.org/build/siso/o11y/monitoring"
 	"go.chromium.org/build/siso/o11y/resultstore"
 	"go.chromium.org/build/siso/o11y/trace"
+	sisopath "go.chromium.org/build/siso/path"
 	"go.chromium.org/build/siso/reapi/merkletree"
 	"go.chromium.org/build/siso/ui"
 	"go.chromium.org/build/siso/version"
@@ -270,7 +271,7 @@ func (c *Command) setupResultStore(ctx context.Context, projectID string, buildP
 		// TODO(b/329564182): add other files? e.g. siso_output, siso_trace.json etc.
 		if len(files) > 0 {
 			var entsErr error
-			ents, entsErr = hashFS.Entries(ctx, buildPath.AbsBase(), files)
+			ents, entsErr = hashFS.Entries(ctx, buildPath.AbsBase(), sisopath.Paths(files))
 			if entsErr != nil {
 				clog.Warningf(ctx, "failed to get entries for %q: %v", files, entsErr)
 			}

@@ -14,6 +14,7 @@ import (
 
 	rpb "go.chromium.org/build/remote-apis/build/bazel/remote/execution/v2"
 
+	"go.chromium.org/build/siso/path"
 	"go.chromium.org/build/siso/reapi/digest"
 )
 
@@ -67,8 +68,8 @@ func TestSetActionResult_ResetsDirOutputsExpanded(t *testing.T) {
 
 	c := &Cmd{
 		WorkDir:    "out/Default",
-		OutputDirs: []string{"out/Default/gendir"},
-		outfiles: map[string]bool{
+		OutputDirs: []path.Path{"out/Default/gendir"},
+		outfiles: map[path.Path]bool{
 			"out/Default/gendir": true,
 		},
 		CmdHash: []byte("cmdhash"),

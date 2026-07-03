@@ -26,7 +26,7 @@ func (u *Uploader) UploadFiles(ctx context.Context, ents []merkletree.Entry) err
 	var files []*rspb.File
 	for _, ent := range ents {
 		file := &rspb.File{
-			Uid: ent.Name,
+			Uid: string(ent.Name),
 		}
 		if ent.Data.IsZero() {
 			continue

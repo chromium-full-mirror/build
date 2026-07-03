@@ -17,6 +17,7 @@ import (
 	rpb "go.chromium.org/build/remote-apis/build/bazel/remote/execution/v2"
 
 	"go.chromium.org/build/siso/hashfs"
+	"go.chromium.org/build/siso/path"
 	"go.chromium.org/build/siso/reapi/digest"
 	"go.chromium.org/build/siso/reapi/merkletree"
 )
@@ -32,7 +33,7 @@ func (c *Cmd) SetResultOutputs(ctx context.Context, result *rpb.ActionResult, ds
 	if err != nil {
 		return err
 	}
-	ResultFromEntries(ctx, result, c.WorkDir, fileEntries)
+	ResultFromEntries(ctx, result, string(c.WorkDir), fileEntries)
 	for _, entry := range fileEntries {
 		// A symlink (or directory) output has no content blob: its Data is the
 		// zero value. Skip it so a zero/invalid-digest entry is not seeded into
@@ -43,11 +44,11 @@ func (c *Cmd) SetResultOutputs(ctx context.Context, result *rpb.ActionResult, ds
 		ds.Set(entry.Data)
 	}
 	for _, dir := range c.OutputDirs {
-		td, err := dirOutputTree(ctx, c.HashFS, c.WorkspaceRoot, dir, ds)
+		td, err := dirOutputTree(ctx, c.HashFS, c.WorkspaceRoot, string(dir), ds)
 		if err != nil {
 			return err
 		}
-		relPath, err := filepath.Rel(c.WorkDir, dir)
+		relPath, err := filepath.Rel(string(c.WorkDir), string(dir))
 		if err != nil {
 			return fmt.Errorf("rel path for dir output %s: %w", dir, err)
 		}
@@ -65,21 +66,21 @@ func (c *Cmd) SetResultOutputs(ctx context.Context, result *rpb.ActionResult, ds
 // it is the action-cache key for the directory output, so an unstable digest
 // would defeat cache/CAS dedup of an unchanged output.
 func dirOutputTree(ctx context.Context, hashFS *hashfs.HashFS, root, dir string, ds *digest.Store) (digest.Digest, error) {
-	entries, err := hashFS.Entries(ctx, root, []string{dir + "/"})
+	entries, err := hashFS.Entries(ctx, root, []path.Path{path.Path(dir + "/")})
 	if err != nil {
 		return digest.Digest{}, fmt.Errorf("enumerate dir output %s: %w", dir, err)
 	}
 	mt := merkletree.New(ds)
 	prefix := dir + "/"
 	for _, ent := range entries {
-		rel, ok := strings.CutPrefix(ent.Name, prefix)
+		rel, ok := strings.CutPrefix(string(ent.Name), prefix)
 		if !ok || rel == "" {
 			// The bare directory itself or an entry outside dir; empty
 			// subdirectories are added by the walk below.
 			continue
 		}
 		if err := mt.Set(merkletree.Entry{
-			Name:         rel,
+			Name:         path.Path(rel),
 			Data:         ent.Data,
 			IsExecutable: ent.IsExecutable,
 			Target:       ent.Target,
@@ -103,7 +104,7 @@ func dirOutputTree(ctx context.Context, hashFS *hashfs.HashFS, root, dir string,
 		if !ok || rel == "" {
 			return nil
 		}
-		return mt.Set(merkletree.Entry{Name: rel})
+		return mt.Set(merkletree.Entry{Name: path.Path(rel)})
 	})
 	if walkErr != nil {
 		return digest.Digest{}, fmt.Errorf("enumerate dirs for dir output %s: %w", dir, walkErr)

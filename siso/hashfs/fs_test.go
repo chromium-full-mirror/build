@@ -29,6 +29,7 @@ import (
 
 	"go.chromium.org/build/siso/hashfs"
 	"go.chromium.org/build/siso/hashfs/osfs"
+	"go.chromium.org/build/siso/path"
 	"go.chromium.org/build/siso/reapi/digest"
 	"go.chromium.org/build/siso/reapi/merkletree"
 	"go.chromium.org/build/siso/resource"
@@ -93,16 +94,16 @@ func TestStamp(t *testing.T) {
 			t.Parallel()
 			var cmdhash []byte
 			now := time.Now()
-			_, err := hfs.Stat(ctx, dir, fname)
+			_, err := hfs.Stat(ctx, dir, path.Path(fname))
 			if err == nil {
 				t.Fatalf("Stat(%s)=_, %v; want nil error", fname, err)
 			}
 			t.Logf("Write(%q, %v)", fname, now)
-			err = hfs.WriteFile(ctx, dir, fname, nil, false, now, cmdhash, nil)
+			err = hfs.WriteFile(ctx, dir, path.Path(fname), nil, false, now, cmdhash, nil)
 			if err != nil {
 				t.Errorf("Write(%s)=%v; want nil error", fname, err)
 			}
-			fi, err := hfs.Stat(ctx, dir, fname)
+			fi, err := hfs.Stat(ctx, dir, path.Path(fname))
 			if err != nil {
 				t.Fatalf("Stat(%s)=_, %v; want nil error", fname, err)
 			}
@@ -126,7 +127,7 @@ func TestStamp(t *testing.T) {
 			if !ok {
 				t.Fatalf("fi.Sys()=%T, want merkletree.Entry", fi.Sys())
 			}
-			if got.Name != fullname {
+			if string(got.Name) != fullname {
 				t.Errorf("entry.Name=%q, want=%q", got.Name, fullname)
 			}
 			if got.Data.Digest() != digest.Empty {
@@ -170,7 +171,7 @@ func TestReadDir(t *testing.T) {
 	}
 	defer hashFS.Close(ctx)
 	t.Logf("base/debug")
-	dents, err := hashFS.ReadDir(ctx, dir, "base/debug")
+	dents, err := hashFS.ReadDir(ctx, dir, path.Path("base/debug"))
 	if err != nil {
 		t.Errorf("hashfs.ReadDir(ctx, %q, %q)=%v, %v; want nil err", dir, "base/debug", dents, err)
 	}
@@ -186,13 +187,13 @@ func TestReadDir(t *testing.T) {
 	}
 
 	t.Logf("check base/base.h")
-	fi, err := hashFS.Stat(ctx, dir, "base/base.h")
+	fi, err := hashFS.Stat(ctx, dir, path.Path("base/base.h"))
 	if err != nil {
 		t.Errorf("hashfs.Stat(ctx, %q, %q)=%v, %v; want, nil err", dir, "base/base.h", fi, err)
 	}
 
 	t.Logf("base")
-	dents, err = hashFS.ReadDir(ctx, dir, "base")
+	dents, err = hashFS.ReadDir(ctx, dir, path.Path("base"))
 	if err != nil {
 		t.Errorf("hashfs.ReadDir(ctx, %q, %q)=%v, %v; want nil err", dir, "base", dents, err)
 	}
@@ -230,7 +231,7 @@ func TestReadDir(t *testing.T) {
 	var eg errgroup.Group
 	var names [2][]string
 	eg.Go(func() error {
-		dents, err := hashFS.ReadDir(ctx, dir, "out/siso/gen/base")
+		dents, err := hashFS.ReadDir(ctx, dir, path.Path("out/siso/gen/base"))
 		for _, dent := range dents {
 			names[0] = append(names[0], dent.Name())
 		}
@@ -238,7 +239,7 @@ func TestReadDir(t *testing.T) {
 		return err
 	})
 	eg.Go(func() error {
-		dents, err := hashFS.ReadDir(ctx, dir, "out/siso/gen/base")
+		dents, err := hashFS.ReadDir(ctx, dir, path.Path("out/siso/gen/base"))
 		for _, dent := range dents {
 			names[1] = append(names[1], dent.Name())
 		}
@@ -271,17 +272,17 @@ func TestMkdir(t *testing.T) {
 	}
 	defer hashFS.Close(ctx)
 	t.Logf("check out/siso/gen/v8/include")
-	_, err = hashFS.Stat(ctx, dir, "out/siso/gen/v8/include")
+	_, err = hashFS.Stat(ctx, dir, path.Path("out/siso/gen/v8/include"))
 	if err == nil {
 		t.Fatalf("hashfs.Stat(ctx, %q, %q)=_, nil; want err", dir, "out/siso/gen/v8/include")
 	}
 
-	err = hashFS.Mkdir(ctx, dir, "out/siso/gen/v8/include/inspector", nil, nil)
+	err = hashFS.Mkdir(ctx, dir, path.Path("out/siso/gen/v8/include/inspector"), nil, nil)
 	if err != nil {
 		t.Errorf("hashfs.Mkdir(ctx, %q, %q)=%v; want nil err", dir, "out/siso/gen/v8/include/inspector", err)
 	}
 
-	fi, err := hashFS.Stat(ctx, dir, "out/siso/gen/v8/include")
+	fi, err := hashFS.Stat(ctx, dir, path.Path("out/siso/gen/v8/include"))
 	if err != nil || !fi.IsDir() {
 		t.Errorf("hashfs.Stat(ctx, %q, %q)=%v, %v; want dir, nil err", dir, "out/siso/gen/v8/include", fi, err)
 	}
@@ -291,7 +292,7 @@ func TestMkdir(t *testing.T) {
 	}
 	t.Logf("out/siso/gen/v8/include mtime: %s", mtimeInclude)
 
-	fi, err = hashFS.Stat(ctx, dir, "out/siso/gen/v8/include/inspector")
+	fi, err = hashFS.Stat(ctx, dir, path.Path("out/siso/gen/v8/include/inspector"))
 	if err != nil || !fi.IsDir() {
 		t.Errorf("hashfs.Stat(ctx, %q, %q)=%v, %v; want dir, nil err", dir, "out/siso/gen/v8/include/inspector", fi, err)
 	}
@@ -307,12 +308,12 @@ func TestMkdir(t *testing.T) {
 		t.Errorf("mtime inspector=%v; now=%v", mtimeInspector, now)
 	}
 	t.Logf("mkdir again. mtime should be updated %s", now)
-	err = hashFS.Mkdir(ctx, dir, "out/siso/gen/v8/include/inspector", nil, nil)
+	err = hashFS.Mkdir(ctx, dir, path.Path("out/siso/gen/v8/include/inspector"), nil, nil)
 	if err != nil {
 		t.Errorf("hashfs.Mkdir(ctx, %q, %q)=%v; want nil err", dir, "out/siso/gen/v8/include/inspector", err)
 	}
 
-	fi, err = hashFS.Stat(ctx, dir, "out/siso/gen/v8/include")
+	fi, err = hashFS.Stat(ctx, dir, path.Path("out/siso/gen/v8/include"))
 	if err != nil || !fi.IsDir() {
 		t.Errorf("hashfs.Stat(ctx, %q, %q)=%v, %v; want dir, nil err", dir, "out/siso/gen/v8/include", fi, err)
 	}
@@ -320,7 +321,7 @@ func TestMkdir(t *testing.T) {
 		t.Errorf("%q mtime: %s -> %s", "out/siso/gen/v8/include", mtimeInclude, fi.ModTime())
 	}
 
-	fi, err = hashFS.Stat(ctx, dir, "out/siso/gen/v8/include/inspector")
+	fi, err = hashFS.Stat(ctx, dir, path.Path("out/siso/gen/v8/include/inspector"))
 	if err != nil || !fi.IsDir() {
 		t.Errorf("hashfs.Stat(ctx, %q, %q)=%v, %v; want dir, nil err", dir, "out/siso/gen/v8/include/inspector", fi, err)
 	}
@@ -365,7 +366,7 @@ func TestStat_Race(t *testing.T) {
 	for range n {
 		eg.Go(func() error {
 			defer count.Add(1)
-			fi, err := hashFS.Stat(ctx, dir, fname)
+			fi, err := hashFS.Stat(ctx, dir, path.Path(fname))
 			if err != nil {
 				return err
 			}
@@ -400,19 +401,19 @@ func TestStat_NonExistentIntermediateDirectory(t *testing.T) {
 		t.Fatalf("os.Mkdir(%q)=%v; want nil err", existDir, err)
 	}
 
-	if _, err := hfs.Stat(ctx, dir, "exist_dir"); err != nil {
+	if _, err := hfs.Stat(ctx, dir, path.Path("exist_dir")); err != nil {
 		t.Errorf("hfs.Stat(ctx, %q, %q)=_, %v; want nil err", dir, "exist_dir", err)
 	}
 
-	if _, err := hfs.Stat(ctx, dir, "exist_dir/not_exist_dir"); !errors.Is(err, fs.ErrNotExist) {
+	if _, err := hfs.Stat(ctx, dir, path.Path("exist_dir/not_exist_dir")); !errors.Is(err, fs.ErrNotExist) {
 		t.Errorf("hfs.Stat(ctx, %q, %q)=_, %v; want %v", dir, "exist_dir/not_exist_dir", err, fs.ErrNotExist)
 	}
 
-	if _, err := hfs.Stat(ctx, dir, "exist_dir/not_exist_dir/foo"); !errors.Is(err, fs.ErrNotExist) {
+	if _, err := hfs.Stat(ctx, dir, path.Path("exist_dir/not_exist_dir/foo")); !errors.Is(err, fs.ErrNotExist) {
 		t.Errorf("hfs.Stat(ctx, %q, %q)=_, %v; want %v", dir, "exist_dir/not_exist_dir/foo", err, fs.ErrNotExist)
 	}
 
-	if _, err := hfs.Stat(ctx, dir, "exist_dir/not_exist_dir"); !errors.Is(err, fs.ErrNotExist) {
+	if _, err := hfs.Stat(ctx, dir, path.Path("exist_dir/not_exist_dir")); !errors.Is(err, fs.ErrNotExist) {
 		t.Errorf("hfs.Stat(ctx, %q, %q)=_, %v; want %v", dir, "exist_dir/not_exist_dir", err, fs.ErrNotExist)
 	}
 }
@@ -435,7 +436,7 @@ func BenchmarkStat(b *testing.B) {
 	b.Run("not_exist", func(b *testing.B) {
 		b.ReportAllocs()
 		for b.Loop() {
-			_, err := hfs.Stat(ctx, dir, fname)
+			_, err := hfs.Stat(ctx, dir, path.Path(fname))
 			if !errors.Is(err, fs.ErrNotExist) {
 				b.Fatalf("hfs.Stat(ctx,%q,%q)=%v; want %v", dir, fname, err, fs.ErrNotExist)
 			}
@@ -445,12 +446,12 @@ func BenchmarkStat(b *testing.B) {
 	setupFiles(b, dir, map[string]string{
 		fname: "",
 	})
-	hfs.Forget(ctx, dir, []string{fname})
+	hfs.Forget(ctx, dir, []path.Path{path.Path(fname)})
 
 	b.Run("emptyfile", func(b *testing.B) {
 		b.ReportAllocs()
 		for b.Loop() {
-			_, err := hfs.Stat(ctx, dir, fname)
+			_, err := hfs.Stat(ctx, dir, path.Path(fname))
 			if err != nil {
 				b.Fatalf("hfs.Stat(ctx,%q,%q)=%v; want nil", dir, fname, err)
 			}
@@ -489,7 +490,7 @@ func TestStatAllocs(t *testing.T) {
 			num = 1
 		}
 		avg := testing.AllocsPerRun(num, func() {
-			_, err := hfs.Stat(ctx, dir, fname)
+			_, err := hfs.Stat(ctx, dir, path.Path(fname))
 			if !errors.Is(err, fs.ErrNotExist) {
 				t.Fatalf("hfs.Stat(ctx,%q,%q)=%v; want %v", dir, fname, err, fs.ErrNotExist)
 			}
@@ -502,7 +503,7 @@ func TestStatAllocs(t *testing.T) {
 	setupFiles(t, dir, map[string]string{
 		fname: "",
 	})
-	hfs.Forget(ctx, dir, []string{fname})
+	hfs.Forget(ctx, dir, []path.Path{path.Path(fname)})
 
 	t.Run("emptyfile", func(t *testing.T) {
 		num := 1000
@@ -510,7 +511,7 @@ func TestStatAllocs(t *testing.T) {
 			num = 1
 		}
 		avg := testing.AllocsPerRun(num, func() {
-			_, err := hfs.Stat(ctx, dir, fname)
+			_, err := hfs.Stat(ctx, dir, path.Path(fname))
 			if err != nil {
 				t.Fatalf("hfs.Stat(ctx,%q,%q)=%v; want nil", dir, fname, err)
 			}
@@ -549,11 +550,11 @@ func TestStat_IntermediateDir(t *testing.T) {
 		t.Fatalf("stat(%q)=%v; want nil err", dname, err)
 	}
 	time.Sleep(1 * time.Microsecond)
-	_, err = hfs.Stat(ctx, dir, fname)
+	_, err = hfs.Stat(ctx, dir, path.Path(fname))
 	if err != nil {
 		t.Fatalf("Stat(%q)=%v; want nil err", fname, err)
 	}
-	fi, err := hfs.Stat(ctx, dir, dname)
+	fi, err := hfs.Stat(ctx, dir, path.Path(dname))
 	if err != nil {
 		t.Fatalf("Stat(%q)=%v; want nil err", dname, err)
 	}
@@ -582,11 +583,11 @@ func TestStat_Dir(t *testing.T) {
 	}()
 	dirname := "out/siso/ios_cwt_chromedriver_tests_module.xctest"
 	cmdhash := sha256.Sum256([]byte("command line"))
-	err = hfs.Mkdir(ctx, dir, dirname, cmdhash[:], nil)
+	err = hfs.Mkdir(ctx, dir, path.Path(dirname), cmdhash[:], nil)
 	if err != nil {
 		t.Errorf("Mkdir(ctx, %q, %q, %q)=%v; want nil err", dir, dirname, cmdhash, err)
 	}
-	fi, err := hfs.Stat(ctx, dir, dirname)
+	fi, err := hfs.Stat(ctx, dir, path.Path(dirname))
 	if err != nil {
 		t.Fatalf("Stat(ctx, %q, %q)=_, %v; want nil err", dir, dirname, err)
 	}
@@ -606,7 +607,7 @@ func TestStat_Dir(t *testing.T) {
 	if lfi.ModTime().Equal(fi.ModTime()) {
 		t.Errorf("local mtime=%v should not equal to old hfs mtime=%v", lfi.ModTime(), fi.ModTime())
 	}
-	fi, err = hfs.Stat(ctx, dir, dirname)
+	fi, err = hfs.Stat(ctx, dir, path.Path(dirname))
 	if err != nil {
 		t.Fatalf("Stat(ctx, %q, %q)=_, %v; want nil err", dir, dirname, err)
 	}
@@ -638,11 +639,11 @@ func TestStatIfExists_DirVanished(t *testing.T) {
 
 	dirname := "out/siso/gen"
 	cmdhash := sha256.Sum256([]byte("command line"))
-	if err := hfs.Mkdir(ctx, dir, dirname, cmdhash[:], nil); err != nil {
+	if err := hfs.Mkdir(ctx, dir, path.Path(dirname), cmdhash[:], nil); err != nil {
 		t.Fatalf("Mkdir(ctx, %q, %q)=%v; want nil err", dir, dirname, err)
 	}
 	// Populate the cache entry for the directory.
-	if _, err := hfs.Stat(ctx, dir, dirname); err != nil {
+	if _, err := hfs.Stat(ctx, dir, path.Path(dirname)); err != nil {
 		t.Fatalf("Stat(ctx, %q, %q)=_, %v; want nil err", dir, dirname, err)
 	}
 	// Remove the directory from disk behind hashfs's back, leaving the
@@ -653,7 +654,7 @@ func TestStatIfExists_DirVanished(t *testing.T) {
 
 	// StatIfExists trusts the cached directory entry: it skips the
 	// mtime-refresh Lstat and reports the directory as existing.
-	fi, err := hfs.StatIfExists(ctx, dir, dirname)
+	fi, err := hfs.StatIfExists(ctx, dir, path.Path(dirname))
 	if err != nil {
 		t.Errorf("StatIfExists(ctx, %q, %q)=_, %v; want nil err", dir, dirname, err)
 	} else if !fi.IsDir() {
@@ -661,7 +662,7 @@ func TestStatIfExists_DirVanished(t *testing.T) {
 	}
 
 	// Stat re-Lstats and observes the directory is gone from disk.
-	if _, err := hfs.Stat(ctx, dir, dirname); !errors.Is(err, fs.ErrNotExist) {
+	if _, err := hfs.Stat(ctx, dir, path.Path(dirname)); !errors.Is(err, fs.ErrNotExist) {
 		t.Errorf("Stat(ctx, %q, %q)=_, %v; want %v", dir, dirname, err, fs.ErrNotExist)
 	}
 }
@@ -713,21 +714,21 @@ func TestStat_Symlink_FileInfoPath(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	fi, err := hfs.Stat(ctx, dir, "system/core/include/utils")
+	fi, err := hfs.Stat(ctx, dir, path.Path("system/core/include/utils"))
 	if err != nil {
 		t.Fatalf("Stat(%q)=%v, %v; want nil err", "system/core/include/utils", fi, err)
 	}
 	if got, want := fi.Target(), "../libutils/include/utils/"; got != want {
 		t.Errorf("fi.Target()=%q; want=%q", got, want)
 	}
-	fi, err = hfs.Stat(ctx, dir, "system/core/include/utils/Errors.h")
+	fi, err = hfs.Stat(ctx, dir, path.Path("system/core/include/utils/Errors.h"))
 	if err != nil {
 		t.Fatalf("Stat=%v, %v; want nil err", fi, err)
 	}
 	if got, want := fi.Target(), "../../binder/include/utils/Errors.h"; got != want {
 		t.Errorf("fi.Target()=%q; want=%q", got, want)
 	}
-	if got, want := fi.Path(), filepath.Join(dir, "system/core/libutils/include/utils/Errors.h"); got != want {
+	if got, want := string(fi.Path()), filepath.Join(dir, "system/core/libutils/include/utils/Errors.h"); got != want {
 		t.Errorf("fi.Path()=%q; want=%q", got, want)
 	}
 }
@@ -737,7 +738,7 @@ func computeUpdateEntries(pre, post []hashfs.UpdateEntry, restat bool, updatedTi
 	m := make(map[string]hashfs.UpdateEntry)
 	if restat {
 		for _, ent := range pre {
-			m[ent.Name] = ent
+			m[string(ent.Name)] = ent
 		}
 	}
 	entries := make([]hashfs.UpdateEntry, 0, len(post))
@@ -745,7 +746,7 @@ func computeUpdateEntries(pre, post []hashfs.UpdateEntry, restat bool, updatedTi
 		ent.CmdHash = cmdHash
 		ent.UpdatedTime = updatedTime
 		ent.IsLocal = true
-		pent := m[ent.Name]
+		pent := m[string(ent.Name)]
 		if !restat {
 			ent.ModTime = updatedTime
 			ent.IsChanged = true
@@ -782,12 +783,12 @@ func TestUpdate_FromLocal(t *testing.T) {
 
 	fname := "out/siso/gen/foo.stamp"
 	fullname := filepath.ToSlash(filepath.Join(dir, fname))
-	_, err = hfs.Stat(ctx, dir, fname)
+	_, err = hfs.Stat(ctx, dir, path.Path(fname))
 	if !errors.Is(err, fs.ErrNotExist) {
 		t.Fatalf("Stat(ctx, %q,%q)=%v; want %v", dir, fname, err, fs.ErrNotExist)
 	}
 
-	pre := hfs.RetrieveUpdateEntries(ctx, dir, []string{fname})
+	pre := hfs.RetrieveUpdateEntries(ctx, dir, []path.Path{path.Path(fname)})
 
 	setupFiles(t, dir, map[string]string{
 		fname: "",
@@ -805,13 +806,13 @@ func TestUpdate_FromLocal(t *testing.T) {
 	h.Write([]byte("command line"))
 	cmdhash := h.Sum(nil)
 
-	post := hfs.RetrieveUpdateEntriesFromLocal(ctx, dir, []string{fname})
+	post := hfs.RetrieveUpdateEntriesFromLocal(ctx, dir, []path.Path{path.Path(fname)})
 	entries := computeUpdateEntries(pre, post, false, now, cmdhash)
 	err = hfs.Update(ctx, dir, entries)
 	if err != nil {
 		t.Errorf("Update(ctx, %q, {%q}, %v, cmdhash)=%v; want nil err", dir, fname, now, err)
 	}
-	fi, err := hfs.Stat(ctx, dir, fname)
+	fi, err := hfs.Stat(ctx, dir, path.Path(fname))
 	if err != nil {
 		t.Fatalf("Stat(ctx, %q, %q)=_, %v; want nil err", dir, fname, err)
 	}
@@ -878,11 +879,11 @@ func TestUpdate_FromLocal_update(t *testing.T) {
 		fname: "0",
 	})
 	fullname := filepath.ToSlash(filepath.Join(dir, fname))
-	_, err = hfs.Stat(ctx, dir, fname)
+	_, err = hfs.Stat(ctx, dir, path.Path(fname))
 	if err != nil {
 		t.Fatalf("Stat(ctx, %q,%q)=%v; want nil", dir, fname, err)
 	}
-	pre := hfs.RetrieveUpdateEntries(ctx, dir, []string{fname})
+	pre := hfs.RetrieveUpdateEntries(ctx, dir, []path.Path{path.Path(fname)})
 
 	if pre[0].Entry.Data.Digest().IsZero() {
 		t.Fatalf("digest for %s is zero?", pre[0].Entry.Data.Digest())
@@ -895,7 +896,7 @@ func TestUpdate_FromLocal_update(t *testing.T) {
 	h := sha256.New()
 	h.Write([]byte("command line"))
 	cmdhash := h.Sum(nil)
-	post := hfs.RetrieveUpdateEntriesFromLocal(ctx, dir, []string{fname})
+	post := hfs.RetrieveUpdateEntriesFromLocal(ctx, dir, []path.Path{path.Path(fname)})
 	now := time.Now()
 	entries := computeUpdateEntries(pre, post, false, now, cmdhash)
 	err = hfs.Update(ctx, dir, entries)
@@ -903,12 +904,12 @@ func TestUpdate_FromLocal_update(t *testing.T) {
 		t.Errorf("Update(ctx, %q, {%q}, %v, cmdhash)=%v; want nil err", dir, fname, now, err)
 	}
 
-	pre = hfs.RetrieveUpdateEntries(ctx, dir, []string{fname})
+	pre = hfs.RetrieveUpdateEntries(ctx, dir, []path.Path{path.Path(fname)})
 	time.Sleep(1 * time.Microsecond)
 	setupFiles(t, dir, map[string]string{
 		fname: "2",
 	})
-	post = hfs.RetrieveUpdateEntriesFromLocal(ctx, dir, []string{fname})
+	post = hfs.RetrieveUpdateEntriesFromLocal(ctx, dir, []path.Path{path.Path(fname)})
 	now = time.Now()
 	entries = computeUpdateEntries(pre, post, false, now, cmdhash)
 	err = hfs.Update(ctx, dir, entries)
@@ -916,7 +917,7 @@ func TestUpdate_FromLocal_update(t *testing.T) {
 		t.Errorf("Update(ctx, %q, {%q}, %v, cmdhash)=%v; want nil err", dir, fname, now, err)
 	}
 
-	ents, err := hfs.Entries(ctx, dir, []string{fname})
+	ents, err := hfs.Entries(ctx, dir, []path.Path{path.Path(fname)})
 	if err != nil || len(ents) != 1 {
 		t.Fatalf("enties %d, %v: want 1, nil", len(ents), err)
 	}
@@ -925,7 +926,7 @@ func TestUpdate_FromLocal_update(t *testing.T) {
 		t.Errorf("digest not changed? %s", pre[0].Entry.Data.Digest())
 	}
 
-	fi, err := hfs.Stat(ctx, dir, fname)
+	fi, err := hfs.Stat(ctx, dir, path.Path(fname))
 	if err != nil {
 		t.Fatalf("Stat(ctx, %q, %q)=_, %v; want nil err", dir, fname, err)
 	}
@@ -991,11 +992,11 @@ func TestUpdate_FromLocal_Restat_update(t *testing.T) {
 
 	fname := "out/siso/gen/foo.stamp"
 	fullname := filepath.ToSlash(filepath.Join(dir, fname))
-	_, err = hfs.Stat(ctx, dir, fname)
+	_, err = hfs.Stat(ctx, dir, path.Path(fname))
 	if !errors.Is(err, fs.ErrNotExist) {
 		t.Fatalf("Stat(ctx, %q,%q)=%v; want %v", dir, fname, err, fs.ErrNotExist)
 	}
-	pre := hfs.RetrieveUpdateEntries(ctx, dir, []string{fname})
+	pre := hfs.RetrieveUpdateEntries(ctx, dir, []path.Path{path.Path(fname)})
 
 	setupFiles(t, dir, map[string]string{
 		fname: "",
@@ -1012,13 +1013,13 @@ func TestUpdate_FromLocal_Restat_update(t *testing.T) {
 	h := sha256.New()
 	h.Write([]byte("command line"))
 	cmdhash := h.Sum(nil)
-	post := hfs.RetrieveUpdateEntriesFromLocal(ctx, dir, []string{fname})
+	post := hfs.RetrieveUpdateEntriesFromLocal(ctx, dir, []path.Path{path.Path(fname)})
 	entries := computeUpdateEntries(pre, post, true, now, cmdhash)
 	err = hfs.Update(ctx, dir, entries)
 	if err != nil {
 		t.Errorf("Update(ctx, %q, {%q}, %v, cmdhash)=%v; want nil err", dir, fname, now, err)
 	}
-	fi, err := hfs.Stat(ctx, dir, fname)
+	fi, err := hfs.Stat(ctx, dir, path.Path(fname))
 	if err != nil {
 		t.Fatalf("Stat(ctx, %q, %q)=_, %v; want nil err", dir, fname, err)
 	}
@@ -1087,7 +1088,7 @@ func TestUpdate_FromLocal_Restat_noupdate(t *testing.T) {
 	setupFiles(t, dir, map[string]string{
 		fname: "",
 	})
-	_, err = hfs.Stat(ctx, dir, fname)
+	_, err = hfs.Stat(ctx, dir, path.Path(fname))
 	if errors.Is(err, fs.ErrNotExist) {
 		t.Fatalf("Stat(ctx, %q,%q)=%v; want nil", dir, fname, err)
 	}
@@ -1095,7 +1096,7 @@ func TestUpdate_FromLocal_Restat_noupdate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("lstat(%q)=%v; want nil", fullname, err)
 	}
-	pre := hfs.RetrieveUpdateEntries(ctx, dir, []string{fname})
+	pre := hfs.RetrieveUpdateEntries(ctx, dir, []path.Path{path.Path(fname)})
 
 	time.Sleep(1 * time.Microsecond)
 	now := time.Now()
@@ -1105,13 +1106,13 @@ func TestUpdate_FromLocal_Restat_noupdate(t *testing.T) {
 	h := sha256.New()
 	h.Write([]byte("command line"))
 	cmdhash := h.Sum(nil)
-	post := hfs.RetrieveUpdateEntriesFromLocal(ctx, dir, []string{fname})
+	post := hfs.RetrieveUpdateEntriesFromLocal(ctx, dir, []path.Path{path.Path(fname)})
 	entries := computeUpdateEntries(pre, post, true, now, cmdhash)
 	err = hfs.Update(ctx, dir, entries)
 	if err != nil {
 		t.Errorf("Update(ctx, %q, {%q}, %v, cmdhash)=%v; want nil err", dir, fname, now, err)
 	}
-	fi, err := hfs.Stat(ctx, dir, fname)
+	fi, err := hfs.Stat(ctx, dir, path.Path(fname))
 	if err != nil {
 		t.Fatalf("Stat(ctx, %q, %q)=_, %v; want nil err", dir, fname, err)
 	}
@@ -1175,7 +1176,7 @@ func TestUpdate_FromLocal_Dir(t *testing.T) {
 
 	outname := "out/siso/gen/foo.stamp"
 	outdirname := "out/siso/gen"
-	pre := hfs.RetrieveUpdateEntries(ctx, dir, []string{outname, outdirname})
+	pre := hfs.RetrieveUpdateEntries(ctx, dir, []path.Path{path.Path(outname), path.Path(outdirname)})
 
 	setupFiles(t, dir, map[string]string{
 		outname: "",
@@ -1185,7 +1186,7 @@ func TestUpdate_FromLocal_Dir(t *testing.T) {
 	cmdhash := h.Sum(nil)
 	now := time.Now()
 
-	post := hfs.RetrieveUpdateEntriesFromLocal(ctx, dir, []string{outname, outdirname})
+	post := hfs.RetrieveUpdateEntriesFromLocal(ctx, dir, []path.Path{path.Path(outname), path.Path(outdirname)})
 	entries := computeUpdateEntries(pre, post, false, now, cmdhash)
 	err = hfs.Update(ctx, dir, entries)
 	if err != nil {
@@ -1193,7 +1194,7 @@ func TestUpdate_FromLocal_Dir(t *testing.T) {
 	}
 
 	// make sure outdirname not clobber outname entry.
-	fi, err := hfs.Stat(ctx, dir, outname)
+	fi, err := hfs.Stat(ctx, dir, path.Path(outname))
 	if err != nil {
 		t.Fatalf("Stat(ctx, %q, %q)=_, %v; want nil err", dir, outname, err)
 	}
@@ -1295,20 +1296,20 @@ func TestUpdate_FromLocal_AbsSymlink(t *testing.T) {
 
 	outname := "out/siso/sdk/xcode_links/x.app/Info.plist"
 
-	pre := hfs.RetrieveUpdateEntries(ctx, dir, []string{outname})
+	pre := hfs.RetrieveUpdateEntries(ctx, dir, []path.Path{path.Path(outname)})
 	h := sha256.New()
 	h.Write([]byte("command line"))
 	cmdhash := h.Sum(nil)
 	now := time.Now()
 
-	post := hfs.RetrieveUpdateEntriesFromLocal(ctx, dir, []string{outname})
+	post := hfs.RetrieveUpdateEntriesFromLocal(ctx, dir, []path.Path{path.Path(outname)})
 	entries := computeUpdateEntries(pre, post, true, now, cmdhash)
 	err = hfs.Update(ctx, dir, entries)
 	if err != nil {
 		t.Errorf("Update(ctx, %q, {%q}, %v, cmdhash)=%v, want nil err", dir, outname, now, err)
 	}
 	stats := hfs.OS.Stats()
-	fi, err := hfs.Stat(ctx, dir, outname)
+	fi, err := hfs.Stat(ctx, dir, path.Path(outname))
 	if err != nil {
 		t.Fatalf("Stat(ctx, %q, %q)=_, %v; want nil err", dir, outname, err)
 	}
@@ -1333,7 +1334,7 @@ func TestUpdate_FromLocal_AbsSymlink(t *testing.T) {
 		t.Errorf("Refresh(ctx,%q)=%v; want nil err", dir, err)
 	}
 
-	fi, err = hfs.Stat(ctx, dir, outname)
+	fi, err = hfs.Stat(ctx, dir, path.Path(outname))
 	if err != nil {
 		t.Fatalf("Stat(ctx, %q, %q)=_, %v; want nil err", dir, outname, err)
 	}
@@ -1448,18 +1449,18 @@ func TestUpdate_FromLocal_NonLocalSymlink(t *testing.T) {
 	}()
 
 	outname := "out/siso/sdk/xcode_links/x.app/Info.plist"
-	pre := hfs.RetrieveUpdateEntries(ctx, dir, []string{outname})
+	pre := hfs.RetrieveUpdateEntries(ctx, dir, []path.Path{path.Path(outname)})
 	h := sha256.New()
 	h.Write([]byte("command line"))
 	cmdhash := h.Sum(nil)
 	now := time.Now()
-	post := hfs.RetrieveUpdateEntriesFromLocal(ctx, dir, []string{outname})
+	post := hfs.RetrieveUpdateEntriesFromLocal(ctx, dir, []path.Path{path.Path(outname)})
 	entries := computeUpdateEntries(pre, post, true, now, cmdhash)
 	err = hfs.Update(ctx, dir, entries)
 	if err != nil {
 		t.Errorf("Update(ctx, %q, {%q}, %v, cmdhash)=%v, want nil err", dir, outname, now, err)
 	}
-	fi, err := hfs.Stat(ctx, dir, outname)
+	fi, err := hfs.Stat(ctx, dir, path.Path(outname))
 	if err != nil {
 		t.Fatalf("Stat(ctx, %q, %q)=_, %v; want nil err", dir, outname, err)
 	}
@@ -1484,7 +1485,7 @@ func TestUpdate_FromLocal_NonLocalSymlink(t *testing.T) {
 		t.Errorf("Refresh(ctx,%q)=%v; want nil err", dir, err)
 	}
 
-	fi, err = hfs.Stat(ctx, dir, outname)
+	fi, err = hfs.Stat(ctx, dir, path.Path(outname))
 	if err != nil {
 		t.Fatalf("Stat(ctx, %q, %q)=_, %v; want nil err", dir, outname, err)
 	}
@@ -1675,7 +1676,7 @@ func TestSymlinkDir(t *testing.T) {
 						t.Fatal(err)
 					}
 				})
-				fi, err := hfs.Stat(ctx, dir, tc.symlink)
+				fi, err := hfs.Stat(ctx, dir, path.Path(tc.symlink))
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -1683,14 +1684,14 @@ func TestSymlinkDir(t *testing.T) {
 					t.Errorf("hfs.Stat(ctx, dir, %q) target=%q; want=%q", tc.symlink, fi.Target(), tc.target)
 				}
 
-				fi, err = hfs.Stat(ctx, dir, tc.realfile)
+				fi, err = hfs.Stat(ctx, dir, path.Path(tc.realfile))
 				if err != nil {
 					t.Fatal(err)
 				}
 				if !fi.Mode().IsRegular() {
 					t.Errorf("hfs.Stat(ctx, dir, %q) mode=%s; want regular", tc.realfile, fi.Mode())
 				}
-				fi, err = hfs.Stat(ctx, dir, tc.symlinkedfile)
+				fi, err = hfs.Stat(ctx, dir, path.Path(tc.symlinkedfile))
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -1710,7 +1711,7 @@ func TestSymlinkDir(t *testing.T) {
 						t.Fatal(err)
 					}
 				})
-				fi, err := hfs.Stat(ctx, dir, tc.symlinkedfile)
+				fi, err := hfs.Stat(ctx, dir, path.Path(tc.symlinkedfile))
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -1731,7 +1732,7 @@ func TestSymlinkDir(t *testing.T) {
 					}
 				})
 
-				fi, err := hfs.Stat(ctx, dir, tc.realfile)
+				fi, err := hfs.Stat(ctx, dir, path.Path(tc.realfile))
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -1739,7 +1740,7 @@ func TestSymlinkDir(t *testing.T) {
 					t.Errorf("hfs.Stat(ctx, dir, %q) mode=%s; want regular", tc.realfile, fi.Mode())
 				}
 
-				fi, err = hfs.Stat(ctx, dir, tc.symlinkedfile)
+				fi, err = hfs.Stat(ctx, dir, path.Path(tc.symlinkedfile))
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -1747,7 +1748,7 @@ func TestSymlinkDir(t *testing.T) {
 					t.Errorf("hfs.Stat(ctx, dir, %q) mode=%s; want regular", tc.symlinkedfile, fi.Mode())
 				}
 
-				fi, err = hfs.Stat(ctx, dir, tc.symlink)
+				fi, err = hfs.Stat(ctx, dir, path.Path(tc.symlink))
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -1793,7 +1794,7 @@ func TestFlusTohHardlink(t *testing.T) {
 	}
 	t.Logf("%T", verfi.Sys())
 
-	verfi2, err := hashFS.Stat(ctx, dir, "chrome/VERSION")
+	verfi2, err := hashFS.Stat(ctx, dir, path.Path("chrome/VERSION"))
 	if err != nil {
 		t.Fatalf("hashFS.Stat(ctx, dir, %q) %v; want nil err", "chrome/VERSION", err)
 	}
@@ -1805,12 +1806,12 @@ func TestFlusTohHardlink(t *testing.T) {
 	now := time.Now()
 	cmdhash := []byte("cmdhash")
 	t.Logf("copy chrome/VERSION to out/siso/cronet/VERSION at %s", now)
-	err = hashFS.Copy(ctx, dir, "chrome/VERSION", "out/siso/cronet/VERSION", now, cmdhash, nil)
+	err = hashFS.Copy(ctx, dir, path.Path("chrome/VERSION"), path.Path("out/siso/cronet/VERSION"), now, cmdhash, nil)
 	if err != nil {
 		t.Fatalf("hashFS.Copy(ctx, dir, %q, %q, now, cmdhash)=%v; want nil err", "chrome/VERSION", "out/siso/chronet/VERSION", err)
 	}
 	t.Logf("flush out/siso/cronet/VERSION")
-	err = hashFS.Flush(ctx, dir, []string{"out/siso/cronet/VERSION"})
+	err = hashFS.Flush(ctx, dir, []path.Path{"out/siso/cronet/VERSION"})
 	if err != nil {
 		t.Fatalf("hashFS.Flush(ctx, dir, %q)=%v; want nil err", "out/siso/cronet/VERSION", err)
 	}
@@ -1893,7 +1894,7 @@ func TestFlushHardlinkSameSource(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err = hashFS.Flush(ctx, dir, []string{"subdir/hardlink"})
+	err = hashFS.Flush(ctx, dir, []path.Path{"subdir/hardlink"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1937,7 +1938,7 @@ func TestXattr(t *testing.T) {
 			t.Fatal(err)
 		}
 		defer hashFS.Close(ctx)
-		ents, err := hashFS.Entries(ctx, dir, []string{file})
+		ents, err := hashFS.Entries(ctx, dir, []path.Path{path.Path(file)})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1957,7 +1958,7 @@ func TestXattr(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer hashFS.Close(ctx)
-	ents, err := hashFS.Entries(ctx, dir, []string{file})
+	ents, err := hashFS.Entries(ctx, dir, []path.Path{path.Path(file)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1988,7 +1989,7 @@ func TestRefresh(t *testing.T) {
 	setupFiles(t, dir, map[string]string{
 		"out/siso/gen/expected.json": "[]",
 	})
-	fi, err := hashFS.Stat(ctx, dir, "out/siso/gen/expected.json")
+	fi, err := hashFS.Stat(ctx, dir, path.Path("out/siso/gen/expected.json"))
 	if err != nil {
 		t.Fatalf("hashfs.Stat(ctx, %q, %q)=%v, %v; want nil err", dir, "out/siso/gen/expected.json", fi, err)
 	}
@@ -2109,7 +2110,7 @@ func setupForFlush(t *testing.T) (*hashfs.HashFS, string) {
 	t.Cleanup(func() { hashFS.Close(ctx) })
 
 	for _, name := range flushTestNames {
-		_, err := hashFS.Stat(ctx, dir, name)
+		_, err := hashFS.Stat(ctx, dir, path.Path(name))
 		if name == "new-entry" {
 			if err == nil {
 				t.Errorf("Stat(ctx, dir, %q)=_, %v; want error", name, err)
@@ -2129,7 +2130,7 @@ func TestMkdirFlush(t *testing.T) {
 	for _, name := range flushTestNames {
 		t.Run(name, func(t *testing.T) {
 			hashFS, dir := setupForFlush(t)
-			err := hashFS.Mkdir(ctx, dir, name, nil, nil)
+			err := hashFS.Mkdir(ctx, dir, path.Path(name), nil, nil)
 			switch name {
 			case "empty-dir", "subdir", "new-entry":
 				if err != nil {
@@ -2141,12 +2142,12 @@ func TestMkdirFlush(t *testing.T) {
 				}
 				return
 			}
-			fi, err := hashFS.Stat(ctx, dir, name)
+			fi, err := hashFS.Stat(ctx, dir, path.Path(name))
 			if err != nil {
 				t.Fatalf("Stat(ctx, dir, %q)=%v, %v; want nil err", name, fi, err)
 			}
 			mtime := fi.ModTime()
-			err = hashFS.Flush(ctx, dir, []string{name})
+			err = hashFS.Flush(ctx, dir, []path.Path{path.Path(name)})
 			if err != nil {
 				t.Fatalf("Flush(ctx, dir, {%q})=%v; want nil err", name, err)
 			}
@@ -2187,11 +2188,11 @@ func TestMkdirFlush_mtime(t *testing.T) {
 	h.Write([]byte("command line"))
 	cmdhash := h.Sum(nil)
 	dirname := "out/siso/ios/build/bots/scripts"
-	err = hfs.Mkdir(ctx, dir, dirname, cmdhash, nil)
+	err = hfs.Mkdir(ctx, dir, path.Path(dirname), cmdhash, nil)
 	if err != nil {
 		t.Fatalf("mkdir(ctx, %q, %q, %q)=%v; want nil err", dir, dirname, cmdhash, err)
 	}
-	fi, err := hfs.Stat(ctx, dir, dirname)
+	fi, err := hfs.Stat(ctx, dir, path.Path(dirname))
 	if err != nil {
 		t.Fatalf("stat(ctx, %q, %q)=_, %v; want nil err", dir, dirname, err)
 	}
@@ -2212,7 +2213,7 @@ func TestMkdirFlush_mtime(t *testing.T) {
 	if fi.ModTime().Equal(lfi.ModTime()) {
 		t.Errorf("fi.mtime=%v should not equal to lfi.modtime=%v", fi.ModTime(), lfi.ModTime())
 	}
-	err = hfs.Flush(ctx, dir, []string{dirname})
+	err = hfs.Flush(ctx, dir, []path.Path{path.Path(dirname)})
 	if err != nil {
 		t.Errorf("flush(ctx, %q, {%q})=%v; want nil err", dir, dirname, err)
 	}
@@ -2251,8 +2252,8 @@ func TestFlushDir_ExpandsChildren(t *testing.T) {
 
 	mkFile := func(name, content string) hashfs.UpdateEntry {
 		return hashfs.UpdateEntry{
-			Name:        name,
-			Entry:       &merkletree.Entry{Name: name, Data: digest.FromBytes(name, []byte(content))},
+			Name:        path.Path(name),
+			Entry:       &merkletree.Entry{Name: path.Path(name), Data: digest.FromBytes(name, []byte(content))},
 			Mode:        0644,
 			ModTime:     now,
 			CmdHash:     cmdhash,
@@ -2262,8 +2263,8 @@ func TestFlushDir_ExpandsChildren(t *testing.T) {
 	}
 	mkDir := func(name string) hashfs.UpdateEntry {
 		return hashfs.UpdateEntry{
-			Name:        name,
-			Entry:       &merkletree.Entry{Name: name},
+			Name:        path.Path(name),
+			Entry:       &merkletree.Entry{Name: path.Path(name)},
 			Mode:        fs.ModeDir | 0755,
 			ModTime:     now,
 			CmdHash:     cmdhash,
@@ -2288,9 +2289,9 @@ func TestFlushDir_ExpandsChildren(t *testing.T) {
 		}
 	}
 
-	// Flush only the directory target (trailing slash); its children must
+	// Flush only the directory artifact (trailing slash); its children must
 	// come with it.
-	if err := hfs.Flush(ctx, dir, []string{"gen/"}); err != nil {
+	if err := hfs.Flush(ctx, dir, []path.Path{"gen/"}); err != nil {
 		t.Fatalf("Flush(gen/)=%v", err)
 	}
 
@@ -2339,8 +2340,8 @@ func TestFlushDir_PinsMtime(t *testing.T) {
 
 	mkFile := func(name, content string) hashfs.UpdateEntry {
 		return hashfs.UpdateEntry{
-			Name:        name,
-			Entry:       &merkletree.Entry{Name: name, Data: digest.FromBytes(name, []byte(content))},
+			Name:        path.Path(name),
+			Entry:       &merkletree.Entry{Name: path.Path(name), Data: digest.FromBytes(name, []byte(content))},
 			Mode:        0644,
 			ModTime:     recorded,
 			CmdHash:     cmdhash,
@@ -2350,8 +2351,8 @@ func TestFlushDir_PinsMtime(t *testing.T) {
 	}
 	mkDir := func(name string) hashfs.UpdateEntry {
 		return hashfs.UpdateEntry{
-			Name:        name,
-			Entry:       &merkletree.Entry{Name: name},
+			Name:        path.Path(name),
+			Entry:       &merkletree.Entry{Name: path.Path(name)},
 			Mode:        fs.ModeDir | 0755,
 			ModTime:     recorded,
 			CmdHash:     cmdhash,
@@ -2368,7 +2369,7 @@ func TestFlushDir_PinsMtime(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := hfs.Flush(ctx, dir, []string{"gen/"}); err != nil {
+	if err := hfs.Flush(ctx, dir, []path.Path{"gen/"}); err != nil {
 		t.Fatalf("Flush(gen/)=%v", err)
 	}
 
@@ -2393,11 +2394,11 @@ func TestWriteEmptyFlush(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			hashFS, dir := setupForFlush(t)
 			now := time.Now()
-			err := hashFS.WriteFile(ctx, dir, name, nil, false, now, []byte("cmdhash"), nil)
+			err := hashFS.WriteFile(ctx, dir, path.Path(name), nil, false, now, []byte("cmdhash"), nil)
 			if err != nil {
 				t.Fatalf("WriteFile(ctx, dir, %q, nil, false, now, cmdhash)=%v; want nil err", name, err)
 			}
-			fi, err := hashFS.Stat(ctx, dir, name)
+			fi, err := hashFS.Stat(ctx, dir, path.Path(name))
 			if err != nil {
 				t.Fatalf("Stat(ctx, dir, %q)=%v, %v; want nil err", name, fi, err)
 			}
@@ -2408,7 +2409,7 @@ func TestWriteEmptyFlush(t *testing.T) {
 			if !mtime.Equal(now) {
 				t.Errorf("mtime %v != %v", mtime, now)
 			}
-			err = hashFS.Flush(ctx, dir, []string{name})
+			err = hashFS.Flush(ctx, dir, []path.Path{path.Path(name)})
 			if err != nil {
 				t.Fatalf("Flush(ctx, dir, {%q})=%v; want nil err", name, err)
 			}
@@ -2442,11 +2443,11 @@ func TestWriteDataFlush(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			hashFS, dir := setupForFlush(t)
 			now := time.Now()
-			err := hashFS.WriteFile(ctx, dir, name, []byte("new data"), false, now, []byte("new-cmd-hash"), nil)
+			err := hashFS.WriteFile(ctx, dir, path.Path(name), []byte("new data"), false, now, []byte("new-cmd-hash"), nil)
 			if err != nil {
 				t.Fatalf("WriteFile(ctx, dir, %q, data, false, now, cmdhash)=%v; want nil err", name, err)
 			}
-			fi, err := hashFS.Stat(ctx, dir, name)
+			fi, err := hashFS.Stat(ctx, dir, path.Path(name))
 			if err != nil {
 				t.Fatalf("Stat(ctx, dir, %q)=%v, %v; want nil err", name, fi, err)
 			}
@@ -2458,7 +2459,7 @@ func TestWriteDataFlush(t *testing.T) {
 			if !mtime.Equal(now) {
 				t.Errorf("mtime %v != %v", mtime, now)
 			}
-			err = hashFS.Flush(ctx, dir, []string{name})
+			err = hashFS.Flush(ctx, dir, []path.Path{path.Path(name)})
 			if err != nil {
 				t.Fatalf("Flush(ctx, dir, {%q})=%v; want nil err", name, err)
 			}
@@ -2532,14 +2533,14 @@ func TestUpdate_WithLocalFlush(t *testing.T) {
 			}
 			err = update(ctx, hashFS, dir, []merkletree.Entry{
 				{
-					Name: name,
+					Name: path.Path(name),
 					Data: data,
 				},
 			}, now, []byte("new-cmd-hash"), digest.Digest{})
 			if err != nil {
 				t.Fatalf("update(ctx, dir, []{%q}, now, cmdhash, actionDigest)=%v; want nil err", name, err)
 			}
-			fi, err := hashFS.Stat(ctx, dir, name)
+			fi, err := hashFS.Stat(ctx, dir, path.Path(name))
 			if err != nil {
 				t.Fatalf("Stat(ctx, dir, %q)=%v, %v; want nil err", name, fi, err)
 			}
@@ -2547,7 +2548,7 @@ func TestUpdate_WithLocalFlush(t *testing.T) {
 			if !mtime.Equal(now) {
 				t.Errorf("mtime %v != %v", mtime, now)
 			}
-			err = hashFS.Flush(ctx, dir, []string{name})
+			err = hashFS.Flush(ctx, dir, []path.Path{path.Path(name)})
 			if err != nil {
 				t.Fatalf("Flush(ctx, dir, {%q})=%v; want nil err", name, err)
 			}
@@ -2595,11 +2596,11 @@ func TestSymlinkFlush(t *testing.T) {
 				})
 			}
 			now := time.Now()
-			err := hashFS.Symlink(ctx, dir, target, name, now, []byte("cmdhash"), nil)
+			err := hashFS.Symlink(ctx, dir, target, path.Path(name), now, []byte("cmdhash"), nil)
 			if err != nil {
 				t.Fatalf("Symlink(ctx, dir, %q, %q, now, cmdhash)=%v; want nil err", target, name, err)
 			}
-			fi, err := hashFS.Stat(ctx, dir, name)
+			fi, err := hashFS.Stat(ctx, dir, path.Path(name))
 			if err != nil {
 				t.Fatalf("Stat(ctx, dir, %q)=%v, %v; want nil err", name, fi, err)
 			}
@@ -2607,7 +2608,7 @@ func TestSymlinkFlush(t *testing.T) {
 			if !mtime.Equal(now) {
 				t.Errorf("mtime %v != %v", mtime, now)
 			}
-			err = hashFS.Flush(ctx, dir, []string{name})
+			err = hashFS.Flush(ctx, dir, []path.Path{path.Path(name)})
 			if err != nil {
 				t.Fatalf("Flush(ctx, dir, {%q})=%v; want nil err", name, err)
 			}
@@ -2630,15 +2631,15 @@ func TestRemoveFlush(t *testing.T) {
 	for _, name := range flushTestNames {
 		t.Run(name, func(t *testing.T) {
 			hashFS, dir := setupForFlush(t)
-			err := hashFS.Remove(ctx, dir, name)
+			err := hashFS.Remove(ctx, dir, path.Path(name))
 			if err != nil {
 				t.Fatalf("Remove(ctx, dir, %q)=%v; want nil err", name, err)
 			}
-			fi, err := hashFS.Stat(ctx, dir, name)
+			fi, err := hashFS.Stat(ctx, dir, path.Path(name))
 			if !errors.Is(err, fs.ErrNotExist) {
 				t.Fatalf("Stat(ctx, dir, %q)=%v, %v; want %v", name, fi, err, fs.ErrNotExist)
 			}
-			err = hashFS.Flush(ctx, dir, []string{name})
+			err = hashFS.Flush(ctx, dir, []path.Path{path.Path(name)})
 			if name == "subdir" {
 				if err == nil {
 					t.Errorf("Flush(ctx, dir, {%q})=%v; want %v", name, err, syscall.ENOTEMPTY)
@@ -2689,7 +2690,7 @@ func TestEntries_Symlink(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ents, err := hashFS.Entries(ctx, dir, []string{"dir", "symlink_dir", "dir/foo", "symlink_dir/foo"})
+	ents, err := hashFS.Entries(ctx, dir, []path.Path{"dir", "symlink_dir", "dir/foo", "symlink_dir/foo"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2733,11 +2734,11 @@ func TestEntries_EscapedSymlink(t *testing.T) {
 	}()
 
 	createFile := func(root, name, data string) merkletree.Entry {
-		err := hashFS.WriteFile(ctx, root, name, []byte(data), false, time.Now(), nil, nil)
+		err := hashFS.WriteFile(ctx, root, path.Path(name), []byte(data), false, time.Now(), nil, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
-		ents, err := hashFS.Entries(ctx, root, []string{name})
+		ents, err := hashFS.Entries(ctx, root, []path.Path{path.Path(name)})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -2748,7 +2749,7 @@ func TestEntries_EscapedSymlink(t *testing.T) {
 		return ents[0]
 	}
 	createSymlink := func(root, name, target string) {
-		err := hashFS.Symlink(ctx, root, target, name, time.Now(), nil, nil)
+		err := hashFS.Symlink(ctx, root, target, path.Path(name), time.Now(), nil, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -2768,7 +2769,7 @@ func TestEntries_EscapedSymlink(t *testing.T) {
 	entMap["subdir/file"] = createFile(workspaceRoot, "subdir/file", "subdir/file")
 	createSymlink(workspaceRoot, "subdir/localSymlink", "../file")
 
-	ents, err := hashFS.Entries(ctx, workspaceRoot, []string{
+	ents, err := hashFS.Entries(ctx, workspaceRoot, []path.Path{
 		"absEscapedSymlink",
 		"absEscapedSymlinkDir",
 		"absEscapedSymlinkDir/file",
@@ -2788,7 +2789,7 @@ func TestEntries_EscapedSymlink(t *testing.T) {
 
 	entForPath := func(key, name string) merkletree.Entry {
 		ent := entMap[key]
-		ent.Name = name
+		ent.Name = path.Path(name)
 		return ent
 	}
 
@@ -2829,7 +2830,7 @@ func TestEntries_NonExistentIntermediateDirectory(t *testing.T) {
 
 	dir := t.TempDir()
 
-	ents, err := hfs.Entries(ctx, dir, []string{"not_exist_dir"})
+	ents, err := hfs.Entries(ctx, dir, []path.Path{path.Path("not_exist_dir")})
 	if err != nil {
 		t.Fatalf("hfs.Entries(ctx, _, _)=_, %v; want nil err", err)
 	}
@@ -2838,11 +2839,11 @@ func TestEntries_NonExistentIntermediateDirectory(t *testing.T) {
 		t.Fatalf("len(ent)=%d; want 0", len(ents))
 	}
 
-	if _, err := hfs.Stat(ctx, dir, "not_exist_dir/foo"); !errors.Is(err, fs.ErrNotExist) {
+	if _, err := hfs.Stat(ctx, dir, path.Path("not_exist_dir/foo")); !errors.Is(err, fs.ErrNotExist) {
 		t.Errorf("hfs.Stat(ctx, %q, %q)=_, %v; want %v", dir, "not_exist_dir/foo", err, fs.ErrNotExist)
 	}
 
-	ents, err = hfs.Entries(ctx, dir, []string{"not_exist_dir"})
+	ents, err = hfs.Entries(ctx, dir, []path.Path{path.Path("not_exist_dir")})
 	if err != nil {
 		t.Fatalf("hfs.Entries(ctx, _, _)=_, %v; want nil err", err)
 	}
@@ -2886,11 +2887,11 @@ func TestForget_UnexpectedRemoveRspFileUnderSymlinkDir(t *testing.T) {
 				t.Fatalf("hfs.Close=%v", err)
 			}
 		}()
-		err = hfs.WriteFile(ctx, srcDir, rspFile, nil, false, time.Now(), nil, nil)
+		err = hfs.WriteFile(ctx, srcDir, path.Path(rspFile), nil, false, time.Now(), nil, nil)
 		if err != nil {
 			t.Errorf("hfs.Write %q: %v", rspFile, err)
 		}
-		err = hfs.Flush(ctx, srcDir, []string{rspFile})
+		err = hfs.Flush(ctx, srcDir, []path.Path{path.Path(rspFile)})
 		if err != nil {
 			t.Errorf("hfs.Flush %q: %v", rspFile, err)
 		}
@@ -2916,12 +2917,12 @@ func TestForget_UnexpectedRemoveRspFileUnderSymlinkDir(t *testing.T) {
 		if err != nil {
 			t.Fatalf("hfs.WaitReady=%v; want nil", err)
 		}
-		_, err = hfs.Stat(ctx, srcDir, rspFile)
+		_, err = hfs.Stat(ctx, srcDir, path.Path(rspFile))
 		if err != nil {
 			t.Errorf("Stat %q: %v", rspFile, err)
 		}
 		// force compute digest.
-		_, err = hfs.Entries(ctx, srcDir, []string{rspFile})
+		_, err = hfs.Entries(ctx, srcDir, []path.Path{path.Path(rspFile)})
 		if err != nil {
 			t.Errorf("Entries %q: %v", rspFile, err)
 		}
@@ -2931,7 +2932,7 @@ func TestForget_UnexpectedRemoveRspFileUnderSymlinkDir(t *testing.T) {
 			t.Errorf("remove %q: %v", rspFile, err)
 		}
 
-		_, err = hfs.Stat(ctx, srcDir, rspFile)
+		_, err = hfs.Stat(ctx, srcDir, path.Path(rspFile))
 		if err != nil {
 			t.Errorf("Stat %q: %v", rspFile, err)
 		}
@@ -2940,16 +2941,16 @@ func TestForget_UnexpectedRemoveRspFileUnderSymlinkDir(t *testing.T) {
 		if !errors.Is(err, fs.ErrNotExist) {
 			t.Errorf("os.Lstat %q: %v", rspFile, err)
 		}
-		hfs.Forget(ctx, srcDir, []string{rspFile})
-		_, err = hfs.Stat(ctx, srcDir, rspFile)
+		hfs.Forget(ctx, srcDir, []path.Path{path.Path(rspFile)})
+		_, err = hfs.Stat(ctx, srcDir, path.Path(rspFile))
 		if !errors.Is(err, fs.ErrNotExist) {
 			t.Errorf("Stat %q: %v; want fs.ErrNotExist", rspFile, err)
 		}
-		err = hfs.WriteFile(ctx, srcDir, rspFile, nil, false, time.Now(), nil, nil)
+		err = hfs.WriteFile(ctx, srcDir, path.Path(rspFile), nil, false, time.Now(), nil, nil)
 		if err != nil {
 			t.Errorf("hfs.Write %q: %v", rspFile, err)
 		}
-		err = hfs.Flush(ctx, srcDir, []string{rspFile})
+		err = hfs.Flush(ctx, srcDir, []path.Path{path.Path(rspFile)})
 		if err != nil {
 			t.Errorf("hfs.Flush %q: %v", rspFile, err)
 		}
@@ -2992,7 +2993,7 @@ func TestRetrieveUpdateEntriesFromLocal_SharedParent(t *testing.T) {
 		"out/foo/c/d.txt",
 	}
 
-	ents := hfs.RetrieveUpdateEntriesFromLocal(ctx, dir, fnames)
+	ents := hfs.RetrieveUpdateEntriesFromLocal(ctx, dir, path.Paths(fnames))
 	if len(ents) != len(fnames) {
 		t.Errorf("RetrieveUpdateEntriesFromLocal returned %d entries; want %d", len(ents), len(fnames))
 	}
@@ -3000,7 +3001,7 @@ func TestRetrieveUpdateEntriesFromLocal_SharedParent(t *testing.T) {
 	for _, fname := range fnames {
 		found := false
 		for _, ent := range ents {
-			if ent.Name == filepath.ToSlash(fname) {
+			if ent.Name == path.Path(filepath.ToSlash(fname)) {
 				found = true
 				break
 			}

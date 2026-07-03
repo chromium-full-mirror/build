@@ -89,7 +89,7 @@ func (c *Client) RegisterFiles(ctx context.Context, dir string, entries []*Regis
 		if ent == nil {
 			continue
 		}
-		fullpath := filepath.Join(dir, ent.Entry.Name)
+		fullpath := filepath.Join(dir, string(ent.Entry.Name))
 		relpath, err := filepath.Rel(c.dir, fullpath)
 		if log.V(1) {
 			clog.Infof(ctx, "cartfs entry %q %q -> %q: %v", dir, ent.Entry.Name, relpath, err)

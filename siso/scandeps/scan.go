@@ -20,6 +20,7 @@ import (
 	"github.com/kelindar/bitmap"
 
 	"go.chromium.org/build/siso/o11y/clog"
+	sisopath "go.chromium.org/build/siso/path"
 )
 
 // scanner is a C++ dependency scanner per request.
@@ -28,7 +29,7 @@ type scanner struct {
 	fsview *fsview
 
 	// dir stack for #include "...".
-	dirstack    []string
+	dirstack    []sisopath.Path
 	maxDirstack int
 
 	// input stack
@@ -53,12 +54,12 @@ type scanner struct {
 	macroUsed map[string]map[string]bool
 
 	// filename -> has #include MACRO
-	macroInclude map[string]bool
+	macroInclude map[sisopath.Path]bool
 
 	// incname -> dirs
 	// include of incname should be processed again for dirs
 	// as incname contains #include MACRO and MACRO may have been changed.
-	macroDirs map[string][]string
+	macroDirs map[string][]sisopath.Path
 
 	// incname -> index of dirs
 	// include of incname was processed by the index of dirs,
@@ -66,10 +67,10 @@ type scanner struct {
 	nameDirs map[string]int
 
 	// hmap data: incpath -> filenames.
-	hmaps map[string][]string
+	hmaps map[string][]sisopath.Path
 
 	// allocation
-	ds    []string
+	ds    []sisopath.Path
 	names []string
 
 	// stats
@@ -99,7 +100,7 @@ var includedBitmapPool = sync.Pool{
 	},
 }
 
-func (s *scanner) reset(fsys *filesystem, workspaceRoot string, inputDeps map[string][]string, precomputedTrees []string) {
+func (s *scanner) reset(fsys *filesystem, workspaceRoot string, inputDeps map[string][]string, precomputedTrees []sisopath.Path) {
 	s.pt.Reset()
 	s.fsview.reset(fsys, workspaceRoot, inputDeps, precomputedTrees)
 	s.dirstack = s.dirstack[:0]
@@ -130,18 +131,18 @@ var scannerPool = sync.Pool{
 		return &scanner{
 			pt: NewPathTable(),
 			fsview: &fsview{
-				visited: make(map[string]bool),
-				dirs:    make(map[string]bool),
-				files:   make(map[string]*scanResult),
-				topEnts: make(map[string]*sync.Map),
+				visited: make(map[sisopath.Path]bool),
+				dirs:    make(map[sisopath.Path]bool),
+				files:   make(map[sisopath.Path]*scanResult),
+				topEnts: make(map[sisopath.Path]*sync.Map),
 			},
 			macros:       make(map[string][]string),
 			included:     make(map[string]*bitmap.Bitmap),
 			macroUsed:    make(map[string]map[string]bool),
-			macroInclude: make(map[string]bool),
-			macroDirs:    make(map[string][]string),
+			macroInclude: make(map[sisopath.Path]bool),
+			macroDirs:    make(map[string][]sisopath.Path),
 			nameDirs:     make(map[string]int),
-			hmaps:        make(map[string][]string),
+			hmaps:        make(map[string][]sisopath.Path),
 		}
 	},
 }
@@ -169,7 +170,7 @@ func (s *scanResult) String() string {
 	return fmt.Sprintf("done=%t includes=%q defines=%q symlinkTargets=%q: %v", s.done, s.includes, s.defines, s.symlinkTargets, s.err)
 }
 
-func (fsys *filesystem) scanner(ctx context.Context, workspaceRoot string, inputDeps map[string][]string, precomputedTrees []string) *scanner {
+func (fsys *filesystem) scanner(ctx context.Context, workspaceRoot string, inputDeps map[string][]string, precomputedTrees []sisopath.Path) *scanner {
 	s := scannerPool.Get().(*scanner)
 	s.reset(fsys, workspaceRoot, inputDeps, precomputedTrees)
 	for _, dir := range precomputedTrees {
@@ -188,13 +189,13 @@ func (s *scanner) pushInputs(ins ...string) {
 	}
 }
 
-func (s *scanner) pushInputsWithDir(ctx context.Context, dir string, ins ...string) {
+func (s *scanner) pushInputsWithDir(ctx context.Context, dir sisopath.Path, ins ...string) {
 	s.pushDir(ctx, dir)
 	s.inputs = append(s.inputs, "") // "" will trigger popDir
 	s.pushInputs(ins...)
 }
 
-func (s *scanner) pushMacroInputs(ctx context.Context, dir string, ins ...string) {
+func (s *scanner) pushMacroInputs(ctx context.Context, dir sisopath.Path, ins ...string) {
 	s.pushDir(ctx, dir)
 	s.inputs = append(s.inputs, "") // pop dir
 	// only include macro again. i.e. no need to include non-macro path.
@@ -257,36 +258,36 @@ func (s *scanner) updateMacros(macros map[string][]string) {
 	}
 }
 
-func (s *scanner) addInclude(ctx context.Context, fname string) {
+func (s *scanner) addInclude(ctx context.Context, fname sisopath.Path) {
 	// -include or /FI is equivalent with `#include "filename"`
-	s.pushInputs(`"` + fname + `"`)
+	s.pushInputs(`"` + string(fname) + `"`)
 	if log.V(1) {
 		clog.Infof(ctx, "include %q", fname)
 	}
 }
 
-func (s *scanner) addSource(ctx context.Context, fname string) {
+func (s *scanner) addSource(ctx context.Context, fname sisopath.Path) {
 	// add dir and include as if #include "basename".
-	base := filepath.Base(fname)
-	s.pushInputsWithDir(ctx, filepath.ToSlash(filepath.Dir(fname)), `"`+base+`"`)
+	base := string(fname.Base())
+	s.pushInputsWithDir(ctx, fname.Dir(), `"`+base+`"`)
 	if log.V(1) {
 		clog.Infof(ctx, "source %q", fname)
 	}
 }
 
-func (s *scanner) addDir(ctx context.Context, dir string) {
+func (s *scanner) addDir(ctx context.Context, dir sisopath.Path) {
 	s.fsview.addDir(ctx, dir, includeSearchPath)
 }
 
-func (s *scanner) addQuoteDir(ctx context.Context, dir string) {
+func (s *scanner) addQuoteDir(ctx context.Context, dir sisopath.Path) {
 	s.fsview.addDir(ctx, dir, quoteSearchPath)
 }
 
-func (s *scanner) addFrameworkDir(ctx context.Context, dir string) {
+func (s *scanner) addFrameworkDir(ctx context.Context, dir sisopath.Path) {
 	s.fsview.addDir(ctx, dir, frameworkSearchPath)
 }
 
-func (s *scanner) pushDir(ctx context.Context, dir string) {
+func (s *scanner) pushDir(ctx context.Context, dir sisopath.Path) {
 	s.dirstack = append(s.dirstack, dir)
 	if len(s.dirstack) > s.maxDirstack {
 		s.maxDirstack = len(s.dirstack)
@@ -308,18 +309,20 @@ func (s *scanner) popDir(ctx context.Context) {
 	}
 }
 
-func (s *scanner) addHmap(ctx context.Context, hmap string) bool {
+func (s *scanner) addHmap(ctx context.Context, hmap sisopath.Path) bool {
 	m, ok := s.fsview.getHmap(ctx, hmap)
 	if !ok {
 		return false
 	}
 	for k, v := range m {
-		s.hmaps[k] = append(s.hmaps[k], v)
+		// hmap values are untrusted external data and may carry
+		// OS-native separators; normalize, don't cast.
+		s.hmaps[k] = append(s.hmaps[k], sisopath.New(v))
 	}
 	return true
 }
 
-func (s *scanner) find(ctx context.Context, name string) (string, error) {
+func (s *scanner) find(ctx context.Context, name string) (sisopath.Path, error) {
 	s.findCount++
 	if name == "" {
 		return "", io.EOF
@@ -367,7 +370,7 @@ func (s *scanner) find(ctx context.Context, name string) (string, error) {
 		}
 		dirIndex := s.pt.Index(".")
 		s.macroCheck(ctx, dirIndex, rel, incpath, sr.includes)
-		dir := path.Dir(incpath)
+		dir := incpath.Dir()
 		s.updateMacros(sr.defines)
 		s.pushInputsWithDir(ctx, dir, sr.includes...)
 		return incpath, nil
@@ -392,7 +395,7 @@ func (s *scanner) find(ctx context.Context, name string) (string, error) {
 		// TODO: lookup hmap appropriately.
 		s.ds = ds
 		for i, dir := range ds {
-			dirIndex := s.pt.Index(dir)
+			dirIndex := s.pt.Index(string(dir))
 			if included.Contains(dirIndex) {
 				continue
 			}
@@ -410,7 +413,8 @@ func (s *scanner) find(ctx context.Context, name string) (string, error) {
 			s.macroCheck(ctx, dirIndex, name, incpath, sr.includes)
 			// `#include "xx"` in incpath may include "xx"
 			// from the dir of incpath.
-			dir := path.Dir(incpath)
+			dir := incpath.Dir()
+
 			if log.V(1) {
 				clog.Infof(ctx, "find %s -> includes:%q defines:%q", incpath, sr.includes, sr.defines)
 			}
@@ -437,7 +441,7 @@ func (s *scanner) find(ctx context.Context, name string) (string, error) {
 				clog.Infof(ctx, "check framework %s -> %s : %s", name, fwname, s.fsview.frameworkPaths)
 			}
 			for _, dir := range s.fsview.frameworkPaths {
-				dirIndex := s.pt.Index(dir)
+				dirIndex := s.pt.Index(string(dir))
 				if included.Contains(dirIndex) {
 					continue
 				}
@@ -456,7 +460,8 @@ func (s *scanner) find(ctx context.Context, name string) (string, error) {
 
 				// `#include "xx"` in incpath may include "xx"
 				// from the dir of incpath.
-				dir := path.Dir(incpath)
+				dir := incpath.Dir()
+
 				if log.V(1) {
 					clog.Infof(ctx, "find %s -> includes:%q defines:%q", incpath, sr.includes, sr.defines)
 				}
@@ -473,7 +478,7 @@ func (s *scanner) find(ctx context.Context, name string) (string, error) {
 	return "", fs.ErrNotExist
 }
 
-func (s *scanner) macroCheck(ctx context.Context, dirIndex uint32, name, incpath string, incnames []string) {
+func (s *scanner) macroCheck(ctx context.Context, dirIndex uint32, name string, incpath sisopath.Path, incnames []string) {
 	for _, iname := range incnames {
 		if isMacro(iname) && !s.macroAllUsed(ctx, iname) {
 			// incname uses macro.
@@ -485,7 +490,7 @@ func (s *scanner) macroCheck(ctx context.Context, dirIndex uint32, name, incpath
 					clog.Warningf(ctx, "failed to get path for index %d: %v", dirIndex, err)
 					return
 				}
-				s.macroDirs[name] = append(s.macroDirs[name], dir)
+				s.macroDirs[name] = append(s.macroDirs[name], sisopath.FromClean(dir))
 			}
 			s.macroInclude[incpath] = true
 			s.included[name].Remove(dirIndex)
@@ -515,7 +520,7 @@ func (s *scanner) macroAllUsed(ctx context.Context, macro string) bool {
 	return allUsed
 }
 
-func (s *scanner) results() []string {
+func (s *scanner) results() []sisopath.Path {
 	res := s.fsview.results()
 	// add all files referred by hmap
 	// TODO: add only used header in hmap.

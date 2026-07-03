@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"go.chromium.org/build/siso/path"
 	"go.chromium.org/build/siso/reapi/digest"
 	"go.chromium.org/build/siso/reapi/merkletree"
 )
@@ -137,7 +138,7 @@ func TestExpandDirInputs_InvalidatedOnRemoveAll(t *testing.T) {
 		t.Fatalf("setup: %q not in expansion %v", victim, first)
 	}
 
-	if err := hfs.RemoveAll(ctx, root, victim); err != nil {
+	if err := hfs.RemoveAll(ctx, root, path.Path(victim)); err != nil {
 		t.Fatalf("RemoveAll(%q): %v", victim, err)
 	}
 
@@ -157,12 +158,12 @@ func TestExpandDirInputs_InvalidatedByAllMutations(t *testing.T) {
 		mutate func(t *testing.T, hfs *HashFS, root, victim string)
 	}{
 		{"Remove", func(t *testing.T, hfs *HashFS, root, victim string) {
-			if err := hfs.Remove(ctx, root, victim); err != nil {
+			if err := hfs.Remove(ctx, root, path.Path(victim)); err != nil {
 				t.Fatal(err)
 			}
 		}},
 		{"Forget", func(t *testing.T, hfs *HashFS, root, victim string) {
-			hfs.Forget(ctx, root, []string{victim})
+			hfs.Forget(ctx, root, []path.Path{path.Path(victim)})
 		}},
 		{"ForgetMissingsInDir", func(t *testing.T, hfs *HashFS, root, victim string) {
 			hfs.ForgetMissingsInDir(ctx, root, "gen")

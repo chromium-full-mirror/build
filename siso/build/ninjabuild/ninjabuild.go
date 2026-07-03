@@ -25,6 +25,7 @@ import (
 	"go.chromium.org/build/siso/hashfs"
 	"go.chromium.org/build/siso/o11y/clog"
 	"go.chromium.org/build/siso/o11y/trace"
+	"go.chromium.org/build/siso/path"
 	"go.chromium.org/build/siso/toolsupport/ninjautil"
 )
 
@@ -47,8 +48,8 @@ type globals struct {
 	buildConfig *buildconfig.Config
 	stepConfig  *StepConfig
 
-	// node id -> string
-	targetPaths []string
+	// node id -> path.Path
+	targetPaths []path.Path
 
 	// deps path id -> *depsPath
 	depsPaths []atomic.Pointer[depsPath]
@@ -59,7 +60,7 @@ type globals struct {
 	phony map[string]bool
 
 	// caseSensitives lists all case sensitive input filenames.
-	caseSensitives map[string][]string
+	caseSensitives map[string][]path.Path
 
 	// edge will be associated with the gn target.
 	gnTargets map[*ninjautil.Edge]gnTarget
@@ -310,11 +311,11 @@ func NewGraph(ctx context.Context, fname string, nstate *ninjautil.State, config
 			depsLog:        depsLog,
 			buildConfig:    config,
 			stepConfig:     stepConfig,
-			targetPaths:    make([]string, nstate.NumNodes()),
+			targetPaths:    make([]path.Path, nstate.NumNodes()),
 			depsPaths:      make([]atomic.Pointer[depsPath], depsLog.NumPaths()),
 			edgeRules:      make([]edgeRuleHolder, nstate.NumNodes()),
 			phony:          make(map[string]bool),
-			caseSensitives: make(map[string][]string),
+			caseSensitives: make(map[string][]path.Path),
 			gnTargets:      make(map[*ninjautil.Edge]gnTarget),
 			executables:    make(map[string]bool),
 		},
@@ -371,11 +372,11 @@ func (g *Graph) Reset(ctx context.Context) error {
 func (g *Graph) reset(ctx context.Context) {
 	g.visited = make(map[*ninjautil.Edge]*build.Edge)
 	g.globals.depsLog.Reset()
-	g.globals.targetPaths = make([]string, g.globals.nstate.NumNodes())
+	g.globals.targetPaths = make([]path.Path, g.globals.nstate.NumNodes())
 	g.globals.depsPaths = make([]atomic.Pointer[depsPath], g.globals.depsLog.NumPaths())
 	g.globals.edgeRules = make([]edgeRuleHolder, g.globals.nstate.NumNodes())
 	g.globals.phony = make(map[string]bool)
-	g.globals.caseSensitives = make(map[string][]string)
+	g.globals.caseSensitives = make(map[string][]path.Path)
 	g.globals.gnTargets = make(map[*ninjautil.Edge]gnTarget)
 	g.globals.executables = make(map[string]bool)
 	g.initGlobals(ctx)
@@ -385,7 +386,7 @@ func (g *Graph) initGlobals(ctx context.Context) {
 	// initialize caseSensitives.
 	for _, f := range g.globals.stepConfig.CaseSensitiveInputs {
 		cif := strings.ToLower(f)
-		g.globals.caseSensitives[cif] = append(g.globals.caseSensitives[cif], f)
+		g.globals.caseSensitives[cif] = append(g.globals.caseSensitives[cif], path.FromClean(f))
 	}
 	// initialize :inputs label
 	inputsLabels := make(map[string]bool)
@@ -417,20 +418,21 @@ func (g *Graph) initGlobals(ctx context.Context) {
 		inputNodes := edge.Inputs()
 		inputs := make([]string, 0, len(inputNodes))
 		for _, n := range inputNodes {
-			inputs = append(inputs, g.globals.targetPath(n))
+			inputs = append(inputs, string(g.globals.targetPath(n)))
 		}
 		clog.Infof(ctx, "add %q (%q) in input_deps: %d", label, target, len(inputs))
 		g.globals.stepConfig.InputDeps[label] = inputs
 	}
 	// initialize executables.
-	hfsExecutables := make(map[string]bool)
+	hfsExecutables := make(map[path.Path]bool)
 	for _, f := range g.globals.stepConfig.Executables {
 		g.globals.executables[f] = true
-		absPath := f
-		if !filepath.IsAbs(absPath) {
-			absPath = filepath.Join(g.globals.path.WorkspaceRoot, f)
+		var absPath path.Path
+		if filepath.IsAbs(f) {
+			absPath = path.New(f)
+		} else {
+			absPath = path.JoinRoot(g.globals.path.WorkspaceRoot, path.New(f))
 		}
-		absPath = filepath.ToSlash(absPath)
 		hfsExecutables[absPath] = true
 		clog.Infof(ctx, "set executable %q %q", f, absPath)
 	}
@@ -575,21 +577,22 @@ func (g *Graph) TargetPath(ctx context.Context, target build.Target) (string, er
 	if !ok {
 		return "", fmt.Errorf("invalid target %v", target)
 	}
-	return g.globals.targetPath(node), nil
+	return string(g.globals.targetPath(node)), nil
 }
 
-func (g *globals) targetPath(node *ninjautil.Node) string {
+func (g *globals) targetPath(node *ninjautil.Node) path.Path {
 	p := g.targetPaths[node.ID()]
 	if p != "" {
 		return p
 	}
 	raw := node.Path()
-	p = raw
-	if !filepath.IsAbs(p) {
-		p = filepath.ToSlash(filepath.Join(g.path.BaseDir, p))
+	if !filepath.IsAbs(raw) {
+		p = path.Path(filepath.ToSlash(filepath.Join(g.path.BaseDir, raw)))
+	} else {
+		p = path.Path(raw)
 	}
-	// filepath.Join strips a directory target's trailing slash; re-append it.
-	if strings.HasSuffix(raw, "/") && !strings.HasSuffix(p, "/") {
+	// filepath.Join strips a directory artifact's trailing slash; re-append it.
+	if strings.HasSuffix(raw, "/") && !strings.HasSuffix(string(p), "/") {
 		p += "/"
 	}
 	g.targetPaths[node.ID()] = p
@@ -612,7 +615,7 @@ func (g *Graph) Edge(ctx context.Context, target build.Target, next build.StepDe
 		return v, build.ErrDuplicateStep
 	}
 	if edge.IsPhony() {
-		g.globals.phony[g.globals.targetPath(n)] = true
+		g.globals.phony[string(g.globals.targetPath(n))] = true
 	}
 	stepDef := g.newStepDef(ctx, edge, next)
 	edgeInputs := edge.TriggerInputs()
@@ -683,24 +686,24 @@ func (g *Graph) StepLimits(ctx context.Context) map[string]int {
 // returns number of removed files and number of last generated files.
 func (g *Graph) CleanDead(ctx context.Context) (int, int, error) {
 	started := time.Now()
-	var deads []string
-	dir := g.globals.path.AbsBase()
+	var deads []path.Path
+	dir := path.New(g.globals.path.AbsBase())
 	genFiles := g.globals.hashFS.PreviouslyGeneratedFiles()
 
 	// Normalize generated files to workspace-relative slash paths, dropping
 	// any that escape the out dir (e.g. through a symlinked directory;
 	// b/336667052).
-	rels := make([]string, 0, len(genFiles))
+	rels := make([]path.Path, 0, len(genFiles))
 	for _, genFile := range genFiles {
-		rel, err := filepath.Rel(dir, genFile)
+		rel, err := genFile.Rel(dir)
 		if err != nil {
 			return len(deads), len(genFiles), err
 		}
-		if !filepath.IsLocal(rel) {
+		if !filepath.IsLocal(string(rel)) {
 			clog.Warningf(ctx, "skip generated file not in out dir: %s", genFile)
 			continue
 		}
-		rels = append(rels, filepath.ToSlash(rel))
+		rels = append(rels, rel)
 	}
 
 	// Judge only the outermost entries: a directory output is owned as a
@@ -708,10 +711,10 @@ func (g *Graph) CleanDead(ctx context.Context) (int, int, error) {
 	// a dead root takes its whole subtree. Sort only for deterministic deads.
 	slices.Sort(rels)
 	for _, rel := range execute.OutermostPaths(rels) {
-		if g.isDead(rel) {
+		if g.isDead(string(rel)) {
 			// RemoveAll so a dead dir output goes with its contents; a plain
 			// Remove would fail on a non-empty directory.
-			err := g.globals.hashFS.RemoveAll(ctx, dir, rel)
+			err := g.globals.hashFS.RemoveAll(ctx, string(dir), rel)
 			if err != nil {
 				// Best-effort: a dead output that can't be removed (e.g. held
 				// open by another process on Windows) is left behind rather
@@ -725,7 +728,7 @@ func (g *Graph) CleanDead(ctx context.Context) (int, int, error) {
 	}
 	var err error
 	if len(deads) > 0 {
-		err = g.globals.hashFS.Flush(ctx, dir, deads)
+		err = g.globals.hashFS.Flush(ctx, string(dir), deads)
 	}
 	if err != nil {
 		clog.Warningf(ctx, "cleandead %d/%d %s: %v", len(deads), len(genFiles), time.Since(started), err)

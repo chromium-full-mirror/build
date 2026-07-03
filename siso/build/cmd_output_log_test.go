@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"go.chromium.org/build/siso/execute"
+	"go.chromium.org/build/siso/path"
 	"go.chromium.org/build/siso/reapi/digest"
 	"go.chromium.org/build/siso/ui"
 )
@@ -18,7 +19,7 @@ func TestCmdOutput(t *testing.T) {
 		Desc:       "CXX foo.o",
 		ActionName: "cxx",
 		WorkDir:    "out/siso",
-		Outputs:    []string{"out/siso/foo.o"},
+		Outputs:    []path.Path{"out/siso/foo.o"},
 	}
 	const command = "../../third_party/llvm-build/Release+Asserts/bin/clang++ -c ../../base/base.cc"
 
@@ -162,7 +163,7 @@ func TestCmdOutputMsg(t *testing.T) {
 		Desc:       "CXX foo.o",
 		ActionName: "cxx",
 		WorkDir:    "out/siso",
-		Outputs:    []string{"out/siso/foo.o"},
+		Outputs:    []path.Path{"out/siso/foo.o"},
 	}
 	const shortCommand = "python3 ../../build/gen.py gen/base.txt"
 	const longCommand = "../../third_party/llvm-build/Release+Asserts/bin/clang++ -c ../../base/base.cc -o obj/base/base.o"

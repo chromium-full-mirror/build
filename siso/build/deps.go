@@ -21,6 +21,7 @@ import (
 	"go.chromium.org/build/siso/execute"
 	"go.chromium.org/build/siso/o11y/clog"
 	"go.chromium.org/build/siso/o11y/trace"
+	"go.chromium.org/build/siso/path"
 	"go.chromium.org/build/siso/toolsupport/gccutil"
 	"go.chromium.org/build/siso/toolsupport/makeutil"
 	"go.chromium.org/build/siso/toolsupport/msvcutil"
@@ -32,7 +33,7 @@ type depsProcessor interface {
 
 	// fix step.cmd and returns deps inputs.
 	// paths are workspace relative.
-	DepsCmd(context.Context, *Builder, *Step) ([]string, error)
+	DepsCmd(context.Context, *Builder, *Step) ([]path.Path, error)
 
 	// collects deps after cmd run.
 	// paths are relative to the out dir.
@@ -73,10 +74,10 @@ func depsExpandInputs(ctx context.Context, b *Builder, step *Step) {
 	ctx, span := trace.NewSpan(ctx, "deps-expand-inputs")
 	defer span.Close(nil)
 
-	fsys := b.hashFS.FileSystem(ctx, filepath.Join(step.cmd.WorkspaceRoot, step.cmd.WorkDir))
+	fsys := b.hashFS.FileSystem(ctx, filepath.Join(step.cmd.WorkspaceRoot, string(step.cmd.WorkDir)))
 
 	oldlen := len(step.cmd.Inputs)
-	var expanded []string
+	var expanded []path.Path
 	// deps=gcc,msvc with sources doesn't need to expand inputs,
 	// but need to use DepsBaseInputs to get expand phony in build graph inputs.
 	includeOrderOnly := false
@@ -106,8 +107,8 @@ func depsExpandInputs(ctx context.Context, b *Builder, step *Step) {
 	default:
 		expanded = step.def.ExpandedInputs(ctx)
 	}
-	inputs := make([]string, 0, oldlen+len(expanded))
-	seen := make(map[string]bool)
+	inputs := make([]path.Path, 0, oldlen+len(expanded))
+	seen := make(map[path.Path]bool)
 	for _, in := range step.cmd.Inputs {
 		if seen[in] {
 			continue
@@ -115,9 +116,10 @@ func depsExpandInputs(ctx context.Context, b *Builder, step *Step) {
 		seen[in] = true
 		// labels are expanded in expanded,
 		// so no need to preserve it in inputs.
-		if strings.Contains(in, ":") {
-			if runtime.GOOS == "windows" && filepath.IsAbs(in) {
-				if strings.Contains(in[2:], ":") {
+		ins := string(in)
+		if strings.Contains(ins, ":") {
+			if runtime.GOOS == "windows" && filepath.IsAbs(ins) {
+				if strings.Contains(ins[2:], ":") {
 					continue
 				}
 			} else {
@@ -142,14 +144,13 @@ func depsExpandInputs(ctx context.Context, b *Builder, step *Step) {
 		inputs = append(inputs, in)
 	}
 	clog.Infof(ctx, "deps expands %d -> %d", len(step.cmd.Inputs), len(inputs))
-	step.cmd.Inputs = make([]string, len(inputs))
-	copy(step.cmd.Inputs, inputs)
+	step.cmd.Inputs = inputs
 }
 
 // depsFixCmd checks the purity of the command by checking step inputs and deps.
-func depsFixCmd(ctx context.Context, b *Builder, step *Step, deps []string) {
-	deps = step.def.ExpandedCaseSensitives(ctx, deps)
-	err := checkDepsExist(ctx, b, deps)
+func depsFixCmd(ctx context.Context, b *Builder, step *Step, deps []path.Path) {
+	depPaths := step.def.ExpandedCaseSensitives(ctx, deps)
+	err := checkDepsExist(ctx, b, depPaths)
 	if err != nil {
 		clog.Warningf(ctx, "check deps exist: %v", err)
 		step.cmd.Pure = false
@@ -167,10 +168,10 @@ func depsCmd(ctx context.Context, b *Builder, step *Step) error {
 	if found {
 		start := time.Now()
 		includeOrderOnly := false
-		stepInputs := step.def.DepsBaseInputs(ctx, step.cmd.ToolInputs, includeOrderOnly)
+		baseInputs := step.def.DepsBaseInputs(ctx, step.cmd.ToolInputs, includeOrderOnly)
 		depsIns, err := ds.DepsCmd(ctx, b, step)
-		depsIns = step.def.ExpandedCaseSensitives(ctx, depsIns)
-		inputs := uniqueFiles(stepInputs, depsIns)
+		depsInPaths := step.def.ExpandedCaseSensitives(ctx, depsIns)
+		inputs := uniquePathFiles(baseInputs, depsInPaths)
 		clog.Infof(ctx, "%s-deps %d %s: %v", step.cmd.Deps, len(inputs), time.Since(start), err)
 		if err != nil {
 			return err
@@ -214,7 +215,7 @@ func depsClean(ctx context.Context, b *Builder, step *Step, err error) {
 	ds.DepsClean(ctx, b, step, err)
 }
 
-func checkDepsExist(ctx context.Context, b *Builder, depsIns []string) error {
+func checkDepsExist(ctx context.Context, b *Builder, depsIns []path.Path) error {
 	ctx, span := trace.NewSpan(ctx, "check-deps-exist")
 	defer span.Close(nil)
 
@@ -234,12 +235,12 @@ func checkDepsExist(ctx context.Context, b *Builder, depsIns []string) error {
 
 func checkDepfile(ctx context.Context, b *Builder, step *Step) error {
 	// need to write depfile on disk even if output_local_strategy skips downloading. b/355099718
-	err := b.hashFS.Flush(ctx, b.path.WorkspaceRoot, []string{step.cmd.Depfile})
+	err := b.hashFS.Flush(ctx, b.path.WorkspaceRoot, []path.Path{step.cmd.Depfile})
 	if err != nil {
 		return fmt.Errorf("failed to fetch depfile %q: %w", step.cmd.Depfile, err)
 	}
 	fsys := b.hashFS.FileSystem(ctx, b.path.WorkspaceRoot)
-	deps, err := makeutil.ParseDepsFile(ctx, fsys, step.cmd.Depfile)
+	deps, err := makeutil.ParseDepsFile(ctx, fsys, string(step.cmd.Depfile))
 	if err != nil {
 		return fmt.Errorf("failed to parse depfile %q: %w", step.cmd.Depfile, err)
 	}
@@ -262,11 +263,11 @@ func checkDeps(ctx context.Context, b *Builder, step *Step, deps []string) error
 		expInputs := step.def.ExpandedInputs(ctx)
 		ninjaInputs = make(map[string]bool, len(expInputs))
 		for _, in := range expInputs {
-			ninjaInputs[in] = true
+			ninjaInputs[string(in)] = true
 		}
 	}
 
-	var checkInputs []string
+	var checkInputs []path.Path
 	var unsandboxed []string
 
 	platform := step.cmd.Platform
@@ -283,10 +284,10 @@ func checkDeps(ctx context.Context, b *Builder, step *Step, deps []string) error
 			continue
 		}
 		// all dep (== inputs) should exist just after step ran.
-		input := b.path.MaybeFromRelative(ctx, dep)
+		input := path.New(b.path.MaybeFromRelative(ctx, dep))
 
 		// Sandboxed actions can only use depfiles to promote order-only to implicit deps
-		if step.enforceDepfileOnlyPromotes && !ninjaInputs[input] {
+		if step.enforceDepfileOnlyPromotes && !ninjaInputs[string(input)] {
 			unsandboxed = append(unsandboxed, dep)
 			continue
 		}
@@ -296,7 +297,7 @@ func checkDeps(ctx context.Context, b *Builder, step *Step, deps []string) error
 			// file may be read by handler and not found
 			// and generated after that (e.g. gn_logs.txt)
 			// forget and check again.
-			b.hashFS.Forget(ctx, b.path.WorkspaceRoot, []string{input})
+			b.hashFS.Forget(ctx, b.path.WorkspaceRoot, []path.Path{input})
 			fi, err = b.hashFS.Stat(ctx, b.path.WorkspaceRoot, input)
 		}
 		if err != nil {

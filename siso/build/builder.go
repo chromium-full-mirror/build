@@ -49,6 +49,7 @@ import (
 	sisopprof "go.chromium.org/build/siso/o11y/pprof"
 	"go.chromium.org/build/siso/o11y/resultstore"
 	"go.chromium.org/build/siso/o11y/trace"
+	sisopath "go.chromium.org/build/siso/path"
 	"go.chromium.org/build/siso/reapi"
 	"go.chromium.org/build/siso/reapi/digest"
 	"go.chromium.org/build/siso/reapi/merkletree"
@@ -539,7 +540,7 @@ func (b *Builder) Build(ctx context.Context, name string, args ...string) (err e
 	if b.rebuildManifest == "" {
 		// record build files in hashfs. b/489164002
 		for _, fname := range b.graph.Filenames() {
-			_, err = b.hashFS.Stat(ctx, b.path.AbsBase(), fname)
+			_, err = b.hashFS.Stat(ctx, b.path.AbsBase(), sisopath.New(fname))
 			if err != nil {
 				clog.Warningf(ctx, "failed to stat build file %q: %v", fname, err)
 			}
@@ -620,7 +621,7 @@ func (b *Builder) Build(ctx context.Context, name string, args ...string) (err e
 
 	var mftime time.Time
 	if b.rebuildManifest != "" {
-		fi, err := b.hashFS.Stat(ctx, b.path.WorkspaceRoot, b.path.MaybeFromRelative(ctx, b.rebuildManifest))
+		fi, err := b.hashFS.Stat(ctx, b.path.WorkspaceRoot, sisopath.New(b.path.MaybeFromRelative(ctx, b.rebuildManifest)))
 		if err == nil {
 			mftime = fi.ModTime()
 			clog.Infof(ctx, "manifest %s: %s", b.rebuildManifest, mftime)
@@ -629,7 +630,7 @@ func (b *Builder) Build(ctx context.Context, name string, args ...string) (err e
 	defer func() {
 		stat = b.Stats()
 		if b.rebuildManifest != "" {
-			fi, mferr := b.hashFS.Stat(ctx, b.path.WorkspaceRoot, b.path.MaybeFromRelative(ctx, b.rebuildManifest))
+			fi, mferr := b.hashFS.Stat(ctx, b.path.WorkspaceRoot, sisopath.New(b.path.MaybeFromRelative(ctx, b.rebuildManifest)))
 			if mferr != nil {
 				clog.Warningf(ctx, "failed to stat %s: %v", b.rebuildManifest, mferr)
 				err = fmt.Errorf("%w: missing manifest %s: %v", ErrManifest, b.rebuildManifest, mferr)
@@ -810,7 +811,7 @@ loop:
 					buf = buf[:runtime.Stack(buf, false)]
 					var out string
 					if outs := step.def.Outputs(ctx); len(outs) > 0 {
-						out = outs[0]
+						out = string(outs[0])
 					} else {
 						out = fmt.Sprintf("%p", step)
 					}
@@ -924,7 +925,7 @@ func (b *Builder) uploadBuildNinja(ctx context.Context) {
 	started := time.Now()
 	inputs := b.graph.Filenames()
 	inputs = append(inputs, "args.gn")
-	ents, err := b.hashFS.Entries(ctx, b.path.AbsBase(), inputs)
+	ents, err := b.hashFS.Entries(ctx, b.path.AbsBase(), sisopath.Paths(inputs))
 	if err != nil {
 		clog.Warningf(ctx, "failed to get build files entries: %v", err)
 		return
@@ -992,13 +993,13 @@ func (b *Builder) recordNinjaLogs(ctx context.Context, s *Step) {
 
 	// Remove prefixed working directory path from Outputs.
 	outputs := make([]string, 0, len(s.cmd.Outputs)+len(s.cmd.OutputDirs))
-	outDir := s.cmd.WorkDir + "/"
+	outDir := string(s.cmd.WorkDir) + "/"
 	for _, output := range s.cmd.Outputs {
-		outputs = append(outputs, strings.TrimPrefix(output, outDir))
+		outputs = append(outputs, strings.TrimPrefix(string(output), outDir))
 	}
 	for _, output := range s.cmd.OutputDirs {
 		// Re-append trailing "/" to match ninja's target name convention.
-		outputs = append(outputs, strings.TrimPrefix(output, outDir)+"/")
+		outputs = append(outputs, strings.TrimPrefix(string(output), outDir)+"/")
 	}
 	ninjautil.WriteNinjaLogEntries(ctx, b.ninjaLogWriter, start, end, s.endTime, outputs, s.cmd.Args)
 }
@@ -1019,7 +1020,7 @@ func stepLogEntry(ctx context.Context, logger *clog.Logger, step *Step, duration
 		Request: &http.Request{
 			Method: http.MethodPost,
 			URL: &url.URL{
-				Path: path.Join("/step", step.def.ActionName(), filepath.ToSlash(step.def.Outputs(ctx)[0])),
+				Path: path.Join("/step", step.def.ActionName(), string(step.def.Outputs(ctx)[0])),
 			},
 		},
 		Status: httpStatus,
@@ -1124,13 +1125,13 @@ func isCanceled(ctx context.Context, err error) bool {
 func dedupInputs(ctx context.Context, cmd *execute.Cmd) {
 	// need to dedup input with different case in intermediate dir on win and mac?
 	caseInsensitive := cmd.Platform["OSFamily"] == "Windows"
-	m := make(map[string]string, len(cmd.Inputs))
+	m := make(map[sisopath.Path]sisopath.Path, len(cmd.Inputs))
 	lenBefore := len(cmd.Inputs)
 	inputs := cmd.Inputs[:0]
 	for _, input := range cmd.Inputs {
 		key := input
 		if caseInsensitive {
-			key = strings.ToLower(input)
+			key = sisopath.Path(strings.ToLower(string(input)))
 		}
 		if s, found := m[key]; found {
 			if log.V(1) {
@@ -1177,14 +1178,16 @@ func (b *Builder) outputs(ctx context.Context, step *Step) error {
 		}
 	}
 
-	localOutputs := step.def.LocalOutputs(ctx)
-	span.SetAttr("outputs-local", len(localOutputs))
-	seen := make(map[string]bool)
-	for _, o := range localOutputs {
+	defLocalOutputs := step.def.LocalOutputs(ctx)
+	span.SetAttr("outputs-local", len(defLocalOutputs))
+	seen := make(map[sisopath.Path]bool)
+	var localOutputs []sisopath.Path
+	for _, o := range defLocalOutputs {
 		if seen[o] {
 			continue
 		}
 		seen[o] = true
+		localOutputs = append(localOutputs, o)
 	}
 
 	clog.Infof(ctx, "outputs %d->%d", len(outputs), len(localOutputs))
@@ -1197,9 +1200,9 @@ func (b *Builder) outputs(ctx context.Context, step *Step) error {
 		}
 		seen[out] = true
 		var local bool
-		fullOut := out
+		fullOut := string(out)
 		if !filepath.IsAbs(fullOut) {
-			fullOut = filepath.Join(step.cmd.WorkspaceRoot, out)
+			fullOut = filepath.Join(step.cmd.WorkspaceRoot, fullOut)
 		}
 		if b.hashFS.NeedFlush(ctx, step.cmd.WorkspaceRoot, out) {
 			localOutputs = append(localOutputs, out)
@@ -1217,7 +1220,7 @@ func (b *Builder) outputs(ctx context.Context, step *Step) error {
 		}
 		fi, err := b.hashFS.Stat(ctx, step.cmd.WorkspaceRoot, out)
 		if err != nil {
-			b.targets.Store(out, targetState{
+			b.targets.Store(string(out), targetState{
 				dirtyErr: err,
 			})
 			reqOut := isRequiredOutput(out, defOutputs)
@@ -1239,7 +1242,7 @@ func (b *Builder) outputs(ctx context.Context, step *Step) error {
 			}
 			continue
 		}
-		b.targets.Store(out, targetState{
+		b.targets.Store(string(out), targetState{
 			mtime:   fi.ModTime(),
 			changed: fi.IsChanged(),
 		})
@@ -1248,7 +1251,7 @@ func (b *Builder) outputs(ctx context.Context, step *Step) error {
 	// missing file output: hard-fail when declared (required), warn otherwise.
 	dirFsys := b.hashFS.FileSystem(ctx, step.cmd.WorkspaceRoot)
 	for _, dir := range step.cmd.OutputDirs {
-		targetKey := dir
+		targetKey := string(dir)
 		fi, err := b.hashFS.Stat(ctx, step.cmd.WorkspaceRoot, dir)
 		if err != nil {
 			b.targets.Store(targetKey, targetState{
@@ -1264,7 +1267,7 @@ func (b *Builder) outputs(ctx context.Context, step *Step) error {
 			clog.Warningf(ctx, "missing dir output %s: %v", dir, err)
 			continue
 		}
-		mtime, walkErr := effectiveMtime(dirFsys, dir, fi.ModTime(), true)
+		mtime, walkErr := effectiveMtime(dirFsys, string(dir), fi.ModTime(), true)
 		if walkErr != nil {
 			// Can't fully read the output: hard-fail if required, else warn.
 			if isRequiredOutput(dir, defOutputs) && !experiments.Enabled("ignore-missing-outputs", "") {
@@ -1281,7 +1284,7 @@ func (b *Builder) outputs(ctx context.Context, step *Step) error {
 		// an output_local=false dir output never lands locally.
 		local := b.hashFS.NeedFlush(ctx, step.cmd.WorkspaceRoot, dir)
 		if local {
-			// Trailing slash marks a declared directory target so Flush
+			// Trailing slash marks a declared directory artifact so Flush
 			// materializes its whole tree, not just the directory node.
 			localOutputs = append(localOutputs, dir+"/")
 		}
@@ -1356,17 +1359,18 @@ func (b *Builder) updateDeps(ctx context.Context, step *Step) error {
 		clog.Warningf(ctx, "update deps: no outputs")
 		return nil
 	}
-	output, err := filepath.Rel(step.cmd.WorkDir, step.cmd.Outputs[0])
+	outputPath, err := step.cmd.Outputs[0].Rel(step.cmd.WorkDir)
 	if err != nil {
 		clog.Warningf(ctx, "update deps: failed to get rel %s,%s: %v", step.cmd.WorkDir, step.cmd.Outputs[0], err)
 		return nil
 	}
+	output := string(outputPath)
 	fi, err := b.hashFS.Stat(ctx, step.cmd.WorkspaceRoot, step.cmd.Outputs[0])
 	if err != nil {
 		clog.Warningf(ctx, "update deps: missing outputs %s: %v", step.cmd.Outputs[0], err)
 		return nil
 	}
-	ents, err := b.hashFS.Entries(ctx, step.cmd.WorkspaceRoot, []string{step.cmd.Outputs[0]})
+	ents, err := b.hashFS.Entries(ctx, step.cmd.WorkspaceRoot, []sisopath.Path{step.cmd.Outputs[0]})
 	if err != nil || len(ents) == 0 {
 		clog.Warningf(ctx, "update deps: failed to get output entry %q %d: %v", step.cmd.Outputs[0], len(ents), err)
 		return nil
@@ -1382,9 +1386,9 @@ func (b *Builder) updateDeps(ctx context.Context, step *Step) error {
 	clog.Infof(ctx, "update deps=%s: %s %s %d updated:%t pure:%t/%t->true", step.cmd.Deps, output, base64.StdEncoding.EncodeToString(step.cmd.CmdHash), len(deps), updated, step.cmd.Pure, step.cmd.Pure)
 	span.SetAttr("deps", len(deps))
 	span.SetAttr("updated", updated)
-	canonicalizedDeps := make([]string, 0, len(deps))
+	canonicalizedDeps := make([]sisopath.Path, 0, len(deps))
 	for _, dep := range deps {
-		canonicalizedDeps = append(canonicalizedDeps, b.path.MaybeFromRelative(ctx, dep))
+		canonicalizedDeps = append(canonicalizedDeps, sisopath.New(b.path.MaybeFromRelative(ctx, dep)))
 	}
 	depsFixCmd(ctx, b, step, canonicalizedDeps)
 	return nil

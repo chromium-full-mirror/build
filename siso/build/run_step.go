@@ -22,6 +22,7 @@ import (
 
 	"go.chromium.org/build/siso/o11y/clog"
 	"go.chromium.org/build/siso/o11y/trace"
+	"go.chromium.org/build/siso/path"
 	"go.chromium.org/build/siso/reapi"
 	"go.chromium.org/build/siso/toolsupport/msvcutil"
 	"go.chromium.org/build/siso/ui"
@@ -222,7 +223,7 @@ func (b *Builder) runStep(ctx context.Context, step *Step) (retErr error) {
 	defer func() {
 		if retErr != nil && !errors.Is(retErr, context.Canceled) {
 			// force flush to disk
-			ferr := b.hashFS.Flush(ctx, step.cmd.WorkspaceRoot, []string{step.cmd.RSPFile})
+			ferr := b.hashFS.Flush(ctx, step.cmd.WorkspaceRoot, []path.Path{step.cmd.RSPFile})
 			clog.Warningf(ctx, "failed to exec %v: preserve rsp=%s flush:%v", retErr, step.cmd.RSPFile, ferr)
 			return
 		}
@@ -290,7 +291,7 @@ func stepStartLog(ctx context.Context, logger *clog.Logger, step *Step, descript
 		"description": description,
 		"action":      step.def.ActionName(),
 		"span_name":   spanName,
-		"output0":     step.def.Outputs(ctx)[0],
+		"output0":     string(step.def.Outputs(ctx)[0]),
 	}
 	logger.Log(logEntry)
 }
@@ -306,7 +307,7 @@ func (b *Builder) stepSpanInit(ctx context.Context, span *trace.Span, step *Step
 	span.SetAttr("description", description)
 	span.SetAttr("action", step.def.ActionName())
 	span.SetAttr("span_name", spanName)
-	span.SetAttr("output0", step.def.Outputs(ctx)[0])
+	span.SetAttr("output0", string(step.def.Outputs(ctx)[0]))
 	if next := step.def.Next(); next != nil {
 		span.SetAttr("next_id", step.def.Next().String())
 	}

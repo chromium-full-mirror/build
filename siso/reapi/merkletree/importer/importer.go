@@ -16,6 +16,7 @@ import (
 
 	"go.chromium.org/build/siso/hashfs/osfs"
 	"go.chromium.org/build/siso/o11y/clog"
+	"go.chromium.org/build/siso/path"
 	"go.chromium.org/build/siso/reapi/digest"
 	"go.chromium.org/build/siso/reapi/merkletree"
 )
@@ -28,25 +29,25 @@ func (Importer) Import(ctx context.Context, dir string, ds *digest.Store) (diges
 	var entries []merkletree.Entry
 	// TODO: pass osfs from subcommand?
 	osfs := osfs.New(ctx, "fs", osfs.Option{})
-	err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+	err := filepath.WalkDir(dir, func(fpath string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
-		if dir == path {
+		if dir == fpath {
 			return nil
 		}
-		name := strings.TrimPrefix(filepath.ToSlash(path), dir+"/")
+		name := strings.TrimPrefix(filepath.ToSlash(fpath), dir+"/")
 		if d.IsDir() {
 			if log.V(3) {
 				clog.Infof(ctx, "add dir %s", name)
 			}
 			entries = append(entries, merkletree.Entry{
-				Name: name,
+				Name: path.Path(name),
 			})
 			return nil
 		}
 		if d.Type()&fs.ModeSymlink == fs.ModeSymlink {
-			target, err := os.Readlink(path)
+			target, err := os.Readlink(fpath)
 			if err != nil {
 				return err
 			}
@@ -54,7 +55,7 @@ func (Importer) Import(ctx context.Context, dir string, ds *digest.Store) (diges
 				clog.Infof(ctx, "add symlink %s ->%s", name, target)
 			}
 			entries = append(entries, merkletree.Entry{
-				Name:   name,
+				Name:   path.Path(name),
 				Target: target,
 			})
 			return nil
@@ -66,7 +67,7 @@ func (Importer) Import(ctx context.Context, dir string, ds *digest.Store) (diges
 		if err != nil {
 			return err
 		}
-		data, err := digest.FromLocalFile(ctx, osfs.FileSource(path, fi.Size()))
+		data, err := digest.FromLocalFile(ctx, osfs.FileSource(fpath, fi.Size()))
 		if err != nil {
 			return err
 		}
@@ -74,7 +75,7 @@ func (Importer) Import(ctx context.Context, dir string, ds *digest.Store) (diges
 			clog.Infof(ctx, "add file %s %v", name, data.Digest())
 		}
 		entries = append(entries, merkletree.Entry{
-			Name:         name,
+			Name:         path.Path(name),
 			Data:         data,
 			IsExecutable: (fi.Mode()&fs.ModePerm)&0111 != 0,
 		})

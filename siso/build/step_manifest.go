@@ -8,6 +8,8 @@ import (
 	"context"
 	"crypto/sha256"
 	"io"
+
+	"go.chromium.org/build/siso/path"
 )
 
 // stepManifest is a manifest of a step.
@@ -19,9 +21,9 @@ type stepManifest struct {
 	cmdHash []byte
 
 	// inputs of the step.
-	inputs []string
+	inputs []path.Path
 	// outputs of the step.
-	outputs []string
+	outputs []path.Path
 	// hash of inputs/outputs/extra
 	// extra: sandbox
 	edgeHash []byte
@@ -44,15 +46,15 @@ func newStepManifest(ctx context.Context, stepDef StepDef) *stepManifest {
 
 const unitSeparator = "\x1f"
 
-func calculateEdgeHash(inputs, outputs, extra []string) []byte {
+func calculateEdgeHash(inputs, outputs []path.Path, extra []string) []byte {
 	h := sha256.New()
 	for _, fname := range inputs {
-		io.WriteString(h, fname)
+		io.WriteString(h, string(fname))
 		io.WriteString(h, unitSeparator)
 	}
 	io.WriteString(h, unitSeparator)
 	for _, fname := range outputs {
-		io.WriteString(h, fname)
+		io.WriteString(h, string(fname))
 		io.WriteString(h, unitSeparator)
 	}
 	if len(extra) > 0 {

@@ -136,7 +136,7 @@ func runOnce(ctx context.Context, cmd *execute.Cmd) (*rpb.ActionResult, error) {
 	// success. (Bazel kills survivors at main-child exit instead, which is only
 	// safe because it captures output via files, not pipes.)
 	c.Env = cmd.Env
-	c.Dir = filepath.Join(cmd.WorkspaceRoot, cmd.WorkDir)
+	c.Dir = filepath.Join(cmd.WorkspaceRoot, string(cmd.WorkDir))
 	c.Stdout = cmd.StdoutWriter()
 	c.Stderr = cmd.StderrWriter()
 	var consoleWG sync.WaitGroup

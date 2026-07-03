@@ -25,6 +25,7 @@ import (
 	pb "go.chromium.org/build/siso/build/ninjabuild/proto"
 	"go.chromium.org/build/siso/hashfs"
 	"go.chromium.org/build/siso/o11y/clog"
+	"go.chromium.org/build/siso/path"
 	"go.chromium.org/build/siso/reapi/digest"
 	"go.chromium.org/build/siso/toolsupport/ninjautil"
 )
@@ -66,7 +67,7 @@ type DepsLogKey struct {
 // TODO(b/374196367): use digest for validity of output.
 func checkDepsLogState(ctx context.Context, hashFS *hashfs.HashFS, bpath *build.Path, key DepsLogKey) (DepsLogState, error) {
 	fname := bpath.MaybeFromRelative(ctx, key.Target)
-	fi, err := hashFS.Stat(ctx, bpath.WorkspaceRoot, fname)
+	fi, err := hashFS.Stat(ctx, bpath.WorkspaceRoot, path.New(fname))
 	if err != nil {
 		return DepsLogStale, fmt.Errorf("not found deps output %q: %v", key.Target, err)
 	}
@@ -74,7 +75,7 @@ func checkDepsLogState(ctx context.Context, hashFS *hashfs.HashFS, bpath *build.
 		return DepsLogValid, nil
 	}
 	if !key.Digest.IsZero() {
-		ents, err := hashFS.Entries(ctx, bpath.WorkspaceRoot, []string{fname})
+		ents, err := hashFS.Entries(ctx, bpath.WorkspaceRoot, []path.Path{path.Path(fname)})
 		if err != nil || len(ents) == 0 {
 			return DepsLogStale, fmt.Errorf("output %q entry error %v: ents=%d %v", key.Target, key.Digest, len(ents), err)
 		}

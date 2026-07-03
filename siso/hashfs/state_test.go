@@ -28,6 +28,7 @@ import (
 
 	"go.chromium.org/build/siso/hashfs"
 	pb "go.chromium.org/build/siso/hashfs/proto"
+	"go.chromium.org/build/siso/path"
 	"go.chromium.org/build/siso/reapi/digest"
 	"go.chromium.org/build/siso/reapi/merkletree"
 )
@@ -242,7 +243,7 @@ func TestState(t *testing.T) {
 		t.Fatalf("WaitReady=%v; want nil", err)
 	}
 
-	err = hashFS.WriteFile(ctx, dir, "stamp", nil, false, time.Now(), []byte("dummy-cmdhash"), nil)
+	err = hashFS.WriteFile(ctx, dir, path.Path("stamp"), nil, false, time.Now(), []byte("dummy-cmdhash"), nil)
 	if err != nil {
 		t.Errorf("WriteFile(...)=%v; want nil error", err)
 	}
@@ -466,7 +467,7 @@ func TestState_Symlink(t *testing.T) {
 		if err != nil {
 			t.Fatalf("WaitReady=%v; want nil", err)
 		}
-		fi, err := hashFS.Stat(ctx, dir, "symlink")
+		fi, err := hashFS.Stat(ctx, dir, path.Path("symlink"))
 		if err != nil {
 			t.Fatalf("Stat(%q)=%v", "symlink", err)
 		}
@@ -477,7 +478,7 @@ func TestState_Symlink(t *testing.T) {
 			t.Errorf("target=%q; want=%q", fi.Target(), "target.0")
 		}
 		// make dirty to write state file
-		err = hashFS.WriteFile(ctx, dir, "stamp", nil, false, time.Now(), []byte("dummy-cmdhash"), nil)
+		err = hashFS.WriteFile(ctx, dir, path.Path("stamp"), nil, false, time.Now(), []byte("dummy-cmdhash"), nil)
 		if err != nil {
 			t.Errorf("WriteFile(...)=%v; want nil error", err)
 		}
@@ -519,7 +520,7 @@ func TestState_Symlink(t *testing.T) {
 		if err != nil {
 			t.Fatalf("WaitReady=%v; want nil", err)
 		}
-		fi, err := hashFS.Stat(ctx, dir, "symlink")
+		fi, err := hashFS.Stat(ctx, dir, path.Path("symlink"))
 		if err != nil {
 			t.Fatalf("Stat(%q)=%v", "symlink", err)
 		}
@@ -817,7 +818,7 @@ func TestState_DirOutput_BuildWithoutBytesReload(t *testing.T) {
 			t.Fatalf("WaitReady=%v", err)
 		}
 		for _, rel := range want {
-			fi, err := hashFS2.Stat(ctx, dir, rel)
+			fi, err := hashFS2.Stat(ctx, dir, path.Path(rel))
 			if err != nil {
 				t.Fatalf("reload %d: %s dropped: %v; a build-without-bytes directory output (output_local=false) must keep every entry across reload even though it is not on local disk", i, rel, err)
 			}

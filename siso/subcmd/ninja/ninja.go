@@ -36,6 +36,7 @@ import (
 	"go.chromium.org/build/siso/o11y/clog"
 	"go.chromium.org/build/siso/o11y/monitoring"
 	"go.chromium.org/build/siso/o11y/trace"
+	"go.chromium.org/build/siso/path"
 	"go.chromium.org/build/siso/reapi"
 	"go.chromium.org/build/siso/resource"
 	"go.chromium.org/build/siso/signals"
@@ -646,7 +647,7 @@ func (c *Command) Run(ctx context.Context) (stats build.Stats, finalErr error) {
 			return stats, err
 		}
 		// to avoid unexpected reconcile mtime
-		hashFS.Forget(ctx, buildPath.WorkspaceRoot, []string{buildPath.MaybeFromRelative(ctx, "build.ninja.stamp")})
+		hashFS.Forget(ctx, buildPath.WorkspaceRoot, []path.Path{path.Path(buildPath.MaybeFromRelative(ctx, "build.ninja.stamp"))})
 		err = hashFS.Refresh(ctx)
 		if err != nil {
 			clog.Warningf(ctx, "%s modified. failed to refresh hashfs %s: %v", c.fname, time.Since(started), err)

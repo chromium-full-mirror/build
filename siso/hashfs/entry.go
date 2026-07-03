@@ -23,6 +23,7 @@ import (
 	"go.chromium.org/build/siso/hashfs/osfs"
 	"go.chromium.org/build/siso/o11y/clog"
 	"go.chromium.org/build/siso/o11y/monitoring"
+	"go.chromium.org/build/siso/path"
 	"go.chromium.org/build/siso/reapi/digest"
 	"go.chromium.org/build/siso/reapi/retry"
 )
@@ -107,7 +108,7 @@ func (e *entry) String() string {
 
 var errNotRegular = errors.New("unexpected filetype not regular")
 
-func (e *entry) init(ctx context.Context, fname string, executables map[string]bool, osfs *osfs.OSFS) {
+func (e *entry) init(ctx context.Context, fname string, executables map[path.Path]bool, osfs *osfs.OSFS) {
 	fi, err := osfs.Lstat(ctx, fname)
 	if errors.Is(err, fs.ErrNotExist) {
 		if log.V(1) {
@@ -296,7 +297,7 @@ func (e *entry) updateDir(ctx context.Context, hfs *HashFS, dname string) []stri
 			}
 			wg.Go(func() {
 				// update entry in e.directory.
-				_, err := hfs.stat(ctx, dname, name, statOpts{})
+				_, err := hfs.stat(ctx, dname, path.Path(name), statOpts{})
 				if err != nil {
 					clog.Warningf(ctx, "updateDir stat %s: %v", name, err)
 				}
@@ -315,7 +316,7 @@ func (e *entry) updateDir(ctx context.Context, hfs *HashFS, dname string) []stri
 				continue
 			}
 			// update entry in e.directory.
-			_, err := hfs.stat(ctx, dname, name, statOpts{})
+			_, err := hfs.stat(ctx, dname, path.Path(name), statOpts{})
 			if err != nil {
 				clog.Warningf(ctx, "updateDir stat %s: %v", name, err)
 			}

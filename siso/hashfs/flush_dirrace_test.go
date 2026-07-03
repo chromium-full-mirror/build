@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"go.chromium.org/build/siso/path"
 	"go.chromium.org/build/siso/reapi/digest"
 	"go.chromium.org/build/siso/reapi/merkletree"
 )
@@ -60,7 +61,7 @@ func TestFlush_LocalReadyDirInputNotFlushed(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := hfs.Flush(ctx, root, []string{"srcdir"}); err != nil {
+	if err := hfs.Flush(ctx, root, []path.Path{"srcdir"}); err != nil {
 		t.Fatalf("flush: %v", err)
 	}
 	got, err := os.ReadFile(src)
@@ -133,12 +134,12 @@ func TestFlush_PopulatedDirReplacesStaleNonDir(t *testing.T) {
 			}
 			for i := range nchild {
 				child := fmt.Sprintf("%s/child%02d", dir, i)
-				if err := hfs.WriteFile(ctx, root, child, []byte("c"), false, mtime, cmdhash, nil); err != nil {
+				if err := hfs.WriteFile(ctx, root, path.Path(child), []byte("c"), false, mtime, cmdhash, nil); err != nil {
 					t.Fatalf("writefile %s: %v", child, err)
 				}
 			}
 
-			if err := hfs.Flush(ctx, root, []string{dir + "/"}); err != nil {
+			if err := hfs.Flush(ctx, root, []path.Path{path.Path(dir + "/")}); err != nil {
 				t.Fatalf("Flush(populated dir over stale %s)=%v; want nil", disk, err)
 			}
 
@@ -161,7 +162,7 @@ func TestFlush_PopulatedDirReplacesStaleNonDir(t *testing.T) {
 }
 
 // TestFlush_MemberListedBeforeDirTarget covers a caller that lists a directory
-// output's members before the directory target itself -- e.g. a file output
+// output's members before the directory artifact itself -- e.g. a file output
 // declared under a directory output, since builder.go appends file outputs
 // ahead of dir+"/" outputs. expandFlushDirs must still order the parent
 // directory ahead of its members so Flush materializes the directory (removing
@@ -209,20 +210,20 @@ func TestFlush_MemberListedBeforeDirTarget(t *testing.T) {
 	}}); err != nil {
 		t.Fatalf("update dir: %v", err)
 	}
-	// List every member first, then the directory target -- the order that
+	// List every member first, then the directory artifact -- the order that
 	// would defeat the synchronous directory flush without the parent-first
 	// sort in expandFlushDirs.
 	var files []string
 	for i := range nchild {
 		child := fmt.Sprintf("%s/child%02d", dir, i)
-		if err := hfs.WriteFile(ctx, root, child, []byte("c"), false, mtime, cmdhash, nil); err != nil {
+		if err := hfs.WriteFile(ctx, root, path.Path(child), []byte("c"), false, mtime, cmdhash, nil); err != nil {
 			t.Fatalf("writefile %s: %v", child, err)
 		}
 		files = append(files, child)
 	}
 	files = append(files, dir+"/")
 
-	if err := hfs.Flush(ctx, root, files); err != nil {
+	if err := hfs.Flush(ctx, root, path.Paths(files)); err != nil {
 		t.Fatalf("Flush(members before dir target)=%v; want nil", err)
 	}
 

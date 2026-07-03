@@ -18,6 +18,7 @@ import (
 	rpb "go.chromium.org/build/remote-apis/build/bazel/remote/execution/v2"
 
 	"go.chromium.org/build/siso/hashfs"
+	"go.chromium.org/build/siso/path"
 	"go.chromium.org/build/siso/reapi"
 	"go.chromium.org/build/siso/reapi/digest"
 	"go.chromium.org/build/siso/reapi/merkletree"
@@ -230,7 +231,7 @@ func TestExpandDirOutputs_Idempotent(t *testing.T) {
 	cmd := &Cmd{
 		WorkspaceRoot: root,
 		WorkDir:       "out",
-		OutputDirs:    []string{"out/gen"},
+		OutputDirs:    []path.Path{"out/gen"},
 	}
 	cmd.InitOutputs()
 	cmd.actionResult = &rpb.ActionResult{
@@ -306,8 +307,8 @@ func TestSetResultOutputs_FileAndDir(t *testing.T) {
 		WorkspaceRoot: root,
 		WorkDir:       "out",
 		HashFS:        hashFS,
-		Outputs:       []string{"out/a.o"},
-		OutputDirs:    []string{"out/gen"},
+		Outputs:       []path.Path{"out/a.o"},
+		OutputDirs:    []path.Path{"out/gen"},
 	}
 	ds := digest.NewStore()
 	result := &rpb.ActionResult{}
@@ -369,7 +370,7 @@ func TestSetResultOutputs_SymlinkOutput(t *testing.T) {
 		WorkspaceRoot: root,
 		WorkDir:       "out",
 		HashFS:        hashFS,
-		Outputs:       []string{"out/link"},
+		Outputs:       []path.Path{"out/link"},
 	}
 	ds := digest.NewStore()
 	result := &rpb.ActionResult{}

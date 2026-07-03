@@ -20,6 +20,7 @@ import (
 
 	"go.chromium.org/build/siso/execute"
 	epb "go.chromium.org/build/siso/execute/proto"
+	"go.chromium.org/build/siso/path"
 )
 
 // ServeSpawnHelper runs the helper side of the spawn protocol on the inherited
@@ -160,7 +161,7 @@ func handleStart(ctx context.Context, conn *spawnConn, logger *log.Logger, id ui
 			Args:          req.GetArgs(),
 			Env:           req.GetEnv(),
 			WorkspaceRoot: req.GetWorkspaceRoot(),
-			WorkDir:       req.GetWorkDir(),
+			WorkDir:       path.New(req.GetWorkDir()),
 			OOMScoreAdj:   oomScoreAdj,
 		}
 

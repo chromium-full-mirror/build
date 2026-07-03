@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"go.chromium.org/build/siso/path"
 	"go.chromium.org/build/siso/reapi/digest"
 	"go.chromium.org/build/siso/reapi/merkletree"
 )
@@ -66,9 +67,9 @@ func TestFlush_TypeTransitions(t *testing.T) {
 		var err error
 		switch typ {
 		case "file":
-			err = hfs.WriteFile(ctx, root, name, []byte("new-file"), false, mtime, cmdhash, nil)
+			err = hfs.WriteFile(ctx, root, path.Path(name), []byte("new-file"), false, mtime, cmdhash, nil)
 		case "symlink":
-			err = hfs.Symlink(ctx, root, "new-target", name, mtime, cmdhash, nil)
+			err = hfs.Symlink(ctx, root, "new-target", path.Path(name), mtime, cmdhash, nil)
 		case "dir":
 			err = hfs.Update(ctx, root, []UpdateEntry{{
 				Name:    name,
@@ -108,7 +109,7 @@ func TestFlush_TypeTransitions(t *testing.T) {
 					}
 				})
 				record(t, hfs, root, want)
-				if err := hfs.Flush(ctx, root, []string{name}); err != nil {
+				if err := hfs.Flush(ctx, root, []path.Path{path.Path(name)}); err != nil {
 					t.Fatalf("Flush(%s on disk -> %s)=%v; want nil (stale %s must be replaced)", disk, want, err, disk)
 				}
 				p := filepath.Join(root, name)

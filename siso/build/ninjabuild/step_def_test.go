@@ -14,6 +14,7 @@ import (
 
 	"go.chromium.org/build/siso/build"
 	"go.chromium.org/build/siso/hashfs"
+	"go.chromium.org/build/siso/path"
 	"go.chromium.org/build/siso/toolsupport/ninjautil"
 )
 
@@ -38,11 +39,11 @@ func TestStepExpandLabels(t *testing.T) {
 		globals: g,
 	}
 
-	got := s.expandLabels(ctx, []string{
+	got := s.expandLabels(ctx, []path.Path{
 		"foo/bar",
 		"component:component",
 	})
-	want := []string{
+	want := []path.Path{
 		"foo/bar",
 		"component/b",
 		"component/a/1",
@@ -111,7 +112,7 @@ build target1: __rule target2 | ../../source1 || target3
 					},
 				},
 			},
-			targetPaths: make([]string, state.NumNodes()),
+			targetPaths: make([]path.Path, state.NumNodes()),
 			edgeRules:   make([]edgeRuleHolder, state.NumNodes()),
 		},
 	}
@@ -142,12 +143,12 @@ build target1: __rule target2 | ../../source1 || target3
 		}
 	}
 	s := newStepDef("target1")
-	got := s.Inputs(ctx)
+	got := path.Strings(s.Inputs(ctx))
 	want := []string{"out/Default/target2", "source1", "out/Default/target3", "source0"}
 	if diff := cmp.Diff(want, got); diff != "" {
 		t.Errorf("Inputs: diff -want +got:\n%s", diff)
 	}
-	got = s.ExpandedInputs(ctx)
+	got = path.Strings(s.ExpandedInputs(ctx))
 	sort.Strings(got)
 	sort.Strings(want)
 	if diff := cmp.Diff(want, got); diff != "" {
@@ -230,7 +231,7 @@ build target1: __rule ../../source1 foo.stamp foo.a
 					},
 				},
 			},
-			targetPaths: make([]string, state.NumNodes()),
+			targetPaths: make([]path.Path, state.NumNodes()),
 			edgeRules:   make([]edgeRuleHolder, state.NumNodes()),
 		},
 	}
@@ -262,12 +263,12 @@ build target1: __rule ../../source1 foo.stamp foo.a
 		}
 	}
 	s := newStepDef("target1")
-	got := s.Inputs(ctx)
+	got := path.Strings(s.Inputs(ctx))
 	want := []string{"source1", "out/Default/foo.stamp", "out/Default/foo.a", "source0"}
 	if diff := cmp.Diff(want, got); diff != "" {
 		t.Errorf("Inputs: diff -want +got:\n%s", diff)
 	}
-	got = s.ExpandedInputs(ctx)
+	got = path.Strings(s.ExpandedInputs(ctx))
 	want = []string{"source1", "source2", "out/Default/foo.a", "source3", "source4", "source0"}
 	sort.Strings(got)
 	sort.Strings(want)
@@ -319,7 +320,7 @@ build foo.h: __rule | ./protoc
 			path:        build.NewPath(dir, "out/Default"),
 			hashFS:      hashFS,
 			stepConfig:  &StepConfig{},
-			targetPaths: make([]string, state.NumNodes()),
+			targetPaths: make([]path.Path, state.NumNodes()),
 			edgeRules:   make([]edgeRuleHolder, state.NumNodes()),
 		},
 	}
@@ -354,12 +355,12 @@ build foo.h: __rule | ./protoc
 		}
 	}
 	s := newStepDef("foo.h")
-	got := s.Inputs(ctx)
+	got := path.Strings(s.Inputs(ctx))
 	want := []string{"out/Default/protoc"}
 	if diff := cmp.Diff(want, got); diff != "" {
 		t.Errorf("Inputs: diff -want +got:\n%s", diff)
 	}
-	got = s.ExpandedInputs(ctx)
+	got = path.Strings(s.ExpandedInputs(ctx))
 	want = []string{
 		"out/Default/protoc",
 		"out/Default/libc++.so",
@@ -430,7 +431,7 @@ build target1: __rule ../../source1.cc target2.h target3.h
 					},
 				},
 			},
-			targetPaths: make([]string, state.NumNodes()),
+			targetPaths: make([]path.Path, state.NumNodes()),
 			edgeRules:   make([]edgeRuleHolder, state.NumNodes()),
 		},
 	}
@@ -462,12 +463,12 @@ build target1: __rule ../../source1.cc target2.h target3.h
 		}
 	}
 	s := newStepDef("target1")
-	got := s.Inputs(ctx)
+	got := path.Strings(s.Inputs(ctx))
 	want := []string{"source1.cc", "out/Default/target2.h", "out/Default/target3.h"}
 	if diff := cmp.Diff(want, got); diff != "" {
 		t.Errorf("Inputs: diff -want +got:\n%s", diff)
 	}
-	got = s.ExpandedInputs(ctx)
+	got = path.Strings(s.ExpandedInputs(ctx))
 	want = []string{"source1.cc", "out/Default/target2.h", "out/Default/target3.h", "out/Default/target4.h"}
 	sort.Strings(got)
 	sort.Strings(want)

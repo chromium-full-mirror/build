@@ -21,6 +21,7 @@ import (
 	log "github.com/golang/glog"
 
 	"go.chromium.org/build/siso/o11y/clog"
+	"go.chromium.org/build/siso/path"
 	"go.chromium.org/build/siso/reapi/digest"
 )
 
@@ -47,7 +48,7 @@ func (d *directory) String() string {
 // path elements of filepath.
 // defer allocation for lookup, but pass elems for store.
 type pathElements struct {
-	origFname string
+	origFname path.Path
 
 	// number of elements processed.
 	n int
@@ -59,7 +60,7 @@ type pathElements struct {
 // lookup fname in directory and returns an entry of the fname,
 // real file name and directory entry that contains the entry,
 // and bool indicates file exists or not.
-func (d *directory) lookup(ctx context.Context, fname string) (*entry, string, *directory, bool) {
+func (d *directory) lookup(ctx context.Context, fname path.Path) (*entry, path.Path, *directory, bool) {
 	// expect d.isRoot == true
 	for range maxSymlinks {
 		e, dir, resolved, ok := d.lookupEntry(ctx, fname)
@@ -87,49 +88,49 @@ var missingEntry = func() *entry {
 	}
 }()
 
-func (d *directory) lookupEntry(ctx context.Context, fname string) (*entry, *directory, string, bool) {
+func (d *directory) lookupEntry(ctx context.Context, fname path.Path) (*entry, *directory, path.Path, bool) {
 	pe := pathElements{
 		origFname: fname,
 	}
-	for fname != "" {
-		fname = strings.TrimPrefix(fname, "/")
-		elem, rest, ok := strings.Cut(fname, "/")
+	s := string(fname)
+	for s != "" {
+		s = strings.TrimPrefix(s, "/")
+		elem, rest, ok := strings.Cut(s, "/")
 		if !ok {
-			e, ok := d.m.Load(fname)
+			e, ok := d.m.Load(s)
 			if !ok {
 				return nil, d, "", false
 			}
 			return e.(*entry), d, "", true
 		}
-		fname = rest
+		s = rest
 		pe.n++
-		subdir, target, missing := resolveNextDir(ctx, d, lookupNextDir, pe, elem, fname)
+		subdir, target, missing := resolveNextDir(ctx, d, lookupNextDir, pe, elem, s)
 		if subdir == nil {
 			if missing {
 				return missingEntry, nil, "", true
 			}
-			return nil, nil, target, false
+			return nil, nil, path.Path(target), false
 		}
 		d = subdir
 	}
 	if log.V(1) {
-		logOrigFname := pe.origFname
-		clog.Infof(ctx, "lookup %s fname empty", logOrigFname)
+		clog.Infof(ctx, "lookup %s fname empty", pe.origFname)
 	}
 	return nil, nil, "", false
 }
 
 var errRootSymlink = errors.New("symlink resolved from root")
 
-func (d *directory) store(ctx context.Context, fname string, e *entry) (*entry, error) {
+func (d *directory) store(ctx context.Context, fname path.Path, e *entry) (*entry, error) {
 	for range maxSymlinks {
 		ent, resolved, err := d.storeEntry(ctx, fname, e)
 		if resolved != "" {
 			if !d.isRoot {
-				if filepath.IsAbs(resolved) {
+				if filepath.IsAbs(string(resolved)) {
 					return nil, fmt.Errorf("root symlink %s: %w", resolved, errRootSymlink)
 				}
-				if !filepath.IsLocal(resolved) {
+				if !filepath.IsLocal(string(resolved)) {
 					return nil, fmt.Errorf("non local symlink %s: %w", resolved, errRootSymlink)
 				}
 			}
@@ -142,7 +143,7 @@ func (d *directory) store(ctx context.Context, fname string, e *entry) (*entry, 
 }
 
 type storeRaceError struct {
-	fname     string
+	fname     path.Path
 	prevEntry *entry
 	entry     *entry
 	curEntry  any // *entry
@@ -158,7 +159,7 @@ func (e storeRaceError) Error() string {
 // from ee when appropriate and logs changes.
 // Returns (entry to use, keep bool).
 // If keep is true, the returned entry should be used as-is (no swap needed).
-func shouldKeep(ctx context.Context, origFname string, ee, e *entry) (*entry, bool) {
+func shouldKeep(ctx context.Context, origFname path.Path, ee, e *entry) (*entry, bool) {
 	if e == ee {
 		// if storing entry `e` is the same as stored entry `ee`, no need to update.
 		return e, true
@@ -187,7 +188,7 @@ func shouldKeep(ctx context.Context, origFname string, ee, e *entry) (*entry, bo
 		if log.V(1) {
 			// lv is to reduce the number of memory allocations when variables are escaping to heap.
 			lv := struct {
-				origFname         string
+				origFname         path.Path
 				cmdchanged        bool
 				edgechanged       bool
 				eetarget, etarget string
@@ -199,7 +200,7 @@ func shouldKeep(ctx context.Context, origFname string, ee, e *entry) (*entry, bo
 			// don't log nil to digest of empty file (size=0)
 			// lv is to reduce the number of memory allocations when variables are escaping to heap.
 			lv := struct {
-				origFname   string
+				origFname   path.Path
 				cmdchanged  bool
 				edgechanged bool
 				eed, ed     digest.Digest
@@ -210,7 +211,7 @@ func shouldKeep(ctx context.Context, origFname string, ee, e *entry) (*entry, bo
 		if log.V(1) {
 			// lv is to reduce the number of memory allocations when variables are escaping to heap.
 			lv := struct {
-				origFname     string
+				origFname     path.Path
 				cmdchanged    bool
 				edgechanged   bool
 				actionchanged bool
@@ -235,7 +236,7 @@ func shouldKeep(ctx context.Context, origFname string, ee, e *entry) (*entry, bo
 		if log.V(1) {
 			// lv is to reduce the number of memory allocations when variables are escaping to heap.
 			lv := struct {
-				origFname   string
+				origFname   path.Path
 				mtime       time.Time
 				updatedTime time.Time
 			}{origFname, ee.getMtime(), ee.getUpdatedTime()}
@@ -258,34 +259,36 @@ func shouldKeep(ctx context.Context, origFname string, ee, e *entry) (*entry, bo
 	return e, false
 }
 
-func (d *directory) storeEntry(ctx context.Context, fname string, e *entry) (*entry, string, error) {
+func (d *directory) storeEntry(ctx context.Context, fname path.Path, e *entry) (*entry, path.Path, error) {
 	pe := pathElements{
 		origFname: fname,
-		elems:     make([]string, 0, strings.Count(fname, "/")+1),
+		elems:     make([]string, 0, strings.Count(string(fname), "/")+1),
 	}
 	if log.V(8) {
-		logOrigFname := pe.origFname
-		clog.Infof(ctx, "store %s %v", logOrigFname, e)
+		clog.Infof(ctx, "store %s %v", pe.origFname, e)
 	}
-	if strings.HasPrefix(fname, "/") {
+	if strings.HasPrefix(string(fname), "/") {
+		// Slash-rooted only: a drive-absolute path keeps its drive as
+		// elems[0], which the Windows branch below suffixes.
 		pe.elems = append(pe.elems, "/")
 	}
 	nextDir := func(ctx context.Context, d *directory, pe pathElements, elem string) (*directory, string, bool) {
 		return storeNextDir(ctx, d, pe, elem, errors.Is(e.err, fs.ErrNotExist))
 	}
-	for fname != "" {
-		fname = strings.TrimPrefix(fname, "/")
-		elem, rest, ok := strings.Cut(fname, "/")
+	s := string(fname)
+	for s != "" {
+		s = strings.TrimPrefix(s, "/")
+		elem, rest, ok := strings.Cut(s, "/")
 		if !ok {
-			v, loaded := d.m.LoadOrStore(fname, e)
+			v, loaded := d.m.LoadOrStore(s, e)
 			if !loaded {
 				if log.V(8) {
 					// lv is to reduce the number of memory allocations when variables are escaping to heap.
 					lv := struct {
-						origFname string
+						origFname path.Path
 						d         *directory
 						fname     string
-					}{pe.origFname, d, fname}
+					}{pe.origFname, d, s}
 					clog.Infof(ctx, "store %s -> %p %s", lv.origFname, lv.d, lv.fname)
 				}
 				return e, "", nil
@@ -297,12 +300,12 @@ func (d *directory) storeEntry(ctx context.Context, fname string, e *entry) (*en
 			}
 
 			// e should be new value for fname.
-			swapped := d.m.CompareAndSwap(fname, ee, e)
+			swapped := d.m.CompareAndSwap(s, ee, e)
 			if !swapped {
 				// store race?
-				v, ok := d.m.Load(fname)
+				v, ok := d.m.Load(s)
 				return nil, "", storeRaceError{
-					fname:     fname,
+					fname:     path.Path(s),
 					prevEntry: ee,
 					entry:     e,
 					curEntry:  v,
@@ -314,21 +317,20 @@ func (d *directory) storeEntry(ctx context.Context, fname string, e *entry) (*en
 		}
 		pe.n++
 		pe.elems = append(pe.elems, elem)
-		fname = rest
-		subdir, resolved, missing := resolveNextDir(ctx, d, nextDir, pe, elem, fname)
+		s = rest
+		subdir, resolved, missing := resolveNextDir(ctx, d, nextDir, pe, elem, s)
 		if subdir == nil {
 			if missing {
 				return missingEntry, "", nil
 			}
 			if resolved != "" {
-				return nil, resolved, nil
+				return nil, path.Path(resolved), nil
 			}
 			return nil, "", fmt.Errorf("store resolve next dir %s failed: %s", elem, pe.origFname)
 		}
 		d = subdir
 	}
-	errOrigFname := pe.origFname
-	return nil, "", fmt.Errorf("bad fname? %q", errOrigFname)
+	return nil, "", fmt.Errorf("bad fname? %q", pe.origFname)
 }
 
 // resolveNextDir resolves a dir named `elem` by calling `next`.
@@ -346,10 +348,12 @@ func resolveNextDir(ctx context.Context, d *directory, next func(context.Context
 		if len(pe.elems) != pe.n {
 			// reconstruct elems for lookup
 			pe.elems = make([]string, 0, pe.n+1)
-			if strings.HasPrefix(pe.origFname, "/") {
+			origStr := string(pe.origFname)
+			if strings.HasPrefix(origStr, "/") {
+				// Slash-rooted only (see storeEntry).
 				pe.elems = append(pe.elems, "/")
 			}
-			s := pe.origFname
+			s := origStr
 			for range pe.n - 1 {
 				s = strings.TrimPrefix(s, "/")
 				elem, rest, _ := strings.Cut(s, "/")
@@ -429,9 +433,10 @@ func storeNextDir(ctx context.Context, d *directory, pe pathElements, elem strin
 			if log.V(9) {
 				// lv is to reduce the number of memory allocations when variables are escaping to heap.
 				lv := struct {
-					origFname, elem string
-					d               *directory
-					dent            *entry
+					origFname path.Path
+					elem      string
+					d         *directory
+					dent      *entry
 				}{pe.origFname, elem, d, dent}
 				clog.Infof(ctx, "store %s subdir0 %s -> %s (%v)", lv.origFname, lv.elem, lv.d, lv.dent)
 			}
@@ -447,8 +452,9 @@ func storeNextDir(ctx context.Context, d *directory, pe pathElements, elem strin
 		if log.V(9) {
 			// lv is to reduce the number of memory allocations when variables are escaping to heap.
 			lv := struct {
-				origFname, elem string
-				deleted         bool
+				origFname path.Path
+				elem      string
+				deleted   bool
 			}{pe.origFname, elem, deleted}
 			clog.Infof(ctx, "store %s delete missing %s to create dir deleted: %t", lv.origFname, lv.elem, lv.deleted)
 		}
@@ -541,9 +547,10 @@ func storeNextDir(ctx context.Context, d *directory, pe pathElements, elem strin
 	if log.V(9) {
 		// lv is to reduce the number of memory allocations when variables are escaping to heap.
 		lv := struct {
-			origFname, elem string
-			subdir          *directory
-			dent            *entry
+			origFname path.Path
+			elem      string
+			subdir    *directory
+			dent      *entry
 		}{pe.origFname, elem, subdir, dent}
 		clog.Infof(ctx, "store %s subdir1 %s -> %s (%v)", lv.origFname, lv.elem, lv.subdir, lv.dent)
 	}
@@ -565,7 +572,7 @@ func storeNextDir(ctx context.Context, d *directory, pe pathElements, elem strin
 // The generated check applies to leaves, not directories. Keeping the directory
 // node anchored avoids orphaning a concurrent store that has published a directory
 // node but not yet stored its child entry.
-func (d *directory) deleteNotGenerated(ctx context.Context, fname string) {
+func (d *directory) deleteNotGenerated(ctx context.Context, fname path.Path) {
 	e, _, dir, ok := d.lookup(ctx, fname)
 	if !ok || e == nil {
 		return
@@ -578,15 +585,15 @@ func (d *directory) deleteNotGenerated(ctx context.Context, fname string) {
 		return
 	}
 	if dir != nil {
-		dir.m.CompareAndDelete(filepath.Base(fname), e)
+		dir.m.CompareAndDelete(string(fname.Base()), e)
 	}
 }
 
-func (d *directory) deleteNotGeneratedLeaves(ctx context.Context, dirname string) {
+func (d *directory) deleteNotGeneratedLeaves(ctx context.Context, dirname path.Path) {
 	d.m.Range(func(k, v any) bool {
 		name := k.(string)
 		e := v.(*entry)
-		fname := filepath.ToSlash(filepath.Join(dirname, name))
+		fname := dirname.Join(name)
 		// Recurse into any directory (generated or not) before the generated
 		// check, so stale non-generated descendants under a generated subdir are
 		// still pruned while the directory node stays anchored.
@@ -614,13 +621,13 @@ func (d *directory) deleteNotGeneratedLeaves(ctx context.Context, dirname string
 // the right default for cache invalidation: clearing a parent's negative cache,
 // forgetting inputs. Real directory removal goes through deleteForce (a path whose
 // own on-disk state is stale - removed, or type-changed to a file) or RemoveAll.
-func (d *directory) delete(ctx context.Context, fname string) {
+func (d *directory) delete(ctx context.Context, fname path.Path) {
 	_, _, dir, ok := d.lookup(ctx, fname)
 	if !ok || dir == nil {
 		// Path isn't cached - nothing to do.
 		return
 	}
-	name := filepath.Base(fname)
+	name := string(fname.Base())
 	v, vok := dir.m.Load(name)
 	if !vok {
 		return
@@ -642,11 +649,11 @@ func (d *directory) delete(ctx context.Context, fname string) {
 // re-recorded as the file. Using the child-preserving delete there would leave
 // the stale directory entry behind (ReadFile then fails with "no src" and the
 // new file is still treated as a directory).
-func (d *directory) deleteForce(ctx context.Context, fname string) {
+func (d *directory) deleteForce(ctx context.Context, fname path.Path) {
 	_, _, dir, ok := d.lookup(ctx, fname)
 	if !ok || dir == nil {
 		// Path isn't cached - nothing to do.
 		return
 	}
-	dir.m.Delete(filepath.Base(fname))
+	dir.m.Delete(string(fname.Base()))
 }

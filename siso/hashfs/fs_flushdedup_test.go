@@ -8,6 +8,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"go.chromium.org/build/siso/path"
 )
 
 // TestExpandFlushDirs_DedupsWithoutDirectory verifies expandFlushDirs dedupes
@@ -48,7 +50,7 @@ func TestExpandFlushDirs_DedupsWithoutDirectory(t *testing.T) {
 			if err := os.WriteFile(filepath.Join(root, name), []byte("X"), 0644); err != nil {
 				t.Fatal(err)
 			}
-			if _, err := hfs.Stat(ctx, root, name); err != nil {
+			if _, err := hfs.Stat(ctx, root, path.Path(name)); err != nil {
 				t.Fatal(err)
 			}
 		}
@@ -59,7 +61,7 @@ func TestExpandFlushDirs_DedupsWithoutDirectory(t *testing.T) {
 		}
 	})
 
-	// Sanity: the same duplicate is also deduped when a directory target
+	// Sanity: the same duplicate is also deduped when a directory artifact
 	// (trailing slash) IS present and expanded to its members.
 	t.Run("DuplicateWithDirectory", func(t *testing.T) {
 		if err := os.MkdirAll(filepath.Join(root, "d"), 0755); err != nil {
@@ -77,7 +79,7 @@ func TestExpandFlushDirs_DedupsWithoutDirectory(t *testing.T) {
 			t.Errorf("expandFlushDirs (directory present) emitted %q %d times; want 1 (result=%v)", "foo.o.d", n, got)
 		}
 		if countOf(got, "d/x") != 1 {
-			t.Errorf("expandFlushDirs did not expand directory target %q; result=%v", "d/", got)
+			t.Errorf("expandFlushDirs did not expand directory artifact %q; result=%v", "d/", got)
 		}
 	})
 

@@ -21,6 +21,7 @@ import (
 	"go.chromium.org/build/siso/execute/localexec"
 	"go.chromium.org/build/siso/hashfs"
 	"go.chromium.org/build/siso/o11y/clog"
+	sisopath "go.chromium.org/build/siso/path"
 	"go.chromium.org/build/siso/reapi/digest"
 	"go.chromium.org/build/siso/toolsupport/nsjailutil"
 )
@@ -125,9 +126,9 @@ func (c *Command) run(ctx context.Context) error {
 
 	cmd := &execute.Cmd{
 		WorkspaceRoot:     workspaceRoot,
-		WorkDir:           outDir,
-		Inputs:            req.Inputs,
-		Outputs:           req.Outputs,
+		WorkDir:           sisopath.Path(outDir),
+		Inputs:            sisopath.Paths(req.Inputs),
+		Outputs:           sisopath.Paths(req.Outputs),
 		HashFS:            hashFS,
 		ExecRootInJailDir: jail.ExecRoot(),
 	}

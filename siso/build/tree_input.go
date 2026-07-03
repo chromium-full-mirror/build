@@ -11,13 +11,13 @@ import (
 	"path/filepath"
 	"slices"
 	"sort"
-	"strings"
 	"sync"
 	"time"
 
 	log "github.com/golang/glog"
 
 	"go.chromium.org/build/siso/o11y/clog"
+	"go.chromium.org/build/siso/path"
 	"go.chromium.org/build/siso/reapi/digest"
 	"go.chromium.org/build/siso/reapi/merkletree"
 )
@@ -113,7 +113,7 @@ func (b *Builder) treeInput(ctx context.Context, dir, labelSuffix string, fixFn 
 		return merkletree.TreeEntry{}, err
 	}
 	return merkletree.TreeEntry{
-		Name:   dir,
+		Name:   path.Path(dir),
 		Digest: st.d,
 	}, nil
 }
@@ -132,12 +132,14 @@ func (st *subtree) init(ctx context.Context, b *Builder, dir string, files []str
 		if fixFn != nil {
 			files = fixFn(ctx, files)
 		}
+		dirPath := path.Path(dir)
 		var inputs []string
 		for _, f := range files {
-			if !strings.HasPrefix(f, dir+"/") {
+			fp := path.Path(f)
+			if !fp.HasPrefix(dirPath) {
 				continue
 			}
-			inputs = append(inputs, strings.TrimPrefix(f, dir+"/"))
+			inputs = append(inputs, string(fp.TrimPrefix(dirPath)))
 		}
 		sort.Strings(inputs)
 		rootDir := dir
@@ -145,7 +147,7 @@ func (st *subtree) init(ctx context.Context, b *Builder, dir string, files []str
 			rootDir = filepath.Join(b.path.WorkspaceRoot, dir)
 		}
 		clog.Infof(ctx, "tree init root dir: %q (%q %q)", rootDir, b.path.WorkspaceRoot, dir)
-		ents, err := b.hashFS.Entries(ctx, rootDir, inputs)
+		ents, err := b.hashFS.Entries(ctx, rootDir, path.Paths(inputs))
 		if err != nil {
 			clog.Warningf(ctx, "failed to get subtree entries %s: %v", dir, err)
 			st.err = err

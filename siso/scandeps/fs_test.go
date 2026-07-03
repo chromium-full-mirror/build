@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"go.chromium.org/build/siso/hashfs"
+	"go.chromium.org/build/siso/path"
 )
 
 // TestScanFileDoesNotCacheContextCancel: a scan canceled while waiting on
@@ -36,10 +37,10 @@ func TestScanFileDoesNotCacheContextCancel(t *testing.T) {
 		t.Fatal(err)
 	}
 	fv := &fsview{
-		visited: map[string]bool{},
-		dirs:    map[string]bool{},
-		files:   map[string]*scanResult{},
-		topEnts: map[string]*sync.Map{},
+		visited: map[path.Path]bool{},
+		dirs:    map[path.Path]bool{},
+		files:   map[path.Path]*scanResult{},
+		topEnts: map[path.Path]*sync.Map{},
 	}
 	fv.reset(fsys, dir, nil, nil)
 
@@ -105,7 +106,7 @@ func TestFilesystemUpdate(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() {
-		err := hashFS.Mkdir(ctx, dir, "out/siso/gen", nil, nil)
+		err := hashFS.Mkdir(ctx, dir, path.New("out/siso/gen"), nil, nil)
 		if err != nil {
 			t.Errorf("hashFS.Mkdir(ctx, %q, %q)=%v; want nil err", dir, "out/siso/gen", err)
 		}

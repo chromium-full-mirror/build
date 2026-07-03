@@ -22,6 +22,7 @@ import (
 
 	"go.chromium.org/build/siso/execute"
 	"go.chromium.org/build/siso/hashfs"
+	"go.chromium.org/build/siso/path"
 	"go.chromium.org/build/siso/reapi"
 	"go.chromium.org/build/siso/reapi/digest"
 	"go.chromium.org/build/siso/reapi/merkletree"
@@ -366,7 +367,7 @@ func newRacingTestStep(cmd *execute.Cmd, outputs []string) *Step {
 		finishReported: new(sync.Once),
 		def: fakeStepDef{
 			actionName: "clang",
-			outputs:    outputs,
+			outputs:    path.Paths(outputs),
 		},
 	}
 }
@@ -426,7 +427,7 @@ func TestRunRacing_StaleLocalReadyOutput(t *testing.T) {
 
 	cmd := &execute.Cmd{
 		Args:          []string{"clang", "-o", "stubs.jar"},
-		Outputs:       []string{"stubs.jar"},
+		Outputs:       []path.Path{"stubs.jar"},
 		WorkspaceRoot: dir,
 		HashFS:        hashFS,
 		Platform:      map[string]string{"container-image": "docker://ubuntu"},
@@ -559,7 +560,7 @@ func TestRunRacing_RemoteWinFlushFailureFallsBackToLocal(t *testing.T) {
 	// then writes the expected content when run as the fallback.
 	cmd := &execute.Cmd{
 		Args:          []string{"/bin/sh", "-c", "sleep 2; printf 'stubs content' > stubs.jar"},
-		Outputs:       []string{"stubs.jar"},
+		Outputs:       []path.Path{"stubs.jar"},
 		WorkspaceRoot: dir,
 		HashFS:        env.hashFS,
 		Platform:      map[string]string{"container-image": "docker://ubuntu"},
@@ -630,7 +631,7 @@ func TestRunRacing_RemoteWinMissingOutputFallsBackToLocal(t *testing.T) {
 	// then writes both outputs when run as the fallback.
 	cmd := &execute.Cmd{
 		Args:          []string{"/bin/sh", "-c", "sleep 2; printf 'stubs content' > stubs.jar; printf 'stubs2 content' > stubs2.jar"},
-		Outputs:       []string{"stubs.jar", "stubs2.jar"},
+		Outputs:       []path.Path{"stubs.jar", "stubs2.jar"},
 		WorkspaceRoot: dir,
 		HashFS:        env.hashFS,
 		Platform:      map[string]string{"container-image": "docker://ubuntu"},
