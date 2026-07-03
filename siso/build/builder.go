@@ -1118,21 +1118,28 @@ func isCanceled(ctx context.Context, err error) bool {
 	return false
 }
 
-// dedupInputs deduplicates inputs.
-// For windows worker, which uses case insensitive file system, it also
-// deduplicates filenames with different cases, e.g. "Windows.h" vs "windows.h".
-// TODO(b/275452106): support Mac worker
+// caseInsensitiveDedupMapPool pools dedupInputs' collapse map.
+var caseInsensitiveDedupMapPool = sync.Pool{
+	New: func() any { return make(map[sisopath.Path]sisopath.Path, 1024) },
+}
+
+// dedupInputs collapses case-insensitive duplicates in cmd.Inputs for
+// Windows remote workers ("Windows.h" vs "windows.h" on NTFS); inputs
+// for other workers are already unique case-sensitively.
+// TODO(b/275452106): support Mac worker.
 func dedupInputs(ctx context.Context, cmd *execute.Cmd) {
-	// need to dedup input with different case in intermediate dir on win and mac?
-	caseInsensitive := cmd.Platform["OSFamily"] == "Windows"
-	m := make(map[sisopath.Path]sisopath.Path, len(cmd.Inputs))
+	if cmd.Platform["OSFamily"] != "Windows" {
+		return
+	}
+	m := caseInsensitiveDedupMapPool.Get().(map[sisopath.Path]sisopath.Path)
+	defer func() {
+		clear(m)
+		caseInsensitiveDedupMapPool.Put(m)
+	}()
 	lenBefore := len(cmd.Inputs)
 	inputs := cmd.Inputs[:0]
 	for _, input := range cmd.Inputs {
-		key := input
-		if caseInsensitive {
-			key = sisopath.Path(strings.ToLower(string(input)))
-		}
+		key := sisopath.Path(strings.ToLower(string(input)))
 		if s, found := m[key]; found {
 			if log.V(1) {
 				clog.Infof(ctx, "dedup input %s (%s)", input, s)
