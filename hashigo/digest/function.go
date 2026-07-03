@@ -68,6 +68,7 @@ var registry = func() map[rpb.DigestFunction_Value]*hasher {
 		// MurmurHash3 x64_128. The 16-byte digest is the library's canonical
 		// serialization: the two 64-bit halves h1 then h2, each big-endian.
 		rpb.DigestFunction_MURMUR3: {fn: rpb.DigestFunction_MURMUR3, newHash: func() hash.Hash { return murmur3.New128() }, omitSegment: true},
+		rpb.DigestFunction_VSO:     {fn: rpb.DigestFunction_VSO, newHash: func() hash.Hash { return newVSO() }, omitSegment: true},
 	}
 	for _, h := range r {
 		h.name = strings.ToLower(h.fn.String())

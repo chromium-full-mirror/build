@@ -166,6 +166,7 @@ func TestResourceNameSegment(t *testing.T) {
 		{rpb.DigestFunction_MURMUR3, ""},
 		{rpb.DigestFunction_SHA384, ""},
 		{rpb.DigestFunction_SHA512, ""},
+		{rpb.DigestFunction_VSO, ""},
 		{rpb.DigestFunction_GITSHA1, "gitsha1"},
 		{rpb.DigestFunction_BLAKE3, "blake3"},
 	} {
@@ -240,6 +241,7 @@ func TestInferOmitted(t *testing.T) {
 		{32, rpb.DigestFunction_MD5}, // collision with MURMUR3 resolved to MD5.
 		{96, rpb.DigestFunction_SHA384},
 		{128, rpb.DigestFunction_SHA512},
+		{66, rpb.DigestFunction_VSO},
 		{7, rpb.DigestFunction_SHA256}, // no match falls back to SHA-256.
 	} {
 		if got := InferOmitted(tc.hexLen).Value(); got != tc.want {
@@ -281,7 +283,7 @@ func TestInferOmittedFrom(t *testing.T) {
 
 func TestSupportedFunctions(t *testing.T) {
 	fns := SupportedFunctions()
-	if got, want := len(fns), 8; got != want {
+	if got, want := len(fns), 9; got != want {
 		t.Errorf("len(SupportedFunctions()) = %d, want %d", got, want)
 	}
 	if got, want := fns[0], rpb.DigestFunction_SHA256; got != want {
