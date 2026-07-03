@@ -9,13 +9,8 @@
 package digest
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
-	"io"
 	"sync"
-
-	"google.golang.org/protobuf/proto"
 
 	rpb "go.chromium.org/build/remote-apis/build/bazel/remote/execution/v2"
 )
@@ -27,40 +22,14 @@ var copyBufPool = sync.Pool{
 	},
 }
 
-// Empty is a digest of empty content.
-var Empty = OfBytes([]byte{})
-
-// EmptyTree is a digest of an empty tree (Tree message with empty root directory).
-var EmptyTree = OfBytes(func() []byte { b, _ := proto.Marshal(&rpb.Tree{Root: &rpb.Directory{}}); return b }())
-
-// Digest is a digest.
+// Digest is a content digest: a hash and the content size in bytes.
+//
+// It does not record which digest function produced the hash; that is conveyed
+// out-of-band (as in the REAPI Digest message) by the Function held by the
+// caller. Digest is a pure comparable value, safe as a map key.
 type Digest struct {
 	Hash      string `json:"hash,omitempty"`
 	SizeBytes int64  `json:"size_bytes,omitempty"`
-}
-
-// OfBytes creates a Digest from bytes.
-func OfBytes(b []byte) Digest {
-	h := sha256.Sum256(b)
-	return Digest{
-		Hash:      hex.EncodeToString(h[:]),
-		SizeBytes: int64(len(b)),
-	}
-}
-
-// OfReader creates a Digest from io.Reader.
-func OfReader(r io.Reader) (Digest, error) {
-	h := sha256.New()
-	bufp := copyBufPool.Get().(*[]byte)
-	n, err := io.CopyBuffer(h, r, *bufp)
-	copyBufPool.Put(bufp)
-	if err != nil {
-		return Digest{}, err
-	}
-	return Digest{
-		Hash:      hex.EncodeToString(h.Sum(nil)),
-		SizeBytes: n,
-	}, nil
 }
 
 // FromProto converts from digest proto.

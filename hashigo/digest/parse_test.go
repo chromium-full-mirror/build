@@ -51,3 +51,30 @@ func TestParse(t *testing.T) {
 		})
 	}
 }
+
+func TestParseErrors(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name  string
+		input string
+	}{
+		{
+			// Uppercase hex is rejected, matching Validate and the REAPI
+			// wire format.
+			name:  "uppercase-hash",
+			input: "6400FA014F9E835DB82D6F27FB71E100D623EBA0AB346FA890304412367E798C/310",
+		},
+		{
+			// 30 hex chars matches no registered function's hash length.
+			name:  "wrong-hash-length",
+			input: "6400fa014f9e835db82d6f27fb71e1/310",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if d, err := Parse(tc.input); err == nil {
+				t.Errorf("Parse(%q)=%v, nil; want error", tc.input, d)
+			}
+		})
+	}
+}

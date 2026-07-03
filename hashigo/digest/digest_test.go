@@ -14,15 +14,15 @@ const testDigestStr123 = "039058c6f2c0cb492c533b0a4d14ef77cc0f78abccced5287d84a1
 func TestDigest(t *testing.T) {
 	// Regular case
 	b := []byte{1, 2, 3}
-	d := OfBytes(b)
+	d := SHA256.FromBytes(b)
 
 	if d.String() != testDigestStr123 {
-		t.Errorf("OfBytes(%v).String() = %s, want %s", b, d.String(), testDigestStr123)
+		t.Errorf("SHA256.FromBytes(%v).String() = %s, want %s", b, d.String(), testDigestStr123)
 	}
 
 	p := d.Proto()
 	if p == nil {
-		t.Errorf("OfBytes(%v).Proto() = nil, want a Digest proto", b)
+		t.Errorf("SHA256.FromBytes(%v).Proto() = nil, want a Digest proto", b)
 	}
 
 	dFromProto := FromProto(p)
@@ -37,16 +37,19 @@ func TestDigest(t *testing.T) {
 	}
 
 	// Empty digest
-	empty := OfBytes([]byte{})
+	empty := SHA256.FromBytes([]byte{})
 	if empty.SizeBytes != 0 {
-		t.Errorf("OfBytes([]byte{}).SizeBytes = %v, want 0", empty.SizeBytes)
+		t.Errorf("SHA256.FromBytes([]byte{}).SizeBytes = %v, want 0", empty.SizeBytes)
 	}
 	if empty.IsZero() {
-		t.Errorf("OfBytes([]byte{}).IsZero() = true, want false")
+		t.Errorf("SHA256.FromBytes([]byte{}).IsZero() = true, want false")
+	}
+	if empty != SHA256.Empty() {
+		t.Errorf("SHA256.FromBytes([]byte{}) = %v, want %v", empty, SHA256.Empty())
 	}
 
 	// EmptyTree digest
-	if EmptyTree.SizeBytes != 2 {
-		t.Errorf("EmptyTree.SizeBytes = %v, want 2", EmptyTree.SizeBytes)
+	if SHA256.EmptyTree().SizeBytes != 2 {
+		t.Errorf("SHA256.EmptyTree().SizeBytes = %v, want 2", SHA256.EmptyTree().SizeBytes)
 	}
 }
