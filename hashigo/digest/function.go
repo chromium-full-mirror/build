@@ -5,6 +5,7 @@
 package digest
 
 import (
+	"crypto/md5"
 	"crypto/sha1"
 	"crypto/sha256"
 	"encoding/hex"
@@ -40,6 +41,7 @@ type hasher struct {
 // the hash state on the stack instead of heap-allocating a hash.Hash.
 func sumSHA256(b []byte) string { s := sha256.Sum256(b); return hex.EncodeToString(s[:]) }
 func sumSHA1(b []byte) string   { s := sha1.Sum(b); return hex.EncodeToString(s[:]) }
+func sumMD5(b []byte) string    { s := md5.Sum(b); return hex.EncodeToString(s[:]) }
 func sumBLAKE3(b []byte) string { s := blake3.Sum256(b); return hex.EncodeToString(s[:]) }
 
 // registry maps each supported digest function to its hasher. Per the REAPI
@@ -56,6 +58,7 @@ var registry = func() map[rpb.DigestFunction_Value]*hasher {
 		rpb.DigestFunction_SHA1:    {fn: rpb.DigestFunction_SHA1, newHash: sha1.New, sum: sumSHA1, omitSegment: true},
 		rpb.DigestFunction_GITSHA1: {fn: rpb.DigestFunction_GITSHA1, newHash: sha1.New, gitFraming: true},
 		rpb.DigestFunction_BLAKE3:  {fn: rpb.DigestFunction_BLAKE3, newHash: func() hash.Hash { return blake3.New() }, sum: sumBLAKE3},
+		rpb.DigestFunction_MD5:     {fn: rpb.DigestFunction_MD5, newHash: md5.New, sum: sumMD5, omitSegment: true},
 	}
 	for _, h := range r {
 		h.name = strings.ToLower(h.fn.String())

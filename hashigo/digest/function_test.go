@@ -62,6 +62,9 @@ func TestKnownVectors(t *testing.T) {
 		{rpb.DigestFunction_GITSHA1, "", "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391"},
 		{rpb.DigestFunction_GITSHA1, "abc", "f2ba8f84ab5c1bce84a7b441cb1959cfc7093b7f"},
 		{rpb.DigestFunction_GITSHA1, "hello world", "95d09f2b10159347eece71399a7e2e907ea3df4f"},
+		// MD5 (RFC 1321 test suite).
+		{rpb.DigestFunction_MD5, "", "d41d8cd98f00b204e9800998ecf8427e"},
+		{rpb.DigestFunction_MD5, "abc", "900150983cd24fb0d6963f7d28e17f72"},
 	} {
 		fn, err := Lookup(tc.fn)
 		if err != nil {
@@ -97,6 +100,7 @@ func TestParseFunction(t *testing.T) {
 		{"sha1", rpb.DigestFunction_SHA1, false},
 		{"gitsha1", rpb.DigestFunction_GITSHA1, false},
 		{"blake3", rpb.DigestFunction_BLAKE3, false},
+		{"md5", rpb.DigestFunction_MD5, false},
 		{"unknown", rpb.DigestFunction_UNKNOWN, true}, // an enum, but not a function.
 		{"bogus", rpb.DigestFunction_UNKNOWN, true},   // not an enum.
 	} {
@@ -144,6 +148,7 @@ func TestResourceNameSegment(t *testing.T) {
 		{rpb.DigestFunction_UNKNOWN, ""}, // canonicalized to SHA-256 by Lookup.
 		{rpb.DigestFunction_SHA256, ""},
 		{rpb.DigestFunction_SHA1, ""}, // omitted, inferred by length.
+		{rpb.DigestFunction_MD5, ""},
 		{rpb.DigestFunction_GITSHA1, "gitsha1"},
 		{rpb.DigestFunction_BLAKE3, "blake3"},
 	} {
@@ -215,6 +220,7 @@ func TestInferOmitted(t *testing.T) {
 	}{
 		{64, rpb.DigestFunction_SHA256},
 		{40, rpb.DigestFunction_SHA1},
+		{32, rpb.DigestFunction_MD5},
 		{7, rpb.DigestFunction_SHA256}, // no match falls back to SHA-256.
 	} {
 		if got := InferOmitted(tc.hexLen).Value(); got != tc.want {
@@ -225,7 +231,7 @@ func TestInferOmitted(t *testing.T) {
 
 func TestSupportedFunctions(t *testing.T) {
 	fns := SupportedFunctions()
-	if got, want := len(fns), 4; got != want {
+	if got, want := len(fns), 5; got != want {
 		t.Errorf("len(SupportedFunctions()) = %d, want %d", got, want)
 	}
 	if got, want := fns[0], rpb.DigestFunction_SHA256; got != want {
