@@ -2409,16 +2409,8 @@ func TestWriteEmptyFlush(t *testing.T) {
 				t.Errorf("mtime %v != %v", mtime, now)
 			}
 			err = hashFS.Flush(ctx, dir, []string{name})
-			switch name {
-			case "empty-dir", "subdir":
-				if err == nil {
-					t.Fatalf("Flush(ctx, dir, {%q})=%v; want error", name, err)
-				}
-				return
-			default:
-				if err != nil {
-					t.Fatalf("Flush(ctx, dir, {%q})=%v; want nil err", name, err)
-				}
+			if err != nil {
+				t.Fatalf("Flush(ctx, dir, {%q})=%v; want nil err", name, err)
 			}
 			lfi, err := os.Lstat(filepath.Join(dir, name))
 			if err != nil {
@@ -2467,16 +2459,8 @@ func TestWriteDataFlush(t *testing.T) {
 				t.Errorf("mtime %v != %v", mtime, now)
 			}
 			err = hashFS.Flush(ctx, dir, []string{name})
-			switch name {
-			case "empty-dir", "subdir":
-				if err == nil {
-					t.Fatalf("Flush(ctx, dir, {%q})=%v; want error", name, err)
-				}
-				return
-			default:
-				if err != nil {
-					t.Fatalf("Flush(ctx, dir, {%q})=%v; want nil err", name, err)
-				}
+			if err != nil {
+				t.Fatalf("Flush(ctx, dir, {%q})=%v; want nil err", name, err)
 			}
 			lfi, err := os.Lstat(filepath.Join(dir, name))
 			if err != nil {
@@ -2624,16 +2608,8 @@ func TestSymlinkFlush(t *testing.T) {
 				t.Errorf("mtime %v != %v", mtime, now)
 			}
 			err = hashFS.Flush(ctx, dir, []string{name})
-			switch name {
-			case "subdir":
-				if err == nil {
-					t.Fatalf("Flush(ctx, dir, {%q})=%v; want error", name, err)
-				}
-				return
-			default:
-				if err != nil {
-					t.Fatalf("Flush(ctx, dir, {%q})=%v; want nil err", name, err)
-				}
+			if err != nil {
+				t.Fatalf("Flush(ctx, dir, {%q})=%v; want nil err", name, err)
 			}
 			lfi, err := os.Lstat(filepath.Join(dir, name))
 			if err != nil {

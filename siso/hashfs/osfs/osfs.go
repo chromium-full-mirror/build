@@ -192,6 +192,17 @@ func (ofs *OSFS) Remove(ctx context.Context, name string) error {
 	return err
 }
 
+// RemoveAll removes name and any children it contains.
+func (ofs *OSFS) RemoveAll(ctx context.Context, name string) error {
+	started := time.Now()
+	err := os.RemoveAll(name)
+	ofs.OpsDone(err)
+	if dur := time.Since(started); dur > 1*time.Minute {
+		logSlow(ctx, name, dur, err)
+	}
+	return err
+}
+
 // Rename renames oldpath to newpath.
 func (ofs *OSFS) Rename(ctx context.Context, oldpath, newpath string) error {
 	started := time.Now()

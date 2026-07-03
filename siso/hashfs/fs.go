@@ -2078,8 +2078,10 @@ func (hfs *HashFS) expandFlushDirs(ctx context.Context, workspaceRoot string, fi
 		}
 		walk(dir)
 	}
-	// Returning expanded (not files) also dedups a caller's duplicate paths
-	// when no directory was expanded.
+	// Sort so an ancestor directory always precedes its members: Flush
+	// materializes directories in slice order, before launching member flushes.
+	// Returning expanded (not files) also dedups a caller's duplicate paths.
+	slices.Sort(expanded)
 	return expanded
 }
 
@@ -2174,6 +2176,17 @@ func (hfs *HashFS) Flush(ctx context.Context, workspaceRoot string, files []stri
 			default:
 			}
 			return fmt.Errorf("flush admission %s: %w", fname, err)
+		}
+		if e.isDirectory() {
+			// Materialize a directory synchronously: a member's flush MkdirAll's
+			// its parent, so any stale file/symlink at the directory's path must
+			// be cleared before member flushes launch.
+			err = e.flush(ctx, fname, hfs.OS, max(e.d.FetchTimeout(), hfs.opt.MinFlushTimeout))
+			done(err)
+			if err != nil {
+				return fmt.Errorf("flush dir %s: %w", fname, err)
+			}
+			continue
 		}
 		eg.Go(func() (err error) {
 			defer func() { done(err) }()

@@ -14,7 +14,6 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
-	"syscall"
 	"time"
 
 	log "github.com/golang/glog"
@@ -428,6 +427,16 @@ func (e *entry) flushRemove(ctx context.Context, fname string, osfs *osfs.OSFS) 
 	return err
 }
 
+// removeStaleForFlush removes an on-disk entry whose type no longer matches
+// the recorded output. RemoveAll, not Remove: it may be a non-empty directory.
+func removeStaleForFlush(ctx context.Context, fname, desc string, osfs *osfs.OSFS) error {
+	clog.Warningf(ctx, "flush %s: was %s in a previous build; removing stale entry", fname, desc)
+	if err := osfs.RemoveAll(ctx, fname); err != nil {
+		return fmt.Errorf("flush %s: remove stale %s: %w", fname, desc, err)
+	}
+	return nil
+}
+
 // flushDir ensures a directory exists on disk with the correct mtime.
 func (e *entry) flushDir(ctx context.Context, fname string, osfs *osfs.OSFS) error {
 	mtime := e.getMtime()
@@ -437,6 +446,13 @@ func (e *entry) flushDir(ctx context.Context, fname string, osfs *osfs.OSFS) err
 			clog.Infof(ctx, "flush dir %s: already exist", fname)
 		}
 		return nil
+	}
+	if err == nil && !fi.IsDir() {
+		// A stale file/symlink from a previous build is in the way;
+		// MkdirAll can't replace it, so remove it first.
+		if rerr := removeStaleForFlush(ctx, fname, "a non-directory", osfs); rerr != nil {
+			return rerr
+		}
 	}
 	err = osfs.MkdirAll(ctx, fname, 0755)
 	if err != nil {
@@ -454,15 +470,26 @@ func (e *entry) flushSymlink(ctx context.Context, fname string, osfs *osfs.OSFS)
 	if err == nil && e.target == target {
 		return nil
 	}
-	e.mu.Lock()
-	err = osfs.Symlink(ctx, e.target, fname)
-	if errors.Is(err, fs.ErrExist) {
-		err = osfs.Remove(ctx, fname)
-		if err == nil {
-			err = osfs.Symlink(ctx, e.target, fname)
+	// Clear whatever occupies the path before creating the symlink, outside
+	// e.mu so readers of the entry aren't blocked behind a slow tree removal.
+	// Probe with Lstat rather than keying on the Symlink error: on Windows a
+	// directory in the way fails with ERROR_ACCESS_DENIED, not ErrExist.
+	if _, lerr := osfs.Lstat(ctx, fname); lerr == nil {
+		if rerr := removeStaleForFlush(ctx, fname, "a stale entry", osfs); rerr != nil {
+			return rerr
 		}
 	}
-	e.mu.Unlock()
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	err = osfs.Symlink(ctx, e.target, fname)
+	if errors.Is(err, fs.ErrExist) {
+		// The path appeared between the Lstat probe and the Symlink (an
+		// external writer racing the flush); clear it and retry once.
+		if rerr := removeStaleForFlush(ctx, fname, "a raced entry", osfs); rerr != nil {
+			return rerr
+		}
+		err = osfs.Symlink(ctx, e.target, fname)
+	}
 	clog.Infof(ctx, "flush symlink %s -> %s: %v", fname, e.target, err)
 	// don't change mtimes. it fails if target doesn't exist.
 	return err
@@ -476,16 +503,15 @@ func (e *entry) flushRegularFile(ctx context.Context, fname string, osfs *osfs.O
 
 	var removeReason string
 	fi, err := osfs.Lstat(ctx, fname)
-	if err == nil {
-		if fi.IsDir() {
-			err := &fs.PathError{
-				Op:   "flush",
-				Path: fname,
-				Err:  syscall.EISDIR,
-			}
-			clog.Warningf(ctx, "flush %s: %v", fname, err)
-			return err
+	if err == nil && fi.IsDir() {
+		// A stale directory from a previous build is in the way; remove
+		// the tree and treat the path as absent.
+		if rerr := removeStaleForFlush(ctx, fname, "a directory", osfs); rerr != nil {
+			return rerr
 		}
+		fi, err = nil, fs.ErrNotExist
+	}
+	if err == nil {
 		if e.matchesFileInfo(fi) {
 			// TODO: check hash, mode?
 			clog.Infof(ctx, "flush %s: already exist", fname)
