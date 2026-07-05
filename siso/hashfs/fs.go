@@ -228,7 +228,7 @@ func New(ctx context.Context, opt Option) (*HashFS, error) {
 			clog.Warningf(ctx, "Failed to remove journal: %v", err)
 		}
 
-		f, err := os.Create(journalFile)
+		f, err := osfs.Create(journalFile)
 		if err != nil {
 			clog.Warningf(ctx, "Failed to create fs state journal: %v", err)
 		} else if err := writeJournalHeader(f, opt.DigestFunction); err != nil {
