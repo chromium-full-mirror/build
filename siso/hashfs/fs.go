@@ -198,12 +198,19 @@ func New(ctx context.Context, opt Option) (*HashFS, error) {
 			clog.Infof(ctx, "Load fs state from %s: %s", opt.StateFile, time.Since(start))
 		}
 
+		// If the build switched -reapi_digest_function since this out
+		// dir was last built, discarding the state forces a cold
+		// rehash/rebuild instead of trusting stale hashes (or fast
+		// no-ops) under the new function.
+		var discarded bool
+		fstate, discarded = discardOnFunctionMismatch(ctx, opt.DigestFunction, fstate)
+
 		// Recover last build updates from the journal if the previous
 		// build didn't finish properly (journal file not removed).
-		// Skip the journal when state was corrupted, since we don't
-		// have a valid base state to apply it to.
+		// Skip the journal when state was corrupted or discarded, since
+		// we don't have a valid base state to apply it to.
 		var reconciled bool
-		if fsys.loadErr == nil {
+		if fsys.loadErr == nil && !discarded {
 			reconciled = loadJournal(ctx, opt.DigestFunction, journalFile, fstate)
 		}
 		if err := fsys.SetState(ctx, fstate); err != nil {
@@ -224,6 +231,11 @@ func New(ctx context.Context, opt Option) (*HashFS, error) {
 		f, err := os.Create(journalFile)
 		if err != nil {
 			clog.Warningf(ctx, "Failed to create fs state journal: %v", err)
+		} else if err := writeJournalHeader(f, opt.DigestFunction); err != nil {
+			// Without the header a future load can't tell which digest
+			// function produced the entries, so don't journal at all.
+			clog.Warningf(ctx, "Failed to write fs state journal header: %v", err)
+			f.Close()
 		} else {
 			fsys.journal.w = f
 		}

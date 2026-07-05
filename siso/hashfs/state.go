@@ -31,6 +31,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"go.chromium.org/build/hashigo/digest"
+	rpb "go.chromium.org/build/remote-apis/build/bazel/remote/execution/v2"
 
 	"go.chromium.org/build/siso/blob"
 	"go.chromium.org/build/siso/hashfs/osfs"
@@ -856,10 +857,29 @@ func (ies *initialEntryStates) info() string {
 		len(ies.missingDigests))
 }
 
+// discardOnFunctionMismatch returns state if its digest function matches fn,
+// otherwise an empty state with discarded=true. The persisted digests
+// are only valid for the function that computed them, so trusting them under a
+// different -reapi_digest_function would yield wrong cache keys or stale no-ops.
+// An empty state carries no digests, so it is never a mismatch: a fresh build
+// under any function starts from an empty state without a spurious discard.
+func discardOnFunctionMismatch(ctx context.Context, fn digest.Function, state *pb.State) (*pb.State, bool) {
+	if len(state.GetEntries()) == 0 {
+		return state, false
+	}
+	if fn.Matches(rpb.DigestFunction_Value(state.GetDigestFunction())) {
+		return state, false
+	}
+	clog.Warningf(ctx, "digest function changed (state=%d, current=%d); discarding persisted fs state", state.GetDigestFunction(), int32(fn.Value()))
+	return &pb.State{}, true
+}
+
 // SetState sets states to the HashFS.
 func (hfs *HashFS) SetState(ctx context.Context, state *pb.State) error {
 	defer trace.Begin(ctx, "hashfs.SetState").End()
 	start := time.Now()
+
+	state, _ = discardOnFunctionMismatch(ctx, hfs.opt.DigestFunction, state)
 
 	octx := ctx // preserve original ctx
 	logw := hfs.opt.SetStateLogger
@@ -1345,6 +1365,7 @@ func (hfs *HashFS) State(ctx context.Context) *pb.State {
 			}
 		}
 	}
+	state.DigestFunction = int32(hfs.opt.DigestFunction.Value())
 	if hfs.opt.FSMonitor != nil {
 		token, err := hfs.opt.FSMonitor.ClockToken(ctx)
 		if err != nil {
@@ -1370,11 +1391,20 @@ func (hfs *HashFS) State(ctx context.Context) *pb.State {
 }
 
 func StateMap(fn digest.Function, s *pb.State) map[string]*pb.Entry {
+	s, _ = discardOnFunctionMismatch(context.Background(), fn, s)
 	m := make(map[string]*pb.Entry)
 	for _, e := range s.Entries {
 		m[e.Name] = e
 	}
 	return m
+}
+
+// StateDigestFunction returns the digest function that computed the state's
+// digests, for read-only consumers that must interpret the state as recorded
+// rather than under the currently configured function. An unset function
+// (legacy state) means SHA-256.
+func StateDigestFunction(s *pb.State) (digest.Function, error) {
+	return digest.Lookup(rpb.DigestFunction_Value(s.GetDigestFunction()))
 }
 
 func loadJournal(ctx context.Context, fn digest.Function, fname string, state *pb.State) bool {
@@ -1388,10 +1418,41 @@ func loadJournal(ctx context.Context, fn digest.Function, fname string, state *p
 		}
 		return false
 	}
+	dec := json.NewDecoder(bytes.NewReader(b))
+	if !dec.More() {
+		return false
+	}
+	// The first record may be a header naming the digest function that
+	// produced the journal. A journal without a header was written by an
+	// older siso, which only supported sha256. The journal's digests are
+	// only valid for the function that computed them, so a mismatched
+	// journal is discarded as if it were absent; BLAKE3 and SHA-256 are
+	// both 64 hex chars, so nothing downstream would catch the mixup.
+	jfn := digest.SHA256
+	var hdr string
+	if err := dec.Decode(&hdr); err == nil {
+		name, ok := strings.CutPrefix(hdr, journalHeaderPrefix)
+		if !ok {
+			clog.Warningf(ctx, "unrecognized journal header %q; discarding journal", hdr)
+			return false
+		}
+		jfn, err = digest.ParseFunction(name)
+		if err != nil {
+			clog.Warningf(ctx, "unrecognized journal digest function: %v; discarding journal", err)
+			return false
+		}
+	} else {
+		// Not a header, so a legacy journal whose first record is an
+		// entry: restart decoding from the beginning.
+		dec = json.NewDecoder(bytes.NewReader(b))
+	}
+	if jfn != fn {
+		clog.Warningf(ctx, "journal digest function %s doesn't match current %s; discarding journal", jfn, fn)
+		return false
+	}
 	var cnt int
 	var broken bool
 	m := StateMap(fn, state)
-	dec := json.NewDecoder(bytes.NewReader(b))
 	for dec.More() {
 		ent := &pb.Entry{}
 		err := dec.Decode(&ent)
@@ -1418,6 +1479,11 @@ func loadJournal(ctx context.Context, fn digest.Function, fname string, state *p
 	for _, k := range keys {
 		state.Entries = append(state.Entries, m[k])
 	}
+	// All merged digests are under fn (both the base state and the journal
+	// were verified against it). Record it, so a base state that predates
+	// the reconciliation (e.g. an empty fresh-build state) doesn't leave
+	// the merged state mistagged as sha256.
+	state.DigestFunction = int32(fn.Value())
 	clog.Infof(ctx, "reconcile from journal %d entries (broken=%t) in %s", cnt, broken, time.Since(started))
 	return true
 }
@@ -1480,6 +1546,25 @@ func (w *journalWriter) Close() error {
 	}
 	err := w.w.Close()
 	w.w = nil
+	return err
+}
+
+// journalHeaderPrefix prefixes the journal header, a JSON string naming the
+// digest function of the entries that follow, e.g. "digest_function=blake3".
+// Entries are JSON objects, so the string type alone identifies the header;
+// an older siso fails to decode it as an entry and ignores the whole journal,
+// which is safe.
+const journalHeaderPrefix = "digest_function="
+
+// writeJournalHeader writes the journal header record for fn to w.
+func writeJournalHeader(w io.Writer, fn digest.Function) error {
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	err := enc.Encode(journalHeaderPrefix + fn.String())
+	if err != nil {
+		return err
+	}
+	_, err = w.Write(buf.Bytes())
 	return err
 }
 

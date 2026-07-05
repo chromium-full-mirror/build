@@ -298,6 +298,11 @@ type State struct {
 	MissingOutputs []string `protobuf:"bytes,4,rep,name=missing_outputs,json=missingOutputs,proto3" json:"missing_outputs,omitempty"`
 	// files that are used as inputs, but digest is still unknown.
 	MissingDigests []string `protobuf:"bytes,5,rep,name=missing_digests,json=missingDigests,proto3" json:"missing_digests,omitempty"`
+	// REAPI digest function (rpb.DigestFunction.Value) used to compute the
+	// digests stored in this state. 0/UNKNOWN means sha256 (the historical
+	// default), so old state files keep matching. On load, a mismatch with the
+	// current build's digest function discards the persisted digests.
+	DigestFunction int32 `protobuf:"varint,6,opt,name=digest_function,json=digestFunction,proto3" json:"digest_function,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -367,6 +372,13 @@ func (x *State) GetMissingDigests() []string {
 	return nil
 }
 
+func (x *State) GetDigestFunction() int32 {
+	if x != nil {
+		return x.DigestFunction
+	}
+	return 0
+}
+
 var File_state_proto protoreflect.FileDescriptor
 
 const file_state_proto_rawDesc = "" +
@@ -391,13 +403,14 @@ const file_state_proto_rawDesc = "" +
 	"\x05local\x18\n" +
 	" \x01(\bR\x05local\"(\n" +
 	"\fBuildTargets\x12\x18\n" +
-	"\atargets\x18\x01 \x03(\tR\atargets\"\xea\x01\n" +
+	"\atargets\x18\x01 \x03(\tR\atargets\"\x93\x02\n" +
 	"\x05State\x12,\n" +
 	"\aentries\x18\x01 \x03(\v2\x12.siso.hashfs.EntryR\aentries\x12!\n" +
 	"\flast_checked\x18\x02 \x01(\tR\vlastChecked\x12>\n" +
 	"\rbuild_targets\x18\x03 \x01(\v2\x19.siso.hashfs.BuildTargetsR\fbuildTargets\x12'\n" +
 	"\x0fmissing_outputs\x18\x04 \x03(\tR\x0emissingOutputs\x12'\n" +
-	"\x0fmissing_digests\x18\x05 \x03(\tR\x0emissingDigestsB)Z'go.chromium.org/build/siso/hashfs/protob\x06proto3"
+	"\x0fmissing_digests\x18\x05 \x03(\tR\x0emissingDigests\x12'\n" +
+	"\x0fdigest_function\x18\x06 \x01(\x05R\x0edigestFunctionB)Z'go.chromium.org/build/siso/hashfs/protob\x06proto3"
 
 var (
 	file_state_proto_rawDescOnce sync.Once

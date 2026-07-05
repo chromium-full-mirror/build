@@ -27,6 +27,7 @@ import (
 	"google.golang.org/protobuf/testing/protocmp"
 
 	"go.chromium.org/build/hashigo/digest"
+	rpb "go.chromium.org/build/remote-apis/build/bazel/remote/execution/v2"
 
 	"go.chromium.org/build/siso/blob"
 	"go.chromium.org/build/siso/hashfs"
@@ -260,6 +261,499 @@ func TestState(t *testing.T) {
 		}
 		sort.Strings(names)
 		t.Errorf("stamp entry not exists? %q", names)
+	}
+}
+
+func TestStateRecordsDigestFunction(t *testing.T) {
+	ctx := t.Context()
+
+	dir := t.TempDir()
+	dir, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	blake3, err := digest.Lookup(rpb.DigestFunction_BLAKE3)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	opts := hashfs.Option{
+		StateFile:      filepath.Join(dir, ".siso_fs_state"),
+		CompressLevel:  1,
+		DigestFunction: blake3,
+	}
+	hashFS, err := hashfs.New(ctx, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer hashFS.Close(ctx)
+	if err := hashFS.WaitReady(ctx); err != nil {
+		t.Fatalf("WaitReady=%v; want nil", err)
+	}
+
+	st := hashFS.State(ctx)
+	if got, want := st.GetDigestFunction(), int32(rpb.DigestFunction_BLAKE3); got != want {
+		t.Errorf("State().DigestFunction = %d, want %d", got, want)
+	}
+}
+
+// TestStateDigestFunction verifies that read-only consumers can recover the
+// function that computed a persisted state, so StateMap keeps the entries
+// instead of discarding them under a hardcoded SHA-256.
+func TestStateDigestFunction(t *testing.T) {
+	blake3, err := digest.Lookup(rpb.DigestFunction_BLAKE3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	st := &pb.State{
+		DigestFunction: int32(rpb.DigestFunction_BLAKE3),
+		Entries:        []*pb.Entry{{Name: "foo"}},
+	}
+	fn, err := hashfs.StateDigestFunction(st)
+	if err != nil {
+		t.Fatalf("StateDigestFunction=%v; want nil", err)
+	}
+	if got, want := fn, blake3; got != want {
+		t.Errorf("StateDigestFunction = %v, want %v", got, want)
+	}
+	if _, ok := hashfs.StateMap(fn, st)["foo"]; !ok {
+		t.Errorf("StateMap(StateDigestFunction(st), st) discarded entries")
+	}
+
+	// A legacy state without a recorded function means SHA-256.
+	fn, err = hashfs.StateDigestFunction(&pb.State{})
+	if err != nil {
+		t.Fatalf("StateDigestFunction(empty)=%v; want nil", err)
+	}
+	if got, want := fn, digest.SHA256; got != want {
+		t.Errorf("StateDigestFunction(empty) = %v, want %v", got, want)
+	}
+}
+
+// TestNewDiscardsStateOnDigestFunctionChange verifies that reopening an out dir
+// under a different -reapi_digest_function discards the persisted (now stale)
+// digests rather than trusting them. Reopening under the same function keeps
+// them.
+func TestNewDiscardsStateOnDigestFunctionChange(t *testing.T) {
+	ctx := t.Context()
+
+	dir := t.TempDir()
+	dir, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	opts := hashfs.Option{
+		StateFile:     filepath.Join(dir, ".siso_fs_state"),
+		CompressLevel: 1,
+	}
+	stampName := filepath.ToSlash(filepath.Join(dir, "stamp"))
+
+	// Build state under sha256 (the default) and persist it.
+	hashFS1, err := hashfs.New(ctx, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := hashFS1.WaitReady(ctx); err != nil {
+		t.Fatalf("WaitReady=%v; want nil", err)
+	}
+	if err := hashFS1.WriteFile(ctx, dir, "stamp", nil, false, time.Now(), []byte("dummy-cmdhash"), nil); err != nil {
+		t.Fatalf("WriteFile(...)=%v; want nil", err)
+	}
+	st1 := hashFS1.State(ctx)
+	if _, ok := hashfs.StateMap(digest.SHA256, st1)[stampName]; !ok {
+		t.Fatalf("stamp entry missing from persisted state")
+	}
+	hashFS1.Close(ctx)
+	if err := hashfs.Save(ctx, st1, opts); err != nil {
+		t.Fatalf("Save(...)=%v; want nil", err)
+	}
+
+	// Reopen under the same function: the entry survives.
+	hashFSSame, err := hashfs.New(ctx, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := hashFSSame.WaitReady(ctx); err != nil {
+		t.Fatalf("WaitReady=%v; want nil", err)
+	}
+	if _, ok := hashfs.StateMap(digest.SHA256, hashFSSame.State(ctx))[stampName]; !ok {
+		t.Errorf("stamp entry discarded when reopened under the same digest function")
+	}
+	hashFSSame.Close(ctx)
+
+	// Reopen under a different function: the stale entry is discarded.
+	blake3, err := digest.Lookup(rpb.DigestFunction_BLAKE3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	opts2 := opts
+	opts2.DigestFunction = blake3
+	hashFS2, err := hashfs.New(ctx, opts2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer hashFS2.Close(ctx)
+	if err := hashFS2.WaitReady(ctx); err != nil {
+		t.Fatalf("WaitReady=%v; want nil", err)
+	}
+	if _, ok := hashfs.StateMap(blake3, hashFS2.State(ctx))[stampName]; ok {
+		t.Errorf("stamp entry survived a digest function change; want discarded")
+	}
+}
+
+// TestStateKeepsEntriesAcrossReopenNonSHA256 verifies that the digest
+// function recorded in the persisted state survives a save/load round trip:
+// state built and reopened under BLAKE3 keeps its entries. If the recorded
+// function were dropped on save, the state would read back as SHA-256 and the
+// reopen under BLAKE3 would wrongly discard it — a case neither the same-
+// function (sha256) keep test nor the function-change discard test can catch.
+func TestStateKeepsEntriesAcrossReopenNonSHA256(t *testing.T) {
+	ctx := t.Context()
+
+	dir := t.TempDir()
+	dir, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	blake3, err := digest.Lookup(rpb.DigestFunction_BLAKE3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	opts := hashfs.Option{
+		StateFile:      filepath.Join(dir, ".siso_fs_state"),
+		CompressLevel:  1,
+		DigestFunction: blake3,
+	}
+	stampName := filepath.ToSlash(filepath.Join(dir, "stamp"))
+
+	// Build state under BLAKE3 and persist it.
+	hashFS1, err := hashfs.New(ctx, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := hashFS1.WaitReady(ctx); err != nil {
+		t.Fatalf("WaitReady=%v; want nil", err)
+	}
+	if err := hashFS1.WriteFile(ctx, dir, "stamp", nil, false, time.Now(), []byte("dummy-cmdhash"), nil); err != nil {
+		t.Fatalf("WriteFile(...)=%v; want nil", err)
+	}
+	st1 := hashFS1.State(ctx)
+	if _, ok := hashfs.StateMap(blake3, st1)[stampName]; !ok {
+		t.Fatalf("stamp entry missing from persisted state")
+	}
+	hashFS1.Close(ctx)
+	if err := hashfs.Save(ctx, st1, opts); err != nil {
+		t.Fatalf("Save(...)=%v; want nil", err)
+	}
+
+	// Reopen under BLAKE3: the entry survives the round trip.
+	hashFS2, err := hashfs.New(ctx, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer hashFS2.Close(ctx)
+	if err := hashFS2.WaitReady(ctx); err != nil {
+		t.Fatalf("WaitReady=%v; want nil", err)
+	}
+	if _, ok := hashfs.StateMap(blake3, hashFS2.State(ctx))[stampName]; !ok {
+		t.Errorf("stamp entry discarded on reopen under the recorded digest function; want kept")
+	}
+}
+
+// TestSetStateDiscardsOnDigestFunctionMismatch verifies the guard added to the
+// direct state-ingest paths (SetState and StateMap), which subcommands use
+// without going through HashFS.New's pre-journal check. A state whose recorded
+// digest function differs from the current one must be discarded rather than
+// trusted under the new function.
+func TestSetStateDiscardsOnDigestFunctionMismatch(t *testing.T) {
+	ctx := t.Context()
+
+	// Current function is the default sha256; the state claims blake3.
+	state := &pb.State{
+		DigestFunction: int32(rpb.DigestFunction_BLAKE3),
+		Entries: []*pb.Entry{
+			{
+				Id:      &pb.FileID{ModTime: 1},
+				Name:    "stale/file",
+				CmdHash: []byte("cmdhash"),
+			},
+		},
+	}
+
+	// StateMap discards the mismatched entries.
+	if m := hashfs.StateMap(digest.SHA256, state); len(m) != 0 {
+		t.Errorf("StateMap() over mismatched state = %d entries, want 0", len(m))
+	}
+
+	// SetState discards them too: the entry must not be loaded into the tree.
+	dir := t.TempDir()
+	dir, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hashFS, err := hashfs.New(ctx, hashfs.Option{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer hashFS.Close(ctx)
+	if err := hashFS.SetState(ctx, state); err != nil {
+		t.Fatalf("SetState(...)=%v; want nil", err)
+	}
+	if err := hashFS.WaitReady(ctx); err != nil {
+		t.Fatalf("WaitReady=%v; want nil", err)
+	}
+	if _, ok := hashfs.StateMap(digest.SHA256, hashFS.State(ctx))[filepath.ToSlash(filepath.Join(dir, "stale/file"))]; ok {
+		t.Errorf("stale entry loaded despite digest function mismatch; want discarded")
+	}
+	if m := hashfs.StateMap(digest.SHA256, hashFS.State(ctx)); len(m) != 0 {
+		t.Errorf("HashFS state after mismatched SetState = %d entries, want 0", len(m))
+	}
+
+	// A matching state (sha256, recorded as UNKNOWN/0) is kept by StateMap.
+	matching := &pb.State{
+		Entries: []*pb.Entry{
+			{Id: &pb.FileID{ModTime: 1}, Name: "kept/file", CmdHash: []byte("cmdhash")},
+		},
+	}
+	if m := hashfs.StateMap(digest.SHA256, matching); len(m) != 1 {
+		t.Errorf("StateMap() over matching state = %d entries, want 1", len(m))
+	}
+}
+
+// TestJournalDigestFunctionMismatch verifies that a journal left behind by a
+// crashed build under a different -reapi_digest_function is not merged into
+// the persisted state of the next build. BLAKE3 and SHA-256 digests are both
+// 64 hex chars, so nothing downstream would catch the poisoned entries.
+func TestJournalDigestFunctionMismatch(t *testing.T) {
+	ctx := t.Context()
+
+	dir := t.TempDir()
+	dir, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	opts := hashfs.Option{
+		StateFile:     filepath.Join(dir, ".siso_fs_state"),
+		CompressLevel: 1,
+	}
+	blake3, err := digest.Lookup(rpb.DigestFunction_BLAKE3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	optsBlake3 := opts
+	optsBlake3.DigestFunction = blake3
+	stampName := filepath.ToSlash(filepath.Join(dir, "stamp"))
+	poisonName := filepath.ToSlash(filepath.Join(dir, "poison"))
+	recoverName := filepath.ToSlash(filepath.Join(dir, "recover"))
+
+	// A sha256 build completes: state file tagged sha256, journal removed.
+	hashFS1, err := hashfs.New(ctx, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := hashFS1.WaitReady(ctx); err != nil {
+		t.Fatalf("WaitReady=%v; want nil", err)
+	}
+	if err := hashFS1.WriteFile(ctx, dir, "stamp", nil, false, time.Now(), []byte("dummy-cmdhash"), nil); err != nil {
+		t.Fatalf("WriteFile(...)=%v; want nil", err)
+	}
+	st1 := hashFS1.State(ctx)
+	hashFS1.Close(ctx)
+	if err := hashfs.Save(ctx, st1, opts); err != nil {
+		t.Fatalf("Save(...)=%v; want nil", err)
+	}
+
+	// A blake3 build starts (discarding the sha256 state in memory only),
+	// journals an update, and crashes before saving: no Close, so the
+	// sha256 state file survives next to a blake3 journal.
+	hashFS2, err := hashfs.New(ctx, optsBlake3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := hashFS2.WaitReady(ctx); err != nil {
+		t.Fatalf("WaitReady=%v; want nil", err)
+	}
+	if err := hashFS2.WriteFile(ctx, dir, "poison", nil, false, time.Now(), []byte("dummy-cmdhash"), nil); err != nil {
+		t.Fatalf("WriteFile(...)=%v; want nil", err)
+	}
+
+	// The next sha256 build must load the sha256 state but refuse the
+	// blake3 journal.
+	hashFS3, err := hashfs.New(ctx, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := hashFS3.WaitReady(ctx); err != nil {
+		t.Fatalf("WaitReady=%v; want nil", err)
+	}
+	m := hashfs.StateMap(digest.SHA256, hashFS3.State(ctx))
+	if _, ok := m[stampName]; !ok {
+		t.Errorf("sha256 state entry %s lost; want kept", stampName)
+	}
+	if _, ok := m[poisonName]; ok {
+		t.Errorf("blake3 journal entry %s merged into sha256 state; want discarded", poisonName)
+	}
+
+	// A same-function journal is still merged: crash a sha256 build and
+	// check the next sha256 build reconciles its journal into the state
+	// file.
+	if err := hashFS3.WriteFile(ctx, dir, "recover", nil, false, time.Now(), []byte("dummy-cmdhash"), nil); err != nil {
+		t.Fatalf("WriteFile(...)=%v; want nil", err)
+	}
+	hashFS4, err := hashfs.New(ctx, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := hashFS4.WaitReady(ctx); err != nil {
+		t.Fatalf("WaitReady=%v; want nil", err)
+	}
+	defer hashFS4.Close(ctx)
+	if _, ok := hashfs.StateMap(digest.SHA256, hashFS4.State(ctx))[recoverName]; !ok {
+		t.Errorf("sha256 journal entry %s not merged under sha256; want merged", recoverName)
+	}
+}
+
+// TestJournalLegacyHeaderless verifies that a journal without a
+// digest-function header (written by an older siso, which only supported
+// sha256) is loaded under sha256 and discarded under any other function.
+func TestJournalLegacyHeaderless(t *testing.T) {
+	ctx := t.Context()
+
+	writeLegacyJournal := func(t *testing.T, fname, entName string) {
+		t.Helper()
+		var buf bytes.Buffer
+		err := hashfs.JournalEntry(&buf, &pb.Entry{
+			Id:      &pb.FileID{ModTime: 1},
+			Name:    entName,
+			CmdHash: []byte("dummy-cmdhash"),
+		})
+		if err != nil {
+			t.Fatalf("JournalEntry(...)=%v; want nil", err)
+		}
+		if err := os.WriteFile(fname, buf.Bytes(), 0644); err != nil {
+			t.Fatalf("WriteFile(%s)=%v; want nil", fname, err)
+		}
+	}
+
+	t.Run("sha256", func(t *testing.T) {
+		dir := t.TempDir()
+		dir, err := filepath.EvalSymlinks(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		opts := hashfs.Option{
+			StateFile:     filepath.Join(dir, ".siso_fs_state"),
+			CompressLevel: 1,
+		}
+		legacyName := filepath.ToSlash(filepath.Join(dir, "legacy"))
+		if err := hashfs.Save(ctx, &pb.State{}, opts); err != nil {
+			t.Fatalf("Save(...)=%v; want nil", err)
+		}
+		writeLegacyJournal(t, opts.StateFile+".journal", legacyName)
+
+		hashFS, err := hashfs.New(ctx, opts)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := hashFS.WaitReady(ctx); err != nil {
+			t.Fatalf("WaitReady=%v; want nil", err)
+		}
+		hashFS.Close(ctx)
+		// Reconciliation saves the merged state as the new base state.
+		st, err := hashfs.Load(ctx, opts)
+		if err != nil {
+			t.Fatalf("Load(...)=%v; want nil", err)
+		}
+		if _, ok := hashfs.StateMap(digest.SHA256, st)[legacyName]; !ok {
+			t.Errorf("legacy journal entry %s not merged under sha256; want merged", legacyName)
+		}
+	})
+
+	t.Run("blake3", func(t *testing.T) {
+		dir := t.TempDir()
+		dir, err := filepath.EvalSymlinks(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		blake3, err := digest.Lookup(rpb.DigestFunction_BLAKE3)
+		if err != nil {
+			t.Fatal(err)
+		}
+		opts := hashfs.Option{
+			StateFile:      filepath.Join(dir, ".siso_fs_state"),
+			CompressLevel:  1,
+			DigestFunction: blake3,
+		}
+		legacyName := filepath.ToSlash(filepath.Join(dir, "legacy"))
+		// The base state is blake3-tagged so it passes the state guard
+		// and only the journal's function decides the journal's fate.
+		if err := hashfs.Save(ctx, &pb.State{DigestFunction: int32(rpb.DigestFunction_BLAKE3)}, opts); err != nil {
+			t.Fatalf("Save(...)=%v; want nil", err)
+		}
+		writeLegacyJournal(t, opts.StateFile+".journal", legacyName)
+
+		hashFS, err := hashfs.New(ctx, opts)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := hashFS.WaitReady(ctx); err != nil {
+			t.Fatalf("WaitReady=%v; want nil", err)
+		}
+		defer hashFS.Close(ctx)
+		if _, ok := hashfs.StateMap(blake3, hashFS.State(ctx))[legacyName]; ok {
+			t.Errorf("legacy (sha256) journal entry %s merged under blake3; want discarded", legacyName)
+		}
+	})
+}
+
+// TestNewFreshBuildNonSHA256 verifies that a fresh build (no state file yet)
+// under a non-SHA-256 digest function does not spuriously discard: an empty
+// state carries no digests, so its own crashed build's journal must still be
+// recovered.
+func TestNewFreshBuildNonSHA256(t *testing.T) {
+	ctx := t.Context()
+
+	dir := t.TempDir()
+	dir, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	blake3, err := digest.Lookup(rpb.DigestFunction_BLAKE3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	opts := hashfs.Option{
+		StateFile:      filepath.Join(dir, ".siso_fs_state"),
+		CompressLevel:  1,
+		DigestFunction: blake3,
+	}
+	stampName := filepath.ToSlash(filepath.Join(dir, "stamp"))
+
+	// First-ever blake3 build journals an update and crashes before
+	// saving: no state file, only a blake3 journal.
+	hashFS1, err := hashfs.New(ctx, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := hashFS1.WaitReady(ctx); err != nil {
+		t.Fatalf("WaitReady=%v; want nil", err)
+	}
+	if err := hashFS1.WriteFile(ctx, dir, "stamp", nil, false, time.Now(), []byte("dummy-cmdhash"), nil); err != nil {
+		t.Fatalf("WriteFile(...)=%v; want nil", err)
+	}
+
+	// The next blake3 build must recover the journal.
+	hashFS2, err := hashfs.New(ctx, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := hashFS2.WaitReady(ctx); err != nil {
+		t.Fatalf("WaitReady=%v; want nil", err)
+	}
+	defer hashFS2.Close(ctx)
+	if _, ok := hashfs.StateMap(blake3, hashFS2.State(ctx))[stampName]; !ok {
+		t.Errorf("blake3 journal entry %s not merged in fresh blake3 build; want merged", stampName)
 	}
 }
 

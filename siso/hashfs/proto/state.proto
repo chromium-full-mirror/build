@@ -58,4 +58,10 @@ message State {
 
   // files that are used as inputs, but digest is still unknown.
   repeated string missing_digests = 5;
+
+  // REAPI digest function (rpb.DigestFunction.Value) used to compute the
+  // digests stored in this state. 0/UNKNOWN means sha256 (the historical
+  // default), so old state files keep matching. On load, a mismatch with the
+  // current build's digest function discards the persisted digests.
+  int32 digest_function = 6;
 }
