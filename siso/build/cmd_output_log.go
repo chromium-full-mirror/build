@@ -228,18 +228,24 @@ func cmdOutput(ctx context.Context, result cmdOutputResult, cmd *execute.Cmd, in
 			if strings.HasSuffix(name, "/") && d == fn.EmptyTree() {
 				continue
 			}
-			msg := formatAuxiliaryOutput(name, d, instance)
+			msg := formatAuxiliaryOutput(name, d, instance, fn)
 			res.auxiliaryOutputs = append(res.auxiliaryOutputs, msg)
 		}
 	}
 	return res
 }
 
-func formatAuxiliaryOutput(name string, d digest.Digest, instance string) string {
+// formatAuxiliaryOutput formats one auxiliary output as a copy-pastable
+// `siso fetch` command line. For non-sha256 digest functions it appends
+// -reapi_digest_function so the fetch subcommand uses the right function.
+func formatAuxiliaryOutput(name string, d digest.Digest, instance string, fn digest.Function) string {
 	var cmdArgs []string
 	cmdArgs = append(cmdArgs, "siso", "fetch")
 	if instance != "" {
 		cmdArgs = append(cmdArgs, "-reapi_instance", instance)
+	}
+	if fn != digest.SHA256 {
+		cmdArgs = append(cmdArgs, "-reapi_digest_function", fn.String())
 	}
 	if strings.HasSuffix(name, "/") {
 		cmdArgs = append(cmdArgs, "-type=tree-extract")

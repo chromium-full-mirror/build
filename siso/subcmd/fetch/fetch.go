@@ -103,6 +103,52 @@ func (c *Command) Execute(ctx context.Context, flagSet *flag.FlagSet, _ ...any) 
 	return subcommands.ExitSuccess
 }
 
+// parseBytestreamURI extracts the endpoint, project, instance, and digest
+// function from a bytestream:// URI into c, and returns the "<hash>/<size>"
+// digest string. It accepts the format emitted by reapi.Client.FileURI: an
+// explicit {digest_function} segment (e.g. blake3) always wins; an omitted
+// segment is inferred from the hash length, unless the configured
+// -reapi_digest_function already matches that length (so the flag decides
+// ambiguous lengths, e.g. 64-hex with -reapi_digest_function=blake3).
+func (c *Command) parseBytestreamURI(uri string) (string, error) {
+	bsurl, err := url.Parse(uri)
+	if err != nil {
+		return "", fmt.Errorf("invalid bytestream uri: %w", err)
+	}
+	c.reopt.Address = bsurl.Host
+	elems := strings.Split(strings.TrimPrefix(bsurl.EscapedPath(), "/"), "/")
+	// projects/<project>/instances/<instance>/blobs/[<digest_function>/]<hash>/<size>
+	if len(elems) != 7 && len(elems) != 8 {
+		return "", fmt.Errorf("invalid bytestream uri: path=%q", strings.Join(elems, "/"))
+	}
+	if elems[0] != "projects" || elems[2] != "instances" || elems[4] != "blobs" {
+		return "", fmt.Errorf("invalid bytestream uri: path=%q", strings.Join(elems, "/"))
+	}
+	c.projectID = elems[1]
+	c.reopt.Instance = path.Join(elems[0:4]...)
+	rest := elems[5:]
+	if len(rest) == 3 {
+		fn, recognized, err := digest.FunctionByName(rest[0])
+		if err != nil {
+			return "", fmt.Errorf("invalid bytestream uri: %w", err)
+		}
+		if !recognized {
+			return "", fmt.Errorf("invalid bytestream uri: %q is not a digest function: path=%q", rest[0], strings.Join(elems, "/"))
+		}
+		c.reopt.DigestFunction = fn.String()
+		rest = rest[1:]
+	} else {
+		fn, err := reapi.ParseDigestFunction(c.reopt.DigestFunction)
+		if err != nil {
+			return "", err
+		}
+		if fn.HexLen() != len(rest[0]) {
+			c.reopt.DigestFunction = digest.InferOmitted(len(rest[0])).String()
+		}
+	}
+	return path.Join(rest...), nil
+}
+
 func (c *Command) run(ctx context.Context) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer signals.HandleInterrupt(ctx, cancel)()
@@ -112,22 +158,11 @@ func (c *Command) run(ctx context.Context) error {
 	}
 	var digestStr string
 	if strings.HasPrefix(c.Flags.Arg(0), "bytestream://") {
-		bsurl, err := url.Parse(c.Flags.Arg(0))
+		var err error
+		digestStr, err = c.parseBytestreamURI(c.Flags.Arg(0))
 		if err != nil {
-			return fmt.Errorf("invalid bytestream uri: %w", err)
+			return err
 		}
-		c.reopt.Address = bsurl.Host
-		elems := strings.Split(strings.TrimPrefix(bsurl.EscapedPath(), "/"), "/")
-		// projects/<project>/instances/<instance>/blobs/<hash>/<size>
-		if len(elems) != 7 {
-			return fmt.Errorf("invlaid bytestream uri: path=%q", strings.Join(elems, "/"))
-		}
-		if elems[0] != "projects" || elems[2] != "instances" || elems[4] != "blobs" {
-			return fmt.Errorf("invlaid bytestream uri: path=%q", strings.Join(elems, "/"))
-		}
-		c.projectID = elems[1]
-		c.reopt.Instance = path.Join(elems[0:4]...)
-		digestStr = path.Join(elems[5:]...)
 	} else {
 		digestStr = c.Flags.Arg(0)
 	}

@@ -361,7 +361,7 @@ func (b *Builder) outputFailureSummary(ctx context.Context, step *Step, err erro
 		fmt.Fprintf(&buf, "auxiliary outputs:\n")
 		for _, name := range slices.Sorted(maps.Keys(step.cmd.AuxiliaryOutputDigests)) {
 			digest := step.cmd.AuxiliaryOutputDigests[name]
-			fmt.Fprintf(&buf, "%s\n", formatAuxiliaryOutput(name, digest, b.reapiclient.Instance()))
+			fmt.Fprintf(&buf, "%s\n", formatAuxiliaryOutput(name, digest, b.reapiclient.Instance(), b.hashFS.DigestFunction()))
 		}
 	}
 	fmt.Fprintf(&buf, "%v\n", err)

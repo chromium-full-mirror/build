@@ -166,6 +166,53 @@ siso_rule: clang/cxx
 	}
 }
 
+func TestFormatAuxiliaryOutput(t *testing.T) {
+	const sha256Hash = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+	const sha1Hash = "da39a3ee5e6b4b0d3255bfef95601890afd80709"
+	sha1fn, err := digest.ParseFunction("sha1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name     string
+		fname    string
+		d        digest.Digest
+		instance string
+		fn       digest.Function
+		want     string
+	}{
+		{
+			name:     "sha256 emits no digest-function flag",
+			fname:    "foo.d",
+			d:        digest.Digest{Hash: sha256Hash, SizeBytes: 3},
+			instance: "instance",
+			fn:       digest.SHA256,
+			want:     "foo.d\t" + sha256Hash + "/3\tsiso fetch -reapi_instance instance " + sha256Hash + "/3 foo.d",
+		},
+		{
+			name:     "sha1 emits digest-function flag",
+			fname:    "foo.d",
+			d:        digest.Digest{Hash: sha1Hash, SizeBytes: 3},
+			instance: "instance",
+			fn:       sha1fn,
+			want:     "foo.d\t" + sha1Hash + "/3\tsiso fetch -reapi_instance instance -reapi_digest_function sha1 " + sha1Hash + "/3 foo.d",
+		},
+		{
+			name:  "tree with sha1 keeps type flag",
+			fname: "bar/",
+			d:     digest.Digest{Hash: sha1Hash, SizeBytes: 3},
+			fn:    sha1fn,
+			want:  "bar/\t" + sha1Hash + "/3\tsiso fetch -reapi_digest_function sha1 -type=tree-extract " + sha1Hash + "/3 bar/",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := formatAuxiliaryOutput(tc.fname, tc.d, tc.instance, tc.fn); got != tc.want {
+				t.Errorf("formatAuxiliaryOutput(%q, %s, %q, %s) = %q; want %q", tc.fname, tc.d, tc.instance, tc.fn, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestCmdOutputMsg(t *testing.T) {
 	execcmd := &execute.Cmd{
 		Desc:       "CXX foo.o",
