@@ -10,13 +10,12 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"sort"
 
 	"github.com/google/subcommands"
 	"google.golang.org/protobuf/proto"
-
-	"go.chromium.org/build/hashigo/digest"
 
 	"go.chromium.org/build/siso/build/ninjabuild"
 	"go.chromium.org/build/siso/hashfs"
@@ -60,11 +59,17 @@ func (c *diffCommand) Execute(ctx context.Context, flagSet *flag.FlagSet, _ ...a
 		fmt.Fprintf(os.Stderr, "failed to init dir %s: %v\n", c.outDir, err)
 		return 1
 	}
+	if err := c.run(ctx, os.Stdout); err != nil {
+		fmt.Fprintf(os.Stderr, "%v\n", err)
+		return 1
+	}
+	return 0
+}
 
+func (c *diffCommand) run(ctx context.Context, w io.Writer) error {
 	st, err := hashfs.Load(ctx, hashfs.Option{StateFile: c.stateFile})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "failed to load %s: %v\n", c.stateFile, err)
-		return 1
+		return fmt.Errorf("failed to load %s: %w", c.stateFile, err)
 	}
 	// sort files in build order.
 	sort.Slice(st.Entries, func(i, j int) bool {
@@ -73,13 +78,22 @@ func (c *diffCommand) Execute(ctx context.Context, flagSet *flag.FlagSet, _ ...a
 		}
 		return st.Entries[i].Id.GetModTime() < st.Entries[j].Id.GetModTime()
 	})
-	stm := hashfs.StateMap(digest.SHA256, st)
+	// Interpret each state under the digest function it was recorded with, so
+	// states from non-sha256 builds are not discarded as mismatched.
+	fn, err := hashfs.StateDigestFunction(st)
+	if err != nil {
+		return fmt.Errorf("bad digest function in %s: %w", c.stateFile, err)
+	}
+	stm := hashfs.StateMap(fn, st)
 	stBase, err := hashfs.Load(ctx, hashfs.Option{StateFile: c.stateFileBase})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "failed to load %s: %v\n", c.stateFileBase, err)
-		return 1
+		return fmt.Errorf("failed to load %s: %w", c.stateFileBase, err)
 	}
-	stBaseM := hashfs.StateMap(digest.SHA256, stBase)
+	fnBase, err := hashfs.StateDigestFunction(stBase)
+	if err != nil {
+		return fmt.Errorf("bad digest function in %s: %w", c.stateFileBase, err)
+	}
+	stBaseM := hashfs.StateMap(fnBase, stBase)
 
 	for _, s := range st.Entries {
 		cur := stm[s.Name]
@@ -91,12 +105,11 @@ func (c *diffCommand) Execute(ctx context.Context, flagSet *flag.FlagSet, _ ...a
 		}
 		buf, err := json.MarshalIndent(diff, "", " ")
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "marshal error: %v\n", err)
-			return 1
+			return fmt.Errorf("marshal error: %w", err)
 		}
-		fmt.Printf("%s\n", buf)
+		fmt.Fprintf(w, "%s\n", buf)
 	}
-	return 0
+	return nil
 }
 
 type entryDiff struct {

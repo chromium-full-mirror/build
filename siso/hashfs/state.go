@@ -1407,6 +1407,27 @@ func StateDigestFunction(s *pb.State) (digest.Function, error) {
 	return digest.Lookup(rpb.DigestFunction_Value(s.GetDigestFunction()))
 }
 
+// NewFromState creates a HashFS for the digest function recorded in st
+// (overriding opt.DigestFunction) and ingests st into it, so that read-only
+// consumers interpret the persisted digests under the function they were
+// computed with.
+func NewFromState(ctx context.Context, st *pb.State, opt Option) (*HashFS, error) {
+	fn, err := StateDigestFunction(st)
+	if err != nil {
+		return nil, err
+	}
+	opt.DigestFunction = fn
+	hfs, err := New(ctx, opt)
+	if err != nil {
+		return nil, err
+	}
+	if err := hfs.SetState(ctx, st); err != nil {
+		hfs.Close(ctx)
+		return nil, err
+	}
+	return hfs, nil
+}
+
 func loadJournal(ctx context.Context, fn digest.Function, fname string, state *pb.State) bool {
 	started := time.Now()
 	b, err := os.ReadFile(fname)

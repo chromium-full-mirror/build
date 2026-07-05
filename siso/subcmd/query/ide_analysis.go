@@ -23,8 +23,6 @@ import (
 	"google.golang.org/protobuf/encoding/prototext"
 	"google.golang.org/protobuf/proto"
 
-	"go.chromium.org/build/hashigo/digest"
-
 	"go.chromium.org/build/siso/build"
 	"go.chromium.org/build/siso/build/ninjabuild"
 	"go.chromium.org/build/siso/hashfs"
@@ -173,8 +171,14 @@ func (c *ideAnalysisCommand) analyze(ctx context.Context, buildPath *build.Path,
 		if err != nil {
 			return err
 		}
+		// Interpret the state under the digest function it was recorded with,
+		// so states from non-sha256 builds are not discarded as mismatched.
+		fn, err := hashfs.StateDigestFunction(fsstate)
+		if err != nil {
+			return err
+		}
 		// hashFS.SetState ?
-		analyzer.fsm = hashfs.StateMap(digest.SHA256, fsstate)
+		analyzer.fsm = hashfs.StateMap(fn, fsstate)
 		fmt.Fprintf(os.Stderr, "load hashfs state in %s\n", ui.FormatDuration(time.Since(started)))
 		return nil
 	})

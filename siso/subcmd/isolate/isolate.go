@@ -191,6 +191,9 @@ func (c *Command) run(ctx context.Context) error {
 	if srcFn != dstFn {
 		return fmt.Errorf("content digest function mismatch: -src_cas_digest_function=%s -dst_cas_digest_function=%s: one isolate run supports a single content-hash function", srcFn, dstFn)
 	}
+	// Deliberately flag-driven: the digest function recorded in the persisted
+	// state is ignored. If it differs from -src_cas_digest_function, SetState
+	// discards the stale entries and isolate rehashes — slow but correct.
 	c.fsopt.DigestFunction = srcFn
 
 	ui.Default.Printf("use %s\n", c.srcreopt)

@@ -90,19 +90,15 @@ func (c *Command) run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	hashFS, err := hashfs.New(ctx, hashfs.Option{})
-	if err != nil {
-		return err
-	}
-	defer hashFS.Close(ctx)
 	fsstate, err := hashfs.Load(ctx, *c.fsopt)
 	if err != nil {
 		return err
 	}
-	err = hashFS.SetState(ctx, fsstate)
+	hashFS, err := hashfs.NewFromState(ctx, fsstate, hashfs.Option{})
 	if err != nil {
 		return err
 	}
+	defer hashFS.Close(ctx)
 
 	var req nsjailutil.Request
 	if c.nsjailReqJSONString == "" {

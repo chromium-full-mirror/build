@@ -166,16 +166,11 @@ func (c *depsCommand) run(ctx context.Context, args []string) error {
 			targets = depsLog.RecordedTargets()
 		}
 	} else {
-		var err error
-		hashFS, err = hashfs.New(ctx, hashfs.Option{})
-		if err != nil {
-			return err
-		}
 		fsstate, err := hashfs.Load(ctx, hashfs.Option{StateFile: c.fsopt.StateFile})
 		if err != nil {
 			return err
 		}
-		err = hashFS.SetState(ctx, fsstate)
+		hashFS, err = hashfs.NewFromState(ctx, fsstate, hashfs.Option{})
 		if err != nil {
 			return err
 		}
