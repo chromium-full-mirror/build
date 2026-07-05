@@ -89,6 +89,10 @@ var missingEntry = func() *entry {
 }()
 
 func (d *directory) lookupEntry(ctx context.Context, fname path.Path) (*entry, *directory, path.Path, bool) {
+	// A directory target is named with a trailing slash ("gen/"); path
+	// components never contain one, so it maps to the same entry as the
+	// bare name.
+	fname = path.Path(strings.TrimRight(string(fname), "/"))
 	pe := pathElements{
 		origFname: fname,
 	}
@@ -260,6 +264,9 @@ func shouldKeep(ctx context.Context, origFname path.Path, ee, e *entry) (*entry,
 }
 
 func (d *directory) storeEntry(ctx context.Context, fname path.Path, e *entry) (*entry, path.Path, error) {
+	// Store a directory target named with a trailing slash ("gen/") under
+	// the bare name, the same key lookupEntry resolves it to.
+	fname = path.Path(strings.TrimRight(string(fname), "/"))
 	pe := pathElements{
 		origFname: fname,
 		elems:     make([]string, 0, strings.Count(string(fname), "/")+1),
