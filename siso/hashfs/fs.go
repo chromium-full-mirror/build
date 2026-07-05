@@ -1062,7 +1062,8 @@ func (hfs *HashFS) RemoveAll(ctx context.Context, root string, name path.Path) e
 	}
 	hfs.clean.Store(false)
 	name = makeFullpath(root, name)
-	removeErr := os.RemoveAll(string(name))
+	// Route through OSFS.RemoveAll for its metrics and slow-operation logging.
+	removeErr := hfs.OS.RemoveAll(ctx, string(name))
 	// The in-memory entry records the post-state: the path no longer exists.
 	// This is distinct from what we return to the caller: a failed on-disk
 	// removal must surface, not be masked by the entry bookkeeping below.
