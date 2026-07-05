@@ -641,7 +641,7 @@ func (c *Client) Init(ctx context.Context) error {
 		return err
 	})
 	if err != nil {
-		c.conn.Close()
+		c.Close()
 		return fmt.Errorf("failed to get capabilities: %w", err)
 	}
 	clog.Infof(ctx, "capabilities of %s: %s", c.opt.Instance, capa)
@@ -690,9 +690,17 @@ func (c *Client) Init(ctx context.Context) error {
 	return nil
 }
 
-// Close closes the client.
+// Close closes the client's connections, including the separate CAS
+// connection when one was dialed.
 func (c *Client) Close() error {
-	return c.conn.Close()
+	err := c.conn.Close()
+	if c.casConn != nil && c.casConn != c.conn {
+		cerr := c.casConn.Close()
+		if err == nil {
+			err = cerr
+		}
+	}
+	return err
 }
 
 // IOMetrics returns an IOMetrics of the client.
