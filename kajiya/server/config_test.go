@@ -17,9 +17,8 @@ import (
 	"google.golang.org/grpc/test/bufconn"
 	"google.golang.org/protobuf/proto"
 
+	"go.chromium.org/build/hashigo/digest"
 	repb "go.chromium.org/build/remote-apis/build/bazel/remote/execution/v2"
-
-	"go.chromium.org/build/kajiya/digest"
 )
 
 const defaultMaxRecvMsgSize = 4 * 1024 * 1024 // 4 MiB (gRPC default)
@@ -65,7 +64,7 @@ func TestRecommendedMaxRecvMsgSize_MatchesProtoMarshal(t *testing.T) {
 			Requests: []*repb.BatchUpdateBlobsRequest_Request{
 				{
 					Digest: &repb.Digest{
-						Hash:      digest.Empty.Hash,
+						Hash:      digest.SHA256.Empty().Hash,
 						SizeBytes: maxDataSize,
 					},
 					Data:       dummyData,
@@ -138,7 +137,7 @@ func TestRecommendedMaxRecvMsgSize_Integration(t *testing.T) {
 		return &repb.BatchUpdateBlobsRequest{
 			Requests: []*repb.BatchUpdateBlobsRequest_Request{
 				{
-					Digest:     digest.FromBlob(data).ToProto(),
+					Digest:     digest.SHA256.FromBytes(data).Proto(),
 					Data:       data,
 					Compressor: repb.Compressor_ZSTD,
 				},

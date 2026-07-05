@@ -374,7 +374,7 @@ func createServer(ctx context.Context, dataDir string) (*grpc.Server, func(), er
 			return nil, cleanup, err
 		}
 
-		err = actioncache.Register(s, ac, cas)
+		err = actioncache.Register(s, ac, cas, cfg)
 		if err != nil {
 			return nil, cleanup, err
 		}
@@ -396,7 +396,7 @@ func createServer(ctx context.Context, dataDir string) (*grpc.Server, func(), er
 			}
 		}
 
-		err = execution.Register(s, executor, ac, cas)
+		err = execution.Register(s, executor, ac, cas, cfg)
 		if err != nil {
 			return nil, cleanup, err
 		}

@@ -57,7 +57,7 @@ func NewLocalExec(ctx context.Context, t *testing.T) *reapi.Client {
 		lis.Close()
 		t.Fatal(err)
 	}
-	if err := actioncache.Register(serv, ac, cas); err != nil {
+	if err := actioncache.Register(serv, ac, cas, cfg); err != nil {
 		lis.Close()
 		t.Fatal(err)
 	}
@@ -68,7 +68,7 @@ func NewLocalExec(ctx context.Context, t *testing.T) *reapi.Client {
 		lis.Close()
 		t.Fatal(err)
 	}
-	if err := execution.Register(serv, executor, ac, cas); err != nil {
+	if err := execution.Register(serv, executor, ac, cas, cfg); err != nil {
 		lis.Close()
 		t.Fatal(err)
 	}

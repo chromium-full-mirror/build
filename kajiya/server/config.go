@@ -9,9 +9,8 @@ import (
 	"github.com/klauspost/compress/zstd"
 	"google.golang.org/protobuf/proto"
 
+	"go.chromium.org/build/hashigo/digest"
 	repb "go.chromium.org/build/remote-apis/build/bazel/remote/execution/v2"
-
-	"go.chromium.org/build/kajiya/digest"
 )
 
 // Config holds shared configuration for all Kajiya services.
@@ -62,7 +61,7 @@ func (c Config) RecommendedMaxRecvMsgSize() int {
 	batchUpdateSize := proto.Size(&repb.BatchUpdateBlobsRequest{
 		Requests: []*repb.BatchUpdateBlobsRequest_Request{
 			{
-				Digest:     digest.FromBlob(dummyData).ToProto(),
+				Digest:     digest.SHA256.FromBytes(dummyData).Proto(),
 				Data:       dummyData,
 				Compressor: repb.Compressor_ZSTD,
 			},

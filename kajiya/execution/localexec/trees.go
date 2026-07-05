@@ -14,8 +14,9 @@ import (
 
 	"golang.org/x/sync/singleflight"
 
+	"go.chromium.org/build/hashigo/digest"
+
 	"go.chromium.org/build/kajiya/blobstore"
-	"go.chromium.org/build/kajiya/digest"
 	"go.chromium.org/build/kajiya/execution/model"
 )
 
@@ -56,18 +57,18 @@ func newTreeRepository(baseDir string, cas *blobstore.ContentAddressableStorage)
 }
 
 // Path returns the path on disk where the directory with the given digest is materialized.
-func (t *TreeRepository) Path(dirDigest digest.Digest) string {
+func (t *TreeRepository) Path(fn digest.Function, dirDigest digest.Digest) string {
 	return filepath.Join(t.baseDir, dirDigest.Hash[:2], dirDigest.Hash)
 }
 
 // EnsureDirectory ensures that the *repb.Directory for a given digest.Digest, is present in the
 // tree repository, including all its subdirectories, materializing them first if necessary.
-func (t *TreeRepository) EnsureDirectory(dirTrie *model.DirectoryTrie) (err error) {
+func (t *TreeRepository) EnsureDirectory(fn digest.Function, dirTrie *model.DirectoryTrie) (err error) {
 	dirTrie.Root().Walk(func(k []byte, kd *model.KajiyaDirectory) bool {
 		// Check if we already have the directory materialized on disk.
 		// If yes, we trust its contents and reuse it, instead of materializing it again.
 		// We still need to check whether all subdirectories are there, too, though.
-		repoPath := t.Path(kd.Digest)
+		repoPath := t.Path(fn, kd.Digest)
 		if _, err = os.Stat(repoPath); err == nil {
 			return false
 		}
@@ -87,7 +88,7 @@ func (t *TreeRepository) EnsureDirectory(dirTrie *model.DirectoryTrie) (err erro
 			}
 
 			// Materialize the directory itself.
-			if err = MaterializeDirectory(t.cas, tmpPath, kd, false); err != nil {
+			if err = MaterializeDirectory(t.cas, fn, tmpPath, kd, false); err != nil {
 				return nil, fmt.Errorf("failed to materialize directory: %w", err)
 			}
 

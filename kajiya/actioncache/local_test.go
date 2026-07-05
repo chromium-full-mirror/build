@@ -10,30 +10,34 @@ import (
 
 	"google.golang.org/protobuf/proto"
 
+	"go.chromium.org/build/hashigo/digest"
 	repb "go.chromium.org/build/remote-apis/build/bazel/remote/execution/v2"
 
 	"go.chromium.org/build/kajiya/blobstore"
-	"go.chromium.org/build/kajiya/digest"
 )
 
+// TestValidateActionOutputDirectories verifies that validateAction flattens an
+// output directory's RootDirectoryDigest (not the action digest) and accepts a
+// valid ActionResult referencing an output directory tree.
 func TestValidateActionOutputDirectories(t *testing.T) {
 	cas, err := blobstore.NewWithOpts(t.Context(), t.TempDir(), blobstore.Options{})
 	if err != nil {
 		t.Fatalf("blobstore.NewWithOpts: %v", err)
 	}
+	fn := digest.SHA256
 
 	// Store an output file and a Directory referencing it in the CAS.
-	fileDigest, err := cas.Put([]byte("output file content"))
+	fileDigest, err := cas.Put(fn, []byte("output file content"))
 	if err != nil {
 		t.Fatalf("cas.Put(file): %v", err)
 	}
 	dirBytes, err := proto.MarshalOptions{Deterministic: true}.Marshal(&repb.Directory{
-		Files: []*repb.FileNode{{Name: "f", Digest: fileDigest.ToProto()}},
+		Files: []*repb.FileNode{{Name: "f", Digest: fileDigest.Proto()}},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	dirDigest, err := cas.Put(dirBytes)
+	dirDigest, err := cas.Put(fn, dirBytes)
 	if err != nil {
 		t.Fatalf("cas.Put(directory): %v", err)
 	}
@@ -42,14 +46,14 @@ func TestValidateActionOutputDirectories(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewWithOpts: %v", err)
 	}
-	actionDigest := digest.FromBlob([]byte("some action"))
-	if err := ac.Put(actionDigest, &repb.ActionResult{
-		OutputDirectories: []*repb.OutputDirectory{{Path: "out", RootDirectoryDigest: dirDigest.ToProto()}},
+	actionDigest := fn.FromBytes([]byte("some action"))
+	if err := ac.Put(fn, actionDigest, &repb.ActionResult{
+		OutputDirectories: []*repb.OutputDirectory{{Path: "out", RootDirectoryDigest: dirDigest.Proto()}},
 	}); err != nil {
 		t.Fatalf("ac.Put: %v", err)
 	}
 
-	blobs, err := ac.validateAction(actionDigest)
+	blobs, err := ac.validateAction(fn, actionDigest)
 	if err != nil {
 		t.Fatalf("validateAction: %v", err)
 	}

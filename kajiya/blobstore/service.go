@@ -24,9 +24,9 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"go.chromium.org/build/hashigo/digest"
 	repb "go.chromium.org/build/remote-apis/build/bazel/remote/execution/v2"
 
-	"go.chromium.org/build/kajiya/digest"
 	"go.chromium.org/build/kajiya/server"
 )
 
@@ -137,7 +137,7 @@ func parseReadResource(name string) (digest.Digest, repb.Compressor_Value, error
 	if size < 0 {
 		return d, c, status.Errorf(codes.InvalidArgument, "invalid resource name, size must be non-negative: %d", size)
 	}
-	d, err = digest.New(hash, size)
+	d, err = digest.SHA256.Validate(hash, size)
 	if err != nil {
 		return d, c, status.Errorf(codes.InvalidArgument, "invalid resource name, hash is not a valid digest: %s => %s", hash, err)
 	}
@@ -214,7 +214,7 @@ func parseWriteResource(name string) (digest.Digest, uuid.UUID, repb.Compressor_
 	if size < 0 {
 		return d, u, c, status.Errorf(codes.InvalidArgument, "invalid resource name, size must be non-negative: %d", size)
 	}
-	d, err = digest.New(hash, size)
+	d, err = digest.SHA256.Validate(hash, size)
 	if err != nil {
 		return d, u, c, status.Errorf(codes.InvalidArgument, "invalid resource name, hash is not a valid digest: %s => %s", hash, err)
 	}
@@ -267,7 +267,7 @@ func (s *Service) Read(request *bspb.ReadRequest, server bspb.ByteStream_ReadSer
 	if request.ReadOffset < 0 {
 		return status.Error(codes.OutOfRange, "offset is negative")
 	}
-	if request.ReadOffset > d.Size {
+	if request.ReadOffset > d.SizeBytes {
 		return status.Error(codes.OutOfRange, "offset is greater than the size of the file")
 	}
 	if shouldCompress && request.ReadLimit != 0 {
@@ -275,7 +275,7 @@ func (s *Service) Read(request *bspb.ReadRequest, server bspb.ByteStream_ReadSer
 	}
 
 	// Open the file and seek to the offset.
-	f, err := s.cas.Open(d, request.ReadOffset, request.ReadLimit)
+	f, err := s.cas.Open(digest.SHA256, d, request.ReadOffset, request.ReadLimit)
 	if err != nil {
 		var mbe *MissingBlobsError
 		if errors.As(err, &mbe) {
@@ -454,7 +454,7 @@ func (s *Service) Write(server bspb.ByteStream_WriteServer) (err error) {
 	}()
 
 	// Create an UploadWriter for the blob that will store it in the CAS.
-	uw, err := s.cas.NewUploadWriter(req.expectedDigest, req.uploadID)
+	uw, err := s.cas.NewUploadWriter(digest.SHA256, req.expectedDigest, req.uploadID)
 	if err != nil {
 		if errors.Is(err, ErrBlobExists) {
 			return server.SendAndClose(blobAlreadyExists(req.expectedDigest, req.compressor))
@@ -498,7 +498,7 @@ func (s *Service) Write(server bspb.ByteStream_WriteServer) (err error) {
 
 	// Send the response to the client.
 	return server.SendAndClose(&bspb.WriteResponse{
-		CommittedSize: req.expectedDigest.Size,
+		CommittedSize: req.expectedDigest.SizeBytes,
 	})
 }
 
@@ -507,7 +507,7 @@ func blobAlreadyExists(d digest.Digest, compressor repb.Compressor_Value) *bspb.
 	// value `-1` if this is a compressed upload, or with the full size of the uploaded file if this is an
 	// uncompressed upload (regardless of how much data was transmitted by the client)"
 	// https://github.com/bazelbuild/remote-apis/blob/v2.3.0/build/bazel/remote/execution/v2/remote_execution.proto#L256-L265
-	size := d.Size
+	size := d.SizeBytes
 	if compressor != repb.Compressor_IDENTITY {
 		size = -1
 	}
@@ -532,9 +532,9 @@ func (s *Service) QueryWriteStatus(ctx context.Context, request *bspb.QueryWrite
 	}
 
 	// Check if the file exists in the CAS, if yes, the upload is complete.
-	if s.cas.Has(d) {
+	if s.cas.Has(digest.SHA256, d) {
 		return &bspb.QueryWriteStatusResponse{
-			CommittedSize: d.Size,
+			CommittedSize: d.SizeBytes,
 			Complete:      true,
 		}, nil
 	}
@@ -564,11 +564,11 @@ func (s *Service) FindMissingBlobs(ctx context.Context, request *repb.FindMissin
 	// Filter the list in place so that only the missing blobs remain.
 	n := 0
 	for _, d := range request.BlobDigests {
-		dg, err := digest.NewFromProto(d)
+		dg, err := digest.SHA256.FromProto(d)
 		if err != nil {
 			return nil, status.Errorf(codes.InvalidArgument, "invalid digest: %v", err)
 		}
-		if !s.cas.Has(dg) {
+		if !s.cas.Has(digest.SHA256, dg) {
 			request.BlobDigests[n] = d
 			n++
 		}
@@ -631,13 +631,13 @@ func (s *Service) BatchUpdateBlobs(ctx context.Context, request *repb.BatchUpdat
 		}
 
 		// Parse the digest.
-		expectedDigest, err := digest.NewFromProto(blob.Digest)
+		expectedDigest, err := digest.SHA256.FromProto(blob.Digest)
 		if err != nil {
 			return nil, status.Errorf(codes.InvalidArgument, "invalid digest: %v", err)
 		}
 
 		// Store the blob in our CAS.
-		actualDigest, err := s.cas.Put(data)
+		actualDigest, err := s.cas.Put(digest.SHA256, data)
 		if err != nil {
 			return nil, status.Errorf(codes.Internal, "could not store blob in CAS: %v", err)
 		}
@@ -694,7 +694,7 @@ func (s *Service) BatchReadBlobs(ctx context.Context, request *repb.BatchReadBlo
 	// For each blob in the list, check if it exists in the CAS. If yes, read it from the CAS.
 	for _, d := range request.Digests {
 		// Parse the digest.
-		dg, err := digest.NewFromProto(d)
+		dg, err := digest.SHA256.FromProto(d)
 		if err != nil {
 			return nil, status.Errorf(codes.InvalidArgument, "invalid digest: %v", err)
 		}
@@ -705,7 +705,7 @@ func (s *Service) BatchReadBlobs(ctx context.Context, request *repb.BatchReadBlo
 		}
 
 		// Read the blob from the CAS.
-		data, err := s.cas.Get(dg)
+		data, err := s.cas.Get(digest.SHA256, dg)
 		if err != nil {
 			if mbe := (&MissingBlobsError{}); errors.As(err, &mbe) {
 				r.Status = status.New(codes.NotFound, "").Proto()
@@ -749,13 +749,13 @@ func (s *Service) GetTree(request *repb.GetTreeRequest, treeServer repb.ContentA
 	}
 
 	// Parse the digest.
-	d, err := digest.NewFromProto(request.RootDigest)
+	d, err := digest.SHA256.FromProto(request.RootDigest)
 	if err != nil {
 		return status.Errorf(codes.InvalidArgument, "invalid digest: %v", err)
 	}
 
 	// Flatten the directory tree.
-	_, dirs, err := s.cas.FlattenDirectory(d)
+	_, dirs, err := s.cas.FlattenDirectory(digest.SHA256, d)
 	if err != nil {
 		var mbe *MissingBlobsError
 		if errors.As(err, &mbe) {

@@ -9,6 +9,8 @@ package localexec
 import (
 	"errors"
 
+	"go.chromium.org/build/hashigo/digest"
+
 	"go.chromium.org/build/kajiya/blobstore"
 	"go.chromium.org/build/kajiya/execution/model"
 )
@@ -25,7 +27,7 @@ func (b *fuseBackend) Close() error {
 	return nil
 }
 
-func (b *fuseBackend) RegisterSandbox(string, *model.DirectoryTrie, *blobstore.ContentAddressableStorage, *AccessRecorder) (string, error) {
+func (b *fuseBackend) RegisterSandbox(string, *model.DirectoryTrie, digest.Function, *blobstore.ContentAddressableStorage, *AccessRecorder) (string, error) {
 	return "", errors.New("FuseFS is only supported on Linux")
 }
 

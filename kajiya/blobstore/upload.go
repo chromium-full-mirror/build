@@ -16,7 +16,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"go.chromium.org/build/kajiya/digest"
+	"go.chromium.org/build/hashigo/digest"
 )
 
 // DigestMismatchError represents an error where the actual digest differs from the expected digest during verification.
@@ -47,6 +47,7 @@ var ErrBlobExists = errors.New("blob already exists")
 // UploadWriter is an io.WriteCloser that will add the written data as a new blob to the CAS if the calculated digest
 // matches the given digest upon calling Close().
 type UploadWriter struct {
+	fn             digest.Function
 	expectedDigest digest.Digest
 	uploadID       uuid.UUID
 
@@ -59,10 +60,15 @@ type UploadWriter struct {
 
 // NewUploadWriter creates a new UploadWriter for the given digest. If the CAS already contains the digest,
 // NewUploadWriter will return ErrBlobExists.
-func (c *ContentAddressableStorage) NewUploadWriter(d digest.Digest, uploadID uuid.UUID) (*UploadWriter, error) {
-	if c.Has(d) {
+func (c *ContentAddressableStorage) NewUploadWriter(fn digest.Function, d digest.Digest, uploadID uuid.UUID) (*UploadWriter, error) {
+	if c.Has(fn, d) {
 		return nil, ErrBlobExists
 	}
+
+	// Build the hasher for the blob's digest function. For git-framing
+	// functions this seeds the "blob <size>\0" header, so the streamed Write
+	// calls only contribute raw content.
+	hasher := fn.NewContentHasher(d.SizeBytes)
 
 	path := filepath.Join(c.tmpDir, uploadID.String())
 	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0644)
@@ -71,12 +77,13 @@ func (c *ContentAddressableStorage) NewUploadWriter(d digest.Digest, uploadID uu
 	}
 
 	return &UploadWriter{
+		fn:             fn,
 		expectedDigest: d,
 		uploadID:       uploadID,
 		cas:            c,
 		file:           f,
 		path:           path,
-		hasher:         digest.HashFn.New(),
+		hasher:         hasher,
 	}, nil
 }
 
@@ -100,7 +107,7 @@ func (uw *UploadWriter) Write(p []byte) (n int, err error) {
 		}
 	}()
 
-	if uw.cas.Has(uw.expectedDigest) {
+	if uw.cas.Has(uw.fn, uw.expectedDigest) {
 		return 0, ErrBlobExists
 	}
 
@@ -109,8 +116,8 @@ func (uw *UploadWriter) Write(p []byte) (n int, err error) {
 		uw.hasher.Write(p[:n])
 		uw.size += int64(n)
 	}
-	if err == nil && uw.size > uw.expectedDigest.Size {
-		err = &UploadTooLargeError{Actual: uw.size, Expected: uw.expectedDigest.Size}
+	if err == nil && uw.size > uw.expectedDigest.SizeBytes {
+		err = &UploadTooLargeError{Actual: uw.size, Expected: uw.expectedDigest.SizeBytes}
 	}
 
 	return n, err
@@ -142,7 +149,7 @@ func (uw *UploadWriter) Close() (err error) {
 		return &DigestMismatchError{Actual: d, Expected: uw.expectedDigest}
 	}
 
-	if err = uw.cas.Adopt(uw.expectedDigest, uw.path); err != nil {
+	if err = uw.cas.Adopt(uw.fn, uw.expectedDigest, uw.path); err != nil {
 		return err
 	}
 
@@ -152,7 +159,7 @@ func (uw *UploadWriter) Close() (err error) {
 // digest returns the digest of the data that has been written so far.
 func (uw *UploadWriter) digest() digest.Digest {
 	return digest.Digest{
-		Hash: hex.EncodeToString(uw.hasher.Sum(nil)),
-		Size: uw.size,
+		Hash:      hex.EncodeToString(uw.hasher.Sum(nil)),
+		SizeBytes: uw.size,
 	}
 }

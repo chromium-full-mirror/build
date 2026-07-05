@@ -26,12 +26,13 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/anypb"
 
+	"go.chromium.org/build/hashigo/digest"
 	repb "go.chromium.org/build/remote-apis/build/bazel/remote/execution/v2"
 
 	"go.chromium.org/build/kajiya/actioncache"
 	"go.chromium.org/build/kajiya/blobstore"
-	"go.chromium.org/build/kajiya/digest"
 	"go.chromium.org/build/kajiya/execution/model"
+	"go.chromium.org/build/kajiya/server"
 )
 
 // Service implements the REAPI Execution service.
@@ -53,7 +54,7 @@ type ExecutorInterface interface {
 }
 
 // Register creates and registers a new Service with the given gRPC server.
-func Register(s *grpc.Server, executor ExecutorInterface, ac *actioncache.ActionCache, cas *blobstore.ContentAddressableStorage) error {
+func Register(s *grpc.Server, executor ExecutorInterface, ac *actioncache.ActionCache, cas *blobstore.ContentAddressableStorage, _ server.Config) error {
 	if executor == nil {
 		return fmt.Errorf("executor must be set")
 	}
@@ -146,7 +147,7 @@ func (s *Service) Execute(request *repb.ExecuteRequest, executeServer repb.Execu
 	// Generate a unique identifier for this operation.
 	opName := uuidgen.NewV7()
 
-	actionDigest, err := digest.NewFromProto(request.ActionDigest)
+	actionDigest, err := digest.SHA256.FromProto(request.ActionDigest)
 	if err != nil {
 		return status.Errorf(codes.InvalidArgument, "invalid action digest: %v", err)
 	}
@@ -163,7 +164,7 @@ func (s *Service) Execute(request *repb.ExecuteRequest, executeServer repb.Execu
 		}
 
 		// Check the action cache and if we get a hit, send the result back.
-		ar, err := s.actionCache.Get(actionDigest)
+		ar, err := s.actionCache.Get(digest.SHA256, actionDigest)
 		if err != nil && !errors.Is(err, fs.ErrNotExist) {
 			return fmt.Errorf("failed to get action from cache: %w", err)
 		}
@@ -177,7 +178,7 @@ func (s *Service) Execute(request *repb.ExecuteRequest, executeServer repb.Execu
 	}
 
 	// Cache miss, so we have to load & parse the action proto, then execute the action.
-	action, err := model.LoadAction(actionDigest, s.cas)
+	action, err := model.LoadAction(digest.SHA256, actionDigest, s.cas)
 	if err != nil {
 		return err
 	}
@@ -225,7 +226,7 @@ func (s *Service) Execute(request *repb.ExecuteRequest, executeServer repb.Execu
 		// results, as it's always possible that a failed action is due to a transient
 		// issue that will be resolved on the next execution.
 		if !action.DoNotCache && s.actionCache != nil && ar.ExitCode == 0 {
-			if err = s.actionCache.Put(action.ActionDigest, ar); err != nil {
+			if err = s.actionCache.Put(digest.SHA256, action.ActionDigest, ar); err != nil {
 				slog.Error("failed to put action into cache", "error", err)
 			}
 		}
@@ -253,7 +254,7 @@ func formatMissingBlobsError(e *blobstore.MissingBlobsError) error {
 	for _, b := range e.Blobs {
 		violations = append(violations, &errpb.PreconditionFailure_Violation{
 			Type:    "MISSING",
-			Subject: fmt.Sprintf("blobs/%s/%d", b.Hash, b.Size),
+			Subject: fmt.Sprintf("blobs/%s/%d", b.Hash, b.SizeBytes),
 		})
 	}
 

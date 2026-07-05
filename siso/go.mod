@@ -25,7 +25,7 @@ require (
 	github.com/open-telemetry/opentelemetry-collector-contrib/extension/healthcheckv2extension v0.153.0
 	github.com/pkg/xattr v0.4.12
 	go.chromium.org/build/kajiya v0.0.0-20260525075854-5ac828095bad
-	go.chromium.org/build/remote-apis v0.0.0-20260525075854-5ac828095bad
+	go.chromium.org/build/remote-apis v0.0.0-20260703032754-b447bdcc4c29
 	go.opentelemetry.io/collector/component v1.59.0
 	go.opentelemetry.io/collector/config/configoptional v1.59.0
 	go.opentelemetry.io/collector/confmap v1.59.0
@@ -132,7 +132,10 @@ require (
 	github.com/tidwall/wal v1.2.1 // indirect
 	github.com/tklauser/go-sysconf v0.3.16 // indirect
 	github.com/tklauser/numcpus v0.11.0 // indirect
+	github.com/twmb/murmur3 v1.1.8 // indirect
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect
+	github.com/zeebo/blake3 v0.2.4 // indirect
+	go.chromium.org/build/hashigo v0.0.0-20260703105532-39aa1a491645 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/collector v0.153.0 // indirect
 	go.opentelemetry.io/collector/client v1.59.0 // indirect

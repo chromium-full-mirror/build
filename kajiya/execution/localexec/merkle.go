@@ -10,17 +10,19 @@ import (
 	"path/filepath"
 	"strings"
 
+	"go.chromium.org/build/hashigo/digest"
+
 	"go.chromium.org/build/kajiya/blobstore"
 	"go.chromium.org/build/kajiya/execution/model"
 )
 
 // MaterializeDirectory materializes the *repb.Directory d into the empty directory
 // at the given path.
-func MaterializeDirectory(cas *blobstore.ContentAddressableStorage, path string, d *model.KajiyaDirectory, withOutputs bool) error {
+func MaterializeDirectory(cas *blobstore.ContentAddressableStorage, fn digest.Function, path string, d *model.KajiyaDirectory, withOutputs bool) error {
 	// Materialize all regular input files into the directory.
 	for _, f := range d.Files {
 		filePath := filepath.Join(path, f.Name)
-		if err := MaterializeFile(cas, filePath, f); err != nil {
+		if err := MaterializeFile(cas, fn, filePath, f); err != nil {
 			return err
 		}
 	}
@@ -90,9 +92,9 @@ func CreateOutputDirectories(path string, d *model.KajiyaDirectory) error {
 }
 
 // MaterializeFile downloads the given file from the CAS and writes it to the given path.
-func MaterializeFile(cas *blobstore.ContentAddressableStorage, filePath string, f model.KajiyaFile) error {
+func MaterializeFile(cas *blobstore.ContentAddressableStorage, fn digest.Function, filePath string, f model.KajiyaFile) error {
 	// Calculate the file permissions from all relevant fields.
-	if err := cas.LinkTo(f.Digest, filePath); err != nil {
+	if err := cas.LinkTo(fn, f.Digest, filePath); err != nil {
 		return fmt.Errorf("failed to link to file in CAS: %w", err)
 	}
 

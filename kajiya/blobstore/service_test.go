@@ -23,9 +23,9 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/grpc/test/bufconn"
 
+	"go.chromium.org/build/hashigo/digest"
 	repb "go.chromium.org/build/remote-apis/build/bazel/remote/execution/v2"
 
-	"go.chromium.org/build/kajiya/digest"
 	"go.chromium.org/build/kajiya/server"
 )
 
@@ -118,7 +118,7 @@ func randomBlob(t testing.TB, size int) ([]byte, *repb.Digest) {
 	if _, err := rand.Read(blobData); err != nil {
 		t.Fatalf("Failed to generate random data: %v", err)
 	}
-	d := digest.FromBlob(blobData).ToProto()
+	d := digest.SHA256.FromBytes(blobData).Proto()
 	return blobData, d
 }
 
@@ -487,11 +487,11 @@ func TestWriteWrongDigest(t *testing.T) {
 	// so only the hash differs (not the size).
 	blobData := bytes.Repeat([]byte("a"), 100)
 	wrongData := bytes.Repeat([]byte("b"), 100)
-	wrongDigest := digest.FromBlob(wrongData)
+	wrongDigest := digest.SHA256.FromBytes(wrongData)
 
 	// Upload blobData but claim it has wrongDigest's hash.
 	uploadID := uuid.New()
-	resourceName := fmt.Sprintf("test-instance/uploads/%s/blobs/%s/%d", uploadID, wrongDigest.Hash, wrongDigest.Size)
+	resourceName := fmt.Sprintf("test-instance/uploads/%s/blobs/%s/%d", uploadID, wrongDigest.Hash, wrongDigest.SizeBytes)
 	stream, err := client.Write(ctx)
 	if err != nil {
 		t.Fatalf("Failed to create Write stream: %v", err)
@@ -712,7 +712,7 @@ func TestBatchOperationsBlobsLargeBlobs(t *testing.T) {
 	tooLargeBlobData := append(blobData, 0)
 	_, err = casClient.BatchUpdateBlobs(ctx, &repb.BatchUpdateBlobsRequest{
 		Requests: []*repb.BatchUpdateBlobsRequest_Request{{
-			Digest: digest.FromBlob(tooLargeBlobData).ToProto(),
+			Digest: digest.SHA256.FromBytes(tooLargeBlobData).Proto(),
 			Data:   tooLargeBlobData,
 		}},
 		DigestFunction: repb.DigestFunction_SHA256,

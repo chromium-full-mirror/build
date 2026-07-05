@@ -7,13 +7,16 @@ package blobstore
 import (
 	"fmt"
 
-	"go.chromium.org/build/kajiya/digest"
+	"go.chromium.org/build/hashigo/digest"
 )
 
 // MissingBlobsError is an error type that indicates that one or more blobs are
 // missing from the blob store. This is used to indicate that a client needs to
 // upload the missing blobs before the operation can proceed.
 type MissingBlobsError struct {
+	// Fn is the digest function of the missing blobs.
+	Fn digest.Function
+
 	// Blobs is the list of missing blobs.
 	Blobs []digest.Digest
 }

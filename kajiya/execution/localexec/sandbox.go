@@ -15,10 +15,10 @@ import (
 	errpb "google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/protobuf/proto"
 
+	"go.chromium.org/build/hashigo/digest"
 	repb "go.chromium.org/build/remote-apis/build/bazel/remote/execution/v2"
 
 	"go.chromium.org/build/kajiya/blobstore"
-	"go.chromium.org/build/kajiya/digest"
 	"go.chromium.org/build/kajiya/execution/model"
 )
 
@@ -58,6 +58,9 @@ type Sandbox struct {
 	cas   *blobstore.ContentAddressableStorage
 	trees *TreeRepository
 
+	// The digest function used by the action, applied to all output digests.
+	digestFn digest.Function
+
 	// The directory of the sandbox.
 	sandboxDir string
 
@@ -92,7 +95,7 @@ func (sb *Sandbox) Prepare(action *model.Action) (err error) {
 	switch sb.strategy {
 	case NestedOverlayFS:
 		// Ensure that we have all directories required to build our sandbox.
-		if err = sb.trees.EnsureDirectory(action.InputTrie); err != nil {
+		if err = sb.trees.EnsureDirectory(sb.digestFn, action.InputTrie); err != nil {
 			return err
 		}
 		fallthrough
@@ -127,7 +130,7 @@ func (sb *Sandbox) Prepare(action *model.Action) (err error) {
 		// are materialized on disk.
 		sb.fuseSandboxID = filepath.Base(sb.sandboxDir)
 		sb.overlayLowerDir, err = sb.fuse.RegisterSandbox(
-			sb.fuseSandboxID, action.InputTrie, sb.cas, sb.recorder)
+			sb.fuseSandboxID, action.InputTrie, sb.digestFn, sb.cas, sb.recorder)
 		if err != nil {
 			return fmt.Errorf("failed to register sandbox with FUSE: %w", err)
 		}
@@ -163,17 +166,17 @@ func (sb *Sandbox) Prepare(action *model.Action) (err error) {
 			switch sb.strategy {
 			case Files:
 				dirPath := filepath.Join(sb.sandboxDir, string(k))
-				if err = MaterializeDirectory(sb.cas, dirPath, dir, true); err != nil {
+				if err = MaterializeDirectory(sb.cas, sb.digestFn, dirPath, dir, true); err != nil {
 					return true
 				}
 			case OverlayFS:
 				dirPath := filepath.Join(sb.overlayLowerDir, string(k))
-				if err = MaterializeDirectory(sb.cas, dirPath, dir, true); err != nil {
+				if err = MaterializeDirectory(sb.cas, sb.digestFn, dirPath, dir, true); err != nil {
 					return true
 				}
 			case NestedOverlayFS:
 				mntTarget := filepath.Join("/mnt", string(k))
-				mntLowerDir := sb.trees.Path(dir.Digest)
+				mntLowerDir := sb.trees.Path(sb.digestFn, dir.Digest)
 				mntUpperDir := filepath.Join(sb.overlayUpperDir, mountID(dir))
 				if err = os.Mkdir(mntUpperDir, 0755); err != nil {
 					return true
@@ -244,17 +247,17 @@ func (sb *Sandbox) buildMerkleTree(path string) ([]*repb.Directory, error) {
 			if err != nil {
 				return nil, fmt.Errorf("failed to build merkle tree: %w", err)
 			}
-			d, err := digest.FromMessage(subDirs[0])
+			d, err := sb.digestFn.FromMessage(subDirs[0])
 			if err != nil {
 				return nil, fmt.Errorf("failed to get digest: %w", err)
 			}
 			dir.Directories = append(dir.Directories, &repb.DirectoryNode{
 				Name:   dirEntry.Name(),
-				Digest: d.ToProto(),
+				Digest: d.Proto(),
 			})
 			dirs = append(dirs, subDirs...)
 		} else {
-			d, err := digest.FromFile(filepath.Join(path, dirEntry.Name()))
+			d, err := sb.digestFn.FromFile(filepath.Join(path, dirEntry.Name()))
 			if err != nil {
 				return nil, fmt.Errorf("failed to get digest: %w", err)
 			}
@@ -264,10 +267,10 @@ func (sb *Sandbox) buildMerkleTree(path string) ([]*repb.Directory, error) {
 			}
 			fileNode := &repb.FileNode{
 				Name:         dirEntry.Name(),
-				Digest:       d.ToProto(),
+				Digest:       d.Proto(),
 				IsExecutable: fi.Mode()&0111 != 0,
 			}
-			err = sb.cas.Adopt(d, filepath.Join(path, dirEntry.Name()))
+			err = sb.cas.Adopt(sb.digestFn, d, filepath.Join(path, dirEntry.Name()))
 			if err != nil {
 				return nil, fmt.Errorf("failed to move file into CAS: %w", err)
 			}
@@ -279,7 +282,7 @@ func (sb *Sandbox) buildMerkleTree(path string) ([]*repb.Directory, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal directory: %w", err)
 	}
-	if _, err = sb.cas.Put(dirBytes); err != nil {
+	if _, err = sb.cas.Put(sb.digestFn, dirBytes); err != nil {
 		return nil, err
 	}
 
@@ -410,14 +413,14 @@ func (sb *Sandbox) UploadOutputs(action *model.Action, actionResult *repb.Action
 				}
 
 				var d digest.Digest
-				d, err = sb.cas.Put(treeBytes)
+				d, err = sb.cas.Put(sb.digestFn, treeBytes)
 				if err != nil {
 					return true
 				}
 
 				actionResult.OutputDirectories = append(actionResult.OutputDirectories, &repb.OutputDirectory{
 					Path:                  pathFromWorkDir,
-					TreeDigest:            d.ToProto(),
+					TreeDigest:            d.Proto(),
 					IsTopologicallySorted: false,
 				})
 			} else if lfi.Mode().IsRegular() {
@@ -432,17 +435,17 @@ func (sb *Sandbox) UploadOutputs(action *model.Action, actionResult *repb.Action
 
 				// Upload the file to the CAS.
 				var d digest.Digest
-				d, err = digest.FromFile(fullPath)
+				d, err = sb.digestFn.FromFile(fullPath)
 				if err != nil {
 					return true
 				}
-				if err = sb.cas.Adopt(d, fullPath); err != nil {
+				if err = sb.cas.Adopt(sb.digestFn, d, fullPath); err != nil {
 					return true
 				}
 
 				actionResult.OutputFiles = append(actionResult.OutputFiles, &repb.OutputFile{
 					Path:         pathFromWorkDir,
-					Digest:       d.ToProto(),
+					Digest:       d.Proto(),
 					IsExecutable: lfi.Mode()&0111 != 0,
 				})
 			} else {

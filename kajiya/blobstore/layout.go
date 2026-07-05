@@ -12,7 +12,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"go.chromium.org/build/kajiya/digest"
+	"go.chromium.org/build/hashigo/digest"
 )
 
 // EnsureLayout creates the necessary directory structure for a hash-addressed
@@ -116,7 +116,7 @@ func looksLikeShardDir(name string) bool {
 }
 
 func looksLikeBlobName(name string) bool {
-	if len(name) != digest.HashHexLen {
+	if len(name) != digest.SHA256.HexLen() {
 		return false
 	}
 	for i := range len(name) {

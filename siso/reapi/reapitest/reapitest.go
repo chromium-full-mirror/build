@@ -23,10 +23,10 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 
+	"go.chromium.org/build/hashigo/digest"
 	"go.chromium.org/build/kajiya/actioncache"
 	"go.chromium.org/build/kajiya/blobstore"
 	"go.chromium.org/build/kajiya/capabilities"
-	"go.chromium.org/build/kajiya/digest"
 	"go.chromium.org/build/kajiya/execution"
 	"go.chromium.org/build/kajiya/execution/model"
 	"go.chromium.org/build/kajiya/server"
@@ -40,7 +40,25 @@ import (
 type Fake struct {
 	CAS *blobstore.ContentAddressableStorage
 
+	// DigestFunction is the digest function the fake server advertises and
+	// uses for CAS access. The zero value means SHA-256. NewWithOption sets
+	// it from the client's reapi.Option.
+	DigestFunction digest.Function
+
 	ExecuteFunc func(*Fake, *rpb.Action) (*rpb.ActionResult, error)
+}
+
+// fn returns the fake server's digest function (SHA-256 by default).
+func (f *Fake) fn() digest.Function {
+	return fnOrDefault(f.DigestFunction)
+}
+
+// fnOrDefault returns fn, or SHA-256 if fn is the zero value.
+func fnOrDefault(fn digest.Function) digest.Function {
+	if fn == (digest.Function{}) {
+		return digest.SHA256
+	}
+	return fn
 }
 
 // Execute runs command on fake reapi.
@@ -50,8 +68,8 @@ func (f *Fake) Execute(action *model.Action) (*rpb.ActionResult, error) {
 	}
 
 	return f.ExecuteFunc(f, &rpb.Action{
-		InputRootDigest: action.InputRootDigest.ToProto(),
-		CommandDigest:   action.CommandDigest.ToProto(),
+		InputRootDigest: action.InputRootDigest.Proto(),
+		CommandDigest:   action.CommandDigest.Proto(),
 	})
 }
 
@@ -95,12 +113,12 @@ func newServer(ctx context.Context, t *testing.T, fake *Fake) *testServer {
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = actioncache.Register(serv, ac, cas)
+	err = actioncache.Register(serv, ac, cas, cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	err = execution.Register(serv, fake, ac, cas)
+	err = execution.Register(serv, fake, ac, cas, cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -151,11 +169,11 @@ func NewWithOption(ctx context.Context, t *testing.T, fake *Fake, opt reapi.Opti
 
 // Fetch fetches content identified by d from cas.
 func (f *Fake) Fetch(ctx context.Context, d *rpb.Digest) ([]byte, error) {
-	dd, err := digest.NewFromProto(d)
+	dd, err := f.fn().FromProto(d)
 	if err != nil {
 		return nil, err
 	}
-	b, err := f.CAS.Get(dd)
+	b, err := f.CAS.Get(f.fn(), dd)
 	if err != nil {
 		return nil, err
 	}
@@ -173,24 +191,29 @@ func (f *Fake) FetchProto(ctx context.Context, d *rpb.Digest, m proto.Message) e
 
 // Put puts data in CAS (for output of exec).
 func (f *Fake) Put(ctx context.Context, data []byte) (*rpb.Digest, error) {
-	d, err := f.CAS.Put(data)
+	d, err := f.CAS.Put(f.fn(), data)
 	if err != nil {
 		return nil, err
 	}
-	return d.ToProto(), nil
+	return d.Proto(), nil
 }
 
 type InputTree struct {
 	CAS  *blobstore.ContentAddressableStorage
 	Root *rpb.Digest
+
+	// DigestFunction is the digest function of the tree's digests. The zero
+	// value means SHA-256.
+	DigestFunction digest.Function
 }
 
 func (t InputTree) get(d *rpb.Digest, m proto.Message) error {
-	dd, err := digest.NewFromProto(d)
+	fn := fnOrDefault(t.DigestFunction)
+	dd, err := fn.FromProto(d)
 	if err != nil {
 		return fmt.Errorf("failed to convert proto digest %s: %w", d, err)
 	}
-	b, err := t.CAS.Get(dd)
+	b, err := t.CAS.Get(fn, dd)
 	if err != nil {
 		return fmt.Errorf("failed to get %s from CAS: %w", dd, err)
 	}

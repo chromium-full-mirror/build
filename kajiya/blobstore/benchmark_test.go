@@ -20,7 +20,8 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
-	"go.chromium.org/build/kajiya/digest"
+	"go.chromium.org/build/hashigo/digest"
+
 	"go.chromium.org/build/kajiya/log"
 	"go.chromium.org/build/kajiya/server"
 )
@@ -80,7 +81,7 @@ func BenchmarkUpload(b *testing.B) {
 			if _, err := rand.Read(blobData); err != nil {
 				b.Fatalf("Failed to generate random data: %v", err)
 			}
-			d := digest.FromBlob(blobData)
+			d := digest.SHA256.FromBytes(blobData)
 
 			b.ResetTimer()
 			b.ReportAllocs()
@@ -91,7 +92,7 @@ func BenchmarkUpload(b *testing.B) {
 
 				// Delete the blob from CAS to ensure the next upload is a fresh write.
 				b.StopTimer()
-				if err := cas.Delete(d); err != nil {
+				if err := cas.Delete(digest.SHA256, d); err != nil {
 					b.Fatalf("Failed to delete blob: %v", err)
 				}
 				b.StartTimer()
@@ -127,7 +128,7 @@ func BenchmarkDownload(b *testing.B) {
 			if _, err := rand.Read(blobData); err != nil {
 				b.Fatalf("Failed to generate random data: %v", err)
 			}
-			d := digest.FromBlob(blobData)
+			d := digest.SHA256.FromBytes(blobData)
 
 			// Upload once so we can download it
 			uploadBlob(ctx, b, client, d, blobData)
@@ -137,7 +138,7 @@ func BenchmarkDownload(b *testing.B) {
 			b.SetBytes(sz.size)
 
 			for b.Loop() {
-				readResourceName := fmt.Sprintf("test-instance/blobs/%s/%d", d.Hash, d.Size)
+				readResourceName := fmt.Sprintf("test-instance/blobs/%s/%d", d.Hash, d.SizeBytes)
 				readStream, err := client.Read(ctx, &bspb.ReadRequest{
 					ResourceName: readResourceName,
 				})
@@ -160,11 +161,29 @@ func BenchmarkDownload(b *testing.B) {
 	}
 }
 
+// BenchmarkPath measures the per-digest cost of computing a blob's on-disk
+// path, a hot operation in FindMissingBlobs and FUSE sandbox registration.
+func BenchmarkPath(b *testing.B) {
+	oldLogger := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(io.Discard, nil)))
+	b.Cleanup(func() { slog.SetDefault(oldLogger) })
+
+	cas, err := NewWithOpts(b.Context(), b.TempDir(), Options{Sharded: true})
+	if err != nil {
+		b.Fatal(err)
+	}
+	d := digest.SHA256.FromBytes([]byte("hello"))
+	b.ReportAllocs()
+	for b.Loop() {
+		_ = cas.Path(digest.SHA256, d)
+	}
+}
+
 func uploadBlob(ctx context.Context, t testing.TB, client bspb.ByteStreamClient, d digest.Digest, blobData []byte) {
 	t.Helper()
 
 	uploadID := uuid.New()
-	writeResourceName := fmt.Sprintf("test-instance/uploads/%s/blobs/%s/%d", uploadID, d.Hash, d.Size)
+	writeResourceName := fmt.Sprintf("test-instance/uploads/%s/blobs/%s/%d", uploadID, d.Hash, d.SizeBytes)
 
 	stream, err := client.Write(ctx)
 	if err != nil {
@@ -174,7 +193,7 @@ func uploadBlob(ctx context.Context, t testing.TB, client bspb.ByteStreamClient,
 	// Send data in chunks
 	chunkSize := int64(1024 * 1024)
 	offset := int64(0)
-	sz := d.Size
+	sz := d.SizeBytes
 	for offset < sz {
 		end := min(offset+chunkSize, sz)
 		req := &bspb.WriteRequest{

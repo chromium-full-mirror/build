@@ -20,8 +20,9 @@ import (
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/singleflight"
 
+	"go.chromium.org/build/hashigo/digest"
+
 	"go.chromium.org/build/kajiya/atomicio"
-	"go.chromium.org/build/kajiya/digest"
 )
 
 // ContentAddressableStorage is a simple CAS implementation that stores files on the local disk.
@@ -86,12 +87,12 @@ func NewWithOpts(ctx context.Context, dataDir string, opts Options) (*ContentAdd
 	// Clients will usually not upload it, but just assume that it's always available.
 	// A faster way would be to special case the empty digest in the CAS implementation,
 	// but this is simpler and more robust.
-	d, err := cas.Put(nil)
+	d, err := cas.Put(digest.SHA256, nil)
 	if err != nil {
 		return nil, err
 	}
-	if d != digest.Empty {
-		return nil, fmt.Errorf("empty blob did not have expected hash: got %s, wanted %s", d, digest.Empty)
+	if d != digest.SHA256.Empty() {
+		return nil, fmt.Errorf("empty blob did not have expected hash: got %s, wanted %s", d, digest.SHA256.Empty())
 	}
 
 	if !opts.SkipValidation {
@@ -179,7 +180,7 @@ func (c *ContentAddressableStorage) validate(ctx context.Context) (count int, si
 		// Validate file digests in parallel.
 		g.Go(func() error {
 			// Read the file and verify its digest.
-			actualDigest, err := digest.FromFile(path)
+			actualDigest, err := digest.SHA256.FromFile(path)
 			if err != nil {
 				return fmt.Errorf("failed to read file %s: %w", path, err)
 			}
@@ -204,7 +205,7 @@ func (c *ContentAddressableStorage) validate(ctx context.Context) (count int, si
 }
 
 // Path returns the path to the file with digest d in the CAS.
-func (c *ContentAddressableStorage) Path(d digest.Digest) string {
+func (c *ContentAddressableStorage) Path(fn digest.Function, d digest.Digest) string {
 	if c.sharded {
 		return filepath.Join(c.dataDir, d.Hash[:2], d.Hash)
 	}
@@ -212,28 +213,28 @@ func (c *ContentAddressableStorage) Path(d digest.Digest) string {
 }
 
 // Stat returns os.FileInfo for the requested digest if it exists.
-func (c *ContentAddressableStorage) Stat(d digest.Digest) (os.FileInfo, error) {
-	p := c.Path(d)
+func (c *ContentAddressableStorage) Stat(fn digest.Function, d digest.Digest) (os.FileInfo, error) {
+	p := c.Path(fn, d)
 
 	fi, err := os.Lstat(p)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
-			return nil, &MissingBlobsError{Blobs: []digest.Digest{d}}
+			return nil, &MissingBlobsError{Fn: fn, Blobs: []digest.Digest{d}}
 		}
 		return nil, err
 	}
 
-	if fi.Size() != d.Size {
+	if fi.Size() != d.SizeBytes {
 		slog.Error("actual file size does not match digest", "size", fi.Size(), "digest", d)
-		return nil, &MissingBlobsError{Blobs: []digest.Digest{d}}
+		return nil, &MissingBlobsError{Fn: fn, Blobs: []digest.Digest{d}}
 	}
 
 	return fi, nil
 }
 
 // Has returns true if the requested digest exists in the CAS.
-func (c *ContentAddressableStorage) Has(d digest.Digest) bool {
-	if _, err := c.Stat(d); err != nil {
+func (c *ContentAddressableStorage) Has(fn digest.Function, d digest.Digest) bool {
+	if _, err := c.Stat(fn, d); err != nil {
 		var mbe *MissingBlobsError
 		if !errors.As(err, &mbe) {
 			// That's unexpected, let's log it.
@@ -248,19 +249,19 @@ func (c *ContentAddressableStorage) Has(d digest.Digest) bool {
 // The returned ReadCloser is limited to the given offset and limit.
 // The offset must be non-negative and no larger than the file size.
 // A limit of 0 means no limit, and a limit that's larger than the file size is truncated to the file size.
-func (c *ContentAddressableStorage) Open(d digest.Digest, offset int64, limit int64) (io.ReadCloser, error) {
-	p := c.Path(d)
+func (c *ContentAddressableStorage) Open(fn digest.Function, d digest.Digest, offset int64, limit int64) (io.ReadCloser, error) {
+	p := c.Path(fn, d)
 
 	f, err := os.Open(p)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
-			return nil, &MissingBlobsError{Blobs: []digest.Digest{d}}
+			return nil, &MissingBlobsError{Fn: fn, Blobs: []digest.Digest{d}}
 		}
 		return nil, err
 	}
 
 	// Ensure that the offset and limit are not negative and not larger than the file size.
-	if offset < 0 || offset > d.Size || limit < 0 || limit > d.Size-offset {
+	if offset < 0 || offset > d.SizeBytes || limit < 0 || limit > d.SizeBytes-offset {
 		_ = f.Close()
 		return nil, fs.ErrInvalid
 	}
@@ -282,9 +283,9 @@ func (c *ContentAddressableStorage) Open(d digest.Digest, offset int64, limit in
 }
 
 // Get reads a file for the given digest from disk and returns its contents.
-func (c *ContentAddressableStorage) Get(d digest.Digest) ([]byte, error) {
+func (c *ContentAddressableStorage) Get(fn digest.Function, d digest.Digest) ([]byte, error) {
 	// Just call Open and read the whole file.
-	f, err := c.Open(d, 0, 0)
+	f, err := c.Open(fn, d, 0, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -295,17 +296,18 @@ func (c *ContentAddressableStorage) Get(d digest.Digest) ([]byte, error) {
 	return io.ReadAll(f)
 }
 
-// Put stores the given data in the CAS and returns its digest.
-func (c *ContentAddressableStorage) Put(data []byte) (digest.Digest, error) {
-	d := digest.FromBlob(data)
+// Put stores the given data in the CAS using digest function fn and returns its
+// digest.
+func (c *ContentAddressableStorage) Put(fn digest.Function, data []byte) (digest.Digest, error) {
+	d := fn.FromBytes(data)
 	_, err, _ := c.putSyncer.Do(d.Hash, func() (any, error) {
 		// If the file is already in the CAS, we're done.
-		if c.Has(d) {
+		if c.Has(fn, d) {
 			return nil, nil
 		}
 
 		// Add the file to the CAS.
-		if err := atomicio.WriteFile(c.Path(d), data); err != nil {
+		if err := atomicio.WriteFile(c.Path(fn, d), data); err != nil {
 			return nil, err
 		}
 		return nil, nil
@@ -315,10 +317,10 @@ func (c *ContentAddressableStorage) Put(data []byte) (digest.Digest, error) {
 
 // Adopt moves a file from the given path into the CAS.
 // The digest is assumed to have been validated by the caller.
-func (c *ContentAddressableStorage) Adopt(d digest.Digest, srcPath string) error {
+func (c *ContentAddressableStorage) Adopt(fn digest.Function, d digest.Digest, srcPath string) error {
 	_, err, _ := c.putSyncer.Do(d.Hash, func() (any, error) {
 		// If the file is already in the CAS, we're done.
-		if c.Has(d) {
+		if c.Has(fn, d) {
 			if err := os.Remove(srcPath); err != nil {
 				return nil, err
 			}
@@ -326,7 +328,7 @@ func (c *ContentAddressableStorage) Adopt(d digest.Digest, srcPath string) error
 		}
 
 		// Move the file into the CAS.
-		if err := os.Rename(srcPath, c.Path(d)); err != nil {
+		if err := os.Rename(srcPath, c.Path(fn, d)); err != nil {
 			return nil, err
 		}
 		return nil, nil
@@ -337,10 +339,10 @@ func (c *ContentAddressableStorage) Adopt(d digest.Digest, srcPath string) error
 // LinkTo creates a link `path` pointing to the file with digest `d` in the CAS.
 // If the operating system supports cloning files via copy-on-write semantics,
 // the file is cloned instead of hard linked.
-func (c *ContentAddressableStorage) LinkTo(d digest.Digest, path string) error {
-	if err := FastCopy(c.Path(d), path); err != nil {
+func (c *ContentAddressableStorage) LinkTo(fn digest.Function, d digest.Digest, path string) error {
+	if err := FastCopy(c.Path(fn, d), path); err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
-			return &MissingBlobsError{Blobs: []digest.Digest{d}}
+			return &MissingBlobsError{Fn: fn, Blobs: []digest.Digest{d}}
 		}
 		return err
 	}
@@ -348,8 +350,8 @@ func (c *ContentAddressableStorage) LinkTo(d digest.Digest, path string) error {
 }
 
 // Delete removes a file with digest d from the CAS.
-func (c *ContentAddressableStorage) Delete(d digest.Digest) error {
-	p := c.Path(d)
+func (c *ContentAddressableStorage) Delete(fn digest.Function, d digest.Digest) error {
+	p := c.Path(fn, d)
 	err := os.Remove(p)
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return err

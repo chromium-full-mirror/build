@@ -17,10 +17,10 @@ import (
 	"github.com/google/uuid"
 	iradix "github.com/hashicorp/go-immutable-radix/v2"
 
+	"go.chromium.org/build/hashigo/digest"
 	repb "go.chromium.org/build/remote-apis/build/bazel/remote/execution/v2"
 
 	"go.chromium.org/build/kajiya/blobstore"
-	"go.chromium.org/build/kajiya/digest"
 )
 
 type EnvVar struct {
@@ -92,6 +92,9 @@ type Action struct {
 	// A unique identifier for this execute operation.
 	OpName uuid.UUID
 
+	// The digest function used by the action and all its digests.
+	Fn digest.Function
+
 	// Digests for the action, command, and input root.
 	ActionDigest    digest.Digest
 	CommandDigest   digest.Digest
@@ -113,15 +116,16 @@ type Action struct {
 	CaptureWholeTree bool
 }
 
-// LoadAction loads an Action from the CAS given its digest.
-func LoadAction(actionDigest digest.Digest, cas *blobstore.ContentAddressableStorage) (ka *Action, err error) {
+// LoadAction loads an Action from the CAS given its digest function and digest.
+func LoadAction(fn digest.Function, actionDigest digest.Digest, cas *blobstore.ContentAddressableStorage) (ka *Action, err error) {
 	// Fetch the Action from the CAS.
-	action, err := cas.Action(actionDigest)
+	action, err := cas.Action(fn, actionDigest)
 	if err != nil {
 		return nil, err
 	}
 
 	ka = &Action{
+		Fn:           fn,
 		ActionDigest: actionDigest,
 		DoNotCache:   action.DoNotCache,
 	}
@@ -135,12 +139,14 @@ func LoadAction(actionDigest digest.Digest, cas *blobstore.ContentAddressableSto
 		ka.Timeout = action.Timeout.AsDuration()
 	}
 
+	// All of the action's sub-digests use the same digest function fn.
+
 	// Fetch the Command from the CAS.
-	ka.CommandDigest, err = digest.NewFromProto(action.CommandDigest)
+	ka.CommandDigest, err = fn.FromProto(action.CommandDigest)
 	if err != nil {
 		return nil, err
 	}
-	cmd, err := cas.Command(ka.CommandDigest)
+	cmd, err := cas.Command(fn, ka.CommandDigest)
 	if err != nil {
 		return nil, err
 	}
@@ -187,12 +193,12 @@ func LoadAction(actionDigest digest.Digest, cas *blobstore.ContentAddressableSto
 		ka.ContainerImage = containerImages[0]
 	}
 
-	ka.InputRootDigest, err = digest.NewFromProto(action.InputRootDigest)
+	ka.InputRootDigest, err = fn.FromProto(action.InputRootDigest)
 	if err != nil {
 		return nil, err
 	}
 	// Convert the input root to a radix trie.
-	ka.InputTrie, err = treeToTrie(cas, action.InputRootDigest)
+	ka.InputTrie, err = treeToTrie(cas, fn, action.InputRootDigest)
 	if err != nil {
 		return nil, err
 	}
@@ -293,7 +299,7 @@ func convertUnixMode(explicitMode uint32, isExecutable bool) (fs.FileMode, error
 	return 0644, nil
 }
 
-func treeToTrie(cas *blobstore.ContentAddressableStorage, rootDigest *repb.Digest) (*DirectoryTrie, error) {
+func treeToTrie(cas *blobstore.ContentAddressableStorage, fn digest.Function, rootDigest *repb.Digest) (*DirectoryTrie, error) {
 	var dirQueue []*repb.DirectoryNode
 	trieBuilder := iradix.New[*KajiyaDirectory]().Txn()
 	var missingBlobs []digest.Digest
@@ -307,11 +313,11 @@ func treeToTrie(cas *blobstore.ContentAddressableStorage, rootDigest *repb.Diges
 		dirQueue = dirQueue[1:]
 
 		// Get the directory from the CAS.
-		dirDigest, err := digest.NewFromProto(dirNode.Digest)
+		dirDigest, err := fn.FromProto(dirNode.Digest)
 		if err != nil {
 			return nil, err
 		}
-		dir, err := cas.Directory(dirDigest)
+		dir, err := cas.Directory(fn, dirDigest)
 		if err != nil {
 			var mberr *blobstore.MissingBlobsError
 			if errors.As(err, &mberr) {
@@ -351,11 +357,11 @@ func treeToTrie(cas *blobstore.ContentAddressableStorage, rootDigest *repb.Diges
 			}
 
 			// Check if the file is present in the CAS.
-			fileDigest, err := digest.NewFromProto(file.Digest)
+			fileDigest, err := fn.FromProto(file.Digest)
 			if err != nil {
 				return nil, err
 			}
-			if !cas.Has(fileDigest) {
+			if !cas.Has(fn, fileDigest) {
 				missingBlobs = append(missingBlobs, fileDigest)
 			}
 
@@ -439,7 +445,7 @@ func treeToTrie(cas *blobstore.ContentAddressableStorage, rootDigest *repb.Diges
 	}
 
 	if len(missingBlobs) > 0 {
-		return nil, &blobstore.MissingBlobsError{Blobs: missingBlobs}
+		return nil, &blobstore.MissingBlobsError{Fn: fn, Blobs: missingBlobs}
 	}
 
 	return trieBuilder.Commit(), nil

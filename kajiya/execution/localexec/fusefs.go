@@ -22,6 +22,8 @@ import (
 	"github.com/hanwen/go-fuse/v2/fs"
 	"github.com/hanwen/go-fuse/v2/fuse"
 
+	"go.chromium.org/build/hashigo/digest"
+
 	"go.chromium.org/build/kajiya/blobstore"
 	"go.chromium.org/build/kajiya/execution/model"
 )
@@ -69,7 +71,7 @@ func (r *CASRoot) Getattr(ctx context.Context, fh fs.FileHandle, out *fuse.AttrO
 // for the given InputTrie. File contents are served directly from CAS on
 // demand. Returns the on-disk path within the FUSE mount to use as the
 // overlayfs lower directory.
-func (r *CASRoot) RegisterSandbox(sandboxID string, trie *model.DirectoryTrie, cas *blobstore.ContentAddressableStorage, fuseMountpoint string, recorder *AccessRecorder) (string, error) {
+func (r *CASRoot) RegisterSandbox(sandboxID string, trie *model.DirectoryTrie, fn digest.Function, cas *blobstore.ContentAddressableStorage, fuseMountpoint string, recorder *AccessRecorder) (string, error) {
 	ctx := context.Background()
 
 	// Map from trie path to inode for building the tree.
@@ -152,13 +154,13 @@ func (r *CASRoot) RegisterSandbox(sandboxID string, trie *model.DirectoryTrie, c
 		// enabled, create per-sandbox inodes so each carries the recorder
 		// and input-root-relative path.
 		for _, f := range dir.Files {
-			casPath := cas.Path(f.Digest)
+			casPath := cas.Path(fn, f.Digest)
 			cf := casFile{
 				casPath:  casPath,
 				recorder: recorder,
 				attr: fuse.Attr{
 					Mode:      uint32(f.UnixMode),
-					Size:      uint64(f.Digest.Size),
+					Size:      uint64(f.Digest.SizeBytes),
 					Owner:     fuseOwner,
 					Mtime:     uint64(f.Mtime.Unix()),
 					Mtimensec: uint32(f.Mtime.Nanosecond()),

@@ -12,7 +12,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"go.chromium.org/build/kajiya/digest"
+	"go.chromium.org/build/hashigo/digest"
 )
 
 // putAll puts the given blobs into cas and returns their digests in input
@@ -21,7 +21,7 @@ func putAll(t *testing.T, cas *ContentAddressableStorage, blobs [][]byte) []dige
 	t.Helper()
 	digests := make([]digest.Digest, len(blobs))
 	for i, b := range blobs {
-		d, err := cas.Put(b)
+		d, err := cas.Put(digest.SHA256, b)
 		if err != nil {
 			t.Fatalf("Put(blob %d): %v", i, err)
 		}
@@ -51,10 +51,10 @@ func TestMigrate_FlatToSharded(t *testing.T) {
 		t.Fatalf("second NewWithOpts: %v", err)
 	}
 	for i, d := range digests {
-		if got, want := cas.Path(d), filepath.Join(dir, d.Hash[:2], d.Hash); got != want {
+		if got, want := cas.Path(digest.SHA256, d), filepath.Join(dir, d.Hash[:2], d.Hash); got != want {
 			t.Errorf("Path(%s) = %q; want %q", d, got, want)
 		}
-		got, err := cas.Get(d)
+		got, err := cas.Get(digest.SHA256, d)
 		if err != nil {
 			t.Errorf("Get(%s) after flat->sharded migration: %v", d, err)
 			continue
@@ -84,10 +84,10 @@ func TestMigrate_ShardedToFlat(t *testing.T) {
 		t.Fatalf("second NewWithOpts: %v", err)
 	}
 	for i, d := range digests {
-		if got, want := cas.Path(d), filepath.Join(dir, d.Hash); got != want {
+		if got, want := cas.Path(digest.SHA256, d), filepath.Join(dir, d.Hash); got != want {
 			t.Errorf("Path(%s) = %q; want %q", d, got, want)
 		}
-		got, err := cas.Get(d)
+		got, err := cas.Get(digest.SHA256, d)
 		if err != nil {
 			t.Errorf("Get(%s) after sharded->flat migration: %v", d, err)
 			continue
@@ -117,7 +117,7 @@ func TestMigrate_Idempotent(t *testing.T) {
 		t.Errorf("re-migration moved %d entries; want 0", moved)
 	}
 	for i, d := range digests {
-		got, err := cas.Get(d)
+		got, err := cas.Get(digest.SHA256, d)
 		if err != nil {
 			t.Errorf("Get(%s) after idempotent re-migration: %v", d, err)
 			continue
@@ -142,7 +142,7 @@ func TestMigrate_OverwritesStaleDestination(t *testing.T) {
 	if err != nil {
 		t.Fatalf("seed NewWithOpts: %v", err)
 	}
-	d, err := cas.Put(blob)
+	d, err := cas.Put(digest.SHA256, blob)
 	if err != nil {
 		t.Fatalf("Put: %v", err)
 	}
@@ -160,7 +160,7 @@ func TestMigrate_OverwritesStaleDestination(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewWithOpts: %v", err)
 	}
-	got, err := cas.Get(d)
+	got, err := cas.Get(digest.SHA256, d)
 	if err != nil {
 		t.Fatalf("Get: %v", err)
 	}
@@ -200,7 +200,7 @@ func TestMigrate_PartialState(t *testing.T) {
 		t.Fatalf("NewWithOpts after partial: %v", err)
 	}
 	for i, d := range digests {
-		got, err := cas.Get(d)
+		got, err := cas.Get(digest.SHA256, d)
 		if err != nil {
 			t.Errorf("Get(%s) after recovery from partial migration: %v", d, err)
 			continue

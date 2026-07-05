@@ -11,10 +11,10 @@ import (
 
 	"google.golang.org/protobuf/proto"
 
+	"go.chromium.org/build/hashigo/digest"
 	repb "go.chromium.org/build/remote-apis/build/bazel/remote/execution/v2"
 
 	"go.chromium.org/build/kajiya/blobstore"
-	"go.chromium.org/build/kajiya/digest"
 )
 
 // putProto marshals m, stores it in cas, and returns its proto digest.
@@ -24,11 +24,11 @@ func putProto(t *testing.T, cas *blobstore.ContentAddressableStorage, m proto.Me
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}
-	d, err := cas.Put(b)
+	d, err := cas.Put(digest.SHA256, b)
 	if err != nil {
 		t.Fatalf("cas.Put: %v", err)
 	}
-	return d.ToProto()
+	return d.Proto()
 }
 
 // newCAS returns a fresh CAS rooted in t.TempDir().
@@ -53,13 +53,13 @@ func (b *inputRootBuilder) dir(files []string, subDirs []*repb.DirectoryNode) *r
 	b.t.Helper()
 	d := &repb.Directory{}
 	for _, name := range files {
-		fd, err := b.cas.Put([]byte("contents of " + name))
+		fd, err := b.cas.Put(digest.SHA256, []byte("contents of "+name))
 		if err != nil {
 			b.t.Fatalf("cas.Put file: %v", err)
 		}
 		d.Files = append(d.Files, &repb.FileNode{
 			Name:   name,
-			Digest: fd.ToProto(),
+			Digest: fd.Proto(),
 		})
 	}
 	d.Directories = subDirs
@@ -78,7 +78,7 @@ func uploadAction(t *testing.T, cas *blobstore.ContentAddressableStorage, cmd *r
 	if err != nil {
 		t.Fatalf("marshal action: %v", err)
 	}
-	d, err := cas.Put(b)
+	d, err := cas.Put(digest.SHA256, b)
 	if err != nil {
 		t.Fatalf("cas.Put action: %v", err)
 	}
@@ -109,7 +109,7 @@ func TestLoadAction_DefaultWorkingDir(t *testing.T) {
 	}
 	actionDigest := uploadAction(t, cas, cmd, rootDigest)
 
-	ka, err := LoadAction(actionDigest, cas)
+	ka, err := LoadAction(digest.SHA256, actionDigest, cas)
 	if err != nil {
 		t.Fatalf("LoadAction: %v", err)
 	}
@@ -134,7 +134,7 @@ func TestLoadAction_RootLevelOutput(t *testing.T) {
 	}
 	actionDigest := uploadAction(t, cas, cmd, rootDigest)
 
-	ka, err := LoadAction(actionDigest, cas)
+	ka, err := LoadAction(digest.SHA256, actionDigest, cas)
 	if err != nil {
 		t.Fatalf("LoadAction: %v", err)
 	}
@@ -166,7 +166,7 @@ func TestLoadAction_NestedOutputUnderRoot(t *testing.T) {
 	}
 	actionDigest := uploadAction(t, cas, cmd, rootDigest)
 
-	ka, err := LoadAction(actionDigest, cas)
+	ka, err := LoadAction(digest.SHA256, actionDigest, cas)
 	if err != nil {
 		t.Fatalf("LoadAction: %v", err)
 	}
@@ -200,7 +200,7 @@ func TestLoadAction_OutputUnderWorkingDir(t *testing.T) {
 	}
 	actionDigest := uploadAction(t, cas, cmd, rootDigest)
 
-	ka, err := LoadAction(actionDigest, cas)
+	ka, err := LoadAction(digest.SHA256, actionDigest, cas)
 	if err != nil {
 		t.Fatalf("LoadAction: %v", err)
 	}
@@ -229,7 +229,7 @@ func TestLoadAction_OutputErrorPropagates(t *testing.T) {
 	}
 	actionDigest := uploadAction(t, cas, cmd, rootDigest)
 
-	_, err := LoadAction(actionDigest, cas)
+	_, err := LoadAction(digest.SHA256, actionDigest, cas)
 	if err == nil {
 		t.Fatal("LoadAction succeeded; want error for escaping output path")
 	}
@@ -266,7 +266,7 @@ func TestLoadAction_WindowsReservedOutputName(t *testing.T) {
 	}
 	actionDigest := uploadAction(t, cas, cmd, rootDigest)
 
-	_, err := LoadAction(actionDigest, cas)
+	_, err := LoadAction(digest.SHA256, actionDigest, cas)
 	if err == nil {
 		t.Fatal("LoadAction succeeded; want error for DOS-reserved output path on Windows")
 	}

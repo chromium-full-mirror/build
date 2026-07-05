@@ -24,11 +24,12 @@ import (
 	"google.golang.org/grpc/test/bufconn"
 	"google.golang.org/protobuf/proto"
 
+	"go.chromium.org/build/hashigo/digest"
 	repb "go.chromium.org/build/remote-apis/build/bazel/remote/execution/v2"
 
 	"go.chromium.org/build/kajiya/blobstore"
-	"go.chromium.org/build/kajiya/digest"
 	"go.chromium.org/build/kajiya/execution/localexec"
+	"go.chromium.org/build/kajiya/server"
 )
 
 const benchBufSize = 4 * 1024 * 1024
@@ -84,7 +85,7 @@ func BenchmarkExecuteE2E(b *testing.B) {
 					// Start in-memory gRPC server with Execution service (no action cache).
 					lis := bufconn.Listen(benchBufSize)
 					srv := grpc.NewServer()
-					if err := Register(srv, executor, nil, cas); err != nil {
+					if err := Register(srv, executor, nil, cas, server.Config{}); err != nil {
 						b.Fatal(err)
 					}
 					go func() { _ = srv.Serve(lis) }()
@@ -139,7 +140,7 @@ func skipIfFuseUnavailable(b *testing.B) {
 func executeOne(b *testing.B, ctx context.Context, cas *blobstore.ContentAddressableStorage, client repb.ExecutionClient, actionDigest digest.Digest) {
 	b.Helper()
 	stream, err := client.Execute(ctx, &repb.ExecuteRequest{
-		ActionDigest:    actionDigest.ToProto(),
+		ActionDigest:    actionDigest.Proto(),
 		SkipCacheLookup: true,
 	})
 	if err != nil {
@@ -163,11 +164,11 @@ func executeOne(b *testing.B, ctx context.Context, cas *blobstore.ContentAddress
 		if resp.Result.ExitCode != 0 {
 			stderr := resp.Result.StderrRaw
 			if len(stderr) == 0 && resp.Result.StderrDigest != nil {
-				d, err := digest.NewFromProto(resp.Result.StderrDigest)
+				d, err := digest.SHA256.FromProto(resp.Result.StderrDigest)
 				if err != nil {
 					b.Fatalf("action exited with code %d; stderr digest invalid: %v", resp.Result.ExitCode, err)
 				}
-				blob, err := cas.Get(d)
+				blob, err := cas.Get(digest.SHA256, d)
 				if err != nil {
 					b.Fatalf("action exited with code %d; fetching stderr from CAS failed: %v", resp.Result.ExitCode, err)
 				}
@@ -192,7 +193,7 @@ func putBenchProtos(tb testing.TB, cas *blobstore.ContentAddressableStorage,
 
 	// Single 1KB source file reused for all inputs.
 	content := bytes.Repeat([]byte("x"), 1024)
-	fileDigest, err := cas.Put(content)
+	fileDigest, err := cas.Put(digest.SHA256, content)
 	if err != nil {
 		tb.Fatal(err)
 	}
@@ -204,11 +205,11 @@ func putBenchProtos(tb testing.TB, cas *blobstore.ContentAddressableStorage,
 		if err != nil {
 			tb.Fatal(err)
 		}
-		d, err := cas.Put(b)
+		d, err := cas.Put(digest.SHA256, b)
 		if err != nil {
 			tb.Fatal(err)
 		}
-		return d.ToProto()
+		return d.Proto()
 	}
 
 	// Build leaf directories with files (20 per dir).
@@ -223,7 +224,7 @@ func putBenchProtos(tb testing.TB, cas *blobstore.ContentAddressableStorage,
 		for range n {
 			dir.Files = append(dir.Files, &repb.FileNode{
 				Name:   fmt.Sprintf("f%06d.h", fileIdx),
-				Digest: fileDigest.ToProto(),
+				Digest: fileDigest.Proto(),
 			})
 			fileIdx++
 		}
@@ -278,14 +279,14 @@ func putBenchProtos(tb testing.TB, cas *blobstore.ContentAddressableStorage,
 	if err != nil {
 		tb.Fatal(err)
 	}
-	cmdDigest, err := cas.Put(cmdBytes)
+	cmdDigest, err := cas.Put(digest.SHA256, cmdBytes)
 	if err != nil {
 		tb.Fatal(err)
 	}
 
 	// Action proto.
 	action := &repb.Action{
-		CommandDigest:   cmdDigest.ToProto(),
+		CommandDigest:   cmdDigest.Proto(),
 		InputRootDigest: rootDigest,
 		DoNotCache:      true,
 	}
@@ -293,7 +294,7 @@ func putBenchProtos(tb testing.TB, cas *blobstore.ContentAddressableStorage,
 	if err != nil {
 		tb.Fatal(err)
 	}
-	actionDigest, err := cas.Put(actionBytes)
+	actionDigest, err := cas.Put(digest.SHA256, actionBytes)
 	if err != nil {
 		tb.Fatal(err)
 	}

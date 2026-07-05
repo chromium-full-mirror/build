@@ -23,11 +23,11 @@ import (
 	"golang.org/x/sync/singleflight"
 	"google.golang.org/protobuf/proto"
 
+	"go.chromium.org/build/hashigo/digest"
 	repb "go.chromium.org/build/remote-apis/build/bazel/remote/execution/v2"
 
 	"go.chromium.org/build/kajiya/atomicio"
 	"go.chromium.org/build/kajiya/blobstore"
-	"go.chromium.org/build/kajiya/digest"
 )
 
 // ActionCache is a simple action cache implementation that stores ActionResults on the local disk.
@@ -136,11 +136,11 @@ func (c *ActionCache) validate(ctx context.Context) (count int, blobs []digest.D
 
 		// Validate file digests in parallel.
 		g.Go(func() error {
-			actionDigest, err := digest.New(d.Name(), fi.Size())
+			actionDigest, err := digest.SHA256.Validate(d.Name(), fi.Size())
 			if err != nil {
 				return err
 			}
-			b, err := c.validateAction(actionDigest)
+			b, err := c.validateAction(digest.SHA256, actionDigest)
 			blobsMu.Lock()
 			blobs = append(blobs, b...)
 			blobsMu.Unlock()
@@ -165,30 +165,33 @@ func (c *ActionCache) validate(ctx context.Context) (count int, blobs []digest.D
 	return count, blobs, nil
 }
 
-// validate checks that the action with the given digest is present, valid and that
-// all blobs referenced by it exist in the CAS.
-func (c *ActionCache) validateAction(d digest.Digest) (blobs []digest.Digest, err error) {
+// validateAction checks that the action with the given digest is present, valid
+// and that all blobs referenced by it exist in the CAS.
+func (c *ActionCache) validateAction(fn digest.Function, d digest.Digest) (blobs []digest.Digest, err error) {
 	// Get the ActionResult from the cache.
-	actionResult, err := c.Get(d)
+	actionResult, err := c.Get(fn, d)
 	if err != nil {
 		return nil, err
 	}
 
+	// Referenced blobs use the same digest function as the action.
+	empty := fn.Empty()
+
 	// Helper function to avoid duplicating error handling code below.
 	addBlob := func(h *repb.Digest) error {
 		// Empty digests are guaranteed to be present in the CAS and just waste memory.
-		if h == nil || (h.SizeBytes == 0 && h.Hash == digest.Empty.Hash) {
+		if h == nil || (h.SizeBytes == 0 && h.Hash == empty.Hash) {
 			return nil
 		}
 
 		// Parse the digest.
-		d, err := digest.NewFromProto(h)
+		d, err := fn.FromProto(h)
 		if err != nil {
 			return err
 		}
 
 		// Check that all referenced blobs exist in the CAS.
-		if !c.cas.Has(d) {
+		if !c.cas.Has(fn, d) {
 			return fmt.Errorf("action result from CAS missing referenced blob %s", d)
 		}
 
@@ -217,11 +220,11 @@ func (c *ActionCache) validateAction(d digest.Digest) (blobs []digest.Digest, er
 		if dir.RootDirectoryDigest == nil {
 			return nil, fmt.Errorf("action result from CAS had an output dir with a missing root directory digest")
 		}
-		rootDigest, err := digest.NewFromProto(dir.RootDirectoryDigest)
+		rootDigest, err := fn.FromProto(dir.RootDirectoryDigest)
 		if err != nil {
 			return nil, err
 		}
-		dirDigests, dirs, err := c.cas.FlattenDirectory(rootDigest)
+		dirDigests, dirs, err := c.cas.FlattenDirectory(fn, rootDigest)
 		if err != nil {
 			return nil, err
 		}
@@ -239,7 +242,7 @@ func (c *ActionCache) validateAction(d digest.Digest) (blobs []digest.Digest, er
 }
 
 // path returns the path to the file with digest d in the action cache.
-func (c *ActionCache) path(d digest.Digest) string {
+func (c *ActionCache) path(_ digest.Function, d digest.Digest) string {
 	if c.sharded {
 		return filepath.Join(c.dataDir, d.Hash[:2], d.Hash)
 	}
@@ -247,8 +250,8 @@ func (c *ActionCache) path(d digest.Digest) string {
 }
 
 // Get returns the cached ActionResult for the given digest.
-func (c *ActionCache) Get(actionDigest digest.Digest) (*repb.ActionResult, error) {
-	p := c.path(actionDigest)
+func (c *ActionCache) Get(fn digest.Function, actionDigest digest.Digest) (*repb.ActionResult, error) {
+	p := c.path(fn, actionDigest)
 
 	// Read the action result for the requested action into a byte slice.
 	buf, err := os.ReadFile(p)
@@ -266,7 +269,7 @@ func (c *ActionCache) Get(actionDigest digest.Digest) (*repb.ActionResult, error
 }
 
 // Put stores the given ActionResult for the given digest.
-func (c *ActionCache) Put(actionDigest digest.Digest, ar *repb.ActionResult) error {
+func (c *ActionCache) Put(fn digest.Function, actionDigest digest.Digest, ar *repb.ActionResult) error {
 	_, err, _ := c.syncer.Do(actionDigest.Hash, func() (any, error) {
 		// Marshal the action result. We use deterministic marshalling to ensure
 		// that the below comparison works correctly.
@@ -278,7 +281,7 @@ func (c *ActionCache) Put(actionDigest digest.Digest, ar *repb.ActionResult) err
 		// Check if the action result is already in the cache. If yes
 		// and it is the same as the one we want to store, we can skip
 		// writing it to disk.
-		buf, err := os.ReadFile(c.path(actionDigest))
+		buf, err := os.ReadFile(c.path(fn, actionDigest))
 		if err != nil && !errors.Is(err, fs.ErrNotExist) {
 			return nil, err
 		}
@@ -288,13 +291,13 @@ func (c *ActionCache) Put(actionDigest digest.Digest, ar *repb.ActionResult) err
 		}
 
 		// Store the action result in our action cache.
-		err = atomicio.WriteFile(c.path(actionDigest), actionResultRaw)
+		err = atomicio.WriteFile(c.path(fn, actionDigest), actionResultRaw)
 		return nil, err
 	})
 	return err
 }
 
 // Remove deletes the cached ActionResult for the given digest.
-func (c *ActionCache) Remove(d digest.Digest) error {
+func (c *ActionCache) Remove(fn digest.Function, d digest.Digest) error {
 	return fmt.Errorf("not implemented yet")
 }

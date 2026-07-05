@@ -19,6 +19,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"go.chromium.org/build/hashigo/digest"
 	repb "go.chromium.org/build/remote-apis/build/bazel/remote/execution/v2"
 
 	"go.chromium.org/build/kajiya/blobstore"
@@ -169,6 +170,7 @@ func (e *Executor) Execute(action *model.Action) (*repb.ActionResult, error) {
 	sb := &Sandbox{
 		cas:        e.cas,
 		trees:      e.trees,
+		digestFn:   action.Fn,
 		sandboxDir: sandboxDir,
 		strategy:   e.sandboxStrategy,
 		fuse:       e.fuse,
@@ -187,7 +189,7 @@ func (e *Executor) Execute(action *model.Action) (*repb.ActionResult, error) {
 	}
 
 	// Save stdout and stderr to the CAS and update their digests in the action result.
-	if err := e.saveStdOutErr(actionResult); err != nil {
+	if err := e.saveStdOutErr(action.Fn, actionResult); err != nil {
 		return nil, err
 	}
 
@@ -207,18 +209,18 @@ func (e *Executor) Execute(action *model.Action) (*repb.ActionResult, error) {
 }
 
 // saveStdOutErr saves stdout and stderr to the CAS and returns the updated action result.
-func (e *Executor) saveStdOutErr(actionResult *repb.ActionResult) error {
-	d, err := e.cas.Put(actionResult.StdoutRaw)
+func (e *Executor) saveStdOutErr(fn digest.Function, actionResult *repb.ActionResult) error {
+	d, err := e.cas.Put(fn, actionResult.StdoutRaw)
 	if err != nil {
 		return status.Errorf(codes.Internal, "failed to put stdout into CAS: %v", err)
 	}
-	actionResult.StdoutDigest = d.ToProto()
+	actionResult.StdoutDigest = d.Proto()
 
-	d, err = e.cas.Put(actionResult.StderrRaw)
+	d, err = e.cas.Put(fn, actionResult.StderrRaw)
 	if err != nil {
 		return status.Errorf(codes.Internal, "failed to put stderr into CAS: %v", err)
 	}
-	actionResult.StderrDigest = d.ToProto()
+	actionResult.StderrDigest = d.Proto()
 
 	// Servers are not required to inline stdout and stderr, so we just set them to nil.
 	// The client can just fetch them from the CAS if it needs them.

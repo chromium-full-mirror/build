@@ -16,6 +16,8 @@ import (
 
 	"github.com/hanwen/go-fuse/v2/fuse"
 
+	"go.chromium.org/build/hashigo/digest"
+
 	"go.chromium.org/build/kajiya/blobstore"
 	"go.chromium.org/build/kajiya/execution/model"
 )
@@ -88,8 +90,8 @@ func (b *fuseBackend) Close() error {
 // RegisterSandbox creates a virtual subtree for the input trie of one
 // action and returns the on-disk path inside the FUSE mount that should
 // be used as the overlayfs lower directory.
-func (b *fuseBackend) RegisterSandbox(sandboxID string, trie *model.DirectoryTrie, cas *blobstore.ContentAddressableStorage, recorder *AccessRecorder) (string, error) {
-	return b.root.RegisterSandbox(sandboxID, trie, cas, b.mountpoint, recorder)
+func (b *fuseBackend) RegisterSandbox(sandboxID string, trie *model.DirectoryTrie, fn digest.Function, cas *blobstore.ContentAddressableStorage, recorder *AccessRecorder) (string, error) {
+	return b.root.RegisterSandbox(sandboxID, trie, fn, cas, b.mountpoint, recorder)
 }
 
 // UnregisterSandbox removes the sandbox's virtual subtree, dropping its

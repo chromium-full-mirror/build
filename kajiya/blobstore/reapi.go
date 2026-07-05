@@ -9,14 +9,13 @@ import (
 
 	"google.golang.org/protobuf/proto"
 
+	"go.chromium.org/build/hashigo/digest"
 	repb "go.chromium.org/build/remote-apis/build/bazel/remote/execution/v2"
-
-	"go.chromium.org/build/kajiya/digest"
 )
 
 // proto reads a proto message with the given digest from the CAS and unmarshals it into m.
-func (c *ContentAddressableStorage) proto(d digest.Digest, m proto.Message) error {
-	msgBytes, err := c.Get(d)
+func (c *ContentAddressableStorage) proto(fn digest.Function, d digest.Digest, m proto.Message) error {
+	msgBytes, err := c.Get(fn, d)
 	if err != nil {
 		return fmt.Errorf("failed to get protobuf from CAS: %w", err)
 	}
@@ -27,27 +26,27 @@ func (c *ContentAddressableStorage) proto(d digest.Digest, m proto.Message) erro
 }
 
 // Action reads an Action message with the given digest from the CAS.
-func (c *ContentAddressableStorage) Action(actionDigest digest.Digest) (*repb.Action, error) {
+func (c *ContentAddressableStorage) Action(fn digest.Function, actionDigest digest.Digest) (*repb.Action, error) {
 	action := &repb.Action{}
-	if err := c.proto(actionDigest, action); err != nil {
+	if err := c.proto(fn, actionDigest, action); err != nil {
 		return nil, fmt.Errorf("failed to get Action message from CAS: %w", err)
 	}
 	return action, nil
 }
 
 // Command reads a Command message with the given digest from the CAS.
-func (c *ContentAddressableStorage) Command(cmdDigest digest.Digest) (*repb.Command, error) {
+func (c *ContentAddressableStorage) Command(fn digest.Function, cmdDigest digest.Digest) (*repb.Command, error) {
 	cmd := &repb.Command{}
-	if err := c.proto(cmdDigest, cmd); err != nil {
+	if err := c.proto(fn, cmdDigest, cmd); err != nil {
 		return nil, fmt.Errorf("failed to get Command message from CAS: %w", err)
 	}
 	return cmd, nil
 }
 
 // Directory reads a Directory message with the given digest from the CAS.
-func (c *ContentAddressableStorage) Directory(dirDigest digest.Digest) (*repb.Directory, error) {
+func (c *ContentAddressableStorage) Directory(fn digest.Function, dirDigest digest.Digest) (*repb.Directory, error) {
 	dir := &repb.Directory{}
-	if err := c.proto(dirDigest, dir); err != nil {
+	if err := c.proto(fn, dirDigest, dir); err != nil {
 		return nil, fmt.Errorf("failed to get Directory message from CAS: %w", err)
 	}
 	return dir, nil
@@ -55,14 +54,15 @@ func (c *ContentAddressableStorage) Directory(dirDigest digest.Digest) (*repb.Di
 
 // FlattenDirectory reads a Directory message with the given digest from the CAS and returns flat
 // lists with the digests as well as the messages of the root directory and all subdirectories.
-func (c *ContentAddressableStorage) FlattenDirectory(rootDigest digest.Digest) (dirDigests []digest.Digest, dirs []*repb.Directory, err error) {
+// Subdirectories use the same digest function as the root.
+func (c *ContentAddressableStorage) FlattenDirectory(fn digest.Function, rootDigest digest.Digest) (dirDigests []digest.Digest, dirs []*repb.Directory, err error) {
 	// Create a queue of directories to process and add the root directory.
 	dirDigests = []digest.Digest{rootDigest}
 
 	// Iteratively process the directories.
 	for i := 0; i < len(dirDigests); i++ {
 		// Get the blob for the directory message from the CAS.
-		directory, err := c.Directory(dirDigests[i])
+		directory, err := c.Directory(fn, dirDigests[i])
 		if err != nil {
 			return nil, nil, err
 		}
@@ -73,7 +73,7 @@ func (c *ContentAddressableStorage) FlattenDirectory(rootDigest digest.Digest) (
 		// Add all subdirectory nodes to the queue.
 		for _, subDirNode := range directory.Directories {
 			// Parse the digest.
-			subDigest, err := digest.NewFromProto(subDirNode.Digest)
+			subDigest, err := fn.FromProto(subDirNode.Digest)
 			if err != nil {
 				return nil, nil, fmt.Errorf("invalid digest: %v", err)
 			}

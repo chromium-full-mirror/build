@@ -21,8 +21,9 @@ import (
 
 	iradix "github.com/hashicorp/go-immutable-radix/v2"
 
+	"go.chromium.org/build/hashigo/digest"
+
 	"go.chromium.org/build/kajiya/blobstore"
-	"go.chromium.org/build/kajiya/digest"
 	"go.chromium.org/build/kajiya/execution/model"
 )
 
@@ -37,7 +38,7 @@ func buildTestTrie(t *testing.T, cas *blobstore.ContentAddressableStorage) *mode
 
 	// Put a fake source file into CAS.
 	srcContent := []byte("int main() { return 0; }\n")
-	srcDigest, err := cas.Put(srcContent)
+	srcDigest, err := cas.Put(digest.SHA256, srcContent)
 	if err != nil {
 		t.Fatalf("cas.Put: %v", err)
 	}
@@ -118,7 +119,7 @@ func TestFuseOverlayWritePermission(t *testing.T) {
 	// --- register sandbox ------------------------------------------------
 	trie := buildTestTrie(t, cas)
 	sandboxID := "test-sandbox"
-	lowerDir, err := root.RegisterSandbox(sandboxID, trie, cas, fuseMountpoint, nil)
+	lowerDir, err := root.RegisterSandbox(sandboxID, trie, digest.SHA256, cas, fuseMountpoint, nil)
 	if err != nil {
 		t.Fatalf("RegisterSandbox: %v", err)
 	}
@@ -289,7 +290,7 @@ func BenchmarkFuseE2E(b *testing.B) {
 		}
 	})
 
-	warmupLowerDir, err := root.RegisterSandbox("bench-warmup", trie, cas, fuseMountpoint, nil)
+	warmupLowerDir, err := root.RegisterSandbox("bench-warmup", trie, digest.SHA256, cas, fuseMountpoint, nil)
 	if err != nil {
 		b.Fatalf("RegisterSandbox: %v", err)
 	}
@@ -305,7 +306,7 @@ func BenchmarkFuseE2E(b *testing.B) {
 		for pb.Next() {
 			actionID := actionIDs.Add(1)
 			sandboxID := fmt.Sprintf("bench-action-%d", actionID)
-			lowerDir, err := root.RegisterSandbox(sandboxID, trie, cas, fuseMountpoint, nil)
+			lowerDir, err := root.RegisterSandbox(sandboxID, trie, digest.SHA256, cas, fuseMountpoint, nil)
 			if err != nil {
 				b.Fatalf("RegisterSandbox(%s): %v", sandboxID, err)
 			}
@@ -344,7 +345,7 @@ func buildBenchmarkTrie(b *testing.B, cas *blobstore.ContentAddressableStorage, 
 		UnixMode: 0755,
 	})
 	txn.Insert([]byte("src/"), &model.KajiyaDirectory{
-		Digest:   digest.Digest{Hash: "benchmark-shared-src-dir", Size: int64(len(files))},
+		Digest:   digest.Digest{Hash: "benchmark-shared-src-dir", SizeBytes: int64(len(files))},
 		Files:    files,
 		UnixMode: 0755,
 	})
@@ -379,8 +380,8 @@ func benchmarkBlobSize(i int) int64 {
 func benchmarkSparseBlob(b *testing.B, cas *blobstore.ContentAddressableStorage, i int, size int64) digest.Digest {
 	b.Helper()
 
-	d := digest.Digest{Hash: fmt.Sprintf("%02x%062x", i%256, i+1), Size: size}
-	path := cas.Path(d)
+	d := digest.Digest{Hash: fmt.Sprintf("%02x%062x", i%256, i+1), SizeBytes: size}
+	path := cas.Path(digest.SHA256, d)
 
 	// The benchmark cares about FUSE open/read behavior and apparent CAS
 	// sizes, so sparse files keep setup cheap without making every digest
@@ -468,7 +469,7 @@ func TestFuseSandboxDirLayout(t *testing.T) {
 
 	trie := buildTestTrie(t, cas)
 	sandboxID := "layout-test"
-	lowerDir, err := root.RegisterSandbox(sandboxID, trie, cas, fuseMountpoint, nil)
+	lowerDir, err := root.RegisterSandbox(sandboxID, trie, digest.SHA256, cas, fuseMountpoint, nil)
 	if err != nil {
 		t.Fatalf("RegisterSandbox: %v", err)
 	}
@@ -511,8 +512,8 @@ func TestFuseSandboxDirLayout(t *testing.T) {
 	}
 
 	// Verify the file's digest matches what we stored.
-	wantDigest := digest.FromBlob(data)
-	t.Logf("source file digest: %s/%d", wantDigest.Hash, wantDigest.Size)
+	wantDigest := digest.SHA256.FromBytes(data)
+	t.Logf("source file digest: %s/%d", wantDigest.Hash, wantDigest.SizeBytes)
 }
 
 // TestFuseOutputInodeLeak verifies that output directory inodes from one
@@ -543,7 +544,7 @@ func TestFuseOutputInodeLeak(t *testing.T) {
 	})
 
 	// Put a fake source file into CAS so the shared directory has content.
-	srcDigest, err := cas.Put([]byte("source"))
+	srcDigest, err := cas.Put(digest.SHA256, []byte("source"))
 	if err != nil {
 		t.Fatalf("cas.Put: %v", err)
 	}
@@ -551,7 +552,7 @@ func TestFuseOutputInodeLeak(t *testing.T) {
 	// sharedDigest is the REAPI digest of the shared input directory.
 	// Both tries reference the same digest, so the second sandbox will
 	// hit the dirInodes cache.
-	sharedDigest := digest.Digest{Hash: "shared-dir-digest-for-test", Size: 42}
+	sharedDigest := digest.Digest{Hash: "shared-dir-digest-for-test", SizeBytes: 42}
 
 	// buildTrie creates a trie with a "shared/" directory (using sharedDigest)
 	// that declares a single output under outputSubdir (e.g. "gen_a/result.o").
@@ -579,7 +580,7 @@ func TestFuseOutputInodeLeak(t *testing.T) {
 
 	// Register sandbox A. This populates the dirInodes cache for sharedDigest
 	// and calls createOutputInodes, which creates "gen_a/" under the shared inode.
-	lowerA, err := root.RegisterSandbox("sandbox-a", trieA, cas, fuseMountpoint, nil)
+	lowerA, err := root.RegisterSandbox("sandbox-a", trieA, digest.SHA256, cas, fuseMountpoint, nil)
 	if err != nil {
 		t.Fatalf("RegisterSandbox(a): %v", err)
 	}
@@ -587,7 +588,7 @@ func TestFuseOutputInodeLeak(t *testing.T) {
 
 	// Register sandbox B. This hits the dirInodes cache and calls
 	// createOutputInodes on the SAME shared inode, creating "gen_b/".
-	lowerB, err := root.RegisterSandbox("sandbox-b", trieB, cas, fuseMountpoint, nil)
+	lowerB, err := root.RegisterSandbox("sandbox-b", trieB, digest.SHA256, cas, fuseMountpoint, nil)
 	if err != nil {
 		t.Fatalf("RegisterSandbox(b): %v", err)
 	}
@@ -662,7 +663,7 @@ func TestFuseConcurrentRegisterSandbox(t *testing.T) {
 	for i := range numSandboxes {
 		wg.Go(func() {
 			sandboxID := fmt.Sprintf("concurrent-%d", i)
-			lowerDir, err := root.RegisterSandbox(sandboxID, trie, cas, fuseMountpoint, nil)
+			lowerDir, err := root.RegisterSandbox(sandboxID, trie, digest.SHA256, cas, fuseMountpoint, nil)
 			if err != nil {
 				errs[i] = fmt.Errorf("RegisterSandbox(%s): %v", sandboxID, err)
 				return
@@ -724,14 +725,14 @@ func TestFuseTracedSandbox(t *testing.T) {
 
 	// Register a traced sandbox.
 	recorder := NewAccessRecorder()
-	lowerDir, err := root.RegisterSandbox("traced", trie, cas, fuseMountpoint, recorder)
+	lowerDir, err := root.RegisterSandbox("traced", trie, digest.SHA256, cas, fuseMountpoint, recorder)
 	if err != nil {
 		t.Fatalf("RegisterSandbox(traced): %v", err)
 	}
 	t.Cleanup(func() { root.UnregisterSandbox("traced") })
 
 	// Register a non-traced sandbox (nil recorder).
-	lowerDirUntraced, err := root.RegisterSandbox("untraced", trie, cas, fuseMountpoint, nil)
+	lowerDirUntraced, err := root.RegisterSandbox("untraced", trie, digest.SHA256, cas, fuseMountpoint, nil)
 	if err != nil {
 		t.Fatalf("RegisterSandbox(untraced): %v", err)
 	}
