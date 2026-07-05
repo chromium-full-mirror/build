@@ -217,7 +217,11 @@ func (c *ActionCache) validateAction(d digest.Digest) (blobs []digest.Digest, er
 		if dir.RootDirectoryDigest == nil {
 			return nil, fmt.Errorf("action result from CAS had an output dir with a missing root directory digest")
 		}
-		dirDigests, dirs, err := c.cas.FlattenDirectory(d)
+		rootDigest, err := digest.NewFromProto(dir.RootDirectoryDigest)
+		if err != nil {
+			return nil, err
+		}
+		dirDigests, dirs, err := c.cas.FlattenDirectory(rootDigest)
 		if err != nil {
 			return nil, err
 		}
