@@ -218,7 +218,7 @@ func (ofs *OSFS) RemoveAll(ctx context.Context, name string) error {
 // Rename renames oldpath to newpath.
 func (ofs *OSFS) Rename(ctx context.Context, oldpath, newpath string) error {
 	started := time.Now()
-	err := os.Rename(oldpath, newpath)
+	err := rename(oldpath, newpath)
 	ofs.OpsDone(err)
 	if dur := time.Since(started); dur > 1*time.Minute {
 		logSlow(ctx, newpath, dur, err)
