@@ -9,6 +9,8 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
+	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -148,6 +150,65 @@ func TestScanDeps(t *testing.T) {
 	}
 	if diff := cmp.Diff(want, got, cmpopts.SortSlices(func(a, b path.Path) bool { return a < b })); diff != "" {
 		t.Errorf("scandeps diff -want +got:\n%s", diff)
+	}
+}
+
+// TestScanDeps_BackslashInclude verifies that an #include path containing a
+// backslash separator or a redundant slash resolves to a clean forward-slash
+// dependency path. Headers generated on Windows contain such paths. A
+// non-normalized path would be placed under a wrong directory in the remote
+// input tree, so the remote compiler could not find the header.
+func TestScanDeps_BackslashInclude(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("backslashes are only path separators on Windows")
+	}
+	ctx := t.Context()
+	dir := tempDir(t)
+
+	for fname, content := range map[string]string{
+		// Mimics a generated header: os.path.join produced the backslash and
+		// string concatenation produced the redundant "//".
+		"gen/forward.h": `
+#include "base//nested\header.h"
+`,
+		"base/nested/header.h": ``,
+		"apps/apps.cc": `
+#include "gen/forward.h"
+`,
+	} {
+		fname := filepath.Join(dir, fname)
+		if err := os.MkdirAll(filepath.Dir(fname), 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(fname, []byte(content), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	hashFS, err := hashfs.New(ctx, hashfs.Option{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	scanDeps := New(ctx, hashFS, Options{})
+	req := Request{
+		Sources: []path.Path{"apps/apps.cc"},
+		Dirs:    []path.Path{""},
+	}
+	got, err := scanDeps.Scan(ctx, dir, req)
+	if err != nil {
+		t.Fatalf("Scan()=%v; want nil err", err)
+	}
+
+	// The backslash+redundant-slash include must resolve to a clean path.
+	const want = path.Path("base/nested/header.h")
+	if !slices.Contains(got, want) {
+		t.Errorf("scandeps did not resolve backslash include to %q; got %q", want, got)
+	}
+	// No returned dependency may retain a backslash or a redundant slash.
+	for _, p := range got {
+		if strings.ContainsRune(string(p), '\\') || strings.Contains(string(p), "//") {
+			t.Errorf("scandeps returned non-normalized path %q", p)
+		}
 	}
 }
 

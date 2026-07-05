@@ -9,7 +9,6 @@ import (
 	"context"
 	"errors"
 	"io/fs"
-	stdpath "path"
 	"path/filepath"
 	"runtime"
 	"slices"
@@ -437,19 +436,22 @@ func topElem(name string) string {
 }
 
 func (fv *fsview) pathJoin(dir path.Path, fname string) path.Path {
+	// fname comes verbatim from an #include directive. In headers generated
+	// on Windows it can contain backslashes or redundant slashes, so
+	// normalize with path.New. A non-clean path here would end up in the
+	// remote input tree, where the compiler cannot resolve the include.
 	fv.pathbuf.Reset()
 	if dir == "" || dir == "." {
-		return path.FromClean(fname)
+		return path.New(fname)
 	}
 	if strings.HasPrefix(fname, ".") {
 		// e.g. "./foo.h", "../foo/bar.h"
-		return path.Path(stdpath.Join(string(dir), fname))
+		return path.New(string(dir) + "/" + fname)
 	}
-	// no path.Clean
 	fv.pathbuf.WriteString(string(dir))
 	fv.pathbuf.WriteByte('/')
 	fv.pathbuf.WriteString(fname)
-	return path.FromClean(fv.pathbuf.String())
+	return path.New(fv.pathbuf.String())
 }
 
 // getHmap returns hmap excluding files that aren't under workspaceRoot.
