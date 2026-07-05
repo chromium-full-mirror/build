@@ -19,17 +19,6 @@ import (
 // DigestSemaphore is a semaphore to control concurrent digest calculation.
 var DigestSemaphore = semaphore.New("file-digest", runtime.GOMAXPROCS(0))
 
-// Keep track what files are currently accessed for digest calculation.
-// On Windows, it would fail with ERROR_SHARING_VIOLATION when it
-// open the file and remove the same file.
-// To prevent from the error, don't remove the file in flush
-// while the file is accessed for digest calculation.
-var (
-	digestLock   sync.Mutex
-	digestCond   = sync.NewCond(&digestLock)
-	digestFnames = make(map[string]struct{})
-)
-
 var noLazyForTests map[string]bool
 
 // SetNoLazyForTest sets filenames that would not calculate digest lazily
@@ -49,16 +38,6 @@ func localDigest(ctx context.Context, src digest.Source, fname string) (digest.D
 	ctx, span := trace.NewSpan(ctx, "local-digest")
 	defer span.Close(nil)
 
-	digestLock.Lock()
-	digestFnames[fname] = struct{}{}
-	digestLock.Unlock()
-
-	defer func() {
-		digestLock.Lock()
-		delete(digestFnames, fname)
-		digestCond.Broadcast()
-		digestLock.Unlock()
-	}()
 	started := time.Now()
 	d, err := digest.FromLocalFile(ctx, src)
 	if dur := time.Since(started); dur >= 10*time.Second {

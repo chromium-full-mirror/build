@@ -406,21 +406,10 @@ func (e *entry) flush(ctx context.Context, fname string, osfs *osfs.OSFS, timeou
 	}
 }
 
-// flushRemove removes a file from disk, waiting for any in-progress
-// digest calculation to finish first (Windows sharing violation guard).
+// flushRemove removes a file from disk. Removal is safe even while a digest
+// read holds the file open: openRead shares FILE_SHARE_DELETE on Windows.
 func (e *entry) flushRemove(ctx context.Context, fname string, osfs *osfs.OSFS) error {
-	// to protect concurrent digest calculation and removal
-	// on Windows.
-	digestLock.Lock()
-	for {
-		if _, ok := digestFnames[fname]; !ok {
-			break
-		}
-		// wait if digest calculation on fname is under progress
-		digestCond.Wait()
-	}
 	err := osfs.Remove(ctx, fname)
-	digestLock.Unlock()
 	clog.Infof(ctx, "flush remove %s: %v", fname, err)
 	if errors.Is(err, fs.ErrNotExist) {
 		err = nil
