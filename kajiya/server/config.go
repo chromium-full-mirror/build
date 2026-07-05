@@ -6,6 +6,8 @@
 package server
 
 import (
+	"strings"
+
 	"github.com/klauspost/compress/zstd"
 	"google.golang.org/protobuf/proto"
 
@@ -17,6 +19,11 @@ import (
 type Config struct {
 	MaxBatchTotalSizeBytes int64
 	MaxRecvMsgSize         int
+
+	// DigestFunctions is the set of digest functions the server advertises
+	// and accepts, typically produced by ParseDigestFunctions. Empty means
+	// SHA-256 only.
+	DigestFunctions []digest.Function
 }
 
 // RecommendedMaxRecvMsgSize returns the maximum gRPC receive message size
@@ -58,15 +65,28 @@ func (c Config) RecommendedMaxRecvMsgSize() int {
 	// a server, this is an unsolvable problem. The best the client can do is
 	// to calculate a MaxSendMsgSize using the same algorithm as we use here,
 	// and / or correctly handle RESOURCE_EXHAUSTED errors for batch uploads.
+	//
+	// The worst-case digest is the advertised function with the longest hex
+	// hash (e.g. SHA-512's 128 chars), since its digests make the request
+	// proto the largest.
+	fn := digest.SHA256
+	for _, f := range c.AdvertisedDigestFunctions() {
+		if f.HexLen() > fn.HexLen() {
+			fn = f
+		}
+	}
 	batchUpdateSize := proto.Size(&repb.BatchUpdateBlobsRequest{
 		Requests: []*repb.BatchUpdateBlobsRequest_Request{
 			{
-				Digest:     digest.SHA256.FromBytes(dummyData).Proto(),
+				Digest: &repb.Digest{
+					Hash:      strings.Repeat("f", fn.HexLen()),
+					SizeBytes: maxDataSize,
+				},
 				Data:       dummyData,
 				Compressor: repb.Compressor_ZSTD,
 			},
 		},
-		DigestFunction: repb.DigestFunction_SHA256,
+		DigestFunction: fn.Value(),
 	})
 
 	return max(defaultSize, batchUpdateSize)

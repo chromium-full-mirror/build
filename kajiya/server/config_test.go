@@ -93,73 +93,102 @@ func TestRecommendedMaxRecvMsgSize_MatchesProtoMarshal(t *testing.T) {
 
 // TestRecommendedMaxRecvMsgSize_Integration verifies that a real gRPC
 // server configured with RecommendedMaxRecvMsgSize accepts worst-case
-// messages at the limit and rejects messages that exceed it.
+// messages at the limit and rejects messages that exceed it, including when a
+// digest function with longer hashes than SHA-256 is advertised.
 func TestRecommendedMaxRecvMsgSize_Integration(t *testing.T) {
 	const batchLimit = 10 * 1024 * 1024 // 10 MiB — exceeds the 4 MiB gRPC default.
 
-	cfg := Config{MaxBatchTotalSizeBytes: batchLimit}
-
-	enc, err := zstd.NewWriter(nil)
+	sha512Fn, err := digest.ParseFunction("sha512")
 	if err != nil {
-		t.Fatalf("zstd.NewWriter: %v", err)
+		t.Fatal(err)
 	}
-	defer enc.Close()
 
-	maxDataSize := enc.MaxEncodedSize(int(batchLimit))
-
-	// Start a gRPC server with the recommended max receive message size.
-	lis := bufconn.Listen(64 * 1024 * 1024)
-	srv := grpc.NewServer(grpc.MaxRecvMsgSize(cfg.RecommendedMaxRecvMsgSize()))
-	repb.RegisterContentAddressableStorageServer(srv, &repb.UnimplementedContentAddressableStorageServer{})
-	go func() { _ = srv.Serve(lis) }()
-	t.Cleanup(func() {
-		srv.Stop()
-		lis.Close()
-	})
-
-	// Create a client connection to the in-memory listener.
-	conn, err := grpc.NewClient("passthrough://bufnet",
-		grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
-			return lis.Dial()
-		}),
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-	)
-	if err != nil {
-		t.Fatalf("grpc.NewClient: %v", err)
-	}
-	t.Cleanup(func() { conn.Close() })
-
-	client := repb.NewContentAddressableStorageClient(conn)
-	ctx := t.Context()
-
-	buildRequest := func(dataSize int) *repb.BatchUpdateBlobsRequest {
-		data := make([]byte, dataSize)
-		return &repb.BatchUpdateBlobsRequest{
-			Requests: []*repb.BatchUpdateBlobsRequest_Request{
-				{
-					Digest:     digest.SHA256.FromBytes(data).Proto(),
-					Data:       data,
-					Compressor: repb.Compressor_ZSTD,
-				},
+	for _, tc := range []struct {
+		name string
+		cfg  Config
+		fn   digest.Function
+	}{
+		{
+			name: "sha256_default",
+			cfg:  Config{MaxBatchTotalSizeBytes: batchLimit},
+			fn:   digest.SHA256,
+		},
+		{
+			// SHA-512 hashes are 128 hex chars, twice as long as SHA-256, so
+			// the worst-case message must be sized for them.
+			name: "sha512_advertised",
+			cfg: Config{
+				MaxBatchTotalSizeBytes: batchLimit,
+				DigestFunctions:        []digest.Function{digest.SHA256, sha512Fn},
 			},
-			DigestFunction: repb.DigestFunction_SHA256,
-		}
+			fn: sha512Fn,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			enc, err := zstd.NewWriter(nil)
+			if err != nil {
+				t.Fatalf("zstd.NewWriter: %v", err)
+			}
+			defer enc.Close()
+
+			maxDataSize := enc.MaxEncodedSize(batchLimit)
+
+			// Start a gRPC server with the recommended max receive message size.
+			lis := bufconn.Listen(64 * 1024 * 1024)
+			srv := grpc.NewServer(grpc.MaxRecvMsgSize(tc.cfg.RecommendedMaxRecvMsgSize()))
+			repb.RegisterContentAddressableStorageServer(srv, &repb.UnimplementedContentAddressableStorageServer{})
+			go func() { _ = srv.Serve(lis) }()
+			t.Cleanup(func() {
+				srv.Stop()
+				lis.Close()
+			})
+
+			// Create a client connection to the in-memory listener.
+			conn, err := grpc.NewClient("passthrough://bufnet",
+				grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
+					return lis.Dial()
+				}),
+				grpc.WithTransportCredentials(insecure.NewCredentials()),
+			)
+			if err != nil {
+				t.Fatalf("grpc.NewClient: %v", err)
+			}
+			t.Cleanup(func() { conn.Close() })
+
+			client := repb.NewContentAddressableStorageClient(conn)
+			ctx := t.Context()
+
+			buildRequest := func(dataSize int) *repb.BatchUpdateBlobsRequest {
+				data := make([]byte, dataSize)
+				return &repb.BatchUpdateBlobsRequest{
+					Requests: []*repb.BatchUpdateBlobsRequest_Request{
+						{
+							Digest:     tc.fn.FromBytes(data).Proto(),
+							Data:       data,
+							Compressor: repb.Compressor_ZSTD,
+						},
+					},
+					DigestFunction: tc.fn.Value(),
+				}
+			}
+
+			// At-limit: the server should accept the message (returning
+			// Unimplemented because we registered the stub service, not
+			// ResourceExhausted).
+			t.Run("at_limit", func(t *testing.T) {
+				_, err := client.BatchUpdateBlobs(ctx, buildRequest(maxDataSize))
+				if got, want := grpcstatus.Code(err), codes.Unimplemented; got != want {
+					t.Errorf("at-limit request: got code %v, want %v (err: %v)", got, want, err)
+				}
+			})
+
+			// Over-limit: the server should reject the message with ResourceExhausted.
+			t.Run("over_limit", func(t *testing.T) {
+				_, err := client.BatchUpdateBlobs(ctx, buildRequest(maxDataSize+1))
+				if got, want := grpcstatus.Code(err), codes.ResourceExhausted; got != want {
+					t.Errorf("over-limit request: got code %v, want %v (err: %v)", got, want, err)
+				}
+			})
+		})
 	}
-
-	// At-limit: the server should accept the message (returning Unimplemented
-	// because we registered the stub service, not ResourceExhausted).
-	t.Run("at_limit", func(t *testing.T) {
-		_, err := client.BatchUpdateBlobs(ctx, buildRequest(maxDataSize))
-		if got, want := grpcstatus.Code(err), codes.Unimplemented; got != want {
-			t.Errorf("at-limit request: got code %v, want %v (err: %v)", got, want, err)
-		}
-	})
-
-	// Over-limit: the server should reject the message with ResourceExhausted.
-	t.Run("over_limit", func(t *testing.T) {
-		_, err := client.BatchUpdateBlobs(ctx, buildRequest(maxDataSize+1))
-		if got, want := grpcstatus.Code(err), codes.ResourceExhausted; got != want {
-			t.Errorf("over-limit request: got code %v, want %v (err: %v)", got, want, err)
-		}
-	})
 }

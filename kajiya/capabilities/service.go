@@ -41,12 +41,16 @@ func (s *Service) GetCapabilities(ctx context.Context, request *repb.GetCapabili
 		}
 	}()
 
+	advertised := s.config.AdvertisedDigestFunctions()
+	values := make([]repb.DigestFunction_Value, len(advertised))
+	for i, fn := range advertised {
+		values[i] = fn.Value()
+	}
+
 	// Return the capabilities.
 	return &repb.ServerCapabilities{
 		CacheCapabilities: &repb.CacheCapabilities{
-			DigestFunctions: []repb.DigestFunction_Value{
-				repb.DigestFunction_SHA256,
-			},
+			DigestFunctions: values,
 			ActionCacheUpdateCapabilities: &repb.ActionCacheUpdateCapabilities{
 				UpdateEnabled: true,
 			},
@@ -66,11 +70,9 @@ func (s *Service) GetCapabilities(ctx context.Context, request *repb.GetCapabili
 			},
 		},
 		ExecutionCapabilities: &repb.ExecutionCapabilities{
-			DigestFunction: repb.DigestFunction_SHA256,
-			DigestFunctions: []repb.DigestFunction_Value{
-				repb.DigestFunction_SHA256,
-			},
-			ExecEnabled: true,
+			DigestFunction:  values[0],
+			DigestFunctions: values,
+			ExecEnabled:     true,
 			ExecutionPriorityCapabilities: &repb.PriorityCapabilities{
 				Priorities: []*repb.PriorityCapabilities_PriorityRange{
 					{

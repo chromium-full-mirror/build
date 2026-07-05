@@ -15,6 +15,7 @@ import (
 	"google.golang.org/grpc/test/bufconn"
 	"google.golang.org/protobuf/testing/protocmp"
 
+	"go.chromium.org/build/hashigo/digest"
 	repb "go.chromium.org/build/remote-apis/build/bazel/remote/execution/v2"
 	semverpb "go.chromium.org/build/remote-apis/build/bazel/semver"
 
@@ -26,14 +27,13 @@ const bufferSize = 1024 * 1024
 
 // startTestServer sets up a gRPC server listening on a bufconn listener.
 // It returns the listener (to dial to) and a cleanup function.
-func startTestServer(t *testing.T) *bufconn.Listener {
+func startTestServer(t *testing.T, cfg server.Config) *bufconn.Listener {
 	t.Helper()
 
 	// Create an in-memory listener
 	lis := bufconn.Listen(bufferSize)
 
 	// Create a standard gRPC server
-	cfg := server.Config{MaxBatchTotalSizeBytes: 1048576}
 	s := grpc.NewServer(grpc.MaxRecvMsgSize(cfg.RecommendedMaxRecvMsgSize()))
 
 	// Register the service implementation
@@ -57,9 +57,12 @@ func startTestServer(t *testing.T) *bufconn.Listener {
 	return lis
 }
 
-func TestGetCapabilities(t *testing.T) {
-	// Start the server.
-	lis := startTestServer(t)
+// getCapabilities starts a server with the given config and returns its
+// GetCapabilities response.
+func getCapabilities(t *testing.T, cfg server.Config) *repb.ServerCapabilities {
+	t.Helper()
+
+	lis := startTestServer(t, cfg)
 
 	// Create a client that dials the in-memory listener.
 	ctx := t.Context()
@@ -72,32 +75,44 @@ func TestGetCapabilities(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to dial bufnet: %v", err)
 	}
-	defer func(conn *grpc.ClientConn) {
+	t.Cleanup(func() {
 		if err := conn.Close(); err != nil {
 			t.Errorf("Failed to close gRPC client connection: %v", err)
 		}
-	}(conn)
+	})
 
-	// Create the actual protobuf client.
+	// Create the actual protobuf client and call the GetCapabilities RPC.
 	client := repb.NewCapabilitiesClient(conn)
-
-	// Call the GetCapabilities RPC.
-	req := &repb.GetCapabilitiesRequest{
+	resp, err := client.GetCapabilities(ctx, &repb.GetCapabilitiesRequest{
 		InstanceName: "test-instance",
-	}
-	resp, err := client.GetCapabilities(ctx, req)
+	})
 	if err != nil {
 		t.Fatalf("GetCapabilities RPC failed: %v", err)
 	}
 	if resp == nil {
 		t.Fatal("GetCapabilities returned nil response")
 	}
+	return resp
+}
 
+func TestGetCapabilities(t *testing.T) {
+	// blake3 is advertised in addition to the default to verify that the
+	// configured set (in order, first = default) is returned.
+	blake3Fn, err := digest.Lookup(repb.DigestFunction_BLAKE3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp := getCapabilities(t, server.Config{
+		MaxBatchTotalSizeBytes: 1048576,
+		DigestFunctions:        []digest.Function{digest.SHA256, blake3Fn},
+	})
+
+	advertised := []repb.DigestFunction_Value{repb.DigestFunction_SHA256, repb.DigestFunction_BLAKE3}
 	want := &repb.ServerCapabilities{
 		LowApiVersion:  &semverpb.SemVer{Major: 2, Minor: 0},
 		HighApiVersion: &semverpb.SemVer{Major: 2, Minor: 0},
 		CacheCapabilities: &repb.CacheCapabilities{
-			DigestFunctions: []repb.DigestFunction_Value{repb.DigestFunction_SHA256},
+			DigestFunctions: advertised,
 			ActionCacheUpdateCapabilities: &repb.ActionCacheUpdateCapabilities{
 				UpdateEnabled: true,
 			},
@@ -124,11 +139,28 @@ func TestGetCapabilities(t *testing.T) {
 					},
 				},
 			},
-			DigestFunctions: []repb.DigestFunction_Value{repb.DigestFunction_SHA256},
+			DigestFunctions: advertised,
 		},
 	}
 
 	if diff := cmp.Diff(want, resp, protocmp.Transform()); diff != "" {
 		t.Errorf("GetCapabilities() mismatch (-want +got):\n%s", diff)
+	}
+}
+
+// TestGetCapabilitiesDefaultSHA256Only verifies that a server without a
+// configured digest-function set advertises only SHA-256.
+func TestGetCapabilitiesDefaultSHA256Only(t *testing.T) {
+	resp := getCapabilities(t, server.Config{})
+
+	wantFns := []repb.DigestFunction_Value{repb.DigestFunction_SHA256}
+	if diff := cmp.Diff(wantFns, resp.GetCacheCapabilities().GetDigestFunctions(), protocmp.Transform()); diff != "" {
+		t.Errorf("CacheCapabilities.DigestFunctions mismatch (-want +got):\n%s", diff)
+	}
+	if diff := cmp.Diff(wantFns, resp.GetExecutionCapabilities().GetDigestFunctions(), protocmp.Transform()); diff != "" {
+		t.Errorf("ExecutionCapabilities.DigestFunctions mismatch (-want +got):\n%s", diff)
+	}
+	if got, want := resp.GetExecutionCapabilities().GetDigestFunction(), repb.DigestFunction_SHA256; got != want {
+		t.Errorf("ExecutionCapabilities.DigestFunction = %v, want %v", got, want)
 	}
 }

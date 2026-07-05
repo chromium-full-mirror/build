@@ -16,7 +16,6 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	"go.chromium.org/build/hashigo/digest"
 	repb "go.chromium.org/build/remote-apis/build/bazel/remote/execution/v2"
 
 	"go.chromium.org/build/kajiya/blobstore"
@@ -32,10 +31,12 @@ type Service struct {
 
 	// The blobstore.ContentAddressableStorage to use for reading blobs.
 	cas *blobstore.ContentAddressableStorage
+
+	config server.Config
 }
 
 // Register creates and registers a new Service with the given gRPC server.
-func Register(s *grpc.Server, ac *ActionCache, cas *blobstore.ContentAddressableStorage, _ server.Config) error {
+func Register(s *grpc.Server, ac *ActionCache, cas *blobstore.ContentAddressableStorage, cfg server.Config) error {
 	if ac == nil {
 		return fmt.Errorf("ac must be set")
 	}
@@ -45,8 +46,9 @@ func Register(s *grpc.Server, ac *ActionCache, cas *blobstore.ContentAddressable
 	}
 
 	service := &Service{
-		ac:  ac,
-		cas: cas,
+		ac:     ac,
+		cas:    cas,
+		config: cfg,
 	}
 	repb.RegisterActionCacheServer(s, service)
 	return nil
@@ -66,17 +68,12 @@ func (s *Service) GetActionResult(ctx context.Context, request *repb.GetActionRe
 		}
 	}()
 
-	// If the client explicitly specifies a DigestFunction, ensure that it's SHA256.
-	if request.DigestFunction != repb.DigestFunction_UNKNOWN && request.DigestFunction != repb.DigestFunction_SHA256 {
-		return nil, status.Errorf(codes.InvalidArgument, "hash function %q is not supported", request.DigestFunction.String())
-	}
-
-	actionDigest, err := digest.SHA256.FromProto(request.ActionDigest)
+	fn, actionDigest, err := s.config.ResolveDigest(request.DigestFunction, request.ActionDigest)
 	if err != nil {
-		return nil, status.Error(codes.InvalidArgument, err.Error())
+		return nil, err
 	}
 
-	actionResult, err := s.ac.Get(digest.SHA256, actionDigest)
+	actionResult, err := s.ac.Get(fn, actionDigest)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			return nil, status.Errorf(codes.NotFound, "action digest %s not found in cache", actionDigest)
@@ -97,11 +94,6 @@ func (s *Service) UpdateActionResult(ctx context.Context, request *repb.UpdateAc
 		}
 	}()
 
-	// If the client explicitly specifies a DigestFunction, ensure that it's SHA256.
-	if request.DigestFunction != repb.DigestFunction_UNKNOWN && request.DigestFunction != repb.DigestFunction_SHA256 {
-		return nil, status.Errorf(codes.InvalidArgument, "hash function %q is not supported", request.DigestFunction.String())
-	}
-
 	// Check that the client didn't send inline stdout / stderr data.
 	if request.ActionResult.StdoutRaw != nil {
 		return nil, status.Error(codes.InvalidArgument, "client should not populate stdout_raw during upload")
@@ -111,34 +103,34 @@ func (s *Service) UpdateActionResult(ctx context.Context, request *repb.UpdateAc
 	}
 
 	// Check that the action digest is valid.
-	actionDigest, err := digest.SHA256.FromProto(request.ActionDigest)
+	fn, actionDigest, err := s.config.ResolveDigest(request.DigestFunction, request.ActionDigest)
 	if err != nil {
-		return nil, status.Error(codes.InvalidArgument, err.Error())
+		return nil, err
 	}
 
 	// Check that the action is present in our CAS.
-	if !s.cas.Has(digest.SHA256, actionDigest) {
+	if !s.cas.Has(fn, actionDigest) {
 		return nil, status.Errorf(codes.NotFound, "action digest %s not found in CAS", actionDigest)
 	}
 
 	// If the action result contains a stdout digest, check that it is present in our CAS.
 	if request.ActionResult.StdoutDigest != nil {
-		stdoutDigest, err := digest.SHA256.FromProto(request.ActionResult.StdoutDigest)
+		stdoutDigest, err := fn.FromProto(request.ActionResult.StdoutDigest)
 		if err != nil {
 			return nil, status.Error(codes.InvalidArgument, err.Error())
 		}
-		if !s.cas.Has(digest.SHA256, stdoutDigest) {
+		if !s.cas.Has(fn, stdoutDigest) {
 			return nil, status.Errorf(codes.NotFound, "stdout digest %s not found in CAS", stdoutDigest)
 		}
 	}
 
 	// Same for stderr.
 	if request.ActionResult.StderrDigest != nil {
-		stderrDigest, err := digest.SHA256.FromProto(request.ActionResult.StderrDigest)
+		stderrDigest, err := fn.FromProto(request.ActionResult.StderrDigest)
 		if err != nil {
 			return nil, status.Error(codes.InvalidArgument, err.Error())
 		}
-		if !s.cas.Has(digest.SHA256, stderrDigest) {
+		if !s.cas.Has(fn, stderrDigest) {
 			return nil, status.Errorf(codes.NotFound, "stderr digest %s not found in CAS", stderrDigest)
 		}
 	}
@@ -146,7 +138,7 @@ func (s *Service) UpdateActionResult(ctx context.Context, request *repb.UpdateAc
 	// TODO: Check that all the output files are present in our CAS.
 
 	// Store the action result.
-	if err := s.ac.Put(digest.SHA256, actionDigest, request.ActionResult); err != nil {
+	if err := s.ac.Put(fn, actionDigest, request.ActionResult); err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 

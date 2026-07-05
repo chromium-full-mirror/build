@@ -63,6 +63,7 @@ var (
 	quiet                  = flag.Bool("quiet", false, "if true, print only warnings and errors in log output")
 	maxRecvMsgSize         = flag.Int("max_recv_msg_size", 0, "maximum size of a single gRPC message that can be received")
 	maxBatchTotalSizeBytes = flag.Int64("max_batch_total_size_bytes", 0, "maximum combined total size of blobs in batch requests (0 means unlimited)")
+	digestFunctions        = flag.String("digest_functions", "sha256", "comma-separated list of digest functions to advertise and accept (e.g. sha256,blake3); md5 and murmur3 cannot be enabled together")
 	skipCASValidation      = flag.Bool("skip_cas_validation", false, "skip CAS integrity validation on startup (faster startup, but won't detect corrupted blobs)")
 	allowHostFS            = flag.Bool("allow_host_fs", false, "allow actions without a container image to run with access to the host filesystem")
 	traceInputs            = flag.Bool("trace_inputs", false, "trace which input files each action opens and report as auxiliary metadata (FuseFS sandbox only)")
@@ -320,9 +321,15 @@ func createServer(ctx context.Context, dataDir string) (*grpc.Server, func(), er
 		return nil, cleanup, fmt.Errorf("both --tls_cert_file and --tls_key_file must be specified")
 	}
 
+	fns, err := server.ParseDigestFunctions(*digestFunctions)
+	if err != nil {
+		return nil, cleanup, fmt.Errorf("invalid -digest_functions: %w", err)
+	}
+
 	cfg := server.Config{
 		MaxBatchTotalSizeBytes: *maxBatchTotalSizeBytes,
 		MaxRecvMsgSize:         *maxRecvMsgSize,
+		DigestFunctions:        fns,
 	}
 	if cfg.MaxRecvMsgSize == 0 {
 		cfg.MaxRecvMsgSize = cfg.RecommendedMaxRecvMsgSize()
@@ -352,8 +359,9 @@ func createServer(ctx context.Context, dataDir string) (*grpc.Server, func(), er
 	// Create a CAS backed by a local filesystem.
 	casDir := filepath.Join(dataDir, "cas")
 	cas, err := blobstore.NewWithOpts(ctx, casDir, blobstore.Options{
-		Sharded:        true,
-		SkipValidation: *skipCASValidation,
+		Sharded:         true,
+		SkipValidation:  *skipCASValidation,
+		DigestFunctions: cfg.AdvertisedDigestFunctions(),
 	})
 	if err != nil {
 		return nil, cleanup, err
@@ -368,7 +376,8 @@ func createServer(ctx context.Context, dataDir string) (*grpc.Server, func(), er
 	if *enableCache {
 		acDir := filepath.Join(dataDir, "ac")
 		ac, err = actioncache.NewWithOpts(ctx, acDir, cas, actioncache.Options{
-			Sharded: true,
+			Sharded:         true,
+			DigestFunctions: cfg.AdvertisedDigestFunctions(),
 		})
 		if err != nil {
 			return nil, cleanup, err

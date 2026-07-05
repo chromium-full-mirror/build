@@ -43,6 +43,7 @@ type Service struct {
 	actionCache *actioncache.ActionCache
 	cas         *blobstore.ContentAddressableStorage
 	sem         *semaphore.Weighted
+	config      server.Config
 
 	// actionDigestDeduper merges multiple parallel requests for the same action.
 	actionDigestDeduper singleflight.Group
@@ -54,7 +55,7 @@ type ExecutorInterface interface {
 }
 
 // Register creates and registers a new Service with the given gRPC server.
-func Register(s *grpc.Server, executor ExecutorInterface, ac *actioncache.ActionCache, cas *blobstore.ContentAddressableStorage, _ server.Config) error {
+func Register(s *grpc.Server, executor ExecutorInterface, ac *actioncache.ActionCache, cas *blobstore.ContentAddressableStorage, cfg server.Config) error {
 	if executor == nil {
 		return fmt.Errorf("executor must be set")
 	}
@@ -68,6 +69,7 @@ func Register(s *grpc.Server, executor ExecutorInterface, ac *actioncache.Action
 		actionCache: ac,
 		cas:         cas,
 		sem:         semaphore.NewWeighted(int64(runtime.GOMAXPROCS(0))),
+		config:      cfg,
 	}
 
 	repb.RegisterExecutionServer(s, service)
@@ -139,17 +141,12 @@ func (s *Service) Execute(request *repb.ExecuteRequest, executeServer repb.Execu
 		return status.Errorf(codes.InvalidArgument, "request contained invalid metadata: %v", err)
 	}
 
-	// If the client explicitly specifies a DigestFunction, ensure that it's SHA256.
-	if request.DigestFunction != repb.DigestFunction_UNKNOWN && request.DigestFunction != repb.DigestFunction_SHA256 {
-		return status.Errorf(codes.InvalidArgument, "hash function %q is not supported", request.DigestFunction.String())
-	}
-
 	// Generate a unique identifier for this operation.
 	opName := uuidgen.NewV7()
 
-	actionDigest, err := digest.SHA256.FromProto(request.ActionDigest)
+	fn, actionDigest, err := s.config.ResolveDigest(request.DigestFunction, request.ActionDigest)
 	if err != nil {
-		return status.Errorf(codes.InvalidArgument, "invalid action digest: %v", err)
+		return err
 	}
 
 	// If we have an action cache, check if the action is already cached.
@@ -164,7 +161,7 @@ func (s *Service) Execute(request *repb.ExecuteRequest, executeServer repb.Execu
 		}
 
 		// Check the action cache and if we get a hit, send the result back.
-		ar, err := s.actionCache.Get(digest.SHA256, actionDigest)
+		ar, err := s.actionCache.Get(fn, actionDigest)
 		if err != nil && !errors.Is(err, fs.ErrNotExist) {
 			return fmt.Errorf("failed to get action from cache: %w", err)
 		}
@@ -178,7 +175,7 @@ func (s *Service) Execute(request *repb.ExecuteRequest, executeServer repb.Execu
 	}
 
 	// Cache miss, so we have to load & parse the action proto, then execute the action.
-	action, err := model.LoadAction(digest.SHA256, actionDigest, s.cas)
+	action, err := model.LoadAction(fn, actionDigest, s.cas)
 	if err != nil {
 		return err
 	}
@@ -195,7 +192,7 @@ func (s *Service) Execute(request *repb.ExecuteRequest, executeServer repb.Execu
 	// According to the REAPI specification, in-flight requests for the same `Action` may be
 	// merged unless the `DoNotCache` bit is set. This improves efficiency and performance by
 	// avoiding duplicate work.
-	ar, err, _ := s.actionDigestDeduper.Do(dedupKey(digest.SHA256, actionDigest, opName, action.DoNotCache), func() (any, error) {
+	ar, err, _ := s.actionDigestDeduper.Do(dedupKey(fn, actionDigest, opName, action.DoNotCache), func() (any, error) {
 		// Acquire a semaphore to limit the number of concurrent executions.
 		err = s.sem.Acquire(executeServer.Context(), 1)
 		if err != nil {
@@ -222,7 +219,7 @@ func (s *Service) Execute(request *repb.ExecuteRequest, executeServer repb.Execu
 		// results, as it's always possible that a failed action is due to a transient
 		// issue that will be resolved on the next execution.
 		if !action.DoNotCache && s.actionCache != nil && ar.ExitCode == 0 {
-			if err = s.actionCache.Put(digest.SHA256, action.ActionDigest, ar); err != nil {
+			if err = s.actionCache.Put(fn, action.ActionDigest, ar); err != nil {
 				slog.Error("failed to put action into cache", "error", err)
 			}
 		}
@@ -247,10 +244,21 @@ func (s *Service) Execute(request *repb.ExecuteRequest, executeServer repb.Execu
 // Execution API.
 func formatMissingBlobsError(e *blobstore.MissingBlobsError) error {
 	violations := make([]*errpb.PreconditionFailure_Violation, 0, len(e.Blobs))
+	seg := ""
+	if !e.Fn.IsZero() {
+		seg = e.Fn.ResourceNameSegment()
+	}
 	for _, b := range e.Blobs {
+		// The subject uses the ByteStream resource-name format (with the
+		// function's segment, if any) so clients retry uploads into the
+		// correct digest namespace.
+		subject := fmt.Sprintf("blobs/%s/%d", b.Hash, b.SizeBytes)
+		if seg != "" {
+			subject = fmt.Sprintf("blobs/%s/%s/%d", seg, b.Hash, b.SizeBytes)
+		}
 		violations = append(violations, &errpb.PreconditionFailure_Violation{
 			Type:    "MISSING",
-			Subject: fmt.Sprintf("blobs/%s/%d", b.Hash, b.SizeBytes),
+			Subject: subject,
 		})
 	}
 

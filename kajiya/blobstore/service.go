@@ -92,7 +92,8 @@ func Register(s *grpc.Server, cas *ContentAddressableStorage, cfg server.Config)
 // For compressed data, it is in the following form:
 //
 // `{instance_name}/compressed-blobs/{compressor}/{uncompressed_hash}/{uncompressed_size}`
-func parseReadResource(name string) (digest.Digest, repb.Compressor_Value, error) {
+func (s *Service) parseReadResource(name string) (digest.Function, digest.Digest, repb.Compressor_Value, error) {
+	var fn digest.Function
 	var d digest.Digest
 
 	fields := strings.Split(name, "/")
@@ -108,41 +109,81 @@ func parseReadResource(name string) (digest.Digest, repb.Compressor_Value, error
 	var c repb.Compressor_Value
 	var hash string
 	var sizeField string
+	var err error
 	switch fields[0] {
 	case "blobs":
-		if len(fields) != 3 {
-			return d, c, status.Errorf(codes.InvalidArgument, "invalid resource name, must match format {instance_name}/blobs/{hash}/{size}: %s", name)
-		}
+		// {instance_name}/blobs/[{digest_function}/]{hash}/{size}
 		c = repb.Compressor_IDENTITY
-		hash = fields[1]
-		sizeField = fields[2]
-	case "compressed-blobs":
-		if len(fields) != 4 {
-			return d, c, status.Errorf(codes.InvalidArgument, "invalid resource name, must match format {instance_name}/compressed-blobs/{compressor}/{uncompressed_hash}/{uncompressed_size}: %s", name)
+		var rest []string
+		fn, rest, err = stripDigestFunction(fields[1:])
+		if err != nil {
+			return fn, d, c, err
 		}
-		if fields[1] != "zstd" {
-			return d, c, status.Errorf(codes.InvalidArgument, "invalid compressor type, only \"zstd\" is supported: %q", fields[1])
+		if len(rest) != 2 {
+			return fn, d, c, status.Errorf(codes.InvalidArgument, "invalid resource name, must match format {instance_name}/blobs/[{digest_function}/]{hash}/{size}: %s", name)
+		}
+		hash = rest[0]
+		sizeField = rest[1]
+	case "compressed-blobs":
+		// {instance_name}/compressed-blobs/{compressor}/[{digest_function}/]{hash}/{size}
+		if len(fields) < 2 || fields[1] != "zstd" {
+			if len(fields) < 2 {
+				return fn, d, c, status.Errorf(codes.InvalidArgument, "invalid resource name, must match format {instance_name}/compressed-blobs/{compressor}/[{digest_function}/]{uncompressed_hash}/{uncompressed_size}: %s", name)
+			}
+			return fn, d, c, status.Errorf(codes.InvalidArgument, "invalid compressor type, only \"zstd\" is supported: %q", fields[1])
 		}
 		c = repb.Compressor_ZSTD
-		hash = fields[2]
-		sizeField = fields[3]
+		var rest []string
+		fn, rest, err = stripDigestFunction(fields[2:])
+		if err != nil {
+			return fn, d, c, err
+		}
+		if len(rest) != 2 {
+			return fn, d, c, status.Errorf(codes.InvalidArgument, "invalid resource name, must match format {instance_name}/compressed-blobs/{compressor}/[{digest_function}/]{uncompressed_hash}/{uncompressed_size}: %s", name)
+		}
+		hash = rest[0]
+		sizeField = rest[1]
 	default:
-		return d, c, status.Errorf(codes.InvalidArgument, "invalid resource name, must match format {instance_name}/blobs/{hash}/{size} or {instance_name}/compressed-blobs/{compressor}/{uncompressed_hash}/{uncompressed_size}: %s", name)
+		return fn, d, c, status.Errorf(codes.InvalidArgument, "invalid resource name, must match format {instance_name}/blobs/[{digest_function}/]{hash}/{size} or {instance_name}/compressed-blobs/{compressor}/[{digest_function}/]{uncompressed_hash}/{uncompressed_size}: %s", name)
 	}
 
 	size, err := strconv.ParseInt(sizeField, 10, 64)
 	if err != nil {
-		return d, c, status.Errorf(codes.InvalidArgument, "invalid resource name, size must be an integer: %s", sizeField)
+		return fn, d, c, status.Errorf(codes.InvalidArgument, "invalid resource name, size must be an integer: %s", sizeField)
 	}
 	if size < 0 {
-		return d, c, status.Errorf(codes.InvalidArgument, "invalid resource name, size must be non-negative: %d", size)
+		return fn, d, c, status.Errorf(codes.InvalidArgument, "invalid resource name, size must be non-negative: %d", size)
 	}
-	d, err = digest.SHA256.Validate(hash, size)
+	// An omitted {digest_function} segment is inferred from the hash length
+	// and the advertised functions; an explicit one must be advertised.
+	fn, err = s.config.ResolveResourceNameFunction(fn, len(hash))
 	if err != nil {
-		return d, c, status.Errorf(codes.InvalidArgument, "invalid resource name, hash is not a valid digest: %s => %s", hash, err)
+		return fn, d, c, err
+	}
+	d, err = fn.Validate(hash, size)
+	if err != nil {
+		return fn, d, c, status.Errorf(codes.InvalidArgument, "invalid resource name, hash is not a valid digest: %s => %s", hash, err)
 	}
 
-	return d, c, nil
+	return fn, d, c, nil
+}
+
+// stripDigestFunction returns the digest function encoded as the leading field
+// of a resource name (if present) and the remaining fields. SHA-256 omits the
+// segment, so an absent function yields the zero Function (inferred from the
+// hash length by the caller). A digest-function name is never a valid hash, so
+// this is unambiguous.
+func stripDigestFunction(fields []string) (digest.Function, []string, error) {
+	if len(fields) > 0 {
+		fn, recognized, err := digest.FunctionByName(fields[0])
+		if err != nil {
+			return fn, fields, status.Errorf(codes.InvalidArgument, "unsupported digest function in resource name: %q", fields[0])
+		}
+		if recognized {
+			return fn, fields[1:], nil
+		}
+	}
+	return digest.Function{}, fields, nil
 }
 
 // parseWriteResource parses a WriteRequest.ResourceName and returns the validated Digest and upload ID and compressor.
@@ -154,13 +195,14 @@ func parseReadResource(name string) (digest.Digest, repb.Compressor_Value, error
 // For compressed data, it is in the following form:
 //
 // `{instance_name}/uploads/{uuid}/compressed-blobs/{compressor}/{uncompressed_hash}/{uncompressed_size}[/{optionalmetadata}]`
-func parseWriteResource(name string) (digest.Digest, uuid.UUID, repb.Compressor_Value, error) {
+func (s *Service) parseWriteResource(name string) (digest.Function, digest.Digest, uuid.UUID, repb.Compressor_Value, error) {
+	var fn digest.Function
 	var d digest.Digest
 	var u uuid.UUID
 	var c repb.Compressor_Value
 
 	if name == "" {
-		return d, u, c, status.Error(codes.InvalidArgument, "resource name is empty")
+		return fn, d, u, c, status.Error(codes.InvalidArgument, "resource name is empty")
 	}
 
 	fields := strings.Split(name, "/")
@@ -174,52 +216,72 @@ func parseWriteResource(name string) (digest.Digest, uuid.UUID, repb.Compressor_
 	}
 
 	if len(fields) < 3 || fields[0] != "uploads" {
-		return d, u, c, status.Errorf(codes.InvalidArgument, "invalid resource name, must follow format {instance_name}/uploads/{uuid}/blobs/{hash}/{size}[/{optionalmetadata}] or {instance_name}/uploads/{uuid}/compressed-blobs/{compressor}/{hash}/{size}[/{optionalmetadata}]: %s", name)
+		return fn, d, u, c, status.Errorf(codes.InvalidArgument, "invalid resource name, must follow format {instance_name}/uploads/{uuid}/blobs/{hash}/{size}[/{optionalmetadata}] or {instance_name}/uploads/{uuid}/compressed-blobs/{compressor}/{hash}/{size}[/{optionalmetadata}]: %s", name)
 	}
 	u, err := uuid.Parse(fields[1])
 	if err != nil {
-		return d, u, c, status.Errorf(codes.InvalidArgument, "invalid resource name, second component is not a UUID: %s", fields[1])
+		return fn, d, u, c, status.Errorf(codes.InvalidArgument, "invalid resource name, second component is not a UUID: %s", fields[1])
 	}
 
 	var hash string
 	var sizeField string
 	switch fields[2] {
 	case "blobs":
-		fields = fields[3:]
-		if len(fields) < 2 {
-			return d, u, c, status.Errorf(codes.InvalidArgument, "invalid resource name, must match format {instance_name}/uploads/{uuid}/blobs/{hash}/{size}[/{optionalmetadata}]: %s", name)
-		}
+		// .../uploads/{uuid}/blobs/[{digest_function}/]{hash}/{size}[/{optionalmetadata}]
 		c = repb.Compressor_IDENTITY
-		hash = fields[0]
-		sizeField = fields[1]
-	case "compressed-blobs":
-		fields = fields[3:]
-		if len(fields) < 3 {
-			return d, u, c, status.Errorf(codes.InvalidArgument, "invalid resource name, must match format {instance_name}/uploads/{uuid}/compressed-blobs/{compressor}/{uncompressed_hash}/{uncompressed_size}[/{optionalmetadata}]: %s", name)
+		var rest []string
+		fn, rest, err = stripDigestFunction(fields[3:])
+		if err != nil {
+			return fn, d, u, c, err
 		}
-		if fields[0] != "zstd" {
-			return d, u, c, status.Errorf(codes.InvalidArgument, "invalid compressor type, only \"zstd\" is supported: %q", fields[0])
+		if len(rest) < 2 {
+			return fn, d, u, c, status.Errorf(codes.InvalidArgument, "invalid resource name, must match format {instance_name}/uploads/{uuid}/blobs/[{digest_function}/]{hash}/{size}[/{optionalmetadata}]: %s", name)
+		}
+		hash = rest[0]
+		sizeField = rest[1]
+	case "compressed-blobs":
+		// .../uploads/{uuid}/compressed-blobs/{compressor}/[{digest_function}/]{hash}/{size}[/{optionalmetadata}]
+		tail := fields[3:]
+		if len(tail) < 1 || tail[0] != "zstd" {
+			if len(tail) < 1 {
+				return fn, d, u, c, status.Errorf(codes.InvalidArgument, "invalid resource name, must match format {instance_name}/uploads/{uuid}/compressed-blobs/{compressor}/[{digest_function}/]{uncompressed_hash}/{uncompressed_size}[/{optionalmetadata}]: %s", name)
+			}
+			return fn, d, u, c, status.Errorf(codes.InvalidArgument, "invalid compressor type, only \"zstd\" is supported: %q", tail[0])
 		}
 		c = repb.Compressor_ZSTD
-		hash = fields[1]
-		sizeField = fields[2]
+		var rest []string
+		fn, rest, err = stripDigestFunction(tail[1:])
+		if err != nil {
+			return fn, d, u, c, err
+		}
+		if len(rest) < 2 {
+			return fn, d, u, c, status.Errorf(codes.InvalidArgument, "invalid resource name, must match format {instance_name}/uploads/{uuid}/compressed-blobs/{compressor}/[{digest_function}/]{uncompressed_hash}/{uncompressed_size}[/{optionalmetadata}]: %s", name)
+		}
+		hash = rest[0]
+		sizeField = rest[1]
 	default:
-		return d, u, c, status.Errorf(codes.InvalidArgument, "invalid resource name, must follow format {instance_name}/uploads/{uuid}/blobs/{hash}/{size}[/{optionalmetadata}] or {instance_name}/uploads/{uuid}/compressed-blobs/{compressor}/{hash}/{size}[/{optionalmetadata}]: %s", name)
+		return fn, d, u, c, status.Errorf(codes.InvalidArgument, "invalid resource name, must follow format {instance_name}/uploads/{uuid}/blobs/[{digest_function}/]{hash}/{size}[/{optionalmetadata}] or {instance_name}/uploads/{uuid}/compressed-blobs/{compressor}/[{digest_function}/]{hash}/{size}[/{optionalmetadata}]: %s", name)
 	}
 
 	size, err := strconv.ParseInt(sizeField, 10, 64)
 	if err != nil {
-		return d, u, c, status.Errorf(codes.InvalidArgument, "invalid resource name, size must be an integer: %s", sizeField)
+		return fn, d, u, c, status.Errorf(codes.InvalidArgument, "invalid resource name, size must be an integer: %s", sizeField)
 	}
 	if size < 0 {
-		return d, u, c, status.Errorf(codes.InvalidArgument, "invalid resource name, size must be non-negative: %d", size)
+		return fn, d, u, c, status.Errorf(codes.InvalidArgument, "invalid resource name, size must be non-negative: %d", size)
 	}
-	d, err = digest.SHA256.Validate(hash, size)
+	// An omitted {digest_function} segment is inferred from the hash length
+	// and the advertised functions; an explicit one must be advertised.
+	fn, err = s.config.ResolveResourceNameFunction(fn, len(hash))
 	if err != nil {
-		return d, u, c, status.Errorf(codes.InvalidArgument, "invalid resource name, hash is not a valid digest: %s => %s", hash, err)
+		return fn, d, u, c, err
+	}
+	d, err = fn.Validate(hash, size)
+	if err != nil {
+		return fn, d, u, c, status.Errorf(codes.InvalidArgument, "invalid resource name, hash is not a valid digest: %s => %s", hash, err)
 	}
 
-	return d, u, c, nil
+	return fn, d, u, c, nil
 }
 
 // readResponseWriter sends bytes written to it to the client by wrapping them in ByteStream.ReadResponse messages.
@@ -252,7 +314,7 @@ func (s *Service) Read(request *bspb.ReadRequest, server bspb.ByteStream_ReadSer
 		}
 	}()
 
-	d, c, err := parseReadResource(request.ResourceName)
+	fn, d, c, err := s.parseReadResource(request.ResourceName)
 	if err != nil {
 		return err
 	}
@@ -275,7 +337,7 @@ func (s *Service) Read(request *bspb.ReadRequest, server bspb.ByteStream_ReadSer
 	}
 
 	// Open the file and seek to the offset.
-	f, err := s.cas.Open(digest.SHA256, d, request.ReadOffset, request.ReadLimit)
+	f, err := s.cas.Open(fn, d, request.ReadOffset, request.ReadLimit)
 	if err != nil {
 		var mbe *MissingBlobsError
 		if errors.As(err, &mbe) {
@@ -328,6 +390,7 @@ type writeRequestReader struct {
 
 	buf            []byte
 	resName        string
+	fn             digest.Function
 	expectedDigest digest.Digest
 	uploadID       uuid.UUID
 	compressor     repb.Compressor_Value
@@ -349,7 +412,7 @@ func (s *Service) newWriteRequestReader(ws bspb.ByteStream_WriteServer) (*writeR
 		finishWrite: req.FinishWrite,
 	}
 
-	r.expectedDigest, r.uploadID, r.compressor, err = parseWriteResource(r.resName)
+	r.fn, r.expectedDigest, r.uploadID, r.compressor, err = s.parseWriteResource(r.resName)
 	if err != nil {
 		return nil, err
 	}
@@ -454,7 +517,7 @@ func (s *Service) Write(server bspb.ByteStream_WriteServer) (err error) {
 	}()
 
 	// Create an UploadWriter for the blob that will store it in the CAS.
-	uw, err := s.cas.NewUploadWriter(digest.SHA256, req.expectedDigest, req.uploadID)
+	uw, err := s.cas.NewUploadWriter(req.fn, req.expectedDigest, req.uploadID)
 	if err != nil {
 		if errors.Is(err, ErrBlobExists) {
 			return server.SendAndClose(blobAlreadyExists(req.expectedDigest, req.compressor))
@@ -526,13 +589,13 @@ func (s *Service) QueryWriteStatus(ctx context.Context, request *bspb.QueryWrite
 		}
 	}()
 
-	d, _, _, err := parseWriteResource(request.ResourceName)
+	fn, d, _, _, err := s.parseWriteResource(request.ResourceName)
 	if err != nil {
 		return nil, err
 	}
 
 	// Check if the file exists in the CAS, if yes, the upload is complete.
-	if s.cas.Has(digest.SHA256, d) {
+	if s.cas.Has(fn, d) {
 		return &bspb.QueryWriteStatusResponse{
 			CommittedSize: d.SizeBytes,
 			Complete:      true,
@@ -556,19 +619,21 @@ func (s *Service) FindMissingBlobs(ctx context.Context, request *repb.FindMissin
 		}
 	}()
 
-	// If the client explicitly specifies a DigestFunction, ensure that it's SHA256.
-	if request.DigestFunction != repb.DigestFunction_UNKNOWN && request.DigestFunction != repb.DigestFunction_SHA256 {
-		return nil, status.Errorf(codes.InvalidArgument, "hash function %q is not supported", request.DigestFunction.String())
+	// Resolve the request-level digest function once; per-digest inference
+	// from the hash length only remains for UNKNOWN.
+	reqFn, err := s.config.ResolveFunction(request.DigestFunction)
+	if err != nil {
+		return nil, err
 	}
 
 	// Filter the list in place so that only the missing blobs remain.
 	n := 0
 	for _, d := range request.BlobDigests {
-		dg, err := digest.SHA256.FromProto(d)
+		fn, dg, err := s.config.ResolveWith(reqFn, d)
 		if err != nil {
-			return nil, status.Errorf(codes.InvalidArgument, "invalid digest: %v", err)
+			return nil, err
 		}
-		if !s.cas.Has(digest.SHA256, dg) {
+		if !s.cas.Has(fn, dg) {
 			request.BlobDigests[n] = d
 			n++
 		}
@@ -591,9 +656,12 @@ func (s *Service) BatchUpdateBlobs(ctx context.Context, request *repb.BatchUpdat
 		}
 	}()
 
-	// If the client explicitly specifies a DigestFunction, ensure that it's SHA256.
-	if request.DigestFunction != repb.DigestFunction_UNKNOWN && request.DigestFunction != repb.DigestFunction_SHA256 {
-		return nil, status.Errorf(codes.InvalidArgument, "hash function %q is not supported", request.DigestFunction.String())
+	// Resolve the request-level digest function once. It may be UNKNOWN even
+	// for a spec-compliant SHA-1 request; the function is then inferred per
+	// digest from the hash length.
+	reqFn, err := s.config.ResolveFunction(request.DigestFunction)
+	if err != nil {
+		return nil, err
 	}
 
 	// Enforce the max batch total size limit.
@@ -630,14 +698,13 @@ func (s *Service) BatchUpdateBlobs(ctx context.Context, request *repb.BatchUpdat
 			return nil, status.Error(codes.InvalidArgument, "unsupported compression algorithm")
 		}
 
-		// Parse the digest.
-		expectedDigest, err := digest.SHA256.FromProto(blob.Digest)
+		// Parse the digest with the request's function.
+		fn, expectedDigest, err := s.config.ResolveWith(reqFn, blob.Digest)
 		if err != nil {
-			return nil, status.Errorf(codes.InvalidArgument, "invalid digest: %v", err)
+			return nil, err
 		}
 
-		// Store the blob in our CAS.
-		actualDigest, err := s.cas.Put(digest.SHA256, data)
+		actualDigest, err := s.cas.Put(fn, data)
 		if err != nil {
 			return nil, status.Errorf(codes.Internal, "could not store blob in CAS: %v", err)
 		}
@@ -668,9 +735,11 @@ func (s *Service) BatchReadBlobs(ctx context.Context, request *repb.BatchReadBlo
 		}
 	}()
 
-	// If the client explicitly specifies a DigestFunction, ensure that it's SHA256.
-	if request.DigestFunction != repb.DigestFunction_UNKNOWN && request.DigestFunction != repb.DigestFunction_SHA256 {
-		return nil, status.Errorf(codes.InvalidArgument, "hash function %q is not supported", request.DigestFunction.String())
+	// Resolve the request-level digest function once; per-digest inference
+	// from the hash length only remains for UNKNOWN.
+	reqFn, err := s.config.ResolveFunction(request.DigestFunction)
+	if err != nil {
+		return nil, err
 	}
 
 	// Enforce the max batch total size limit.
@@ -693,10 +762,10 @@ func (s *Service) BatchReadBlobs(ctx context.Context, request *repb.BatchReadBlo
 
 	// For each blob in the list, check if it exists in the CAS. If yes, read it from the CAS.
 	for _, d := range request.Digests {
-		// Parse the digest.
-		dg, err := digest.SHA256.FromProto(d)
+		// Parse the digest with the request's function.
+		fn, dg, err := s.config.ResolveWith(reqFn, d)
 		if err != nil {
-			return nil, status.Errorf(codes.InvalidArgument, "invalid digest: %v", err)
+			return nil, err
 		}
 
 		// Prepare the response proto for this blob.
@@ -705,7 +774,7 @@ func (s *Service) BatchReadBlobs(ctx context.Context, request *repb.BatchReadBlo
 		}
 
 		// Read the blob from the CAS.
-		data, err := s.cas.Get(digest.SHA256, dg)
+		data, err := s.cas.Get(fn, dg)
 		if err != nil {
 			if mbe := (&MissingBlobsError{}); errors.As(err, &mbe) {
 				r.Status = status.New(codes.NotFound, "").Proto()
@@ -743,19 +812,14 @@ func (s *Service) GetTree(request *repb.GetTreeRequest, treeServer repb.ContentA
 		}
 	}()
 
-	// If the client explicitly specifies a DigestFunction, ensure that it's SHA256.
-	if request.DigestFunction != repb.DigestFunction_UNKNOWN && request.DigestFunction != repb.DigestFunction_SHA256 {
-		return status.Errorf(codes.InvalidArgument, "hash function %q is not supported", request.DigestFunction.String())
-	}
-
-	// Parse the digest.
-	d, err := digest.SHA256.FromProto(request.RootDigest)
+	// Resolve the digest function and parse the digest.
+	fn, d, err := s.config.ResolveDigest(request.DigestFunction, request.RootDigest)
 	if err != nil {
-		return status.Errorf(codes.InvalidArgument, "invalid digest: %v", err)
+		return err
 	}
 
 	// Flatten the directory tree.
-	_, dirs, err := s.cas.FlattenDirectory(digest.SHA256, d)
+	_, dirs, err := s.cas.FlattenDirectory(fn, d)
 	if err != nil {
 		var mbe *MissingBlobsError
 		if errors.As(err, &mbe) {

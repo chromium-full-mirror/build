@@ -71,9 +71,9 @@ func startTestServer(t testing.TB, cas *ContentAddressableStorage, cfg server.Co
 func setupTest(ctx context.Context, t testing.TB, cfg server.Config) (bspb.ByteStreamClient, repb.ContentAddressableStorageClient) {
 	t.Helper()
 
-	// Setup CAS.
+	// Setup CAS, provisioned for the digest functions the server advertises.
 	dataDir := t.TempDir()
-	cas, err := New(ctx, dataDir)
+	cas, err := NewWithOpts(ctx, dataDir, Options{DigestFunctions: cfg.AdvertisedDigestFunctions()})
 	if err != nil {
 		t.Fatalf("Failed to create CAS: %v", err)
 	}
@@ -198,6 +198,328 @@ func TestReadWrite(t *testing.T) {
 
 	if !bytes.Equal(readBuf.Bytes(), blobData) {
 		t.Errorf("Read data mismatch")
+	}
+}
+
+// TestBlake3EndToEnd drives the server with the BLAKE3 digest function over the
+// real REAPI: ByteStream Write/Read using a "blobs/blake3/{hash}/{size}"
+// resource name (exactly what Siso's resourceName produces) plus
+// FindMissingBlobs/BatchUpdateBlobs/BatchReadBlobs carrying
+// DigestFunction=BLAKE3. It is the cross-binary contract check for non-sha256.
+func TestBlake3EndToEnd(t *testing.T) {
+	ctx := t.Context()
+	bs, cas := setupTest(ctx, t, server.Config{
+		MaxBatchTotalSizeBytes: 4 * 1024 * 1024,
+		DigestFunctions:        []digest.Function{digest.SHA256, mustFn(t, repb.DigestFunction_BLAKE3)},
+	})
+
+	blob := []byte("blake3 end-to-end content")
+	d := mustFn(t, repb.DigestFunction_BLAKE3).FromBytes(blob)
+
+	// --- ByteStream Write with the blake3 resource-name segment ---
+	uploadID := uuid.New()
+	writeName := fmt.Sprintf("test-instance/uploads/%s/blobs/blake3/%s/%d", uploadID, d.Hash, d.SizeBytes)
+	stream, err := bs.Write(ctx)
+	if err != nil {
+		t.Fatalf("Write stream: %v", err)
+	}
+	if err := stream.Send(&bspb.WriteRequest{ResourceName: writeName, FinishWrite: true, Data: blob}); err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+	resp, err := stream.CloseAndRecv()
+	if err != nil {
+		t.Fatalf("CloseAndRecv: %v", err)
+	}
+	if got, want := resp.CommittedSize, d.SizeBytes; got != want {
+		t.Errorf("CommittedSize = %d, want %d", got, want)
+	}
+
+	// --- ByteStream Read it back ---
+	readName := fmt.Sprintf("test-instance/blobs/blake3/%s/%d", d.Hash, d.SizeBytes)
+	readStream, err := bs.Read(ctx, &bspb.ReadRequest{ResourceName: readName})
+	if err != nil {
+		t.Fatalf("Read stream: %v", err)
+	}
+	var readBuf bytes.Buffer
+	for {
+		chunk, err := readStream.Recv()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			t.Fatalf("Recv: %v", err)
+		}
+		readBuf.Write(chunk.Data)
+	}
+	if !bytes.Equal(readBuf.Bytes(), blob) {
+		t.Errorf("Read data mismatch: got %q, want %q", readBuf.Bytes(), blob)
+	}
+
+	// --- FindMissingBlobs with DigestFunction=BLAKE3 ---
+	other := mustFn(t, repb.DigestFunction_BLAKE3).FromBytes([]byte("not uploaded"))
+	fmResp, err := cas.FindMissingBlobs(ctx, &repb.FindMissingBlobsRequest{
+		InstanceName:   "test-instance",
+		BlobDigests:    []*repb.Digest{d.Proto(), other.Proto()},
+		DigestFunction: repb.DigestFunction_BLAKE3,
+	})
+	if err != nil {
+		t.Fatalf("FindMissingBlobs: %v", err)
+	}
+	if len(fmResp.MissingBlobDigests) != 1 || fmResp.MissingBlobDigests[0].Hash != other.Hash {
+		t.Errorf("FindMissingBlobs missing = %v, want only %s", fmResp.MissingBlobDigests, other.Hash)
+	}
+
+	// --- BatchUpdateBlobs + BatchReadBlobs with DigestFunction=BLAKE3 ---
+	batchBlob := []byte("batched blake3 blob")
+	bd := mustFn(t, repb.DigestFunction_BLAKE3).FromBytes(batchBlob)
+	if _, err := cas.BatchUpdateBlobs(ctx, &repb.BatchUpdateBlobsRequest{
+		InstanceName:   "test-instance",
+		DigestFunction: repb.DigestFunction_BLAKE3,
+		Requests:       []*repb.BatchUpdateBlobsRequest_Request{{Digest: bd.Proto(), Data: batchBlob}},
+	}); err != nil {
+		t.Fatalf("BatchUpdateBlobs: %v", err)
+	}
+	brResp, err := cas.BatchReadBlobs(ctx, &repb.BatchReadBlobsRequest{
+		InstanceName:   "test-instance",
+		DigestFunction: repb.DigestFunction_BLAKE3,
+		Digests:        []*repb.Digest{bd.Proto()},
+	})
+	if err != nil {
+		t.Fatalf("BatchReadBlobs: %v", err)
+	}
+	if len(brResp.Responses) != 1 || !bytes.Equal(brResp.Responses[0].Data, batchBlob) {
+		t.Errorf("BatchReadBlobs returned %v, want one blob %q", brResp.Responses, batchBlob)
+	}
+
+	// --- A sha1 digest must be rejected as wrong-length when read under blake3 ---
+	sha1D := mustFn(t, repb.DigestFunction_SHA1).FromBytes(blob)
+	badName := fmt.Sprintf("test-instance/blobs/blake3/%s/%d", sha1D.Hash, sha1D.SizeBytes)
+	badStream, err := bs.Read(ctx, &bspb.ReadRequest{ResourceName: badName})
+	if err == nil {
+		_, err = badStream.Recv()
+	}
+	if err == nil {
+		t.Error("reading a 40-hex sha1 hash under blake3 should fail, got nil error")
+	}
+}
+
+// TestSHA1NoSegmentEndToEnd drives the server with the SHA-1 digest function
+// using spec-compliant resource names that OMIT the function segment (exactly
+// what Siso produces for SHA-1, since the segment is reserved for newer
+// functions). The server must infer SHA-1 from the 40-char hash length.
+func TestSHA1NoSegmentEndToEnd(t *testing.T) {
+	ctx := t.Context()
+	bs, cas := setupTest(ctx, t, server.Config{
+		MaxBatchTotalSizeBytes: 4 * 1024 * 1024,
+		DigestFunctions:        []digest.Function{digest.SHA256, mustFn(t, repb.DigestFunction_SHA1)},
+	})
+
+	blob := []byte("sha1 end-to-end content")
+	d := mustFn(t, repb.DigestFunction_SHA1).FromBytes(blob)
+	if got, want := len(d.Hash), 40; got != want {
+		t.Fatalf("sha1 hash length = %d, want %d", got, want)
+	}
+
+	// --- ByteStream Write with NO function segment ---
+	uploadID := uuid.New()
+	writeName := fmt.Sprintf("test-instance/uploads/%s/blobs/%s/%d", uploadID, d.Hash, d.SizeBytes)
+	stream, err := bs.Write(ctx)
+	if err != nil {
+		t.Fatalf("Write stream: %v", err)
+	}
+	if err := stream.Send(&bspb.WriteRequest{ResourceName: writeName, FinishWrite: true, Data: blob}); err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+	resp, err := stream.CloseAndRecv()
+	if err != nil {
+		t.Fatalf("CloseAndRecv: %v", err)
+	}
+	if got, want := resp.CommittedSize, d.SizeBytes; got != want {
+		t.Errorf("CommittedSize = %d, want %d", got, want)
+	}
+
+	// --- ByteStream Read it back with NO function segment ---
+	readName := fmt.Sprintf("test-instance/blobs/%s/%d", d.Hash, d.SizeBytes)
+	readStream, err := bs.Read(ctx, &bspb.ReadRequest{ResourceName: readName})
+	if err != nil {
+		t.Fatalf("Read stream: %v", err)
+	}
+	var readBuf bytes.Buffer
+	for {
+		chunk, err := readStream.Recv()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			t.Fatalf("Recv: %v", err)
+		}
+		readBuf.Write(chunk.Data)
+	}
+	if !bytes.Equal(readBuf.Bytes(), blob) {
+		t.Errorf("Read data mismatch: got %q, want %q", readBuf.Bytes(), blob)
+	}
+
+	// --- FindMissingBlobs with DigestFunction=SHA1 sees the uploaded blob ---
+	other := mustFn(t, repb.DigestFunction_SHA1).FromBytes([]byte("not uploaded"))
+	fmResp, err := cas.FindMissingBlobs(ctx, &repb.FindMissingBlobsRequest{
+		InstanceName:   "test-instance",
+		BlobDigests:    []*repb.Digest{d.Proto(), other.Proto()},
+		DigestFunction: repb.DigestFunction_SHA1,
+	})
+	if err != nil {
+		t.Fatalf("FindMissingBlobs: %v", err)
+	}
+	if len(fmResp.MissingBlobDigests) != 1 || fmResp.MissingBlobDigests[0].Hash != other.Hash {
+		t.Errorf("FindMissingBlobs missing = %v, want only %s", fmResp.MissingBlobDigests, other.Hash)
+	}
+}
+
+// TestMurmur3NoSegmentEndToEnd drives a server that advertises MURMUR3 with
+// spec-compliant resource names that OMIT the function segment (mandatory for
+// MURMUR3, like MD5). MD5 and MURMUR3 hashes are both 32 hex chars, so the
+// omitted segment is only resolvable because the advertised set contains
+// exactly one of them.
+func TestMurmur3NoSegmentEndToEnd(t *testing.T) {
+	ctx := t.Context()
+	bs, cas := setupTest(ctx, t, server.Config{
+		MaxBatchTotalSizeBytes: 4 * 1024 * 1024,
+		DigestFunctions:        []digest.Function{digest.SHA256, mustFn(t, repb.DigestFunction_MURMUR3)},
+	})
+
+	blob := []byte("murmur3 end-to-end content")
+	d := mustFn(t, repb.DigestFunction_MURMUR3).FromBytes(blob)
+	if got, want := len(d.Hash), 32; got != want {
+		t.Fatalf("murmur3 hash length = %d, want %d", got, want)
+	}
+
+	// --- ByteStream Write with NO function segment ---
+	uploadID := uuid.New()
+	writeName := fmt.Sprintf("test-instance/uploads/%s/blobs/%s/%d", uploadID, d.Hash, d.SizeBytes)
+	stream, err := bs.Write(ctx)
+	if err != nil {
+		t.Fatalf("Write stream: %v", err)
+	}
+	if err := stream.Send(&bspb.WriteRequest{ResourceName: writeName, FinishWrite: true, Data: blob}); err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+	resp, err := stream.CloseAndRecv()
+	if err != nil {
+		t.Fatalf("CloseAndRecv: %v", err)
+	}
+	if got, want := resp.CommittedSize, d.SizeBytes; got != want {
+		t.Errorf("CommittedSize = %d, want %d", got, want)
+	}
+
+	// --- ByteStream Read it back with NO function segment ---
+	readName := fmt.Sprintf("test-instance/blobs/%s/%d", d.Hash, d.SizeBytes)
+	readStream, err := bs.Read(ctx, &bspb.ReadRequest{ResourceName: readName})
+	if err != nil {
+		t.Fatalf("Read stream: %v", err)
+	}
+	var readBuf bytes.Buffer
+	for {
+		chunk, err := readStream.Recv()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			t.Fatalf("Recv: %v", err)
+		}
+		readBuf.Write(chunk.Data)
+	}
+	if !bytes.Equal(readBuf.Bytes(), blob) {
+		t.Errorf("Read data mismatch: got %q, want %q", readBuf.Bytes(), blob)
+	}
+
+	// --- FindMissingBlobs with DigestFunction=MURMUR3 sees the uploaded blob ---
+	other := mustFn(t, repb.DigestFunction_MURMUR3).FromBytes([]byte("not uploaded"))
+	fmResp, err := cas.FindMissingBlobs(ctx, &repb.FindMissingBlobsRequest{
+		InstanceName:   "test-instance",
+		BlobDigests:    []*repb.Digest{d.Proto(), other.Proto()},
+		DigestFunction: repb.DigestFunction_MURMUR3,
+	})
+	if err != nil {
+		t.Fatalf("FindMissingBlobs: %v", err)
+	}
+	if len(fmResp.MissingBlobDigests) != 1 || fmResp.MissingBlobDigests[0].Hash != other.Hash {
+		t.Errorf("FindMissingBlobs missing = %v, want only %s", fmResp.MissingBlobDigests, other.Hash)
+	}
+}
+
+// TestNonAdvertisedFunctionRejected verifies that a server rejects requests
+// using a digest function outside its advertised set (default: SHA-256 only),
+// both as an explicit resource-name segment / request enum and as an omitted
+// segment whose hash length matches no advertised function.
+func TestNonAdvertisedFunctionRejected(t *testing.T) {
+	ctx := t.Context()
+	bs, cas := setupTest(ctx, t, server.Config{MaxBatchTotalSizeBytes: 4 * 1024 * 1024})
+
+	blob := []byte("non-advertised function content")
+	blake3Digest := mustFn(t, repb.DigestFunction_BLAKE3).FromBytes(blob)
+	sha1Digest := mustFn(t, repb.DigestFunction_SHA1).FromBytes(blob)
+
+	// Explicit blake3 segment in a ByteStream read.
+	readName := fmt.Sprintf("test-instance/blobs/blake3/%s/%d", blake3Digest.Hash, blake3Digest.SizeBytes)
+	readStream, err := bs.Read(ctx, &bspb.ReadRequest{ResourceName: readName})
+	if err == nil {
+		_, err = readStream.Recv()
+	}
+	if got, want := status.Code(err), codes.InvalidArgument; got != want {
+		t.Errorf("Read with blake3 segment: status = %v (%v), want %v", got, err, want)
+	}
+
+	// Omitted segment with a 40-hex (SHA-1) hash: no advertised function matches.
+	readName = fmt.Sprintf("test-instance/blobs/%s/%d", sha1Digest.Hash, sha1Digest.SizeBytes)
+	readStream, err = bs.Read(ctx, &bspb.ReadRequest{ResourceName: readName})
+	if err == nil {
+		_, err = readStream.Recv()
+	}
+	if got, want := status.Code(err), codes.InvalidArgument; got != want {
+		t.Errorf("Read with omitted sha1-length hash: status = %v (%v), want %v", got, err, want)
+	}
+
+	// Explicit non-advertised enum in a batch request.
+	_, err = cas.FindMissingBlobs(ctx, &repb.FindMissingBlobsRequest{
+		InstanceName:   "test-instance",
+		BlobDigests:    []*repb.Digest{blake3Digest.Proto()},
+		DigestFunction: repb.DigestFunction_BLAKE3,
+	})
+	if got, want := status.Code(err), codes.InvalidArgument; got != want {
+		t.Errorf("FindMissingBlobs with blake3: status = %v (%v), want %v", got, err, want)
+	}
+}
+
+// TestBatchUpdateBlobsSHA1InferredFunction verifies that a spec-compliant SHA-1
+// BatchUpdateBlobs request with DigestFunction UNKNOWN (the function is inferred
+// from the 40-char hash) is stored under SHA-1, not canonicalized to SHA-256.
+func TestBatchUpdateBlobsSHA1InferredFunction(t *testing.T) {
+	ctx := t.Context()
+	_, casClient := setupTest(ctx, t, server.Config{
+		MaxBatchTotalSizeBytes: 4 * 1024 * 1024,
+		DigestFunctions:        []digest.Function{digest.SHA256, mustFn(t, repb.DigestFunction_SHA1)},
+	})
+
+	blob := []byte("sha1 inferred-function batch content")
+	d := mustFn(t, repb.DigestFunction_SHA1).FromBytes(blob)
+	if got, want := len(d.Hash), 40; got != want {
+		t.Fatalf("sha1 hash length = %d, want %d", got, want)
+	}
+
+	// DigestFunction is left UNKNOWN: a spec-compliant client may omit it for
+	// SHA-1, relying on hash-length inference.
+	resp, err := casClient.BatchUpdateBlobs(ctx, &repb.BatchUpdateBlobsRequest{
+		Requests: []*repb.BatchUpdateBlobsRequest_Request{
+			{Digest: d.Proto(), Data: blob},
+		},
+	})
+	if err != nil {
+		t.Fatalf("BatchUpdateBlobs: %v", err)
+	}
+	if len(resp.Responses) != 1 {
+		t.Fatalf("got %d responses, want 1", len(resp.Responses))
+	}
+	if got, want := resp.Responses[0].Status.Code, int32(codes.OK); got != want {
+		t.Errorf("response status = %v, want OK", resp.Responses[0].Status)
 	}
 }
 

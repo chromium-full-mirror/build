@@ -5,12 +5,18 @@
 package execution
 
 import (
+	"fmt"
+	"slices"
 	"testing"
 
 	"github.com/google/uuid"
+	errpb "google.golang.org/genproto/googleapis/rpc/errdetails"
+	"google.golang.org/grpc/status"
 
 	"go.chromium.org/build/hashigo/digest"
 	repb "go.chromium.org/build/remote-apis/build/bazel/remote/execution/v2"
+
+	"go.chromium.org/build/kajiya/blobstore"
 )
 
 // mustFn returns the digest.Function for the given enum value, failing the
@@ -45,5 +51,60 @@ func TestDedupKey(t *testing.T) {
 	// DoNotCache uses the unique operation name so requests never merge.
 	if got, want := dedupKey(sha1Fn, d, op, true), op.String(); got != want {
 		t.Errorf("dedupKey(DoNotCache) = %q, want %q", got, want)
+	}
+}
+
+// TestFormatMissingBlobsErrorSubjects verifies the REAPI missing-blob subject
+// carries the digest-function segment for non-sha256 functions
+// (blobs/<fn>/<hash>/<size>) and omits it for sha256 (blobs/<hash>/<size>), so
+// clients retry uploads into the correct namespace.
+func TestFormatMissingBlobsErrorSubjects(t *testing.T) {
+	blake3Fn := mustFn(t, repb.DigestFunction_BLAKE3)
+	blake3D := blake3Fn.FromBytes([]byte("blake3 content"))
+	sha256D := digest.SHA256.FromBytes([]byte("sha256 content"))
+
+	for _, tc := range []struct {
+		name string
+		fn   digest.Function
+		d    digest.Digest
+		want []string
+	}{
+		{
+			name: "blake3",
+			fn:   blake3Fn,
+			d:    blake3D,
+			want: []string{fmt.Sprintf("blobs/blake3/%s/%d", blake3D.Hash, blake3D.SizeBytes)},
+		},
+		{
+			name: "sha256",
+			fn:   digest.SHA256,
+			d:    sha256D,
+			want: []string{fmt.Sprintf("blobs/%s/%d", sha256D.Hash, sha256D.SizeBytes)},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := formatMissingBlobsError(&blobstore.MissingBlobsError{
+				Fn:    tc.fn,
+				Blobs: []digest.Digest{tc.d},
+			})
+			st, ok := status.FromError(err)
+			if !ok {
+				t.Fatalf("formatMissingBlobsError did not return a status: %v", err)
+			}
+
+			var got []string
+			for _, d := range st.Details() {
+				pf, ok := d.(*errpb.PreconditionFailure)
+				if !ok {
+					continue
+				}
+				for _, v := range pf.Violations {
+					got = append(got, v.Subject)
+				}
+			}
+			if !slices.Equal(got, tc.want) {
+				t.Errorf("subjects = %v, want %v", got, tc.want)
+			}
+		})
 	}
 }
