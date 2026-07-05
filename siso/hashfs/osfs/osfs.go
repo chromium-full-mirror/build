@@ -469,7 +469,7 @@ func (FileSource) IsLocal() {}
 
 // Open opens the named file for reading.
 func (fsc FileSource) Open(ctx context.Context) (io.ReadCloser, error) {
-	r, err := os.Open(fsc.Fname)
+	r, err := openRead(fsc.Fname)
 	return &file{ctx: ctx, file: r, started: time.Now(), fs: fsc.fs}, err
 }
 
