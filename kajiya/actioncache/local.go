@@ -305,7 +305,7 @@ func (c *ActionCache) Get(fn digest.Function, actionDigest digest.Digest) (*repb
 
 // Put stores the given ActionResult for the given digest.
 func (c *ActionCache) Put(fn digest.Function, actionDigest digest.Digest, ar *repb.ActionResult) error {
-	_, err, _ := c.syncer.Do(actionDigest.Hash, func() (any, error) {
+	_, err, _ := c.syncer.Do(blobstore.DigestKey(fn, actionDigest), func() (any, error) {
 		// Marshal the action result. We use deterministic marshalling to ensure
 		// that the below comparison works correctly.
 		actionResultRaw, err := proto.MarshalOptions{Deterministic: true}.Marshal(ar)

@@ -195,11 +195,7 @@ func (s *Service) Execute(request *repb.ExecuteRequest, executeServer repb.Execu
 	// According to the REAPI specification, in-flight requests for the same `Action` may be
 	// merged unless the `DoNotCache` bit is set. This improves efficiency and performance by
 	// avoiding duplicate work.
-	dedupKey := actionDigest.Hash
-	if action.DoNotCache {
-		dedupKey = opName.String()
-	}
-	ar, err, _ := s.actionDigestDeduper.Do(dedupKey, func() (any, error) {
+	ar, err, _ := s.actionDigestDeduper.Do(dedupKey(digest.SHA256, actionDigest, opName, action.DoNotCache), func() (any, error) {
 		// Acquire a semaphore to limit the number of concurrent executions.
 		err = s.sem.Acquire(executeServer.Context(), 1)
 		if err != nil {
@@ -265,6 +261,18 @@ func formatMissingBlobsError(e *blobstore.MissingBlobsError) error {
 		return status.Errorf(codes.Internal, "failed to create status: %v", err)
 	}
 	return st.Err()
+}
+
+// dedupKey returns the singleflight key for an in-flight Execute request.
+// Cacheable requests merge on the action digest, namespaced by digest function
+// so two requests sharing a hash string under different functions don't merge
+// and return the wrong ActionResult. Uncacheable requests (DoNotCache) get the
+// unique operation name so they never merge.
+func dedupKey(fn digest.Function, actionDigest digest.Digest, opName uuid.UUID, doNotCache bool) string {
+	if doNotCache {
+		return opName.String()
+	}
+	return blobstore.DigestKey(fn, actionDigest)
 }
 
 // executionStage returns an Operation message with an update on the current state of opName

@@ -629,6 +629,88 @@ func TestFuseOutputInodeLeak(t *testing.T) {
 	}
 }
 
+// TestFuseDirInodeCacheDigestFunctionNamespacing verifies that the shared
+// dirInodes cache is namespaced by digest function: two sandboxes whose input
+// directories share the same digest hash under different functions must not
+// share cached inodes, since the cached subtree's file inodes bake in the
+// registering function's CAS paths.
+func TestFuseDirInodeCacheDigestFunctionNamespacing(t *testing.T) {
+	if _, err := exec.LookPath("fusermount3"); err != nil {
+		t.Skip("fusermount3 not found in PATH")
+	}
+
+	sha256treeFn, err := digest.ParseFunction("sha256tree")
+	if err != nil {
+		t.Fatal(err)
+	}
+	fns := []digest.Function{digest.SHA256, sha256treeFn}
+
+	ctx := t.Context()
+	cas, err := blobstore.NewWithOpts(ctx, t.TempDir(), blobstore.Options{DigestFunctions: fns})
+	if err != nil {
+		t.Fatalf("blobstore.NewWithOpts: %v", err)
+	}
+
+	// One file digest, two different contents planted directly at each
+	// function's CAS path, so serving the wrong function's blob is
+	// observable.
+	contents := map[digest.Function]string{
+		digest.SHA256: "AAAA",
+		sha256treeFn:  "BBBB",
+	}
+	fileDigest := digest.Digest{Hash: fmt.Sprintf("%064x", 0xf00d), SizeBytes: 4}
+	for fn, content := range contents {
+		if err := os.WriteFile(cas.Path(fn, fileDigest), []byte(content), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// The shared input directory has the same digest hash under both
+	// functions, so the second sandbox would hit the first one's cached
+	// subtree if the cache were not namespaced by function.
+	sharedDigest := digest.Digest{Hash: "shared-dir-digest-for-fn-test", SizeBytes: 42}
+	txn := iradix.New[*model.KajiyaDirectory]().Txn()
+	txn.Insert([]byte(""), &model.KajiyaDirectory{
+		Dirs:     []string{"shared"},
+		UnixMode: 0755,
+	})
+	txn.Insert([]byte("shared/"), &model.KajiyaDirectory{
+		Digest: sharedDigest,
+		Files: []model.KajiyaFile{
+			{Name: "input", Digest: fileDigest, UnixMode: 0644},
+		},
+		UnixMode: 0755,
+	})
+	trie := txn.Commit()
+
+	fuseMountpoint := t.TempDir()
+	root, server, err := MountCASFS(fuseMountpoint)
+	if err != nil {
+		t.Fatalf("MountCASFS: %v", err)
+	}
+	t.Cleanup(func() {
+		root.Close()
+		server.Unmount()
+	})
+
+	for i, fn := range fns {
+		sandboxID := fmt.Sprintf("fn-test-%d", i)
+		lowerDir, err := root.RegisterSandbox(sandboxID, trie, fn, cas, fuseMountpoint, nil)
+		if err != nil {
+			t.Fatalf("RegisterSandbox(%v): %v", fn, err)
+		}
+		t.Cleanup(func() { root.UnregisterSandbox(sandboxID) })
+
+		data, err := os.ReadFile(filepath.Join(lowerDir, "shared", "input"))
+		if err != nil {
+			t.Fatalf("ReadFile(%v): %v", fn, err)
+		}
+		if got, want := string(data), contents[fn]; got != want {
+			t.Errorf("sandbox for %v read %q, want %q", fn, got, want)
+		}
+	}
+}
+
 // TestFuseConcurrentRegisterSandbox verifies that registering and
 // unregistering multiple sandboxes concurrently is safe and correct.
 func TestFuseConcurrentRegisterSandbox(t *testing.T) {

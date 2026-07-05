@@ -42,23 +42,19 @@ func newTreeRepository(baseDir string, cas *blobstore.ContentAddressableStorage)
 		return nil, fmt.Errorf("failed to create directory %q: %w", baseDir, err)
 	}
 
-	// Create all shard subdirectories.
-	for i := range 256 {
-		shardDir := filepath.Join(baseDir, fmt.Sprintf("%02x", i))
-		if err := os.Mkdir(shardDir, 0755); err != nil && !errors.Is(err, fs.ErrExist) {
-			return nil, fmt.Errorf("failed to create directory %q: %w", shardDir, err)
-		}
-	}
-
 	return &TreeRepository{
 		baseDir: baseDir,
 		cas:     cas,
 	}, nil
 }
 
-// Path returns the path on disk where the directory with the given digest is materialized.
+// Path returns the path on disk where the directory with the given digest is
+// materialized. Trees are namespaced by digest function, since the same hash
+// under two functions can refer to different content. Entries from an older,
+// un-namespaced layout are never looked up again and are harmless: the tree
+// repository is a cache, and nothing walks its base directory.
 func (t *TreeRepository) Path(fn digest.Function, dirDigest digest.Digest) string {
-	return filepath.Join(t.baseDir, dirDigest.Hash[:2], dirDigest.Hash)
+	return filepath.Join(t.baseDir, fn.String(), dirDigest.Hash[:2], dirDigest.Hash)
 }
 
 // EnsureDirectory ensures that the *repb.Directory for a given digest.Digest, is present in the
@@ -74,7 +70,7 @@ func (t *TreeRepository) EnsureDirectory(fn digest.Function, dirTrie *model.Dire
 		}
 
 		var tmpPath string
-		_, err, _ = t.materializeSyncer.Do(kd.Digest.Hash, func() (_ any, err error) {
+		_, err, _ = t.materializeSyncer.Do(blobstore.DigestKey(fn, kd.Digest), func() (_ any, err error) {
 			// Check again if the directory is already materialized.
 			if _, err = os.Stat(repoPath); err == nil {
 				return nil, nil
@@ -92,7 +88,11 @@ func (t *TreeRepository) EnsureDirectory(fn digest.Function, dirTrie *model.Dire
 				return nil, fmt.Errorf("failed to materialize directory: %w", err)
 			}
 
-			// Move the directory to its final location.
+			// Move the directory to its final location, creating the
+			// per-function shard directory on first use.
+			if err := os.MkdirAll(filepath.Dir(repoPath), 0755); err != nil {
+				return nil, fmt.Errorf("failed to create shard directory: %w", err)
+			}
 			if err := os.Rename(tmpPath, repoPath); err != nil {
 				return nil, fmt.Errorf("failed to rename directory: %w", err)
 			}

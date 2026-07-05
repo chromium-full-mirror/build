@@ -50,13 +50,16 @@ type CASRoot struct {
 	mu        sync.Mutex
 	sandboxes map[string]*fs.Inode
 
-	// fileInodes caches persistent inodes for CAS files, keyed by CAS path.
-	// dirInodes caches persistent inodes for directories, keyed by REAPI
-	// directory digest. Sharing inodes across sandboxes means the kernel's
-	// page cache, dentry cache, and readdir cache are all shared — accesses
-	// in one sandbox warm caches for all others.
+	// fileInodes caches persistent inodes for CAS files, keyed by CAS path
+	// (which embeds the digest function's root). dirInodes caches persistent
+	// inodes for directories, keyed by digest function + REAPI directory
+	// digest: the cached subtree's file inodes bake in that function's CAS
+	// paths, so the same hash under another function must not share it.
+	// Sharing inodes across sandboxes means the kernel's page cache, dentry
+	// cache, and readdir cache are all shared — accesses in one sandbox warm
+	// caches for all others.
 	fileInodes sync.Map // map[string]*fs.Inode (CAS path -> file inode)
-	dirInodes  sync.Map // map[string]*fs.Inode (digest hash -> dir subtree inode)
+	dirInodes  sync.Map // map[string]*fs.Inode ("<function>/<hash>" -> dir subtree inode)
 }
 
 var _ = (fs.NodeGetattrer)((*CASRoot)(nil))
@@ -99,10 +102,14 @@ func (r *CASRoot) RegisterSandbox(sandboxID string, trie *model.DirectoryTrie, f
 		}
 
 		// When tracing is disabled, check if we already have a cached inode
-		// subtree for this directory digest. If so, reuse it: all files,
-		// symlinks, and subdirectories are already children of the cached
-		// inode, so we only need to wire up the inodes map for the trie walk.
-		digestKey := dir.Digest.Hash
+		// subtree for this directory digest under this digest function. If
+		// so, reuse it: all files, symlinks, and subdirectories are already
+		// children of the cached inode, so we only need to wire up the inodes
+		// map for the trie walk.
+		digestKey := ""
+		if dir.Digest.Hash != "" {
+			digestKey = blobstore.DigestKey(fn, dir.Digest)
+		}
 		if recorder == nil && digestKey != "" && dirInode != sandboxInode {
 			if cached, ok := r.dirInodes.Load(digestKey); ok {
 				cachedInode := cached.(*fs.Inode)

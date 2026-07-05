@@ -238,6 +238,13 @@ func (c *ContentAddressableStorage) Path(fn digest.Function, d digest.Digest) st
 	return filepath.Join(dir, d.Hash)
 }
 
+// DigestKey returns the in-memory key ("<function>/<hash>") for a digest,
+// namespacing same-length hashes from different digest functions. It is used
+// for singleflight and dedup map keys.
+func DigestKey(fn digest.Function, d digest.Digest) string {
+	return fn.String() + "/" + d.Hash
+}
+
 // Stat returns os.FileInfo for the requested digest if it exists.
 func (c *ContentAddressableStorage) Stat(fn digest.Function, d digest.Digest) (os.FileInfo, error) {
 	p := c.Path(fn, d)
@@ -326,7 +333,7 @@ func (c *ContentAddressableStorage) Get(fn digest.Function, d digest.Digest) ([]
 // digest.
 func (c *ContentAddressableStorage) Put(fn digest.Function, data []byte) (digest.Digest, error) {
 	d := fn.FromBytes(data)
-	_, err, _ := c.putSyncer.Do(d.Hash, func() (any, error) {
+	_, err, _ := c.putSyncer.Do(DigestKey(fn, d), func() (any, error) {
 		// If the file is already in the CAS, we're done.
 		if c.Has(fn, d) {
 			return nil, nil
@@ -344,7 +351,7 @@ func (c *ContentAddressableStorage) Put(fn digest.Function, data []byte) (digest
 // Adopt moves a file from the given path into the CAS.
 // The digest is assumed to have been validated by the caller.
 func (c *ContentAddressableStorage) Adopt(fn digest.Function, d digest.Digest, srcPath string) error {
-	_, err, _ := c.putSyncer.Do(d.Hash, func() (any, error) {
+	_, err, _ := c.putSyncer.Do(DigestKey(fn, d), func() (any, error) {
 		// If the file is already in the CAS, we're done.
 		if c.Has(fn, d) {
 			if err := os.Remove(srcPath); err != nil {
