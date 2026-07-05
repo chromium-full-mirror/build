@@ -17,6 +17,8 @@ import (
 	"testing"
 	"time"
 
+	"go.chromium.org/build/hashigo/digest"
+
 	"go.chromium.org/build/siso/build"
 	"go.chromium.org/build/siso/build/ninjabuild"
 	"go.chromium.org/build/siso/hashfs"
@@ -416,7 +418,7 @@ func TestBuild_DirOutputLocalReloadCmdHash(t *testing.T) {
 	if err != nil {
 		t.Fatalf("hashfs.Load: %v", err)
 	}
-	m := hashfs.StateMap(st)
+	m := hashfs.StateMap(digest.SHA256, st)
 	for _, rel := range []string{
 		"out/siso/gen",
 		"out/siso/gen/data",

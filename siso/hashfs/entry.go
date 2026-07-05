@@ -20,11 +20,14 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"go.chromium.org/build/hashigo/digest"
+
+	"go.chromium.org/build/siso/blob"
 	"go.chromium.org/build/siso/hashfs/osfs"
 	"go.chromium.org/build/siso/o11y/clog"
 	"go.chromium.org/build/siso/o11y/monitoring"
 	"go.chromium.org/build/siso/path"
-	"go.chromium.org/build/siso/reapi/digest"
+	"go.chromium.org/build/siso/reapi/fetch"
 	"go.chromium.org/build/siso/reapi/retry"
 )
 
@@ -68,7 +71,7 @@ type entry struct {
 
 	target string // symlink.
 
-	src digest.Source
+	src blob.Source
 	buf []byte // from WriteFile.
 
 	mu sync.RWMutex
@@ -166,7 +169,7 @@ func (e *entry) init(ctx context.Context, fname string, executables map[path.Pat
 	}
 }
 
-func (e *entry) compute(ctx context.Context, fname string) error {
+func (e *entry) compute(ctx context.Context, fn digest.Function, fname string) error {
 	// Fast path: already done, errored, or nothing to compute.
 	e.mu.Lock()
 	if e.err != nil {
@@ -198,12 +201,12 @@ func (e *entry) compute(ctx context.Context, fname string) error {
 	// Run in a goroutine so we can bail on context cancellation
 	// without blocking on disk I/O.
 	type result struct {
-		data digest.Data
+		data blob.Data
 		err  error
 	}
 	ch := make(chan result, 1)
 	go func() {
-		data, err := localDigest(ctx, e.src, fname)
+		data, err := localDigest(ctx, fn, e.src, fname)
 		ch <- result{data, err}
 	}()
 
@@ -579,7 +582,7 @@ func (e *entry) flushSkipMatchingDigest(ctx context.Context, fname string, fi os
 		return false, nil
 	}
 	src := osfs.FileSource(fname, fi.Size())
-	ld, err := localDigest(ctx, src, fname)
+	ld, err := localDigest(ctx, osfs.DigestFunction(), src, fname)
 	if err != nil {
 		clog.Warningf(ctx, "flush %s: digest error: %v", fname, err)
 		return false, nil
@@ -676,7 +679,7 @@ func (e *entry) flushWrite(ctx context.Context, fname string, osfs *osfs.OSFS, s
 		srcname = lsrc.Fname
 	}
 	tmpname := filepath.Join(filepath.Dir(fname), "."+filepath.Base(fname)+".siso_tmp")
-	ctx, cancel := digest.ContextWithTimeout(ctx, e.d)
+	ctx, cancel := fetch.ContextWithTimeout(ctx, e.d)
 	defer cancel()
 	// Skip the first-byte watchdog for local FileSource: no gRPC
 	// InPayload event can fire and a slow local copy would be falsely

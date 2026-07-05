@@ -16,9 +16,11 @@ import (
 
 	log "github.com/golang/glog"
 
+	"go.chromium.org/build/hashigo/digest"
+
+	"go.chromium.org/build/siso/blob"
 	"go.chromium.org/build/siso/o11y/clog"
 	"go.chromium.org/build/siso/path"
-	"go.chromium.org/build/siso/reapi/digest"
 	"go.chromium.org/build/siso/reapi/merkletree"
 )
 
@@ -154,8 +156,8 @@ func (st *subtree) init(ctx context.Context, b *Builder, dir string, files []str
 			return
 		}
 		// keep digest in tree in st.ds
-		ds := digest.NewStore()
-		mt := merkletree.NewPooled(ds)
+		ds := blob.NewStore()
+		mt := merkletree.NewPooled(b.hashFS.DigestFunction(), ds)
 		defer mt.Release()
 		for _, ent := range ents {
 			err := mt.Set(ent)
@@ -176,7 +178,7 @@ func (st *subtree) init(ctx context.Context, b *Builder, dir string, files []str
 		// check subtree's root digest exist in CAS first.
 		// If so, we can assume subtree data exist in CAS.
 		// Otherwise, we need to upload subtree data to CAS.
-		rootDS := digest.NewStore()
+		rootDS := blob.NewStore()
 		data, ok := ds.Get(st.d)
 		if !ok {
 			clog.Warningf(ctx, "no tree root digest in store? %s", st.d)

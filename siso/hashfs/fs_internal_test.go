@@ -14,9 +14,11 @@ import (
 	"testing"
 	"time"
 
+	"go.chromium.org/build/hashigo/digest"
+
+	"go.chromium.org/build/siso/blob"
 	"go.chromium.org/build/siso/hashfs/osfs"
 	"go.chromium.org/build/siso/path"
-	"go.chromium.org/build/siso/reapi/digest"
 )
 
 // TestStatMtimeDeferDigestGate: StatMtime skips the digest queue only in
@@ -49,7 +51,7 @@ func TestStatMtimeDeferDigestGate(t *testing.T) {
 		if !ok {
 			t.Fatal("entry missing after StatMtime")
 		}
-		want := digest.FromBytes(fname, []byte(body)).Digest()
+		want := blob.FromBytes(digest.SHA256, fname, []byte(body)).Digest()
 		if !wantDigest {
 			// Close drains pending digests in non-defer mode, so a still-zero
 			// digest after it proves StatMtime skipped the queue (not "not yet").
@@ -116,8 +118,8 @@ func TestReadFileStaleSizeDigest(t *testing.T) {
 	// suppress lazyCompute and leave a wrong digest). Valid: zero (deferred)
 	// or the full-file digest; the prefix digest is the bug.
 	got := e2.digest()
-	prefixDigest := digest.FromBytes(fname, []byte(prefix)).Digest()
-	fullDigest := digest.FromBytes(fname, []byte(grown)).Digest()
+	prefixDigest := blob.FromBytes(digest.SHA256, fname, []byte(prefix)).Digest()
+	fullDigest := blob.FromBytes(digest.SHA256, fname, []byte(grown)).Digest()
 	if !got.IsZero() && got != fullDigest {
 		t.Fatalf("ReadFile stored digest %v; want zero (deferred) or full %v, not the stale prefix %v", got, fullDigest, prefixDigest)
 	}

@@ -12,12 +12,13 @@ import (
 	"path/filepath"
 	"testing"
 
+	"go.chromium.org/build/hashigo/digest"
 	rpb "go.chromium.org/build/remote-apis/build/bazel/remote/execution/v2"
 
+	"go.chromium.org/build/siso/blob"
 	"go.chromium.org/build/siso/build"
 	"go.chromium.org/build/siso/build/ninjabuild"
 	"go.chromium.org/build/siso/hashfs"
-	"go.chromium.org/build/siso/reapi/digest"
 	"go.chromium.org/build/siso/reapi/reapitest"
 )
 
@@ -111,12 +112,12 @@ func TestBuild_OutputLocalGraph(t *testing.T) {
 	if err != nil {
 		t.Fatalf("hashfs.Load=%v; want nil err", err)
 	}
-	m := hashfs.StateMap(st)
+	m := hashfs.StateMap(digest.SHA256, st)
 	e1, ok := m[filepath.ToSlash(filepath.Join(dir, "out/siso/out1"))]
 	if !ok {
 		t.Errorf("out1 not found in hashfs state: %v", m)
 	} else {
-		want := digest.FromBytes("", out1Data).Digest()
+		want := blob.FromBytes(digest.SHA256, "", out1Data).Digest()
 		if e1.Digest.Hash != want.Hash || e1.Digest.SizeBytes != want.SizeBytes {
 			t.Errorf("out1 digest=%s; want %s", e1.Digest, want)
 		}

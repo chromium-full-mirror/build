@@ -30,13 +30,15 @@ import (
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/protobuf/proto"
 
+	"go.chromium.org/build/hashigo/digest"
+
+	"go.chromium.org/build/siso/blob"
 	"go.chromium.org/build/siso/hashfs/osfs"
 	pb "go.chromium.org/build/siso/hashfs/proto"
 	"go.chromium.org/build/siso/mmapfile"
 	"go.chromium.org/build/siso/o11y/clog"
 	"go.chromium.org/build/siso/o11y/trace"
 	"go.chromium.org/build/siso/path"
-	"go.chromium.org/build/siso/reapi/digest"
 	"go.chromium.org/build/siso/resource"
 	"go.chromium.org/build/siso/toolsupport/cartfsutil"
 	"go.chromium.org/build/siso/toolsupport/cogutil"
@@ -60,6 +62,10 @@ type IgnoreFunc func(context.Context, string) bool
 
 // Option is an option for HashFS.
 type Option struct {
+	// DigestFunction is the content digest function. The zero value means
+	// SHA-256.
+	DigestFunction digest.Function
+
 	StateFile       string // filename that HashFS saves its state to
 	CompressLevel   int    // compression level (0 = uncompressed, 1 = fastest, 10 = best)
 	CompressThreads int    // number of threads to use for data compression
@@ -104,7 +110,7 @@ func (o *Option) RegisterFlags(flagSet *flag.FlagSet) {
 
 // DataSource is an interface to get digest source for digest and its name.
 type DataSource interface {
-	Source(context.Context, digest.Digest, string) digest.Source
+	Source(context.Context, digest.Digest, string) blob.Source
 }
 
 const (
@@ -592,7 +598,7 @@ func (ies *initialEntryStates) initStateEntry(ctx context.Context, es *entryStat
 		mode |= 0111
 	}
 	var dir *directory
-	var src digest.Source
+	var src blob.Source
 	entDigest := toDigest(es.ent.Digest)
 	if !entDigest.IsZero() {
 		es.ftype = "file"
@@ -688,7 +694,7 @@ func (ies *initialEntryStates) initFile(ctx context.Context, es *entryState, fi 
 		// don't reconcile for source (non-generated file),
 		// as user may want to trigger build by touch.
 		src := ies.osfs.FileSource(es.ent.Name, fi.Size())
-		data, err := localDigest(ctx, src, es.ent.Name)
+		data, err := localDigest(ctx, ies.osfs.DigestFunction(), src, es.ent.Name)
 		if err == nil && data.Digest() == es.e.d {
 			es.et = entryEqLocal
 			err = ies.osfs.Chtimes(ctx, es.ent.Name, time.Now(), es.e.mtime)
@@ -1283,7 +1289,7 @@ func (hfs *HashFS) State(ctx context.Context) *pb.State {
 					state.MissingDigests = append(state.MissingDigests, name)
 				} else if len(e.cmdhash) > 0 {
 					clog.Warningf(ctx, "need to calculate digest for %s: cmdhash=%v", name, e.cmdhash)
-					err := e.compute(ctx, name)
+					err := e.compute(ctx, hfs.opt.DigestFunction, name)
 					if err != nil {
 						clog.Warningf(ctx, "failed to calculate digest for %s: %v", name, err)
 						state.MissingDigests = append(state.MissingDigests, name)
@@ -1363,7 +1369,7 @@ func (hfs *HashFS) State(ctx context.Context) *pb.State {
 	return state
 }
 
-func StateMap(s *pb.State) map[string]*pb.Entry {
+func StateMap(fn digest.Function, s *pb.State) map[string]*pb.Entry {
 	m := make(map[string]*pb.Entry)
 	for _, e := range s.Entries {
 		m[e.Name] = e
@@ -1371,7 +1377,7 @@ func StateMap(s *pb.State) map[string]*pb.Entry {
 	return m
 }
 
-func loadJournal(ctx context.Context, fname string, state *pb.State) bool {
+func loadJournal(ctx context.Context, fn digest.Function, fname string, state *pb.State) bool {
 	started := time.Now()
 	b, err := os.ReadFile(fname)
 	if err != nil {
@@ -1384,7 +1390,7 @@ func loadJournal(ctx context.Context, fname string, state *pb.State) bool {
 	}
 	var cnt int
 	var broken bool
-	m := StateMap(state)
+	m := StateMap(fn, state)
 	dec := json.NewDecoder(bytes.NewReader(b))
 	for dec.More() {
 		ent := &pb.Entry{}

@@ -21,12 +21,13 @@ import (
 	log "github.com/golang/glog"
 	"google.golang.org/protobuf/proto"
 
+	"go.chromium.org/build/hashigo/digest"
+
 	"go.chromium.org/build/siso/build"
 	pb "go.chromium.org/build/siso/build/ninjabuild/proto"
 	"go.chromium.org/build/siso/hashfs"
 	"go.chromium.org/build/siso/o11y/clog"
 	"go.chromium.org/build/siso/path"
-	"go.chromium.org/build/siso/reapi/digest"
 	"go.chromium.org/build/siso/toolsupport/ninjautil"
 )
 

@@ -18,13 +18,14 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"go.chromium.org/build/hashigo/digest"
 	rpb "go.chromium.org/build/remote-apis/build/bazel/remote/execution/v2"
 
+	"go.chromium.org/build/siso/blob"
 	"go.chromium.org/build/siso/execute"
 	"go.chromium.org/build/siso/hashfs"
 	"go.chromium.org/build/siso/path"
 	"go.chromium.org/build/siso/reapi"
-	"go.chromium.org/build/siso/reapi/digest"
 	"go.chromium.org/build/siso/reapi/merkletree"
 	"go.chromium.org/build/siso/reapi/reapitest"
 )
@@ -445,7 +446,7 @@ func TestRunRacing_StaleLocalReadyOutput(t *testing.T) {
 			Name: "stubs.jar",
 			Entry: &merkletree.Entry{
 				Name: "stubs.jar",
-				Data: digest.FromBytes("stubs.jar", content),
+				Data: blob.FromBytes(digest.SHA256, "stubs.jar", content),
 			},
 			IsLocal:     true,
 			Mode:        0644,
@@ -539,7 +540,7 @@ func TestRunRacing_RemoteWinFlushFailureFallsBackToLocal(t *testing.T) {
 	// The remote action result references the digest of content, but the
 	// blob is never uploaded to CAS, so flushing the remote outputs to
 	// the local disk fails with NotFound.
-	missing := digest.FromBytes("stubs.jar", content).Digest()
+	missing := blob.FromBytes(digest.SHA256, "stubs.jar", content).Digest()
 	fakere := &reapitest.Fake{
 		ExecuteFunc: func(fakere *reapitest.Fake, action *rpb.Action) (*rpb.ActionResult, error) {
 			return &rpb.ActionResult{

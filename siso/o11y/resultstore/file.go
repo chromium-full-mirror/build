@@ -12,7 +12,9 @@ import (
 	"google.golang.org/protobuf/types/known/fieldmaskpb"
 	"google.golang.org/protobuf/types/known/wrapperspb"
 
-	"go.chromium.org/build/siso/reapi/digest"
+	"go.chromium.org/build/hashigo/digest"
+
+	"go.chromium.org/build/siso/blob"
 	"go.chromium.org/build/siso/reapi/merkletree"
 )
 
@@ -22,7 +24,7 @@ func (u *Uploader) UploadFiles(ctx context.Context, ents []merkletree.Entry) err
 	if u.HashFS == nil || u.REAPIClient == nil {
 		return fmt.Errorf("resultstore: unable to upload file. hashfs or reapi client is not set")
 	}
-	ds := digest.NewStore()
+	ds := blob.NewStore()
 	var files []*rspb.File
 	for _, ent := range ents {
 		file := &rspb.File{

@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-package digest
+package blob
 
 import (
 	"bytes"
@@ -12,57 +12,19 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"go.chromium.org/build/hashigo/digest"
 )
 
 // testDigestStr123 is the digest string for []byte{1, 2, 3}.
 const testDigestStr123 = "039058c6f2c0cb492c533b0a4d14ef77cc0f78abccced5287d84a1a2011cfb81/3"
-
-func TestDigest(t *testing.T) {
-	// Regular case
-	b := []byte{1, 2, 3}
-	d := ofBytes(b)
-
-	if d.String() != testDigestStr123 {
-		t.Errorf("ofBytes(%v).String() = %s, want %s", b, d.String(), testDigestStr123)
-	}
-
-	p := d.Proto()
-	if p == nil {
-		t.Errorf("ofBytes(%v).Proto() = nil, want a Digest proto", b)
-	}
-
-	dFromProto := FromProto(p)
-	if dFromProto != d {
-		t.Errorf("FromProto(%v) = %v, want %v", p, dFromProto, d)
-	}
-
-	// From nil proto
-	nild := FromProto(nil)
-	if nild.IsZero() != true {
-		t.Errorf("FromProto(nil).IsZero() = false, want true")
-	}
-
-	// Empty digest
-	empty := ofBytes([]byte{})
-	if empty.SizeBytes != 0 {
-		t.Errorf("ofBytes([]byte{}).SizeBytes = %v, want 0", empty.SizeBytes)
-	}
-	if empty.IsZero() {
-		t.Errorf("ofBytes([]byte{}).IsZero() = true, want false")
-	}
-
-	// EmptyTree digest
-	if EmptyTree.SizeBytes != 2 {
-		t.Errorf("EmptyTree.SizeBytes = %v, want 2", EmptyTree.SizeBytes)
-	}
-}
 
 func TestData(t *testing.T) {
 	ctx := t.Context()
 
 	name := "123"
 	b := []byte{1, 2, 3}
-	d := FromBytes(name, b)
+	d := FromBytes(digest.SHA256, name, b)
 	if d.IsZero() {
 		t.Errorf("FromBytes(..., []byte{1, 2, 3}).IsZero() = true, want false")
 	}
@@ -79,9 +41,9 @@ func TestData(t *testing.T) {
 		t.Errorf("FromBytes(%q, []byte{1, 2, 3}).Bytes(ctx) = %v, _, want %v", name, gotStr, wantStr)
 	}
 
-	zd := NewData(nil, Digest{})
+	zd := NewData(nil, digest.Digest{})
 	if !zd.IsZero() {
-		t.Errorf("NewData(nil, Digest{}).IsZero() = false, want true")
+		t.Errorf("NewData(nil, digest.Digest{}).IsZero() = false, want true")
 	}
 
 	// TODO(b/267409605): Add test for FromProtoMessage.
@@ -134,7 +96,7 @@ func TestLocalFileSource(t *testing.T) {
 		t.Fatalf("failed to write file %q. %v", fname, err)
 	}
 
-	d, err := FromLocalFile(ctx, localFileSource{fname})
+	d, err := FromLocalFile(ctx, digest.SHA256, localFileSource{fname})
 	if err != nil {
 		t.Fatalf("FromLocalFile(...) = _, %v, want nil error", err)
 	}

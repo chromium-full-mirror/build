@@ -23,14 +23,15 @@ import (
 	log "github.com/golang/glog"
 	"google.golang.org/protobuf/types/known/durationpb"
 
+	"go.chromium.org/build/hashigo/digest"
 	rpb "go.chromium.org/build/remote-apis/build/bazel/remote/execution/v2"
 	semverpb "go.chromium.org/build/remote-apis/build/bazel/semver"
 
+	"go.chromium.org/build/siso/blob"
 	"go.chromium.org/build/siso/hashfs"
 	"go.chromium.org/build/siso/o11y/clog"
 	"go.chromium.org/build/siso/path"
 	"go.chromium.org/build/siso/reapi"
-	"go.chromium.org/build/siso/reapi/digest"
 	"go.chromium.org/build/siso/reapi/merkletree"
 )
 
@@ -484,7 +485,7 @@ func (c *Cmd) RemoteChroot() bool {
 
 // Digest computes action digest of the cmd.
 // If ds is nil, then it will reuse the previous calculated digest if any.
-func (c *Cmd) Digest(ctx context.Context, ds *digest.Store) (actionDigest digest.Digest, err error) {
+func (c *Cmd) Digest(ctx context.Context, ds *blob.Store) (actionDigest digest.Digest, err error) {
 	if !c.Pure {
 		return digest.Digest{}, fmt.Errorf("unable to create digest for impure cmd %s", c.ID)
 	}
@@ -517,7 +518,7 @@ func (c *Cmd) Digest(ctx context.Context, ds *digest.Store) (actionDigest digest
 		ents, treeInputs = c.chrootDir(ctx, ents, treeInputs)
 	}
 
-	inputRootDigest, err = treeDigest(ctx, treeInputs, ents, ds)
+	inputRootDigest, err = treeDigest(ctx, c.HashFS.DigestFunction(), treeInputs, ents, ds)
 	if err != nil {
 		return digest.Digest{}, fmt.Errorf("failed to get input root for %s: %w", c, err)
 	}
@@ -548,7 +549,7 @@ func (c *Cmd) Digest(ctx context.Context, ds *digest.Store) (actionDigest digest
 	if reapi.UseActionForPlatformProperties(c.REAPIVersion) {
 		actionMsg.Platform = c.remoteExecutionPlatform()
 	}
-	action, err := digest.FromProtoMessage(actionMsg)
+	action, err := blob.FromProtoMessage(c.HashFS.DigestFunction(), actionMsg)
 	if err != nil {
 		return digest.Digest{}, fmt.Errorf("failed to build action for %s: %w", c, err)
 	}
@@ -676,8 +677,8 @@ func (c *Cmd) inputTree(ctx context.Context) ([]merkletree.Entry, error) {
 }
 
 // treeDigest returns a digest for the Merkle tree entries.
-func treeDigest(ctx context.Context, subtrees []merkletree.TreeEntry, entries []merkletree.Entry, ds *digest.Store) (digest.Digest, error) {
-	t := merkletree.NewPooled(ds)
+func treeDigest(ctx context.Context, fn digest.Function, subtrees []merkletree.TreeEntry, entries []merkletree.Entry, ds *blob.Store) (digest.Digest, error) {
+	t := merkletree.NewPooled(fn, ds)
 	defer t.Release()
 	for _, subtree := range subtrees {
 		if log.V(2) {
@@ -822,7 +823,7 @@ func (c *Cmd) remoteExecutionPlatform() *rpb.Platform {
 }
 
 // commandDigest constructs the digest of the command line.
-func (c *Cmd) commandDigest(ctx context.Context, ds *digest.Store) (digest.Digest, error) {
+func (c *Cmd) commandDigest(ctx context.Context, ds *blob.Store) (digest.Digest, error) {
 	var outFiles, outDirs []string
 	process := func(res []string, paths ...path.Path) []string {
 		for _, out := range paths {
@@ -891,7 +892,7 @@ func (c *Cmd) commandDigest(ctx context.Context, ds *digest.Store) (digest.Diges
 	sort.Slice(command.EnvironmentVariables, func(i, j int) bool {
 		return command.EnvironmentVariables[i].Name < command.EnvironmentVariables[j].Name
 	})
-	data, err := digest.FromProtoMessage(command)
+	data, err := blob.FromProtoMessage(c.HashFS.DigestFunction(), command)
 	if err != nil {
 		return digest.Digest{}, err
 	}
@@ -977,7 +978,7 @@ func (c *Cmd) entriesFromResult(ctx context.Context, ds hashfs.DataSource, updat
 			Name: pname,
 			Entry: &merkletree.Entry{
 				Name:         pname,
-				Data:         digest.NewData(ds.Source(ctx, d, string(pname)), d),
+				Data:         blob.NewData(ds.Source(ctx, d, string(pname)), d),
 				IsExecutable: f.IsExecutable,
 			},
 			Mode: mode,
@@ -1091,16 +1092,16 @@ func (c *Cmd) expandDirOutputs(ctx context.Context, ds hashfs.DataSource) error 
 			continue
 		}
 		treeDigest := digest.FromProto(d.GetTreeDigest())
-		b, err := digest.DataToBytes(ctx, digest.NewData(ds.Source(ctx, treeDigest, d.GetPath()), treeDigest))
+		b, err := blob.DataToBytes(ctx, blob.NewData(ds.Source(ctx, treeDigest, d.GetPath()), treeDigest))
 		if err != nil {
 			return fmt.Errorf("fetch tree for dir output %s %s: %w", d.GetPath(), treeDigest, err)
 		}
-		store := digest.NewStore()
-		root, err := reapi.ParseTree(ctx, b, store)
+		store := blob.NewStore()
+		root, err := reapi.ParseTree(ctx, c.HashFS.DigestFunction(), b, store)
 		if err != nil {
 			return fmt.Errorf("parse tree for dir output %s %s: %w", d.GetPath(), treeDigest, err)
 		}
-		dfiles, dsymlinks, ddirs := merkletree.Traverse(ctx, d.GetPath(), root, store)
+		dfiles, dsymlinks, ddirs := merkletree.Traverse(ctx, c.HashFS.DigestFunction(), d.GetPath(), root, store)
 		// merkletree.Traverse joins with the OS separator; REAPI output paths
 		// (and the hashfs keys they feed) are always forward-slash, so
 		// normalize for Windows.
@@ -1426,7 +1427,7 @@ func (c *Cmd) RecordOutputsFromLocal(ctx context.Context, now time.Time) error {
 }
 
 // ResultFromEntries updates result from entries (collected from workspace).
-func ResultFromEntries(ctx context.Context, result *rpb.ActionResult, dir string, entries []merkletree.Entry) {
+func ResultFromEntries(ctx context.Context, fn digest.Function, result *rpb.ActionResult, dir string, entries []merkletree.Entry) {
 	for _, ent := range entries {
 		name, err := filepath.Rel(dir, string(ent.Name))
 		if err != nil {
@@ -1444,7 +1445,7 @@ func ResultFromEntries(ctx context.Context, result *rpb.ActionResult, dir string
 			result.OutputDirectories = append(result.OutputDirectories, &rpb.OutputDirectory{
 				Path: name,
 				// TODO(b/275448031): calculate tree digest from the entry.
-				TreeDigest: digest.Empty.Proto(),
+				TreeDigest: fn.Empty().Proto(),
 			})
 		default:
 			result.OutputFiles = append(result.OutputFiles, &rpb.OutputFile{

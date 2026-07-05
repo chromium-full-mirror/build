@@ -16,6 +16,8 @@ import (
 	"github.com/google/subcommands"
 	"google.golang.org/protobuf/proto"
 
+	"go.chromium.org/build/hashigo/digest"
+
 	"go.chromium.org/build/siso/build/ninjabuild"
 	"go.chromium.org/build/siso/hashfs"
 	pb "go.chromium.org/build/siso/hashfs/proto"
@@ -71,13 +73,13 @@ func (c *diffCommand) Execute(ctx context.Context, flagSet *flag.FlagSet, _ ...a
 		}
 		return st.Entries[i].Id.GetModTime() < st.Entries[j].Id.GetModTime()
 	})
-	stm := hashfs.StateMap(st)
+	stm := hashfs.StateMap(digest.SHA256, st)
 	stBase, err := hashfs.Load(ctx, hashfs.Option{StateFile: c.stateFileBase})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed to load %s: %v\n", c.stateFileBase, err)
 		return 1
 	}
-	stBaseM := hashfs.StateMap(stBase)
+	stBaseM := hashfs.StateMap(digest.SHA256, stBase)
 
 	for _, s := range st.Entries {
 		cur := stm[s.Name]

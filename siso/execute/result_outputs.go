@@ -14,11 +14,12 @@ import (
 
 	"google.golang.org/protobuf/proto"
 
+	"go.chromium.org/build/hashigo/digest"
 	rpb "go.chromium.org/build/remote-apis/build/bazel/remote/execution/v2"
 
+	"go.chromium.org/build/siso/blob"
 	"go.chromium.org/build/siso/hashfs"
 	"go.chromium.org/build/siso/path"
-	"go.chromium.org/build/siso/reapi/digest"
 	"go.chromium.org/build/siso/reapi/merkletree"
 )
 
@@ -28,12 +29,12 @@ import (
 // AllOutputs, so a directory output is always built into a real Tree and
 // never collapses to an empty tree (a flattened list strips its trailing
 // slash, after which the recording layer caches a bare empty-tree node).
-func (c *Cmd) SetResultOutputs(ctx context.Context, result *rpb.ActionResult, ds *digest.Store) error {
+func (c *Cmd) SetResultOutputs(ctx context.Context, result *rpb.ActionResult, ds *blob.Store) error {
 	fileEntries, err := c.HashFS.Entries(ctx, c.WorkspaceRoot, c.FileOutputsWithDepfile())
 	if err != nil {
 		return err
 	}
-	ResultFromEntries(ctx, result, string(c.WorkDir), fileEntries)
+	ResultFromEntries(ctx, c.HashFS.DigestFunction(), result, string(c.WorkDir), fileEntries)
 	for _, entry := range fileEntries {
 		// A symlink (or directory) output has no content blob: its Data is the
 		// zero value. Skip it so a zero/invalid-digest entry is not seeded into
@@ -65,12 +66,12 @@ func (c *Cmd) SetResultOutputs(ctx context.Context, result *rpb.ActionResult, ds
 // The Tree digest must be deterministic across rebuilds of identical content:
 // it is the action-cache key for the directory output, so an unstable digest
 // would defeat cache/CAS dedup of an unchanged output.
-func dirOutputTree(ctx context.Context, hashFS *hashfs.HashFS, root, dir string, ds *digest.Store) (digest.Digest, error) {
+func dirOutputTree(ctx context.Context, hashFS *hashfs.HashFS, root, dir string, ds *blob.Store) (digest.Digest, error) {
 	entries, err := hashFS.Entries(ctx, root, []path.Path{path.Path(dir + "/")})
 	if err != nil {
 		return digest.Digest{}, fmt.Errorf("enumerate dir output %s: %w", dir, err)
 	}
-	mt := merkletree.New(ds)
+	mt := merkletree.New(hashFS.DigestFunction(), ds)
 	prefix := dir + "/"
 	for _, ent := range entries {
 		rel, ok := strings.CutPrefix(string(ent.Name), prefix)
@@ -124,7 +125,7 @@ func dirOutputTree(ctx context.Context, hashFS *hashfs.HashFS, root, dir string,
 	}
 	childHash := make(map[*rpb.Directory]string, len(children))
 	for _, d := range children {
-		cd, err := digest.FromProtoMessage(d)
+		cd, err := blob.FromProtoMessage(hashFS.DigestFunction(), d)
 		if err != nil {
 			return digest.Digest{}, fmt.Errorf("child dir digest for dir output %s: %w", dir, err)
 		}
@@ -138,7 +139,7 @@ func dirOutputTree(ctx context.Context, hashFS *hashfs.HashFS, root, dir string,
 	if err != nil {
 		return digest.Digest{}, fmt.Errorf("marshal tree for dir output %s: %w", dir, err)
 	}
-	td := digest.FromBytes(fmt.Sprintf("tree:%s", dir), b)
+	td := blob.FromBytes(hashFS.DigestFunction(), fmt.Sprintf("tree:%s", dir), b)
 	ds.Set(td)
 	return td.Digest(), nil
 }

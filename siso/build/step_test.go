@@ -12,9 +12,10 @@ import (
 	"testing"
 	"time"
 
+	"go.chromium.org/build/hashigo/digest"
+
 	"go.chromium.org/build/siso/execute"
 	"go.chromium.org/build/siso/path"
-	"go.chromium.org/build/siso/reapi/digest"
 )
 
 type fakeStepDef struct {

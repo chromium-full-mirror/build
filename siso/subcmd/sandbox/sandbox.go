@@ -16,13 +16,13 @@ import (
 	"github.com/google/subcommands"
 	"google.golang.org/protobuf/encoding/prototext"
 
+	"go.chromium.org/build/siso/blob"
 	"go.chromium.org/build/siso/build/ninjabuild"
 	"go.chromium.org/build/siso/execute"
 	"go.chromium.org/build/siso/execute/localexec"
 	"go.chromium.org/build/siso/hashfs"
 	"go.chromium.org/build/siso/o11y/clog"
 	sisopath "go.chromium.org/build/siso/path"
-	"go.chromium.org/build/siso/reapi/digest"
 	"go.chromium.org/build/siso/toolsupport/nsjailutil"
 )
 
@@ -146,7 +146,7 @@ func (c *Command) run(ctx context.Context) error {
 	result, _ := cmd.ActionResult()
 	// Populate the result's outputs. The store is throwaway: this debug tool
 	// prints the result, it does not upload the blobs.
-	if err := cmd.SetResultOutputs(ctx, result, digest.NewStore()); err != nil {
+	if err := cmd.SetResultOutputs(ctx, result, blob.NewStore()); err != nil {
 		return err
 	}
 

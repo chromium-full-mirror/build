@@ -17,9 +17,10 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/protobuf/proto"
 
+	"go.chromium.org/build/hashigo/digest"
 	rpb "go.chromium.org/build/remote-apis/build/bazel/remote/execution/v2"
 
-	"go.chromium.org/build/siso/reapi/digest"
+	"go.chromium.org/build/siso/blob"
 )
 
 func TestSet(t *testing.T) {
@@ -33,7 +34,7 @@ func TestSet(t *testing.T) {
 		{
 			Entry: Entry{
 				Name:         "third_party/llvm-build/Release+Asserts/bin/clang",
-				Data:         digest.FromBytes("clang binary", []byte("clang binary")),
+				Data:         blob.FromBytes(digest.SHA256, "clang binary", []byte("clang binary")),
 				IsExecutable: true,
 			},
 			wantName: "clang",
@@ -135,14 +136,14 @@ func TestSet(t *testing.T) {
 		{
 			Entry: Entry{
 				Name: "path/name/.",
-				Data: digest.FromBytes("file", []byte("file")),
+				Data: blob.FromBytes(digest.SHA256, "file", []byte("file")),
 			},
 			wantErr: true,
 		},
 		{
 			Entry: Entry{
 				Name: "path/name/..",
-				Data: digest.FromBytes("file", []byte("file")),
+				Data: blob.FromBytes(digest.SHA256, "file", []byte("file")),
 			},
 			wantErr: true,
 		},
@@ -161,7 +162,7 @@ func TestSet(t *testing.T) {
 		{
 			Entry: Entry{
 				Name: "path/name/../../foo",
-				Data: digest.FromBytes("file", []byte("file")),
+				Data: blob.FromBytes(digest.SHA256, "file", []byte("file")),
 			},
 			// "foo" file
 			wantName: "foo",
@@ -188,7 +189,7 @@ func TestSet(t *testing.T) {
 		{
 			Entry: Entry{
 				Name: "path/name/../..",
-				Data: digest.FromBytes("file", []byte("file")),
+				Data: blob.FromBytes(digest.SHA256, "file", []byte("file")),
 			},
 			// .. should not be file.
 			wantErr: true,
@@ -207,8 +208,8 @@ func TestSet(t *testing.T) {
 			wantErr: true,
 		},
 	} {
-		ds := digest.NewStore()
-		mt := New(ds)
+		ds := blob.NewStore()
+		mt := New(digest.SHA256, ds)
 		err := mt.Set(tc.Entry)
 		if (err != nil) != tc.wantErr {
 			t.Errorf("mt.Set(%v)=%v; want err=%t", tc.Entry, err, tc.wantErr)
@@ -287,20 +288,20 @@ func getNode(mt *MerkleTree, path string) (proto.Message, error) {
 }
 
 func TestBuildInvalidEntry(t *testing.T) {
-	ds := digest.NewStore()
-	mt := New(ds)
+	ds := blob.NewStore()
+	mt := New(digest.SHA256, ds)
 
 	for _, ent := range []Entry{
 		{
 			// Invalid Entry: Absolute path.
 			Name:         "/usr/bin/third_party/llvm-build/Release+Asserts/bin/clang",
-			Data:         digest.FromBytes("clang binary", []byte("clang binary")),
+			Data:         blob.FromBytes(digest.SHA256, "clang binary", []byte("clang binary")),
 			IsExecutable: true,
 		},
 		{
 			// Invalid Entry: has both `Data` and `Target` fields set.
 			Name:   "third_party/llvm-build/Release+Asserts/bin/clang++",
-			Data:   digest.FromBytes("clang binary", []byte("clang binary")),
+			Data:   blob.FromBytes(digest.SHA256, "clang binary", []byte("clang binary")),
 			Target: "clang",
 		},
 	} {
@@ -314,13 +315,13 @@ func TestBuildInvalidEntry(t *testing.T) {
 func TestBuild(t *testing.T) {
 	ctx := t.Context()
 
-	ds := digest.NewStore()
-	mt := New(ds)
+	ds := blob.NewStore()
+	mt := New(digest.SHA256, ds)
 
 	for _, ent := range []Entry{
 		{
 			Name:         "third_party/llvm-build/Release+Asserts/bin/clang",
-			Data:         digest.FromBytes("clang binary", []byte("clang binary")),
+			Data:         blob.FromBytes(digest.SHA256, "clang binary", []byte("clang binary")),
 			IsExecutable: true,
 		},
 		{
@@ -333,7 +334,7 @@ func TestBuild(t *testing.T) {
 		},
 		{
 			Name: "base/build_time.h",
-			Data: digest.FromBytes("base_time.h", []byte("byte_time.h content")),
+			Data: blob.FromBytes(digest.SHA256, "base_time.h", []byte("byte_time.h content")),
 		},
 		{
 			Name: "out/Release/obj/base",
@@ -341,20 +342,20 @@ func TestBuild(t *testing.T) {
 		},
 		{
 			Name: "base/debug/debugger.cc",
-			Data: digest.FromBytes("debugger.cc", []byte("debugger.cc content")),
+			Data: blob.FromBytes(digest.SHA256, "debugger.cc", []byte("debugger.cc content")),
 		},
 		{
 			Name: "base/test/../macros.h",
-			Data: digest.FromBytes("macros.h", []byte("macros.h content")),
+			Data: blob.FromBytes(digest.SHA256, "macros.h", []byte("macros.h content")),
 		},
 		// de-dup for same content http://b/124693412
 		{
 			Name: "third_party/skia/include/private/SkSafe32.h",
-			Data: digest.FromBytes("SkSafe32.h", []byte("SkSafe32.h content")),
+			Data: blob.FromBytes(digest.SHA256, "SkSafe32.h", []byte("SkSafe32.h content")),
 		},
 		{
 			Name: "third_party/skia/include/private/SkSafe32.h",
-			Data: digest.FromBytes("SkSafe32.h", []byte("SkSafe32.h content")),
+			Data: blob.FromBytes(digest.SHA256, "SkSafe32.h", []byte("SkSafe32.h content")),
 		},
 	} {
 		err := mt.Set(ent)
@@ -418,13 +419,13 @@ func TestBuild(t *testing.T) {
 
 func TestBuildWithSubTree(t *testing.T) {
 	ctx := t.Context()
-	ds := digest.NewStore()
-	mt := New(ds)
+	ds := blob.NewStore()
+	mt := New(digest.SHA256, ds)
 
 	for _, ent := range []Entry{
 		{
 			Name:         "bin/clang",
-			Data:         digest.FromBytes("clang binary", []byte("clang binary")),
+			Data:         blob.FromBytes(digest.SHA256, "clang binary", []byte("clang binary")),
 			IsExecutable: true,
 		},
 		{
@@ -433,11 +434,11 @@ func TestBuildWithSubTree(t *testing.T) {
 		},
 		{
 			Name: "lib/clang/17/include/stdint.h",
-			Data: digest.FromBytes("stdint.h", []byte("stdint.h")),
+			Data: blob.FromBytes(digest.SHA256, "stdint.h", []byte("stdint.h")),
 		},
 		{
 			Name: "lib/libstdc++.so.6",
-			Data: digest.FromBytes("libstdc++.so.6", []byte("libstdc++.so.6")),
+			Data: blob.FromBytes(digest.SHA256, "libstdc++.so.6", []byte("libstdc++.so.6")),
 		},
 	} {
 		err := mt.Set(ent)
@@ -451,9 +452,9 @@ func TestBuildWithSubTree(t *testing.T) {
 	}
 
 	tds := ds
-	ds = digest.NewStore()
+	ds = blob.NewStore()
 	t.Logf("set tree third_party/llvm-build/Release+Asserts %s", d)
-	mt = New(ds)
+	mt = New(digest.SHA256, ds)
 	err = mt.SetTree(TreeEntry{
 		Name:   "third_party/llvm-build/Release+Asserts",
 		Digest: d,
@@ -469,7 +470,7 @@ func TestBuildWithSubTree(t *testing.T) {
 		{
 			ent: Entry{
 				Name:         "third_party/llvm-build/Release+Asserts/bin/clang",
-				Data:         digest.FromBytes("clang binary", []byte("clang binary")),
+				Data:         blob.FromBytes(digest.SHA256, "clang binary", []byte("clang binary")),
 				IsExecutable: true,
 			},
 			wantErr: true,
@@ -477,13 +478,13 @@ func TestBuildWithSubTree(t *testing.T) {
 		{
 			ent: Entry{
 				Name: "base/base.h",
-				Data: digest.FromBytes("base.h", []byte("base.h")),
+				Data: blob.FromBytes(digest.SHA256, "base.h", []byte("base.h")),
 			},
 		},
 		{
 			ent: Entry{
 				Name: "base/base.cc",
-				Data: digest.FromBytes("base.cc", []byte("base.cc")),
+				Data: blob.FromBytes(digest.SHA256, "base.cc", []byte("base.cc")),
 			},
 		},
 	} {
@@ -543,11 +544,11 @@ func TestBuildDuplicateError(t *testing.T) {
 			ents: []Entry{
 				{
 					Name: "dir/file1",
-					Data: digest.FromBytes("file1.1", []byte("file1.1")),
+					Data: blob.FromBytes(digest.SHA256, "file1.1", []byte("file1.1")),
 				},
 				{
 					Name: "dir/file1",
-					Data: digest.FromBytes("file1.2", []byte("file1.2")),
+					Data: blob.FromBytes(digest.SHA256, "file1.2", []byte("file1.2")),
 				},
 			},
 		},
@@ -557,12 +558,12 @@ func TestBuildDuplicateError(t *testing.T) {
 			ents: []Entry{
 				{
 					Name:         "dir/file1",
-					Data:         digest.FromBytes("file1", []byte("file1")),
+					Data:         blob.FromBytes(digest.SHA256, "file1", []byte("file1")),
 					IsExecutable: false,
 				},
 				{
 					Name:         "dir/file1",
-					Data:         digest.FromBytes("file1", []byte("file1")),
+					Data:         blob.FromBytes(digest.SHA256, "file1", []byte("file1")),
 					IsExecutable: true,
 				},
 			},
@@ -572,7 +573,7 @@ func TestBuildDuplicateError(t *testing.T) {
 			ents: []Entry{
 				{
 					Name: "dir/foo",
-					Data: digest.FromBytes("foo file", []byte("foo file")),
+					Data: blob.FromBytes(digest.SHA256, "foo file", []byte("foo file")),
 				},
 				{
 					Name:   "dir/foo",
@@ -585,7 +586,7 @@ func TestBuildDuplicateError(t *testing.T) {
 			ents: []Entry{
 				{
 					Name: "dir/foo",
-					Data: digest.FromBytes("foo file", []byte("foo file")),
+					Data: blob.FromBytes(digest.SHA256, "foo file", []byte("foo file")),
 				},
 				{
 					Name: "dir/foo",
@@ -595,8 +596,8 @@ func TestBuildDuplicateError(t *testing.T) {
 	} {
 		t.Run(tc.desc, func(t *testing.T) {
 			ctx := t.Context()
-			ds := digest.NewStore()
-			mt := New(ds)
+			ds := blob.NewStore()
+			mt := New(digest.SHA256, ds)
 			for _, ent := range tc.ents {
 				err := mt.Set(ent)
 				if err != nil {
@@ -619,10 +620,10 @@ func TestBuildDuplicateError(t *testing.T) {
 // dedup) would emit an invalid Directory and silently corrupt the action.
 func TestBuildDuplicateFileIdempotent(t *testing.T) {
 	ctx := t.Context()
-	ds := digest.NewStore()
-	mt := New(ds)
+	ds := blob.NewStore()
+	mt := New(digest.SHA256, ds)
 
-	data := digest.FromBytes("f content", []byte("f content"))
+	data := blob.FromBytes(digest.SHA256, "f content", []byte("f content"))
 	ent := Entry{Name: "dir/f", Data: data, IsExecutable: true}
 
 	// Set the identical entry twice.
@@ -664,8 +665,8 @@ func TestBuildDuplicateFileIdempotent(t *testing.T) {
 
 func TestBuildDuplicateSymlinkDir(t *testing.T) {
 	ctx := t.Context()
-	ds := digest.NewStore()
-	mt := New(ds)
+	ds := blob.NewStore()
+	mt := New(digest.SHA256, ds)
 	ents := []Entry{
 		{
 			Name:   "dir/foo",
@@ -704,8 +705,8 @@ func TestBuildDuplicateSymlinkDir(t *testing.T) {
 
 func TestBuildResolveSymlinkDir(t *testing.T) {
 	ctx := t.Context()
-	ds := digest.NewStore()
-	mt := New(ds)
+	ds := blob.NewStore()
+	mt := New(digest.SHA256, ds)
 	ents := []Entry{
 		{
 			Name:   "Foo.framework/Headers",
@@ -713,7 +714,7 @@ func TestBuildResolveSymlinkDir(t *testing.T) {
 		},
 		{
 			Name: "Foo.framework/Headers/Bar.h",
-			Data: digest.FromBytes("Bar.h", []byte("Bar.h")),
+			Data: blob.FromBytes(digest.SHA256, "Bar.h", []byte("Bar.h")),
 		},
 		{
 			Name: "Foo.framework/Versions/Current/Headers",
@@ -741,8 +742,8 @@ func TestBuildResolveSymlinkDir(t *testing.T) {
 
 func TestBuildResolveSymlinkDirAndSymlinkFile(t *testing.T) {
 	ctx := t.Context()
-	ds := digest.NewStore()
-	mt := New(ds)
+	ds := blob.NewStore()
+	mt := New(digest.SHA256, ds)
 	ents := []Entry{
 		{
 			Name: "system/core/include",
@@ -757,11 +758,11 @@ func TestBuildResolveSymlinkDirAndSymlinkFile(t *testing.T) {
 		},
 		{
 			Name: "system/core/include/utils/RWLock.h",
-			Data: digest.FromBytes("RWLock.h", []byte("#include <utils/Errors.h>\n")),
+			Data: blob.FromBytes(digest.SHA256, "RWLock.h", []byte("#include <utils/Errors.h>\n")),
 		},
 		{
 			Name: "system/core/libutils/binder/include/utils/Errors.h",
-			Data: digest.FromBytes("Errors.h", []byte("")),
+			Data: blob.FromBytes(digest.SHA256, "Errors.h", []byte("")),
 		},
 		{
 			Name: "system/core/libutils/include/utils",
@@ -809,11 +810,11 @@ func TestBuildResolveSymlinkDirAndSymlinkFile(t *testing.T) {
 
 func TestBuildResolveSymlinkTree(t *testing.T) {
 	ctx := t.Context()
-	ds := digest.NewStore()
-	mt := New(ds)
+	ds := blob.NewStore()
+	mt := New(digest.SHA256, ds)
 	err := mt.SetTree(TreeEntry{
 		Name:   "build/mac_files/SDKs/MacOSX.sdk",
-		Digest: digest.Empty,
+		Digest: digest.SHA256.Empty(),
 		Store:  ds,
 	})
 	if err != nil {
@@ -849,8 +850,8 @@ func TestBuildResolveSymlinkTree(t *testing.T) {
 
 func TestBuildResolveSymlinkDirMerge(t *testing.T) {
 	ctx := t.Context()
-	ds := digest.NewStore()
-	mt := New(ds)
+	ds := blob.NewStore()
+	mt := New(digest.SHA256, ds)
 	ents := []Entry{
 		{
 			Name: "external/puffin",
@@ -864,11 +865,11 @@ func TestBuildResolveSymlinkDirMerge(t *testing.T) {
 		},
 		{
 			Name: "external/puffin/puffin/src/include/puffin/common.h",
-			Data: digest.FromBytes("common.h", []byte("// common.h")),
+			Data: blob.FromBytes(digest.SHA256, "common.h", []byte("// common.h")),
 		},
 		{
 			Name: "external/puffin/puffin/src/logging.h",
-			Data: digest.FromBytes("logging.h", []byte("// logging.h")),
+			Data: blob.FromBytes(digest.SHA256, "logging.h", []byte("// logging.h")),
 		},
 		{
 			Name: "external/puffin/src",
@@ -878,7 +879,7 @@ func TestBuildResolveSymlinkDirMerge(t *testing.T) {
 		},
 		{
 			Name: "external/puffin/src/puff_reader.cc",
-			Data: digest.FromBytes("puff_reader.cc", []byte("// puff_reader.cc")),
+			Data: blob.FromBytes(digest.SHA256, "puff_reader.cc", []byte("// puff_reader.cc")),
 		},
 	}
 	for _, ent := range ents {
@@ -906,7 +907,7 @@ func TestBuildResolveSymlinkDirMerge(t *testing.T) {
 	checkDir(ctx, t, ds, iDir, "puffin", []string{"common.h"}, nil, nil)
 }
 
-func checkDir(ctx context.Context, t *testing.T, ds *digest.Store, pdir *rpb.Directory, name string, wantFiles []string, wantDirs []string, wantSymlinks []string) *rpb.Directory {
+func checkDir(ctx context.Context, t *testing.T, ds *blob.Store, pdir *rpb.Directory, name string, wantFiles []string, wantDirs []string, wantSymlinks []string) *rpb.Directory {
 	t.Helper()
 	t.Logf("check %s", name)
 	dir := pdir
@@ -969,7 +970,7 @@ func getDigest(dir *rpb.Directory, name string) (digest.Digest, bool, error) {
 	return digest.Digest{}, false, errors.New("not found")
 }
 
-func openDir(ctx context.Context, ds *digest.Store, d digest.Digest) (*rpb.Directory, error) {
+func openDir(ctx context.Context, ds *blob.Store, d digest.Digest) (*rpb.Directory, error) {
 	data, ok := ds.Get(d)
 	if !ok {
 		return nil, fmt.Errorf("%v not found", d)
@@ -992,8 +993,8 @@ func openDir(ctx context.Context, ds *digest.Store, d digest.Digest) (*rpb.Direc
 }
 
 func BenchmarkSetDir(b *testing.B) {
-	ds := digest.NewStore()
-	m := New(ds)
+	ds := blob.NewStore()
+	m := New(digest.SHA256, ds)
 	cur := dirstate{name: ".", dir: m.m[""]}
 
 	for b.Loop() {

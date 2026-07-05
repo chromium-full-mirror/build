@@ -32,12 +32,14 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 
+	"go.chromium.org/build/hashigo/digest"
 	rpb "go.chromium.org/build/remote-apis/build/bazel/remote/execution/v2"
 
+	"go.chromium.org/build/siso/blob"
 	"go.chromium.org/build/siso/o11y/clog"
 	"go.chromium.org/build/siso/o11y/trace"
 	"go.chromium.org/build/siso/reapi/bytestreamio"
-	"go.chromium.org/build/siso/reapi/digest"
+	"go.chromium.org/build/siso/reapi/fetch"
 	"go.chromium.org/build/siso/reapi/retry"
 	"go.chromium.org/build/siso/sync/semaphore"
 )
@@ -152,10 +154,18 @@ func (c *Client) acceptableCompressors(d digest.Digest) []rpb.Compressor_Value {
 func (c *Client) resourceName(d digest.Digest) string {
 	if compressor := c.compressor(d); compressor != rpb.Compressor_IDENTITY {
 		return path.Join(c.opt.Instance, "compressed-blobs",
-			strings.ToLower(compressor.String()),
+			strings.ToLower(compressor.String()), c.digestFunctionSegment(),
 			d.Hash, strconv.FormatInt(d.SizeBytes, 10))
 	}
-	return path.Join(c.opt.Instance, "blobs", d.Hash, strconv.FormatInt(d.SizeBytes, 10))
+	return path.Join(c.opt.Instance, "blobs", c.digestFunctionSegment(),
+		d.Hash, strconv.FormatInt(d.SizeBytes, 10))
+}
+
+// digestFunctionSegment returns the resource-name path segment for the client's
+// digest function, or "" when REAPI omits it (sha256 and sha1, inferred by the
+// server from the hash length). path.Join drops empty segments.
+func (c *Client) digestFunctionSegment() string {
+	return c.digestFn.ResourceNameSegment()
 }
 
 // probeSize is the largest compressed blob size that takes the sync
@@ -354,6 +364,7 @@ func (c *Client) getWithBatchReadBlobs(ctx context.Context, d digest.Digest, nam
 			InstanceName:          c.opt.Instance,
 			Digests:               []*rpb.Digest{d.Proto()},
 			AcceptableCompressors: c.acceptableCompressors(d),
+			DigestFunction:        c.digestFn.Value(),
 		})
 		return err
 	})
@@ -415,7 +426,7 @@ func (c *Client) getWithByteStream(ctx context.Context, d digest.Digest, name st
 	}
 	buf := make([]byte, d.SizeBytes)
 	err := retry.Do(ctx, func() error {
-		ctx, cancel := digest.ContextWithTimeout(ctx, d)
+		ctx, cancel := fetch.ContextWithTimeout(ctx, d)
 		defer cancel()
 		r, err := bytestreamio.Open(ctx, bpb.NewByteStreamClient(c.casConn), resourceName)
 		if err != nil {
@@ -452,13 +463,21 @@ func (c *Client) Missing(ctx context.Context, blobs []digest.Digest) ([]digest.D
 	}
 	cas := rpb.NewContentAddressableStorageClient(c.casConn)
 
+	// Limit each *rpb.FindMissingBlobsRequest under gRPC's default 4MiB message
+	// size. Each repeated Digest costs its hex hash plus a small constant of
+	// proto framing (sub-message tag/length, hash field tag/length, and the
+	// size_bytes field). Derive the batch from the current function's hash length
+	// so long hashes (e.g. 128 hex bytes for SHA-512) still stay under the limit;
+	// the reserve leaves room for the request's instance_name and digest_function
+	// fields.
+	const maxRequestBytes = 4 << 20
+	const reserveBytes = 4 << 10
+	const perDigestOverhead = 16
+	maxBlobs := (maxRequestBytes - reserveBytes) / (c.digestFn.HexLen() + perDigestOverhead)
+
 	var ret []digest.Digest
 	for len(blobspb) > 0 {
 		var remain []*rpb.Digest
-		// limit *rpb.FindMissingBlobsRequest size under 4MB.
-		// each digest is sha256 64 bytes + size 4 bytes.
-		// 48k is sufficiently large that would never exceeds 4MB.
-		const maxBlobs = 48 * 1024
 		if len(blobspb) > maxBlobs {
 			remain = blobspb[maxBlobs:]
 			blobspb = blobspb[:maxBlobs]
@@ -470,8 +489,9 @@ func (c *Client) Missing(ctx context.Context, blobs []digest.Digest) ([]digest.D
 			defer cancel()
 			var err error
 			resp, err = cas.FindMissingBlobs(ctx, &rpb.FindMissingBlobsRequest{
-				InstanceName: c.opt.Instance,
-				BlobDigests:  blobspb,
+				InstanceName:   c.opt.Instance,
+				BlobDigests:    blobspb,
+				DigestFunction: c.digestFn.Value(),
 			})
 			c.m.OpsDone(err)
 			return err
@@ -495,7 +515,7 @@ func (c *Client) Missing(ctx context.Context, blobs []digest.Digest) ([]digest.D
 }
 
 // UploadAll uploads all blobs specified in ds that are still missing in the CAS.
-func (c *Client) UploadAll(ctx context.Context, ds *digest.Store) (numUploaded int, err error) {
+func (c *Client) UploadAll(ctx context.Context, ds *blob.Store) (numUploaded int, err error) {
 	if c.casConn == nil {
 		return 0, status.Error(codes.FailedPrecondition, "conn is not configured")
 	}
@@ -635,8 +655,8 @@ func (c *Client) CheckWritable(ctx context.Context) error {
 	if c.casConn == nil {
 		return status.Error(codes.FailedPrecondition, "conn is not configured")
 	}
-	data := digest.FromBytes("empty", nil)
-	ds := digest.NewStore()
+	data := blob.FromBytes(c.digestFn, "empty", nil)
+	ds := blob.NewStore()
 	ds.Set(data)
 	blobs := []digest.Digest{data.Digest()}
 	uploads := map[digest.Digest]*uploadOp{
@@ -688,7 +708,7 @@ func (e missingError) Error() string {
 }
 
 // upload uploads blobs in digest stores.
-func (c *Client) upload(ctx context.Context, ds *digest.Store, blobs []digest.Digest, uploads map[digest.Digest]*uploadOp) (int, error) {
+func (c *Client) upload(ctx context.Context, ds *blob.Store, blobs []digest.Digest, uploads map[digest.Digest]*uploadOp) (int, error) {
 	ctx, span := trace.NewSpan(ctx, "upload")
 	defer span.Close(nil)
 
@@ -700,7 +720,7 @@ func (c *Client) upload(ctx context.Context, ds *digest.Store, blobs []digest.Di
 	c.mu.Unlock()
 
 	// Separate small blobs and large blobs because they are going to use different RPCs.
-	smalls, larges := separateBlobs(c.opt.Instance, blobs, byteLimit)
+	smalls, larges := separateBlobs(c.opt.Instance, c.digestFn, blobs, byteLimit)
 	clog.Infof(ctx, "upload by batch %d out of %d", len(smalls), len(blobs))
 	span.SetAttr("small", len(smalls))
 	span.SetAttr("large", len(larges))
@@ -730,7 +750,7 @@ func (c *Client) upload(ctx context.Context, ds *digest.Store, blobs []digest.Di
 // separateBlobs separates blobs to two groups.
 // One group is for small blobs that can fit in BatchUpdateBlobsRequest, and the other is for large blobs.
 // TODO(b/273884978): simplify and optimize the code.
-func separateBlobs(instance string, blobs []digest.Digest, byteLimit int64) (smalls, larges []digest.Digest) {
+func separateBlobs(instance string, fn digest.Function, blobs []digest.Digest, byteLimit int64) (smalls, larges []digest.Digest) {
 	if len(blobs) == 0 {
 		return nil, nil
 	}
@@ -740,7 +760,8 @@ func separateBlobs(instance string, blobs []digest.Digest, byteLimit int64) (sma
 	maxSizeBytes := min(blobs[len(blobs)-1].SizeBytes, byteLimit)
 	// Prepare a dummy request message to calculate the size of the BatchUpdateBlobsRequest accurately.
 	dummyReq := &rpb.BatchUpdateBlobsRequest{
-		InstanceName: instance,
+		InstanceName:   instance,
+		DigestFunction: fn.Value(),
 		Requests: []*rpb.BatchUpdateBlobsRequest_Request{
 			{Data: make([]byte, 0, maxSizeBytes)},
 		},
@@ -763,11 +784,11 @@ func separateBlobs(instance string, blobs []digest.Digest, byteLimit int64) (sma
 
 // uploadWithBatchUpdateBlobs uploads blobs using BatchUpdateBlobs RPC.
 // The blobs will be bundled into multiple batches that fit in the size limit.
-func (c *Client) uploadWithBatchUpdateBlobs(ctx context.Context, digests []digest.Digest, uploads map[digest.Digest]*uploadOp, ds *digest.Store, byteLimit int64) ([]missingBlob, error) {
+func (c *Client) uploadWithBatchUpdateBlobs(ctx context.Context, digests []digest.Digest, uploads map[digest.Digest]*uploadOp, ds *blob.Store, byteLimit int64) ([]missingBlob, error) {
 	blobReqs, missingBlobs := c.blobsToUpload(ctx, digests, ds, byteLimit)
 
 	// Bundle the blobs to multiple batch requests.
-	batchReqs := createBatchUpdateBlobsRequests(c.opt.Instance, blobReqs, byteLimit, batchBlobUploadLimit)
+	batchReqs := createBatchUpdateBlobsRequests(c.opt.Instance, c.digestFn, blobReqs, byteLimit, batchBlobUploadLimit)
 	casClient := rpb.NewContentAddressableStorageClient(c.casConn)
 
 	eg, gctx := errgroup.WithContext(ctx)
@@ -784,7 +805,7 @@ func (c *Client) uploadWithBatchUpdateBlobs(ctx context.Context, digests []diges
 }
 
 // processBatchUpdateBlobsReq sends one BatchUpdateBlobs RPC and reconciles the response.
-func (c *Client) processBatchUpdateBlobsReq(ctx context.Context, casClient rpb.ContentAddressableStorageClient, batchReq *rpb.BatchUpdateBlobsRequest, uploads map[digest.Digest]*uploadOp, ds *digest.Store, missingBlobs *missingBlobs) error {
+func (c *Client) processBatchUpdateBlobsReq(ctx context.Context, casClient rpb.ContentAddressableStorageClient, batchReq *rpb.BatchUpdateBlobsRequest, uploads map[digest.Digest]*uploadOp, ds *blob.Store, missingBlobs *missingBlobs) error {
 	var batchResp *rpb.BatchUpdateBlobsResponse
 	checkBlobs := make(map[digest.Digest]bool)
 	for _, req := range batchReq.Requests {
@@ -868,7 +889,7 @@ func (c *Client) processBatchUpdateBlobsReq(ctx context.Context, casClient rpb.C
 }
 
 // blobsToUpload returns a list of blobs to upload by looking up the digest store.
-func (c *Client) blobsToUpload(ctx context.Context, blobs []digest.Digest, ds *digest.Store, byteLimit int64) (iter.Seq[*rpb.BatchUpdateBlobsRequest_Request], *missingBlobs) {
+func (c *Client) blobsToUpload(ctx context.Context, blobs []digest.Digest, ds *blob.Store, byteLimit int64) (iter.Seq[*rpb.BatchUpdateBlobsRequest_Request], *missingBlobs) {
 	var missings missingBlobs
 	ch := make(chan *rpb.BatchUpdateBlobsRequest_Request)
 
@@ -927,10 +948,10 @@ func (c *Client) blobsToUpload(ctx context.Context, blobs []digest.Digest, ds *d
 }
 
 // encodeForBatchUpload reads blob data and optionally compresses it for batch upload.
-func (c *Client) encodeForBatchUpload(ctx context.Context, data digest.Data) (*rpb.BatchUpdateBlobsRequest_Request, error) {
+func (c *Client) encodeForBatchUpload(ctx context.Context, data blob.Data) (*rpb.BatchUpdateBlobsRequest_Request, error) {
 	d := data.Digest()
 	compressor := c.compressorForBatchUpdate(d)
-	b, err := digest.DataToBytes(ctx, data)
+	b, err := blob.DataToBytes(ctx, data)
 	if err != nil {
 		return nil, err
 	}
@@ -960,10 +981,14 @@ func (c *Client) encodeForBatchUpload(ctx context.Context, data digest.Data) (*r
 }
 
 // createBatchUpdateBlobsRequests bundles blobs into multiple batch requests.
-func createBatchUpdateBlobsRequests(instance string, blobReqs iter.Seq[*rpb.BatchUpdateBlobsRequest_Request], byteLimit int64, numLimit int) iter.Seq[*rpb.BatchUpdateBlobsRequest] {
+func createBatchUpdateBlobsRequests(instance string, fn digest.Function, blobReqs iter.Seq[*rpb.BatchUpdateBlobsRequest_Request], byteLimit int64, numLimit int) iter.Seq[*rpb.BatchUpdateBlobsRequest] {
 	return func(yield func(*rpb.BatchUpdateBlobsRequest) bool) {
-		// Initial batch request size without blobs.
-		batchReqNoReqsSize := int64(proto.Size(&rpb.BatchUpdateBlobsRequest{InstanceName: instance}))
+		// Initial batch request size without blobs: the instance name plus
+		// the digest_function field, which every emitted request carries.
+		batchReqNoReqsSize := int64(proto.Size(&rpb.BatchUpdateBlobsRequest{
+			InstanceName:   instance,
+			DigestFunction: fn.Value(),
+		}))
 		size := batchReqNoReqsSize
 		// totalSizeBytes tracks the sum of uncompressed Digest.SizeBytes
 		// in the current batch. Some backends interpret
@@ -979,8 +1004,9 @@ func createBatchUpdateBlobsRequests(instance string, blobReqs iter.Seq[*rpb.Batc
 			case byteLimit > 0 && (nextSize > byteLimit || nextTotalSizeBytes > byteLimit):
 				// When the batch request exceeds the size limit, it starts creating a new batch request.
 				if !yield(&rpb.BatchUpdateBlobsRequest{
-					InstanceName: instance,
-					Requests:     reqs[:len(reqs)-1],
+					InstanceName:   instance,
+					Requests:       reqs[:len(reqs)-1],
+					DigestFunction: fn.Value(),
 				}) {
 					return
 				}
@@ -991,8 +1017,9 @@ func createBatchUpdateBlobsRequests(instance string, blobReqs iter.Seq[*rpb.Batc
 			case len(reqs) == numLimit:
 				// When the batch request exceeds the number of blobs. it start creating a new batch request.
 				if !yield(&rpb.BatchUpdateBlobsRequest{
-					InstanceName: instance,
-					Requests:     reqs,
+					InstanceName:   instance,
+					Requests:       reqs,
+					DigestFunction: fn.Value(),
 				}) {
 					return
 				}
@@ -1006,14 +1033,15 @@ func createBatchUpdateBlobsRequests(instance string, blobReqs iter.Seq[*rpb.Batc
 		}
 		if len(reqs) > 0 {
 			yield(&rpb.BatchUpdateBlobsRequest{
-				InstanceName: instance,
-				Requests:     reqs,
+				InstanceName:   instance,
+				Requests:       reqs,
+				DigestFunction: fn.Value(),
 			})
 		}
 	}
 }
 
-func (c *Client) uploadWithByteStream(ctx context.Context, digests []digest.Digest, uploads map[digest.Digest]*uploadOp, ds *digest.Store) []missingBlob {
+func (c *Client) uploadWithByteStream(ctx context.Context, digests []digest.Digest, uploads map[digest.Digest]*uploadOp, ds *blob.Store) []missingBlob {
 	clog.Infof(ctx, "upload by streaming %d", len(digests))
 
 	bsClient := bpb.NewByteStreamClient(c.casConn)
@@ -1041,7 +1069,7 @@ func (c *Client) uploadWithByteStream(ctx context.Context, digests []digest.Dige
 }
 
 // streamOneBlob uploads one blob via ByteStream; errors go to addMissing, not propagated.
-func (c *Client) streamOneBlob(ctx context.Context, bsClient bpb.ByteStreamClient, d digest.Digest, uploads map[digest.Digest]*uploadOp, ds *digest.Store, addMissing func(missingBlob)) {
+func (c *Client) streamOneBlob(ctx context.Context, bsClient bpb.ByteStreamClient, d digest.Digest, uploads map[digest.Digest]*uploadOp, ds *blob.Store, addMissing func(missingBlob)) {
 	started := time.Now()
 	data, ok := ds.Get(d)
 	if !ok {
@@ -1050,7 +1078,7 @@ func (c *Client) streamOneBlob(ctx context.Context, bsClient bpb.ByteStreamClien
 		return
 	}
 	err := retry.Do(ctx, func() error {
-		ctx, cancel := digest.ContextWithTimeout(ctx, d)
+		ctx, cancel := fetch.ContextWithTimeout(ctx, d)
 		defer cancel()
 		rd, err := data.Open(ctx)
 		if err != nil {
@@ -1108,11 +1136,14 @@ func (c *Client) streamOneBlob(ctx context.Context, bsClient bpb.ByteStreamClien
 // resourceName constructs a resource name for uploading the blob identified by the digest.
 // For uncompressed blob. the format is
 //
-// `{instance_name}/uploads/{uuid}/blobs/{hash}/{size}`
+// `{instance_name}/uploads/{uuid}/blobs/{digest_function/}{hash}/{size}`
 //
 // # For compressed blob, the format is
 //
-// `{instance_name}/uploads/{uuid}/compressed-blobs/{compressor}/{uncompressed_hash}/{uncompressed_size}`
+// `{instance_name}/uploads/{uuid}/compressed-blobs/{compressor}/{digest_function/}{uncompressed_hash}/{uncompressed_size}`
+//
+// The digest_function segment is omitted for sha256 (per spec); path.Join drops
+// empty segments.
 //
 // See also the API document.
 // https://github.com/bazelbuild/remote-apis/blob/64cc5e9e422c93e1d7f0545a146fd84fcc0e8b47/build/bazel/remote/execution/v2/remote_execution.proto#L211-L239
@@ -1121,16 +1152,17 @@ func (c *Client) uploadResourceName(d digest.Digest) string {
 		return path.Join(c.opt.Instance, "uploads", uuid.New().String(),
 			"compressed-blobs",
 			strings.ToLower(compressor.String()),
+			c.digestFunctionSegment(),
 			d.Hash,
 			strconv.FormatInt(d.SizeBytes, 10))
 	}
-	return path.Join(c.opt.Instance, "uploads", uuid.New().String(), "blobs", d.Hash, strconv.FormatInt(d.SizeBytes, 10))
+	return path.Join(c.opt.Instance, "uploads", uuid.New().String(), "blobs", c.digestFunctionSegment(), d.Hash, strconv.FormatInt(d.SizeBytes, 10))
 }
 
 // FileURI returns bytestream URI for digest.
 func (c *Client) FileURI(d digest.Digest) string {
 	// compressed-blobs is not supported?
-	return fmt.Sprintf("bytestream://%s/%s", c.opt.Address, path.Join(c.opt.Instance, "blobs", d.Hash, strconv.FormatInt(d.SizeBytes, 10)))
+	return fmt.Sprintf("bytestream://%s/%s", c.opt.Address, path.Join(c.opt.Instance, "blobs", c.digestFunctionSegment(), d.Hash, strconv.FormatInt(d.SizeBytes, 10)))
 }
 
 // newEncoder returns an encoder to compress blob.

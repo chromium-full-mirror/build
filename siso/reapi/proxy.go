@@ -19,10 +19,10 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"go.chromium.org/build/hashigo/digest"
 	rpb "go.chromium.org/build/remote-apis/build/bazel/remote/execution/v2"
 
 	"go.chromium.org/build/siso/o11y/clog"
-	"go.chromium.org/build/siso/reapi/digest"
 )
 
 // Proxy is RE API proxy.
@@ -69,6 +69,7 @@ func (p *Proxy) Serve(ctx context.Context) error {
 
 	casp := &contentAddressableStorageProxy{
 		client:            rpb.NewContentAddressableStorageClient(p.client.casConn),
+		emptyDigest:       p.client.digestFn.Empty(),
 		writableInstances: make(map[string]bool),
 	}
 	casp.checkWritable(ctx, p.client)
@@ -154,6 +155,10 @@ type contentAddressableStorageProxy struct {
 	rpb.UnimplementedContentAddressableStorageServer
 	client rpb.ContentAddressableStorageClient
 
+	// emptyDigest is the digest of the empty blob under the backend's digest
+	// function, used to recognize writability probes.
+	emptyDigest digest.Digest
+
 	mu                sync.Mutex
 	writableInstances map[string]bool
 }
@@ -175,7 +180,7 @@ func (cp *contentAddressableStorageProxy) FindMissingBlobs(ctx context.Context, 
 }
 
 func (cp *contentAddressableStorageProxy) BatchUpdateBlobs(ctx context.Context, req *rpb.BatchUpdateBlobsRequest) (*rpb.BatchUpdateBlobsResponse, error) {
-	if len(req.Requests) == 1 && digest.FromProto(req.Requests[0].GetDigest()) == digest.Empty && len(req.Requests[0].GetData()) == 0 {
+	if len(req.Requests) == 1 && digest.FromProto(req.Requests[0].GetDigest()) == cp.emptyDigest && len(req.Requests[0].GetData()) == 0 {
 		cp.mu.Lock()
 		ok := cp.writableInstances[req.InstanceName]
 		cp.mu.Unlock()

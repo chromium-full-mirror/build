@@ -15,9 +15,11 @@ import (
 
 	log "github.com/golang/glog"
 
+	"go.chromium.org/build/hashigo/digest"
+
+	"go.chromium.org/build/siso/blob"
 	"go.chromium.org/build/siso/hashfs/osfs"
 	"go.chromium.org/build/siso/path"
-	"go.chromium.org/build/siso/reapi/digest"
 )
 
 // BenchmarkFlushBuf measures the cost of flushing a buf-backed entry (the
@@ -35,7 +37,7 @@ func BenchmarkFlushBuf(b *testing.B) {
 			base[i] = 'x'
 		}
 		newEntry := func(fname string, buf []byte, mtime time.Time) *entry {
-			data := digest.FromBytes(fname, buf)
+			data := blob.FromBytes(digest.SHA256, fname, buf)
 			lready := make(chan bool, 1)
 			lready <- true
 			return &entry{
@@ -221,7 +223,7 @@ func BenchmarkCopyImpl(b *testing.B) {
 		for i := range content {
 			content[i] = byte(i)
 		}
-		data := digest.FromBytes("", content)
+		data := blob.FromBytes(digest.SHA256, "", content)
 
 		// run sets up a src file and a dst path on one filesystem, then drives
 		// fn(src, dst) once per iteration after removing any prior dst.

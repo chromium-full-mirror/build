@@ -22,10 +22,12 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"go.chromium.org/build/hashigo/digest"
+
+	"go.chromium.org/build/siso/blob"
 	"go.chromium.org/build/siso/o11y/clog"
 	"go.chromium.org/build/siso/o11y/iometrics"
 	"go.chromium.org/build/siso/o11y/monitoring"
-	"go.chromium.org/build/siso/reapi/digest"
 	"go.chromium.org/build/siso/reapi/firstbyte"
 	"go.chromium.org/build/siso/sync/semaphore"
 	"go.chromium.org/build/siso/toolsupport/cartfsutil"
@@ -53,6 +55,7 @@ const defaultDigestXattr = "google.digest.sha256"
 type OSFS struct {
 	*iometrics.IOMetrics
 
+	digestFn        digest.Function
 	digestXattrName string
 	onCog           bool
 }
@@ -64,6 +67,10 @@ type Option struct {
 	// and stays empty elsewhere;
 	// set explicitly to opt in on other filesystems that publish it.
 	DigestXattrName string
+
+	// DigestFunction is the content digest function. The zero value means
+	// SHA-256.
+	DigestFunction digest.Function
 
 	// OnCog indicates the exec root is on the Cog filesystem.
 	// Enables a stat-before-utimes workaround for b/356987531.
@@ -89,8 +96,13 @@ func New(ctx context.Context, name string, opt Option) *OSFS {
 	if digestXattrName != "" {
 		clog.Infof(ctx, "use xattr %s for file digest", digestXattrName)
 	}
+	fn := opt.DigestFunction
+	if fn.IsZero() {
+		fn = digest.SHA256
+	}
 	return &OSFS{
 		IOMetrics:       iometrics.New(name),
+		digestFn:        fn,
 		digestXattrName: digestXattrName,
 		onCog:           opt.OnCog,
 	}
@@ -129,9 +141,9 @@ func (ofs *OSFS) Chtimes(ctx context.Context, name string, atime, mtime time.Tim
 	return err
 }
 
-// AsFileSource asserts digest.Source value holds FileSource type,
+// AsFileSource asserts blob.Source value holds FileSource type,
 // and return bool whether it holds or not.
-func (*OSFS) AsFileSource(ds digest.Source) (FileSource, bool) {
+func (*OSFS) AsFileSource(ds blob.Source) (FileSource, bool) {
 	s, ok := ds.(FileSource)
 	return s, ok
 }
@@ -330,7 +342,7 @@ func firstByteTimeoutFromCtx(ctx context.Context) (time.Duration, bool) {
 }
 
 // WriteDigestData writes digest source into the named file.
-func (ofs *OSFS) WriteDigestData(ctx context.Context, name string, src digest.Source, perm fs.FileMode, timeout time.Duration) error {
+func (ofs *OSFS) WriteDigestData(ctx context.Context, name string, src blob.Source, perm fs.FileMode, timeout time.Duration) error {
 	started := time.Now()
 	var n int64
 	var rd measuringReader
@@ -436,9 +448,19 @@ func (ofs *OSFS) WriteDigestData(ctx context.Context, name string, src digest.So
 	return err
 }
 
+// DigestFunction returns the content digest function used by this filesystem.
+func (ofs *OSFS) DigestFunction() digest.Function {
+	return ofs.digestFn
+}
+
 // FileDigestFromXattr returns file's digest via xattr if possible.
 func (ofs *OSFS) FileDigestFromXattr(ctx context.Context, name string, size int64) (digest.Digest, error) {
 	if ofs.digestXattrName == "" {
+		return digest.Digest{}, errors.ErrUnsupported
+	}
+	// The xattr caches a sha256 digest, so it is only valid when sha256 is the
+	// active digest function. For any other function, recompute.
+	if ofs.digestFn != digest.SHA256 {
 		return digest.Digest{}, errors.ErrUnsupported
 	}
 	d, err := xattr.LGet(name, ofs.digestXattrName)
@@ -449,6 +471,9 @@ func (ofs *OSFS) FileDigestFromXattr(ctx context.Context, name string, size int6
 	if size < 0 {
 		fi, err := os.Lstat(name)
 		ofs.OpsDone(err)
+		if err != nil {
+			return digest.Digest{}, err
+		}
 		size = fi.Size()
 	}
 	return digest.Digest{
@@ -475,6 +500,23 @@ func (fsc FileSource) Open(ctx context.Context) (io.ReadCloser, error) {
 
 func (fsc FileSource) String() string {
 	return fmt.Sprintf("file://%s", fsc.Fname)
+}
+
+// Size returns the file's content size, stat-ing the file if it is not already
+// known. Used by git-framing digest functions, which need the size up front.
+func (fsc FileSource) Size() (int64, error) {
+	if fsc.size >= 0 {
+		return fsc.size, nil
+	}
+	// Stat (not Lstat) so the reported size matches the bytes Open reads: for a
+	// symlink to a file, Open follows the link and reads the target, and
+	// git-framing digests enforce that the framed size equals the bytes read.
+	fi, err := os.Stat(fsc.Fname)
+	fsc.fs.OpsDone(err)
+	if err != nil {
+		return 0, err
+	}
+	return fi.Size(), nil
 }
 
 // FileDigestFromXattr returns file's digest via xattr if possible.

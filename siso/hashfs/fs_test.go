@@ -27,10 +27,12 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"golang.org/x/sync/errgroup"
 
+	"go.chromium.org/build/hashigo/digest"
+
+	"go.chromium.org/build/siso/blob"
 	"go.chromium.org/build/siso/hashfs"
 	"go.chromium.org/build/siso/hashfs/osfs"
 	"go.chromium.org/build/siso/path"
-	"go.chromium.org/build/siso/reapi/digest"
 	"go.chromium.org/build/siso/reapi/merkletree"
 	"go.chromium.org/build/siso/resource"
 )
@@ -130,8 +132,8 @@ func TestStamp(t *testing.T) {
 			if string(got.Name) != fullname {
 				t.Errorf("entry.Name=%q, want=%q", got.Name, fullname)
 			}
-			if got.Data.Digest() != digest.Empty {
-				t.Errorf("entry.Data.Digest=%v, want=%v", got.Data.Digest(), digest.Empty)
+			if got.Data.Digest() != digest.SHA256.Empty() {
+				t.Errorf("entry.Data.Digest=%v, want=%v", got.Data.Digest(), digest.SHA256.Empty())
 			}
 		})
 	}
@@ -828,7 +830,7 @@ func TestUpdate_FromLocal(t *testing.T) {
 	if !fi.IsChanged() {
 		t.Errorf("fi.IsChanged()=%t; want true", fi.IsChanged())
 	}
-	m := hashfs.StateMap(hfs.State(ctx))
+	m := hashfs.StateMap(digest.SHA256, hfs.State(ctx))
 	hfs = nil
 	e, ok := m[fullname]
 	if !ok {
@@ -942,7 +944,7 @@ func TestUpdate_FromLocal_update(t *testing.T) {
 	if !fi.IsChanged() {
 		t.Errorf("fi.IsChanged()=%t; want true", fi.IsChanged())
 	}
-	m := hashfs.StateMap(hfs.State(ctx))
+	m := hashfs.StateMap(digest.SHA256, hfs.State(ctx))
 	hfs = nil
 	e, ok := m[fullname]
 	if !ok {
@@ -1035,7 +1037,7 @@ func TestUpdate_FromLocal_Restat_update(t *testing.T) {
 	if !fi.IsChanged() {
 		t.Errorf("fi.IsChanged()=%t; want true", fi.IsChanged())
 	}
-	m := hashfs.StateMap(hfs.State(ctx))
+	m := hashfs.StateMap(digest.SHA256, hfs.State(ctx))
 	hfs = nil
 	e, ok := m[fullname]
 	if !ok {
@@ -1128,7 +1130,7 @@ func TestUpdate_FromLocal_Restat_noupdate(t *testing.T) {
 	if fi.IsChanged() {
 		t.Errorf("fi.IsChanged()=%t; want false", fi.IsChanged())
 	}
-	m := hashfs.StateMap(hfs.State(ctx))
+	m := hashfs.StateMap(digest.SHA256, hfs.State(ctx))
 	hfs = nil
 	e, ok := m[fullname]
 	if !ok {
@@ -1207,7 +1209,7 @@ func TestUpdate_FromLocal_Dir(t *testing.T) {
 	if !bytes.Equal(cmdhash, fi.CmdHash()) {
 		t.Errorf("fi.CmdHash=%q; want=%q", fi.CmdHash(), cmdhash)
 	}
-	m := hashfs.StateMap(hfs.State(ctx))
+	m := hashfs.StateMap(digest.SHA256, hfs.State(ctx))
 	hfs = nil
 	fullname := filepath.ToSlash(filepath.Join(dir, outname))
 	e, ok := m[fullname]
@@ -1349,7 +1351,7 @@ func TestUpdate_FromLocal_AbsSymlink(t *testing.T) {
 		t.Errorf("fi.CmdHash=%q; want=%q", fi.CmdHash(), cmdhash)
 	}
 
-	m := hashfs.StateMap(hfs.State(ctx))
+	m := hashfs.StateMap(digest.SHA256, hfs.State(ctx))
 	hfs = nil
 	e, ok := m[realfullname]
 	if !ok {
@@ -1500,7 +1502,7 @@ func TestUpdate_FromLocal_NonLocalSymlink(t *testing.T) {
 		t.Errorf("fi.CmdHash=%q; want=%q", fi.CmdHash(), cmdhash)
 	}
 
-	m := hashfs.StateMap(hfs.State(ctx))
+	m := hashfs.StateMap(digest.SHA256, hfs.State(ctx))
 	hfs = nil
 	e, ok := m[realfullname]
 	if !ok {
@@ -2020,7 +2022,7 @@ func TestRefresh(t *testing.T) {
 	}
 	// fullname should be invalidated after Refresh, so not exist in state,
 	// or properly refreshed.
-	m := hashfs.StateMap(hashFS.State(ctx))
+	m := hashfs.StateMap(digest.SHA256, hashFS.State(ctx))
 	ent, ok := m[fullname]
 	if ok {
 		// if exists, mtime should match with local disk.
@@ -2256,7 +2258,7 @@ func TestFlushDir_ExpandsChildren(t *testing.T) {
 	mkFile := func(name, content string) hashfs.UpdateEntry {
 		return hashfs.UpdateEntry{
 			Name:        path.Path(name),
-			Entry:       &merkletree.Entry{Name: path.Path(name), Data: digest.FromBytes(name, []byte(content))},
+			Entry:       &merkletree.Entry{Name: path.Path(name), Data: blob.FromBytes(digest.SHA256, name, []byte(content))},
 			Mode:        0644,
 			ModTime:     now,
 			CmdHash:     cmdhash,
@@ -2344,7 +2346,7 @@ func TestFlushDir_PinsMtime(t *testing.T) {
 	mkFile := func(name, content string) hashfs.UpdateEntry {
 		return hashfs.UpdateEntry{
 			Name:        path.Path(name),
-			Entry:       &merkletree.Entry{Name: path.Path(name), Data: digest.FromBytes(name, []byte(content))},
+			Entry:       &merkletree.Entry{Name: path.Path(name), Data: blob.FromBytes(digest.SHA256, name, []byte(content))},
 			Mode:        0644,
 			ModTime:     recorded,
 			CmdHash:     cmdhash,
@@ -2530,9 +2532,9 @@ func TestUpdate_WithLocalFlush(t *testing.T) {
 			case "empty-dir", "subdir", "new-entry":
 				return
 			}
-			data, err := digest.FromLocalFile(ctx, osfs.FileSource(filepath.Join(dir, name), -1))
+			data, err := blob.FromLocalFile(ctx, digest.SHA256, osfs.FileSource(filepath.Join(dir, name), -1))
 			if err != nil {
-				t.Fatalf("digest.FromLocalFile(ctx, {%q})=%v, %v; want nil err", filepath.Join(dir, name), data, err)
+				t.Fatalf("blob.FromLocalFile(ctx, {%q})=%v, %v; want nil err", filepath.Join(dir, name), data, err)
 			}
 			err = update(ctx, hashFS, dir, []merkletree.Entry{
 				{
@@ -2701,11 +2703,11 @@ func TestEntries_Symlink(t *testing.T) {
 	want := []merkletree.Entry{
 		{Name: "dir"},
 		{Name: "symlink_dir", Target: "dir"},
-		{Name: "dir/foo", Data: digest.FromBytes("", nil)},
-		{Name: "symlink_dir/foo", Data: digest.FromBytes("", nil)},
+		{Name: "dir/foo", Data: blob.FromBytes(digest.SHA256, "", nil)},
+		{Name: "symlink_dir/foo", Data: blob.FromBytes(digest.SHA256, "", nil)},
 	}
 
-	if diff := cmp.Diff(want, ents, cmp.Transformer("digest", func(d digest.Data) digest.Digest {
+	if diff := cmp.Diff(want, ents, cmp.Transformer("digest", func(d blob.Data) digest.Digest {
 		return d.Digest()
 	})); diff != "" {
 		t.Errorf("hashFS.Entries() diff -want +got:\n%s", diff)
@@ -2811,7 +2813,7 @@ func TestEntries_EscapedSymlink(t *testing.T) {
 		{Name: "subdir/localSymlink", Target: "../file"},
 	}
 
-	if diff := cmp.Diff(want, ents, cmp.Transformer("digest", func(d digest.Data) digest.Digest {
+	if diff := cmp.Diff(want, ents, cmp.Transformer("digest", func(d blob.Data) digest.Digest {
 		return d.Digest()
 	})); diff != "" {
 		t.Errorf("inputRoot: -want +got:\n%s", diff)

@@ -15,11 +15,12 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"go.chromium.org/build/hashigo/digest"
 	rpb "go.chromium.org/build/remote-apis/build/bazel/remote/execution/v2"
 
+	"go.chromium.org/build/siso/blob"
 	"go.chromium.org/build/siso/build/cachestore"
 	"go.chromium.org/build/siso/o11y/clog"
-	"go.chromium.org/build/siso/reapi/digest"
 )
 
 // LayeredCache is a multi-layer cache. It will attempt to read from caches in
@@ -139,7 +140,7 @@ const (
 )
 
 // Source returns digest source for the name identified by the digest.
-func (lc *LayeredCache) Source(ctx context.Context, d digest.Digest, f string) digest.Source {
+func (lc *LayeredCache) Source(ctx context.Context, d digest.Digest, f string) blob.Source {
 	if len(lc.caches) == 0 {
 		return nil
 	}
@@ -184,7 +185,7 @@ func (s layeredSource) Open(ctx context.Context) (io.ReadCloser, error) {
 		return io.NopCloser(bytes.NewReader(content)), nil
 	}
 	end := len(s.lc.caches) - 1
-	var source digest.Source
+	var source blob.Source
 	var localCache *LocalCache
 	for i, cache := range s.lc.caches {
 		if i == end || cache.HasContent(ctx, s.d) {

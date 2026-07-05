@@ -12,8 +12,10 @@ import (
 	"testing"
 	"time"
 
+	"go.chromium.org/build/hashigo/digest"
+
+	"go.chromium.org/build/siso/blob"
 	"go.chromium.org/build/siso/path"
-	"go.chromium.org/build/siso/reapi/digest"
 	"go.chromium.org/build/siso/reapi/merkletree"
 )
 
@@ -108,7 +110,7 @@ func TestExpandDirInputs_InvalidatedOnUpdate(t *testing.T) {
 		t.Fatalf("before mutation: walks=%d; want 1 (second expand should hit cache)", walks)
 	}
 
-	data := digest.FromBytes("newf", []byte("NEW"))
+	data := blob.FromBytes(digest.SHA256, "newf", []byte("NEW"))
 	if err := hfs.Update(ctx, root, []UpdateEntry{{
 		Name:    "gen/sub0/newf",
 		Entry:   &merkletree.Entry{Data: data},

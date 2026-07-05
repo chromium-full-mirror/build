@@ -5,7 +5,9 @@
 package resultstore
 
 import (
-	"go.chromium.org/build/siso/reapi/digest"
+	"go.chromium.org/build/hashigo/digest"
+
+	"go.chromium.org/build/siso/blob"
 )
 
 func (u *Uploader) AddBuildLog(msg string) {
@@ -14,9 +16,15 @@ func (u *Uploader) AddBuildLog(msg string) {
 	u.buildLogMu.Unlock()
 }
 
-func (u *Uploader) BuildLogData() digest.Data {
+func (u *Uploader) BuildLogData() blob.Data {
+	// The data is uploaded via UploadFiles, which requires HashFS; fall back
+	// to SHA-256 when it is not set (the data is then never uploaded).
+	fn := digest.SHA256
+	if u.HashFS != nil {
+		fn = u.HashFS.DigestFunction()
+	}
 	u.buildLogMu.Lock()
-	data := digest.FromBytes("build.log", u.buildLog.Bytes())
+	data := blob.FromBytes(fn, "build.log", u.buildLog.Bytes())
 	u.buildLog.Reset()
 	u.buildLogMu.Unlock()
 	return data

@@ -2,17 +2,21 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-package digest
+package blob
+
+import (
+	"go.chromium.org/build/hashigo/digest"
+)
 
 // Store works as an in-memory content addressable storage.
 type Store struct {
-	m map[Digest]Data
+	m map[digest.Digest]Data
 }
 
 // NewStore creates Store.
 func NewStore() *Store {
 	return &Store{
-		m: make(map[Digest]Data),
+		m: make(map[digest.Digest]Data),
 	}
 }
 
@@ -22,14 +26,14 @@ func (s *Store) Set(d Data) {
 }
 
 // Get gets data from store by the digest.
-func (s *Store) Get(digest Digest) (Data, bool) {
-	v, ok := s.m[digest]
+func (s *Store) Get(dg digest.Digest) (Data, bool) {
+	v, ok := s.m[dg]
 	return v, ok
 }
 
 // GetSource gets source from the store.
-func (s *Store) GetSource(digest Digest) (Source, bool) {
-	v, ok := s.Get(digest)
+func (s *Store) GetSource(dg digest.Digest) (Source, bool) {
+	v, ok := s.Get(dg)
 	if !ok {
 		return nil, false
 	}
@@ -37,8 +41,8 @@ func (s *Store) GetSource(digest Digest) (Source, bool) {
 }
 
 // Delete deletes digest from the store.
-func (s *Store) Delete(digest Digest) {
-	delete(s.m, digest)
+func (s *Store) Delete(dg digest.Digest) {
+	delete(s.m, dg)
 }
 
 // Size returns the number of digests in the store.
@@ -50,8 +54,8 @@ func (s *Store) Size() int {
 }
 
 // List returns a list of the digests of the stored data.
-func (s *Store) List() []Digest {
-	digests := make([]Digest, 0, len(s.m))
+func (s *Store) List() []digest.Digest {
+	digests := make([]digest.Digest, 0, len(s.m))
 	for k := range s.m {
 		digests = append(digests, k)
 	}

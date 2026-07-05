@@ -20,9 +20,10 @@ import (
 
 	log "github.com/golang/glog"
 
+	"go.chromium.org/build/hashigo/digest"
+
 	"go.chromium.org/build/siso/o11y/clog"
 	"go.chromium.org/build/siso/path"
-	"go.chromium.org/build/siso/reapi/digest"
 )
 
 // directory is per-directory entry map to reduce mutex contention.

@@ -12,10 +12,12 @@ import (
 
 	"google.golang.org/protobuf/proto"
 
+	"go.chromium.org/build/hashigo/digest"
 	rpb "go.chromium.org/build/remote-apis/build/bazel/remote/execution/v2"
 
+	"go.chromium.org/build/siso/blob"
+	"go.chromium.org/build/siso/hashfs"
 	"go.chromium.org/build/siso/path"
-	"go.chromium.org/build/siso/reapi/digest"
 )
 
 // fakeTreeSource is a hashfs.DataSource serving preloaded blobs keyed by digest, so expandDirOutputs can flatten a directory output without a real CAS.
@@ -23,7 +25,7 @@ type fakeTreeSource struct {
 	blobs map[digest.Digest][]byte
 }
 
-func (s fakeTreeSource) Source(_ context.Context, d digest.Digest, _ string) digest.Source {
+func (s fakeTreeSource) Source(_ context.Context, d digest.Digest, _ string) blob.Source {
 	return fakeBlob{b: s.blobs[d]}
 }
 
@@ -52,7 +54,7 @@ func TestSetActionResult_ResetsDirOutputsExpanded(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	treeDg := digest.FromBytes("tree", treeBytes).Digest()
+	treeDg := blob.FromBytes(digest.SHA256, "tree", treeBytes).Digest()
 
 	ds := fakeTreeSource{blobs: map[digest.Digest][]byte{treeDg: treeBytes}}
 
@@ -66,6 +68,11 @@ func TestSetActionResult_ResetsDirOutputsExpanded(t *testing.T) {
 		}
 	}
 
+	hfs, err := hashfs.New(ctx, hashfs.Option{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer hfs.Close(ctx)
 	c := &Cmd{
 		WorkDir:    "out/Default",
 		OutputDirs: []path.Path{"out/Default/gendir"},
@@ -73,6 +80,7 @@ func TestSetActionResult_ResetsDirOutputsExpanded(t *testing.T) {
 			"out/Default/gendir": true,
 		},
 		CmdHash: []byte("cmdhash"),
+		HashFS:  hfs,
 	}
 
 	// First attempt (cache probe): flattens gendir/hello.txt and sets the guard.

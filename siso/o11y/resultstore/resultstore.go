@@ -24,10 +24,10 @@ import (
 	"google.golang.org/protobuf/types/known/fieldmaskpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	"go.chromium.org/build/siso/blob"
 	"go.chromium.org/build/siso/hashfs"
 	"go.chromium.org/build/siso/o11y/clog"
 	"go.chromium.org/build/siso/reapi"
-	"go.chromium.org/build/siso/reapi/digest"
 )
 
 // Options is options for resultstore uploader.
@@ -167,7 +167,7 @@ loop:
 				}
 				batchReq.UploadRequests = append(batchReq.UploadRequests, req)
 
-			case *digest.Store:
+			case *blob.Store:
 				started := time.Now()
 				n, err := u.REAPIClient.UploadAll(ctx, req)
 				if err != nil {

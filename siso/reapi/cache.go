@@ -12,11 +12,12 @@ import (
 
 	bpb "google.golang.org/genproto/googleapis/bytestream"
 
+	"go.chromium.org/build/hashigo/digest"
 	rpb "go.chromium.org/build/remote-apis/build/bazel/remote/execution/v2"
 
+	"go.chromium.org/build/siso/blob"
 	"go.chromium.org/build/siso/o11y/clog"
 	"go.chromium.org/build/siso/reapi/bytestreamio"
-	"go.chromium.org/build/siso/reapi/digest"
 )
 
 // CacheStore provides a thin wrapper around REAPI client that gets and uploads blobs and action results.
@@ -59,11 +60,11 @@ func (c CacheStore) GetContent(ctx context.Context, d digest.Digest, fname strin
 
 // SetContent sets contents for the fname identified by the digest.
 func (c CacheStore) SetContent(ctx context.Context, d digest.Digest, fname string, content []byte) error {
-	data := digest.FromBytes(fname, content)
+	data := blob.FromBytes(c.client.digestFn, fname, content)
 	if d != data.Digest() {
 		return fmt.Errorf("digest mismatch: d=%s content=%s", d, data.Digest())
 	}
-	ds := digest.NewStore()
+	ds := blob.NewStore()
 	ds.Set(data)
 	_, err := c.client.UploadAll(ctx, ds)
 	return err
@@ -80,7 +81,7 @@ func (c CacheStore) HasContent(ctx context.Context, d digest.Digest) bool {
 }
 
 // Source returns digest source for fname identified by the digest.
-func (c CacheStore) Source(_ context.Context, d digest.Digest, fname string) digest.Source {
+func (c CacheStore) Source(_ context.Context, d digest.Digest, fname string) blob.Source {
 	return digestSource{
 		c:     c.client,
 		d:     d,
@@ -145,6 +146,12 @@ func (s digestSource) Open(ctx context.Context) (io.ReadCloser, error) {
 		return nil, err
 	}
 	return &digestSourceReader{r: rd, size: s.d.SizeBytes, c: s.c, cancel: cancel}, err
+}
+
+// ReadAll returns the full blob content in a single CAS fetch, retrying on
+// retriable errors. blob.DataToBytes uses this instead of Open+read.
+func (s digestSource) ReadAll(ctx context.Context) ([]byte, error) {
+	return s.c.Get(ctx, s.d, s.fname)
 }
 
 func (s digestSource) String() string {

@@ -42,6 +42,10 @@ func (c *Client) ExecuteAndWait(ctx context.Context, req *rpb.ExecuteRequest, op
 			Priority: int32(c.opt.ExecutionPriority),
 		}
 	}
+
+	if req.DigestFunction == rpb.DigestFunction_UNKNOWN {
+		req.DigestFunction = c.digestFn.Value()
+	}
 	var opName string
 	var lastExecOpMetadata *rpb.ExecuteOperationMetadata
 	var waitReq *rpb.WaitExecutionRequest

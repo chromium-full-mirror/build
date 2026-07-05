@@ -337,7 +337,7 @@ func starActionsExit(thread *starlark.Thread, fn *starlark.Builtin, args starlar
 	if err != nil {
 		return starlark.None, err
 	}
-	execute.ResultFromEntries(c.ctx, result, string(c.cmd.WorkDir), entries)
+	execute.ResultFromEntries(c.ctx, c.cmd.HashFS.DigestFunction(), result, string(c.cmd.WorkDir), entries)
 	c.cmd.SetActionResult(result, false)
 	return starlark.None, nil
 }

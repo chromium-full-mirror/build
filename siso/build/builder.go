@@ -37,6 +37,7 @@ import (
 
 	rpb "go.chromium.org/build/remote-apis/build/bazel/remote/execution/v2"
 
+	"go.chromium.org/build/siso/blob"
 	"go.chromium.org/build/siso/build/metadata"
 	"go.chromium.org/build/siso/execute"
 	"go.chromium.org/build/siso/execute/localexec"
@@ -51,7 +52,6 @@ import (
 	"go.chromium.org/build/siso/o11y/trace"
 	sisopath "go.chromium.org/build/siso/path"
 	"go.chromium.org/build/siso/reapi"
-	"go.chromium.org/build/siso/reapi/digest"
 	"go.chromium.org/build/siso/reapi/merkletree"
 	"go.chromium.org/build/siso/scandeps"
 	"go.chromium.org/build/siso/sync/semaphore"
@@ -265,6 +265,11 @@ func New(ctx context.Context, graph Graph, opts Options) (_ *Builder, err error)
 	logger := clog.FromContext(ctx)
 	if logger != nil {
 		logger.Formatter = logFormat
+	}
+	// The hashfs digests become remote-execution cache keys, so the local
+	// filesystem and the REAPI backend must hash with the same function.
+	if opts.REAPIClient != nil && opts.HashFS.DigestFunction() != opts.REAPIClient.DigestFunction() {
+		return nil, fmt.Errorf("content digest function mismatch: hashfs=%s reapi=%s", opts.HashFS.DigestFunction(), opts.REAPIClient.DigestFunction())
 	}
 	start := opts.StartTime
 	if start.IsZero() {
@@ -930,8 +935,8 @@ func (b *Builder) uploadBuildNinja(ctx context.Context) {
 		clog.Warningf(ctx, "failed to get build files entries: %v", err)
 		return
 	}
-	ds := digest.NewStore()
-	tree := merkletree.NewPooled(ds)
+	ds := blob.NewStore()
+	tree := merkletree.NewPooled(b.hashFS.DigestFunction(), ds)
 	defer tree.Release()
 	for _, ent := range ents {
 		err := tree.Set(ent)

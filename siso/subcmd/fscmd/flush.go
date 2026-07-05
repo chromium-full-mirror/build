@@ -20,12 +20,13 @@ import (
 	"github.com/google/subcommands"
 	"golang.org/x/sync/errgroup"
 
+	"go.chromium.org/build/hashigo/digest"
+
 	"go.chromium.org/build/siso/auth/cred"
 	"go.chromium.org/build/siso/build/ninjabuild"
 	"go.chromium.org/build/siso/hashfs"
 	pb "go.chromium.org/build/siso/hashfs/proto"
 	"go.chromium.org/build/siso/reapi"
-	"go.chromium.org/build/siso/reapi/digest"
 	"go.chromium.org/build/siso/signals"
 	"go.chromium.org/build/siso/sync/semaphore"
 )
@@ -146,7 +147,7 @@ func (c *flushCommand) run(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to load %s: %w", c.stateFile, err)
 	}
-	stm := hashfs.StateMap(st)
+	stm := hashfs.StateMap(client.DigestFunction(), st)
 
 	for _, fname := range fnames {
 		fmt.Printf("%s ...", fname)

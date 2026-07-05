@@ -14,11 +14,12 @@ import (
 
 	log "github.com/golang/glog"
 
+	"go.chromium.org/build/hashigo/digest"
 	rpb "go.chromium.org/build/remote-apis/build/bazel/remote/execution/v2"
 
+	"go.chromium.org/build/siso/blob"
 	"go.chromium.org/build/siso/o11y/clog"
 	"go.chromium.org/build/siso/o11y/trace"
-	"go.chromium.org/build/siso/reapi/digest"
 	"go.chromium.org/build/siso/reapi/retry"
 )
 
@@ -41,9 +42,10 @@ func (c *Client) WalkDir(ctx context.Context, d digest.Digest, fn func(dname str
 	var nrecvs, ndirs int
 	err := retry.Do(ctx, func() error {
 		stream, err := casClient.GetTree(ctx, &rpb.GetTreeRequest{
-			InstanceName: c.opt.Instance,
-			RootDigest:   d.Proto(),
-			PageToken:    pageToken,
+			InstanceName:   c.opt.Instance,
+			RootDigest:     d.Proto(),
+			PageToken:      pageToken,
+			DigestFunction: c.digestFn.Value(),
 		})
 		if err != nil {
 			return err
@@ -102,7 +104,7 @@ func (c *Client) WalkDir(ctx context.Context, d digest.Digest, fn func(dname str
 				return nil
 			}
 			for _, dir := range resp.Directories {
-				dd, derr := digest.FromProtoMessage(dir)
+				dd, derr := blob.FromProtoMessage(c.digestFn, dir)
 				if derr != nil {
 					return derr
 				}

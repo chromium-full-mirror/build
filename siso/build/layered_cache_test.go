@@ -11,10 +11,11 @@ import (
 
 	"google.golang.org/protobuf/proto"
 
+	"go.chromium.org/build/hashigo/digest"
 	rpb "go.chromium.org/build/remote-apis/build/bazel/remote/execution/v2"
 
+	"go.chromium.org/build/siso/blob"
 	"go.chromium.org/build/siso/build/cachestore"
-	"go.chromium.org/build/siso/reapi/digest"
 )
 
 const FirstOnly = "firstonly"
@@ -25,7 +26,7 @@ const NewlyAdded = "newly_added"
 const ActionResult = "action_result"
 
 func makeDigest(s string) digest.Digest {
-	return digest.FromBytes(s, []byte(s)).Digest()
+	return blob.FromBytes(digest.SHA256, s, []byte(s)).Digest()
 }
 
 func setContent(ctx context.Context, cache cachestore.CacheStore, s string) error {

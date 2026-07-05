@@ -9,18 +9,19 @@ import (
 	"slices"
 	"testing"
 
+	"go.chromium.org/build/hashigo/digest"
 	rpb "go.chromium.org/build/remote-apis/build/bazel/remote/execution/v2"
 
+	"go.chromium.org/build/siso/blob"
 	"go.chromium.org/build/siso/path"
-	"go.chromium.org/build/siso/reapi/digest"
 	"go.chromium.org/build/siso/reapi/merkletree"
 	"go.chromium.org/build/siso/reapi/reapitest"
 )
 
 func TestWalkDir(t *testing.T) {
 	ctx := t.Context()
-	ds := digest.NewStore()
-	tree := merkletree.New(ds)
+	ds := blob.NewStore()
+	tree := merkletree.New(digest.SHA256, ds)
 	for _, s := range []string{
 		"file1",
 		"subdir1/file1",
@@ -29,7 +30,7 @@ func TestWalkDir(t *testing.T) {
 	} {
 		tree.Set(merkletree.Entry{
 			Name: path.Path(s),
-			Data: digest.FromBytes("empty", nil),
+			Data: blob.FromBytes(digest.SHA256, "empty", nil),
 		})
 	}
 	d, err := tree.Build(ctx)

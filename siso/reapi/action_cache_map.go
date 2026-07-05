@@ -8,9 +8,8 @@ import (
 	"context"
 	"iter"
 
+	"go.chromium.org/build/hashigo/digest"
 	rpb "go.chromium.org/build/remote-apis/build/bazel/remote/execution/v2"
-
-	"go.chromium.org/build/siso/reapi/digest"
 )
 
 // ActionCacheMap is a mapping service from lookup key to actions,
@@ -31,9 +30,10 @@ func (c *Client) ActionCacheMap() ActionCacheMap {
 func (m ActionCacheMap) Add(ctx context.Context, lookupKey string, action digest.Digest) error {
 	client := rpb.NewActionCacheClient(m.c.casConn)
 	_, err := client.AddActionLookup(ctx, &rpb.AddActionLookupRequest{
-		InstanceName: m.c.opt.Instance,
-		LookupKey:    lookupKey,
-		ActionDigest: action.Proto(),
+		InstanceName:   m.c.opt.Instance,
+		LookupKey:      lookupKey,
+		ActionDigest:   action.Proto(),
+		DigestFunction: m.c.digestFn.Value(),
 	})
 	return err
 }
@@ -47,8 +47,9 @@ func (m ActionCacheMap) List(ctx context.Context, lookupKey string) iter.Seq2[*r
 		// long time to check many actions.
 		// so no need to support paging here?
 		resp, err := client.ListActions(ctx, &rpb.ListActionsRequest{
-			InstanceName: m.c.opt.Instance,
-			LookupKey:    lookupKey,
+			InstanceName:   m.c.opt.Instance,
+			LookupKey:      lookupKey,
+			DigestFunction: m.c.digestFn.Value(),
 		})
 		if err != nil {
 			yield(nil, err)

@@ -11,8 +11,10 @@ import (
 	"path/filepath"
 	"testing"
 
+	"go.chromium.org/build/hashigo/digest"
+
+	"go.chromium.org/build/siso/blob"
 	"go.chromium.org/build/siso/path"
-	"go.chromium.org/build/siso/reapi/digest"
 	"go.chromium.org/build/siso/reapi/merkletree"
 )
 
@@ -48,7 +50,7 @@ func TestDirectoryDeleteKeepsPopulatedDir(t *testing.T) {
 	sd := digest.Digest{Hash: "siblinghash", SizeBytes: 4}
 	err = hfs.Update(ctx, dir, []UpdateEntry{{
 		Name:    sibling,
-		Entry:   &merkletree.Entry{Name: sibling, Data: digest.NewData(nil, sd)},
+		Entry:   &merkletree.Entry{Name: sibling, Data: blob.NewData(nil, sd)},
 		Mode:    0o644,
 		CmdHash: []byte("cmdhash"),
 	}})
@@ -104,7 +106,7 @@ func TestDirectoryDeleteKeepsEmptyDir(t *testing.T) {
 	cd := digest.Digest{Hash: "childhash", SizeBytes: 4}
 	err = hfs.Update(ctx, dir, []UpdateEntry{{
 		Name:    child,
-		Entry:   &merkletree.Entry{Name: child, Data: digest.NewData(nil, cd)},
+		Entry:   &merkletree.Entry{Name: child, Data: blob.NewData(nil, cd)},
 		Mode:    0o644,
 		CmdHash: []byte("cmdhash"),
 	}})
@@ -161,7 +163,7 @@ func TestForgetMissingsInDir_PrunesUnderMissingGeneratedDir(t *testing.T) {
 			sd := digest.Digest{Hash: "stalehash", SizeBytes: 4}
 			if err := hfs.Update(ctx, dir, []UpdateEntry{{
 				Name:  stale,
-				Entry: &merkletree.Entry{Name: stale, Data: digest.NewData(nil, sd)},
+				Entry: &merkletree.Entry{Name: stale, Data: blob.NewData(nil, sd)},
 				Mode:  0o644,
 			}}); err != nil {
 				t.Fatalf("Update(%q): %v", stale, err)
@@ -222,7 +224,7 @@ func TestForgetMissingsInDir_ReconcilesGeneratedDir(t *testing.T) {
 	sd := digest.Digest{Hash: "stalehash", SizeBytes: 4}
 	if err := hfs.Update(ctx, dir, []UpdateEntry{{
 		Name:  stale,
-		Entry: &merkletree.Entry{Name: stale, Data: digest.NewData(nil, sd)},
+		Entry: &merkletree.Entry{Name: stale, Data: blob.NewData(nil, sd)},
 		Mode:  0o644,
 	}}); err != nil {
 		t.Fatalf("Update(%q): %v", stale, err)
@@ -259,7 +261,7 @@ func TestForgetOutputsDropsOutputDirChildren(t *testing.T) {
 	cd := digest.Digest{Hash: "childhash", SizeBytes: 4}
 	err = hfs.Update(ctx, dir, []UpdateEntry{{
 		Name:    child,
-		Entry:   &merkletree.Entry{Name: child, Data: digest.NewData(nil, cd)},
+		Entry:   &merkletree.Entry{Name: child, Data: blob.NewData(nil, cd)},
 		Mode:    0o644,
 		CmdHash: []byte("cmdhash"),
 	}})
@@ -309,7 +311,7 @@ func TestRetrieveUpdateEntriesFromLocal_RemovedDirDropsChildren(t *testing.T) {
 	cd := digest.Digest{Hash: "childhash", SizeBytes: 4}
 	err = hfs.Update(ctx, dir, []UpdateEntry{{
 		Name:    child,
-		Entry:   &merkletree.Entry{Name: child, Data: digest.NewData(nil, cd)},
+		Entry:   &merkletree.Entry{Name: child, Data: blob.NewData(nil, cd)},
 		Mode:    0o644,
 		CmdHash: []byte("cmdhash"),
 	}})
@@ -399,7 +401,7 @@ func TestForgetMissingsInDir_KeepsEmptyDirNode(t *testing.T) {
 	cd := digest.Digest{Hash: "childhash", SizeBytes: 4}
 	err = hfs.Update(ctx, dir, []UpdateEntry{{
 		Name:    child,
-		Entry:   &merkletree.Entry{Name: child, Data: digest.NewData(nil, cd)},
+		Entry:   &merkletree.Entry{Name: child, Data: blob.NewData(nil, cd)},
 		Mode:    0o644,
 		CmdHash: []byte("cmdhash"),
 	}})
@@ -448,7 +450,7 @@ func TestForgetMissingsInDir_KeepsGeneratedDescendant(t *testing.T) {
 	gd := digest.Digest{Hash: "genhash", SizeBytes: 5}
 	err = hfs.Update(ctx, dir, []UpdateEntry{{
 		Name:      gen,
-		Entry:     &merkletree.Entry{Name: gen, Data: digest.NewData(nil, gd)},
+		Entry:     &merkletree.Entry{Name: gen, Data: blob.NewData(nil, gd)},
 		Mode:      0o644,
 		CmdHash:   []byte("cmdhash"),
 		IsChanged: true,
@@ -490,7 +492,7 @@ func TestForgetMissingsInDir_KeepsUnchangedGeneratedDescendant(t *testing.T) {
 	gd := digest.Digest{Hash: "genhash", SizeBytes: 5}
 	err = hfs.Update(ctx, dir, []UpdateEntry{{
 		Name:    gen,
-		Entry:   &merkletree.Entry{Name: gen, Data: digest.NewData(nil, gd)},
+		Entry:   &merkletree.Entry{Name: gen, Data: blob.NewData(nil, gd)},
 		Mode:    0o644,
 		CmdHash: []byte("cmdhash"),
 	}})

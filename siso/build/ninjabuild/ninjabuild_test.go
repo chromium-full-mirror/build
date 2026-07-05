@@ -14,13 +14,15 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 
+	"go.chromium.org/build/hashigo/digest"
+
+	"go.chromium.org/build/siso/blob"
 	"go.chromium.org/build/siso/build"
 	"go.chromium.org/build/siso/build/buildconfig"
 	"go.chromium.org/build/siso/execute"
 	"go.chromium.org/build/siso/hashfs"
 	pb "go.chromium.org/build/siso/hashfs/proto"
 	"go.chromium.org/build/siso/path"
-	"go.chromium.org/build/siso/reapi/digest"
 )
 
 // TestLoad_RejectsNestedDirOutput verifies Load errors when one step produces
@@ -273,7 +275,7 @@ build foo.o: touch foo.cc
 		if err != nil {
 			t.Fatal(err)
 		}
-		d := digest.FromBytes(name, []byte(content)).Digest()
+		d := blob.FromBytes(digest.SHA256, name, []byte(content)).Digest()
 		entries = append(entries, &pb.Entry{
 			Id:      &pb.FileID{ModTime: fi.ModTime().UnixNano()},
 			Name:    filepath.ToSlash(fname),
@@ -294,7 +296,7 @@ build foo.o: touch foo.cc
 			t.Error(err)
 		}
 	}()
-	stepConfig, err := NewStepConfig(ctx, config, path, "build.ninja", ".")
+	stepConfig, err := NewStepConfig(ctx, digest.SHA256, config, path, "build.ninja", ".")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -399,7 +401,7 @@ build all: phony exe
 			t.Error(err)
 		}
 	}()
-	stepConfig, err := NewStepConfig(ctx, config, path, "build.ninja", ".")
+	stepConfig, err := NewStepConfig(ctx, digest.SHA256, config, path, "build.ninja", ".")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -495,7 +497,7 @@ build all: phony
 		t.Fatal(err)
 	}
 
-	_, err = NewStepConfig(ctx, config, path, "build.ninja", ".")
+	_, err = NewStepConfig(ctx, digest.SHA256, config, path, "build.ninja", ".")
 	if err == nil {
 		t.Error("NewStepConfig succeeded with unknown keys, but should have failed")
 	}

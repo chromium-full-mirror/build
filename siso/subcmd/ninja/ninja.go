@@ -491,13 +491,25 @@ func (c *Command) Run(ctx context.Context) (stats build.Stats, finalErr error) {
 	var ninjaLogWriter io.Writer // ninjaLogWriter is used to pass the ninja log writer from CheckManifest to the main thread's bopts to avoid truncation.
 	octx := ctx
 
+	// Resolve the content digest function once and thread it into every
+	// HashFS (including the temporary ones below); the reapi client resolves
+	// the same flag in reapi.New. Parsed regardless of whether REAPI is
+	// configured: offline/local builds keep hashing and interpreting the
+	// persisted fs state under -reapi_digest_function instead of falling
+	// back to sha256 and discarding a non-sha256 build's state.
+	digestFn, err := reapi.ParseDigestFunction(c.reopt.DigestFunction)
+	if err != nil {
+		return stats, err
+	}
+	c.fsopt.DigestFunction = digestFn
+
 	// When check manifest is done including regenerating manifest, it's ready to start loading Ninja files. This channel is used to start ninja loading
 	checkManifestDone := make(chan error)
 	go func() {
 		ctx := trace.NewThread(octx, "checkManifest")
 		// use temporary hashfs to check manifest and load manifest
 		// files.
-		tempHashFS, err := hashfs.New(ctx, hashfs.Option{})
+		tempHashFS, err := hashfs.New(ctx, hashfs.Option{DigestFunction: digestFn})
 		if err != nil {
 			checkManifestDone <- err
 			return
@@ -671,7 +683,7 @@ func (c *Command) Run(ctx context.Context) (stats build.Stats, finalErr error) {
 	}
 
 	spin.Start("load siso config")
-	stepConfig, err := ninjabuild.NewStepConfig(ctx, config, buildPath, c.fname, c.stateDir)
+	stepConfig, err := ninjabuild.NewStepConfig(ctx, digestFn, config, buildPath, c.fname, c.stateDir)
 	if err != nil {
 		spin.Stop(err)
 		return stats, err

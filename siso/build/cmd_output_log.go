@@ -11,8 +11,9 @@ import (
 	"slices"
 	"strings"
 
+	"go.chromium.org/build/hashigo/digest"
+
 	"go.chromium.org/build/siso/execute"
-	"go.chromium.org/build/siso/reapi/digest"
 	"go.chromium.org/build/siso/toolsupport/msvcutil"
 	"go.chromium.org/build/siso/ui"
 )
@@ -221,9 +222,10 @@ func cmdOutput(ctx context.Context, result cmdOutputResult, cmd *execute.Cmd, in
 	}
 	res.output = output
 	if len(cmd.AuxiliaryOutputDigests) > 0 {
+		fn := cmd.HashFS.DigestFunction()
 		for _, name := range slices.Sorted(maps.Keys(cmd.AuxiliaryOutputDigests)) {
 			d := cmd.AuxiliaryOutputDigests[name]
-			if strings.HasSuffix(name, "/") && d == digest.EmptyTree {
+			if strings.HasSuffix(name, "/") && d == fn.EmptyTree() {
 				continue
 			}
 			msg := formatAuxiliaryOutput(name, d, instance)

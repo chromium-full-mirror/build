@@ -19,6 +19,8 @@ import (
 
 	"golang.org/x/sync/errgroup"
 
+	"go.chromium.org/build/hashigo/digest"
+
 	"go.chromium.org/build/siso/build"
 	"go.chromium.org/build/siso/build/buildconfig"
 	"go.chromium.org/build/siso/execute"
@@ -99,14 +101,14 @@ func (g gnTarget) String() string {
 
 // NewStepConfig creates new *StepConfig and stores it in .siso_config
 // and .siso_filegroups.
-func NewStepConfig(ctx context.Context, config *buildconfig.Config, p *build.Path, fname, stateDir string) (*StepConfig, error) {
+func NewStepConfig(ctx context.Context, fn digest.Function, config *buildconfig.Config, p *build.Path, fname, stateDir string) (*StepConfig, error) {
 	defer trace.Begin(ctx, "ninjabuild.NewStepConfig").End()
 	// Use a temporary HashFS for config initialization and updating filegroups.
 	// Config initialization is mostly CPU-bound (loading Starlark scripts, parsing config),
 	// while HashFS initialization is Disk-bound (scanning directory state, computing digests).
 	// Isolating config parsing avoids blocking the CPU execution phase on the long
 	// background disk scan of the main HashFS, allowing them to run concurrently.
-	tempHashFS, err := hashfs.New(ctx, hashfs.Option{})
+	tempHashFS, err := hashfs.New(ctx, hashfs.Option{DigestFunction: fn})
 	if err != nil {
 		return nil, err
 	}
@@ -341,7 +343,7 @@ func (g *Graph) Reload(ctx context.Context) error {
 	})
 	eg.Go(func() error {
 		var err error
-		g.globals.stepConfig, err = NewStepConfig(ctx, g.globals.buildConfig, g.globals.path, g.fname, stateDir)
+		g.globals.stepConfig, err = NewStepConfig(ctx, g.globals.hashFS.DigestFunction(), g.globals.buildConfig, g.globals.path, g.fname, stateDir)
 		return err
 	})
 	eg.Go(func() error {

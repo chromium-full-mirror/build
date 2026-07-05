@@ -14,13 +14,14 @@ import (
 
 	log "github.com/golang/glog"
 
+	"go.chromium.org/build/hashigo/digest"
 	rpb "go.chromium.org/build/remote-apis/build/bazel/remote/execution/v2"
 
+	"go.chromium.org/build/siso/blob"
 	"go.chromium.org/build/siso/execute"
 	"go.chromium.org/build/siso/o11y/clog"
 	"go.chromium.org/build/siso/o11y/trace"
 	"go.chromium.org/build/siso/reapi"
-	"go.chromium.org/build/siso/reapi/digest"
 	_ "go.chromium.org/build/siso/reapi/proto" // for auxiliary metadata
 	"go.chromium.org/build/siso/sync/semaphore"
 )
@@ -44,7 +45,7 @@ func (re *RemoteExec) prepareInputs(ctx context.Context, cmd *execute.Cmd) (dige
 	var actionDigest digest.Digest
 	err := Semaphore.Do(ctx, func(ctx context.Context) error {
 		var err error
-		ds := digest.NewStore()
+		ds := blob.NewStore()
 		actionDigest, err = cmd.Digest(ctx, ds)
 		if err != nil {
 			return err
@@ -93,6 +94,7 @@ func (re *RemoteExec) Execute(uploadCtx, execCtx context.Context, cmd *execute.C
 	opName, resp, err := re.client.ExecuteAndWait(cctx, &rpb.ExecuteRequest{
 		ActionDigest:    actionDigest.Proto(),
 		SkipCacheLookup: cmd.SkipCacheLookup,
+		DigestFunction:  re.client.DigestFunction().Value(),
 	})
 	cspan.Close(nil)
 	clog.Infof(execCtx, "digest: %s, skipCacheLookup:%t opName: %s", actionDigest, cmd.SkipCacheLookup, opName)

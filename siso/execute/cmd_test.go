@@ -16,11 +16,12 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 
+	"go.chromium.org/build/hashigo/digest"
 	rpb "go.chromium.org/build/remote-apis/build/bazel/remote/execution/v2"
 
+	"go.chromium.org/build/siso/blob"
 	"go.chromium.org/build/siso/hashfs"
 	"go.chromium.org/build/siso/path"
-	"go.chromium.org/build/siso/reapi/digest"
 	"go.chromium.org/build/siso/reapi/merkletree"
 )
 
@@ -149,7 +150,7 @@ func TestCanonicalizeDir(t *testing.T) {
 	}
 }
 
-func cmpDigestData(a, b digest.Data) bool {
+func cmpDigestData(a, b blob.Data) bool {
 	return a.Digest() == b.Digest()
 }
 
@@ -169,7 +170,7 @@ func TestEntriesFromResult_Auxiliary(t *testing.T) {
 			},
 		},
 	}
-	treeData, err := digest.FromProtoMessage(tree)
+	treeData, err := blob.FromProtoMessage(digest.SHA256, tree)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -209,7 +210,7 @@ func TestEntriesFromResult_Auxiliary(t *testing.T) {
 			Name: "out/Default/main.o",
 			Entry: &merkletree.Entry{
 				Name: "out/Default/main.o",
-				Data: digest.NewData(ds.Source(ctx, d1, "out/Default/main.o"), d1),
+				Data: blob.NewData(ds.Source(ctx, d1, "out/Default/main.o"), d1),
 			},
 			UpdatedTime: now,
 			ModTime:     now,
@@ -217,10 +218,10 @@ func TestEntriesFromResult_Auxiliary(t *testing.T) {
 			Mode:        0644,
 		},
 	}
-	if diff := cmp.Diff(entries, wantEntries, cmpopts.IgnoreUnexported(hashfs.UpdateEntry{}, merkletree.Entry{}, digest.Data{}), cmpopts.IgnoreFields(hashfs.UpdateEntry{}, "Action")); diff != "" {
+	if diff := cmp.Diff(entries, wantEntries, cmpopts.IgnoreUnexported(hashfs.UpdateEntry{}, merkletree.Entry{}, blob.Data{}), cmpopts.IgnoreFields(hashfs.UpdateEntry{}, "Action")); diff != "" {
 		t.Errorf("entries mismatch (-got +want):\n%s", diff)
 	}
-	// cmp.Diff ignores digest.Data's unexported fields, so the content digest
+	// cmp.Diff ignores blob.Data's unexported fields, so the content digest
 	// is not compared above. Assert it explicitly: main.o must carry d1.
 	if len(entries) == 1 {
 		if got := entries[0].Entry.Data.Digest(); got != d1 {
@@ -272,7 +273,7 @@ func TestEntriesFromResult_DirOutput(t *testing.T) {
 			Name: "out/Default/gendir/hello.txt",
 			Entry: &merkletree.Entry{
 				Name: "out/Default/gendir/hello.txt",
-				Data: digest.NewData(ds.Source(ctx, d1, "out/Default/gendir/hello.txt"), d1),
+				Data: blob.NewData(ds.Source(ctx, d1, "out/Default/gendir/hello.txt"), d1),
 			},
 			UpdatedTime: now,
 			ModTime:     now,
@@ -292,10 +293,10 @@ func TestEntriesFromResult_DirOutput(t *testing.T) {
 			CmdHash:     []byte("test-cmd-hash"),
 		},
 	}
-	if diff := cmp.Diff(entries, wantEntries, cmpopts.IgnoreUnexported(hashfs.UpdateEntry{}, merkletree.Entry{}, digest.Data{}), cmpopts.IgnoreFields(hashfs.UpdateEntry{}, "Action")); diff != "" {
+	if diff := cmp.Diff(entries, wantEntries, cmpopts.IgnoreUnexported(hashfs.UpdateEntry{}, merkletree.Entry{}, blob.Data{}), cmpopts.IgnoreFields(hashfs.UpdateEntry{}, "Action")); diff != "" {
 		t.Errorf("entries mismatch (-got +want):\n%s", diff)
 	}
-	// cmp.Diff ignores digest.Data's unexported fields, so assert the flattened
+	// cmp.Diff ignores blob.Data's unexported fields, so assert the flattened
 	// file's content digest explicitly: gendir/hello.txt must carry d1.
 	gotHello := false
 	for _, e := range entries {
@@ -474,7 +475,7 @@ func TestIsOutputFile_ForwardSlashSemantics(t *testing.T) {
 
 type mockDataSource struct{}
 
-func (mockDataSource) Source(ctx context.Context, d digest.Digest, name string) digest.Source {
+func (mockDataSource) Source(ctx context.Context, d digest.Digest, name string) blob.Source {
 	return nil
 }
 
@@ -523,7 +524,7 @@ func TestRecordPreOutputs(t *testing.T) {
 	rd := digest.Digest{Hash: "remotehash", SizeBytes: 7}
 	if err := hashFS.Update(ctx, dir, []hashfs.UpdateEntry{{
 		Name:    path.Path(hashfsOnly),
-		Entry:   &merkletree.Entry{Name: path.Path(hashfsOnly), Data: digest.NewData(nil, rd)},
+		Entry:   &merkletree.Entry{Name: path.Path(hashfsOnly), Data: blob.NewData(nil, rd)},
 		Mode:    0o644,
 		CmdHash: []byte("cmdhash"),
 	}}); err != nil {
@@ -727,12 +728,12 @@ func TestComputeOutputEntries_DirOnlyEdgeHash(t *testing.T) {
 
 // singleFileDirTree registers a REAPI tree blob (and its content blob) for a
 // directory containing exactly one file, and returns the tree digest.
-func singleFileDirTree(t *testing.T, ds *digest.Store, member, content string) digest.Digest {
+func singleFileDirTree(t *testing.T, ds *blob.Store, member, content string) digest.Digest {
 	t.Helper()
-	cd := digest.FromBytes(member, []byte(content))
+	cd := blob.FromBytes(digest.SHA256, member, []byte(content))
 	ds.Set(cd)
 	tree := &rpb.Tree{Root: &rpb.Directory{Files: []*rpb.FileNode{{Name: member, Digest: cd.Digest().Proto()}}}}
-	td, err := digest.FromProtoMessage(tree)
+	td, err := blob.FromProtoMessage(digest.SHA256, tree)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -761,7 +762,7 @@ func TestRecordOutputs_DirTreeReplacesStaleMembers(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ds := digest.NewStore()
+	ds := blob.NewStore()
 	td1 := singleFileDirTree(t, ds, "old.txt", "OLD")
 	td2 := singleFileDirTree(t, ds, "new.txt", "NEW")
 

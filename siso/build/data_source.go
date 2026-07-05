@@ -11,11 +11,13 @@ import (
 	"os"
 	"path/filepath"
 
+	"go.chromium.org/build/hashigo/digest"
+
 	"go.chromium.org/build/siso/auth/cred"
+	"go.chromium.org/build/siso/blob"
 	"go.chromium.org/build/siso/build/cachestore"
 	"go.chromium.org/build/siso/o11y/clog"
 	"go.chromium.org/build/siso/reapi"
-	"go.chromium.org/build/siso/reapi/digest"
 )
 
 func NewDataSource(ctx context.Context, credential cred.Cred, localCacheEnable bool, cacheDir string, reapiClient *reapi.Client) DataSource {
@@ -52,14 +54,14 @@ func (ds DataSource) Close(ctx context.Context) error {
 	return ds.Client.Close()
 }
 
-// DigestData creates a new digest.Data from the given digest and filename,
+// DigestData creates a new blob.Data from the given digest and filename,
 // using the DataSource to retrieve the actual data.
-func (ds DataSource) DigestData(ctx context.Context, d digest.Digest, fname string) digest.Data {
-	return digest.NewData(ds.Source(ctx, d, fname), d)
+func (ds DataSource) DigestData(ctx context.Context, d digest.Digest, fname string) blob.Data {
+	return blob.NewData(ds.Source(ctx, d, fname), d)
 }
 
-// Source returns a digest.Source for the given digest and filename.
-func (ds DataSource) Source(_ context.Context, d digest.Digest, fname string) digest.Source {
+// Source returns a blob.Source for the given digest and filename.
+func (ds DataSource) Source(_ context.Context, d digest.Digest, fname string) blob.Source {
 	return source{
 		dataSource: ds,
 		d:          d,

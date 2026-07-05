@@ -71,6 +71,22 @@ func TestClose_SharedConnClosedOnce(t *testing.T) {
 	}
 }
 
+func TestNewFromConn_DigestFunctionErrorClosesBothConns(t *testing.T) {
+	ctx := t.Context()
+	conn := &fakeConn{}
+	casConn := &fakeConn{}
+	_, err := NewFromConn(ctx, Option{DigestFunction: "bogus"}, cred.Cred{}, conn, casConn)
+	if err == nil {
+		t.Fatal("NewFromConn succeeded; want digest function error")
+	}
+	if got, want := conn.closed, 1; got != want {
+		t.Errorf("conn.closed = %d; want %d", got, want)
+	}
+	if got, want := casConn.closed, 1; got != want {
+		t.Errorf("casConn.closed = %d; want %d", got, want)
+	}
+}
+
 func TestInit_CapabilitiesErrorClosesBothConns(t *testing.T) {
 	ctx := t.Context()
 	conn := &fakeConn{invokeErr: status.Error(codes.InvalidArgument, "no capabilities")}
@@ -81,6 +97,27 @@ func TestInit_CapabilitiesErrorClosesBothConns(t *testing.T) {
 	}
 	if err := c.Init(ctx); err == nil {
 		t.Fatal("Init succeeded; want GetCapabilities error")
+	}
+	if got, want := conn.closed, 1; got != want {
+		t.Errorf("conn.closed = %d; want %d", got, want)
+	}
+	if got, want := casConn.closed, 1; got != want {
+		t.Errorf("casConn.closed = %d; want %d", got, want)
+	}
+}
+
+func TestInit_DigestFunctionValidationErrorClosesBothConns(t *testing.T) {
+	ctx := t.Context()
+	// Empty ServerCapabilities advertise no digest functions, so any
+	// function other than sha256 fails validation.
+	conn := &fakeConn{}
+	casConn := &fakeConn{}
+	c, err := NewFromConn(ctx, Option{DigestFunction: "sha1"}, cred.Cred{}, conn, casConn)
+	if err != nil {
+		t.Fatalf("NewFromConn: %v", err)
+	}
+	if err := c.Init(ctx); err == nil {
+		t.Fatal("Init succeeded; want digest function validation error")
 	}
 	if got, want := conn.closed, 1; got != want {
 		t.Errorf("conn.closed = %d; want %d", got, want)

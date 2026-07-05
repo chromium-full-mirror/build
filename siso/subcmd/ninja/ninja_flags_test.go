@@ -11,6 +11,23 @@ import (
 	"github.com/google/go-cmp/cmp"
 )
 
+// enableOfflineMode replaces the reapi options, but must keep the digest
+// function: offline builds still hash and interpret .siso_fs_state under
+// -reapi_digest_function, or a non-sha256 build's state would be discarded
+// and re-hashed as sha256.
+func TestEnableOfflineModeKeepsDigestFunction(t *testing.T) {
+	c := &Command{}
+	flagSet := flag.NewFlagSet("ninja", flag.ContinueOnError)
+	c.SetFlags(flagSet)
+	if err := flagSet.Parse([]string{"-reapi_digest_function", "blake3", "-offline"}); err != nil {
+		t.Fatalf("flag parse %v; want nil err", err)
+	}
+	c.enableOfflineMode(t.Context())
+	if got, want := c.reopt.DigestFunction, "blake3"; got != want {
+		t.Errorf("after enableOfflineMode, reopt.DigestFunction = %q, want %q", got, want)
+	}
+}
+
 func TestParseFlagsFully(t *testing.T) {
 	for _, tc := range []struct {
 		name      string

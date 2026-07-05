@@ -14,21 +14,30 @@ import (
 
 	log "github.com/golang/glog"
 
+	"go.chromium.org/build/hashigo/digest"
+
+	"go.chromium.org/build/siso/blob"
 	"go.chromium.org/build/siso/hashfs/osfs"
 	"go.chromium.org/build/siso/o11y/clog"
 	"go.chromium.org/build/siso/path"
-	"go.chromium.org/build/siso/reapi/digest"
 	"go.chromium.org/build/siso/reapi/merkletree"
 )
 
 // Importer is an importer.
-type Importer struct{}
+type Importer struct {
+	// Fn is the content digest function. The zero value means SHA-256.
+	Fn digest.Function
+}
 
 // Import imports dir into digest store and returns digest of root.
-func (Importer) Import(ctx context.Context, dir string, ds *digest.Store) (digest.Digest, error) {
+func (im Importer) Import(ctx context.Context, dir string, ds *blob.Store) (digest.Digest, error) {
+	fn := im.Fn
+	if fn.IsZero() {
+		fn = digest.SHA256
+	}
 	var entries []merkletree.Entry
 	// TODO: pass osfs from subcommand?
-	osfs := osfs.New(ctx, "fs", osfs.Option{})
+	osfs := osfs.New(ctx, "fs", osfs.Option{DigestFunction: fn})
 	err := filepath.WalkDir(dir, func(fpath string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -67,7 +76,7 @@ func (Importer) Import(ctx context.Context, dir string, ds *digest.Store) (diges
 		if err != nil {
 			return err
 		}
-		data, err := digest.FromLocalFile(ctx, osfs.FileSource(fpath, fi.Size()))
+		data, err := blob.FromLocalFile(ctx, fn, osfs.FileSource(fpath, fi.Size()))
 		if err != nil {
 			return err
 		}
@@ -85,7 +94,7 @@ func (Importer) Import(ctx context.Context, dir string, ds *digest.Store) (diges
 		return digest.Digest{}, err
 	}
 
-	inputTree := merkletree.New(ds)
+	inputTree := merkletree.New(fn, ds)
 	for _, ent := range entries {
 		log.V(3).Infof("set %s", ent.Name)
 		err = inputTree.Set(ent)

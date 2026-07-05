@@ -16,10 +16,12 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
 
+	"go.chromium.org/build/hashigo/digest"
+
+	"go.chromium.org/build/siso/blob"
 	"go.chromium.org/build/siso/build"
 	"go.chromium.org/build/siso/hashfs"
 	fspb "go.chromium.org/build/siso/hashfs/proto"
-	"go.chromium.org/build/siso/reapi/digest"
 	pb "go.chromium.org/build/siso/toolsupport/ciderutil/proto"
 )
 
@@ -586,7 +588,7 @@ func setupFileState(t *testing.T, topdir, fname string, files map[string]fileSta
 	}
 	writeFile := func(fname, content string, mtime time.Time, generated bool) {
 		mkdirAll(filepath.Dir(fname), mtime)
-		d := digest.FromBytes(fname, []byte(content))
+		d := blob.FromBytes(digest.SHA256, fname, []byte(content))
 		ent := &fspb.Entry{
 			Id: &fspb.FileID{
 				ModTime: mtime.UnixNano(),

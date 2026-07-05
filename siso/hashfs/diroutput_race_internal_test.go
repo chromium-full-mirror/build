@@ -9,8 +9,10 @@ import (
 	"io/fs"
 	"testing"
 
+	"go.chromium.org/build/hashigo/digest"
+
+	"go.chromium.org/build/siso/blob"
 	"go.chromium.org/build/siso/path"
-	"go.chromium.org/build/siso/reapi/digest"
 	"go.chromium.org/build/siso/reapi/merkletree"
 )
 
@@ -41,8 +43,8 @@ func TestShouldKeep_DiskMissDoesNotEvictBuildWithoutBytes(t *testing.T) {
 		})
 		if err := hfs.Update(ctx, root, []UpdateEntry{
 			{Name: dir, Entry: &merkletree.Entry{Name: dir}, Mode: 0o755 | fs.ModeDir, CmdHash: cmdhash, Action: action},
-			{Name: member, Entry: &merkletree.Entry{Name: member, Data: digest.NewData(nil, digest.Digest{Hash: "innerhash", SizeBytes: 3})}, Mode: 0o644, CmdHash: cmdhash, Action: action},
-			{Name: file, Entry: &merkletree.Entry{Name: file, Data: digest.NewData(nil, digest.Digest{Hash: "filehash", SizeBytes: 4})}, Mode: 0o644, CmdHash: cmdhash, Action: action},
+			{Name: member, Entry: &merkletree.Entry{Name: member, Data: blob.NewData(nil, digest.Digest{Hash: "innerhash", SizeBytes: 3})}, Mode: 0o644, CmdHash: cmdhash, Action: action},
+			{Name: file, Entry: &merkletree.Entry{Name: file, Data: blob.NewData(nil, digest.Digest{Hash: "filehash", SizeBytes: 4})}, Mode: 0o644, CmdHash: cmdhash, Action: action},
 			{Name: link, Entry: &merkletree.Entry{Name: link, Target: "out.o"}, Mode: 0o644 | fs.ModeSymlink, CmdHash: cmdhash, Action: action},
 		}); err != nil {
 			t.Fatalf("Update: %v", err)

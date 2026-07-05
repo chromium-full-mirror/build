@@ -20,11 +20,11 @@ import (
 
 	rpb "go.chromium.org/build/remote-apis/build/bazel/remote/execution/v2"
 
+	"go.chromium.org/build/siso/blob"
 	"go.chromium.org/build/siso/execute"
 	"go.chromium.org/build/siso/o11y/clog"
 	"go.chromium.org/build/siso/o11y/trace"
 	"go.chromium.org/build/siso/path"
-	"go.chromium.org/build/siso/reapi/digest"
 )
 
 func (b *Builder) execLocal(ctx context.Context, step *Step) (retErr error) {
@@ -269,7 +269,7 @@ func (b *Builder) cacheWrite(ctx context.Context, step *Step) error {
 		// Action digests are lazily computed for local so they are not available at this point
 		cmd := step.cmd
 		result, _ := cmd.ActionResult()
-		ds := digest.NewStore()
+		ds := blob.NewStore()
 		actionDigest, err := cmd.Digest(ctx, ds)
 
 		if err != nil {
@@ -302,7 +302,7 @@ func (b *Builder) cacheWrite(ctx context.Context, step *Step) error {
 
 		// Convert rawStdout to digest since RE spec v2 prohibits inlining
 		if len(result.GetStdoutRaw()) != 0 && result.GetStdoutDigest() == nil {
-			stdoutDigest := digest.FromBytes("stdout", result.GetStdoutRaw())
+			stdoutDigest := blob.FromBytes(b.hashFS.DigestFunction(), "stdout", result.GetStdoutRaw())
 			result.StdoutDigest = stdoutDigest.Digest().Proto()
 			if log.V(1) {
 				clog.Infof(ctx, "stdout digest %s", stdoutDigest.Digest())
@@ -313,7 +313,7 @@ func (b *Builder) cacheWrite(ctx context.Context, step *Step) error {
 
 		// Convert rawStderr to digest since RE spec v2 prohibits inlining
 		if len(result.GetStderrRaw()) != 0 && result.GetStderrDigest() == nil {
-			stderrDigest := digest.FromBytes("stderr", result.GetStderrRaw())
+			stderrDigest := blob.FromBytes(b.hashFS.DigestFunction(), "stderr", result.GetStderrRaw())
 			result.StderrDigest = stderrDigest.Digest().Proto()
 			if log.V(1) {
 				clog.Infof(ctx, "stderr digest %s", stderrDigest.Digest())

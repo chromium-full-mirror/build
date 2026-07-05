@@ -15,6 +15,7 @@ import (
 	"io"
 	"os"
 	"path"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -36,6 +37,7 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 
+	"go.chromium.org/build/hashigo/digest"
 	rpb "go.chromium.org/build/remote-apis/build/bazel/remote/execution/v2"
 	semverpb "go.chromium.org/build/remote-apis/build/bazel/semver"
 
@@ -44,7 +46,6 @@ import (
 	"go.chromium.org/build/siso/o11y/iometrics"
 	"go.chromium.org/build/siso/o11y/monitoring"
 	"go.chromium.org/build/siso/o11y/trace"
-	"go.chromium.org/build/siso/reapi/digest"
 	"go.chromium.org/build/siso/reapi/firstbyte"
 	"go.chromium.org/build/siso/reapi/retry"
 	"go.chromium.org/build/siso/version"
@@ -113,6 +114,10 @@ type Option struct {
 	// default to use high api version advertised by the server
 	// capabilities.
 	REAPIVersion string
+
+	// DigestFunction selects the content digest function by name
+	// (e.g. "sha256", "sha1", "blake3"). Empty means "sha256".
+	DigestFunction string
 
 	// UploadConcurrency caps in-flight upload RPCs per UploadAll call.
 	// Zero (default) means serial; set to max(32, GOMAXPROCS*4) or similar
@@ -204,6 +209,8 @@ func (o *Option) RegisterFlags(fs *flag.FlagSet, envs map[string]string) {
 	fs.BoolVar(&o.KeepAliveParams.PermitWithoutStream, o.Prefix+"_grpc_keepalive_permit_without_stream", false, "grpc keepalive permit without stream"+purpose)
 
 	fs.StringVar(&o.REAPIVersion, o.Prefix+"_version_to_use", "", "specify re api version to use, in format of v<major>.<minor>. e.g. v2.0")
+
+	fs.StringVar(&o.DigestFunction, o.Prefix+"_digest_function", "sha256", "content digest function: sha256, sha1, gitsha1, blake3, md5, sha384, sha512, murmur3, vso, or sha256tree"+purpose)
 
 	fs.StringVar(&o.TraceCookie, o.Prefix+"_trace_cookie", "", "if set, sent as the `cookie` gRPC metadata header on every RPC to this backend, to force server-side trace sampling (e.g. Dapper)"+purpose)
 
@@ -308,10 +315,11 @@ type grpcClientConn interface {
 
 // Client is a remote exec API client.
 type Client struct {
-	opt     Option
-	cred    cred.Cred
-	conn    grpcClientConn
-	casConn grpcClientConn
+	opt      Option
+	digestFn digest.Function
+	cred     cred.Cred
+	conn     grpcClientConn
+	casConn  grpcClientConn
 
 	mu           sync.Mutex
 	capabilities *rpb.ServerCapabilities
@@ -605,16 +613,39 @@ func NewFromConn(ctx context.Context, opt Option, cred cred.Cred, conn, casConn 
 		}
 		return pd
 	}
+	fn, err := ParseDigestFunction(opt.DigestFunction)
+	if err != nil {
+		conn.Close()
+		if casConn != nil && casConn != conn {
+			casConn.Close()
+		}
+		return nil, err
+	}
 	c := &Client{
 		opt:             opt,
+		digestFn:        fn,
 		cred:            cred,
 		conn:            conn,
 		casConn:         casConn,
 		zstdDecoderPool: zstdDecoderPool,
 		m:               iometrics.New("reapi"),
 	}
-	c.knownDigests.Store(digest.Empty, true)
+	c.knownDigests.Store(c.digestFn.Empty(), true)
 	return c, nil
+}
+
+// ParseDigestFunction resolves the content digest function from the
+// -..._digest_function flag value. An empty name means sha256.
+func ParseDigestFunction(name string) (digest.Function, error) {
+	if name == "" {
+		name = "sha256"
+	}
+	return digest.ParseFunction(name)
+}
+
+// DigestFunction returns the content digest function used with this backend.
+func (c *Client) DigestFunction() digest.Function {
+	return c.digestFn
 }
 
 // Init initializes the client by fetching capabilities and negotiating compression.
@@ -645,6 +676,10 @@ func (c *Client) Init(ctx context.Context) error {
 		return fmt.Errorf("failed to get capabilities: %w", err)
 	}
 	clog.Infof(ctx, "capabilities of %s: %s", c.opt.Instance, capa)
+	if err := validateDigestFunction(c.digestFn, capa); err != nil {
+		c.Close()
+		return err
+	}
 	if c.opt.CompressedBlob > 0 {
 		c.opt.compressor = selectCompressor(capa.GetCacheCapabilities().GetSupportedCompressors())
 		if c.opt.compressor != rpb.Compressor_IDENTITY {
@@ -688,6 +723,44 @@ func (c *Client) Init(ctx context.Context) error {
 	c.capabilities = capa
 	c.apiVersion = apiVersion
 	return nil
+}
+
+// validateDigestFunction checks that the configured digest function is
+// advertised by the server's cache capabilities and, when the server offers
+// remote execution, by its execution capabilities too (otherwise CAS uploads
+// would succeed but Execute would fail later). An empty advertised list means
+// an old server that only speaks sha256: clients infer sha256 in that case,
+// but any other function is rejected.
+func validateDigestFunction(fn digest.Function, capa *rpb.ServerCapabilities) error {
+	if err := checkAdvertisedDigestFunctions(fn, capa.GetCacheCapabilities().GetDigestFunctions(), "cache"); err != nil {
+		return err
+	}
+	ec := capa.GetExecutionCapabilities()
+	if !ec.GetExecEnabled() {
+		return nil
+	}
+	advertised := ec.GetDigestFunctions()
+	if len(advertised) == 0 && ec.GetDigestFunction() != rpb.DigestFunction_UNKNOWN {
+		// Per the spec, the repeated digest_functions field takes precedence,
+		// falling back to the legacy singular field if it is unset.
+		advertised = []rpb.DigestFunction_Value{ec.GetDigestFunction()}
+	}
+	return checkAdvertisedDigestFunctions(fn, advertised, "execution")
+}
+
+// checkAdvertisedDigestFunctions checks fn against one capability's advertised
+// digest functions.
+func checkAdvertisedDigestFunctions(fn digest.Function, advertised []rpb.DigestFunction_Value, capability string) error {
+	if len(advertised) == 0 {
+		if fn == digest.SHA256 {
+			return nil
+		}
+		return fmt.Errorf("digest function %s not supported; server advertised no %s digest functions", fn, capability)
+	}
+	if slices.Contains(advertised, fn.Value()) {
+		return nil
+	}
+	return fmt.Errorf("digest function %s is not supported by the server's %s capabilities; advertised: %v", fn, capability, advertised)
 }
 
 // Close closes the client's connections, including the separate CAS
@@ -743,8 +816,9 @@ func keepFirstAttempt(callCtx context.Context, timeoutCause, callErr error) bool
 func (c *Client) GetActionResult(ctx context.Context, d digest.Digest) (*rpb.ActionResult, error) {
 	client := rpb.NewActionCacheClient(c.casConn)
 	req := &rpb.GetActionResultRequest{
-		InstanceName: c.opt.Instance,
-		ActionDigest: d.Proto(),
+		InstanceName:   c.opt.Instance,
+		ActionDigest:   d.Proto(),
+		DigestFunction: c.digestFn.Value(),
 	}
 	// Attempt 0 runs under a short deadline so a stalled lookup
 	// doesn't sit the full 10s service-config deadline. Only our
@@ -790,9 +864,10 @@ func (c *Client) UpdateActionResultEnabled() bool {
 func (c *Client) UpdateActionResult(ctx context.Context, d digest.Digest, result *rpb.ActionResult) error {
 	client := rpb.NewActionCacheClient(c.casConn)
 	_, err := client.UpdateActionResult(ctx, &rpb.UpdateActionResultRequest{
-		InstanceName: c.opt.Instance,
-		ActionDigest: d.Proto(),
-		ActionResult: result,
+		InstanceName:   c.opt.Instance,
+		ActionDigest:   d.Proto(),
+		ActionResult:   result,
+		DigestFunction: c.digestFn.Value(),
 	})
 	c.m.OpsDone(err)
 	return err

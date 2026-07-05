@@ -15,12 +15,13 @@ import (
 	"strings"
 	"testing"
 
+	"go.chromium.org/build/hashigo/digest"
 	rpb "go.chromium.org/build/remote-apis/build/bazel/remote/execution/v2"
 
+	"go.chromium.org/build/siso/blob"
 	"go.chromium.org/build/siso/hashfs"
 	"go.chromium.org/build/siso/path"
 	"go.chromium.org/build/siso/reapi"
-	"go.chromium.org/build/siso/reapi/digest"
 	"go.chromium.org/build/siso/reapi/merkletree"
 )
 
@@ -43,31 +44,31 @@ func newHashFS(t *testing.T) (*hashfs.HashFS, string) {
 }
 
 // traverseTree fetches and flattens a Tree blob exactly as the cache-hit path (expandDirOutputs) does, returning each file's path mapped to its content read back from the store (reading content, not just blob existence, catches empty-tree/wrong-digest regressions).
-func traverseTree(t *testing.T, ds *digest.Store, td digest.Digest, base string) map[string]string {
+func traverseTree(t *testing.T, ds *blob.Store, td digest.Digest, base string) map[string]string {
 	t.Helper()
 	treeData, ok := ds.Get(td)
 	if !ok {
 		t.Fatalf("tree blob %s not registered in store", td)
 	}
-	b, err := digest.DataToBytes(t.Context(), treeData)
+	b, err := blob.DataToBytes(t.Context(), treeData)
 	if err != nil {
 		t.Fatalf("read tree blob: %v", err)
 	}
-	parseStore := digest.NewStore()
-	rootDir, err := reapi.ParseTree(t.Context(), b, parseStore)
+	parseStore := blob.NewStore()
+	rootDir, err := reapi.ParseTree(t.Context(), digest.SHA256, b, parseStore)
 	if err != nil {
 		t.Fatalf("ParseTree: %v", err)
 	}
-	gotFiles, _, _ := merkletree.Traverse(t.Context(), base, rootDir, parseStore)
+	gotFiles, _, _ := merkletree.Traverse(t.Context(), digest.SHA256, base, rootDir, parseStore)
 	contents := make(map[string]string, len(gotFiles))
 	for _, f := range gotFiles {
 		path := filepath.ToSlash(f.GetPath())
-		blob, ok := ds.Get(digest.FromProto(f.GetDigest()))
+		cData, ok := ds.Get(digest.FromProto(f.GetDigest()))
 		if !ok {
 			t.Errorf("content blob for %s missing from store (would upload an unfetchable tree)", path)
 			continue
 		}
-		data, err := digest.DataToBytes(t.Context(), blob)
+		data, err := blob.DataToBytes(t.Context(), cData)
 		if err != nil {
 			t.Errorf("read content blob for %s: %v", path, err)
 			continue
@@ -95,7 +96,7 @@ func TestDirOutputTree_RoundTrip(t *testing.T) {
 		}
 	}
 
-	ds := digest.NewStore()
+	ds := blob.NewStore()
 	td, err := dirOutputTree(ctx, hashFS, root, "out/gen", ds)
 	if err != nil {
 		t.Fatalf("dirOutputTree: %v", err)
@@ -116,22 +117,22 @@ func TestDirOutputTree_RoundTrip(t *testing.T) {
 }
 
 // traverseTreeDirs is like traverseTree but returns the tree's directory paths (including empty subdirectories).
-func traverseTreeDirs(t *testing.T, ds *digest.Store, td digest.Digest, base string) []string {
+func traverseTreeDirs(t *testing.T, ds *blob.Store, td digest.Digest, base string) []string {
 	t.Helper()
 	treeData, ok := ds.Get(td)
 	if !ok {
 		t.Fatalf("tree blob %s not registered in store", td)
 	}
-	b, err := digest.DataToBytes(t.Context(), treeData)
+	b, err := blob.DataToBytes(t.Context(), treeData)
 	if err != nil {
 		t.Fatalf("read tree blob: %v", err)
 	}
-	parseStore := digest.NewStore()
-	rootDir, err := reapi.ParseTree(t.Context(), b, parseStore)
+	parseStore := blob.NewStore()
+	rootDir, err := reapi.ParseTree(t.Context(), digest.SHA256, b, parseStore)
 	if err != nil {
 		t.Fatalf("ParseTree: %v", err)
 	}
-	_, _, gotDirs := merkletree.Traverse(t.Context(), base, rootDir, parseStore)
+	_, _, gotDirs := merkletree.Traverse(t.Context(), digest.SHA256, base, rootDir, parseStore)
 	var paths []string
 	for _, d := range gotDirs {
 		paths = append(paths, filepath.ToSlash(d.GetPath()))
@@ -152,7 +153,7 @@ func TestDirOutputTree_EmptySubdir(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ds := digest.NewStore()
+	ds := blob.NewStore()
 	td, err := dirOutputTree(ctx, hashFS, root, "out/gen", ds)
 	if err != nil {
 		t.Fatalf("dirOutputTree: %v", err)
@@ -182,7 +183,7 @@ func TestDirOutputTree_Deterministic(t *testing.T) {
 	}
 	var first digest.Digest
 	for i := range 20 {
-		ds := digest.NewStore()
+		ds := blob.NewStore()
 		td, err := dirOutputTree(ctx, hashFS, root, "out/gen", ds)
 		if err != nil {
 			t.Fatalf("dirOutputTree: %v", err)
@@ -197,10 +198,10 @@ func TestDirOutputTree_Deterministic(t *testing.T) {
 	}
 }
 
-// storeDataSource adapts a digest.Store to hashfs.DataSource so a test can drive expandDirOutputs.
-type storeDataSource struct{ s *digest.Store }
+// storeDataSource adapts a blob.Store to hashfs.DataSource so a test can drive expandDirOutputs.
+type storeDataSource struct{ s *blob.Store }
 
-func (d storeDataSource) Source(_ context.Context, dg digest.Digest, _ string) digest.Source {
+func (d storeDataSource) Source(_ context.Context, dg digest.Digest, _ string) blob.Source {
 	src, _ := d.s.GetSource(dg)
 	return src
 }
@@ -222,7 +223,7 @@ func TestExpandDirOutputs_Idempotent(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	ds := digest.NewStore()
+	ds := blob.NewStore()
 	td, err := dirOutputTree(ctx, hashFS, root, "out/gen", ds)
 	if err != nil {
 		t.Fatalf("dirOutputTree: %v", err)
@@ -232,6 +233,7 @@ func TestExpandDirOutputs_Idempotent(t *testing.T) {
 		WorkspaceRoot: root,
 		WorkDir:       "out",
 		OutputDirs:    []path.Path{"out/gen"},
+		HashFS:        hashFS,
 	}
 	cmd.InitOutputs()
 	cmd.actionResult = &rpb.ActionResult{
@@ -275,13 +277,13 @@ func TestDirOutputTree_Empty(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ds := digest.NewStore()
+	ds := blob.NewStore()
 	td, err := dirOutputTree(ctx, hashFS, root, "out/empty", ds)
 	if err != nil {
 		t.Fatalf("dirOutputTree(empty): %v", err)
 	}
-	if td != digest.EmptyTree {
-		t.Errorf("empty dir tree digest = %v; want canonical EmptyTree %v", td, digest.EmptyTree)
+	if td != digest.SHA256.EmptyTree() {
+		t.Errorf("empty dir tree digest = %v; want canonical EmptyTree %v", td, digest.SHA256.EmptyTree())
 	}
 }
 
@@ -310,7 +312,7 @@ func TestSetResultOutputs_FileAndDir(t *testing.T) {
 		Outputs:       []path.Path{"out/a.o"},
 		OutputDirs:    []path.Path{"out/gen"},
 	}
-	ds := digest.NewStore()
+	ds := blob.NewStore()
 	result := &rpb.ActionResult{}
 	if err := cmd.SetResultOutputs(ctx, result, ds); err != nil {
 		t.Fatalf("SetResultOutputs: %v", err)
@@ -321,7 +323,7 @@ func TestSetResultOutputs_FileAndDir(t *testing.T) {
 	if len(result.OutputFiles) != 1 || result.OutputFiles[0].GetPath() != "a.o" {
 		t.Fatalf("OutputFiles = %v; want one file %q", result.OutputFiles, "a.o")
 	}
-	wantObj := digest.FromBytes("a.o", []byte("obj")).Digest()
+	wantObj := blob.FromBytes(digest.SHA256, "a.o", []byte("obj")).Digest()
 	if got := digest.FromProto(result.OutputFiles[0].GetDigest()); got != wantObj {
 		t.Errorf("a.o digest = %v; want %v (digest of %q)", got, wantObj, "obj")
 	}
@@ -334,7 +336,7 @@ func TestSetResultOutputs_FileAndDir(t *testing.T) {
 		t.Errorf("OutputDirectory path = %q; want %q", od.GetPath(), "gen")
 	}
 	td := digest.FromProto(od.GetTreeDigest())
-	if td == digest.EmptyTree || td.SizeBytes == 0 {
+	if td == digest.SHA256.EmptyTree() || td.SizeBytes == 0 {
 		t.Fatalf("OutputDirectory tree = %v; want a real non-empty tree (empty tree = cache poisoning)", td)
 	}
 	got := traverseTree(t, ds, td, "gen")
@@ -372,7 +374,7 @@ func TestSetResultOutputs_SymlinkOutput(t *testing.T) {
 		HashFS:        hashFS,
 		Outputs:       []path.Path{"out/link"},
 	}
-	ds := digest.NewStore()
+	ds := blob.NewStore()
 	result := &rpb.ActionResult{}
 	if err := cmd.SetResultOutputs(ctx, result, ds); err != nil {
 		t.Fatalf("SetResultOutputs: %v", err)

@@ -8,18 +8,26 @@ import (
 	"errors"
 	"testing"
 
+	"go.chromium.org/build/hashigo/digest"
+
 	"go.chromium.org/build/siso/execute"
+	"go.chromium.org/build/siso/hashfs"
 	"go.chromium.org/build/siso/path"
-	"go.chromium.org/build/siso/reapi/digest"
 	"go.chromium.org/build/siso/ui"
 )
 
 func TestCmdOutput(t *testing.T) {
+	hfs, err := hashfs.New(t.Context(), hashfs.Option{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer hfs.Close(t.Context())
 	execcmd := &execute.Cmd{
 		Desc:       "CXX foo.o",
 		ActionName: "cxx",
 		WorkDir:    "out/siso",
 		Outputs:    []path.Path{"out/siso/foo.o"},
+		HashFS:     hfs,
 	}
 	const command = "../../third_party/llvm-build/Release+Asserts/bin/clang++ -c ../../base/base.cc"
 
@@ -128,7 +136,7 @@ foo.d	e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855/0	siso fe
 			result: cmdOutputResultSUCCESS,
 			rule:   "clang/cxx",
 			auxiliary: map[string]digest.Digest{
-				"bar/": digest.EmptyTree,
+				"bar/": digest.SHA256.EmptyTree(),
 			},
 			want: `SUCCESS:  "./foo.o" CXX foo.o
 build step: cxx "./foo.o"

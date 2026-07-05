@@ -10,9 +10,11 @@ import (
 	"sync"
 	"time"
 
+	"go.chromium.org/build/hashigo/digest"
+
+	"go.chromium.org/build/siso/blob"
 	"go.chromium.org/build/siso/o11y/clog"
 	"go.chromium.org/build/siso/o11y/trace"
-	"go.chromium.org/build/siso/reapi/digest"
 	"go.chromium.org/build/siso/sync/semaphore"
 )
 
@@ -34,12 +36,12 @@ func SetNoLazyForTest(fnames ...string) {
 	}
 }
 
-func localDigest(ctx context.Context, src digest.Source, fname string) (digest.Data, error) {
+func localDigest(ctx context.Context, fn digest.Function, src blob.Source, fname string) (blob.Data, error) {
 	ctx, span := trace.NewSpan(ctx, "local-digest")
 	defer span.Close(nil)
 
 	started := time.Now()
-	d, err := digest.FromLocalFile(ctx, src)
+	d, err := blob.FromLocalFile(ctx, fn, src)
 	if dur := time.Since(started); dur >= 10*time.Second {
 		clog.Warningf(ctx, "too slow local digest %s %s in %s, err=%v", fname, d.Digest(), dur, err)
 	}
@@ -53,6 +55,7 @@ type digestReq struct {
 }
 
 type digester struct {
+	fn        digest.Function
 	quitEarly bool
 	q         chan digestReq
 
@@ -202,7 +205,7 @@ func (d *digester) compute(ctx context.Context, fname string, e *entry) {
 			return context.Cause(ctx)
 		default:
 		}
-		return e.compute(ctx, fname)
+		return e.compute(ctx, d.fn, fname)
 	})
 	if err != nil {
 		clog.Warningf(ctx, "failed to compute digest %s: %v", fname, err)

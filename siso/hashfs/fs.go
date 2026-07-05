@@ -30,12 +30,15 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"go.chromium.org/build/hashigo/digest"
+
+	"go.chromium.org/build/siso/blob"
 	"go.chromium.org/build/siso/hashfs/osfs"
 	pb "go.chromium.org/build/siso/hashfs/proto"
 	"go.chromium.org/build/siso/o11y/clog"
 	"go.chromium.org/build/siso/o11y/trace"
 	"go.chromium.org/build/siso/path"
-	"go.chromium.org/build/siso/reapi/digest"
+	"go.chromium.org/build/siso/reapi/fetch"
 	"go.chromium.org/build/siso/reapi/merkletree"
 	"go.chromium.org/build/siso/resource"
 	"go.chromium.org/build/siso/sync/semaphore"
@@ -159,14 +162,19 @@ func New(ctx context.Context, opt Option) (*HashFS, error) {
 	if opt.DataSource == nil {
 		opt.DataSource = noDataSource{}
 	}
+	if opt.DigestFunction.IsZero() {
+		opt.DigestFunction = digest.SHA256
+	}
 	opt.OSFSOption.OnCog = opt.CogFS != nil
 	opt.OSFSOption.CartFS = opt.CartFS
+	opt.OSFSOption.DigestFunction = opt.DigestFunction
 	fsys := &HashFS{
 		opt:       opt,
 		directory: &directory{isRoot: true},
 		OS:        osfs.New(ctx, "fs", opt.OSFSOption),
 
 		digester: digester{
+			fn:        opt.DigestFunction,
 			quitEarly: opt.DeferDigest,
 			q:         make(chan digestReq, 1000),
 			quit:      make(chan struct{}),
@@ -196,7 +204,7 @@ func New(ctx context.Context, opt Option) (*HashFS, error) {
 		// have a valid base state to apply it to.
 		var reconciled bool
 		if fsys.loadErr == nil {
-			reconciled = loadJournal(ctx, journalFile, fstate)
+			reconciled = loadJournal(ctx, opt.DigestFunction, journalFile, fstate)
 		}
 		if err := fsys.SetState(ctx, fstate); err != nil {
 			return nil, err
@@ -222,6 +230,11 @@ func New(ctx context.Context, opt Option) (*HashFS, error) {
 	}
 	go fsys.digester.start(ctx)
 	return fsys, nil
+}
+
+// DigestFunction returns the content digest function used by this filesystem.
+func (hfs *HashFS) DigestFunction() digest.Function {
+	return hfs.opt.DigestFunction
 }
 
 // LoadErr returns load error.
@@ -799,7 +812,7 @@ func (hfs *HashFS) ReadFile(ctx context.Context, root string, fname path.Path) (
 		// check it is already flushed to disk or not.
 		if err != nil || !e.getMtime().Equal(lfi.ModTime()) || ed.SizeBytes != lfi.Size() {
 			// not yet flushed, read from CAS
-			buf, err := digest.DataToBytes(ctx, digest.NewData(e.src, ed))
+			buf, err := blob.DataToBytes(ctx, blob.NewData(e.src, ed))
 			if log.V(1) {
 				clog.Infof(ctx, "readfile(%s) %s: %v", ed, fullname, err)
 			}
@@ -838,7 +851,7 @@ func (hfs *HashFS) ReadFile(ctx context.Context, root string, fname path.Path) (
 		needDigest := e.d.IsZero()
 		e.mu.RUnlock()
 		if needDigest {
-			d := digest.FromBytes(string(fullname), buf).Digest()
+			d := blob.FromBytes(hfs.opt.DigestFunction, string(fullname), buf).Digest()
 			e.mu.Lock()
 			if e.d.IsZero() {
 				e.d = d
@@ -859,7 +872,7 @@ func (hfs *HashFS) WriteFile(ctx context.Context, root string, fname path.Path, 
 		clog.Infof(ctx, "writefile @%s %s x:%t mtime:%s", root, fname, isExecutable, mtime)
 	}
 	hfs.clean.Store(false)
-	data := digest.FromBytes(string(fname), b)
+	data := blob.FromBytes(hfs.opt.DigestFunction, string(fname), b)
 	fullname := makeFullpath(root, fname)
 	span.SetAttr("fname", string(fullname))
 	lready := make(chan bool, 1)
@@ -1333,7 +1346,7 @@ func (hfs *HashFS) resolveEscapingSymlink(ctx context.Context, root string, fnam
 	clog.Infof(ctx, "resolve symlink %s to %s", fname, name)
 	hfs.digester.compute(ctx, string(name), elink)
 	d := elink.digest()
-	me.Data = digest.NewData(elink.src, d)
+	me.Data = blob.NewData(elink.src, d)
 	me.IsExecutable = elink.mode&0111 != 0
 	me.Target = elink.target
 	return me, nil
@@ -1547,7 +1560,7 @@ func (hfs *HashFS) buildMerkletreeEntries(ctx context.Context, root string, inpu
 		}
 		me := merkletree.Entry{
 			Name:         fname,
-			Data:         digest.NewData(e.src, d),
+			Data:         blob.NewData(e.src, d),
 			IsExecutable: e.mode&0111 != 0,
 			Target:       e.target,
 		}
@@ -2004,7 +2017,7 @@ func (ns noSource) String() string {
 
 type noDataSource struct{}
 
-func (noDataSource) Source(_ context.Context, d digest.Digest, fname string) digest.Source {
+func (noDataSource) Source(_ context.Context, d digest.Digest, fname string) blob.Source {
 	return noSource{fname}
 }
 
@@ -2128,7 +2141,7 @@ func (hfs *HashFS) Flush(ctx context.Context, workspaceRoot string, files []path
 						Name: file,
 						Entry: &merkletree.Entry{
 							Name:         file,
-							Data:         digest.NewData(e.src, e.d),
+							Data:         blob.NewData(e.src, e.d),
 							IsExecutable: e.mode&0111 != 0,
 						},
 						// TODO: set other properties in cartfs?
@@ -2178,7 +2191,7 @@ func (hfs *HashFS) Flush(ctx context.Context, workspaceRoot string, files []path
 			// Materialize a directory synchronously: a member's flush MkdirAll's
 			// its parent, so any stale file/symlink at the directory's path must
 			// be cleared before member flushes launch.
-			err = e.flush(ctx, string(fname), hfs.OS, max(e.d.FetchTimeout(), hfs.opt.MinFlushTimeout))
+			err = e.flush(ctx, string(fname), hfs.OS, max(fetch.Timeout(e.d), hfs.opt.MinFlushTimeout))
 			done(err)
 			if err != nil {
 				return fmt.Errorf("flush dir %s: %w", fname, err)
@@ -2187,7 +2200,7 @@ func (hfs *HashFS) Flush(ctx context.Context, workspaceRoot string, files []path
 		}
 		eg.Go(func() (err error) {
 			defer func() { done(err) }()
-			err = e.flush(ctx, string(fname), hfs.OS, max(e.d.FetchTimeout(), hfs.opt.MinFlushTimeout))
+			err = e.flush(ctx, string(fname), hfs.OS, max(fetch.Timeout(e.d), hfs.opt.MinFlushTimeout))
 			// flush should not fail with cas not found error.
 			// but if it failed, current recorded digest should
 			// be wrong, so should delete from the hashfs.
@@ -2303,7 +2316,7 @@ func (fi FileInfo) Sys() any {
 	d := fi.e.digest()
 	return merkletree.Entry{
 		Name:         fi.Path(),
-		Data:         digest.NewData(fi.e.src, d),
+		Data:         blob.NewData(fi.e.src, d),
 		IsExecutable: fi.e.mode&0111 != 0,
 		Target:       fi.e.target,
 	}

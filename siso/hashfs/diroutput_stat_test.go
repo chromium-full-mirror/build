@@ -11,9 +11,10 @@ import (
 	"path/filepath"
 	"testing"
 
+	"go.chromium.org/build/hashigo/digest"
+
 	"go.chromium.org/build/siso/hashfs"
 	"go.chromium.org/build/siso/path"
-	"go.chromium.org/build/siso/reapi/digest"
 	"go.chromium.org/build/siso/reapi/merkletree"
 )
 

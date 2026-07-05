@@ -26,11 +26,12 @@ import (
 	"google.golang.org/protobuf/proto"
 	tspb "google.golang.org/protobuf/types/known/timestamppb"
 
+	"go.chromium.org/build/hashigo/digest"
 	rpb "go.chromium.org/build/remote-apis/build/bazel/remote/execution/v2"
 
 	"go.chromium.org/build/siso/auth/cred"
+	"go.chromium.org/build/siso/blob"
 	"go.chromium.org/build/siso/reapi"
-	"go.chromium.org/build/siso/reapi/digest"
 	"go.chromium.org/build/siso/reapi/merkletree/exporter"
 	"go.chromium.org/build/siso/reapi/merkletree/importer"
 	rbepb "go.chromium.org/build/siso/reapi/proto"
@@ -267,12 +268,12 @@ func (c *Command) call(ctx context.Context, reopt reapi.Option, credential cred.
 	fmt.Printf("ToolInvocationID: %s\n", toolInvocationID)
 	fmt.Printf("ActionID: %s\n", actionID)
 
-	ds := digest.NewStore()
+	ds := blob.NewStore()
 	var inputRootDigest digest.Digest
 	_, err = os.Stat("root")
 	if err == nil {
 		fmt.Printf("input root from root/: ")
-		var im importer.Importer
+		im := importer.Importer{Fn: client.DigestFunction()}
 		inputRootDigest, err = im.Import(ctx, "root", ds)
 		if err != nil {
 			return err
@@ -294,7 +295,7 @@ func (c *Command) call(ctx context.Context, reopt reapi.Option, credential cred.
 			return err
 		}
 		platform = command.Platform
-		data, err := digest.FromProtoMessage(command)
+		data, err := blob.FromProtoMessage(client.DigestFunction(), command)
 		if err != nil {
 			return err
 		}
@@ -321,7 +322,7 @@ func (c *Command) call(ctx context.Context, reopt reapi.Option, credential cred.
 		action.InputRootDigest = inputRootDigest.Proto()
 	}
 	log.Infof("action: %s", action)
-	data, err := digest.FromProtoMessage(action)
+	data, err := blob.FromProtoMessage(client.DigestFunction(), action)
 	if err != nil {
 		return err
 	}

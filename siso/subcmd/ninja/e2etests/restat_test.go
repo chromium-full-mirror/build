@@ -11,6 +11,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	"go.chromium.org/build/hashigo/digest"
+
 	"go.chromium.org/build/siso/build"
 	"go.chromium.org/build/siso/build/ninjabuild"
 	"go.chromium.org/build/siso/hashfs"
@@ -317,7 +319,7 @@ func TestBuild_RestatMultiout(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	stmap := hashfs.StateMap(st)
+	stmap := hashfs.StateMap(digest.SHA256, st)
 
 	touchFile(t, dir, "base/foo.in")
 
@@ -338,7 +340,7 @@ func TestBuild_RestatMultiout(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	nstmap := hashfs.StateMap(nst)
+	nstmap := hashfs.StateMap(digest.SHA256, nst)
 
 	fname := filepath.ToSlash(filepath.Join(dir, "out/siso/foo.out"))
 	first := stmap[fname]

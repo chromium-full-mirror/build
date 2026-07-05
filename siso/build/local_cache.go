@@ -22,12 +22,13 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 
+	"go.chromium.org/build/hashigo/digest"
 	rpb "go.chromium.org/build/remote-apis/build/bazel/remote/execution/v2"
 
+	"go.chromium.org/build/siso/blob"
 	"go.chromium.org/build/siso/o11y/clog"
 	"go.chromium.org/build/siso/o11y/iometrics"
 	"go.chromium.org/build/siso/o11y/trace"
-	"go.chromium.org/build/siso/reapi/digest"
 	"go.chromium.org/build/siso/sync/semaphore"
 	"go.chromium.org/build/siso/ui"
 )
@@ -416,7 +417,7 @@ func (c *LocalCache) GarbageCollectIfRequired(ctx context.Context) {
 }
 
 // Source returns digest source for fname identified by the digest.
-func (c *LocalCache) Source(_ context.Context, d digest.Digest, fname string) digest.Source {
+func (c *LocalCache) Source(_ context.Context, d digest.Digest, fname string) blob.Source {
 	return dataSource{c: c, d: d, fname: fname, m: c.IOMetrics()}
 }
 

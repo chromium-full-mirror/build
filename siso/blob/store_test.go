@@ -2,13 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-package digest
+package blob
 
 import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
+
+	"go.chromium.org/build/hashigo/digest"
 )
 
 func TestStore(t *testing.T) {
@@ -18,7 +20,7 @@ func TestStore(t *testing.T) {
 	}
 
 	ds := NewStore()
-	d1 := FromBytes("123", []byte{1, 2, 3})
+	d1 := FromBytes(digest.SHA256, "123", []byte{1, 2, 3})
 	dg1 := d1.Digest()
 
 	// It should fail because the Data is not set yet.
@@ -47,7 +49,7 @@ func TestStore(t *testing.T) {
 	}
 
 	// Set the 2nd data.
-	d2 := FromBytes("abc", []byte("abc"))
+	d2 := FromBytes(digest.SHA256, "abc", []byte("abc"))
 	dg2 := d2.Digest()
 	ds.Set(d2)
 
@@ -60,8 +62,8 @@ func TestStore(t *testing.T) {
 
 	// list digests
 	listGot := ds.List()
-	listWant := []Digest{dg1, dg2}
-	ignoreOrder := cmpopts.SortSlices(func(x, y Digest) bool { return x.String() < y.String() })
+	listWant := []digest.Digest{dg1, dg2}
+	ignoreOrder := cmpopts.SortSlices(func(x, y digest.Digest) bool { return x.String() < y.String() })
 	if diff := cmp.Diff(listWant, listGot, ignoreOrder); diff != "" {
 		t.Errorf("ds.List(): diff -want +got:\n%s", diff)
 	}

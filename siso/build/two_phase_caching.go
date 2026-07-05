@@ -14,12 +14,13 @@ import (
 
 	log "github.com/golang/glog"
 
+	"go.chromium.org/build/hashigo/digest"
 	rpb "go.chromium.org/build/remote-apis/build/bazel/remote/execution/v2"
 
+	"go.chromium.org/build/siso/blob"
 	"go.chromium.org/build/siso/o11y/clog"
 	"go.chromium.org/build/siso/o11y/trace"
 	"go.chromium.org/build/siso/path"
-	"go.chromium.org/build/siso/reapi/digest"
 	"go.chromium.org/build/siso/reapi/merkletree"
 )
 
@@ -94,7 +95,7 @@ func (rt reapiTwoPhaseCaching) Check(ctx context.Context, lookupKey string, step
 			continue
 		}
 		if log.V(1) {
-			actionDigest, err := digest.FromProtoMessage(action)
+			actionDigest, err := blob.FromProtoMessage(rt.b.hashFS.DigestFunction(), action)
 			clog.Infof(ctx, "match action %s => %s: %v", action, actionDigest, err)
 		}
 		step.cmd = ocmd.Clone()
@@ -183,7 +184,7 @@ func (rt reapiTwoPhaseCaching) matchInputRoot(ctx context.Context, inputRootDige
 			names = append(names, name)
 			m[name] = merkletree.Entry{
 				Name:         path.Path(name),
-				Data:         digest.NewData(nil, digest.FromProto(file.Digest)),
+				Data:         blob.NewData(nil, digest.FromProto(file.Digest)),
 				IsExecutable: file.IsExecutable,
 			}
 		}

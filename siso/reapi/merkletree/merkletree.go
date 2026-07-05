@@ -20,11 +20,12 @@ import (
 
 	"google.golang.org/protobuf/proto"
 
+	"go.chromium.org/build/hashigo/digest"
 	rpb "go.chromium.org/build/remote-apis/build/bazel/remote/execution/v2"
 
+	"go.chromium.org/build/siso/blob"
 	"go.chromium.org/build/siso/o11y/clog"
 	"go.chromium.org/build/siso/path"
-	"go.chromium.org/build/siso/reapi/digest"
 )
 
 // MerkleTree represents a merkle tree.
@@ -32,7 +33,8 @@ type MerkleTree struct {
 	// dirname to Directory.
 	// empty dirname is root.
 	m     map[string]*rpb.Directory
-	store *digest.Store
+	fn    digest.Function
+	store *blob.Store
 
 	// Note: this cache showed a reduction of 7GB (4%) during a Chrome
 	// build. The assumption is that traversal is sequential. A measurement
@@ -42,12 +44,13 @@ type MerkleTree struct {
 	pooled bool
 }
 
-// New creates new merkle tree with digest store.
-func New(store *digest.Store) *MerkleTree {
+// New creates new merkle tree with digest function and digest store.
+func New(fn digest.Function, store *blob.Store) *MerkleTree {
 	return &MerkleTree{
 		m: map[string]*rpb.Directory{
 			"": {},
 		},
+		fn:    fn,
 		store: store,
 	}
 }
@@ -62,8 +65,9 @@ var merkleTreePool = sync.Pool{
 
 // NewPooled returns a MerkleTree from the pool.
 // Call Release when done to return it; defer is the typical usage.
-func NewPooled(store *digest.Store) *MerkleTree {
+func NewPooled(fn digest.Function, store *blob.Store) *MerkleTree {
 	m := merkleTreePool.Get().(*MerkleTree)
+	m.fn = fn
 	m.store = store
 	m.lastDir = dirstate{}
 	m.pooled = true
@@ -98,7 +102,7 @@ type Entry struct {
 	Name path.Path
 
 	// Data is entry's content. `nil` for directories and symlinks.
-	Data digest.Data
+	Data blob.Data
 
 	// IsExecutable is true if the file is executable.
 	// no need to set this for directory.
@@ -303,7 +307,7 @@ type TreeEntry struct {
 	// It may be nil, if it is sure that the subtree was uploaded
 	// to CAS and no need to check missing blobs / upload blobs
 	// of the subtree.
-	Store *digest.Store
+	Store *blob.Store
 }
 
 // SetTree sets a subtree entry.
@@ -362,7 +366,7 @@ func (m *MerkleTree) SetTree(tentry TreeEntry) error {
 	}
 }
 
-func (m *MerkleTree) setTree(cur dirstate, name string, d digest.Digest, store *digest.Store) {
+func (m *MerkleTree) setTree(cur dirstate, name string, d digest.Digest, store *blob.Store) {
 	dirname := pathJoin(cur.name, name)
 	dirnode := &rpb.DirectoryNode{
 		Name:   name,
@@ -578,7 +582,7 @@ func (m *MerkleTree) buildTree(ctx context.Context, curdir *rpb.Directory, dirna
 	})
 	curdir.Directories = dirs
 
-	data, err := digest.FromProtoMessage(curdir)
+	data, err := blob.FromProtoMessage(m.fn, curdir)
 	if err != nil {
 		return nil, fmt.Errorf("directory digest %s: %w", dirname, err)
 	}

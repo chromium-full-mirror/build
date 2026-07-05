@@ -401,8 +401,12 @@ func (c *Command) resolveFlags() error {
 func (c *Command) enableOfflineMode(ctx context.Context) {
 	ui.Default.Warningf("%s", ui.SGR(ui.Red, "offline mode\n"))
 	clog.Warningf(ctx, "offline mode")
+	// Keep -reapi_digest_function across the reset: offline builds still
+	// hash and interpret the persisted fs state under it.
+	digestFunction := c.reopt.DigestFunction
 	c.reopt = new(reapi.Option)
 	c.reopt.Insecure = true
+	c.reopt.DigestFunction = digestFunction
 	c.projectID = ""
 	c.collectorAddress = ""
 	c.enableCloudLogging = false

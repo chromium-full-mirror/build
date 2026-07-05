@@ -26,10 +26,12 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
 
+	"go.chromium.org/build/hashigo/digest"
+
+	"go.chromium.org/build/siso/blob"
 	"go.chromium.org/build/siso/hashfs"
 	pb "go.chromium.org/build/siso/hashfs/proto"
 	"go.chromium.org/build/siso/path"
-	"go.chromium.org/build/siso/reapi/digest"
 	"go.chromium.org/build/siso/reapi/merkletree"
 )
 
@@ -249,7 +251,7 @@ func TestState(t *testing.T) {
 	}
 
 	st := hashFS.State(ctx)
-	m := hashfs.StateMap(st)
+	m := hashfs.StateMap(digest.SHA256, st)
 	_, ok := m[filepath.ToSlash(filepath.Join(dir, "stamp"))]
 	if !ok {
 		names := make([]string, 0, len(m))
@@ -291,7 +293,7 @@ func TestState_Dir(t *testing.T) {
 	fmt.Fprint(h, "step command")
 	cmdhash := h.Sum(nil)
 	cmdhashStr := base64.StdEncoding.EncodeToString(cmdhash)
-	d := digest.FromBytes("action digest", []byte("action proto")).Digest()
+	d := blob.FromBytes(digest.SHA256, "action digest", []byte("action proto")).Digest()
 	t.Logf("record gen/generate_all dir. mtime=%s cmdhash=%s d=%s", mtime, cmdhashStr, d)
 	err = update(ctx, hashFS, dir, []merkletree.Entry{
 		{
@@ -303,7 +305,7 @@ func TestState_Dir(t *testing.T) {
 	}
 
 	st := hashFS.State(ctx)
-	m := hashfs.StateMap(st)
+	m := hashfs.StateMap(digest.SHA256, st)
 	ent, ok := m[filepath.ToSlash(filepath.Join(dir, "gen/generate_all"))]
 	if !ok {
 		t.Errorf("gen/generate_all entry not exists?")
@@ -340,7 +342,7 @@ func TestState_BadDirEntry(t *testing.T) {
 	fmt.Fprint(h, "step command")
 	cmdhash := h.Sum(nil)
 	cmdhashStr := base64.StdEncoding.EncodeToString(cmdhash)
-	d := digest.FromBytes("action digest", []byte("action proto")).Digest()
+	d := blob.FromBytes(digest.SHA256, "action digest", []byte("action proto")).Digest()
 
 	func() {
 		t.Logf("-- generate .siso_fs_state for gen/output_file as dir")
@@ -371,7 +373,7 @@ func TestState_BadDirEntry(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	m := hashfs.StateMap(st)
+	m := hashfs.StateMap(digest.SHA256, st)
 	ent, ok := m[filepath.ToSlash(filepath.Join(dir, "gen/output_file"))]
 	if !ok {
 		t.Errorf("gen/output_file entry not exists?")
@@ -418,7 +420,7 @@ func TestState_BadDirEntry(t *testing.T) {
 		t.Error("IsClean=true; want false")
 	}
 	st = hashFS.State(ctx)
-	m = hashfs.StateMap(st)
+	m = hashfs.StateMap(digest.SHA256, st)
 	_, ok = m[filepath.ToSlash(filepath.Join(dir, "gen/output_file"))]
 	if ok {
 		t.Errorf("gen/output_file entry exists; want not exists")
@@ -487,7 +489,7 @@ func TestState_Symlink(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load %v", err)
 	}
-	m := hashfs.StateMap(st)
+	m := hashfs.StateMap(digest.SHA256, st)
 	e, ok := m[filepath.ToSlash(filepath.Join(dir, "symlink"))]
 	if !ok {
 		t.Errorf("no symlnk: %v", m)
@@ -574,10 +576,10 @@ func TestState_DirOutput_ReloadPreservesCmdHash(t *testing.T) {
 	h := sha256.New()
 	fmt.Fprint(h, "dir output step")
 	cmdhash := h.Sum(nil)
-	actionDg := digest.FromBytes("action digest", []byte("action proto")).Digest()
+	actionDg := blob.FromBytes(digest.SHA256, "action digest", []byte("action proto")).Digest()
 
-	helloData := digest.FromBytes("gendir/hello.txt", []byte("hello"))
-	nestedData := digest.FromBytes("gendir/sub/nested.txt", []byte("nested"))
+	helloData := blob.FromBytes(digest.SHA256, "gendir/hello.txt", []byte("hello"))
+	nestedData := blob.FromBytes(digest.SHA256, "gendir/sub/nested.txt", []byte("nested"))
 
 	entries := []merkletree.Entry{
 		{Name: "gendir"},
@@ -614,7 +616,7 @@ func TestState_DirOutput_ReloadPreservesCmdHash(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load=%v; want nil", err)
 	}
-	m := hashfs.StateMap(st)
+	m := hashfs.StateMap(digest.SHA256, st)
 	for _, rel := range []string{"gendir", "gendir/sub", "gendir/hello.txt", "gendir/sub/nested.txt"} {
 		key := filepath.ToSlash(filepath.Join(dir, rel))
 		ent, ok := m[key]
@@ -669,8 +671,8 @@ func TestState_DirOutput_StaleInnerFileReconcile(t *testing.T) {
 		h := sha256.New()
 		fmt.Fprint(h, "dir output step")
 		cmdhash := h.Sum(nil)
-		actionDg := digest.FromBytes("action digest", []byte("action proto")).Digest()
-		recordedData := digest.FromBytes("gendir/hello.txt", []byte("original"))
+		actionDg := blob.FromBytes(digest.SHA256, "action digest", []byte("action proto")).Digest()
+		recordedData := blob.FromBytes(digest.SHA256, "gendir/hello.txt", []byte("original"))
 
 		func() {
 			hashFS, err := hashfs.New(ctx, opts)
@@ -741,7 +743,7 @@ func TestState_DirOutput_StaleInnerFileReconcile(t *testing.T) {
 		if !fi.ModTime().Equal(newMtime) {
 			t.Errorf("kept-tainted mtime=%v; want %v (disk drift must be reflected)", fi.ModTime(), newMtime)
 		}
-		m := hashfs.StateMap(hashFS2.State(ctx))
+		m := hashfs.StateMap(digest.SHA256, hashFS2.State(ctx))
 		ent, ok := m[filepath.ToSlash(filepath.Join(dir, "gendir/hello.txt"))]
 		if !ok {
 			t.Fatalf("gendir/hello.txt absent from state; a kept-tainted generated entry must survive reload")
@@ -777,13 +779,13 @@ func TestState_DirOutput_BuildWithoutBytesReload(t *testing.T) {
 	h := sha256.New()
 	fmt.Fprint(h, "dir output step")
 	cmdhash := h.Sum(nil)
-	actionDg := digest.FromBytes("action digest", []byte("action proto")).Digest()
+	actionDg := blob.FromBytes(digest.SHA256, "action digest", []byte("action proto")).Digest()
 
 	entries := []merkletree.Entry{
 		{Name: "gendir"},
 		{Name: "gendir/sub"},
-		{Name: "gendir/hello.txt", Data: digest.FromBytes("gendir/hello.txt", []byte("hello"))},
-		{Name: "gendir/sub/nested.txt", Data: digest.FromBytes("gendir/sub/nested.txt", []byte("nested"))},
+		{Name: "gendir/hello.txt", Data: blob.FromBytes(digest.SHA256, "gendir/hello.txt", []byte("hello"))},
+		{Name: "gendir/sub/nested.txt", Data: blob.FromBytes(digest.SHA256, "gendir/sub/nested.txt", []byte("nested"))},
 	}
 	want := []string{"gendir", "gendir/sub", "gendir/hello.txt", "gendir/sub/nested.txt"}
 

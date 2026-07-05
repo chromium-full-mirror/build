@@ -19,6 +19,8 @@ import (
 	"testing"
 	"time"
 
+	"go.chromium.org/build/hashigo/digest"
+
 	"go.chromium.org/build/siso/build"
 	"go.chromium.org/build/siso/build/buildconfig"
 	"go.chromium.org/build/siso/build/ninjabuild"
@@ -343,7 +345,7 @@ func setupBuild(ctx context.Context, t *testing.T, dir string, fsopt hashfs.Opti
 			t.Fatal(err)
 		}
 	})
-	stepConfig, err := ninjabuild.NewStepConfig(ctx, config, path, "build.ninja", ".")
+	stepConfig, err := ninjabuild.NewStepConfig(ctx, digest.SHA256, config, path, "build.ninja", ".")
 	if err != nil {
 		t.Fatal(err)
 	}
