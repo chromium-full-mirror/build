@@ -13,10 +13,39 @@ import (
 	"google.golang.org/protobuf/types/known/wrapperspb"
 
 	"go.chromium.org/build/hashigo/digest"
+	rpb "go.chromium.org/build/remote-apis/build/bazel/remote/execution/v2"
 
 	"go.chromium.org/build/siso/blob"
 	"go.chromium.org/build/siso/reapi/merkletree"
 )
+
+// hashType maps a digest function to the ResultStore file hash type.
+// ResultStore only models MD5/SHA1/SHA256; anything else is unspecified.
+func hashType(fn digest.Function) rspb.File_HashType {
+	switch fn.Value() {
+	case rpb.DigestFunction_SHA256:
+		return rspb.File_SHA256
+	case rpb.DigestFunction_SHA1:
+		return rspb.File_SHA1
+	case rpb.DigestFunction_MD5:
+		return rspb.File_MD5
+	default:
+		return rspb.File_HASH_TYPE_UNSPECIFIED
+	}
+}
+
+// digestFunction returns the digest function that produced the digests this
+// uploader attaches to files: HashFS's function, falling back to the REAPI
+// client's, then SHA-256.
+func (u *Uploader) digestFunction() digest.Function {
+	if u.HashFS != nil {
+		return u.HashFS.DigestFunction()
+	}
+	if u.REAPIClient != nil {
+		return u.REAPIClient.DigestFunction()
+	}
+	return digest.SHA256
+}
 
 // UploadFiles uploads files to RBE-CAS, and sets the files as the invocation's artifact.
 // Need to set HashFS, REAPIClient to Uploader before calling this.
@@ -25,6 +54,7 @@ func (u *Uploader) UploadFiles(ctx context.Context, ents []merkletree.Entry) err
 		return fmt.Errorf("resultstore: unable to upload file. hashfs or reapi client is not set")
 	}
 	ds := blob.NewStore()
+	ht := hashType(u.digestFunction())
 	var files []*rspb.File
 	for _, ent := range ents {
 		file := &rspb.File{
@@ -41,7 +71,7 @@ func (u *Uploader) UploadFiles(ctx context.Context, ents []merkletree.Entry) err
 		}
 		// file.ContentType ?
 		file.Digest = d.Hash
-		file.HashType = rspb.File_SHA256
+		file.HashType = ht
 		files = append(files, file)
 	}
 	select {
@@ -88,7 +118,7 @@ func (u *Uploader) SetFile(ctx context.Context, name string, d digest.Digest) er
 							Value: d.SizeBytes,
 						},
 						Digest:   d.Hash,
-						HashType: rspb.File_SHA256,
+						HashType: hashType(u.digestFunction()),
 					},
 				},
 			},
