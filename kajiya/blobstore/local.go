@@ -14,7 +14,6 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"strings"
 	"time"
 
 	"golang.org/x/sync/errgroup"
@@ -31,6 +30,11 @@ type ContentAddressableStorage struct {
 	tmpDir  string
 	sharded bool
 
+	// Configured digest functions and their precomputed root directories
+	// (<function>/ under the data dir).
+	fns   []digest.Function
+	roots map[digest.Function]string
+
 	// Synchronization mechanism to prevent concurrent puts of the same blob.
 	putSyncer singleflight.Group
 }
@@ -46,6 +50,12 @@ type Options struct {
 
 	// SkipValidation skips re-hashing all existing blobs on startup.
 	SkipValidation bool
+
+	// DigestFunctions is the set of digest functions to provision storage
+	// roots for and validate on startup, typically the server's advertised
+	// set. Data under other functions' roots is left untouched and ignored.
+	// Empty means SHA-256 only, matching the server's default.
+	DigestFunctions []digest.Function
 }
 
 // New creates a new local CAS with default options. The data directory is created if it does not exist.
@@ -63,9 +73,15 @@ func NewWithOpts(ctx context.Context, dataDir string, opts Options) (*ContentAdd
 		return nil, err
 	}
 
-	// Ensure that our data directory has the correct layout.
-	if _, err := EnsureLayout(dataDir, opts.Sharded); err != nil {
-		return nil, fmt.Errorf("ensuring CAS directory layout: %w", err)
+	// Ensure that each configured digest function's root (<function>/ under
+	// the data dir) has the correct layout.
+	fns := opts.DigestFunctions
+	if len(fns) == 0 {
+		fns = []digest.Function{digest.SHA256}
+	}
+	roots, err := EnsureFunctionRoots(dataDir, fns, opts.Sharded)
+	if err != nil {
+		return nil, fmt.Errorf("provisioning CAS storage roots: %w", err)
 	}
 
 	// Wipe any leftover upload temp files from a previous run that may have crashed mid-upload.
@@ -81,18 +97,22 @@ func NewWithOpts(ctx context.Context, dataDir string, opts Options) (*ContentAdd
 		dataDir: dataDir,
 		tmpDir:  tmpDir,
 		sharded: opts.Sharded,
+		fns:     fns,
+		roots:   roots,
 	}
 
-	// Ensure that we have the "empty blob" present in the CAS.
-	// Clients will usually not upload it, but just assume that it's always available.
-	// A faster way would be to special case the empty digest in the CAS implementation,
-	// but this is simpler and more robust.
-	d, err := cas.Put(digest.SHA256, nil)
-	if err != nil {
-		return nil, err
-	}
-	if d != digest.SHA256.Empty() {
-		return nil, fmt.Errorf("empty blob did not have expected hash: got %s, wanted %s", d, digest.SHA256.Empty())
+	// Ensure that the "empty blob" is present in the CAS for every configured
+	// digest function: clients will usually not upload it, but just assume
+	// that it's always available.
+	for _, fn := range fns {
+		want := fn.Empty()
+		d, err := cas.Put(fn, nil)
+		if err != nil {
+			return nil, err
+		}
+		if d != want {
+			return nil, fmt.Errorf("empty blob did not have expected hash: got %s, wanted %s", d, want)
+		}
 	}
 
 	if !opts.SkipValidation {
@@ -114,34 +134,49 @@ func NewWithOpts(ctx context.Context, dataDir string, opts Options) (*ContentAdd
 	return cas, nil
 }
 
-// isValidSubdir returns true if the given subdirectory name is valid inside the CAS data directory.
-// The provided path must be relative to the data directory.
-func (c *ContentAddressableStorage) isValidSubdir(s string) bool {
-	if s == "." || s == "tmp" {
-		return true
-	}
-	return c.sharded && len(s) == 2 && digest.IsHex(s[0]) && digest.IsHex(s[1])
-}
-
-// validate checks that all files in the CAS are valid and returns the number of found blobs.
+// validate checks that all files in the CAS are valid and returns the number of
+// found blobs and their total size. Each configured digest function's blobs
+// live under their own <function>/ root; other roots are ignored.
 func (c *ContentAddressableStorage) validate(ctx context.Context) (count int, size int64, err error) {
 	g, ctx := errgroup.WithContext(ctx)
 	g.SetLimit(runtime.GOMAXPROCS(0))
 
-	// Walk through all files in our data directory and verify that they have the
-	// correct hash and size.
-	err = filepath.WalkDir(c.dataDir, func(path string, d fs.DirEntry, err error) error {
+	for _, fn := range c.fns {
+		n, s, verr := c.validateRoot(ctx, g, c.roots[fn], fn)
+		count += n
+		size += s
+		if verr != nil {
+			return count, size, verr
+		}
+	}
+
+	// Wait for all goroutines to complete
+	if err = g.Wait(); err != nil {
+		return count, size, err
+	}
+	return count, size, nil
+}
+
+// validateRoot walks one digest function's root directory, verifying file names
+// and scheduling digest re-checks on g.
+func (c *ContentAddressableStorage) validateRoot(ctx context.Context, g *errgroup.Group, root string, fn digest.Function) (count int, size int64, err error) {
+	hexLen := fn.HexLen()
+
+	err = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
 
 		// Verify that there are no unexpected directories.
 		if d.IsDir() {
-			relPath, err := filepath.Rel(c.dataDir, path)
+			relPath, err := filepath.Rel(root, path)
 			if err != nil {
 				return err
 			}
-			if c.isValidSubdir(relPath) {
+			if relPath == "." {
+				return nil
+			}
+			if c.sharded && LooksLikeShardDir(relPath) {
 				return nil
 			}
 			return fmt.Errorf("unexpected subdirectory %s", path)
@@ -154,19 +189,10 @@ func (c *ContentAddressableStorage) validate(ctx context.Context) (count int, si
 		default:
 		}
 
-		// Extract the expected digest from the filename.
-		if len(d.Name()) != 64 {
-			if strings.HasPrefix(d.Name(), "tmp_") {
-				// These might be leftover from a previous crash and are safe to delete.
-				slog.Warn("deleting leftover temporary file", "path", path)
-				if err = os.Remove(path); err != nil {
-					return err
-				}
-			} else {
-				// Out of caution, avoid deleting other unknown files automatically for now.
-				slog.Warn("ignoring file with unexpected name", "path", path)
-			}
-			return nil
+		// Skip files whose name is not a valid digest of the expected length;
+		// delete leftover temporary files from a crashed write.
+		if stray, err := SkipStrayFile(path, d.Name(), hexLen); err != nil || stray {
+			return err
 		}
 
 		// Keep stats about the found blobs.
@@ -180,7 +206,7 @@ func (c *ContentAddressableStorage) validate(ctx context.Context) (count int, si
 		// Validate file digests in parallel.
 		g.Go(func() error {
 			// Read the file and verify its digest.
-			actualDigest, err := digest.SHA256.FromFile(path)
+			actualDigest, err := fn.FromFile(path)
 			if err != nil {
 				return fmt.Errorf("failed to read file %s: %w", path, err)
 			}
@@ -193,23 +219,23 @@ func (c *ContentAddressableStorage) validate(ctx context.Context) (count int, si
 
 		return nil
 	})
-	if err != nil {
-		return count, size, err
-	}
-
-	// Wait for all goroutines to complete
-	if err = g.Wait(); err != nil {
-		return count, size, err
-	}
-	return count, size, nil
+	return count, size, err
 }
 
-// Path returns the path to the file with digest d in the CAS.
+// Path returns the path to the file with digest d in the CAS. Each digest
+// function's blobs live under their own <function>/ root. The configured
+// functions' roots are precomputed; a non-configured function (only reachable
+// through internal calls, since the RPC layer rejects non-advertised
+// functions) falls back to joining the path on the fly.
 func (c *ContentAddressableStorage) Path(fn digest.Function, d digest.Digest) string {
-	if c.sharded {
-		return filepath.Join(c.dataDir, d.Hash[:2], d.Hash)
+	dir, ok := c.roots[fn]
+	if !ok {
+		dir = filepath.Join(c.dataDir, fn.String())
 	}
-	return filepath.Join(c.dataDir, d.Hash)
+	if c.sharded {
+		return filepath.Join(dir, d.Hash[:2], d.Hash)
+	}
+	return filepath.Join(dir, d.Hash)
 }
 
 // Stat returns os.FileInfo for the requested digest if it exists.

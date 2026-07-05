@@ -34,6 +34,8 @@ import (
 type ActionCache struct {
 	dataDir string                               // directory where the action results are stored
 	sharded bool                                 // whether action results are placed under {00, 01, ..., ff} subdirs
+	fns     []digest.Function                    // configured digest functions
+	roots   map[digest.Function]string           // precomputed per-function root directories
 	syncer  singleflight.Group                   // synchronization mechanism to prevent concurrent puts of the same action
 	cas     *blobstore.ContentAddressableStorage // CAS for validating referenced blobs
 }
@@ -46,6 +48,12 @@ type Options struct {
 	// hold many results; the zero value (no sharding) avoids 256 mkdir
 	// calls and is cheaper for short-lived caches (e.g. in tests).
 	Sharded bool
+
+	// DigestFunctions is the set of digest functions to provision storage
+	// roots for and validate on startup, typically the server's advertised
+	// set. Data under other functions' roots is left untouched and ignored.
+	// Empty means SHA-256 only, matching the server's default.
+	DigestFunctions []digest.Function
 }
 
 // New creates a new local ActionCache with default options. The data directory is created if it does not exist.
@@ -63,14 +71,22 @@ func NewWithOpts(ctx context.Context, dataDir string, cas *blobstore.ContentAddr
 		return nil, err
 	}
 
-	// Ensure that our data directory has the correct layout.
-	if _, err := blobstore.EnsureLayout(dataDir, opts.Sharded); err != nil {
-		return nil, fmt.Errorf("migrating action cache layout: %w", err)
+	// Ensure that each configured digest function's root (<function>/ under
+	// the data dir) has the correct layout.
+	fns := opts.DigestFunctions
+	if len(fns) == 0 {
+		fns = []digest.Function{digest.SHA256}
+	}
+	roots, err := blobstore.EnsureFunctionRoots(dataDir, fns, opts.Sharded)
+	if err != nil {
+		return nil, fmt.Errorf("provisioning action cache storage roots: %w", err)
 	}
 
 	ac := &ActionCache{
 		dataDir: dataDir,
 		sharded: opts.Sharded,
+		fns:     fns,
+		roots:   roots,
 		cas:     cas,
 	}
 
@@ -85,72 +101,21 @@ func NewWithOpts(ctx context.Context, dataDir string, cas *blobstore.ContentAddr
 	return ac, err
 }
 
-// isValidSubdir returns true if the given subdirectory name is valid inside the data directory.
-// The provided path must be relative to the data directory.
-func (c *ActionCache) isValidSubdir(s string) bool {
-	if s == "." {
-		return true
-	}
-	return c.sharded && len(s) == 2 && digest.IsHex(s[0]) && digest.IsHex(s[1])
-}
-
-// validateCache checks that all actions in the cache are valid.
+// validate checks that all actions in the cache are valid. Each configured
+// digest function's results live under their own <function>/ root; other
+// roots are ignored.
 func (c *ActionCache) validate(ctx context.Context) (count int, blobs []digest.Digest, err error) {
 	var blobsMu sync.Mutex
 
 	g, ctx := errgroup.WithContext(ctx)
 	g.SetLimit(runtime.GOMAXPROCS(0))
 
-	// Walk through all files in our data directory and verify that they have the
-	// correct hash and size.
-	err = filepath.WalkDir(c.dataDir, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
+	for _, fn := range c.fns {
+		n, verr := c.validateRoot(ctx, g, &blobsMu, &blobs, c.roots[fn], fn)
+		count += n
+		if verr != nil {
+			return 0, nil, verr
 		}
-
-		// Verify that there are no unexpected directories.
-		if d.IsDir() {
-			relPath, err := filepath.Rel(c.dataDir, path)
-			if err != nil {
-				return err
-			}
-			if c.isValidSubdir(relPath) {
-				return nil
-			}
-			return fmt.Errorf("unexpected subdirectory %s", path)
-		}
-
-		// Exit early if context is cancelled.
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-		}
-
-		// Keep stats about the found action results.
-		fi, err := d.Info()
-		if err != nil {
-			return err
-		}
-		count++
-
-		// Validate file digests in parallel.
-		g.Go(func() error {
-			actionDigest, err := digest.SHA256.Validate(d.Name(), fi.Size())
-			if err != nil {
-				return err
-			}
-			b, err := c.validateAction(digest.SHA256, actionDigest)
-			blobsMu.Lock()
-			blobs = append(blobs, b...)
-			blobsMu.Unlock()
-			return err
-		})
-
-		return nil
-	})
-	if err != nil {
-		return 0, nil, err
 	}
 
 	// Wait for all goroutines to complete
@@ -163,6 +128,69 @@ func (c *ActionCache) validate(ctx context.Context) (count int, blobs []digest.D
 	blobs = slices.Compact(blobs)
 
 	return count, blobs, nil
+}
+
+// validateRoot walks one digest function's root directory, scheduling action
+// validations on g.
+func (c *ActionCache) validateRoot(ctx context.Context, g *errgroup.Group, blobsMu *sync.Mutex, blobs *[]digest.Digest, root string, fn digest.Function) (count int, err error) {
+	hexLen := fn.HexLen()
+
+	err = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+
+		// Verify that there are no unexpected directories.
+		if d.IsDir() {
+			relPath, err := filepath.Rel(root, path)
+			if err != nil {
+				return err
+			}
+			if relPath == "." {
+				return nil
+			}
+			if c.sharded && blobstore.LooksLikeShardDir(relPath) {
+				return nil
+			}
+			return fmt.Errorf("unexpected subdirectory %s", path)
+		}
+
+		// Exit early if context is cancelled.
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
+		// Skip files whose name is not a valid digest of the expected length;
+		// delete leftover temporary files from a crashed write.
+		if stray, err := blobstore.SkipStrayFile(path, d.Name(), hexLen); err != nil || stray {
+			return err
+		}
+
+		// Keep stats about the found action results.
+		fi, err := d.Info()
+		if err != nil {
+			return err
+		}
+		count++
+
+		// Validate file digests in parallel.
+		g.Go(func() error {
+			actionDigest, err := fn.Validate(d.Name(), fi.Size())
+			if err != nil {
+				return err
+			}
+			b, err := c.validateAction(fn, actionDigest)
+			blobsMu.Lock()
+			*blobs = append(*blobs, b...)
+			blobsMu.Unlock()
+			return err
+		})
+
+		return nil
+	})
+	return count, err
 }
 
 // validateAction checks that the action with the given digest is present, valid
@@ -241,12 +269,19 @@ func (c *ActionCache) validateAction(fn digest.Function, d digest.Digest) (blobs
 	return blobs, nil
 }
 
-// path returns the path to the file with digest d in the action cache.
-func (c *ActionCache) path(_ digest.Function, d digest.Digest) string {
-	if c.sharded {
-		return filepath.Join(c.dataDir, d.Hash[:2], d.Hash)
+// path returns the path to the file with digest d in the action cache. Each
+// digest function's results live under their own <function>/ root. The
+// configured functions' roots are precomputed; a non-configured function
+// falls back to joining the path on the fly.
+func (c *ActionCache) path(fn digest.Function, d digest.Digest) string {
+	dir, ok := c.roots[fn]
+	if !ok {
+		dir = filepath.Join(c.dataDir, fn.String())
 	}
-	return filepath.Join(c.dataDir, d.Hash)
+	if c.sharded {
+		return filepath.Join(dir, d.Hash[:2], d.Hash)
+	}
+	return filepath.Join(dir, d.Hash)
 }
 
 // Get returns the cached ActionResult for the given digest.
