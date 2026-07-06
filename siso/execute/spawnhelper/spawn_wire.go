@@ -4,7 +4,7 @@
 
 //go:build unix
 
-package localexec
+package spawnhelper
 
 import (
 	"bufio"

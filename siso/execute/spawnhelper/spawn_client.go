@@ -4,7 +4,7 @@
 
 //go:build unix
 
-package localexec
+package spawnhelper
 
 import (
 	"context"
@@ -16,24 +16,20 @@ import (
 	"sync"
 	"syscall"
 
-	"google.golang.org/protobuf/types/known/anypb"
-
-	rpb "go.chromium.org/build/remote-apis/build/bazel/remote/execution/v2"
-
 	epb "go.chromium.org/build/siso/execute/proto"
 )
 
-// spawnReply is one demultiplexed reply for a pending Run: either the "result"
-// Any wrapping an rpb.ActionResult (SpawnResult) or an error (SpawnError, or a
-// transport failure).
+// spawnReply is one demultiplexed reply for a pending Run: either
+// a SpawnResult or an error (a SpawnError from the helper, or a transport
+// failure).
 type spawnReply struct {
 	err    error
-	result *anypb.Any
+	result *epb.SpawnResult
 }
 
-// client is the siso-side handle to a running spawn helper. It multiplexes
+// Client is the siso-side handle to a running spawn helper. It multiplexes
 // concurrent actions over one socketpair connection, keyed by request id.
-type client struct {
+type Client struct {
 	cmd  *exec.Cmd
 	conn *spawnConn
 
@@ -46,7 +42,7 @@ type client struct {
 // launch executes args with `-conn_fd 3`, handing it one end of a unix
 // socketpair. Run it while siso's heap is small.
 // logFile, if non-empty, is forwarded so the helper writes its diagnostics there.
-func launch(args []string, logFile string) (*client, error) {
+func Launch(args []string, logFile string) (*Client, error) {
 	// Hold ForkLock and set close-on-exec so a concurrent fork+exec doesn't leak
 	// these fds; ExtraFiles re-clears CLOEXEC on the child's inherited copy.
 	syscall.ForkLock.RLock()
@@ -96,7 +92,7 @@ func launch(args []string, logFile string) (*client, error) {
 		_ = cmd.Wait()
 		return nil, fmt.Errorf("unexpected conn type %T", conn)
 	}
-	c := &client{
+	c := &Client{
 		cmd:     cmd,
 		conn:    newSpawnConn(uc),
 		pending: make(map[uint64]chan spawnReply),
@@ -107,7 +103,7 @@ func launch(args []string, logFile string) (*client, error) {
 
 // readLoop demultiplexes reply messages to waiting Run calls until the connection
 // fails (e.g. the helper exits), after which all pending and future Runs fail.
-func (c *client) readLoop() {
+func (c *Client) readLoop() {
 	for {
 		msg, err := c.conn.recv()
 		if err != nil {
@@ -117,7 +113,7 @@ func (c *client) readLoop() {
 		var reply spawnReply
 		switch p := msg.Payload.(type) {
 		case *epb.SpawnMessage_Result:
-			reply.result = p.Result.GetActionResult()
+			reply.result = p.Result
 		case *epb.SpawnMessage_Error:
 			// Raw helper-side message; callers (e.g. runViaHelper) add the
 			// "spawn helper:" context so it isn't duplicated.
@@ -135,7 +131,7 @@ func (c *client) readLoop() {
 	}
 }
 
-func (c *client) failAll(err error) {
+func (c *Client) failAll(err error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.dead == nil {
@@ -149,7 +145,7 @@ func (c *client) failAll(err error) {
 
 // Run asks the helper to execute req. The helper captures the child's
 // stdout/stderr and returns them inline in the ActionResult's Stdout/StderrRaw.
-func (c *client) Run(ctx context.Context, req *epb.SpawnRequest) (*rpb.ActionResult, error) {
+func (c *Client) Run(ctx context.Context, req *epb.SpawnRequest) (*epb.SpawnResult, error) {
 	ch := make(chan spawnReply, 1)
 	c.mu.Lock()
 	if c.dead != nil {
@@ -171,7 +167,7 @@ func (c *client) Run(ctx context.Context, req *epb.SpawnRequest) (*rpb.ActionRes
 
 	select {
 	case reply := <-ch:
-		return decodeReply(reply)
+		return reply.result, reply.err
 	case <-ctx.Done():
 		// The helper owns and reaps the child, so let it cancel and report back;
 		// signalling here would risk a pid-reuse race.
@@ -185,25 +181,28 @@ func (c *client) Run(ctx context.Context, req *epb.SpawnRequest) (*rpb.ActionRes
 			return nil, fmt.Errorf("send cancel after ctx done: %w", err)
 		}
 		reply := <-ch
-		res, err := decodeReply(reply)
-		if err != nil {
+		if reply.err != nil {
 			// The helper's error crossed the wire as a string, losing the
 			// context.Canceled identity; return the real cause so errors.Is
 			// matches like on the in-process path. A success that raced the
 			// cancel is still honored.
 			return nil, context.Cause(ctx)
 		}
-		return res, nil
+		return reply.result, nil
 	}
 }
 
-func decodeReply(reply spawnReply) (*rpb.ActionResult, error) {
-	if reply.err != nil {
-		return nil, reply.err
-	}
-	ar := &rpb.ActionResult{}
-	if err := reply.result.UnmarshalTo(ar); err != nil {
-		return nil, fmt.Errorf("unmarshal action result: %w", err)
-	}
-	return ar, nil
+// Close closes the client end of the control socket, so the helper sees EOF and exits.
+func (c *Client) Close() error {
+	return c.conn.close()
+}
+
+// Kill sends SIGKILL to the helper process.
+func (c *Client) Kill() error {
+	return c.cmd.Process.Kill()
+}
+
+// Wait blocks until the helper process exits and reaps it.
+func (c *Client) Wait() error {
+	return c.cmd.Wait()
 }

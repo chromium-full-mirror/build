@@ -8,13 +8,13 @@ package localexec
 
 import (
 	"context"
-	"log"
+	"flag"
 	"os"
 	"path/filepath"
-	"strconv"
 	"testing"
 
 	"go.chromium.org/build/siso/execute"
+	"go.chromium.org/build/siso/execute/spawnhelper"
 )
 
 // TestMain lets the test binary act as the spawn helper when re-exec'd by launch,
@@ -24,20 +24,18 @@ func TestMain(m *testing.M) {
 		if a != "spawn-helper" {
 			continue
 		}
-		connFD := 0
-		for j := i + 1; j < len(os.Args)-1; j++ {
-			if os.Args[j] == "-conn_fd" {
-				connFD, _ = strconv.Atoi(os.Args[j+1])
-			}
-		}
-		_ = ServeSpawnHelper(context.Background(), connFD, log.New(os.Stderr, "", log.LstdFlags))
+		fs := flag.NewFlagSet("spawn-helper", flag.ContinueOnError)
+		var server spawnhelper.Server
+		server.RegisterFlags(fs)
+		fs.Parse(os.Args[i+1:])
+		_ = server.Serve(context.Background(), Spawner{})
 		os.Exit(0)
 	}
 	// Production won't auto-launch under `go test`, so launch one explicitly; the
 	// re-exec is safe here because this binary dispatches the subcommand above.
 	exe, err := os.Executable()
 	if err == nil {
-		if c, lerr := launch([]string{exe, "spawn-helper"}, ""); lerr == nil {
+		if c, lerr := spawnhelper.Launch([]string{exe, "spawn-helper"}, ""); lerr == nil {
 			helper.Store(c)
 		}
 	}
