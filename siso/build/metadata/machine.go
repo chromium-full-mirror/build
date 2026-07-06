@@ -74,9 +74,13 @@ type CPUInfo struct {
 	BrandName string `json:"brand"`
 	// VendorString is the raw vendor string reported by the CPU, e.g. "GenuineIntel".
 	VendorString string `json:"vendor"`
-	// LogicalCores is the number of logical cores usable by the current process.
+	// LogicalCores is the total number of logical cores (hardware threads) on
+	// the machine's CPU, independent of any cgroup, processor-group, or CPU
+	// affinity restrictions on the current process.
 	LogicalCores int `json:"logical_cores"`
-	// PhysicalCores is the number of physical cores on the machine.
+	// PhysicalCores is the total number of physical cores on the machine's CPU,
+	// independent of any cgroup, processor-group, or CPU affinity restrictions
+	// on the current process.
 	PhysicalCores int `json:"physical_cores"`
 }
 
