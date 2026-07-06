@@ -38,6 +38,7 @@ import (
 
 	"go.chromium.org/build/siso/auth/cred"
 	"go.chromium.org/build/siso/build"
+	"go.chromium.org/build/siso/build/metadata/host"
 	"go.chromium.org/build/siso/hashfs"
 	"go.chromium.org/build/siso/o11y/clog"
 	"go.chromium.org/build/siso/o11y/monitoring"
@@ -222,7 +223,7 @@ func newOTELMetricsExporter(ctx context.Context, collectorAddr string) *otlpmetr
 func (c *Command) buildProperties(ctx context.Context, buildPath *build.Path) resultstore.Properties {
 	properties := resultstore.Properties{}
 	properties.Add("dir", buildPath.BaseDir)
-	info := cpuinfo()
+	info := cpuinfo(ctx)
 	properties.Add("cpu", info)
 	info = gcinfo()
 	properties.Add("memgc", info)
@@ -305,11 +306,16 @@ func (c *Command) setupResultStore(ctx context.Context, projectID string, buildP
 }
 
 // cpuinfo returns a string containing CPU information.
-func cpuinfo() string {
+func cpuinfo(ctx context.Context) string {
+	physicalCores, logicalCores, err := host.CPUCores()
+	if err != nil {
+		clog.Warningf(ctx, "failed to get cpu cores: %v", err)
+	}
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "cpu family=%d model=%d stepping=%d ", cpuid.CPU.Family, cpuid.CPU.Model, cpuid.CPU.Stepping)
 	fmt.Fprintf(&sb, "brand=%q vendor=%q ", cpuid.CPU.BrandName, cpuid.CPU.VendorString)
-	fmt.Fprintf(&sb, "physicalCores=%d threadsPerCore=%d logicalCores=%d ", cpuid.CPU.PhysicalCores, cpuid.CPU.ThreadsPerCore, cpuid.CPU.LogicalCores)
+	// TODO: update host.CPUCores to also return threads per core?
+	fmt.Fprintf(&sb, "physicalCores=%d threadsPerCore=%d logicalCores=%d ", physicalCores, cpuid.CPU.ThreadsPerCore, logicalCores)
 	fmt.Fprintf(&sb, "vm=%t features=%s", cpuid.CPU.VM(), cpuid.CPU.FeatureSet())
 	return sb.String()
 }

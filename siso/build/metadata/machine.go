@@ -6,7 +6,6 @@ package metadata
 
 import (
 	"context"
-	"errors"
 	"runtime"
 
 	"github.com/klauspost/cpuid/v2"
@@ -32,11 +31,14 @@ func GatherMachineInfo(ctx context.Context) MachineInfo {
 		clog.Warningf(ctx, "failed to get machine memory: %v", err)
 	}
 	osVersion, err := host.OSVersion()
-	if errors.Is(err, host.ErrUnsupportedOS) {
-		osVersion = ""
-	} else {
+	if err != nil {
 		clog.Warningf(ctx, "failed to get os version: %v", err)
 	}
+	physicalCores, logicalCores, err := host.CPUCores()
+	if err != nil {
+		clog.Warningf(ctx, "failed to get cpu cores: %v", err)
+	}
+
 	return MachineInfo{
 		Platform: PlatformInfo{
 			Architecture: runtime.GOARCH,
@@ -46,8 +48,8 @@ func GatherMachineInfo(ctx context.Context) MachineInfo {
 		CPU: CPUInfo{
 			BrandName:     cpuid.CPU.BrandName,
 			VendorString:  cpuid.CPU.VendorString,
-			LogicalCores:  cpuid.CPU.LogicalCores,
-			PhysicalCores: cpuid.CPU.PhysicalCores,
+			LogicalCores:  logicalCores,
+			PhysicalCores: physicalCores,
 		},
 		Memory: MemoryInfo{
 			Total: total,
