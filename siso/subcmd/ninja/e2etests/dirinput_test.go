@@ -12,16 +12,21 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
 	"time"
+
+	"google.golang.org/protobuf/encoding/prototext"
 
 	"go.chromium.org/build/hashigo/digest"
 
 	"go.chromium.org/build/siso/build"
 	"go.chromium.org/build/siso/build/ninjabuild"
 	"go.chromium.org/build/siso/hashfs"
+	nsjailpb "go.chromium.org/build/siso/toolsupport/nsjailutil/proto"
 )
 
 // requirePython3 skips the test if python3 is not on $PATH (the dir-input tests drive the build with python3-based unzip/mkzip scripts).
@@ -434,5 +439,45 @@ func TestBuild_DirOutputLocalReloadCmdHash(t *testing.T) {
 		if len(ent.GetCmdHash()) == 0 {
 			t.Errorf("%s has empty CmdHash; want the producing step's cmdhash (entries under a declared dir output are generated outputs)", rel)
 		}
+	}
+}
+
+func TestBuild_DirInput_Sandbox(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("sandbox is only available on linux")
+	}
+	if !runInSubProcess(t) {
+		return
+	}
+	ctx := t.Context()
+	dir := tempDir(t)
+
+	setupFiles(t, dir, t.Name(), nil)
+
+	opt, graph, cleanup := setupBuild(ctx, t, dir, hashfs.Option{
+		StateFile: ".siso_fs_state",
+	})
+	stats, err := ninjabuild.Run(ctx, graph, opt, nil, ninjabuild.RunNinjaOpts{})
+	cleanup()
+	if err != nil {
+		t.Fatalf("ninja err: %v", err)
+	}
+	if stats.Done != stats.Total || stats.Total != 3 {
+		t.Errorf("done=%d total=%d; want done=total=3", stats.Done, stats.Total)
+	}
+	buf, err := os.ReadFile(filepath.Join(dir, "out/siso/nsjail.config"))
+	if err != nil {
+		t.Fatalf("read nsjail.config: %v", err)
+	}
+	config := &nsjailpb.NsJailConfig{}
+	err = prototext.Unmarshal(buf, config)
+	if err != nil {
+		t.Fatalf("unmarshal nsjail.config: %v\n%s", err, buf)
+	}
+	// Assert that input_dir/ is bind-mounted as a directory!
+	if !slices.ContainsFunc(config.Mount, func(mount *nsjailpb.MountPt) bool {
+		return mount.GetDst() == "/src/out/siso/input_dir" && mount.GetIsBind() && mount.GetIsDir()
+	}) {
+		t.Errorf("missing input_dir directory mount or wrong config\n%s", buf)
 	}
 }

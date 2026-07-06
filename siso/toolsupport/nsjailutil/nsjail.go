@@ -229,12 +229,12 @@ func New(ctx context.Context, fsys fs.FS, req Request) (_ *NSJail, err error) {
 				IsSymlink: proto.Bool(true),
 				IsDir:     proto.Bool(false),
 			})
-		case fi.Mode().IsRegular():
+		case fi.IsDir() || fi.Mode().IsRegular():
 			jail.config.Mount = append(jail.config.Mount, &pb.MountPt{
 				Src:    proto.String(absInputPath),
 				Dst:    proto.String(inputPathInSandbox),
 				IsBind: proto.Bool(true),
-				IsDir:  proto.Bool(false),
+				IsDir:  proto.Bool(fi.IsDir()),
 			})
 		default:
 			return nil, fmt.Errorf("unsupported input file type %q: %v", input, fi.Mode())
