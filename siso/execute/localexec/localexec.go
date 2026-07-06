@@ -65,7 +65,9 @@ func (LocalExec) Run(ctx context.Context, cmd *execute.Cmd) (err error) {
 		res.ExitCode = 1
 	}
 	cmd.SetActionResult(res, false)
-
+	if res.ExecutionMetadata == nil {
+		res.ExecutionMetadata = &rpb.ExecutedActionMetadata{}
+	}
 	duration := res.ExecutionMetadata.ExecutionCompletedTimestamp.AsTime().Sub(res.ExecutionMetadata.ExecutionStartTimestamp.AsTime())
 	clog.Infof(ctx, "localexec: %v duration=%s exit=%d stdout=%d stderr=%d metadata=%s", cmd.Args, duration, res.ExitCode, len(res.StdoutRaw), len(res.StderrRaw), res.ExecutionMetadata)
 
