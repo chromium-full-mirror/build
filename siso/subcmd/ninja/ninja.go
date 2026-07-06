@@ -347,6 +347,7 @@ func (c *Command) Run(ctx context.Context) (stats build.Stats, finalErr error) {
 	if err := localexec.StartHelper(ctx, c.spawnHelper, spawnHelperLog); err != nil {
 		return stats, err
 	}
+	defer localexec.StopHelper(ctx)
 
 	limits := c.computeLimits(ctx)
 	projectID := c.reopt.UpdateProjectID(c.projectID)

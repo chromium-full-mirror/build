@@ -17,6 +17,7 @@ import (
 	"go.chromium.org/build/siso/execute"
 	epb "go.chromium.org/build/siso/execute/proto"
 	"go.chromium.org/build/siso/execute/spawnhelper"
+	"go.chromium.org/build/siso/o11y/clog"
 )
 
 // helper holds the running spawn helper once StartHelper launches it. runViaHelper
@@ -44,6 +45,22 @@ func StartHelper(ctx context.Context, helperCommand, logFile string) error {
 	}
 	helper.Store(c)
 	return nil
+}
+
+// StopHelper closes the control socket so the helper drains and exits, then waits
+// for it. The helper reaps every local action, so its rusage cutime holds all of
+// their CPU time. Waiting here is what rolls that up into siso's own rusage, so
+// `time siso` and the build-time graph account for the local build's CPU. No-op
+// when no helper was started (tests, non-build subcommands).
+func StopHelper(ctx context.Context) error {
+	c := helper.Swap(nil)
+	if c == nil {
+		return nil
+	}
+	if err := c.Close(); err != nil {
+		clog.Warningf(ctx, "spawn helper close: %v", err)
+	}
+	return c.Wait()
 }
 
 // runViaHelper runs cmd through the spawn helper. When no helper was started it
