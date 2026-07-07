@@ -676,8 +676,8 @@ func (b *Builder) Build(ctx context.Context, name string, args ...string) (err e
 				restat.ROps, restat.RErrs, ui.NumBytes(restat.RBytes),
 				restat.WOps, restat.WErrs, ui.NumBytes(restat.WBytes))
 		}
-		msg := fmt.Sprintf("\nlocal:%d remote:%d cache:%d cache-write:%d(err:%d) fallback:%d retry:%d skip:%d\n",
-			stat.Local+stat.NoExec, stat.Remote, stat.CacheHit, stat.CacheWrite, stat.CacheWriteErr, stat.LocalFallback, stat.RemoteRetry, stat.Skipped) +
+		msg := fmt.Sprintf("\nnoexec:%d local:%d remote:%d cache:%d skip:%d\n  cache-write:%d(err:%d) fallback:%d retry:%d\n",
+			stat.NoExec, stat.Local, stat.Remote, stat.CacheHit, stat.Skipped, stat.CacheWrite, stat.CacheWriteErr, stat.LocalFallback, stat.RemoteRetry) +
 			depsStatLine +
 			restatLine +
 			fsstatLine + "\n"
