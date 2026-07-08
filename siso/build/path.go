@@ -67,6 +67,15 @@ func (p *Path) MaybeFromRelative(ctx context.Context, s string) string {
 	return pp
 }
 
+// FromRelativePath is MaybeFromRelative returning a path.Path. Separators are
+// normalized to "/", but ".." is not collapsed: an absolute path outside the
+// workspace may have ".." crossing a symlink that only the OS can resolve.
+func (p *Path) FromRelativePath(ctx context.Context, s string) path.Path {
+	// filepath.ToSlash converts native separators (a no-op on POSIX) without
+	// lexically cleaning "..", unlike path.New.
+	return path.FromClean(filepath.ToSlash(p.MaybeFromRelative(ctx, s)))
+}
+
 // FromRelative converts from base directory relative to workspace path,
 // slash-separated.
 // It keeps absolute path if it is outside of workspace.

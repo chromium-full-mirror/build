@@ -498,7 +498,7 @@ func depInputs(ctx context.Context, s *StepDef) (iter.Seq[path.Path], error) {
 						clog.Warningf(ctx, "unexpected dep id=%d for %q: %v", depID, out, err)
 						continue
 					}
-					if !yield(path.New(s.globals.path.MaybeFromRelative(ctx, in))) {
+					if !yield(s.globals.path.FromRelativePath(ctx, in)) {
 						return
 					}
 					continue
@@ -512,7 +512,7 @@ func depInputs(ctx context.Context, s *StepDef) (iter.Seq[path.Path], error) {
 					}
 					dp = &depsPath{
 						path:      in,
-						canonpath: path.New(s.globals.path.MaybeFromRelative(ctx, in)),
+						canonpath: s.globals.path.FromRelativePath(ctx, in),
 					}
 					// dp should be the same for depID, so
 					// no need to use compareAndSwap.
@@ -551,7 +551,7 @@ func depInputs(ctx context.Context, s *StepDef) (iter.Seq[path.Path], error) {
 		}
 		return func(yield func(path.Path) bool) {
 			for _, in := range deps {
-				if !yield(path.New(s.globals.path.MaybeFromRelative(ctx, in))) {
+				if !yield(s.globals.path.FromRelativePath(ctx, in)) {
 					return
 				}
 			}

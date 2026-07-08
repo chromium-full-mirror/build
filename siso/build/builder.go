@@ -1400,7 +1400,7 @@ func (b *Builder) updateDeps(ctx context.Context, step *Step) error {
 	span.SetAttr("updated", updated)
 	canonicalizedDeps := make([]sisopath.Path, 0, len(deps))
 	for _, dep := range deps {
-		canonicalizedDeps = append(canonicalizedDeps, sisopath.New(b.path.MaybeFromRelative(ctx, dep)))
+		canonicalizedDeps = append(canonicalizedDeps, b.path.FromRelativePath(ctx, dep))
 	}
 	depsFixCmd(ctx, b, step, canonicalizedDeps)
 	return nil
