@@ -243,6 +243,11 @@ func (s *Step) SetMetricsForTest(metrics StepMetric) {
 	s.metrics = metrics
 }
 
+// SetCmdForTest sets the Cmd of the step for external package testing.
+func (s *Step) SetCmdForTest(cmd *execute.Cmd) {
+	s.cmd = cmd
+}
+
 // Outputs returns step's outputs (target name in ninja, i.e. output path relative to wd.)
 func (s *Step) Outputs() []string {
 	return s.outputPaths
