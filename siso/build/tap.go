@@ -6,7 +6,6 @@ package build
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -14,8 +13,10 @@ import (
 	"path/filepath"
 
 	log "github.com/golang/glog"
+	"google.golang.org/protobuf/encoding/protojson"
 
 	"go.chromium.org/build/siso/execute"
+	pb "go.chromium.org/build/siso/execute/proto"
 	"go.chromium.org/build/siso/o11y/clog"
 	"go.chromium.org/build/siso/path"
 )
@@ -101,13 +102,8 @@ func (t *externalTapExecutor) postProcess(ctx context.Context, tapLogFileName st
 	if err != nil {
 		return nil, nil, err
 	}
-	type tapOutput struct {
-		Reads   []string `json:"reads,omitempty"`
-		Writes  []string `json:"writes,omitempty"`
-		Deletes []string `json:"deletes,omitempty"`
-	}
-	var tapData tapOutput
-	err = json.Unmarshal(buf, &tapData)
+	tapData := &pb.TapResult{}
+	err = protojson.UnmarshalOptions{DiscardUnknown: true}.Unmarshal(buf, tapData)
 	if err != nil {
 		return nil, nil, err
 	}

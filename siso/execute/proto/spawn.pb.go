@@ -153,9 +153,8 @@ func (*SpawnMessage_Result) isSpawnMessage_Payload() {}
 func (*SpawnMessage_Error) isSpawnMessage_Payload() {}
 
 // SpawnRequest is the command the helper should fork+exec. args/env are proto3
-// strings, so non-UTF-8 argv/env bytes are not preserved verbatim (accepted
-// risk). workspace_root and work_dir are passed separately and joined by the
-// helper, so it keeps the absolute workspace root available for follow-up work.
+// strings like in REAPI. We accept that non-UTF-8 argv/env are not preserved
+// verbatim.
 type SpawnRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
