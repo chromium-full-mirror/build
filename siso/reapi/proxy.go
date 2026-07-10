@@ -151,6 +151,14 @@ func (ap *actionCacheProxy) UpdateActionResult(ctx context.Context, req *rpb.Upd
 	return ap.client.UpdateActionResult(ctx, req)
 }
 
+func (ap *actionCacheProxy) AddActionLookup(ctx context.Context, req *rpb.AddActionLookupRequest) (*rpb.AddActionLookupResponse, error) {
+	return ap.client.AddActionLookup(ctx, req)
+}
+
+func (ap *actionCacheProxy) ListActions(ctx context.Context, req *rpb.ListActionsRequest) (*rpb.ListActionsResponse, error) {
+	return ap.client.ListActions(ctx, req)
+}
+
 type contentAddressableStorageProxy struct {
 	rpb.UnimplementedContentAddressableStorageServer
 	client rpb.ContentAddressableStorageClient
@@ -202,6 +210,27 @@ func (cp *contentAddressableStorageProxy) BatchUpdateBlobs(ctx context.Context, 
 
 func (cp *contentAddressableStorageProxy) BatchReadBlobs(ctx context.Context, req *rpb.BatchReadBlobsRequest) (*rpb.BatchReadBlobsResponse, error) {
 	return cp.client.BatchReadBlobs(ctx, req)
+}
+
+func (cp *contentAddressableStorageProxy) GetTree(req *rpb.GetTreeRequest, serv rpb.ContentAddressableStorage_GetTreeServer) error {
+	gtc, err := cp.client.GetTree(serv.Context(), req)
+	if err != nil {
+		return err
+	}
+	for {
+		resp, err := gtc.Recv()
+		if err != nil {
+			return err
+		}
+		err = serv.Send(resp)
+		if err != nil {
+			return err
+		}
+		if resp.GetNextPageToken() != "" {
+			continue
+		}
+		return nil
+	}
 }
 
 type executionProxy struct {
