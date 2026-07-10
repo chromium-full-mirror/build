@@ -31,7 +31,6 @@ type Server struct {
 	logFile string
 
 	conn    *spawnConn
-	logger  *log.Logger
 	spawner Spawner
 
 	mu       sync.Mutex
@@ -88,14 +87,18 @@ func (s *Server) Serve(ctx context.Context, spawner Spawner) error {
 		defer f.Close()
 		logw = f
 	}
-	s.logger = log.New(logw, "", log.LstdFlags|log.Lmsgprefix)
+	log.SetFlags(log.LstdFlags | log.Lmsgprefix)
+	log.SetOutput(logw)
+	// TODO: we'd like to plumb logging via clog as
+	// localexec spawner may use clog for logging,
+	// but clog doesn't support standard log.Logger as sink.
 
 	s.inflight = make(map[uint64]context.CancelFunc)
 
 	// Non-fatal: without a subreaper, orphans reparent to init, which reaps
 	// them on any normal (non-PID-1) host.
 	if err := becomeSubreaper(); err != nil {
-		s.logger.Printf("become child subreaper: %v", err)
+		log.Printf("become child subreaper: %v", err)
 	}
 
 	// Unblock recv() if ctx is cancelled (e.g. SIGTERM).
@@ -163,7 +166,7 @@ func (s *Server) handleStart(ctx context.Context, id uint64, req *epb.SpawnReque
 	// and drains. The log goes to the helper's own file, never siso's progress UI.
 	reply := func(msg *epb.SpawnMessage) {
 		if err := s.conn.send(msg); err != nil {
-			s.logger.Printf("send id=%d: %v", id, err)
+			log.Printf("send id=%d: %v", id, err)
 			_ = s.conn.close()
 		}
 	}
