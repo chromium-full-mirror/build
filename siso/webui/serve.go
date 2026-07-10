@@ -34,12 +34,7 @@ import (
 var content embed.FS
 
 var (
-	// templates is a map for caching HTML template files when local development is false.
-	templates = make(map[string]*template.Template)
-	// combinedCSS is a string for caching the global stylesheet when local development is false.
-	combinedCSS         = ""
-	combinedCSSChecksum = uint32(0)
-	combinedCSSPathRe   = regexp.MustCompile(`/combined.(\d+).css`)
+	combinedCSSPathRe = regexp.MustCompile(`/combined.(\d+).css`)
 
 	// sisoStateHeuristics lists files that when present inside an output subdirectory under 'out/',
 	// strongly indicate that the subdirectory represents an active build configuration (rather than
@@ -167,6 +162,13 @@ type WebuiServer struct {
 	metricsMu       sync.Mutex
 	outdirMetrics   map[string]*outdirInfo
 	uploadedMetrics []*buildMetrics
+
+	cssMu               sync.RWMutex
+	combinedCSS         string
+	combinedCSSChecksum uint32
+
+	templatesMu sync.RWMutex
+	templates   map[string]*template.Template
 }
 
 type runningStepInfo struct {
@@ -200,26 +202,40 @@ func (f ErrManifestNotExist) Error() string {
 
 // loadView lazy-parses a view once, or parses every time if in local development mode.
 func (s *WebuiServer) loadView(view string) (*template.Template, error) {
-	if template, ok := templates[view]; ok {
-		return template, nil
+	s.templatesMu.RLock()
+	tmpl, ok := s.templates[view]
+	s.templatesMu.RUnlock()
+	if !s.localDevelopment && ok {
+		return tmpl, nil
 	}
 	templatesFS, err := fs.Sub(s.staticFS, "templates")
 	if err != nil {
 		return nil, fmt.Errorf("templates not found: %w", err)
 	}
-	template, err := template.New("").Funcs(baseFunctions).ParseFS(templatesFS, "webui_base.html", view)
+	tmpl, err = template.New("").Funcs(baseFunctions).ParseFS(templatesFS, "webui_base.html", view)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse view: %w", err)
 	}
-	if !s.localDevelopment {
-		templates[view] = template
+	if s.localDevelopment {
+		return tmpl, nil
 	}
-	return template, nil
+	s.templatesMu.Lock()
+	defer s.templatesMu.Unlock()
+	if cachedTmpl, ok := s.templates[view]; ok {
+		return cachedTmpl, nil
+	}
+	s.templates[view] = tmpl
+	return tmpl, nil
 }
 
 // ensureCSS lazy-loads the global stylesheet, or loads every time if in local development mode.
 func (s *WebuiServer) ensureCSS() error {
-	if !s.localDevelopment && combinedCSS != "" {
+	// Fast-path: Check if CSS is already cached. We use a read-lock here
+	// to avoid blocking other concurrent requests in production mode.
+	s.cssMu.RLock()
+	hasCSS := s.combinedCSS != ""
+	s.cssMu.RUnlock()
+	if !s.localDevelopment && hasCSS {
 		return nil
 	}
 	sb := strings.Builder{}
@@ -243,8 +259,16 @@ func (s *WebuiServer) ensureCSS() error {
 		sb.Write(data)
 		sb.WriteByte('\n')
 	}
-	combinedCSS = sb.String()
-	combinedCSSChecksum = crc32.ChecksumIEEE([]byte(combinedCSS))
+	// Slow-path: Lock for writing to update the cache.
+	s.cssMu.Lock()
+	defer s.cssMu.Unlock()
+	// Double-check: Another concurrent request might have populated the cache
+	// while we were waiting for the write lock.
+	if !s.localDevelopment && s.combinedCSS != "" {
+		return nil
+	}
+	s.combinedCSS = sb.String()
+	s.combinedCSSChecksum = crc32.ChecksumIEEE([]byte(s.combinedCSS))
 	return nil
 }
 
@@ -293,7 +317,10 @@ func (s *WebuiServer) renderBuildView(wr http.ResponseWriter, r *http.Request, t
 		return fmt.Errorf("failed to ensure CSS: %w", err)
 	}
 	// Use checksum for CSS for cache busting.
-	data["combinedCSSPath"] = fmt.Sprintf("/combined.%d.css", combinedCSSChecksum)
+	s.cssMu.RLock()
+	checksum := s.combinedCSSChecksum
+	s.cssMu.RUnlock()
+	data["combinedCSSPath"] = fmt.Sprintf("/combined.%d.css", checksum)
 	err = tmpl.ExecuteTemplate(wr, "base", data)
 	if err != nil {
 		return fmt.Errorf("failed to execute template: %w", err)
@@ -343,6 +370,7 @@ func NewServer(ctx context.Context, cfg ServerConfig) (*WebuiServer, error) {
 		defaultManifest:  cfg.ManifestPath,
 		outdirMetrics:    make(map[string]*outdirInfo),
 		port:             cfg.Port,
+		templates:        make(map[string]*template.Template),
 	}
 
 	if cfg.LocalDevelopment {
@@ -482,7 +510,10 @@ func (s *WebuiServer) Serve() int {
 		if combinedCSSPathRe.MatchString(r.URL.Path) {
 			w.Header().Add("Content-Type", "text/css; charset=UTF-8")
 			w.Header().Add("Cache-Control", "max-age=86400, private") // 1 day
-			w.Write([]byte(combinedCSS))
+			s.cssMu.RLock()
+			css := s.combinedCSS
+			s.cssMu.RUnlock()
+			w.Write([]byte(css))
 			return
 		}
 
