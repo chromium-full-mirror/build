@@ -416,7 +416,8 @@ func (s *WebuiServer) staticFileHandler(h http.Handler) http.Handler {
 
 func (s *WebuiServer) Serve() int {
 	s.sseServer.Start()
-	http.Handle("/events/", s.sseServer)
+	mux := http.NewServeMux()
+	mux.Handle("/events/", s.sseServer)
 
 	// Subrouter for all outdir related URLs.
 	// This is set up on a separate mux because it's too generic and would otherwise cause panic:
@@ -456,7 +457,7 @@ func (s *WebuiServer) Serve() int {
 	uploadsRouter.HandleFunc("POST /uploads/view/builds/{rev}/steps/{id}/recall/", s.handleOutdirDoRecall)
 	uploadsRouter.HandleFunc("/uploads/view/builds/{rev}/steps/{id}/", s.handleOutdirViewStep)
 	uploadsRouter.HandleFunc("/uploads/view/builds/{rev}/steps/", s.handleOutdirListSteps)
-	http.HandleFunc("/uploads/view/", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/uploads/view/", func(w http.ResponseWriter, r *http.Request) {
 		// This is how we hack around the hardcoded assumption that URLs are /{outroot}/{outsub}/.
 		// Common code paths will then have checks to handle this special case.
 		r.SetPathValue("outroot", "uploads")
@@ -465,7 +466,7 @@ func (s *WebuiServer) Serve() int {
 	})
 
 	// Default catch-all handler.
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		// Redirect root to default outdir.
 		if r.URL.Path == "/" {
 			http.Redirect(w, r, fmt.Sprintf("/%s/%s/", s.defaultOutdirRoot, s.defaultOutdirSub), http.StatusTemporaryRedirect)
@@ -489,10 +490,10 @@ func (s *WebuiServer) Serve() int {
 		outdirRouter.ServeHTTP(w, r)
 	})
 
-	http.Handle("/js/", s.staticFileHandler(http.FileServerFS(s.staticFS)))
+	mux.Handle("/js/", s.staticFileHandler(http.FileServerFS(s.staticFS)))
 
 	// Serve third party JS. No other third party libraries right now, so just serve Material Design node_modules root.
-	http.Handle("/third_party/", http.StripPrefix("/third_party/", s.staticFileHandler(http.FileServerFS(mwc.NodeModulesFS))))
+	mux.Handle("/third_party/", http.StripPrefix("/third_party/", s.staticFileHandler(http.FileServerFS(mwc.NodeModulesFS))))
 
 	fmt.Printf("listening on http://localhost:%d/...\n", s.port)
 	// Hack for now to make loading external siso_metrics.json more usable, until we can have the homepage automatically show "here's all the loaded siso_metrics"
@@ -502,7 +503,7 @@ func (s *WebuiServer) Serve() int {
 			fmt.Printf("- http://localhost:%d/uploads/view/builds/%s/steps/\n", s.port, metrics.Rev)
 		}
 	}
-	err := http.ListenAndServe(fmt.Sprintf(":%d", s.port), nil)
+	err := http.ListenAndServe(fmt.Sprintf(":%d", s.port), mux)
 	if errors.Is(err, http.ErrServerClosed) {
 		fmt.Printf("server closed\n")
 	} else if err != nil {
