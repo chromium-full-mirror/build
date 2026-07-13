@@ -30,7 +30,7 @@ import (
 // never collapses to an empty tree (a flattened list strips its trailing
 // slash, after which the recording layer caches a bare empty-tree node).
 func (c *Cmd) SetResultOutputs(ctx context.Context, result *rpb.ActionResult, ds *blob.Store) error {
-	fileEntries, err := c.HashFS.Entries(ctx, c.WorkspaceRoot, c.FileOutputsWithDepfile())
+	fileEntries, err := c.HashFS.RawEntries(ctx, c.WorkspaceRoot, c.FileOutputsWithDepfile())
 	if err != nil {
 		return err
 	}

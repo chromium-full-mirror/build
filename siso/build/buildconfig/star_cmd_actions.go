@@ -333,7 +333,7 @@ func starActionsExit(thread *starlark.Thread, fn *starlark.Builtin, args starlar
 	if stderr != "" {
 		result.StderrRaw = []byte(string(stderr))
 	}
-	entries, err := c.cmd.HashFS.Entries(c.ctx, c.cmd.WorkspaceRoot, c.cmd.Outputs)
+	entries, err := c.cmd.HashFS.RawEntries(c.ctx, c.cmd.WorkspaceRoot, c.cmd.Outputs)
 	if err != nil {
 		return starlark.None, err
 	}

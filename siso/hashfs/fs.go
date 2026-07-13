@@ -1370,13 +1370,26 @@ func (hfs *HashFS) resolveEscapingSymlink(ctx context.Context, root string, fnam
 func (hfs *HashFS) Entries(ctx context.Context, root string, inputs []path.Path) ([]merkletree.Entry, error) {
 	ctx, span := trace.NewSpan(ctx, "fs-entries")
 	defer span.Close(nil)
+	return hfs.entries(ctx, root, inputs, true)
+}
 
+// RawEntries gets merkletree entries for inputs at root.
+// it will return symlink entries as is, even if it escaped from root.
+// root can be an empty string "" when inputs are absolute paths.
+func (hfs *HashFS) RawEntries(ctx context.Context, root string, inputs []path.Path) ([]merkletree.Entry, error) {
+	ctx, span := trace.NewSpan(ctx, "fs-raw-entries")
+	defer span.Close(nil)
+	return hfs.entries(ctx, root, inputs, false)
+}
+
+func (hfs *HashFS) entries(ctx context.Context, root string, inputs []path.Path, resolveEscapedSymlinks bool) ([]merkletree.Entry, error) {
+	clog.Infof(ctx, "entries resolveEscapedSymlinks=%t", resolveEscapedSymlinks)
 	inputs = path.Paths(hfs.expandDirInputs(ctx, root, path.Strings(inputs)))
 	ents, err := hfs.resolveInputEntries(ctx, root, inputs)
 	if err != nil {
 		return nil, err
 	}
-	return hfs.buildMerkletreeEntries(ctx, root, inputs, ents)
+	return hfs.buildMerkletreeEntries(ctx, root, inputs, ents, resolveEscapedSymlinks)
 }
 
 // expandDirInputs replaces each trailing-slash directory-target input with the
@@ -1556,9 +1569,10 @@ func (hfs *HashFS) startDigest(ctx context.Context, fname string, e *entry, wg *
 }
 
 // buildMerkletreeEntries converts resolved entries to merkletree format,
-// filtering entries with errors and resolving symlinks that escape root.
+// filtering entries with errors and resolving symlinks that escape root
+// if resolveEscapedSymlinks is true.
 // inputs are the original relative paths (used for merkletree entry names).
-func (hfs *HashFS) buildMerkletreeEntries(ctx context.Context, root string, inputs []path.Path, ents []*entry) ([]merkletree.Entry, error) {
+func (hfs *HashFS) buildMerkletreeEntries(ctx context.Context, root string, inputs []path.Path, ents []*entry, resolveEscapedSymlinks bool) ([]merkletree.Entry, error) {
 	entries := make([]merkletree.Entry, 0, len(inputs))
 	for i, e := range ents {
 		fname := inputs[i]
@@ -1576,7 +1590,7 @@ func (hfs *HashFS) buildMerkletreeEntries(ctx context.Context, root string, inpu
 			IsExecutable: e.mode&0111 != 0,
 			Target:       e.target,
 		}
-		if e.isSymlink() {
+		if resolveEscapedSymlinks && e.isSymlink() {
 			name := path.JoinRoot(root, fname)
 			tname := makeFullpath(filepath.Dir(string(name)), path.Path(e.target))
 			if escapesRoot(root, string(tname)) {
