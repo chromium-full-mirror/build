@@ -366,7 +366,7 @@ func NewServer(ctx context.Context, cfg ServerConfig) (*WebuiServer, error) {
 		staticFS:         fs.FS(content),
 		sseServer:        newSseServer(),
 		workspaceRoot:    workspaceRoot,
-		defaultOutdir:    outDir,
+		defaultOutdir:    filepath.ToSlash(outDir),
 		defaultManifest:  cfg.ManifestPath,
 		outdirMetrics:    make(map[string]*outdirInfo),
 		port:             cfg.Port,
