@@ -214,7 +214,6 @@ type Builder struct {
 	// two phase caching
 	twoPhaseCachingSema *semaphore.Semaphore
 	twoPhaseCaching     twoPhaseCaching
-	tapFactory          tapFactory
 
 	explainWriter        io.Writer
 	ninjaLogWriter       io.Writer
@@ -449,12 +448,6 @@ func New(ctx context.Context, graph Graph, opts Options) (_ *Builder, err error)
 				rt.actionCacheMap = b.reapiclient.ActionCacheMap()
 			}
 			b.twoPhaseCaching = rt
-			// TODO: support cartfs tapping
-			tf, err := newExternalTapFactory()
-			if err != nil {
-				return nil, err
-			}
-			b.tapFactory = tf
 		}
 	}
 	return b, nil

@@ -69,7 +69,12 @@ func (LocalExec) Run(ctx context.Context, cmd *execute.Cmd) (err error) {
 		res.ExecutionMetadata = &rpb.ExecutedActionMetadata{}
 	}
 	duration := res.ExecutionMetadata.ExecutionCompletedTimestamp.AsTime().Sub(res.ExecutionMetadata.ExecutionStartTimestamp.AsTime())
-	clog.Infof(ctx, "localexec: %v duration=%s exit=%d stdout=%d stderr=%d metadata=%s", cmd.Args, duration, res.ExitCode, len(res.StdoutRaw), len(res.StderrRaw), res.ExecutionMetadata)
+	tapResult, tapped := ExtractTapResult(res)
+	if tapped {
+		clog.Infof(ctx, "localexec: %v duration=%s exit=%d stdout=%d stderr=%d tap reads=%d writes=%d deletes=%d", cmd.Args, duration, res.ExitCode, len(res.StdoutRaw), len(res.StderrRaw), len(tapResult.Reads), len(tapResult.Writes), len(tapResult.Deletes))
+	} else {
+		clog.Infof(ctx, "localexec: %v duration=%s exit=%d stdout=%d stderr=%d metadata=%s", cmd.Args, duration, res.ExitCode, len(res.StdoutRaw), len(res.StderrRaw), res.ExecutionMetadata)
+	}
 
 	if res.ExitCode != 0 {
 		return execute.ExitError{ExitCode: int(res.ExitCode)}
@@ -89,11 +94,22 @@ var ForkSema = semaphore.New("fork", runtime.GOMAXPROCS(0))
 // fails with ETXTBSY, i.e. a write-mode fd to the executable is transiently
 // open somewhere (https://github.com/golang/go/issues/22315).
 func run(ctx context.Context, cmd *execute.Cmd) (*rpb.ActionResult, error) {
+	tcmd, tpostProc, err := tapCmd(cmd)
+	if err != nil {
+		return nil, err
+	}
 	backoff := 10 * time.Millisecond
 	for {
-		res, err := runOnce(ctx, cmd)
-		if err == nil || !errors.Is(err, syscall.ETXTBSY) || backoff > 320*time.Millisecond {
-			// success, non-ETXTBSY error, or budget exhausted.
+		res, err := runOnce(ctx, tcmd)
+		if err == nil {
+			// success.
+			err = tpostProc(ctx, res)
+			return res, err
+		}
+		// may leave temporary file for tapping when failed
+		// (as we leave *.rsp, *.d when failed)
+		if !errors.Is(err, syscall.ETXTBSY) || backoff > 320*time.Millisecond {
+			// non-ETXTBSY error, or budget exhausted.
 			return res, err
 		}
 		clog.Warningf(ctx, "ETXTBSY starting %s; retrying in %s", cmd.Args[0], backoff)

@@ -30,9 +30,7 @@ import (
 func (b *Builder) execLocal(ctx context.Context, step *Step) (retErr error) {
 	ctx, span := trace.NewSpan(ctx, "exec-local")
 	defer span.Close(nil)
-	sandbox, sandboxOption := b.selectSandbox(ctx, step)
-	clog.Infof(ctx, "exec local %s sandbox:%s", step.cmd.Desc, sandbox)
-	if sandbox == "two-phase-caching" {
+	if b.allowTwoPhaseCaching(step) {
 		// TODO: no two phase caching when rewrapper is used?
 		step.setPhase(stepCacheCheck)
 		err := b.twoPhaseCachingLookup(ctx, step)
@@ -45,6 +43,8 @@ func (b *Builder) execLocal(ctx context.Context, step *Step) (retErr error) {
 		}
 		clog.Infof(ctx, "two phase cache: %v", err)
 	}
+	sandbox, sandboxOption := b.selectSandbox(ctx, step)
+	clog.Infof(ctx, "exec local %s sandbox:%s", step.cmd.Desc, sandbox)
 	step.setPhase(stepInput)
 	err := b.prepareLocalInputs(ctx, step)
 	if err != nil && !experiments.Enabled("ignore-missing-local-inputs", "step %s missing inputs: %v", step, err) {
@@ -99,16 +99,6 @@ func (b *Builder) execLocal(ctx context.Context, step *Step) (retErr error) {
 		if sandboxOption["enforce_depfile_only_promotes"] == "true" {
 			step.enforceDepfileOnlyPromotes = true
 		}
-	case "two-phase-caching":
-		twoPhaseCachingExecutor, err := b.tapFactory.New(ctx, b, executor)
-		if err != nil {
-			return fmt.Errorf("unable to perform tap: %w", err)
-		}
-		executor = twoPhaseCachingExecutor
-		if sandboxOption["enforce_depfile_only_promotes"] == "true" {
-			step.enforceDepfileOnlyPromotes = true
-		}
-
 	case "":
 		// no sandbox. ignore
 	default:
@@ -187,17 +177,24 @@ func (b *Builder) execLocal(ctx context.Context, step *Step) (retErr error) {
 	if err != nil {
 		return err
 	}
-	if step.metrics.TwoPhaseCachingKey != "" {
-		err := b.twoPhaseCaching.Add(ctx, step.metrics.TwoPhaseCachingKey, step)
-		if err != nil {
-			clog.Warningf(ctx, "two phase caching: add %v", err)
-		}
-	} else {
-		err := b.cacheWrite(ctx, step)
-		if errors.Is(err, errNoCacheWrite) {
-			clog.Infof(ctx, "cache write ignored: %v", err)
-		} else if err != nil {
-			clog.Warningf(ctx, "cache write failed: %v", err)
+	if ctx.Err() == nil && b.allowCacheWrite(step) {
+		if step.metrics.TwoPhaseCachingKey != "" {
+			err := b.tapCanonicalizeCmd(ctx, step.cmd)
+			if err != nil {
+				clog.Warningf(ctx, "two phase caching: canonicalize cmd %v", err)
+			} else {
+				err := b.twoPhaseCaching.Add(ctx, step.metrics.TwoPhaseCachingKey, step)
+				if err != nil {
+					clog.Warningf(ctx, "two phase caching: add %v", err)
+				}
+			}
+		} else {
+			err := b.cacheWrite(ctx, step)
+			if errors.Is(err, errNoCacheWrite) {
+				clog.Infof(ctx, "cache write ignored: %v", err)
+			} else if err != nil {
+				clog.Warningf(ctx, "cache write failed: %v", err)
+			}
 		}
 	}
 	return nil
@@ -209,9 +206,6 @@ func (b *Builder) selectSandbox(ctx context.Context, step *Step) (string, map[st
 	sandbox := step.def.Sandbox()
 	if sandbox["backend"] != "" {
 		return sandbox["backend"], sandbox
-	}
-	if b.allowTwoPhaseCaching(step) {
-		return "two-phase-caching", nil
 	}
 	enableTrace := experiments.Enabled("file-access-trace", "enable file access-trace")
 	if !enableTrace {

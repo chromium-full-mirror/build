@@ -7,115 +7,32 @@ package build
 import (
 	"context"
 	"errors"
-	"fmt"
 	"io/fs"
-	"os"
 	"path/filepath"
 
-	log "github.com/golang/glog"
-	"google.golang.org/protobuf/encoding/protojson"
-
 	"go.chromium.org/build/siso/execute"
-	pb "go.chromium.org/build/siso/execute/proto"
+	"go.chromium.org/build/siso/execute/localexec"
 	"go.chromium.org/build/siso/o11y/clog"
 	"go.chromium.org/build/siso/path"
 )
 
-type tapFactory interface {
-	New(context.Context, *Builder, execute.Executor) (execute.Executor, error)
-}
-
-// TODO: integrate cartfs
-
-type externalTapFactory struct {
-	tapCommand string
-}
-
-func newExternalTapFactory() (externalTapFactory, error) {
-	s := os.Getenv("SISO_TAP_COMMAND")
-	if s == "" {
-		return externalTapFactory{}, errors.New("no SISO_TAP_COMMAND")
+func (b *Builder) tapCanonicalizeCmd(ctx context.Context, cmd *execute.Cmd) error {
+	res, _ := cmd.ActionResult()
+	tapData, tapped := localexec.ExtractTapResult(res)
+	if !tapped {
+		return errors.New("no tap data")
 	}
-	return externalTapFactory{
-		tapCommand: s,
-	}, nil
-}
-
-func (f externalTapFactory) New(ctx context.Context, b *Builder, executor execute.Executor) (execute.Executor, error) {
-	if f.tapCommand == "" {
-		return nil, fmt.Errorf("no external tap command. need SISO_TAP_COMMAND")
-	}
-	return &externalTapExecutor{
-		b:          b,
-		tapCommand: f.tapCommand,
-		executor:   executor,
-	}, nil
-}
-
-type externalTapExecutor struct {
-	b           *Builder
-	tapCommand  string
-	executor    execute.Executor
-	origInputs  []string
-	origOutputs []string
-	inputs      []string
-	outputs     []string
-}
-
-func (t *externalTapExecutor) Run(ctx context.Context, cmd *execute.Cmd) error {
-	cmd.StdoutWriter()
-	cmd.StderrWriter()
-	tapLogFile, err := os.CreateTemp("", fmt.Sprintf("tap-%s-*.json", cmd.ID))
-	if err != nil {
-		return err
-	}
-	defer func() {
-		os.Remove(tapLogFile.Name())
-	}()
-	newCmd := &execute.Cmd{}
-	*newCmd = *cmd
-	newCmd.Args = append([]string{
-		t.tapCommand,
-		"--tap_output", tapLogFile.Name(),
-		"--",
-	}, cmd.Args...)
-	err = t.executor.Run(ctx, newCmd)
-	if err != nil {
-		return err
-	}
-	cmd.SetActionResult(newCmd.ActionResult())
-	t.origInputs = path.Strings(cmd.Inputs)
-	t.origOutputs = path.Strings(cmd.Outputs)
-	t.inputs, t.outputs, err = t.postProcess(ctx, tapLogFile.Name(), cmd)
-	if err == nil {
-		cmd.Pure = true
-	}
-	if log.V(2) {
-		clog.Infof(ctx, "inputs %q", cmd.Inputs)
-		clog.Infof(ctx, "outputs %q", cmd.Outputs)
-	}
-	return err
-}
-
-func (t *externalTapExecutor) postProcess(ctx context.Context, tapLogFileName string, cmd *execute.Cmd) (inputs, outputs []string, retErr error) {
-	buf, err := os.ReadFile(tapLogFileName)
-	if err != nil {
-		return nil, nil, err
-	}
-	tapData := &pb.TapResult{}
-	err = protojson.UnmarshalOptions{DiscardUnknown: true}.Unmarshal(buf, tapData)
-	if err != nil {
-		return nil, nil, err
-	}
+	var ninputs, noutputs int
 	// ignore out of workspace root
 	// TODO: use with input root absolute path?
 	// TODO: just use detected inputs?
 	seen := make(map[string]bool)
 	for _, input := range cmd.AllInputs() {
 		seen[string(input)] = true
+		ninputs++
 	}
 	for _, input := range tapData.Reads {
-		rel, err := filepath.Rel(t.b.path.WorkspaceRoot, input)
+		rel, err := filepath.Rel(b.path.WorkspaceRoot, input)
 		if err != nil {
 			clog.Warningf(ctx, "reads relpath %q: %v", input, err)
 			continue
@@ -123,11 +40,10 @@ func (t *externalTapExecutor) postProcess(ctx context.Context, tapLogFileName st
 		if !filepath.IsLocal(rel) {
 			continue
 		}
-		_, err = t.b.hashFS.Stat(ctx, t.b.path.WorkspaceRoot, path.New(rel))
+		_, err = b.hashFS.Stat(ctx, b.path.WorkspaceRoot, path.New(rel))
 		if errors.Is(err, fs.ErrNotExist) {
 			continue
 		}
-		inputs = append(inputs, rel)
 		if seen[rel] {
 			continue
 		}
@@ -140,9 +56,10 @@ func (t *externalTapExecutor) postProcess(ctx context.Context, tapLogFileName st
 	// it might detect unspecified outputs.
 	for _, output := range cmd.AllOutputs() {
 		seen[string(output)] = true
+		noutputs++
 	}
 	for _, output := range tapData.Writes {
-		rel, err := filepath.Rel(t.b.path.WorkspaceRoot, output)
+		rel, err := filepath.Rel(b.path.WorkspaceRoot, output)
 		if err != nil {
 			clog.Warningf(ctx, "writes relpath %q: %v", output, err)
 			continue
@@ -150,7 +67,7 @@ func (t *externalTapExecutor) postProcess(ctx context.Context, tapLogFileName st
 		if !filepath.IsLocal(rel) {
 			continue
 		}
-		fi, err := t.b.hashFS.Stat(ctx, t.b.path.WorkspaceRoot, path.New(rel))
+		fi, err := b.hashFS.Stat(ctx, b.path.WorkspaceRoot, path.New(rel))
 		if err != nil {
 			continue
 		}
@@ -160,16 +77,14 @@ func (t *externalTapExecutor) postProcess(ctx context.Context, tapLogFileName st
 			// by hashfs Update.
 			continue
 		}
-		outputs = append(outputs, rel)
 		if seen[rel] {
 			continue
 		}
 		seen[rel] = true
 		cmd.Outputs = append(cmd.Outputs, path.New(rel))
 	}
-	// TODO: handle deletes
 	for _, del := range tapData.Deletes {
-		rel, err := filepath.Rel(t.b.path.WorkspaceRoot, del)
+		rel, err := filepath.Rel(b.path.WorkspaceRoot, del)
 		if err != nil {
 			clog.Warningf(ctx, "deletes relpath %q: %v", del, err)
 			continue
@@ -177,15 +92,18 @@ func (t *externalTapExecutor) postProcess(ctx context.Context, tapLogFileName st
 		if !filepath.IsLocal(rel) {
 			continue
 		}
-		_, err = t.b.hashFS.Stat(ctx, t.b.path.WorkspaceRoot, path.New(rel))
+		relPath := path.New(rel)
+		_, err = b.hashFS.Stat(ctx, b.path.WorkspaceRoot, relPath)
 		if errors.Is(err, fs.ErrNotExist) {
 			continue
 		}
+		b.hashFS.Forget(ctx, b.path.WorkspaceRoot, []path.Path{relPath})
 		clog.Infof(ctx, "delete %q", rel)
 	}
-	return inputs, outputs, nil
-}
 
-// TODO: implement?
-// func (t *externalTapExecutor) logLocalExec(ctx context.Context, step *Step, dur time.Duration) error {
-// }
+	// now tap results are applied to cmd, so we can consider
+	// this cmd is pure, thus cacheable.
+	cmd.Pure = true
+	clog.Infof(ctx, "tap canonicalized inputs=%d->%d outputs=%d->%d", ninputs, len(cmd.Inputs), noutputs, len(cmd.Outputs))
+	return nil
+}
