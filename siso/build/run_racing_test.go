@@ -134,7 +134,6 @@ func TestRemoteClaimFallbackIfAllowed(t *testing.T) {
 		err                error
 		maxFallbackAllowed int64
 		initialFallbacks   int64
-		failuresAllowed    int
 		cmdStdout          string
 		wantOk             bool
 		checkErr           func(*testing.T, error)
@@ -198,7 +197,6 @@ func TestRemoteClaimFallbackIfAllowed(t *testing.T) {
 			name:               "ExitError_PreferNoFallback",
 			err:                execute.ExitError{ExitCode: 1},
 			maxFallbackAllowed: 10,
-			failuresAllowed:    1,
 			cmdStdout:          "compile error",
 			wantOk:             false,
 			checkErr: func(t *testing.T, err error) {
@@ -214,7 +212,6 @@ func TestRemoteClaimFallbackIfAllowed(t *testing.T) {
 			name:               "ExitError_SIGKILL_AlwaysFallback",
 			err:                execute.ExitError{ExitCode: 137},
 			maxFallbackAllowed: 10,
-			failuresAllowed:    1,
 			cmdStdout:          "oom",
 			wantOk:             true,
 			checkErr: func(t *testing.T, err error) {
@@ -248,10 +245,6 @@ func TestRemoteClaimFallbackIfAllowed(t *testing.T) {
 				maxFallbackAllowed: tt.maxFallbackAllowed,
 			}
 			b.numFallback.Store(tt.initialFallbacks)
-			b.failures.allowed = tt.failuresAllowed
-			if b.failures.allowed == 0 {
-				b.failures.allowed = 2
-			}
 
 			cmd := &execute.Cmd{
 				Args: []string{"clang++", "foo.cc"},

@@ -83,11 +83,7 @@ func (b *Builder) remoteClaimFallbackIfAllowed(ctx context.Context, step *Step, 
 	var eerr execute.ExitError
 	if errors.As(err, &eerr) {
 		// report compile fail early to developers.
-		// If user runs on non-terminal or user sets a
-		// non-default -k, then it implies that they want to
-		// keep going as much as possible and
-		// correct result, rather than fast feedback.
-		preferNoFallbackOnExecErr := len(step.cmd.Stdout())+len(step.cmd.Stderr()) > 0 && b.failures.allowed == 1
+		preferNoFallbackOnExecErr := len(step.cmd.Stdout())+len(step.cmd.Stderr()) > 0
 		switch {
 		case eerr.ExitCode == 137:
 			// we still see unexpected SIGKILL (OOM?)
