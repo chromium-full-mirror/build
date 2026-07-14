@@ -49,6 +49,8 @@ import (
 	"go.chromium.org/build/siso/reapi/firstbyte"
 	"go.chromium.org/build/siso/reapi/retry"
 	"go.chromium.org/build/siso/version"
+
+	_ "embed"
 )
 
 // Option contains options of remote exec API.
@@ -334,74 +336,9 @@ type Client struct {
 
 // serviceConfig is gRPC service config for RE API.
 // https://github.com/bazelbuild/bazel/blob/7.1.1/src/main/java/com/google/devtools/build/lib/remote/RemoteRetrier.java#L47
-var serviceConfig = `
-{
-	"loadBalancingConfig": [{"round_robin":{}}],
-	"methodConfig": [
-	  {
-		"name": [
-                  { "service": "build.bazel.remote.execution.v2.Execution" }
-                ],
-		"timeout": "600s",
-		"retryPolicy": {
-			"maxAttempts": 5,
-			"initialBackoff": "1s",
-			"maxBackoff": "120s",
-			"backoffMultiplier": 1.6,
-			"retryableStatusCodes": [
-				"ABORTED",
-				"INTERNAL",
-				"RESOURCE_EXHAUSTED",
-				"UNAVAILABLE",
-				"UNKNOWN"
-			]
-		}
-	  },
-          {
-		"name": [
-                  {
-                    "service": "build.bazel.remote.execution.v2.ActionCache",
-                    "method": "GetActionResult"
-                  }
-                ],
-		"timeout": "10s",
-		"retryPolicy": {
-			"maxAttempts": 5,
-			"initialBackoff": "0.1s",
-			"maxBackoff": "1s",
-			"backoffMultiplier": 1.6,
-			"retryableStatusCodes": [
-				"ABORTED",
-				"INTERNAL",
-				"RESOURCE_EXHAUSTED",
-				"UNAVAILABLE",
-				"UNKNOWN"
-			]
-		}
-          },
-	  {
-		"name": [
-                  { "service": "build.bazel.remote.execution.v2.ActionCache" },
-                  { "service": "build.bazel.remote.execution.v2.ContentAddressableStorage" },
-                  { "service": "build.bazel.remote.execution.v2.Capabilities" }
-                ],
-		"timeout": "300s",
-		"retryPolicy": {
-			"maxAttempts": 5,
-			"initialBackoff": "0.1s",
-			"maxBackoff": "1s",
-			"backoffMultiplier": 1.6,
-			"retryableStatusCodes": [
-				"ABORTED",
-				"INTERNAL",
-				"RESOURCE_EXHAUSTED",
-				"UNAVAILABLE",
-				"UNKNOWN"
-			]
-		}
-	  }
-        ]
-}`
+//
+//go:embed service_config.json
+var serviceConfig string
 
 func DialOptions(keepAliveParams keepalive.ClientParameters) []grpc.DialOption {
 	// TODO(b/273639326): handle auth failures gracefully.
