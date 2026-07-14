@@ -1,6 +1,6 @@
 module go.chromium.org/build/gong
 
-go 1.26.4
+go 1.26.5
 
 require (
 	github.com/golang/glog v1.2.5
