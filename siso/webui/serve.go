@@ -30,7 +30,7 @@ import (
 	mwc "go.chromium.org/build/siso/third_party/material_web_components"
 )
 
-//go:embed templates/*.html css/*.css js/*.js
+//go:embed templates/*.html static/*.css static/*.js
 var content embed.FS
 
 var (
@@ -240,13 +240,13 @@ func (s *WebuiServer) ensureCSS() error {
 	}
 	sb := strings.Builder{}
 	for _, stylesheet := range []string{
-		"css/light.css",
-		"css/light-hc.css",
-		"css/light-mc.css",
-		"css/dark.css",
-		"css/dark-hc.css",
-		"css/dark-mc.css",
-		"css/style.css",
+		"static/light.css",
+		"static/light-hc.css",
+		"static/light-mc.css",
+		"static/dark.css",
+		"static/dark-hc.css",
+		"static/dark-mc.css",
+		"static/style.css",
 	} {
 		f, err := s.staticFS.Open(stylesheet)
 		if err != nil {
@@ -449,10 +449,10 @@ func (s *WebuiServer) Serve() int {
 
 	// Subrouter for all outdir related URLs.
 	// This is set up on a separate mux because it's too generic and would otherwise cause panic:
-	//     /css/ and /{outroot}/{outsub}/ both match some paths, like "/css/outsub/".
+	//     /static/ and /{outroot}/{outsub}/ both match some paths, like "/static/outsub/".
 	//     But neither is more specific than the other.
-	//     /css/ matches "/css/", but /{outroot}/{outsub}/ doesn't.
-	//     /{outroot}/{outsub}/ matches "/outroot/outsub/", but /css/ doesn't.
+	//     /static/ matches "/static/", but /{outroot}/{outsub}/ doesn't.
+	//     /{outroot}/{outsub}/ matches "/outroot/outsub/", but /static/ doesn't.
 	outdirRouter := http.NewServeMux()
 	outdirRouter.HandleFunc("/{outroot}/{outsub}/", s.handleOutdirRoot)
 	outdirRouter.HandleFunc("/{outroot}/{outsub}/builds/{rev}/logs/", func(w http.ResponseWriter, r *http.Request) {
@@ -521,7 +521,7 @@ func (s *WebuiServer) Serve() int {
 		outdirRouter.ServeHTTP(w, r)
 	})
 
-	mux.Handle("/js/", s.staticFileHandler(http.FileServerFS(s.staticFS)))
+	mux.Handle("/static/", s.staticFileHandler(http.FileServerFS(s.staticFS)))
 
 	// Serve third party JS. No other third party libraries right now, so just serve Material Design node_modules root.
 	mux.Handle("/third_party/", http.StripPrefix("/third_party/", s.staticFileHandler(http.FileServerFS(mwc.NodeModulesFS))))
