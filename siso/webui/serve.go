@@ -153,14 +153,13 @@ type WebuiServer struct {
 	sseServer         *sseServer
 	workspaceRoot     string
 	defaultOutdir     string
-	defaultManifest   string
 	defaultOutdirRoot string
 	defaultOutdirSub  string
+	outdirInfos       outdirRegistry
 	outsubs           []string
 	runbuildState
 
-	metricsMu       sync.Mutex
-	outdirMetrics   map[string]*outdirInfo
+	uploadedMu      sync.Mutex
 	uploadedMetrics []*buildMetrics
 
 	cssMu               sync.RWMutex
@@ -360,15 +359,15 @@ func NewServer(ctx context.Context, cfg ServerConfig) (*WebuiServer, error) {
 	if err != nil {
 		return nil, &ErrWorkspaceNotExist{err}
 	}
+	defaultOutdir := filepath.ToSlash(outDir)
 	s := WebuiServer{
 		sisoVersion:      cfg.Version,
 		localDevelopment: cfg.LocalDevelopment,
 		staticFS:         fs.FS(content),
 		sseServer:        newSseServer(),
 		workspaceRoot:    workspaceRoot,
-		defaultOutdir:    filepath.ToSlash(outDir),
-		defaultManifest:  cfg.ManifestPath,
-		outdirMetrics:    make(map[string]*outdirInfo),
+		defaultOutdir:    defaultOutdir,
+		outdirInfos:      makeOutdirRegistry(workspaceRoot, cfg.ManifestPath, defaultOutdir),
 		port:             cfg.Port,
 		templates:        make(map[string]*template.Template),
 	}
@@ -378,12 +377,10 @@ func NewServer(ctx context.Context, cfg ServerConfig) (*WebuiServer, error) {
 	}
 
 	// Preload default outdir.
-	absOutDir := filepath.Join(workspaceRoot, outDir)
-	defaultOutdirInfo, err := loadOutdirInfo(workspaceRoot, absOutDir, cfg.ManifestPath)
+	defaultOutdirInfo, err := s.outdirInfos.Get(outDir)
 	if err != nil {
 		return nil, fmt.Errorf("failed to preload outdir: %w", err)
 	}
-	s.outdirMetrics[absOutDir] = defaultOutdirInfo
 	s.defaultOutdirRoot = defaultOutdirInfo.outRoot
 	s.defaultOutdirSub = defaultOutdirInfo.outSub
 
@@ -426,9 +423,9 @@ func (s *WebuiServer) LoadStandaloneMetrics(metricsPath string) error {
 	if err != nil {
 		return fmt.Errorf("failed to load metrics: %w", err)
 	}
-	s.metricsMu.Lock()
+	s.uploadedMu.Lock()
 	s.uploadedMetrics = append(s.uploadedMetrics, metrics)
-	s.metricsMu.Unlock()
+	s.uploadedMu.Unlock()
 	return nil
 }
 

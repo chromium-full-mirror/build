@@ -32,6 +32,55 @@ const (
 	flatOutsub = "_"
 )
 
+// outdirRegistry manages metrics for a set of outdirs relative to a given workspace root.
+type outdirRegistry struct {
+	workspaceRoot   string
+	defaultManifest string
+	defaultOutdir   string
+
+	mu            sync.Mutex
+	outdirMetrics map[string]*outdirInfo
+}
+
+func makeOutdirRegistry(workspaceRoot, defaultManifest, defaultOutdir string) outdirRegistry {
+	return outdirRegistry{
+		workspaceRoot:   workspaceRoot,
+		defaultManifest: defaultManifest,
+		defaultOutdir:   defaultOutdir,
+		outdirMetrics:   make(map[string]*outdirInfo),
+	}
+}
+
+// Get lazy-loads outdir at a given path, returning cached result if possible.
+func (r *outdirRegistry) Get(outdir string) (*outdirInfo, error) {
+	abs := filepath.Join(r.workspaceRoot, outdir)
+	r.mu.Lock()
+	outdirInfo, ok := r.outdirMetrics[abs]
+	defer r.mu.Unlock()
+	if !ok {
+		// For output directories with custom manifest paths (e.g. flat output directories),
+		// use the manifest path specified by -f instead of falling back to the hardcoded "build.ninja".
+		// TODO: refactor to generic manifest path resolution logic?
+		manifestPath := "build.ninja"
+		if abs == filepath.Join(r.workspaceRoot, r.defaultOutdir) {
+			manifestPath = r.defaultManifest
+		}
+		var err error
+		outdirInfo, err = loadOutdirInfo(r.workspaceRoot, abs, manifestPath)
+		if err != nil {
+			return nil, fmt.Errorf("couldn't load outdir %s: %w", abs, err)
+		}
+		r.outdirMetrics[abs] = outdirInfo
+	}
+	return outdirInfo, nil
+}
+
+// Invalidate drops info from the registry for a given path.
+func (r *outdirRegistry) Invalidate(outdir string) {
+	abs := filepath.Join(r.workspaceRoot, outdir)
+	delete(r.outdirMetrics, abs)
+}
+
 type outdirInfo struct {
 	path         string
 	pathRel      string
@@ -252,29 +301,10 @@ func loadOutdirInfo(workspaceRoot, outDir, manifestPath string) (*outdirInfo, er
 func (s *WebuiServer) getOutdirForRequest(r *http.Request) (*outdirInfo, error) {
 	outroot := r.PathValue("outroot")
 	outsub := r.PathValue("outsub")
-	abs := filepath.Join(s.workspaceRoot, outroot, outsub)
 	if outsub == flatOutsub {
-		abs = filepath.Join(s.workspaceRoot, outroot)
+		return s.outdirInfos.Get(outroot)
 	}
-	s.metricsMu.Lock()
-	defer s.metricsMu.Unlock()
-	outdirInfo, ok := s.outdirMetrics[abs]
-	if !ok {
-		var err error
-		// For output directories with custom manifest paths (e.g. flat output directories),
-		// use the manifest path specified by -f instead of falling back to the hardcoded "build.ninja".
-		// TODO: refactor to generic manifest path resolution logic?
-		manifestPath := "build.ninja"
-		if abs == filepath.Join(s.workspaceRoot, s.defaultOutdir) {
-			manifestPath = s.defaultManifest
-		}
-		outdirInfo, err = loadOutdirInfo(s.workspaceRoot, abs, manifestPath)
-		if err != nil {
-			return nil, fmt.Errorf("couldn't load outdir %s: %w", abs, err)
-		}
-		s.outdirMetrics[abs] = outdirInfo
-	}
-	return outdirInfo, nil
+	return s.outdirInfos.Get(filepath.Join(outroot, outsub))
 }
 
 func (s *WebuiServer) handleOutdirReload(w http.ResponseWriter, r *http.Request) {
@@ -284,16 +314,13 @@ func (s *WebuiServer) handleOutdirReload(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// loadOutdirInfo will always override existing cached data.
-	newOutdirInfo, err := loadOutdirInfo(s.workspaceRoot, outdirInfo.path, outdirInfo.manifestPath)
+	s.outdirInfos.Invalidate(outdirInfo.pathRel)
+	_, err = s.outdirInfos.Get(outdirInfo.pathRel)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed to reload outdir: %v", err)
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
-	s.metricsMu.Lock()
-	s.outdirMetrics[outdirInfo.path] = newOutdirInfo
-	s.metricsMu.Unlock()
 
 	// Then redirect to root page.
 	http.Redirect(w, r, outdirBaseURL(r), http.StatusTemporaryRedirect)
