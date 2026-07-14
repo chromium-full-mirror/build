@@ -215,36 +215,36 @@ func (rt reapiTwoPhaseCaching) matchInputRoot(ctx context.Context, inputRootDige
 			clog.Infof(ctx, "walkdir entries %v", len(ents))
 		}
 		if len(ents) != len(names) {
-			return fmt.Errorf("missing some entries locally (local:%d, expected:%d)", len(ents), len(names))
+			return fmt.Errorf("missing some entries locally in %q (local:%d, expected:%d)", dname, len(ents), len(names))
 		}
 		for _, ent := range ents {
 			e, ok := m[string(ent.Name)]
 			if !ok {
-				return fmt.Errorf("missing %s in %s", ent.Name, dname)
+				return fmt.Errorf("missing %q in %q", ent.Name, dname)
 			}
 			if !e.Data.IsZero() {
 				// want file
 				if ent.Data.Digest() != e.Data.Digest() {
-					return fmt.Errorf("mismatch %s in %s: digest local:%s != want:%s", ent.Name, dname, ent.Data.Digest(), e.Data.Digest())
+					return fmt.Errorf("mismatch %q in %q: digest local:%s != want:%s", ent.Name, dname, ent.Data.Digest(), e.Data.Digest())
 				}
 				if ent.IsExecutable != e.IsExecutable {
-					return fmt.Errorf("mismatch %s in %s: is_executable local:%t != want:%t", ent.Name, dname, ent.IsExecutable, e.IsExecutable)
+					return fmt.Errorf("mismatch %q in %q: is_executable local:%t != want:%t", ent.Name, dname, ent.IsExecutable, e.IsExecutable)
 				}
 				continue
 			}
 			if e.Target != "" {
 				// want symlink
 				if ent.Target != e.Target {
-					return fmt.Errorf("mismatch %s in %s: target local:%q != want:%q", ent.Name, dname, ent.Target, e.Target)
+					return fmt.Errorf("mismatch %q in %q: target local:%q != want:%q", ent.Name, dname, ent.Target, e.Target)
 				}
 				continue
 			}
 			// want dir
 			if !ent.Data.IsZero() {
-				return fmt.Errorf("mismatch %s in %s: local digest:%s want:dir", ent.Name, dname, ent.Data.Digest())
+				return fmt.Errorf("mismatch %q in %q: local digest:%s want:dir", ent.Name, dname, ent.Data.Digest())
 			}
 			if ent.Target != "" {
-				return fmt.Errorf("mismatch %s in %s: local symlink:%q want:dir", ent.Name, dname, ent.Target)
+				return fmt.Errorf("mismatch %q in %q: local symlink:%q want:dir", ent.Name, dname, ent.Target)
 			}
 		}
 		if log.V(2) {
