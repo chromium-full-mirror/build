@@ -228,7 +228,7 @@ func (s *State) Targets(args []string) ([]*Node, error) {
 			seen := make(map[string]bool)
 			n, ok := s.hatTarget(t, seen)
 			if !ok {
-				errs = append(errs, fmt.Errorf("unknown target %q", t))
+				errs = append(errs, UnknownTargetError{t})
 				continue
 			}
 			outs := n.OutEdges()
@@ -255,7 +255,7 @@ func (s *State) Targets(args []string) ([]*Node, error) {
 		}
 		n, ok := s.LookupNodeByPath(t)
 		if !ok {
-			errs = append(errs, fmt.Errorf("unknown target %q", t))
+			errs = append(errs, UnknownTargetError{t})
 			continue
 		}
 		nodes = append(nodes, n)

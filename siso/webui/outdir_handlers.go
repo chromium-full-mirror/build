@@ -827,12 +827,16 @@ func (s *WebuiServer) handleOutdirListTargets(w http.ResponseWriter, r *http.Req
 			return
 		}
 		outdirInfo.ninjaState = state
-		outdirInfo.manifestMtime = stat.ModTime()
+		outdirInfo.manifestMtime = buildNinjaMtime
 	}
 
 	// Use cached *ninjautil.State to read info.
 	nodes, err := outdirInfo.ninjaState.Targets([]string{target})
 	if err != nil {
+		if _, ok := errors.AsType[ninjautil.UnknownTargetError](err); ok {
+			s.renderBuildViewError(http.StatusNotFound, fmt.Sprintf("target %s not found: %v", target, err), w, r)
+			return
+		}
 		s.renderBuildViewError(http.StatusInternalServerError, fmt.Sprintf("failed to get node for target %s: %v", target, err), w, r)
 		return
 	}

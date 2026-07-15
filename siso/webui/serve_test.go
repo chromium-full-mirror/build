@@ -57,7 +57,13 @@ func mustServer(ctx context.Context, t *testing.T, cfg ServerConfig) (*WebuiServ
 	if err := os.MkdirAll("out/Default", 0755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile("out/Default/build.ninja", []byte(""), 0644); err != nil {
+	if err := os.WriteFile("out/Default/build.ninja", []byte(`rule cc
+  command = clang++
+rule link
+  command = ld
+build foo.o: cc foo.c
+build foo: link foo.o
+build all: phony foo`), 0644); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile("out/Default/siso_metrics.json", []byte(`{"build_id": "test-rev"}
@@ -118,6 +124,9 @@ func TestRoutes(t *testing.T) {
 		{"/out/Default/builds/test-rev/steps/step-1/", http.StatusOK},
 		{"/out/Default/builds/test-rev/steps/step-0/", http.StatusNotFound},
 		{"/out/Default/builds/nonexistent-rev/steps/step-1/", http.StatusNotFound},
+		{"/out/Default/targets/all/", http.StatusOK},
+		{"/out/Default/targets/foo.o/", http.StatusOK},
+		{"/out/Default/targets/nonexistent.o/", http.StatusNotFound},
 	} {
 		rec := httptest.NewRecorder()
 		s.mux().ServeHTTP(rec, httptest.NewRequest("GET", tc.path, nil))
