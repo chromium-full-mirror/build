@@ -439,8 +439,7 @@ func (s *WebuiServer) staticFileHandler(h http.Handler) http.Handler {
 	})
 }
 
-func (s *WebuiServer) Serve() int {
-	s.sseServer.Start()
+func (s *WebuiServer) mux() http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle("/events/", s.sseServer)
 
@@ -523,6 +522,12 @@ func (s *WebuiServer) Serve() int {
 	// Serve third party JS. No other third party libraries right now, so just serve Material Design node_modules root.
 	mux.Handle("/third_party/", http.StripPrefix("/third_party/", s.staticFileHandler(http.FileServerFS(mwc.NodeModulesFS))))
 
+	return mux
+}
+
+// Serve serves the webui with the current configuration.
+func (s *WebuiServer) Serve() int {
+	s.sseServer.Start()
 	fmt.Printf("listening on http://localhost:%d/...\n", s.port)
 	// Hack for now to make loading external siso_metrics.json more usable, until we can have the homepage automatically show "here's all the loaded siso_metrics"
 	if len(s.uploadedMetrics) > 0 {
@@ -531,7 +536,7 @@ func (s *WebuiServer) Serve() int {
 			fmt.Printf("- http://localhost:%d/uploads/view/builds/%s/steps/\n", s.port, metrics.Rev)
 		}
 	}
-	err := http.ListenAndServe(fmt.Sprintf(":%d", s.port), mux)
+	err := http.ListenAndServe(fmt.Sprintf(":%d", s.port), s.mux())
 	if errors.Is(err, http.ErrServerClosed) {
 		fmt.Printf("server closed\n")
 	} else if err != nil {
