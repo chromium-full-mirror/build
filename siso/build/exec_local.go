@@ -319,7 +319,7 @@ func (b *Builder) cacheWrite(ctx context.Context, step *Step) error {
 		// Populate output files (and a real tree per directory output) from
 		// the command's typed outputs, recording their blobs in ds.
 		if err := cmd.SetResultOutputs(ctx, result, ds); err != nil {
-			return err
+			return fmt.Errorf("set result outputs: %w", err)
 		}
 
 		step.setPhase(phase.wait())
@@ -331,7 +331,12 @@ func (b *Builder) cacheWrite(ctx context.Context, step *Step) error {
 				return err
 			}
 			// Now set the action result in RE
-			return b.reapiclient.UpdateActionResult(ctx, actionDigest, result)
+			err := b.reapiclient.UpdateActionResult(ctx, actionDigest, result)
+			if err != nil {
+				clog.Warningf(ctx, "failed to write action result: %v\n%s", err, result)
+				return fmt.Errorf("update action result for %s: %w", actionDigest, err)
+			}
+			return nil
 		})
 		return err
 	}()
