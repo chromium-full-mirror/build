@@ -109,7 +109,7 @@ func (b *Builder) runStep(ctx context.Context, step *Step) (retErr error) {
 					}
 					switch s.Name {
 					case spanDepsCmd:
-						step.metrics.DepsScanTime = IntervalMetric(s.Start.Sub(b.start))
+						step.metrics.DepsScanTime = IntervalMetric(s.Duration())
 					case spanScandepsRun:
 						step.metrics.ScandepsTime = IntervalMetric(s.Duration())
 						step.metrics.ScandepsStartTime = IntervalMetric(s.Start.Sub(b.start))
