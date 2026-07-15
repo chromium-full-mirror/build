@@ -126,3 +126,36 @@ func TestRoutes(t *testing.T) {
 		}
 	}
 }
+
+func TestRedirects(t *testing.T) {
+	s, _ := mustServer(t.Context(), t, ServerConfig{
+		Version:          "test-version",
+		LocalDevelopment: false,
+		Port:             8080,
+		OutDir: ninjabuild.DirFlag{
+			Dir:           "out/Default",
+			ConfigRepoDir: "build/config/siso",
+		},
+		ManifestPath: "build.ninja",
+	})
+
+	for _, tc := range []struct {
+		path string
+		want string
+	}{
+		{"/", "/out/Default/"},
+		{"/out/Default/", "/out/Default/builds/test-rev/steps/"},
+		{"/out/Default/targets/", "/out/Default/targets/all/"},
+		{"/out/Default/reload", "/out/Default"},
+	} {
+		rec := httptest.NewRecorder()
+		s.mux().ServeHTTP(rec, httptest.NewRequest("GET", tc.path, nil))
+		if rec.Code != http.StatusTemporaryRedirect {
+			t.Errorf("GET %s = %d; want %d", tc.path, rec.Code, http.StatusTemporaryRedirect)
+			continue
+		}
+		if got := rec.Header().Get("Location"); got != tc.want {
+			t.Errorf("GET %s redirect = %q; want %q", tc.path, got, tc.want)
+		}
+	}
+}
