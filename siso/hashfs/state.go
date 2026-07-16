@@ -63,6 +63,8 @@ type IgnoreFunc func(context.Context, string) bool
 
 // Option is an option for HashFS.
 type Option struct {
+	BuildLabel string // The active build label being built (if any).
+
 	// DigestFunction is the content digest function. The zero value means
 	// SHA-256.
 	DigestFunction digest.Function
@@ -99,6 +101,7 @@ type Option struct {
 
 // RegisterFlags registers flags for the option.
 func (o *Option) RegisterFlags(flagSet *flag.FlagSet) {
+	flagSet.StringVar(&o.BuildLabel, "build_label", "", "The active build label being built")
 	flagSet.StringVar(&o.StateFile, "fs_state", defaultStateFile, "fs state filename")
 	flagSet.IntVar(&o.CompressLevel, "fs_state_compression_level", 1, "fs state compression level (1 = fastest, 10 = best)")
 	flagSet.IntVar(&o.CompressThreads, "fs_state_compression_threads", defaultCompressThreads, "number of threads to use for data compression")
@@ -932,6 +935,8 @@ func (hfs *HashFS) SetState(ctx context.Context, state *pb.State) error {
 
 	hfs.setStateCh = make(chan error, 1)
 
+	hfs.loadBuildLabels(ctx, state, initial)
+
 	clean := initial.clean()
 	hfs.clean.Store(clean)
 	// store in background.
@@ -1386,6 +1391,9 @@ func (hfs *HashFS) State(ctx context.Context) *pb.State {
 		}
 		return true
 	})
+
+	hfs.saveBuildLabels(state)
+
 	clog.Infof(ctx, "state %d entries token:%q buildTargets:%v: missingOutputs:%d missingDigests:%d %s", len(state.Entries), state.LastChecked, state.BuildTargets, len(state.MissingOutputs), len(state.MissingDigests), time.Since(started))
 	return state
 }
@@ -1599,4 +1607,86 @@ func JournalEntry(w io.Writer, ent *pb.Entry) error {
 	}
 	_, err = w.Write(buf.Bytes())
 	return err
+}
+
+// getActiveFilesMap compiles a fast-lookup map of normalized paths for all active state entries.
+func getActiveFilesMap(state *pb.State) map[string]bool {
+	activeFiles := make(map[string]bool)
+	for _, e := range state.Entries {
+		activeFiles[e.Name] = true
+	}
+	return activeFiles
+}
+
+// loadBuildLabels validates and loads build label tracking data from the state file.
+func (hfs *HashFS) loadBuildLabels(ctx context.Context, state *pb.State, initial *initialEntryStates) {
+	hfs.ledgerMu.Lock()
+	defer hfs.ledgerMu.Unlock()
+
+	hfs.buildLabelDictionary = make(map[uint32]*pb.BuildLabelMetadata)
+	corrupted := false
+	if state.BuildLabelDictionary != nil {
+		for _, entry := range state.BuildLabelDictionary {
+			if entry.Id >= 64 {
+				corrupted = true
+				break
+			}
+			hfs.buildLabelDictionary[entry.Id] = entry.Metadata
+		}
+	}
+	if corrupted {
+		clog.Warningf(ctx, "corrupted LabelDictionary detected in state file, resetting build label masks")
+		hfs.buildLabelDictionary = make(map[uint32]*pb.BuildLabelMetadata)
+	}
+
+	hfs.fileBuildLabels = make(map[string]uint64)
+	if !corrupted && state.FileBuildLabels != nil {
+		// Load validation: Ensure we don't hold onto labels for files that were
+		// deleted outside of Siso (e.g. by `rm`) between builds.
+		activeFiles := make(map[string]bool)
+		for i := range initial.alloc {
+			es := &initial.alloc[i]
+			if es.ftype != "" && es.e.err == nil {
+				activeFiles[es.ent.Name] = true
+			}
+		}
+		for _, entry := range state.FileBuildLabels {
+			if activeFiles[entry.Path] {
+				hfs.fileBuildLabels[entry.Path] = entry.Mask
+			}
+		}
+	}
+}
+
+// saveBuildLabels serializes the in-memory build label tracking data into the state file.
+func (hfs *HashFS) saveBuildLabels(state *pb.State) {
+	hfs.ledgerMu.RLock()
+	defer hfs.ledgerMu.RUnlock()
+	if len(hfs.buildLabelDictionary) > 0 {
+		state.BuildLabelDictionary = make([]*pb.BuildLabelDictionaryEntry, 0, len(hfs.buildLabelDictionary))
+		for id, v := range hfs.buildLabelDictionary {
+			state.BuildLabelDictionary = append(state.BuildLabelDictionary, &pb.BuildLabelDictionaryEntry{
+				Id: id,
+				Metadata: &pb.BuildLabelMetadata{
+					BuildLabel:         v.BuildLabel,
+					LastBuildTimestamp: v.LastBuildTimestamp,
+				},
+			})
+		}
+	}
+	if len(hfs.fileBuildLabels) > 0 {
+		// Save validation: Double-check that we only serialize labels for files
+		// that are explicitly active in the final exported state tree.
+		activeFiles := getActiveFilesMap(state)
+
+		state.FileBuildLabels = make([]*pb.FileBuildLabel, 0, len(hfs.fileBuildLabels))
+		for name, mask := range hfs.fileBuildLabels {
+			if activeFiles[name] {
+				state.FileBuildLabels = append(state.FileBuildLabels, &pb.FileBuildLabel{
+					Path: name,
+					Mask: mask,
+				})
+			}
+		}
+	}
 }

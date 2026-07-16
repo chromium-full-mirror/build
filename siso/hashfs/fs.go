@@ -148,6 +148,12 @@ type HashFS struct {
 	// dirInputCached gates invalidation so builds with no directory inputs pay
 	// only an atomic load.
 	dirInputCached atomic.Bool
+
+	// ledgerMu protects the build label tracking ledger (buildLabelDictionary and fileBuildLabels)
+	// from concurrent read/writes during VFS evictions and state flushes.
+	ledgerMu             sync.RWMutex
+	buildLabelDictionary map[uint32]*pb.BuildLabelMetadata
+	fileBuildLabels      map[string]uint64
 }
 
 // New creates a HashFS.
@@ -180,6 +186,8 @@ func New(ctx context.Context, opt Option) (*HashFS, error) {
 			quit:      make(chan struct{}),
 			done:      make(chan struct{}),
 		},
+		buildLabelDictionary: make(map[uint32]*pb.BuildLabelMetadata),
+		fileBuildLabels:      make(map[string]uint64),
 	}
 	if opt.StateFile != "" {
 		start := time.Now()
@@ -1067,6 +1075,10 @@ func (hfs *HashFS) Remove(ctx context.Context, root string, fname path.Path) err
 	}
 	hfs.clean.Store(false)
 	fname = makeFullpath(root, fname)
+	fnameStr := string(fname)
+	hfs.WithBuildLabelTrackingLockDo(func() {
+		delete(hfs.fileBuildLabels, fnameStr)
+	})
 	lready := make(chan bool, 1)
 	lready <- true
 	e := &entry{
@@ -1079,6 +1091,17 @@ func (hfs *HashFS) Remove(ctx context.Context, root string, fname path.Path) err
 	return err
 }
 
+// WithBuildLabelTrackingLockDo grabs the ledgerMu and executes callback
+// if and only if a build label was requested for this invocation.
+func (hfs *HashFS) WithBuildLabelTrackingLockDo(f func()) {
+	if hfs.opt.BuildLabel == "" {
+		return
+	}
+	hfs.ledgerMu.Lock()
+	defer hfs.ledgerMu.Unlock()
+	f()
+}
+
 // RemoveAll removes all files under root/name.
 // Also removes from the disk at the same time.
 func (hfs *HashFS) RemoveAll(ctx context.Context, root string, name path.Path) error {
@@ -1087,6 +1110,15 @@ func (hfs *HashFS) RemoveAll(ctx context.Context, root string, name path.Path) e
 	}
 	hfs.clean.Store(false)
 	name = makeFullpath(root, name)
+	nameStr := string(name)
+	prefix := nameStr + "/"
+	hfs.WithBuildLabelTrackingLockDo(func() {
+		for k := range hfs.fileBuildLabels {
+			if k == nameStr || strings.HasPrefix(k, prefix) {
+				delete(hfs.fileBuildLabels, k)
+			}
+		}
+	})
 	// Route through OSFS.RemoveAll for its metrics and slow-operation logging.
 	removeErr := hfs.OS.RemoveAll(ctx, string(name))
 	// The in-memory entry records the post-state: the path no longer exists.
@@ -1151,6 +1183,14 @@ func (hfs *HashFS) ClearStaleFileForDirOutput(ctx context.Context, root, name st
 
 // Forget forgets cached entry for inputs under root.
 func (hfs *HashFS) Forget(ctx context.Context, root string, inputs []path.Path) {
+	hfs.WithBuildLabelTrackingLockDo(func() {
+		for _, fname := range inputs {
+			fullname := makeFullpath(root, fname)
+			fullnameStr := string(fullname)
+			delete(hfs.fileBuildLabels, fullnameStr)
+		}
+	})
+
 	for _, fname := range inputs {
 		fullname := makeFullpath(root, fname)
 		hfs.directory.delete(ctx, fullname)
@@ -1162,6 +1202,36 @@ func (hfs *HashFS) Forget(ctx context.Context, root string, inputs []path.Path) 
 // Unlike Forget, it drops directory subtrees because output directories are
 // owned by the step being invalidated.
 func (hfs *HashFS) ForgetOutputs(ctx context.Context, root string, outputs []path.Path) {
+	if len(outputs) == 0 {
+		return
+	}
+
+	// Build a lookup map of normalized output paths.
+	outputMap := make(map[string]bool, len(outputs))
+	for _, fname := range outputs {
+		fullname := makeFullpath(root, fname)
+		fullnameStr := string(fullname)
+		outputMap[fullnameStr] = true
+	}
+
+	hfs.WithBuildLabelTrackingLockDo(func() {
+		// Scan fileBuildLabels exactly once for all outputs.
+		for k := range hfs.fileBuildLabels {
+			p := k
+			for {
+				if outputMap[p] {
+					delete(hfs.fileBuildLabels, k)
+					break
+				}
+				dir := stdpath.Dir(p)
+				if dir == p || dir == "." || dir == "/" {
+					break
+				}
+				p = dir
+			}
+		}
+	})
+
 	for _, fname := range outputs {
 		fullname := makeFullpath(root, fname)
 		hfs.directory.deleteForce(ctx, fullname)
