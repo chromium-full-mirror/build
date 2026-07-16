@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"os"
 	"os/exec"
@@ -146,11 +147,7 @@ func (s *WebuiServer) handleRunbuildPost(w http.ResponseWriter, r *http.Request)
 				return
 			case <-time.After(100 * time.Millisecond):
 				activeStepsLock.RLock()
-				// TODO: use golang 1.23 maps.Values
-				activeByStarted := make([]runningStepInfo, 0, len(activeSteps))
-				for _, value := range activeSteps {
-					activeByStarted = append(activeByStarted, value)
-				}
+				activeByStarted := slices.Collect(maps.Values(activeSteps))
 				activeStepsLock.RUnlock()
 
 				slices.SortFunc(activeByStarted, func(a, b runningStepInfo) int {

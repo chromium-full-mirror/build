@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"maps"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -186,8 +187,7 @@ func loadBuildMetrics(metricsPath string) (*buildMetrics, error) {
 			actionCounts[metric.Action]++
 		}
 	}
-	// TODO(b/349287453): use maps.Keys once go 1.23
-	for action := range actionCounts {
+	for action := range maps.Keys(actionCounts) {
 		metricsData.actionCounts = append(metricsData.actionCounts, fieldAggregate{
 			Key:   action,
 			Count: actionCounts[action],
@@ -203,8 +203,7 @@ func loadBuildMetrics(metricsPath string) (*buildMetrics, error) {
 			ruleCounts[metric.Rule]++
 		}
 	}
-	// TODO(b/349287453): use maps.Keys once go 1.23
-	for rule := range ruleCounts {
+	for rule := range maps.Keys(ruleCounts) {
 		metricsData.ruleCounts = append(metricsData.ruleCounts, fieldAggregate{
 			Key:   rule,
 			Count: ruleCounts[rule],
@@ -439,12 +438,7 @@ func (s *WebuiServer) handleOutdirViewLog(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	// TODO(b/349287453): use maps.Keys once go 1.23
-	var allowedFiles []string
-	for allowedFile := range allowedFilesMap {
-		allowedFiles = append(allowedFiles, allowedFile)
-	}
-	slices.Sort(allowedFiles)
+	allowedFiles := slices.Sorted(maps.Keys(allowedFilesMap))
 
 	err = s.renderBuildView(w, r, tmpl, map[string]any{
 		"allowedFiles": allowedFiles,
@@ -494,11 +488,7 @@ func (s *WebuiServer) handleOutdirAggregates(w http.ResponseWriter, r *http.Requ
 	}
 
 	// Sort by utime descending.
-	// TODO(b/349287453): use maps.Values once go 1.23
-	var sortedAggregates []aggregateMetric
-	for _, v := range aggregates {
-		sortedAggregates = append(sortedAggregates, v)
-	}
+	sortedAggregates := slices.Collect(maps.Values(aggregates))
 	slices.SortFunc(sortedAggregates, func(a, b aggregateMetric) int {
 		return cmp.Compare(b.TotalUtime, a.TotalUtime)
 	})
