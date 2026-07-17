@@ -41,6 +41,8 @@ func (c *Client) WalkDir(ctx context.Context, d digest.Digest, fn func(dname str
 	var apiDur, cbDur time.Duration
 	var nrecvs, ndirs int
 	err := retry.Do(ctx, func() error {
+		ctx, cancel := context.WithCancel(ctx)
+		defer cancel()
 		stream, err := casClient.GetTree(ctx, &rpb.GetTreeRequest{
 			InstanceName:   c.opt.Instance,
 			RootDigest:     d.Proto(),
