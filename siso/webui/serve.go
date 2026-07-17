@@ -46,6 +46,12 @@ var (
 	}
 	// baseFunctions provides global functions to the HTML template files.
 	baseFunctions = template.FuncMap{
+		// outdirEscape escapes all special characters for safe inclusion in a URL path
+		// segment, except slashes which are assumed to be part of the outdir's path and
+		// hence left as-is.
+		"outdirEscape": func(s string) string {
+			return strings.ReplaceAll(url.PathEscape(s), "%2F", "/")
+		},
 		"pathEscape": func(s string) string {
 			return url.PathEscape(s)
 		},
@@ -146,17 +152,15 @@ var (
 )
 
 type WebuiServer struct {
-	sisoVersion       string
-	localDevelopment  bool
-	port              int
-	staticFS          fs.FS
-	sseServer         *sseServer
-	workspaceRoot     string
-	defaultOutdir     string
-	defaultOutdirRoot string
-	defaultOutdirSub  string
-	outdirInfos       outdirRegistry
-	outsubs           []string
+	sisoVersion      string
+	localDevelopment bool
+	port             int
+	staticFS         fs.FS
+	sseServer        *sseServer
+	workspaceRoot    string
+	defaultOutdir    string
+	outdirInfos      outdirRegistry
+	knownOutdirs     []string
 	runbuildState
 
 	uploadedMu      sync.Mutex
@@ -291,8 +295,6 @@ func (s *WebuiServer) renderBuildView(wr http.ResponseWriter, r *http.Request, t
 		if rev == "" {
 			rev = outdirInfo.latestRevID
 		}
-		data["outroot"] = outdirInfo.outRoot
-		data["outsub"] = outdirInfo.outSub
 		outdirAbbrev := outdirInfo.path
 		// Showing the full path is too long in the webui so abbreviate home dir to ~.
 		// TODO(b/361703735): refactor https://chromium-review.googlesource.com/c/infra/infra/+/5804478/comment/dcfb372d_f21e4cc5/
@@ -303,7 +305,7 @@ func (s *WebuiServer) renderBuildView(wr http.ResponseWriter, r *http.Request, t
 		data["outdirRel"] = outdirInfo.pathRel
 		data["revs"] = outdirInfo.metrics
 	}
-	data["outsubs"] = s.outsubs
+	data["knownOutdirs"] = s.knownOutdirs
 	data["versionID"] = s.sisoVersion
 	data["currentURL"] = r.URL
 	data["currentRev"] = rev
@@ -377,17 +379,13 @@ func NewServer(ctx context.Context, cfg ServerConfig) (*WebuiServer, error) {
 	}
 
 	// Preload default outdir.
-	defaultOutdirInfo, err := s.outdirInfos.Get(outDir)
+	_, err = s.outdirInfos.Get(outDir)
 	if err != nil {
 		return nil, fmt.Errorf("failed to preload outdir: %w", err)
 	}
-	s.defaultOutdirRoot = defaultOutdirInfo.outRoot
-	s.defaultOutdirSub = defaultOutdirInfo.outSub
 
 	// Find other outdirs.
-	// TODO: support out*/*
-	// TODO(b/361703735): can use defaultOutdirParent?
-	matches, err := filepath.Glob(filepath.Join(s.workspaceRoot, "out/*"))
+	matches, err := filepath.Glob(filepath.Join(s.workspaceRoot, "out*/*"))
 	if err != nil {
 		return nil, fmt.Errorf("failed to glob %s: %w", s.workspaceRoot, err)
 	}
@@ -407,11 +405,11 @@ func NewServer(ctx context.Context, cfg ServerConfig) (*WebuiServer, error) {
 			}) {
 				continue
 			}
-			outsub, err := filepath.Rel(filepath.Join(s.workspaceRoot, defaultOutdirInfo.outRoot), match)
+			outsub, err := filepath.Rel(s.workspaceRoot, match)
 			if err != nil {
-				return nil, fmt.Errorf("failed to make %s workspace relative: %w", match, err)
+				return nil, fmt.Errorf("failed to make %s workspace-root relative: %w", match, err)
 			}
-			s.outsubs = append(s.outsubs, outsub)
+			s.knownOutdirs = append(s.knownOutdirs, filepath.ToSlash(outsub))
 		}
 	}
 
@@ -493,7 +491,7 @@ func (s *WebuiServer) mux() http.Handler {
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		// Redirect root to default outdir.
 		if r.URL.Path == "/" {
-			http.Redirect(w, r, fmt.Sprintf("/%s/%s/", s.defaultOutdirRoot, s.defaultOutdirSub), http.StatusTemporaryRedirect)
+			http.Redirect(w, r, fmt.Sprintf("/%s/", s.defaultOutdir), http.StatusTemporaryRedirect)
 			return
 		}
 

@@ -59,6 +59,7 @@ func mustServer(ctx context.Context, t *testing.T) (*WebuiServer, string) {
 		t.Fatal(err)
 	}
 
+	// Chromium style outdir.
 	if err := os.MkdirAll("out/Default", 0755); err != nil {
 		t.Fatal(err)
 	}
@@ -77,6 +78,7 @@ build all: phony foo`), 0644); err != nil {
 		t.Fatal(err)
 	}
 
+	// Chromium style outdir with characters that will be URL-encoded.
 	if err := os.MkdirAll("out/Default final v2 (1)", 0755); err != nil {
 		t.Fatal(err)
 	}
@@ -84,6 +86,29 @@ build all: phony foo`), 0644); err != nil {
 		t.Fatal(err)
 	}
 
+	// ChromiumOS style outdir.
+	// https://chromium.googlesource.com/chromium/src/+/18f03121b045467feac4bcc30f51b7dbf28e5a64/docs/chromeos_build_instructions.md#building-for-the-board
+	if err := os.MkdirAll("out_amd64-generic/Release", 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile("out_amd64-generic/Release/build.ninja", []byte(""), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile("out_amd64-generic/Release/siso_metrics.json", []byte(`{"build_id": "cros-rev"}
+{"step_id": "step-1", "rule": "cc", "action": "clang", "outputs": ["out2.o"]}
+`), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Outdir that is not scanned by default (glob for out*/* only).
+	if err := os.MkdirAll("tmp-out/Default", 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile("tmp-out/Default/build.ninja", []byte(""), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Now init the server.
 	s, err := NewServer(ctx, ServerConfig{
 		Version:          "test-version",
 		LocalDevelopment: false,
@@ -109,12 +134,6 @@ func TestServer_InitialState(t *testing.T) {
 	if s.defaultOutdir != "out/Default" {
 		t.Errorf("defaultOutdir = %q; want %q", s.defaultOutdir, "out/Default")
 	}
-	if s.defaultOutdirRoot != "out" {
-		t.Errorf("defaultOutdirRoot = %q; want %q", s.defaultOutdirRoot, "out")
-	}
-	if s.defaultOutdirSub != "Default" {
-		t.Errorf("defaultOutdirSub = %q; want %q", s.defaultOutdirSub, "Default")
-	}
 }
 
 func TestRoutes(t *testing.T) {
@@ -128,9 +147,11 @@ func TestRoutes(t *testing.T) {
 		{"/out/Default/builds/test-rev/steps/step-1/", http.StatusOK},
 		{"/out/Default/builds/test-rev/steps/step-0/", http.StatusNotFound},
 		{"/out/Default/builds/nonexistent-rev/steps/step-1/", http.StatusNotFound},
+		{"/out/Default/builds/cros-rev/steps/step-1/", http.StatusNotFound},
 		{"/out/Default/targets/all/", http.StatusOK},
 		{"/out/Default/targets/foo.o/", http.StatusOK},
 		{"/out/Default/targets/nonexistent.o/", http.StatusNotFound},
+		{"/out_amd64-generic/Release/builds/cros-rev/steps/step-1/", http.StatusOK},
 	} {
 		rec := httptest.NewRecorder()
 		s.mux().ServeHTTP(rec, httptest.NewRequest("GET", tc.path, nil))
@@ -187,13 +208,11 @@ func TestOutdirMenu_RendersCorrectURLs(t *testing.T) {
 	})
 
 	// The slash between out/Default must be left unescaped.
-	// TODO: We should change the menu items to show full outdir relative to workspace root
-	// e.g "out/Default" not just "Default". This is especially because the actual dropdown
-	// renders e.g. "~/path/to/chromium/src/out/Default" so it's less clear why "out/" is
-	// being completely excluded from the items.
 	want := map[string]string{
-		"Default":              "/out/Default/",
-		"Default final v2 (1)": "/out/Default%20final%20v2%20%281%29/",
+		"out/Default":               "/out/Default/",
+		"out/Default final v2 (1)":  "/out/Default%20final%20v2%20%281%29/",
+		"out_amd64-generic/Release": "/out_amd64-generic/Release/",
+		// Other outdirs not included (glob for out*/* only).
 	}
 	if diff := cmp.Diff(want, items); diff != "" {
 		t.Errorf("outdir menu mismatch (-want +got):\n%s", diff)

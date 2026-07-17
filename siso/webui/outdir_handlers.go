@@ -86,8 +86,6 @@ type outdirInfo struct {
 	path         string
 	pathRel      string
 	manifestPath string
-	outRoot      string
-	outSub       string
 	metrics      []*buildMetrics
 	latestRevID  string
 
@@ -238,22 +236,16 @@ func loadOutdirInfo(workspaceRoot, outDir, manifestPath string) (*outdirInfo, er
 
 	// TODO(b/361703735): make sure this works on windows? https://chromium-review.googlesource.com/c/infra/infra/+/5803123/comment/502308d3_ac05bf91/
 	outRoot, outSub := filepath.Split(execRel)
-	if outRoot == "" {
-		outRoot = outSub
-		outSub = flatOutsub
-	} else {
+	if outRoot != "" {
 		if strings.Contains(outSub, "/") {
 			return nil, fmt.Errorf("outdir must match pattern `workspace/outroot/outsub`, others are not supported yet")
 		}
-		outRoot = filepath.Clean(outRoot)
 	}
 
 	outdirInfo := &outdirInfo{
 		path:         outDir,
 		pathRel:      execRel,
 		manifestPath: manifestPath,
-		outRoot:      outRoot,
-		outSub:       outSub,
 		mu:           sync.Mutex{},
 	}
 

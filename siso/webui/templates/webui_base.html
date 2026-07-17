@@ -3,7 +3,6 @@ Use of this source code is governed by a BSD-style license that can be
 found in the LICENSE file. */}}
 
 {{define "base"}}
-{{$outroot:=.outroot}}
 {{$outdirRevBaseURL:=.outdirRevBaseURL}}
 <!DOCTYPE html>
 <html lang="en">
@@ -55,9 +54,9 @@ found in the LICENSE file. */}}
               <md-icon slot="icon"></md-icon>
             </md-text-button>
             <md-menu id="outdir-menu" anchor="outdir-menu-button" positioning="popover">
-              {{range $outsubs := .outsubs}}
-              <md-menu-item href="/{{$outroot}}/{{pathEscape $outsubs}}/">
-                <div slot="headline">{{$outsubs}}</div>
+              {{range $knownOutdir := .knownOutdirs}}
+              <md-menu-item href="/{{outdirEscape $knownOutdir}}/">
+                <div slot="headline">{{$knownOutdir}}</div>
               </md-menu-item>
               {{end}}
             </md-menu>
