@@ -739,8 +739,8 @@ func (ies *initialEntryStates) handleBeforeLocal(ctx context.Context, es *entryS
 	ies.ninvalidate.Add(1)
 	ies.dirty.Store(true)
 	if !es.prevGenerated || !ies.keepTainted {
+		clog.Warningf(ctx, "invalidate %s %q: state:%s disk:%s, prevGenerated:%t, keepTainted:%t", es.ftype, es.ent.Name, es.e.mtime, fi.ModTime(), es.prevGenerated, ies.keepTainted)
 		es.ftype = ""
-		clog.Warningf(ctx, "invalidate %s %q: state:%s disk:%s", es.ftype, es.ent.Name, es.e.mtime, fi.ModTime())
 		return nil
 	}
 	es.tainted = true
