@@ -906,7 +906,7 @@ func NewContext(ctx context.Context, rmd *rpb.RequestMetadata) context.Context {
 	} else {
 		md = md.Copy()
 	}
-	md.Set("build.bazel.remote.execution.v2.requestmetadata-bin", string(b))
+	md.Set(requestMetadataKey, string(b))
 	return metadata.NewOutgoingContext(ctx, md)
 }
 
@@ -916,7 +916,7 @@ func MetadataFromOutgoingContext(ctx context.Context) (*rpb.RequestMetadata, boo
 	if !ok {
 		return nil, false
 	}
-	v, ok := md["build.bazel.remote.execution.v2.requestmetadata-bin"]
+	v, ok := md[requestMetadataKey]
 	if !ok {
 		return nil, false
 	}

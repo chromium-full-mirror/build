@@ -17,6 +17,7 @@ import (
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 
 	"go.chromium.org/build/hashigo/digest"
@@ -24,6 +25,11 @@ import (
 
 	"go.chromium.org/build/siso/o11y/clog"
 )
+
+// requestMetadataKey is the gRPC metadata key that carries the marshaled
+// RE API RequestMetadata.
+// https://github.com/bazelbuild/remote-apis/blob/8f539af4b407a4f649707f9632fc2b715c9aa065/build/bazel/remote/execution/v2/remote_execution.proto#L2034-L2045
+const requestMetadataKey = "build.bazel.remote.execution.v2.requestmetadata-bin"
 
 // Proxy is RE API proxy.
 type Proxy struct {
@@ -37,6 +43,49 @@ func NewProxy(client *Client, addr string) *Proxy {
 		client: client,
 		addr:   addr,
 	}
+}
+
+// withForwardedMetadata copies the client's REAPI RequestMetadata from the
+// incoming request onto the outgoing context, so the backend still sees the
+// tool_invocation_id, target_id, action_mnemonic and friends for logging,
+// monitoring and grouping. Without this the proxy would strip it: the handlers
+// pass the server context to the upstream client, and gRPC does not forward
+// incoming metadata to outgoing calls.
+func withForwardedMetadata(ctx context.Context) context.Context {
+	md, ok := metadata.FromIncomingContext(ctx)
+	if !ok {
+		return ctx
+	}
+	vals := md.Get(requestMetadataKey)
+	if len(vals) == 0 {
+		return ctx
+	}
+	pairs := make([]string, 0, len(vals)*2)
+	for _, v := range vals {
+		pairs = append(pairs, requestMetadataKey, v)
+	}
+	return metadata.AppendToOutgoingContext(ctx, pairs...)
+}
+
+// forwardMetadataUnaryInterceptor forwards the client's RequestMetadata upstream
+// on unary RPCs.
+func forwardMetadataUnaryInterceptor(ctx context.Context, req any, _ *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
+	return handler(withForwardedMetadata(ctx), req)
+}
+
+// forwardMetadataStream overrides the handler's context so streaming RPCs carry
+// the forwarded RequestMetadata on upstream calls.
+type forwardMetadataStream struct {
+	grpc.ServerStream
+	ctx context.Context
+}
+
+func (s *forwardMetadataStream) Context() context.Context { return s.ctx }
+
+// forwardMetadataStreamInterceptor forwards the client's RequestMetadata upstream
+// on streaming RPCs.
+func forwardMetadataStreamInterceptor(srv any, ss grpc.ServerStream, _ *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+	return handler(srv, &forwardMetadataStream{ServerStream: ss, ctx: withForwardedMetadata(ss.Context())})
 }
 
 // Serve serves RE API requests and proxies to the client.
@@ -54,7 +103,11 @@ func (p *Proxy) Serve(ctx context.Context) error {
 		return fmt.Errorf("failed to listen %s %s: %w", loc.Scheme, loc.Path, err)
 	}
 	// TODO: set recv msg size based on server capabilities?
-	server := grpc.NewServer(grpc.MaxRecvMsgSize(20 * 1024 * 1024))
+	server := grpc.NewServer(
+		grpc.MaxRecvMsgSize(20*1024*1024),
+		grpc.ChainUnaryInterceptor(forwardMetadataUnaryInterceptor),
+		grpc.ChainStreamInterceptor(forwardMetadataStreamInterceptor),
+	)
 
 	cp := &capabilitiesProxy{
 		client: rpb.NewCapabilitiesClient(p.client.conn),
