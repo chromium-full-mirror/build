@@ -17,6 +17,7 @@ import (
 	"strings"
 
 	"github.com/google/subcommands"
+	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/encoding/prototext"
 	"google.golang.org/protobuf/proto"
 
@@ -33,7 +34,7 @@ const usage = `fetch contents from CAS or ActionResult.
 Print contents to stdout, or extract in <dir> for -type *-extract.
 
  $ siso fetch [-project <project>] [-reapi_instance <instance>] \
-          [-type <type>] \
+          [-type <type>] [-format <format>]\
           <digest> [<dir>]
  $ siso fetch [-type <type>] \
   bytesteam://<endpoint>/projects/<project>/instances/<instance>/blobs/<digest>
@@ -66,6 +67,7 @@ type Command struct {
 	projectID string
 	reopt     *reapi.Option
 	dataType  string
+	format    string
 }
 
 func (c *Command) SetFlags(flagSet *flag.FlagSet) {
@@ -85,6 +87,7 @@ func (c *Command) SetFlags(flagSet *flag.FlagSet) {
                or list (if <dir> is not specified)
   action-list: actions associated with two phase cache key.
 `)
+	flagSet.StringVar(&c.format, "format", "", `format: "raw", "proto" or "json"`)
 }
 
 func (c *Command) Execute(ctx context.Context, flagSet *flag.FlagSet, _ ...any) subcommands.ExitStatus {
@@ -156,6 +159,16 @@ func (c *Command) run(ctx context.Context) error {
 	if c.Flags.NArg() == 0 {
 		return fmt.Errorf("no digest nor bytestream uri: %w", flag.ErrHelp)
 	}
+	formatter := func(m proto.Message) string { return fmt.Sprint(m) }
+	switch c.format {
+	case "raw", "":
+	case "proto":
+		formatter = prototext.Format
+	case "json":
+		formatter = protojson.Format
+	default:
+		return fmt.Errorf("unsupported format %q: %w", c.format, flag.ErrHelp)
+	}
 	var digestStr string
 	if strings.HasPrefix(c.Flags.Arg(0), "bytestream://") {
 		var err error
@@ -205,7 +218,7 @@ func (c *Command) run(ctx context.Context) error {
 		if err != nil {
 			return fmt.Errorf("failed to get action result for action digest %s. %w", d, err)
 		}
-		fmt.Println(prototext.Format(ar))
+		fmt.Println(formatter(ar))
 		unknowns := ar.ProtoReflect().GetUnknown()
 		if len(unknowns) > 0 {
 			return fmt.Errorf("unknown fields in marshaled proto: %v", unknowns)
@@ -272,7 +285,7 @@ func (c *Command) run(ctx context.Context) error {
 			if err != nil {
 				return fmt.Errorf("failed to list actions for %s: %v", d.String(), err)
 			}
-			fmt.Println(action)
+			fmt.Println(formatter(action))
 			fmt.Println()
 		}
 		return nil
@@ -297,7 +310,7 @@ func (c *Command) run(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to unmarshal %s as %T: %w", d, pmsg, err)
 	}
-	fmt.Println(pmsg)
+	fmt.Println(formatter(pmsg))
 	return nil
 }
 
