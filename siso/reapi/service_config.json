@@ -35,6 +35,10 @@
         {
           "service": "build.bazel.remote.execution.v2.ActionCache",
           "method": "GetActionResult"
+        },
+        {
+          "service": "build.bazel.remote.execution.v2.ActionCache",
+          "method": "ListActions"
         }
       ],
       "timeout": "10s",
