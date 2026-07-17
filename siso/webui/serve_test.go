@@ -11,7 +11,11 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+
+	"github.com/PuerkitoBio/goquery"
+	"github.com/google/go-cmp/cmp"
 
 	"go.chromium.org/build/siso/build/ninjabuild"
 )
@@ -43,7 +47,7 @@ func TestServer_MissingWorkspace(t *testing.T) {
 	}
 }
 
-func mustServer(ctx context.Context, t *testing.T, cfg ServerConfig) (*WebuiServer, string) {
+func mustServer(ctx context.Context, t *testing.T) (*WebuiServer, string) {
 	t.Helper()
 	dir := t.TempDir()
 	dir, err := filepath.EvalSymlinks(dir)
@@ -54,6 +58,7 @@ func mustServer(ctx context.Context, t *testing.T, cfg ServerConfig) (*WebuiServ
 	if err := os.MkdirAll("build/config/siso", 0755); err != nil {
 		t.Fatal(err)
 	}
+
 	if err := os.MkdirAll("out/Default", 0755); err != nil {
 		t.Fatal(err)
 	}
@@ -71,15 +76,15 @@ build all: phony foo`), 0644); err != nil {
 `), 0644); err != nil {
 		t.Fatal(err)
 	}
-	s, err := NewServer(ctx, cfg)
-	if err != nil {
-		t.Fatalf("server err = %v; want nil err", err)
-	}
-	return s, dir
-}
 
-func TestServer_InitialState(t *testing.T) {
-	s, tmp := mustServer(t.Context(), t, ServerConfig{
+	if err := os.MkdirAll("out/Default final v2 (1)", 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile("out/Default final v2 (1)/build.ninja", []byte(""), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	s, err := NewServer(ctx, ServerConfig{
 		Version:          "test-version",
 		LocalDevelopment: false,
 		Port:             8080,
@@ -89,6 +94,14 @@ func TestServer_InitialState(t *testing.T) {
 		},
 		ManifestPath: "build.ninja",
 	})
+	if err != nil {
+		t.Fatalf("server err = %v; want nil err", err)
+	}
+	return s, dir
+}
+
+func TestServer_InitialState(t *testing.T) {
+	s, tmp := mustServer(t.Context(), t)
 
 	if s.workspaceRoot != tmp {
 		t.Errorf("workspaceRoot = %q; want %q", s.workspaceRoot, tmp)
@@ -105,16 +118,7 @@ func TestServer_InitialState(t *testing.T) {
 }
 
 func TestRoutes(t *testing.T) {
-	s, _ := mustServer(t.Context(), t, ServerConfig{
-		Version:          "test-version",
-		LocalDevelopment: false,
-		Port:             8080,
-		OutDir: ninjabuild.DirFlag{
-			Dir:           "out/Default",
-			ConfigRepoDir: "build/config/siso",
-		},
-		ManifestPath: "build.ninja",
-	})
+	s, _ := mustServer(t.Context(), t)
 
 	for _, tc := range []struct {
 		path string
@@ -137,16 +141,7 @@ func TestRoutes(t *testing.T) {
 }
 
 func TestRedirects(t *testing.T) {
-	s, _ := mustServer(t.Context(), t, ServerConfig{
-		Version:          "test-version",
-		LocalDevelopment: false,
-		Port:             8080,
-		OutDir: ninjabuild.DirFlag{
-			Dir:           "out/Default",
-			ConfigRepoDir: "build/config/siso",
-		},
-		ManifestPath: "build.ninja",
-	})
+	s, _ := mustServer(t.Context(), t)
 
 	for _, tc := range []struct {
 		path string
@@ -166,5 +161,41 @@ func TestRedirects(t *testing.T) {
 		if got := rec.Header().Get("Location"); got != tc.want {
 			t.Errorf("GET %s redirect = %q; want %q", tc.path, got, tc.want)
 		}
+	}
+}
+
+// Test that outdir URLs are rendered correctly.
+// We apply custom escaping in the template, so unit testing the data model is inadequate.
+// TODO: test for android-style outdirs as well?
+func TestOutdirMenu_RendersCorrectURLs(t *testing.T) {
+	s, _ := mustServer(t.Context(), t)
+	rec := httptest.NewRecorder()
+	s.mux().ServeHTTP(rec, httptest.NewRequest("GET", "/out/Default/builds/test-rev/steps/", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET steps = %d; want 200", rec.Code)
+	}
+
+	items := make(map[string]string)
+	doc, err := goquery.NewDocumentFromReader(rec.Body)
+	if err != nil {
+		t.Fatalf("failed to parse page: %v", err)
+	}
+	doc.Find("#outdir-menu md-menu-item").Each(func(_ int, menuItem *goquery.Selection) {
+		href, _ := menuItem.Attr("href")
+		name := strings.TrimSpace(menuItem.Text())
+		items[name] = href
+	})
+
+	// The slash between out/Default must be left unescaped.
+	// TODO: We should change the menu items to show full outdir relative to workspace root
+	// e.g "out/Default" not just "Default". This is especially because the actual dropdown
+	// renders e.g. "~/path/to/chromium/src/out/Default" so it's less clear why "out/" is
+	// being completely excluded from the items.
+	want := map[string]string{
+		"Default":              "/out/Default/",
+		"Default final v2 (1)": "/out/Default%20final%20v2%20%281%29/",
+	}
+	if diff := cmp.Diff(want, items); diff != "" {
+		t.Errorf("outdir menu mismatch (-want +got):\n%s", diff)
 	}
 }

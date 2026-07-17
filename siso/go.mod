@@ -14,6 +14,7 @@ require (
 	cloud.google.com/go/profiler v0.6.0
 	cloud.google.com/go/trace v1.16.0
 	github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/metric v0.57.0
+	github.com/PuerkitoBio/goquery v1.12.0
 	github.com/golang/glog v1.2.5
 	github.com/google/go-cmp v0.7.0
 	github.com/google/subcommands v1.2.0
@@ -74,6 +75,7 @@ require (
 	github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/trace v1.33.0 // indirect
 	github.com/GoogleCloudPlatform/opentelemetry-operations-go/internal/resourcemapping v0.57.0 // indirect
 	github.com/Microsoft/go-winio v0.6.2 // indirect
+	github.com/andybalholm/cascadia v1.3.3 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
 	github.com/cenkalti/backoff/v6 v6.0.0 // indirect
