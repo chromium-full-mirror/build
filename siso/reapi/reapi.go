@@ -799,6 +799,14 @@ func (c *Client) UpdateActionResultEnabled() bool {
 
 // UpdateActionResult updates the action result by the digest.
 func (c *Client) UpdateActionResult(ctx context.Context, d digest.Digest, result *rpb.ActionResult) error {
+	if !useOutputSymlinks(c.APIVersion()) {
+		// backend may not support output_symlinks.
+		// use output_file_symlinks instead.
+		result = proto.CloneOf(result)
+		result.OutputFileSymlinks = result.OutputSymlinks //nolint:staticcheck // existing deprecation
+		result.OutputSymlinks = nil
+	}
+
 	client := rpb.NewActionCacheClient(c.casConn)
 	_, err := client.UpdateActionResult(ctx, &rpb.UpdateActionResultRequest{
 		InstanceName:   c.opt.Instance,
@@ -863,6 +871,29 @@ func UseActionForPlatformProperties(apiVer *semverpb.SemVer) bool {
 //	  // `output_files` and `output_directories` will be ignored!
 //	  repeated string output_paths
 func UseOutputPaths(apiVer *semverpb.SemVer) bool {
+	return apiVer.GetMajor() >= 2 && apiVer.GetMinor() >= 1
+}
+
+// useOutputSymlinks returns true
+// when output_symlinks instead of output_file_symlinks or
+// output_directory_symlinks in ActionResult.
+//
+//	message ActionResult
+//	     // DEPRECATED as of v2.1. Servers that wish to be compatible with
+//	     // v2.0 API should still populate this field in addition to
+//	     // `output_symlinks`.
+//	     repeated string output_file_symlinks
+//
+//	     // DEPRECATED as of v2.1. Servers that wish to be compatible with
+//	     // v2.0 API should still populate this field in addition to
+//	     // `output_symlinks`.
+//	     repeated string output_directory_symlinks
+//
+//	     // New in v2.1: this field will only be populated if the command
+//	     // `output_paths` field was used, and not the pre v2.1
+//	     // `output_files` or `output_directories` fields.
+//	     repeated string output_symlinks
+func useOutputSymlinks(apiVer *semverpb.SemVer) bool {
 	return apiVer.GetMajor() >= 2 && apiVer.GetMinor() >= 1
 }
 

@@ -1453,7 +1453,9 @@ func (hfs *HashFS) RawEntries(ctx context.Context, root string, inputs []path.Pa
 }
 
 func (hfs *HashFS) entries(ctx context.Context, root string, inputs []path.Path, resolveEscapedSymlinks bool) ([]merkletree.Entry, error) {
-	clog.Infof(ctx, "entries resolveEscapedSymlinks=%t", resolveEscapedSymlinks)
+	if log.V(1) {
+		clog.Infof(ctx, "entries resolveEscapedSymlinks=%t", resolveEscapedSymlinks)
+	}
 	inputs = path.Paths(hfs.expandDirInputs(ctx, root, path.Strings(inputs)))
 	ents, err := hfs.resolveInputEntries(ctx, root, inputs)
 	if err != nil {

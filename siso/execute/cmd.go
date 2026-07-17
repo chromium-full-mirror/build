@@ -1009,7 +1009,14 @@ func (c *Cmd) entriesFromResult(ctx context.Context, ds hashfs.DataSource, updat
 		ent.CmdHash = c.CmdHash
 		entries = append(entries, ent)
 	}
-	for _, s := range c.actionResult.GetOutputSymlinks() {
+	outputSymlinks := c.actionResult.GetOutputSymlinks()
+	if len(outputSymlinks) == 0 && len(c.actionResult.GetOutputFileSymlinks())+len(c.actionResult.GetOutputDirectorySymlinks()) > 0 { //nolint:staticcheck // existing deprecation
+		outputSymlinks = slices.Concat(
+			c.actionResult.GetOutputFileSymlinks(),      //nolint:staticcheck // existing deprecation
+			c.actionResult.GetOutputDirectorySymlinks(), //nolint:staticcheck // existing deprecation
+		)
+	}
+	for _, s := range outputSymlinks {
 		if s.Target == "" {
 			continue
 		}
@@ -1081,6 +1088,12 @@ func (c *Cmd) expandDirOutputs(ctx context.Context, ds hashfs.DataSource) error 
 	c.dirOutputsExpanded = true
 	files := c.actionResult.GetOutputFiles()
 	symlinks := c.actionResult.GetOutputSymlinks()
+	if len(symlinks) == 0 && len(c.actionResult.GetOutputFileSymlinks())+len(c.actionResult.GetOutputDirectorySymlinks()) > 0 { //nolint:staticcheck // existing deprecation
+		symlinks = slices.Concat(
+			c.actionResult.GetOutputFileSymlinks(),      //nolint:staticcheck // existing deprecation
+			c.actionResult.GetOutputDirectorySymlinks(), //nolint:staticcheck // existing deprecation
+		)
+	}
 	var dirs []*rpb.OutputDirectory
 	for _, d := range c.actionResult.GetOutputDirectories() {
 		dname := c.WorkDir.Join(d.GetPath())

@@ -286,6 +286,11 @@ func (b *Builder) cacheWrite(ctx context.Context, step *Step) error {
 			OutputFiles:       result.GetOutputFiles(),
 			OutputSymlinks:    result.GetOutputSymlinks(),
 			OutputDirectories: result.GetOutputDirectories(),
+
+			// deprecated as of v2.1
+			OutputFileSymlinks:      result.GetOutputFileSymlinks(),      //nolint:staticcheck // existing deprecation
+			OutputDirectorySymlinks: result.GetOutputDirectorySymlinks(), //nolint:staticcheck // existing deprecation
+
 			ExitCode:          result.GetExitCode(),
 			StdoutRaw:         result.GetStdoutRaw(),
 			StderrRaw:         result.GetStderrRaw(),

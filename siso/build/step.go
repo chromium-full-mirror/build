@@ -732,7 +732,8 @@ func validateRemoteActionResult(result *rpb.ActionResult) bool {
 		return false
 	}
 
-	if result.ExitCode == 0 && len(result.GetOutputFiles()) == 0 && len(result.GetOutputDirectories()) == 0 {
+	if result.ExitCode == 0 && len(result.GetOutputFiles()) == 0 && len(result.GetOutputDirectories()) == 0 && len(result.GetOutputSymlinks()) == 0 &&
+		len(result.GetOutputFileSymlinks()) == 0 && len(result.GetOutputDirectorySymlinks()) == 0 { //nolint:staticcheck // existing deprecation
 		// succeeded result should have at least one output. b/350360391
 		// A dir-only output has no OutputFiles but does have an
 		// OutputDirectory, so accept that too (else it re-executes every build).
