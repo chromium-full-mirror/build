@@ -273,6 +273,9 @@ func (cp *contentAddressableStorageProxy) GetTree(req *rpb.GetTreeRequest, serv 
 	}
 	for {
 		resp, err := gtc.Recv()
+		if err == io.EOF { //nolint:errorlint
+			return nil
+		}
 		if err != nil {
 			return err
 		}
@@ -280,10 +283,6 @@ func (cp *contentAddressableStorageProxy) GetTree(req *rpb.GetTreeRequest, serv 
 		if err != nil {
 			return err
 		}
-		if resp.GetNextPageToken() != "" {
-			continue
-		}
-		return nil
 	}
 }
 
