@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"iter"
 	"maps"
 	"net/http"
 	"os"
@@ -23,6 +24,7 @@ import (
 
 	"go.chromium.org/build/siso/build"
 	"go.chromium.org/build/siso/toolsupport/ninjautil"
+	"go.chromium.org/build/siso/webui/invocation"
 )
 
 const (
@@ -94,6 +96,27 @@ type outdirInfo struct {
 	ninjaState    *ninjautil.State
 }
 
+// Get returns the outdir that matches the provided rev.
+// TODO: rename rev to id?
+func (i *outdirInfo) Get(rev string) *buildMetrics {
+	for _, m := range i.metrics {
+		if m.Rev == rev {
+			return m
+		}
+	}
+	return nil
+}
+
+// Latest returns the most recent build revision found in this outdir.
+func (i *outdirInfo) Latest() *buildMetrics {
+	return i.Get(i.latestRevID)
+}
+
+// All returns an iterator over all build revisions found in this outdir.
+func (i *outdirInfo) All() iter.Seq[*buildMetrics] {
+	return slices.Values(i.metrics)
+}
+
 type fieldAggregate struct {
 	Key   string
 	Count int
@@ -103,7 +126,7 @@ type fieldAggregate struct {
 // (Exported fields are accessible from Go templates.)
 type buildMetrics struct {
 	Mtime         time.Time
-	Rev           string
+	Rev           string // TODO: rename to BuildID?
 	buildDuration build.IntervalMetric
 	lastStepID    string
 	ruleCounts    []fieldAggregate
@@ -111,11 +134,22 @@ type buildMetrics struct {
 	// buildMetrics contains build.StepMetric related to overall build e.g. regenerate ninja files.
 	buildMetrics []*build.StepMetric
 	// StepMetrics contains build.StepMetric related to ninja executions.
+	// TODO: rename to allow invocation.Invocation Steps() to rename to StepMetrics().
 	StepMetrics []*build.StepMetric
 	// stepByStepID keys step ID to *build.StepMetric for faster lookup.
 	stepByStepID map[string]*build.StepMetric
 	// stepByOutput keys output to *build.StepMetric for faster lookup.
 	stepByOutput map[string]*build.StepMetric
+}
+
+// ID returns the build ID of this invocation.
+func (b *buildMetrics) ID() string {
+	return b.Rev
+}
+
+// Steps returns the step metrics struct for this invocation.
+func (b *buildMetrics) Steps() []*build.StepMetric {
+	return b.StepMetrics
 }
 
 // aggregateMetric represents data for the aggregates page.
@@ -305,6 +339,7 @@ func (s *WebuiServer) handleOutdirReload(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	// TODO(b/533258244): decouple from outdirInfo?
 	s.outdirInfos.Invalidate(outdirInfo.pathRel)
 	_, err = s.outdirInfos.Get(outdirInfo.pathRel)
 	if err != nil {
@@ -325,12 +360,12 @@ func (s *WebuiServer) handleOutdirRoot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if outdirInfo.latestRevID == "" {
+	if outdirInfo.Latest() == nil {
 		s.renderBuildViewError(http.StatusNotFound, "outdir has no metrics", w, r)
 		return
 	}
 
-	http.Redirect(w, r, fmt.Sprintf("%s/builds/%s/steps/", outdirBaseURL(r), outdirInfo.latestRevID), http.StatusTemporaryRedirect)
+	http.Redirect(w, r, fmt.Sprintf("%s/builds/%s/steps/", outdirBaseURL(r), outdirInfo.Latest().ID()), http.StatusTemporaryRedirect)
 }
 
 func (s *WebuiServer) handleOutdirViewLog(w http.ResponseWriter, r *http.Request) {
@@ -368,6 +403,7 @@ func (s *WebuiServer) handleOutdirViewLog(w http.ResponseWriter, r *http.Request
 	// Do this every page load because we don't know if another build has happened since past reload.
 	// If this has happened, then the suffix would have changed.
 	// (The alternative is either store all files in-memory, or refactor Webui to watch for files changing.)
+	// TODO(b/533258244): decouple from outdirInfo?
 	matches, err := filepath.Glob(filepath.Join(outdirInfo.path, "siso_metrics*.json"))
 	if err != nil {
 		s.renderBuildViewError(http.StatusInternalServerError, fmt.Sprintf("failed to glob siso_metrics*.json: %v", err), w, r)
@@ -450,8 +486,8 @@ func (s *WebuiServer) handleOutdirAggregates(w http.ResponseWriter, r *http.Requ
 	}
 
 	var metrics *buildMetrics
-	for _, m := range outdirInfo.metrics {
-		if m.Rev == r.PathValue("rev") {
+	for m := range outdirInfo.All() {
+		if m.ID() == r.PathValue("rev") {
 			metrics = m
 			break
 		}
@@ -507,8 +543,8 @@ func (s *WebuiServer) handleOutdirDoRecall(w http.ResponseWriter, r *http.Reques
 	}
 
 	var metrics *buildMetrics
-	for _, m := range outdirInfo.metrics {
-		if m.Rev == r.PathValue("rev") {
+	for m := range outdirInfo.All() {
+		if m.ID() == r.PathValue("rev") {
 			metrics = m
 			break
 		}
@@ -543,7 +579,7 @@ func (s *WebuiServer) handleOutdirDoRecall(w http.ResponseWriter, r *http.Reques
 
 func (s *WebuiServer) handleOutdirViewStep(w http.ResponseWriter, r *http.Request) {
 	var metrics *buildMetrics
-	var outdirInfo *outdirInfo
+	var outdirInfo invocation.Provider[*buildMetrics]
 	var err error
 	if didRequestUploadedMetrics(r) {
 		for _, m := range s.uploadedMetrics {
@@ -558,7 +594,7 @@ func (s *WebuiServer) handleOutdirViewStep(w http.ResponseWriter, r *http.Reques
 			s.renderBuildViewError(http.StatusNotFound, fmt.Sprintf("outdir failed to load for request %s: %v", r.URL, err), w, r)
 			return
 		}
-		for _, m := range outdirInfo.metrics {
+		for m := range outdirInfo.All() {
 			if m.Rev == r.PathValue("rev") {
 				metrics = m
 				break
@@ -588,7 +624,7 @@ func (s *WebuiServer) handleOutdirViewStep(w http.ResponseWriter, r *http.Reques
 	// So if it changes across builds it won't work. But it's expected to be stable for most builds.)
 	inOtherRevs := make(map[string]build.StepMetric)
 	if outdirInfo != nil {
-		for _, m := range outdirInfo.metrics {
+		for m := range outdirInfo.All() {
 			if step, ok := m.stepByOutput[stepData.Output()]; ok {
 				inOtherRevs[m.Rev] = *step
 			}
@@ -618,7 +654,7 @@ func (s *WebuiServer) handleOutdirViewStep(w http.ResponseWriter, r *http.Reques
 
 func (s *WebuiServer) handleOutdirListSteps(w http.ResponseWriter, r *http.Request) {
 	var metrics *buildMetrics
-	var outdirInfo *outdirInfo
+	var outdirInfo invocation.Provider[*buildMetrics]
 	var err error
 	if didRequestUploadedMetrics(r) {
 		for _, m := range s.uploadedMetrics {
@@ -633,7 +669,7 @@ func (s *WebuiServer) handleOutdirListSteps(w http.ResponseWriter, r *http.Reque
 			s.renderBuildViewError(http.StatusNotFound, fmt.Sprintf("outdir failed to load for request %s: %v", r.URL, err), w, r)
 			return
 		}
-		for _, m := range outdirInfo.metrics {
+		for m := range outdirInfo.All() {
 			if m.Rev == r.PathValue("rev") {
 				metrics = m
 				break
@@ -787,6 +823,7 @@ func (s *WebuiServer) handleOutdirListTargets(w http.ResponseWriter, r *http.Req
 
 	// Check manifest or manifest.stamp is newer to reload.
 	// Don't continue if failed to stat manifest, but ignore if manifest.stamp failed to stat.
+	// TODO(b/533258244): decouple from outdirInfo?
 	stat, err := os.Stat(filepath.Join(outdirInfo.path, outdirInfo.manifestPath))
 	if err != nil {
 		s.renderBuildViewError(http.StatusInternalServerError, fmt.Sprintf("failed to stat %s: %v", outdirInfo.manifestPath, err), w, r)
