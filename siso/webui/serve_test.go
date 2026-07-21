@@ -136,7 +136,7 @@ func TestServer_InitialState(t *testing.T) {
 	}
 }
 
-func TestRoutes(t *testing.T) {
+func TestRoutes_Outdirs(t *testing.T) {
 	s, _ := mustServer(t.Context(), t)
 
 	for _, tc := range []struct {
@@ -148,10 +148,42 @@ func TestRoutes(t *testing.T) {
 		{"/out/Default/builds/test-rev/steps/step-0/", http.StatusNotFound},
 		{"/out/Default/builds/nonexistent-rev/steps/step-1/", http.StatusNotFound},
 		{"/out/Default/builds/cros-rev/steps/step-1/", http.StatusNotFound},
+		{"/out/Default/builds/test-rev/aggregates/", http.StatusOK},
 		{"/out/Default/targets/all/", http.StatusOK},
 		{"/out/Default/targets/foo.o/", http.StatusOK},
 		{"/out/Default/targets/nonexistent.o/", http.StatusNotFound},
 		{"/out_amd64-generic/Release/builds/cros-rev/steps/step-1/", http.StatusOK},
+	} {
+		rec := httptest.NewRecorder()
+		s.mux().ServeHTTP(rec, httptest.NewRequest("GET", tc.path, nil))
+		if rec.Code != tc.want {
+			t.Errorf("GET %s = %d; want %d", tc.path, rec.Code, tc.want)
+		}
+	}
+}
+
+func TestRoutes_UploadedMetrics(t *testing.T) {
+	s, _ := mustServer(t.Context(), t)
+
+	tmp := t.TempDir()
+	metricsFile := filepath.Join(tmp, "my_custom_metrics.json")
+	if err := os.WriteFile(metricsFile, []byte(`{"build_id": "uploaded-build-id"}
+{"step_id": "step-1", "rule": "cc", "action": "clang", "outputs": ["out.o"]}
+`), 0644); err != nil {
+		t.Fatalf("failed to write standalone metrics: %v", err)
+	}
+	if err := s.LoadStandaloneMetrics(metricsFile); err != nil {
+		t.Fatalf("failed to load standalone metrics: %v", err)
+	}
+
+	for _, tc := range []struct {
+		path string
+		want int
+	}{
+		{"/uploads/view/builds/uploaded-build-id/steps/", http.StatusOK},
+		{"/uploads/view/builds/uploaded-build-id/steps/step-1/", http.StatusOK},
+		{"/uploads/view/builds/nonexistent-rev/steps/", http.StatusNotFound},
+		{"/uploads/view/builds/uploaded-build-id/aggregates/", http.StatusNotFound},
 	} {
 		rec := httptest.NewRecorder()
 		s.mux().ServeHTTP(rec, httptest.NewRequest("GET", tc.path, nil))

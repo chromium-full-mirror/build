@@ -10,8 +10,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
-	"iter"
 	"maps"
 	"net/http"
 	"os"
@@ -19,7 +17,6 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"go.chromium.org/build/siso/build"
@@ -34,88 +31,6 @@ const (
 	// flat (single-level) output directories (like AOSP's "out") under Go's mux routing (e.g. /out/_/builds/...)
 	flatOutsub = "_"
 )
-
-// outdirRegistry manages metrics for a set of outdirs relative to a given workspace root.
-type outdirRegistry struct {
-	workspaceRoot   string
-	defaultManifest string
-	defaultOutdir   string
-
-	mu            sync.Mutex
-	outdirMetrics map[string]*outdirInfo
-}
-
-func makeOutdirRegistry(workspaceRoot, defaultManifest, defaultOutdir string) outdirRegistry {
-	return outdirRegistry{
-		workspaceRoot:   workspaceRoot,
-		defaultManifest: defaultManifest,
-		defaultOutdir:   defaultOutdir,
-		outdirMetrics:   make(map[string]*outdirInfo),
-	}
-}
-
-// Get lazy-loads outdir at a given path, returning cached result if possible.
-func (r *outdirRegistry) Get(outdir string) (*outdirInfo, error) {
-	abs := filepath.Join(r.workspaceRoot, outdir)
-	r.mu.Lock()
-	outdirInfo, ok := r.outdirMetrics[abs]
-	defer r.mu.Unlock()
-	if !ok {
-		// For output directories with custom manifest paths (e.g. flat output directories),
-		// use the manifest path specified by -f instead of falling back to the hardcoded "build.ninja".
-		// TODO: refactor to generic manifest path resolution logic?
-		manifestPath := "build.ninja"
-		if abs == filepath.Join(r.workspaceRoot, r.defaultOutdir) {
-			manifestPath = r.defaultManifest
-		}
-		var err error
-		outdirInfo, err = loadOutdirInfo(r.workspaceRoot, abs, manifestPath)
-		if err != nil {
-			return nil, fmt.Errorf("couldn't load outdir %s: %w", abs, err)
-		}
-		r.outdirMetrics[abs] = outdirInfo
-	}
-	return outdirInfo, nil
-}
-
-// Invalidate drops info from the registry for a given path.
-func (r *outdirRegistry) Invalidate(outdir string) {
-	abs := filepath.Join(r.workspaceRoot, outdir)
-	delete(r.outdirMetrics, abs)
-}
-
-type outdirInfo struct {
-	path         string
-	pathRel      string
-	manifestPath string
-	metrics      []*buildMetrics
-	latestRevID  string
-
-	mu            sync.Mutex
-	manifestMtime time.Time
-	ninjaState    *ninjautil.State
-}
-
-// Get returns the outdir that matches the provided rev.
-// TODO: rename rev to id?
-func (i *outdirInfo) Get(rev string) *buildMetrics {
-	for _, m := range i.metrics {
-		if m.Rev == rev {
-			return m
-		}
-	}
-	return nil
-}
-
-// Latest returns the most recent build revision found in this outdir.
-func (i *outdirInfo) Latest() *buildMetrics {
-	return i.Get(i.latestRevID)
-}
-
-// All returns an iterator over all build revisions found in this outdir.
-func (i *outdirInfo) All() iter.Seq[*buildMetrics] {
-	return slices.Values(i.metrics)
-}
 
 type fieldAggregate struct {
 	Key   string
@@ -248,90 +163,7 @@ func loadBuildMetrics(metricsPath string) (*buildMetrics, error) {
 	return metricsData, nil
 }
 
-// loadOutdirInfo attempts to load all metrics found in the outdir.
-func loadOutdirInfo(workspaceRoot, outDir, manifestPath string) (*outdirInfo, error) {
-	start := time.Now()
-	fmt.Fprintf(os.Stderr, "load data at %s...", outDir)
-	defer func() {
-		fmt.Fprintf(os.Stderr, " returned in %v\n", time.Since(start))
-	}()
-
-	// Get path relative to workspaceRoot.
-	execRel, err := filepath.Rel(workspaceRoot, outDir)
-	if err != nil {
-		return nil, fmt.Errorf("couldn't get ninja dir relative to workspace: %w", err)
-	}
-
-	// Validate manifest path.
-	_, err = os.Stat(filepath.Join(outDir, manifestPath))
-	if errors.Is(err, fs.ErrNotExist) {
-		return nil, &ErrManifestNotExist{outDir, manifestPath}
-	}
-
-	// TODO(b/361703735): make sure this works on windows? https://chromium-review.googlesource.com/c/infra/infra/+/5803123/comment/502308d3_ac05bf91/
-	outRoot, outSub := filepath.Split(execRel)
-	if outRoot != "" {
-		if strings.Contains(outSub, "/") {
-			return nil, fmt.Errorf("outdir must match pattern `workspace/outroot/outsub`, others are not supported yet")
-		}
-	}
-
-	outdirInfo := &outdirInfo{
-		path:         outDir,
-		pathRel:      execRel,
-		manifestPath: manifestPath,
-		mu:           sync.Mutex{},
-	}
-
-	// Attempt to load latest metrics first.
-	// Only silently ignore if it doesn't exist, otherwise always return error.
-	// TODO(b/349287453): consider tolerate fail, so frontend can show error?
-	latestMetricsPath := filepath.Join(outDir, "siso_metrics.json")
-	_, err = os.Stat(latestMetricsPath)
-	if err == nil {
-		latestMetrics, err := loadBuildMetrics(latestMetricsPath)
-		if err != nil {
-			return nil, fmt.Errorf("failed to load latest metrics: %w", err)
-		}
-		outdirInfo.metrics = append(outdirInfo.metrics, latestMetrics)
-		outdirInfo.latestRevID = latestMetrics.Rev
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return nil, fmt.Errorf("failed to stat latest metrics: %w", err)
-	}
-
-	// Then load revisions if available.
-	revPaths, err := filepath.Glob(filepath.Join(outDir, "siso_metrics.*.json"))
-	if err != nil {
-		return nil, fmt.Errorf("failed to glob revs: %w", err)
-	}
-	for _, revPath := range revPaths {
-		baseName := filepath.Base(revPath)
-		matches := sisoMetricsRe.FindStringSubmatch(baseName)
-		if matches == nil {
-			fmt.Fprintf(os.Stderr, "ignoring invalid %s\n", revPath)
-			continue
-		}
-		revMetrics, err := loadBuildMetrics(revPath)
-		if err != nil {
-			// TODO(b/349287453): show error in frontend as well?
-			fmt.Fprintf(os.Stderr, "ignoring invalid rev metrics %s: %v\n", revPath, err)
-			continue
-		}
-		outdirInfo.metrics = append(outdirInfo.metrics, revMetrics)
-	}
-	return outdirInfo, nil
-}
-
-// getOutdirForRequest lazy-loads outdir for the request, returning cached result if possible.
-func (s *WebuiServer) getOutdirForRequest(r *http.Request) (*outdirInfo, error) {
-	outroot := r.PathValue("outroot")
-	outsub := r.PathValue("outsub")
-	if outsub == flatOutsub {
-		return s.outdirInfos.Get(outroot)
-	}
-	return s.outdirInfos.Get(filepath.Join(outroot, outsub))
-}
-
+// handleOutdirReload reloads the outdir, which is an invocation provider, not an invocation itself.
 func (s *WebuiServer) handleOutdirReload(w http.ResponseWriter, r *http.Request) {
 	outdirInfo, err := s.getOutdirForRequest(r)
 	if err != nil {
@@ -352,8 +184,8 @@ func (s *WebuiServer) handleOutdirReload(w http.ResponseWriter, r *http.Request)
 	http.Redirect(w, r, outdirBaseURL(r), http.StatusTemporaryRedirect)
 }
 
-// handleOutdirRoot redirects from outdir root URL to `./builds/{latestRev}/steps/`.
-func (s *WebuiServer) handleOutdirRoot(w http.ResponseWriter, r *http.Request) {
+// handleInvocationRoot redirects from outdir root URL to `./builds/{latestRev}/steps/`.
+func (s *WebuiServer) handleInvocationRoot(w http.ResponseWriter, r *http.Request) {
 	outdirInfo, err := s.getOutdirForRequest(r)
 	if err != nil {
 		s.renderBuildViewError(http.StatusNotFound, fmt.Sprintf("outdir failed to load for request %s: %v", r.URL, err), w, r)
@@ -368,7 +200,7 @@ func (s *WebuiServer) handleOutdirRoot(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, fmt.Sprintf("%s/builds/%s/steps/", outdirBaseURL(r), outdirInfo.Latest().ID()), http.StatusTemporaryRedirect)
 }
 
-func (s *WebuiServer) handleOutdirViewLog(w http.ResponseWriter, r *http.Request) {
+func (s *WebuiServer) handleInvocationViewLog(w http.ResponseWriter, r *http.Request) {
 	outdirInfo, err := s.getOutdirForRequest(r)
 	if err != nil {
 		s.renderBuildViewError(http.StatusNotFound, fmt.Sprintf("outdir failed to load for request %s: %v", r.URL, err), w, r)
@@ -478,7 +310,7 @@ func (s *WebuiServer) handleOutdirViewLog(w http.ResponseWriter, r *http.Request
 	}
 }
 
-func (s *WebuiServer) handleOutdirAggregates(w http.ResponseWriter, r *http.Request) {
+func (s *WebuiServer) handleInvocationAggregates(w http.ResponseWriter, r *http.Request) {
 	outdirInfo, err := s.getOutdirForRequest(r)
 	if err != nil {
 		s.renderBuildViewError(http.StatusNotFound, fmt.Sprintf("outdir failed to load for request %s: %v", r.URL, err), w, r)
@@ -535,7 +367,7 @@ func (s *WebuiServer) handleOutdirAggregates(w http.ResponseWriter, r *http.Requ
 	}
 }
 
-func (s *WebuiServer) handleOutdirDoRecall(w http.ResponseWriter, r *http.Request) {
+func (s *WebuiServer) handleInvocationDoRecall(w http.ResponseWriter, r *http.Request) {
 	outdirInfo, err := s.getOutdirForRequest(r)
 	if err != nil {
 		s.renderBuildViewError(http.StatusNotFound, fmt.Sprintf("outdir failed to load for request %s: %v", r.URL, err), w, r)
@@ -577,7 +409,7 @@ func (s *WebuiServer) handleOutdirDoRecall(w http.ResponseWriter, r *http.Reques
 	}
 }
 
-func (s *WebuiServer) handleOutdirViewStep(w http.ResponseWriter, r *http.Request) {
+func (s *WebuiServer) handleInvocationViewStep(w http.ResponseWriter, r *http.Request) {
 	var metrics *buildMetrics
 	var outdirInfo invocation.Provider[*buildMetrics]
 	var err error
@@ -652,7 +484,7 @@ func (s *WebuiServer) handleOutdirViewStep(w http.ResponseWriter, r *http.Reques
 	}
 }
 
-func (s *WebuiServer) handleOutdirListSteps(w http.ResponseWriter, r *http.Request) {
+func (s *WebuiServer) handleInvocationListSteps(w http.ResponseWriter, r *http.Request) {
 	var metrics *buildMetrics
 	var outdirInfo invocation.Provider[*buildMetrics]
 	var err error
@@ -808,7 +640,7 @@ func (s *WebuiServer) handleOutdirListSteps(w http.ResponseWriter, r *http.Reque
 	}
 }
 
-func (s *WebuiServer) handleOutdirListTargets(w http.ResponseWriter, r *http.Request) {
+func (s *WebuiServer) handleInvocationListTargets(w http.ResponseWriter, r *http.Request) {
 	outdirInfo, err := s.getOutdirForRequest(r)
 	if err != nil {
 		s.renderBuildViewError(http.StatusNotFound, fmt.Sprintf("outdir failed to load for request %s: %v", r.URL, err), w, r)

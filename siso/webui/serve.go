@@ -448,7 +448,7 @@ func (s *WebuiServer) mux() http.Handler {
 	//     /static/ matches "/static/", but /{outroot}/{outsub}/ doesn't.
 	//     /{outroot}/{outsub}/ matches "/outroot/outsub/", but /static/ doesn't.
 	outdirRouter := http.NewServeMux()
-	outdirRouter.HandleFunc("/{outroot}/{outsub}/", s.handleOutdirRoot)
+	outdirRouter.HandleFunc("/{outroot}/{outsub}/", s.handleInvocationRoot)
 	outdirRouter.HandleFunc("/{outroot}/{outsub}/builds/{rev}/logs/", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, fmt.Sprintf("%s/builds/%s/logs/.siso_config", outdirBaseURL(r), url.PathEscape(r.PathValue("rev"))), http.StatusTemporaryRedirect)
 	})
@@ -459,12 +459,12 @@ func (s *WebuiServer) mux() http.Handler {
 	outdirRouter.HandleFunc("POST /{outroot}/{outsub}/runbuild/", s.handleRunbuildPost)
 	outdirRouter.HandleFunc("/{outroot}/{outsub}/reload", s.handleOutdirReload)
 	outdirRouter.HandleFunc("/{outroot}/{outsub}/watch/", s.handleOutdirWatch)
-	outdirRouter.HandleFunc("/{outroot}/{outsub}/builds/{rev}/logs/{file}", s.handleOutdirViewLog)
-	outdirRouter.HandleFunc("/{outroot}/{outsub}/builds/{rev}/aggregates/", s.handleOutdirAggregates)
-	outdirRouter.HandleFunc("POST /{outroot}/{outsub}/builds/{rev}/steps/{id}/recall/", s.handleOutdirDoRecall)
-	outdirRouter.HandleFunc("/{outroot}/{outsub}/builds/{rev}/steps/{id}/", s.handleOutdirViewStep)
-	outdirRouter.HandleFunc("/{outroot}/{outsub}/builds/{rev}/steps/", s.handleOutdirListSteps)
-	outdirRouter.HandleFunc("/{outroot}/{outsub}/targets/{target}/", s.handleOutdirListTargets)
+	outdirRouter.HandleFunc("/{outroot}/{outsub}/builds/{rev}/logs/{file}", s.handleInvocationViewLog)
+	outdirRouter.HandleFunc("/{outroot}/{outsub}/builds/{rev}/aggregates/", s.handleInvocationAggregates)
+	outdirRouter.HandleFunc("POST /{outroot}/{outsub}/builds/{rev}/steps/{id}/recall/", s.handleInvocationDoRecall)
+	outdirRouter.HandleFunc("/{outroot}/{outsub}/builds/{rev}/steps/{id}/", s.handleInvocationViewStep)
+	outdirRouter.HandleFunc("/{outroot}/{outsub}/builds/{rev}/steps/", s.handleInvocationListSteps)
+	outdirRouter.HandleFunc("/{outroot}/{outsub}/targets/{target}/", s.handleInvocationListTargets)
 
 	// Handlers for uploaded metrics.
 	// We define these explicitly by catching all URLs starting with /uploads/view/, and defining a subset
@@ -474,11 +474,11 @@ func (s *WebuiServer) mux() http.Handler {
 	// Furthermore, we also have hardcoded links built around this URL structure.
 	// It would probably be more ideal to have just "/uploads/{rev}/builds/steps/", but it would require more refactoring.
 	uploadsRouter := http.NewServeMux()
-	uploadsRouter.HandleFunc("/uploads/view/", s.handleOutdirRoot)
-	uploadsRouter.HandleFunc("/uploads/view/builds/{rev}/aggregates/", s.handleOutdirAggregates)
-	uploadsRouter.HandleFunc("POST /uploads/view/builds/{rev}/steps/{id}/recall/", s.handleOutdirDoRecall)
-	uploadsRouter.HandleFunc("/uploads/view/builds/{rev}/steps/{id}/", s.handleOutdirViewStep)
-	uploadsRouter.HandleFunc("/uploads/view/builds/{rev}/steps/", s.handleOutdirListSteps)
+	uploadsRouter.HandleFunc("/uploads/view/", s.handleInvocationRoot)
+	uploadsRouter.HandleFunc("/uploads/view/builds/{rev}/aggregates/", s.handleInvocationAggregates)
+	uploadsRouter.HandleFunc("POST /uploads/view/builds/{rev}/steps/{id}/recall/", s.handleInvocationDoRecall)
+	uploadsRouter.HandleFunc("/uploads/view/builds/{rev}/steps/{id}/", s.handleInvocationViewStep)
+	uploadsRouter.HandleFunc("/uploads/view/builds/{rev}/steps/", s.handleInvocationListSteps)
 	mux.HandleFunc("/uploads/view/", func(w http.ResponseWriter, r *http.Request) {
 		// This is how we hack around the hardcoded assumption that URLs are /{outroot}/{outsub}/.
 		// Common code paths will then have checks to handle this special case.
