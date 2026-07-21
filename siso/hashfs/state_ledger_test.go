@@ -8,7 +8,6 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
-	"runtime"
 	"sync"
 	"testing"
 	"time"
@@ -69,23 +68,14 @@ func TestBuildLabelLedger_PersistenceAndValidation(t *testing.T) {
 	fiDir1 := statFile(dirFile1)
 	fiDir2 := statFile(dirFile2)
 
-	expectedPath1 := "/active1.txt"
-	expectedPath2 := "/active2.txt"
-	expectedPath3 := "/active3.txt"
-	expectedPathInput := "/forgotten_input.txt"
-	expectedPathDir1 := "/active_dir/file1.txt"
-	expectedPathDir2 := "/active_dir/subdir/file2.txt"
-	expectedDir := "/active_dir"
-
-	if runtime.GOOS == "windows" {
-		expectedPath1 = "active1.txt"
-		expectedPath2 = "active2.txt"
-		expectedPath3 = "active3.txt"
-		expectedPathInput = "forgotten_input.txt"
-		expectedPathDir1 = "active_dir/file1.txt"
-		expectedPathDir2 = "active_dir/subdir/file2.txt"
-		expectedDir = "active_dir"
-	}
+	expectedPath1 := filepath.ToSlash(active1)
+	expectedPath2 := filepath.ToSlash(active2)
+	expectedPath3 := filepath.ToSlash(active3)
+	expectedPathInput := filepath.ToSlash(input1)
+	expectedPathDir1 := filepath.ToSlash(dirFile1)
+	expectedPathDir2 := filepath.ToSlash(dirFile2)
+	expectedDir := filepath.ToSlash(filepath.Dir(dirFile1))
+	expectedGhost := filepath.ToSlash(filepath.Join(dir, "ghost.txt"))
 
 	// We create a pb.State containing the entries, plus our build label tracking maps.
 	state := &pb.State{
@@ -135,13 +125,9 @@ func TestBuildLabelLedger_PersistenceAndValidation(t *testing.T) {
 			{Path: expectedPathInput, Mask: 1},
 			{Path: expectedPathDir1, Mask: 1},
 			{Path: expectedPathDir2, Mask: 1},
-			{Path: "/ghost.txt", Mask: 1}, // ghost.txt is explicitly NOT in Entries or on disk
+			{Path: expectedGhost, Mask: 1},
 		},
 	}
-
-	// Initialize HashFS with our TempDir as the root implicitly by changing dir
-	// (HashFS resolves paths relative to cwd).
-	t.Chdir(dir)
 
 	var hashfsSetStateLog syncBuffer
 	opt := Option{
