@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"cloud.google.com/go/longrunning/autogen/longrunningpb"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -308,8 +309,16 @@ func (ep *executionProxy) Execute(req *rpb.ExecuteRequest, serv rpb.Execution_Ex
 		if !op.GetDone() {
 			continue
 		}
+		drainExecStream(exc)
 		return nil
 	}
+}
+
+// drainExecStream reads the EOF the backend sends after the done operation, so
+// the upstream stream completes cleanly instead of being recorded as canceled
+// when the handler returns.
+func drainExecStream(exc grpc.ClientStream) {
+	_ = exc.RecvMsg(&longrunningpb.Operation{})
 }
 
 func (ep *executionProxy) WaitExecution(req *rpb.WaitExecutionRequest, serv rpb.Execution_WaitExecutionServer) error {
@@ -329,6 +338,7 @@ func (ep *executionProxy) WaitExecution(req *rpb.WaitExecutionRequest, serv rpb.
 		if !op.GetDone() {
 			continue
 		}
+		drainExecStream(exc)
 		return nil
 	}
 }
