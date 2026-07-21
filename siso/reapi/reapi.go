@@ -349,7 +349,6 @@ func DialOptions(keepAliveParams keepalive.ClientParameters) []grpc.DialOption {
 	dopts := append([]grpc.DialOption(nil),
 		grpc.WithKeepaliveParams(keepAliveParams),
 		grpc.WithDisableServiceConfig(),
-		// no retry for ActionCache
 		grpc.WithDefaultServiceConfig(serviceConfig),
 		// active streams and per-RPC stages into bytestream.* histograms
 		grpc.WithStatsHandler(monitoring.BytestreamStatsHandler()),
