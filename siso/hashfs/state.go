@@ -1627,7 +1627,7 @@ func (hfs *HashFS) loadBuildLabels(ctx context.Context, state *pb.State, initial
 	corrupted := false
 	if state.BuildLabelDictionary != nil {
 		for _, entry := range state.BuildLabelDictionary {
-			if entry.Id >= 64 {
+			if entry == nil || entry.Id >= 64 || entry.Metadata == nil || entry.Metadata.BuildLabel == "" {
 				corrupted = true
 				break
 			}

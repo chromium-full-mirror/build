@@ -11,13 +11,12 @@ import (
 	"time"
 
 	pb "go.chromium.org/build/siso/hashfs/proto"
-	"go.chromium.org/build/siso/path"
 )
 
 // UpdateBuildLabelMask applies the bitmask for the given build label to the provided files.
 // It manages build label bit allocations dynamically up to 64 labels, utilizing an LRU
 // eviction strategy if the mask space overflows.
-func (hfs *HashFS) UpdateBuildLabelMask(ctx context.Context, execRoot, buildLabel string, files []path.Path) {
+func (hfs *HashFS) UpdateBuildLabelMask(ctx context.Context, execRoot, buildLabel string, files []string) {
 	if buildLabel == "" || len(files) == 0 {
 		return
 	}
@@ -29,13 +28,12 @@ func (hfs *HashFS) UpdateBuildLabelMask(ctx context.Context, execRoot, buildLabe
 	mask := uint64(1) << bitID
 
 	for _, f := range files {
-		absPath := string(f)
-		if !filepath.IsAbs(absPath) {
-			absPath = filepath.Join(execRoot, absPath)
+		if !filepath.IsAbs(f) {
+			f = filepath.Join(execRoot, f)
 		}
-		absPath = filepath.ToSlash(absPath)
+		f = filepath.ToSlash(f)
 		// Siso paths in .siso_fs_state are stored natively matching e.Name
-		hfs.fileBuildLabels[absPath] |= mask
+		hfs.fileBuildLabels[f] |= mask
 	}
 }
 

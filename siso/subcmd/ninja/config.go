@@ -487,6 +487,7 @@ func (c *Command) initBuildOpts(ctx context.Context, projectID string, buildPath
 		KeepDepfile:           c.debugMode.Keepdepfile,
 		Limits:                limits,
 		UploadBuildNinjaFiles: c.enableBuildNinjaFilesUpload,
+		BuildLabel:            c.fsopt.BuildLabel,
 	}
 }
 

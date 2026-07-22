@@ -145,6 +145,9 @@ type Options struct {
 
 	// LastFailureTargets is a list of targets that failed in the previous build.
 	LastFailureTargets []string
+
+	// BuildLabel to attach to output files
+	BuildLabel string
 }
 
 // Builder is a builder.
@@ -257,6 +260,8 @@ type Builder struct {
 	rebuildManifest string
 
 	lastFailureTargets map[string]struct{}
+
+	buildLabel string
 }
 
 // New creates new builder.
@@ -417,6 +422,7 @@ func New(ctx context.Context, graph Graph, opts Options) (_ *Builder, err error)
 		rebuildManifest:       opts.RebuildManifest,
 		UploadBuildNinjaFiles: opts.UploadBuildNinjaFiles,
 		lastFailureTargets:    make(map[string]struct{}),
+		buildLabel:            opts.BuildLabel,
 	}
 	for _, t := range opts.LastFailureTargets {
 		b.lastFailureTargets[t] = struct{}{}

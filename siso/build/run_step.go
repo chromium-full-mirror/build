@@ -142,6 +142,13 @@ func (b *Builder) runStep(ctx context.Context, step *Step) (retErr error) {
 
 	if !b.needToRun(ctx, step.def, stepManifest) {
 		step.metrics.skip = true
+		if b.buildLabel != "" {
+			outPaths := make([]string, 0, len(stepManifest.outputs))
+			for _, out := range stepManifest.outputs {
+				outPaths = append(outPaths, b.path.MaybeToRelative(ctx, string(out)))
+			}
+			b.hashFS.UpdateBuildLabelMask(ctx, b.path.AbsBase(), b.buildLabel, outPaths)
+		}
 		b.plan.completeStep(ctx, step)
 		b.stats.update(ctx, &step.metrics, true)
 		return nil
@@ -209,6 +216,9 @@ func (b *Builder) runStep(ctx context.Context, step *Step) (retErr error) {
 		err = b.hashFS.Flush(ctx, step.cmd.WorkspaceRoot, step.cmd.FlushOutputs())
 		mspan.Close(nil)
 		if err == nil {
+			if b.buildLabel != "" {
+				b.hashFS.UpdateBuildLabelMask(ctx, b.path.AbsBase(), b.buildLabel, step.outputPaths)
+			}
 			b.plan.completeStep(ctx, step)
 			return nil
 		}
@@ -279,6 +289,10 @@ func (b *Builder) runStep(ctx context.Context, step *Step) (retErr error) {
 			b.progress.enqueueOutput(ui.SGR(ui.Green, fmt.Sprintf("last failed target fixed: %s", out)) + "\n")
 		}
 	}
+	if b.buildLabel != "" {
+		b.hashFS.UpdateBuildLabelMask(ctx, b.path.AbsBase(), b.buildLabel, step.outputPaths)
+	}
+
 	b.plan.completeStep(ctx, step)
 	return nil
 }

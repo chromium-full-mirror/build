@@ -10,8 +10,6 @@ import (
 	"runtime"
 	"testing"
 	"time"
-
-	"go.chromium.org/build/siso/path"
 )
 
 func TestHashFS_UpdateBuildLabelMask_LRU_Eviction(t *testing.T) {
@@ -50,7 +48,7 @@ func TestHashFS_UpdateBuildLabelMask_LRU_Eviction(t *testing.T) {
 	// 1. Fill the dictionary to its maximum capacity (64 items)
 	for i := 1; i <= 64; i++ {
 		labelName := fmt.Sprintf("label-%d", i)
-		hfs.UpdateBuildLabelMask(ctx, "", labelName, []path.Path{"shared_file.txt", path.Path(fmt.Sprintf("file-%d.txt", i))})
+		hfs.UpdateBuildLabelMask(ctx, "", labelName, []string{"shared_file.txt", fmt.Sprintf("file-%d.txt", i)})
 		// Add a tiny sleep to ensure LastBuildTimestamp strictly orders the labels for LRU.
 		time.Sleep(1 * time.Millisecond)
 	}
@@ -75,7 +73,7 @@ func TestHashFS_UpdateBuildLabelMask_LRU_Eviction(t *testing.T) {
 	}
 
 	// 2. Add the 65th label, which should trigger eviction of "label-1"
-	hfs.UpdateBuildLabelMask(ctx, "", "label-65", []path.Path{"shared_file.txt", "file-65.txt"})
+	hfs.UpdateBuildLabelMask(ctx, "", "label-65", []string{"shared_file.txt", "file-65.txt"})
 
 	// Verify "label-1" is evicted
 	_, ok = getBitID("label-1")
@@ -122,8 +120,8 @@ func TestHashFS_UpdateBuildLabelMask_Basic(t *testing.T) {
 	}
 
 	// 1. Try empty target and empty files
-	hfs.UpdateBuildLabelMask(ctx, execRoot, "", []path.Path{"file.txt"}) // Empty target
-	hfs.UpdateBuildLabelMask(ctx, execRoot, "label-x", []path.Path{})    // Empty files
+	hfs.UpdateBuildLabelMask(ctx, execRoot, "", []string{"file.txt"}) // Empty target
+	hfs.UpdateBuildLabelMask(ctx, execRoot, "label-x", []string{})    // Empty files
 	hfs.ledgerMu.RLock()
 	if len(hfs.buildLabelDictionary) != 0 || len(hfs.fileBuildLabels) != 0 {
 		t.Errorf("Got labels: %v, files: %v for empty inputs, want empty maps", hfs.buildLabelDictionary, hfs.fileBuildLabels)
@@ -131,7 +129,7 @@ func TestHashFS_UpdateBuildLabelMask_Basic(t *testing.T) {
 	hfs.ledgerMu.RUnlock()
 
 	// 2. Test basic insertion and path normalization
-	hfs.UpdateBuildLabelMask(ctx, execRoot, "label-a", []path.Path{"file1.txt"})
+	hfs.UpdateBuildLabelMask(ctx, execRoot, "label-a", []string{"file1.txt"})
 
 	var idA uint32
 	hfs.ledgerMu.RLock()
@@ -162,7 +160,7 @@ func TestHashFS_UpdateBuildLabelMask_Basic(t *testing.T) {
 	}
 
 	// 3. Test label reuse (updates timestamp, reuses same ID)
-	hfs.UpdateBuildLabelMask(ctx, execRoot, "label-a", []path.Path{"file2.txt"})
+	hfs.UpdateBuildLabelMask(ctx, execRoot, "label-a", []string{"file2.txt"})
 	hfs.ledgerMu.RLock()
 	dictionaryLen := len(hfs.buildLabelDictionary)
 	hfs.ledgerMu.RUnlock()
@@ -171,7 +169,7 @@ func TestHashFS_UpdateBuildLabelMask_Basic(t *testing.T) {
 	}
 
 	// 4. Test bitwise OR overlap on shared files
-	hfs.UpdateBuildLabelMask(ctx, execRoot, "label-b", []path.Path{"file2.txt"})
+	hfs.UpdateBuildLabelMask(ctx, execRoot, "label-b", []string{"file2.txt"})
 
 	var idB uint32
 	hfs.ledgerMu.RLock()
@@ -219,18 +217,18 @@ func TestHashFS_UpdateBuildLabelMask_LRU_Ordering(t *testing.T) {
 	// 1. Fill the dictionary to capacity (64 labels)
 	for i := 1; i <= 64; i++ {
 		labelName := fmt.Sprintf("label-%d", i)
-		hfs.UpdateBuildLabelMask(ctx, "", labelName, []path.Path{"shared.txt"})
+		hfs.UpdateBuildLabelMask(ctx, "", labelName, []string{"shared.txt"})
 		time.Sleep(1 * time.Millisecond) // strictly order timestamps
 	}
 
 	// label-1 is now the oldest.
 	// 2. Re-access label-1 to update its timestamp, making it the newest
-	hfs.UpdateBuildLabelMask(ctx, "", "label-1", []path.Path{"shared.txt"})
+	hfs.UpdateBuildLabelMask(ctx, "", "label-1", []string{"shared.txt"})
 	time.Sleep(1 * time.Millisecond)
 
 	// label-2 should now be the oldest
 	// 3. Add label-65, which should evict label-2 (since label-1 was touched)
-	hfs.UpdateBuildLabelMask(ctx, "", "label-65", []path.Path{"shared.txt"})
+	hfs.UpdateBuildLabelMask(ctx, "", "label-65", []string{"shared.txt"})
 
 	// label-1 should still exist!
 	if !checkLabelExists("label-1") {
