@@ -275,13 +275,13 @@ func (p *progress) buildSummary(b *Builder) string {
 		// Use floor to avoid rounding up to 100% when there are cache misses.
 		cacheHitRatio = fmt.Sprintf("cache:%5.02f%% ", math.Floor(float64(stat.CacheHit)/float64(stat.CacheHit+stat.Remote)*10000)/100.0)
 	}
-	var fallback string
-	if stat.LocalFallback > 0 {
-		fallback = "fallback:" + ui.SGR(ui.BackgroundRed, fmt.Sprintf("%d", stat.LocalFallback)) + " "
-	}
 	var cacheWrite string
 	if stat.CacheWrite > 0 {
 		cacheWrite = fmt.Sprintf("cache-write:%d(err:%d) ", stat.CacheWrite, stat.CacheWriteErr)
+	}
+	var fallback string
+	if stat.LocalFallback > 0 {
+		fallback = "fallback:" + ui.SGR(ui.BackgroundRed, fmt.Sprintf("%d", stat.LocalFallback)) + " "
 	}
 	var retry string
 	if stat.RemoteRetry > 0 {
@@ -289,12 +289,57 @@ func (p *progress) buildSummary(b *Builder) string {
 	}
 	b.statusReporter.PlanHasTotalSteps(stat.Total - stat.Skipped)
 
-	return fmt.Sprintf("[%d/%d] %s pre:%s local:%s remote:%s fetch:%s %s%s%s%s%s",
+	msg := fmt.Sprintf("[%d/%d] %s pre:%s local:%s remote:%s fetch:%s %s%s%s%s%s",
 		stat.Done-stat.Skipped, stat.Total-stat.Skipped,
 		dur,
 		preprocProgress, localProgress, remoteProgress, flushProgress,
 		stepsPerSec, cacheHitRatio, cacheWrite, fallback, retry,
 	)
+	if !ui.Default.IsOneTerminalLine(msg) {
+		// msg is too long.
+		// instead of eliding in the middle of status,
+		// eliding status field name to fit on one terminal line.
+		msg = elideStatus(msg)
+	}
+	return msg
+}
+
+func elideStatus(msg string) string {
+	sepSeen := false
+	fieldName := false
+	var sb strings.Builder
+	for i := range len(msg) {
+		ch := msg[i]
+		if fieldName {
+			switch ch {
+			case ':':
+				fieldName = false
+				sb.WriteByte(ch)
+				continue
+			case '-':
+				sepSeen = true
+				fieldName = false
+				continue
+			}
+			continue
+		}
+		if sepSeen {
+			if ch == ' ' {
+				continue
+			}
+			sepSeen = false
+			sb.WriteByte(ch)
+			if ch >= 'a' && ch <= 'z' {
+				fieldName = true
+			}
+			continue
+		}
+		if ch == ' ' {
+			sepSeen = true
+		}
+		sb.WriteByte(ch)
+	}
+	return sb.String()
 }
 
 // appendFrame builds the terminal frame into lines and returns the

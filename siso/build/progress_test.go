@@ -26,6 +26,8 @@ func (r *recordingUI) PrintLines(msgs ...string) {
 	r.printLines = append(r.printLines, slices.Clone(msgs))
 }
 
+func (*recordingUI) IsOneTerminalLine(string) bool { return true }
+
 func (r *recordingUI) NewSpinner() ui.Spinner {
 	return noopSpinner{}
 }
@@ -438,5 +440,26 @@ func TestProgress_NotIsTerminal(t *testing.T) {
 
 	if w := step.getWeightedDuration(); w == 0 {
 		t.Errorf("weighted_duration=0; want non-zero")
+	}
+}
+
+func TestElideStatus(t *testing.T) {
+	for _, tc := range []struct {
+		msg  string
+		want string
+	}{
+		{
+			msg:  "[100/123456] 10.20s pre:0 local:\033[41m653\033[0m remote:\033[41m12345\033[0m cache:0.67% fallback:\033[41m873\033[0m",
+			want: "[100/123456] 10.20s p:0 l:\033[41m653\033[0m r:\033[41m12345\033[0m c:0.67% f:\033[41m873\033[0m",
+		},
+		{
+			msg:  "[200/123456] 1m10.20s pre:0 local:\033[41m653\033[0m remote:\033[41m12345\033[0m cache:0.67% cache-write:10(err:0) fallback:\033[41m873\033[0m",
+			want: "[200/123456] 1m10.20s p:0 l:\033[41m653\033[0m r:\033[41m12345\033[0m c:0.67% cw:10(err:0) f:\033[41m873\033[0m",
+		},
+	} {
+		got := elideStatus(tc.msg)
+		if got != tc.want {
+			t.Errorf("elideStatus(%q)=%q; want %q\nmsg:\n%s\ngot:\n%s", tc.msg, got, tc.want, tc.msg, got)
+		}
 	}
 }

@@ -147,6 +147,11 @@ func (t *TermUI) PrintLines(msgs ...string) {
 	os.Stdout.Write(buf.Bytes())
 }
 
+// IsOneTerminalLine returns true if line fit on one terminal line.
+func (t *TermUI) IsOneTerminalLine(line string) bool {
+	return visibleLen(line) < t.Width()
+}
+
 // NewSpinner returns a terminal-based spinner.
 func (t *TermUI) NewSpinner() Spinner {
 	return &termSpinner{}

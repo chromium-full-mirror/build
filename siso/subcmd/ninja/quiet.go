@@ -60,7 +60,8 @@ func (quietUI) BuildFinished() {}
 
 var _ ui.UI = quietUI{}
 
-func (quietUI) PrintLines(...string) {}
+func (quietUI) PrintLines(...string)          {}
+func (quietUI) IsOneTerminalLine(string) bool { return true }
 func (q quietUI) NewSpinner() ui.Spinner {
 	return &quietSpinner{
 		w:               q.stdoutWriter(),
