@@ -82,14 +82,12 @@ found in the LICENSE file. */}}
       </md-icon-button>
     </md-filled-text-field>
     <div>
-      <button type="button" class="filter-button" popovertarget="action-filter-popover"
-          style="anchor-name: --action-filter-anchor">
+      <button type="button" class="filter-button" popovertarget="action-filter-popover">
         <md-icon>filter_alt</md-icon>
         Ninja rules
         <md-ripple></md-ripple>
       </button>
-      <div popover class="filter-popover" id="action-filter-popover"
-          style="position-anchor: --action-filter-anchor">
+      <div popover class="filter-popover" id="action-filter-popover">
         <div class="popover-content">
           <ul>
             {{range .actionCounts}}
@@ -109,14 +107,12 @@ found in the LICENSE file. */}}
       </div>
     </div>
     <div>
-      <button type="button" class="filter-button" popovertarget="rule-filter-popover"
-          style="anchor-name: --rule-filter-anchor">
+      <button type="button" class="filter-button" popovertarget="rule-filter-popover">
         <md-icon>filter_alt</md-icon>
         Siso configs
         <md-ripple></md-ripple>
       </button>
-      <div popover class="filter-popover" id="rule-filter-popover"
-          style="position-anchor: --rule-filter-anchor">
+      <div popover class="filter-popover" id="rule-filter-popover">
         <div class="popover-content">
           <ul>
             {{range .ruleCounts}}
