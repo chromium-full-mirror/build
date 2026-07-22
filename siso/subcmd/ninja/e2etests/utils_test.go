@@ -425,3 +425,18 @@ func openDepsLog(ctx context.Context, t *testing.T, dir string) (*ninjabuild.Dep
 		}
 	}
 }
+
+// skipUnlessNsjailUsable skips the test unless nsjail can actually run here:
+// it may be installed yet unable to build its mount namespace in restricted
+// environments (unprivileged CI containers), so probe with a trivial action.
+func skipUnlessNsjailUsable(t *testing.T) {
+	t.Helper()
+	nsjailPath, err := exec.LookPath("nsjail")
+	if err != nil {
+		t.Skip("This test requires nsjail: not found in PATH")
+	}
+	out, err := exec.Command(nsjailPath, "--quiet", "--chroot", "/", "--cwd", "/", "--disable_rlimits", "--", "/bin/true").CombinedOutput()
+	if err != nil {
+		t.Skipf("This test requires a working nsjail: %v: %s", err, strings.TrimSpace(string(out)))
+	}
+}

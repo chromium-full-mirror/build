@@ -632,11 +632,21 @@ func TestRecordOutputsFromLocal_JailDepfile(t *testing.T) {
 	}
 
 	c := &Cmd{
-		WorkspaceRoot:     root,
-		ExecRootInJailDir: jail,
-		Outputs:           []path.Path{"foo.o"},
-		Depfile:           "foo.o.d",
-		HashFS:            hashFS,
+		WorkspaceRoot: root,
+		PostProc: func(ctx context.Context, outputs []path.Path) error {
+			for _, out := range outputs {
+				outInJail := filepath.Join(jail, string(out))
+				outAbs := filepath.Join(root, string(out))
+				err := os.Rename(outInJail, outAbs)
+				if err != nil {
+					return err
+				}
+			}
+			return nil
+		},
+		Outputs: []path.Path{"foo.o"},
+		Depfile: "foo.o.d",
+		HashFS:  hashFS,
 	}
 	c.InitOutputs()
 
@@ -681,11 +691,21 @@ func TestRecordOutputsFromLocal_JailDepfileAlsoOutput(t *testing.T) {
 
 	// foo.o.d is both a declared output and the depfile.
 	c := &Cmd{
-		WorkspaceRoot:     root,
-		ExecRootInJailDir: jail,
-		Outputs:           []path.Path{"foo.o", "foo.o.d"},
-		Depfile:           "foo.o.d",
-		HashFS:            hashFS,
+		WorkspaceRoot: root,
+		PostProc: func(ctx context.Context, outputs []path.Path) error {
+			for _, out := range outputs {
+				outInJail := filepath.Join(jail, string(out))
+				outAbs := filepath.Join(root, string(out))
+				err := os.Rename(outInJail, outAbs)
+				if err != nil {
+					return err
+				}
+			}
+			return nil
+		},
+		Outputs: []path.Path{"foo.o", "foo.o.d"},
+		Depfile: "foo.o.d",
+		HashFS:  hashFS,
 	}
 	c.InitOutputs()
 
@@ -890,62 +910,6 @@ func TestAllOutputsNoAlias(t *testing.T) {
 	}
 }
 
-// TestRenameFromJail verifies renameFromJail captures an output out of the nsjail exec root, replacing a non-empty pre-created destination cleanly (a plain os.Rename of a dir onto a non-empty dir fails ENOTEMPTY).
-func TestRenameFromJail(t *testing.T) {
-	t.Run("file overwrites destination", func(t *testing.T) {
-		dir := t.TempDir()
-		jail := filepath.Join(dir, "jail")
-		dst := filepath.Join(dir, "dst")
-		if err := os.MkdirAll(jail, 0755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(filepath.Join(jail, "out.txt"), []byte("NEW"), 0644); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.MkdirAll(dst, 0755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(filepath.Join(dst, "out.txt"), []byte("OLD"), 0644); err != nil {
-			t.Fatal(err)
-		}
-		if err := renameFromJail(filepath.Join(jail, "out.txt"), filepath.Join(dst, "out.txt")); err != nil {
-			t.Fatalf("renameFromJail(file): %v", err)
-		}
-		got, err := os.ReadFile(filepath.Join(dst, "out.txt"))
-		if err != nil || string(got) != "NEW" {
-			t.Fatalf("dst content = %q, %v; want NEW", got, err)
-		}
-	})
-
-	t.Run("dir onto populated destination", func(t *testing.T) {
-		dir := t.TempDir()
-		jail := filepath.Join(dir, "jail", "gen")
-		dst := filepath.Join(dir, "out", "gen")
-		if err := os.MkdirAll(jail, 0755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(filepath.Join(jail, "new.txt"), []byte("NEW"), 0644); err != nil {
-			t.Fatal(err)
-		}
-		// Destination pre-created and populated by a prior build.
-		if err := os.MkdirAll(dst, 0755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(filepath.Join(dst, "stale.txt"), []byte("OLD"), 0644); err != nil {
-			t.Fatal(err)
-		}
-		if err := renameFromJail(jail, dst); err != nil {
-			t.Fatalf("renameFromJail(dir onto populated dir): %v", err)
-		}
-		if _, err := os.Stat(filepath.Join(dst, "new.txt")); err != nil {
-			t.Errorf("captured dir missing new.txt: %v", err)
-		}
-		if _, err := os.Stat(filepath.Join(dst, "stale.txt")); !os.IsNotExist(err) {
-			t.Errorf("stale file from previous build survived capture: err=%v", err)
-		}
-	})
-}
-
 func TestOutermostPaths(t *testing.T) {
 	for _, tc := range []struct {
 		name string
@@ -1004,11 +968,26 @@ func TestRecordOutputsFromLocal_JailNestedDirOutput(t *testing.T) {
 	}
 
 	c := &Cmd{
-		WorkspaceRoot:     root,
-		ExecRootInJailDir: jail,
-		Outputs:           []path.Path{"gen/foo.h"},
-		OutputDirs:        []path.Path{"gen"},
-		HashFS:            hashFS,
+		WorkspaceRoot: root,
+		PostProc: func(ctx context.Context, outputs []path.Path) error {
+			for _, out := range outputs {
+				outInJail := filepath.Join(jail, string(out))
+				outAbs := filepath.Join(root, string(out))
+				if fi, err := os.Lstat(outInJail); err == nil && fi.IsDir() {
+					if err := os.RemoveAll(outAbs); err != nil {
+						return err
+					}
+				}
+				err := os.Rename(outInJail, outAbs)
+				if err != nil {
+					return err
+				}
+			}
+			return nil
+		},
+		Outputs:    []path.Path{"gen/foo.h"},
+		OutputDirs: []path.Path{"gen"},
+		HashFS:     hashFS,
 	}
 	c.InitOutputs()
 

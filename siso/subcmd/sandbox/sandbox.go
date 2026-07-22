@@ -121,12 +121,12 @@ func (c *Command) run(ctx context.Context) error {
 	}
 
 	cmd := &execute.Cmd{
-		WorkspaceRoot:     workspaceRoot,
-		WorkDir:           sisopath.Path(outDir),
-		Inputs:            sisopath.Paths(req.Inputs),
-		Outputs:           sisopath.Paths(req.Outputs),
-		HashFS:            hashFS,
-		ExecRootInJailDir: jail.ExecRoot(),
+		WorkspaceRoot: workspaceRoot,
+		WorkDir:       sisopath.Path(outDir),
+		Inputs:        sisopath.Paths(req.Inputs),
+		Outputs:       sisopath.Paths(req.Outputs),
+		HashFS:        hashFS,
+		PostProc:      jail.PostProc,
 	}
 	cmd.Args, err = jail.Args(ctx, c.cmdline...)
 	if err != nil {

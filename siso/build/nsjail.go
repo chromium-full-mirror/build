@@ -78,6 +78,7 @@ func (n *nsjailExecutor) Run(ctx context.Context, cmd *execute.Cmd) (err error) 
 	req := n.req
 	req.Inputs = path.Strings(cmd.AllInputs())
 	req.Outputs = path.Strings(cmd.AllOutputs())
+	req.Restat = cmd.Restat
 	jail, err := nsjailutil.New(ctx, fsys, req)
 	if err != nil {
 		return err
@@ -92,7 +93,7 @@ func (n *nsjailExecutor) Run(ctx context.Context, cmd *execute.Cmd) (err error) 
 	}
 	// phony_output would have no cmd.Outputs, so no need to capture outputs in jail.
 	if len(cmd.Outputs) > 0 || len(cmd.OutputDirs) > 0 {
-		newCmd.ExecRootInJailDir = jail.ExecRoot()
+		newCmd.PostProc = jail.PostProc
 	}
 	clog.Infof(ctx, "run %q", newCmd.Args)
 	err = n.executor.Run(ctx, newCmd)

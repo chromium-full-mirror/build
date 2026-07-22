@@ -11,7 +11,6 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"os"
 	"path/filepath"
 	"runtime"
 	"slices"
@@ -111,9 +110,9 @@ type Cmd struct {
 	// They are relative to ExecRoot.
 	ReconcileOutputdirs []path.Path
 
-	// ExecRootInJailDir is an absolute path of jail to capture outputs
-	// after sandbox execution.
-	ExecRootInJailDir string
+	// PostProc is post process to capture outputs from jail after sandbox
+	// execution.
+	PostProc func(context.Context, []path.Path) error
 
 	// Deps specifies deps type of the cmd, "gcc", "msvc".
 	Deps string
@@ -1313,35 +1312,12 @@ func (c *Cmd) computeOutputEntries(entries []hashfs.UpdateEntry, updatedTime tim
 	return ret
 }
 
-// renameFromJail moves a captured output from the nsjail exec root to its
-// workspace location. A directory destination may already hold the previous
-// build's files, and os.Rename onto a non-empty directory fails with
-// ENOTEMPTY, so remove the destination first. File outputs rename directly.
-func renameFromJail(jailPath, destPath string) error {
-	if fi, err := os.Lstat(jailPath); err == nil && fi.IsDir() {
-		if err := os.RemoveAll(destPath); err != nil {
-			return err
-		}
-	}
-	return os.Rename(jailPath, destPath)
-}
-
 // RecordOutputsFromLocal records cmd's outputs from local disk in hashfs.
 func (c *Cmd) RecordOutputsFromLocal(ctx context.Context, now time.Time) error {
-	if c.ExecRootInJailDir != "" {
-		// TODO: reconcile output dirs?
-		// OutermostPaths drops entries nested under a directory output:
-		// renaming the ancestor moves the whole subtree, so a nested rename
-		// would fail (source gone) or clobber a sibling already moved in.
-		for _, output := range OutermostPaths(c.AllOutputs()) {
-			outputInJail := filepath.Join(c.ExecRootInJailDir, string(output))
-			outputAbs := filepath.Join(c.WorkspaceRoot, string(output))
-			if log.V(1) {
-				clog.Infof(ctx, "capture output from jail %q -> %q", outputInJail, outputAbs)
-			}
-			if err := renameFromJail(outputInJail, outputAbs); err != nil {
-				return err
-			}
+	if c.PostProc != nil {
+		err := c.PostProc(ctx, OutermostPaths(c.AllOutputs()))
+		if err != nil {
+			return err
 		}
 	}
 	for _, dir := range c.ReconcileOutputdirs {

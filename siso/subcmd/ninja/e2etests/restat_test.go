@@ -153,6 +153,264 @@ func TestBuild_Restat(t *testing.T) {
 	}()
 }
 
+func TestBuild_Restat_Nsjail(t *testing.T) {
+	if !runInSubProcess(t) {
+		return
+	}
+	skipUnlessNsjailUsable(t)
+	ctx := t.Context()
+	dir := tempDir(t)
+
+	// allow python3 on luci builder.
+	if _, err := os.Stat("/b/s/w/ir"); err == nil {
+		// /b/s/w/ir/cipd_bin_packages/cpython3/bin/python3
+		t.Setenv("SISO_NSJAIL_PUBLIC_DIRS", "/b/s/w/ir")
+	}
+
+	exists := func(fname string) error {
+		_, err := os.Stat(filepath.Join(dir, "out/siso", fname))
+		return err
+	}
+
+	hashfsOpts := hashfs.Option{
+		StateFile: ".siso_fs_state",
+	}
+
+	func() {
+		t.Logf("first build")
+		setupFiles(t, dir, t.Name(), nil)
+		opt, graph, cleanup := setupBuild(ctx, t, dir, hashfsOpts)
+		defer cleanup()
+
+		_, err := ninjabuild.Run(ctx, graph, opt, []string{"all"}, ninjabuild.RunNinjaOpts{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := exists("foo.out"); err != nil {
+			t.Errorf("foo.out doesn't exist: %v", err)
+		}
+		if err := exists("bar.out"); err != nil {
+			t.Errorf("bar.out doesn't exist: %v", err)
+		}
+	}()
+
+	func() {
+		t.Logf("second build. touch base/foo.in, expect only foo.out is built")
+		touchFile(t, dir, "base/foo.in")
+		opt, graph, cleanup := setupBuild(ctx, t, dir, hashfsOpts)
+		defer cleanup()
+		var metricsBuffer syncBuffer
+		opt.MetricsJSONWriter = &metricsBuffer
+
+		stat, err := ninjabuild.Run(ctx, graph, opt, []string{"all"}, ninjabuild.RunNinjaOpts{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if stat.Skipped != 2 { // all(phony) and bar.out
+			t.Errorf("Skipped=%d; want 2", stat.Skipped)
+		}
+		dec := json.NewDecoder(bytes.NewReader(metricsBuffer.buf.Bytes()))
+		for dec.More() {
+			var m build.StepMetric
+			err := dec.Decode(&m)
+			if err != nil {
+				t.Errorf("decode %v", err)
+			}
+			if m.StepID == "" {
+				continue
+			}
+			switch filepath.Base(m.Output()) {
+			case "foo.out":
+				if m.Err {
+					t.Errorf("%s err=%t; want false", m.Output(), m.Err)
+				}
+			default:
+				t.Errorf("unexpected output %q: %#v", m.Output(), m)
+			}
+		}
+	}()
+
+	func() {
+		t.Logf("third build, update base/foo.in")
+		modifyFile(t, dir, "base/foo.in", func(buf []byte) []byte {
+			return append(buf, []byte(" modified")...)
+		})
+		opt, graph, cleanup := setupBuild(ctx, t, dir, hashfsOpts)
+		defer cleanup()
+		var metricsBuffer syncBuffer
+		opt.MetricsJSONWriter = &metricsBuffer
+
+		stat, err := ninjabuild.Run(ctx, graph, opt, []string{"all"}, ninjabuild.RunNinjaOpts{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if stat.Skipped != 1 { // all(phony)
+			t.Errorf("Skipped=%d; want 1", stat.Skipped)
+			for _, fname := range []string{
+				"base/foo.in",
+				"base/bar.in",
+				"out/siso/foo.out",
+				"out/siso/bar.out",
+			} {
+				fi, err := opt.HashFS.Stat(ctx, dir, path.New(fname))
+				if err != nil {
+					t.Logf("%s: err=%v", fname, err)
+				} else {
+					t.Logf("%s: %s", fname, fi.ModTime())
+				}
+			}
+		}
+		dec := json.NewDecoder(bytes.NewReader(metricsBuffer.buf.Bytes()))
+		for dec.More() {
+			var m build.StepMetric
+			err := dec.Decode(&m)
+			if err != nil {
+				t.Errorf("decode %v", err)
+			}
+			if m.StepID == "" {
+				continue
+			}
+			switch filepath.Base(m.Output()) {
+			case "foo.out", "bar.out":
+				if m.Err {
+					t.Errorf("%s err=%t; want false", m.Output(), m.Err)
+				}
+			default:
+				t.Errorf("unexpected output %q", m.Output())
+			}
+		}
+	}()
+}
+
+func TestBuild_Restat_NsjailRecreateFile(t *testing.T) {
+	if !runInSubProcess(t) {
+		return
+	}
+	skipUnlessNsjailUsable(t)
+	ctx := t.Context()
+	dir := tempDir(t)
+
+	// allow python3 on luci builder.
+	if _, err := os.Stat("/b/s/w/ir"); err == nil {
+		// /b/s/w/ir/cipd_bin_packages/cpython3/bin/python3
+		t.Setenv("SISO_NSJAIL_PUBLIC_DIRS", "/b/s/w/ir")
+	}
+
+	exists := func(fname string) error {
+		_, err := os.Stat(filepath.Join(dir, "out/siso", fname))
+		return err
+	}
+
+	hashfsOpts := hashfs.Option{
+		StateFile: ".siso_fs_state",
+	}
+
+	func() {
+		t.Logf("first build")
+		setupFiles(t, dir, t.Name(), nil)
+		opt, graph, cleanup := setupBuild(ctx, t, dir, hashfsOpts)
+		defer cleanup()
+
+		_, err := ninjabuild.Run(ctx, graph, opt, []string{"all"}, ninjabuild.RunNinjaOpts{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := exists("foo.out"); err != nil {
+			t.Errorf("foo.out doesn't exist: %v", err)
+		}
+		if err := exists("bar.out"); err != nil {
+			t.Errorf("bar.out doesn't exist: %v", err)
+		}
+	}()
+
+	func() {
+		t.Logf("second build. touch base/foo.in, expect only foo.out is built")
+		touchFile(t, dir, "base/foo.in")
+		opt, graph, cleanup := setupBuild(ctx, t, dir, hashfsOpts)
+		defer cleanup()
+		var metricsBuffer syncBuffer
+		opt.MetricsJSONWriter = &metricsBuffer
+
+		stat, err := ninjabuild.Run(ctx, graph, opt, []string{"all"}, ninjabuild.RunNinjaOpts{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if stat.Skipped != 2 { // all(phony) and bar.out
+			t.Errorf("Skipped=%d; want 2", stat.Skipped)
+		}
+		dec := json.NewDecoder(bytes.NewReader(metricsBuffer.buf.Bytes()))
+		for dec.More() {
+			var m build.StepMetric
+			err := dec.Decode(&m)
+			if err != nil {
+				t.Errorf("decode %v", err)
+			}
+			if m.StepID == "" {
+				continue
+			}
+			switch filepath.Base(m.Output()) {
+			case "foo.out":
+				if m.Err {
+					t.Errorf("%s err=%t; want false", m.Output(), m.Err)
+				}
+			default:
+				t.Errorf("unexpected output %q: %#v", m.Output(), m)
+			}
+		}
+	}()
+
+	func() {
+		t.Logf("third build, update base/foo.in")
+		modifyFile(t, dir, "base/foo.in", func(buf []byte) []byte {
+			return append(buf, []byte(" modified")...)
+		})
+		opt, graph, cleanup := setupBuild(ctx, t, dir, hashfsOpts)
+		defer cleanup()
+		var metricsBuffer syncBuffer
+		opt.MetricsJSONWriter = &metricsBuffer
+
+		stat, err := ninjabuild.Run(ctx, graph, opt, []string{"all"}, ninjabuild.RunNinjaOpts{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if stat.Skipped != 1 { // all(phony)
+			t.Errorf("Skipped=%d; want 1", stat.Skipped)
+			for _, fname := range []string{
+				"base/foo.in",
+				"base/bar.in",
+				"out/siso/foo.out",
+				"out/siso/bar.out",
+			} {
+				fi, err := opt.HashFS.Stat(ctx, dir, path.New(fname))
+				if err != nil {
+					t.Logf("%s: err=%v", fname, err)
+				} else {
+					t.Logf("%s: %s", fname, fi.ModTime())
+				}
+			}
+		}
+		dec := json.NewDecoder(bytes.NewReader(metricsBuffer.buf.Bytes()))
+		for dec.More() {
+			var m build.StepMetric
+			err := dec.Decode(&m)
+			if err != nil {
+				t.Errorf("decode %v", err)
+			}
+			if m.StepID == "" {
+				continue
+			}
+			switch filepath.Base(m.Output()) {
+			case "foo.out", "bar.out":
+				if m.Err {
+					t.Errorf("%s err=%t; want false", m.Output(), m.Err)
+				}
+			default:
+				t.Errorf("unexpected output %q", m.Output())
+			}
+		}
+	}()
+}
+
 // Test restat=1 behavior when restat_content=true is set
 func TestBuild_Restat_RestatContent(t *testing.T) {
 	if !runInSubProcess(t) {
