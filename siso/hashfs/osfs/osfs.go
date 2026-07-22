@@ -58,6 +58,7 @@ type OSFS struct {
 	digestFn        digest.Function
 	digestXattrName string
 	onCog           bool
+	cartFS          *cartfsutil.Client
 }
 
 // Option is an option for osfs.
@@ -105,6 +106,7 @@ func New(ctx context.Context, name string, opt Option) *OSFS {
 		digestFn:        fn,
 		digestXattrName: digestXattrName,
 		onCog:           opt.OnCog,
+		cartFS:          opt.CartFS,
 	}
 }
 
@@ -149,7 +151,7 @@ func (*OSFS) AsFileSource(ds blob.Source) (FileSource, bool) {
 }
 
 // FileSource creates new FileSource for name.
-// For FileDigestFromXattr, if size is non-negative, it will be used.
+// For FileDigestFromFS, if size is non-negative, it will be used.
 // If size is negative, it will check file info.
 func (ofs *OSFS) FileSource(name string, size int64) FileSource {
 	return FileSource{Fname: name, size: size, fs: ofs}
@@ -453,33 +455,34 @@ func (ofs *OSFS) DigestFunction() digest.Function {
 	return ofs.digestFn
 }
 
-// FileDigestFromXattr returns file's digest via xattr if possible.
-func (ofs *OSFS) FileDigestFromXattr(ctx context.Context, name string, size int64) (digest.Digest, error) {
-	if ofs.digestXattrName == "" {
-		return digest.Digest{}, errors.ErrUnsupported
-	}
+var xattrLGet = xattr.LGet
+
+// FileDigestFromFS returns file's digest via xattr or cartfs GetDigest if possible.
+func (ofs *OSFS) FileDigestFromFS(ctx context.Context, name string, size int64) (digest.Digest, error) {
 	// The xattr caches a sha256 digest, so it is only valid when sha256 is the
 	// active digest function. For any other function, recompute.
 	if ofs.digestFn != digest.SHA256 {
 		return digest.Digest{}, errors.ErrUnsupported
 	}
-	d, err := xattr.LGet(name, ofs.digestXattrName)
-	ofs.OpsDone(err)
-	if err != nil {
-		return digest.Digest{}, err
-	}
-	if size < 0 {
-		fi, err := os.Lstat(name)
+	if ofs.digestXattrName != "" {
+		d, err := xattrLGet(name, ofs.digestXattrName)
 		ofs.OpsDone(err)
-		if err != nil {
-			return digest.Digest{}, err
+		if err == nil {
+			if size < 0 {
+				fi, err := os.Lstat(name)
+				ofs.OpsDone(err)
+				if err != nil {
+					return digest.Digest{}, err
+				}
+				size = fi.Size()
+			}
+			return digest.Digest{
+				Hash:      string(d),
+				SizeBytes: size,
+			}, nil
 		}
-		size = fi.Size()
 	}
-	return digest.Digest{
-		Hash:      string(d),
-		SizeBytes: size,
-	}, nil
+	return ofs.cartFS.Digest(ctx, name)
 }
 
 // FileSource is a file source.
@@ -519,9 +522,9 @@ func (fsc FileSource) Size() (int64, error) {
 	return fi.Size(), nil
 }
 
-// FileDigestFromXattr returns file's digest via xattr if possible.
-func (fsc FileSource) FileDigestFromXattr(ctx context.Context) (digest.Digest, error) {
-	return fsc.fs.FileDigestFromXattr(ctx, fsc.Fname, fsc.size)
+// FileDigestFromFS returns file's digest via xattr or cartfs GetDigest if possible.
+func (fsc FileSource) FileDigestFromFS(ctx context.Context) (digest.Digest, error) {
+	return fsc.fs.FileDigestFromFS(ctx, fsc.Fname, fsc.size)
 }
 
 type file struct {

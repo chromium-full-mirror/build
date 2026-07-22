@@ -143,7 +143,7 @@ func (b byteSource) String() string {
 func FromLocalFile(ctx context.Context, fn digest.Function, src Source) (Data, error) {
 	fd, ok := src.(fileDigester)
 	if ok {
-		d, err := fd.FileDigestFromXattr(ctx)
+		d, err := fd.FileDigestFromFS(ctx)
 		if err == nil {
 			return Data{
 				digest: d,
@@ -181,7 +181,7 @@ func FromLocalFile(ctx context.Context, fn digest.Function, src Source) (Data, e
 }
 
 type fileDigester interface {
-	FileDigestFromXattr(context.Context) (digest.Digest, error)
+	FileDigestFromFS(context.Context) (digest.Digest, error)
 }
 
 // sizeSource is an optional interface for sources that can report their content
