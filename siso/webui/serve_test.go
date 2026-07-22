@@ -183,7 +183,7 @@ func TestRoutes_UploadedMetrics(t *testing.T) {
 		{"/uploads/view/builds/uploaded-build-id/steps/", http.StatusOK},
 		{"/uploads/view/builds/uploaded-build-id/steps/step-1/", http.StatusOK},
 		{"/uploads/view/builds/nonexistent-rev/steps/", http.StatusNotFound},
-		{"/uploads/view/builds/uploaded-build-id/aggregates/", http.StatusNotFound},
+		{"/uploads/view/builds/uploaded-build-id/aggregates/", http.StatusOK},
 	} {
 		rec := httptest.NewRecorder()
 		s.mux().ServeHTTP(rec, httptest.NewRequest("GET", tc.path, nil))

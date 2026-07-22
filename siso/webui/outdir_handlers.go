@@ -21,7 +21,6 @@ import (
 
 	"go.chromium.org/build/siso/build"
 	"go.chromium.org/build/siso/toolsupport/ninjautil"
-	"go.chromium.org/build/siso/webui/invocation"
 )
 
 const (
@@ -163,17 +162,23 @@ func loadBuildMetrics(metricsPath string) (*buildMetrics, error) {
 	return metricsData, nil
 }
 
-// handleOutdirReload reloads the outdir, which is an invocation provider, not an invocation itself.
+// handleOutdirReload reloads the outdir.
 func (s *WebuiServer) handleOutdirReload(w http.ResponseWriter, r *http.Request) {
-	outdirInfo, err := s.getOutdirForRequest(r)
+	series, err := s.invocationSeriesFor(r)
 	if err != nil {
-		s.renderBuildViewError(http.StatusNotFound, fmt.Sprintf("outdir failed to load for request %s: %v", r.URL, err), w, r)
+		s.renderBuildViewError(http.StatusNotFound, fmt.Sprintf("failed to load invocation(s) for %s: %v", r.URL, err), w, r)
+		return
+	}
+	// TODO(b/533258244): introduce concept of reloadable invocation series?
+	outdirInfo, ok := series.(*outdirInfo)
+	if !ok {
+		s.renderBuildViewError(http.StatusNotFound, "this is not an outdir", w, r)
 		return
 	}
 
 	// TODO(b/533258244): decouple from outdirInfo?
-	s.outdirInfos.Invalidate(outdirInfo.pathRel)
-	_, err = s.outdirInfos.Get(outdirInfo.pathRel)
+	s.outdirProvider.Invalidate(outdirInfo.pathRel)
+	_, err = s.outdirProvider.Get(outdirInfo.pathRel)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed to reload outdir: %v", err)
 		w.WriteHeader(http.StatusInternalServerError)
@@ -184,26 +189,31 @@ func (s *WebuiServer) handleOutdirReload(w http.ResponseWriter, r *http.Request)
 	http.Redirect(w, r, outdirBaseURL(r), http.StatusTemporaryRedirect)
 }
 
-// handleInvocationRoot redirects from outdir root URL to `./builds/{latestRev}/steps/`.
-func (s *WebuiServer) handleInvocationRoot(w http.ResponseWriter, r *http.Request) {
-	outdirInfo, err := s.getOutdirForRequest(r)
+// handleInvocationSeriesRoot redirects from invocation series URL to `./builds/{latestRev}/steps/`.
+func (s *WebuiServer) handleInvocationSeriesRoot(w http.ResponseWriter, r *http.Request) {
+	series, err := s.invocationSeriesFor(r)
 	if err != nil {
-		s.renderBuildViewError(http.StatusNotFound, fmt.Sprintf("outdir failed to load for request %s: %v", r.URL, err), w, r)
+		s.renderBuildViewError(http.StatusNotFound, fmt.Sprintf("failed to load invocation(s) for %s: %v", r.URL, err), w, r)
+		return
+	}
+	if series.Latest() == nil {
+		s.renderBuildViewError(http.StatusNotFound, "no invocations found", w, r)
 		return
 	}
 
-	if outdirInfo.Latest() == nil {
-		s.renderBuildViewError(http.StatusNotFound, "outdir has no metrics", w, r)
-		return
-	}
-
-	http.Redirect(w, r, fmt.Sprintf("%s/builds/%s/steps/", outdirBaseURL(r), outdirInfo.Latest().ID()), http.StatusTemporaryRedirect)
+	http.Redirect(w, r, fmt.Sprintf("%s/builds/%s/steps/", outdirBaseURL(r), series.Latest().ID()), http.StatusTemporaryRedirect)
 }
 
-func (s *WebuiServer) handleInvocationViewLog(w http.ResponseWriter, r *http.Request) {
-	outdirInfo, err := s.getOutdirForRequest(r)
+func (s *WebuiServer) handleOutdirViewLog(w http.ResponseWriter, r *http.Request) {
+	series, err := s.invocationSeriesFor(r)
 	if err != nil {
-		s.renderBuildViewError(http.StatusNotFound, fmt.Sprintf("outdir failed to load for request %s: %v", r.URL, err), w, r)
+		s.renderBuildViewError(http.StatusNotFound, fmt.Sprintf("failed to load invocation(s) for %s: %v", r.URL, err), w, r)
+		return
+	}
+	// TODO(b/533258244): move the raw logs concept into the [invocation.Invocation] interface?
+	outdirInfo, ok := series.(*outdirInfo)
+	if !ok {
+		s.renderBuildViewError(http.StatusNotFound, "only outdirs are currently supported", w, r)
 		return
 	}
 
@@ -311,19 +321,12 @@ func (s *WebuiServer) handleInvocationViewLog(w http.ResponseWriter, r *http.Req
 }
 
 func (s *WebuiServer) handleInvocationAggregates(w http.ResponseWriter, r *http.Request) {
-	outdirInfo, err := s.getOutdirForRequest(r)
+	series, err := s.invocationSeriesFor(r)
 	if err != nil {
-		s.renderBuildViewError(http.StatusNotFound, fmt.Sprintf("outdir failed to load for request %s: %v", r.URL, err), w, r)
+		s.renderBuildViewError(http.StatusNotFound, fmt.Sprintf("failed to load invocation(s) for %s: %v", r.URL, err), w, r)
 		return
 	}
-
-	var metrics *buildMetrics
-	for m := range outdirInfo.All() {
-		if m.ID() == r.PathValue("rev") {
-			metrics = m
-			break
-		}
-	}
+	metrics := series.Get(r.PathValue("rev"))
 	if metrics == nil {
 		s.renderBuildViewError(http.StatusNotFound, fmt.Sprintf("no metrics found for request %s", r.URL), w, r)
 		return
@@ -368,19 +371,12 @@ func (s *WebuiServer) handleInvocationAggregates(w http.ResponseWriter, r *http.
 }
 
 func (s *WebuiServer) handleInvocationDoRecall(w http.ResponseWriter, r *http.Request) {
-	outdirInfo, err := s.getOutdirForRequest(r)
+	series, err := s.invocationSeriesFor(r)
 	if err != nil {
-		s.renderBuildViewError(http.StatusNotFound, fmt.Sprintf("outdir failed to load for request %s: %v", r.URL, err), w, r)
+		s.renderBuildViewError(http.StatusNotFound, fmt.Sprintf("failed to load invocation(s) for %s: %v", r.URL, err), w, r)
 		return
 	}
-
-	var metrics *buildMetrics
-	for m := range outdirInfo.All() {
-		if m.ID() == r.PathValue("rev") {
-			metrics = m
-			break
-		}
-	}
+	metrics := series.Get(r.PathValue("rev"))
 	if metrics == nil {
 		s.renderBuildViewError(http.StatusNotFound, fmt.Sprintf("no metrics found for request %s", r.URL), w, r)
 		return
@@ -410,29 +406,12 @@ func (s *WebuiServer) handleInvocationDoRecall(w http.ResponseWriter, r *http.Re
 }
 
 func (s *WebuiServer) handleInvocationViewStep(w http.ResponseWriter, r *http.Request) {
-	var metrics *buildMetrics
-	var outdirInfo invocation.Provider[*buildMetrics]
-	var err error
-	if didRequestUploadedMetrics(r) {
-		for _, m := range s.uploadedMetrics {
-			if m.Rev == r.PathValue("rev") {
-				metrics = m
-				break
-			}
-		}
-	} else {
-		outdirInfo, err = s.getOutdirForRequest(r)
-		if err != nil {
-			s.renderBuildViewError(http.StatusNotFound, fmt.Sprintf("outdir failed to load for request %s: %v", r.URL, err), w, r)
-			return
-		}
-		for m := range outdirInfo.All() {
-			if m.Rev == r.PathValue("rev") {
-				metrics = m
-				break
-			}
-		}
+	series, err := s.invocationSeriesFor(r)
+	if err != nil {
+		s.renderBuildViewError(http.StatusNotFound, fmt.Sprintf("failed to load invocation(s) for %s: %v", r.URL, err), w, r)
+		return
 	}
+	metrics := series.Get(r.PathValue("rev"))
 	if metrics == nil {
 		s.renderBuildViewError(http.StatusNotFound, fmt.Sprintf("no metrics found for request %s", r.URL), w, r)
 		return
@@ -451,15 +430,13 @@ func (s *WebuiServer) handleInvocationViewStep(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	// Find steps with the same output in other revs.
+	// Find steps with the same output in other invocations under this series.
 	// (A step could have multiple outputs, and we only log the first output as the output name.
 	// So if it changes across builds it won't work. But it's expected to be stable for most builds.)
 	inOtherRevs := make(map[string]build.StepMetric)
-	if outdirInfo != nil {
-		for m := range outdirInfo.All() {
-			if step, ok := m.stepByOutput[stepData.Output()]; ok {
-				inOtherRevs[m.Rev] = *step
-			}
+	for m := range series.All() {
+		if step, ok := m.stepByOutput[stepData.Output()]; ok {
+			inOtherRevs[m.Rev] = *step
 		}
 	}
 
@@ -485,29 +462,12 @@ func (s *WebuiServer) handleInvocationViewStep(w http.ResponseWriter, r *http.Re
 }
 
 func (s *WebuiServer) handleInvocationListSteps(w http.ResponseWriter, r *http.Request) {
-	var metrics *buildMetrics
-	var outdirInfo invocation.Provider[*buildMetrics]
-	var err error
-	if didRequestUploadedMetrics(r) {
-		for _, m := range s.uploadedMetrics {
-			if m.Rev == r.PathValue("rev") {
-				metrics = m
-				break
-			}
-		}
-	} else {
-		outdirInfo, err = s.getOutdirForRequest(r)
-		if err != nil {
-			s.renderBuildViewError(http.StatusNotFound, fmt.Sprintf("outdir failed to load for request %s: %v", r.URL, err), w, r)
-			return
-		}
-		for m := range outdirInfo.All() {
-			if m.Rev == r.PathValue("rev") {
-				metrics = m
-				break
-			}
-		}
+	series, err := s.invocationSeriesFor(r)
+	if err != nil {
+		s.renderBuildViewError(http.StatusNotFound, fmt.Sprintf("failed to load invocation(s) for %s: %v", r.URL, err), w, r)
+		return
 	}
+	metrics := series.Get(r.PathValue("rev"))
 	if metrics == nil {
 		s.renderBuildViewError(http.StatusNotFound, fmt.Sprintf("no metrics found for request %s", r.URL), w, r)
 		return
@@ -640,10 +600,16 @@ func (s *WebuiServer) handleInvocationListSteps(w http.ResponseWriter, r *http.R
 	}
 }
 
-func (s *WebuiServer) handleInvocationListTargets(w http.ResponseWriter, r *http.Request) {
-	outdirInfo, err := s.getOutdirForRequest(r)
+func (s *WebuiServer) handleOutdirListTargets(w http.ResponseWriter, r *http.Request) {
+	series, err := s.invocationSeriesFor(r)
 	if err != nil {
-		s.renderBuildViewError(http.StatusNotFound, fmt.Sprintf("outdir failed to load for request %s: %v", r.URL, err), w, r)
+		s.renderBuildViewError(http.StatusNotFound, fmt.Sprintf("failed to load invocation(s) for %s: %v", r.URL, err), w, r)
+		return
+	}
+	// TODO(b/533258244): introduce concept of invocation series that provides build.ninja file?
+	outdirInfo, ok := series.(*outdirInfo)
+	if !ok {
+		s.renderBuildViewError(http.StatusNotFound, "this is not an outdir", w, r)
 		return
 	}
 

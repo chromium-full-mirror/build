@@ -22,9 +22,14 @@ func (s *WebuiServer) handleOutdirWatch(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	outdirInfo, err := s.getOutdirForRequest(r)
+	series, err := s.invocationSeriesFor(r)
 	if err != nil {
-		s.renderBuildViewError(http.StatusInternalServerError, fmt.Sprintf("failed to get outdir: %v", err), w, r)
+		s.renderBuildViewError(http.StatusNotFound, fmt.Sprintf("can't find outdir for %s: %v", r.URL, err), w, r)
+		return
+	}
+	outdirInfo, ok := series.(*outdirInfo)
+	if !ok {
+		s.renderBuildViewError(http.StatusNotFound, "this is not an outdir", w, r)
 		return
 	}
 

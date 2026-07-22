@@ -28,6 +28,7 @@ import (
 	"go.chromium.org/build/siso/build"
 	"go.chromium.org/build/siso/build/ninjabuild"
 	mwc "go.chromium.org/build/siso/third_party/material_web_components"
+	"go.chromium.org/build/siso/webui/invocation"
 )
 
 //go:embed templates/*.html static/*.css static/*.js
@@ -159,12 +160,10 @@ type WebuiServer struct {
 	sseServer        *sseServer
 	workspaceRoot    string
 	defaultOutdir    string
-	outdirInfos      outdirRegistry
-	knownOutdirs     []string
+	outdirProvider   outdirProvider
+	knownOutdirs     []string // TODO: fold into outdirProvider
+	uploadedMetrics  metricsFileProvider
 	runbuildState
-
-	uploadedMu      sync.Mutex
-	uploadedMetrics []*buildMetrics
 
 	cssMu               sync.RWMutex
 	combinedCSS         string
@@ -275,10 +274,6 @@ func (s *WebuiServer) ensureCSS() error {
 	return nil
 }
 
-func didRequestUploadedMetrics(r *http.Request) bool {
-	return r.PathValue("outroot") == "uploads" && r.PathValue("outsub") == "view"
-}
-
 // baseURLFromRequest gets the base URL from context.
 // This is a HARDCODED assumption that siso webui only has routes that start with outdir.
 func outdirBaseURL(r *http.Request) string {
@@ -288,22 +283,29 @@ func outdirBaseURL(r *http.Request) string {
 // renderBuildView renders a build-related view.
 // TODO(b/361703735): return data instead of write to response writer? https://chromium-review.googlesource.com/c/infra/infra/+/5803123/comment/4ce69ada_31730349/
 func (s *WebuiServer) renderBuildView(wr http.ResponseWriter, r *http.Request, tmpl *template.Template, data map[string]any) error {
+	series, err := s.invocationSeriesFor(r)
+	if err != nil {
+		return fmt.Errorf("failed to load invocation(s) for %s: %v", r.URL, err)
+	}
 	rev := r.PathValue("rev")
-	if didRequestUploadedMetrics(r) {
+	// TODO(b/533258244): remove hardcoded dependency that we're either viewing
+	// an outdir or an uploaded metrics file and it can't be anything else?
+	switch g := series.(type) {
+	case metricsFileInfo:
 		data["viewingUploaded"] = true
-	} else if outdirInfo, err := s.getOutdirForRequest(r); err == nil {
+	case *outdirInfo:
 		if rev == "" {
-			rev = outdirInfo.latestRevID
+			rev = g.latestRevID
 		}
-		outdirAbbrev := outdirInfo.path
+		outdirAbbrev := g.path
 		// Showing the full path is too long in the webui so abbreviate home dir to ~.
 		// TODO(b/361703735): refactor https://chromium-review.googlesource.com/c/infra/infra/+/5804478/comment/dcfb372d_f21e4cc5/
 		if home, err := os.UserHomeDir(); err == nil {
 			outdirAbbrev = strings.Replace(outdirAbbrev, home, "~", 1)
 		}
 		data["outdirAbbrev"] = outdirAbbrev
-		data["outdirRel"] = outdirInfo.pathRel
-		data["revs"] = outdirInfo.metrics
+		data["outdirRel"] = g.pathRel
+		data["revs"] = g.metrics
 	}
 	data["knownOutdirs"] = s.knownOutdirs
 	data["versionID"] = s.sisoVersion
@@ -313,7 +315,7 @@ func (s *WebuiServer) renderBuildView(wr http.ResponseWriter, r *http.Request, t
 	if rev != "" {
 		data["outdirRevBaseURL"] = fmt.Sprintf("%s/builds/%s", data["outdirBaseURL"], rev)
 	}
-	err := s.ensureCSS()
+	err = s.ensureCSS()
 	if err != nil {
 		return fmt.Errorf("failed to ensure CSS: %w", err)
 	}
@@ -369,7 +371,8 @@ func NewServer(ctx context.Context, cfg ServerConfig) (*WebuiServer, error) {
 		sseServer:        newSseServer(),
 		workspaceRoot:    workspaceRoot,
 		defaultOutdir:    defaultOutdir,
-		outdirInfos:      makeOutdirRegistry(workspaceRoot, cfg.ManifestPath, defaultOutdir),
+		outdirProvider:   makeOutdirProvider(workspaceRoot, cfg.ManifestPath, defaultOutdir),
+		uploadedMetrics:  makeMetricsFileProvider(),
 		port:             cfg.Port,
 		templates:        make(map[string]*template.Template),
 	}
@@ -379,7 +382,7 @@ func NewServer(ctx context.Context, cfg ServerConfig) (*WebuiServer, error) {
 	}
 
 	// Preload default outdir.
-	_, err = s.outdirInfos.Get(outDir)
+	_, err = s.outdirProvider.Get(outDir)
 	if err != nil {
 		return nil, fmt.Errorf("failed to preload outdir: %w", err)
 	}
@@ -417,14 +420,30 @@ func NewServer(ctx context.Context, cfg ServerConfig) (*WebuiServer, error) {
 }
 
 func (s *WebuiServer) LoadStandaloneMetrics(metricsPath string) error {
-	metrics, err := loadBuildMetrics(metricsPath)
-	if err != nil {
-		return fmt.Errorf("failed to load metrics: %w", err)
+	_, err := s.uploadedMetrics.Get(metricsPath)
+	return err
+}
+
+func (s *WebuiServer) invocationSeriesFor(r *http.Request) (invocation.Series[*buildMetrics], error) {
+	if r.PathValue("outroot") == "uploads" && r.PathValue("outsub") == "view" {
+		s.uploadedMetrics.mu.Lock()
+		defer s.uploadedMetrics.mu.Unlock()
+		for _, m := range s.uploadedMetrics.files {
+			if m.metrics.Rev == r.PathValue("rev") {
+				return m, nil
+			}
+		}
+		return nil, fmt.Errorf("not found")
+		// TODO: move into uploaded.go?
 	}
-	s.uploadedMu.Lock()
-	s.uploadedMetrics = append(s.uploadedMetrics, metrics)
-	s.uploadedMu.Unlock()
-	return nil
+
+	outroot := r.PathValue("outroot")
+	outsub := r.PathValue("outsub")
+	path := filepath.Join(outroot, outsub)
+	if outsub == flatOutsub {
+		path = outroot
+	}
+	return s.outdirProvider.Get(path)
 }
 
 func (s *WebuiServer) staticFileHandler(h http.Handler) http.Handler {
@@ -448,7 +467,7 @@ func (s *WebuiServer) mux() http.Handler {
 	//     /static/ matches "/static/", but /{outroot}/{outsub}/ doesn't.
 	//     /{outroot}/{outsub}/ matches "/outroot/outsub/", but /static/ doesn't.
 	outdirRouter := http.NewServeMux()
-	outdirRouter.HandleFunc("/{outroot}/{outsub}/", s.handleInvocationRoot)
+	outdirRouter.HandleFunc("/{outroot}/{outsub}/", s.handleInvocationSeriesRoot)
 	outdirRouter.HandleFunc("/{outroot}/{outsub}/builds/{rev}/logs/", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, fmt.Sprintf("%s/builds/%s/logs/.siso_config", outdirBaseURL(r), url.PathEscape(r.PathValue("rev"))), http.StatusTemporaryRedirect)
 	})
@@ -459,12 +478,12 @@ func (s *WebuiServer) mux() http.Handler {
 	outdirRouter.HandleFunc("POST /{outroot}/{outsub}/runbuild/", s.handleRunbuildPost)
 	outdirRouter.HandleFunc("/{outroot}/{outsub}/reload", s.handleOutdirReload)
 	outdirRouter.HandleFunc("/{outroot}/{outsub}/watch/", s.handleOutdirWatch)
-	outdirRouter.HandleFunc("/{outroot}/{outsub}/builds/{rev}/logs/{file}", s.handleInvocationViewLog)
+	outdirRouter.HandleFunc("/{outroot}/{outsub}/builds/{rev}/logs/{file}", s.handleOutdirViewLog)
 	outdirRouter.HandleFunc("/{outroot}/{outsub}/builds/{rev}/aggregates/", s.handleInvocationAggregates)
 	outdirRouter.HandleFunc("POST /{outroot}/{outsub}/builds/{rev}/steps/{id}/recall/", s.handleInvocationDoRecall)
 	outdirRouter.HandleFunc("/{outroot}/{outsub}/builds/{rev}/steps/{id}/", s.handleInvocationViewStep)
 	outdirRouter.HandleFunc("/{outroot}/{outsub}/builds/{rev}/steps/", s.handleInvocationListSteps)
-	outdirRouter.HandleFunc("/{outroot}/{outsub}/targets/{target}/", s.handleInvocationListTargets)
+	outdirRouter.HandleFunc("/{outroot}/{outsub}/targets/{target}/", s.handleOutdirListTargets)
 
 	// Handlers for uploaded metrics.
 	// We define these explicitly by catching all URLs starting with /uploads/view/, and defining a subset
@@ -474,7 +493,7 @@ func (s *WebuiServer) mux() http.Handler {
 	// Furthermore, we also have hardcoded links built around this URL structure.
 	// It would probably be more ideal to have just "/uploads/{rev}/builds/steps/", but it would require more refactoring.
 	uploadsRouter := http.NewServeMux()
-	uploadsRouter.HandleFunc("/uploads/view/", s.handleInvocationRoot)
+	uploadsRouter.HandleFunc("/uploads/view/", s.handleInvocationSeriesRoot)
 	uploadsRouter.HandleFunc("/uploads/view/builds/{rev}/aggregates/", s.handleInvocationAggregates)
 	uploadsRouter.HandleFunc("POST /uploads/view/builds/{rev}/steps/{id}/recall/", s.handleInvocationDoRecall)
 	uploadsRouter.HandleFunc("/uploads/view/builds/{rev}/steps/{id}/", s.handleInvocationViewStep)
@@ -528,10 +547,11 @@ func (s *WebuiServer) Serve() int {
 	s.sseServer.Start()
 	fmt.Printf("listening on http://localhost:%d/...\n", s.port)
 	// Hack for now to make loading external siso_metrics.json more usable, until we can have the homepage automatically show "here's all the loaded siso_metrics"
-	if len(s.uploadedMetrics) > 0 {
+	// TODO(b/533258244): now that we have the concept of invocation providers, this should become feasible.
+	if len(s.uploadedMetrics.files) > 0 {
 		fmt.Printf("for provided siso_metrics.json:\n")
-		for _, metrics := range s.uploadedMetrics {
-			fmt.Printf("- http://localhost:%d/uploads/view/builds/%s/steps/\n", s.port, metrics.Rev)
+		for _, file := range s.uploadedMetrics.files {
+			fmt.Printf("- http://localhost:%d/uploads/view/builds/%s/steps/\n", s.port, file.metrics.ID())
 		}
 	}
 	err := http.ListenAndServe(fmt.Sprintf(":%d", s.port), s.mux())

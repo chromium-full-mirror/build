@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"io/fs"
 	"iter"
-	"net/http"
 	"os"
 	"path/filepath"
 	"slices"
@@ -18,10 +17,11 @@ import (
 	"time"
 
 	"go.chromium.org/build/siso/toolsupport/ninjautil"
+	"go.chromium.org/build/siso/webui/invocation"
 )
 
-// outdirRegistry manages metrics for a set of outdirs relative to a given workspace root.
-type outdirRegistry struct {
+// outdirProvider manages metrics for a set of outdirs relative to a given workspace root.
+type outdirProvider struct {
 	workspaceRoot   string
 	defaultManifest string
 	defaultOutdir   string
@@ -30,8 +30,8 @@ type outdirRegistry struct {
 	outdirMetrics map[string]*outdirInfo
 }
 
-func makeOutdirRegistry(workspaceRoot, defaultManifest, defaultOutdir string) outdirRegistry {
-	return outdirRegistry{
+func makeOutdirProvider(workspaceRoot, defaultManifest, defaultOutdir string) outdirProvider {
+	return outdirProvider{
 		workspaceRoot:   workspaceRoot,
 		defaultManifest: defaultManifest,
 		defaultOutdir:   defaultOutdir,
@@ -40,7 +40,7 @@ func makeOutdirRegistry(workspaceRoot, defaultManifest, defaultOutdir string) ou
 }
 
 // Get lazy-loads outdir at a given path, returning cached result if possible.
-func (r *outdirRegistry) Get(outdir string) (*outdirInfo, error) {
+func (r *outdirProvider) Get(outdir string) (invocation.Series[*buildMetrics], error) {
 	abs := filepath.Join(r.workspaceRoot, outdir)
 	r.mu.Lock()
 	outdirInfo, ok := r.outdirMetrics[abs]
@@ -63,9 +63,11 @@ func (r *outdirRegistry) Get(outdir string) (*outdirInfo, error) {
 	return outdirInfo, nil
 }
 
-// Invalidate drops info from the registry for a given path.
-func (r *outdirRegistry) Invalidate(outdir string) {
+// Invalidate drops information about the given outdir.
+func (r *outdirProvider) Invalidate(outdir string) {
 	abs := filepath.Join(r.workspaceRoot, outdir)
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	delete(r.outdirMetrics, abs)
 }
 
@@ -174,14 +176,4 @@ func loadOutdirInfo(workspaceRoot, outDir, manifestPath string) (*outdirInfo, er
 		outdirInfo.metrics = append(outdirInfo.metrics, revMetrics)
 	}
 	return outdirInfo, nil
-}
-
-// getOutdirForRequest lazy-loads outdir for the request, returning cached result if possible.
-func (s *WebuiServer) getOutdirForRequest(r *http.Request) (*outdirInfo, error) {
-	outroot := r.PathValue("outroot")
-	outsub := r.PathValue("outsub")
-	if outsub == flatOutsub {
-		return s.outdirInfos.Get(outroot)
-	}
-	return s.outdirInfos.Get(filepath.Join(outroot, outsub))
 }

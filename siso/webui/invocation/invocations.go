@@ -10,14 +10,33 @@ import (
 	"go.chromium.org/build/siso/build"
 )
 
-// Provider serves data for one or more invocations.
-// A provider could be a wrapper around an outdir e.g. out/Default, uploaded siso_metrics.json, etc.
+// Provider is a strategy that owns one or more invocations.
+//
+// For example:
+//
+//   - An outdir provider owns the lifecycle of finding all outdirs (out/Default,
+//     out/Release, etc.) under a single workspace.
+//   - Uploaded metric providers own multiple separate siso_metrics.json.
+//
+// All invocations are returned grouped as a [Series].
 type Provider[T Invocation] interface {
-	// Get returns an invocation from this provider based on a known build ID.
+	Get(key string) (Series[T], error)
+	Invalidate(key string)
+}
+
+// Series groups one or more invocations that are related to each other,
+// and webui offers cross-comparison functionality with them.
+//
+// For example, all invocations in the same outdir should be one series,
+//
+// We don't know whether multiple siso_metrics.json uploads came from the same
+// outdir, so those should be grouped by themselves.
+type Series[T Invocation] interface {
+	// Get returns an invocation from this series based on a known build ID.
 	Get(id string) T
-	// All returns an iterator over all invocations from this provider.
+	// All returns an iterator over all invocations from this series.
 	All() iter.Seq[T]
-	// Latest returns the most recent invocation known to this provider.
+	// Latest returns the most recent invocation in this series.
 	Latest() T
 }
 
