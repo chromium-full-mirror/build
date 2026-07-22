@@ -214,7 +214,7 @@ func (s *WebuiServer) loadView(view string) (*template.Template, error) {
 	if err != nil {
 		return nil, fmt.Errorf("templates not found: %w", err)
 	}
-	tmpl, err = template.New("").Funcs(baseFunctions).ParseFS(templatesFS, "webui_base.html", view)
+	tmpl, err = template.New("").Funcs(baseFunctions).ParseFS(templatesFS, "base.html", view)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse view: %w", err)
 	}
@@ -334,7 +334,7 @@ func (s *WebuiServer) renderBuildView(wr http.ResponseWriter, r *http.Request, t
 // renderBuildViewError renders a build-related error.
 func (s *WebuiServer) renderBuildViewError(status int, message string, w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(status)
-	tmpl, err := s.loadView("_error.html")
+	tmpl, err := s.loadView("error.html")
 	if err != nil {
 		fmt.Fprintf(w, "failed to load error view: %s\n", err)
 		return
@@ -480,7 +480,7 @@ func (s *WebuiServer) mux() http.Handler {
 	outdirRouter.HandleFunc("/{outroot}/{outsub}/watch/", s.handleOutdirWatch)
 	outdirRouter.HandleFunc("/{outroot}/{outsub}/builds/{rev}/logs/{file}", s.handleOutdirViewLog)
 	outdirRouter.HandleFunc("/{outroot}/{outsub}/builds/{rev}/aggregates/", s.handleInvocationAggregates)
-	outdirRouter.HandleFunc("POST /{outroot}/{outsub}/builds/{rev}/steps/{id}/recall/", s.handleInvocationDoRecall)
+	outdirRouter.HandleFunc("POST /{outroot}/{outsub}/builds/{rev}/steps/{id}/recall/", s.handleInvocationStepRecall)
 	outdirRouter.HandleFunc("/{outroot}/{outsub}/builds/{rev}/steps/{id}/", s.handleInvocationViewStep)
 	outdirRouter.HandleFunc("/{outroot}/{outsub}/builds/{rev}/steps/", s.handleInvocationListSteps)
 	outdirRouter.HandleFunc("/{outroot}/{outsub}/targets/{target}/", s.handleOutdirListTargets)
@@ -495,7 +495,7 @@ func (s *WebuiServer) mux() http.Handler {
 	uploadsRouter := http.NewServeMux()
 	uploadsRouter.HandleFunc("/uploads/view/", s.handleInvocationSeriesRoot)
 	uploadsRouter.HandleFunc("/uploads/view/builds/{rev}/aggregates/", s.handleInvocationAggregates)
-	uploadsRouter.HandleFunc("POST /uploads/view/builds/{rev}/steps/{id}/recall/", s.handleInvocationDoRecall)
+	uploadsRouter.HandleFunc("POST /uploads/view/builds/{rev}/steps/{id}/recall/", s.handleInvocationStepRecall)
 	uploadsRouter.HandleFunc("/uploads/view/builds/{rev}/steps/{id}/", s.handleInvocationViewStep)
 	uploadsRouter.HandleFunc("/uploads/view/builds/{rev}/steps/", s.handleInvocationListSteps)
 	mux.HandleFunc("/uploads/view/", func(w http.ResponseWriter, r *http.Request) {

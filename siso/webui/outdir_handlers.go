@@ -217,7 +217,7 @@ func (s *WebuiServer) handleOutdirViewLog(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	tmpl, err := s.loadView("_logs.html")
+	tmpl, err := s.loadView("invocaton_logs.html")
 	if err != nil {
 		s.renderBuildViewError(http.StatusInternalServerError, fmt.Sprintf("failed to load view: %s", err), w, r)
 		return
@@ -356,7 +356,7 @@ func (s *WebuiServer) handleInvocationAggregates(w http.ResponseWriter, r *http.
 		return cmp.Compare(b.TotalUtime, a.TotalUtime)
 	})
 
-	tmpl, err := s.loadView("_aggregates.html")
+	tmpl, err := s.loadView("invocation_aggregates.html")
 	if err != nil {
 		s.renderBuildViewError(http.StatusInternalServerError, fmt.Sprintf("failed to load view: %s", err), w, r)
 		return
@@ -370,7 +370,7 @@ func (s *WebuiServer) handleInvocationAggregates(w http.ResponseWriter, r *http.
 	}
 }
 
-func (s *WebuiServer) handleInvocationDoRecall(w http.ResponseWriter, r *http.Request) {
+func (s *WebuiServer) handleInvocationStepRecall(w http.ResponseWriter, r *http.Request) {
 	series, err := s.invocationSeriesFor(r)
 	if err != nil {
 		s.renderBuildViewError(http.StatusNotFound, fmt.Sprintf("failed to load invocation(s) for %s: %v", r.URL, err), w, r)
@@ -382,7 +382,7 @@ func (s *WebuiServer) handleInvocationDoRecall(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	tmpl, err := s.loadView("_recall.html")
+	tmpl, err := s.loadView("invocation_step_recall.html")
 	if err != nil {
 		s.renderBuildViewError(http.StatusInternalServerError, fmt.Sprintf("failed to load view: %s", err), w, r)
 		return
@@ -417,7 +417,7 @@ func (s *WebuiServer) handleInvocationViewStep(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	tmpl, err := s.loadView("_step.html")
+	tmpl, err := s.loadView("invocation_step.html")
 	if err != nil {
 		s.renderBuildViewError(http.StatusInternalServerError, fmt.Sprintf("failed to load view: %s", err), w, r)
 		return
@@ -473,7 +473,7 @@ func (s *WebuiServer) handleInvocationListSteps(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	tmpl, err := s.loadView("_steps.html")
+	tmpl, err := s.loadView("invocation_steps.html")
 	if err != nil {
 		s.renderBuildViewError(http.StatusInternalServerError, fmt.Sprintf("failed to load view: %s", err), w, r)
 		return
@@ -690,7 +690,7 @@ func (s *WebuiServer) handleOutdirListTargets(w http.ResponseWriter, r *http.Req
 	slices.Sort(inputs)
 	slices.Sort(outputs)
 
-	tmpl, err := s.loadView("_targets.html")
+	tmpl, err := s.loadView("ninja_targets.html")
 	if err != nil {
 		s.renderBuildViewError(http.StatusInternalServerError, fmt.Sprintf("failed to load view: %s", err), w, r)
 		return

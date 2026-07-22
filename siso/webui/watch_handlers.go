@@ -16,7 +16,7 @@ import (
 )
 
 func (s *WebuiServer) handleOutdirWatch(w http.ResponseWriter, r *http.Request) {
-	tmpl, err := s.loadView("_watch.html")
+	tmpl, err := s.loadView("build_watch.html")
 	if err != nil {
 		s.renderBuildViewError(http.StatusInternalServerError, fmt.Sprintf("failed to load view: %s", err), w, r)
 		return
