@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"path/filepath"
 	"slices"
 	"time"
@@ -173,10 +174,12 @@ func (rt reapiTwoPhaseCaching) matchInputRoot(ctx context.Context, inputRootDige
 	ctx, span := trace.NewSpan(ctx, "twophasecaching-match-input-root")
 	defer span.Close(nil)
 	var inputs []string
+	leafDir := make(map[string]bool)
 	err := rt.b.reapiclient.WalkDir(ctx, inputRootDigest, func(dname string, dir *rpb.Directory) error {
 		if log.V(2) {
 			clog.Infof(ctx, "walkdir dir %q: %v", dname, dir)
 		}
+		delete(leafDir, dname)
 		m := make(map[string]merkletree.Entry)
 		var names []string
 		for _, file := range dir.Files {
@@ -194,6 +197,7 @@ func (rt reapiTwoPhaseCaching) matchInputRoot(ctx context.Context, inputRootDige
 			m[name] = merkletree.Entry{
 				Name: path.Path(name),
 			}
+			leafDir[name] = true
 		}
 		for _, symlink := range dir.Symlinks {
 			name := filepath.ToSlash(filepath.Join(dname, symlink.Name))
@@ -230,6 +234,7 @@ func (rt reapiTwoPhaseCaching) matchInputRoot(ctx context.Context, inputRootDige
 				if ent.IsExecutable != e.IsExecutable {
 					return fmt.Errorf("mismatch %q in %q: is_executable local:%t != want:%t", ent.Name, dname, ent.IsExecutable, e.IsExecutable)
 				}
+				inputs = append(inputs, string(e.Name))
 				continue
 			}
 			if e.Target != "" {
@@ -237,6 +242,7 @@ func (rt reapiTwoPhaseCaching) matchInputRoot(ctx context.Context, inputRootDige
 				if ent.Target != e.Target {
 					return fmt.Errorf("mismatch %q in %q: target local:%q != want:%q", ent.Name, dname, ent.Target, e.Target)
 				}
+				inputs = append(inputs, string(e.Name))
 				continue
 			}
 			// want dir
@@ -244,18 +250,26 @@ func (rt reapiTwoPhaseCaching) matchInputRoot(ctx context.Context, inputRootDige
 				return fmt.Errorf("mismatch %q in %q: local digest:%s want:dir", ent.Name, dname, ent.Data.Digest())
 			}
 			if ent.Target != "" {
-				return fmt.Errorf("mismatch %q in %q: local symlink:%q want:dir", ent.Name, dname, ent.Target)
+				fsys := rt.b.hashFS.FileSystem(ctx, rt.b.path.WorkspaceRoot)
+				fi, err := fsys.StatIfExists(string(ent.Name))
+				if err != nil {
+					return fmt.Errorf("mismatch %q in %q: bad symlink %q: %v", ent.Name, dname, ent.Target, err)
+				}
+				if !fi.IsDir() {
+					return fmt.Errorf("mismatch %q in %q: local symlink:%q want:dir", ent.Name, dname, ent.Target)
+				}
+				// match if this is symlink to directory.
 			}
 		}
 		if log.V(2) {
 			clog.Infof(ctx, "walkdir dir %q: match", dname)
 		}
-		inputs = append(inputs, names...)
 		return nil
 	})
 	if err != nil {
 		return nil, err
 	}
+	inputs = append(inputs, slices.Sorted(maps.Keys(leafDir))...)
 	return inputs, nil
 }
 
