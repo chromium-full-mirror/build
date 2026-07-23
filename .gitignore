@@ -16,3 +16,6 @@
 .expect_tests_coverage*
 .vscode
 .idea
+.nova
+.tm_properties
+.zed
