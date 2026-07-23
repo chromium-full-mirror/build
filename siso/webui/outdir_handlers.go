@@ -217,7 +217,7 @@ func (s *WebuiServer) handleOutdirViewLog(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	tmpl, err := s.loadView("invocaton_logs.html")
+	tmpl, err := s.loadView("invocation_logs.html")
 	if err != nil {
 		s.renderBuildViewError(http.StatusInternalServerError, fmt.Sprintf("failed to load view: %s", err), w, r)
 		return
@@ -293,7 +293,7 @@ func (s *WebuiServer) handleOutdirViewLog(w http.ResponseWriter, r *http.Request
 		actualFile = fmt.Sprintf(revFileFormatter, buildSuffix)
 	}
 
-	fileContents, err := os.ReadFile(filepath.Join(s.defaultOutdir, actualFile))
+	fileContents, err := os.ReadFile(filepath.Join(outdirInfo.path, actualFile))
 	if err != nil {
 		s.renderBuildViewError(http.StatusInternalServerError, fmt.Sprintf("failed to open file: %v", err), w, r)
 		return

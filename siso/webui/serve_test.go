@@ -77,6 +77,17 @@ build all: phony foo`), 0644); err != nil {
 `), 0644); err != nil {
 		t.Fatal(err)
 	}
+	for file, content := range map[string]string{
+		"out/Default/.siso_config":     "siso_config default",
+		"out/Default/.siso_filegroups": "siso_filegroups default",
+		"out/Default/siso_localexec":   "siso_localexec default",
+		"out/Default/siso_output":      "siso_output default",
+		"out/Default/siso_trace.json":  `{"trace": "default"}`,
+	} {
+		if err := os.WriteFile(file, []byte(content), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
 
 	// Chromium style outdir with characters that will be URL-encoded.
 	if err := os.MkdirAll("out/Default final v2 (1)", 0755); err != nil {
@@ -97,6 +108,12 @@ build all: phony foo`), 0644); err != nil {
 	if err := os.WriteFile("out_amd64-generic/Release/siso_metrics.json", []byte(`{"build_id": "cros-rev"}
 {"step_id": "step-1", "rule": "cc", "action": "clang", "outputs": ["out2.o"]}
 `), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile("out_amd64-generic/Release/.siso_config", []byte("siso_config cros"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile("out_amd64-generic/Release/siso_output", []byte("siso_output cros"), 0644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -152,7 +169,16 @@ func TestRoutes_Outdirs(t *testing.T) {
 		{"/out/Default/targets/all/", http.StatusOK},
 		{"/out/Default/targets/foo.o/", http.StatusOK},
 		{"/out/Default/targets/nonexistent.o/", http.StatusNotFound},
+		{"/out/Default/builds/test-rev/logs/.siso_config", http.StatusOK},
+		{"/out/Default/builds/test-rev/logs/.siso_filegroups", http.StatusOK},
+		{"/out/Default/builds/test-rev/logs/siso_localexec", http.StatusOK},
+		{"/out/Default/builds/test-rev/logs/siso_output", http.StatusOK},
+		{"/out/Default/builds/test-rev/logs/siso_trace.json", http.StatusOK},
+		{"/out/Default/builds/test-rev/logs/unknown_file", http.StatusNotFound},
+		{"/out/Default/builds/nonexistent-rev/logs/.siso_config", http.StatusNotFound},
 		{"/out_amd64-generic/Release/builds/cros-rev/steps/step-1/", http.StatusOK},
+		{"/out_amd64-generic/Release/builds/cros-rev/logs/.siso_config", http.StatusOK},
+		{"/out_amd64-generic/Release/builds/cros-rev/logs/siso_output", http.StatusOK},
 	} {
 		rec := httptest.NewRecorder()
 		s.mux().ServeHTTP(rec, httptest.NewRequest("GET", tc.path, nil))
@@ -204,6 +230,8 @@ func TestRedirects(t *testing.T) {
 		{"/out/Default/", "/out/Default/builds/test-rev/steps/"},
 		{"/out/Default/targets/", "/out/Default/targets/all/"},
 		{"/out/Default/reload", "/out/Default"},
+		{"/out/Default/builds/test-rev/logs/", "/out/Default/builds/test-rev/logs/.siso_config"},
+		{"/out_amd64-generic/Release/builds/cros-rev/logs/", "/out_amd64-generic/Release/builds/cros-rev/logs/.siso_config"},
 	} {
 		rec := httptest.NewRecorder()
 		s.mux().ServeHTTP(rec, httptest.NewRequest("GET", tc.path, nil))
@@ -214,6 +242,41 @@ func TestRedirects(t *testing.T) {
 		if got := rec.Header().Get("Location"); got != tc.want {
 			t.Errorf("GET %s redirect = %q; want %q", tc.path, got, tc.want)
 		}
+	}
+}
+
+func TestRoutes_ViewLog(t *testing.T) {
+	s, _ := mustServer(t.Context(), t)
+
+	for _, tc := range []struct {
+		path, want string
+	}{
+		{"/out/Default/builds/test-rev/logs/siso_output", "siso_output default"},
+		{"/out_amd64-generic/Release/builds/cros-rev/logs/siso_output", "siso_output cros"},
+	} {
+		// Test the HTML page.
+		t.Run(tc.path, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			s.mux().ServeHTTP(rec, httptest.NewRequest("GET", tc.path, nil))
+			if rec.Code != http.StatusOK {
+				t.Errorf("GET %s = %d; want %d", tc.path, rec.Code, http.StatusOK)
+			}
+			if !strings.Contains(rec.Body.String(), tc.want) {
+				t.Errorf("GET %s body = %q; want it to contain %q", tc.path, rec.Body.String(), tc.want)
+			}
+		})
+
+		// Test the raw file.
+		t.Run(tc.path+"?raw=true", func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			s.mux().ServeHTTP(rec, httptest.NewRequest("GET", tc.path+"?raw=true", nil))
+			if rec.Code != http.StatusOK {
+				t.Errorf("GET %s = %d; want %d", tc.path, rec.Code, http.StatusOK)
+			}
+			if got := rec.Body.String(); got != tc.want {
+				t.Errorf("GET %s body = %q; want %q", tc.path, got, tc.want)
+			}
+		})
 	}
 }
 
