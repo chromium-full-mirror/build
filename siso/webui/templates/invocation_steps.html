@@ -87,8 +87,8 @@ found in the LICENSE file. */}}
         Ninja rules
         <md-ripple></md-ripple>
       </button>
-      <div popover class="filter-popover" id="action-filter-popover">
-        <div class="popover-content">
+      <div popover class="menu-popover filter-popover" id="action-filter-popover">
+        <div class="menu-popover-content">
           <ul>
             {{range .actionCounts}}
             {{if gt .Count 1}}
@@ -112,8 +112,8 @@ found in the LICENSE file. */}}
         Siso configs
         <md-ripple></md-ripple>
       </button>
-      <div popover class="filter-popover" id="rule-filter-popover">
-        <div class="popover-content">
+      <div popover class="menu-popover filter-popover" id="rule-filter-popover">
+        <div class="menu-popover-content">
           <ul>
             {{range .ruleCounts}}
             <li>

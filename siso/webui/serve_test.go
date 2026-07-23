@@ -296,7 +296,7 @@ func TestOutdirMenu_RendersCorrectURLs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to parse page: %v", err)
 	}
-	doc.Find("#outdir-menu md-menu-item").Each(func(_ int, menuItem *goquery.Selection) {
+	doc.Find("#invocation-series-menu md-menu-item").Each(func(_ int, menuItem *goquery.Selection) {
 		href, _ := menuItem.Attr("href")
 		name := strings.TrimSpace(menuItem.Text())
 		items[name] = href

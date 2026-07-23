@@ -42,8 +42,8 @@ found in the LICENSE file. */}}
         <p class="subtitle">{{.versionID}}</p>
         <div class="breadcrumbs">
           <div class="breadcrumb">
-            <md-text-button id="outdir-menu-button" class="breadcrumb-menu-button" trailing-icon
-                onclick="document.getElementById('outdir-menu').open = !document.getElementById('outdir-menu').open">
+            <button type="button" id="invocation-series-menu-button" class="breadcrumb-menu-button"
+                popovertarget="invocation-series-menu">
               {{if .outdirAbbrev}}
                 {{.outdirAbbrev}}
               {{else if .viewingUploaded}}
@@ -51,19 +51,39 @@ found in the LICENSE file. */}}
               {{else}}
                 <em>unknown</em>
               {{end}}
-              <md-icon slot="icon"></md-icon>
-            </md-text-button>
-            <md-menu id="outdir-menu" anchor="outdir-menu-button" positioning="popover">
-              {{range $knownOutdir := .knownOutdirs}}
-              <md-menu-item href="/{{outdirEscape $knownOutdir}}/">
+              <md-icon></md-icon>
+              <md-ripple></md-ripple>
+            </button>
+            <div popover class="menu-popover" id="invocation-series-menu">
+              <div class="menu-popover-content">
+                <div>
+                    Current
+                </div>
+                <p>
+                    {{if .outdirAbbrev}}
+                      {{.outdirAbbrev}}
+                    {{else if .viewingUploaded}}
+                      <em>uploaded</em>
+                    {{else}}
+                      <em>unknown</em>
+                    {{end}}
+                    <md-icon-button href="{{.outdirBaseURL}}/reload">
+                      <md-icon>refresh</md-icon>
+                    </md-icon-button>
+                </p>
+                <md-divider role="separator"></md-divider>
+                <div>
+                    Outdirs
+                </div>
+                {{range $knownOutdir := .knownOutdirs}}
+                <md-menu-item href="/{{outdirEscape $knownOutdir}}/">
                 <div slot="headline">{{$knownOutdir}}</div>
-              </md-menu-item>
-              {{end}}
-            </md-menu>
+                </md-menu-item>
+                {{end}}
+                <md-elevation></md-elevation>
+              </div>
+            </div>
           </div>
-          <md-icon-button href="{{.outdirBaseURL}}/reload">
-            <md-icon>refresh</md-icon>
-          </md-icon-button>
         </div>
       </div>
       <div class="header-controls">

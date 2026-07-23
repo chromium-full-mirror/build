@@ -64,27 +64,7 @@ html, body {
     }
 
     .breadcrumb-menu-button {
-        /* default <md-text-button> color is --md-sys-color-primary which is the
-        * accent color, this stands out too much so use the same color that
-        * <md-icon-button> uses i.e. --md-sys-color-on-surface-variant. */
-        --md-text-button-icon-color: var(--md-sys-color-on-surface-variant);
-        --md-text-button-label-text-color: var(--md-sys-color-on-surface-variant);
-        --md-text-button-hover-icon-color: var(--md-sys-color-on-surface-variant);
-        --md-text-button-hover-label-text-color:
-            var(--md-sys-color-on-surface-variant);
-        --md-text-button-hover-state-layer-color:
-            var(--md-sys-color-on-surface-variant);
-        --md-text-button-focus-icon-color: var(--md-sys-color-on-surface-variant);
-        --md-text-button-focus-label-text-color:
-            var(--md-sys-color-on-surface-variant);
-        --md-text-button-focus-state-layer-color:
-            var(--md-sys-color-on-surface-variant);
-        --md-text-button-pressed-icon-color:
-            var(--md-sys-color-on-surface-variant);
-        --md-text-button-pressed-label-text-color:
-            var(--md-sys-color-on-surface-variant);
-        --md-text-button-pressed-state-layer-color:
-            var(--md-sys-color-on-surface-variant);
+        --md-icon-size: 18px;
     }
     .breadcrumb-menu-button md-icon::before {
         content: 'arrow_drop_down';
@@ -348,7 +328,8 @@ html, body {
     }
 }
 
-.filter-button {
+.filter-button,
+.breadcrumb-menu-button {
     position: relative;
     background: none;
     border: none;
@@ -357,32 +338,42 @@ html, body {
     font-size: var(--md-sys-typescale-label-large-size);
     display: flex;
     align-items: center;
-    margin-top: 6px;
     padding: 0 12px;
     gap: 8px;
     height: 36px;
 }
-.filter-popover {
-    position-area: center right;
-    position-try-fallbacks: top right;
+.breadcrumb-menu-button {
+    height: 28px;
+}
+
+.menu-popover {
     background: transparent;
     border: none;
-    margin: 0 -16px;
+    margin: -16px;
     padding: 16px;
+    position-area: block-end span-inline-end;
 
-    .popover-content {
+    .menu-popover-content {
         position: relative;
         background: var(--md-sys-color-surface-container);
         --md-elevation-level: 2;
         padding: 8px 16px;
     }
-    .popover-content ul {
+    .menu-popover-content ul {
         list-style: none;
         padding: 0;
     }
-    .popover-content li {
+    .menu-popover-content li {
         padding: 4px 0;
     }
+}
+
+.filter-button {
+    margin-top: 6px;
+}
+.filter-popover {
+    position-area: center right;
+    position-try-fallbacks: top right;
 }
 
 .data-table-container {
