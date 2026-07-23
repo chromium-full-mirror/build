@@ -7,6 +7,7 @@
 html, body {
     margin: 0;
     padding: 0;
+    --header-height: 36px;
 }
 
 #page {
@@ -20,6 +21,11 @@ html, body {
 
     .header {
         grid-area: header;
+        position: sticky;
+        top: 0;
+        z-index: 2;
+        background-color: var(--md-sys-color-surface-container);
+        height: var(--header-height);
         display: flex;
         justify-content: space-between;
         align-items: center;
@@ -102,11 +108,12 @@ html, body {
     grid-area: navrail;
     align-self: start;
     position: sticky;
-    top: 0;
+    top: var(--header-height);
 }
 #page-view {
     background: var(--md-sys-color-surface);
     border-radius: var(--md-sys-shape-corner-large);
+    margin-right: 12px;
 }
 #page-content {
     padding: 16px;
@@ -123,7 +130,6 @@ html, body {
 }
 #page-sidebar {
     grid-area: sidebar;
-    padding-top: 8px;
     /* Even though this is part of the grid, it needs to be explicitly set for
      * some reason, otherwise child elements won't wrap. TODO: why? */
     width: 300px;
@@ -265,7 +271,7 @@ html, body {
 
 .data-table-filter {
     position: sticky;
-    top: 12px;
+    top: calc(16px + var(--header-height));
 }
 .step-views {
     display: flex;
