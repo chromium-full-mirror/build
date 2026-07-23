@@ -40,17 +40,19 @@ found in the LICENSE file. */}}
       <div class="header-title">
         <h1>sisoweb</h1>
         <p class="subtitle">{{.versionID}}</p>
-        <div class="breadcrumbs">
+        <div class="breadcrumbs" id="breadcrumbs" hx-swap-oob="true">
           <div class="breadcrumb">
             <button type="button" id="invocation-series-menu-button" class="breadcrumb-menu-button"
                 popovertarget="invocation-series-menu">
-              {{if .outdirAbbrev}}
-                {{.outdirAbbrev}}
-              {{else if .viewingUploaded}}
-                <em>uploaded</em>
-              {{else}}
-                <em>unknown</em>
-              {{end}}
+              <span class="breadcrumb-label">
+                {{if .outdirAbbrev}}
+                  {{.outdirAbbrev}}
+                {{else if .viewingUploaded}}
+                  <em>uploaded</em>
+                {{else}}
+                  <em>unknown</em>
+                {{end}}
+              </span>
               <md-icon></md-icon>
               <md-ripple></md-ripple>
             </button>
@@ -84,6 +86,51 @@ found in the LICENSE file. */}}
               </div>
             </div>
           </div>
+
+          {{/* Invocation selector for invocation-related pages */}}
+          {{/* TODO: Introduce a "what type of page am I on" or "is this an invocation page" variable, this is really hacky. */}}
+          {{if and .currentRev (urlPathHasPrefix .currentURL (printf "%s/builds/" .outdirBaseURL))}}
+          {{$currentRev := .currentRev}}
+          <div class="breadcrumb">
+            <button type="button" id="invocation-menu-button" class="breadcrumb-menu-button"
+                popovertarget="invocation-menu">
+              <span class="breadcrumb-label">
+                  Invocation {{$currentRev}}
+              </span>
+              {{if .revs}}
+                <md-icon></md-icon>
+              {{end}}
+              <md-ripple></md-ripple>
+            </button>
+            {{if .revs}}
+            <div popover class="menu-popover" id="invocation-menu">
+              <div class="menu-popover-content">
+                {{/* Really hacky method of allowing switching between invocations
+                     but keeping the active subtab. */}}
+                {{/* TODO: Introduce a route generator, this logic is really unpleasant. */}}
+                {{$activeTab := "steps"}}
+                {{if urlPathHasPrefix .currentURL (printf "%s/builds/%s/aggregates/" .outdirBaseURL .currentRev)}}
+                  {{$activeTab = "aggregates"}}
+                {{else if urlPathHasPrefix .currentURL (printf "%s/builds/%s/logs/" .outdirBaseURL .currentRev)}}
+                  {{$activeTab = "logs"}}
+                {{end}}
+                <div>
+                    Invocations
+                </div>
+                {{range $r := .revs}}
+                <md-menu-item href="{{$.outdirBaseURL}}/builds/{{$r.Rev}}/{{$activeTab}}/">
+                  <div slot="headline">Invocation {{$r.Rev}}</div>
+                </md-menu-item>
+                {{end}}
+                <md-elevation></md-elevation>
+              </div>
+            </div>
+            {{end}}
+          </div>
+          {{end}}
+
+          {{/* Sub-breadcrumbs defined by the individual page templates */}}
+          {{block "breadcrumbs" .}}{{end}}
         </div>
       </div>
       <div class="header-controls">

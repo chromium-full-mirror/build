@@ -2,6 +2,21 @@
 Use of this source code is governed by a BSD-style license that can be
 found in the LICENSE file. */}}
 
+{{define "breadcrumbs"}}
+  {{if .file}}
+    <div class="breadcrumb">
+      <a href="{{.outdirRevBaseURL}}/logs/" class="breadcrumb-label">Raw Logs</a>
+    </div>
+    <div class="breadcrumb">
+      <span class="breadcrumb-label">{{.file}}</span>
+    </div>
+  {{else}}
+    <div class="breadcrumb">
+      <span class="breadcrumb-label">Raw Logs</span>
+    </div>
+  {{end}}
+{{end}}
+
 {{define "content"}}
 {{$outdirRevBaseURL:=.outdirRevBaseURL}}
 {{$currentURL:=.currentURL}}

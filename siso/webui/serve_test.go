@@ -313,3 +313,43 @@ func TestOutdirMenu_RendersCorrectURLs(t *testing.T) {
 		t.Errorf("outdir menu mismatch (-want +got):\n%s", diff)
 	}
 }
+
+func TestBreadcrumbs(t *testing.T) {
+	s, tmp := mustServer(t.Context(), t)
+
+	// Since the outdir path is absolute and dynamically generated via t.TempDir(),
+	// we determine the expected outdir abbrev label dynamically.
+	outdirAbbrev := filepath.Join(tmp, "out/Default")
+
+	for _, tc := range []struct {
+		path string
+		want []string
+	}{
+		{"/out/Default/builds/test-rev/steps/", []string{outdirAbbrev, "Invocation test-rev", "Steps"}},
+		{"/out/Default/builds/test-rev/steps/step-1/", []string{outdirAbbrev, "Invocation test-rev", "Steps", "out1.o"}},
+		{"/out/Default/builds/test-rev/aggregates/", []string{outdirAbbrev, "Invocation test-rev", "Aggregates"}},
+		{"/out/Default/targets/all/", []string{outdirAbbrev, "Targets", "all"}},
+		{"/out/Default/targets/foo.o/", []string{outdirAbbrev, "Targets", "foo.o"}},
+		{"/out/Default/builds/test-rev/logs/.siso_config", []string{outdirAbbrev, "Invocation test-rev", "Raw Logs", ".siso_config"}},
+		{"/out/Default/runbuild/", []string{outdirAbbrev, "Run Build"}},
+		{"/out/Default/watch/", []string{outdirAbbrev, "Watch"}},
+	} {
+		t.Run(tc.path, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			s.mux().ServeHTTP(rec, httptest.NewRequest("GET", tc.path, nil))
+			doc, err := goquery.NewDocumentFromReader(rec.Body)
+			if err != nil {
+				t.Fatalf("failed to parse HTML: %v", err)
+			}
+
+			var got []string
+			doc.Find("#breadcrumbs .breadcrumb-label").Each(func(_ int, s *goquery.Selection) {
+				got = append(got, strings.TrimSpace(s.Text()))
+			})
+
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Errorf("breadcrumbs mismatch for %s (-want +got):\n%s", tc.path, diff)
+			}
+		})
+	}
+}

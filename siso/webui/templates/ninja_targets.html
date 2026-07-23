@@ -2,6 +2,21 @@
 Use of this source code is governed by a BSD-style license that can be
 found in the LICENSE file. */}}
 
+{{define "breadcrumbs"}}
+  {{if .target}}
+    <div class="breadcrumb">
+      <a class="breadcrumb-label" href="{{.outdirBaseURL}}/targets/">Targets</a>
+    </div>
+    <div class="breadcrumb">
+      <span class="breadcrumb-label">{{.target}}</span>
+    </div>
+  {{else}}
+    <div class="breadcrumb">
+      <span class="breadcrumb-label">Targets</span>
+    </div>
+  {{end}}
+{{end}}
+
 {{define "content"}}
 <h2><code>{{.target}}</code></h2>
 {{$outdirBaseURL:=.outdirBaseURL}}
