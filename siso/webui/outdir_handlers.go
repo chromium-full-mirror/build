@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"go.chromium.org/build/siso/build"
+	"go.chromium.org/build/siso/build/metadata"
 	"go.chromium.org/build/siso/toolsupport/ninjautil"
 )
 
@@ -41,6 +42,7 @@ type fieldAggregate struct {
 type buildMetrics struct {
 	Mtime         time.Time
 	Rev           string // TODO: rename to BuildID?
+	Info          *metadata.InvocationInfo
 	buildDuration build.IntervalMetric
 	lastStepID    string
 	ruleCounts    []fieldAggregate
@@ -59,6 +61,11 @@ type buildMetrics struct {
 // ID returns the build ID of this invocation.
 func (b *buildMetrics) ID() string {
 	return b.Rev
+}
+
+// BuildDuration returns the build duration of this invocation.
+func (b *buildMetrics) BuildDuration() build.IntervalMetric {
+	return b.buildDuration
 }
 
 // Steps returns the step metrics struct for this invocation.
@@ -159,6 +166,25 @@ func loadBuildMetrics(metricsPath string) (*buildMetrics, error) {
 		return cmp.Compare(b.Count, a.Count)
 	})
 
+	// Attempt to load corresponding invocation metadata if available.
+	dir := filepath.Dir(metricsPath)
+	if matches, err := filepath.Glob(filepath.Join(dir, "siso_metadata*.json")); err == nil {
+		for _, match := range matches {
+			data, err := os.ReadFile(match)
+			if err != nil {
+				continue
+			}
+			var info metadata.InvocationInfo
+			if err := json.Unmarshal(data, &info); err != nil {
+				continue
+			}
+			if info.BuildID == metricsData.Rev || len(matches) == 1 {
+				metricsData.Info = &info
+				break
+			}
+		}
+	}
+
 	return metricsData, nil
 }
 
@@ -202,6 +228,32 @@ func (s *WebuiServer) handleInvocationSeriesRoot(w http.ResponseWriter, r *http.
 	}
 
 	http.Redirect(w, r, fmt.Sprintf("%s/builds/%s/steps/", outdirBaseURL(r), series.Latest().ID()), http.StatusTemporaryRedirect)
+}
+
+func (s *WebuiServer) handleInvocationDetails(w http.ResponseWriter, r *http.Request) {
+	series, err := s.invocationSeriesFor(r)
+	if err != nil {
+		s.renderBuildViewError(http.StatusNotFound, fmt.Sprintf("failed to load invocation(s) for %s: %v", r.URL, err), w, r)
+		return
+	}
+	metrics := series.Get(r.PathValue("rev"))
+	if metrics == nil {
+		s.renderBuildViewError(http.StatusNotFound, fmt.Sprintf("no metrics found for request %s", r.URL), w, r)
+		return
+	}
+
+	tmpl, err := s.loadView("invocation_details.html")
+	if err != nil {
+		s.renderBuildViewError(http.StatusInternalServerError, fmt.Sprintf("failed to load view: %s", err), w, r)
+		return
+	}
+
+	err = s.renderBuildView(w, r, tmpl, map[string]any{
+		"metrics": metrics,
+	})
+	if err != nil {
+		s.renderBuildViewError(http.StatusInternalServerError, fmt.Sprintf("failed to render view: %v", err), w, r)
+	}
 }
 
 func (s *WebuiServer) handleOutdirViewLog(w http.ResponseWriter, r *http.Request) {

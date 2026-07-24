@@ -77,6 +77,15 @@ build all: phony foo`), 0644); err != nil {
 `), 0644); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile("out/Default/siso_metadata.json", []byte(`
+{
+  "build_id": "test-rev",
+  "siso_version": "0.0.1",
+  "targets": ["all"],
+  "machine": {"platform": {"os": "linux", "architecture": "amd64"}, "cpu": {"brand": "Intel CPU", "logical_cores": 8, "physical_cores": 4}, "memory": {"total": 17179869184}}
+}`), 0644); err != nil {
+		t.Fatal(err)
+	}
 	for file, content := range map[string]string{
 		"out/Default/.siso_config":     "siso_config default",
 		"out/Default/.siso_filegroups": "siso_filegroups default",
@@ -165,6 +174,7 @@ func TestRoutes_Outdirs(t *testing.T) {
 		{"/out/Default/builds/test-rev/steps/step-0/", http.StatusNotFound},
 		{"/out/Default/builds/nonexistent-rev/steps/step-1/", http.StatusNotFound},
 		{"/out/Default/builds/cros-rev/steps/step-1/", http.StatusNotFound},
+		{"/out/Default/builds/test-rev/details/", http.StatusOK},
 		{"/out/Default/builds/test-rev/aggregates/", http.StatusOK},
 		{"/out/Default/targets/all/", http.StatusOK},
 		{"/out/Default/targets/foo.o/", http.StatusOK},
@@ -177,6 +187,7 @@ func TestRoutes_Outdirs(t *testing.T) {
 		{"/out/Default/builds/test-rev/logs/unknown_file", http.StatusNotFound},
 		{"/out/Default/builds/nonexistent-rev/logs/.siso_config", http.StatusNotFound},
 		{"/out_amd64-generic/Release/builds/cros-rev/steps/step-1/", http.StatusOK},
+		{"/out_amd64-generic/Release/builds/cros-rev/details/", http.StatusOK},
 		{"/out_amd64-generic/Release/builds/cros-rev/logs/.siso_config", http.StatusOK},
 		{"/out_amd64-generic/Release/builds/cros-rev/logs/siso_output", http.StatusOK},
 	} {
@@ -208,6 +219,7 @@ func TestRoutes_UploadedMetrics(t *testing.T) {
 	}{
 		{"/uploads/view/builds/uploaded-build-id/steps/", http.StatusOK},
 		{"/uploads/view/builds/uploaded-build-id/steps/step-1/", http.StatusOK},
+		{"/uploads/view/builds/uploaded-build-id/details/", http.StatusOK},
 		{"/uploads/view/builds/nonexistent-rev/steps/", http.StatusNotFound},
 		{"/uploads/view/builds/uploaded-build-id/aggregates/", http.StatusOK},
 	} {
@@ -327,6 +339,7 @@ func TestBreadcrumbs(t *testing.T) {
 	}{
 		{"/out/Default/builds/test-rev/steps/", []string{outdirAbbrev, "Invocation test-rev", "Build Steps"}},
 		{"/out/Default/builds/test-rev/steps/step-1/", []string{outdirAbbrev, "Invocation test-rev", "Build Steps", "out1.o"}},
+		{"/out/Default/builds/test-rev/details/", []string{outdirAbbrev, "Invocation test-rev", "Details"}},
 		{"/out/Default/builds/test-rev/aggregates/", []string{outdirAbbrev, "Invocation test-rev", "Aggregates"}},
 		{"/out/Default/targets/all/", []string{outdirAbbrev, "Targets", "all"}},
 		{"/out/Default/targets/foo.o/", []string{outdirAbbrev, "Targets", "foo.o"}},

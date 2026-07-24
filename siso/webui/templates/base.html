@@ -97,7 +97,9 @@ found in the LICENSE file. */}}
                      but keeping the active subtab. */}}
                 {{/* TODO: Introduce a route generator, this logic is really unpleasant. */}}
                 {{$activeTab := "steps"}}
-                {{if urlPathHasPrefix .currentURL (printf "%s/builds/%s/aggregates/" .outdirBaseURL .currentRev)}}
+                {{if urlPathHasPrefix .currentURL (printf "%s/builds/%s/details/" .outdirBaseURL .currentRev)}}
+                  {{$activeTab = "details"}}
+                {{else if urlPathHasPrefix .currentURL (printf "%s/builds/%s/aggregates/" .outdirBaseURL .currentRev)}}
                   {{$activeTab = "aggregates"}}
                 {{else if urlPathHasPrefix .currentURL (printf "%s/builds/%s/logs/" .outdirBaseURL .currentRev)}}
                   {{$activeTab = "logs"}}

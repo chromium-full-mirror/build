@@ -147,7 +147,25 @@ var (
 		"timeRFC3339": func(t time.Time) string {
 			return t.Format(time.RFC3339)
 		},
+		"formatBytes": func(b uint64) string {
+			if b == 0 {
+				return "N/A"
+			}
+			const unit = 1024
+			if b < unit {
+				return fmt.Sprintf("%d B", b)
+			}
+			v, i := float64(b)/unit, 0
+			for ; v >= unit && i < len(byteUnits)-1; i++ {
+				v /= unit
+			}
+			return fmt.Sprintf("%.1f %s", v, byteUnits[i])
+		},
+		"joinStrings": func(elems []string, sep string) string {
+			return strings.Join(elems, sep)
+		},
 	}
+	byteUnits     = [...]string{"KiB", "MiB", "GiB", "TiB", "PiB", "EiB"}
 	sisoMetricsRe = regexp.MustCompile(`siso_metrics.(\d+).json`)
 	sortParamRe   = regexp.MustCompile(`^(?P<sortBy>[a-z]+?)(?P<order>Asc|Dsc)$`)
 )
@@ -468,6 +486,7 @@ func (s *WebuiServer) mux() http.Handler {
 	outdirRouter.HandleFunc("POST /{outroot}/{outsub}/runbuild/", s.handleRunbuildPost)
 	outdirRouter.HandleFunc("/{outroot}/{outsub}/reload", s.handleOutdirReload)
 	outdirRouter.HandleFunc("/{outroot}/{outsub}/watch/", s.handleOutdirWatch)
+	outdirRouter.HandleFunc("/{outroot}/{outsub}/builds/{rev}/details/", s.handleInvocationDetails)
 	outdirRouter.HandleFunc("/{outroot}/{outsub}/builds/{rev}/logs/{file}", s.handleOutdirViewLog)
 	outdirRouter.HandleFunc("/{outroot}/{outsub}/builds/{rev}/aggregates/", s.handleInvocationAggregates)
 	outdirRouter.HandleFunc("POST /{outroot}/{outsub}/builds/{rev}/steps/{id}/recall/", s.handleInvocationStepRecall)
@@ -484,6 +503,7 @@ func (s *WebuiServer) mux() http.Handler {
 	// It would probably be more ideal to have just "/uploads/{rev}/builds/steps/", but it would require more refactoring.
 	uploadsRouter := http.NewServeMux()
 	uploadsRouter.HandleFunc("/uploads/view/", s.handleInvocationSeriesRoot)
+	uploadsRouter.HandleFunc("/uploads/view/builds/{rev}/details/", s.handleInvocationDetails)
 	uploadsRouter.HandleFunc("/uploads/view/builds/{rev}/aggregates/", s.handleInvocationAggregates)
 	uploadsRouter.HandleFunc("POST /uploads/view/builds/{rev}/steps/{id}/recall/", s.handleInvocationStepRecall)
 	uploadsRouter.HandleFunc("/uploads/view/builds/{rev}/steps/{id}/", s.handleInvocationViewStep)
