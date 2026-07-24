@@ -86,7 +86,7 @@ html, body {
     content: 'brightness_7';
 }
 
-#page-tabs {
+#page-navrail {
     grid-area: navrail;
     align-self: start;
     position: sticky;
@@ -99,22 +99,31 @@ html, body {
 }
 #page-content {
     padding: 16px;
-}
-#page-content:has(#page-sidebar) {
-    gap: 16px;
-    display: grid;
-    grid-template-columns:
-        300px
-        /* Prevent elements like <pre> horizontally overflowing
-        * https://css-tricks.com/preventing-a-grid-blowout/ */
-        minmax(0, 1fr);
-    grid-template-areas: "sidebar inner-content";
-}
-#page-sidebar {
-    grid-area: sidebar;
-    /* Even though this is part of the grid, it needs to be explicitly set for
-     * some reason, otherwise child elements won't wrap. TODO: why? */
-    width: 300px;
+    &:has(#page-sidebar) {
+        gap: 16px;
+        display: grid;
+        grid-template-columns:
+            300px
+            /* Prevent elements like <pre> horizontally overflowing
+            * https://css-tricks.com/preventing-a-grid-blowout/ */
+            minmax(0, 1fr);
+        grid-template-areas: "sidebar inner-content";
+    }
+    &:has(#page-sidebar):has(#page-tabs) {
+        grid-template-areas:
+            "tabs tabs"
+            "sidebar inner-content";
+    }
+
+    #page-tabs {
+        grid-area: tabs;
+    }
+    #page-sidebar {
+        grid-area: sidebar;
+        /* Even though this is part of the grid, it needs to be explicitly set for
+         * some reason, otherwise child elements won't wrap. TODO: why? */
+        width: 300px;
+    }
 }
 
 .page-tab {

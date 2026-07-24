@@ -325,8 +325,8 @@ func TestBreadcrumbs(t *testing.T) {
 		path string
 		want []string
 	}{
-		{"/out/Default/builds/test-rev/steps/", []string{outdirAbbrev, "Invocation test-rev", "Steps"}},
-		{"/out/Default/builds/test-rev/steps/step-1/", []string{outdirAbbrev, "Invocation test-rev", "Steps", "out1.o"}},
+		{"/out/Default/builds/test-rev/steps/", []string{outdirAbbrev, "Invocation test-rev", "Build Steps"}},
+		{"/out/Default/builds/test-rev/steps/step-1/", []string{outdirAbbrev, "Invocation test-rev", "Build Steps", "out1.o"}},
 		{"/out/Default/builds/test-rev/aggregates/", []string{outdirAbbrev, "Invocation test-rev", "Aggregates"}},
 		{"/out/Default/targets/all/", []string{outdirAbbrev, "Targets", "all"}},
 		{"/out/Default/targets/foo.o/", []string{outdirAbbrev, "Targets", "foo.o"}},
