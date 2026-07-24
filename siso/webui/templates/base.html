@@ -143,7 +143,9 @@ found in the LICENSE file. */}}
       </a>
     </nav>
     <div id="page-view">
+      {{block "tabs" .}}{{end}}
       <div id="page-content" class="content">{{template "content" .}}</div>
+      {{block "sidebar" .}}{{end}}
     </div>
   </div>
 </body>

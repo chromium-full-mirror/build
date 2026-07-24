@@ -8,18 +8,21 @@ found in the LICENSE file. */}}
 </div>
 {{end}}
 
-{{define "content"}}
-{{$outdirRel:=.outdirRel}}
-{{$outdirRevBaseURL:=.outdirRevBaseURL}}
-{{$currentURL:=.currentURL}}
-{{$currentRev:=.currentRev}}
-{{$buildDuration:=.buildDuration}}
+{{define "tabs"}}
 <md-tabs id="page-tabs" hx-push-url="true">
   {{/* TODO: we need some sort of "route generator" function because this is brittle. */}}
   <md-primary-tab hx-get="{{.outdirRevBaseURL}}/steps/" {{if urlPathHasPrefix .currentURL (printf "%s/steps/" .outdirRevBaseURL)}}selected{{end}}>Build Steps</md-primary-tab>
   <md-primary-tab hx-get="{{.outdirRevBaseURL}}/logs/" {{if urlPathHasPrefix .currentURL (printf "%s/logs/" .outdirRevBaseURL)}}selected{{end}}>Logs</md-primary-tab>
   <md-primary-tab hx-get="{{.outdirRevBaseURL}}/aggregates/" {{if urlPathHasPrefix .currentURL (printf "%s/aggregates/" .outdirRevBaseURL)}}selected{{end}}>Performance</md-primary-tab>
 </md-tabs>
+{{end}}
+
+{{define "sidebar"}}
+{{$outdirRel:=.outdirRel}}
+{{$outdirRevBaseURL:=.outdirRevBaseURL}}
+{{$currentURL:=.currentURL}}
+{{$currentRev:=.currentRev}}
+{{$buildDuration:=.buildDuration}}
 <aside id="page-sidebar">
 <form class="data-table-filter"
     {{/* Need to add ?sort= to the URL manually if set because sort is handled outside of this form. */}}
@@ -144,6 +147,14 @@ found in the LICENSE file. */}}
   </div>
 </form>
 </aside>
+{{end}}
+
+{{define "content"}}
+{{$outdirRel:=.outdirRel}}
+{{$outdirRevBaseURL:=.outdirRevBaseURL}}
+{{$currentURL:=.currentURL}}
+{{$currentRev:=.currentRev}}
+{{$buildDuration:=.buildDuration}}
 <div class="data-table-container">
   <table>
     <thead>

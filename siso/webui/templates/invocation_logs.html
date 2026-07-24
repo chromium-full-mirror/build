@@ -17,17 +17,20 @@ found in the LICENSE file. */}}
   {{end}}
 {{end}}
 
-{{define "content"}}
-{{$outdirRevBaseURL:=.outdirRevBaseURL}}
-{{$currentURL:=.currentURL}}
-{{$currentRev:=.currentRev}}
-{{$allowedFiles:=.allowedFiles}}
+{{define "tabs"}}
 <md-tabs id="page-tabs" hx-push-url="true">
   {{/* TODO: we need some sort of "route generator" function because this is brittle. */}}
   <md-primary-tab hx-get="{{.outdirRevBaseURL}}/steps/" {{if urlPathHasPrefix .currentURL (printf "%s/steps/" .outdirRevBaseURL)}}selected{{end}}>Build Steps</md-primary-tab>
   <md-primary-tab hx-get="{{.outdirRevBaseURL}}/logs/" {{if urlPathHasPrefix .currentURL (printf "%s/logs/" .outdirRevBaseURL)}}selected{{end}}>Logs</md-primary-tab>
   <md-primary-tab hx-get="{{.outdirRevBaseURL}}/aggregates/" {{if urlPathHasPrefix .currentURL (printf "%s/aggregates/" .outdirRevBaseURL)}}selected{{end}}>Performance</md-primary-tab>
 </md-tabs>
+{{end}}
+
+{{define "sidebar"}}
+{{$outdirRevBaseURL:=.outdirRevBaseURL}}
+{{$currentURL:=.currentURL}}
+{{$currentRev:=.currentRev}}
+{{$allowedFiles:=.allowedFiles}}
 <aside id="page-sidebar">
   <ul class="revs-timeline">
     {{range $r := .revs}}
@@ -56,5 +59,12 @@ found in the LICENSE file. */}}
     {{end}}
   </ul>
 </aside>
+{{end}}
+
+{{define "content"}}
+{{$outdirRevBaseURL:=.outdirRevBaseURL}}
+{{$currentURL:=.currentURL}}
+{{$currentRev:=.currentRev}}
+{{$allowedFiles:=.allowedFiles}}
 <pre><code>{{.fileContents}}</code></pre>
 {{end}}

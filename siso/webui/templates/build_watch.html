@@ -8,11 +8,10 @@ found in the LICENSE file. */}}
 </div>
 {{end}}
 
-{{define "content"}}
+{{define "sidebar"}}
 {{$outdirRel:=.outdirRel}}
 {{$outdirRevBaseURL:=.outdirRevBaseURL}}
 {{$currentURL:=.currentURL}}
-
 <aside id="page-sidebar">
   <div>
     <ul class="revs-timeline">
@@ -39,7 +38,12 @@ found in the LICENSE file. */}}
     </div>
   </div>
 </aside>
+{{end}}
 
+{{define "content"}}
+{{$outdirRel:=.outdirRel}}
+{{$outdirRevBaseURL:=.outdirRevBaseURL}}
+{{$currentURL:=.currentURL}}
 <div class="data-table-container">
   {{if .watchErr}}
     <div class="error-message" style="padding: 20px; color: var(--md-sys-color-error);">
