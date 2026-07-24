@@ -31,7 +31,7 @@ import (
 	"go.chromium.org/build/siso/webui/invocation"
 )
 
-//go:embed templates/*.html static/*.css static/*.js
+//go:embed templates/*.html templates/**/*.html static/*.css static/*.js
 var content embed.FS
 
 var (
@@ -214,7 +214,8 @@ func (s *WebuiServer) loadView(view string) (*template.Template, error) {
 	if err != nil {
 		return nil, fmt.Errorf("templates not found: %w", err)
 	}
-	tmpl, err = template.New("").Funcs(baseFunctions).ParseFS(templatesFS, "base.html", view)
+	tmpl, err = template.New("").Funcs(baseFunctions).ParseFS(
+		templatesFS, "base.html", "partials/*.html", view)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse view: %w", err)
 	}
