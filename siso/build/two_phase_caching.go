@@ -179,7 +179,9 @@ func (rt reapiTwoPhaseCaching) matchInputRoot(ctx context.Context, inputRootDige
 		if log.V(2) {
 			clog.Infof(ctx, "walkdir dir %q: %v", dname, dir)
 		}
-		delete(leafDir, dname)
+		if len(dir.Files) > 0 || len(dir.Directories) > 0 || len(dir.Symlinks) > 0 {
+			delete(leafDir, dname)
+		}
 		m := make(map[string]merkletree.Entry)
 		var names []string
 		for _, file := range dir.Files {

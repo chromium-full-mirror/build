@@ -162,6 +162,39 @@ func TestMatchInputRoot(t *testing.T) {
 			},
 			wantErr: true,
 		},
+		{
+			name: "empty_dir",
+			setup: func(t *testing.T, dir string) []merkletree.Entry {
+				t.Helper()
+				filePath := filepath.Join(dir, "bin/toybox")
+				err := os.MkdirAll(filepath.Dir(filePath), 0755)
+				if err != nil {
+					t.Fatal(err)
+				}
+				err = os.WriteFile(filePath, []byte("toybox"), 0644)
+				if err != nil {
+					t.Fatal(err)
+				}
+				libDir := filepath.Join(dir, "lib64")
+				err = os.MkdirAll(libDir, 0755)
+				if err != nil {
+					t.Fatal(err)
+				}
+				return []merkletree.Entry{
+					{
+						Name: path.Path("bin/toybox"),
+						Data: blob.FromBytes(digest.SHA256, "bin/toybox", []byte("toybox")),
+					},
+					{
+						Name: path.Path("lib64"),
+					},
+				}
+			},
+			wantInputs: []string{
+				"bin/toybox",
+				"lib64",
+			},
+		},
 	} {
 		ctx := t.Context()
 		dir := t.TempDir()
