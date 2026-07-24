@@ -65,6 +65,8 @@ html, body {
 
     .breadcrumb-menu-button {
         --md-icon-size: 18px;
+        --md-text-button-container-height: 28px;
+        --md-text-button-label-text-color: var(--md-sys-color-on-surface-variant);
     }
     .breadcrumb-menu-button md-icon::before {
         content: 'arrow_drop_down';
@@ -328,36 +330,40 @@ html, body {
     }
 }
 
-.filter-button,
-.breadcrumb-menu-button {
+.menu-popover-button {
     position: relative;
     background: none;
     border: none;
     border-radius: 999px;
     font-family: var(--md-ref-typeface-plain);
     font-size: var(--md-sys-typescale-label-large-size);
+    color: var(--md-text-button-label-text-color, var(--md-sys-color-primary));
+    min-height: var(--md-text-button-container-height, 40px);
     display: flex;
     align-items: center;
     padding: 0 12px;
     gap: 8px;
-    height: 36px;
-}
-.breadcrumb-menu-button {
-    height: 28px;
 }
 
+/* Container for popover menus.
+ * The inner .menu-popover-content paints an outer shadow into this container. */
 .menu-popover {
     background: transparent;
     border: none;
     margin: -16px;
     padding: 16px;
     position-area: block-end span-inline-end;
+    /* Don't capture pointer events, inner container owns them. */
+    pointer-events: none;
 
     .menu-popover-content {
         position: relative;
+        pointer-events: auto;
         background: var(--md-sys-color-surface-container);
         --md-elevation-level: 2;
         padding: 8px 16px;
+        /* Reuse Material Design menu border radius. */
+        border-radius: var(--md-menu-container-shape, var(--md-sys-shape-corner-extra-small, 4px));
     }
     .menu-popover-content ul {
         list-style: none;
