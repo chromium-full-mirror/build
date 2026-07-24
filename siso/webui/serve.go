@@ -287,26 +287,15 @@ func (s *WebuiServer) renderBuildView(wr http.ResponseWriter, r *http.Request, t
 	if err != nil {
 		return fmt.Errorf("failed to load invocation(s) for %s: %v", r.URL, err)
 	}
+
+	data["seriesTitle"] = series.Title()
+	data["revs"] = series.All()
+
 	rev := r.PathValue("rev")
-	// TODO(b/533258244): remove hardcoded dependency that we're either viewing
-	// an outdir or an uploaded metrics file and it can't be anything else?
-	switch g := series.(type) {
-	case metricsFileInfo:
-		data["viewingUploaded"] = true
-	case *outdirInfo:
-		if rev == "" {
-			rev = g.latestRevID
-		}
-		outdirAbbrev := g.path
-		// Showing the full path is too long in the webui so abbreviate home dir to ~.
-		// TODO(b/361703735): refactor https://chromium-review.googlesource.com/c/infra/infra/+/5804478/comment/dcfb372d_f21e4cc5/
-		if home, err := os.UserHomeDir(); err == nil {
-			outdirAbbrev = strings.Replace(outdirAbbrev, home, "~", 1)
-		}
-		data["outdirAbbrev"] = outdirAbbrev
-		data["outdirRel"] = g.pathRel
-		data["revs"] = g.metrics
+	if rev == "" && series.Latest() != nil {
+		rev = series.Latest().ID()
 	}
+
 	data["knownOutdirs"] = s.knownOutdirs
 	data["versionID"] = s.sisoVersion
 	data["currentURL"] = r.URL

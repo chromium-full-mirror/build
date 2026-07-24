@@ -70,3 +70,8 @@ func (m metricsFileInfo) Get(id string) *buildMetrics {
 func (m metricsFileInfo) Latest() *buildMetrics {
 	return m.metrics
 }
+
+// Title implements [invocation.Series].
+func (m metricsFileInfo) Title() string {
+	return "uploaded"
+}

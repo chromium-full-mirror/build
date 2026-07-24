@@ -45,13 +45,7 @@ found in the LICENSE file. */}}
             <button type="button" id="invocation-series-menu-button" class="menu-popover-button breadcrumb-menu-button"
                 popovertarget="invocation-series-menu">
               <span class="breadcrumb-label">
-                {{if .outdirAbbrev}}
-                  {{.outdirAbbrev}}
-                {{else if .viewingUploaded}}
-                  <em>uploaded</em>
-                {{else}}
-                  <em>unknown</em>
-                {{end}}
+                {{.seriesTitle}}
               </span>
               <md-icon></md-icon>
               <md-ripple></md-ripple>
@@ -62,13 +56,7 @@ found in the LICENSE file. */}}
                     Current
                 </div>
                 <p>
-                    {{if .outdirAbbrev}}
-                      {{.outdirAbbrev}}
-                    {{else if .viewingUploaded}}
-                      <em>uploaded</em>
-                    {{else}}
-                      <em>unknown</em>
-                    {{end}}
+                    {{.seriesTitle}}
                     <md-icon-button href="{{.outdirBaseURL}}/reload">
                       <md-icon>refresh</md-icon>
                     </md-icon-button>

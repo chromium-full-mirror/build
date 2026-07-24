@@ -38,6 +38,8 @@ type Series[T Invocation] interface {
 	All() iter.Seq[T]
 	// Latest returns the most recent invocation in this series.
 	Latest() T
+	// Title returns a human-readable title of this series (e.g. outdir path or "uploaded").
+	Title() string
 }
 
 // Invocation represents data for a single build invocation.

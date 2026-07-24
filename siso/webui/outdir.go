@@ -104,6 +104,19 @@ func (i *outdirInfo) All() iter.Seq[*buildMetrics] {
 	return slices.Values(i.metrics)
 }
 
+// Title returns the display title for this outdir.
+func (i *outdirInfo) Title() string {
+	// Try to replace the home directory with "~", if it fails return it as-is.
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return i.path
+	}
+	if after, ok := strings.CutPrefix(i.path, home); ok {
+		return filepath.Join("~", after)
+	}
+	return i.path
+}
+
 // loadOutdirInfo attempts to load all metrics found in the outdir.
 func loadOutdirInfo(workspaceRoot, outDir, manifestPath string) (*outdirInfo, error) {
 	start := time.Now()
