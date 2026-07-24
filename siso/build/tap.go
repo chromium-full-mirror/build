@@ -8,7 +8,11 @@ import (
 	"context"
 	"errors"
 	"io/fs"
+	"os"
 	"path/filepath"
+	"strings"
+
+	log "github.com/golang/glog"
 
 	"go.chromium.org/build/siso/execute"
 	"go.chromium.org/build/siso/execute/localexec"
@@ -26,12 +30,43 @@ func (b *Builder) tapCanonicalizeCmd(ctx context.Context, cmd *execute.Cmd) erro
 	// ignore out of workspace root
 	// TODO: use with input root absolute path?
 	// TODO: just use detected inputs?
-	seen := make(map[string]bool)
+	seen := make(map[path.Path]bool)
 	for _, input := range cmd.AllInputs() {
-		seen[string(input)] = true
+		seen[input] = true
 		ninputs++
 	}
+	// os.TempDir() is $TMPDIR or /tmp.
+	ignores := map[path.Path]struct{}{path.New(os.TempDir()): {}}
+	ignored := 0
+	if len(cmd.Env) > 0 {
+		for _, env := range cmd.Env {
+			tmpdir, ok := strings.CutPrefix(env, "TMPDIR=")
+			if ok {
+				if !filepath.IsAbs(tmpdir) {
+					clog.Warningf(ctx, "ignore TMPDIR: not absolute path: %q", tmpdir)
+					continue
+				}
+				ignores[path.New(tmpdir)] = struct{}{}
+			}
+		}
+	}
+	shouldIgnore := func(op string, p path.Path) bool {
+		for ignore := range ignores {
+			if p.HasPrefix(ignore) {
+				if log.V(1) {
+					clog.Infof(ctx, "ignore %s %q in %q", op, p, ignore)
+				}
+				ignored++
+				return true
+			}
+		}
+		return false
+	}
+
 	for _, input := range tapData.Reads {
+		if shouldIgnore("reads", path.New(input)) {
+			continue
+		}
 		rel, err := filepath.Rel(b.path.WorkspaceRoot, input)
 		if err != nil {
 			clog.Warningf(ctx, "reads relpath %q: %v", input, err)
@@ -40,25 +75,29 @@ func (b *Builder) tapCanonicalizeCmd(ctx context.Context, cmd *execute.Cmd) erro
 		if !filepath.IsLocal(rel) {
 			continue
 		}
-		_, err = b.hashFS.Stat(ctx, b.path.WorkspaceRoot, path.New(rel))
+		relPath := path.New(rel)
+		_, err = b.hashFS.Stat(ctx, b.path.WorkspaceRoot, relPath)
 		if errors.Is(err, fs.ErrNotExist) {
 			continue
 		}
-		if seen[rel] {
+		if seen[relPath] {
 			continue
 		}
-		seen[rel] = true
-		cmd.Inputs = append(cmd.Inputs, path.New(rel))
+		seen[relPath] = true
+		cmd.Inputs = append(cmd.Inputs, relPath)
 	}
 	clear(seen)
 	// need to use both original outputs and detected outputs.
 	// it might not detect output for restat action.
 	// it might detect unspecified outputs.
 	for _, output := range cmd.AllOutputs() {
-		seen[string(output)] = true
+		seen[output] = true
 		noutputs++
 	}
 	for _, output := range tapData.Writes {
+		if shouldIgnore("writes", path.New(output)) {
+			continue
+		}
 		rel, err := filepath.Rel(b.path.WorkspaceRoot, output)
 		if err != nil {
 			clog.Warningf(ctx, "writes relpath %q: %v", output, err)
@@ -67,7 +106,8 @@ func (b *Builder) tapCanonicalizeCmd(ctx context.Context, cmd *execute.Cmd) erro
 		if !filepath.IsLocal(rel) {
 			continue
 		}
-		fi, err := b.hashFS.Stat(ctx, b.path.WorkspaceRoot, path.New(rel))
+		relPath := path.New(rel)
+		fi, err := b.hashFS.Stat(ctx, b.path.WorkspaceRoot, relPath)
 		if err != nil {
 			continue
 		}
@@ -77,11 +117,11 @@ func (b *Builder) tapCanonicalizeCmd(ctx context.Context, cmd *execute.Cmd) erro
 			// by hashfs Update.
 			continue
 		}
-		if seen[rel] {
+		if seen[relPath] {
 			continue
 		}
-		seen[rel] = true
-		cmd.Outputs = append(cmd.Outputs, path.New(rel))
+		seen[relPath] = true
+		cmd.Outputs = append(cmd.Outputs, relPath)
 	}
 	for _, del := range tapData.Deletes {
 		rel, err := filepath.Rel(b.path.WorkspaceRoot, del)
@@ -98,12 +138,12 @@ func (b *Builder) tapCanonicalizeCmd(ctx context.Context, cmd *execute.Cmd) erro
 			continue
 		}
 		b.hashFS.Forget(ctx, b.path.WorkspaceRoot, []path.Path{relPath})
-		clog.Infof(ctx, "delete %q", rel)
+		clog.Infof(ctx, "delete %q", relPath)
 	}
 
 	// now tap results are applied to cmd, so we can consider
 	// this cmd is pure, thus cacheable.
 	cmd.Pure = true
-	clog.Infof(ctx, "tap canonicalized inputs=%d->%d outputs=%d->%d", ninputs, len(cmd.Inputs), noutputs, len(cmd.Outputs))
+	clog.Infof(ctx, "tap canonicalized inputs=%d->%d outputs=%d->%d ignored=%d", ninputs, len(cmd.Inputs), noutputs, len(cmd.Outputs), ignored)
 	return nil
 }
