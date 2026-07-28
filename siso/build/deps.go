@@ -273,6 +273,7 @@ func checkDeps(ctx context.Context, b *Builder, step *Step, deps []string) error
 	platform := step.cmd.Platform
 	relocatableReq := platform["InputRootAbsolutePath"] == ""
 	for _, dep := range deps {
+		relDep := dep
 		// remote relocatableReq should not have absolute path dep.
 		if filepath.IsAbs(dep) {
 			if relocatableReq {
@@ -281,10 +282,22 @@ func checkDeps(ctx context.Context, b *Builder, step *Step, deps []string) error
 					return fmt.Errorf("absolute path in deps %q of %q: use input_root_absolute_path=true for %q (siso config: %s): %w", dep, step, step.cmd.Outputs[0], step.def.RuleName(), errNotRelocatable)
 				}
 			}
-			continue
+			rel, err := filepath.Rel(b.path.WorkspaceRoot, dep)
+			if err != nil {
+				return fmt.Errorf("failed to make workspace relpath %q: %w", dep, err)
+			}
+			if !filepath.IsLocal(rel) {
+				// dependency on system file? ignore
+				continue
+			}
+			relDep, err = filepath.Rel(b.path.BaseDir, rel)
+			if err != nil {
+				return fmt.Errorf("failed to make dir relpath %q: %w", rel, err)
+			}
+			clog.Infof(ctx, "dep %q -> %q", dep, relDep)
 		}
 		// all dep (== inputs) should exist just after step ran.
-		input := path.New(b.path.MaybeFromRelative(ctx, dep))
+		input := path.New(b.path.MaybeFromRelative(ctx, relDep))
 
 		// Sandboxed actions can only use depfiles to promote order-only to implicit deps
 		if step.enforceDepfileOnlyPromotes && !ninjaInputs[string(input)] {
