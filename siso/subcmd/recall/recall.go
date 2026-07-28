@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -497,9 +498,26 @@ func (c *Command) callLocal(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	if !filepath.IsLocal(command.WorkingDirectory) {
+		return fmt.Errorf("working_directory %q is not under exec_root", command.WorkingDirectory)
+	}
 	wd := filepath.Join(root, command.WorkingDirectory)
-	for _, output := range command.OutputFiles {
-		odir := filepath.Join(wd, filepath.Dir(output))
+	outdirs := slices.Clone(command.OutputDirectories) //nolint:staticcheck // existing deprecation
+	for _, output := range slices.Concat(
+		command.OutputFiles, //nolint:staticcheck // existing deprecation
+		command.OutputPaths,
+	) {
+		outdirs = append(outdirs, filepath.Dir(output))
+	}
+	for _, outdir := range outdirs {
+		odir := filepath.Join(wd, outdir)
+		rel, err := filepath.Rel(root, odir)
+		if err != nil {
+			return err
+		}
+		if !filepath.IsLocal(rel) {
+			return fmt.Errorf("output %q is not under exec_root", rel)
+		}
 		err = os.MkdirAll(odir, 0755)
 		if err != nil {
 			return err
