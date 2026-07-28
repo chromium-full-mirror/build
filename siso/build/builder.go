@@ -391,10 +391,14 @@ func New(ctx context.Context, graph Graph, opts Options) (_ *Builder, err error)
 		reSchedStat:        semaphore.Stat{Name: "re:sched"},
 		reWorkerStat:       semaphore.Stat{Name: "re:worker"},
 
-		locallyNeeded:         opts.LocallyNeeded,
-		cacheSema:             semaphore.New("cache", opts.Limits.Cache),
-		cache:                 opts.Cache,
-		twoPhaseCachingSema:   semaphore.New("cache-check", opts.Limits.Cache),
+		locallyNeeded: opts.LocallyNeeded,
+		cacheSema:     semaphore.New("cache", opts.Limits.Cache),
+		cache:         opts.Cache,
+
+		// TODO(b/539291862): revisit limit configuration.
+		// This limit is needed to avoid too many concurrent gRPC
+		// calls (i.e. protect from gRPC stream saturation).
+		twoPhaseCachingSema:   semaphore.New("cache-check", opts.Limits.Remote),
 		failureSummaryWriter:  opts.FailureSummaryWriter,
 		failedCommandsWriter:  opts.FailedCommandsWriter,
 		outputLogWriter:       opts.OutputLogWriter,
