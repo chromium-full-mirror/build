@@ -98,31 +98,7 @@ func (b *Builder) runStep(ctx context.Context, step *Step) (retErr error) {
 			// Some timings are measured using spans instead, extrapolate those
 			// into the step metrics now.
 			if tc != nil {
-				var metricSpans []MetricSpan
-				for _, s := range tc.Spans() {
-					if shouldLogSpan(s.Name) {
-						metricSpans = append(metricSpans, MetricSpan{
-							Name:          s.Name,
-							StartNanos:    s.Start.Sub(b.start).Nanoseconds(),
-							DurationNanos: s.Duration().Nanoseconds(),
-						})
-					}
-					switch s.Name {
-					case spanDepsCmd:
-						step.metrics.DepsScanTime = IntervalMetric(s.Duration())
-					case spanScandepsRun:
-						step.metrics.ScandepsTime = IntervalMetric(s.Duration())
-						step.metrics.ScandepsStartTime = IntervalMetric(s.Start.Sub(b.start))
-					case spanExecRemoteCacheCheck:
-						step.metrics.CacheTime = IntervalMetric(s.Duration())
-						step.metrics.CacheStartTime = IntervalMetric(s.Start.Sub(b.start))
-					case spanMaterializeInputs:
-						step.metrics.MaterializeInputsTime = IntervalMetric(s.Duration())
-					case spanMaterializeOutputs:
-						step.metrics.MaterializeOutputsTime = IntervalMetric(s.Duration())
-					}
-				}
-				step.metrics.Spans = metricSpans
+				step.metrics.updateFromTrace(tc.Spans(), b.start)
 			}
 			// Other metrics.
 			stepLogEntry(ctx, logger, step, duration, retErr)
@@ -343,7 +319,11 @@ func (b *Builder) handleStep(ctx context.Context, step *Step) (bool, error) {
 	exited := result != nil
 	if exited {
 		step.metrics.ActionStartTime = IntervalMetric(started.Sub(b.start))
-		step.metrics.RunTime = IntervalMetric(time.Since(started))
+		span.Add(ctx, trace.SpanData{
+			Name:  spanHandleStepRun,
+			Start: started,
+			End:   time.Now(),
+		})
 		step.metrics.NoExec = true
 	}
 	return exited, nil

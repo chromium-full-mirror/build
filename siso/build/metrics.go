@@ -16,6 +16,7 @@ import (
 
 	epb "go.chromium.org/build/siso/execute/proto"
 	"go.chromium.org/build/siso/o11y/clog"
+	"go.chromium.org/build/siso/o11y/trace"
 	rbepb "go.chromium.org/build/siso/reapi/proto"
 )
 
@@ -41,6 +42,35 @@ const (
 	// Span for time it took to materialize outputs to disk
 	// that were required by the step.
 	spanMaterializeOutputs = "materialize-outputs"
+
+	// Run spans.
+	// Exactly one of these is canonical for the purposes of reporting a step's "run time"
+	// for comparison purposes including ninja reports.
+	// Unlike ninja, execution strategies may be repeated, run in parallel, etc. so
+	// it is not surprising to see more than one of these spans logged for a step.
+
+	// Span for local execution of the step, measured from the start of command until
+	// post-processing (deps update, output check, cache write, output flush) completes.
+	// Semaphore waiting time is not included.
+	spanExecLocalRun = "exec-local-run"
+	// Span for remote cache hit of the step, measured from the start of cache query
+	// until post-processing (deps update, output flush) completes.
+	// Semaphore waiting time is not included.
+	spanExecRemoteCacheRun = "exec-remote-cache-run"
+	// Span for the final remote execution of the step, measured from the start of the
+	// attempt until post-processing (output download, deps update, output flush) completes.
+	// Semaphore waiting time is not included.
+	// TODO(b/520207778): This is not yet logged at time of writing.
+	spanExecRemoteExecRun = "exec-remote-exec-run"
+	// Span for a step completed by a handler without running a command, measured for
+	// the handler call.
+	spanHandleStepRun = "handle-step-run"
+
+	// Span for a single remote execution attempt. Multiple of these may be logged.
+	// This does not include post-processing.
+	spanExecRemoteExecAttempt = "exec-remote-exec-attempt"
+	// Span for remote execution post-processing (output download, deps update, output flush).
+	spanExecRemoteExecPostProc = "exec-remote-exec-postproc"
 )
 
 // shouldLogSpan returns whether this is a span that should be logged for metric purposes.
@@ -51,7 +81,12 @@ func shouldLogSpan(name string) bool {
 	}
 	switch kind {
 	case spanScandepsRun,
+		spanExecLocalRun,
 		spanExecRemoteCacheCheck,
+		spanExecRemoteCacheRun,
+		spanExecRemoteExecAttempt,
+		spanExecRemoteExecRun,
+		spanHandleStepRun,
 		spanMaterializeInputs,
 		spanMaterializeOutputs:
 		return true
@@ -270,7 +305,6 @@ func (m *StepMetric) copyExecResult(src *StepMetric) {
 	m.Digest = src.Digest
 
 	// Fields set during command execution.
-	m.RunTime = src.RunTime
 	m.ExecTime = src.ExecTime
 	m.ActionStartTime = src.ActionStartTime
 	m.Cached = src.Cached
@@ -350,5 +384,68 @@ func (m *StepMetric) done(ctx context.Context, step *Step, buildStart time.Time)
 				continue
 			}
 		}
+	}
+}
+
+// updateFromTrace updates metrics from the provided trace spans.
+func (m *StepMetric) updateFromTrace(spans []trace.SpanData, buildStart time.Time) {
+	var metricSpans []MetricSpan
+	// There can be multiple run time spans per step, but only one canonical RunTime.
+	// Collect all of them upfront and decide the winner after the loop.
+	var localRun, remoteAttempt, remoteCacheRun, handleRun IntervalMetric
+	var remoteAttemptStart time.Time
+
+	for _, s := range spans {
+		if shouldLogSpan(s.Name) {
+			metricSpans = append(metricSpans, MetricSpan{
+				Name:          s.Name,
+				StartNanos:    s.Start.Sub(buildStart).Nanoseconds(),
+				DurationNanos: s.Duration().Nanoseconds(),
+			})
+		}
+		switch s.Name {
+		case spanDepsCmd:
+			m.DepsScanTime = IntervalMetric(s.Duration())
+		case spanScandepsRun:
+			m.ScandepsTime = IntervalMetric(s.Duration())
+			m.ScandepsStartTime = IntervalMetric(s.Start.Sub(buildStart))
+		case spanExecLocalRun:
+			localRun = IntervalMetric(s.Duration())
+		case spanExecRemoteCacheCheck:
+			m.CacheTime = IntervalMetric(s.Duration())
+			m.CacheStartTime = IntervalMetric(s.Start.Sub(buildStart))
+		case spanExecRemoteCacheRun:
+			remoteCacheRun = IntervalMetric(s.Duration())
+		case spanExecRemoteExecAttempt:
+			if s.Start.After(remoteAttemptStart) {
+				remoteAttempt = IntervalMetric(s.Duration())
+				remoteAttemptStart = s.Start
+			}
+		case spanHandleStepRun:
+			handleRun = IntervalMetric(s.Duration())
+		case spanMaterializeInputs:
+			m.MaterializeInputsTime = IntervalMetric(s.Duration())
+		case spanMaterializeOutputs:
+			m.MaterializeOutputsTime = IntervalMetric(s.Duration())
+		}
+	}
+	m.Spans = metricSpans
+
+	switch {
+	case m.NoExec:
+		// NoExec means no command was run (i.e. handler used).
+		m.RunTime = handleRun
+	case m.IsLocal:
+		// Local fallback after failed remoteexec means both IsRemote and IsLocal
+		// will be set, so check IsLocal first.
+		m.RunTime = localRun
+	case m.IsRemote:
+		// Remote execution.
+		// Unlike other cases, RunTime historically has been postproc-exclusive.
+		// TODO(b/520207778): Make it consistent?
+		m.RunTime = remoteAttempt
+	case m.Cached:
+		// Remote cache hit.
+		m.RunTime = remoteCacheRun
 	}
 }

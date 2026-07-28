@@ -50,14 +50,18 @@ func (b *Builder) execRemoteExecute(uploadCtx, execCtx context.Context, step *St
 	}
 	return retry.DoWithMaxRetries(ctx, maxRetries, func() error {
 		step.setPhase(phase.wait())
+		// When and how long the attempt took.
+		// Stays zero if sema is never entered (e.g. due to cancel)
+		var attemptStart time.Time
+		var attemptDur time.Duration
 		err := b.remoteSema.Do(ctx, step.weight, func(ctx context.Context) error {
 			step.setPhase(phase)
 			if phase == stepRetryRun {
 				step.metrics.RemoteRetry++
 				b.progressStepRetry(step)
 			}
-			reExecStarted := time.Now()
-			b.actionStartedTime(step, reExecStarted)
+			attemptStart = time.Now()
+			b.actionStartedTime(step, attemptStart)
 			clog.Infof(ctx, "step state: remote exec [%s]", phase)
 			phase = stepRetryRun
 			result, cached, err := b.remoteExec.Execute(uploadCtx, ctx, step.cmd)
@@ -94,8 +98,8 @@ func (b *Builder) execRemoteExecute(uploadCtx, execCtx context.Context, step *St
 				md := result.GetExecutionMetadata()
 				if md != nil {
 					execDur := md.GetWorkerCompletedTimestamp().AsTime().Sub(md.GetWorkerStartTimestamp().AsTime())
-					runDur := time.Since(reExecStarted)
-					sleepDur := execDur - runDur
+					elapsed := time.Since(attemptStart)
+					sleepDur := execDur - elapsed
 					if sleepDur > 0 {
 						clog.Infof(ctx, "simulate cache miss in execRemote: sleep %s", sleepDur)
 						select {
@@ -108,11 +112,17 @@ func (b *Builder) execRemoteExecute(uploadCtx, execCtx context.Context, step *St
 					clog.Warningf(ctx, "simulate cache miss: missing execution metadata in action result")
 				}
 			}
-			step.metrics.RunTime = IntervalMetric(time.Since(reExecStarted))
+			attemptEnd := time.Now()
+			attemptDur = attemptEnd.Sub(attemptStart)
+			span.Add(ctx, trace.SpanData{
+				Name:  spanExecRemoteExecAttempt,
+				Start: attemptStart,
+				End:   attemptEnd,
+			})
 			step.metrics.done(ctx, step, b.start)
 			return err
 		})
-		reExecDur += time.Duration(step.metrics.RunTime)
+		reExecDur += attemptDur
 		if code := status.Code(err); noFallback && (code == codes.DeadlineExceeded || errors.Is(err, context.DeadlineExceeded)) && reExecDur < timeout {
 			clog.Warningf(ctx, "exec remote timedout duration=%s timeout=%s: %v", reExecDur, timeout, err)
 			err = status.Errorf(codes.Unavailable, "reapi timedout %v", err)
@@ -167,6 +177,12 @@ func (b *Builder) updateREStat(result *rpb.ActionResult, err error) {
 
 func (b *Builder) execRemote(ctx context.Context, step *Step) error {
 	execErr := b.execRemoteExecute(ctx, ctx, step)
+
+	// TODO(b/520207778): Can we also log spanExecRemoteExecRun here?
+	// It's not trivial to make this change because retry.DoWithMaxRetries only returns error.
+	ctx, span := trace.NewSpan(ctx, spanExecRemoteExecPostProc)
+	defer span.Close(nil)
+
 	downloadErr := b.execRemoteDownload(ctx, step, execErr)
 	if downloadErr != nil {
 		return downloadErr
@@ -226,7 +242,11 @@ func (b *Builder) execRemoteCache(ctx context.Context, step *Step) error {
 	}
 	b.actionStartedTime(step, actionStarted)
 	defer func() {
-		step.metrics.RunTime = IntervalMetric(time.Since(start))
+		span.Add(ctx, trace.SpanData{
+			Name:  spanExecRemoteCacheRun,
+			Start: start,
+			End:   time.Now(),
+		})
 		step.metrics.done(ctx, step, b.start)
 	}()
 

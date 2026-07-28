@@ -164,7 +164,11 @@ func (b *Builder) execLocal(ctx context.Context, step *Step) (retErr error) {
 	// Beyond this point, we should be marking the step done.  Do that as we leave the function.
 	defer func() {
 		if !started.IsZero() {
-			step.metrics.RunTime = IntervalMetric(time.Since(started))
+			span.Add(ctx, trace.SpanData{
+				Name:  spanExecLocalRun,
+				Start: started,
+				End:   time.Now(),
+			})
 		}
 		step.metrics.done(ctx, step, b.start)
 	}()
