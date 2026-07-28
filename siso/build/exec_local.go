@@ -163,7 +163,9 @@ func (b *Builder) execLocal(ctx context.Context, step *Step) (retErr error) {
 	}
 	// Beyond this point, we should be marking the step done.  Do that as we leave the function.
 	defer func() {
-		step.metrics.RunTime = IntervalMetric(time.Since(started))
+		if !started.IsZero() {
+			step.metrics.RunTime = IntervalMetric(time.Since(started))
+		}
 		step.metrics.done(ctx, step, b.start)
 	}()
 	if err != nil {
