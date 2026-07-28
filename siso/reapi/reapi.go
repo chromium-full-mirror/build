@@ -450,7 +450,16 @@ func newConn(ctx context.Context, addr string, cred cred.Cred, opt Option) (grpc
 		// user should specify credential helper for the backend.
 		copts = append(copts, option.WithoutAuthentication())
 	}
-	dopts := DialOptions(opt.KeepAliveParams)
+	keepAliveParams := opt.KeepAliveParams
+	if strings.HasPrefix(addr, "unix://") {
+		// Unix Domain Sockets operate in local kernel memory on the same host.
+		// Disconnects are signaled immediately by the OS via EOF/POLLHUP, and there
+		// are no NAT middleboxes or firewalls. Disabling gRPC keepalive on UDS
+		// prevents false-positive PING ACK timeouts under high local build load.
+		clog.Infof(ctx, "disabling keepalive on unix domain socket: %q", addr)
+		keepAliveParams = keepalive.ClientParameters{}
+	}
+	dopts := DialOptions(keepAliveParams)
 	if opt.TracerProvider != nil {
 		// Disable the default google.golang.org/api telemetry handler so this
 		// is the sole writer of grpc-trace-bin.
