@@ -83,6 +83,17 @@ def CheckChange(input_api, output_api):
   return results
 
 
+SUBTEST_CHECK_DIRS = [
+    r'^gong/gn/build/ninjawriter$',
+]
+
+
+def _IsSubtestCheckEnabledForDir(input_api, dirpath):
+  return any(
+      input_api.re.search(pattern, dirpath)
+      for pattern in SUBTEST_CHECK_DIRS)
+
+
 def CheckGoChanges(input_api, output_api):
   file_filter = lambda path: input_api.FilterSourceFile(
       path,
@@ -98,6 +109,8 @@ def CheckGoChanges(input_api, output_api):
       key=lambda source: source.AbsoluteLocalPath())
   if not affected_files:
     return []
+
+  results = []
 
   # Fetch dependencies from CIPD.
   # This is done in this script because we don't use gclient to manage Go
@@ -165,7 +178,6 @@ def CheckGoChanges(input_api, output_api):
                                    'Run `gofmt -s -w .` to fix them.'), bad)
     ]
 
-  # Run `golangci-lint` on folders.
   dirs = {
       input_api.os_path.dirname(f.AbsoluteLocalPath()):
           input_api.os_path.dirname(f.LocalPath()) for f in affected_files
@@ -176,6 +188,40 @@ def CheckGoChanges(input_api, output_api):
     error_type = output_api.PresubmitPromptWarning
 
   tests = []
+
+  # Build custom AST vettool and run on enabled directories.
+  subtestanalyzer_dir = input_api.os_path.join(
+      input_api.change.RepositoryRoot(), 'infra', 'subtestanalyzer')
+  subtest_affected_dirs = {
+      input_api.os_path.dirname(f.AbsoluteLocalPath()):
+          input_api.os_path.dirname(f.LocalPath())
+      for f in affected_files
+      if _IsSubtestCheckEnabledForDir(
+          input_api, input_api.os_path.dirname(f.LocalPath()))
+  }
+  if input_api.os_path.exists(subtestanalyzer_dir) and subtest_affected_dirs:
+    vettool_bin = input_api.os_path.join(subtestanalyzer_dir, 'subtestanalyzer')
+    try:
+      input_api.subprocess.check_call(
+          [go, 'build', '-o', vettool_bin, '.'],
+          cwd=subtestanalyzer_dir,
+          stdout=input_api.subprocess.PIPE,
+          stderr=input_api.subprocess.PIPE)
+      for absolute, pretty in sorted(subtest_affected_dirs.items()):
+        kwargs = {'cwd': absolute}
+        if env:
+          kwargs['env'] = env
+        tests.append(
+            input_api.Command(
+                name=f'Check subtest names via go vet on {pretty}',
+                cmd=[go, 'vet', f'-vettool={vettool_bin}', './...'],
+                kwargs=kwargs,
+                message=error_type))
+    except input_api.subprocess.CalledProcessError as e:
+      results.append(output_api.PresubmitPromptOrNotify(
+          f'Failed to build subtestanalyzer vettool: {e}'))
+
+  # Run `golangci-lint` on folders.
   for absolute, pretty in sorted(dirs.items()):
     kwargs = {'cwd': absolute}
     if env:
@@ -189,7 +235,7 @@ def CheckGoChanges(input_api, output_api):
             ],
             kwargs=kwargs,
             message=error_type))
-  return input_api.RunTests(tests)
+  return results + input_api.RunTests(tests)
 
 
 def CheckPythonChanges(input_api, output_api):

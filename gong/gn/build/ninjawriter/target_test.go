@@ -245,7 +245,7 @@ build obj/foo.out: _rule | ../../tools/script.py ../../src/input.txt
 `,
 		},
 		{
-			name: "with depfile",
+			name: "with_depfile",
 			action: graph.RunScriptAction{
 				Script: mustFile(t, "//tools/script.py"),
 				Args: []graph.SubstitutionPattern{
