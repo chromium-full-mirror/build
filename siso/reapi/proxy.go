@@ -132,6 +132,9 @@ func (p *Proxy) Serve(ctx context.Context) error {
 	ep := &executionProxy{client: rpb.NewExecutionClient(p.client.conn)}
 	rpb.RegisterExecutionServer(server, ep)
 
+	op := &operationsProxy{client: longrunningpb.NewOperationsClient(p.client.conn)}
+	longrunningpb.RegisterOperationsServer(server, op)
+
 	bsp := &byteStreamProxy{client: bspb.NewByteStreamClient(p.client.casDataConn)}
 	bspb.RegisterByteStreamServer(server, bsp)
 
@@ -389,4 +392,13 @@ func (bp *byteStreamProxy) Write(serv bspb.ByteStream_WriteServer) error {
 			return err
 		}
 	}
+}
+
+type operationsProxy struct {
+	longrunningpb.UnimplementedOperationsServer
+	client longrunningpb.OperationsClient
+}
+
+func (op *operationsProxy) GetOperation(ctx context.Context, req *longrunningpb.GetOperationRequest) (*longrunningpb.Operation, error) {
+	return op.client.GetOperation(ctx, req)
 }
