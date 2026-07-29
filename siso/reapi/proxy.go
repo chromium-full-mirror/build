@@ -17,6 +17,7 @@ import (
 	"cloud.google.com/go/longrunning/autogen/longrunningpb"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/admin"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
@@ -137,6 +138,12 @@ func (p *Proxy) Serve(ctx context.Context) error {
 
 	bsp := &byteStreamProxy{client: bspb.NewByteStreamClient(p.client.casDataConn)}
 	bspb.RegisterByteStreamServer(server, bsp)
+
+	adminCleanup, err := admin.Register(server)
+	if err != nil {
+		return err
+	}
+	defer adminCleanup()
 
 	errCh := make(chan error, 1)
 	go func() {

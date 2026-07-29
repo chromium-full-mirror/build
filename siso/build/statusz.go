@@ -12,11 +12,21 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
+
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/admin"
 
 	"go.chromium.org/build/siso/o11y/clog"
 )
 
 func NewStatuszServer(ctx context.Context, b *Builder, dir string) error {
+	grpcServer := grpc.NewServer()
+	adminCleanup, err := admin.Register(grpcServer)
+	if err != nil {
+		return err
+	}
+
 	mux := http.NewServeMux()
 
 	mux.Handle("/api/active_steps", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
@@ -32,8 +42,22 @@ func NewStatuszServer(ctx context.Context, b *Builder, dir string) error {
 			clog.Warningf(ctx, "failed to write response: %v", err)
 		}
 	}))
+
+	mainHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.ProtoMajor == 2 && strings.HasPrefix(r.Header.Get("Content-Type"), "application/grpc") {
+			grpcServer.ServeHTTP(w, r)
+		} else {
+			mux.ServeHTTP(w, r)
+		}
+	})
+
+	var protocols http.Protocols
+	protocols.SetHTTP1(true)
+	protocols.SetUnencryptedHTTP2(true)
+
 	s := &http.Server{
-		Handler: mux,
+		Handler:   mainHandler,
+		Protocols: &protocols,
 	}
 	lc := net.ListenConfig{}
 	listener, err := lc.Listen(ctx, "tcp", "localhost:0")
@@ -46,6 +70,7 @@ func NewStatuszServer(ctx context.Context, b *Builder, dir string) error {
 		if err != nil {
 			clog.Warningf(ctx, "listener close error: %v", err)
 		}
+		adminCleanup()
 	}()
 
 	s.Addr = listener.Addr().String()
