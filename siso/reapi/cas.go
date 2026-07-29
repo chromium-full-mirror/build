@@ -428,7 +428,7 @@ func (c *Client) getWithByteStream(ctx context.Context, d digest.Digest, name st
 	err := retry.Do(ctx, func() error {
 		ctx, cancel := fetch.ContextWithTimeout(ctx, d)
 		defer cancel()
-		r, err := bytestreamio.Open(ctx, bpb.NewByteStreamClient(c.casConn), resourceName)
+		r, err := bytestreamio.Open(ctx, bpb.NewByteStreamClient(c.casDataConn), resourceName)
 		if err != nil {
 			c.m.ReadDone(0, err)
 			return err
@@ -1044,7 +1044,7 @@ func createBatchUpdateBlobsRequests(instance string, fn digest.Function, blobReq
 func (c *Client) uploadWithByteStream(ctx context.Context, digests []digest.Digest, uploads map[digest.Digest]*uploadOp, ds *blob.Store) []missingBlob {
 	clog.Infof(ctx, "upload by streaming %d", len(digests))
 
-	bsClient := bpb.NewByteStreamClient(c.casConn)
+	bsClient := bpb.NewByteStreamClient(c.casDataConn)
 	var (
 		mu      sync.Mutex
 		missing []missingBlob

@@ -160,7 +160,7 @@ func NewWithOption(ctx context.Context, t *testing.T, fake *Fake, opt reapi.Opti
 	if err != nil {
 		t.Fatal(err)
 	}
-	client, err := reapi.NewFromConn(ctx, opt, cred.Cred{}, conn, conn)
+	client, err := reapi.NewFromConn(ctx, opt, cred.Cred{}, conn, conn, conn)
 	if err != nil {
 		t.Fatal(err)
 	}

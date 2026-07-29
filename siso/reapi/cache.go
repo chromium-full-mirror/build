@@ -133,7 +133,7 @@ func (s digestSource) Open(ctx context.Context) (io.ReadCloser, error) {
 	// or if an error occurs during setup, otherwise we leak the stream until the
 	// parent context (step context) is canceled.
 	ctx, cancel := context.WithCancel(ctx)
-	r, err := bytestreamio.Open(ctx, bpb.NewByteStreamClient(s.c.casConn), s.c.resourceName(s.d))
+	r, err := bytestreamio.Open(ctx, bpb.NewByteStreamClient(s.c.casDataConn), s.c.resourceName(s.d))
 	if err != nil {
 		cancel()
 		s.c.m.ReadDone(0, err)

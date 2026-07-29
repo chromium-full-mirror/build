@@ -132,7 +132,7 @@ func (p *Proxy) Serve(ctx context.Context) error {
 	ep := &executionProxy{client: rpb.NewExecutionClient(p.client.conn)}
 	rpb.RegisterExecutionServer(server, ep)
 
-	bsp := &byteStreamProxy{client: bspb.NewByteStreamClient(p.client.casConn)}
+	bsp := &byteStreamProxy{client: bspb.NewByteStreamClient(p.client.casDataConn)}
 	bspb.RegisterByteStreamServer(server, bsp)
 
 	errCh := make(chan error, 1)

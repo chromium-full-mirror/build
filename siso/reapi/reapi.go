@@ -108,6 +108,7 @@ type Option struct {
 	WalkDirStream bool
 
 	ConnPool        int
+	DataConnPool    int
 	KeepAliveParams keepalive.ClientParameters
 
 	// StatsHandler, if non-nil, is wired into every gRPC ClientConn via
@@ -209,6 +210,7 @@ func (o *Option) RegisterFlags(fs *flag.FlagSet, envs map[string]string) {
 	fs.BoolVar(&o.WalkDirStream, o.Prefix+"_walkdir_stream", false, "use GetTree for WalkDir")
 
 	fs.IntVar(&o.ConnPool, o.Prefix+"_grpc_conn_pool", 25, "grpc connection pool")
+	fs.IntVar(&o.DataConnPool, o.Prefix+"_grpc_data_conn_pool", 25, "grpc connection pool for data (bytestream Read, Write)")
 
 	// https://grpc.io/docs/guides/keepalive/#keepalive-configuration-specification
 	// b/286237547 - RBE suggests 30s
@@ -323,11 +325,12 @@ type grpcClientConn interface {
 
 // Client is a remote exec API client.
 type Client struct {
-	opt      Option
-	digestFn digest.Function
-	cred     cred.Cred
-	conn     grpcClientConn
-	casConn  grpcClientConn
+	opt         Option
+	digestFn    digest.Function
+	cred        cred.Cred
+	conn        grpcClientConn
+	casConn     grpcClientConn
+	casDataConn grpcClientConn
 
 	mu           sync.Mutex
 	capabilities *rpb.ServerCapabilities
@@ -416,24 +419,38 @@ func New(ctx context.Context, cred cred.Cred, opt Option) (*Client, error) {
 		opt.BatchCompressedBlob = 0
 		clog.Warningf(ctx, "disabling blob compression because grpc compression is enabled")
 	}
-	clog.Infof(ctx, "address: %q instance: %q", opt.Address, opt.Instance)
-	conn, err := newConn(ctx, opt.Address, cred, opt)
+	address := opt.Address
+	clog.Infof(ctx, "address: %q (%d) instance: %q", address, opt.ConnPool, opt.Instance)
+	conn, err := newConn(ctx, address, cred, opt.ConnPool, opt)
 	if err != nil {
 		return nil, DialError{Err: err}
 	}
 	casConn := conn
 	if opt.CASAddress != "" {
-		clog.Infof(ctx, "cas address: %q", opt.CASAddress)
-		casConn, err = newConn(ctx, opt.CASAddress, cred, opt)
+		address = opt.CASAddress
+		clog.Infof(ctx, "cas address: %q (%d)", address, opt.ConnPool)
+		casConn, err = newConn(ctx, address, cred, opt.ConnPool, opt)
 		if err != nil {
 			conn.Close()
 			return nil, DialError{Err: err}
 		}
 	}
-	return NewFromConn(ctx, opt, cred, conn, casConn)
+	casDataConn := casConn
+	if opt.DataConnPool > 0 {
+		clog.Infof(ctx, "data address: %q (%d)", address, opt.DataConnPool)
+		casDataConn, err = newConn(ctx, address, cred, opt.DataConnPool, opt)
+		if err != nil {
+			conn.Close()
+			if conn != casConn {
+				casConn.Close()
+			}
+			return nil, DialError{Err: err}
+		}
+	}
+	return NewFromConn(ctx, opt, cred, conn, casConn, casDataConn)
 }
 
-func newConn(ctx context.Context, addr string, cred cred.Cred, opt Option) (grpcClientConn, error) {
+func newConn(ctx context.Context, addr string, cred cred.Cred, pool int, opt Option) (grpcClientConn, error) {
 	// Force the gRPC DNS resolver by prefixing "dns:///" when the caller
 	// did not supply a scheme. gtransport.DialPool rides the deprecated
 	// grpc.DialContext path whose default resolver is "passthrough",
@@ -449,7 +466,7 @@ func newConn(ctx context.Context, addr string, cred cred.Cred, opt Option) (grpc
 	}
 	copts := []option.ClientOption{
 		option.WithEndpoint(endpoint),
-		option.WithGRPCConnectionPool(opt.ConnPool),
+		option.WithGRPCConnectionPool(pool),
 	}
 	if !isGoogleRBE(addr) {
 		// disable Google Application Default for non RBE backend.
@@ -550,8 +567,8 @@ func newConn(ctx context.Context, addr string, cred cred.Cred, opt Option) (grpc
 	return conn, nil
 }
 
-// NewFromConn creates new remote exec API client from conn and casConn.
-func NewFromConn(ctx context.Context, opt Option, cred cred.Cred, conn, casConn grpcClientConn) (*Client, error) {
+// NewFromConn creates new remote exec API client from conn, casConn, and casDataConn.
+func NewFromConn(ctx context.Context, opt Option, cred cred.Cred, conn, casConn, casDataConn grpcClientConn) (*Client, error) {
 	zstdDecoderPool := &sync.Pool{}
 	zstdDecoderPool.New = func() any {
 		d, err := zstd.NewReader(nil, zstdDecoderOpts...)
@@ -570,6 +587,9 @@ func NewFromConn(ctx context.Context, opt Option, cred cred.Cred, conn, casConn 
 		if casConn != nil && casConn != conn {
 			casConn.Close()
 		}
+		if casDataConn != nil && casDataConn != casConn {
+			casDataConn.Close()
+		}
 		return nil, err
 	}
 	c := &Client{
@@ -578,6 +598,7 @@ func NewFromConn(ctx context.Context, opt Option, cred cred.Cred, conn, casConn 
 		cred:            cred,
 		conn:            conn,
 		casConn:         casConn,
+		casDataConn:     casDataConn,
 		zstdDecoderPool: zstdDecoderPool,
 		m:               iometrics.New("reapi"),
 	}
@@ -724,6 +745,12 @@ func (c *Client) Close() error {
 			err = cerr
 		}
 	}
+	if c.casDataConn != nil && c.casDataConn != c.casConn {
+		cerr := c.casDataConn.Close()
+		if err == nil {
+			err = cerr
+		}
+	}
 	return err
 }
 
@@ -785,6 +812,7 @@ func (c *Client) GetActionResult(ctx context.Context, d digest.Digest) (*rpb.Act
 		// Decide before cancel() overwrites the deadline cause.
 		keep := keepFirstAttempt(callCtx, cause, err)
 		cancel()
+		clog.Infof(ctx, "GetActionResult keep=%t err=%v", keep, err)
 		if keep {
 			c.m.OpsDone(err)
 			return result, err

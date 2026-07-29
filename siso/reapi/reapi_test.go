@@ -352,7 +352,7 @@ func TestExecuteAndWaitDefaultsDigestFunction(t *testing.T) {
 		Instance:       "test",
 		KeepExecStream: true,
 		DigestFunction: "blake3",
-	}, cred.Cred{}, conn, conn)
+	}, cred.Cred{}, conn, conn, conn)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -398,7 +398,7 @@ func TestExecuteStream_NoCanceledOnSuccess(t *testing.T) {
 	cl, err := reapi.NewFromConn(ctx, reapi.Option{
 		Instance:       "test",
 		KeepExecStream: true,
-	}, cred.Cred{}, conn, conn)
+	}, cred.Cred{}, conn, conn, conn)
 	if err != nil {
 		t.Fatal(err)
 	}

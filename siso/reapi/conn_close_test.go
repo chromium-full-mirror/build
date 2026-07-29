@@ -41,7 +41,8 @@ func TestClose_ClosesCASConn(t *testing.T) {
 	ctx := t.Context()
 	conn := &fakeConn{}
 	casConn := &fakeConn{}
-	c, err := NewFromConn(ctx, Option{}, cred.Cred{}, conn, casConn)
+	casDataConn := &fakeConn{}
+	c, err := NewFromConn(ctx, Option{}, cred.Cred{}, conn, casConn, casDataConn)
 	if err != nil {
 		t.Fatalf("NewFromConn: %v", err)
 	}
@@ -54,12 +55,15 @@ func TestClose_ClosesCASConn(t *testing.T) {
 	if got, want := casConn.closed, 1; got != want {
 		t.Errorf("casConn.closed = %d; want %d", got, want)
 	}
+	if got, want := casDataConn.closed, 1; got != want {
+		t.Errorf("casDataConn.closed = %d; want %d", got, want)
+	}
 }
 
 func TestClose_SharedConnClosedOnce(t *testing.T) {
 	ctx := t.Context()
 	conn := &fakeConn{}
-	c, err := NewFromConn(ctx, Option{}, cred.Cred{}, conn, conn)
+	c, err := NewFromConn(ctx, Option{}, cred.Cred{}, conn, conn, conn)
 	if err != nil {
 		t.Fatalf("NewFromConn: %v", err)
 	}
@@ -75,7 +79,8 @@ func TestNewFromConn_DigestFunctionErrorClosesBothConns(t *testing.T) {
 	ctx := t.Context()
 	conn := &fakeConn{}
 	casConn := &fakeConn{}
-	_, err := NewFromConn(ctx, Option{DigestFunction: "bogus"}, cred.Cred{}, conn, casConn)
+	casDataConn := &fakeConn{}
+	_, err := NewFromConn(ctx, Option{DigestFunction: "bogus"}, cred.Cred{}, conn, casConn, casDataConn)
 	if err == nil {
 		t.Fatal("NewFromConn succeeded; want digest function error")
 	}
@@ -85,13 +90,17 @@ func TestNewFromConn_DigestFunctionErrorClosesBothConns(t *testing.T) {
 	if got, want := casConn.closed, 1; got != want {
 		t.Errorf("casConn.closed = %d; want %d", got, want)
 	}
+	if got, want := casDataConn.closed, 1; got != want {
+		t.Errorf("casDataConn.closed = %d; want %d", got, want)
+	}
 }
 
 func TestInit_CapabilitiesErrorClosesBothConns(t *testing.T) {
 	ctx := t.Context()
 	conn := &fakeConn{invokeErr: status.Error(codes.InvalidArgument, "no capabilities")}
 	casConn := &fakeConn{}
-	c, err := NewFromConn(ctx, Option{}, cred.Cred{}, conn, casConn)
+	casDataConn := &fakeConn{}
+	c, err := NewFromConn(ctx, Option{}, cred.Cred{}, conn, casConn, casDataConn)
 	if err != nil {
 		t.Fatalf("NewFromConn: %v", err)
 	}
@@ -104,6 +113,9 @@ func TestInit_CapabilitiesErrorClosesBothConns(t *testing.T) {
 	if got, want := casConn.closed, 1; got != want {
 		t.Errorf("casConn.closed = %d; want %d", got, want)
 	}
+	if got, want := casDataConn.closed, 1; got != want {
+		t.Errorf("casDataConn.closed = %d; want %d", got, want)
+	}
 }
 
 func TestInit_DigestFunctionValidationErrorClosesBothConns(t *testing.T) {
@@ -112,7 +124,8 @@ func TestInit_DigestFunctionValidationErrorClosesBothConns(t *testing.T) {
 	// function other than sha256 fails validation.
 	conn := &fakeConn{}
 	casConn := &fakeConn{}
-	c, err := NewFromConn(ctx, Option{DigestFunction: "sha1"}, cred.Cred{}, conn, casConn)
+	casDataConn := &fakeConn{}
+	c, err := NewFromConn(ctx, Option{DigestFunction: "sha1"}, cred.Cred{}, conn, casConn, casDataConn)
 	if err != nil {
 		t.Fatalf("NewFromConn: %v", err)
 	}
@@ -124,5 +137,8 @@ func TestInit_DigestFunctionValidationErrorClosesBothConns(t *testing.T) {
 	}
 	if got, want := casConn.closed, 1; got != want {
 		t.Errorf("casConn.closed = %d; want %d", got, want)
+	}
+	if got, want := casDataConn.closed, 1; got != want {
+		t.Errorf("casDataConn.closed = %d; want %d", got, want)
 	}
 }

@@ -101,7 +101,7 @@ func NewLocalExec(ctx context.Context, t *testing.T) *reapi.Client {
 		Address:  "bufconn",
 		Instance: "projects/siso-test/instances/default_instance",
 	}
-	client, err := reapi.NewFromConn(ctx, opt, cred.Cred{}, conn, conn)
+	client, err := reapi.NewFromConn(ctx, opt, cred.Cred{}, conn, conn, conn)
 	if err != nil {
 		t.Fatal(err)
 	}
