@@ -672,6 +672,10 @@ func (s *WebuiServer) handleInvocationListSteps(w http.ResponseWriter, r *http.R
 	itemsFirst := pageIndex * itemsPerPage
 	itemsLast := max(0, min(itemsFirst+itemsPerPage, len(filteredSteps)))
 	subset := filteredSteps[itemsFirst:itemsLast]
+	targets := []string{}
+	if metrics.Info != nil {
+		targets = metrics.Info.Targets
+	}
 
 	data := map[string]any{
 		"subset":           subset,
@@ -686,6 +690,8 @@ func (s *WebuiServer) handleInvocationListSteps(w http.ResponseWriter, r *http.R
 		"itemFirstLogical": itemsFirst + 1,
 		"itemLastLogical":  itemsFirst + len(subset),
 		"itemsLen":         len(filteredSteps),
+		"targets":          targets,
+		"status":           metrics.Status,
 		"actionCounts":     metrics.actionCounts,
 		"ruleCounts":       metrics.ruleCounts,
 		"buildDuration":    metrics.buildDuration,

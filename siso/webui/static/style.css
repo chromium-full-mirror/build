@@ -23,7 +23,7 @@ html, body {
         grid-template-columns: 80px auto 300px;
         grid-template-areas:
             "header  header  header"
-            "navrail  tabs   sidebar"
+            "navrail  tabs   tabs"
             "navrail content sidebar";
     }
 
@@ -99,19 +99,101 @@ html, body {
     align-self: start;
     position: sticky;
     top: var(--header-height);
+
+    /* Simulation of https://m3.material.io/components/navigation-rail/overview
+     * since Material Web is in maintenance mode and this component is missing
+     * at time of writing. */
+    .page-tab {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        position: relative;
+        text-align: center;
+        --page-tab-width: 80px;
+        --page-tab-icon-width: 56px;
+        --page-tab-icon-height: 32px;
+        width: var(--page-tab-width);
+        margin-bottom: 8px;
+        font-size: var(--md-sys-typescale-label-medium-size);
+        font-weight: var(--md-sys-typescale-label-medium-weight);
+        color: var(--md-sys-color-on-surface);
+        &:hover {
+            text-decoration: none;
+        }
+
+        md-icon {
+            height: var(--page-tab-icon-height);
+            width: var(--page-tab-icon-width);
+            margin: 0 auto;
+        }
+        &.selected md-icon {
+            background: var(--md-sys-color-secondary-container);
+            border-radius: 999px;
+            font-variation-settings: 'FILL' 1;
+        }
+
+        md-ripple {
+            position: absolute;
+            height: var(--page-tab-icon-height);
+            width: var(--page-tab-icon-width);
+            margin: 0 auto;
+            border-radius: 999px;
+        }
+    }
 }
 #page-view {
     display: contents;
 }
 #page-tabs {
     grid-area: tabs;
+
+    /* Simulation of https://m3.material.io/components/button-groups/overview
+     * (for the connected button group variant only)
+     * since Material Web is in maintenance mode and this component is missing
+     * at time of writing. */
+    --tab-height: 40px;
+    --tab-line-height: var(--md-sys-typescale-label-large-line-height, 1.25rem);
+    --tab-text-size: var(--md-sys-typescale-label-large-size, 0.875rem);
+    --tab-text-weight: var(--md-sys-typescale-label-large-weight, var(--md-ref-typeface-weight-medium, 500));
+    --tab-icon-size: 18px;
+    --tab-leading-space: 24px;
+    --tab-trailing-space: 24px;
+    .page-tab {
+        display: inline-flex;
+        place-items: center;
+        margin-bottom: 4px;
+        box-sizing: border-box;
+        background: var(--md-filled-tonal-button-container-color, var(--md-sys-color-secondary-container));
+        color: var(--md-filled-tonal-button-label-text-color, var(--md-sys-color-on-secondary-container));
+        font-size: var(--tab-text-size);
+        font-weight: var(--tab-text-weight);
+        min-height: var(--tab-height);
+        padding-block: calc((var(--tab-height) - max(var(--tab-line-height), var(--tab-icon-size))) / 2);
+        padding-inline-start: var(--tab-leading-space);
+        padding-inline-end: var(--tab-trailing-space);
+        border-radius: var(--md-sys-shape-corner-extra-small);
+        transition: border-radius 350ms cubic-bezier(0.27, 1.06, 0.18, 1.00);
+        &:first-of-type {
+            border-start-start-radius: var(--md-sys-shape-corner-full);
+            border-end-start-radius: var(--md-sys-shape-corner-full);
+        }
+        &:last-of-type {
+            border-start-end-radius: var(--md-sys-shape-corner-full);
+            border-end-end-radius: var(--md-sys-shape-corner-full);
+        }
+        &:hover {
+            text-decoration: none;
+        }
+        &.selected {
+            background: var(--md-filled-button-container-color, var(--md-sys-color-primary-container));
+            color: var(--md-filled-button-label-text-color, var(--md-sys-color-on-primary-container));
+            border-radius: var(--md-sys-shape-corner-full);
+        }
+    }
 }
 #page-content {
     grid-area: content;
-    background: var(--md-sys-color-surface);
-    border-radius: var(--md-sys-shape-corner-large);
     margin-right: 12px;
-    padding: 16px;
 }
 #page-sidebar {
     grid-area: sidebar;
@@ -120,44 +202,26 @@ html, body {
     width: 300px;
 }
 
-.page-tab {
-    /* Simulation of https://m3.material.io/components/navigation-rail/overview
-    * since Material Web is in maintenance mode and this component is missing
-    * at time of writing. */
+.surface {
+    background: var(--md-sys-color-surface);
+    border-radius: var(--md-sys-shape-corner-large);
+    padding: 16px;
+}
+.build-status.surface {
     display: flex;
-    flex-direction: column;
     align-items: center;
-    position: relative;
-    text-align: center;
-    --page-tab-width: 80px;
-    --page-tab-icon-width: 56px;
-    --page-tab-icon-height: 32px;
-    width: var(--page-tab-width);
-    margin-bottom: 8px;
-    font-size: var(--md-sys-typescale-label-medium-size);
-    font-weight: var(--md-sys-typescale-label-medium-weight);
-    color: var(--md-sys-color-on-surface);
-    &:hover {
-        text-decoration: none;
+    gap: 8px;
+    margin-bottom: 4px;
+    padding: 12px 16px;
+    font-size: var(--md-sys-typescale-title-medium-size);
+    font-weight: var(--md-sys-typescale-title-small-weight);
+    &.success {
+        background: var(--siso-sys-color-success-container);
+        color: var(--siso-sys-color-on-success-container);
     }
-
-    md-icon {
-        height: var(--page-tab-icon-height);
-        width: var(--page-tab-icon-width);
-        margin: 0 auto;
-    }
-    &.selected md-icon {
-        background: var(--md-sys-color-secondary-container);
-        border-radius: 999px;
-        font-variation-settings: 'FILL' 1;
-    }
-
-    md-ripple {
-        position: absolute;
-        height: var(--page-tab-icon-height);
-        width: var(--page-tab-icon-width);
-        margin: 0 auto;
-        border-radius: 999px;
+    &.failure {
+        background: var(--md-sys-color-error-container);
+        color: var(--md-sys-color-on-error-container);
     }
 }
 
@@ -482,12 +546,8 @@ th.remote-indicator {
 td.remote-indicator {
     text-align: center;
 }
-.light .remote-indicator md-icon.icon-cache-hit {
-    color: rgb(0, 124, 0);
-    font-variation-settings: 'FILL' 1;
-}
-.dark .remote-indicator md-icon.icon-cache-hit {
-    color: rgb(171, 255, 171);
+.remote-indicator md-icon.icon-cache-hit {
+    color: var(--siso-sys-color-success);
     font-variation-settings: 'FILL' 1;
 }
 
@@ -724,10 +784,24 @@ pre:has(> code) {
         var(--md-ref-typeface-weight-bold);
 
     /* Shapes */
+    --md-sys-shape-corner-extra-small: 4px;
     --md-sys-shape-corner-small: 8px;
     --md-sys-shape-corner-medium: 12px;
     --md-sys-shape-corner-large: 16px;
+    --md-sys-shape-corner-full: 9999px;
 
     /* Misc */
     --md-icon-button-state-layer-height: 40px;
+
+    /* Siso WebUI extensions to Material Design */
+    --siso-sys-color-success: rgb(0 124 0);
+    --siso-sys-color-on-success: rgb(255 255 255);
+    --siso-sys-color-success-container: rgb(184 243 180);
+    --siso-sys-color-on-success-container: rgb(0 33 2);
+}
+.dark {
+    --siso-sys-color-success: rgb(112 220 115);
+    --siso-sys-color-on-success: rgb(0 57 4);
+    --siso-sys-color-success-container: rgb(0 83 7);
+    --siso-sys-color-on-success-container: rgb(184 243 180);
 }

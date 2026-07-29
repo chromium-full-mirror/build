@@ -144,9 +144,11 @@ found in the LICENSE file. */}}
         <span>Targets</span>
       </a>
     </nav>
-    <div id="page-view">
+    <nav id="page-tabs" hx-push-url="true" hx-swap-oob="true">
       {{block "tabs" .}}{{end}}
-      <div id="page-content" class="content">{{template "content" .}}</div>
+    </nav>
+    <div id="page-view">
+      <div id="page-content">{{template "content" .}}</div>
       {{block "sidebar" .}}{{end}}
     </div>
   </div>

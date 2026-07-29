@@ -9,6 +9,7 @@ found in the LICENSE file. */}}
 {{end}}
 
 {{define "content"}}
+<div class="surface">
 <div hx-ext="sse" sse-connect="/events/">
     <div id="build-exec-result">
         <form action="." method="POST" style="display: flex; align-items: center; gap: 4px;">
@@ -39,5 +40,6 @@ found in the LICENSE file. */}}
             <div sse-swap="activesteps" hx-target="this" hx-swap="innerHTML"></div>
         </div>
     </div>
+</div>
 </div>
 {{end}}

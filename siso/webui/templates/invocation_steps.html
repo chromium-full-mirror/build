@@ -150,6 +150,13 @@ found in the LICENSE file. */}}
 {{$currentURL:=.currentURL}}
 {{$currentRev:=.currentRev}}
 {{$buildDuration:=.buildDuration}}
+<div class="surface build-status
+  {{if .status.Succeeded}} success"><md-icon>check_circle</md-icon>
+  {{else if .status.Failed}} failure"><md-icon>cancel</md-icon>
+  {{else}} "><md-icon>help</md-icon>{{end}}
+  <span><code>{{joinStrings .targets ", "}}</code> in {{formatIntervalMetricHuman .buildDuration}}</span>
+</div>
+<div class="surface">
 <div class="data-table-container">
   <table>
     <thead>
@@ -242,5 +249,6 @@ found in the LICENSE file. */}}
       {{end}}
     </tbody>
   </table>
+</div>
 </div>
 {{end}}
