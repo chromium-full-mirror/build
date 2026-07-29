@@ -440,16 +440,16 @@ func TestIsOutputFile(t *testing.T) {
 		path string
 		want bool
 	}{
-		{name: "exact match", path: "out/Default/main.o", want: true},
-		{name: "dir match", path: "out/Default/gendir", want: true},
-		{name: "file under dir", path: "out/Default/gendir/foo.txt", want: true},
-		{name: "nested under dir", path: "out/Default/gendir/sub/bar.txt", want: true},
-		{name: "deeply nested under dir", path: "out/Default/gendir/a/b/c/d/e.txt", want: true},
-		{name: "unrelated file", path: "out/Default/other.o", want: false},
-		{name: "partial prefix", path: "out/Default/gendir_extra/foo.txt", want: false},
-		{name: "absolute path no match", path: "/usr/local/bin/tool", want: false},
-		{name: "root path", path: "/", want: false},
-		{name: "empty path", path: "", want: false},
+		{name: "exact_match", path: "out/Default/main.o", want: true},
+		{name: "dir_match", path: "out/Default/gendir", want: true},
+		{name: "file_under_dir", path: "out/Default/gendir/foo.txt", want: true},
+		{name: "nested_under_dir", path: "out/Default/gendir/sub/bar.txt", want: true},
+		{name: "deeply_nested_under_dir", path: "out/Default/gendir/a/b/c/d/e.txt", want: true},
+		{name: "unrelated_file", path: "out/Default/other.o", want: false},
+		{name: "partial_prefix", path: "out/Default/gendir_extra/foo.txt", want: false},
+		{name: "absolute_path_no_match", path: "/usr/local/bin/tool", want: false},
+		{name: "root_path", path: "/", want: false},
+		{name: "empty_path", path: "", want: false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			got := cmd.isOutputFile(path.Path(tc.path))
@@ -860,25 +860,25 @@ func TestDeclaredOutputsAndAllOutputs(t *testing.T) {
 		wantAll      []string
 	}{
 		{
-			name:         "files only",
+			name:         "files_only",
 			cmd:          Cmd{Outputs: []path.Path{"a.o", "b.o"}},
 			wantDeclared: []string{"a.o", "b.o"},
 			wantAll:      []string{"a.o", "b.o"},
 		},
 		{
-			name:         "files and dirs",
+			name:         "files_and_dirs",
 			cmd:          Cmd{Outputs: []path.Path{"a.o"}, OutputDirs: []path.Path{"gen"}},
 			wantDeclared: []string{"a.o", "gen"},
 			wantAll:      []string{"a.o", "gen"},
 		},
 		{
-			name:         "files and depfile",
+			name:         "files_and_depfile",
 			cmd:          Cmd{Outputs: []path.Path{"a.o"}, Depfile: "a.o.d"},
 			wantDeclared: []string{"a.o"},
 			wantAll:      []string{"a.o", "a.o.d"},
 		},
 		{
-			name:         "files dirs and depfile",
+			name:         "files_dirs_and_depfile",
 			cmd:          Cmd{Outputs: []path.Path{"a.o"}, OutputDirs: []path.Path{"gen"}, Depfile: "a.o.d"},
 			wantDeclared: []string{"a.o", "gen"},
 			wantAll:      []string{"a.o", "gen", "a.o.d"},
@@ -916,15 +916,15 @@ func TestOutermostPaths(t *testing.T) {
 		in   []string
 		want []string
 	}{
-		{"file nested in dir output", []string{"gen/foo.h", "gen"}, []string{"gen"}},
-		{"nested dir outputs", []string{"gen", "gen/sub"}, []string{"gen"}},
-		{"siblings, no parent output", []string{"gen/a.o", "gen/b.o"}, []string{"gen/a.o", "gen/b.o"}},
-		{"exact duplicate (depfile also output)", []string{"foo.o", "foo.o.d", "foo.o.d"}, []string{"foo.o", "foo.o.d"}},
+		{"file_nested_in_dir_output", []string{"gen/foo.h", "gen"}, []string{"gen"}},
+		{"nested_dir_outputs", []string{"gen", "gen/sub"}, []string{"gen"}},
+		{"siblings_no_parent_output", []string{"gen/a.o", "gen/b.o"}, []string{"gen/a.o", "gen/b.o"}},
+		{"exact_duplicate_depfile_also_output", []string{"foo.o", "foo.o.d", "foo.o.d"}, []string{"foo.o", "foo.o.d"}},
 		{"unrelated", []string{"gen", "other.o"}, []string{"gen", "other.o"}},
 		// Sorted order can interleave a sibling between a directory root and
 		// its contents ('.' < '/'): "gen/foo.stamp" sorts between "gen/foo"
 		// and "gen/foo/a.o". The sibling must stay; the nested file must go.
-		{"interleaved sibling", []string{"gen/foo", "gen/foo.stamp", "gen/foo/a.o"}, []string{"gen/foo", "gen/foo.stamp"}},
+		{"interleaved_sibling", []string{"gen/foo", "gen/foo.stamp", "gen/foo/a.o"}, []string{"gen/foo", "gen/foo.stamp"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			got := OutermostPaths(path.Paths(tc.in))
