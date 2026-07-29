@@ -87,7 +87,7 @@ type outdirInfo struct {
 // TODO: rename rev to id?
 func (i *outdirInfo) Get(rev string) *buildMetrics {
 	for _, m := range i.metrics {
-		if m.Rev == rev {
+		if m.ID() == rev {
 			return m
 		}
 	}
@@ -163,7 +163,7 @@ func loadOutdirInfo(workspaceRoot, outDir, manifestPath string) (*outdirInfo, er
 			return nil, fmt.Errorf("failed to load latest metrics: %w", err)
 		}
 		outdirInfo.metrics = append(outdirInfo.metrics, latestMetrics)
-		outdirInfo.latestRevID = latestMetrics.Rev
+		outdirInfo.latestRevID = latestMetrics.ID()
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return nil, fmt.Errorf("failed to stat latest metrics: %w", err)
 	}

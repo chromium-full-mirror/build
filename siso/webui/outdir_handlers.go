@@ -17,10 +17,8 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"time"
 
 	"go.chromium.org/build/siso/build"
-	"go.chromium.org/build/siso/build/metadata"
 	"go.chromium.org/build/siso/toolsupport/ninjautil"
 )
 
@@ -37,68 +35,6 @@ type fieldAggregate struct {
 	Count int
 }
 
-// BuildStatus describes whether a build finished, and if so whether it succeeded.
-//
-// Infer the status from siso_metrics.json. When the build finishes, Siso appends
-// a build_id row with an err field if the build failed.
-// If the build is killed/crashed/still running, this row doesn't yet exist,
-// hence we interpret it as an unknown result.
-type BuildStatus string
-
-const (
-	buildStatusUnknown BuildStatus = "unknown"
-	buildStatusSuccess BuildStatus = "success"
-	buildStatusFailure BuildStatus = "failure"
-)
-
-// Succeeded returns whether the build finished without an error.
-func (s BuildStatus) Succeeded() bool {
-	return s == buildStatusSuccess
-}
-
-// Failed returns whether the build finished with an error.
-func (s BuildStatus) Failed() bool {
-	return s == buildStatusFailure
-}
-
-// buildMetrics represents data for a single build revision.
-// (Exported fields are accessible from Go templates.)
-type buildMetrics struct {
-	Mtime         time.Time
-	Rev           string // TODO: rename to BuildID?
-	Info          *metadata.InvocationInfo
-	Status        BuildStatus
-	FailedSteps   int
-	buildDuration build.IntervalMetric
-	lastStepID    string
-	ruleCounts    []fieldAggregate
-	actionCounts  []fieldAggregate
-	// buildMetrics contains build.StepMetric related to overall build e.g. regenerate ninja files.
-	buildMetrics []*build.StepMetric
-	// StepMetrics contains build.StepMetric related to ninja executions.
-	// TODO: rename to allow invocation.Invocation Steps() to rename to StepMetrics().
-	StepMetrics []*build.StepMetric
-	// stepByStepID keys step ID to *build.StepMetric for faster lookup.
-	stepByStepID map[string]*build.StepMetric
-	// stepByOutput keys output to *build.StepMetric for faster lookup.
-	stepByOutput map[string]*build.StepMetric
-}
-
-// ID returns the build ID of this invocation.
-func (b *buildMetrics) ID() string {
-	return b.Rev
-}
-
-// BuildDuration returns the build duration of this invocation.
-func (b *buildMetrics) BuildDuration() build.IntervalMetric {
-	return b.buildDuration
-}
-
-// Steps returns the step metrics struct for this invocation.
-func (b *buildMetrics) Steps() []*build.StepMetric {
-	return b.StepMetrics
-}
-
 // aggregateMetric represents data for the aggregates page.
 // (All fields are exported to be usable in Go templates.)
 type aggregateMetric struct {
@@ -107,130 +43,6 @@ type aggregateMetric struct {
 	TotalUtime            build.IntervalMetric
 	TotalDuration         build.IntervalMetric
 	TotalWeightedDuration build.IntervalMetric
-}
-
-func loadBuildMetrics(metricsPath string) (*buildMetrics, error) {
-	f, err := os.Open(metricsPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read metrics: %w", err)
-	}
-	defer f.Close()
-
-	stat, err := f.Stat()
-	if err != nil {
-		return nil, fmt.Errorf("failed to stat metrics: %w", err)
-	}
-
-	metricsData := &buildMetrics{
-		Mtime:        stat.ModTime(),
-		buildMetrics: []*build.StepMetric{},
-		StepMetrics:  []*build.StepMetric{},
-		stepByStepID: make(map[string]*build.StepMetric),
-		stepByOutput: make(map[string]*build.StepMetric),
-		ruleCounts:   []fieldAggregate{},
-		actionCounts: []fieldAggregate{},
-	}
-
-	d := json.NewDecoder(f)
-	buildFinished := false
-	for {
-		var m build.StepMetric
-		err := d.Decode(&m)
-		if errors.Is(err, io.EOF) {
-			break
-		}
-		if errors.Is(err, io.ErrUnexpectedEOF) {
-			buildFinished = false
-			break
-		}
-		if err != nil {
-			return nil, fmt.Errorf("parse error in %s:%d: %w", metricsPath, d.InputOffset(), err)
-		}
-		if m.BuildID != "" {
-			metricsData.buildMetrics = append(metricsData.buildMetrics, &m)
-			// The last build metric found has the actual build duration.
-			metricsData.buildDuration = m.Duration
-			buildFinished = true
-		} else if m.StepID != "" {
-			metricsData.StepMetrics = append(metricsData.StepMetrics, &m)
-			metricsData.stepByStepID[m.StepID] = &m
-			metricsData.stepByOutput[m.Output()] = &m
-			metricsData.lastStepID = m.StepID
-			if m.Err {
-				metricsData.FailedSteps++
-			}
-			buildFinished = false
-		} else {
-			return nil, fmt.Errorf("unexpected metric found %v", m)
-		}
-	}
-
-	if len(metricsData.buildMetrics) == 0 || metricsData.buildMetrics[0].BuildID == "" {
-		return nil, fmt.Errorf("need at least one build_id in %s", metricsPath)
-	}
-	metricsData.Rev = metricsData.buildMetrics[0].BuildID
-
-	switch {
-	case !buildFinished:
-		metricsData.Status = buildStatusUnknown
-	case metricsData.buildMetrics[len(metricsData.buildMetrics)-1].Err:
-		metricsData.Status = buildStatusFailure
-	default:
-		metricsData.Status = buildStatusSuccess
-	}
-
-	actionCounts := make(map[string]int)
-	for _, metric := range metricsData.StepMetrics {
-		if metric.Action != "" {
-			actionCounts[metric.Action]++
-		}
-	}
-	for action := range maps.Keys(actionCounts) {
-		metricsData.actionCounts = append(metricsData.actionCounts, fieldAggregate{
-			Key:   action,
-			Count: actionCounts[action],
-		})
-	}
-	slices.SortFunc(metricsData.actionCounts, func(a, b fieldAggregate) int {
-		return cmp.Compare(b.Count, a.Count)
-	})
-
-	ruleCounts := make(map[string]int)
-	for _, metric := range metricsData.StepMetrics {
-		if metric.Rule != "" {
-			ruleCounts[metric.Rule]++
-		}
-	}
-	for rule := range maps.Keys(ruleCounts) {
-		metricsData.ruleCounts = append(metricsData.ruleCounts, fieldAggregate{
-			Key:   rule,
-			Count: ruleCounts[rule],
-		})
-	}
-	slices.SortFunc(metricsData.ruleCounts, func(a, b fieldAggregate) int {
-		return cmp.Compare(b.Count, a.Count)
-	})
-
-	// Attempt to load corresponding invocation metadata if available.
-	dir := filepath.Dir(metricsPath)
-	if matches, err := filepath.Glob(filepath.Join(dir, "siso_metadata*.json")); err == nil {
-		for _, match := range matches {
-			data, err := os.ReadFile(match)
-			if err != nil {
-				continue
-			}
-			var info metadata.InvocationInfo
-			if err := json.Unmarshal(data, &info); err != nil {
-				continue
-			}
-			if info.BuildID == metricsData.Rev || len(matches) == 1 {
-				metricsData.Info = &info
-				break
-			}
-		}
-	}
-
-	return metricsData, nil
 }
 
 // handleOutdirReload reloads the outdir.
@@ -430,7 +242,7 @@ func (s *WebuiServer) handleInvocationAggregates(w http.ResponseWriter, r *http.
 	}
 
 	aggregates := make(map[string]aggregateMetric)
-	for _, m := range metrics.StepMetrics {
+	for _, m := range metrics.StepMetrics() {
 		// Aggregate by rule if exists otherwise action.
 		aggregateBy := m.Action
 		if len(m.Rule) > 0 {
@@ -614,7 +426,7 @@ func (s *WebuiServer) handleInvocationListSteps(w http.ResponseWriter, r *http.R
 		}
 		slices.Reverse(filteredSteps)
 	default:
-		for _, m := range metrics.StepMetrics {
+		for _, m := range metrics.StepMetrics() {
 			if len(actionsWanted) > 0 && !slices.Contains(actionsWanted, m.Action) {
 				continue
 			}

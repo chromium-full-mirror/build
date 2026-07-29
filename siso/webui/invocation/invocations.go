@@ -46,6 +46,6 @@ type Series[T Invocation] interface {
 type Invocation interface {
 	// ID returns the build ID.
 	ID() string
-	// Steps returns all build steps run in this invocation.
-	Steps() []*build.StepMetric // TODO: rename to StepMetrics
+	// StepMetrics returns all build steps run in this invocation.
+	StepMetrics() []*build.StepMetric
 }
