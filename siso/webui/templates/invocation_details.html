@@ -18,6 +18,18 @@ found in the LICENSE file. */}}
   <h2>Invocation Details</h2>
   <ul class="step-details">
     <li>
+      {{if $metrics.Status.Succeeded}}
+        <md-icon>check_circle</md-icon>
+        <span>Build Succeeded</span>
+      {{else if $metrics.Status.Failed}}
+        <md-icon>cancel</md-icon>
+        <span>Build Failed ({{$metrics.FailedSteps}} steps failed)</span>
+      {{else}}
+        <md-icon>help</md-icon>
+        <span>Build Status Unknown</span>
+      {{end}}
+    </li>
+    <li>
       <md-icon>fingerprint</md-icon>
       <span>Build ID: <code>{{$metrics.Rev}}</code></span>
     </li>

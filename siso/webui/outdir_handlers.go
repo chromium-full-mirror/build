@@ -37,12 +37,38 @@ type fieldAggregate struct {
 	Count int
 }
 
+// BuildStatus describes whether a build finished, and if so whether it succeeded.
+//
+// Infer the status from siso_metrics.json. When the build finishes, Siso appends
+// a build_id row with an err field if the build failed.
+// If the build is killed/crashed/still running, this row doesn't yet exist,
+// hence we interpret it as an unknown result.
+type BuildStatus string
+
+const (
+	buildStatusUnknown BuildStatus = "unknown"
+	buildStatusSuccess BuildStatus = "success"
+	buildStatusFailure BuildStatus = "failure"
+)
+
+// Succeeded returns whether the build finished without an error.
+func (s BuildStatus) Succeeded() bool {
+	return s == buildStatusSuccess
+}
+
+// Failed returns whether the build finished with an error.
+func (s BuildStatus) Failed() bool {
+	return s == buildStatusFailure
+}
+
 // buildMetrics represents data for a single build revision.
 // (Exported fields are accessible from Go templates.)
 type buildMetrics struct {
 	Mtime         time.Time
 	Rev           string // TODO: rename to BuildID?
 	Info          *metadata.InvocationInfo
+	Status        BuildStatus
+	FailedSteps   int
 	buildDuration build.IntervalMetric
 	lastStepID    string
 	ruleCounts    []fieldAggregate
@@ -106,10 +132,15 @@ func loadBuildMetrics(metricsPath string) (*buildMetrics, error) {
 	}
 
 	d := json.NewDecoder(f)
+	buildFinished := false
 	for {
 		var m build.StepMetric
 		err := d.Decode(&m)
 		if errors.Is(err, io.EOF) {
+			break
+		}
+		if errors.Is(err, io.ErrUnexpectedEOF) {
+			buildFinished = false
 			break
 		}
 		if err != nil {
@@ -119,11 +150,16 @@ func loadBuildMetrics(metricsPath string) (*buildMetrics, error) {
 			metricsData.buildMetrics = append(metricsData.buildMetrics, &m)
 			// The last build metric found has the actual build duration.
 			metricsData.buildDuration = m.Duration
+			buildFinished = true
 		} else if m.StepID != "" {
 			metricsData.StepMetrics = append(metricsData.StepMetrics, &m)
 			metricsData.stepByStepID[m.StepID] = &m
 			metricsData.stepByOutput[m.Output()] = &m
 			metricsData.lastStepID = m.StepID
+			if m.Err {
+				metricsData.FailedSteps++
+			}
+			buildFinished = false
 		} else {
 			return nil, fmt.Errorf("unexpected metric found %v", m)
 		}
@@ -133,6 +169,15 @@ func loadBuildMetrics(metricsPath string) (*buildMetrics, error) {
 		return nil, fmt.Errorf("need at least one build_id in %s", metricsPath)
 	}
 	metricsData.Rev = metricsData.buildMetrics[0].BuildID
+
+	switch {
+	case !buildFinished:
+		metricsData.Status = buildStatusUnknown
+	case metricsData.buildMetrics[len(metricsData.buildMetrics)-1].Err:
+		metricsData.Status = buildStatusFailure
+	default:
+		metricsData.Status = buildStatusSuccess
+	}
 
 	actionCounts := make(map[string]int)
 	for _, metric := range metricsData.StepMetrics {
