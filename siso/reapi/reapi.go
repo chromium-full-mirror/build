@@ -103,6 +103,10 @@ type Option struct {
 	// with WaitExecution to mitigate grpc/network issue.
 	KeepExecStream bool
 
+	// Use GetTree for WalkDir.
+	// If false, use BatchReadBlobs instead.
+	WalkDirStream bool
+
 	ConnPool        int
 	KeepAliveParams keepalive.ClientParameters
 
@@ -201,6 +205,8 @@ func (o *Option) RegisterFlags(fs *flag.FlagSet, envs map[string]string) {
 	fs.BoolVar(&o.EnableGRPCCompression, o.Prefix+"_enable_grpc_compression", false, "enable grpc compression.  if enabled, blob-level compression will be forcibly disabled."+purpose)
 
 	fs.BoolVar(&o.KeepExecStream, o.Prefix+"_keep_exec_stream", false, "keep Execute stream open as long as possible")
+
+	fs.BoolVar(&o.WalkDirStream, o.Prefix+"_walkdir_stream", false, "use GetTree for WalkDir")
 
 	fs.IntVar(&o.ConnPool, o.Prefix+"_grpc_conn_pool", 25, "grpc connection pool")
 
