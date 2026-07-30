@@ -48,4 +48,6 @@ type Invocation interface {
 	ID() string
 	// StepMetrics returns all build steps run in this invocation.
 	StepMetrics() []*build.StepMetric
+	// CriticalPath returns the build steps on the critical path in execution order.
+	CriticalPath() []*build.StepMetric
 }

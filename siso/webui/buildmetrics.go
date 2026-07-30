@@ -80,6 +80,25 @@ func (b *buildMetrics) StepMetrics() []*build.StepMetric {
 	return b.stepMetrics
 }
 
+// CriticalPath returns the build steps on the critical path in execution order.
+func (b *buildMetrics) CriticalPath() []*build.StepMetric {
+	var path []*build.StepMetric
+	// We assume the last step is on the critical path.
+	// Build the critical path backwards then reverse it.
+	critStepID := b.lastStepID
+	for critStepID != "" {
+		if step, ok := b.stepByStepID[critStepID]; ok {
+			path = append(path, step)
+			critStepID = step.PrevStepID
+		} else {
+			// TODO(b/349287453): add some sort of error to indicate prev step was not found
+			break
+		}
+	}
+	slices.Reverse(path)
+	return path
+}
+
 func loadBuildMetrics(metricsPath string) (*buildMetrics, error) {
 	f, err := os.Open(metricsPath)
 	if err != nil {

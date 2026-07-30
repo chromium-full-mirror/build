@@ -412,19 +412,7 @@ func (s *WebuiServer) handleInvocationListSteps(w http.ResponseWriter, r *http.R
 	switch view {
 	case "criticalPath":
 		sortSupported = false
-		// We assume the last step is on the critical path.
-		// Build the critical path backwards then reverse it.
-		critStepID := metrics.lastStepID
-		for critStepID != "" {
-			if step, ok := metrics.stepByStepID[critStepID]; ok {
-				filteredSteps = append(filteredSteps, step)
-				critStepID = step.PrevStepID
-			} else {
-				// TODO(b/349287453): add some sort of error to indicate prev step was not found
-				break
-			}
-		}
-		slices.Reverse(filteredSteps)
+		filteredSteps = metrics.CriticalPath()
 	default:
 		for _, m := range metrics.StepMetrics() {
 			if len(actionsWanted) > 0 && !slices.Contains(actionsWanted, m.Action) {
