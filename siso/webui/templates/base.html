@@ -80,10 +80,13 @@ found in the LICENSE file. */}}
           {{if and .currentRev (not .isSeriesList) (urlPathHasPrefix .currentURL (printf "%s/builds/" .outdirBaseURL))}}
           {{$currentRev := .currentRev}}
           <div class="breadcrumb">
+            <a class="breadcrumb-label" href="{{.outdirBaseURL}}/builds/">Invocations</a>
+          </div>
+          <div class="breadcrumb">
             <button type="button" id="invocation-menu-button" class="menu-popover-button breadcrumb-menu-button"
                 popovertarget="invocation-menu">
               <span class="breadcrumb-label">
-                  Invocation {{$currentRev}}
+                  {{$currentRev}}
               </span>
               {{if .revs}}
                 <md-icon></md-icon>
@@ -107,13 +110,9 @@ found in the LICENSE file. */}}
                 <div>
                     Invocations
                 </div>
-                <md-menu-item href="{{$.outdirBaseURL}}/builds/">
-                  <div slot="headline">All Invocations...</div>
-                </md-menu-item>
-                <md-divider role="separator"></md-divider>
                 {{range $r := .revs}}
                 <md-menu-item href="{{$.outdirBaseURL}}/builds/{{$r.Rev}}/{{$activeTab}}/">
-                  <div slot="headline">Invocation {{$r.Rev}}</div>
+                  <div slot="headline">{{$r.Rev}}</div>
                 </md-menu-item>
                 {{end}}
                 <md-elevation></md-elevation>

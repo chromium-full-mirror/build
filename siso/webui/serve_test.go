@@ -357,13 +357,13 @@ func TestBreadcrumbs(t *testing.T) {
 		want []string
 	}{
 		{"/out/Default/builds/", []string{outdirAbbrev, "Invocations"}},
-		{"/out/Default/builds/test-rev/steps/", []string{outdirAbbrev, "Invocation test-rev", "Build Steps"}},
-		{"/out/Default/builds/test-rev/steps/step-1/", []string{outdirAbbrev, "Invocation test-rev", "Build Steps", "out1.o"}},
-		{"/out/Default/builds/test-rev/details/", []string{outdirAbbrev, "Invocation test-rev", "Details"}},
-		{"/out/Default/builds/test-rev/aggregates/", []string{outdirAbbrev, "Invocation test-rev", "Aggregates"}},
+		{"/out/Default/builds/test-rev/steps/", []string{outdirAbbrev, "Invocations", "test-rev", "Build Steps"}},
+		{"/out/Default/builds/test-rev/steps/step-1/", []string{outdirAbbrev, "Invocations", "test-rev", "Build Steps", "out1.o"}},
+		{"/out/Default/builds/test-rev/details/", []string{outdirAbbrev, "Invocations", "test-rev", "Details"}},
+		{"/out/Default/builds/test-rev/aggregates/", []string{outdirAbbrev, "Invocations", "test-rev", "Aggregates"}},
 		{"/out/Default/targets/all/", []string{outdirAbbrev, "Targets", "all"}},
 		{"/out/Default/targets/foo.o/", []string{outdirAbbrev, "Targets", "foo.o"}},
-		{"/out/Default/builds/test-rev/logs/.siso_config", []string{outdirAbbrev, "Invocation test-rev", "Raw Logs", ".siso_config"}},
+		{"/out/Default/builds/test-rev/logs/.siso_config", []string{outdirAbbrev, "Invocations", "test-rev", "Raw Logs", ".siso_config"}},
 		{"/out/Default/runbuild/", []string{outdirAbbrev, "Run Build"}},
 		{"/out/Default/watch/", []string{outdirAbbrev, "Watch"}},
 	} {
