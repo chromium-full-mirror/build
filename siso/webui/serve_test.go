@@ -169,6 +169,7 @@ func TestRoutes_Outdirs(t *testing.T) {
 		path string
 		want int
 	}{
+		{"/out/Default/builds/", http.StatusOK},
 		{"/out/Default/builds/test-rev/steps/", http.StatusOK},
 		{"/out/Default/builds/test-rev/steps/step-1/", http.StatusOK},
 		{"/out/Default/builds/test-rev/steps/step-0/", http.StatusNotFound},
@@ -199,6 +200,23 @@ func TestRoutes_Outdirs(t *testing.T) {
 	}
 }
 
+func TestRoutes_InvocationSeriesList(t *testing.T) {
+	s, _ := mustServer(t.Context(), t)
+
+	rec := httptest.NewRecorder()
+	s.mux().ServeHTTP(rec, httptest.NewRequest("GET", "/out/Default/builds/", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /out/Default/builds/ = %d; want 200", rec.Code)
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, "test-rev") {
+		t.Errorf("body missing test-rev: %s", body)
+	}
+	if !strings.Contains(body, "Invocations") {
+		t.Errorf("body missing Invocations title: %s", body)
+	}
+}
+
 func TestRoutes_UploadedMetrics(t *testing.T) {
 	s, _ := mustServer(t.Context(), t)
 
@@ -217,6 +235,7 @@ func TestRoutes_UploadedMetrics(t *testing.T) {
 		path string
 		want int
 	}{
+		{"/uploads/view/builds/", http.StatusOK},
 		{"/uploads/view/builds/uploaded-build-id/steps/", http.StatusOK},
 		{"/uploads/view/builds/uploaded-build-id/steps/step-1/", http.StatusOK},
 		{"/uploads/view/builds/uploaded-build-id/details/", http.StatusOK},
@@ -337,6 +356,7 @@ func TestBreadcrumbs(t *testing.T) {
 		path string
 		want []string
 	}{
+		{"/out/Default/builds/", []string{outdirAbbrev, "Invocations"}},
 		{"/out/Default/builds/test-rev/steps/", []string{outdirAbbrev, "Invocation test-rev", "Build Steps"}},
 		{"/out/Default/builds/test-rev/steps/step-1/", []string{outdirAbbrev, "Invocation test-rev", "Build Steps", "out1.o"}},
 		{"/out/Default/builds/test-rev/details/", []string{outdirAbbrev, "Invocation test-rev", "Details"}},

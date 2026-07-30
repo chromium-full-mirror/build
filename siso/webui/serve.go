@@ -437,7 +437,7 @@ func (s *WebuiServer) invocationSeriesFor(r *http.Request) (invocation.Series[*b
 		s.uploadedMetrics.mu.Lock()
 		defer s.uploadedMetrics.mu.Unlock()
 		for _, m := range s.uploadedMetrics.files {
-			if m.metrics.Rev == r.PathValue("rev") {
+			if m.metrics.Rev == r.PathValue("rev") || r.PathValue("rev") == "" {
 				return m, nil
 			}
 		}
@@ -486,6 +486,7 @@ func (s *WebuiServer) mux() http.Handler {
 	outdirRouter.HandleFunc("POST /{outroot}/{outsub}/runbuild/", s.handleRunbuildPost)
 	outdirRouter.HandleFunc("/{outroot}/{outsub}/reload", s.handleOutdirReload)
 	outdirRouter.HandleFunc("/{outroot}/{outsub}/watch/", s.handleOutdirWatch)
+	outdirRouter.HandleFunc("/{outroot}/{outsub}/builds/", s.handleInvocationSeriesList)
 	outdirRouter.HandleFunc("/{outroot}/{outsub}/builds/{rev}/details/", s.handleInvocationDetails)
 	outdirRouter.HandleFunc("/{outroot}/{outsub}/builds/{rev}/logs/{file}", s.handleOutdirViewLog)
 	outdirRouter.HandleFunc("/{outroot}/{outsub}/builds/{rev}/aggregates/", s.handleInvocationAggregates)
@@ -503,6 +504,7 @@ func (s *WebuiServer) mux() http.Handler {
 	// It would probably be more ideal to have just "/uploads/{rev}/builds/steps/", but it would require more refactoring.
 	uploadsRouter := http.NewServeMux()
 	uploadsRouter.HandleFunc("/uploads/view/", s.handleInvocationSeriesRoot)
+	uploadsRouter.HandleFunc("/uploads/view/builds/", s.handleInvocationSeriesList)
 	uploadsRouter.HandleFunc("/uploads/view/builds/{rev}/details/", s.handleInvocationDetails)
 	uploadsRouter.HandleFunc("/uploads/view/builds/{rev}/aggregates/", s.handleInvocationAggregates)
 	uploadsRouter.HandleFunc("POST /uploads/view/builds/{rev}/steps/{id}/recall/", s.handleInvocationStepRecall)

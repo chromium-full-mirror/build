@@ -225,6 +225,21 @@ html, body {
     }
 }
 
+.status-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    &.success {
+        color: var(--siso-sys-color-success);
+    }
+    &.failure {
+        color: var(--md-sys-color-error);
+    }
+    &.unknown {
+        color: var(--md-sys-color-on-surface-variant);
+    }
+}
+
 /* Steps page. */
 
 .revs-timeline {
