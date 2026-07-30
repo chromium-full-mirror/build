@@ -89,6 +89,17 @@ func TestUpdateStepMetricsFromTrace_CanonicalRunTime(t *testing.T) {
 			name:    "remote exec",
 			metrics: StepMetric{IsRemote: true},
 			spans: []trace.SpanData{
+				// If there was multiple attempts, the last one is the winner.
+				testSpan(spanExecRemoteExecAttempt, time.Second, 2*time.Second),
+				testSpan(spanExecRemoteExecAttempt, 2*time.Second, 9*time.Second),
+				testSpan(spanExecRemoteExecPostProc, 11*time.Second, 3*time.Second),
+			},
+			want: IntervalMetric(12 * time.Second),
+		},
+		{
+			name:    "remote exec attempt only",
+			metrics: StepMetric{IsRemote: true},
+			spans: []trace.SpanData{
 				testSpan(spanExecRemoteExecAttempt, time.Second, 9*time.Second),
 			},
 			want: IntervalMetric(9 * time.Second),

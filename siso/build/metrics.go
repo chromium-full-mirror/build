@@ -44,7 +44,7 @@ const (
 	spanMaterializeOutputs = "materialize-outputs"
 
 	// Run spans.
-	// Exactly one of these is canonical for the purposes of reporting a step's "run time"
+	// Exactly one set of these is canonical for purposes of reporting a step's "run time"
 	// for comparison purposes including ninja reports.
 	// Unlike ninja, execution strategies may be repeated, run in parallel, etc. so
 	// it is not surprising to see more than one of these spans logged for a step.
@@ -53,15 +53,12 @@ const (
 	// post-processing (deps update, output check, cache write, output flush) completes.
 	// Semaphore waiting time is not included.
 	spanExecLocalRun = "exec-local-run"
+
 	// Span for remote cache hit of the step, measured from the start of cache query
 	// until post-processing (deps update, output flush) completes.
 	// Semaphore waiting time is not included.
 	spanExecRemoteCacheRun = "exec-remote-cache-run"
-	// Span for the final remote execution of the step, measured from the start of the
-	// attempt until post-processing (output download, deps update, output flush) completes.
-	// Semaphore waiting time is not included.
-	// TODO(b/520207778): This is not yet logged at time of writing.
-	spanExecRemoteExecRun = "exec-remote-exec-run"
+
 	// Span for a step completed by a handler without running a command, measured for
 	// the handler call.
 	spanHandleStepRun = "handle-step-run"
@@ -85,7 +82,6 @@ func shouldLogSpan(name string) bool {
 		spanExecRemoteCacheCheck,
 		spanExecRemoteCacheRun,
 		spanExecRemoteExecAttempt,
-		spanExecRemoteExecRun,
 		spanHandleStepRun,
 		spanMaterializeInputs,
 		spanMaterializeOutputs:
@@ -392,7 +388,8 @@ func (m *StepMetric) updateFromTrace(spans []trace.SpanData, buildStart time.Tim
 	var metricSpans []MetricSpan
 	// There can be multiple run time spans per step, but only one canonical RunTime.
 	// Collect all of them upfront and decide the winner after the loop.
-	var localRun, remoteAttempt, remoteCacheRun, handleRun IntervalMetric
+	var localRun, remoteCacheRun, handleRun IntervalMetric
+	var remoteAttempt, remotePostProc time.Duration
 	var remoteAttemptStart time.Time
 
 	for _, s := range spans {
@@ -418,9 +415,11 @@ func (m *StepMetric) updateFromTrace(spans []trace.SpanData, buildStart time.Tim
 			remoteCacheRun = IntervalMetric(s.Duration())
 		case spanExecRemoteExecAttempt:
 			if s.Start.After(remoteAttemptStart) {
-				remoteAttempt = IntervalMetric(s.Duration())
+				remoteAttempt = s.Duration()
 				remoteAttemptStart = s.Start
 			}
+		case spanExecRemoteExecPostProc:
+			remotePostProc = s.Duration()
 		case spanHandleStepRun:
 			handleRun = IntervalMetric(s.Duration())
 		case spanMaterializeInputs:
@@ -441,9 +440,7 @@ func (m *StepMetric) updateFromTrace(spans []trace.SpanData, buildStart time.Tim
 		m.RunTime = localRun
 	case m.IsRemote:
 		// Remote execution.
-		// Unlike other cases, RunTime historically has been postproc-exclusive.
-		// TODO(b/520207778): Make it consistent?
-		m.RunTime = remoteAttempt
+		m.RunTime = IntervalMetric(remoteAttempt + remotePostProc)
 	case m.Cached:
 		// Remote cache hit.
 		m.RunTime = remoteCacheRun

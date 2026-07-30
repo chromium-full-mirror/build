@@ -178,8 +178,6 @@ func (b *Builder) updateREStat(result *rpb.ActionResult, err error) {
 func (b *Builder) execRemote(ctx context.Context, step *Step) error {
 	execErr := b.execRemoteExecute(ctx, ctx, step)
 
-	// TODO(b/520207778): Can we also log spanExecRemoteExecRun here?
-	// It's not trivial to make this change because retry.DoWithMaxRetries only returns error.
 	ctx, span := trace.NewSpan(ctx, spanExecRemoteExecPostProc)
 	defer span.Close(nil)
 
