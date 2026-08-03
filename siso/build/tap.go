@@ -63,6 +63,8 @@ func (b *Builder) tapCanonicalizeCmd(ctx context.Context, cmd *execute.Cmd) erro
 		return false
 	}
 
+	fsys := b.hashFS.FileSystem(ctx, b.path.WorkspaceRoot)
+
 	for _, input := range tapData.Reads {
 		if shouldIgnore("reads", path.New(input)) {
 			continue
@@ -76,7 +78,7 @@ func (b *Builder) tapCanonicalizeCmd(ctx context.Context, cmd *execute.Cmd) erro
 			continue
 		}
 		relPath := path.New(rel)
-		_, err = b.hashFS.Stat(ctx, b.path.WorkspaceRoot, relPath)
+		fi, err := fsys.Stat(string(relPath))
 		if errors.Is(err, fs.ErrNotExist) {
 			continue
 		}
@@ -85,6 +87,14 @@ func (b *Builder) tapCanonicalizeCmd(ctx context.Context, cmd *execute.Cmd) erro
 		}
 		seen[relPath] = true
 		cmd.Inputs = append(cmd.Inputs, relPath)
+		for _, p := range fsys.VisitedPaths(fi) {
+			pPath := path.New(p)
+			if seen[pPath] {
+				continue
+			}
+			seen[pPath] = true
+			cmd.Inputs = append(cmd.Inputs, pPath)
+		}
 	}
 	clear(seen)
 	// need to use both original outputs and detected outputs.

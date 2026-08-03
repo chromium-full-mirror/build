@@ -9,6 +9,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"testing"
 
@@ -345,5 +346,91 @@ func TestTapCanonicalizeCmd_IgnoreCmdEnvTMPDIR(t *testing.T) {
 
 	if len(cmd.Outputs) != 0 {
 		t.Errorf("cmd.Outputs = %v; want empty (tmp writes should be ignored)", cmd.Outputs)
+	}
+}
+
+func TestTapCanonicalizeCmd_Symlink(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("no symlink test on windows")
+		return
+	}
+
+	ctx := t.Context()
+	dir, tmpDir := setupDirForTapTest(t)
+	wsDir := filepath.Join(dir, "workspace")
+
+	hfs, err := hashfs.New(ctx, hashfs.Option{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer hfs.Close(ctx)
+	if err := hfs.WaitReady(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	setupFile := func(rel string) {
+		t.Helper()
+		abs := filepath.Join(wsDir, rel)
+		if err := os.MkdirAll(filepath.Dir(abs), 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(abs, []byte("content"), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	setupSymlink := func(rel, target string) string {
+		t.Helper()
+		abs := filepath.Join(wsDir, rel)
+		if err := os.MkdirAll(filepath.Dir(abs), 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(target, abs); err != nil {
+			t.Fatal(err)
+		}
+		return abs
+	}
+
+	setupFile("target.h")
+	symlinkInput := setupSymlink("symlink.h", "target.h")
+	setupFile("dir/target2.h")
+	subSymlinkInput := setupSymlink("symlink_sub.h", "dir/target2.h")
+	outsideFile := filepath.Join(tmpDir, "outside.h")
+	if err := os.WriteFile(outsideFile, []byte("content"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	outsideSymlinkInput := setupSymlink("symlink_outside.h", outsideFile)
+
+	b := &Builder{
+		hashFS: hfs,
+		path:   NewPath(wsDir, "out/siso"),
+	}
+
+	cmd := &execute.Cmd{
+		WorkspaceRoot: wsDir,
+	}
+
+	err = setTapResult(cmd,
+		[]string{symlinkInput, subSymlinkInput, outsideSymlinkInput},
+		nil,
+		nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = b.tapCanonicalizeCmd(ctx, cmd)
+	if err != nil {
+		t.Fatalf("tapCanonicalizeCmd returned error: %v", err)
+	}
+
+	wantInputs := []path.Path{
+		path.New("symlink.h"),
+		path.New("target.h"),
+		path.New("symlink_sub.h"),
+		path.New("dir/target2.h"),
+		path.New("symlink_outside.h"),
+	}
+	if !slices.Equal(cmd.Inputs, wantInputs) {
+		t.Errorf("cmd.Inputs = %v; want %v", cmd.Inputs, wantInputs)
 	}
 }
