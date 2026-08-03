@@ -2,7 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-package pprof
+// Package upload implements a Cloud Profiler uploader for pprof profiles.
+package upload
 
 import (
 	"bytes"
@@ -16,7 +17,10 @@ import (
 
 	"go.chromium.org/build/siso/build/metadata"
 	"go.chromium.org/build/siso/o11y/clog"
+	"go.chromium.org/build/siso/o11y/pprof"
 )
+
+var _ pprof.Uploader = (*Uploader)(nil)
 
 // Options is a profile uploader option.
 type Options struct {
@@ -67,7 +71,7 @@ func (u *Uploader) SetMetadata(ctx context.Context, metadata metadata.Metadata) 
 }
 
 // Upload uploads a profile.
-func (u *Uploader) Upload(ctx context.Context, p *Profile) error {
+func (u *Uploader) Upload(ctx context.Context, p *pprof.Profile) error {
 	if u == nil || u.projectID == "" {
 		return nil
 	}

@@ -99,7 +99,7 @@ type Options struct {
 	Pprof                string
 	Tracer               *trace.Tracer
 	TraceExporter        *trace.Exporter
-	PprofUploader        *sisopprof.Uploader
+	PprofUploader        sisopprof.Uploader
 	ResultstoreUploader  *resultstore.Uploader
 
 	// Clobber forces to rebuild ignoring existing generated files.
@@ -229,7 +229,7 @@ type Builder struct {
 	tracer               *trace.Tracer
 	traceStats           *traceStats
 	tracePprof           *tracePprof
-	pprofUploader        *sisopprof.Uploader
+	pprofUploader        sisopprof.Uploader
 	resultstoreUploader  *resultstore.Uploader
 
 	tracePidPreproc, tracePidLocal, tracePidRemote, tracePidWorker int64
@@ -717,7 +717,9 @@ func (b *Builder) Build(ctx context.Context, name string, args ...string) (err e
 	b.tracePidRemote = b.tracer.Process(ctx, "remote-exec")
 	b.tracePidWorker = b.tracer.Process(ctx, "rbe")
 	b.tracePprof.SetMetadata(b.metadata)
-	b.pprofUploader.SetMetadata(ctx, b.metadata)
+	if b.pprofUploader != nil {
+		b.pprofUploader.SetMetadata(ctx, b.metadata)
+	}
 	defer func(ctx context.Context) {
 		perr := b.tracePprof.Close(ctx)
 		if perr != nil {
