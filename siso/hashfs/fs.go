@@ -2194,7 +2194,7 @@ func (hfs *HashFS) expandFlushDirs(ctx context.Context, workspaceRoot string, fi
 }
 
 // flushedDirEntry pairs a materialized directory with its entry so Flush can
-// re-pin the directory's mtime after all of its members are written.
+// restore the directory's mtime after all of its members are written.
 type flushedDirEntry struct {
 	fname string
 	e     *entry
@@ -2208,7 +2208,7 @@ func (hfs *HashFS) Flush(ctx context.Context, workspaceRoot string, files []path
 	defer span.Close(nil)
 	files = path.Paths(hfs.expandFlushDirs(ctx, workspaceRoot, path.Strings(files)))
 	// errgroup.WithContext cancels its derived ctx once eg.Wait returns; keep
-	// the pre-errgroup ctx for the post-flush directory mtime re-pin below.
+	// the pre-errgroup ctx for the post-flush directory mtime restore below.
 	flushCtx := ctx
 	eg, ctx := errgroup.WithContext(ctx)
 	var localEntries []UpdateEntry
@@ -2219,11 +2219,6 @@ func (hfs *HashFS) Flush(ctx context.Context, workspaceRoot string, files []path
 		if !ok {
 			// If it doesn't exist in memory, just use local disk as is.
 			continue
-		}
-		if e.isDirectory() {
-			// flushDir pins this directory's mtime, but writing members into
-			// it afterward re-bumps it on disk; record it for the re-pin below.
-			flushedDirs = append(flushedDirs, flushedDirEntry{fname: string(fname), e: e})
 		}
 		select {
 		case need := <-e.lready:
@@ -2262,6 +2257,7 @@ func (hfs *HashFS) Flush(ctx context.Context, workspaceRoot string, files []path
 					}
 				}
 				err := e.err
+				generatedDir := e.isDirectory() && len(e.cmdhash) > 0
 				e.mu.Unlock()
 				if errors.Is(err, fs.ErrNotExist) || errors.Is(err, errNotRegular) {
 					clog.Warningf(ctx, "flush %s local-ready: %v", fname, err)
@@ -2269,6 +2265,15 @@ func (hfs *HashFS) Flush(ctx context.Context, workspaceRoot string, files []path
 				}
 				if err != nil {
 					return fmt.Errorf("flush %s local-ready: %w", fname, err)
+				}
+				if generatedDir {
+					// Members flushed below may still be written into this
+					// local-ready generated directory, re-bumping its on-disk
+					// mtime; record it for the mtime restore after eg.Wait. A
+					// source directory (no cmdhash) is left alone: rewriting
+					// its mtime would hide a user's mid-build change from
+					// updateDir.
+					flushedDirs = append(flushedDirs, flushedDirEntry{fname: string(fname), e: e})
 				}
 				continue
 			}
@@ -2294,6 +2299,9 @@ func (hfs *HashFS) Flush(ctx context.Context, workspaceRoot string, files []path
 			if err != nil {
 				return fmt.Errorf("flush dir %s: %w", fname, err)
 			}
+			// flushDir set this directory's mtime, but writing members into
+			// it afterward re-bumps it on disk; record it for the restore below.
+			flushedDirs = append(flushedDirs, flushedDirEntry{fname: string(fname), e: e})
 			continue
 		}
 		eg.Go(func() (err error) {
@@ -2315,15 +2323,15 @@ func (hfs *HashFS) Flush(ctx context.Context, workspaceRoot string, files []path
 	if err := eg.Wait(); err != nil {
 		return err
 	}
-	// flushDir pins each directory's mtime to its recorded value, but writing
-	// members into a directory re-bumps it on disk afterward. Re-pin every
-	// flushed directory now that all members are written, so it stays
+	// flushDir sets each directory's mtime to its recorded value, but writing
+	// members into a directory re-bumps it on disk afterward. Restore every
+	// flushed directory's mtime now that all members are written, so it stays
 	// consistent with .siso_fs_state and isn't invalidated on reload. This
-	// mirrors the file mtime pin in flushRegularFile.
+	// mirrors the file mtime handling in flushRegularFile.
 	for _, d := range flushedDirs {
 		mtime := d.e.getMtime()
 		if err := hfs.OS.Chtimes(flushCtx, d.fname, time.Time{}, mtime); err != nil {
-			clog.Warningf(flushCtx, "flush re-pin dir mtime %s: %v", d.fname, err)
+			clog.Warningf(flushCtx, "flush restore dir mtime %q: %v", d.fname, err)
 		}
 	}
 	return nil

@@ -2315,12 +2315,12 @@ func TestFlushDir_ExpandsChildren(t *testing.T) {
 	}
 }
 
-// TestFlushDir_PinsMtime verifies Flush re-pins each materialized directory's
-// mtime to its recorded value. Writing members into a directory bumps the
-// directory's on-disk mtime, so without the post-flush re-pin the directory
-// would mismatch its .siso_fs_state mtime on reload and be spuriously
-// invalidated, forcing a needless rebuild.
-func TestFlushDir_PinsMtime(t *testing.T) {
+// TestFlushDir_RestoresMtime verifies Flush restores each materialized
+// directory's mtime to its recorded value. Writing members into a directory
+// bumps the directory's on-disk mtime, so without the post-flush restore the
+// directory would mismatch its .siso_fs_state mtime on reload and be
+// spuriously invalidated, forcing a needless rebuild.
+func TestFlushDir_RestoresMtime(t *testing.T) {
 	ctx := t.Context()
 	dir := t.TempDir()
 	dir, err := filepath.EvalSymlinks(dir)
@@ -2339,8 +2339,9 @@ func TestFlushDir_PinsMtime(t *testing.T) {
 	h := sha256.New()
 	h.Write([]byte("dir output step"))
 	cmdhash := h.Sum(nil)
-	// A clearly-past recorded mtime: if the re-pin is skipped, the member
-	// writes leave each directory at ~now, an hour away from this value.
+	// A recorded mtime that's clearly in the past: if the restore is
+	// skipped, the member writes leave each directory's mtime at the
+	// current time, an hour later than this value.
 	recorded := time.Now().Add(-time.Hour)
 
 	mkFile := func(name, content string) hashfs.UpdateEntry {
@@ -2379,7 +2380,7 @@ func TestFlushDir_PinsMtime(t *testing.T) {
 	}
 
 	// Both the root and the subdirectory had members written into them, so
-	// both must be re-pinned to the recorded mtime, not the wall-clock time
+	// both must be restored to the recorded mtime, not the wall-clock time
 	// of the member writes.
 	for _, rel := range []string{"gen", "gen/sub"} {
 		fi, err := os.Lstat(filepath.Join(dir, rel))
@@ -2387,8 +2388,100 @@ func TestFlushDir_PinsMtime(t *testing.T) {
 			t.Fatalf("Lstat(%q)=%v", rel, err)
 		}
 		if !fi.ModTime().Equal(recorded) {
-			t.Errorf("flushed dir %q mtime = %v; want recorded %v (member writes bumped it and the post-flush re-pin did not restore it)", rel, fi.ModTime(), recorded)
+			t.Errorf("flushed dir %q mtime = %v; want recorded %v (member writes bumped it and the post-flush restore did not reset it)", rel, fi.ModTime(), recorded)
 		}
+	}
+}
+
+// TestFlushDir_RestoresLocalReadyDirMtime covers a generated directory that
+// is already local-ready when a trailing-slash flush writes new members
+// beneath it. The member writes bump the directory's on-disk mtime, so it
+// must be restored to the recorded value even though the directory needed no
+// materialization itself; otherwise the saved state no longer matches disk
+// and the next build spuriously invalidates the directory output.
+func TestFlushDir_RestoresLocalReadyDirMtime(t *testing.T) {
+	ctx := t.Context()
+	dir := t.TempDir()
+	dir, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hfs, err := hashfs.New(ctx, hashfs.Option{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer hfs.Close(ctx)
+	if err := hfs.WaitReady(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	h := sha256.New()
+	h.Write([]byte("dir output step"))
+	cmdhash := h.Sum(nil)
+	// A recorded mtime that's clearly in the past: if the restore is
+	// skipped, the directory's mtime stays at the current time, an hour
+	// later than this value.
+	recorded := time.Now().Add(-time.Hour)
+
+	mkFile := func(name, content string) hashfs.UpdateEntry {
+		return hashfs.UpdateEntry{
+			Name:        path.Path(name),
+			Entry:       &merkletree.Entry{Name: path.Path(name), Data: blob.FromBytes(digest.SHA256, name, []byte(content))},
+			Mode:        0644,
+			ModTime:     recorded,
+			CmdHash:     cmdhash,
+			UpdatedTime: recorded,
+			IsChanged:   true,
+		}
+	}
+	if err := hfs.Update(ctx, dir, []hashfs.UpdateEntry{
+		{
+			Name:        "gen",
+			Entry:       &merkletree.Entry{Name: "gen"},
+			Mode:        fs.ModeDir | 0755,
+			ModTime:     recorded,
+			CmdHash:     cmdhash,
+			UpdatedTime: recorded,
+			IsChanged:   true,
+		},
+		mkFile("gen/a", "AAA"),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// First flush materializes gen and sets its mtime; gen is local-ready from
+	// here on.
+	if err := hfs.Flush(ctx, dir, []path.Path{"gen/"}); err != nil {
+		t.Fatalf("Flush(gen/)=%v", err)
+	}
+	fi, err := os.Lstat(filepath.Join(dir, "gen"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !fi.ModTime().Equal(recorded) {
+		t.Fatalf("materialized dir mtime = %v; want recorded %v", fi.ModTime(), recorded)
+	}
+
+	// A later step generates another member without flushing it.
+	if err := hfs.Update(ctx, dir, []hashfs.UpdateEntry{
+		mkFile("gen/b", "BBB"),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// This flush takes the local-ready path for gen, then writes gen/b into it.
+	if err := hfs.Flush(ctx, dir, []path.Path{"gen/"}); err != nil {
+		t.Fatalf("Flush(gen/)=%v", err)
+	}
+
+	b, err := os.ReadFile(filepath.Join(dir, "gen/b"))
+	if err != nil || string(b) != "BBB" {
+		t.Fatalf("gen/b = %q, err=%v; want %q written by the flush", b, err, "BBB")
+	}
+	fi, err = os.Lstat(filepath.Join(dir, "gen"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !fi.ModTime().Equal(recorded) {
+		t.Errorf("local-ready dir mtime after member flush = %v; want recorded %v (member write bumped it and the restore skipped the local-ready dir)", fi.ModTime(), recorded)
 	}
 }
 

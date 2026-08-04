@@ -61,6 +61,10 @@ func TestFlush_LocalReadyDirInputNotFlushed(t *testing.T) {
 	if err := os.WriteFile(src, []byte("now-a-file"), 0644); err != nil {
 		t.Fatal(err)
 	}
+	fileMtime := time.Unix(1700000000, 0)
+	if err := os.Chtimes(src, time.Time{}, fileMtime); err != nil {
+		t.Fatal(err)
+	}
 
 	if err := hfs.Flush(ctx, root, []path.Path{"srcdir"}); err != nil {
 		t.Fatalf("flush: %v", err)
@@ -68,6 +72,67 @@ func TestFlush_LocalReadyDirInputNotFlushed(t *testing.T) {
 	got, err := os.ReadFile(src)
 	if err != nil || string(got) != "now-a-file" {
 		t.Errorf("source after flush = %q, err=%v; want %q left in place (local-ready input not flushed as a stale output)", got, err, "now-a-file")
+	}
+	fi, err := os.Lstat(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := fi.ModTime(), fileMtime; !got.Equal(want) {
+		t.Errorf("%q mtime after flush = %v; want %v (skipped local-ready entry must not be reset to the recorded dir mtime)", src, got, want)
+	}
+}
+
+// TestFlush_LocalReadyDirMtimeNotRestored verifies Flush does not rewrite the
+// on-disk mtime of a local-ready source directory it skipped. Resetting it to
+// the recorded mtime would make updateDir's mtime comparison see no change, so
+// a file the user added mid-build would stay invisible to ReadDir/Glob.
+func TestFlush_LocalReadyDirMtimeNotRestored(t *testing.T) {
+	ctx := t.Context()
+	root := t.TempDir()
+	root, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	src := filepath.Join(root, "srcdir")
+	if err := os.MkdirAll(src, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(src, "f"), []byte("x"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	hfs, err := New(ctx, Option{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := hfs.Close(ctx); err != nil {
+			t.Errorf("hfs.Close=%v", err)
+		}
+	})
+	// Stat records srcdir as a local-ready directory input.
+	if _, err := hfs.Stat(ctx, root, "srcdir"); err != nil {
+		t.Fatalf("stat: %v", err)
+	}
+
+	// The user adds a file mid-build, bumping the directory mtime.
+	if err := os.WriteFile(filepath.Join(src, "g"), []byte("y"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	bumped := time.Unix(1700000000, 0)
+	if err := os.Chtimes(src, time.Time{}, bumped); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := hfs.Flush(ctx, root, []path.Path{"srcdir"}); err != nil {
+		t.Fatalf("flush: %v", err)
+	}
+	fi, err := os.Lstat(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := fi.ModTime(), bumped; !got.Equal(want) {
+		t.Errorf("dir mtime after flush = %v; want %v (skipped local-ready dir must not be reset to the recorded mtime)", got, want)
 	}
 }
 
