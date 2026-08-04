@@ -2297,6 +2297,12 @@ func (hfs *HashFS) Flush(ctx context.Context, workspaceRoot string, files []path
 			err = e.flush(ctx, string(fname), hfs.OS, max(fetch.Timeout(e.d), hfs.opt.MinFlushTimeout))
 			done(err)
 			if err != nil {
+				// Cancel and drain member flushes already launched, so no
+				// goroutine keeps mutating outputs after Flush reports failure.
+				cancel()
+				if werr := eg.Wait(); werr != nil {
+					clog.Warningf(ctx, "flush: drained pending flushes: %v", werr)
+				}
 				return fmt.Errorf("flush dir %s: %w", fname, err)
 			}
 			// flushDir set this directory's mtime, but writing members into
