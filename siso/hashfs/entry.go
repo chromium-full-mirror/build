@@ -14,6 +14,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 
 	log "github.com/golang/glog"
@@ -430,6 +431,71 @@ func removeStaleForFlush(ctx context.Context, fname, desc string, osfs *osfs.OSF
 	return nil
 }
 
+// staleAncestorMu serializes stale-ancestor removal across concurrent
+// flushes. Two outputs below the same stale file must not both act on their
+// own Lstat: one would recreate the directory and materialize its output,
+// and the other would then RemoveAll that directory (with the sibling's
+// fresh output inside) based on its stale view.
+var staleAncestorMu sync.Mutex
+
+// mkdirAllForFlush ensures dir exists for an output being flushed below it,
+// removing a stale non-directory ancestor: the recorded entry proves every
+// component must be a directory, so anything else on the path is a leftover
+// from a previous build. A symlink that resolves to a directory is a valid
+// component and is kept.
+func mkdirAllForFlush(ctx context.Context, dir string, osfs *osfs.OSFS) error {
+	err := osfs.MkdirAll(ctx, dir, 0755)
+	if err == nil {
+		return nil
+	}
+	staleAncestorMu.Lock()
+	defer staleAncestorMu.Unlock()
+	// A concurrent flush may have removed the stale ancestor while we waited
+	// for the lock; the walk below then acts on the current on-disk state.
+	if merr := osfs.MkdirAll(ctx, dir, 0755); merr == nil {
+		return nil
+	}
+	// Walk up to the first existing component. At most one non-directory can
+	// exist on the path (nothing can exist below it), so one removal is
+	// enough.
+	for p := dir; ; {
+		fi, lerr := osfs.Lstat(ctx, p)
+		if lerr != nil {
+			// The component doesn't exist or is unreachable below a
+			// non-directory ancestor (ENOTDIR); keep walking up.
+			parent := filepath.Dir(p)
+			if parent == p {
+				return err
+			}
+			p = parent
+			continue
+		}
+		if fi.IsDir() {
+			// MkdirAll failed for some other reason.
+			return err
+		}
+		if fi.Mode()&fs.ModeSymlink != 0 {
+			sfi, serr := os.Stat(p)
+			if serr == nil && sfi.IsDir() {
+				// A symlink to a directory is a valid component, not what
+				// made MkdirAll fail.
+				return err
+			}
+			// A symlink is stale only on positive proof: it resolves to a
+			// non-directory, or it is dangling (ENOENT/ENOTDIR). One with an
+			// unstatable target (EACCES, EIO, ...) may be intentional;
+			// removing it would divert outputs from the symlink's target.
+			if serr != nil && !errors.Is(serr, fs.ErrNotExist) && !errors.Is(serr, syscall.ENOTDIR) {
+				return serr
+			}
+		}
+		if rerr := removeStaleForFlush(ctx, p, "a non-directory ancestor", osfs); rerr != nil {
+			return rerr
+		}
+		return osfs.MkdirAll(ctx, dir, 0755)
+	}
+}
+
 // flushDir ensures a directory exists on disk with the correct mtime.
 func (e *entry) flushDir(ctx context.Context, fname string, osfs *osfs.OSFS) error {
 	mtime := e.getMtime()
@@ -447,7 +513,7 @@ func (e *entry) flushDir(ctx context.Context, fname string, osfs *osfs.OSFS) err
 			return rerr
 		}
 	}
-	err = osfs.MkdirAll(ctx, fname, 0755)
+	err = mkdirAllForFlush(ctx, fname, osfs)
 	if err != nil {
 		clog.Infof(ctx, "flush dir %s: %v", fname, err)
 	} else {
@@ -523,7 +589,7 @@ func (e *entry) flushRegularFile(ctx context.Context, fname string, osfs *osfs.O
 		}
 	}
 
-	err = osfs.MkdirAll(ctx, filepath.Dir(fname), 0755)
+	err = mkdirAllForFlush(ctx, filepath.Dir(fname), osfs)
 	if err != nil {
 		clog.Warningf(ctx, "flush %s: mkdir: %v", fname, err)
 		return fmt.Errorf("failed to create directory for %s: %w", fname, err)
