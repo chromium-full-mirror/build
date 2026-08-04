@@ -253,10 +253,10 @@ func (o *Option) String() string {
 }
 
 // UpdateProjectID updates the Option for projID and returns cloud project ID to use.
-// Just returns empty string if backend is not RBE.
+// Just returns original projID if backend is not RBE.
 func (o *Option) UpdateProjectID(projID string) string {
 	if !isGoogleRBE(o.Address) {
-		return ""
+		return projID
 	}
 	if projID != "" && !strings.HasPrefix(o.Instance, "projects/") {
 		o.Instance = path.Join("projects", projID, "instances", o.Instance)
