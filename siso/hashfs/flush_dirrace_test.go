@@ -136,13 +136,18 @@ func TestFlush_LocalReadyDirMtimeNotRestored(t *testing.T) {
 	}
 }
 
-// TestFlush_PopulatedDirReplacesStaleNonDir covers a trailing-slash directory
-// output whose path is still a stale file or symlink on disk from a previous
-// build. Flush expands the directory into its members and flushes them
+// TestFlush_PopulatedDirReplacesStaleNonDir covers a directory output whose
+// path is still a stale file or symlink on disk from a previous build. Flush
+// expands a trailing-slash directory into its members and flushes them
 // concurrently; each member's flush MkdirAll's its parent. The parent directory
 // must be materialized (stale entry removed, directory created) before any
 // member flush runs, or a member races ahead and MkdirAll fails ENOTDIR (or
 // follows the stale symlink). Many members make the race reliable.
+//
+// The membersFirst order lists every member before the directory target, as
+// happens when a file output is declared under a directory output (builder.go
+// appends file outputs ahead of dir+"/" outputs). expandFlushDirs must sort
+// the parent directory ahead of its members regardless of caller order.
 func TestFlush_PopulatedDirReplacesStaleNonDir(t *testing.T) {
 	mtime := time.Unix(1000000000, 0)
 	cmdhash := []byte("cmd")
@@ -151,160 +156,89 @@ func TestFlush_PopulatedDirReplacesStaleNonDir(t *testing.T) {
 	const nchild = 24
 
 	for _, disk := range []string{"file", "symlink"} {
-		t.Run(disk, func(t *testing.T) {
-			if runtime.GOOS == "windows" && disk == "symlink" {
-				t.Skip("no symlink on windows")
-			}
-			ctx := t.Context()
-			root := t.TempDir()
-			root, err := filepath.EvalSymlinks(root)
-			if err != nil {
-				t.Fatal(err)
-			}
-			p := filepath.Join(root, dir)
-			if err := os.MkdirAll(filepath.Dir(p), 0755); err != nil {
-				t.Fatal(err)
-			}
-			switch disk {
-			case "file":
-				if err := os.WriteFile(p, []byte("stale-file"), 0644); err != nil {
+		for _, order := range []string{"dirTarget", "membersFirst"} {
+			t.Run(disk+"_"+order, func(t *testing.T) {
+				if runtime.GOOS == "windows" && disk == "symlink" {
+					t.Skip("no symlink on windows")
+				}
+				ctx := t.Context()
+				root := t.TempDir()
+				root, err := filepath.EvalSymlinks(root)
+				if err != nil {
 					t.Fatal(err)
 				}
-			case "symlink":
-				if err := os.Symlink("stale-target", p); err != nil {
+				p := filepath.Join(root, dir)
+				if err := os.MkdirAll(filepath.Dir(p), 0755); err != nil {
 					t.Fatal(err)
 				}
-			}
+				switch disk {
+				case "file":
+					if err := os.WriteFile(p, []byte("stale-file"), 0644); err != nil {
+						t.Fatal(err)
+					}
+				case "symlink":
+					if err := os.Symlink("stale-target", p); err != nil {
+						t.Fatal(err)
+					}
+				}
 
-			hfs, err := New(ctx, Option{})
-			if err != nil {
-				t.Fatal(err)
-			}
-			t.Cleanup(func() {
-				if err := hfs.Close(ctx); err != nil {
-					t.Errorf("hfs.Close=%v", err)
+				hfs, err := New(ctx, Option{})
+				if err != nil {
+					t.Fatal(err)
+				}
+				t.Cleanup(func() {
+					if err := hfs.Close(ctx); err != nil {
+						t.Errorf("hfs.Close=%v", err)
+					}
+				})
+
+				// Record the directory as a not-local (build-without-the-bytes)
+				// output, plus many member files under it.
+				if err := hfs.Update(ctx, root, []UpdateEntry{{
+					Name:    dir,
+					Entry:   &merkletree.Entry{Name: dir},
+					Mode:    0o755 | fs.ModeDir,
+					ModTime: mtime,
+					CmdHash: cmdhash,
+					Action:  action,
+				}}); err != nil {
+					t.Fatalf("update dir: %v", err)
+				}
+				var children []string
+				for i := range nchild {
+					child := fmt.Sprintf("%s/child%02d", dir, i)
+					if err := hfs.WriteFile(ctx, root, path.Path(child), []byte("c"), false, mtime, cmdhash, nil); err != nil {
+						t.Fatalf("writefile %q: %v", child, err)
+					}
+					children = append(children, child)
+				}
+
+				var files []string
+				switch order {
+				case "dirTarget":
+					files = []string{dir + "/"}
+				case "membersFirst":
+					files = append(children, dir+"/")
+				}
+				if err := hfs.Flush(ctx, root, path.Paths(files)); err != nil {
+					t.Fatalf("Flush(%s over stale %s)=%v; want nil", order, disk, err)
+				}
+
+				fi, err := os.Lstat(p)
+				if err != nil {
+					t.Fatalf("Lstat(%q): %v", p, err)
+				}
+				if !fi.IsDir() {
+					t.Fatalf("%q: on-disk mode=%v; want directory", p, fi.Mode())
+				}
+				for i := range nchild {
+					cp := filepath.Join(p, fmt.Sprintf("child%02d", i))
+					b, err := os.ReadFile(cp)
+					if err != nil || string(b) != "c" {
+						t.Errorf("child%02d = %q, err=%v; want %q", i, b, err, "c")
+					}
 				}
 			})
-
-			// Record the directory as a not-local (build-without-the-bytes)
-			// output, plus many member files under it.
-			if err := hfs.Update(ctx, root, []UpdateEntry{{
-				Name:    dir,
-				Entry:   &merkletree.Entry{Name: dir},
-				Mode:    0o755 | fs.ModeDir,
-				ModTime: mtime,
-				CmdHash: cmdhash,
-				Action:  action,
-			}}); err != nil {
-				t.Fatalf("update dir: %v", err)
-			}
-			for i := range nchild {
-				child := fmt.Sprintf("%s/child%02d", dir, i)
-				if err := hfs.WriteFile(ctx, root, path.Path(child), []byte("c"), false, mtime, cmdhash, nil); err != nil {
-					t.Fatalf("writefile %s: %v", child, err)
-				}
-			}
-
-			if err := hfs.Flush(ctx, root, []path.Path{path.Path(dir + "/")}); err != nil {
-				t.Fatalf("Flush(populated dir over stale %s)=%v; want nil", disk, err)
-			}
-
-			fi, err := os.Lstat(p)
-			if err != nil {
-				t.Fatalf("Lstat(dir): %v", err)
-			}
-			if !fi.IsDir() {
-				t.Fatalf("on-disk mode=%v; want directory", fi.Mode())
-			}
-			for i := range nchild {
-				cp := filepath.Join(p, fmt.Sprintf("child%02d", i))
-				b, err := os.ReadFile(cp)
-				if err != nil || string(b) != "c" {
-					t.Errorf("child%02d = %q, err=%v; want %q", i, b, err, "c")
-				}
-			}
-		})
-	}
-}
-
-// TestFlush_MemberListedBeforeDirTarget covers a caller that lists a directory
-// output's members before the directory artifact itself -- e.g. a file output
-// declared under a directory output, since builder.go appends file outputs
-// ahead of dir+"/" outputs. expandFlushDirs must still order the parent
-// directory ahead of its members so Flush materializes the directory (removing
-// any stale file/symlink at its path) before a member's flush MkdirAll's the
-// parent. Otherwise a member races ahead and MkdirAll fails ENOTDIR against the
-// stale entry. Many members make the race reliable.
-func TestFlush_MemberListedBeforeDirTarget(t *testing.T) {
-	ctx := t.Context()
-	mtime := time.Unix(1000000000, 0)
-	cmdhash := []byte("cmd")
-	action := digest.Digest{Hash: "actionhash", SizeBytes: 10}
-	const dir = "gen/out"
-	const nchild = 24
-
-	root := t.TempDir()
-	root, err := filepath.EvalSymlinks(root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	p := filepath.Join(root, dir)
-	if err := os.MkdirAll(filepath.Dir(p), 0755); err != nil {
-		t.Fatal(err)
-	}
-	// A stale regular file sits where the directory output now belongs.
-	if err := os.WriteFile(p, []byte("stale-file"), 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	hfs, err := New(ctx, Option{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		if err := hfs.Close(ctx); err != nil {
-			t.Errorf("hfs.Close=%v", err)
-		}
-	})
-	if err := hfs.Update(ctx, root, []UpdateEntry{{
-		Name:    dir,
-		Entry:   &merkletree.Entry{Name: dir},
-		Mode:    0o755 | fs.ModeDir,
-		ModTime: mtime,
-		CmdHash: cmdhash,
-		Action:  action,
-	}}); err != nil {
-		t.Fatalf("update dir: %v", err)
-	}
-	// List every member first, then the directory artifact -- the order that
-	// would defeat the synchronous directory flush without the parent-first
-	// sort in expandFlushDirs.
-	var files []string
-	for i := range nchild {
-		child := fmt.Sprintf("%s/child%02d", dir, i)
-		if err := hfs.WriteFile(ctx, root, path.Path(child), []byte("c"), false, mtime, cmdhash, nil); err != nil {
-			t.Fatalf("writefile %s: %v", child, err)
-		}
-		files = append(files, child)
-	}
-	files = append(files, dir+"/")
-
-	if err := hfs.Flush(ctx, root, path.Paths(files)); err != nil {
-		t.Fatalf("Flush(members before dir target)=%v; want nil", err)
-	}
-
-	fi, err := os.Lstat(p)
-	if err != nil {
-		t.Fatalf("Lstat(dir): %v", err)
-	}
-	if !fi.IsDir() {
-		t.Fatalf("on-disk mode=%v; want directory", fi.Mode())
-	}
-	for i := range nchild {
-		cp := filepath.Join(p, fmt.Sprintf("child%02d", i))
-		b, err := os.ReadFile(cp)
-		if err != nil || string(b) != "c" {
-			t.Errorf("child%02d = %q, err=%v; want %q", i, b, err, "c")
 		}
 	}
 }

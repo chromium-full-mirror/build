@@ -87,7 +87,7 @@ func TestOpenReadDeepPath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadAll: %v", err)
 	}
-	if string(got) != body {
-		t.Errorf("read %q; want %q", got, body)
+	if got, want := string(got), body; got != want {
+		t.Errorf("read %q; want %q", got, want)
 	}
 }
