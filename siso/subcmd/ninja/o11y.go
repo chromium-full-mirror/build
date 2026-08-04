@@ -251,15 +251,15 @@ func (c *Command) buildProperties(ctx context.Context, buildPath *build.Path) re
 }
 
 // setupResultStore sets up ResultStore for uploading build results.
-// It returns a cleanup function that should be called at the end of the build, and any error that occurred.
-func (c *Command) setupResultStore(ctx context.Context, projectID string, buildPath *build.Path, properties resultstore.Properties, credential cred.Cred, hashFS *hashfs.HashFS) (func(error), error) {
+// It returns the ResultStore uploader, a cleanup function that should be called at the end of the build, and any error that occurred.
+func (c *Command) setupResultStore(ctx context.Context, projectID string, buildPath *build.Path, properties resultstore.Properties, credential cred.Cred, hashFS *hashfs.HashFS) (*resultstore.Uploader, func(error), error) {
 	resultstoreUploader, err := resultstore.New(ctx, resultstore.Options{
 		InvocationID:  c.buildID,
 		Invocation:    c.invocation(ctx, c.buildID, projectID, buildPath.WorkspaceRoot, properties),
 		ClientOptions: credential.ClientOptions(),
 	})
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	ui.Default.Infof("https://btx.cloud.google.com/invocations/%s\n", c.buildID)
 
@@ -302,7 +302,7 @@ func (c *Command) setupResultStore(ctx context.Context, projectID string, buildP
 		spin.Stop(cerr)
 	}
 
-	return cleanup, nil
+	return resultstoreUploader, cleanup, nil
 }
 
 // cpuinfo returns a string containing CPU information.

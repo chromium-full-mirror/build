@@ -29,6 +29,7 @@ import (
 	"go.chromium.org/build/siso/build/ninjabuild"
 	"go.chromium.org/build/siso/hashfs"
 	"go.chromium.org/build/siso/o11y/clog"
+	"go.chromium.org/build/siso/o11y/resultstore"
 	"go.chromium.org/build/siso/o11y/trace"
 	"go.chromium.org/build/siso/reapi"
 	"go.chromium.org/build/siso/sync/lockfile"
@@ -437,7 +438,7 @@ func initDepsLog(ctx context.Context, stateDir string, depsLogFile string) (*nin
 
 // initBuildOpts initializes the `build.Options` struct by collecting
 // various configuration settings and parameters.
-func (c *Command) initBuildOpts(ctx context.Context, projectID string, buildPath *build.Path, config *buildconfig.Config, ds build.DataSource, hashFS *hashfs.HashFS, limits build.Limits, tracer *trace.Tracer, traceExporter *trace.Exporter, logWriters logWriters) build.Options {
+func (c *Command) initBuildOpts(ctx context.Context, projectID string, buildPath *build.Path, config *buildconfig.Config, ds build.DataSource, hashFS *hashfs.HashFS, limits build.Limits, tracer *trace.Tracer, traceExporter *trace.Exporter, logWriters logWriters, resultstoreUploader *resultstore.Uploader) build.Options {
 	defer trace.Begin(ctx, "initBuildOpts").End()
 	var actionSaltBytes []byte
 	if c.actionSalt != "" {
@@ -475,6 +476,7 @@ func (c *Command) initBuildOpts(ctx context.Context, projectID string, buildPath
 		TraceExporter:         traceExporter,
 		Tracer:                tracer,
 		Pprof:                 c.buildPprof,
+		ResultstoreUploader:   resultstoreUploader,
 		Clobber:               c.clobber,
 		FastExit:              c.fastExit,
 		Prepare:               c.prepare,

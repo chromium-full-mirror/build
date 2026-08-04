@@ -35,6 +35,7 @@ import (
 	"go.chromium.org/build/siso/hashfs"
 	"go.chromium.org/build/siso/o11y/clog"
 	"go.chromium.org/build/siso/o11y/monitoring"
+	"go.chromium.org/build/siso/o11y/resultstore"
 	"go.chromium.org/build/siso/o11y/trace"
 	"go.chromium.org/build/siso/path"
 	"go.chromium.org/build/siso/reapi"
@@ -518,7 +519,7 @@ func (c *Command) Run(ctx context.Context) (stats build.Stats, finalErr error) {
 		defer tempHashFS.Close(ctx)
 		emptyDepsLog := &ninjabuild.DepsLog{}
 		tempDS := build.DataSource{}
-		bopts := c.initBuildOpts(ctx, projectID, buildPath, config, tempDS, tempHashFS, limits, tracer, nil, logWriters)
+		bopts := c.initBuildOpts(ctx, projectID, buildPath, config, tempDS, tempHashFS, limits, tracer, nil, logWriters, nil)
 		needHashFSRefresh, err = ninjabuild.CheckManifest(ctx, c.fname, buildPath, config, tempHashFS, emptyDepsLog, &bopts)
 		if err != nil {
 			checkManifestDone <- err
@@ -627,14 +628,16 @@ func (c *Command) Run(ctx context.Context) (stats build.Stats, finalErr error) {
 		return stats, errNothingToDo
 	}
 
+	var resultstoreUploader *resultstore.Uploader
 	if c.enableResultstore {
-		cleanup, err := c.setupResultStore(ctx, projectID, buildPath, properties, credential, hashFS)
+		var cleanup func(error)
+		resultstoreUploader, cleanup, err = c.setupResultStore(ctx, projectID, buildPath, properties, credential, hashFS)
 		if err != nil {
 			return stats, err
 		}
 		defer func() { cleanup(finalErr) }()
 	}
-	bopts := c.initBuildOpts(ctx, projectID, buildPath, config, ds, hashFS, limits, tracer, traceExporter, logWriters)
+	bopts := c.initBuildOpts(ctx, projectID, buildPath, config, ds, hashFS, limits, tracer, traceExporter, logWriters, resultstoreUploader)
 
 	err = <-checkManifestDone
 	if err != nil {
