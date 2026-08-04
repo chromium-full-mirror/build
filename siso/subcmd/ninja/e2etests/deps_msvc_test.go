@@ -273,7 +273,6 @@ func TestBuild_DepsMSVC_InstallerRC(t *testing.T) {
 	// deps for foo/base.dll should be disappeared
 	want = []string{
 		filepath.ToSlash(filepath.Join(dir, "out/siso/gen/installer/bar/base.dll")),
-		"gen/installer/bar/base.dll",
 	}
 	if diff := cmp.Diff(want, got); diff != "" {
 		t.Errorf("deps gen/installer/packed_files.res -want +got:\n%s", diff)

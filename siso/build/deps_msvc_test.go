@@ -71,11 +71,8 @@ func TestDescMSVCDepsAfterRun(t *testing.T) {
 	if err != nil {
 		t.Errorf("DepsAfterRun(ctx, b, step)=%q, %v; want nil err", got, err)
 	}
-	// v1/foo.h is workaround for b/294927170 and
-	// https://github.com/llvm/llvm-project/issues/58726
 	want := []string{
 		"../../base/foo.h",
-		"../../v1/foo.h",
 		"../../base/foo.cc",
 	}
 	if diff := cmp.Diff(want, got); diff != "" {
