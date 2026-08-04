@@ -1120,27 +1120,59 @@ func (hfs *HashFS) RemoveAll(ctx context.Context, root string, name path.Path) e
 		}
 	})
 	// Route through OSFS.RemoveAll for its metrics and slow-operation logging.
-	removeErr := hfs.OS.RemoveAll(ctx, string(name))
-	// The in-memory entry records the post-state: the path no longer exists.
-	// This is distinct from what we return to the caller: a failed on-disk
-	// removal must surface, not be masked by the entry bookkeeping below.
-	entryErr := removeErr
-	if entryErr == nil {
-		entryErr = fs.ErrNotExist
+	if err := hfs.OS.RemoveAll(ctx, string(name)); err != nil {
+		// A failed RemoveAll always leaves the root on disk, so keep the
+		// recorded entry: dropping it would drop the path from saved state,
+		// and clean-dead would never retry. Children RemoveAll did delete
+		// must go: a stale entry would satisfy Stat for a missing path.
+		hfs.dropRemovedChildren(ctx, name)
+		hfs.invalidateDirInputCache(string(name))
+		clog.Warningf(ctx, "removeAll %q: %v", name, err)
+		return err
 	}
 	lready := make(chan bool, 1)
 	lready <- true
 	e := &entry{
 		lready: lready,
-		err:    entryErr,
+		err:    fs.ErrNotExist,
 	}
 	_, storeErr := hfs.directory.store(ctx, name, e)
 	hfs.invalidateDirInputCache(string(name))
-	clog.Infof(ctx, "removeAll %s: %v", name, removeErr)
-	if removeErr != nil {
-		return removeErr
-	}
+	clog.Infof(ctx, "removeAll %q", name)
 	return storeErr
+}
+
+// dropRemovedChildren drops recorded entries under name whose on-disk path a
+// partially failed RemoveAll already deleted. Only a path proven absent by
+// Lstat is dropped (with its whole subtree); anything still on disk, or that
+// cannot be checked, stays recorded.
+func (hfs *HashFS) dropRemovedChildren(ctx context.Context, name path.Path) {
+	e, _, _, ok := hfs.directory.lookup(ctx, name)
+	if !ok || e == nil {
+		return
+	}
+	hfs.dropRemovedChildrenIn(ctx, name, e.getDir())
+}
+
+func (hfs *HashFS) dropRemovedChildrenIn(ctx context.Context, dirname path.Path, d *directory) {
+	if d == nil {
+		return
+	}
+	d.m.Range(func(k, v any) bool {
+		base := k.(string)
+		child := v.(*entry)
+		fname := dirname.Join(base)
+		_, err := hfs.OS.Lstat(ctx, string(fname))
+		switch {
+		case errors.Is(err, fs.ErrNotExist):
+			// Use CompareAndDelete so a concurrent re-store is never clobbered.
+			d.m.CompareAndDelete(base, child)
+			clog.Infof(ctx, "removeAll: drop removed child %q", fname)
+		case err == nil:
+			hfs.dropRemovedChildrenIn(ctx, fname, child.getDir())
+		}
+		return true
+	})
 }
 
 // ClearStaleFileForDirOutput removes name (and its hashfs subtree) when a

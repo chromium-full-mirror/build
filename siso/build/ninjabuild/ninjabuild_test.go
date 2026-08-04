@@ -329,6 +329,15 @@ build foo.o: touch foo.cc
 	if _, err := os.Lstat(filepath.Join(outDir, "gen/dead2.o")); !os.IsNotExist(err) {
 		t.Errorf("Lstat(gen/dead2.o) err=%v; want not-exist (the deletable dead file is still removed)", err)
 	}
+	// The undeletable file must survive in saved state, so it re-enters
+	// PreviouslyGeneratedFiles and the next build's clean-dead retries it.
+	m := hashfs.StateMap(hashFS.DigestFunction(), hashFS.State(ctx))
+	if _, ok := m[filepath.ToSlash(filepath.Join(outDir, "dead.o"))]; !ok {
+		t.Errorf("dead.o missing from saved state; the next build's clean-dead will never retry removing it")
+	}
+	if _, ok := m[filepath.ToSlash(filepath.Join(outDir, "gen/dead2.o"))]; ok {
+		t.Errorf("gen/dead2.o still in saved state; want dropped (it was removed)")
+	}
 }
 
 func TestTargets(t *testing.T) {
