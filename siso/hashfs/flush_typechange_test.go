@@ -160,3 +160,71 @@ func TestFlush_TypeTransitions(t *testing.T) {
 		}
 	}
 }
+
+// TestFlush_StaleSymlinkSizeMtimeCoincidence covers the narrow case the
+// size+mtime comparison alone cannot catch: a stale symlink whose Lstat size (the
+// link-string length) and mtime both coincide with the recorded file output.
+// The type check in matchesFileInfo must keep the flush from accepting the
+// symlink as "already exist" and leaving the wrong entry type on disk.
+func TestFlush_StaleSymlinkSizeMtimeCoincidence(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("no symlink on windows")
+	}
+	ctx := t.Context()
+	cmdhash := []byte("cmd")
+	const name = "gen/out"
+
+	root := t.TempDir()
+	root, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := filepath.Join(root, name)
+	if err := os.MkdirAll(filepath.Dir(p), 0755); err != nil {
+		t.Fatal(err)
+	}
+	// Stale symlink whose target length equals the recorded content length.
+	if err := os.Symlink("0123456789", p); err != nil {
+		t.Fatal(err)
+	}
+	fi, err := os.Lstat(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	hfs, err := New(ctx, Option{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := hfs.Close(ctx); err != nil {
+			t.Errorf("hfs.Close=%v", err)
+		}
+	})
+	// Record a regular-file output with size and mtime matching the symlink.
+	content := []byte("abcdefghij")
+	if got, want := int64(len(content)), fi.Size(); got != want {
+		t.Fatalf("test setup: content size=%d; want %d (symlink target length)", got, want)
+	}
+	if err := hfs.WriteFile(ctx, root, name, content, false, fi.ModTime(), cmdhash, nil); err != nil {
+		t.Fatalf("writefile: %v", err)
+	}
+
+	if err := hfs.Flush(ctx, root, []path.Path{path.Path(name)}); err != nil {
+		t.Fatalf("Flush=%v; want nil", err)
+	}
+	lfi, err := os.Lstat(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !lfi.Mode().IsRegular() {
+		t.Fatalf("on-disk mode=%v; want regular file (stale symlink must not pass as the recorded file)", lfi.Mode())
+	}
+	b, err := os.ReadFile(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := string(b), string(content); got != want {
+		t.Errorf("on-disk content=%q; want %q", got, want)
+	}
+}

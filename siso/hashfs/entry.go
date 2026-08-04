@@ -567,9 +567,11 @@ func isWritable(fi os.FileInfo) bool {
 	return fi.Mode()&0200 != 0
 }
 
-// matchesFileInfo reports whether fi has the same size and mtime as the entry.
+// matchesFileInfo reports whether fi is a regular file with the same size and
+// mtime as the entry. The type check rejects a stale symlink whose
+// link-string length and mtime coincide with the recorded file.
 func (e *entry) matchesFileInfo(fi os.FileInfo) bool {
-	return fi.Size() == e.digest().SizeBytes && fi.ModTime().Equal(e.getMtime())
+	return fi.Mode().IsRegular() && fi.Size() == e.digest().SizeBytes && fi.ModTime().Equal(e.getMtime())
 }
 
 // flushSkipMatchingDigest checks whether the file on disk already has the
