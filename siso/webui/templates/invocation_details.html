@@ -37,14 +37,12 @@ found in the LICENSE file. */}}
       <md-icon>timer</md-icon>
       <span>Build Duration: {{formatIntervalMetricHuman $metrics.BuildDuration}}</span>
     </li>
+    {{if not $metrics.Started.IsZero}}
     <li>
       <md-icon>schedule</md-icon>
-      {{if and $metrics.Info (not $metrics.Info.StartTime.IsZero)}}
-        <span>Started at: {{timeRFC3339 $metrics.Info.StartTime}}</span>
-      {{else}}
-        <span>Last modified: {{timeRFC3339 $metrics.Mtime}}</span>
-      {{end}}
+      <span>Started at: {{timeRFC3339 $metrics.Started.Time}}{{if $metrics.Started.Inferred}} <abbr title="Inferred start time (file modification time minus duration)">*</abbr>{{end}}</span>
     </li>
+    {{end}}
     {{if and $metrics.Info $metrics.Info.SisoVersion}}
     <li>
       <md-icon>info</md-icon>
@@ -128,7 +126,9 @@ found in the LICENSE file. */}}
         <md-ripple></md-ripple>
       </a>
       <div class="rev-info">
-        <relative-time datetime="{{timeRFC3339 .Mtime}}"></relative-time>
+        {{if not .Started.IsZero}}
+        <relative-time datetime="{{timeRFC3339 .Started.Time}}"></relative-time>{{if .Started.Inferred}} <abbr title="Inferred start time (file modification time minus duration)">*</abbr>{{end}}
+        {{end}}
       </div>
     </li>
     {{end}}

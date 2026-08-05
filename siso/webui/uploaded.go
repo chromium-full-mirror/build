@@ -30,6 +30,7 @@ func (u *metricsFileProvider) Get(metricsPath string) (invocation.Series[*buildM
 	if err != nil {
 		return metricsFileInfo{}, fmt.Errorf("failed to import metrics from %q: %w", metricsPath, err)
 	}
+	metrics.standalone = true
 	file := metricsFileInfo{
 		path:    metricsPath,
 		metrics: metrics,

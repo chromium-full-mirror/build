@@ -6,6 +6,7 @@ package invocation
 
 import (
 	"iter"
+	"time"
 
 	"go.chromium.org/build/siso/build"
 )
@@ -46,8 +47,23 @@ type Series[T Invocation] interface {
 type Invocation interface {
 	// ID returns the build ID.
 	ID() string
+	// Started returns when the build started, or a zero value if unknown.
+	Started() Timestamp
 	// StepMetrics returns all build steps run in this invocation.
 	StepMetrics() []*build.StepMetric
 	// CriticalPath returns the build steps on the critical path in execution order.
 	CriticalPath() []*build.StepMetric
+}
+
+// Timestamp represents either a known timestamp or one inferred from another source.
+// For example if we only have a local step metrics file but build timestamp is unavailable,
+// we could approximate the build time using the mtime of the step metrics.
+type Timestamp struct {
+	Time     time.Time
+	Inferred bool
+}
+
+// IsZero reports whether t represents the zero time instant.
+func (t Timestamp) IsZero() bool {
+	return t.Time.IsZero()
 }

@@ -17,6 +17,7 @@ import (
 
 	"go.chromium.org/build/siso/build"
 	"go.chromium.org/build/siso/build/metadata"
+	"go.chromium.org/build/siso/webui/invocation"
 )
 
 // BuildStatus describes whether a build finished, and if so whether it succeeded.
@@ -46,7 +47,8 @@ func (s BuildStatus) Failed() bool {
 // buildMetrics represents data for a single build revision.
 // (Exported fields are accessible from Go templates.)
 type buildMetrics struct {
-	Mtime         time.Time
+	standalone    bool
+	mtime         time.Time
 	Rev           string // TODO: rename to BuildID?
 	Info          *metadata.InvocationInfo
 	Status        BuildStatus
@@ -68,6 +70,26 @@ type buildMetrics struct {
 // ID returns the build ID of this invocation.
 func (b *buildMetrics) ID() string {
 	return b.Rev
+}
+
+// Started returns when the build started, or a zero value if unknown.
+func (b *buildMetrics) Started() invocation.Timestamp {
+	if b.Info != nil && !b.Info.StartTime.IsZero() {
+		return invocation.Timestamp{Time: b.Info.StartTime, Inferred: false}
+	}
+	// For local outdir builds where InvocationInfo is missing (e.g. older builds
+	// before siso_metadata.json was introduced), approximate the start time by
+	// subtracting the build duration from the metrics file modification time (build end).
+	if !b.standalone && !b.mtime.IsZero() {
+		return invocation.Timestamp{
+			Time:     b.mtime.Add(-time.Duration(b.buildDuration)),
+			Inferred: true,
+		}
+	}
+	// Standalone/uploaded metrics without metadata (or builds without mtime)
+	// return a zero timestamp because their local mtime only reflects when the
+	// file was saved or imported.
+	return invocation.Timestamp{}
 }
 
 // BuildDuration returns the build duration of this invocation.
@@ -112,7 +134,7 @@ func loadBuildMetrics(metricsPath string) (*buildMetrics, error) {
 	}
 
 	metricsData := &buildMetrics{
-		Mtime:        stat.ModTime(),
+		mtime:        stat.ModTime(),
 		buildMetrics: []*build.StepMetric{},
 		stepMetrics:  []*build.StepMetric{},
 		stepByStepID: make(map[string]*build.StepMetric),
@@ -213,7 +235,7 @@ func loadBuildMetrics(metricsPath string) (*buildMetrics, error) {
 			if err := json.Unmarshal(data, &info); err != nil {
 				continue
 			}
-			if info.BuildID == metricsData.Rev || len(matches) == 1 {
+			if info.BuildID == metricsData.Rev {
 				metricsData.Info = &info
 				break
 			}

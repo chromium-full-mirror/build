@@ -130,8 +130,12 @@ var (
 			if err != nil {
 				return "", fmt.Errorf("couldn't get local time location")
 			}
+			started := m.Started()
+			if started.IsZero() {
+				return "Unknown", nil
+			}
 			now := time.Now()
-			buildTimeLocal := m.Mtime.In(local)
+			buildTimeLocal := started.Time.In(local)
 			nowY, nowM, nowD := now.Date()
 			buildY, buildM, buildD := buildTimeLocal.Date()
 			if buildY == nowY && buildM == nowM && buildD == nowD {

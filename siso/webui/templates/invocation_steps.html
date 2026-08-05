@@ -34,7 +34,7 @@ found in the LICENSE file. */}}
           <md-ripple></md-ripple>
         </a>
         <div class="rev-info">
-          {{len $r.StepMetrics}} steps <relative-time datetime="{{timeRFC3339 .Mtime}}"></relative-time>
+          {{len $r.StepMetrics}} steps{{if not .Started.IsZero}} <relative-time datetime="{{timeRFC3339 .Started.Time}}"></relative-time>{{if .Started.Inferred}} <abbr title="Inferred start time (file modification time minus duration)">*</abbr>{{end}}{{end}}
           {{if eq $r.Rev $currentRev}}
             <ul class="rev-sublinks">
               <li>

@@ -17,7 +17,7 @@ found in the LICENSE file. */}}
         <tr>
           <th>Build ID</th>
           <th>Status</th>
-          <th>Started / Modified</th>
+          <th>Started</th>
           <th>Duration</th>
           <th>Steps</th>
           <th>Targets</th>
@@ -50,10 +50,8 @@ found in the LICENSE file. */}}
             {{end}}
           </td>
           <td>
-            {{if and $r.Info (not $r.Info.StartTime.IsZero)}}
-              <relative-time datetime="{{timeRFC3339 $r.Info.StartTime}}"></relative-time>
-            {{else}}
-              <relative-time datetime="{{timeRFC3339 $r.Mtime}}"></relative-time>
+            {{if not $r.Started.IsZero}}
+              <relative-time datetime="{{timeRFC3339 $r.Started.Time}}"></relative-time>{{if $r.Started.Inferred}} <abbr title="Inferred start time (file modification time minus duration)">*</abbr>{{end}}
             {{end}}
           </td>
           <td>{{formatIntervalMetricHuman $r.BuildDuration}}</td>

@@ -145,7 +145,9 @@ found in the LICENSE file. */}}
           <md-ripple></md-ripple>
         </a>
         <div class="rev-info">
-          <relative-time datetime="{{timeRFC3339 $r.Mtime}}"></relative-time>
+          {{if not $r.Started.IsZero}}
+          <relative-time datetime="{{timeRFC3339 $r.Started.Time}}"></relative-time>{{if $r.Started.Inferred}} <abbr title="Inferred start time (file modification time minus duration)">*</abbr>{{end}}
+          {{end}}
         </div>
         {{else}}
         <span class="rev-label disabled">
@@ -153,7 +155,9 @@ found in the LICENSE file. */}}
           {{buildTimeHumanReadable $r}}
         </span>
         <div class="rev-info">
-          <relative-time datetime="{{timeRFC3339 $r.Mtime}}"></relative-time>
+          {{if not $r.Started.IsZero}}
+          <relative-time datetime="{{timeRFC3339 $r.Started.Time}}"></relative-time>{{if $r.Started.Inferred}} <abbr title="Inferred start time (file modification time minus duration)">*</abbr>{{end}}
+          {{end}}
         </div>
         {{end}}
       {{end}}
