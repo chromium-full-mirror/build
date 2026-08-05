@@ -12,7 +12,7 @@ import (
 
 // TestRenameFromJail verifies renameFromJail captures an output out of the nsjail exec root, replacing a non-empty pre-created destination cleanly (a plain os.Rename of a dir onto a non-empty dir fails ENOTEMPTY).
 func TestRenameFromJail(t *testing.T) {
-	t.Run("file overwrites destination", func(t *testing.T) {
+	t.Run("file_overwrites_destination", func(t *testing.T) {
 		dir := t.TempDir()
 		jail := filepath.Join(dir, "jail")
 		dst := filepath.Join(dir, "dst")
@@ -37,7 +37,7 @@ func TestRenameFromJail(t *testing.T) {
 		}
 	})
 
-	t.Run("dir onto populated destination", func(t *testing.T) {
+	t.Run("dir_onto_populated_destination", func(t *testing.T) {
 		dir := t.TempDir()
 		jail := filepath.Join(dir, "jail", "gen")
 		dst := filepath.Join(dir, "out", "gen")
