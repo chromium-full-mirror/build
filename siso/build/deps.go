@@ -284,7 +284,8 @@ func checkDeps(ctx context.Context, b *Builder, step *Step, deps []string) error
 			}
 			rel, err := filepath.Rel(b.path.WorkspaceRoot, dep)
 			if err != nil {
-				return fmt.Errorf("failed to make workspace relpath %q: %w", dep, err)
+				// unable to make relative, consider as non-local b/542224263
+				continue
 			}
 			if !filepath.IsLocal(rel) {
 				// dependency on system file? ignore
