@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io/fs"
 	"path/filepath"
+	"strings"
 	"time"
 
 	log "github.com/golang/glog"
@@ -155,7 +156,26 @@ func starActionsFix(thread *starlark.Thread, fn *starlark.Builtin, args starlark
 		c.cmd.ToolInputs = path.Paths(uniqueList(toolInputs))
 	}
 	if outputsValue != nil {
-		c.cmd.Outputs = path.Paths(uniqueList(outputs))
+		// TODO: drop cmd.OutputDirs and use tailing-/ as dir target.
+		seen := make(map[string]bool)
+		var outputFiles, outputDirs []string
+		for _, out := range outputs {
+			if out == "" {
+				continue
+			}
+			if seen[out] {
+				continue
+			}
+			seen[out] = true
+			out, isDir := strings.CutSuffix(out, "/")
+			if isDir {
+				outputDirs = append(outputDirs, out)
+			} else {
+				outputFiles = append(outputFiles, out)
+			}
+		}
+		c.cmd.Outputs = path.Paths(outputFiles)
+		c.cmd.OutputDirs = path.Paths(outputDirs)
 	}
 	if auxiliaryLogOutputFilesValue != nil {
 		c.cmd.AuxiliaryLogOutputFiles = path.Paths(uniqueList(auxiliaryLogOutputFiles))

@@ -45,6 +45,10 @@ func packCmd(cmd *execute.Cmd, expandedInputs func() []string) (*starlarkstruct.
 	if err != nil {
 		return nil, err
 	}
+	outputs := path.Strings(cmd.Outputs)
+	for _, outdir := range cmd.OutputDirs {
+		outputs = append(outputs, outdir.String()+"/")
+	}
 	return starlarkstruct.FromStringDict(starlark.String("cmd"), map[string]starlark.Value{
 		cmdFieldArgs:          packTuple(cmd.Args),
 		cmdFieldEnvs:          envs,
@@ -58,7 +62,7 @@ func packCmd(cmd *execute.Cmd, expandedInputs func() []string) (*starlarkstruct.
 			return packList(expandedInputs()), nil
 		}),
 		cmdFieldRSPFileContent: starlark.Bytes(cmd.RSPFileContent),
-		cmdFieldOutputs:        packList(path.Strings(cmd.Outputs)),
+		cmdFieldOutputs:        packList(outputs),
 	}), nil
 }
 
