@@ -772,12 +772,12 @@ func (c *Client) Proto(ctx context.Context, d digest.Digest, p proto.Message) er
 }
 
 // GetActionResultTimeout caps a single GetActionResult attempt.
-// Picked at the observed p95 of OK responses (~1.2s on chrome
-// cache-warm); past p95 is pathological, cancel-and-retry on a
-// fresh stream beats waiting toward the 10s service-config deadline.
+// 1.2s from chrome's p95 seems to be too short. b/540566219
+// Cancel-and-retry on a fresh stream beats waiting toward the 10s
+// service-config deadline.
 // Applied to attempt 0 only; retries run to the natural 10s deadline.
 // Set to 0 to disable.
-var GetActionResultTimeout = 1200 * time.Millisecond
+var GetActionResultTimeout = 2 * time.Second
 
 // keepFirstAttempt reports whether to return the first GetActionResult
 // attempt or fall back to a retry. The deadline can fire in the gap
