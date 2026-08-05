@@ -39,6 +39,11 @@ func (s *stats) update(ctx context.Context, m *StepMetric, pure bool) {
 		s.s.NoExec++
 	case m.Cached:
 		s.s.CacheHit++
+		if m.RacingWinner == "remote" {
+			s.s.CacheHitLate++
+		} else {
+			s.s.CacheHitEarly++
+		}
 	case m.IsRemote:
 		s.s.Remote++
 	case m.IsLocal:
@@ -92,6 +97,8 @@ type Stats struct {
 	ScanDepsFailed int // actions that scandeps failed
 	ClangScanDeps  int // actions that use clang for scandeps.
 	CacheHit       int // actions for which we got a cache hit
+	CacheHitEarly  int // actions for which we got a cache hit during execRemoteCache
+	CacheHitLate   int // actions for which we got a cache hit during execRemoteExecute
 	Local          int // locally executed actions
 	Remote         int // remote executed actions
 	LocalFallback  int // actions for which remote execution failed, and we did a local fallback
@@ -99,7 +106,7 @@ type Stats struct {
 	CacheWriteErr  int // locally executed actions that failed uploading results directly to RE
 	RemoteRetry    int // accumulated remote retry counts
 	RacingLocal    int // racing steps where local won
-	RacingRemote   int // racing steps where remote won
+	RacingRemote   int // racing steps where remote won (including CacheHitLate)
 	Total          int // total actions that ran during this build
 }
 

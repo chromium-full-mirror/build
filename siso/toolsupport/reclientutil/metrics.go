@@ -17,7 +17,7 @@ import (
 func RBEBuildMetrics(buildID string, version string, dur time.Duration, stats build.Stats) *pb.RbeBuildMetrics {
 	var cacheHitRatio float64 = 0
 	if stats.Remote+stats.CacheHit > 0 {
-		cacheHitRatio = float64(stats.CacheHit / (stats.Remote + stats.CacheHit))
+		cacheHitRatio = float64(stats.CacheHit) / float64(stats.Remote+stats.CacheHit)
 	}
 	return &pb.RbeBuildMetrics{
 		NumRecords: int64(stats.Done - stats.Skipped),
@@ -49,6 +49,30 @@ func completionStatus(stats build.Stats) *pb.Stat {
 			Count: int64(stats.CacheHit),
 		})
 	}
+	if stats.CacheHitEarly > 0 {
+		s.CountsByValue = append(s.CountsByValue, &pb.Stat_Value{
+			Name:  "STATUS_CACHE_HIT_EARLY",
+			Count: int64(stats.CacheHitEarly),
+		})
+	}
+	if stats.CacheHitLate > 0 {
+		s.CountsByValue = append(s.CountsByValue, &pb.Stat_Value{
+			Name:  "STATUS_CACHE_HIT_LATE",
+			Count: int64(stats.CacheHitLate),
+		})
+	}
+	if stats.RacingRemote > 0 {
+		s.CountsByValue = append(s.CountsByValue, &pb.Stat_Value{
+			Name:  "STATUS_RACING_REMOTE",
+			Count: int64(stats.RacingRemote),
+		})
+	}
+	if stats.RacingLocal > 0 {
+		s.CountsByValue = append(s.CountsByValue, &pb.Stat_Value{
+			Name:  "STATUS_RACING_LOCAL",
+			Count: int64(stats.RacingLocal),
+		})
+	}
 	if stats.Remote > 0 {
 		s.CountsByValue = append(s.CountsByValue, &pb.Stat_Value{
 			Name:  "STATUS_REMOTE_EXECUTION",
@@ -66,7 +90,6 @@ func completionStatus(stats build.Stats) *pb.Stat {
 			Name:  "STATUS_LOCAL_EXECUTION",
 			Count: int64(stats.Local),
 		})
-
 	}
 	if stats.Fail > 0 {
 		s.CountsByValue = append(s.CountsByValue, &pb.Stat_Value{

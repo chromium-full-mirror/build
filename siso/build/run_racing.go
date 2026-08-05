@@ -41,8 +41,6 @@ func (b *Builder) runRacing(ctx context.Context, step *Step) error {
 	ctx, span := trace.NewSpan(ctx, "racing")
 	defer span.Close(nil)
 
-	step.metrics.Racing = true
-
 	preprocErr := preprocCmd(ctx, b, step)
 	if preprocErr != nil {
 		// Can't determine inputs for remote - just run locally.
@@ -64,6 +62,8 @@ func (b *Builder) runRacing(ctx context.Context, step *Step) error {
 		// Remote execution disabled - just run locally.
 		return b.execLocal(ctx, step)
 	}
+
+	step.metrics.Racing = true
 
 	// Clone the step for the local racer so the two sides don't
 	// interfere with each other's mutable state.
