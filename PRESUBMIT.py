@@ -86,6 +86,7 @@ def CheckChange(input_api, output_api):
 SUBTEST_CHECK_DIRS = [
     r'^gong/gn/build/ninjawriter$',
     r'^siso/execute$',
+    r'^siso/reapi/merkletree$',
     r'^siso/toolsupport/nsjailutil$',
 ]
 

@@ -536,11 +536,11 @@ func TestBuildWithSubTree(t *testing.T) {
 
 func TestBuildDuplicateError(t *testing.T) {
 	for _, tc := range []struct {
-		desc string
+		name string
 		ents []Entry
 	}{
 		{
-			desc: "dup file-file",
+			name: "dup_file-file",
 			ents: []Entry{
 				{
 					Name: "dir/file1",
@@ -554,7 +554,7 @@ func TestBuildDuplicateError(t *testing.T) {
 		},
 		{
 			// same name and digest, conflicting executable bit.
-			desc: "dup file-file exec-bit",
+			name: "dup_file-file_exec-bit",
 			ents: []Entry{
 				{
 					Name:         "dir/file1",
@@ -569,7 +569,7 @@ func TestBuildDuplicateError(t *testing.T) {
 			},
 		},
 		{
-			desc: "dup file-symlink",
+			name: "dup_file-symlink",
 			ents: []Entry{
 				{
 					Name: "dir/foo",
@@ -582,7 +582,7 @@ func TestBuildDuplicateError(t *testing.T) {
 			},
 		},
 		{
-			desc: "dup file-dir",
+			name: "dup_file-dir",
 			ents: []Entry{
 				{
 					Name: "dir/foo",
@@ -594,7 +594,7 @@ func TestBuildDuplicateError(t *testing.T) {
 			},
 		},
 	} {
-		t.Run(tc.desc, func(t *testing.T) {
+		t.Run(tc.name, func(t *testing.T) {
 			ctx := t.Context()
 			ds := blob.NewStore()
 			mt := New(digest.SHA256, ds)
