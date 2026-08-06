@@ -555,7 +555,7 @@ func (s *WebuiServer) mux() http.Handler {
 	// Serve third party JS. No other third party libraries right now, so just serve Material Design node_modules root.
 	mux.Handle("/third_party/", http.StripPrefix("/third_party/", s.staticFileHandler(http.FileServerFS(mwc.NodeModulesFS))))
 
-	return mux
+	return http.NewCrossOriginProtection().Handler(mux)
 }
 
 // Serve serves the webui with the current configuration.

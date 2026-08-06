@@ -386,3 +386,75 @@ func TestBreadcrumbs(t *testing.T) {
 		})
 	}
 }
+
+func TestCrossOriginProtection(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		method       string
+		path         string
+		secFetchSite string
+		origin       string
+		host         string
+		want         int
+	}{
+		{
+			name:         "safe_methods_allowed_from_cross_origin",
+			method:       "GET",
+			path:         "/out/Default/builds/test-rev/steps/",
+			secFetchSite: "cross-site",
+			origin:       "http://attacker.example.com",
+			want:         http.StatusOK,
+		},
+		{
+			name:         "post_rejected_with_cross_site_sec_fetch_site",
+			method:       "POST",
+			path:         "/out/Default/builds/test-rev/steps/step-1/recall/",
+			secFetchSite: "cross-site",
+			want:         http.StatusForbidden,
+		},
+		{
+			name:         "post_allowed_with_same_origin_sec_fetch_site",
+			method:       "POST",
+			path:         "/out/Default/builds/test-rev/steps/step-1/recall/",
+			secFetchSite: "same-origin",
+			want:         http.StatusOK,
+		},
+		{
+			name:   "post_rejected_with_mismatching_origin",
+			method: "POST",
+			path:   "/out/Default/builds/test-rev/steps/step-1/recall/",
+			host:   "localhost:8080",
+			origin: "http://attacker.example.com",
+			want:   http.StatusForbidden,
+		},
+		{
+			name:   "post_allowed_with_matching_origin",
+			method: "POST",
+			path:   "/out/Default/builds/test-rev/steps/step-1/recall/",
+			host:   "localhost:8080",
+			origin: "http://localhost:8080",
+			want:   http.StatusOK,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s, _ := mustServer(t.Context(), t)
+
+			req := httptest.NewRequest(tc.method, tc.path, nil)
+			if tc.secFetchSite != "" {
+				req.Header.Set("Sec-Fetch-Site", tc.secFetchSite)
+			}
+			if tc.origin != "" {
+				req.Header.Set("Origin", tc.origin)
+			}
+			if tc.host != "" {
+				req.Host = tc.host
+			}
+
+			rec := httptest.NewRecorder()
+			s.mux().ServeHTTP(rec, req)
+			if rec.Code != tc.want {
+				t.Errorf("%s %s = %d; want %d", tc.method, tc.path, rec.Code, tc.want)
+			}
+		})
+	}
+}
