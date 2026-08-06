@@ -183,11 +183,11 @@ func Run(ctx context.Context, graph *Graph, bopts build.Options, targets []strin
 			continue
 		}
 		clog.Infof(ctx, "build finished: %v", err)
-		if bopts.ResultstoreUploader != nil {
+		if bopts.ResultSink != nil {
 			if err != nil {
-				bopts.ResultstoreUploader.AddBuildLog(fmt.Sprintf("build failed: %v\n", err))
+				fmt.Fprintf(bopts.ResultSink, "build failed: %v\n", err)
 			} else {
-				bopts.ResultstoreUploader.AddBuildLog("build succeeded\n")
+				fmt.Fprintln(bopts.ResultSink, "build succeeded")
 			}
 		}
 		return stats, err
@@ -272,19 +272,12 @@ func doBuild(ctx context.Context, graph *Graph, bopts build.Options, nopts RunNi
 		return stats, err
 	}
 	stateDir := graph.StateDir()
-	if bopts.ResultstoreUploader != nil {
-		err := bopts.ResultstoreUploader.NewConfiguration(ctx, "default", graph.ConfigProperties())
-		if err != nil {
-			return stats, err
-		}
-		bopts.ResultstoreUploader.HashFS = bopts.HashFS
-		bopts.ResultstoreUploader.REAPIClient = bopts.REAPIClient
-
+	if bopts.ResultSink != nil {
 		ents, err := bopts.HashFS.Entries(ctx, bopts.Path.AbsBase(), []sisopath.Path{sisopath.New(filepath.Join(stateDir, ".siso_config")), sisopath.New(filepath.Join(stateDir, ".siso_filegroups"))})
 		if err != nil {
 			return stats, err
 		}
-		err = bopts.ResultstoreUploader.UploadFiles(ctx, ents)
+		err = bopts.ResultSink.UploadBuildConfig(ctx, graph.ConfigProperties(), ents)
 		if err != nil {
 			return stats, err
 		}
@@ -347,8 +340,8 @@ func doBuild(ctx context.Context, graph *Graph, bopts build.Options, nopts RunNi
 	if len(semaStats) > 0 {
 		rut := dumpResourceUsageTable(semaStats)
 		clog.Infof(ctx, "resource usage table:\n%s", rut)
-		if bopts.ResultstoreUploader != nil {
-			bopts.ResultstoreUploader.AddBuildLog(rut + "\n")
+		if bopts.ResultSink != nil {
+			fmt.Fprintln(bopts.ResultSink, rut)
 		}
 	}
 	stats = b.Stats()

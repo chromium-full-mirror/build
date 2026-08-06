@@ -631,7 +631,7 @@ func (c *Command) Run(ctx context.Context) (stats build.Stats, finalErr error) {
 	var resultstoreUploader *resultstore.Uploader
 	if c.enableResultstore {
 		var cleanup func(error)
-		resultstoreUploader, cleanup, err = c.setupResultStore(ctx, projectID, buildPath, properties, credential, hashFS)
+		resultstoreUploader, cleanup, err = c.setupResultStore(ctx, projectID, buildPath, properties, credential, hashFS, reapiClient)
 		if err != nil {
 			return stats, err
 		}

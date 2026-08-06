@@ -35,6 +35,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"go.chromium.org/build/hashigo/digest"
 	rpb "go.chromium.org/build/remote-apis/build/bazel/remote/execution/v2"
 
 	"go.chromium.org/build/siso/blob"
@@ -48,7 +49,6 @@ import (
 	"go.chromium.org/build/siso/o11y/iometrics"
 	"go.chromium.org/build/siso/o11y/monitoring"
 	sisopprof "go.chromium.org/build/siso/o11y/pprof"
-	"go.chromium.org/build/siso/o11y/resultstore"
 	"go.chromium.org/build/siso/o11y/trace"
 	sisopath "go.chromium.org/build/siso/path"
 	"go.chromium.org/build/siso/reapi"
@@ -67,6 +67,17 @@ const (
 	logLabelKeyID         = "id"
 	logLabelKeyBacktraces = "backtraces"
 )
+
+// A ResultSink records results of the invocation.
+// It implements io.Writer for writing a transcript of the invocation.
+type ResultSink interface {
+	io.Writer
+	// UploadBuildNinja uploads Build Ninja files to this result sink.
+	UploadBuildNinja(ctx context.Context, d digest.Digest) error
+	// UploadBuildConfig records and uploads config files to this result sink.
+	// Can be called again when manifest reloaded, which regenerates the configuration.
+	UploadBuildConfig(ctx context.Context, properties map[string]string, ents []merkletree.Entry) error
+}
 
 // chromium recipe module expects this string.
 const ninjaNoWorkToDo = "ninja: no work to do.\n"
@@ -100,7 +111,7 @@ type Options struct {
 	Tracer               *trace.Tracer
 	TraceExporter        *trace.Exporter
 	PprofUploader        sisopprof.Uploader
-	ResultstoreUploader  *resultstore.Uploader
+	ResultSink           ResultSink
 
 	// Clobber forces to rebuild ignoring existing generated files.
 	Clobber bool
@@ -230,7 +241,7 @@ type Builder struct {
 	traceStats           *traceStats
 	tracePprof           *tracePprof
 	pprofUploader        sisopprof.Uploader
-	resultstoreUploader  *resultstore.Uploader
+	resultSink           ResultSink
 
 	tracePidPreproc, tracePidLocal, tracePidRemote, tracePidWorker int64
 
@@ -411,7 +422,7 @@ func New(ctx context.Context, graph Graph, opts Options) (_ *Builder, err error)
 		traceStats:            newTraceStats(),
 		tracePprof:            newTracePprof(opts.Pprof),
 		pprofUploader:         opts.PprofUploader,
-		resultstoreUploader:   opts.ResultstoreUploader,
+		resultSink:            opts.ResultSink,
 		clobber:               opts.Clobber,
 		fastExit:              opts.FastExit,
 		prepare:               opts.Prepare,
@@ -685,8 +696,8 @@ func (b *Builder) Build(ctx context.Context, name string, args ...string) (err e
 			restatLine +
 			fsstatLine + "\n"
 		ui.Default.PrintLines("\n", msg)
-		if b.resultstoreUploader != nil {
-			b.resultstoreUploader.AddBuildLog(msg + "\n")
+		if b.resultSink != nil {
+			fmt.Fprintln(b.resultSink, msg)
 		}
 	}()
 	semas := []trace.Semaphore{
@@ -959,8 +970,8 @@ func (b *Builder) uploadBuildNinja(ctx context.Context) {
 		clog.Warningf(ctx, "failed to upload build files tree %s: %v", d, err)
 		return
 	}
-	if b.resultstoreUploader != nil {
-		err := b.resultstoreUploader.SetFile(ctx, "build.ninja.dir", d)
+	if b.resultSink != nil {
+		err := b.resultSink.UploadBuildNinja(ctx, d)
 		if err != nil {
 			clog.Warningf(ctx, "failed to set build files tree %s: %v", d, err)
 		}

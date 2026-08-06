@@ -35,13 +35,16 @@ type Options struct {
 	InvocationID  string
 	Invocation    *rspb.Invocation
 	ClientOptions []option.ClientOption
+
+	// These are needed for upload and associate files in resultstore.
+	HashFS      *hashfs.HashFS
+	REAPIClient *reapi.Client
 }
 
 // Uploader is resultstore uploader.
 type Uploader struct {
-	// These are needed for upload and associate files in resultstore.
-	HashFS      *hashfs.HashFS
-	REAPIClient *reapi.Client
+	hashFS      *hashfs.HashFS
+	reapiClient *reapi.Client
 
 	conn   *grpc.ClientConn
 	client rspb.ResultStoreUploadClient
@@ -66,6 +69,9 @@ func New(ctx context.Context, opts Options) (*Uploader, error) {
 		return nil, err
 	}
 	uploader := &Uploader{
+		hashFS:      opts.HashFS,
+		reapiClient: opts.REAPIClient,
+
 		conn:   conn,
 		client: rspb.NewResultStoreUploadClient(conn),
 
@@ -169,7 +175,7 @@ loop:
 
 			case *blob.Store:
 				started := time.Now()
-				n, err := u.REAPIClient.UploadAll(ctx, req)
+				n, err := u.reapiClient.UploadAll(ctx, req)
 				if err != nil {
 					clog.Warningf(ctx, "failed to upload files: n=%d, %s: %v", n, time.Since(started), err)
 				} else {

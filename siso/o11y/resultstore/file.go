@@ -38,19 +38,19 @@ func hashType(fn digest.Function) rspb.File_HashType {
 // uploader attaches to files: HashFS's function, falling back to the REAPI
 // client's, then SHA-256.
 func (u *Uploader) digestFunction() digest.Function {
-	if u.HashFS != nil {
-		return u.HashFS.DigestFunction()
+	if u.hashFS != nil {
+		return u.hashFS.DigestFunction()
 	}
-	if u.REAPIClient != nil {
-		return u.REAPIClient.DigestFunction()
+	if u.reapiClient != nil {
+		return u.reapiClient.DigestFunction()
 	}
 	return digest.SHA256
 }
 
 // UploadFiles uploads files to RBE-CAS, and sets the files as the invocation's artifact.
-// Need to set HashFS, REAPIClient to Uploader before calling this.
+// Need to set HashFS, REAPIClient to Options before calling this.
 func (u *Uploader) UploadFiles(ctx context.Context, ents []merkletree.Entry) error {
-	if u.HashFS == nil || u.REAPIClient == nil {
+	if u.hashFS == nil || u.reapiClient == nil {
 		return fmt.Errorf("resultstore: unable to upload file. hashfs or reapi client is not set")
 	}
 	ds := blob.NewStore()
@@ -65,7 +65,7 @@ func (u *Uploader) UploadFiles(ctx context.Context, ents []merkletree.Entry) err
 		}
 		ds.Set(ent.Data)
 		d := ent.Data.Digest()
-		file.Uri = u.REAPIClient.FileURI(d)
+		file.Uri = u.reapiClient.FileURI(d)
 		file.Length = &wrapperspb.Int64Value{
 			Value: d.SizeBytes,
 		}
@@ -95,11 +95,11 @@ func (u *Uploader) UploadFiles(ctx context.Context, ents []merkletree.Entry) err
 	return u.Upload(ctx, req)
 }
 
-// SetFile set a file as the invocation's artifact.
-func (u *Uploader) SetFile(ctx context.Context, name string, d digest.Digest) error {
+// uploadFile set a file as the invocation's artifact.
+func (u *Uploader) uploadFile(ctx context.Context, name string, d digest.Digest) error {
 	var uri string
-	if u.REAPIClient != nil {
-		uri = u.REAPIClient.FileURI(d)
+	if u.reapiClient != nil {
+		uri = u.reapiClient.FileURI(d)
 	}
 	req := &rspb.UploadRequest{
 		UploadOperation: rspb.UploadRequest_MERGE,
@@ -125,4 +125,9 @@ func (u *Uploader) SetFile(ctx context.Context, name string, d digest.Digest) er
 		},
 	}
 	return u.Upload(ctx, req)
+}
+
+// UploadBuildNinja implements build.ResultSink.
+func (u *Uploader) UploadBuildNinja(ctx context.Context, d digest.Digest) error {
+	return u.uploadFile(ctx, "build.ninja.dir", d)
 }

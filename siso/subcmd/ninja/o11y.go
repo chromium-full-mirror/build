@@ -45,6 +45,7 @@ import (
 	"go.chromium.org/build/siso/o11y/resultstore"
 	"go.chromium.org/build/siso/o11y/trace"
 	sisopath "go.chromium.org/build/siso/path"
+	"go.chromium.org/build/siso/reapi"
 	"go.chromium.org/build/siso/reapi/merkletree"
 	"go.chromium.org/build/siso/ui"
 	"go.chromium.org/build/siso/version"
@@ -252,11 +253,13 @@ func (c *Command) buildProperties(ctx context.Context, buildPath *build.Path) re
 
 // setupResultStore sets up ResultStore for uploading build results.
 // It returns the ResultStore uploader, a cleanup function that should be called at the end of the build, and any error that occurred.
-func (c *Command) setupResultStore(ctx context.Context, projectID string, buildPath *build.Path, properties resultstore.Properties, credential cred.Cred, hashFS *hashfs.HashFS) (*resultstore.Uploader, func(error), error) {
+func (c *Command) setupResultStore(ctx context.Context, projectID string, buildPath *build.Path, properties resultstore.Properties, credential cred.Cred, hashFS *hashfs.HashFS, reapiClient *reapi.Client) (*resultstore.Uploader, func(error), error) {
 	resultstoreUploader, err := resultstore.New(ctx, resultstore.Options{
 		InvocationID:  c.buildID,
 		Invocation:    c.invocation(ctx, c.buildID, projectID, buildPath.WorkspaceRoot, properties),
 		ClientOptions: credential.ClientOptions(),
+		HashFS:        hashFS,
+		REAPIClient:   reapiClient,
 	})
 	if err != nil {
 		return nil, nil, err
@@ -277,10 +280,12 @@ func (c *Command) setupResultStore(ctx context.Context, projectID string, buildP
 				clog.Warningf(ctx, "failed to get entries for %q: %v", files, entsErr)
 			}
 		}
-		ents = append(ents, merkletree.Entry{
-			Name: "build.log",
-			Data: resultstoreUploader.BuildLogData(),
-		})
+		if resultstoreUploader != nil {
+			ents = append(ents, merkletree.Entry{
+				Name: "build.log",
+				Data: resultstoreUploader.BuildLogData(),
+			})
+		}
 
 		spin := ui.Default.NewSpinner()
 		spin.Start("uploading to resultstore")

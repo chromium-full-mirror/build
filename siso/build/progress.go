@@ -7,6 +7,7 @@ package build
 import (
 	"context"
 	"fmt"
+	"io"
 	"math"
 	"sort"
 	"strings"
@@ -15,7 +16,6 @@ import (
 	"time"
 
 	"go.chromium.org/build/siso/execute"
-	"go.chromium.org/build/siso/o11y/resultstore"
 	"go.chromium.org/build/siso/ui"
 )
 
@@ -73,7 +73,8 @@ type progress struct {
 	// update goroutine.
 	pendingOutput []string
 
-	resultstoreUploader *resultstore.Uploader
+	// resultSink reference for appending to build transcript.
+	resultSink io.Writer
 
 	actives       []*stepInfo
 	done          chan struct{}
@@ -90,7 +91,7 @@ type stepInfo struct {
 func (p *progress) start(ctx context.Context, b *Builder) {
 	p.started = time.Now()
 	p.verbose = b.verbose
-	p.resultstoreUploader = b.resultstoreUploader
+	p.resultSink = b.resultSink
 	p.done = make(chan struct{})
 	p.updateStopped = make(chan struct{})
 	p.linesBuf = make([]string, 0, activeItems+3)
@@ -497,9 +498,9 @@ func (p *progress) report(format string, args ...any) {
 	t := p.ts
 	p.mu.Unlock()
 	var msg string
-	if p.resultstoreUploader != nil {
+	if p.resultSink != nil {
 		msg = fmt.Sprintf(format, args...)
-		p.resultstoreUploader.AddBuildLog(msg + "\n")
+		fmt.Fprintln(p.resultSink, msg)
 	}
 	if ui.IsTerminal() && time.Since(t) < 500*time.Millisecond {
 		return
@@ -537,16 +538,16 @@ func (p *progress) step(b *Builder, step *Step, s string) {
 	p.mu.Unlock()
 	dur := ui.FormatDuration(time.Since(b.start))
 	stat := b.stats.stats()
-	if step != nil && p.resultstoreUploader != nil {
+	if step != nil && p.resultSink != nil {
 		switch {
 		case strings.HasPrefix(s, progressPrefixStart),
 			strings.HasPrefix(s, progressPrefixFinish),
 			strings.HasPrefix(s, progressPrefixError),
 			strings.HasPrefix(s, progressPrefixCacheHit):
-			p.resultstoreUploader.AddBuildLog(fmt.Sprintf("[%d/%d] %s %s\n",
+			fmt.Fprintf(p.resultSink, "[%d/%d] %s %s\n",
 				stat.Done-stat.Skipped, stat.Total-stat.Skipped,
 				dur,
-				s))
+				s)
 		}
 	}
 	var outputResult string

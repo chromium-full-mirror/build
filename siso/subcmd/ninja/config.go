@@ -452,6 +452,10 @@ func (c *Command) initBuildOpts(ctx context.Context, projectID string, buildPath
 	if err != nil {
 		clog.Warningf(ctx, "no cache enabled: %v", err)
 	}
+	var resultSink build.ResultSink
+	if resultstoreUploader != nil {
+		resultSink = resultstoreUploader
+	}
 	return build.Options{
 		JobID:                 c.jobID,
 		ID:                    c.buildID,
@@ -476,7 +480,7 @@ func (c *Command) initBuildOpts(ctx context.Context, projectID string, buildPath
 		TraceExporter:         traceExporter,
 		Tracer:                tracer,
 		Pprof:                 c.buildPprof,
-		ResultstoreUploader:   resultstoreUploader,
+		ResultSink:            resultSink,
 		Clobber:               c.clobber,
 		FastExit:              c.fastExit,
 		Prepare:               c.prepare,
