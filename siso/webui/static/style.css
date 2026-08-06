@@ -87,10 +87,20 @@ html, body {
     }
 }
 
-.light .toggle-dark-mode md-icon::before {
+/* Dark mode toggle icon. Respects OS preference by default. */
+.toggle-dark-mode md-icon::before {
     content: 'brightness_4';
 }
-.dark .toggle-dark-mode md-icon::before {
+@media (prefers-color-scheme: dark) {
+    .toggle-dark-mode md-icon::before {
+        content: 'brightness_7';
+    }
+}
+/* Explicit overrides if set by the user. */
+:root.light .toggle-dark-mode md-icon::before {
+    content: 'brightness_4';
+}
+:root.dark .toggle-dark-mode md-icon::before {
     content: 'brightness_7';
 }
 
@@ -807,16 +817,4 @@ pre:has(> code) {
 
     /* Misc */
     --md-icon-button-state-layer-height: 40px;
-
-    /* Siso WebUI extensions to Material Design */
-    --siso-sys-color-success: rgb(0 124 0);
-    --siso-sys-color-on-success: rgb(255 255 255);
-    --siso-sys-color-success-container: rgb(184 243 180);
-    --siso-sys-color-on-success-container: rgb(0 33 2);
-}
-.dark {
-    --siso-sys-color-success: rgb(112 220 115);
-    --siso-sys-color-on-success: rgb(0 57 4);
-    --siso-sys-color-success-container: rgb(0 83 7);
-    --siso-sys-color-on-success-container: rgb(184 243 180);
 }

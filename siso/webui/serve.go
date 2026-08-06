@@ -265,12 +265,7 @@ func (s *WebuiServer) ensureCSS() error {
 	}
 	sb := strings.Builder{}
 	for _, stylesheet := range []string{
-		"static/light.css",
-		"static/light-hc.css",
-		"static/light-mc.css",
-		"static/dark.css",
-		"static/dark-hc.css",
-		"static/dark-mc.css",
+		"static/theme.css",
 		"static/style.css",
 	} {
 		f, err := s.staticFS.Open(stylesheet)

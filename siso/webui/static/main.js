@@ -3,14 +3,15 @@
 // found in the LICENSE file.
 
 const toggleDarkMode = () => {
-  const bodyEl = document.querySelector('body');
-  const isDark = bodyEl.classList.contains('dark');
+  const root = document.documentElement;
+  const isDark = root.classList.contains('dark') ||
+    (!root.classList.contains('light') && window.matchMedia('(prefers-color-scheme: dark)').matches);
   if (isDark) {
-    bodyEl.classList.remove('dark');
-    bodyEl.classList.add('light');
+    root.classList.remove('dark');
+    root.classList.add('light');
   } else {
-    bodyEl.classList.remove('light');
-    bodyEl.classList.add('dark');
+    root.classList.remove('light');
+    root.classList.add('dark');
   }
 };
 
