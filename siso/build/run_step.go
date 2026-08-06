@@ -100,6 +100,7 @@ func (b *Builder) runStep(ctx context.Context, step *Step) (retErr error) {
 			if tc != nil {
 				step.metrics.updateFromTrace(tc.Spans(), b.start)
 			}
+			step.metrics.done(ctx, b, step, b.start)
 			// Other metrics.
 			stepLogEntry(ctx, logger, step, duration, retErr)
 			b.recordMetrics(ctx, step.metrics)

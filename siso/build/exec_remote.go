@@ -119,7 +119,7 @@ func (b *Builder) execRemoteExecute(uploadCtx, execCtx context.Context, step *St
 				Start: attemptStart,
 				End:   attemptEnd,
 			})
-			step.metrics.done(ctx, step, b.start)
+			step.metrics.done(ctx, b, step, b.start)
 			return err
 		})
 		reExecDur += attemptDur
@@ -245,7 +245,7 @@ func (b *Builder) execRemoteCache(ctx context.Context, step *Step) error {
 			Start: start,
 			End:   time.Now(),
 		})
-		step.metrics.done(ctx, step, b.start)
+		step.metrics.done(ctx, b, step, b.start)
 	}()
 
 	// need to update deps for cache hit for deps=gcc, msvc.

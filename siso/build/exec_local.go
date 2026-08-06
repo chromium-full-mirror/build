@@ -170,7 +170,7 @@ func (b *Builder) execLocal(ctx context.Context, step *Step) (retErr error) {
 				End:   time.Now(),
 			})
 		}
-		step.metrics.done(ctx, step, b.start)
+		step.metrics.done(ctx, b, step, b.start)
 	}()
 	if err != nil {
 		return err

@@ -318,18 +318,38 @@ func (m *StepMetric) init(ctx context.Context, b *Builder, step *Step, stepStart
 	m.StepID = step.def.String()
 	m.Rule = step.def.RuleName()
 	m.Action = step.def.ActionName()
-	for _, o := range step.def.Outputs(ctx) {
-		m.Outputs = append(m.Outputs, b.path.MaybeToRelative(ctx, string(o)))
-	}
 	m.GNTarget = step.def.Binding("gn_target")
 	m.PrevStepID = step.prevStepID
 	m.Ready = IntervalMetric(step.readyTime.Sub(b.start))
 	m.Start = IntervalMetric(stepStart.Sub(step.readyTime))
 }
 
-func (m *StepMetric) done(ctx context.Context, step *Step, buildStart time.Time) {
+func (m *StepMetric) done(ctx context.Context, b *Builder, step *Step, buildStart time.Time) {
 	m.WeightedDuration = IntervalMetric(step.getWeightedDuration())
 	m.Inputs = len(step.cmd.Inputs)
+
+	seen := make(map[string]bool)
+	var outputs []string
+	for _, o := range step.cmd.Outputs {
+		s := b.path.MaybeToRelative(ctx, string(o))
+		if !seen[s] {
+			seen[s] = true
+			outputs = append(outputs, s)
+		}
+	}
+	for _, o := range step.cmd.OutputDirs {
+		s := b.path.MaybeToRelative(ctx, string(o))
+		if !strings.HasSuffix(s, "/") {
+			s += "/"
+		}
+		if !seen[s] {
+			seen[s] = true
+			outputs = append(outputs, s)
+		}
+	}
+	if len(outputs) > 0 {
+		m.Outputs = outputs
+	}
 
 	m.CmdHash = base64.StdEncoding.EncodeToString(step.cmd.CmdHash)
 	m.Digest = step.cmd.ActionDigest().String()

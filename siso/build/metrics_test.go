@@ -14,6 +14,7 @@ import (
 
 	"go.chromium.org/build/siso/execute"
 	"go.chromium.org/build/siso/o11y/trace"
+	"go.chromium.org/build/siso/path"
 )
 
 // Arbitrary fixed build start time.
@@ -36,8 +37,29 @@ func TestStepMetricsDone_NoExecutionMetadata(t *testing.T) {
 		cmd:   &execute.Cmd{},
 	}
 	var m StepMetric
-	m.done(ctx, step, time.Now())
+	m.done(ctx, nil, step, time.Now())
 	t.Logf("m.done passed without panic")
+}
+
+func TestStepMetricsDone_OutputsAndOutputDirs(t *testing.T) {
+	ctx := t.Context()
+	b := &Builder{
+		path: NewPath("/src", "out/Release"),
+	}
+	step := &Step{
+		state: &stepState{},
+		cmd: &execute.Cmd{
+			Outputs:    []path.Path{path.New("out/Release/obj/foo.o"), path.New("out/Release/gen/extra.h")},
+			OutputDirs: []path.Path{path.New("out/Release/gen/outdir")},
+		},
+	}
+	var m StepMetric
+	m.done(ctx, b, step, time.Now())
+
+	wantOutputs := []string{"obj/foo.o", "gen/extra.h", "gen/outdir/"}
+	if diff := cmp.Diff(wantOutputs, m.Outputs); diff != "" {
+		t.Errorf("m.Outputs mismatch (-want +got):\n%s", diff)
+	}
 }
 
 func TestStepMetricsJSON_Spans(t *testing.T) {
