@@ -6,7 +6,7 @@ require (
 	github.com/golang/glog v1.2.5
 	github.com/google/go-cmp v0.7.0
 	github.com/google/subcommands v1.2.0
-	go.starlark.net v0.0.0-20260630144053-529d8e869a14
+	go.starlark.net v0.0.0-20260708150628-5395d018f003
 )
 
-require golang.org/x/sys v0.46.0 // indirect
+require golang.org/x/sys v0.47.0 // indirect
