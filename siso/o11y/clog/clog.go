@@ -418,23 +418,23 @@ func (l *Logger) Log(e logging.Entry) {
 	l.log(e)
 }
 
-func toOtelValue(v any) otelog.Value {
+func toOtelValue(v any) attribute.Value {
 	switch val := v.(type) {
 	case string:
-		return otelog.StringValue(val)
+		return attribute.StringValue(val)
 	case map[string]any:
-		var kvs []otelog.KeyValue
+		var kvs []attribute.KeyValue
 		for k, v := range val {
-			kvs = append(kvs, otelog.KeyValue{
-				Key:   k,
+			kvs = append(kvs, attribute.KeyValue{
+				Key:   attribute.Key(k),
 				Value: toOtelValue(v),
 			})
 		}
-		return otelog.MapValue(kvs...)
+		return attribute.MapValue(kvs...)
 
 		// TODO: bool, float64, int64, []byte, slice
 	default:
-		return otelog.StringValue(fmt.Sprintf("%v", val))
+		return attribute.StringValue(fmt.Sprintf("%v", val))
 	}
 }
 
@@ -492,12 +492,12 @@ func (l *Logger) log(e logging.Entry) {
 			ctx = trace.ContextWithSpanContext(ctx, sc)
 		}
 
-		var attrs []otelog.KeyValue
+		var attrs []attribute.KeyValue
 		for k, v := range e.Labels {
-			attrs = append(attrs, otelog.String(k, v))
+			attrs = append(attrs, attribute.String(k, v))
 		}
 		for k, v := range l.res.Labels {
-			attrs = append(attrs, otelog.String(k, v))
+			attrs = append(attrs, attribute.String(k, v))
 		}
 		if e.SourceLocation != nil {
 			// Must use JSON instead of proto marshalling.
@@ -506,7 +506,7 @@ func (l *Logger) log(e logging.Entry) {
 			if err != nil {
 				glog.Warning("failed to marshal source location: %v", err)
 			} else {
-				attrs = append(attrs, otelog.Bytes("gcp.source_location", message))
+				attrs = append(attrs, attribute.ByteSlice("gcp.source_location", message))
 			}
 		}
 
@@ -516,7 +516,7 @@ func (l *Logger) log(e logging.Entry) {
 		if e.HTTPRequest != nil {
 			logName = "siso.step"
 		}
-		attrs = append(attrs, otelog.String("gcp.log_name", logName))
+		attrs = append(attrs, attribute.String("gcp.log_name", logName))
 		rec.AddAttributes(attrs...)
 		l.otelLogger.Emit(ctx, rec)
 		return
