@@ -373,8 +373,10 @@ func setupBuild(ctx context.Context, t *testing.T, dir string, fsopt hashfs.Opti
 		}
 	})
 	opt := build.Options{
-		Path:            path,
-		HashFS:          hashFS,
+		Path:   path,
+		HashFS: hashFS,
+		// Forward active build label from fsopt so test builds tag output artifacts in .siso_fs_state.
+		BuildLabel:      fsopt.BuildLabel,
 		REExecEnable:    true,
 		Cache:           cache,
 		FailuresAllowed: 1,
