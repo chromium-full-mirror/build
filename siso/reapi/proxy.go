@@ -33,6 +33,18 @@ import (
 // https://github.com/bazelbuild/remote-apis/blob/8f539af4b407a4f649707f9632fc2b715c9aa065/build/bazel/remote/execution/v2/remote_execution.proto#L2034-L2045
 const requestMetadataKey = "build.bazel.remote.execution.v2.requestmetadata-bin"
 
+// traceBinKey is the gRPC metadata key that carries the caller's trace context
+// in the binary format RBE understands. See otelDialOption, which is what
+// writes it on a build's own RPCs.
+const traceBinKey = "grpc-trace-bin"
+
+// forwardedMetadataKeys are the incoming metadata keys the proxy copies onto
+// its upstream calls. Each upstream call belongs to exactly one incoming RPC,
+// so forwarding these values does not combine metadata from different callers.
+// The proxy must not set Option.TracerProvider: its client would then write
+// traceBinKey itself and duplicate the forwarded value.
+var forwardedMetadataKeys = []string{requestMetadataKey, traceBinKey}
+
 // Proxy is RE API proxy.
 type Proxy struct {
 	client *Client
@@ -47,36 +59,38 @@ func NewProxy(client *Client, addr string) *Proxy {
 	}
 }
 
-// withForwardedMetadata copies the client's REAPI RequestMetadata from the
-// incoming request onto the outgoing context, so the backend still sees the
-// tool_invocation_id, target_id, action_mnemonic and friends for logging,
-// monitoring and grouping. Without this the proxy would strip it: the handlers
-// pass the server context to the upstream client, and gRPC does not forward
-// incoming metadata to outgoing calls.
+// withForwardedMetadata copies forwardedMetadataKeys from the incoming request
+// onto the outgoing context, so the backend still sees the tool_invocation_id,
+// target_id, action_mnemonic and friends for logging, monitoring and grouping,
+// and still parents its spans under the step that issued the RPC. Without this
+// the proxy would strip them: the handlers pass the server context to the
+// upstream client, and gRPC does not forward incoming metadata to outgoing
+// calls.
 func withForwardedMetadata(ctx context.Context) context.Context {
 	md, ok := metadata.FromIncomingContext(ctx)
 	if !ok {
 		return ctx
 	}
-	vals := md.Get(requestMetadataKey)
-	if len(vals) == 0 {
-		return ctx
+	var pairs []string
+	for _, key := range forwardedMetadataKeys {
+		for _, v := range md.Get(key) {
+			pairs = append(pairs, key, v)
+		}
 	}
-	pairs := make([]string, 0, len(vals)*2)
-	for _, v := range vals {
-		pairs = append(pairs, requestMetadataKey, v)
+	if len(pairs) == 0 {
+		return ctx
 	}
 	return metadata.AppendToOutgoingContext(ctx, pairs...)
 }
 
-// forwardMetadataUnaryInterceptor forwards the client's RequestMetadata upstream
-// on unary RPCs.
+// forwardMetadataUnaryInterceptor forwards the client's metadata upstream on
+// unary RPCs.
 func forwardMetadataUnaryInterceptor(ctx context.Context, req any, _ *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
 	return handler(withForwardedMetadata(ctx), req)
 }
 
 // forwardMetadataStream overrides the handler's context so streaming RPCs carry
-// the forwarded RequestMetadata on upstream calls.
+// the forwarded metadata on upstream calls.
 type forwardMetadataStream struct {
 	grpc.ServerStream
 	ctx context.Context
@@ -84,8 +98,8 @@ type forwardMetadataStream struct {
 
 func (s *forwardMetadataStream) Context() context.Context { return s.ctx }
 
-// forwardMetadataStreamInterceptor forwards the client's RequestMetadata upstream
-// on streaming RPCs.
+// forwardMetadataStreamInterceptor forwards the client's metadata upstream on
+// streaming RPCs.
 func forwardMetadataStreamInterceptor(srv any, ss grpc.ServerStream, _ *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
 	return handler(srv, &forwardMetadataStream{ServerStream: ss, ctx: withForwardedMetadata(ss.Context())})
 }

@@ -127,6 +127,59 @@ func TestForwardMetadataUnaryInterceptor(t *testing.T) {
 	}
 }
 
+// traceBinValue returns a wire value for the grpc-trace-bin header in the
+// binary trace-context format: a version byte, then the trace id, span id and
+// flags fields. See TestTracingDialOptionPropagatesGrpcTraceBin.
+func traceBinValue(traceID [16]byte, spanID [8]byte, flags byte) string {
+	b := make([]byte, 0, 29)
+	b = append(b, 0, 0)
+	b = append(b, traceID[:]...)
+	b = append(b, 1)
+	b = append(b, spanID[:]...)
+	b = append(b, 2, flags)
+	return string(b)
+}
+
+// TestForwardMetadataUnaryInterceptorTraceContext verifies the interceptor
+// forwards the caller's trace context alongside its RequestMetadata, so the
+// backend's spans parent under the step that issued the RPC rather than being
+// orphaned at the proxy.
+func TestForwardMetadataUnaryInterceptorTraceContext(t *testing.T) {
+	rmd := &rpb.RequestMetadata{ToolInvocationId: "invocation-1"}
+	want := traceBinValue(
+		[16]byte{0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0x01},
+		[8]byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08},
+		0x01, // sampled
+	)
+	in := metadata.Pairs(
+		requestMetadataKey, marshalRequestMetadata(t, rmd),
+		traceBinKey, want,
+	)
+	ctx := metadata.NewIncomingContext(t.Context(), in)
+
+	var gotCtx context.Context
+	handler := func(ctx context.Context, _ any) (any, error) {
+		gotCtx = ctx
+		return nil, nil
+	}
+	if _, err := forwardMetadataUnaryInterceptor(ctx, nil, nil, handler); err != nil {
+		t.Fatalf("interceptor: %v", err)
+	}
+
+	md, ok := metadata.FromOutgoingContext(gotCtx)
+	if !ok {
+		t.Fatal("handler context has no outgoing metadata, want the forwarded trace context")
+	}
+	// The proxy treats the trace context as opaque bytes: it must arrive
+	// upstream byte-for-byte, exactly once.
+	if got := md.Get(traceBinKey); len(got) != 1 || got[0] != want {
+		t.Errorf("outgoing %s = %q, want exactly one entry %q", traceBinKey, got, want)
+	}
+	if got := md.Get(requestMetadataKey); len(got) != 1 {
+		t.Errorf("outgoing %s entries = %d, want 1", requestMetadataKey, len(got))
+	}
+}
+
 // TestForwardMetadataUnaryInterceptorNoMetadata verifies a request without
 // RequestMetadata passes through untouched.
 func TestForwardMetadataUnaryInterceptorNoMetadata(t *testing.T) {
