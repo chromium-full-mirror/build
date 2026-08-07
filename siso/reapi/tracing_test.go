@@ -9,6 +9,7 @@ import (
 	"net"
 	"testing"
 
+	metricnoop "go.opentelemetry.io/otel/metric/noop"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	oteltrace "go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc"
@@ -43,7 +44,7 @@ func TestTracingDialOptionPropagatesGrpcTraceBin(t *testing.T) {
 			return lis.DialContext(ctx)
 		}),
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		tracingDialOption(tp),
+		otelDialOption(tp, metricnoop.NewMeterProvider()),
 	)
 	if err != nil {
 		t.Fatalf("NewClient: %v", err)

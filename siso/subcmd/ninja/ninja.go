@@ -416,6 +416,7 @@ func (c *Command) Run(ctx context.Context) (stats build.Stats, finalErr error) {
 		if err != nil {
 			return stats, err
 		}
+		c.reopt.MeterProvider = e
 		// Export all the metrics before shutting down as we still need the cloud logger to be present.
 		defer func() {
 			// Report build metrics.

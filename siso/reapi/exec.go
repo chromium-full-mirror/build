@@ -296,6 +296,7 @@ func (c *Client) executeOperation(ctx context.Context, opName string, opts ...gr
 	lroClient := longrunningpb.NewOperationsClient(c.conn)
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 	defer cancel()
+	opts = append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	op, err := lroClient.GetOperation(ctx, &longrunningpb.GetOperationRequest{
 		Name: opName,
 	}, opts...)

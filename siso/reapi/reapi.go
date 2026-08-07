@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/klauspost/compress/zstd"
+	otelmetric "go.opentelemetry.io/otel/metric"
 	oteltrace "go.opentelemetry.io/otel/trace"
 	"google.golang.org/api/option"
 	gtransport "google.golang.org/api/transport/grpc"
@@ -134,10 +135,16 @@ type Option struct {
 	// MaxRetries is the maximum number of retries for retriable errors.
 	MaxRetries int
 
-	// TracerProvider, when non-nil, enables grpc-native OpenTelemetry tracing:
-	// each RPC propagates its context via grpc-trace-bin for server-side
-	// recording (e.g. Dapper). Nil leaves the connection untraced.
+	// TracerProvider, when non-nil, enables grpc-native OpenTelemetry tracing.
+	// Each RPC propagates its context via grpc-trace-bin for server-side
+	// recording (e.g. Dapper). Setting it replaces gtransport's default
+	// telemetry handler.
 	TracerProvider oteltrace.TracerProvider
+
+	// MeterProvider, when non-nil, enables grpc-native OpenTelemetry client
+	// metrics through this provider. Setting it replaces gtransport's default
+	// telemetry handler.
+	MeterProvider otelmetric.MeterProvider
 
 	// TraceCookie, when non-empty, is attached as the `cookie` gRPC metadata
 	// header on every RPC to this backend (to force server-side trace
@@ -368,15 +375,30 @@ func DialOptions(keepAliveParams keepalive.ClientParameters) []grpc.DialOption {
 	return dopts
 }
 
-// tracingDialOption installs grpc-native OpenTelemetry tracing that propagates
-// each RPC's context to the server via the grpc-trace-bin header using tp.
-func tracingDialOption(tp oteltrace.TracerProvider) grpc.DialOption {
-	return grpcotel.DialOption(grpcotel.Options{
-		TraceOptions: grpcexpotel.TraceOptions{
+// otelDialOption installs the requested grpc-native OpenTelemetry tracing and
+// metrics instrumentation.
+func otelDialOption(tp oteltrace.TracerProvider, mp otelmetric.MeterProvider) grpc.DialOption {
+	var opt grpcotel.Options
+	if tp != nil {
+		opt.TraceOptions = grpcexpotel.TraceOptions{
 			TracerProvider:    tp,
 			TextMapPropagator: grpcotel.GRPCTraceBinPropagator{},
-		},
-	})
+		}
+	}
+	if mp != nil {
+		opt.MetricsOptions = grpcotel.MetricsOptions{
+			MeterProvider: mp,
+			// Keep the fleet-visible metric set stable across grpc-go upgrades.
+			Metrics: stats.NewMetricSet(
+				grpcotel.ClientAttemptStartedMetricName,
+				grpcotel.ClientAttemptDurationMetricName,
+				grpcotel.ClientAttemptSentCompressedTotalMessageSizeMetricName,
+				grpcotel.ClientAttemptRcvdCompressedTotalMessageSizeMetricName,
+				grpcotel.ClientCallDurationMetricName,
+			),
+		}
+	}
+	return grpcotel.DialOption(opt)
 }
 
 // cookieInterceptors return unary and stream client interceptors that attach
@@ -483,11 +505,11 @@ func newConn(ctx context.Context, addr string, cred cred.Cred, pool int, opt Opt
 		keepAliveParams = keepalive.ClientParameters{}
 	}
 	dopts := DialOptions(keepAliveParams)
-	if opt.TracerProvider != nil {
-		// Disable the default google.golang.org/api telemetry handler so this
-		// is the sole writer of grpc-trace-bin.
+	if opt.TracerProvider != nil || opt.MeterProvider != nil {
+		// gtransport combines tracing and metrics in one handler. Disable it
+		// whenever either is replaced to avoid duplicate telemetry.
 		copts = append(copts, option.WithTelemetryDisabled())
-		dopts = append(dopts, tracingDialOption(opt.TracerProvider))
+		dopts = append(dopts, otelDialOption(opt.TracerProvider, opt.MeterProvider))
 	}
 	if opt.TraceCookie != "" {
 		unary, stream := cookieInterceptors(opt.TraceCookie)
