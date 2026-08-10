@@ -27,6 +27,9 @@ type DigestMismatchError struct {
 
 // Error returns a human-readable error message.
 func (e *DigestMismatchError) Error() string {
+	if e.Actual.Hash == "" {
+		return fmt.Sprintf("size mismatch: got %d, want %d", e.Actual.SizeBytes, e.Expected.SizeBytes)
+	}
 	return fmt.Sprintf("hash mismatch: got %s, want %s", e.Actual, e.Expected)
 }
 

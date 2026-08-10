@@ -105,6 +105,15 @@ func TestGetCapabilities(t *testing.T) {
 	resp := getCapabilities(t, server.Config{
 		MaxBatchTotalSizeBytes: 1048576,
 		DigestFunctions:        []digest.Function{digest.SHA256, blake3Fn},
+		EnableChunkedBlobs:     true,
+		FastCDC_2020Params: &repb.FastCdc2020Params{
+			AvgChunkSizeBytes: 512 * 1024,
+			Seed:              0,
+		},
+		RepMaxCDCParams: &repb.RepMaxCdcParams{
+			MinChunkSizeBytes: 256 * 1024,
+			HorizonSizeBytes:  8 * 256 * 1024,
+		},
 	})
 
 	advertised := []repb.DigestFunction_Value{repb.DigestFunction_SHA256, repb.DigestFunction_BLAKE3}
@@ -127,6 +136,16 @@ func TestGetCapabilities(t *testing.T) {
 			MaxBatchTotalSizeBytes:      1048576,
 			SymlinkAbsolutePathStrategy: repb.SymlinkAbsolutePathStrategy_DISALLOWED,
 			SupportedCompressors:        []repb.Compressor_Value{repb.Compressor_IDENTITY, repb.Compressor_ZSTD},
+			SplitBlobSupport:            true,
+			SpliceBlobSupport:           true,
+			FastCdc_2020Params: &repb.FastCdc2020Params{
+				AvgChunkSizeBytes: 512 * 1024,
+				Seed:              0,
+			},
+			RepMaxCdcParams: &repb.RepMaxCdcParams{
+				MinChunkSizeBytes: 256 * 1024,
+				HorizonSizeBytes:  8 * 256 * 1024,
+			},
 		},
 		ExecutionCapabilities: &repb.ExecutionCapabilities{
 			DigestFunction: repb.DigestFunction_SHA256,

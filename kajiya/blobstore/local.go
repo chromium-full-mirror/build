@@ -32,8 +32,9 @@ type ContentAddressableStorage struct {
 
 	// Configured digest functions and their precomputed root directories
 	// (<function>/ under the data dir).
-	fns   []digest.Function
-	roots map[digest.Function]string
+	fns        []digest.Function
+	roots      map[digest.Function]string
+	splitRoots map[digest.Function]string
 
 	// Synchronization mechanism to prevent concurrent puts of the same blob.
 	putSyncer singleflight.Group
@@ -83,6 +84,14 @@ func NewWithOpts(ctx context.Context, dataDir string, opts Options) (*ContentAdd
 	if err != nil {
 		return nil, fmt.Errorf("provisioning CAS storage roots: %w", err)
 	}
+	splitsDir := filepath.Join(dataDir, "splits")
+	if err := os.Mkdir(splitsDir, 0755); err != nil && !errors.Is(err, fs.ErrExist) {
+		return nil, err
+	}
+	splitRoots, err := EnsureFunctionRoots(splitsDir, fns, opts.Sharded)
+	if err != nil {
+		return nil, fmt.Errorf("provisioning CAS split storage roots: %w", err)
+	}
 
 	// Wipe any leftover upload temp files from a previous run that may have crashed mid-upload.
 	tmpDir := filepath.Join(dataDir, "tmp")
@@ -94,11 +103,12 @@ func NewWithOpts(ctx context.Context, dataDir string, opts Options) (*ContentAdd
 	}
 
 	cas := &ContentAddressableStorage{
-		dataDir: dataDir,
-		tmpDir:  tmpDir,
-		sharded: opts.Sharded,
-		fns:     fns,
-		roots:   roots,
+		dataDir:    dataDir,
+		tmpDir:     tmpDir,
+		sharded:    opts.Sharded,
+		fns:        fns,
+		roots:      roots,
+		splitRoots: splitRoots,
 	}
 
 	// Ensure that the "empty blob" is present in the CAS for every configured
@@ -285,6 +295,7 @@ func (c *ContentAddressableStorage) Has(fn digest.Function, d digest.Digest) boo
 func (c *ContentAddressableStorage) Open(fn digest.Function, d digest.Digest, offset int64, limit int64) (io.ReadCloser, error) {
 	p := c.Path(fn, d)
 
+	// TODO: check splice/<digest> for blob created by SpliceBlob
 	f, err := os.Open(p)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
@@ -389,5 +400,6 @@ func (c *ContentAddressableStorage) Delete(fn digest.Function, d digest.Digest) 
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return err
 	}
+	_ = os.Remove(c.splitPath(fn, d))
 	return nil
 }

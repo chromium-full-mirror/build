@@ -31,6 +31,8 @@ import (
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/reflection"
 
+	repb "go.chromium.org/build/remote-apis/build/bazel/remote/execution/v2"
+
 	"go.chromium.org/build/kajiya/actioncache"
 	"go.chromium.org/build/kajiya/blobstore"
 	"go.chromium.org/build/kajiya/capabilities"
@@ -64,9 +66,20 @@ var (
 	maxRecvMsgSize         = flag.Int("max_recv_msg_size", 0, "maximum size of a single gRPC message that can be received")
 	maxBatchTotalSizeBytes = flag.Int64("max_batch_total_size_bytes", 0, "maximum combined total size of blobs in batch requests (0 means unlimited)")
 	digestFunctions        = flag.String("digest_functions", "sha256", "comma-separated list of digest functions to advertise and accept (e.g. sha256,blake3); md5 and murmur3 cannot be enabled together")
-	skipCASValidation      = flag.Bool("skip_cas_validation", false, "skip CAS integrity validation on startup (faster startup, but won't detect corrupted blobs)")
-	allowHostFS            = flag.Bool("allow_host_fs", false, "allow actions without a container image to run with access to the host filesystem")
-	traceInputs            = flag.Bool("trace_inputs", false, "trace which input files each action opens and report as auxiliary metadata (FuseFS sandbox only)")
+
+	enableChunkedBlobs = flag.Bool("enable_chunked_blobs", false, "enable chunked blob. e.g. SpliceBlob and SplitBlob")
+
+	// https://github.com/bazelbuild/remote-apis/blob/v2.12.0/build/bazel/remote/execution/v2/remote_execution.proto#L2383
+	fastCDC2020AvgChunkSizeBytes = flag.Uint64("fast_cdc_2020_avg_chunk_size_bytes", 512*1024, "average (expected) chunk size for the FastCDC chunking altorithm")
+	fastCDC2020Seed              = flag.Uint64("fast_cdc_2020_seed", 0, "seed for the FastCDC mask generation")
+
+	// https://github.com/bazelbuild/remote-apis/blob/v2.12.0/build/bazel/remote/execution/v2/remote_execution.proto#L2414
+	repMaxCDCMinChunkSizeBytes = flag.Uint64("rep_max_cdc_min_chunk_size_bytes", 256*1024, "minimum chunk size for the RepMaxCDC chunking algorithm")
+	repMaxCDCHorizonSizeBytes  = flag.Uint64("rep_max_cdc_horizon_size_bytes", 8*256*1024, "lookahead window for the finding optimal cutting points for RepMaxCDC chunking algorithm")
+
+	skipCASValidation = flag.Bool("skip_cas_validation", false, "skip CAS integrity validation on startup (faster startup, but won't detect corrupted blobs)")
+	allowHostFS       = flag.Bool("allow_host_fs", false, "allow actions without a container image to run with access to the host filesystem")
+	traceInputs       = flag.Bool("trace_inputs", false, "trace which input files each action opens and report as auxiliary metadata (FuseFS sandbox only)")
 
 	sb localexec.SandboxStrategy
 )
@@ -337,6 +350,17 @@ func createServer(ctx context.Context, dataDir string) (*grpc.Server, func(), er
 	} else if cfg.MaxRecvMsgSize < cfg.RecommendedMaxRecvMsgSize() {
 		slog.Warn("gRPC max receive message size is too small, consider increasing your -max_recv_msg_size",
 			"got", cfg.MaxRecvMsgSize, "want", cfg.RecommendedMaxRecvMsgSize())
+	}
+	if *enableChunkedBlobs {
+		cfg.EnableChunkedBlobs = true
+		cfg.FastCDC_2020Params = &repb.FastCdc2020Params{
+			AvgChunkSizeBytes: *fastCDC2020AvgChunkSizeBytes,
+			Seed:              uint32(*fastCDC2020Seed),
+		}
+		cfg.RepMaxCDCParams = &repb.RepMaxCdcParams{
+			MinChunkSizeBytes: *repMaxCDCMinChunkSizeBytes,
+			HorizonSizeBytes:  *repMaxCDCHorizonSizeBytes,
+		}
 	}
 
 	// Create tls based credential.

@@ -24,6 +24,11 @@ type Config struct {
 	// and accepts, typically produced by ParseDigestFunctions. Empty means
 	// SHA-256 only.
 	DigestFunctions []digest.Function
+
+	// for chunked blob support
+	EnableChunkedBlobs bool
+	FastCDC_2020Params *repb.FastCdc2020Params
+	RepMaxCDCParams    *repb.RepMaxCdcParams
 }
 
 // RecommendedMaxRecvMsgSize returns the maximum gRPC receive message size

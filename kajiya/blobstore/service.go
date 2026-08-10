@@ -836,3 +836,82 @@ func (s *Service) GetTree(request *repb.GetTreeRequest, treeServer repb.ContentA
 	// Send the tree to the client.
 	return treeServer.Send(response)
 }
+
+// SplitBlob implements the ContentAddressableStorage.SplitBlob RPC.
+func (s *Service) SplitBlob(ctx context.Context, request *repb.SplitBlobRequest) (resp *repb.SplitBlobResponse, err error) {
+	defer func() {
+		if err != nil {
+			slog.Error("SplitBlob", "digest", request.BlobDigest, "error", err)
+		} else {
+			slog.Info("SplitBlob", "digest", request.BlobDigest, "chunks", len(resp.ChunkDigests))
+		}
+	}()
+
+	fn, d, err := s.config.ResolveDigest(request.DigestFunction, request.BlobDigest)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err = s.cas.Split(fn, d)
+	if err != nil {
+		var mse *MissingSplitError
+		if errors.As(err, &mse) {
+			return nil, status.Errorf(codes.NotFound, "split not found: %v", err)
+		}
+		var mbe *MissingBlobsError
+		if errors.As(err, &mbe) {
+			return nil, status.Errorf(codes.NotFound, "split chunks not found: %v", err)
+		}
+		return nil, status.Errorf(codes.Internal, "failed to read split mapping: %v", err)
+	}
+
+	return resp, nil
+}
+
+// SpliceBlob implements the ContentAddressableStorage.SpliceBlob RPC.
+func (s *Service) SpliceBlob(ctx context.Context, request *repb.SpliceBlobRequest) (resp *repb.SpliceBlobResponse, err error) {
+	defer func() {
+		if err != nil {
+			slog.Error("SpliceBlob", "blob_digest", request.BlobDigest, "chunks", len(request.ChunkDigests), "error", err)
+		} else {
+			slog.Info("SpliceBlob", "blob_digest", request.BlobDigest, "chunks", len(request.ChunkDigests))
+		}
+	}()
+
+	reqFn, err := s.config.ResolveFunction(request.DigestFunction)
+	if err != nil {
+		return nil, err
+	}
+	fn, blobDigest, err := s.config.ResolveWith(reqFn, request.BlobDigest)
+	if err != nil {
+		return nil, err
+	}
+
+	var chunkDigests []digest.Digest
+	for _, d := range request.ChunkDigests {
+		cfn, cd, err := s.config.ResolveWith(reqFn, d)
+		if err != nil {
+			return nil, err
+		}
+		if cfn != fn {
+			return nil, status.Errorf(codes.InvalidArgument, "chunk digest function %s does not match blob digest function %s", cfn, fn)
+		}
+		chunkDigests = append(chunkDigests, cd)
+	}
+	err = s.cas.Splice(fn, blobDigest, chunkDigests, request.ChunkingFunction)
+	if err != nil {
+		var mbe *MissingBlobsError
+		if errors.As(err, &mbe) {
+			return nil, status.Errorf(codes.NotFound, "missing chunks: %v", err)
+		}
+		var dme *DigestMismatchError
+		if errors.As(err, &dme) {
+			return nil, status.Errorf(codes.InvalidArgument, "spliced blob digest mismatch: %v", err)
+		}
+		return nil, status.Errorf(codes.Internal, "failed to splice blob: %v", err)
+	}
+
+	return &repb.SpliceBlobResponse{
+		BlobDigest: request.BlobDigest,
+	}, nil
+}

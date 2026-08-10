@@ -29,3 +29,29 @@ func (e *MissingBlobsError) Error() string {
 	}
 	return fmt.Sprintf("missing %d blobs", len(e.Blobs))
 }
+
+// MissingSplitError is an error type that indicates that digest has
+// no split information in the blob store.
+type MissingSplitError struct {
+	// Fn is the digest function of the missing blobs.
+	Fn digest.Function
+
+	// Blob is the digest to split.
+	Blob digest.Digest
+}
+
+func (e *MissingSplitError) Error() string {
+	return fmt.Sprintf("missing split for %s", e.Blob)
+}
+
+type UnexpectedSpliceError struct {
+	// Blob is the digest to splice.
+	Blob digest.Digest
+
+	// TotalSize is total size of chunks of the splice.
+	TotalSize int64
+}
+
+func (e *UnexpectedSpliceError) Error() string {
+	return fmt.Sprintf("sum of chunk sizes (%d) does not match expected blob size (%d)", e.TotalSize, e.Blob.SizeBytes)
+}

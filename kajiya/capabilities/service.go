@@ -68,6 +68,10 @@ func (s *Service) GetCapabilities(ctx context.Context, request *repb.GetCapabili
 				repb.Compressor_IDENTITY,
 				repb.Compressor_ZSTD,
 			},
+			SplitBlobSupport:   s.config.EnableChunkedBlobs,
+			SpliceBlobSupport:  s.config.EnableChunkedBlobs,
+			FastCdc_2020Params: s.config.FastCDC_2020Params,
+			RepMaxCdcParams:    s.config.RepMaxCDCParams,
 		},
 		ExecutionCapabilities: &repb.ExecutionCapabilities{
 			DigestFunction:  values[0],

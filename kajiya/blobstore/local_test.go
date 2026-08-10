@@ -247,10 +247,10 @@ func TestDigestFunctionScoping(t *testing.T) {
 		for _, e := range entries {
 			names = append(names, e.Name())
 		}
-		if got, want := len(entries), 2; got != want {
-			t.Errorf("data dir has %d entries %v, want %d (sha256 and tmp only)", got, names, want)
+		if got, want := len(entries), 3; got != want {
+			t.Errorf("data dir has %d entries %v, want %d (sha256, splits, and tmp only)", got, names, want)
 		}
-		for _, want := range []string{"sha256", "tmp"} {
+		for _, want := range []string{"sha256", "splits", "tmp"} {
 			if _, err := os.Stat(filepath.Join(dir, want)); err != nil {
 				t.Errorf("expected %s/ to exist: %v", want, err)
 			}
