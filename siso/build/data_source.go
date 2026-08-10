@@ -23,7 +23,7 @@ import (
 func NewDataSource(ctx context.Context, credential cred.Cred, localCacheEnable bool, cacheDir string, reapiClient *reapi.Client) DataSource {
 	layeredCache := NewLayeredCache()
 	if localCacheEnable {
-		cache, err := NewLocalCache(cacheDir)
+		cache, err := reapi.NewLocalCache(cacheDir)
 		if err != nil {
 			clog.Warningf(ctx, "failed to create local cache - no local cache enabled: %v", err)
 		} else {

@@ -16,6 +16,7 @@ import (
 
 	"go.chromium.org/build/siso/blob"
 	"go.chromium.org/build/siso/build/cachestore"
+	"go.chromium.org/build/siso/reapi"
 )
 
 const FirstOnly = "firstonly"
@@ -37,7 +38,7 @@ func TestLayeredCache(t *testing.T) {
 	ctx := t.Context()
 	cache := NewLayeredCache()
 
-	first, err := NewLocalCache(t.TempDir())
+	first, err := reapi.NewLocalCache(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -49,7 +50,7 @@ func TestLayeredCache(t *testing.T) {
 	}
 	cache.AddLayer(first)
 
-	second, err := NewLocalCache(t.TempDir())
+	second, err := reapi.NewLocalCache(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -112,13 +113,13 @@ func TestWriteThroughCache(t *testing.T) {
 	ctx := t.Context()
 	cache := NewLayeredCache()
 
-	first, err := NewLocalCache(t.TempDir())
+	first, err := reapi.NewLocalCache(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
 	cache.AddLayer(first)
 
-	second, err := NewLocalCache(t.TempDir())
+	second, err := reapi.NewLocalCache(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}

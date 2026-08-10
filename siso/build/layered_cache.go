@@ -21,6 +21,7 @@ import (
 	"go.chromium.org/build/siso/blob"
 	"go.chromium.org/build/siso/build/cachestore"
 	"go.chromium.org/build/siso/o11y/clog"
+	"go.chromium.org/build/siso/reapi"
 )
 
 // LayeredCache is a multi-layer cache. It will attempt to read from caches in
@@ -186,13 +187,13 @@ func (s layeredSource) Open(ctx context.Context) (io.ReadCloser, error) {
 	}
 	end := len(s.lc.caches) - 1
 	var source blob.Source
-	var localCache *LocalCache
+	var localCache *reapi.LocalCache
 	for i, cache := range s.lc.caches {
 		if i == end || cache.HasContent(ctx, s.d) {
 			source = cache.Source(ctx, s.d, s.f)
 			break
 		}
-		if lc, ok := s.lc.caches[i].(*LocalCache); ok {
+		if lc, ok := s.lc.caches[i].(*reapi.LocalCache); ok {
 			localCache = lc
 		}
 	}

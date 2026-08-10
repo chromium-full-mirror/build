@@ -279,7 +279,7 @@ func TestRemoteClaimFallbackIfAllowed(t *testing.T) {
 type racingTestEnv struct {
 	dir        string
 	reclient   *reapi.Client
-	cachestore *LocalCache
+	cachestore *reapi.LocalCache
 	hashFS     *hashfs.HashFS
 }
 
@@ -294,7 +294,7 @@ func newRacingTestEnv(t *testing.T, fakere *reapitest.Fake) *racingTestEnv {
 		t.Fatal(err)
 	}
 	reclient := reapitest.New(ctx, t, fakere)
-	cachestore, err := NewLocalCache(filepath.Join(dir, ".siso_cache"))
+	cachestore, err := reapi.NewLocalCache(filepath.Join(dir, ".siso_cache"))
 	if err != nil {
 		t.Fatal(err)
 	}

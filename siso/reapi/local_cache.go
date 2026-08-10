@@ -1,8 +1,8 @@
-// Copyright 2023 The Chromium Authors
+// Copyright 2026 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-package build
+package reapi
 
 import (
 	"bytes"
@@ -33,9 +33,9 @@ import (
 	"go.chromium.org/build/siso/ui"
 )
 
-// localCacheSemaphore is a semaphore to control concurrent lstat,
+// LocalCacheSemaphore is a semaphore to control concurrent lstat,
 // to protect from thread exhaustion. b/490029722
-var localCacheSemaphore = semaphore.New("local-cache", runtime.GOMAXPROCS(0)*2)
+var LocalCacheSemaphore = semaphore.New("local-cache", runtime.GOMAXPROCS(0)*2)
 
 // LocalCache implements CacheStore interface with local files.
 type LocalCache struct {
@@ -89,7 +89,7 @@ func (c *LocalCache) GetActionResult(ctx context.Context, d digest.Digest) (*rpb
 	}
 	fname := c.actionCacheFilename(d)
 	var result *rpb.ActionResult
-	err := localCacheSemaphore.Do(ctx, func(ctx context.Context) error {
+	err := LocalCacheSemaphore.Do(ctx, func(ctx context.Context) error {
 		b, err := os.ReadFile(fname)
 		c.m.ReadDone(len(b), err)
 		if errors.Is(err, os.ErrNotExist) {
@@ -125,7 +125,7 @@ func (c *LocalCache) SetActionResult(ctx context.Context, d digest.Digest, ar *r
 
 	fname := c.actionCacheFilename(d)
 	_, err, _ = c.singleflight.Do(fname, func() (any, error) {
-		err := localCacheSemaphore.Do(ctx, func(ctx context.Context) error {
+		err := LocalCacheSemaphore.Do(ctx, func(ctx context.Context) error {
 			err := os.MkdirAll(filepath.Dir(fname), 0755)
 			c.m.OpsDone(err)
 			if err != nil {
@@ -159,7 +159,7 @@ func (c *LocalCache) GetContent(ctx context.Context, d digest.Digest, _ string) 
 	defer span.Close(nil)
 	cname := c.contentCacheFilename(d)
 	var buf []byte
-	err := localCacheSemaphore.Do(ctx, func(ctx context.Context) error {
+	err := LocalCacheSemaphore.Do(ctx, func(ctx context.Context) error {
 		r, err := os.Open(cname)
 		if err != nil {
 			c.m.ReadDone(0, err)
@@ -190,7 +190,7 @@ func (c *LocalCache) GetContent(ctx context.Context, d digest.Digest, _ string) 
 func (c *LocalCache) SetContent(ctx context.Context, d digest.Digest, fname string, buf []byte) error {
 	cname := c.contentCacheFilename(d)
 	_, err, shared := c.singleflight.Do(cname, func() (any, error) {
-		err := localCacheSemaphore.Do(ctx, func(ctx context.Context) error {
+		err := LocalCacheSemaphore.Do(ctx, func(ctx context.Context) error {
 			_, err := os.Stat(cname)
 			c.m.OpsDone(err)
 			if err == nil {

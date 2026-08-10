@@ -1,8 +1,8 @@
-// Copyright 2024 The Chromium Authors
+// Copyright 2026 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-package build
+package reapi
 
 import (
 	"path/filepath"
@@ -11,8 +11,15 @@ import (
 
 	"google.golang.org/protobuf/proto"
 
+	"go.chromium.org/build/hashigo/digest"
 	rpb "go.chromium.org/build/remote-apis/build/bazel/remote/execution/v2"
+
+	"go.chromium.org/build/siso/blob"
 )
+
+func makeDigest(s string) digest.Digest {
+	return blob.FromBytes(digest.SHA256, s, []byte(s)).Digest()
+}
 
 func TestActionResultCache(t *testing.T) {
 	ctx := t.Context()

@@ -711,7 +711,7 @@ func (b *Builder) Build(ctx context.Context, name string, args ...string) (err e
 		b.hashFS.ActiveFlushGate(),
 		hashfs.ForgetMissingsSemaphore,
 		osfs.LstatSemaphore,
-		localCacheSemaphore,
+		reapi.LocalCacheSemaphore,
 		reapi.FileSemaphore,
 		gccutil.Semaphore,
 		msvcutil.Semaphore,

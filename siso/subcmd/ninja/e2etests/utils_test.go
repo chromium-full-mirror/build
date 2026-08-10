@@ -25,6 +25,7 @@ import (
 	"go.chromium.org/build/siso/build/buildconfig"
 	"go.chromium.org/build/siso/build/ninjabuild"
 	"go.chromium.org/build/siso/hashfs"
+	"go.chromium.org/build/siso/reapi"
 )
 
 var (
@@ -356,7 +357,7 @@ func setupBuild(ctx context.Context, t *testing.T, dir string, fsopt hashfs.Opti
 
 	graph := ninjabuild.NewGraph(ctx, "build.ninja", nstate, config, path, hashFS, stepConfig, depsLog)
 
-	cachestore, err := build.NewLocalCache(".siso_cache")
+	cachestore, err := reapi.NewLocalCache(".siso_cache")
 	if err != nil {
 		t.Logf("no local cache enabled: %v", err)
 	}
