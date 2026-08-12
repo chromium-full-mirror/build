@@ -6,6 +6,7 @@ package ninja
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"maps"
@@ -180,7 +181,10 @@ func (c *Command) initCloudMonitoring(ctx context.Context, credential cred.Cred,
 	}
 	var exporter smetric.Exporter
 	if c.collectorAddress != "" {
-		exporter = newOTELMetricsExporter(ctx, c.collectorAddress)
+		exporter, err = newOTELMetricsExporter(ctx, c.collectorAddress)
+		if err != nil {
+			clog.Warningf(ctx, "failed to create OTEL metrics exporter, falling back to Cloud Monitoring: %v", err)
+		}
 	}
 	if exporter == nil {
 		exporter, err = cloudmetric.New(
@@ -203,20 +207,18 @@ func (c *Command) initCloudMonitoring(ctx context.Context, credential cred.Cred,
 	return mp, nil
 }
 
-func newOTELMetricsExporter(ctx context.Context, collectorAddr string) *otlpmetricgrpc.Exporter {
+func newOTELMetricsExporter(ctx context.Context, collectorAddr string) (smetric.Exporter, error) {
 	conn, err := grpc.NewClient(collectorAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
-		clog.Warningf(ctx, "failed to create connection to OTLP collector: %v", err)
-		return nil
+		return nil, fmt.Errorf("create connection to OTLP collector: %w", err)
 	}
 
 	exporter, err := otlpmetricgrpc.New(ctx, otlpmetricgrpc.WithGRPCConn(conn))
 	if err != nil {
-		clog.Warningf(ctx, "failed to create OTLP metric exporter: %v", err)
-		return nil
+		return nil, errors.Join(fmt.Errorf("create OTLP metric exporter: %w", err), conn.Close())
 	}
 	clog.Infof(ctx, "OTEL metrics exporter to %s", collectorAddr)
-	return exporter
+	return exporter, nil
 }
 
 // buildProperties builds properties for the invocation that will be uploaded to ResultStore.
