@@ -6,7 +6,7 @@ require (
 	github.com/twmb/murmur3 v1.1.8
 	github.com/zeebo/blake3 v0.2.4
 	go.chromium.org/build/remote-apis v0.0.0-20260805080330-7d621b551da7
-	google.golang.org/protobuf v1.36.11
+	google.golang.org/protobuf v1.36.12
 )
 
 require (
