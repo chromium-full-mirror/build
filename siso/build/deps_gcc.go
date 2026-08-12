@@ -139,7 +139,7 @@ func (depsGCC) DepsAfterRun(ctx context.Context, b *Builder, step *Step) (_ []st
 	}
 	err = checkDeps(ctx, b, step, deps)
 	if err != nil {
-		return nil, fmt.Errorf("error in depfile %q: %w", step.cmd.Depfile, err)
+		return nil, fmt.Errorf("error in GCC deps check with depfile %q: %w", step.cmd.Depfile, err)
 	}
 	dspan.SetAttr("deps", len(deps))
 	dspan.Close(nil)
