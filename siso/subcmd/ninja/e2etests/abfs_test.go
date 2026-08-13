@@ -16,6 +16,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sync"
 	"syscall"
 	"testing"
 
@@ -93,8 +94,11 @@ func TestBuild_ABFS(t *testing.T) {
 	}
 
 	ofs := osfs.New(ctx, "osfs", osfs.Option{})
-	getRBEDigests := make(map[string]int)
-	setRBEDigests := make(map[string]int)
+	var (
+		mu            sync.Mutex
+		getRBEDigests = make(map[string]int)
+		setRBEDigests = make(map[string]int)
+	)
 	mux := http.NewServeMux()
 	mux.HandleFunc("/mnt/get-rbe-digest", func(w http.ResponseWriter, req *http.Request) {
 		if req.Method != http.MethodGet {
@@ -103,7 +107,9 @@ func TestBuild_ABFS(t *testing.T) {
 		}
 		q := req.URL.Query()
 		path := q.Get("path")
+		mu.Lock()
 		getRBEDigests[path]++
+		mu.Unlock()
 		fi, err := os.Lstat(filepath.Join(dir, path))
 		if err != nil {
 			if errors.Is(err, fs.ErrNotExist) {
@@ -149,9 +155,11 @@ func TestBuild_ABFS(t *testing.T) {
 		}
 		respMsg := make(map[string]string)
 		for _, r := range reqMsg.Digests {
+			mu.Lock()
 			setRBEDigests[r.Path]++
+			mu.Unlock()
 			if r.SHA256 != outDigest.GetHash() || r.Size != outDigest.GetSizeBytes() {
-				respMsg[r.Path] = fmt.Sprintf("unknown digset %s/%d", r.SHA256, r.Size)
+				respMsg[r.Path] = fmt.Sprintf("unknown digest %s/%d", r.SHA256, r.Size)
 				continue
 			}
 			err := os.WriteFile(filepath.Join(dir, r.Path), outData, fs.FileMode(r.Mode)&fs.ModePerm)
