@@ -41,6 +41,7 @@ import (
 	"go.chromium.org/build/siso/reapi"
 	"go.chromium.org/build/siso/resource"
 	"go.chromium.org/build/siso/signals"
+	"go.chromium.org/build/siso/toolsupport/abfsutil"
 	"go.chromium.org/build/siso/toolsupport/cartfsutil"
 	"go.chromium.org/build/siso/toolsupport/cogutil"
 	"go.chromium.org/build/siso/toolsupport/soongutil"
@@ -941,7 +942,14 @@ func (c *Command) setupHashFS(ctx context.Context, buildPath *build.Path, ds bui
 		ui.Default.PrintLines(ui.SGR(ui.Yellow, "build on cartfs\n"))
 		c.fsopt.CartFS = cartfs
 	}
-
+	if c.abfsEndpoint != "" {
+		abfs, err := abfsutil.New(ctx, c.abfsEndpoint, buildPath.WorkspaceRoot)
+		if err != nil {
+			return nil, nil, err
+		}
+		ui.Default.PrintLines(ui.SGR(ui.Yellow, "build on abfs\n"))
+		c.fsopt.ABFS = abfs
+	}
 	c.fsopt.FSMonitor = initFSMonitor(ctx, buildPath.WorkspaceRoot)
 
 	hashFS, err := hashfs.New(ctx, *c.fsopt)

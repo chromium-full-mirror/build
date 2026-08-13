@@ -42,6 +42,7 @@ import (
 	"go.chromium.org/build/siso/reapi/merkletree"
 	"go.chromium.org/build/siso/resource"
 	"go.chromium.org/build/siso/sync/semaphore"
+	"go.chromium.org/build/siso/toolsupport/abfsutil"
 	"go.chromium.org/build/siso/toolsupport/cartfsutil"
 )
 
@@ -173,6 +174,7 @@ func New(ctx context.Context, opt Option) (*HashFS, error) {
 	}
 	opt.OSFSOption.OnCog = opt.CogFS != nil
 	opt.OSFSOption.CartFS = opt.CartFS
+	opt.OSFSOption.ABFS = opt.ABFS
 	opt.OSFSOption.DigestFunction = opt.DigestFunction
 	fsys := &HashFS{
 		opt:       opt,
@@ -1818,9 +1820,10 @@ func (hfs *HashFS) Update(ctx context.Context, workspaceRoot string, entries []U
 	})
 
 	if hfs.opt.CartFS != nil {
-		start := time.Now()
 		hfs.cartfsRegister(ctx, workspaceRoot, entries, cartfsutil.UrgencyOnAccess)
-		clog.Infof(ctx, "cartfsRegister took %s for %d entries", time.Since(start), len(entries))
+	}
+	if hfs.opt.ABFS != nil {
+		hfs.abfsRegister(ctx, workspaceRoot, entries)
 	}
 
 	committed := make([]string, 0, len(entries))
@@ -1900,6 +1903,58 @@ func (hfs *HashFS) cartfsRegister(ctx context.Context, workspaceRoot string, ent
 		}
 	} else {
 		clog.Warningf(ctx, "cartfs register 0 from_local=%d not_file=%d", nFromLocals, nNonFiles)
+	}
+}
+
+// abfsRegister registers file entries into ABFS.
+// making successfully inserted entries as local.
+func (hfs *HashFS) abfsRegister(ctx context.Context, workspaceRoot string, entries []UpdateEntry) {
+	start := time.Now()
+	var numUpdates int
+	defer func() {
+		clog.Infof(ctx, "abfsRegister took %v for %d entries (registered=%d)",
+			time.Since(start), len(entries), numUpdates)
+	}()
+
+	var updates []*abfsutil.Registration
+	var updateIdx []int
+	var nFromLocals, nNonFiles int
+	for i, ent := range entries {
+		if ent.Entry == nil {
+			// UpdateEntry was captured by RetrieveUpdateEntriesFromLocal
+			// so file already exist on local disk
+			nFromLocals++
+			continue
+		}
+		if ent.Entry.Data.IsZero() {
+			// symlink or dir. handled in usual way.
+			nNonFiles++
+			continue
+		}
+		updateIdx = append(updateIdx, i)
+		updates = append(updates, &abfsutil.Registration{
+			Entry: *ent.Entry,
+		})
+	}
+	if len(updates) > 0 {
+		numUpdates = len(updates)
+		err := hfs.opt.ABFS.RegisterFiles(ctx, workspaceRoot, updates)
+		if err != nil {
+			clog.Warningf(ctx, "abfs register %d under %s: %v", len(updates), workspaceRoot, err)
+		} else {
+			clog.Infof(ctx, "abfs register %d under %s", len(updates), workspaceRoot)
+			// abfs registered the update, so we can assume
+			// these files exist locally.
+			for ui, ei := range updateIdx {
+				if updates[ui].Err != nil {
+					clog.Warningf(ctx, "abfs register %q: %v", updates[ui].Entry.Name, updates[ui].Err)
+					continue
+				}
+				entries[ei].IsLocal = true
+			}
+		}
+	} else {
+		clog.Warningf(ctx, "abfs register 0 from_local=%d not_file=%d", nFromLocals, nNonFiles)
 	}
 }
 
@@ -2261,6 +2316,12 @@ func (hfs *HashFS) Flush(ctx context.Context, workspaceRoot string, files []path
 					clog.Infof(ctx, "flush %s local ready", fname)
 				}
 				e.mu.Lock()
+				// TODO: support for abfs too if abfs provides trigger downloading.
+				// flush will be called when it will be used
+				// for local action.
+				// better for performance to trigger downloading
+				// when flush (in batch), rather than let them
+				// download on access (serially).
 				if hfs.opt.CartFS != nil && !e.d.IsZero() {
 					localEntries = append(localEntries, UpdateEntry{
 						Name: file,
@@ -2272,6 +2333,7 @@ func (hfs *HashFS) Flush(ctx context.Context, workspaceRoot string, files []path
 						// TODO: set other properties in cartfs?
 					})
 				}
+
 				if e.mtimeUpdated && !e.isSymlink() {
 					// mtime was updated after entry sets mtime from the local disk.
 					// Don't update mtime for symlink,

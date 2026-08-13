@@ -30,6 +30,7 @@ import (
 	"go.chromium.org/build/siso/o11y/monitoring"
 	"go.chromium.org/build/siso/reapi/firstbyte"
 	"go.chromium.org/build/siso/sync/semaphore"
+	"go.chromium.org/build/siso/toolsupport/abfsutil"
 	"go.chromium.org/build/siso/toolsupport/cartfsutil"
 )
 
@@ -59,6 +60,7 @@ type OSFS struct {
 	digestXattrName string
 	onCog           bool
 	cartFS          *cartfsutil.Client
+	abfs            *abfsutil.Client
 }
 
 // Option is an option for osfs.
@@ -79,6 +81,8 @@ type Option struct {
 	// CartFS is client of CartFS.
 	// TODO(b/513044090): decide xattr or GetDigest API.
 	CartFS *cartfsutil.Client
+	// ABFS is client of ABFS.
+	ABFS *abfsutil.Client
 }
 
 func (o *Option) RegisterFlags(flagSet *flag.FlagSet) {
@@ -107,6 +111,7 @@ func New(ctx context.Context, name string, opt Option) *OSFS {
 		digestXattrName: digestXattrName,
 		onCog:           opt.OnCog,
 		cartFS:          opt.CartFS,
+		abfs:            opt.ABFS,
 	}
 }
 
@@ -482,7 +487,13 @@ func (ofs *OSFS) FileDigestFromFS(ctx context.Context, name string, size int64) 
 			}, nil
 		}
 	}
-	return ofs.cartFS.Digest(ctx, name)
+	if ofs.cartFS != nil {
+		return ofs.cartFS.Digest(ctx, name)
+	}
+	if ofs.abfs != nil {
+		return ofs.abfs.Digest(ctx, name)
+	}
+	return digest.Digest{}, errors.ErrUnsupported
 }
 
 // FileSource is a file source.

@@ -142,6 +142,7 @@ type NinjaFlags struct {
 	reCacheEnableWrite bool
 
 	cartfsEndpoint string
+	abfsEndpoint   string
 
 	enableCloudLogging          bool
 	enableResultstore           bool
@@ -257,6 +258,8 @@ func (c *Command) SetFlags(flagSet *flag.FlagSet) {
 
 	// TODO(b/513044090): discover cartfs endpoint automatically?
 	flagSet.StringVar(&c.cartfsEndpoint, "cartfs_endpoint", "", "cartfs server endpoint. e.g. localhost:65001")
+
+	flagSet.StringVar(&c.abfsEndpoint, "abfs_endpoint", "", "abfs server endpoint e.g. unix://.abfs.sock")
 
 	flagSet.DurationVar(&c.traceThreshold, "trace_threshold", 1*time.Minute, "threshold for trace record")
 	flagSet.DurationVar(&c.traceSpanThreshold, "trace_span_threshold", 100*time.Millisecond, "theshold for trace span record")

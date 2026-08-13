@@ -41,6 +41,7 @@ import (
 	"go.chromium.org/build/siso/o11y/trace"
 	"go.chromium.org/build/siso/path"
 	"go.chromium.org/build/siso/resource"
+	"go.chromium.org/build/siso/toolsupport/abfsutil"
 	"go.chromium.org/build/siso/toolsupport/cartfsutil"
 	"go.chromium.org/build/siso/toolsupport/cogutil"
 )
@@ -95,6 +96,7 @@ type Option struct {
 	Ignore      IgnoreFunc
 	CogFS       *cogutil.Client
 	CartFS      *cartfsutil.Client
+	ABFS        *abfsutil.Client
 
 	SetStateLogger io.Writer // capture SetState log for test
 }
