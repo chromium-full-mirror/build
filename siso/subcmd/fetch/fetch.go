@@ -25,6 +25,7 @@ import (
 	rpb "go.chromium.org/build/remote-apis/build/bazel/remote/execution/v2"
 
 	"go.chromium.org/build/siso/auth/cred"
+	"go.chromium.org/build/siso/blob"
 	"go.chromium.org/build/siso/reapi"
 	"go.chromium.org/build/siso/reapi/merkletree/exporter"
 	"go.chromium.org/build/siso/signals"
@@ -283,10 +284,18 @@ func (c *Command) run(ctx context.Context) error {
 	case "action-list":
 		for action, err := range client.ActionCacheMap().List(ctx, d.String()) {
 			if err != nil {
-				return fmt.Errorf("failed to list actions for %s: %v", d.String(), err)
+				return fmt.Errorf("failed to list actions for %s: %w", d.String(), err)
 			}
-			fmt.Println(formatter(action))
-			fmt.Println()
+			if c.format == "" {
+				data, err := blob.FromProtoMessage(digest.SHA256, action)
+				if err != nil {
+					return fmt.Errorf("failed to calculate action digest: %w", err)
+				}
+				fmt.Printf("action_digest: %s\n", data.Digest())
+			} else {
+				fmt.Println(formatter(action))
+				fmt.Println()
+			}
 		}
 		return nil
 	default:
