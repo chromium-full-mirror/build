@@ -129,9 +129,17 @@ to register handlers and step configs.
      * value: dict of a filegroup generator
        * "type" specifies filegroup generator type.
          * "glob":
-           * glob match from the dir specified by the label.
-           * "includes": path patterns to include the glob
-           * "excludes": path patterns to exclude the glob
+           * Recursively traverses files under the target directory using
+             [glob patterns](#glob-pattern). Directories themselves are not
+             included in the result.
+           * "dir": (optional) root directory to search. If omitted, defaults
+             to the directory part before `:` in the filegroup label key.
+           * "includes": list of [glob patterns](#glob-pattern) to include
+             in the glob. e.g. `["*"]` to include all files recursively.
+           * "excludes": (optional) list of [glob patterns](#glob-pattern)
+             to exclude from the glob.
+           * A file is included if it matches at least one pattern in
+             `includes` and does not match any pattern in `excludes`.
          * TODO(b/266759797): add other type, like "filelist".
    * `handlers` dict
      * key: handler name
@@ -295,11 +303,22 @@ in`includes` (and is not excluded by `excludes`).
 
 ### glob pattern
 
- * If a pattern starts with `!`, it works as excludes.
- * If a pattern contains `/`, it is matched against the full path of an input.
- * If a pattern ends with `/**`, it it matched aagaint the directory prefix.
- * Otherwise, the pattern is matched against the basename of the input's path.
- * The matching logic is equivalent to Go's [path.Match](https://pkg.go.dev/path#Match).
+Glob patterns are used in `filegroups` and `path_filter`.
+The matching logic is based on Go's
+[path.Match](https://pkg.go.dev/path#Match).
+
+ * If a pattern contains `/` (e.g. `"sub/*.h"`), it is matched against the
+   full or relative path of an input. Note that `*` in `path.Match` does not
+   cross path separators (`/`).
+ * Otherwise (if the pattern contains no `/`, e.g. `"*.h"`), the pattern is
+   matched against the basename of the input's path, matching files at any
+   directory depth. For example, `["*"]` matches all files under the directory
+   recursively in `filegroups`.
+ * In `path_filter` (or `patterns` list):
+   * If a pattern starts with `!`, it works as an exclude pattern.
+   * If a pattern ends with `/**` (e.g. `"dir/**"`), it is matched against the
+     directory prefix (matching any files under the directory). Note that `**`
+     glob is only supported in `path_filter` and does not work in `filegroups`.
 
 ## per-step config
 
