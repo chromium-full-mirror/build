@@ -95,11 +95,14 @@ func (rt reapiTwoPhaseCaching) Check(ctx context.Context, lookupKey string, step
 			clog.Infof(ctx, "mismatch action %s: %v", action, err)
 			continue
 		}
-		if log.V(1) {
-			actionDigest, err := blob.FromProtoMessage(rt.b.hashFS.DigestFunction(), action)
-			clog.Infof(ctx, "match action %s => %s: %v", action, actionDigest, err)
-		}
 		step.cmd = ocmd.Clone()
+		actionMsg, err := blob.FromProtoMessage(rt.b.hashFS.DigestFunction(), action)
+		if log.V(1) {
+			clog.Infof(ctx, "match action %s => %s: %v", action, actionMsg, err)
+		}
+		if err == nil {
+			step.cmd.SetActionDigest(actionMsg.Digest())
+		}
 		// use the same inputs, outputs as action.
 		step.cmd.Inputs = path.Paths(inputs)
 		step.cmd.Outputs = path.Paths(outputs)

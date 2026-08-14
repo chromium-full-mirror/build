@@ -470,7 +470,7 @@ func (c *Cmd) ActionDigest() digest.Digest {
 }
 
 // SetActionDigest sets action digest.
-// This is used to set the digest in test.
+// This is used to set the digest for two phase caching or in test.
 func (c *Cmd) SetActionDigest(d digest.Digest) {
 	c.actionDigest = d
 }
@@ -490,6 +490,9 @@ func (c *Cmd) Digest(ctx context.Context, ds *blob.Store) (actionDigest digest.D
 	}
 	if c.HashFS == nil {
 		return digest.Digest{}, fmt.Errorf("unable to get the input root for %s: missing HashFS", c)
+	}
+	if ds == nil && !c.actionDigest.IsZero() {
+		return c.actionDigest, nil
 	}
 	chrootPath, remoteChroot := c.Platform["dockerChrootPath"]
 	if remoteChroot {
