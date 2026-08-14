@@ -420,6 +420,9 @@ provide `runtime`.
 provide [`struct`](https://pkg.go.dev/go.starlark.net/starlarkstruct#Struct)
 and [`module`](https://pkg.go.dev/go.starlark.net/starlarkstruct#Module)
 
+### [@builtin//time.star](../build/buildconfig/time.star)
+provides [`time`](https://pkg.go.dev/go.starlark.net/lib/time).
+
 ### @config
 
 `@config` points `//build/config/siso` by default (changed by `--config`).
