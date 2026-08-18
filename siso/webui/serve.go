@@ -6,7 +6,6 @@
 package webui
 
 import (
-	"context"
 	"embed"
 	"errors"
 	"fmt"
@@ -26,7 +25,6 @@ import (
 	"time"
 
 	"go.chromium.org/build/siso/build"
-	"go.chromium.org/build/siso/build/ninjabuild"
 	mwc "go.chromium.org/build/siso/third_party/material_web_components"
 	"go.chromium.org/build/siso/webui/invocation"
 )
@@ -201,19 +199,6 @@ type runningStepInfo struct {
 	started  time.Time
 }
 
-// ErrWorkspaceNotExist represents error when workspace was not found.
-type ErrWorkspaceNotExist struct {
-	err error
-}
-
-func (f ErrWorkspaceNotExist) Unwrap() error {
-	return f.err
-}
-
-func (f ErrWorkspaceNotExist) Error() string {
-	return fmt.Sprintf("failed to find workspace: %v", f.err)
-}
-
 // ErrManifestNotExist represents error when build manifest was not found.
 type ErrManifestNotExist struct {
 	outdirPath   string
@@ -360,25 +345,22 @@ type ServerConfig struct {
 	Version          string
 	LocalDevelopment bool
 	Port             int
-	OutDir           ninjabuild.DirFlag
+	WorkspaceRoot    string
+	DefaultOutdir    string
 	ManifestPath     string
 }
 
 // NewServer inits a webui server.
-func NewServer(ctx context.Context, cfg ServerConfig) (*WebuiServer, error) {
-	_, workspaceRoot, outDir, err := ninjabuild.InitDir(ctx, cfg.OutDir)
-	if err != nil {
-		return nil, &ErrWorkspaceNotExist{err}
-	}
-	defaultOutdir := filepath.ToSlash(outDir)
+func NewServer(cfg ServerConfig) (*WebuiServer, error) {
+	defaultOutdir := filepath.ToSlash(cfg.DefaultOutdir)
 	s := WebuiServer{
 		sisoVersion:      cfg.Version,
 		localDevelopment: cfg.LocalDevelopment,
 		staticFS:         fs.FS(content),
 		sseServer:        newSseServer(),
-		workspaceRoot:    workspaceRoot,
+		workspaceRoot:    cfg.WorkspaceRoot,
 		defaultOutdir:    defaultOutdir,
-		outdirProvider:   makeOutdirProvider(workspaceRoot, cfg.ManifestPath, defaultOutdir),
+		outdirProvider:   makeOutdirProvider(cfg.WorkspaceRoot, cfg.ManifestPath, defaultOutdir),
 		uploadedMetrics:  makeMetricsFileProvider(),
 		port:             cfg.Port,
 		templates:        make(map[string]*template.Template),
@@ -389,7 +371,7 @@ func NewServer(ctx context.Context, cfg ServerConfig) (*WebuiServer, error) {
 	}
 
 	// Preload default outdir.
-	_, err = s.outdirProvider.Get(outDir)
+	_, err := s.outdirProvider.Get(defaultOutdir)
 	if err != nil {
 		return nil, fmt.Errorf("failed to preload outdir: %w", err)
 	}

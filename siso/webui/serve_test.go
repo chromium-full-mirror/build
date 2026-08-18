@@ -5,7 +5,6 @@
 package webui
 
 import (
-	"context"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -16,11 +15,9 @@ import (
 
 	"github.com/PuerkitoBio/goquery"
 	"github.com/google/go-cmp/cmp"
-
-	"go.chromium.org/build/siso/build/ninjabuild"
 )
 
-func TestServer_MissingWorkspace(t *testing.T) {
+func TestServer_MissingManifest(t *testing.T) {
 	dir := t.TempDir()
 	dir, err := filepath.EvalSymlinks(dir)
 	if err != nil {
@@ -28,26 +25,24 @@ func TestServer_MissingWorkspace(t *testing.T) {
 	}
 	t.Chdir(dir)
 
-	_, err = NewServer(t.Context(), ServerConfig{
+	_, err = NewServer(ServerConfig{
 		Version:          "test-version",
 		LocalDevelopment: false,
 		Port:             8080,
-		OutDir: ninjabuild.DirFlag{
-			Dir:           "non_existent_dir",
-			ConfigRepoDir: "build/config/siso",
-		},
-		ManifestPath: "build.ninja",
+		WorkspaceRoot:    dir,
+		DefaultOutdir:    "non_existent_dir",
+		ManifestPath:     "build.ninja",
 	})
 
 	if err == nil {
 		t.Fatal("server got err = nil; want error")
 	}
-	if _, ok := errors.AsType[*ErrWorkspaceNotExist](err); !ok {
-		t.Fatalf("server got err = %v; want ErrWorkspaceNotExist", err)
+	if _, ok := errors.AsType[*ErrManifestNotExist](err); !ok {
+		t.Fatalf("server got err = %v; want ErrManifestNotExist", err)
 	}
 }
 
-func mustServer(ctx context.Context, t *testing.T) (*WebuiServer, string) {
+func mustServer(t *testing.T) (*WebuiServer, string) {
 	t.Helper()
 	dir := t.TempDir()
 	dir, err := filepath.EvalSymlinks(dir)
@@ -135,15 +130,13 @@ build all: phony foo`), 0644); err != nil {
 	}
 
 	// Now init the server.
-	s, err := NewServer(ctx, ServerConfig{
+	s, err := NewServer(ServerConfig{
 		Version:          "test-version",
 		LocalDevelopment: false,
 		Port:             8080,
-		OutDir: ninjabuild.DirFlag{
-			Dir:           "out/Default",
-			ConfigRepoDir: "build/config/siso",
-		},
-		ManifestPath: "build.ninja",
+		WorkspaceRoot:    dir,
+		DefaultOutdir:    "out/Default",
+		ManifestPath:     "build.ninja",
 	})
 	if err != nil {
 		t.Fatalf("server err = %v; want nil err", err)
@@ -152,7 +145,7 @@ build all: phony foo`), 0644); err != nil {
 }
 
 func TestServer_InitialState(t *testing.T) {
-	s, tmp := mustServer(t.Context(), t)
+	s, tmp := mustServer(t)
 
 	if s.workspaceRoot != tmp {
 		t.Errorf("workspaceRoot = %q; want %q", s.workspaceRoot, tmp)
@@ -163,7 +156,7 @@ func TestServer_InitialState(t *testing.T) {
 }
 
 func TestRoutes_Outdirs(t *testing.T) {
-	s, _ := mustServer(t.Context(), t)
+	s, _ := mustServer(t)
 
 	for _, tc := range []struct {
 		path string
@@ -201,7 +194,7 @@ func TestRoutes_Outdirs(t *testing.T) {
 }
 
 func TestRoutes_InvocationSeriesList(t *testing.T) {
-	s, _ := mustServer(t.Context(), t)
+	s, _ := mustServer(t)
 
 	rec := httptest.NewRecorder()
 	s.mux().ServeHTTP(rec, httptest.NewRequest("GET", "/out/Default/builds/", nil))
@@ -218,7 +211,7 @@ func TestRoutes_InvocationSeriesList(t *testing.T) {
 }
 
 func TestRoutes_UploadedMetrics(t *testing.T) {
-	s, _ := mustServer(t.Context(), t)
+	s, _ := mustServer(t)
 
 	tmp := t.TempDir()
 	metricsFile := filepath.Join(tmp, "my_custom_metrics.json")
@@ -251,7 +244,7 @@ func TestRoutes_UploadedMetrics(t *testing.T) {
 }
 
 func TestRedirects(t *testing.T) {
-	s, _ := mustServer(t.Context(), t)
+	s, _ := mustServer(t)
 
 	for _, tc := range []struct {
 		path string
@@ -277,7 +270,7 @@ func TestRedirects(t *testing.T) {
 }
 
 func TestRoutes_ViewLog(t *testing.T) {
-	s, _ := mustServer(t.Context(), t)
+	s, _ := mustServer(t)
 
 	for _, tc := range []struct {
 		path, want string
@@ -315,7 +308,7 @@ func TestRoutes_ViewLog(t *testing.T) {
 // We apply custom escaping in the template, so unit testing the data model is inadequate.
 // TODO: test for android-style outdirs as well?
 func TestOutdirMenu_RendersCorrectURLs(t *testing.T) {
-	s, _ := mustServer(t.Context(), t)
+	s, _ := mustServer(t)
 	rec := httptest.NewRecorder()
 	s.mux().ServeHTTP(rec, httptest.NewRequest("GET", "/out/Default/builds/test-rev/steps/", nil))
 	if rec.Code != http.StatusOK {
@@ -346,7 +339,7 @@ func TestOutdirMenu_RendersCorrectURLs(t *testing.T) {
 }
 
 func TestBreadcrumbs(t *testing.T) {
-	s, tmp := mustServer(t.Context(), t)
+	s, tmp := mustServer(t)
 
 	// Since the outdir path is absolute and dynamically generated via t.TempDir(),
 	// we determine the expected outdir abbrev label dynamically.
@@ -437,7 +430,7 @@ func TestCrossOriginProtection(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			s, _ := mustServer(t.Context(), t)
+			s, _ := mustServer(t)
 
 			req := httptest.NewRequest(tc.method, tc.path, nil)
 			if tc.secFetchSite != "" {
