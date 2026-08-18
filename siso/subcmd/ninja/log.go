@@ -296,6 +296,12 @@ func (c *Command) setupCrashOutput(ctx context.Context) (func(), error) {
 }
 
 func (c *Command) writeInvocationInfo(ctx context.Context, metricsLabels map[string]string, targets []string) error {
+	fname := c.logFilename(c.invocationJSON, "")
+	if fname == "" {
+		return nil
+	}
+	rotateFiles(ctx, fname)
+
 	j, err := json.Marshal(metadata.InvocationInfo{
 		SisoVersion:        c.version,
 		StartTime:          c.started,
@@ -308,7 +314,7 @@ func (c *Command) writeInvocationInfo(ctx context.Context, metricsLabels map[str
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(c.logDir, c.invocationJSON), j, 0644)
+	return os.WriteFile(fname, j, 0644)
 }
 
 func (c *Command) cleanupReclientMetrics(ctx context.Context) {
