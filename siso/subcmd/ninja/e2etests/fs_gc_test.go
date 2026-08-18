@@ -9,6 +9,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -196,4 +197,65 @@ func TestBuild_FSGC_ValidationErrors(t *testing.T) {
 			t.Errorf("runGC conflicting strategy err, got=<nil>; want=error")
 		}
 	})
+}
+
+func TestBuild_FSGC_ListActiveLabels(t *testing.T) {
+	if !runInSubProcess(t) {
+		return
+	}
+	ctx, dir := setupGCTestDir(t)
+
+	// Seed the HashFS state ledger with actual builds
+	runNinjaWithLabel(ctx, t, dir, "target-1", "build.ninja.0")
+	time.Sleep(50 * time.Millisecond)
+	runNinjaWithLabel(ctx, t, dir, "target-2", "build.ninja.1")
+
+	// Capture stdout asynchronously
+	oldStdout := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+	defer func() {
+		os.Stdout = oldStdout
+		w.Close() // Ensure restoration and unblocking if runGC panics
+	}()
+
+	errCh := make(chan error, 1)
+	var outBytes []byte
+	go func() {
+		var err error
+		outBytes, err = io.ReadAll(r)
+		errCh <- err
+	}()
+
+	err := runGC(ctx, t, dir, "--list_active_labels")
+
+	w.Close()
+
+	if readErr := <-errCh; readErr != nil {
+		t.Fatalf("Failed to read stdout pipe: %v", readErr)
+	}
+
+	if err != nil {
+		t.Fatalf("runGC err, got=%v; want=<nil>", err)
+	}
+
+	output := string(outBytes)
+
+	if !strings.Contains(output, "Active Build Labels (2):") {
+		t.Errorf("output missing summary header, got:\n%s", output)
+	}
+	if !strings.Contains(output, " - target-1") {
+		t.Errorf("output missing target-1, got:\n%s", output)
+	}
+	if !strings.Contains(output, " - target-2") {
+		t.Errorf("output missing target-2, got:\n%s", output)
+	}
+
+	// Confirm zero files were dropped, obj/foo.o and obj/bar.o still exist
+	if _, err := os.Stat(filepath.Join(dir, "out/siso/obj/foo.o")); err != nil {
+		t.Errorf("stat(obj/foo.o) err, got=%v; want=<nil>", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "out/siso/obj/bar.o")); err != nil {
+		t.Errorf("stat(obj/bar.o) err, got=%v; want=<nil>", err)
+	}
 }

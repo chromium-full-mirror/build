@@ -8,6 +8,7 @@ import (
 	"context"
 	"math"
 	"path/filepath"
+	"sort"
 	"time"
 
 	pb "go.chromium.org/build/siso/hashfs/proto"
@@ -90,4 +91,20 @@ func (hfs *HashFS) allocateBitIDLocked(buildLabel string) uint32 {
 	}
 
 	return oldestID
+}
+
+// ActiveBuildLabels returns a sorted list of all active build labels currently tracked in the state ledger.
+func (hfs *HashFS) ActiveBuildLabels() []string {
+	hfs.ledgerMu.RLock()
+	defer hfs.ledgerMu.RUnlock()
+
+	labels := make([]string, 0, len(hfs.buildLabelDictionary))
+	for id, meta := range hfs.buildLabelDictionary {
+		if id < 64 && meta != nil && meta.BuildLabel != "" {
+			labels = append(labels, meta.BuildLabel)
+		}
+	}
+
+	sort.Strings(labels)
+	return labels
 }
