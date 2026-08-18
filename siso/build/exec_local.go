@@ -51,6 +51,9 @@ func (b *Builder) execLocal(ctx context.Context, step *Step) (retErr error) {
 		return err
 	}
 	step.cmd.RecordPreOutputs(ctx)
+	if err := b.resetDirOutputs(ctx, step); err != nil {
+		return err
+	}
 
 	stateMessage := "local exec"
 	var stateMessagePrefix string
@@ -395,6 +398,19 @@ func (b *Builder) prepareLocalInputs(ctx context.Context, step *Step) error {
 		step.cmd.Inputs = inputs
 	}
 	return err
+}
+
+// resetDirOutputs wipes each declared directory output before the command runs,
+// so a rerun with fewer files leaves no stale members. The action recreates the
+// dir itself (siso doesn't), matching the REAPI worker. Call after
+// RecordPreOutputs: it removes the prior tree restat compares against.
+func (b *Builder) resetDirOutputs(ctx context.Context, step *Step) error {
+	for _, dir := range step.cmd.OutputDirs {
+		if err := b.hashFS.ResetDirOutput(ctx, step.cmd.WorkspaceRoot, string(dir)); err != nil {
+			return fmt.Errorf("reset dir output %s: %w", dir, err)
+		}
+	}
+	return nil
 }
 
 // checkLocalOutputs checks if all outputs are on local disk.

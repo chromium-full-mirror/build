@@ -1107,6 +1107,13 @@ func (hfs *HashFS) WithBuildLabelTrackingLockDo(f func()) {
 // RemoveAll removes all files under root/name.
 // Also removes from the disk at the same time.
 func (hfs *HashFS) RemoveAll(ctx context.Context, root string, name path.Path) error {
+	return hfs.removeAll(ctx, root, name, false)
+}
+
+// removeAll removes root/name from disk and reconciles the records.
+// forget drops the record on success instead of recording the path absent: a
+// not-exist entry is authoritative and would shadow a recreated tree.
+func (hfs *HashFS) removeAll(ctx context.Context, root string, name path.Path, forget bool) error {
 	if log.V(1) {
 		clog.Infof(ctx, "removeAll @%s %s", root, name)
 	}
@@ -1131,6 +1138,12 @@ func (hfs *HashFS) RemoveAll(ctx context.Context, root string, name path.Path) e
 		hfs.invalidateDirInputCache(string(name))
 		clog.Warningf(ctx, "removeAll %q: %v", name, err)
 		return err
+	}
+	if forget {
+		hfs.directory.deleteForce(ctx, name)
+		hfs.invalidateDirInputCache(string(name))
+		clog.Infof(ctx, "removeAll %q: forget", name)
+		return nil
 	}
 	lready := make(chan bool, 1)
 	lready <- true
@@ -1175,6 +1188,20 @@ func (hfs *HashFS) dropRemovedChildrenIn(ctx context.Context, dirname path.Path,
 		}
 		return true
 	})
+}
+
+// ResetDirOutput removes a directory output (disk tree and recorded subtree)
+// before its step runs, so a rerun with fewer files leaves no stale members.
+// Only the parent is ensured; contents are re-recorded from disk after the
+// step runs. Reconciliation is removeAll's, so a wipe cannot drift from a
+// clean-dead one.
+func (hfs *HashFS) ResetDirOutput(ctx context.Context, root, name string) error {
+	target := path.New(name)
+	if err := hfs.removeAll(ctx, root, target, true); err != nil {
+		return err
+	}
+	fullpath := makeFullpath(root, target)
+	return hfs.OS.MkdirAll(ctx, filepath.Dir(string(fullpath)), 0755)
 }
 
 // ClearStaleFileForDirOutput removes name (and its hashfs subtree) when a
