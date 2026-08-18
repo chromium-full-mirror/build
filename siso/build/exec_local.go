@@ -105,7 +105,7 @@ func (b *Builder) execLocal(ctx context.Context, step *Step) (retErr error) {
 	case "":
 		// no sandbox. ignore
 	default:
-		clog.Warningf(ctx, "unsupported sandbox %q", sandbox)
+		return fmt.Errorf("unsupported sandbox %q", sandbox)
 	}
 
 	if step.def.Binding("use_remote_exec_wrapper") != "" {
