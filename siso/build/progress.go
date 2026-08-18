@@ -236,7 +236,7 @@ func (p *progress) render(b *Builder) {
 // fastLocal acquisition) and reports the plan's live total to
 // b.statusReporter as side effects.
 func (p *progress) buildSummary(b *Builder) string {
-	dur := ui.FormatDuration(time.Since(b.start))
+	dur := ui.FormatDurationSec(time.Since(b.start))
 	stat := b.stats.stats()
 
 	runProgress := func(waits, servs int) string {
@@ -419,7 +419,7 @@ func formatStepRow(si *stepInfo) string {
 	d := si.step.servDuration()
 	durStr := "      "
 	if d > 0 {
-		durStr = fmt.Sprintf("%6s", ui.FormatDuration(d))
+		durStr = fmt.Sprintf("%6s", ui.FormatDurationSec(d))
 	}
 	msg := fmt.Sprintf("  %s [%s] %s", durStr, phase, si.desc)
 	switch phase {
@@ -650,13 +650,13 @@ func (p *progress) ActiveSteps() []ActiveStepInfo {
 	for _, s := range as {
 		var servDur string
 		if dur := s.step.servDuration(); dur > 0 {
-			servDur = ui.FormatDuration(dur)
+			servDur = ui.FormatDurationSec(dur)
 		}
 		activeSteps = append(activeSteps, ActiveStepInfo{
 			ID:      s.step.String(),
 			Desc:    s.desc,
 			Phase:   s.step.phase().String(),
-			Dur:     ui.FormatDuration(now.Sub(s.step.startTime)),
+			Dur:     ui.FormatDurationSec(now.Sub(s.step.startTime)),
 			ServDur: servDur,
 		})
 	}
