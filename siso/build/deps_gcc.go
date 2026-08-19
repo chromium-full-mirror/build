@@ -135,7 +135,7 @@ func (depsGCC) DepsAfterRun(ctx context.Context, b *Builder, step *Step) (_ []st
 	_, dspan := trace.NewSpan(ctx, "parse-deps")
 	deps, err := makeutil.ParseDeps(ctx, buf)
 	if err != nil {
-		return nil, fmt.Errorf("gcc-deps: failed to parse depfile %q: %w", step.cmd.Depfile, err)
+		return nil, DepsError{Err: fmt.Errorf("gcc-deps: failed to parse depfile %q: %w", step.cmd.Depfile, err)}
 	}
 	err = checkDeps(ctx, b, step, deps)
 	if err != nil {

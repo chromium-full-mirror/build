@@ -236,6 +236,38 @@ func TestRemoteClaimFallbackIfAllowed(t *testing.T) {
 				}
 			},
 		},
+		{
+			name:               "DepsError_NoFallback",
+			err:                DepsError{Err: errors.New("missing header")},
+			maxFallbackAllowed: 10,
+			wantOk:             false,
+			checkErr: func(t *testing.T, err error) {
+				var depsErr DepsError
+				if !errors.As(err, &depsErr) {
+					t.Errorf("got %T: %v, expected DepsError", err, err)
+				}
+				var fallbackErr TooManyFallbackError
+				if errors.As(err, &fallbackErr) {
+					t.Errorf("unexpected TooManyFallbackError for DepsError: %v", err)
+				}
+			},
+		},
+		{
+			name:               "DepsError_UnsandboxedInputs_NoFallback",
+			err:                DepsError{UnsandboxedInputs: []string{"../../undeclared.h"}},
+			maxFallbackAllowed: 10,
+			wantOk:             false,
+			checkErr: func(t *testing.T, err error) {
+				var depsErr DepsError
+				if !errors.As(err, &depsErr) {
+					t.Errorf("got %T: %v, expected DepsError", err, err)
+				}
+				var fallbackErr TooManyFallbackError
+				if errors.As(err, &fallbackErr) {
+					t.Errorf("unexpected TooManyFallbackError for DepsError: %v", err)
+				}
+			},
+		},
 	}
 
 	for _, tt := range tests {

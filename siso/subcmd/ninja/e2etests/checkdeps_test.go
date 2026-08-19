@@ -6,6 +6,7 @@ package e2etests
 
 import (
 	"bytes"
+	"errors"
 	"io"
 	"strings"
 	"testing"
@@ -61,5 +62,54 @@ func TestBuild_CheckDeps(t *testing.T) {
 	want := `deps error: deps inputs have no dependencies from "./obj/foo.o" to ["bar.h"]`
 	if !strings.Contains(sisoOutput.String(), want) {
 		t.Errorf("unexpected siso_output\ngot:\n%s\nwant contains\n%s", sisoOutput.String(), want)
+	}
+}
+
+func TestBuild_FailOnBadDeps(t *testing.T) {
+	if !runInSubProcess(t) {
+		return
+	}
+	ctx := t.Context()
+	dir := tempDir(t)
+
+	runNinjaTest := func(t *testing.T, target string, w io.Writer, experiment string) (build.Stats, error) {
+		t.Helper()
+		build.SetExperimentForTest(experiment)
+		defer func() {
+			build.SetExperimentForTest("")
+		}()
+		opt, graph, cleanup := setupBuild(ctx, t, dir, hashfs.Option{
+			StateFile: ".siso_fs_state",
+		})
+		defer cleanup()
+		opt.OutputLogWriter = w
+		return ninjabuild.Run(ctx, graph, opt, []string{target}, ninjabuild.RunNinjaOpts{})
+	}
+
+	setupFiles(t, dir, "TestBuild_CheckDeps", nil)
+	var sisoOutput bytes.Buffer
+	t.Logf("-- first build bar.h")
+	stats, err := runNinjaTest(t, "bar.h", &sisoOutput, "fail-on-bad-deps,no-fallback")
+	if err != nil {
+		t.Fatalf("ninja err: %v", err)
+	}
+	if stats.Done != stats.Total || stats.Total != 1 {
+		t.Errorf("done=%d total=%d; want done=total=1", stats.Done, stats.Total)
+	}
+
+	t.Logf("-- second build all with fail-on-bad-deps,no-fallback")
+	sisoOutput.Reset()
+	_, err = runNinjaTest(t, "all", &sisoOutput, "fail-on-bad-deps,no-fallback")
+	if err == nil {
+		t.Fatalf("ninja err: got nil, want error")
+	}
+
+	var depsErr build.DepsError
+	if !errors.As(err, &depsErr) {
+		t.Errorf("got error %T: %v, want build.DepsError", err, err)
+	}
+	var fallbackErr build.TooManyFallbackError
+	if errors.As(err, &fallbackErr) {
+		t.Errorf("unexpected TooManyFallbackError: %v", err)
 	}
 }

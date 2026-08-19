@@ -49,23 +49,32 @@ var depsProcessors = map[string]depsProcessor{
 	"msvc":    depsMSVC{},
 }
 
-// DepfileAddsUnsandboxedFileError is error type when a depfile adds a file as a dep
-// that was not part of the original sandbox. Sandboxed actions can only use depfiles
-// to promote order-only deps to regular implicit deps.
-type DepfileAddsUnsandboxedFileError struct {
-	Inputs []string
+// DepsError is an error type for dependency check failures.
+type DepsError struct {
+	Err               error
+	UnsandboxedInputs []string
 }
 
-func (e DepfileAddsUnsandboxedFileError) Error() string {
-	return fmt.Sprintf("sandboxed action has depfile that adds dependencies that are not listed in its inputs. When sandboxing, depfiles can only be used to promote order-only deps to implicit deps. The files are:\n  %s", strings.Join(e.Inputs, "\n  "))
+func (e DepsError) Error() string {
+	if len(e.UnsandboxedInputs) > 0 {
+		return fmt.Sprintf("sandboxed action has depfile that adds dependencies that are not listed in its inputs. When sandboxing, depfiles can only be used to promote order-only deps to implicit deps. The files are:\n  %s", strings.Join(e.UnsandboxedInputs, "\n  "))
+	}
+	return fmt.Sprintf("deps error: %v", e.Err)
 }
 
-func (e DepfileAddsUnsandboxedFileError) Is(target error) bool {
-	t, ok := target.(DepfileAddsUnsandboxedFileError)
+func (e DepsError) Unwrap() error {
+	return e.Err
+}
+
+func (e DepsError) Is(target error) bool {
+	t, ok := target.(DepsError)
 	if !ok {
 		return false
 	}
-	return slices.Equal(e.Inputs, t.Inputs)
+	if len(e.UnsandboxedInputs) > 0 || len(t.UnsandboxedInputs) > 0 {
+		return slices.Equal(e.UnsandboxedInputs, t.UnsandboxedInputs)
+	}
+	return errors.Is(e.Err, t.Err)
 }
 
 // depsExpandInputs expands step.cmd.Inputs.
@@ -242,7 +251,7 @@ func checkDepfile(ctx context.Context, b *Builder, step *Step) error {
 	fsys := b.hashFS.FileSystem(ctx, b.path.WorkspaceRoot)
 	deps, err := makeutil.ParseDepsFile(ctx, fsys, string(step.cmd.Depfile))
 	if err != nil {
-		return fmt.Errorf("failed to parse depfile %q: %w", step.cmd.Depfile, err)
+		return DepsError{Err: fmt.Errorf("failed to parse depfile %q: %w", step.cmd.Depfile, err)}
 	}
 	err = checkDeps(ctx, b, step, deps)
 	if err != nil {
@@ -315,11 +324,11 @@ func checkDeps(ctx context.Context, b *Builder, step *Step, deps []string) error
 			fi, err = b.hashFS.Stat(ctx, b.path.WorkspaceRoot, input)
 		}
 		if err != nil {
-			return fmt.Errorf("deps input %q not exist: %w", dep, err)
+			return DepsError{Err: fmt.Errorf("deps input %q not exist: %w", dep, err)}
 		}
 		// input should not be output.
 		if slices.Contains(step.cmd.Outputs, input) {
-			return fmt.Errorf("deps input %q is output", dep)
+			return DepsError{Err: fmt.Errorf("deps input %q is output", dep)}
 		}
 		if len(fi.CmdHash()) == 0 {
 			// source, not generated file
@@ -334,14 +343,14 @@ func checkDeps(ctx context.Context, b *Builder, step *Step, deps []string) error
 	}
 	if len(unsandboxed) > 0 {
 		slices.Sort(unsandboxed)
-		return DepfileAddsUnsandboxedFileError{Inputs: unsandboxed}
+		return DepsError{UnsandboxedInputs: unsandboxed}
 	}
 	if experiments.Enabled("check-deps", "") || experiments.Enabled("fail-on-bad-deps", "") {
 		unknownBadDep, err := step.def.CheckInputDeps(ctx, checkInputs)
 		if err != nil {
 			clog.Warningf(ctx, "deps error: %v", err)
 			if unknownBadDep && experiments.Enabled("fail-on-bad-deps", "") {
-				return fmt.Errorf("deps error: %w", err)
+				return DepsError{Err: err}
 			}
 			stderr := step.cmd.Stderr()
 			w := step.cmd.StderrWriter()

@@ -266,7 +266,7 @@ func TestBuild_Depfile_SandboxedRestriction(t *testing.T) {
 	t.Logf("-- attempting to build with sandboxing restriction active")
 	stats, err := runNinjaTest(t)
 
-	expectedErr := build.DepfileAddsUnsandboxedFileError{Inputs: []string{"../../undeclared.h"}}
+	expectedErr := build.DepsError{UnsandboxedInputs: []string{"../../undeclared.h"}}
 	if !errors.Is(err, expectedErr) {
 		t.Errorf("got error %v, want %v", err, expectedErr)
 	}
@@ -316,7 +316,7 @@ func TestBuild_Depfile_SandboxedRestriction_FirstRunWithoutSandboxing(t *testing
 	t.Logf("-- attempting to build with sandboxing restriction active")
 	stats, err = runNinjaTest(t)
 
-	expectedErr := build.DepfileAddsUnsandboxedFileError{Inputs: []string{"../../undeclared.h"}}
+	expectedErr := build.DepsError{UnsandboxedInputs: []string{"../../undeclared.h"}}
 	if !errors.Is(err, expectedErr) {
 		t.Errorf("got error %v, want %v", err, expectedErr)
 	}
@@ -351,7 +351,7 @@ func TestBuild_Depfile_SandboxedRestriction_Multiple(t *testing.T) {
 	t.Logf("-- attempting to build with sandboxing restriction active")
 	stats, err := runNinjaTest(t)
 
-	expectedErr := build.DepfileAddsUnsandboxedFileError{Inputs: []string{"../../undeclared.h", "../../undeclared2.h"}}
+	expectedErr := build.DepsError{UnsandboxedInputs: []string{"../../undeclared.h", "../../undeclared2.h"}}
 	if !errors.Is(err, expectedErr) {
 		t.Errorf("got error %v, want %v", err, expectedErr)
 	}

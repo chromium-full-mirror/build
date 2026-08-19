@@ -80,6 +80,10 @@ func (b *Builder) remoteClaimFallbackIfAllowed(ctx context.Context, step *Step, 
 		clog.Errorf(ctx, "not remote executable: %v\nUse `use_system_inputs` or put them inside workspace", err)
 		return false, fmt.Errorf("remote-exec %s failed: %w", step.cmd.ActionDigest(), err)
 	}
+	if _, ok := errors.AsType[DepsError](err); ok {
+		clog.Errorf(ctx, "deps error: %v", err)
+		return false, fmt.Errorf("remote-exec %s failed: %w", step.cmd.ActionDigest(), err)
+	}
 	var eerr execute.ExitError
 	if errors.As(err, &eerr) {
 		// report compile fail early to developers.

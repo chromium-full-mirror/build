@@ -786,7 +786,7 @@ func (c *Command) postRun(ctx context.Context, stats build.Stats, runErr error) 
 				return subcommands.ExitFailure
 			}
 			if errTooManyFallback, ok := errors.AsType[build.TooManyFallbackError](errBuild.Err); ok {
-				if _, ok := errors.AsType[execute.ExitError](errTooManyFallback.Err); !ok {
+				if !isBuildError(errTooManyFallback.Err) {
 					msgPrefix := "Infra failure"
 					result.InfraFailure = true
 					result.Message = fmt.Sprintf("%s: %v", msgPrefix, errTooManyFallback)
@@ -797,7 +797,7 @@ func (c *Command) postRun(ctx context.Context, stats build.Stats, runErr error) 
 					ui.Default.Errorf("\n%6s %s: %v\n", dur, msgPrefix, errTooManyFallback)
 					return subcommands.ExitFailure
 				}
-				// fallthrough if too many fallback with exit error.
+				// fallthrough if too many fallback with exit error or deps error.
 			}
 			msgPrefix := "Build Failure"
 			result.Message = fmt.Sprintf("%s: %v", msgPrefix, runErr)
@@ -971,4 +971,14 @@ func (c *Command) setupHashFS(ctx context.Context, buildPath *build.Path, ds bui
 		}
 	}
 	return hashFS, close, nil
+}
+
+func isBuildError(err error) bool {
+	if _, ok := errors.AsType[execute.ExitError](err); ok {
+		return true
+	}
+	if _, ok := errors.AsType[build.DepsError](err); ok {
+		return true
+	}
+	return false
 }
