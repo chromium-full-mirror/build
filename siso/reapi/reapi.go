@@ -208,7 +208,7 @@ func (o *Option) RegisterFlags(fs *flag.FlagSet, envs map[string]string) {
 
 	fs.Int64Var(&o.BatchCompressedBlob, o.Prefix+"_batch_compress_blob", 0, "use compressed blobs in BatchUpdateBlobs if server supports it and size is bigger than this. specify 0 to disable."+purpose)
 
-	fs.Int64Var(&o.ByteStreamReadThreshold, o.Prefix+"_byte_stream_read_threshold", 2*1024*1024, "if blob size >= threshold, use ByteStream API (compression-aware)"+purpose)
+	fs.Int64Var(&o.ByteStreamReadThreshold, o.Prefix+"_byte_stream_read_threshold", 1024*1024, "if blob size >= threshold, use ByteStream API (compression-aware)"+purpose)
 
 	fs.BoolVar(&o.EnableGRPCCompression, o.Prefix+"_enable_grpc_compression", false, "enable grpc compression.  if enabled, blob-level compression will be forcibly disabled."+purpose)
 
