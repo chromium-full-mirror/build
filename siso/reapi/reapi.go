@@ -348,6 +348,8 @@ type Client struct {
 	zstdDecoderPool *sync.Pool
 
 	m *iometrics.IOMetrics
+
+	walkdirCache sync.Map // key:digest.Digest, value:serialized *rpb.Directory
 }
 
 // serviceConfig is gRPC service config for RE API.

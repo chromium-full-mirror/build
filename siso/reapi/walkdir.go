@@ -111,6 +111,8 @@ type walkDirStats struct {
 	pageToken     string
 	apiDur, cbDur time.Duration
 	nrecvs, ndirs int
+	ncached       int
+	nhit          int
 }
 
 func (s *walkDirStats) String() string {
@@ -122,20 +124,67 @@ func (s *walkDirStats) String() string {
 	if s.ndirs > 0 {
 		avgCBDur = s.cbDur / time.Duration(s.ndirs)
 	}
-	return fmt.Sprintf("api %d %s avg:%s dir %d cb %s avg:%s",
-		s.nrecvs, s.apiDur, avgAPIDur, s.ndirs, s.cbDur, avgCBDur)
+	return fmt.Sprintf("api %d %s avg:%s dir %d cb %s avg:%s cached %d hit %d",
+		s.nrecvs, s.apiDur, avgAPIDur, s.ndirs, s.cbDur, avgCBDur, s.ncached, s.nhit)
 }
 
 func (c *Client) walkDirIter(ctx context.Context, d digest.Digest, stats *walkDirStats) iter.Seq2[*rpb.Directory, error] {
+	_, ok := c.walkdirCache.Load(d)
+	if ok {
+		iter, err := c.cachedTreeIter(d, stats)
+		if err == nil {
+			return iter
+		}
+	}
 	if c.opt.WalkDirStream {
 		return c.getTreeIter(ctx, d, stats)
 	}
 	return c.readDirIter(ctx, d, stats)
 }
 
+func (c *Client) cachedTreeIter(d digest.Digest, stats *walkDirStats) (iter.Seq2[*rpb.Directory, error], error) {
+	var dirs []*rpb.Directory
+	pendings := []digest.Digest{d}
+	seen := make(map[digest.Digest]struct{})
+	seen[d] = struct{}{}
+	for len(pendings) > 0 {
+		d := pendings[0]
+		pendings = pendings[1:]
+		data, ok := c.walkdirCache.Load(d)
+		if !ok {
+			return nil, fmt.Errorf("no directory for %s", d)
+		}
+		stats.nhit++
+		dir := &rpb.Directory{}
+		err := proto.Unmarshal(data.([]byte), dir)
+		if err != nil {
+			return nil, fmt.Errorf("unmarshal directory for %s: %w", d, err)
+		}
+		dirs = append(dirs, dir)
+		for _, subdir := range dir.Directories {
+			sd := digest.FromProto(subdir.Digest)
+			if _, ok := seen[sd]; ok {
+				continue
+			}
+			pendings = append(pendings, sd)
+			seen[sd] = struct{}{}
+		}
+	}
+	return func(yield func(*rpb.Directory, error) bool) {
+		for _, dir := range dirs {
+			if !yield(dir, nil) {
+				return
+			}
+		}
+	}, nil
+}
+
 func (c *Client) getTreeIter(ctx context.Context, d digest.Digest, stats *walkDirStats) iter.Seq2[*rpb.Directory, error] {
 	casClient := rpb.NewContentAddressableStorageClient(c.casConn)
 	return func(yield func(*rpb.Directory, error) bool) {
+		seen := make(map[digest.Digest]struct{})
+		waits := make(map[digest.Digest]struct{})
+		waits[d] = struct{}{}
 		ctx, cancel := context.WithCancel(ctx)
 		defer cancel()
 		stream, err := casClient.GetTree(ctx, &rpb.GetTreeRequest{
@@ -148,7 +197,7 @@ func (c *Client) getTreeIter(ctx context.Context, d digest.Digest, stats *walkDi
 			yield(nil, err)
 			return
 		}
-		for {
+		for len(waits) > 0 {
 			started := time.Now()
 			resp, err := stream.Recv()
 			dur := time.Since(started)
@@ -164,10 +213,55 @@ func (c *Client) getTreeIter(ctx context.Context, d digest.Digest, stats *walkDi
 				yield(nil, err)
 				return
 			}
-			for _, dir := range resp.Directories {
+			dirs := resp.Directories
+			for len(dirs) > 0 {
+				dir := dirs[0]
+				dirs = dirs[1:]
+				dd, err := blob.FromProtoMessage(c.digestFn, dir)
+				if err != nil {
+					yield(dir, err)
+					return
+				}
+				data, err := proto.Marshal(dir)
+				if err != nil {
+					yield(dir, err)
+					return
+				}
+				if _, ok := seen[dd.Digest()]; !ok {
+					stats.ncached++
+					c.walkdirCache.Store(dd.Digest(), data)
+					seen[dd.Digest()] = struct{}{}
+				}
+				delete(waits, dd.Digest())
 				if !yield(dir, nil) {
 					return
 				}
+				for _, sdn := range dir.Directories {
+					sd := digest.FromProto(sdn.GetDigest())
+					if _, ok := waits[sd]; ok {
+						stats.nhit++
+						continue
+					}
+					if _, ok := seen[sd]; ok {
+						stats.nhit++
+						continue
+					}
+					data, ok := c.walkdirCache.Load(sd)
+					if ok {
+						subdir := &rpb.Directory{}
+						err := proto.Unmarshal(data.([]byte), subdir)
+						if err != nil {
+							yield(nil, err)
+							return
+						}
+						stats.nhit++
+						seen[sd] = struct{}{}
+						dirs = append(dirs, subdir)
+						continue
+					}
+					waits[sd] = struct{}{}
+				}
+
 			}
 			stats.pageToken = resp.NextPageToken
 		}
@@ -193,20 +287,35 @@ func (c *Client) readDirIter(ctx context.Context, d digest.Digest, stats *walkDi
 				AcceptableCompressors: compressors,
 				DigestFunction:        c.digestFn.Value(),
 			}
+			responses := make([]*rpb.BatchReadBlobsResponse_Response, 0, len(pendings))
 			for _, d := range pendings {
+				data, ok := c.walkdirCache.Load(d)
+				if ok {
+					stats.nhit++
+					responses = append(responses, &rpb.BatchReadBlobsResponse_Response{
+						Digest: d.Proto(),
+						Data:   data.([]byte),
+						// compressor identity
+					})
+					continue
+				}
 				req.Digests = append(req.Digests, d.Proto())
 			}
 			pendings = pendings[:0]
-			started := time.Now()
-			resp, err := casClient.BatchReadBlobs(ctx, req)
-			dur := time.Since(started)
-			stats.apiDur += dur
-			stats.nrecvs++
-			if err != nil {
-				yield(nil, err)
-				return
+			var resp *rpb.BatchReadBlobsResponse
+			if len(req.Digests) > 0 {
+				started := time.Now()
+				var err error
+				resp, err = casClient.BatchReadBlobs(ctx, req)
+				dur := time.Since(started)
+				stats.apiDur += dur
+				stats.nrecvs++
+				if err != nil {
+					yield(nil, err)
+					return
+				}
 			}
-			for _, rd := range resp.Responses {
+			for _, rd := range append(responses, resp.GetResponses()...) {
 				dd := digest.FromProto(rd.Digest)
 				if rd.Status.GetCode() != 0 {
 					yield(nil, fmt.Errorf("blob %s resp: %w", dd, status.FromProto(rd.Status).Err()))
@@ -223,6 +332,8 @@ func (c *Client) readDirIter(ctx context.Context, d digest.Digest, stats *walkDi
 					yield(nil, fmt.Errorf("blob %s unmarshal: %w", dd, err))
 					return
 				}
+				stats.ncached++
+				c.walkdirCache.Store(dd, data)
 				if !yield(dir, nil) {
 					return
 				}
