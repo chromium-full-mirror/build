@@ -63,7 +63,7 @@ func attachTapResult(tapLogFileName string, res *rpb.ActionResult) error {
 	tapData := &pb.TapResult{}
 	err = protojson.UnmarshalOptions{DiscardUnknown: true}.Unmarshal(buf, tapData)
 	if err != nil {
-		return err
+		tapData.Error = err.Error()
 	}
 	any, err := anypb.New(tapData)
 	if err != nil {

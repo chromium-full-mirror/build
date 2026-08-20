@@ -15,4 +15,9 @@ message TapResult {
   repeated string Reads = 1 [json_name = "reads"];
   repeated string Writes = 2 [json_name = "writes"];
   repeated string Deletes = 3 [json_name = "deletes"];
+
+  // report tap error. command succeeded, but some error in tapping.
+  // will ignore not populate two phase caching as tap result is
+  // not reliable.
+  string Error = 4 [json_name = "error"];
 }

@@ -190,7 +190,7 @@ func (b *Builder) execLocal(ctx context.Context, step *Step) (retErr error) {
 		if step.metrics.TwoPhaseCachingKey != "" {
 			err := b.tapCanonicalizeCmd(ctx, step.cmd)
 			if err != nil {
-				clog.Warningf(ctx, "two phase caching: canonicalize cmd %v", err)
+				clog.Errorf(ctx, "two phase caching: canonicalize cmd %v", err)
 			} else {
 				err := b.twoPhaseCaching.Add(ctx, step.metrics.TwoPhaseCachingKey, step)
 				if err != nil {

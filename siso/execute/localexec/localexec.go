@@ -71,7 +71,11 @@ func (LocalExec) Run(ctx context.Context, cmd *execute.Cmd) (err error) {
 	duration := res.ExecutionMetadata.ExecutionCompletedTimestamp.AsTime().Sub(res.ExecutionMetadata.ExecutionStartTimestamp.AsTime())
 	tapResult, tapped := ExtractTapResult(res)
 	if tapped {
-		clog.Infof(ctx, "localexec: %v duration=%s exit=%d stdout=%d stderr=%d tap reads=%d writes=%d deletes=%d", cmd.Args, duration, res.ExitCode, len(res.StdoutRaw), len(res.StderrRaw), len(tapResult.Reads), len(tapResult.Writes), len(tapResult.Deletes))
+		var errmsg string
+		if tapResult.Error != "" {
+			errmsg = ": " + tapResult.Error
+		}
+		clog.Infof(ctx, "localexec: %v duration=%s exit=%d stdout=%d stderr=%d tap reads=%d writes=%d deletes=%d%s", cmd.Args, duration, res.ExitCode, len(res.StdoutRaw), len(res.StderrRaw), len(tapResult.Reads), len(tapResult.Writes), len(tapResult.Deletes), errmsg)
 	} else {
 		clog.Infof(ctx, "localexec: %v duration=%s exit=%d stdout=%d stderr=%d metadata=%s", cmd.Args, duration, res.ExitCode, len(res.StdoutRaw), len(res.StderrRaw), res.ExecutionMetadata)
 	}

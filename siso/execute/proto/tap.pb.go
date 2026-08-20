@@ -29,10 +29,14 @@ const (
 // will be stored in ActionResult.execution_metadata.auxiliary_metadata
 // if spawnhelper supports tapping.
 type TapResult struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Reads         []string               `protobuf:"bytes,1,rep,name=Reads,json=reads,proto3" json:"Reads,omitempty"`
-	Writes        []string               `protobuf:"bytes,2,rep,name=Writes,json=writes,proto3" json:"Writes,omitempty"`
-	Deletes       []string               `protobuf:"bytes,3,rep,name=Deletes,json=deletes,proto3" json:"Deletes,omitempty"`
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	Reads   []string               `protobuf:"bytes,1,rep,name=Reads,json=reads,proto3" json:"Reads,omitempty"`
+	Writes  []string               `protobuf:"bytes,2,rep,name=Writes,json=writes,proto3" json:"Writes,omitempty"`
+	Deletes []string               `protobuf:"bytes,3,rep,name=Deletes,json=deletes,proto3" json:"Deletes,omitempty"`
+	// report tap error. command succeeded, but some error in tapping.
+	// will ignore not populate two phase caching as tap result is
+	// not reliable.
+	Error         string `protobuf:"bytes,4,opt,name=Error,json=error,proto3" json:"Error,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -88,15 +92,23 @@ func (x *TapResult) GetDeletes() []string {
 	return nil
 }
 
+func (x *TapResult) GetError() string {
+	if x != nil {
+		return x.Error
+	}
+	return ""
+}
+
 var File_tap_proto protoreflect.FileDescriptor
 
 const file_tap_proto_rawDesc = "" +
 	"\n" +
-	"\ttap.proto\x12\fsiso.execute\"S\n" +
+	"\ttap.proto\x12\fsiso.execute\"i\n" +
 	"\tTapResult\x12\x14\n" +
 	"\x05Reads\x18\x01 \x03(\tR\x05reads\x12\x16\n" +
 	"\x06Writes\x18\x02 \x03(\tR\x06writes\x12\x18\n" +
-	"\aDeletes\x18\x03 \x03(\tR\adeletesB*Z(go.chromium.org/build/siso/execute/protob\x06proto3"
+	"\aDeletes\x18\x03 \x03(\tR\adeletes\x12\x14\n" +
+	"\x05Error\x18\x04 \x01(\tR\x05errorB*Z(go.chromium.org/build/siso/execute/protob\x06proto3"
 
 var (
 	file_tap_proto_rawDescOnce sync.Once

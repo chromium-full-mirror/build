@@ -7,6 +7,7 @@ package build
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -26,6 +27,10 @@ func (b *Builder) tapCanonicalizeCmd(ctx context.Context, cmd *execute.Cmd) erro
 	if !tapped {
 		return errors.New("no tap data")
 	}
+	if tapData.Error != "" {
+		return fmt.Errorf("tap error: %v", tapData.Error)
+	}
+
 	var ninputs, noutputs int
 	// ignore out of workspace root
 	// TODO: use with input root absolute path?
