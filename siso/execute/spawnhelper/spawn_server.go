@@ -27,8 +27,9 @@ type Spawner interface {
 
 // Server serves the spawn protocol on an inherited socketpair fd.
 type Server struct {
-	connFD  int
-	logFile string
+	connFD       int
+	logFile      string
+	blockNetwork bool
 
 	conn    *spawnConn
 	spawner Spawner
@@ -42,6 +43,7 @@ type Server struct {
 func (s *Server) RegisterFlags(fs *flag.FlagSet) {
 	fs.IntVar(&s.connFD, "conn_fd", 0, "inherited socketpair fd to serve the spawn protocol on")
 	fs.StringVar(&s.logFile, "log_file", "", "file for the helper's diagnostics (default: stderr)")
+	fs.BoolVar(&s.blockNetwork, "block_network", false, "whether network is blocked")
 }
 
 // Serve reads spawn requests off the inherited socketpair fd and
@@ -106,6 +108,12 @@ func (s *Server) Serve(ctx context.Context, spawner Spawner) error {
 		<-ctx.Done()
 		_ = s.conn.close()
 	}()
+
+	if s.blockNetwork {
+		if err := ifaceUp("lo"); err != nil {
+			log.Printf("spawn helper: failed to bring up lo: %v", err)
+		}
+	}
 
 	// wg tracks running actions so we drain them before returning (which ends the
 	// process); otherwise cancelled children are orphaned and keep modifying outputs.

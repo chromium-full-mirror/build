@@ -20,7 +20,9 @@ func runViaHelper(ctx context.Context, cmd *execute.Cmd) (*rpb.ActionResult, err
 }
 
 // StartHelper is a no-op on non-unix platforms: there is no spawn helper to start.
-func StartHelper(ctx context.Context, helperCommand, logFile string) error { return nil }
+func StartHelper(ctx context.Context, helperCommand, logFile string, blockNetwork bool) error {
+	return nil
+}
 
 // StopHelper is a no-op on non-unix platforms: there is no spawn helper to stop.
 func StopHelper(ctx context.Context) error { return nil }

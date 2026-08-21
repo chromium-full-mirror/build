@@ -229,7 +229,7 @@ func TestHelperDeathUnblocksRun(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	c, err := spawnhelper.Launch([]string{exe, "spawn-helper"}, "")
+	c, err := spawnhelper.Launch([]string{exe, "spawn-helper"}, "", false)
 	if err != nil {
 		t.Fatalf("launch: %v", err)
 	}
@@ -274,7 +274,7 @@ func TestHelperDrainsOnConnClose(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	c, err := spawnhelper.Launch([]string{exe, "spawn-helper"}, "")
+	c, err := spawnhelper.Launch([]string{exe, "spawn-helper"}, "", false)
 	if err != nil {
 		t.Fatalf("launch: %v", err)
 	}
@@ -329,7 +329,7 @@ func TestHelperExitsOnConnClose(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	c, err := spawnhelper.Launch([]string{exe, "spawn-helper"}, "")
+	c, err := spawnhelper.Launch([]string{exe, "spawn-helper"}, "", false)
 	if err != nil {
 		t.Fatalf("launch: %v", err)
 	}

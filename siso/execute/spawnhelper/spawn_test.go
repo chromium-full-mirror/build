@@ -10,6 +10,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"net"
 	"os"
 	"syscall"
 	"testing"
@@ -36,7 +37,16 @@ func TestMain(m *testing.M) {
 
 type testSpawner struct{}
 
-func (testSpawner) Spawn(context.Context, *epb.SpawnRequest) (*epb.SpawnResult, error) {
+func (testSpawner) Spawn(ctx context.Context, req *epb.SpawnRequest) (*epb.SpawnResult, error) {
+	if len(req.Args) > 0 && req.Args[0] == "test-dial" {
+		addr := req.Args[1]
+		conn, err := net.Dial("tcp", addr)
+		if err != nil {
+			return nil, fmt.Errorf("dial failed: %v", err)
+		}
+		conn.Close()
+		return &epb.SpawnResult{}, nil
+	}
 	return nil, fmt.Errorf("not implemented")
 }
 
@@ -47,7 +57,7 @@ func TestLaunchSetsOwnProcessGroup(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	c, err := Launch([]string{exe, "spawn-helper"}, "")
+	c, err := Launch([]string{exe, "spawn-helper"}, "", false)
 	if err != nil {
 		t.Fatalf("launch: %v", err)
 	}

@@ -346,7 +346,7 @@ func (c *Command) Run(ctx context.Context) (stats build.Stats, finalErr error) {
 	// don't use the helper.
 	spawnHelperLog := filepath.Join(c.logDir, "siso_spawn_helper")
 	rotateFiles(ctx, spawnHelperLog)
-	if err := localexec.StartHelper(ctx, c.spawnHelper, spawnHelperLog); err != nil {
+	if err := localexec.StartHelper(ctx, c.spawnHelper, spawnHelperLog, c.blockActionNetworkAccess); err != nil {
 		return stats, err
 	}
 	defer localexec.StopHelper(ctx)

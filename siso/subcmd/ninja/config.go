@@ -163,6 +163,8 @@ type NinjaFlags struct {
 	cleandead  bool
 	debugMode  debugMode
 	adjustWarn string
+
+	blockActionNetworkAccess bool
 }
 
 func (c *Command) SetFlags(flagSet *flag.FlagSet) {
@@ -217,6 +219,7 @@ func (c *Command) SetFlags(flagSet *flag.FlagSet) {
 	flagSet.StringVar(&c.fname, "f", "build.ninja", "input build manifest filename (relative to -C)")
 
 	flagSet.StringVar(&c.spawnHelper, "spawn_helper", "", "command name of external spawn helper. use builtin spawn helper if empty.")
+	flagSet.BoolVar(&c.blockActionNetworkAccess, "block_action_network_access", false, "run spawnhelper in without network connectivity.")
 
 	c.setLocalCacheFlags(flagSet)
 	flagSet.BoolVar(&c.cacheEnableRead, "cache_enable_read", true, "cache enable read")

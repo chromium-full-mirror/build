@@ -63,7 +63,7 @@ func TestMain(m *testing.M) {
 	// re-exec is safe here because this binary dispatches the subcommand above.
 	exe, err := os.Executable()
 	if err == nil {
-		if c, lerr := spawnhelper.Launch([]string{exe, "spawn-helper"}, ""); lerr == nil {
+		if c, lerr := spawnhelper.Launch([]string{exe, "spawn-helper"}, "", false); lerr == nil {
 			helper.Store(c)
 		}
 	}
@@ -124,7 +124,7 @@ func TestStopHelperAccountsChildCPU(t *testing.T) {
 
 	// A dedicated helper so StopHelper can reap it without disturbing the shared one
 	// TestMain installed for the other tests; restore that afterwards.
-	c, err := spawnhelper.Launch([]string{exe, "spawn-helper"}, "")
+	c, err := spawnhelper.Launch([]string{exe, "spawn-helper"}, "", false)
 	if err != nil {
 		t.Fatalf("launch helper: %v", err)
 	}

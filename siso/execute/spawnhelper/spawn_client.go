@@ -42,7 +42,7 @@ type Client struct {
 // launch executes args with `-conn_fd 3`, handing it one end of a unix
 // socketpair. Run it while siso's heap is small.
 // logFile, if non-empty, is forwarded so the helper writes its diagnostics there.
-func Launch(args []string, logFile string) (*Client, error) {
+func Launch(args []string, logFile string, blockNetwork bool) (*Client, error) {
 	// Hold ForkLock and set close-on-exec so a concurrent fork+exec doesn't leak
 	// these fds; ExtraFiles re-clears CLOEXEC on the child's inherited copy.
 	syscall.ForkLock.RLock()
@@ -65,6 +65,9 @@ func Launch(args []string, logFile string) (*Client, error) {
 	if logFile != "" {
 		args = append(args, "-log_file", logFile)
 	}
+	if blockNetwork {
+		args = append(args, "-block_network")
+	}
 	cmd := exec.Command(args[0], args[1:]...)
 	cmd.Stdout = os.Stderr // helper fatal/panic output goes to siso's stderr
 	cmd.Stderr = os.Stderr
@@ -72,6 +75,10 @@ func Launch(args []string, logFile string) (*Client, error) {
 	// Put the helper in its own process group so a terminal Ctrl-C or group
 	// SIGTERM to siso doesn't kill it and its children before serve can drain.
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	if err := setNetworkPolicy(cmd, blockNetwork); err != nil {
+		parent.Close()
+		return nil, fmt.Errorf("network policy: %w", err)
+	}
 	if err := cmd.Start(); err != nil {
 		parent.Close()
 		return nil, fmt.Errorf("start: %w", err)
