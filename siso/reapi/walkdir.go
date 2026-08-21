@@ -270,22 +270,14 @@ func (c *Client) getTreeIter(ctx context.Context, d digest.Digest, stats *walkDi
 
 func (c *Client) readDirIter(ctx context.Context, d digest.Digest, stats *walkDirStats) iter.Seq2[*rpb.Directory, error] {
 	casClient := rpb.NewContentAddressableStorageClient(c.casConn)
-	var compressors []rpb.Compressor_Value
-	if c.opt.BatchCompressedBlob > 0 {
-		compressors = []rpb.Compressor_Value{
-			rpb.Compressor_ZSTD,
-			rpb.Compressor_DEFLATE,
-		}
-	}
 	return func(yield func(*rpb.Directory, error) bool) {
 		pendings := []digest.Digest{d}
 		seen := make(map[digest.Digest]struct{})
 		seen[d] = struct{}{}
 		for len(pendings) > 0 {
 			req := &rpb.BatchReadBlobsRequest{
-				InstanceName:          c.opt.Instance,
-				AcceptableCompressors: compressors,
-				DigestFunction:        c.digestFn.Value(),
+				InstanceName:   c.opt.Instance,
+				DigestFunction: c.digestFn.Value(),
 			}
 			responses := make([]*rpb.BatchReadBlobsResponse_Response, 0, len(pendings))
 			for _, d := range pendings {
