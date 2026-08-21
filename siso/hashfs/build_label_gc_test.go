@@ -262,7 +262,7 @@ func TestGarbageCollectBuildLabels_ContextCancel(t *testing.T) {
 		t.Errorf("TotalFilesDeleted=%d; want=0", gotResult.TotalFilesDeleted)
 	}
 
-	// Verify the recovery-path protected the target dictionary because no files were physically removed
+	// Verify fileA was not physically removed because context was canceled before deletion
 	checkFile(t, fileA, "fileA", false)
 	checkLedger(t, hfs, fileA, "fileA", false)
 	if _, ok := hfs.buildLabelDictionary[0]; !ok {
@@ -304,5 +304,152 @@ func TestGarbageCollectBuildLabels_FailedDeletions(t *testing.T) {
 		t.Errorf("FailedDeletions[0]=%q; want target matching chromeos_exclusive", gotResult.FailedDeletions[0])
 	}
 
+	checkFile(t, fileA, "fileA", false)
 	checkLedger(t, hfs, fileA, "fileA", false)
+	if _, ok := hfs.buildLabelDictionary[0]; !ok {
+		t.Errorf("Target ID 0 (chromeos) was erroneously stripped from dictionary after failed deletion")
+	}
+}
+
+func TestUpdateLedger(t *testing.T) {
+	t.Parallel()
+
+	hfs := &HashFS{
+		buildLabelDictionary: map[uint32]*pb.BuildLabelMetadata{
+			0: {BuildLabel: "label-0"},
+			1: {BuildLabel: "label-1"},
+			2: {BuildLabel: "label-2"},
+		},
+		fileBuildLabels: map[string]uint64{
+			"/path/to/deleted_file": 1 << 0,
+			"/path/to/shared_file":  (1 << 0) | (1 << 1),
+			"/path/to/other_file":   1 << 2,
+		},
+	}
+	hfs.clean.Store(true)
+
+	opts := BuildLabelGCOptions{DryRun: false}
+	evictMask := uint64(1 << 0)
+	successfullyDeleted := []string{"/path/to/deleted_file"}
+
+	hfs.updateLedger(opts, evictMask, successfullyDeleted)
+
+	// Successfully deleted file should be removed from the ledger.
+	if _, ok := hfs.fileBuildLabels["/path/to/deleted_file"]; ok {
+		t.Errorf("deleted_file remained in fileBuildLabels")
+	}
+
+	// Surviving shared file should have the evicted bit cleared.
+	if gotMask, ok := hfs.fileBuildLabels["/path/to/shared_file"]; !ok {
+		t.Errorf("shared_file was unexpectedly deleted from fileBuildLabels")
+	} else if gotMask != (1 << 1) {
+		t.Errorf("shared_file mask = %b; want %b", gotMask, uint64(1<<1))
+	}
+
+	// Unrelated file should remain unchanged.
+	if gotMask, ok := hfs.fileBuildLabels["/path/to/other_file"]; !ok {
+		t.Errorf("other_file was unexpectedly deleted from fileBuildLabels")
+	} else if gotMask != (1 << 2) {
+		t.Errorf("other_file mask = %b; want %b", gotMask, uint64(1<<2))
+	}
+
+	// Evicted label should be removed from the dictionary because all exclusive files were deleted.
+	if _, ok := hfs.buildLabelDictionary[0]; ok {
+		t.Errorf("evicted label 0 remained in buildLabelDictionary")
+	}
+
+	// Non-evicted labels should remain in the dictionary.
+	if _, ok := hfs.buildLabelDictionary[1]; !ok {
+		t.Errorf("label 1 was unexpectedly removed from buildLabelDictionary")
+	}
+	if _, ok := hfs.buildLabelDictionary[2]; !ok {
+		t.Errorf("label 2 was unexpectedly removed from buildLabelDictionary")
+	}
+
+	// Clean state should be marked false to ensure persistence on Close.
+	if hfs.clean.Load() {
+		t.Errorf("hfs.clean is true; want false")
+	}
+}
+
+func TestUpdateLedger_RetainsAbortedFiles(t *testing.T) {
+	t.Parallel()
+
+	hfs := &HashFS{
+		buildLabelDictionary: map[uint32]*pb.BuildLabelMetadata{
+			0: {BuildLabel: "label-0"},
+			1: {BuildLabel: "label-1"},
+		},
+		fileBuildLabels: map[string]uint64{
+			"/path/to/deleted_file": 1 << 0,
+			"/path/to/aborted_file": 1 << 0,
+			"/path/to/shared_file":  (1 << 0) | (1 << 1),
+		},
+	}
+	hfs.clean.Store(true)
+
+	opts := BuildLabelGCOptions{DryRun: false}
+	evictMask := uint64(1 << 0)
+	successfullyDeleted := []string{"/path/to/deleted_file"}
+
+	hfs.updateLedger(opts, evictMask, successfullyDeleted)
+
+	// Successfully deleted file is removed.
+	if _, ok := hfs.fileBuildLabels["/path/to/deleted_file"]; ok {
+		t.Errorf("deleted_file remained in fileBuildLabels")
+	}
+
+	// Aborted exclusive file retains its mask so Siso continues tracking it for future GC sweeps.
+	if gotMask, ok := hfs.fileBuildLabels["/path/to/aborted_file"]; !ok {
+		t.Errorf("aborted_file was unexpectedly purged from fileBuildLabels")
+	} else if gotMask != (1 << 0) {
+		t.Errorf("aborted_file mask = %b; want %b", gotMask, uint64(1<<0))
+	}
+
+	// Shared file has evictMask stripped.
+	if gotMask, ok := hfs.fileBuildLabels["/path/to/shared_file"]; !ok {
+		t.Errorf("shared_file was unexpectedly deleted from fileBuildLabels")
+	} else if gotMask != (1 << 1) {
+		t.Errorf("shared_file mask = %b; want %b", gotMask, uint64(1<<1))
+	}
+
+	// Evicted label is NOT removed from dictionary because aborted_file survived.
+	if _, ok := hfs.buildLabelDictionary[0]; !ok {
+		t.Errorf("label 0 was unexpectedly stripped from dictionary while aborted_file survives")
+	}
+
+	// Non-evicted label remains in dictionary.
+	if _, ok := hfs.buildLabelDictionary[1]; !ok {
+		t.Errorf("label 1 was unexpectedly removed from buildLabelDictionary")
+	}
+}
+
+func TestUpdateLedger_DryRun(t *testing.T) {
+	t.Parallel()
+
+	hfs := &HashFS{
+		buildLabelDictionary: map[uint32]*pb.BuildLabelMetadata{
+			0: {BuildLabel: "label-0"},
+		},
+		fileBuildLabels: map[string]uint64{
+			"/path/to/file": 1 << 0,
+		},
+	}
+	hfs.clean.Store(true)
+
+	opts := BuildLabelGCOptions{DryRun: true}
+	evictMask := uint64(1 << 0)
+	successfullyDeleted := []string{"/path/to/file"}
+
+	hfs.updateLedger(opts, evictMask, successfullyDeleted)
+
+	if _, ok := hfs.fileBuildLabels["/path/to/file"]; !ok {
+		t.Errorf("DryRun modified fileBuildLabels")
+	}
+	if _, ok := hfs.buildLabelDictionary[0]; !ok {
+		t.Errorf("DryRun modified buildLabelDictionary")
+	}
+	if !hfs.clean.Load() {
+		t.Errorf("DryRun modified hfs.clean; want true")
+	}
 }

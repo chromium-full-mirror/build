@@ -224,33 +224,39 @@ func (hfs *HashFS) performActualDeletion(ctx context.Context, opts BuildLabelGCO
 }
 
 func (hfs *HashFS) updateLedger(opts BuildLabelGCOptions, evictMask uint64, successfullyDeleted []string) {
-	if opts.DryRun {
+	if opts.DryRun || evictMask == 0 {
 		return
 	}
 
 	hfs.ledgerMu.Lock()
 	defer hfs.ledgerMu.Unlock()
 
+	// Remove successfully deleted files from the ledger.
 	for _, absPath := range successfullyDeleted {
 		delete(hfs.fileBuildLabels, absPath)
 	}
 
+	// Strip evictMask from surviving shared files while computing survivingMask
+	// in a single pass. Files exclusively owned by evicted labels that failed or
+	// aborted deletion retain their masks so Siso continues tracking them for
+	// future GC sweeps.
 	var survivingMask uint64
-	for _, fileMask := range hfs.fileBuildLabels {
+	for f, fileMask := range hfs.fileBuildLabels {
+		if newMask := fileMask &^ evictMask; newMask != 0 && newMask != fileMask {
+			hfs.fileBuildLabels[f] = newMask
+			fileMask = newMask
+		}
 		survivingMask |= fileMask
 	}
 
+	// Reclaim dictionary slots for evicted labels that have no surviving files.
 	actuallyEvictedMask := evictMask &^ survivingMask
-	if actuallyEvictedMask == 0 {
-		return
-	}
-
 	for id := range hfs.buildLabelDictionary {
-		if id >= 64 {
-			continue
-		}
-		if (uint64(1)<<id)&actuallyEvictedMask != 0 {
+		if id < 64 && (uint64(1)<<id)&actuallyEvictedMask != 0 {
 			delete(hfs.buildLabelDictionary, id)
 		}
 	}
+
+	// Mark the ledger as dirty so the updated bitmasks and dictionary are persisted to disk.
+	hfs.clean.Store(false)
 }
