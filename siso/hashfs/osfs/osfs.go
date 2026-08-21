@@ -92,7 +92,8 @@ func (o *Option) RegisterFlags(flagSet *flag.FlagSet) {
 // New creates new OSFS.
 func New(ctx context.Context, name string, opt Option) *OSFS {
 	digestXattrName := opt.DigestXattrName
-	if digestXattrName == "" && xattr.XATTR_SUPPORTED && (opt.OnCog || opt.CartFS != nil) {
+	// b/549654852: cartfs will drop xattr support
+	if digestXattrName == "" && xattr.XATTR_SUPPORTED && opt.OnCog {
 		digestXattrName = defaultDigestXattr
 	}
 	if !xattr.XATTR_SUPPORTED {
