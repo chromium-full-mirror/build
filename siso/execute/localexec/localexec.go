@@ -228,10 +228,12 @@ func runOnce(ctx context.Context, cmd *execute.Cmd) (*rpb.ActionResult, error) {
 	var ru *epb.Rusage
 	var err error
 	var tracker *rusageTracker
+	var started bool
 	err = ForkSema.Do(ctx, func(ctx context.Context) error {
 		return c.Start()
 	})
 	if err == nil {
+		started = true
 		tracker = newRusageTracker(c)
 		if cmd.OOMScoreAdj != nil {
 			oomScoreAdj(ctx, c.Process.Pid, *cmd.OOMScoreAdj)
@@ -282,7 +284,10 @@ func runOnce(ctx context.Context, cmd *execute.Cmd) (*rpb.ActionResult, error) {
 
 	// TODO(b/273423470): track resource usage.
 
-	if code >= 0 {
+	if ctx.Err() != nil {
+		err = context.Cause(ctx)
+	} else if started {
+		// need to report exit code and stdout/stderr to caller.
 		err = nil
 	}
 	return result, err
