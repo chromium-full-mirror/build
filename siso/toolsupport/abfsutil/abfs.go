@@ -204,6 +204,9 @@ func (c *Client) RegisterFiles(ctx context.Context, dir string, entries []*Regis
 	default:
 		return fmt.Errorf("abfs: set digests: error %d: %s", resp.StatusCode, body)
 	}
+	if len(body) == 0 {
+		return nil
+	}
 	var result map[string]string
 	err = json.Unmarshal(body, &result)
 	if err != nil {
