@@ -29,7 +29,7 @@ var copyBufPool = sync.Pool{
 // caller. Digest is a pure comparable value, safe as a map key.
 type Digest struct {
 	Hash      string `json:"hash,omitempty"`
-	SizeBytes int64  `json:"size_bytes,omitempty"`
+	SizeBytes int64  `json:"size_bytes,omitzero"`
 }
 
 // FromProto converts from digest proto.

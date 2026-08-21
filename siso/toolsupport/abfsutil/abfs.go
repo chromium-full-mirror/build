@@ -82,7 +82,7 @@ type RBEPathStat struct {
 	Path   string `json:"path"`
 	SHA256 string `json:"sha256"`
 	Size   int64  `json:"size"`
-	Mode   uint32 `json:"mode,omitempty"`
+	Mode   uint32 `json:"mode,omitzero"`
 }
 
 // SetRBEDigestsReq is json object of set-rbe-digests request.

@@ -194,13 +194,13 @@ func (c *gcCommand) run(ctx context.Context) (err error) {
 	type gcMetrics struct {
 		Event               string   `json:"event"`
 		EvictLabels         []string `json:"evict_labels,omitempty"`
-		RetainLastX         int      `json:"retain_last_x,omitempty"`
+		RetainLastX         int      `json:"retain_last_x,omitzero"`
 		DryRun              bool     `json:"dry_run"`
 		OutputFile          string   `json:"output_file,omitempty"`
 		EvictedBuildLabels  []string `json:"evicted_build_labels,omitempty"`
 		TotalFilesDeleted   int      `json:"total_files_deleted"`
 		TotalBytesReclaimed int64    `json:"total_bytes_reclaimed"`
-		FailedDeletions     int      `json:"failed_deletions,omitempty"`
+		FailedDeletions     int      `json:"failed_deletions,omitzero"`
 	}
 	m := gcMetrics{
 		Event:               "garbage_collection",

@@ -89,5 +89,5 @@ type CPUInfo struct {
 // MemoryInfo reports memory information.
 type MemoryInfo struct {
 	// Total is the total amount of memory on the machine in bytes.
-	Total uint64 `json:"total,omitempty"`
+	Total uint64 `json:"total,omitzero"`
 }

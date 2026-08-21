@@ -323,7 +323,7 @@ type Event struct {
 
 	// The tracing clock duration of complete events in microseconds.
 	// Used for "ph"="X".
-	Dur int64 `json:"dur,omitempty"`
+	Dur int64 `json:"dur,omitzero"`
 
 	// Any arguments provided for the event.
 	Args map[string]any `json:"args,omitempty"`

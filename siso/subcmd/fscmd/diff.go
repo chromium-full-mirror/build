@@ -116,7 +116,7 @@ type entryDiff struct {
 	Name     string    `json:"name"`
 	DiffType string    `json:"diff_type"`
 	Cur      *pb.Entry `json:"cur"`
-	Base     *pb.Entry `json:"base,omitempty"`
+	Base     *pb.Entry `json:"base,omitzero"`
 }
 
 func checkDiff(name string, cur, base *pb.Entry) (entryDiff, bool) {

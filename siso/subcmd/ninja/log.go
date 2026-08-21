@@ -49,8 +49,8 @@ const sisoResultFilename = "siso_result.json"
 
 // SisoResult contains siso result information.
 type SisoResult struct {
-	Code         int    `json:"code,omitempty"`
-	InfraFailure bool   `json:"infra_failure,omitempty"`
+	Code         int    `json:"code,omitzero"`
+	InfraFailure bool   `json:"infra_failure,omitzero"`
 	Message      string `json:"message,omitempty"`
 }
 

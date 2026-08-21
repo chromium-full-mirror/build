@@ -16,7 +16,7 @@ type NodeDump struct {
 	Value        string     `json:"value,omitempty"`
 	Children     []NodeDump `json:"child,omitempty"`
 	BeginToken   string     `json:"begin_token,omitempty"`
-	End          *NodeDump  `json:"end,omitempty"`
+	End          *NodeDump  `json:"end,omitzero"`
 	AccessorKind string     `json:"accessor_kind,omitempty"`
 }
 

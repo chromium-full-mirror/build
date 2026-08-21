@@ -67,7 +67,7 @@ type StepRule struct {
 
 	// IndirectInputs enables indirect (transitive, recursive) inputs
 	// as action input of the step.
-	IndirectInputs *PathFilter `json:"indirect_inputs,omitempty"`
+	IndirectInputs *PathFilter `json:"indirect_inputs,omitzero"`
 
 	// Outputs are outputs to add to the step.
 	Outputs []string `json:"outputs,omitempty"`
@@ -87,11 +87,11 @@ type StepRule struct {
 	// Output will be considered as clean if output mtime
 	// is not changed by the command execution.
 	// https://ninja-build.org/manual.html#ref_rule:~:text=appears%20in%20commands.-,restat,-if%20present%2C%20causes
-	Restat bool `json:"restat,omitempty"`
+	Restat bool `json:"restat,omitzero"`
 
 	// RestatContent means output will be considered as clean
 	// if output content is the same as before.
-	RestatContent bool `json:"restat_content,omitempty"`
+	RestatContent bool `json:"restat_content,omitzero"`
 
 	// PlatformRef is reference to platform properties.
 	PlatformRef string `json:"platform_ref,omitempty"`
@@ -100,10 +100,10 @@ type StepRule struct {
 	Platform map[string]string `json:"platform,omitempty"`
 
 	// Remote marks the step is remote executable.
-	Remote bool `json:"remote,omitempty"`
+	Remote bool `json:"remote,omitzero"`
 	// StrictRemote forces strict remote execution for matched steps.
 	// i.e. no fastlocal, no local fallback.
-	StrictRemote bool `json:"strict_remote,omitempty"`
+	StrictRemote bool `json:"strict_remote,omitzero"`
 	// RemoteWrapper is a wrapper used in remote execution.
 	// TODO: put RemoteWrapper in Platform["siso:remote_wrapper"]
 	RemoteWrapper string `json:"remote_wrapper,omitempty"`
@@ -113,20 +113,20 @@ type StepRule struct {
 	// path in remote action -> local path
 	RemoteInputs map[string]string `json:"remote_inputs,omitempty"`
 	// InputRootAbsolutePath indicates the step requires absolute path for the input root, i.e. not relocatable.
-	InputRootAbsolutePath bool `json:"input_root_absolute_path,omitempty"`
+	InputRootAbsolutePath bool `json:"input_root_absolute_path,omitzero"`
 	// CanonicalizeDir indicates the step can canonicalize the working dir.
 	// true, false or not-set(when nil), and treated as true when not set.
-	CanonicalizeDir *bool `json:"canonicalize_dir,omitempty"`
+	CanonicalizeDir *bool `json:"canonicalize_dir,omitzero"`
 
 	// UseSystemInput indicates to allow extra inputs outside of workspace.
-	UseSystemInput bool `json:"use_system_input,omitempty"`
+	UseSystemInput bool `json:"use_system_input,omitzero"`
 
 	// UseRemoteExecWrapper indicates the command uses remote exec wrapper
 	// (e.g. gomacc, rewrapper), so
 	// - no need to run `clang -M`
 	// - run locally but more parallelism
 	// - no file access trace
-	UseRemoteExecWrapper bool `json:"use_remote_exec_wrapper,omitempty"`
+	UseRemoteExecWrapper bool `json:"use_remote_exec_wrapper,omitzero"`
 
 	// Timeout specifies time duration for the remote execution call of the step.
 	// This covers the remote execution overheads that are not covered by
@@ -156,7 +156,7 @@ type StepRule struct {
 	// OutputLocal indicates to force to write output files to local disk
 	// for subsequent steps.
 	// TODO: better to have `require_local_inputs`=[<globs>] to reduce unnecessary downloads?
-	OutputLocal bool `json:"output_local,omitempty"`
+	OutputLocal bool `json:"output_local,omitzero"`
 
 	// IgnoreExtraInputPattern specifies regexp to ignore extra inputs.
 	// ignore extra input detected by strace if it matches with this pattern
@@ -171,20 +171,20 @@ type StepRule struct {
 	// Impure marks the step is impure, i.e. allow extra inputs/outputs.
 	// Better to use above options if possible.
 	// Impure disables file access trace.
-	Impure bool `json:"impure,omitempty"`
+	Impure bool `json:"impure,omitzero"`
 
 	// Replace replaces the outputs, when used by other step,
 	// to the inputs of the step.
 	// e.g. stamp.
-	Replace bool `json:"replace,omitempty"`
+	Replace bool `json:"replace,omitzero"`
 
 	// Accumulate accumulates the inputs of the step to
 	// the outputs, when used by other step.
 	// e.g. thin archive.
-	Accumulate bool `json:"accumulate,omitempty"`
+	Accumulate bool `json:"accumulate,omitzero"`
 
 	// Debug indicates to log debug information for the step.
-	Debug bool `json:"debug,omitempty"`
+	Debug bool `json:"debug,omitzero"`
 }
 
 // Init initializes the step rule.
