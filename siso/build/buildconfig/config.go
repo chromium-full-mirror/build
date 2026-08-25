@@ -279,6 +279,9 @@ func (cfg *Config) Handle(ctx context.Context, handler string, bpath *build.Path
 	_, err = starlark.Call(thread, fun, starlark.Tuple([]starlark.Value{hctx, hcmd}), nil)
 	if err != nil {
 		clog.Warningf(ctx, "thread:%s failed to run %s: %v", thread.Name, handler, err)
+		if ctx.Err() != nil {
+			return fmt.Errorf("failed to run %s: %w", handler, context.Cause(ctx))
+		}
 		var eerr *starlark.EvalError
 		if errors.As(err, &eerr) {
 			clog.Warningf(ctx, "stacktrace:\n%s", eerr.Backtrace())
