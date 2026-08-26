@@ -295,10 +295,9 @@ func (s *stepState) SetPhase(phase stepPhase) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.phase = phase
-	switch phase {
-	case stepLocalWait, stepREWrapperWait, stepRemoteWait, stepFallbackWait, stepRetryWait:
+	if phase.isWait() {
 		s.waitStart = time.Now()
-	default:
+	} else {
 		if !s.waitStart.IsZero() {
 			s.waitDuration += time.Since(s.waitStart)
 		}
@@ -437,23 +436,34 @@ func (s stepPhase) String() string {
 	}
 }
 
+var phaseWaitPairs = [...]struct {
+	run  stepPhase
+	wait stepPhase
+}{
+	{stepLocalRun, stepLocalWait},
+	{stepREWrapperRun, stepREWrapperWait},
+	{stepRemoteRun, stepRemoteWait},
+	{stepFallbackRun, stepFallbackWait},
+	{stepRetryRun, stepRetryWait},
+	{stepCacheWrite, stepCacheWriteWait},
+}
+
 func (s stepPhase) wait() stepPhase {
-	switch s {
-	case stepLocalRun:
-		return stepLocalWait
-	case stepREWrapperRun:
-		return stepREWrapperWait
-	case stepRemoteRun:
-		return stepRemoteWait
-	case stepFallbackRun:
-		return stepFallbackWait
-	case stepRetryRun:
-		return stepRetryWait
-	case stepCacheWrite:
-		return stepCacheWriteWait
-	default:
-		return s
+	for _, p := range phaseWaitPairs {
+		if s == p.run {
+			return p.wait
+		}
 	}
+	return s
+}
+
+func (s stepPhase) isWait() bool {
+	for _, p := range phaseWaitPairs {
+		if s == p.wait {
+			return true
+		}
+	}
+	return false
 }
 
 // setPhase sets a phase of the step.
@@ -463,11 +473,31 @@ func (s *Step) setPhase(phase stepPhase) {
 
 // phase returns the phase of the step.
 func (s *Step) phase() stepPhase {
+	if s.state == nil {
+		return stepPhaseNone
+	}
 	return s.state.Phase()
 }
 
 func (s *Step) servDuration() time.Duration {
+	if s.state == nil {
+		return time.Since(s.startTime)
+	}
 	return time.Since(s.startTime) - s.state.WaitDuration()
+}
+
+func (s *Step) displayDuration() time.Duration {
+	if s.phase().isWait() {
+		if s.state != nil {
+			s.state.mu.Lock()
+			defer s.state.mu.Unlock()
+			if !s.state.waitStart.IsZero() {
+				return time.Since(s.state.waitStart)
+			}
+		}
+		return 0
+	}
+	return s.servDuration()
 }
 
 // Done checks the step is done.
