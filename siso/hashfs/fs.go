@@ -1642,8 +1642,7 @@ func pathHasPrefix(p, prefix string) bool {
 // need it, and waits for all digests to finish before returning.
 func (hfs *HashFS) resolveInputEntries(ctx context.Context, root string, inputs []path.Path) ([]*entry, error) {
 	ents := make([]*entry, 0, len(inputs))
-	var wg sync.WaitGroup
-	var nwait int
+	batch := hfs.batchDigester()
 	for _, input := range inputs {
 		fname := makeFullpath(root, input)
 		e, _, _, ok := hfs.directory.lookup(ctx, fname)
@@ -1657,8 +1656,7 @@ func (hfs *HashFS) resolveInputEntries(ctx context.Context, root string, inputs 
 				ready := !e.d.IsZero()
 				e.mu.RUnlock()
 				if !ready {
-					hfs.startDigest(ctx, string(fname), e, &wg)
-					nwait++
+					batch.start(ctx, string(fname), e)
 				}
 			}
 			continue
@@ -1679,26 +1677,13 @@ func (hfs *HashFS) resolveInputEntries(ctx context.Context, root string, inputs 
 			continue
 		}
 		ents = append(ents, ee)
-		hfs.startDigest(ctx, string(fname), ee, &wg)
-		nwait++
+		batch.start(ctx, string(fname), ee)
 	}
 	_, wspan := trace.NewSpan(ctx, "fs-entries-wait")
-	wg.Wait()
+	nwait, err := batch.wait(ctx)
 	wspan.SetAttr("waits", nwait)
 	wspan.Close(nil)
-	return ents, nil
-}
-
-// startDigest spawns a goroutine that computes the digest for e.
-// The goroutine closure lives in its own function so the caller's
-// loop variable e is not forced onto the heap. Inlining this into
-// resolveInputEntries causes escape analysis to promote e to the
-// heap on every iteration (capturing by ref, assign=true), because
-// the loop reassigns e and the closure could observe any value.
-func (hfs *HashFS) startDigest(ctx context.Context, fname string, e *entry, wg *sync.WaitGroup) {
-	wg.Go(func() {
-		hfs.digester.compute(ctx, fname, e)
-	})
+	return ents, err
 }
 
 // buildMerkletreeEntries converts resolved entries to merkletree format,

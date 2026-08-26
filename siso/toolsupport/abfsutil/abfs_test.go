@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-package abfsutil_test
+package abfsutil
 
 import (
 	"encoding/json"
@@ -24,7 +24,6 @@ import (
 	"go.chromium.org/build/siso/blob"
 	"go.chromium.org/build/siso/path"
 	"go.chromium.org/build/siso/reapi/merkletree"
-	"go.chromium.org/build/siso/toolsupport/abfsutil"
 )
 
 func newTestServer(t *testing.T, h http.Handler) string {
@@ -44,7 +43,7 @@ func newTestServer(t *testing.T, h http.Handler) string {
 }
 
 func TestRegisterFiles_Unsupported(t *testing.T) {
-	entries := []*abfsutil.Registration{
+	entries := []*Registration{
 		{
 			Entry: merkletree.Entry{
 				Name: path.Path("out/Default/gen/foo.h"),
@@ -55,7 +54,7 @@ func TestRegisterFiles_Unsupported(t *testing.T) {
 
 	tests := []struct {
 		name   string
-		client *abfsutil.Client
+		client *Client
 	}{
 		{
 			name:   "nil_client",
@@ -63,7 +62,7 @@ func TestRegisterFiles_Unsupported(t *testing.T) {
 		},
 		{
 			name:   "empty_client_struct",
-			client: &abfsutil.Client{},
+			client: &Client{},
 		},
 	}
 
@@ -83,7 +82,7 @@ func TestRegisterFiles_EmptyBody(t *testing.T) {
 	rootDir := "/src"
 	buildDir := filepath.Join(rootDir, "out/Default")
 
-	var gotReq abfsutil.SetRBEDigestsReq
+	var gotReq setRBEDigestsReq
 	var gotMethod, gotPath, gotContentType string
 
 	endpoint := newTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -104,7 +103,7 @@ func TestRegisterFiles_EmptyBody(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	}))
 
-	client, err := abfsutil.New(ctx, endpoint, rootDir)
+	client, err := New(ctx, endpoint, rootDir)
 	if err != nil {
 		t.Fatalf("abfsutil.New() = %v", err)
 	}
@@ -113,7 +112,7 @@ func TestRegisterFiles_EmptyBody(t *testing.T) {
 	d1 := digest.Digest{Hash: "hash1", SizeBytes: 123}
 	d2 := digest.Digest{Hash: "hash2", SizeBytes: 456}
 
-	entries := []*abfsutil.Registration{
+	entries := []*Registration{
 		{
 			Entry: merkletree.Entry{
 				Name:         path.Path("gen/foo.h"),
@@ -145,8 +144,8 @@ func TestRegisterFiles_EmptyBody(t *testing.T) {
 		t.Errorf("Content-Type = %q, want %q", gotContentType, "application/json")
 	}
 
-	wantReq := abfsutil.SetRBEDigestsReq{
-		Digests: []abfsutil.RBEPathStat{
+	wantReq := setRBEDigestsReq{
+		Digests: []rbePathStat{
 			{
 				Path:   "out/Default/gen/foo.h",
 				SHA256: "hash1",
@@ -188,26 +187,26 @@ func TestRegisterFiles_PartialErrors(t *testing.T) {
 		w.Write(respBody)
 	}))
 
-	client, err := abfsutil.New(ctx, endpoint, rootDir)
+	client, err := New(ctx, endpoint, rootDir)
 	if err != nil {
 		t.Fatalf("abfsutil.New() = %v", err)
 	}
 	defer client.Close()
 
-	entSuccess := &abfsutil.Registration{
+	entSuccess := &Registration{
 		Entry: merkletree.Entry{
 			Name: path.Path("gen/success.h"),
 			Data: blob.NewData(nil, digest.Digest{Hash: "hash-success", SizeBytes: 10}),
 		},
 	}
-	entFailed := &abfsutil.Registration{
+	entFailed := &Registration{
 		Entry: merkletree.Entry{
 			Name: path.Path("gen/failed.h"),
 			Data: blob.NewData(nil, digest.Digest{Hash: "hash-failed", SizeBytes: 20}),
 		},
 	}
 
-	entries := []*abfsutil.Registration{entSuccess, entFailed}
+	entries := []*Registration{entSuccess, entFailed}
 	err = client.RegisterFiles(ctx, buildDir, entries)
 	if err != nil {
 		t.Fatalf("RegisterFiles() = %v, want nil", err)
@@ -232,19 +231,19 @@ func TestRegisterFiles_EmptyJSONResponse(t *testing.T) {
 		w.Write([]byte("{}"))
 	}))
 
-	client, err := abfsutil.New(ctx, endpoint, rootDir)
+	client, err := New(ctx, endpoint, rootDir)
 	if err != nil {
 		t.Fatalf("abfsutil.New() = %v", err)
 	}
 	defer client.Close()
 
-	ent := &abfsutil.Registration{
+	ent := &Registration{
 		Entry: merkletree.Entry{
 			Name: path.Path("gen/foo.h"),
 			Data: blob.NewData(nil, digest.Digest{Hash: "hash1", SizeBytes: 10}),
 		},
 	}
-	err = client.RegisterFiles(ctx, buildDir, []*abfsutil.Registration{ent})
+	err = client.RegisterFiles(ctx, buildDir, []*Registration{ent})
 	if err != nil {
 		t.Fatalf("RegisterFiles() = %v, want nil", err)
 	}
@@ -268,19 +267,19 @@ func TestRegisterFiles_UnknownPathInResponse(t *testing.T) {
 		w.Write(respBody)
 	}))
 
-	client, err := abfsutil.New(ctx, endpoint, rootDir)
+	client, err := New(ctx, endpoint, rootDir)
 	if err != nil {
 		t.Fatalf("abfsutil.New() = %v", err)
 	}
 	defer client.Close()
 
-	ent := &abfsutil.Registration{
+	ent := &Registration{
 		Entry: merkletree.Entry{
 			Name: path.Path("gen/foo.h"),
 			Data: blob.NewData(nil, digest.Digest{Hash: "hash1", SizeBytes: 10}),
 		},
 	}
-	err = client.RegisterFiles(ctx, buildDir, []*abfsutil.Registration{ent})
+	err = client.RegisterFiles(ctx, buildDir, []*Registration{ent})
 	if err != nil {
 		t.Fatalf("RegisterFiles() = %v, want nil", err)
 	}
@@ -294,7 +293,7 @@ func TestRegisterFiles_InvalidEntries(t *testing.T) {
 	rootDir := "/src"
 	buildDir := filepath.Join(rootDir, "out/Default")
 
-	var gotReq abfsutil.SetRBEDigestsReq
+	var gotReq setRBEDigestsReq
 
 	endpoint := newTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, err := io.ReadAll(r.Body)
@@ -309,32 +308,32 @@ func TestRegisterFiles_InvalidEntries(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	}))
 
-	client, err := abfsutil.New(ctx, endpoint, rootDir)
+	client, err := New(ctx, endpoint, rootDir)
 	if err != nil {
 		t.Fatalf("abfsutil.New() = %v", err)
 	}
 	defer client.Close()
 
-	entOutOfDir := &abfsutil.Registration{
+	entOutOfDir := &Registration{
 		Entry: merkletree.Entry{
 			Name: path.Path("../../../outside.h"),
 			Data: blob.NewData(nil, digest.Digest{Hash: "hash-outside", SizeBytes: 10}),
 		},
 	}
-	entEmptyDigest := &abfsutil.Registration{
+	entEmptyDigest := &Registration{
 		Entry: merkletree.Entry{
 			Name: path.Path("gen/empty.h"),
 			Data: blob.Data{},
 		},
 	}
-	entValid := &abfsutil.Registration{
+	entValid := &Registration{
 		Entry: merkletree.Entry{
 			Name: path.Path("gen/valid.h"),
 			Data: blob.NewData(nil, digest.Digest{Hash: "hash-valid", SizeBytes: 30}),
 		},
 	}
 
-	entries := []*abfsutil.Registration{
+	entries := []*Registration{
 		nil,
 		entOutOfDir,
 		entEmptyDigest,
@@ -356,8 +355,8 @@ func TestRegisterFiles_InvalidEntries(t *testing.T) {
 		t.Errorf("entValid.Err = %v, want nil", entValid.Err)
 	}
 
-	wantReq := abfsutil.SetRBEDigestsReq{
-		Digests: []abfsutil.RBEPathStat{
+	wantReq := setRBEDigestsReq{
+		Digests: []rbePathStat{
 			{
 				Path:   "out/Default/gen/valid.h",
 				SHA256: "hash-valid",
@@ -380,19 +379,19 @@ func TestRegisterFiles_HTTPError(t *testing.T) {
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 	}))
 
-	client, err := abfsutil.New(ctx, endpoint, rootDir)
+	client, err := New(ctx, endpoint, rootDir)
 	if err != nil {
 		t.Fatalf("abfsutil.New() = %v", err)
 	}
 	defer client.Close()
 
-	ent := &abfsutil.Registration{
+	ent := &Registration{
 		Entry: merkletree.Entry{
 			Name: path.Path("gen/foo.h"),
 			Data: blob.NewData(nil, digest.Digest{Hash: "hash1", SizeBytes: 10}),
 		},
 	}
-	err = client.RegisterFiles(ctx, buildDir, []*abfsutil.Registration{ent})
+	err = client.RegisterFiles(ctx, buildDir, []*Registration{ent})
 	if err == nil {
 		t.Fatalf("RegisterFiles() = nil, want error")
 	}
@@ -409,19 +408,19 @@ func TestRegisterFiles_InvalidJSONResponse(t *testing.T) {
 		w.Write([]byte("{invalid-json"))
 	}))
 
-	client, err := abfsutil.New(ctx, endpoint, rootDir)
+	client, err := New(ctx, endpoint, rootDir)
 	if err != nil {
 		t.Fatalf("abfsutil.New() = %v", err)
 	}
 	defer client.Close()
 
-	ent := &abfsutil.Registration{
+	ent := &Registration{
 		Entry: merkletree.Entry{
 			Name: path.Path("gen/foo.h"),
 			Data: blob.NewData(nil, digest.Digest{Hash: "hash1", SizeBytes: 10}),
 		},
 	}
-	err = client.RegisterFiles(ctx, buildDir, []*abfsutil.Registration{ent})
+	err = client.RegisterFiles(ctx, buildDir, []*Registration{ent})
 	if err == nil {
 		t.Fatalf("RegisterFiles() = nil, want error")
 	}
@@ -445,19 +444,19 @@ func TestRegisterFiles_NetworkError(t *testing.T) {
 	// Close immediately so network requests will fail.
 	srv.Close()
 
-	client, err := abfsutil.New(ctx, "unix://"+sockPath, rootDir)
+	client, err := New(ctx, "unix://"+sockPath, rootDir)
 	if err != nil {
 		t.Fatalf("abfsutil.New() = %v", err)
 	}
 	defer client.Close()
 
-	ent := &abfsutil.Registration{
+	ent := &Registration{
 		Entry: merkletree.Entry{
 			Name: path.Path("gen/foo.h"),
 			Data: blob.NewData(nil, digest.Digest{Hash: "hash1", SizeBytes: 10}),
 		},
 	}
-	err = client.RegisterFiles(ctx, buildDir, []*abfsutil.Registration{ent})
+	err = client.RegisterFiles(ctx, buildDir, []*Registration{ent})
 	if err == nil {
 		t.Fatalf("RegisterFiles() = nil, want network error")
 	}
@@ -479,7 +478,7 @@ func TestDigest(t *testing.T) {
 		p := r.URL.Query().Get("path")
 		switch p {
 		case "out/Default/gen/foo.h":
-			resp := abfsutil.RBEPathStat{
+			resp := rbePathStat{
 				Path:   p,
 				SHA256: "hash-foo",
 				Size:   100,
@@ -501,7 +500,7 @@ func TestDigest(t *testing.T) {
 		}
 	}))
 
-	client, err := abfsutil.New(ctx, endpoint, rootDir)
+	client, err := New(ctx, endpoint, rootDir)
 	if err != nil {
 		t.Fatalf("abfsutil.New() = %v", err)
 	}
@@ -553,7 +552,7 @@ func TestDigest(t *testing.T) {
 
 	t.Run("unsupported_client", func(t *testing.T) {
 		ctx := t.Context()
-		var nilClient *abfsutil.Client
+		var nilClient *Client
 		_, err := nilClient.Digest(ctx, filepath.Join(rootDir, "out/Default/gen/foo.h"))
 		if !errors.Is(err, errors.ErrUnsupported) {
 			t.Errorf("Digest() = %v, want %v", err, errors.ErrUnsupported)
@@ -573,7 +572,7 @@ func TestNew_UnixSocket(t *testing.T) {
 
 	t.Run("abs_path", func(t *testing.T) {
 		ctx := t.Context()
-		client, err := abfsutil.New(ctx, "unix://"+sockPath, tmpdir)
+		client, err := New(ctx, "unix://"+sockPath, tmpdir)
 		if err != nil {
 			t.Fatalf("New() = %v", err)
 		}
@@ -582,10 +581,327 @@ func TestNew_UnixSocket(t *testing.T) {
 
 	t.Run("rel_path", func(t *testing.T) {
 		ctx := t.Context()
-		client, err := abfsutil.New(ctx, "unix://test.sock", tmpdir)
+		client, err := New(ctx, "unix://test.sock", tmpdir)
 		if err != nil {
 			t.Fatalf("New() = %v", err)
 		}
 		defer client.Close()
 	})
+}
+
+func TestBatchDigests(t *testing.T) {
+	ctx := t.Context()
+	rootDir := "/src"
+
+	var gotReq getRBEDigestsReq
+	var gotMethod, gotPath, gotContentType string
+
+	endpoint := newTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotMethod = r.Method
+		gotPath = r.URL.Path
+		gotContentType = r.Header.Get("Content-Type")
+
+		if r.Method != http.MethodPost {
+			http.Error(w, "bad method", http.StatusMethodNotAllowed)
+			return
+		}
+		if r.URL.Path != "/mnt/get-rbe-digests" {
+			http.Error(w, "not found", http.StatusNotFound)
+			return
+		}
+
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if err := json.Unmarshal(body, &gotReq); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		// Return spec-compliant digests in arbitrary (reverse) order to verify path mapping.
+		resp := []rbePathStat{
+			{
+				Path:   "frameworks/base/symlink_to_target",
+				SHA256: "4b227777d4dd1fc61c6f884f48641d02b4d121d3fd328cb08b5531fcacdabf8a",
+				Size:   17,
+				Mode:   41471,
+			},
+			{
+				Path:   "out/soong/bin/protoc",
+				SHA256: "7a35c10298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+				Size:   25481200,
+				Mode:   33261,
+			},
+			{
+				Path:   "frameworks/base/core/java/android/app/Activity.java",
+				SHA256: "b5a2c96250612366acfc8befe72989b4361624e3d415b4a01094ae6b82c409e9",
+				Size:   182304,
+				Mode:   33188,
+			},
+		}
+		respBody, _ := json.Marshal(resp)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write(respBody)
+	}))
+
+	client, err := New(ctx, endpoint, rootDir)
+	if err != nil {
+		t.Fatalf("abfsutil.New() = %v", err)
+	}
+	defer client.Close()
+
+	fnames := []string{
+		filepath.Join(rootDir, "frameworks/base/core/java/android/app/Activity.java"),
+		filepath.Join(rootDir, "out/soong/bin/protoc"),
+		filepath.Join(rootDir, "frameworks/base/symlink_to_target"),
+	}
+
+	digests, err := client.BatchDigests(ctx, fnames)
+	if err != nil {
+		t.Fatalf("BatchDigests() = %v, want nil", err)
+	}
+
+	if gotMethod != http.MethodPost {
+		t.Errorf("request method = %q, want %q", gotMethod, http.MethodPost)
+	}
+	if gotPath != "/mnt/get-rbe-digests" {
+		t.Errorf("request path = %q, want %q", gotPath, "/mnt/get-rbe-digests")
+	}
+	if gotContentType != "application/json" {
+		t.Errorf("Content-Type = %q, want %q", gotContentType, "application/json")
+	}
+
+	wantReq := getRBEDigestsReq{
+		Paths: []string{
+			"frameworks/base/core/java/android/app/Activity.java",
+			"out/soong/bin/protoc",
+			"frameworks/base/symlink_to_target",
+		},
+	}
+	if diff := cmp.Diff(wantReq, gotReq); diff != "" {
+		t.Errorf("getRBEDigestsReq diff (-want +got):\n%s", diff)
+	}
+
+	wantDigests := []digest.Digest{
+		{
+			Hash:      "b5a2c96250612366acfc8befe72989b4361624e3d415b4a01094ae6b82c409e9",
+			SizeBytes: 182304,
+		},
+		{
+			Hash:      "7a35c10298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+			SizeBytes: 25481200,
+		},
+		{
+			Hash:      "4b227777d4dd1fc61c6f884f48641d02b4d121d3fd328cb08b5531fcacdabf8a",
+			SizeBytes: 17,
+		},
+	}
+	if diff := cmp.Diff(wantDigests, digests); diff != "" {
+		t.Errorf("BatchDigests() diff (-want +got):\n%s", diff)
+	}
+}
+
+func TestBatchDigests_Empty(t *testing.T) {
+	ctx := t.Context()
+	rootDir := "/src"
+
+	endpoint := newTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("[]"))
+	}))
+
+	client, err := New(ctx, endpoint, rootDir)
+	if err != nil {
+		t.Fatalf("abfsutil.New() = %v", err)
+	}
+	defer client.Close()
+
+	digests, err := client.BatchDigests(ctx, nil)
+	if err != nil {
+		t.Fatalf("BatchDigests(nil) = %v, want nil", err)
+	}
+	if len(digests) != 0 {
+		t.Errorf("BatchDigests(nil) len = %d, want 0", len(digests))
+	}
+}
+
+func TestBatchDigests_PartialResponse(t *testing.T) {
+	ctx := t.Context()
+	rootDir := "/src"
+
+	endpoint := newTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		resp := []rbePathStat{
+			{
+				Path:   "frameworks/base/found.java",
+				SHA256: "hash-found",
+				Size:   123,
+			},
+		}
+		respBody, _ := json.Marshal(resp)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write(respBody)
+	}))
+
+	client, err := New(ctx, endpoint, rootDir)
+	if err != nil {
+		t.Fatalf("abfsutil.New() = %v", err)
+	}
+	defer client.Close()
+
+	fnames := []string{
+		filepath.Join(rootDir, "frameworks/base/found.java"),
+		filepath.Join(rootDir, "frameworks/base/missing.java"),
+	}
+
+	digests, err := client.BatchDigests(ctx, fnames)
+	if err != nil {
+		t.Fatalf("BatchDigests() = %v, want nil", err)
+	}
+
+	wantDigests := []digest.Digest{
+		{
+			Hash:      "hash-found",
+			SizeBytes: 123,
+		},
+		{}, // missing file has zero digest
+	}
+	if diff := cmp.Diff(wantDigests, digests); diff != "" {
+		t.Errorf("BatchDigests() diff (-want +got):\n%s", diff)
+	}
+}
+
+func TestBatchDigests_OutOfDir(t *testing.T) {
+	ctx := t.Context()
+	rootDir := "/src"
+
+	client, err := New(ctx, "http://dummy", rootDir)
+	if err != nil {
+		t.Fatalf("abfsutil.New() = %v", err)
+	}
+	defer client.Close()
+
+	tests := []struct {
+		name  string
+		fname string
+	}{
+		{
+			name:  "outside_root",
+			fname: "/other/path.h",
+		},
+		{
+			name:  "dotdot_traversal",
+			fname: filepath.Join(rootDir, "../../outside.h"),
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := client.BatchDigests(ctx, []string{tc.fname})
+			if err == nil {
+				t.Fatalf("BatchDigests(%q) = nil, want error", tc.fname)
+			}
+		})
+	}
+}
+
+func TestBatchDigests_Unsupported(t *testing.T) {
+	tests := []struct {
+		name   string
+		client *Client
+	}{
+		{
+			name:   "nil_client",
+			client: nil,
+		},
+		{
+			name:   "empty_client_struct",
+			client: &Client{},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := t.Context()
+			_, err := tc.client.BatchDigests(ctx, []string{"/src/foo.h"})
+			if !errors.Is(err, errors.ErrUnsupported) {
+				t.Errorf("BatchDigests() = %v, want %v", err, errors.ErrUnsupported)
+			}
+		})
+	}
+}
+
+func TestBatchDigests_HTTPError(t *testing.T) {
+	ctx := t.Context()
+	rootDir := "/src"
+
+	endpoint := newTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+	}))
+
+	client, err := New(ctx, endpoint, rootDir)
+	if err != nil {
+		t.Fatalf("abfsutil.New() = %v", err)
+	}
+	defer client.Close()
+
+	_, err = client.BatchDigests(ctx, []string{filepath.Join(rootDir, "foo.h")})
+	if err == nil {
+		t.Fatalf("BatchDigests() = nil, want error")
+	}
+}
+
+func TestBatchDigests_InvalidJSONResponse(t *testing.T) {
+	ctx := t.Context()
+	rootDir := "/src"
+
+	endpoint := newTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("{invalid-json"))
+	}))
+
+	client, err := New(ctx, endpoint, rootDir)
+	if err != nil {
+		t.Fatalf("abfsutil.New() = %v", err)
+	}
+	defer client.Close()
+
+	_, err = client.BatchDigests(ctx, []string{filepath.Join(rootDir, "foo.h")})
+	if err == nil {
+		t.Fatalf("BatchDigests() = nil, want error")
+	}
+}
+
+func TestBatchDigests_NetworkError(t *testing.T) {
+	ctx := t.Context()
+	rootDir := "/src"
+
+	sockPath := filepath.Join(t.TempDir(), "abfs.sock")
+	lis, err := net.Listen("unix", sockPath)
+	if err != nil {
+		t.Fatalf("listen unix: %v", err)
+	}
+	srv := &httptest.Server{
+		Listener: lis,
+		Config:   &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {})},
+	}
+	srv.Start()
+	// Close immediately so network requests will fail.
+	srv.Close()
+
+	client, err := New(ctx, "unix://"+sockPath, rootDir)
+	if err != nil {
+		t.Fatalf("abfsutil.New() = %v", err)
+	}
+	defer client.Close()
+
+	_, err = client.BatchDigests(ctx, []string{filepath.Join(rootDir, "foo.h")})
+	if err == nil {
+		t.Fatalf("BatchDigests() = nil, want network error")
+	}
 }

@@ -77,17 +77,22 @@ type Registration struct {
 	Err error
 }
 
-// RBEPathStat is json object used with ABFS.
-type RBEPathStat struct {
+// rbePathStat is json object used with ABFS.
+type rbePathStat struct {
 	Path   string `json:"path"`
 	SHA256 string `json:"sha256"`
 	Size   int64  `json:"size"`
 	Mode   uint32 `json:"mode,omitzero"`
 }
 
-// SetRBEDigestsReq is json object of set-rbe-digests request.
-type SetRBEDigestsReq struct {
-	Digests []RBEPathStat `json:"digests"`
+// getRBEDigestsReq is json object of get-rbe-digests request.
+type getRBEDigestsReq struct {
+	Paths []string `json:"paths"`
+}
+
+// setRBEDigestsReq is json object of set-rbe-digests request.
+type setRBEDigestsReq struct {
+	Digests []rbePathStat `json:"digests"`
 }
 
 // Digest returns digest of the file.
@@ -126,7 +131,7 @@ func (c *Client) Digest(ctx context.Context, fname string) (digest.Digest, error
 		return digest.Digest{}, fmt.Errorf("abfs: get digest: error %d: %s", resp.StatusCode, body)
 	}
 
-	var result RBEPathStat
+	var result rbePathStat
 	err = json.Unmarshal(body, &result)
 	if err != nil {
 		return digest.Digest{}, fmt.Errorf("abfs: get digest: parse resp %q: %w", body, err)
@@ -137,12 +142,75 @@ func (c *Client) Digest(ctx context.Context, fname string) (digest.Digest, error
 	}, nil
 }
 
+// BatchDigests returns digests of the files.
+// file is absolute path.
+func (c *Client) BatchDigests(ctx context.Context, fnames []string) ([]digest.Digest, error) {
+	if c == nil || c.endpoint == "" || c.dir == "" || c.client == nil {
+		return nil, errors.ErrUnsupported
+	}
+	reqMsg := getRBEDigestsReq{
+		Paths: make([]string, 0, len(fnames)),
+	}
+	for _, fname := range fnames {
+		relpath, err := filepath.Rel(c.dir, fname)
+		if err != nil {
+			return nil, fmt.Errorf("abfs: get digests: out of dir: %q", fname)
+		}
+		if !filepath.IsLocal(relpath) {
+			return nil, fmt.Errorf("abfs: get digests: out of dir: %q", fname)
+		}
+		relpath = filepath.ToSlash(relpath)
+		reqMsg.Paths = append(reqMsg.Paths, relpath)
+	}
+	reqBuf, err := json.Marshal(reqMsg)
+	if err != nil {
+		return nil, fmt.Errorf("abfs: marshal get-rbe-digests request: %w", err)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.endpoint+"/mnt/get-rbe-digests", bytes.NewReader(reqBuf))
+	if err != nil {
+		return nil, fmt.Errorf("abfs: get digests: new request: %w", err)
+	}
+	req.Header.Add("Content-Type", "application/json")
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("abfs: get digests: resp %w", err)
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("abfs: get digests: read resp: %w", err)
+	}
+	switch resp.StatusCode {
+	case http.StatusOK: // 200
+	default:
+		return nil, fmt.Errorf("abfs: get digests: error %d: %s", resp.StatusCode, body)
+	}
+	var result []rbePathStat
+	err = json.Unmarshal(body, &result)
+	if err != nil {
+		return nil, fmt.Errorf("abfs: get digests: parse resp %q: %w", body, err)
+	}
+	m := make(map[string]digest.Digest)
+	for _, r := range result {
+		m[r.Path] = digest.Digest{
+			Hash:      r.SHA256,
+			SizeBytes: r.Size,
+		}
+	}
+	digests := make([]digest.Digest, 0, len(reqMsg.Paths))
+	for _, relpath := range reqMsg.Paths {
+		digests = append(digests, m[relpath])
+	}
+	return digests, nil
+}
+
+// RegisterFiles registers entries under dir.
 func (c *Client) RegisterFiles(ctx context.Context, dir string, entries []*Registration) error {
 	if c == nil || c.endpoint == "" || c.dir == "" || c.client == nil {
 		return errors.ErrUnsupported
 	}
 	m := make(map[string]*Registration)
-	var reqMsg SetRBEDigestsReq
+	var reqMsg setRBEDigestsReq
 	for _, ent := range entries {
 		if ent == nil {
 			continue
@@ -174,7 +242,7 @@ func (c *Client) RegisterFiles(ctx context.Context, dir string, entries []*Regis
 		if ent.Entry.IsExecutable {
 			mode |= 0o111
 		}
-		reqMsg.Digests = append(reqMsg.Digests, RBEPathStat{
+		reqMsg.Digests = append(reqMsg.Digests, rbePathStat{
 			Path:   relpath,
 			SHA256: d.Hash,
 			Size:   d.SizeBytes,

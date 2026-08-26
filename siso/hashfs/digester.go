@@ -211,3 +211,60 @@ func (d *digester) compute(ctx context.Context, fname string, e *entry) {
 		clog.Warningf(ctx, "failed to compute digest %s: %v", fname, err)
 	}
 }
+
+type batchDigester struct {
+	hfs     *HashFS
+	wg      sync.WaitGroup
+	fnames  []string
+	entries []*entry
+	nwait   int
+}
+
+func (hfs *HashFS) batchDigester() *batchDigester {
+	return &batchDigester{
+		hfs: hfs,
+	}
+}
+
+func (b *batchDigester) start(ctx context.Context, fname string, e *entry) {
+	e.mu.Lock()
+	eErr := e.err
+	src := e.src
+	ed := e.d
+	e.mu.Unlock()
+	if eErr != nil || src == nil || !ed.IsZero() {
+		return
+	}
+	b.nwait++
+	if b.hfs.opt.ABFS != nil {
+		b.fnames = append(b.fnames, fname)
+		b.entries = append(b.entries, e)
+		return
+	}
+	b.wg.Go(func() {
+		b.hfs.digester.compute(ctx, fname, e)
+	})
+}
+
+func (b *batchDigester) wait(ctx context.Context) (int, error) {
+	if b.hfs.opt.ABFS != nil {
+		if len(b.fnames) == 0 {
+			return 0, nil
+		}
+		started := time.Now()
+		digests, err := b.hfs.opt.ABFS.BatchDigests(ctx, b.fnames)
+		clog.Infof(ctx, "abfs batch digests %d in %s: %v", len(b.fnames), time.Since(started), err)
+		if err != nil {
+			return 0, err
+		}
+		for i, d := range digests {
+			e := b.entries[i]
+			e.mu.Lock()
+			e.d = d
+			e.mu.Unlock()
+		}
+		return b.nwait, nil
+	}
+	b.wg.Wait()
+	return b.nwait, nil
+}
