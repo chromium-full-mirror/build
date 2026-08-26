@@ -477,6 +477,10 @@ func TestElideStatus(t *testing.T) {
 			msg:  "[200/123456] 1m10.20s pre:0 local:\033[41m653\033[0m remote:\033[41m12345\033[0m cache:0.67% cache-write:10(err:0) fallback:\033[41m873\033[0m",
 			want: "[200/123456] 1m10.20s p:0 l:\033[41m653\033[0m r:\033[41m12345\033[0m c:0.67% cw:10(err:0) f:\033[41m873\033[0m",
 		},
+		{
+			msg:  "[300/123456] 2m10.20s pre:0 local:8\033[41m(+24)\033[0m remote:100\033[41m(+50)\033[0m cache:0.67% fallback:\033[41m873\033[0m",
+			want: "[300/123456] 2m10.20s p:0 l:8\033[41m(+24)\033[0m r:100\033[41m(+50)\033[0m c:0.67% f:\033[41m873\033[0m",
+		},
 	} {
 		got := elideStatus(tc.msg)
 		if got != tc.want {

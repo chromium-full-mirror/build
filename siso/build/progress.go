@@ -251,7 +251,7 @@ func (p *progress) buildSummary(b *Builder) string {
 
 	runProgress := func(waits, servs int) string {
 		if waits > 0 {
-			return ui.SGR(ui.BackgroundRed, fmt.Sprintf("%d", waits+servs))
+			return fmt.Sprintf("%d%s", servs, ui.SGR(ui.BackgroundRed, fmt.Sprintf("(+%d)", waits)))
 		}
 		return fmt.Sprintf("%d", servs)
 	}
