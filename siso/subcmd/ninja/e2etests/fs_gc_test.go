@@ -68,7 +68,7 @@ func runNinjaWithLabel(ctx context.Context, t *testing.T, dir, label, ninjaFile 
 
 func runGC(ctx context.Context, t *testing.T, dir string, args ...string) error {
 	t.Helper()
-	cmd := fscmd.Cmd(cred.Options{})
+	cmd := fscmd.Cmd(func() cred.Options { return cred.Options{} })
 	fs := flag.NewFlagSet("fs", flag.ContinueOnError)
 	cmd.SetFlags(fs)
 	fullArgs := append([]string{"gc", "-C", filepath.Join(dir, "out/siso"), "--fs_state", stateFileName}, args...)

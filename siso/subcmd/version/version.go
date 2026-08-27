@@ -33,7 +33,7 @@ import (
 const cipdServiceURL = "https://chrome-infra-packages.appspot.com"
 
 // Cmd returns the Command for the `version` subcommand.
-func Cmd(ver string, authOpts cred.Options) *Command {
+func Cmd(ver string, authOpts func() cred.Options) *Command {
 	return &Command{
 		version:  ver,
 		authOpts: authOpts,
@@ -55,7 +55,7 @@ func (*Command) Usage() string {
 // Command implements version subcommand.
 type Command struct {
 	version  string
-	authOpts cred.Options
+	authOpts func() cred.Options
 
 	cipdURL string
 	online  bool
@@ -241,7 +241,7 @@ func authenticatedURL(repoURL string) string {
 
 func (c *Command) sisoCommit(ctx context.Context, repo, dir, rev string) (commit, error) {
 	var authHeader string
-	credential, err := cred.New(ctx, repo, c.authOpts)
+	credential, err := cred.New(ctx, repo, c.authOpts())
 	if err != nil {
 		clog.Warningf(ctx, "failed to init cred: %v", err)
 	} else {

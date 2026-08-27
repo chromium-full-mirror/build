@@ -70,7 +70,7 @@ You can omit <dir> if it is current directory ".".
 `
 
 // Cmd returns the Command for the `recall` subcommand provided by this package.
-func Cmd(authOpts cred.Options) *Command {
+func Cmd(authOpts func() cred.Options) *Command {
 	return &Command{
 		authOpts: authOpts,
 	}
@@ -91,7 +91,7 @@ func (*Command) Usage() string {
 // Command implements recall subcomand.
 type Command struct {
 	Flags             *flag.FlagSet
-	authOpts          cred.Options
+	authOpts          func() cred.Options
 	projectID         string
 	reopt             *reapi.Option
 	executeRequestStr string
@@ -146,7 +146,7 @@ func (c *Command) run(ctx context.Context) error {
 			return fmt.Errorf("reapi option is invalid: %w", err)
 		}
 		if c.reopt.NeedCred() {
-			credential, err = cred.New(ctx, c.reopt.ServiceURI(), c.authOpts)
+			credential, err = cred.New(ctx, c.reopt.ServiceURI(), c.authOpts())
 			if err != nil {
 				return err
 			}

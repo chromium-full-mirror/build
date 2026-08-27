@@ -17,7 +17,7 @@ import (
 const stateFile = ".siso_fs_state"
 
 // Cmd returns the Command for the `fs` subcommand provided by this package.
-func Cmd(authOpts cred.Options) *Command {
+func Cmd(authOpts func() cred.Options) *Command {
 	return &Command{
 		authOpts: authOpts,
 	}
@@ -25,7 +25,7 @@ func Cmd(authOpts cred.Options) *Command {
 
 // Command implements fs subcommand.
 type Command struct {
-	authOpts cred.Options
+	authOpts func() cred.Options
 }
 
 func (*Command) Name() string {
@@ -50,7 +50,7 @@ func (c *Command) Execute(ctx context.Context, flagSet *flag.FlagSet, _ ...any) 
 	commander := subcommands.NewCommander(flagSet, c.Name())
 	commander.Register(&diffCommand{}, "")
 	commander.Register(&exportCommand{}, "")
-	commander.Register(&flushCommand{authOpts: c.authOpts}, "")
+	commander.Register(&flushCommand{authOpts: c.authOpts()}, "")
 	commander.Register(&gcCommand{}, "")
 	commander.Register(&importCommand{}, "")
 	commander.Register(&statusCommand{}, "")

@@ -43,7 +43,7 @@ Print contents to stdout, or extract in <dir> for -type *-extract.
 `
 
 // Cmd returns the Command for the `fetch` subcommand provided by this package.
-func Cmd(authOpts cred.Options) *Command {
+func Cmd(authOpts func() cred.Options) *Command {
 	return &Command{
 		authOpts: authOpts,
 	}
@@ -64,7 +64,7 @@ func (*Command) Usage() string {
 // Command implements fetch subcommand.
 type Command struct {
 	Flags     *flag.FlagSet
-	authOpts  cred.Options
+	authOpts  func() cred.Options
 	projectID string
 	reopt     *reapi.Option
 	dataType  string
@@ -188,7 +188,7 @@ func (c *Command) run(ctx context.Context) error {
 		return fmt.Errorf("reapi option is invalid: %w", err)
 	}
 	if c.reopt.NeedCred() {
-		credential, err = cred.New(ctx, c.reopt.ServiceURI(), c.authOpts)
+		credential, err = cred.New(ctx, c.reopt.ServiceURI(), c.authOpts())
 		if err != nil {
 			return err
 		}

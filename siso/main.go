@@ -17,6 +17,7 @@ import (
 	"runtime/pprof"
 	"runtime/trace"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -108,8 +109,8 @@ Use "siso flags" to display all flags.
 	flag.IntVar(&mutexprofFrac, "mutexprof_frac", 0, "mutex profile fraction")
 	flag.StringVar(&traceFile, "trace", "", `go trace output for "go tool trace"`)
 
-	credHelper := cred.DefaultCredentialHelper()
-	flag.StringVar(&credHelper, "credential_helper", credHelper, `path to a credential helper.
+	credHelperFlag := "__default__"
+	flag.StringVar(&credHelperFlag, "credential_helper", credHelperFlag, `path to a credential helper.
     see https://github.com/EngFlow/credential-helper-spec/blob/main/spec.md
     "luci-auth" uses luci-auth.
     "gcloud" uses gcloud.
@@ -141,7 +142,15 @@ Use "siso flags" to display all flags.
 		}
 	}()
 
-	authOpts := cred.AuthOpts(credHelper)
+	// authOpts is a function because creating it has overhead that
+	// we don't want to incur on subcmds that don't require it.
+	authOpts := sync.OnceValue(func() cred.Options {
+		credHelper := credHelperFlag
+		if credHelperFlag == "__default__" {
+			credHelper = cred.DefaultCredentialHelper()
+		}
+		return cred.AuthOpts(credHelper)
+	})
 	if printVersion {
 		return int(version.Cmd(versionStr, authOpts).Execute(ctx, flag.CommandLine))
 	}

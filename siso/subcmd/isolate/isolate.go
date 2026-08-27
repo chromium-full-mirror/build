@@ -52,7 +52,7 @@ const usage = `isolate uploads and computes tree digest for each targets.
 `
 
 // Cmd returns the Command for the `isolate` subcommand.
-func Cmd(authOpts cred.Options) *Command {
+func Cmd(authOpts func() cred.Options) *Command {
 	return &Command{
 		authOpts: authOpts,
 	}
@@ -73,7 +73,7 @@ func (*Command) Usage() string {
 // Command implements isolate subcommand.
 type Command struct {
 	Flags     *flag.FlagSet
-	authOpts  cred.Options
+	authOpts  func() cred.Options
 	projectID string
 	srcreopt  *reapi.Option
 	dstreopt  *reapi.Option
@@ -156,7 +156,7 @@ func (c *Command) run(ctx context.Context) error {
 	var credential cred.Cred
 	if c.srcreopt.NeedCred() || c.enableCloudLogging {
 		spin.Start("init credentials")
-		credential, err = cred.New(ctx, c.srcreopt.ServiceURI(), c.authOpts)
+		credential, err = cred.New(ctx, c.srcreopt.ServiceURI(), c.authOpts())
 		if err != nil {
 			spin.Stop(errors.New(""))
 			return err

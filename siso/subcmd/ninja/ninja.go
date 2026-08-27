@@ -55,7 +55,7 @@ const ninjaUsage = `build the requested targets as ninja.
 `
 
 // Cmd returns the Command for the `ninja` subcommand provided by this package.
-func Cmd(authOpts cred.Options, version string) *Command {
+func Cmd(authOpts func() cred.Options, version string) *Command {
 	return &Command{
 		authOpts: authOpts,
 		version:  version,
@@ -64,7 +64,7 @@ func Cmd(authOpts cred.Options, version string) *Command {
 
 // Command implements ninja subcommand.
 type Command struct {
-	authOpts cred.Options
+	authOpts func() cred.Options
 	version  string
 	started  time.Time
 
@@ -255,7 +255,7 @@ func (c *Command) initCredentials(ctx context.Context) (cred.Cred, error) {
 		return cred.Cred{}, nil
 	}
 
-	credential, err := cred.New(ctx, c.reopt.ServiceURI(), c.authOpts)
+	credential, err := cred.New(ctx, c.reopt.ServiceURI(), c.authOpts())
 	if err != nil {
 		return cred.Cred{}, err
 	}
