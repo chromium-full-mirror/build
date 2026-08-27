@@ -170,6 +170,12 @@ func (b *Builder) runRemote(ctx context.Context, step *Step) error {
 	} else if !strictRemote && b.fastLocalSema != nil && int(b.progress.numLocal.Load()) < b.fastLocalSema.Capacity() {
 		// TODO: skip check cache when step is too new and can't expect cache hit?
 		if cacheCheck {
+			if b.allowTwoPhaseCaching(step) {
+				ok, err := b.twoPhaseCachingLookup(ctx, step)
+				if ok {
+					return err
+				}
+			}
 			clog.Infof(ctx, "check cache before fast local")
 			preprocErr = preprocCmd(ctx, b, step)
 			if len(step.cmd.Platform) > 0 && preprocErr == nil {
@@ -192,6 +198,12 @@ func (b *Builder) runRemote(ctx context.Context, step *Step) error {
 		}
 	}
 	if errors.Is(preprocErr, errNeedPreproc) {
+		if cacheCheck && b.allowTwoPhaseCaching(step) {
+			ok, err := b.twoPhaseCachingLookup(ctx, step)
+			if ok {
+				return err
+			}
+		}
 		preprocErr = preprocCmd(ctx, b, step)
 	}
 	err := preprocErr
@@ -203,6 +215,12 @@ func (b *Builder) runRemote(ctx context.Context, step *Step) error {
 			return b.execLocal(ctx, step)
 		}
 		return b.fallbackLocal(ctx, step, err)
+	}
+	if ctx.Err() == nil && b.allowCacheWrite(step) && step.metrics.TwoPhaseCachingKey != "" {
+		err := b.twoPhaseCaching.Add(ctx, step.metrics.TwoPhaseCachingKey, step)
+		if err != nil {
+			clog.Warningf(ctx, "two phase caching: add %v", err)
+		}
 	}
 	return nil
 }

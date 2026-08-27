@@ -41,6 +41,13 @@ func (b *Builder) runRacing(ctx context.Context, step *Step) error {
 	ctx, span := trace.NewSpan(ctx, "racing")
 	defer span.Close(nil)
 
+	// for local action, two phase caching is done in execLocal.
+	if b.allowRemote(step) && b.allowTwoPhaseCaching(step) {
+		ok, err := b.twoPhaseCachingLookup(ctx, step)
+		if ok {
+			return err
+		}
+	}
 	preprocErr := preprocCmd(ctx, b, step)
 	if preprocErr != nil {
 		// Can't determine inputs for remote - just run locally.
@@ -190,6 +197,12 @@ func (b *Builder) runRacing(ctx context.Context, step *Step) error {
 		// Flush the outputs to the local disk.
 		if err := b.outputs(ctx, step); err != nil {
 			return b.fallbackLocal(ctx, step, err)
+		}
+		if ctx.Err() == nil && b.allowCacheWrite(step) && step.metrics.TwoPhaseCachingKey != "" {
+			err := b.twoPhaseCaching.Add(ctx, step.metrics.TwoPhaseCachingKey, step)
+			if err != nil {
+				clog.Warningf(ctx, "two phase caching: add %v", err)
+			}
 		}
 		return nil
 

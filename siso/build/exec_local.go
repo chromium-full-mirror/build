@@ -13,8 +13,6 @@ import (
 	"time"
 
 	log "github.com/golang/glog"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
@@ -32,16 +30,10 @@ func (b *Builder) execLocal(ctx context.Context, step *Step) (retErr error) {
 	defer span.Close(nil)
 	if b.allowTwoPhaseCaching(step) {
 		// TODO: no two phase caching when rewrapper is used?
-		step.setPhase(stepCacheCheck)
-		err := b.twoPhaseCachingLookup(ctx, step)
-		if err == nil {
-			return nil
+		ok, err := b.twoPhaseCachingLookup(ctx, step)
+		if ok {
+			return err
 		}
-		switch status.Code(err) {
-		case codes.PermissionDenied, codes.Unimplemented:
-			return fmt.Errorf("two phase cache unsupported: %w", err)
-		}
-		clog.Infof(ctx, "two phase cache: %v", err)
 	}
 	sandbox, sandboxOption := b.selectSandbox(ctx, step)
 	clog.Infof(ctx, "exec local %s sandbox:%s", step.cmd.Desc, sandbox)
@@ -192,9 +184,16 @@ func (b *Builder) execLocal(ctx context.Context, step *Step) (retErr error) {
 			if err != nil {
 				clog.Errorf(ctx, "two phase caching: canonicalize cmd %v", err)
 			} else {
-				err := b.twoPhaseCaching.Add(ctx, step.metrics.TwoPhaseCachingKey, step)
-				if err != nil {
-					clog.Warningf(ctx, "two phase caching: add %v", err)
+				err := b.cacheWrite(ctx, step)
+				if errors.Is(err, errNoCacheWrite) {
+					clog.Infof(ctx, "two phase cache: write ignored %q: %v", step.metrics.TwoPhaseCachingKey, err)
+				} else if err != nil {
+					clog.Warningf(ctx, "two phase cache: write failed %q: %v", step.metrics.TwoPhaseCachingKey, err)
+				} else {
+					err := b.twoPhaseCaching.Add(ctx, step.metrics.TwoPhaseCachingKey, step)
+					if err != nil {
+						clog.Warningf(ctx, "two phase caching: add %v", err)
+					}
 				}
 			}
 		} else {

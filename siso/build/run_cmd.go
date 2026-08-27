@@ -24,10 +24,24 @@ func (b *Builder) allowTwoPhaseCaching(step *Step) bool {
 	if b.twoPhaseCaching == nil {
 		return false
 	}
+	if b.cache == nil || !b.reCacheEnableRead {
+		return false
+	}
 	if step.def.Binding("generator") != "" {
 		// gn gen step fails?
 		// err: error in depfile "out/tpc/build.ninja.d": deps input "clang_x64_for_rust_host_build_tools/gen/build/modules/linux/module.modulemap" is output
 		return false
+	}
+	if step.cmd.Pure && b.allowRemote(step) {
+		switch step.cmd.Deps {
+		case "gcc", "msvc":
+			// try two phase caching to avoid scandeps.
+			return true
+		default:
+			// no need to use two phase caching.
+			// just lookup cache by GetActionResult.
+			return false
+		}
 	}
 	return true
 }

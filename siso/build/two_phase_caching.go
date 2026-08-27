@@ -6,7 +6,6 @@ package build
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"maps"
 	"path/filepath"
@@ -14,6 +13,8 @@ import (
 	"time"
 
 	log "github.com/golang/glog"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	"go.chromium.org/build/hashigo/digest"
 	rpb "go.chromium.org/build/remote-apis/build/bazel/remote/execution/v2"
@@ -38,9 +39,10 @@ type twoPhaseCaching interface {
 	Add(ctx context.Context, lookupKey string, step *Step) error
 }
 
-func (b *Builder) twoPhaseCachingLookup(ctx context.Context, step *Step) error {
+func (b *Builder) twoPhaseCachingLookup(ctx context.Context, step *Step) (bool, error) {
 	ctx, span := trace.NewSpan(ctx, "twophasecaching-lookup")
 	defer span.Close(nil)
+	step.setPhase(stepCacheCheck)
 	// disable canonicalize dir to match input root with local
 	// TODO: canonicalize dir in matchInputRoot.
 	step.cmd.CanonicalizeDir = false
@@ -53,7 +55,15 @@ func (b *Builder) twoPhaseCachingLookup(ctx context.Context, step *Step) error {
 		step.metrics.TwoPhaseCachingKey = lookupKey
 		return b.twoPhaseCaching.Check(ctx, lookupKey, step)
 	})
-	return err
+	if err == nil {
+		return true, nil
+	}
+	switch status.Code(err) {
+	case codes.PermissionDenied, codes.Unimplemented:
+		return true, fmt.Errorf("two phase cache unsupported: %w", err)
+	}
+	clog.Warningf(ctx, "two phase cache: %v", err)
+	return false, err
 }
 
 type reapiTwoPhaseCaching struct {
@@ -281,14 +291,6 @@ func (rt reapiTwoPhaseCaching) matchInputRoot(ctx context.Context, inputRootDige
 func (rt reapiTwoPhaseCaching) Add(ctx context.Context, lookupKey string, step *Step) error {
 	ctx, span := trace.NewSpan(ctx, "twophasecaching-add-action-in-cache")
 	defer span.Close(nil)
-	err := rt.b.cacheWrite(ctx, step)
-	if errors.Is(err, errNoCacheWrite) {
-		clog.Infof(ctx, "two phase cache: write ignored %s: %v", lookupKey, err)
-		return err
-	} else if err != nil {
-		clog.Warningf(ctx, "two phase cache: write failed %s: %v", lookupKey, err)
-		return err
-	}
 	// associate action to lookupKey.
 	clog.Infof(ctx, "two phase cache: add lookup=%s action=%s", lookupKey, step.cmd.ActionDigest())
 	return rt.actionCacheMap.Add(ctx, lookupKey, step.cmd.ActionDigest())
