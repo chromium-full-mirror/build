@@ -434,3 +434,90 @@ func TestTapCanonicalizeCmd_Symlink(t *testing.T) {
 		t.Errorf("cmd.Inputs = %v; want %v", cmd.Inputs, wantInputs)
 	}
 }
+
+func TestTapCanonicalizeCmd_TapDetectedZero(t *testing.T) {
+	dir, tmpDir := setupDirForTapTest(t)
+	wsDir := filepath.Join(dir, "workspace")
+	customTmpDir := filepath.Join(dir, "workspace/out/soong/.temp")
+
+	setupFile := func(root, rel string) string {
+		t.Helper()
+		abs := filepath.Join(root, rel)
+		if err := os.MkdirAll(filepath.Dir(abs), 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(abs, []byte("content"), 0644); err != nil {
+			t.Fatal(err)
+		}
+		return abs
+	}
+
+	outsideInput := setupFile(tmpDir, "outside_input.h")
+	outsideOutput := setupFile(tmpDir, "outside_output.o")
+	customTmpInput := setupFile(customTmpDir, "custom_tmp_read.h")
+	customTmpOutput := setupFile(customTmpDir, "custom_tmp_write.o")
+
+	for _, tc := range []struct {
+		name    string
+		env     []string
+		reads   []string
+		writes  []string
+		deletes []string
+	}{
+		{
+			name: "empty",
+		},
+		{
+			name:   "outside_workspace",
+			reads:  []string{outsideInput},
+			writes: []string{outsideOutput},
+		},
+		{
+			name:   "nonexistent_files",
+			reads:  []string{filepath.Join(wsDir, "nonexistent.h")},
+			writes: []string{filepath.Join(wsDir, "out/siso/nonexistent.o")},
+		},
+		{
+			name:   "only_tmpdir",
+			env:    []string{"TMPDIR=" + customTmpDir},
+			reads:  []string{customTmpInput},
+			writes: []string{customTmpOutput},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := t.Context()
+			hfs, err := hashfs.New(ctx, hashfs.Option{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer hfs.Close(ctx)
+			if err := hfs.WaitReady(ctx); err != nil {
+				t.Fatal(err)
+			}
+
+			b := &Builder{
+				hashFS: hfs,
+				path:   NewPath(wsDir, "out/siso"),
+			}
+
+			cmd := &execute.Cmd{
+				WorkspaceRoot: wsDir,
+				Env:           tc.env,
+			}
+
+			err = setTapResult(cmd, tc.reads, tc.writes, tc.deletes)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			err = b.tapCanonicalizeCmd(ctx, cmd)
+			if err == nil {
+				t.Fatalf("tapCanonicalizeCmd returned nil error; want error")
+			}
+			t.Logf("tapCanonicalizeCmd: %v", err)
+			if cmd.Pure {
+				t.Errorf("cmd.Pure = true; want false")
+			}
+		})
+	}
+}

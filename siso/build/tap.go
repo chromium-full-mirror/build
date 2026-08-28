@@ -32,6 +32,7 @@ func (b *Builder) tapCanonicalizeCmd(ctx context.Context, cmd *execute.Cmd) erro
 	}
 
 	var ninputs, noutputs int
+	var ninputsDiscarded, noutputsDiscarded int
 	// ignore out of workspace root
 	// TODO: use with input root absolute path?
 	// TODO: just use detected inputs?
@@ -67,6 +68,7 @@ func (b *Builder) tapCanonicalizeCmd(ctx context.Context, cmd *execute.Cmd) erro
 		}
 		return false
 	}
+	var tapDetected int
 
 	fsys := b.hashFS.FileSystem(ctx, b.path.WorkspaceRoot)
 
@@ -77,16 +79,20 @@ func (b *Builder) tapCanonicalizeCmd(ctx context.Context, cmd *execute.Cmd) erro
 		rel, err := filepath.Rel(b.path.WorkspaceRoot, input)
 		if err != nil {
 			clog.Warningf(ctx, "reads relpath %q: %v", input, err)
+			ninputsDiscarded++
 			continue
 		}
 		if !filepath.IsLocal(rel) {
+			ninputsDiscarded++
 			continue
 		}
 		relPath := path.New(rel)
 		fi, err := fsys.Stat(string(relPath))
 		if errors.Is(err, fs.ErrNotExist) {
+			ninputsDiscarded++
 			continue
 		}
+		tapDetected++
 		if seen[relPath] {
 			continue
 		}
@@ -116,16 +122,20 @@ func (b *Builder) tapCanonicalizeCmd(ctx context.Context, cmd *execute.Cmd) erro
 		rel, err := filepath.Rel(b.path.WorkspaceRoot, output)
 		if err != nil {
 			clog.Warningf(ctx, "writes relpath %q: %v", output, err)
+			noutputsDiscarded++
 			continue
 		}
 		if !filepath.IsLocal(rel) {
+			noutputsDiscarded++
 			continue
 		}
 		relPath := path.New(rel)
 		fi, err := b.hashFS.Stat(ctx, b.path.WorkspaceRoot, relPath)
 		if err != nil {
+			noutputsDiscarded++
 			continue
 		}
+		tapDetected++
 		if fi.IsDir() {
 			// don't include output directories
 			// as it would forget all entries in the directory
@@ -155,10 +165,13 @@ func (b *Builder) tapCanonicalizeCmd(ctx context.Context, cmd *execute.Cmd) erro
 		b.hashFS.Forget(ctx, b.path.WorkspaceRoot, []path.Path{relPath})
 		clog.Infof(ctx, "delete %q", relPath)
 	}
-
+	clog.Infof(ctx, "tap canonicalized detected=%d inputs=%d (discarded:%d) ->%d outputs=%d (discarded:%d) ->%d ignored=%d", tapDetected, ninputs, ninputsDiscarded, len(cmd.Inputs), noutputs, noutputsDiscarded, len(cmd.Outputs), ignored)
+	if tapDetected == 0 {
+		return fmt.Errorf("tap detected=0: %s", tapData)
+	}
 	// now tap results are applied to cmd, so we can consider
 	// this cmd is pure, thus cacheable.
 	cmd.Pure = true
-	clog.Infof(ctx, "tap canonicalized inputs=%d->%d outputs=%d->%d ignored=%d", ninputs, len(cmd.Inputs), noutputs, len(cmd.Outputs), ignored)
+
 	return nil
 }
