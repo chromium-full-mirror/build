@@ -200,7 +200,7 @@ func New(ctx context.Context, uri string, opts Options) (Cred, error) {
 			return Cred{}, context.Cause(ctx)
 		case err = <-errch:
 			if err != nil {
-				return Cred{}, fmt.Errorf("google-application-default credential found, but invalid token\n on cloudtop, you need to run `gcloud application-default login`:\n %w", err)
+				return Cred{}, fmt.Errorf("google-application-default credential found, but invalid token\n on cloudtop, you need to run `gcloud auth application-default login`:\n %w", err)
 			}
 		}
 	}
