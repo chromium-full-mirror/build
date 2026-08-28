@@ -137,6 +137,18 @@ def CheckGoChanges(input_api, output_api):
     go = input_api.os_path.join(cipd_root, 'bin', 'go')
     gofmt = input_api.os_path.join(cipd_root, 'bin', 'gofmt')
     env['PATH'] = input_api.os_path.join(cipd_root, 'bin') + ':' + env['PATH']
+  if input_api.platform.startswith('linux'):
+    ensure_file_content += ('infra/3pp/static_libs/libseccomp/${platform} '
+                            'latest\n')
+    seccomp_include = input_api.os_path.join(cipd_root, 'include')
+    seccomp_lib = input_api.os_path.join(cipd_root, 'lib')
+    seccomp_pkgconfig = input_api.os_path.join(seccomp_lib, 'pkgconfig')
+    env['CGO_ENABLED'] = '1'
+    env['CGO_CFLAGS'] = f'-I{seccomp_include}'
+    env['CGO_LDFLAGS'] = f'-L{seccomp_lib} -lseccomp'
+    env['PKG_CONFIG_PATH'] = (
+        seccomp_pkgconfig +
+        (':' + env['PKG_CONFIG_PATH'] if 'PKG_CONFIG_PATH' in env else ''))
   input_api.subprocess.check_call(
       [
           'cipd',
