@@ -98,8 +98,7 @@ func TestMakeConfigValues_InvalidFramework(t *testing.T) {
 		"frameworks": StringListValue{list: []string{"Foundation"}},
 	})
 
-	var wantErr *FrameworkMissingExtension
-	if !errors.As(err, &wantErr) {
+	if wantErr, ok := errors.AsType[*FrameworkMissingExtension](err); !ok {
 		t.Fatalf("MakeConfigValues(_)=_,%v (%T); want %T err", err, err, wantErr)
 	}
 }

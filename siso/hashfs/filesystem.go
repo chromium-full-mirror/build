@@ -305,14 +305,14 @@ func (fsys FileSystem) statWith(name string, statFn func(context.Context, string
 		fi, err := statFn(fsys.ctx, root, path.Path(name))
 		if err != nil {
 			return FileInfo{
-					root:  root,
-					fname: path.Path(name),
-					fis:   fis,
-				}, &fs.PathError{
-					Op:   "stat",
-					Path: pathname,
-					Err:  err,
-				}
+				root:  root,
+				fname: path.Path(name),
+				fis:   fis,
+			}, &fs.PathError{
+				Op:   "stat",
+				Path: pathname,
+				Err:  err,
+			}
 		}
 		target := fi.Target()
 		if target == "" {
@@ -324,14 +324,14 @@ func (fsys FileSystem) statWith(name string, statFn func(context.Context, string
 		continue
 	}
 	return FileInfo{
-			root:  fsys.dir,
-			fname: path.Path(pathname),
-			fis:   fis,
-		}, &fs.PathError{
-			Op:   "stat",
-			Path: pathname,
-			Err:  syscall.ELOOP,
-		}
+		root:  fsys.dir,
+		fname: path.Path(pathname),
+		fis:   fis,
+	}, &fs.PathError{
+		Op:   "stat",
+		Path: pathname,
+		Err:  syscall.ELOOP,
+	}
 }
 
 // Visited returns visited FileInfo to get the fi by Stat, including fi itself.

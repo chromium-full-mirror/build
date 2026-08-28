@@ -108,8 +108,7 @@ func TestToolchain_Run_ToolMissingCommand(t *testing.T) {
 		resolve.NewOriginlessStringValue("gcc"),
 		block.(*parse.BlockNode),
 	)
-	var wantErr ToolError
-	if !errors.As(err, &wantErr) {
+	if wantErr, ok := errors.AsType[ToolError](err); !ok {
 		t.Errorf("execToolchain() got err=%v (%T), wantErr %T", err, err, wantErr)
 	}
 }
@@ -176,8 +175,7 @@ tool("cc") {
 			"tool": ToolFunction{},
 		}),
 	)
-	var wantErr ToolOutsideToolchain
-	if !errors.As(err, &wantErr) {
+	if wantErr, ok := errors.AsType[ToolOutsideToolchain](err); !ok {
 		t.Errorf("execToolchain() got err=%v (%T), wantErr %T", err, err, wantErr)
 	}
 }

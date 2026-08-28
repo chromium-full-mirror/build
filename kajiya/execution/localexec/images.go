@@ -91,8 +91,7 @@ func (r *ImageRepository) FetchImage(containerImage string) (string, error) {
 		out, err := c.Output()
 		if err != nil {
 			// Get the error output from the error by casting it to *exec.ExitError.
-			var ee *exec.ExitError
-			if errors.As(err, &ee) {
+			if ee, ok := errors.AsType[*exec.ExitError](err); ok {
 				return "", fmt.Errorf("failed to create container: %w: %s", err, ee.Stderr)
 			}
 			return "", fmt.Errorf("failed to create container: %w", err)
@@ -103,8 +102,7 @@ func (r *ImageRepository) FetchImage(containerImage string) (string, error) {
 		defer func() {
 			c := exec.Command(r.dockerPath, "rm", containerName)
 			if _, err := c.Output(); err != nil {
-				var ee *exec.ExitError
-				if errors.As(err, &ee) {
+				if ee, ok := errors.AsType[*exec.ExitError](err); ok {
 					slog.Error("failed to remove container", "error", err, "stderr", ee.Stderr)
 				} else {
 					slog.Error("failed to remove container", "error", err)

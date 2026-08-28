@@ -278,8 +278,7 @@ func (c *ContentAddressableStorage) Stat(fn digest.Function, d digest.Digest) (o
 // Has returns true if the requested digest exists in the CAS.
 func (c *ContentAddressableStorage) Has(fn digest.Function, d digest.Digest) bool {
 	if _, err := c.Stat(fn, d); err != nil {
-		var mbe *MissingBlobsError
-		if !errors.As(err, &mbe) {
+		if _, ok := errors.AsType[*MissingBlobsError](err); !ok {
 			// That's unexpected, let's log it.
 			slog.Error("stat failed", "digest", d, "error", err)
 		}

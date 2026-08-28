@@ -92,8 +92,7 @@ func TestScope_NonRecursiveMergeTo(t *testing.T) {
 			}
 
 			if gotErr {
-				var wantErr *ScopeMergeError
-				if !errors.As(err, &wantErr) {
+				if wantErr, ok := errors.AsType[*ScopeMergeError](err); !ok {
 					t.Errorf("NonRecursiveMergeTo() got err=%v (%T), want %T", err, err, wantErr)
 				}
 			} else if tc.wantDestValue != nil {

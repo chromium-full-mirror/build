@@ -158,8 +158,7 @@ executable("app") {
 		}
 	}
 
-	var wantErr ItemTypeMismatchError
-	if !errors.As(gotErr, &wantErr) {
+	if wantErr, ok := errors.AsType[ItemTypeMismatchError](gotErr); !ok {
 		t.Errorf("builder record items finished with %T err; want %T err", gotErr, wantErr)
 	}
 }

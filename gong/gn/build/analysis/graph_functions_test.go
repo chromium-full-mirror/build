@@ -56,8 +56,7 @@ func TestToolchain_Run_MissingName(t *testing.T) {
 
 	_, err := execToolchain(t, input)
 
-	var wantErr resolve.ArgumentCountError
-	if !errors.As(err, &wantErr) {
+	if wantErr, ok := errors.AsType[resolve.ArgumentCountError](err); !ok {
 		t.Errorf("execToolchain() got err=%v (%T), wantErr %T", err, err, wantErr)
 	}
 }

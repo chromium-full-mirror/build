@@ -440,8 +440,7 @@ func (e StringLiteralExpressionError) Error() string {
 func (e StringLiteralExpressionError) Message() string {
 	// Generally string interpolations aren't complex. So the user should just be presented with
 	// a single error in the UI that points at the origin syntax token and the error message.
-	var gnErr ui.PresentableError
-	if errors.As(e.err, &gnErr) {
+	if gnErr, ok := errors.AsType[ui.PresentableError](e.err); ok {
 		return gnErr.Message()
 	}
 	// However, if the underlying error was an external Go error, we'll expose it in Unwrap.
@@ -452,8 +451,7 @@ func (e StringLiteralExpressionError) Message() string {
 // HelpText returns the user-facing error help text.
 func (e StringLiteralExpressionError) HelpText() string {
 	// See the Message function for why we do this.
-	var gnErr ui.PresentableError
-	if errors.As(e.err, &gnErr) {
+	if gnErr, ok := errors.AsType[ui.PresentableError](e.err); ok {
 		return gnErr.HelpText()
 	}
 	// If the underlying error was an external Go error, we'll expose it in Unwrap.
@@ -465,8 +463,7 @@ func (e StringLiteralExpressionError) HelpText() string {
 func (e StringLiteralExpressionError) Unwrap() error {
 	// Generally string interpolations aren't complex, so the user should not be presented with
 	// the underlying GN error, instead we directly consume the error.
-	var gnErr ui.PresentableError
-	if errors.As(e.err, &gnErr) {
+	if _, ok := errors.AsType[ui.PresentableError](e.err); ok {
 		return nil
 	}
 	// However if it was an external Go error, then it should be exposed.

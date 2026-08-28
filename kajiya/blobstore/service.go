@@ -339,8 +339,7 @@ func (s *Service) Read(request *bspb.ReadRequest, server bspb.ByteStream_ReadSer
 	// Open the file and seek to the offset.
 	f, err := s.cas.Open(fn, d, request.ReadOffset, request.ReadLimit)
 	if err != nil {
-		var mbe *MissingBlobsError
-		if errors.As(err, &mbe) {
+		if _, ok := errors.AsType[*MissingBlobsError](err); ok {
 			return status.Errorf(codes.NotFound, "blob not found: %v", err)
 		}
 		return status.Errorf(codes.Internal, "failed to open file: %v", err)
@@ -551,8 +550,7 @@ func (s *Service) Write(server bspb.ByteStream_WriteServer) (err error) {
 	}
 
 	if err := uw.Close(); err != nil {
-		var dme *DigestMismatchError
-		if errors.As(err, &dme) {
+		if _, ok := errors.AsType[*DigestMismatchError](err); ok {
 			return status.Error(codes.InvalidArgument, err.Error())
 		}
 		return status.Errorf(codes.Internal, "upload failed: %v", err)
@@ -821,8 +819,7 @@ func (s *Service) GetTree(request *repb.GetTreeRequest, treeServer repb.ContentA
 	// Flatten the directory tree.
 	_, dirs, err := s.cas.FlattenDirectory(fn, d)
 	if err != nil {
-		var mbe *MissingBlobsError
-		if errors.As(err, &mbe) {
+		if _, ok := errors.AsType[*MissingBlobsError](err); ok {
 			return status.Errorf(codes.NotFound, "root directory not found: %v", err)
 		}
 		return err
@@ -854,12 +851,10 @@ func (s *Service) SplitBlob(ctx context.Context, request *repb.SplitBlobRequest)
 
 	resp, err = s.cas.Split(fn, d)
 	if err != nil {
-		var mse *MissingSplitError
-		if errors.As(err, &mse) {
+		if _, ok := errors.AsType[*MissingSplitError](err); ok {
 			return nil, status.Errorf(codes.NotFound, "split not found: %v", err)
 		}
-		var mbe *MissingBlobsError
-		if errors.As(err, &mbe) {
+		if _, ok := errors.AsType[*MissingBlobsError](err); ok {
 			return nil, status.Errorf(codes.NotFound, "split chunks not found: %v", err)
 		}
 		return nil, status.Errorf(codes.Internal, "failed to read split mapping: %v", err)
@@ -900,12 +895,10 @@ func (s *Service) SpliceBlob(ctx context.Context, request *repb.SpliceBlobReques
 	}
 	err = s.cas.Splice(fn, blobDigest, chunkDigests, request.ChunkingFunction)
 	if err != nil {
-		var mbe *MissingBlobsError
-		if errors.As(err, &mbe) {
+		if _, ok := errors.AsType[*MissingBlobsError](err); ok {
 			return nil, status.Errorf(codes.NotFound, "missing chunks: %v", err)
 		}
-		var dme *DigestMismatchError
-		if errors.As(err, &dme) {
+		if _, ok := errors.AsType[*DigestMismatchError](err); ok {
 			return nil, status.Errorf(codes.InvalidArgument, "spliced blob digest mismatch: %v", err)
 		}
 		return nil, status.Errorf(codes.Internal, "failed to splice blob: %v", err)

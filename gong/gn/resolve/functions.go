@@ -139,8 +139,7 @@ func (AssertFailureFunction) Run(scope *Scope, call *parse.FunctionCallNode, arg
 	}
 
 	_, err := ExecuteNode(block, scope)
-	var gnErr ui.PresentableError
-	if errors.As(err, &gnErr) {
+	if gnErr, ok := errors.AsType[ui.PresentableError](err); ok {
 		assertMessageValue, err := AsValue[*StringValue](args[0])
 		if err != nil {
 			return nil, TypeError{

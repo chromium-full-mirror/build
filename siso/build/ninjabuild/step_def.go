@@ -232,8 +232,8 @@ func (s *StepDef) Args(ctx context.Context) []string {
 func stepArgs(edge *ninjautil.Edge) []string {
 	cmdline := edge.Binding("command")
 	if runtime.GOOS == "windows" {
-		args, err := cmdutil.Split(cmdline)
-		if err != nil {
+		args, err := cmdutil.Split(cmdline) //nolint:staticcheck // SA4023: cmdutil.Split can return nil on windows.
+		if err != nil {                     //nolint:staticcheck // SA4023: cmdutil.Split can return nil on windows.
 			return []string{"cmd.exe", "/C", cmdline}
 		}
 		return args

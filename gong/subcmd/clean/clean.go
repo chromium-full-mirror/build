@@ -34,7 +34,7 @@ func (h *Command) SetFlags(f *flag.FlagSet) {
 	h.SetCommonFlags(f)
 }
 
-func (h *Command) cleanOneDir(dir string) error {
+func (h *Command) cleanOneDir(dir string) error { //nolint:staticcheck // SA4023: cleanOneDir is not implemented yet and always returns an error.
 	setup := build.NewSetup()
 	if err := setup.DoSetup(dir, false, &h.CommonFlags); err != nil {
 		return err
@@ -44,7 +44,7 @@ func (h *Command) cleanOneDir(dir string) error {
 
 func (h *Command) Execute(ctx context.Context, f *flag.FlagSet, _ ...any) subcommands.ExitStatus {
 	for _, dir := range f.Args() {
-		if err := h.cleanOneDir(dir); err != nil {
+		if err := h.cleanOneDir(dir); err != nil { //nolint:staticcheck // SA4023: cleanOneDir is not implemented yet and always returns an error.
 			if e, ok := errors.AsType[ui.PresentableError](err); ok {
 				fmt.Fprint(os.Stderr, ui.FormatError(e))
 				return subcommands.ExitFailure

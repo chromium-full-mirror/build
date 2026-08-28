@@ -233,8 +233,7 @@ func TestLoadAction_OutputErrorPropagates(t *testing.T) {
 	if err == nil {
 		t.Fatal("LoadAction succeeded; want error for escaping output path")
 	}
-	var iaerr *InvalidActionError
-	if !errors.As(err, &iaerr) {
+	if _, ok := errors.AsType[*InvalidActionError](err); !ok {
 		t.Errorf("LoadAction err = %T (%v); want *InvalidActionError", err, err)
 	}
 }
@@ -270,8 +269,7 @@ func TestLoadAction_WindowsReservedOutputName(t *testing.T) {
 	if err == nil {
 		t.Fatal("LoadAction succeeded; want error for DOS-reserved output path on Windows")
 	}
-	var iaerr *InvalidActionError
-	if !errors.As(err, &iaerr) {
+	if _, ok := errors.AsType[*InvalidActionError](err); !ok {
 		t.Errorf("LoadAction err = %T (%v); want *InvalidActionError", err, err)
 	}
 }

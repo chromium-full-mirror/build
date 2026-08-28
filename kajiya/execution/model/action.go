@@ -319,8 +319,7 @@ func treeToTrie(cas *blobstore.ContentAddressableStorage, fn digest.Function, ro
 		}
 		dir, err := cas.Directory(fn, dirDigest)
 		if err != nil {
-			var mberr *blobstore.MissingBlobsError
-			if errors.As(err, &mberr) {
+			if mberr, ok := errors.AsType[*blobstore.MissingBlobsError](err); ok {
 				missingBlobs = append(missingBlobs, mberr.Blobs...)
 				continue
 			}
