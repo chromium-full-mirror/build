@@ -125,7 +125,6 @@ def CheckGoChanges(input_api, output_api):
   ensure_file_content = ('infra/3pp/tools/golangci-lint/${platform} '
                          'version:3@2.13.1.chromium.1\n')
   go = 'go'
-  gofmt = 'gofmt'
   golangci_lint = input_api.os_path.join(cipd_root, 'golangci-lint')
   env = input_api.environ.copy()
   if input_api.is_committing and input_api.gerrit:
@@ -135,7 +134,6 @@ def CheckGoChanges(input_api, output_api):
     ensure_file_content += ('infra/3pp/tools/go/${platform} '
                             'version:3@1.26.6\n')
     go = input_api.os_path.join(cipd_root, 'bin', 'go')
-    gofmt = input_api.os_path.join(cipd_root, 'bin', 'gofmt')
     env['PATH'] = input_api.os_path.join(cipd_root, 'bin') + ':' + env['PATH']
   if input_api.platform.startswith('linux'):
     ensure_file_content += ('infra/3pp/static_libs/libseccomp/${platform} '
@@ -173,24 +171,6 @@ def CheckGoChanges(input_api, output_api):
     return [
         output_api.PresubmitPromptOrNotify(
             f"go isn't available on your $PATH: {e}")
-    ]
-
-  # Run `go fmt` on files individually.
-  bad = []
-  for f in affected_files:
-    try:
-      stdout, _ = input_api.subprocess.check_call_out(
-          [gofmt, '-s', '-d', f.LocalPath()],
-          stdout=input_api.subprocess.PIPE,
-          stderr=input_api.subprocess.PIPE)
-      if stdout.strip():
-        bad.append(f)
-    except input_api.subprocess.CalledProcessError as e:
-      return [output_api.PresubmitError(f'gofmt failed to run: {e}')]
-  if bad:
-    return [
-        output_api.PresubmitError(('Found badly formatted Go file(s). '
-                                   'Run `gofmt -s -w .` to fix them.'), bad)
     ]
 
   dirs = {

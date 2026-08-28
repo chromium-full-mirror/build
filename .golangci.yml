@@ -79,6 +79,7 @@ issues:
 formatters:
   enable:
     - gci
+    - gofmt
   settings:
     # https://golangci-lint.run/usage/formatters/#gci
     gci:
