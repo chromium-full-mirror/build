@@ -36,7 +36,7 @@ func NewStatuszServer(ctx context.Context, b *Builder, dir string) error {
 			http.Error(w, fmt.Sprintf("failed to json marshal: %v", err), http.StatusInternalServerError)
 			return
 		}
-		w.Header().Add("Context-Type", "text/json")
+		w.Header().Set("Content-Type", "application/json")
 		_, err = w.Write(buf)
 		if err != nil {
 			clog.Warningf(ctx, "failed to write response: %v", err)
