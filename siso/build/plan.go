@@ -605,16 +605,14 @@ func scheduleTarget(ctx context.Context, sched *scheduler, graph Graph, target T
 			}
 			validationQueue, err = scheduleTarget(ctx, sched, graph, in, next, inIgnore, validationQueue)
 			if err != nil {
-				var cycleErr DependencyCycleError
-				if errors.As(err, &cycleErr) {
+				if cycleErr, ok := errors.AsType[DependencyCycleError](err); ok {
 					if len(cycleErr.Targets) <= 1 || cycleErr.Targets[0] != cycleErr.Targets[len(cycleErr.Targets)-1] {
 						cur := sched.path.MaybeToRelative(ctx, string(targetPath(ctx, graph, in)))
 						cycleErr.Targets = append(cycleErr.Targets, cur)
 					}
 					return validationQueue, cycleErr
 				}
-				var missingErr MissingSourceError
-				if errors.As(err, &missingErr) {
+				if missingErr, ok := errors.AsType[MissingSourceError](err); ok {
 					cur := sched.path.MaybeToRelative(ctx, string(targetPath(ctx, graph, in)))
 					missingErr.Deps = append(missingErr.Deps, cur)
 					return validationQueue, missingErr

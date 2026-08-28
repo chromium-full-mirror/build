@@ -200,8 +200,7 @@ func TestRemoteClaimFallbackIfAllowed(t *testing.T) {
 			cmdStdout:          "compile error",
 			wantOk:             false,
 			checkErr: func(t *testing.T, err error) {
-				var exitErr execute.ExitError
-				if !errors.As(err, &exitErr) {
+				if exitErr, ok := errors.AsType[execute.ExitError](err); !ok {
 					t.Errorf("got %T: %v, expected execute.ExitError", err, err)
 				} else if exitErr.ExitCode != 1 {
 					t.Errorf("got exit code %d, expected 1", exitErr.ExitCode)
@@ -227,9 +226,8 @@ func TestRemoteClaimFallbackIfAllowed(t *testing.T) {
 			initialFallbacks:   1,
 			wantOk:             false,
 			checkErr: func(t *testing.T, err error) {
-				var fallbackErr TooManyFallbackError
 				wantErr := status.Error(codes.Unavailable, "unavailable")
-				if !errors.As(err, &fallbackErr) {
+				if fallbackErr, ok := errors.AsType[TooManyFallbackError](err); !ok {
 					t.Errorf("got %T: %v, expected TooManyFallbackError", err, err)
 				} else if !errors.Is(fallbackErr.Err, wantErr) {
 					t.Errorf("got %v, expected wrapped error %v", fallbackErr.Err, wantErr)
@@ -242,12 +240,10 @@ func TestRemoteClaimFallbackIfAllowed(t *testing.T) {
 			maxFallbackAllowed: 10,
 			wantOk:             false,
 			checkErr: func(t *testing.T, err error) {
-				var depsErr DepsError
-				if !errors.As(err, &depsErr) {
+				if _, ok := errors.AsType[DepsError](err); !ok {
 					t.Errorf("got %T: %v, expected DepsError", err, err)
 				}
-				var fallbackErr TooManyFallbackError
-				if errors.As(err, &fallbackErr) {
+				if _, ok := errors.AsType[TooManyFallbackError](err); ok {
 					t.Errorf("unexpected TooManyFallbackError for DepsError: %v", err)
 				}
 			},
@@ -258,12 +254,10 @@ func TestRemoteClaimFallbackIfAllowed(t *testing.T) {
 			maxFallbackAllowed: 10,
 			wantOk:             false,
 			checkErr: func(t *testing.T, err error) {
-				var depsErr DepsError
-				if !errors.As(err, &depsErr) {
+				if _, ok := errors.AsType[DepsError](err); !ok {
 					t.Errorf("got %T: %v, expected DepsError", err, err)
 				}
-				var fallbackErr TooManyFallbackError
-				if errors.As(err, &fallbackErr) {
+				if _, ok := errors.AsType[TooManyFallbackError](err); ok {
 					t.Errorf("unexpected TooManyFallbackError for DepsError: %v", err)
 				}
 			},

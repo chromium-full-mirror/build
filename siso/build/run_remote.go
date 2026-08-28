@@ -84,8 +84,7 @@ func (b *Builder) remoteClaimFallbackIfAllowed(ctx context.Context, step *Step, 
 		clog.Errorf(ctx, "deps error: %v", err)
 		return false, fmt.Errorf("remote-exec %s failed: %w", step.cmd.ActionDigest(), err)
 	}
-	var eerr execute.ExitError
-	if errors.As(err, &eerr) {
+	if eerr, ok := errors.AsType[execute.ExitError](err); ok {
 		// report compile fail early to developers.
 		preferNoFallbackOnExecErr := len(step.cmd.Stdout())+len(step.cmd.Stderr()) > 0
 		switch {

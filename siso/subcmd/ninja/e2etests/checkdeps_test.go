@@ -104,12 +104,10 @@ func TestBuild_FailOnBadDeps(t *testing.T) {
 		t.Fatalf("ninja err: got nil, want error")
 	}
 
-	var depsErr build.DepsError
-	if !errors.As(err, &depsErr) {
+	if _, ok := errors.AsType[build.DepsError](err); !ok {
 		t.Errorf("got error %T: %v, want build.DepsError", err, err)
 	}
-	var fallbackErr build.TooManyFallbackError
-	if errors.As(err, &fallbackErr) {
+	if _, ok := errors.AsType[build.TooManyFallbackError](err); ok {
 		t.Errorf("unexpected TooManyFallbackError: %v", err)
 	}
 }

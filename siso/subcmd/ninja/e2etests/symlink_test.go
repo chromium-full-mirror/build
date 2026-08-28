@@ -314,8 +314,7 @@ func TestBuild_SymlinkSourceDangling(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, err = runNinjaTest(t)
-	var missingSourceErr build.MissingSourceError
-	if !errors.As(err, &missingSourceErr) {
+	if _, ok := errors.AsType[build.MissingSourceError](err); !ok {
 		t.Errorf("unexpected error = %v; want MissingSourceError", err)
 	}
 }
