@@ -43,6 +43,20 @@ func NewStatuszServer(ctx context.Context, b *Builder, dir string) error {
 		}
 	}))
 
+	mux.Handle("/api/progress", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		p := b.ProgressInfo()
+		buf, err := json.Marshal(p)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("failed to json marshal: %v", err), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, err = w.Write(buf)
+		if err != nil {
+			clog.Warningf(ctx, "failed to write response: %v", err)
+		}
+	}))
+
 	mainHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.ProtoMajor == 2 && strings.HasPrefix(r.Header.Get("Content-Type"), "application/grpc") {
 			grpcServer.ServeHTTP(w, r)

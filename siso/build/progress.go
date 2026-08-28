@@ -624,6 +624,14 @@ func (p *progress) step(b *Builder, step *Step, s string) {
 	p.mu.Unlock()
 }
 
+// ProgressInfo holds progress information of the build.
+type ProgressInfo struct {
+	Done        int              `json:"done"`
+	Total       int              `json:"total"`
+	Skipped     int              `json:"skipped"`
+	ActiveSteps []ActiveStepInfo `json:"active_steps,omitempty"`
+}
+
 type ActiveStepInfo struct {
 	ID    string
 	Desc  string

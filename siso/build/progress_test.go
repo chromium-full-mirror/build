@@ -567,3 +567,22 @@ func TestFormatStepRow_WaitPhaseDisplay(t *testing.T) {
 		t.Errorf("formatStepRow output unexpected: %q", row)
 	}
 }
+
+func TestBuilder_ProgressInfo(t *testing.T) {
+	st := newStats(100)
+	st.s.Done = 30
+	st.s.Skipped = 5
+	b := &Builder{
+		stats: st,
+	}
+	p := b.ProgressInfo()
+	if want := 25; p.Done != want {
+		t.Errorf("p.Done = %d; want %d", p.Done, want)
+	}
+	if want := 95; p.Total != want {
+		t.Errorf("p.Total = %d; want %d", p.Total, want)
+	}
+	if want := 5; p.Skipped != want {
+		t.Errorf("p.Skipped = %d; want %d", p.Skipped, want)
+	}
+}

@@ -1444,6 +1444,16 @@ func (b *Builder) ActiveSteps() []ActiveStepInfo {
 	return b.progress.ActiveSteps()
 }
 
+func (b *Builder) ProgressInfo() ProgressInfo {
+	stat := b.stats.stats()
+	return ProgressInfo{
+		Done:        stat.Done - stat.Skipped,
+		Total:       stat.Total - stat.Skipped,
+		Skipped:     stat.Skipped,
+		ActiveSteps: b.ActiveSteps(),
+	}
+}
+
 func (b *Builder) localFallbackEnabled(step *Step) bool {
 	if step != nil && step.def.Binding("strict_remote") == "true" {
 		return false
