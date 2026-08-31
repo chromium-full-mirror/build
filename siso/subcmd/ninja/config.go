@@ -140,6 +140,8 @@ type NinjaFlags struct {
 	reExecEnable       bool
 	reCacheEnableRead  bool
 	reCacheEnableWrite bool
+	localCacheEnable   bool
+	cacheDir           string
 
 	cartfsEndpoint string
 	abfsEndpoint   string
@@ -221,7 +223,6 @@ func (c *Command) SetFlags(flagSet *flag.FlagSet) {
 	flagSet.StringVar(&c.spawnHelper, "spawn_helper", "", "command name of external spawn helper. use builtin spawn helper if empty.")
 	flagSet.BoolVar(&c.blockActionNetworkAccess, "block_action_network_access", false, "run spawnhelper in without network connectivity.")
 
-	c.setLocalCacheFlags(flagSet)
 	flagSet.BoolVar(&c.cacheEnableRead, "cache_enable_read", true, "cache enable read")
 
 	flagSet.StringVar(&c.configFilename, "load", "@config//main.star", "config filename (@config// is --config_repo_dir)")
@@ -258,6 +259,8 @@ func (c *Command) SetFlags(flagSet *flag.FlagSet) {
 	flagSet.BoolVar(&c.reExecEnable, "re_exec_enable", true, "remote exec enable")
 	flagSet.BoolVar(&c.reCacheEnableRead, "re_cache_enable_read", true, "remote exec cache enable read")
 	flagSet.BoolVar(&c.reCacheEnableWrite, "re_cache_enable_write", false, "remote exec cache allow local trusted uploads")
+	flagSet.BoolVar(&c.localCacheEnable, "local_cache_enable", false, "local cache enable")
+	flagSet.StringVar(&c.cacheDir, "cache_dir", defaultCacheDir(), "cache directory")
 
 	// TODO(b/513044090): discover cartfs endpoint automatically?
 	flagSet.StringVar(&c.cartfsEndpoint, "cartfs_endpoint", "", "cartfs server endpoint. e.g. localhost:65001")
@@ -702,14 +705,4 @@ func initFSMonitor(ctx context.Context, workspaceRoot string) hashfs.FSMonitor {
 		ui.Default.Errorf("%s", ui.SGR(ui.BackgroundRed, fmt.Sprintf("unknown SISO_FSMONITOR=%q (%q)\n", fsmonitor, fsm)))
 	}
 	return nil
-}
-
-type localCacheOptions struct {
-	localCacheEnable bool
-	cacheDir         string
-}
-
-func (c *Command) setLocalCacheFlags(flagSet *flag.FlagSet) {
-	flagSet.BoolVar(&c.localCacheEnable, "local_cache_enable", false, "local cache enable")
-	flagSet.StringVar(&c.cacheDir, "cache_dir", defaultCacheDir(), "cache directory")
 }

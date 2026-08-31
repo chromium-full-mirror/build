@@ -85,7 +85,7 @@ func (r *Reader) Size() int64 {
 }
 
 // Create creates a writer on the bytestream for resourceName.
-// ctx will be used until the rriter is closed.
+// ctx will be used until the writer is closed.
 func Create(ctx context.Context, c pb.ByteStreamClient, resourceName, name string) (*Writer, error) {
 	sizeStr := path.Base(resourceName)
 	size, err := strconv.ParseInt(sizeStr, 10, 64)

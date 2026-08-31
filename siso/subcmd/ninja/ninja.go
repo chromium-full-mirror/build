@@ -71,7 +71,6 @@ type Command struct {
 	Flags *flag.FlagSet
 
 	NinjaFlags
-	localCacheOptions
 
 	outputLocal func(context.Context, string) bool
 
@@ -542,6 +541,16 @@ func (c *Command) Run(ctx context.Context) (stats build.Stats, finalErr error) {
 		return nil
 	})
 
+	var localCache *reapi.LocalCache
+	if c.cacheDir != "" {
+		var err error
+		localCache, err = reapi.NewLocalCache(c.cacheDir)
+		if err != nil {
+			return stats, err
+		}
+	}
+	c.reopt.LocalCache = localCache
+
 	var reapiClient *reapi.Client
 	if err := c.reopt.CheckValid(); err == nil {
 		ui.Default.Infof("use %s\n", c.reopt)
@@ -586,11 +595,8 @@ func (c *Command) Run(ctx context.Context) (stats build.Stats, finalErr error) {
 			return stats, flagError{err: fmt.Errorf("no reapi specified, but remote is requested as --remote_jobs=%d: %w", c.remoteJobs, err)}
 		}
 	}
-	if !c.localCacheEnable {
-		c.cacheDir = ""
-	}
 
-	ds := build.NewDataSource(ctx, credential, c.localCacheEnable, c.cacheDir, reapiClient)
+	ds := build.NewDataSource(ctx, localCache, reapiClient)
 	defer func() {
 		err := ds.Close(ctx)
 		if err != nil {

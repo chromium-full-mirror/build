@@ -10,14 +10,11 @@ import (
 	"fmt"
 	"io"
 
-	bpb "google.golang.org/genproto/googleapis/bytestream"
-
 	"go.chromium.org/build/hashigo/digest"
 	rpb "go.chromium.org/build/remote-apis/build/bazel/remote/execution/v2"
 
 	"go.chromium.org/build/siso/blob"
 	"go.chromium.org/build/siso/o11y/clog"
-	"go.chromium.org/build/siso/reapi/bytestreamio"
 )
 
 // CacheStore provides a thin wrapper around REAPI client that gets and uploads blobs and action results.
@@ -90,7 +87,8 @@ func (c CacheStore) Source(_ context.Context, d digest.Digest, fname string) blo
 }
 
 type digestSourceReader struct {
-	r      io.ReadCloser
+	r      io.Closer
+	rd     io.ReadCloser
 	n      int
 	size   int64
 	c      *Client
@@ -98,7 +96,7 @@ type digestSourceReader struct {
 }
 
 func (r *digestSourceReader) Read(buf []byte) (int, error) {
-	n, err := r.r.Read(buf)
+	n, err := r.rd.Read(buf)
 	r.n += n
 	if err == io.EOF && int64(r.n) != r.size {
 		err = io.ErrUnexpectedEOF
@@ -111,14 +109,15 @@ func (r *digestSourceReader) Close() error {
 	// and cancel directly instead of draining a possibly large residual.
 	var eofErr error
 	if int64(r.n) == r.size {
-		eofErr = expectEOF(r.r)
+		eofErr = expectEOF(r.rd)
 	}
-	closeErr := r.r.Close()
-	r.c.m.ReadDone(r.n, cmp.Or(closeErr, eofErr))
+	rdCloseErr := r.rd.Close()
+	rCloseErr := r.r.Close()
+	r.c.m.ReadDone(r.n, cmp.Or(rdCloseErr, rCloseErr, eofErr))
 	if r.cancel != nil {
 		r.cancel()
 	}
-	return closeErr
+	return cmp.Or(rdCloseErr, rCloseErr)
 }
 
 type digestSource struct {
@@ -128,12 +127,12 @@ type digestSource struct {
 }
 
 func (s digestSource) Open(ctx context.Context) (io.ReadCloser, error) {
-	// The context passed to bytestreamio.Open is used for the gRPC stream.
+	// The context passed to bytestreamioOpen is used for the gRPC stream.
 	// We need to cancel this context to close the stream when we are done reading
 	// or if an error occurs during setup, otherwise we leak the stream until the
 	// parent context (step context) is canceled.
 	ctx, cancel := context.WithCancel(ctx)
-	r, err := bytestreamio.Open(ctx, bpb.NewByteStreamClient(s.c.casDataConn), s.c.resourceName(s.d))
+	r, err := s.c.bytestreamioOpen(ctx, s.d, s.fname)
 	if err != nil {
 		cancel()
 		s.c.m.ReadDone(0, err)
@@ -141,11 +140,12 @@ func (s digestSource) Open(ctx context.Context) (io.ReadCloser, error) {
 	}
 	rd, err := s.c.newDecoder(r, s.d)
 	if err != nil {
+		r.Close()
 		cancel()
 		s.c.m.ReadDone(0, err)
 		return nil, err
 	}
-	return &digestSourceReader{r: rd, size: s.d.SizeBytes, c: s.c, cancel: cancel}, err
+	return &digestSourceReader{r: r, rd: rd, size: s.d.SizeBytes, c: s.c, cancel: cancel}, err
 }
 
 // ReadAll returns the full blob content in a single CAS fetch, retrying on

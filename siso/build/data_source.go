@@ -13,23 +13,16 @@ import (
 
 	"go.chromium.org/build/hashigo/digest"
 
-	"go.chromium.org/build/siso/auth/cred"
 	"go.chromium.org/build/siso/blob"
 	"go.chromium.org/build/siso/build/cachestore"
-	"go.chromium.org/build/siso/o11y/clog"
 	"go.chromium.org/build/siso/reapi"
 )
 
-func NewDataSource(ctx context.Context, credential cred.Cred, localCacheEnable bool, cacheDir string, reapiClient *reapi.Client) DataSource {
+func NewDataSource(ctx context.Context, localCache *reapi.LocalCache, reapiClient *reapi.Client) DataSource {
 	layeredCache := NewLayeredCache()
-	if localCacheEnable {
-		cache, err := reapi.NewLocalCache(cacheDir)
-		if err != nil {
-			clog.Warningf(ctx, "failed to create local cache - no local cache enabled: %v", err)
-		} else {
-			layeredCache.AddLayer(cache)
-			cache.GarbageCollectIfRequired(ctx)
-		}
+	if localCache != nil {
+		layeredCache.AddLayer(localCache)
+		localCache.GarbageCollectIfRequired(ctx)
 	}
 	if reapiClient != nil {
 		layeredCache.AddLayer(reapiClient.CacheStore())

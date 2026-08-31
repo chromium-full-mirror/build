@@ -51,6 +51,9 @@ const (
 	// defaultBatchUpdateByteLimit is bytes limit for cas BatchUpdateBlobs.
 	defaultBatchUpdateByteLimit = 4 * 1024 * 1024
 
+	// defaultBatchReadByteLimit is bytes limit for cas BatchReadBlobs.
+	defaultBatchReadByteLimit = 4 * 1024 * 1024
+
 	// batchBlobUploadLimit is max number of blobs in BatchUpdateBlobs.
 	batchBlobUploadLimit = 1000
 )
@@ -114,6 +117,8 @@ var (
 
 // compressor returns a compressor for ByteStream Read/Write APIs.
 func (c *Client) compressor(d digest.Digest) rpb.Compressor_Value {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	if d.SizeBytes < c.opt.CompressedBlob {
 		return rpb.Compressor_IDENTITY
 	}
@@ -122,6 +127,8 @@ func (c *Client) compressor(d digest.Digest) rpb.Compressor_Value {
 
 // compressorForBatchUpdate returns a compressor for BatchUpdateBlobs API.
 func (c *Client) compressorForBatchUpdate(d digest.Digest) rpb.Compressor_Value {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	if d.SizeBytes < c.opt.BatchCompressedBlob {
 		return rpb.Compressor_IDENTITY
 	}
@@ -131,6 +138,8 @@ func (c *Client) compressorForBatchUpdate(d digest.Digest) rpb.Compressor_Value 
 // acceptableCompressors returns acceptable compressors for BatchReadBlobs API.
 // If blob-level compression is disabled or the blob is too small, it returns nil.
 func (c *Client) acceptableCompressors(d digest.Digest) []rpb.Compressor_Value {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	if c.opt.BatchCompressedBlob == 0 || d.SizeBytes < c.opt.BatchCompressedBlob {
 		return nil
 	}
@@ -417,6 +426,27 @@ func expectEOF(r io.Reader) error {
 	}
 }
 
+func (c *Client) bytestreamioOpen(ctx context.Context, d digest.Digest, fname string) (io.ReadCloser, error) {
+	if d.SizeBytes > c.opt.ChunkedBlobsThreshold {
+		c.mu.Lock()
+		splitBlobSupport := c.capabilities.GetCacheCapabilities().GetSplitBlobSupport()
+		c.mu.Unlock()
+		if splitBlobSupport {
+			r, err := c.chunkReader(ctx, d, fname)
+			if err == nil {
+				return r, nil
+			}
+			clog.Warningf(ctx, "failed chunkReader %s %q: %v", d, fname, err)
+		}
+		// not supported, or chunkReader failed. fallback.
+	}
+	r, err := bytestreamio.Open(ctx, bpb.NewByteStreamClient(c.casDataConn), c.resourceName(d))
+	if err != nil {
+		return nil, err
+	}
+	return io.NopCloser(r), nil
+}
+
 // getWithByteStream fetches the content of blob using the ByteStream API
 func (c *Client) getWithByteStream(ctx context.Context, d digest.Digest, name string) ([]byte, error) {
 	started := time.Now()
@@ -428,11 +458,12 @@ func (c *Client) getWithByteStream(ctx context.Context, d digest.Digest, name st
 	err := retry.Do(ctx, func() error {
 		ctx, cancel := fetch.ContextWithTimeout(ctx, d)
 		defer cancel()
-		r, err := bytestreamio.Open(ctx, bpb.NewByteStreamClient(c.casDataConn), resourceName)
+		r, err := c.bytestreamioOpen(ctx, d, name)
 		if err != nil {
 			c.m.ReadDone(0, err)
 			return err
 		}
+		defer r.Close()
 		rd, err := c.newDecoder(r, d)
 		if err != nil {
 			c.m.ReadDone(0, err)

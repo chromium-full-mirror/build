@@ -95,6 +95,12 @@ type Option struct {
 	// instead of BatchReadBlobs if blob size is bigger than this.
 	ByteStreamReadThreshold int64
 
+	// Threshold that decides whether to use Chunked Blobs.
+	ChunkedBlobsThreshold int64
+
+	// threshold for batch for chunks.
+	chunkBatchThreshold int64
+
 	// Enables GRPC compression. If enabled, blob-level compression will be
 	// forcibly disabled.
 	EnableGRPCCompression bool
@@ -151,6 +157,9 @@ type Option struct {
 	// sampling, e.g. Dapper). Scoped to this connection so it never reaches a
 	// non-RBE gRPC service.
 	TraceCookie string
+
+	// LocalCache is local cache for reapi.
+	LocalCache *LocalCache
 }
 
 // Envs returns environment flags for reapi.
@@ -209,6 +218,8 @@ func (o *Option) RegisterFlags(fs *flag.FlagSet, envs map[string]string) {
 	fs.Int64Var(&o.BatchCompressedBlob, o.Prefix+"_batch_compress_blob", 0, "use compressed blobs in BatchUpdateBlobs if server supports it and size is bigger than this. specify 0 to disable."+purpose)
 
 	fs.Int64Var(&o.ByteStreamReadThreshold, o.Prefix+"_byte_stream_read_threshold", 1024*1024, "if blob size >= threshold, use ByteStream API (compression-aware)"+purpose)
+
+	fs.Int64Var(&o.ChunkedBlobsThreshold, o.Prefix+"_chunked_blobs_threshold", 0, "If blob size >= threshold, try to use chunked blob)"+purpose)
 
 	fs.BoolVar(&o.EnableGRPCCompression, o.Prefix+"_enable_grpc_compression", false, "enable grpc compression.  if enabled, blob-level compression will be forcibly disabled."+purpose)
 
@@ -676,20 +687,26 @@ func (c *Client) Init(ctx context.Context) error {
 		c.Close()
 		return err
 	}
+	compressedBlob := c.opt.CompressedBlob
+	var compressor rpb.Compressor_Value
 	if c.opt.CompressedBlob > 0 {
-		c.opt.compressor = selectCompressor(capa.GetCacheCapabilities().GetSupportedCompressors())
-		if c.opt.compressor != rpb.Compressor_IDENTITY {
-			clog.Infof(ctx, "compressed-blobs/%s for > %d", strings.ToLower(c.opt.compressor.String()), c.opt.CompressedBlob)
+		compressor = selectCompressor(capa.GetCacheCapabilities().GetSupportedCompressors())
+		if compressor != rpb.Compressor_IDENTITY {
+			clog.Infof(ctx, "compressed-blobs/%s for > %d", strings.ToLower(compressor.String()), c.opt.CompressedBlob)
 		} else {
 			clog.Infof(ctx, "compressed-blobs is not supported")
+			compressedBlob = 0
 		}
 	}
+	batchCompressedBlob := c.opt.BatchCompressedBlob
+	var compressorForBatchUpdateBlobs rpb.Compressor_Value
 	if c.opt.BatchCompressedBlob > 0 {
-		c.opt.compressorForBatchUpdateBlobs = selectCompressor(capa.GetCacheCapabilities().GetSupportedBatchUpdateCompressors())
-		if c.opt.compressorForBatchUpdateBlobs != rpb.Compressor_IDENTITY {
-			clog.Infof(ctx, "batch-update-blobs/%s for > %d", strings.ToLower(c.opt.compressorForBatchUpdateBlobs.String()), c.opt.BatchCompressedBlob)
+		compressorForBatchUpdateBlobs = selectCompressor(capa.GetCacheCapabilities().GetSupportedBatchUpdateCompressors())
+		if compressorForBatchUpdateBlobs != rpb.Compressor_IDENTITY {
+			clog.Infof(ctx, "batch-update-blobs/%s for > %d", strings.ToLower(compressorForBatchUpdateBlobs.String()), c.opt.BatchCompressedBlob)
 		} else {
 			clog.Infof(ctx, "batch-update-blobs compression is not supported")
+			batchCompressedBlob = 0
 		}
 	}
 	clog.Infof(ctx, "byte stream read threshold: %d", c.opt.ByteStreamReadThreshold)
@@ -714,10 +731,24 @@ func (c *Client) Init(ctx context.Context) error {
 			}
 		}
 	}
+	// prefer compressed bytestream.
+	chunkBatchThreshold := c.opt.CompressedBlob
+	if c.opt.BatchCompressedBlob > 0 {
+		// if batch compressed is enabled, use max_batch_total_size_bytes for batching.
+		chunkBatchThreshold = defaultBatchReadByteLimit
+		if max := c.capabilities.GetCacheCapabilities().GetMaxBatchTotalSizeBytes(); max > 0 {
+			chunkBatchThreshold = max
+		}
+	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.capabilities = capa
 	c.apiVersion = apiVersion
+	c.opt.CompressedBlob = compressedBlob
+	c.opt.compressor = compressor
+	c.opt.BatchCompressedBlob = batchCompressedBlob
+	c.opt.compressorForBatchUpdateBlobs = compressorForBatchUpdateBlobs
+	c.opt.chunkBatchThreshold = chunkBatchThreshold
 	return nil
 }
 
