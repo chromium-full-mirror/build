@@ -10,6 +10,7 @@ import (
 	"crypto/sha256"
 	"crypto/sha512"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"hash"
 	"io"
@@ -337,6 +338,50 @@ func (f Function) FromBytes(b []byte) Digest {
 		Hash:      f.h.sumBytes(b),
 		SizeBytes: int64(len(b)),
 	}
+}
+
+// Reader returns reader to calculate digest from r.
+// size is the content size: it is required for git-framing digest functions
+// (GITSHA-1) and may be -1 (unknown) otherwisze.
+func (f Function) Reader(r io.Reader, size int64) (*Reader, error) {
+	if f.h.gitFraming && size < 0 {
+		return nil, fmt.Errorf("digest function %s requires a known content size", f.h.fn)
+	}
+	hh := f.NewContentHasher(size)
+	return &Reader{
+		h:            hh,
+		r:            r,
+		expectedSize: size,
+	}, nil
+}
+
+// Reader is reader to calculate digest.
+type Reader struct {
+	h            hash.Hash
+	r            io.Reader
+	size         int64
+	expectedSize int64
+}
+
+// Read reads from data from original reader and calculate digest.
+func (r *Reader) Read(buf []byte) (int, error) {
+	n, err := r.r.Read(buf)
+	if err == nil || errors.Is(err, io.EOF) {
+		_, err = r.h.Write(buf[:n])
+	}
+	r.size += int64(n)
+	return n, err
+}
+
+// Digest returns calculated digest.
+func (r *Reader) Digest() (Digest, error) {
+	if r.expectedSize >= 0 && r.expectedSize != r.size {
+		return Digest{}, fmt.Errorf("content size mismatch: expected %d, read %d", r.expectedSize, r.size)
+	}
+	return Digest{
+		Hash:      hex.EncodeToString(r.h.Sum(nil)),
+		SizeBytes: r.size,
+	}, nil
 }
 
 // FromReader computes the digest of content read from r. size is the content
