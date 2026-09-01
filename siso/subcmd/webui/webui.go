@@ -34,7 +34,7 @@ func (*Command) Synopsis() string {
 }
 
 func (*Command) Usage() string {
-	return "Starts the experimental webui. Not ready for wide use yet, requires static files to work. This is subject to breaking changes at any moment."
+	return "Starts the experimental webui. Not ready for wide use yet, requires static files to work. This is subject to breaking changes at any moment.\n"
 }
 
 // Command implements webui subcommand.

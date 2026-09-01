@@ -280,36 +280,49 @@ Use "siso flags" to display all flags.
 	ui.Init()
 	defer ui.Restore()
 
-	subcommands.Register(ninja.Cmd(authOpts, versionID), "")
-
-	subcommands.Register(recall.Cmd(authOpts), "reapi")
-	subcommands.Register(fetch.Cmd(authOpts), "reapi")
-	subcommands.Register(isolate.Cmd(authOpts), "reapi")
-	subcommands.Register(proxy.Cmd(authOpts), "reapi")
-
-	subcommands.Register(fscmd.Cmd(authOpts), "investigation")
-	subcommands.Register(metricscmd.Cmd(), "investigation")
-	subcommands.Register(ps.Cmd(), "investigation")
-	subcommands.Register(query.Cmd(), "investigation")
-	subcommands.Register(report.Cmd(), "investigation")
-	subcommands.Register(webui.Cmd(versionID), "investigation")
-
-	subcommands.Register(auth.CheckCmd(authOpts), "auth")
-	subcommands.Register(auth.LoginCmd(authOpts), "auth")
-	subcommands.Register(auth.LogoutCmd(authOpts), "auth")
-
-	subcommands.Register(ninjafrontend.Cmd(), "debugging")
-	subcommands.Register(sandbox.Cmd(), "debugging")
-	subcommands.Register(scandeps.Cmd(), "debugging")
-
-	subcommands.Register(collector.Cmd(authOpts, versionID), "internal-helper")
-	subcommands.Register(spawnhelper.Cmd(), "internal-helper")
-
-	subcommands.Register(subcommands.FlagsCommand(), "command-help")
-	subcommands.Register(subcommands.HelpCommand(), "command-help")
-	subcommands.Register(version.Cmd(versionStr, authOpts), "command-help")
+	for _, entry := range subcommandsList(authOpts) {
+		subcommands.Register(entry.cmd, entry.group)
+	}
 
 	return int(subcommands.Execute(ctx))
+}
+
+type subcommandEntry struct {
+	cmd   subcommands.Command
+	group string
+}
+
+func subcommandsList(authOpts func() cred.Options) []subcommandEntry {
+	return []subcommandEntry{
+		{cmd: ninja.Cmd(authOpts, versionID), group: ""},
+
+		{cmd: recall.Cmd(authOpts), group: "reapi"},
+		{cmd: fetch.Cmd(authOpts), group: "reapi"},
+		{cmd: isolate.Cmd(authOpts), group: "reapi"},
+		{cmd: proxy.Cmd(authOpts), group: "reapi"},
+
+		{cmd: fscmd.Cmd(authOpts), group: "investigation"},
+		{cmd: metricscmd.Cmd(), group: "investigation"},
+		{cmd: ps.Cmd(), group: "investigation"},
+		{cmd: query.Cmd(), group: "investigation"},
+		{cmd: report.Cmd(), group: "investigation"},
+		{cmd: webui.Cmd(versionID), group: "investigation"},
+
+		{cmd: auth.CheckCmd(authOpts), group: "auth"},
+		{cmd: auth.LoginCmd(authOpts), group: "auth"},
+		{cmd: auth.LogoutCmd(authOpts), group: "auth"},
+
+		{cmd: ninjafrontend.Cmd(), group: "debugging"},
+		{cmd: sandbox.Cmd(), group: "debugging"},
+		{cmd: scandeps.Cmd(), group: "debugging"},
+
+		{cmd: collector.Cmd(authOpts, versionID), group: "internal-helper"},
+		{cmd: spawnhelper.Cmd(), group: "internal-helper"},
+
+		{cmd: subcommands.FlagsCommand(), group: "command-help"},
+		{cmd: subcommands.HelpCommand(), group: "command-help"},
+		{cmd: version.Cmd(versionStr, authOpts), group: "command-help"},
+	}
 }
 
 // startPeriodicMemprofile launches a goroutine that writes a heap profile to a

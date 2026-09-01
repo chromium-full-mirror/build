@@ -31,7 +31,7 @@ func (*LogoutCommand) Synopsis() string {
 }
 
 func (*LogoutCommand) Usage() string {
-	return "logout from siso system."
+	return "logout from siso system.\n"
 }
 
 // LogoutCommand implements logout subcommand.

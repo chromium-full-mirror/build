@@ -46,14 +46,27 @@ Use "siso fs help [subcommand]" for more information about a subcommand.
 
 func (*Command) SetFlags(flagSet *flag.FlagSet) {}
 
+// Subcommands returns the list of subcommands under `fs`.
+func Subcommands(authOpts func() cred.Options) []subcommands.Command {
+	var opts cred.Options
+	if authOpts != nil {
+		opts = authOpts()
+	}
+	return []subcommands.Command{
+		&diffCommand{},
+		&exportCommand{},
+		&flushCommand{authOpts: opts},
+		&gcCommand{},
+		&importCommand{},
+		&statusCommand{},
+	}
+}
+
 func (c *Command) Execute(ctx context.Context, flagSet *flag.FlagSet, _ ...any) subcommands.ExitStatus {
 	commander := subcommands.NewCommander(flagSet, c.Name())
-	commander.Register(&diffCommand{}, "")
-	commander.Register(&exportCommand{}, "")
-	commander.Register(&flushCommand{authOpts: c.authOpts()}, "")
-	commander.Register(&gcCommand{}, "")
-	commander.Register(&importCommand{}, "")
-	commander.Register(&statusCommand{}, "")
+	for _, cmd := range Subcommands(c.authOpts) {
+		commander.Register(cmd, "")
+	}
 	commander.Register(commander.HelpCommand(), "command-help")
 	return commander.Execute(ctx)
 }

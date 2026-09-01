@@ -49,7 +49,7 @@ func (*Command) Synopsis() string {
 }
 
 func (*Command) Usage() string {
-	return "Prints the executable version and the CIPD package the executable was installed from (if it was installed via CIPD)."
+	return "Prints the executable version and the CIPD package the executable was installed from (if it was installed via CIPD).\n"
 }
 
 // Command implements version subcommand.

@@ -31,7 +31,7 @@ func (*LoginCommand) Synopsis() string {
 }
 
 func (*LoginCommand) Usage() string {
-	return "login to siso system."
+	return "login to siso system.\n"
 }
 
 // LoginCommand implements login subcommand.
