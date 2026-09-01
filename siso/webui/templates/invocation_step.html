@@ -104,9 +104,19 @@ found in the LICENSE file. */}}
     </li>
     <li>
       <md-icon>output_circle</md-icon>
-      {{.step.Outputs}} output(s)
+      {{len .step.Outputs}} output(s)
     </li>
   </ul>
+  {{if gt (len .step.Outputs) 1}}
+  <details class="step-outputs-details">
+    <summary>Outputs ({{len .step.Outputs}})</summary>
+    <ul class="step-outputs">
+      {{range .step.Outputs}}
+      <li><code>{{trimPrefix . (printf "%s/" $outdirRel)}}</code></li>
+      {{end}}
+    </ul>
+  </details>
+  {{end}}
   <details>
     <summary>Raw metrics</summary>
     <dl class="step-raw">

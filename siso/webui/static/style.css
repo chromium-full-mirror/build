@@ -604,6 +604,23 @@ td.remote-indicator {
         display: flex;
         align-items: center;
         margin-bottom: 4px;
+        word-break: break-all;
+    }
+
+    details {
+        margin-top: 8px;
+    }
+}
+
+.step-outputs {
+    list-style: none;
+    padding: 0;
+    margin: 8px 0;
+    max-height: 300px;
+    overflow-y: auto;
+
+    li {
+        padding: 2px 0;
     }
 }
 
@@ -612,7 +629,7 @@ td.remote-indicator {
     padding: 0;
 
     li {
-        height: 40px;
+        min-height: 40px;
         display: flex;
         align-items: center;
         gap: 4px;

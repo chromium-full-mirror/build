@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -69,6 +70,7 @@ build all: phony foo`), 0644); err != nil {
 	}
 	if err := os.WriteFile("out/Default/siso_metrics.json", []byte(`{"build_id": "test-rev"}
 {"step_id": "step-1", "rule": "cc", "action": "clang", "outputs": ["out1.o"]}
+{"step_id": "step-multi", "rule": "action", "action": "generate", "outputs": ["gen/out1.pak", "gen/out2.pak", "gen/out3.pak"]}
 `), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -449,5 +451,64 @@ func TestCrossOriginProtection(t *testing.T) {
 				t.Errorf("%s %s = %d; want %d", tc.method, tc.path, rec.Code, tc.want)
 			}
 		})
+	}
+}
+
+func TestInvocationStepOutputs(t *testing.T) {
+	s, _ := mustServer(t)
+
+	// Single output case.
+	{
+		rec := httptest.NewRecorder()
+		s.mux().ServeHTTP(rec, httptest.NewRequest("GET", "/out/Default/builds/test-rev/steps/step-1/", nil))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("GET step-1 = %d; want 200", rec.Code)
+		}
+		doc, err := goquery.NewDocumentFromReader(rec.Body)
+		if err != nil {
+			t.Fatalf("failed to parse HTML: %v", err)
+		}
+		text := doc.Find(".step-details").Text()
+		if !strings.Contains(text, "1 output(s)") {
+			t.Errorf("expected '1 output(s)' in step-details, got: %s", text)
+		}
+		if strings.Contains(text, "[out1.o]") {
+			t.Errorf("step-details should not contain raw slice string '[out1.o]', got: %s", text)
+		}
+		if doc.Find(".step-outputs-details").Length() != 0 {
+			t.Errorf("expected no .step-outputs-details for single output, found %d", doc.Find(".step-outputs-details").Length())
+		}
+	}
+
+	// Multiple outputs case.
+	{
+		rec := httptest.NewRecorder()
+		s.mux().ServeHTTP(rec, httptest.NewRequest("GET", "/out/Default/builds/test-rev/steps/step-multi/", nil))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("GET step-multi = %d; want 200", rec.Code)
+		}
+		doc, err := goquery.NewDocumentFromReader(rec.Body)
+		if err != nil {
+			t.Fatalf("failed to parse HTML: %v", err)
+		}
+		text := doc.Find(".step-details").Text()
+		if !strings.Contains(text, "3 output(s)") {
+			t.Errorf("expected '3 output(s)' in step-details, got: %s", text)
+		}
+		if strings.Contains(text, "[gen/out1.pak") {
+			t.Errorf("step-details should not contain raw slice string, got: %s", text)
+		}
+		details := doc.Find(".step-outputs-details")
+		if details.Length() != 1 {
+			t.Fatalf("expected 1 .step-outputs-details for multiple outputs, found %d", details.Length())
+		}
+		var outputs []string
+		details.Find("li code").Each(func(_ int, sel *goquery.Selection) {
+			outputs = append(outputs, sel.Text())
+		})
+		wantOutputs := []string{"gen/out1.pak", "gen/out2.pak", "gen/out3.pak"}
+		if !slices.Equal(outputs, wantOutputs) {
+			t.Errorf("outputs = %v; want %v", outputs, wantOutputs)
+		}
 	}
 }
