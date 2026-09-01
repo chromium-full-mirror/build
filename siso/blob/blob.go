@@ -19,6 +19,7 @@ import (
 
 	"go.chromium.org/build/hashigo/digest"
 
+	"go.chromium.org/build/siso/o11y/clog"
 	"go.chromium.org/build/siso/reapi/retry"
 )
 
@@ -150,6 +151,7 @@ func FromLocalFile(ctx context.Context, fn digest.Function, src Source) (Data, e
 				source: src,
 			}, nil
 		}
+		clog.Warningf(ctx, "failed to get digest from FS for %q: %v", src, err)
 	}
 	_, ok = src.(LocalFileSource)
 	if !ok {
