@@ -1075,7 +1075,6 @@ func createBatchUpdateBlobsRequests(instance string, fn digest.Function, blobReq
 func (c *Client) uploadWithByteStream(ctx context.Context, digests []digest.Digest, uploads map[digest.Digest]*uploadOp, ds *blob.Store) []missingBlob {
 	clog.Infof(ctx, "upload by streaming %d", len(digests))
 
-	bsClient := bpb.NewByteStreamClient(c.casDataConn)
 	var (
 		mu      sync.Mutex
 		missing []missingBlob
@@ -1090,7 +1089,7 @@ func (c *Client) uploadWithByteStream(ctx context.Context, digests []digest.Dige
 	eg.SetLimit(c.uploadConcurrency())
 	for _, d := range digests {
 		eg.Go(func() error {
-			c.streamOneBlob(gctx, bsClient, d, uploads, ds, addMissing)
+			c.streamOneBlob(gctx, d, uploads, ds, addMissing)
 			return nil
 		})
 	}
@@ -1099,8 +1098,47 @@ func (c *Client) uploadWithByteStream(ctx context.Context, digests []digest.Dige
 	return missing
 }
 
+func (c *Client) bytestreamioUpload(ctx context.Context, d digest.Digest, fname string, rd io.Reader) error {
+	if d.SizeBytes > c.opt.ChunkedBlobsThreshold {
+		c.mu.Lock()
+		spliceBlobSupport := c.capabilities.GetCacheCapabilities().GetSpliceBlobSupport()
+		c.mu.Unlock()
+		if spliceBlobSupport {
+			err := c.chunkUpload(ctx, d, fname, rd)
+			if err == nil {
+				return nil
+			}
+			clog.Warningf(ctx, "failed chunkUpload %s %q: %v", d, fname, err)
+		}
+		// not supported, or chunkUpload failed, fallback.
+
+	}
+	bsClient := bpb.NewByteStreamClient(c.casDataConn)
+	wr, err := bytestreamio.Create(ctx, bsClient, c.uploadResourceName(d), fname)
+	if err != nil {
+		return err
+	}
+	cwr, err := c.newEncoder(wr, d)
+	if err != nil {
+		wr.Close()
+		return err
+	}
+	_, err = io.Copy(cwr, rd)
+	if err != nil {
+		cwr.Close()
+		wr.Close()
+		return err
+	}
+	err = cwr.Close()
+	if err != nil {
+		wr.Close()
+		return err
+	}
+	return wr.Close()
+}
+
 // streamOneBlob uploads one blob via ByteStream; errors go to addMissing, not propagated.
-func (c *Client) streamOneBlob(ctx context.Context, bsClient bpb.ByteStreamClient, d digest.Digest, uploads map[digest.Digest]*uploadOp, ds *blob.Store, addMissing func(missingBlob)) {
+func (c *Client) streamOneBlob(ctx context.Context, d digest.Digest, uploads map[digest.Digest]*uploadOp, ds *blob.Store, addMissing func(missingBlob)) {
 	started := time.Now()
 	data, ok := ds.Get(d)
 	if !ok {
@@ -1119,37 +1157,17 @@ func (c *Client) streamOneBlob(ctx context.Context, bsClient bpb.ByteStreamClien
 		if log.V(1) {
 			clog.Infof(ctx, "put %s", c.uploadResourceName(d))
 		}
-		wr, err := bytestreamio.Create(ctx, bsClient, c.uploadResourceName(d), data.String())
-		if err != nil {
-			return err
-		}
-		cwr, err := c.newEncoder(wr, d)
-		if err != nil {
-			wr.Close()
-			return err
-		}
-		_, err = io.Copy(cwr, rd)
-		if err != nil {
-			cwr.Close()
-			wr.Close()
-			return err
-		}
-		err = cwr.Close()
-		if err != nil {
-			wr.Close()
-			return err
-		}
-		err = wr.Close()
+		err = c.bytestreamioUpload(ctx, d, data.String(), rd)
 		if err != nil {
 			// Some REAPI backends may return non-standard committed size,
 			// or error in CloseAndRecv. Check via FindMissingBlobs whether
 			// the blob is already uploaded or not.
 			ds, merr := c.Missing(ctx, []digest.Digest{d})
 			if merr == nil && len(ds) == 0 {
-				clog.Infof(ctx, "bytestreamio.Create: %v -> %v exists in CAS", err, d)
+				clog.Infof(ctx, "bytestreamioUpload: %v -> %v exists in CAS", err, d)
 				return nil
 			}
-			clog.Warningf(ctx, "bytestreamio.Create: %v -> missing %v, %v", err, ds, merr)
+			clog.Warningf(ctx, "bytestreamioUpload: %v -> missing %v, %v", err, ds, merr)
 			return status.Errorf(codes.Internal, "%v", err)
 		}
 		return nil

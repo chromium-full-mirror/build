@@ -25,7 +25,7 @@ require (
 	github.com/open-telemetry/opentelemetry-collector-contrib/exporter/googlecloudexporter v0.158.0
 	github.com/open-telemetry/opentelemetry-collector-contrib/extension/healthcheckv2extension v0.158.0
 	github.com/pkg/xattr v0.4.12
-	go.chromium.org/build/hashigo v0.0.0-20260805080330-7d621b551da7
+	go.chromium.org/build/hashigo v0.0.0-20260831043016-49a614406dda
 	go.chromium.org/build/kajiya v0.0.0-20260805080330-7d621b551da7
 	go.chromium.org/build/remote-apis v0.0.0-20260805080330-7d621b551da7
 	go.opentelemetry.io/collector/component v1.64.0

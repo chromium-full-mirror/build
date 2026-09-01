@@ -19,10 +19,12 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 
+	"go.chromium.org/build/hashigo/cdc"
 	"go.chromium.org/build/hashigo/digest"
 	rpb "go.chromium.org/build/remote-apis/build/bazel/remote/execution/v2"
 
 	"go.chromium.org/build/siso/blob"
+	"go.chromium.org/build/siso/o11y/clog"
 	"go.chromium.org/build/siso/reapi/bytestreamio"
 )
 
@@ -303,4 +305,88 @@ func (c *Client) fetchChunks(ctx context.Context, chunks []chunk, fname string) 
 		}
 	}
 	return nil
+}
+
+func (c *Client) chunkUpload(ctx context.Context, d digest.Digest, fname string, rd io.Reader) error {
+	if c.opt.LocalCache == nil {
+		return errors.New("chunk upload disabled: no local cache")
+	}
+	spliceReq := &rpb.SpliceBlobRequest{
+		InstanceName:   c.Instance(),
+		BlobDigest:     d.Proto(),
+		DigestFunction: c.digestFn.Value(),
+		// TODO: select appropriate chunking function.
+		ChunkingFunction: rpb.ChunkingFunction_FAST_CDC_2020,
+	}
+	chunker, err := c.chunker(spliceReq.ChunkingFunction)
+	if err != nil {
+		return err
+	}
+	bs := blob.NewStore()
+	for chd, err := range chunker.Chunks(rd) {
+		if err != nil {
+			return err
+		}
+		cd := c.digestFn.FromBytes(chd.Data)
+		spliceReq.ChunkDigests = append(spliceReq.ChunkDigests, cd.Proto())
+		ch := chunk{d: cd, offset: chd.Offset}
+		if !c.opt.LocalCache.HasContent(ctx, cd) {
+			wr, err := c.opt.LocalCache.ContentSink(ctx, cd, ch.Name(fname))
+			if err != nil {
+				return err
+			}
+			if wr != nil {
+				_, err = wr.Write(chd.Data)
+				cerr := wr.Close()
+				if err != nil {
+					return err
+				}
+				if cerr != nil {
+					return cerr
+				}
+			}
+		}
+		bs.Set(blob.NewData(c.opt.LocalCache.Source(ctx, cd, ch.Name(fname)), cd))
+	}
+	// TODO: uploadChunk to optimize for chunk upload?
+	// e.g. upload chunks with multiple BatchUploadBlobs in parallel
+	n, err := c.UploadAll(ctx, bs)
+	clog.Infof(ctx, "upload chunks %d out of %d: %v", n, len(spliceReq.ChunkDigests), err)
+	if err != nil {
+		return err
+	}
+	casClient := rpb.NewContentAddressableStorageClient(c.casConn)
+	resp, err := casClient.SpliceBlob(ctx, spliceReq)
+	if err != nil {
+		return err
+	}
+	if rd := digest.FromProto(resp.GetBlobDigest()); d != rd {
+		return status.Errorf(codes.InvalidArgument, "mismatch blob digest in SpliceBlob: requested=%s resp=%s", d, rd)
+	}
+	return nil
+}
+
+func (c *Client) chunker(fn rpb.ChunkingFunction_Value) (cdc.Chunker, error) {
+	switch fn {
+	case rpb.ChunkingFunction_FAST_CDC_2020:
+		opt := cdc.DefaultFastCDCOptions()
+		c.mu.Lock()
+		if params := c.capabilities.GetCacheCapabilities().GetFastCdc_2020Params(); params != nil {
+			opt = cdc.FastCDCOptionsFromAvgSize(int(params.GetAvgChunkSizeBytes()), params.GetSeed())
+		}
+		c.mu.Unlock()
+		chunker, err := cdc.NewFastCDC(opt)
+		return chunker, err
+	case rpb.ChunkingFunction_REP_MAX_CDC:
+		opt := cdc.DefaultRepMaxCDCOptions()
+		c.mu.Lock()
+		if params := c.capabilities.GetCacheCapabilities().GetRepMaxCdcParams(); params != nil {
+			opt = cdc.RepMaxCDCOptionsFromMinSize(int(params.GetMinChunkSizeBytes()), int(params.GetHorizonSizeBytes()))
+		}
+		c.mu.Unlock()
+		chunker, err := cdc.NewRepMaxCDC(opt)
+		return chunker, err
+	default:
+		return nil, fmt.Errorf("invalid chunking function: %v", fn)
+	}
 }
