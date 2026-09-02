@@ -10,6 +10,10 @@ import (
 	"runtime"
 	"testing"
 	"time"
+
+	"github.com/google/go-cmp/cmp"
+
+	pb "go.chromium.org/build/siso/hashfs/proto"
 )
 
 func TestHashFS_UpdateBuildLabelMask_LRU_Eviction(t *testing.T) {
@@ -45,8 +49,8 @@ func TestHashFS_UpdateBuildLabelMask_LRU_Eviction(t *testing.T) {
 		return hfs.fileBuildLabels[fname]
 	}
 
-	// 1. Fill the dictionary to its maximum capacity (64 items)
-	for i := 1; i <= 64; i++ {
+	// 1. Fill the dictionary to its maximum dynamic capacity (63 items)
+	for i := 1; i <= 63; i++ {
 		labelName := fmt.Sprintf("label-%d", i)
 		hfs.UpdateBuildLabelMask(ctx, "", labelName, []string{"shared_file.txt", fmt.Sprintf("file-%d.txt", i)})
 		// Add a tiny sleep to ensure LastBuildTimestamp strictly orders the labels for LRU.
@@ -55,8 +59,8 @@ func TestHashFS_UpdateBuildLabelMask_LRU_Eviction(t *testing.T) {
 
 	// Verify capacity
 	hfs.ledgerMu.RLock()
-	if len(hfs.buildLabelDictionary) != 64 {
-		t.Fatalf("Got %d items in build label dictionary, want 64", len(hfs.buildLabelDictionary))
+	if len(hfs.buildLabelDictionary) != 63 {
+		t.Fatalf("Got %d items in build label dictionary, want 63", len(hfs.buildLabelDictionary))
 	}
 	hfs.ledgerMu.RUnlock()
 
@@ -66,14 +70,15 @@ func TestHashFS_UpdateBuildLabelMask_LRU_Eviction(t *testing.T) {
 		t.Fatalf("Expected label-1 to exist before eviction")
 	}
 
-	// Check that shared_file.txt has bits from all 64 labels
+	// Check that shared_file.txt has bits from all 63 dynamic labels (bits 0..62)
 	mask := getFileMask("shared_file.txt")
-	if mask != ^uint64(0) {
-		t.Fatalf("Got shared_file.txt mask %x, want all 64 bits set", mask)
+	wantMask := (uint64(1) << maxDynamicBuildLabels) - 1
+	if mask != wantMask {
+		t.Fatalf("Got shared_file.txt mask %x, want %x", mask, wantMask)
 	}
 
-	// 2. Add the 65th label, which should trigger eviction of "label-1"
-	hfs.UpdateBuildLabelMask(ctx, "", "label-65", []string{"shared_file.txt", "file-65.txt"})
+	// 2. Add the 64th label, which should trigger eviction of "label-1"
+	hfs.UpdateBuildLabelMask(ctx, "", "label-64", []string{"shared_file.txt", "file-64.txt"})
 
 	// Verify "label-1" is evicted
 	_, ok = getBitID("label-1")
@@ -81,26 +86,34 @@ func TestHashFS_UpdateBuildLabelMask_LRU_Eviction(t *testing.T) {
 		t.Errorf("Expected label-1 to be evicted (LRU)")
 	}
 
-	// Verify "label-65" got assigned the oldestID
-	newID, ok := getBitID("label-65")
+	// Verify "label-64" got assigned the oldestID
+	newID, ok := getBitID("label-64")
 	if !ok {
-		t.Fatalf("Expected label-65 to exist after eviction")
+		t.Fatalf("Expected label-64 to exist after eviction")
 	}
 	if newID != oldestID {
-		t.Errorf("Got label-65 ID %d, want oldest ID %d", newID, oldestID)
+		t.Errorf("Got label-64 ID %d, want oldest ID %d", newID, oldestID)
 	}
 
-	// 3. Verify fileLabels bit scrubbing
-	// The oldest bit should be scrubbed from "file-1.txt", dropping it from fileLabels entirely
-	if getFileMask("file-1.txt") != 0 {
-		t.Errorf("Expected file-1.txt to be removed from fileLabels since its only bit was evicted")
+	// 3. Verify fileLabels bit scrubbing and tombstone tagging
+	// "file-1.txt" was exclusively owned by the evicted label-1. It should now be
+	// tagged with tombstoneMask (bit 63) and preserved in fileBuildLabels.
+	gotFile1Mask := getFileMask("file-1.txt")
+	if gotFile1Mask != tombstoneMask {
+		t.Errorf("Got file-1.txt mask %x; want tombstoneMask %x", gotFile1Mask, tombstoneMask)
 	}
 
-	// "shared_file.txt" should no longer have the oldest bit from label-1, but wait!
-	// label-64 was added to shared_file.txt and reused oldestID!
-	// So shared_file.txt WILL have the newID bit set because it was re-added.
-	// Let's check file-2.txt. It should still have its original bit.
-	id2, _ := getBitID("label-2")
+	// "shared_file.txt" had the oldest bit cleared and then re-added by label-64.
+	// It should retain all 63 dynamic bits.
+	if getFileMask("shared_file.txt") != wantMask {
+		t.Errorf("Got shared_file.txt mask %x, want %x", getFileMask("shared_file.txt"), wantMask)
+	}
+
+	// "file-2.txt" should still have its original bit.
+	id2, ok := getBitID("label-2")
+	if !ok {
+		t.Fatalf("Expected label-2 to exist in build label dictionary")
+	}
 	if getFileMask("file-2.txt") != (1 << id2) {
 		t.Errorf("Expected file-2.txt to retain its bitmask")
 	}
@@ -214,8 +227,8 @@ func TestHashFS_UpdateBuildLabelMask_LRU_Ordering(t *testing.T) {
 		return false
 	}
 
-	// 1. Fill the dictionary to capacity (64 labels)
-	for i := 1; i <= 64; i++ {
+	// 1. Fill the dictionary to capacity (63 labels)
+	for i := 1; i <= 63; i++ {
 		labelName := fmt.Sprintf("label-%d", i)
 		hfs.UpdateBuildLabelMask(ctx, "", labelName, []string{"shared.txt"})
 		time.Sleep(1 * time.Millisecond) // strictly order timestamps
@@ -227,8 +240,8 @@ func TestHashFS_UpdateBuildLabelMask_LRU_Ordering(t *testing.T) {
 	time.Sleep(1 * time.Millisecond)
 
 	// label-2 should now be the oldest
-	// 3. Add label-65, which should evict label-2 (since label-1 was touched)
-	hfs.UpdateBuildLabelMask(ctx, "", "label-65", []string{"shared.txt"})
+	// 3. Add label-64, which should evict label-2 (since label-1 was touched)
+	hfs.UpdateBuildLabelMask(ctx, "", "label-64", []string{"shared.txt"})
 
 	// label-1 should still exist!
 	if !checkLabelExists("label-1") {
@@ -238,5 +251,121 @@ func TestHashFS_UpdateBuildLabelMask_LRU_Ordering(t *testing.T) {
 	// label-2 should be evicted!
 	if checkLabelExists("label-2") {
 		t.Errorf("Expected label-2 to be evicted (LRU)")
+	}
+}
+
+func TestHashFS_ActiveBuildLabels(t *testing.T) {
+	ctx := t.Context()
+	hfs, err := New(ctx, Option{})
+	if err != nil {
+		t.Fatalf("Failed to create HashFS: %v", err)
+	}
+	defer hfs.Close(ctx)
+
+	// Add 3 labels
+	hfs.UpdateBuildLabelMask(ctx, "", "label-c", []string{"c.txt"})
+	hfs.UpdateBuildLabelMask(ctx, "", "label-a", []string{"a.txt"})
+	hfs.UpdateBuildLabelMask(ctx, "", "label-b", []string{"b.txt"})
+
+	labels := hfs.ActiveBuildLabels()
+	want := []string{"label-a", "label-b", "label-c"}
+	if diff := cmp.Diff(want, labels); diff != "" {
+		t.Errorf("ActiveBuildLabels diff (-want +got):\n%s", diff)
+	}
+
+	// Add an entry with tombstoneBitID (63) directly to buildLabelDictionary,
+	// verifying ActiveBuildLabels() ignores dictionary entries >= maxDynamicBuildLabels.
+	hfs.ledgerMu.Lock()
+	hfs.buildLabelDictionary[tombstoneBitID] = &pb.BuildLabelMetadata{
+		BuildLabel:         "tombstone-sentinel",
+		LastBuildTimestamp: time.Now().UnixNano(),
+	}
+	hfs.ledgerMu.Unlock()
+
+	labels = hfs.ActiveBuildLabels()
+	if diff := cmp.Diff(want, labels); diff != "" {
+		t.Errorf("ActiveBuildLabels with tombstone diff (-want +got):\n%s", diff)
+	}
+}
+
+func TestHashFS_UpdateBuildLabelMask_RebuildTombstonedFile(t *testing.T) {
+	ctx := t.Context()
+	hfs, err := New(ctx, Option{})
+	if err != nil {
+		t.Fatalf("Failed to create HashFS: %v", err)
+	}
+	defer hfs.Close(ctx)
+
+	dir := t.TempDir()
+	filePath := filepath.Join(dir, "rebuilt_file.txt")
+	slashPath := filepath.ToSlash(filePath)
+
+	// 1. Mark a file as tombstoned
+	hfs.ledgerMu.Lock()
+	hfs.fileBuildLabels[slashPath] = tombstoneMask
+	hfs.ledgerMu.Unlock()
+
+	// 2. Rebuild the file with an active build label
+	hfs.UpdateBuildLabelMask(ctx, dir, "active-label", []string{"rebuilt_file.txt"})
+
+	// 3. Verify tombstoneMask has been stripped and only the active label bit is present
+	var activeID uint32
+	var found bool
+	hfs.ledgerMu.RLock()
+	for id, meta := range hfs.buildLabelDictionary {
+		if meta != nil && meta.BuildLabel == "active-label" {
+			activeID = id
+			found = true
+			break
+		}
+	}
+	gotMask := hfs.fileBuildLabels[slashPath]
+	hfs.ledgerMu.RUnlock()
+
+	if !found {
+		t.Fatalf("Expected active-label to exist in build label dictionary")
+	}
+
+	wantMask := uint64(1) << activeID
+	if gotMask != wantMask {
+		t.Errorf("Got mask %x, want %x (tombstone bit should be stripped)", gotMask, wantMask)
+	}
+}
+
+func TestHashFS_UpdateBuildLabelMask_DynamicCountWithNilMetadata(t *testing.T) {
+	ctx := t.Context()
+	hfs, err := New(ctx, Option{})
+	if err != nil {
+		t.Fatalf("Failed to create HashFS: %v", err)
+	}
+	defer hfs.Close(ctx)
+
+	// Populate dynamic slots with one nil metadata entry to ensure
+	// allocateBitIDLocked handles nil metadata gracefully without panic or count skew.
+	hfs.ledgerMu.Lock()
+	for i := range uint32(10) {
+		hfs.buildLabelDictionary[i] = &pb.BuildLabelMetadata{
+			BuildLabel:         fmt.Sprintf("label-%d", i),
+			LastBuildTimestamp: time.Now().UnixNano(),
+		}
+	}
+	hfs.buildLabelDictionary[10] = nil
+	hfs.ledgerMu.Unlock()
+
+	// Allocating a new label should find an empty slot (e.g. 11) without error.
+	hfs.UpdateBuildLabelMask(ctx, "", "label-new", []string{"new_file.txt"})
+
+	hfs.ledgerMu.RLock()
+	if hfs.buildLabelDictionary[10] != nil {
+		t.Errorf("hfs.buildLabelDictionary[10] = %v, want nil", hfs.buildLabelDictionary[10])
+	}
+	newMeta := hfs.buildLabelDictionary[11]
+	hfs.ledgerMu.RUnlock()
+
+	if newMeta == nil {
+		t.Fatalf("hfs.buildLabelDictionary[11] = nil, want label-new")
+	}
+	if got, want := newMeta.BuildLabel, "label-new"; got != want {
+		t.Fatalf("hfs.buildLabelDictionary[11].BuildLabel = %q, want %q", got, want)
 	}
 }

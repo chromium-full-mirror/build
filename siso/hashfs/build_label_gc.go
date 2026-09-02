@@ -118,7 +118,7 @@ func (hfs *HashFS) computeEvictionMasks(opts BuildLabelGCOptions, activeRegexes 
 		if metadata == nil {
 			continue
 		}
-		if id >= 64 {
+		if id >= maxDynamicBuildLabels {
 			continue
 		}
 		all = append(all, MetaWithID{id, metadata})
@@ -170,6 +170,10 @@ func (hfs *HashFS) computeEvictionMasks(opts BuildLabelGCOptions, activeRegexes 
 		}
 	}
 	sort.Strings(evictedBuildLabels)
+
+	// Always include the tombstone sentinel bit in evictMask so that any
+	// tombstoned files from dynamic label overflow are swept during GC.
+	evictMask |= tombstoneMask
 
 	for absPath, fileMask := range hfs.fileBuildLabels {
 		if fileMask == 0 {
@@ -250,9 +254,10 @@ func (hfs *HashFS) updateLedger(opts BuildLabelGCOptions, evictMask uint64, succ
 	}
 
 	// Reclaim dictionary slots for evicted labels that have no surviving files.
+	// Only dynamic IDs (0..62) are stored in buildLabelDictionary.
 	actuallyEvictedMask := evictMask &^ survivingMask
 	for id := range hfs.buildLabelDictionary {
-		if id < 64 && (uint64(1)<<id)&actuallyEvictedMask != 0 {
+		if id < maxDynamicBuildLabels && (uint64(1)<<id)&actuallyEvictedMask != 0 {
 			delete(hfs.buildLabelDictionary, id)
 		}
 	}

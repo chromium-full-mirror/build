@@ -6,6 +6,7 @@ package hashfs
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -240,6 +241,166 @@ func TestGarbageCollectBuildLabels(t *testing.T) {
 	}
 }
 
+func TestGarbageCollectBuildLabels_TombstoneBit(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+
+	dir := t.TempDir()
+	dir, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	hfs := &HashFS{
+		buildLabelDictionary: make(map[uint32]*pb.BuildLabelMetadata),
+		fileBuildLabels:      make(map[string]uint64),
+	}
+
+	now := time.Now().UnixNano()
+	hfs.buildLabelDictionary[0] = &pb.BuildLabelMetadata{BuildLabel: "chromeos", LastBuildTimestamp: now - time.Hour.Nanoseconds()}
+	hfs.buildLabelDictionary[1] = &pb.BuildLabelMetadata{BuildLabel: "android", LastBuildTimestamp: now - time.Second.Nanoseconds()}
+
+	tombstoneExcl := filepath.Join(dir, "tombstone_exclusive.txt")
+	tombstoneShared := filepath.Join(dir, "tombstone_shared.txt")
+	androidExcl := filepath.Join(dir, "android_exclusive.txt")
+
+	os.WriteFile(tombstoneExcl, []byte("tombstone_data"), 0644)
+	os.WriteFile(tombstoneShared, []byte("shared_data"), 0644)
+	os.WriteFile(androidExcl, []byte("android_data"), 0644)
+
+	// File exclusively tombstoned (bit 63)
+	hfs.fileBuildLabels[filepath.ToSlash(tombstoneExcl)] = tombstoneMask
+	// File shared between tombstone and active label 1 (android)
+	hfs.fileBuildLabels[filepath.ToSlash(tombstoneShared)] = tombstoneMask | (1 << 1)
+	// File exclusively owned by active label 1
+	hfs.fileBuildLabels[filepath.ToSlash(androidExcl)] = 1 << 1
+
+	// Strategy: Keep all active labels (android, chromeos)
+	opts := BuildLabelGCOptions{
+		Strategy: BuildLabelGCSweepStrategy{KeepLabels: []string{"android", "chromeos"}},
+		DryRun:   false,
+	}
+
+	gotResult, gotErr := hfs.GarbageCollectBuildLabels(ctx, opts)
+	if gotErr != nil {
+		t.Fatalf("GarbageCollectBuildLabels failed: %v", gotErr)
+	}
+
+	// Only tombstoneExcl should be deleted
+	if gotResult.TotalFilesDeleted != 1 {
+		t.Errorf("TotalFilesDeleted=%d; want 1", gotResult.TotalFilesDeleted)
+	}
+	if gotResult.TotalBytesReclaimed != int64(len("tombstone_data")) {
+		t.Errorf("TotalBytesReclaimed=%d; want %d", gotResult.TotalBytesReclaimed, len("tombstone_data"))
+	}
+	// EvictedBuildLabels should be empty since no dynamic labels were evicted
+	if len(gotResult.EvictedBuildLabels) != 0 {
+		t.Errorf("EvictedBuildLabels=%v; want empty", gotResult.EvictedBuildLabels)
+	}
+
+	// Check physical file status
+	checkFile(t, tombstoneExcl, "tombstoneExcl", true)
+	checkFile(t, tombstoneShared, "tombstoneShared", false)
+	checkFile(t, androidExcl, "androidExcl", false)
+
+	// Check ledger status
+	checkLedger(t, hfs, filepath.ToSlash(tombstoneExcl), "tombstoneExcl", true)
+	checkLedger(t, hfs, filepath.ToSlash(tombstoneShared), "tombstoneShared", false)
+	checkLedger(t, hfs, filepath.ToSlash(androidExcl), "androidExcl", false)
+
+	// In the ledger, tombstoneShared should have had tombstoneMask stripped, retaining bit 1
+	if mask := hfs.fileBuildLabels[filepath.ToSlash(tombstoneShared)]; mask != (1 << 1) {
+		t.Errorf("tombstoneShared mask=%b; want %b", mask, uint64(1<<1))
+	}
+
+	// Active dictionary entries must remain intact
+	if _, ok := hfs.buildLabelDictionary[0]; !ok {
+		t.Errorf("label 0 (chromeos) was unexpectedly deleted from dictionary")
+	}
+	if _, ok := hfs.buildLabelDictionary[1]; !ok {
+		t.Errorf("label 1 (android) was unexpectedly deleted from dictionary")
+	}
+}
+
+func TestGarbageCollectBuildLabels_OverflowLRU(t *testing.T) {
+	ctx := t.Context()
+	dir := t.TempDir()
+	dir, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	opt := Option{
+		BuildLabel:    "test-label",
+		StateFile:     filepath.Join(dir, "test_hashfs.state"),
+		CompressLevel: 0,
+	}
+	hfs, err := New(ctx, opt)
+	if err != nil {
+		t.Fatalf("Failed to create HashFS: %v", err)
+	}
+	defer hfs.Close(ctx)
+
+	// 1. Create physical files and register 63 dynamic labels
+	file1 := filepath.Join(dir, "file-1.txt")
+	file2 := filepath.Join(dir, "file-2.txt")
+	sharedFile := filepath.Join(dir, "shared.txt")
+
+	os.WriteFile(file1, []byte("data1"), 0644)
+	os.WriteFile(file2, []byte("data2"), 0644)
+	os.WriteFile(sharedFile, []byte("datashared"), 0644)
+
+	for i := 1; i <= 63; i++ {
+		labelName := fmt.Sprintf("label-%d", i)
+		files := []string{sharedFile}
+		if i == 1 {
+			files = append(files, file1)
+		}
+		if i == 2 {
+			files = append(files, file2)
+		}
+		hfs.UpdateBuildLabelMask(ctx, dir, labelName, files)
+		time.Sleep(1 * time.Millisecond) // strictly order timestamps for LRU
+	}
+
+	// 2. Add the 64th label to trigger LRU eviction of label-1
+	file64 := filepath.Join(dir, "file-64.txt")
+	os.WriteFile(file64, []byte("data64"), 0644)
+	hfs.UpdateBuildLabelMask(ctx, dir, "label-64", []string{sharedFile, file64})
+
+	// Verify file-1.txt has been tagged with tombstoneMask
+	hfs.ledgerMu.RLock()
+	mask1 := hfs.fileBuildLabels[filepath.ToSlash(file1)]
+	hfs.ledgerMu.RUnlock()
+	if mask1 != tombstoneMask {
+		t.Fatalf("file-1.txt mask = %x; want tombstoneMask %x", mask1, tombstoneMask)
+	}
+
+	// 3. Run GarbageCollectBuildLabels retaining all 63 active labels
+	opts := BuildLabelGCOptions{
+		Strategy: BuildLabelGCSweepStrategy{RetainLastX: 63},
+		DryRun:   false,
+	}
+	result, err := hfs.GarbageCollectBuildLabels(ctx, opts)
+	if err != nil {
+		t.Fatalf("GarbageCollectBuildLabels failed: %v", err)
+	}
+
+	// file-1.txt should have been swept and deleted
+	if result.TotalFilesDeleted != 1 {
+		t.Errorf("TotalFilesDeleted=%d; want 1", result.TotalFilesDeleted)
+	}
+	checkFile(t, file1, "file1", true)
+	checkFile(t, file2, "file2", false)
+	checkFile(t, sharedFile, "sharedFile", false)
+	checkFile(t, file64, "file64", false)
+
+	checkLedger(t, hfs, filepath.ToSlash(file1), "file1", true)
+	checkLedger(t, hfs, filepath.ToSlash(file2), "file2", false)
+	checkLedger(t, hfs, filepath.ToSlash(sharedFile), "sharedFile", false)
+	checkLedger(t, hfs, filepath.ToSlash(file64), "file64", false)
+}
+
 func TestGarbageCollectBuildLabels_ContextCancel(t *testing.T) {
 	t.Parallel()
 	hfs, fileA, _, _, _ := setupGCFileSystem(t)
@@ -369,6 +530,64 @@ func TestUpdateLedger(t *testing.T) {
 	// Clean state should be marked false to ensure persistence on Close.
 	if hfs.clean.Load() {
 		t.Errorf("hfs.clean is true; want false")
+	}
+}
+
+func TestUpdateLedger_TombstoneHandling(t *testing.T) {
+	t.Parallel()
+
+	hfs := &HashFS{
+		buildLabelDictionary: map[uint32]*pb.BuildLabelMetadata{
+			0: {BuildLabel: "label-0"},
+			1: {BuildLabel: "label-1"},
+		},
+		fileBuildLabels: map[string]uint64{
+			"/path/to/deleted_tombstone": tombstoneMask,
+			"/path/to/aborted_tombstone": tombstoneMask,
+			"/path/to/shared_tombstone":  tombstoneMask | (1 << 1),
+			"/path/to/active_file":       1 << 0,
+		},
+	}
+	hfs.clean.Store(true)
+
+	opts := BuildLabelGCOptions{DryRun: false}
+	evictMask := tombstoneMask
+	successfullyDeleted := []string{"/path/to/deleted_tombstone"}
+
+	hfs.updateLedger(opts, evictMask, successfullyDeleted)
+
+	// Successfully deleted tombstoned file is removed.
+	if _, ok := hfs.fileBuildLabels["/path/to/deleted_tombstone"]; ok {
+		t.Errorf("deleted_tombstone remained in fileBuildLabels")
+	}
+
+	// Aborted tombstoned file retains tombstoneMask.
+	if gotMask, ok := hfs.fileBuildLabels["/path/to/aborted_tombstone"]; !ok {
+		t.Errorf("aborted_tombstone was unexpectedly purged from fileBuildLabels")
+	} else if gotMask != tombstoneMask {
+		t.Errorf("aborted_tombstone mask = %x; want %x", gotMask, tombstoneMask)
+	}
+
+	// Shared file has tombstoneMask stripped, retaining bit 1.
+	if gotMask, ok := hfs.fileBuildLabels["/path/to/shared_tombstone"]; !ok {
+		t.Errorf("shared_tombstone was unexpectedly deleted from fileBuildLabels")
+	} else if gotMask != (1 << 1) {
+		t.Errorf("shared_tombstone mask = %b; want %b", gotMask, uint64(1<<1))
+	}
+
+	// Unrelated active file is unchanged.
+	if gotMask, ok := hfs.fileBuildLabels["/path/to/active_file"]; !ok {
+		t.Errorf("active_file was unexpectedly deleted from fileBuildLabels")
+	} else if gotMask != (1 << 0) {
+		t.Errorf("active_file mask = %b; want %b", gotMask, uint64(1<<0))
+	}
+
+	// Active dictionary labels (0 and 1) must remain untouched.
+	if _, ok := hfs.buildLabelDictionary[0]; !ok {
+		t.Errorf("label 0 was unexpectedly removed from buildLabelDictionary")
+	}
+	if _, ok := hfs.buildLabelDictionary[1]; !ok {
+		t.Errorf("label 1 was unexpectedly removed from buildLabelDictionary")
 	}
 }
 
