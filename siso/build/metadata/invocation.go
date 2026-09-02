@@ -18,6 +18,8 @@ type InvocationInfo struct {
 	BuildID string `json:"build_id"`
 	// Targets of the build.
 	Targets []string `json:"targets,omitempty"`
+	// CommandLineArgs are the arguments the siso binary was invoked with.
+	CommandLineArgs []string `json:"command_line_args,omitempty"`
 	// MetricsLabels are arbitrary labels for the build.
 	// These can include RBE metrics labels, as well as other user-defined labels.
 	MetricsLabels map[string]string `json:"metrics_labels,omitempty"`

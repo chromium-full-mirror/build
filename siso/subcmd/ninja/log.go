@@ -302,11 +302,17 @@ func (c *Command) writeInvocationInfo(ctx context.Context, metricsLabels map[str
 	}
 	rotateFiles(ctx, fname)
 
+	var cmdArgs []string
+	if len(os.Args) > 1 {
+		cmdArgs = os.Args[1:]
+	}
+
 	j, err := json.Marshal(metadata.InvocationInfo{
 		SisoVersion:        c.version,
 		StartTime:          c.started,
 		BuildID:            c.buildID,
 		Targets:            targets,
+		CommandLineArgs:    cmdArgs,
 		MetricsLabels:      metricsLabels,
 		EnabledExperiments: build.EnabledExperiments(),
 		Machine:            metadata.GatherMachineInfo(ctx),
