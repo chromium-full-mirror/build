@@ -100,6 +100,7 @@ func installNotifyFilter() (seccomp.ScmpFd, error) {
 		"chdir",
 		"creat",
 		"execve",
+		"fchdir",
 		"fstat",
 		"fstatfs",
 		"getdents64",
@@ -109,6 +110,7 @@ func installNotifyFilter() (seccomp.ScmpFd, error) {
 		"open",
 		"openat",
 		"rename",
+		"rmdir",
 		"statfs",
 		"statx",
 
@@ -333,25 +335,45 @@ const (
 
 type supervisor struct {
 	fops map[string]fop
+	cwds map[uint32]string
 }
 
-func (s *supervisor) absname(pid uint32, atfd fileDesc, fname string) string {
-	if filepath.IsAbs(fname) {
-		return fname
+func (s *supervisor) invalidateCwd() {
+	// Threads in a thread group share the current working directory.
+	// Since chdir/fchdir is rare, clearing all cached cwds ensures
+	// any thread will re-read its cwd on its next relative path operation.
+	clear(s.cwds)
+}
+
+func (s *supervisor) cwd(pid uint32) (string, error) {
+	if cwd, ok := s.cwds[pid]; ok {
+		return cwd, nil
 	}
-	// TODO: cache?
-	if atfd == AT_FDCWD {
-		cwd, err := filepath.EvalSymlinks(fmt.Sprintf("/proc/%d/cwd", pid))
-		if err != nil {
-			panic(fmt.Errorf("failed to get cwd of %d: %w", pid, err))
-		}
-		return filepath.Join(cwd, fname)
-	}
-	dir, err := filepath.EvalSymlinks(fmt.Sprintf("/proc/%d/fd/%s", pid, atfd))
+	cwd, err := os.Readlink(fmt.Sprintf("/proc/%d/cwd", pid))
 	if err != nil {
-		panic(fmt.Errorf("failed to get fd %d of %d: %w", atfd, pid, err))
+		delete(s.cwds, pid)
+		return "", fmt.Errorf("readlink cwd of %d: %w", pid, err)
 	}
-	return filepath.Join(dir, fname)
+	s.cwds[pid] = cwd
+	return cwd, nil
+}
+
+func (s *supervisor) absname(pid uint32, atfd fileDesc, fname string) (string, error) {
+	if filepath.IsAbs(fname) {
+		return fname, nil
+	}
+	if atfd == AT_FDCWD {
+		cwd, err := s.cwd(pid)
+		if err != nil {
+			return "", err
+		}
+		return filepath.Join(cwd, fname), nil
+	}
+	dir, err := os.Readlink(fmt.Sprintf("/proc/%d/fd/%d", pid, atfd))
+	if err != nil {
+		return "", fmt.Errorf("readlink fd %d of %d: %w", atfd, pid, err)
+	}
+	return filepath.Join(dir, fname), nil
 }
 
 func (s *supervisor) tapData() map[string][]string {
@@ -382,17 +404,56 @@ func (s *supervisor) tapData() map[string][]string {
 	return m
 }
 
-func (s *supervisor) Run(fd seccomp.ScmpFd) (retErr error) {
+func (s *supervisor) Run(fd seccomp.ScmpFd, done <-chan struct{}) (retErr error) {
 	defer func() {
 		if r := recover(); r != nil {
 			retErr = fmt.Errorf("panic: %v", r)
 		}
 	}()
+	pfds := []unix.PollFd{
+		{
+			Fd:     int32(fd),
+			Events: unix.POLLIN,
+		},
+	}
 	for {
+		select {
+		case <-done:
+			glog.Infof("supervisor loop done: cmd finished")
+			return nil
+		default:
+		}
+
+		n, err := unix.Poll(pfds, 50)
+		if err != nil {
+			if errors.Is(err, unix.EINTR) {
+				continue
+			}
+			return fmt.Errorf("poll: %w", err)
+		}
+
+		if n == 0 {
+			continue
+		}
+
+		fdHup := pfds[0].Revents&(unix.POLLHUP|unix.POLLERR|unix.POLLNVAL) != 0
+		hasNotif := pfds[0].Revents&unix.POLLIN != 0
+
+		if !hasNotif {
+			if fdHup {
+				glog.Infof("supervisor loop done: fdHup=%t", fdHup)
+				return nil
+			}
+			continue
+		}
+
 		req, err := seccomp.NotifReceive(fd)
 		if err != nil {
 			if errors.Is(err, unix.EINTR) || errors.Is(err, unix.ENOENT) {
 				glog.Warningf("receive: %v (retrying)", err)
+				if fdHup {
+					return nil
+				}
 				continue
 			}
 			return fmt.Errorf("receive: %w", err)
@@ -435,14 +496,39 @@ func (s *supervisor) handleNotif(fd seccomp.ScmpFd, req *seccomp.ScmpNotifReq) (
 			}
 			retErr = nil
 		case error:
-			// fmt.Printf("panic error %v\n", r)
-			resp = nil
-			retErr = r
+			if errors.Is(r, ErrNotifStale) {
+				delete(s.cwds, req.Pid)
+				resp = nil
+				retErr = ErrNotifStale
+				return
+			}
+			if err := seccomp.NotifIDValid(fd, req.ID); err != nil && errors.Is(err, unix.ENOENT) {
+				delete(s.cwds, req.Pid)
+				resp = nil
+				retErr = ErrNotifStale
+				return
+			}
+			glog.Errorf("unexpected error handling notification %d: %v", req.ID, r)
+			// Target process is still alive and waiting; do not drop response.
+			resp = &seccomp.ScmpNotifResp{
+				ID:    req.ID,
+				Flags: seccomp.NotifRespFlagContinue,
+			}
+			retErr = nil
 		case nil:
 		default:
-			// fmt.Printf("panic? %v (%T)\n", r, r)
-			resp = nil
-			retErr = fmt.Errorf("panic: %v", r)
+			glog.Errorf("unexpected panic handling notification %d: %v", req.ID, r)
+			if err := seccomp.NotifIDValid(fd, req.ID); err != nil && errors.Is(err, unix.ENOENT) {
+				delete(s.cwds, req.Pid)
+				resp = nil
+				retErr = ErrNotifStale
+				return
+			}
+			resp = &seccomp.ScmpNotifResp{
+				ID:    req.ID,
+				Flags: seccomp.NotifRespFlagContinue,
+			}
+			retErr = nil
 		}
 	}()
 	strInReq := func(i int) string {
@@ -454,6 +540,9 @@ func (s *supervisor) handleNotif(fd seccomp.ScmpFd, req *seccomp.ScmpNotifReq) (
 		if err != nil {
 			if errors.Is(err, syscall.EFAULT) {
 				panic(unix.EFAULT)
+			}
+			if vErr := seccomp.NotifIDValid(fd, req.ID); vErr != nil && errors.Is(vErr, unix.ENOENT) {
+				panic(ErrNotifStale)
 			}
 			sysName, errName := req.Data.Syscall.GetName()
 			if errName != nil {
@@ -481,6 +570,17 @@ func (s *supervisor) handleNotif(fd seccomp.ScmpFd, req *seccomp.ScmpNotifReq) (
 		Val:   0,
 		Flags: seccomp.NotifRespFlagContinue,
 	}
+	absname := func(atfd fileDesc, fname string) (string, bool) {
+		abs, err := s.absname(req.Pid, atfd, fname)
+		if err != nil {
+			if vErr := seccomp.NotifIDValid(fd, req.ID); vErr != nil && errors.Is(vErr, unix.ENOENT) {
+				panic(ErrNotifStale)
+			}
+			glog.Warningf("[%s] absname(%d, %v, %q): %v", syscallName, req.Pid, atfd, fname, err)
+			return "", false
+		}
+		return abs, true
+	}
 	markAsRead := func(fname string) {
 		switch s.fops[fname] {
 		case writeOp:
@@ -498,24 +598,73 @@ func (s *supervisor) handleNotif(fd seccomp.ScmpFd, req *seccomp.ScmpNotifReq) (
 	switch syscallName {
 	case "access":
 		fname := strInReq(0)
-		markAsRead(s.absname(req.Pid, AT_FDCWD, fname))
+		if abs, ok := absname(AT_FDCWD, fname); ok {
+			markAsRead(abs)
+		}
 		printTrace(" access(%q, %s)\n", fname, os.FileMode(req.Data.Args[1]))
 	case "chdir":
 		dname := strInReq(0)
-		markAsRead(s.absname(req.Pid, AT_FDCWD, dname))
+		if abs, ok := absname(AT_FDCWD, dname); ok {
+			markAsRead(abs)
+		}
+		s.invalidateCwd()
 		printTrace(" chdir(%q)\n", dname)
+	case "fchdir":
+		atfd := fileDesc(req.Data.Args[0])
+		dir, err := os.Readlink(fmt.Sprintf("/proc/%d/fd/%d", req.Pid, atfd))
+		if err != nil {
+			if vErr := seccomp.NotifIDValid(fd, req.ID); vErr != nil && errors.Is(vErr, unix.ENOENT) {
+				panic(ErrNotifStale)
+			}
+			glog.Warningf("fchdir: readlink(%d, %v): %v", req.Pid, atfd, err)
+		} else {
+			markAsRead(dir)
+		}
+		s.invalidateCwd()
+		printTrace(" fchdir(%v)\n", atfd)
+	case "chroot":
+		dname := strInReq(0)
+		if abs, ok := absname(AT_FDCWD, dname); ok {
+			markAsRead(abs)
+		}
+		s.invalidateCwd()
+		printTrace(" chroot(%q)\n", dname)
+	case "pivot_root":
+		newroot := strInReq(0)
+		oldroot := strInReq(1)
+		if absNew, ok := absname(AT_FDCWD, newroot); ok {
+			markAsRead(absNew)
+		}
+		if absOld, ok := absname(AT_FDCWD, oldroot); ok {
+			markAsRead(absOld)
+		}
+		s.invalidateCwd()
+		printTrace(" pivot_root(%q, %q)\n", newroot, oldroot)
 	case "creat":
 		fname := strInReq(0)
-		markAsWrite(s.absname(req.Pid, AT_FDCWD, fname))
+		if abs, ok := absname(AT_FDCWD, fname); ok {
+			markAsWrite(abs)
+		}
 		printTrace(" creat(%q, %s)\n", fname, os.FileMode(req.Data.Args[1]))
 	case "execve":
 		fname := strInReq(0)
-		markAsRead(s.absname(req.Pid, AT_FDCWD, fname))
+		if abs, ok := absname(AT_FDCWD, fname); ok {
+			markAsRead(abs)
+		}
 		printTrace(" execve(%q, %v, %v)\n", fname, req.Data.Args[1], req.Data.Args[2])
+	case "execveat":
+		atfd := fileDesc(req.Data.Args[0])
+		pathname := strInReq(1)
+		if abs, ok := absname(atfd, pathname); ok {
+			markAsRead(abs)
+		}
+		printTrace(" execveat(%v, %q, %v, %v, 0x%x)\n", atfd, pathname, req.Data.Args[2], req.Data.Args[3], req.Data.Args[4])
 	case "faccessat", "faccessat2":
 		atfd := fileDesc(req.Data.Args[0])
 		pathname := strInReq(1)
-		markAsRead(s.absname(req.Pid, atfd, pathname))
+		if abs, ok := absname(atfd, pathname); ok {
+			markAsRead(abs)
+		}
 		printTrace(" %s(%v, %q, %v, 0x%x)\n", syscallName, atfd, pathname, os.FileMode(req.Data.Args[2]), req.Data.Args[3])
 	case "fstat":
 		printTrace(" fstat(%d, 0x%x)\n", fileDesc(req.Data.Args[0]), uintptr(req.Data.Args[1]))
@@ -523,79 +672,111 @@ func (s *supervisor) handleNotif(fd seccomp.ScmpFd, req *seccomp.ScmpNotifReq) (
 		printTrace(" fstatfs(%d, 0x%x)\n", fileDesc(req.Data.Args[0]), uintptr(req.Data.Args[1]))
 	case "mkdir":
 		dname := strInReq(0)
-		markAsWrite(s.absname(req.Pid, AT_FDCWD, dname))
+		if abs, ok := absname(AT_FDCWD, dname); ok {
+			markAsWrite(abs)
+		}
 		printTrace(" mkdir(%q , 0o%o)\n", dname, req.Data.Args[1])
 	case "mkdirat":
 		atfd := fileDesc(req.Data.Args[0])
 		fname := strInReq(1)
-		markAsWrite(s.absname(req.Pid, atfd, fname))
+		if abs, ok := absname(atfd, fname); ok {
+			markAsWrite(abs)
+		}
 		printTrace(" mkdirat(%d, %q, 0o%o)\n", atfd, fname, req.Data.Args[2])
+	case "rmdir":
+		dname := strInReq(0)
+		if abs, ok := absname(AT_FDCWD, dname); ok {
+			markAsDelete(abs)
+		}
+		printTrace(" rmdir(%q)\n", dname)
 	case "newfstatat":
 		atfd := fileDesc(req.Data.Args[0])
 		fname := strInReq(1)
-		markAsRead(s.absname(req.Pid, atfd, fname))
+		if abs, ok := absname(atfd, fname); ok {
+			markAsRead(abs)
+		}
 		printTrace(" newfstatat(%v, %q, 0x%x, 0x%x)\n", atfd, fname, req.Data.Args[2], req.Data.Args[3])
 	case "open":
 		pathname := strInReq(0)
-		absname := s.absname(req.Pid, AT_FDCWD, pathname)
-		if (req.Data.Args[1] & uint64(os.O_WRONLY|os.O_RDWR|os.O_CREATE|os.O_APPEND|os.O_TRUNC)) != 0 {
-			markAsWrite(absname)
-		} else {
-			markAsRead(absname)
+		if absname, ok := absname(AT_FDCWD, pathname); ok {
+			if (req.Data.Args[1] & uint64(os.O_WRONLY|os.O_RDWR|os.O_CREATE|os.O_APPEND|os.O_TRUNC)) != 0 {
+				markAsWrite(absname)
+			} else {
+				markAsRead(absname)
+			}
 		}
 		printTrace(" open(%q, 0x%x, %s)\n", pathname, req.Data.Args[1], os.FileMode(req.Data.Args[2]))
 	case "openat":
 		atfd := fileDesc(req.Data.Args[0])
 		pathname := strInReq(1)
-		absname := s.absname(req.Pid, atfd, pathname)
-		if (req.Data.Args[2] & uint64(os.O_WRONLY|os.O_RDWR|os.O_CREATE|os.O_APPEND|os.O_TRUNC)) != 0 {
-			markAsWrite(absname)
-		} else {
-			markAsRead(absname)
+		if absname, ok := absname(atfd, pathname); ok {
+			if (req.Data.Args[2] & uint64(os.O_WRONLY|os.O_RDWR|os.O_CREATE|os.O_APPEND|os.O_TRUNC)) != 0 {
+				markAsWrite(absname)
+			} else {
+				markAsRead(absname)
+			}
 		}
 		printTrace(" openat(%v, %q, 0x%x, %s)\n", atfd, pathname, req.Data.Args[2], os.FileMode(req.Data.Args[3]))
-		// TODO: use /proc/$req.Pid/cwd's link for AT_FDCWD (cached per PID?)
-
 	case "readlinkat":
 		atfd := fileDesc(req.Data.Args[0])
 		pathname := strInReq(1)
-		markAsRead(s.absname(req.Pid, atfd, pathname))
+		if abs, ok := absname(atfd, pathname); ok {
+			markAsRead(abs)
+		}
 		printTrace(" readlinkat(%s, %q, 0x%x, %d)\n", atfd, pathname, req.Data.Args[2], req.Data.Args[3])
 	case "rename":
 		oldpath := strInReq(0)
 		newpath := strInReq(1)
-		markAsDelete(s.absname(req.Pid, AT_FDCWD, oldpath))
-		markAsWrite(s.absname(req.Pid, AT_FDCWD, newpath))
+		if oldabs, ok := absname(AT_FDCWD, oldpath); ok {
+			markAsDelete(oldabs)
+		}
+		if newabs, ok := absname(AT_FDCWD, newpath); ok {
+			markAsWrite(newabs)
+		}
 		printTrace(" rename(%q, %q)\n", oldpath, newpath)
-	case "renameat":
+	case "renameat", "renameat2":
 		oldatfd := fileDesc(req.Data.Args[0])
 		oldpath := strInReq(1)
 		newatfd := fileDesc(req.Data.Args[2])
 		newpath := strInReq(3)
-		markAsDelete(s.absname(req.Pid, oldatfd, oldpath))
-		markAsWrite(s.absname(req.Pid, newatfd, newpath))
-		printTrace(" renameat(%v, %q, %v, %q)\n", oldatfd, oldpath, newatfd, newpath)
+		if oldabs, ok := absname(oldatfd, oldpath); ok {
+			markAsDelete(oldabs)
+		}
+		if newabs, ok := absname(newatfd, newpath); ok {
+			markAsWrite(newabs)
+		}
+		printTrace(" %s(%v, %q, %v, %q)\n", syscallName, oldatfd, oldpath, newatfd, newpath)
 	case "stat":
 		pathname := strInReq(0)
-		markAsRead(s.absname(req.Pid, AT_FDCWD, pathname))
+		if abs, ok := absname(AT_FDCWD, pathname); ok {
+			markAsRead(abs)
+		}
 		printTrace(" stat(%q, 0x%x)\n", pathname, req.Data.Args[1])
 	case "statfs":
 		pathname := strInReq(0)
-		markAsRead(s.absname(req.Pid, AT_FDCWD, pathname))
+		if abs, ok := absname(AT_FDCWD, pathname); ok {
+			markAsRead(abs)
+		}
 		printTrace(" statfs(%q, 0x%x)\n", pathname, req.Data.Args[1])
 	case "statx":
 		atfd := fileDesc(req.Data.Args[0])
 		pathname := strInReq(1)
-		markAsRead(s.absname(req.Pid, atfd, pathname))
+		if abs, ok := absname(atfd, pathname); ok {
+			markAsRead(abs)
+		}
 		printTrace(" statx(%v, %q, 0x%x, 0x%x, 0x%x)\n", atfd, pathname, req.Data.Args[2], req.Data.Args[3], req.Data.Args[4])
 	case "unlink":
 		pathname := strInReq(0)
-		markAsDelete(s.absname(req.Pid, AT_FDCWD, pathname))
+		if abs, ok := absname(AT_FDCWD, pathname); ok {
+			markAsDelete(abs)
+		}
 		printTrace(" unlink(%q)\n", pathname)
 	case "unlinkat":
 		atfd := fileDesc(req.Data.Args[0])
 		pathname := strInReq(1)
-		markAsDelete(s.absname(req.Pid, atfd, pathname))
+		if abs, ok := absname(atfd, pathname); ok {
+			markAsDelete(abs)
+		}
 		printTrace(" unlinkat(%v, %q)\n", atfd, pathname)
 	case "utimensat":
 		atfd := fileDesc(req.Data.Args[0])
@@ -603,13 +784,17 @@ func (s *supervisor) handleNotif(fd seccomp.ScmpFd, req *seccomp.ScmpNotifReq) (
 		if req.Data.Args[1] != 0 {
 			pathname = strInReq(1)
 		}
-		markAsWrite(s.absname(req.Pid, atfd, pathname))
+		if abs, ok := absname(atfd, pathname); ok {
+			markAsWrite(abs)
+		}
 		printTrace(" utimensat(%v, %q, 0x%x, 0x%x)\n", atfd, pathname, req.Data.Args[2], req.Data.Args[3])
 	case "getdents64":
 		printTrace(" getdents64(%d, 0x%x, %d)\n", int32(req.Data.Args[0]), req.Data.Args[1], req.Data.Args[2])
 	case "getxattr":
 		pathname := strInReq(0)
-		markAsRead(s.absname(req.Pid, AT_FDCWD, pathname))
+		if abs, ok := absname(AT_FDCWD, pathname); ok {
+			markAsRead(abs)
+		}
 		name := strInReq(1)
 		printTrace(" getxattr(%q, %q, 0x%x, %d)\n", pathname, name, req.Data.Args[2], req.Data.Args[3])
 	default:
@@ -649,16 +834,20 @@ func main() {
 	}
 	glog.Infof("notify fd=%d\n", fd)
 
-	s := &supervisor{fops: make(map[string]fop)}
+	done := make(chan struct{})
+	s := &supervisor{
+		fops: make(map[string]fop),
+		cwds: make(map[uint32]string),
+	}
 	var eg errgroup.Group
 	var cmdErr error
 	eg.Go(func() error {
 		defer unix.Close(int(fd))
-		return s.Run(fd)
+		return s.Run(fd, done)
 	})
 	eg.Go(func() error {
+		defer close(done)
 		cmdErr = cmd.Wait()
-		unix.Close(int(fd))
 		return cmdErr
 	})
 	err = eg.Wait()
@@ -682,6 +871,9 @@ func main() {
 				os.Exit(code)
 			}
 		}
+		os.Exit(1)
+	}
+	if err != nil {
 		os.Exit(1)
 	}
 }
