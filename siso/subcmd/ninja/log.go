@@ -307,7 +307,7 @@ func (c *Command) writeInvocationInfo(ctx context.Context, metricsLabels map[str
 		cmdArgs = os.Args[1:]
 	}
 
-	j, err := json.Marshal(metadata.InvocationInfo{
+	info := metadata.InvocationInfo{
 		SisoVersion:        c.version,
 		StartTime:          c.started,
 		BuildID:            c.buildID,
@@ -316,7 +316,12 @@ func (c *Command) writeInvocationInfo(ctx context.Context, metricsLabels map[str
 		MetricsLabels:      metricsLabels,
 		EnabledExperiments: build.EnabledExperiments(),
 		Machine:            metadata.GatherMachineInfo(ctx),
-	})
+	}
+	if err := c.reopt.CheckValid(); err != nil {
+		info.REAPIInstance = c.reopt.Instance
+	}
+
+	j, err := json.Marshal(info)
 	if err != nil {
 		return err
 	}

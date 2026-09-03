@@ -27,4 +27,6 @@ type InvocationInfo struct {
 	EnabledExperiments []string `json:"enabled_experiments,omitempty"`
 	// Machine reports machine information.
 	Machine MachineInfo `json:"machine"`
+	// REAPIInstance is the instance name, if REAPI was used.
+	REAPIInstance string `json:"reapi_instance,omitempty"` // name chosen to be consistent with -reapi_instance flag
 }
