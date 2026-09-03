@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"iter"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -583,6 +584,18 @@ func (s *Step) init(ctx context.Context, b *Builder, stepManifest *stepManifest)
 }
 
 func newCmd(ctx context.Context, b *Builder, stepDef StepDef, stepManifest *stepManifest) *execute.Cmd {
+	// we need to use stepDef.Outputs instead of stepManifest.outputs
+	// to reflect outputs specified by siso rule.
+	// reusing stepManifest.outputs is optimization.
+	outputs := stepManifest.outputs
+	if stepDef.RuleName() != "" {
+		// siso rule applied. update outputs by rule
+		newouts := stepDef.Outputs(ctx)
+		if !slices.Equal(outputs, newouts) {
+			outputs = newouts
+		}
+	}
+
 	// add build.ninja as outputs of gn step.
 	// gn uses
 	//
@@ -597,8 +610,8 @@ func newCmd(ctx context.Context, b *Builder, stepDef StepDef, stepManifest *step
 	// so add it as output to make timestamp of build.ninja
 	// correctly managed by Siso.
 	// This workaround is needed to make second build as null build.
-	if stepDef.ActionName() == "gn" && len(stepManifest.outputs) == 1 && filepath.Base(string(stepManifest.outputs[0])) == "build.ninja.stamp" {
-		stepManifest.outputs = append(stepManifest.outputs, sisopath.New(b.path.MaybeFromRelative(ctx, "build.ninja")))
+	if stepDef.ActionName() == "gn" && len(outputs) == 1 && filepath.Base(string(outputs[0])) == "build.ninja.stamp" {
+		outputs = append(outputs, sisopath.New(b.path.MaybeFromRelative(ctx, "build.ninja")))
 	}
 
 	cmd := &execute.Cmd{
@@ -613,8 +626,8 @@ func newCmd(ctx context.Context, b *Builder, stepDef StepDef, stepManifest *step
 		WorkDir:                 sisopath.Path(b.path.BaseDir),
 		Inputs:                  stepInputs(ctx, stepDef),
 		ToolInputs:              stepDef.ToolInputs(ctx),
-		Outputs:                 stepFileOutputs(stepManifest.outputs),
-		OutputDirs:              stepDirOutputs(stepManifest.outputs),
+		Outputs:                 stepFileOutputs(outputs),
+		OutputDirs:              stepDirOutputs(outputs),
 		EdgeHash:                stepManifest.edgeHash,
 		UseSystemInput:          stepDef.Binding("use_system_input") != "",
 		Deps:                    stepDef.Binding("deps"),
