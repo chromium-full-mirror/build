@@ -49,6 +49,12 @@ func completionStatus(stats build.Stats) *pb.Stat {
 			Count: int64(stats.CacheHit),
 		})
 	}
+	if stats.TwoPhaseCacheHit > 0 {
+		s.CountsByValue = append(s.CountsByValue, &pb.Stat_Value{
+			Name:  "STATUS_TWO_PHASE_CACHE_HIT",
+			Count: int64(stats.TwoPhaseCacheHit),
+		})
+	}
 	if stats.CacheHitEarly > 0 {
 		s.CountsByValue = append(s.CountsByValue, &pb.Stat_Value{
 			Name:  "STATUS_CACHE_HIT_EARLY",

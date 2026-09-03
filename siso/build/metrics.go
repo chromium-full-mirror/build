@@ -235,7 +235,8 @@ type StepMetric struct {
 	// Cache lookup key for two phase caching.
 	TwoPhaseCachingKey string `json:"two_phase_caching_key,omitempty"`
 	// Number of actions checked for two phase caching.
-	TwoPhaseCachingActions int `json:"two_phase_caching_actions,omitzero"`
+	TwoPhaseCachingActions int  `json:"two_phase_caching_actions,omitzero"`
+	TwoPhaseCacheHit       bool `json:"two_phase_cache_hit,omitzero"`
 
 	// RunTime is the total duration of the action execution, including
 	// overhead such as uploading / downloading files. Semaphore waiting time

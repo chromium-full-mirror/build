@@ -140,6 +140,7 @@ func (rt reapiTwoPhaseCaching) Check(ctx context.Context, lookupKey string, step
 			clog.Infof(ctx, "cache hit in two phase caching")
 		}
 		step.metrics.TwoPhaseCachingActions = nactions
+		step.metrics.TwoPhaseCacheHit = true
 		return nil
 	}
 	step.cmd = ocmd

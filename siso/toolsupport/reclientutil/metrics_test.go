@@ -8,21 +8,24 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
+
 	"go.chromium.org/build/siso/build"
 )
 
 func TestCompletionStatus(t *testing.T) {
 	stats := build.Stats{
-		Done:          100,
-		CacheHit:      50,
-		CacheHitEarly: 30,
-		CacheHitLate:  20,
-		RacingRemote:  25,
-		RacingLocal:   15,
-		Remote:        10,
-		LocalFallback: 2,
-		Local:         38,
-		Fail:          1,
+		Done:             100,
+		CacheHit:         50,
+		CacheHitEarly:    30,
+		CacheHitLate:     20,
+		RacingRemote:     25,
+		RacingLocal:      15,
+		Remote:           10,
+		LocalFallback:    2,
+		Local:            38,
+		Fail:             1,
+		TwoPhaseCacheHit: 10,
 	}
 
 	stat := completionStatus(stats)
@@ -36,21 +39,20 @@ func TestCompletionStatus(t *testing.T) {
 	}
 
 	expected := map[string]int64{
-		"STATUS_CACHE_HIT":        50,
-		"STATUS_CACHE_HIT_EARLY":  30,
-		"STATUS_CACHE_HIT_LATE":   20,
-		"STATUS_RACING_REMOTE":    25,
-		"STATUS_RACING_LOCAL":     15,
-		"STATUS_REMOTE_EXECUTION": 10,
-		"STATUS_LOCAL_FALLBACK":   2,
-		"STATUS_LOCAL_EXECUTION":  38,
-		"STATUS_NON_ZERO_EXIT":    1,
+		"STATUS_CACHE_HIT":           50,
+		"STATUS_TWO_PHASE_CACHE_HIT": 10,
+		"STATUS_CACHE_HIT_EARLY":     30,
+		"STATUS_CACHE_HIT_LATE":      20,
+		"STATUS_RACING_REMOTE":       25,
+		"STATUS_RACING_LOCAL":        15,
+		"STATUS_REMOTE_EXECUTION":    10,
+		"STATUS_LOCAL_FALLBACK":      2,
+		"STATUS_LOCAL_EXECUTION":     38,
+		"STATUS_NON_ZERO_EXIT":       1,
 	}
 
-	for k, want := range expected {
-		if got := counts[k]; got != want {
-			t.Errorf("count[%s] = %d; want %d", k, got, want)
-		}
+	if diff := cmp.Diff(expected, counts); diff != "" {
+		t.Errorf("completionStatus mismatch (-want +got):\n%s", diff)
 	}
 }
 
