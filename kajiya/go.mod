@@ -8,7 +8,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/hanwen/go-fuse/v2 v2.11.0
 	github.com/hashicorp/go-immutable-radix/v2 v2.1.0
-	github.com/klauspost/compress v1.19.2
+	github.com/klauspost/compress v1.20.0
 	go.chromium.org/build/hashigo v0.0.0-20260805080330-7d621b551da7
 	go.chromium.org/build/remote-apis v0.0.0-20260805080330-7d621b551da7
 	golang.org/x/sync v0.22.0
