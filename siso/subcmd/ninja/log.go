@@ -317,7 +317,7 @@ func (c *Command) writeInvocationInfo(ctx context.Context, metricsLabels map[str
 		EnabledExperiments: build.EnabledExperiments(),
 		Machine:            metadata.GatherMachineInfo(ctx),
 	}
-	if err := c.reopt.CheckValid(); err != nil {
+	if err := c.reopt.CheckValid(); err == nil {
 		info.REAPIInstance = c.reopt.Instance
 	}
 
