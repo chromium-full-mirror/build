@@ -31,15 +31,16 @@ func (b *Builder) tapCanonicalizeCmd(ctx context.Context, cmd *execute.Cmd) erro
 		return fmt.Errorf("tap error: %v", tapData.Error)
 	}
 
-	var ninputs, noutputs int
-	var ninputsDiscarded, noutputsDiscarded int
+	var nInputs, nOutputs int
+	var nInputsDiscarded, nOutputsDiscarded int
+	var nOutputsInDir int
 	// ignore out of workspace root
 	// TODO: use with input root absolute path?
 	// TODO: just use detected inputs?
 	seen := make(map[path.Path]bool)
 	for _, input := range cmd.AllInputs() {
 		seen[input] = true
-		ninputs++
+		nInputs++
 	}
 	// os.TempDir() is $TMPDIR or /tmp.
 	ignores := map[path.Path]struct{}{path.New(os.TempDir()): {}}
@@ -62,7 +63,25 @@ func (b *Builder) tapCanonicalizeCmd(ctx context.Context, cmd *execute.Cmd) erro
 				if log.V(1) {
 					clog.Infof(ctx, "ignore %s %q in %q", op, p, ignore)
 				}
-				ignored++
+				return true
+			}
+		}
+		return false
+	}
+	underOutputDir := func(p path.Path) bool {
+		for _, dir := range cmd.OutputDirs {
+			if p.HasPrefix(dir) {
+				if log.V(1) {
+					clog.Infof(ctx, "in dir %q under %q", p, dir)
+				}
+				return true
+			}
+		}
+		for _, dir := range cmd.AuxiliaryLogOutputDirs {
+			if p.HasPrefix(dir) {
+				if log.V(1) {
+					clog.Infof(ctx, "in dir %q under %q", p, dir)
+				}
 				return true
 			}
 		}
@@ -74,22 +93,23 @@ func (b *Builder) tapCanonicalizeCmd(ctx context.Context, cmd *execute.Cmd) erro
 
 	for _, input := range tapData.Reads {
 		if shouldIgnore("reads", path.New(input)) {
+			ignored++
 			continue
 		}
 		rel, err := filepath.Rel(b.path.WorkspaceRoot, input)
 		if err != nil {
 			clog.Warningf(ctx, "reads relpath %q: %v", input, err)
-			ninputsDiscarded++
+			nInputsDiscarded++
 			continue
 		}
 		if !filepath.IsLocal(rel) {
-			ninputsDiscarded++
+			nInputsDiscarded++
 			continue
 		}
 		relPath := path.New(rel)
 		fi, err := fsys.Stat(string(relPath))
 		if errors.Is(err, fs.ErrNotExist) {
-			ninputsDiscarded++
+			nInputsDiscarded++
 			continue
 		}
 		tapDetected++
@@ -113,26 +133,27 @@ func (b *Builder) tapCanonicalizeCmd(ctx context.Context, cmd *execute.Cmd) erro
 	// it might detect unspecified outputs.
 	for _, output := range cmd.AllOutputs() {
 		seen[output] = true
-		noutputs++
+		nOutputs++
 	}
 	for _, output := range tapData.Writes {
 		if shouldIgnore("writes", path.New(output)) {
+			ignored++
 			continue
 		}
 		rel, err := filepath.Rel(b.path.WorkspaceRoot, output)
 		if err != nil {
 			clog.Warningf(ctx, "writes relpath %q: %v", output, err)
-			noutputsDiscarded++
+			nOutputsDiscarded++
 			continue
 		}
 		if !filepath.IsLocal(rel) {
-			noutputsDiscarded++
+			nOutputsDiscarded++
 			continue
 		}
 		relPath := path.New(rel)
 		fi, err := b.hashFS.Stat(ctx, b.path.WorkspaceRoot, relPath)
 		if err != nil {
-			noutputsDiscarded++
+			nOutputsDiscarded++
 			continue
 		}
 		tapDetected++
@@ -146,6 +167,13 @@ func (b *Builder) tapCanonicalizeCmd(ctx context.Context, cmd *execute.Cmd) erro
 			continue
 		}
 		seen[relPath] = true
+		if underOutputDir(relPath) {
+			// relPath is covered by cmd.OutputDirs or
+			// AuxiliaryLogOutputDirs, so no need to
+			// add as output files. b/555559994
+			nOutputsInDir++
+			continue
+		}
 		cmd.Outputs = append(cmd.Outputs, relPath)
 	}
 	for _, del := range tapData.Deletes {
@@ -165,7 +193,7 @@ func (b *Builder) tapCanonicalizeCmd(ctx context.Context, cmd *execute.Cmd) erro
 		b.hashFS.Forget(ctx, b.path.WorkspaceRoot, []path.Path{relPath})
 		clog.Infof(ctx, "delete %q", relPath)
 	}
-	clog.Infof(ctx, "tap canonicalized detected=%d inputs=%d (discarded:%d) ->%d outputs=%d (discarded:%d) ->%d ignored=%d", tapDetected, ninputs, ninputsDiscarded, len(cmd.Inputs), noutputs, noutputsDiscarded, len(cmd.Outputs), ignored)
+	clog.Infof(ctx, "tap canonicalized detected=%d inputs=%d (discarded:%d) ->%d outputs=%d (indir:%d discarded:%d) ->%d ignored=%d", tapDetected, nInputs, nInputsDiscarded, len(cmd.Inputs), nOutputs, nOutputsInDir, nOutputsDiscarded, len(cmd.Outputs), ignored)
 	if tapDetected == 0 {
 		return fmt.Errorf("tap detected=0: %s", tapData)
 	}

@@ -521,3 +521,72 @@ func TestTapCanonicalizeCmd_TapDetectedZero(t *testing.T) {
 		})
 	}
 }
+
+func TestTapCanonicalizeCmd_OutputDir(t *testing.T) {
+	ctx := t.Context()
+	dir, _ := setupDirForTapTest(t)
+	wsDir := filepath.Join(dir, "workspace")
+
+	hfs, err := hashfs.New(ctx, hashfs.Option{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer hfs.Close(ctx)
+	if err := hfs.WaitReady(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	setupFile := func(root, rel string) string {
+		t.Helper()
+		abs := filepath.Join(root, rel)
+		if err := os.MkdirAll(filepath.Dir(abs), 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(abs, []byte("content"), 0644); err != nil {
+			t.Fatal(err)
+		}
+		return abs
+	}
+
+	b := &Builder{
+		hashFS: hfs,
+		path:   NewPath(wsDir, "out/siso"),
+	}
+
+	existingInput := setupFile(wsDir, "input.h")
+	existingOutput := setupFile(wsDir, "out/siso/output.o")
+	fileInDirOutput := setupFile(wsDir, "out/siso/output_dir/nested/file.txt")
+	fileInAuxDirOutput := setupFile(wsDir, "out/siso/aux_dir/log.txt")
+	standaloneOutput := setupFile(wsDir, "out/siso/standalone.txt")
+
+	cmd := &execute.Cmd{
+		WorkspaceRoot:          wsDir,
+		Inputs:                 []path.Path{path.New("input.h")},
+		Outputs:                []path.Path{path.New("out/siso/output.o")},
+		OutputDirs:             []path.Path{path.New("out/siso/output_dir")},
+		AuxiliaryLogOutputDirs: []path.Path{path.New("out/siso/aux_dir")},
+	}
+
+	err = setTapResult(cmd,
+		[]string{existingInput},
+		[]string{existingOutput, fileInDirOutput, fileInAuxDirOutput, standaloneOutput},
+		nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = b.tapCanonicalizeCmd(ctx, cmd)
+	if err != nil {
+		t.Fatalf("tapCanonicalizeCmd returned error: %v", err)
+	}
+
+	if !cmd.Pure {
+		t.Errorf("cmd.Pure = false; want true")
+	}
+
+	wantOutputs := []path.Path{path.New("out/siso/output.o"), path.New("out/siso/standalone.txt")}
+	if !slices.Equal(cmd.Outputs, wantOutputs) {
+		t.Errorf("cmd.Outputs = %v; want %v", cmd.Outputs, wantOutputs)
+	}
+}
