@@ -89,8 +89,8 @@ func TestBuild_BuildLabelMask(t *testing.T) {
 	}
 	expectedMask1 := uint64(1) << *bitIDPtr1
 
-	// checking obj/gen.txt (paths are relative to out/siso or absolute)
-	assertMasks(t, state, []string{"obj/gen.txt", "obj/copy.txt", "obj/downstream.txt"}, expectedMask1)
+	// checking obj/gen.txt and manifest (paths are relative to out/siso or absolute)
+	assertMasks(t, state, []string{"build.ninja", "obj/gen.txt", "obj/copy.txt", "obj/downstream.txt"}, expectedMask1)
 
 	// Wait 10ms for mtime check
 	time.Sleep(10 * time.Millisecond)
@@ -117,5 +117,5 @@ func TestBuild_BuildLabelMask(t *testing.T) {
 	}
 	expectedMask2 := uint64(1) << *bitIDPtr2
 
-	assertMasks(t, state2, []string{"obj/gen.txt", "obj/copy.txt", "obj/downstream.txt"}, expectedMask1|expectedMask2)
+	assertMasks(t, state2, []string{"build.ninja", "obj/gen.txt", "obj/copy.txt", "obj/downstream.txt"}, expectedMask1|expectedMask2)
 }

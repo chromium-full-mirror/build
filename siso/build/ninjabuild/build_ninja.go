@@ -165,6 +165,7 @@ func Run(ctx context.Context, graph *Graph, bopts build.Options, targets []strin
 	}
 
 	for {
+		registerManifestFiles(ctx, graph, bopts.BuildLabel)
 		clog.Infof(ctx, "build starts")
 		stats, err := doBuild(ctx, graph, bopts, nopts, targets...)
 		if errors.Is(err, build.ErrManifestModified) {
@@ -192,6 +193,19 @@ func Run(ctx context.Context, graph *Graph, bopts build.Options, targets []strin
 		}
 		return stats, err
 	}
+}
+
+// registerManifestFiles records all loaded Ninja manifest files (the root
+// manifest and any recursive subninjas) into the HashFS build label ledger.
+func registerManifestFiles(ctx context.Context, graph *Graph, buildLabel string) {
+	if buildLabel == "" || graph == nil || graph.globals == nil || graph.globals.hashFS == nil || graph.globals.nstate == nil || graph.globals.path == nil {
+		return
+	}
+	manifestFiles := graph.globals.nstate.Filenames()
+	if len(manifestFiles) == 0 {
+		return
+	}
+	graph.globals.hashFS.UpdateBuildLabelMask(ctx, graph.globals.path.AbsBase(), buildLabel, manifestFiles)
 }
 
 func rebuildManifest(ctx context.Context, graph *Graph, bopts build.Options) error {
