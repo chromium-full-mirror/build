@@ -99,6 +99,7 @@ type NinjaFlags struct {
 	strictRemote    bool
 	failuresAllowed int
 	actionSalt      string
+	localActionSalt string
 
 	ninjaJobs      int
 	ninjaLoadLimit int
@@ -213,6 +214,7 @@ func (c *Command) SetFlags(flagSet *flag.FlagSet) {
 	flagSet.BoolVar(&c.strictRemote, "strict_remote", false, "don't use local for remote step. i.e. no fastlocal, no local fallback")
 	flagSet.IntVar(&c.failuresAllowed, "k", 1, "keep going until N jobs fail (0 means inifinity)")
 	flagSet.StringVar(&c.actionSalt, "action_salt", "", "action salt")
+	flagSet.StringVar(&c.localActionSalt, "local_action_salt", "", "action salt for local steps")
 
 	flagSet.IntVar(&c.ninjaJobs, "j", -1, "not supported. use -remote_jobs and -local_jobs instead")
 	flagSet.IntVar(&c.ninjaLoadLimit, "l", -1, "not supported.")
@@ -453,6 +455,10 @@ func (c *Command) initBuildOpts(ctx context.Context, projectID string, buildPath
 	if c.actionSalt != "" {
 		actionSaltBytes = []byte(c.actionSalt)
 	}
+	var localActionSaltBytes []byte
+	if c.localActionSalt != "" {
+		localActionSaltBytes = []byte(c.localActionSalt)
+	}
 
 	cache, err := build.NewCache(ctx, build.CacheOptions{
 		Store:      ds.Cache,
@@ -478,6 +484,7 @@ func (c *Command) initBuildOpts(ctx context.Context, projectID string, buildPath
 		RECacheEnableRead:     c.reCacheEnableRead,
 		RECacheEnableWrite:    c.reCacheEnableWrite,
 		ActionSalt:            actionSaltBytes,
+		LocalActionSalt:       localActionSaltBytes,
 		LocallyNeeded:         c.locallyNeeded,
 		Cache:                 cache,
 		FailureSummaryWriter:  logWriters.failureSummaryWriter,

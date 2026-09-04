@@ -61,6 +61,9 @@ func (b *Builder) runStrategy(step *Step) func(context.Context, *Step) error {
 }
 
 func (b *Builder) runLocal(ctx context.Context, step *Step) error {
+	if len(b.localActionSalt) > 0 {
+		step.cmd.ActionSalt = b.localActionSalt
+	}
 	// preproc performs scandeps to list up all inputs, so
 	// we can flush these inputs before local execution.
 	// but we already flushed generated *.h etc, no need to

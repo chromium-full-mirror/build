@@ -97,6 +97,7 @@ type Options struct {
 	RECacheEnableRead  bool
 	RECacheEnableWrite bool
 	ActionSalt         []byte
+	LocalActionSalt    []byte
 
 	LocallyNeeded        *LocallyNeededSet
 	Cache                *Cache
@@ -218,7 +219,8 @@ type Builder struct {
 	reStatMu                  sync.Mutex
 	reSchedStat, reWorkerStat semaphore.Stat
 
-	actionSalt []byte
+	actionSalt      []byte
+	localActionSalt []byte
 
 	locallyNeeded *LocallyNeededSet
 
@@ -398,6 +400,7 @@ func New(ctx context.Context, graph Graph, opts Options) (_ *Builder, err error)
 		reCacheEnableRead:  opts.RECacheEnableRead || experiments.Enabled("simulate-remote-cache-misses", "simulate cache miss"),
 		reCacheEnableWrite: opts.RECacheEnableWrite,
 		actionSalt:         opts.ActionSalt,
+		localActionSalt:    opts.LocalActionSalt,
 		reapiclient:        opts.REAPIClient,
 		reSchedStat:        semaphore.Stat{Name: "re:sched"},
 		reWorkerStat:       semaphore.Stat{Name: "re:worker"},
