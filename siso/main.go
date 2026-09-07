@@ -62,7 +62,7 @@ var (
 	traceFile          string
 )
 
-const versionID = "v1.6.0"
+const versionID = "v1.6.1"
 const versionStr = "siso " + versionID
 
 func main() {
