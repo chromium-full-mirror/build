@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -460,4 +461,11 @@ func (s *State) Binding(name string) string {
 // Filenames returns files parsed by the parser (e.g. build.ninja and its subninja etc.)
 func (s *State) Filenames() []string {
 	return s.filenames
+}
+
+// Edges returns all edges in the state.
+func (s *State) Edges() []*Edge {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return slices.Clone(s.edges)
 }

@@ -48,6 +48,7 @@ func subcommandsList() []subcommandEntry {
 		{cmd: &commandsCommand{}, group: ""},
 		{cmd: &depsCommand{}, group: ""},
 		{cmd: &digraphCommand{}, group: "advanced"},
+		{cmd: &graphCommand{}, group: ""},
 		{cmd: &ideAnalysisCommand{}, group: "advanced"},
 		{cmd: &inputsCommand{}, group: ""},
 		{cmd: &ruleCommand{}, group: ""},
