@@ -26,6 +26,7 @@ import (
 	"github.com/google/subcommands"
 
 	"go.chromium.org/build/siso/auth/cred"
+	"go.chromium.org/build/siso/build"
 	"go.chromium.org/build/siso/subcmd/auth"
 	"go.chromium.org/build/siso/subcmd/collector"
 	"go.chromium.org/build/siso/subcmd/fetch"
@@ -318,6 +319,7 @@ func subcommandsList(authOpts func() cred.Options) []subcommandEntry {
 
 		{cmd: collector.Cmd(authOpts, versionID), group: "internal-helper"},
 		{cmd: spawnhelper.Cmd(), group: "internal-helper"},
+		{cmd: build.LandlockCmd(), group: "internal-helper"},
 
 		{cmd: subcommands.FlagsCommand(), group: "command-help"},
 		{cmd: subcommands.HelpCommand(), group: "command-help"},

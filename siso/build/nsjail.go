@@ -29,6 +29,8 @@ type nsjailExecutor struct {
 	jail *nsjailutil.NSJail
 }
 
+var _ execute.Executor = (*nsjailExecutor)(nil)
+
 func newNSJailExecutor(ctx context.Context, b *Builder, executor execute.Executor, sandboxConfig map[string]string) (*nsjailExecutor, error) {
 	exePath := sandboxConfig["nsjail_path"]
 	if exePath == "" {

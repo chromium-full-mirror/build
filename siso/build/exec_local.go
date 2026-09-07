@@ -82,7 +82,14 @@ func (b *Builder) execLocal(ctx context.Context, step *Step) (retErr error) {
 		if sandboxOption["enforce_depfile_only_promotes"] != "false" {
 			step.enforceDepfileOnlyPromotes = true
 		}
-
+	case "landlock":
+		landlockExecutor := newLandlockExecutor(executor, sandboxOption)
+		executor = landlockExecutor
+		step.metrics.Sandbox = true
+		// enforceDepfileOnlyPromotes defaults to true for an landlock-sandboxed action
+		if sandboxOption["enforce_depfile_only_promotes"] != "false" {
+			step.enforceDepfileOnlyPromotes = true
+		}
 	case "file-access-trace":
 		traceExecutor, err := newFileTraceExecutor(ctx, b, executor)
 		if err != nil {

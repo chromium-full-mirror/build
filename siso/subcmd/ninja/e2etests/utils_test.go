@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -441,5 +442,30 @@ func skipUnlessNsjailUsable(t *testing.T) {
 	out, err := exec.Command(nsjailPath, "--quiet", "--chroot", "/", "--cwd", "/", "--disable_rlimits", "--", "/bin/true").CombinedOutput()
 	if err != nil {
 		t.Skipf("This test requires a working nsjail: %v: %s", err, strings.TrimSpace(string(out)))
+	}
+}
+
+// skipUnlessLandlockUsable skips the test unless landlock can actually run here:
+// it may not be supported by the host kernel or in restricted environments.
+func skipUnlessLandlockUsable(t *testing.T) {
+	t.Helper()
+	if runtime.GOOS != "linux" {
+		t.Skip("landlock sandbox is only available on linux")
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		t.Skipf("cannot find executable: %v", err)
+	}
+	f, err := os.CreateTemp(t.TempDir(), "landlock_probe_*.json")
+	if err != nil {
+		t.Skipf("cannot create temp file for landlock probe: %v", err)
+	}
+	defer os.Remove(f.Name())
+	_, _ = f.WriteString(`{"AllowGlobalReaddir":true,"RODirs":["/bin","/lib","/lib64","/usr/bin","/usr/lib","/usr/lib32","/usr/lib64"],"RWDirs":["/dev"],"Args":["/bin/true"]}`)
+	_ = f.Close()
+
+	out, err := exec.Command(exe, "landlock", f.Name()).CombinedOutput()
+	if err != nil {
+		t.Skipf("This test requires working landlock: %v: %s", err, strings.TrimSpace(string(out)))
 	}
 }
