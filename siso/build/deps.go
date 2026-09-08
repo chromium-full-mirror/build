@@ -363,13 +363,13 @@ func checkMissingDeps(ctx context.Context, b *Builder, step *Step, inputs []path
 	if len(inputs) == 0 {
 		return nil
 	}
-	allowlisted, err := step.def.CheckMissingDeps(ctx, inputs)
+	known, err := step.def.CheckMissingDeps(ctx, inputs)
 	if err == nil {
 		return nil
 	}
 	clog.Warningf(ctx, "%s", err)
 
-	if allowlisted {
+	if known {
 		printStderr(step, fmt.Sprintf("missing deps warn: %s", err))
 		return nil
 	}

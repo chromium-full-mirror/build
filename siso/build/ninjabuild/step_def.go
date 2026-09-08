@@ -1083,9 +1083,9 @@ func (s *StepDef) RemoteInputs() map[path.Path]path.Path {
 }
 
 // CheckMissingDeps checks if depInputs can be found in direct/indirect inputs.
-// It returns whether any missing dependency is allowlisted, and an error describing
+// It returns whether any missing dependency is a known issue, and an error describing
 // any missing dependencies found.
-func (s *StepDef) CheckMissingDeps(ctx context.Context, depInputs []path.Path) (allowlisted bool, err error) {
+func (s *StepDef) CheckMissingDeps(ctx context.Context, depInputs []path.Path) (known bool, err error) {
 	deps := make(map[path.Path]bool)
 	for _, dep := range depInputs {
 		deps[dep] = true
@@ -1123,12 +1123,12 @@ func (s *StepDef) CheckMissingDeps(ctx context.Context, depInputs []path.Path) (
 		outputPath = toConfigPath(bpath, out)
 	}
 	reason := "unknown"
-	v, allowlisted := s.globals.stepConfig.BadDeps[outputPath]
-	if allowlisted {
+	v, known := s.globals.stepConfig.BadDeps[outputPath]
+	if known {
 		reason = v
 	}
 	desc := fmt.Sprintf("deps inputs have no dependencies from %q to %q - %s", outputPath, remaining, reason)
-	return allowlisted, errors.New(desc)
+	return known, errors.New(desc)
 }
 
 func resolveEdgeDeps(globals *globals, edge *ninjautil.Edge, checkOutputs bool, deps, seen map[path.Path]bool) []*ninjautil.Edge {
