@@ -194,7 +194,9 @@ func sendfd(w *os.File, fd seccomp.ScmpFd) error {
 }
 
 func recvfd(r *os.File) (seccomp.ScmpFd, error) {
-	glog.Infof("accepting...")
+	if glog.V(1) {
+		glog.Infof("accepting...")
+	}
 	nconn, err := net.FileConn(r)
 	if err != nil {
 		return 0, fmt.Errorf("fileconn: %w", err)
@@ -441,7 +443,9 @@ func (s *supervisor) Run(fd seccomp.ScmpFd, done <-chan struct{}) (retErr error)
 
 		if !hasNotif {
 			if fdHup {
-				glog.Infof("supervisor loop done: fdHup=%t", fdHup)
+				if glog.V(1) {
+					glog.Infof("supervisor loop done: fdHup=%t", fdHup)
+				}
 				return nil
 			}
 			continue
@@ -799,13 +803,17 @@ func (s *supervisor) handleNotif(fd seccomp.ScmpFd, req *seccomp.ScmpNotifReq) (
 		printTrace(" getxattr(%q, %q, 0x%x, %d)\n", pathname, name, req.Data.Args[2], req.Data.Args[3])
 	default:
 		printTrace(" %s(", syscallName)
-		glog.Infof(" syscall=%d %q: %v", req.Data.Syscall, syscallName, err)
+		if glog.V(1) {
+			glog.Infof(" syscall=%d %q: %v", req.Data.Syscall, syscallName, err)
+		}
 		for i, arg := range req.Data.Args {
 			printTrace("0x%x", arg)
 			if i != len(req.Data.Args)-1 {
 				printTrace(", ")
 			}
-			glog.Infof(" args[%d]=%d", i, arg)
+			if glog.V(1) {
+				glog.Infof(" args[%d]=%d", i, arg)
+			}
 		}
 		printTrace(")\n")
 	}
@@ -832,7 +840,9 @@ func main() {
 	if err != nil {
 		glog.Fatalf("target: %v", err)
 	}
-	glog.Infof("notify fd=%d\n", fd)
+	if glog.V(1) {
+		glog.Infof("notify fd=%d\n", fd)
+	}
 
 	done := make(chan struct{})
 	s := &supervisor{
@@ -851,7 +861,9 @@ func main() {
 		return cmdErr
 	})
 	err = eg.Wait()
-	glog.Infof("done: %v", err)
+	if err != nil {
+		glog.Infof("done: %v", err)
+	}
 	if *tapOutput != "" {
 		buf, berr := json.MarshalIndent(s.tapData(), "", " ")
 		if berr != nil {
