@@ -4,7 +4,7 @@ found in the LICENSE file. */}}
 
 {{define "breadcrumbs"}}
 <div class="breadcrumb">
-  <span class="breadcrumb-label">Build Steps</span>
+  <span class="breadcrumb-label">Build Steps{{if .useLit}} (Lit){{end}}</span>
 </div>
 {{end}}
 
@@ -21,7 +21,7 @@ found in the LICENSE file. */}}
 <aside id="page-sidebar">
 <form class="data-table-filter"
     {{/* Need to add ?sort= to the URL manually if set because sort is handled outside of this form. */}}
-    action="{{$outdirRevBaseURL}}/steps/{{if urlParamIsSet $currentURL "sort"}}?sort={{urlParamGet $currentURL "sort"}}{{end}}"
+    action="{{$outdirRevBaseURL}}/{{if .useLit}}steps_lit{{else}}steps{{end}}/{{if urlParamIsSet $currentURL "sort"}}?sort={{urlParamGet $currentURL "sort"}}{{end}}"
     method="GET"
     hx-trigger="change,submit">
   <div>
@@ -29,7 +29,7 @@ found in the LICENSE file. */}}
     <ul class="revs-timeline">
       {{range $r := .revs}}
       <li{{if eq $r.Rev $currentRev}} class="selected"{{end}}>
-        <a class="rev-label" href="{{$outdirRevBaseURL}}/../{{.Rev}}/steps/">
+        <a class="rev-label" href="{{$outdirRevBaseURL}}/../{{.Rev}}/{{if $.useLit}}steps_lit{{else}}steps{{end}}/">
           {{buildTimeHumanReadable $r}}
           <md-ripple></md-ripple>
         </a>
@@ -157,6 +157,16 @@ found in the LICENSE file. */}}
   <span><code>{{joinStrings .targets ", "}}</code> in {{formatIntervalMetricHuman .buildDuration}}</span>
 </div>
 <div class="surface">
+{{if .useLit}}
+  <script type="module" src="/static/siso-step-table.js"></script>
+  <siso-step-table
+      build-duration="{{.buildDurationNanos}}"
+      base-url="{{$outdirRevBaseURL}}"
+      outdir-rel="{{$outdirRel}}"
+      sort-supported="{{.sortSupported}}">
+    <script type="application/json">{{.subsetJSON}}</script>
+  </siso-step-table>
+{{else}}
 <div class="data-table-container">
   <table>
     <thead>
@@ -250,5 +260,6 @@ found in the LICENSE file. */}}
     </tbody>
   </table>
 </div>
+{{end}}
 </div>
 {{end}}

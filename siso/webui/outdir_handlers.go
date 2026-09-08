@@ -371,6 +371,14 @@ func (s *WebuiServer) handleInvocationViewStep(w http.ResponseWriter, r *http.Re
 }
 
 func (s *WebuiServer) handleInvocationListSteps(w http.ResponseWriter, r *http.Request) {
+	s.renderInvocationListSteps(w, r, false)
+}
+
+func (s *WebuiServer) handleInvocationListStepsLit(w http.ResponseWriter, r *http.Request) {
+	s.renderInvocationListSteps(w, r, true)
+}
+
+func (s *WebuiServer) renderInvocationListSteps(w http.ResponseWriter, r *http.Request, useLit bool) {
 	series, err := s.invocationSeriesFor(r)
 	if err != nil {
 		s.renderBuildViewError(http.StatusNotFound, fmt.Sprintf("failed to load invocation(s) for %s: %v", r.URL, err), w, r)
@@ -477,25 +485,39 @@ func (s *WebuiServer) handleInvocationListSteps(w http.ResponseWriter, r *http.R
 		targets = metrics.Info.Targets
 	}
 
+	subsetJSON, err := json.Marshal(subset)
+	if err != nil {
+		s.renderBuildViewError(http.StatusInternalServerError, fmt.Sprintf("failed to encode JSON: %v", err), w, r)
+		return
+	}
+	outdirRel := ""
+	if outdirInfo, ok := series.(*outdirInfo); ok {
+		outdirRel = outdirInfo.pathRel
+	}
+
 	data := map[string]any{
-		"subset":           subset,
-		"outputSearch":     outputSearch,
-		"page":             requestedPage,
-		"pageIndex":        pageIndex,
-		"pageFirst":        pageFirst,
-		"pageNext":         pageNext,
-		"pagePrev":         pagePrev,
-		"pageLast":         pageLast,
-		"pageCount":        pageCount,
-		"itemFirstLogical": itemsFirst + 1,
-		"itemLastLogical":  itemsFirst + len(subset),
-		"itemsLen":         len(filteredSteps),
-		"targets":          targets,
-		"status":           metrics.Status,
-		"actionCounts":     metrics.actionCounts,
-		"ruleCounts":       metrics.ruleCounts,
-		"buildDuration":    metrics.buildDuration,
-		"sortSupported":    sortSupported,
+		"useLit":             useLit,
+		"subset":             subset,
+		"subsetJSON":         string(subsetJSON),
+		"outdirRel":          outdirRel,
+		"outputSearch":       outputSearch,
+		"page":               requestedPage,
+		"pageIndex":          pageIndex,
+		"pageFirst":          pageFirst,
+		"pageNext":           pageNext,
+		"pagePrev":           pagePrev,
+		"pageLast":           pageLast,
+		"pageCount":          pageCount,
+		"itemFirstLogical":   itemsFirst + 1,
+		"itemLastLogical":    itemsFirst + len(subset),
+		"itemsLen":           len(filteredSteps),
+		"targets":            targets,
+		"status":             metrics.Status,
+		"actionCounts":       metrics.actionCounts,
+		"ruleCounts":         metrics.ruleCounts,
+		"buildDuration":      metrics.buildDuration,
+		"buildDurationNanos": int64(metrics.buildDuration),
+		"sortSupported":      sortSupported,
 	}
 	err = s.renderBuildView(w, r, tmpl, data)
 	if err != nil {
