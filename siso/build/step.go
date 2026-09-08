@@ -95,9 +95,10 @@ type StepDef interface {
 	// path in remote action -> local path
 	RemoteInputs() map[sisopath.Path]sisopath.Path
 
-	// CheckInputDeps checks dep can be found in its direct/indirect inputs.
-	// Returns true if it is unknown bad deps, false otherwise.
-	CheckInputDeps(context.Context, []sisopath.Path) (bool, error)
+	// CheckMissingDeps checks if depInputs can be found in direct/indirect inputs.
+	// It returns whether any missing dependency is allowlisted, and an error describing
+	// any missing dependencies found.
+	CheckMissingDeps(context.Context, []sisopath.Path) (allowlisted bool, err error)
 
 	// Handle runs a handler for the cmd.
 	Handle(context.Context, *execute.Cmd) error

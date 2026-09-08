@@ -276,7 +276,8 @@ func checkDeps(ctx context.Context, b *Builder, step *Step, deps []string) error
 		}
 	}
 
-	var checkInputs []path.Path
+	missingDepsCheckEnabled := b.missingDepsCheckEnabled()
+	var inputsToCheckMissingDeps []path.Path
 	var unsandboxed []string
 
 	platform := step.cmd.Platform
@@ -339,26 +340,60 @@ func checkDeps(ctx context.Context, b *Builder, step *Step, deps []string) error
 			// build.ninja should have been updated at the beginning of the build.
 			continue
 		}
-		checkInputs = append(checkInputs, input)
+		if !missingDepsCheckEnabled {
+			continue
+		}
+		inputsToCheckMissingDeps = append(inputsToCheckMissingDeps, input)
 	}
 	if len(unsandboxed) > 0 {
 		slices.Sort(unsandboxed)
 		return DepsError{UnsandboxedInputs: unsandboxed}
 	}
-	if experiments.Enabled("check-deps", "") || experiments.Enabled("fail-on-bad-deps", "") {
-		unknownBadDep, err := step.def.CheckInputDeps(ctx, checkInputs)
-		if err != nil {
-			clog.Warningf(ctx, "deps error: %v", err)
-			if unknownBadDep && experiments.Enabled("fail-on-bad-deps", "") {
-				return DepsError{Err: err}
-			}
-			stderr := step.cmd.Stderr()
-			w := step.cmd.StderrWriter()
-			if len(stderr) != 0 && !bytes.HasSuffix(stderr, []byte("\n")) {
-				fmt.Fprintf(w, "\n")
-			}
-			fmt.Fprintf(w, "deps error: %v\n", err)
-		}
+	if !missingDepsCheckEnabled {
+		return nil
+	}
+	err := checkMissingDeps(ctx, b, step, inputsToCheckMissingDeps)
+	if err != nil {
+		return DepsError{Err: err}
 	}
 	return nil
+}
+
+func checkMissingDeps(ctx context.Context, b *Builder, step *Step, inputs []path.Path) error {
+	if len(inputs) == 0 {
+		return nil
+	}
+	allowlisted, err := step.def.CheckMissingDeps(ctx, inputs)
+	if err == nil {
+		return nil
+	}
+	clog.Warningf(ctx, "%s", err)
+
+	if allowlisted {
+		printStderr(step, fmt.Sprintf("missing deps warn: %s", err))
+		return nil
+	}
+
+	mode := b.missingDepsMode()
+	switch mode {
+	case MissingDepsFatal:
+		return fmt.Errorf("%w: missing deps error: %w", ErrMissingDepsViolation, err)
+	case MissingDepsError:
+		// Defer build failure to the end so remaining steps can continue
+		// and report any additional missing dependency violations.
+		b.hasDeferredMissingDepsErrors.Store(true)
+		fallthrough
+	case MissingDepsWarn:
+		printStderr(step, fmt.Sprintf("missing deps %s: %s", mode, err))
+	}
+	return nil
+}
+
+func printStderr(step *Step, msg string) {
+	stderr := step.cmd.Stderr()
+	w := step.cmd.StderrWriter()
+	if len(stderr) != 0 && !bytes.HasSuffix(stderr, []byte("\n")) {
+		fmt.Fprintf(w, "\n")
+	}
+	fmt.Fprintf(w, "%s\n", msg)
 }

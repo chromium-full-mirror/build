@@ -75,3 +75,63 @@ func TestParseFlagsFully(t *testing.T) {
 		})
 	}
 }
+
+func TestMissingDepsFlag(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		args     []string
+		wantMode string
+		wantErr  bool
+	}{
+		{
+			name:     "default",
+			args:     []string{"-C", "out/siso"},
+			wantMode: "",
+		},
+		{
+			name:     "single_dash_warn",
+			args:     []string{"-C", "out/siso", "-missing_deps=warn"},
+			wantMode: "warn",
+		},
+		{
+			name:     "double_dash_error",
+			args:     []string{"-C", "out/siso", "--missing_deps=error"},
+			wantMode: "error",
+		},
+		{
+			name:     "ignore",
+			args:     []string{"-C", "out/siso", "-missing_deps=ignore"},
+			wantMode: "ignore",
+		},
+		{
+			name:     "fatal",
+			args:     []string{"-C", "out/siso", "-missing_deps=fatal"},
+			wantMode: "fatal",
+		},
+		{
+			name:    "invalid",
+			args:    []string{"-C", "out/siso", "-missing_deps=invalid"},
+			wantErr: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := &Command{}
+			flagSet := flag.NewFlagSet("ninja", flag.ContinueOnError)
+			c.SetFlags(flagSet)
+			err := flagSet.Parse(tc.args)
+			if err != nil {
+				t.Fatalf("flag parse: %v", err)
+			}
+			err = c.resolveFlags()
+			if gotErr := err != nil; gotErr != tc.wantErr {
+				t.Fatalf("c.resolveFlags() = %v; gotErr %t, wantErr %t", err, gotErr, tc.wantErr)
+			}
+			if tc.wantErr {
+				return
+			}
+			if c.missingDeps != tc.wantMode {
+				t.Errorf("c.missingDeps = %q, want %q", c.missingDeps, tc.wantMode)
+			}
+		})
+	}
+}

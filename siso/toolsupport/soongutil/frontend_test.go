@@ -58,7 +58,7 @@ func (fakeStepDef) ToolInputs(context.Context) []path.Path                      
 func (fakeStepDef) ExpandedCaseSensitives(ctx context.Context, in []path.Path) []path.Path { return in }
 func (fakeStepDef) ExpandedInputs(ctx context.Context) []path.Path                         { return nil }
 func (fakeStepDef) RemoteInputs() map[path.Path]path.Path                                  { return nil }
-func (fakeStepDef) CheckInputDeps(context.Context, []path.Path) (bool, error)              { return false, nil }
+func (fakeStepDef) CheckMissingDeps(context.Context, []path.Path) (bool, error)            { return false, nil }
 func (fakeStepDef) Handle(context.Context, *execute.Cmd) error                             { return nil }
 func (fakeStepDef) Outputs(context.Context) []path.Path                                    { return nil }
 func (fakeStepDef) AuxiliaryLogOutputFiles(context.Context) []path.Path                    { return nil }

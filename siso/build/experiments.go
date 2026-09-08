@@ -28,9 +28,11 @@ var knownExperiments = map[string]string{
 	"allow-fallback-high":         "",
 	"allow-fallback-low":          "",
 	// check-deps checks deps (e.g. *.d) has source or direct/indirect deps only.
-	"check-deps":                  "",
-	"fail-on-stdouterr":           "",
+	// TODO(crbug.com/556026322): deprecate once migrated to -undeclared_deps.
+	"check-deps": "",
+	// TODO(crbug.com/556026322): deprecate once migrated to -undeclared_deps.
 	"fail-on-bad-deps":            "",
+	"fail-on-stdouterr":           "",
 	"fallback-on-exec-error":      "",
 	"fast-deps":                   "",
 	"file-access-trace":           "",

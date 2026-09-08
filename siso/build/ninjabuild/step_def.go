@@ -1082,17 +1082,18 @@ func (s *StepDef) RemoteInputs() map[path.Path]path.Path {
 	return m
 }
 
-// CheckInputDeps checks dep can be found in its direct/indirect inputs.
-// Returns true if it is unknown bad deps, false otherwise.
-func (s *StepDef) CheckInputDeps(ctx context.Context, depInputs []path.Path) (bool, error) {
+// CheckMissingDeps checks if depInputs can be found in direct/indirect inputs.
+// It returns whether any missing dependency is allowlisted, and an error describing
+// any missing dependencies found.
+func (s *StepDef) CheckMissingDeps(ctx context.Context, depInputs []path.Path) (allowlisted bool, err error) {
 	deps := make(map[path.Path]bool)
 	for _, dep := range depInputs {
 		deps[dep] = true
 	}
 	seen := make(map[path.Path]bool)
-	// check input deps from s.edge's inputs.
+	// resolve deps from s.edge's inputs.
 	// it doesn't check output of s.edge.
-	edges := checkInputDep(s.globals, s.edge, false, deps, seen)
+	edges := resolveEdgeDeps(s.globals, s.edge, false, deps, seen)
 	// avoid recursion for memory efficiency (e.g. avoid deep stack)
 	for len(edges) > 0 {
 		edge := edges[0]
@@ -1101,8 +1102,8 @@ func (s *StepDef) CheckInputDeps(ctx context.Context, depInputs []path.Path) (bo
 		copy(edges, remain)
 		edges[len(edges)-1] = nil
 		edges = edges[:len(edges)-1]
-		// check input deps for edge's inputs and outputs.
-		edges = append(edges, checkInputDep(s.globals, edge, true, deps, seen)...)
+		// resolve deps for edge's inputs and outputs.
+		edges = append(edges, resolveEdgeDeps(s.globals, edge, true, deps, seen)...)
 		if len(deps) == 0 {
 			return false, nil
 		}
@@ -1121,14 +1122,16 @@ func (s *StepDef) CheckInputDeps(ctx context.Context, depInputs []path.Path) (bo
 		out := path.New(bpath.MaybeFromRelative(ctx, s.edge.Outputs()[0].Path()))
 		outputPath = toConfigPath(bpath, out)
 	}
-	v, ok := s.globals.stepConfig.BadDeps[outputPath]
-	if ok {
-		return false, fmt.Errorf("deps inputs have no dependencies from %q to %q - %s", outputPath, remaining, v)
+	reason := "unknown"
+	v, allowlisted := s.globals.stepConfig.BadDeps[outputPath]
+	if allowlisted {
+		reason = v
 	}
-	return true, fmt.Errorf("deps inputs have no dependencies from %q to %q - unknown", outputPath, remaining)
+	desc := fmt.Sprintf("deps inputs have no dependencies from %q to %q - %s", outputPath, remaining, reason)
+	return allowlisted, errors.New(desc)
 }
 
-func checkInputDep(globals *globals, edge *ninjautil.Edge, checkOutputs bool, deps, seen map[path.Path]bool) []*ninjautil.Edge {
+func resolveEdgeDeps(globals *globals, edge *ninjautil.Edge, checkOutputs bool, deps, seen map[path.Path]bool) []*ninjautil.Edge {
 	if len(deps) == 0 {
 		return nil
 	}

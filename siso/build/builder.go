@@ -160,7 +160,21 @@ type Options struct {
 
 	// BuildLabel to attach to output files
 	BuildLabel string
+
+	// MissingDeps specifies how to handle missing dependencies:
+	// "ignore" (default), "warn", "error", or "fatal".
+	MissingDeps MissingDepsMode
 }
+
+// MissingDepsMode specifies how to handle missing dependencies.
+type MissingDepsMode string
+
+const (
+	MissingDepsIgnore MissingDepsMode = "ignore"
+	MissingDepsWarn   MissingDepsMode = "warn"
+	MissingDepsError  MissingDepsMode = "error"
+	MissingDepsFatal  MissingDepsMode = "fatal"
+)
 
 // Builder is a builder.
 type Builder struct {
@@ -263,8 +277,12 @@ type Builder struct {
 
 	failures failures
 
-	numFallback        atomic.Int64
-	maxFallbackAllowed int64
+	// hasDeferredMissingDepsErrors tracks whether any step encountered missing
+	// dependency errors in "error" mode. Failure is deferred to the end of the build
+	// so that all missing dependency errors across the build can be discovered.
+	hasDeferredMissingDepsErrors atomic.Bool
+	numFallback                  atomic.Int64
+	maxFallbackAllowed           int64
 
 	// ninja debug modes
 	keepRSP     bool
@@ -274,7 +292,8 @@ type Builder struct {
 
 	lastFailureTargets map[string]struct{}
 
-	buildLabel string
+	buildLabel  string
+	missingDeps MissingDepsMode
 }
 
 // New creates new builder.
@@ -441,6 +460,7 @@ func New(ctx context.Context, graph Graph, opts Options) (_ *Builder, err error)
 		UploadBuildNinjaFiles: opts.UploadBuildNinjaFiles,
 		lastFailureTargets:    make(map[string]struct{}),
 		buildLabel:            opts.BuildLabel,
+		missingDeps:           opts.MissingDeps,
 	}
 	for _, t := range opts.LastFailureTargets {
 		b.lastFailureTargets[t] = struct{}{}
@@ -529,6 +549,9 @@ var ErrManifest = errors.New("manifest error")
 
 // ErrManifestModified is an error to indicate that manifest is modified.
 var ErrManifestModified = errors.New("manifest modified")
+
+// ErrMissingDepsViolation is an error to indicate that the build failed due to missing dependency violations.
+var ErrMissingDepsViolation = errors.New("missing dependency violations")
 
 // Build builds args with the name.
 func (b *Builder) Build(ctx context.Context, name string, args ...string) (err error) {
@@ -870,6 +893,10 @@ loop:
 		// report errStuck if it coulddn't progress.
 		// otherwise, report just number of errors.
 		if b.failures.n == 0 {
+			if b.hasDeferredMissingDepsErrors.Load() {
+				errdone <- fmt.Errorf("build failed due to %w", ErrMissingDepsViolation)
+				return
+			}
 			if canceled {
 				errdone <- context.Cause(ctx)
 				return
@@ -1462,4 +1489,23 @@ func (b *Builder) localFallbackEnabled(step *Step) bool {
 		return false
 	}
 	return !b.strictRemote && b.maxFallbackAllowed > 0 && !b.hashFS.OnCog()
+}
+
+func (b *Builder) missingDepsCheckEnabled() bool {
+	return b.missingDepsMode() != MissingDepsIgnore
+}
+
+func (b *Builder) missingDepsMode() MissingDepsMode {
+	switch b.missingDeps {
+	case MissingDepsIgnore, MissingDepsWarn, MissingDepsError, MissingDepsFatal:
+		return b.missingDeps
+	}
+	// TODO(crbug.com/556026322): deprecate fail-on-bad-deps and check-deps experiments once migrated to -missing_deps.
+	if experiments.Enabled("fail-on-bad-deps", "") {
+		return MissingDepsFatal
+	}
+	if experiments.Enabled("check-deps", "") {
+		return MissingDepsWarn
+	}
+	return MissingDepsIgnore
 }

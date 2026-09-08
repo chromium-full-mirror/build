@@ -72,7 +72,9 @@ func (f fakeStepDef) ExpandedInputs(ctx context.Context) []path.Path {
 
 func (fakeStepDef) RemoteInputs() map[path.Path]path.Path { return nil }
 
-func (fakeStepDef) CheckInputDeps(context.Context, []path.Path) (bool, error) { return false, nil }
+func (fakeStepDef) CheckMissingDeps(context.Context, []path.Path) (bool, error) {
+	return false, nil
+}
 
 func (fakeStepDef) Handle(context.Context, *execute.Cmd) error { return nil }
 

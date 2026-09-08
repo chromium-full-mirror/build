@@ -122,6 +122,8 @@ type NinjaFlags struct {
 
 	depsLogFile string
 
+	missingDeps string
+
 	stateDir string
 
 	logDir             string
@@ -230,6 +232,7 @@ func (c *Command) SetFlags(flagSet *flag.FlagSet) {
 	flagSet.StringVar(&c.configFilename, "load", "@config//main.star", "config filename (@config// is --config_repo_dir)")
 	flagSet.StringVar(&c.outputLocalStrategy, "output_local_strategy", "full", `strategy for output_local. "full": download all outputs. "greedy": downloads most outputs except intermediate objs. "minimum": downloads as few as possible. "graph": downloads only remote outputs that a local step will consume, decided at schedule time from the dep graph, spreading downloads over the compile burst. "pathfilter:<path_filter>": use path filter. "patterns:<pattern-list>": colon-separated pathfilter's patterns`)
 	flagSet.StringVar(&c.depsLogFile, "deps_log", ".siso_deps", "deps log filename (relative to -C, -state_dir)")
+	flagSet.StringVar(&c.missingDeps, "missing_deps", "", "how to handle missing dependencies: ignore (default, skip check), warn (warning on stderr), error (fail build at completion), fatal (fail step immediately)")
 
 	flagSet.StringVar(&c.stateDir, "state_dir", "", "state directory (relative to -C) [default: same dir as build.ninja]")
 
@@ -400,6 +403,11 @@ func (c *Command) resolveFlags() error {
 	if c.adjustWarn != "" {
 		ui.Default.Warningf("-w is specified. but not supported. b/288807840\n")
 	}
+	switch c.missingDeps {
+	case "", "ignore", "warn", "error", "fatal":
+	default:
+		return flagError{err: fmt.Errorf("unknown missing_deps mode: %q. should be ignore/warn/error/fatal", c.missingDeps)}
+	}
 
 	if err = uuid.Validate(c.buildID); err != nil {
 		return flagError{err: fmt.Errorf("%q is an invalid build ID. -build_id must be a UUID", c.buildID)}
@@ -510,6 +518,7 @@ func (c *Command) initBuildOpts(ctx context.Context, projectID string, buildPath
 		Limits:                limits,
 		UploadBuildNinjaFiles: c.enableBuildNinjaFilesUpload,
 		BuildLabel:            c.fsopt.BuildLabel,
+		MissingDeps:           build.MissingDepsMode(c.missingDeps),
 	}
 }
 
