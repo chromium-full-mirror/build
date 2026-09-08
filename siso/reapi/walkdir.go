@@ -75,7 +75,6 @@ func (c *Client) WalkDir(ctx context.Context, d digest.Digest, fn func(dname str
 							if err != nil {
 								return err
 							}
-							return nil
 						}
 					}
 				}

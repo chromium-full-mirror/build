@@ -27,6 +27,7 @@ func TestWalkDir(t *testing.T) {
 		"subdir1/file1",
 		"subdir2/file1",
 		"subdir2/subdir2.1/file1",
+		"subdir2/subdir2.2/file1",
 	} {
 		tree.Set(merkletree.Entry{
 			Name: path.Path(s),
@@ -82,7 +83,7 @@ func TestWalkDir(t *testing.T) {
 
 		case "subdir2":
 			wantFiles := []string{"file1"}
-			wantDirs := []string{"subdir2.1"}
+			wantDirs := []string{"subdir2.1", "subdir2.2"}
 			if !slices.Equal(files, wantFiles) || !slices.Equal(dirs, wantDirs) {
 				t.Errorf("dir:%q files=%q dirs=%q; want: files=%q dirs=%q",
 					dname, files, dirs, wantFiles, wantDirs)
@@ -98,6 +99,7 @@ func TestWalkDir(t *testing.T) {
 		"subdir1":           true,
 		"subdir2":           true,
 		"subdir2/subdir2.1": true,
+		"subdir2/subdir2.2": true,
 	}
 	if !maps.Equal(seen, wantSeen) {
 		t.Errorf("seen=%v; want=%v", seen, wantSeen)
