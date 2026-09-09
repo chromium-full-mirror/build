@@ -12,7 +12,11 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"syscall"
 	"testing"
+	"time"
+
+	seccomp "github.com/seccomp/libseccomp-golang"
 )
 
 func buildSisoTap(t *testing.T) string {
@@ -178,5 +182,121 @@ done
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("command failed: %v\noutput: %s", err, string(out))
+	}
+}
+
+func TestSisoTap_ConcurrentSymlinkReadlink(t *testing.T) {
+	bin := buildSisoTap(t)
+	tmpDir := t.TempDir()
+
+	// Reproduce b/558156834:
+	// While the target command performs concurrent symlink and readlink calls (like sbox),
+	// non-fatal signals delivered to the supervisor (causing poll interruptions / POLLERR)
+	// must not cause siso-tap to exit prematurely and fail readlink with ENOSYS.
+	cmd := exec.Command(bin, "--", "python3", "-c", `
+import os, sys, threading, time
+
+tmpdir = sys.argv[1]
+errs = []
+
+def worker(w_id):
+    for i in range(30):
+        src = f"target_{w_id}_{i}"
+        link = os.path.join(tmpdir, f"link_{w_id}_{i}")
+        try:
+            os.symlink(src, link)
+            target = os.readlink(link)
+            if target != src:
+                errs.append(f"mismatch: {target} != {src}")
+        except OSError as e:
+            errs.append(f"oserror {e.errno}: {e}")
+        time.sleep(0.005)
+
+threads = [threading.Thread(target=worker, args=(i,)) for i in range(4)]
+for th in threads:
+    th.start()
+for th in threads:
+    th.join()
+
+if errs:
+    print("\n".join(errs), file=sys.stderr)
+    sys.exit(1)
+`, tmpDir)
+
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("failed to start command: %v", err)
+	}
+
+	stopSignals := make(chan struct{})
+	go func() {
+		ticker := time.NewTicker(2 * time.Millisecond)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-stopSignals:
+				return
+			case <-ticker.C:
+				if cmd.Process != nil {
+					_ = cmd.Process.Signal(syscall.SIGURG)
+				}
+			}
+		}
+	}()
+
+	err := cmd.Wait()
+	close(stopSignals)
+
+	if err != nil {
+		t.Fatalf("command failed: %v\nstdout: %s\nstderr: %s", err, stdout.String(), stderr.String())
+	}
+}
+
+func TestSisoTap_SupervisorDoesNotExitOnPollHUPUntilDone(t *testing.T) {
+	// Reproduce b/558156834:
+	// If poll returns POLLHUP (or POLLERR) while no notifications are pending (!hasNotif),
+	// the supervisor loop must NOT return nil prematurely until <-done has been closed.
+	// Premature return would close the notify fd while the supervised process is still
+	// executing, causing subsequent intercepted syscalls to fail with ENOSYS.
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	// Closing the write end causes poll() on r to immediately return POLLHUP.
+	w.Close()
+
+	s := &supervisor{
+		fops: make(map[string]fop),
+		cwds: make(map[uint32]string),
+	}
+	done := make(chan struct{})
+	runErr := make(chan error, 1)
+
+	go func() {
+		runErr <- s.Run(seccomp.ScmpFd(r.Fd()), done)
+	}()
+
+	// The supervisor loop should keep polling and waiting for <-done,
+	// and must not return prematurely because of POLLHUP.
+	select {
+	case err := <-runErr:
+		t.Fatalf("s.Run returned prematurely before <-done: %v", err)
+	case <-time.After(150 * time.Millisecond):
+		// Expected: still waiting for <-done.
+	}
+
+	// Signal that the supervised process has finished.
+	close(done)
+
+	select {
+	case err := <-runErr:
+		if err != nil {
+			t.Fatalf("s.Run returned error on completion: %v", err)
+		}
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("s.Run did not terminate after <-done was closed")
 	}
 }

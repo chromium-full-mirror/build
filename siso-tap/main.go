@@ -418,10 +418,13 @@ func (s *supervisor) Run(fd seccomp.ScmpFd, done <-chan struct{}) (retErr error)
 			Events: unix.POLLIN,
 		},
 	}
+	var fdHup bool
 	for {
 		select {
 		case <-done:
-			glog.Infof("supervisor loop done: cmd finished")
+			if !fdHup {
+				glog.Infof("supervisor loop done: cmd finished")
+			}
 			return nil
 		default:
 		}
@@ -437,17 +440,17 @@ func (s *supervisor) Run(fd seccomp.ScmpFd, done <-chan struct{}) (retErr error)
 		if n == 0 {
 			continue
 		}
-
-		fdHup := pfds[0].Revents&(unix.POLLHUP|unix.POLLERR|unix.POLLNVAL) != 0
+		fdHup = pfds[0].Revents&unix.POLLHUP != 0
+		fdErr := pfds[0].Revents&(unix.POLLERR|unix.POLLNVAL) != 0
 		hasNotif := pfds[0].Revents&unix.POLLIN != 0
 
 		if !hasNotif {
-			if fdHup {
+			if fdHup || fdErr {
 				if glog.V(1) {
-					glog.Infof("supervisor loop done: fdHup=%t", fdHup)
+					glog.Infof("poll wait: fdHup=%t fdErr=%t", fdHup, fdErr)
 				}
-				return nil
 			}
+			// keep poll until target process finished, i.e. <-done.
 			continue
 		}
 
@@ -455,8 +458,10 @@ func (s *supervisor) Run(fd seccomp.ScmpFd, done <-chan struct{}) (retErr error)
 		if err != nil {
 			if errors.Is(err, unix.EINTR) || errors.Is(err, unix.ENOENT) {
 				glog.Warningf("receive: %v (retrying)", err)
-				if fdHup {
+				select {
+				case <-done:
 					return nil
+				default:
 				}
 				continue
 			}
