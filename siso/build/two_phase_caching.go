@@ -128,6 +128,7 @@ func (rt reapiTwoPhaseCaching) Check(ctx context.Context, lookupKey string, step
 			clog.Infof(ctx, "outputs %q", step.cmd.Outputs)
 		}
 		step.cmd.Pure = true
+		step.cmd.RecordPreOutputs(ctx)
 		err = rt.b.execRemoteCache(ctx, step)
 		if err != nil {
 			// cache miss
