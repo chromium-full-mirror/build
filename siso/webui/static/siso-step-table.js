@@ -5,13 +5,10 @@
 import { LitElement, html } from 'lit';
 import { filterSteps, sortSteps } from './step-transforms.js';
 import { stepQueryState } from './step-query-state.js';
-import { StepSidebarBinder } from './step-sidebar-binding.js';
-
 export class SisoStepTable extends LitElement {
   static properties = {
     endpoint: { type: String },
     baseUrl: { type: String, attribute: 'base-url' },
-    sidebar: { type: String },
     _loading: { state: true },
     _error: { state: true },
     _data: { state: true },
@@ -26,43 +23,26 @@ export class SisoStepTable extends LitElement {
     super();
     this.endpoint = '';
     this.baseUrl = '';
-    this.sidebar = '#page-sidebar';
     this._loading = false;
     this._error = '';
     this._data = null;
+    this._actionCounts = [];
+    this._ruleCounts = [];
 
     this.queryState = queryState;
-    this._sidebarBinder = new StepSidebarBinder(this.queryState, () => this.sortedSteps.length);
     this._onQueryChange = () => this.requestUpdate();
-  }
-
-  getSidebarElement() {
-    if (this.sidebar instanceof HTMLElement) {
-      return this.sidebar;
-    }
-    const selector = typeof this.sidebar === 'string' && this.sidebar ? this.sidebar : '#page-sidebar';
-    return document.querySelector(selector);
-  }
-
-  _bindSidebar() {
-    const el = this.getSidebarElement();
-    if (el) {
-      this._sidebarBinder.bind(el);
-    }
   }
 
   connectedCallback() {
     super.connectedCallback();
     this.queryState.addEventListener('change', this._onQueryChange);
     this.queryState.initFromURL();
-    this._bindSidebar();
     this.fetchData();
   }
 
   disconnectedCallback() {
     super.disconnectedCallback();
     this.queryState.removeEventListener('change', this._onQueryChange);
-    this._sidebarBinder.unbind();
   }
 
   /**
@@ -201,14 +181,49 @@ export class SisoStepTable extends LitElement {
     `;
   }
 
+  computeActionCounts() {
+    if (!this._data?.steps) return [];
+    const counts = new Map();
+    for (const step of this._data.steps) {
+      if (!step.action) continue;
+      counts.set(step.action, (counts.get(step.action) || 0) + 1);
+    }
+    return Array.from(counts.entries())
+      .filter(([_, count]) => count > 1) // Match SSR behavior (only actions with > 1 occurrence)
+      .map(([Key, Count]) => ({ Key, Count }))
+      .sort((a, b) => b.Count - a.Count || a.Key.localeCompare(b.Key));
+  }
+
+  computeRuleCounts() {
+    if (!this._data?.steps) return [];
+    const counts = new Map();
+    for (const step of this._data.steps) {
+      if (!step.rule) continue;
+      counts.set(step.rule, (counts.get(step.rule) || 0) + 1);
+    }
+    return Array.from(counts.entries())
+      .map(([Key, Count]) => ({ Key, Count }))
+      .sort((a, b) => b.Count - a.Count || a.Key.localeCompare(b.Key));
+  }
+
   updated(changedProperties) {
     super.updated(changedProperties);
-    if (changedProperties.has('sidebar') || !this._sidebarBinder.isBound) {
-      this._bindSidebar();
+    if (changedProperties.has('_data')) {
+      this._actionCounts = this.computeActionCounts();
+      this._ruleCounts = this.computeRuleCounts();
     }
     const sorted = this.sortedSteps;
     const pagination = this.queryState.getPagination(sorted.length);
-    this._sidebarBinder.sync(pagination);
+    this.dispatchEvent(new CustomEvent('steps-updated', {
+      bubbles: true,
+      composed: true,
+      detail: {
+        totalFilteredItems: sorted.length,
+        pagination,
+        actionCounts: this._actionCounts,
+        ruleCounts: this._ruleCounts,
+      },
+    }));
   }
 
   render() {

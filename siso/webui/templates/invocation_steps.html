@@ -12,22 +12,17 @@ found in the LICENSE file. */}}
   {{template "invocation_tabs" .}}
 {{end}}
 
+{{define "scripts"}}
+{{if .useLit}}
+<script type="module" src="/static/siso-step-sidebar.js"></script>
+<script type="module" src="/static/siso-step-table.js"></script>
+{{end}}
+{{end}}
+
 {{define "sidebar"}}
-{{$outdirRel:=.outdirRel}}
 {{$outdirRevBaseURL:=.outdirRevBaseURL}}
-{{$currentURL:=.currentURL}}
 {{$currentRev:=.currentRev}}
-{{$buildDuration:=.buildDuration}}
 <aside id="page-sidebar">
-<form class="data-table-filter"
-    {{if not .useLit}}
-    {{/* Need to add ?sort= to the URL manually if set because sort is handled outside of this form. */}}
-    action="{{$outdirRevBaseURL}}/steps/{{if urlParamIsSet $currentURL "sort"}}?sort={{urlParamGet $currentURL "sort"}}{{end}}"
-    method="GET"
-    hx-trigger="change,submit"
-    {{else}}
-    onsubmit="return false;"
-    {{end}}>
   <div>
     {{/* TODO: deduplicate this with timeline on individual step and raw logs pages? */}}
     <ul class="revs-timeline">
@@ -53,7 +48,28 @@ found in the LICENSE file. */}}
       </li>
       {{end}}
     </ul>
-    <div class="step-views">
+
+    {{if .useLit}}
+    <siso-step-sidebar></siso-step-sidebar>
+    {{else}}
+    {{template "legacy_step_filter" .}}
+    {{end}}
+  </div>
+</aside>
+{{end}}
+
+{{define "legacy_step_filter"}}
+{{$outdirRel:=.outdirRel}}
+{{$outdirRevBaseURL:=.outdirRevBaseURL}}
+{{$currentURL:=.currentURL}}
+{{$currentRev:=.currentRev}}
+{{$buildDuration:=.buildDuration}}
+<form class="data-table-filter"
+    {{/* Need to add ?sort= to the URL manually if set because sort is handled outside of this form. */}}
+    action="{{$outdirRevBaseURL}}/steps/{{if urlParamIsSet $currentURL "sort"}}?sort={{urlParamGet $currentURL "sort"}}{{end}}"
+    method="GET"
+    hx-trigger="change,submit">
+  <div class="step-views">
       <h3 id="view-label">View</h3>
       <input type="radio" id="view-all" name="view" value=""{{if urlHasParam $currentURL "view" ""}} checked{{end}}>
       <label for="view-all">All<md-ripple></md-ripple></label>
@@ -82,7 +98,6 @@ found in the LICENSE file. */}}
       <md-icon-button onclick="this.parentElement.querySelector('.page-number').value = {{.pageLast}}">
         <md-icon>last_page</md-icon>
       </md-icon-button>
-    </div>
   </div>
   <div class="filter-controls"
       {{/* Ensure state doesn't go out of sync with the backend by swapping this form whenever we see it in a fetched page. */}}
@@ -145,7 +160,6 @@ found in the LICENSE file. */}}
     </div>
   </div>
 </form>
-</aside>
 {{end}}
 
 {{define "content"}}
@@ -162,11 +176,9 @@ found in the LICENSE file. */}}
 </div>
 <div class="surface">
 {{if .useLit}}
-  <script type="module" src="/static/siso-step-table.js"></script>
   <siso-step-table
       endpoint="{{$outdirRevBaseURL}}/api/steps"
-      base-url="{{$outdirRevBaseURL}}"
-      sidebar="#page-sidebar">
+      base-url="{{$outdirRevBaseURL}}">
   </siso-step-table>
 {{else}}
 <div class="data-table-container">
