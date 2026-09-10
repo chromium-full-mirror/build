@@ -1,0 +1,113 @@
+// Copyright 2026 The Chromium Authors
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
+/**
+ * Traces the critical path through steps backwards using step.prev pointers.
+ * Assumes the last step is on the critical path.
+ * @param {!Array<!object>} steps
+ * @return {!Array<!object>}
+ */
+export function computeCriticalPath(steps) {
+  if (!steps || steps.length === 0) {
+    return [];
+  }
+  const stepMap = new Map();
+  for (const step of steps) {
+    if (step.step_id) {
+      stepMap.set(step.step_id, step);
+    }
+  }
+  let curr = steps.at(-1);
+  const path = [];
+  const visited = new Set();
+  while (curr && !visited.has(curr.step_id)) {
+    visited.add(curr.step_id);
+    path.push(curr);
+    curr = curr.prev ? stepMap.get(curr.prev) : null;
+  }
+  path.reverse();
+  return path;
+}
+
+/**
+ * Filters a list of steps according to the query state.
+ * @param {!Array<!object>} steps
+ * @param {!import('./step-query-state.js').StepQueryState} queryState
+ * @return {!Array<!object>}
+ */
+export function filterSteps(steps, queryState) {
+  if (!steps || steps.length === 0) {
+    return [];
+  }
+
+  if (queryState.view === 'criticalPath') {
+    return computeCriticalPath(steps);
+  }
+
+  return steps.filter((step) => {
+    if (queryState.view === 'localOnly' && !step.is_local) {
+      return false;
+    }
+    if (queryState.searchQuery) {
+      const output = step.outputs?.[0] || '';
+      if (!output.includes(queryState.searchQuery)) {
+        return false;
+      }
+    }
+    if (
+      queryState.actionFilters &&
+      queryState.actionFilters.size > 0 &&
+      !queryState.actionFilters.has(step.action)
+    ) {
+      return false;
+    }
+    if (
+      queryState.ruleFilters &&
+      queryState.ruleFilters.size > 0 &&
+      !queryState.ruleFilters.has(step.rule)
+    ) {
+      return false;
+    }
+    return true;
+  });
+}
+
+/**
+ * Sorts steps by ready, duration, or completion time (asc/dsc).
+ * In criticalPath view, execution order is preserved.
+ * @param {!Array<!object>} steps
+ * @param {!import('./step-query-state.js').StepQueryState} queryState
+ * @return {!Array<!object>}
+ */
+export function sortSteps(steps, queryState) {
+  const result = [...steps];
+  if (queryState.view === 'criticalPath') {
+    // Critical path preserves execution order.
+    return result;
+  }
+
+  result.sort((a, b) => {
+    const readyA = a.ready_nanos || 0;
+    const readyB = b.ready_nanos || 0;
+    const durA = a.duration_nanos || 0;
+    const durB = b.duration_nanos || 0;
+
+    let valA;
+    let valB;
+    if (queryState.sortBy === 'duration') {
+      valA = durA;
+      valB = durB;
+    } else if (queryState.sortBy === 'completion') {
+      valA = readyA + durA;
+      valB = readyB + durB;
+    } else {
+      valA = readyA;
+      valB = readyB;
+    }
+
+    const diff = valA - valB;
+    return queryState.sortDsc ? -diff : diff;
+  });
+  return result;
+}

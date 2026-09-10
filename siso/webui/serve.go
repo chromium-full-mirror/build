@@ -475,6 +475,7 @@ func (s *WebuiServer) mux() http.Handler {
 	outdirRouter.HandleFunc("/{outroot}/{outsub}/builds/{rev}/steps/{id}/", s.handleInvocationViewStep)
 	outdirRouter.HandleFunc("/{outroot}/{outsub}/builds/{rev}/steps/", s.handleInvocationListSteps)
 	outdirRouter.HandleFunc("/{outroot}/{outsub}/builds/{rev}/steps_lit/", s.handleInvocationListStepsLit)
+	outdirRouter.HandleFunc("/{outroot}/{outsub}/builds/{rev}/api/steps", s.handleAPIInvocationSteps)
 	outdirRouter.HandleFunc("/{outroot}/{outsub}/targets/{target}/", s.handleOutdirListTargets)
 
 	// Handlers for uploaded metrics.
@@ -493,6 +494,7 @@ func (s *WebuiServer) mux() http.Handler {
 	uploadsRouter.HandleFunc("/uploads/view/builds/{rev}/steps/{id}/", s.handleInvocationViewStep)
 	uploadsRouter.HandleFunc("/uploads/view/builds/{rev}/steps/", s.handleInvocationListSteps)
 	uploadsRouter.HandleFunc("/uploads/view/builds/{rev}/steps_lit/", s.handleInvocationListStepsLit)
+	uploadsRouter.HandleFunc("/uploads/view/builds/{rev}/api/steps", s.handleAPIInvocationSteps)
 	mux.HandleFunc("/uploads/view/", func(w http.ResponseWriter, r *http.Request) {
 		// This is how we hack around the hardcoded assumption that URLs are /{outroot}/{outsub}/.
 		// Common code paths will then have checks to handle this special case.

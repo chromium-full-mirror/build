@@ -20,10 +20,14 @@ found in the LICENSE file. */}}
 {{$buildDuration:=.buildDuration}}
 <aside id="page-sidebar">
 <form class="data-table-filter"
+    {{if not .useLit}}
     {{/* Need to add ?sort= to the URL manually if set because sort is handled outside of this form. */}}
-    action="{{$outdirRevBaseURL}}/{{if .useLit}}steps_lit{{else}}steps{{end}}/{{if urlParamIsSet $currentURL "sort"}}?sort={{urlParamGet $currentURL "sort"}}{{end}}"
+    action="{{$outdirRevBaseURL}}/steps/{{if urlParamIsSet $currentURL "sort"}}?sort={{urlParamGet $currentURL "sort"}}{{end}}"
     method="GET"
-    hx-trigger="change,submit">
+    hx-trigger="change,submit"
+    {{else}}
+    onsubmit="return false;"
+    {{end}}>
   <div>
     {{/* TODO: deduplicate this with timeline on individual step and raw logs pages? */}}
     <ul class="revs-timeline">
@@ -160,11 +164,9 @@ found in the LICENSE file. */}}
 {{if .useLit}}
   <script type="module" src="/static/siso-step-table.js"></script>
   <siso-step-table
-      build-duration="{{.buildDurationNanos}}"
+      endpoint="{{$outdirRevBaseURL}}/api/steps"
       base-url="{{$outdirRevBaseURL}}"
-      outdir-rel="{{$outdirRel}}"
-      sort-supported="{{.sortSupported}}">
-    <script type="application/json">{{.subsetJSON}}</script>
+      sidebar="#page-sidebar">
   </siso-step-table>
 {{else}}
 <div class="data-table-container">

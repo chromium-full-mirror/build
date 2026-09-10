@@ -5,6 +5,7 @@
 package webui
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -166,6 +167,7 @@ func TestRoutes_Outdirs(t *testing.T) {
 	}{
 		{"/out/Default/builds/", http.StatusOK},
 		{"/out/Default/builds/test-rev/steps/", http.StatusOK},
+		{"/out/Default/builds/test-rev/api/steps", http.StatusOK},
 		{"/out/Default/builds/test-rev/steps/step-1/", http.StatusOK},
 		{"/out/Default/builds/test-rev/steps/step-0/", http.StatusNotFound},
 		{"/out/Default/builds/nonexistent-rev/steps/step-1/", http.StatusNotFound},
@@ -232,6 +234,7 @@ func TestRoutes_UploadedMetrics(t *testing.T) {
 	}{
 		{"/uploads/view/builds/", http.StatusOK},
 		{"/uploads/view/builds/uploaded-build-id/steps/", http.StatusOK},
+		{"/uploads/view/builds/uploaded-build-id/api/steps", http.StatusOK},
 		{"/uploads/view/builds/uploaded-build-id/steps/step-1/", http.StatusOK},
 		{"/uploads/view/builds/uploaded-build-id/details/", http.StatusOK},
 		{"/uploads/view/builds/nonexistent-rev/steps/", http.StatusNotFound},
@@ -510,5 +513,31 @@ func TestInvocationStepOutputs(t *testing.T) {
 		if !slices.Equal(outputs, wantOutputs) {
 			t.Errorf("outputs = %v; want %v", outputs, wantOutputs)
 		}
+	}
+}
+
+func TestAPIInvocationSteps(t *testing.T) {
+	s, _ := mustServer(t)
+	rec := httptest.NewRecorder()
+	s.mux().ServeHTTP(rec, httptest.NewRequest("GET", "/out/Default/builds/test-rev/api/steps", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /api/steps = %d; want 200", rec.Code)
+	}
+
+	contentType := rec.Header().Get("Content-Type")
+	if !strings.HasPrefix(contentType, "application/json") {
+		t.Errorf("Content-Type = %q; want application/json", contentType)
+	}
+
+	var data apiInvocationStepsResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &data); err != nil {
+		t.Fatalf("failed to decode JSON response: %v", err)
+	}
+
+	if len(data.Steps) == 0 {
+		t.Errorf("expected non-empty steps in API response")
+	}
+	if data.BuildDurationNanos < 0 {
+		t.Errorf("expected non-negative BuildDurationNanos, got %d", data.BuildDurationNanos)
 	}
 }

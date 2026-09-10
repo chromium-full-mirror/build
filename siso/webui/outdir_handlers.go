@@ -19,6 +19,7 @@ import (
 	"strings"
 
 	"go.chromium.org/build/siso/build"
+	"go.chromium.org/build/siso/o11y/clog"
 	"go.chromium.org/build/siso/toolsupport/ninjautil"
 )
 
@@ -378,6 +379,41 @@ func (s *WebuiServer) handleInvocationListStepsLit(w http.ResponseWriter, r *htt
 	s.renderInvocationListSteps(w, r, true)
 }
 
+type apiInvocationStepsResponse struct {
+	Steps              []*build.StepMetric `json:"steps"`
+	BuildDurationNanos int64               `json:"buildDurationNanos"`
+	OutdirRel          string              `json:"outdirRel"`
+}
+
+func (s *WebuiServer) handleAPIInvocationSteps(w http.ResponseWriter, r *http.Request) {
+	series, err := s.invocationSeriesFor(r)
+	if err != nil {
+		s.renderBuildViewError(http.StatusNotFound, fmt.Sprintf("failed to load invocation(s) for %s: %v", r.URL, err), w, r)
+		return
+	}
+	metrics := series.Get(r.PathValue("rev"))
+	if metrics == nil {
+		s.renderBuildViewError(http.StatusNotFound, fmt.Sprintf("no metrics found for request %s", r.URL), w, r)
+		return
+	}
+
+	outdirRel := ""
+	if outdirInfo, ok := series.(*outdirInfo); ok {
+		outdirRel = outdirInfo.pathRel
+	}
+
+	data := apiInvocationStepsResponse{
+		Steps:              metrics.StepMetrics(),
+		BuildDurationNanos: int64(metrics.buildDuration),
+		OutdirRel:          outdirRel,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(data); err != nil {
+		clog.Warningf(r.Context(), "failed to encode JSON for %s: %v", r.URL, err)
+	}
+}
+
 func (s *WebuiServer) renderInvocationListSteps(w http.ResponseWriter, r *http.Request, useLit bool) {
 	series, err := s.invocationSeriesFor(r)
 	if err != nil {
@@ -485,11 +521,6 @@ func (s *WebuiServer) renderInvocationListSteps(w http.ResponseWriter, r *http.R
 		targets = metrics.Info.Targets
 	}
 
-	subsetJSON, err := json.Marshal(subset)
-	if err != nil {
-		s.renderBuildViewError(http.StatusInternalServerError, fmt.Sprintf("failed to encode JSON: %v", err), w, r)
-		return
-	}
 	outdirRel := ""
 	if outdirInfo, ok := series.(*outdirInfo); ok {
 		outdirRel = outdirInfo.pathRel
@@ -498,7 +529,6 @@ func (s *WebuiServer) renderInvocationListSteps(w http.ResponseWriter, r *http.R
 	data := map[string]any{
 		"useLit":             useLit,
 		"subset":             subset,
-		"subsetJSON":         string(subsetJSON),
 		"outdirRel":          outdirRel,
 		"outputSearch":       outputSearch,
 		"page":               requestedPage,
