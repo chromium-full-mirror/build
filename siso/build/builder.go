@@ -1409,7 +1409,7 @@ var errFlushOutput = errors.New("failed to flush outputs to local")
 func (b *Builder) updateDeps(ctx context.Context, step *Step) error {
 	ctx, span := trace.NewSpan(ctx, "update-deps")
 	defer span.Close(nil)
-	if len(step.cmd.Outputs) == 0 {
+	if len(step.cmd.Outputs) == 0 || len(step.outputPaths) == 0 {
 		// A directory-only edge cannot carry a depfile or deps.
 		if step.cmd.Deps != "" || step.cmd.Depfile != "" {
 			return fmt.Errorf("update deps: %s declares deps=%q depfile=%q but has only directory outputs %v; deps require a file output to key on", step, step.cmd.Deps, step.cmd.Depfile, step.cmd.OutputDirs)
@@ -1417,31 +1417,27 @@ func (b *Builder) updateDeps(ctx context.Context, step *Step) error {
 		clog.Warningf(ctx, "update deps: no outputs")
 		return nil
 	}
-	outputPath, err := step.cmd.Outputs[0].Rel(step.cmd.WorkDir)
+	outputInNinja := step.outputPaths[0]
+	outputPath := sisopath.Path(b.path.MaybeFromRelative(ctx, outputInNinja))
+	fi, err := b.hashFS.Stat(ctx, step.cmd.WorkspaceRoot, outputPath)
 	if err != nil {
-		clog.Warningf(ctx, "update deps: failed to get rel %s,%s: %v", step.cmd.WorkDir, step.cmd.Outputs[0], err)
+		clog.Warningf(ctx, "update deps: missing outputs %s: %v", outputPath, err)
 		return nil
 	}
-	output := string(outputPath)
-	fi, err := b.hashFS.Stat(ctx, step.cmd.WorkspaceRoot, step.cmd.Outputs[0])
-	if err != nil {
-		clog.Warningf(ctx, "update deps: missing outputs %s: %v", step.cmd.Outputs[0], err)
-		return nil
-	}
-	ents, err := b.hashFS.Entries(ctx, step.cmd.WorkspaceRoot, []sisopath.Path{step.cmd.Outputs[0]})
+	ents, err := b.hashFS.Entries(ctx, step.cmd.WorkspaceRoot, []sisopath.Path{outputPath})
 	if err != nil || len(ents) == 0 {
-		clog.Warningf(ctx, "update deps: failed to get output entry %q %d: %v", step.cmd.Outputs[0], len(ents), err)
+		clog.Warningf(ctx, "update deps: failed to get output entry %q %d: %v", outputPath, len(ents), err)
 		return nil
 	}
 	deps, err := depsAfterRun(ctx, b, step)
 	if err != nil {
 		return err
 	}
-	updated, err := step.def.RecordDeps(ctx, output, fi.ModTime(), ents[0].Data.Digest(), deps)
+	updated, err := step.def.RecordDeps(ctx, outputInNinja, fi.ModTime(), ents[0].Data.Digest(), deps)
 	if err != nil {
-		clog.Warningf(ctx, "update deps: failed to record deps %s, %s, %s, %s, %s: %v", output, base64.StdEncoding.EncodeToString(step.cmd.CmdHash), fi.ModTime(), ents[0].Data.Digest(), deps, err)
+		clog.Warningf(ctx, "update deps: failed to record deps %s, %s, %s, %s, %s: %v", outputInNinja, base64.StdEncoding.EncodeToString(step.cmd.CmdHash), fi.ModTime(), ents[0].Data.Digest(), deps, err)
 	}
-	clog.Infof(ctx, "update deps=%s: %s %s %d updated:%t pure:%t/%t->true", step.cmd.Deps, output, base64.StdEncoding.EncodeToString(step.cmd.CmdHash), len(deps), updated, step.cmd.Pure, step.cmd.Pure)
+	clog.Infof(ctx, "update deps=%s: %s %s %d updated:%t pure:%t/%t->true", step.cmd.Deps, outputInNinja, base64.StdEncoding.EncodeToString(step.cmd.CmdHash), len(deps), updated, step.cmd.Pure, step.cmd.Pure)
 	span.SetAttr("deps", len(deps))
 	span.SetAttr("updated", updated)
 	canonicalizedDeps := make([]sisopath.Path, 0, len(deps))
