@@ -2310,7 +2310,6 @@ func (hfs *HashFS) Flush(ctx context.Context, workspaceRoot string, files []path
 	// the pre-errgroup ctx for the post-flush directory mtime restore below.
 	flushCtx := ctx
 	eg, ctx := errgroup.WithContext(ctx)
-	var localEntries []UpdateEntry
 	var flushedDirs []flushedDirEntry
 	for _, file := range files {
 		fname := makeFullpath(workspaceRoot, file)
@@ -2334,17 +2333,7 @@ func (hfs *HashFS) Flush(ctx context.Context, workspaceRoot string, files []path
 				// better for performance to trigger downloading
 				// when flush (in batch), rather than let them
 				// download on access (serially).
-				if hfs.opt.CartFS != nil && !e.d.IsZero() {
-					localEntries = append(localEntries, UpdateEntry{
-						Name: file,
-						Entry: &merkletree.Entry{
-							Name:         file,
-							Data:         blob.NewData(e.src, e.d),
-							IsExecutable: e.mode&0111 != 0,
-						},
-						// TODO: set other properties in cartfs?
-					})
-				}
+				// it didn't work well with gitws. b/558938598
 
 				if e.mtimeUpdated && !e.isSymlink() {
 					// mtime was updated after entry sets mtime from the local disk.
@@ -2428,9 +2417,6 @@ func (hfs *HashFS) Flush(ctx context.Context, workspaceRoot string, files []path
 			}
 			return err
 		})
-	}
-	if hfs.opt.CartFS != nil {
-		hfs.cartfsRegister(ctx, workspaceRoot, localEntries, cartfsutil.UrgencyImmediate)
 	}
 	if err := eg.Wait(); err != nil {
 		return err
