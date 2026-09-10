@@ -107,7 +107,7 @@ func (c *Command) collect(ctx context.Context) (map[string]blob.Data, error) {
 	osfs := osfs.New(ctx, "fs", c.osfsopt)
 	rc := &reportCollector{fsys: fsys, osfs: osfs, report: report}
 
-	for _, pat := range []string{"siso*", ".siso*", "args.gn", "gn_logs.txt"} {
+	for _, pat := range []string{"siso*", ".siso*", "args.gn", "gn_logs.txt", "rbe_metrics.pb", "rbe_metrics.txt"} {
 		matches, err := fs.Glob(fsys, pat)
 		if err != nil {
 			return nil, err
