@@ -431,7 +431,7 @@ func New(ctx context.Context, graph Graph, opts Options) (_ *Builder, err error)
 		// TODO(b/539291862): revisit limit configuration.
 		// This limit is needed to avoid too many concurrent gRPC
 		// calls (i.e. protect from gRPC stream saturation).
-		twoPhaseCachingSema:   semaphore.New("cache-check", opts.Limits.Remote),
+		twoPhaseCachingSema:   semaphore.New("two-phase-cache", opts.Limits.TwoPhaseCache),
 		failureSummaryWriter:  opts.FailureSummaryWriter,
 		failedCommandsWriter:  opts.FailedCommandsWriter,
 		outputLogWriter:       opts.OutputLogWriter,
