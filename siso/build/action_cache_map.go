@@ -16,6 +16,7 @@ import (
 	"go.chromium.org/build/hashigo/digest"
 	rpb "go.chromium.org/build/remote-apis/build/bazel/remote/execution/v2"
 
+	"go.chromium.org/build/siso/o11y/clog"
 	"go.chromium.org/build/siso/o11y/trace"
 	"go.chromium.org/build/siso/reapi"
 )
@@ -81,9 +82,7 @@ func (m localActionCacheMap) List(ctx context.Context, lookupKey string) iter.Se
 			action := &rpb.Action{}
 			err = m.reapiclient.Proto(ctx, d, action)
 			if err != nil {
-				if !yield(nil, err) {
-					return
-				}
+				clog.Warningf(ctx, "missing action %s: %v", d, err)
 				continue
 			}
 			if !yield(action, nil) {

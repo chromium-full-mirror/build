@@ -28,7 +28,9 @@ func TestBuild_TwoPhaseCaching_RestatContent(t *testing.T) {
 	dir := tempDir(t)
 
 	build.SetExperimentForTest("two-phase-caching,two-phase-caching-local-action-cache-map")
-	t.Setenv("XDG_CACHE_HOME", tempDir(t))
+	userCacheDir := tempDir(t)
+	t.Setenv("XDG_CACHE_HOME", userCacheDir)
+	t.Setenv("LocalAppData", userCacheDir)
 
 	exists := func(fname string) error {
 		_, err := os.Stat(filepath.Join(dir, "out/siso", fname))
