@@ -318,7 +318,7 @@ func (s *StepDef) Binding(name string) string {
 		if s.rule.RestatContent {
 			return "true"
 		}
-		return ""
+		return s.edge.Binding(name)
 	case "impure":
 		if s.rule.Impure {
 			return "true"

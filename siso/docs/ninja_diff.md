@@ -41,6 +41,14 @@ as the fields with similar names in the StepConfig.
 Note that upstream ninja will error out on seeing these extra bindings. But the android fork of
 ninja has an exception to ignore them.
 
+### restat_content
+
+`restat_content` would work like `restat` but uses content digest instead of
+mtime. i.e. step cmd considers output is clean if content is not changed.
+It would be useful for restat=true with remote execution.
+It could not be used for step that produces the same content but
+update mtime to make it dirty.
+
 ### sandbox_disabled
 
 `sandbox_disabled = true` can be used to disable sandboxing for a specific rule in an otherwise
