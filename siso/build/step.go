@@ -682,6 +682,11 @@ func newCmd(ctx context.Context, b *Builder, stepDef StepDef, stepManifest *step
 		}
 		cmd.Platform["dockerRuntime"] = "runsc"
 	}
+	if stepDef.Binding("cache_disabled") == "true" {
+		cmd.SkipCacheLookup = true
+		cmd.DoNotCache = true
+		clog.Infof(ctx, "cache disabled")
+	}
 	cmd.InitOutputs()
 
 	if experiments.Enabled("oom-score-adj", "Set oom_score_adj=1000 on local exec") {

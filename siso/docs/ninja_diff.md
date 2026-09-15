@@ -57,6 +57,12 @@ action-sandbox-enabled build. (see StepConfig.sandbox)
 Note that upstream ninja will error out on seeing this extra binding. But the android fork of
 ninja also implements sandboxing and this sandbox_disabled binding.
 
+### cache_disabled
+
+`cache_disabled = true` can be used to disable cache for a specific action.
+
+Note that upstream ninja will error out on seeing this extra binding.
+
 ### Supports `phony_output` rule variable
 
   * **Ninja:** Doesn't have `phony_output`. But, Android's forked Ninja has a patch for the rule variable. See also [here](https://android.googlesource.com/platform/external/ninja/+/2ddc376cc3c5531db80899ce757861fac7a531b9/doc/manual.asciidoc#819)

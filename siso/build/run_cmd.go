@@ -32,6 +32,9 @@ func (b *Builder) allowTwoPhaseCaching(step *Step) bool {
 		// err: error in depfile "out/tpc/build.ninja.d": deps input "clang_x64_for_rust_host_build_tools/gen/build/modules/linux/module.modulemap" is output
 		return false
 	}
+	if step.cmd.SkipCacheLookup || step.cmd.DoNotCache {
+		return false
+	}
 	if step.cmd.Pure && b.allowRemote(step) {
 		switch step.cmd.Deps {
 		case "gcc", "msvc":
