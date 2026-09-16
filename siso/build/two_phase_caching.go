@@ -93,12 +93,23 @@ func (rt reapiTwoPhaseCaching) Check(ctx context.Context, lookupKey string, step
 		step.metrics.CacheTime = IntervalMetric(time.Since(started))
 	}()
 
+	// RBE returns Order: newest / most recently added first.
+	// The 2PC proposal (go/2-phase-caching-api-proposal) noted from ABFS
+	// metrics that matching candidates are almost always found within
+	// the first 10 candidates
+	// TODO: adapt number of candidate by action
+	// i.e. cheap action should be small, but heavy action could be large.
+	const maxCandidates = 10
 	nactions := 0
 	for action, err := range rt.actionCacheMap.List(ctx, lookupKey) {
 		nactions++
 		if err != nil {
 			step.cmd = ocmd
 			return fmt.Errorf("list actions: %w", err)
+		}
+		if nactions > maxCandidates {
+			clog.Warningf(ctx, "too many cancidates in %q: %d", lookupKey, nactions)
+			return fmt.Errorf("cache not found. too many candidates %d for %s", nactions, lookupKey)
 		}
 		inputs, outputs, err := rt.matchAction(ctx, step, action)
 		if err != nil {
