@@ -35,8 +35,8 @@ func RBEBuildMetrics(buildID string, version string, dur time.Duration, stats bu
 		localCacheHitRatio = float64(stats.TwoPhaseCacheHit) / float64(totalLocal)
 	}
 	// Calculate the overall cache hit ratio.
-	if stats.Total > 0 {
-		overallCacheHitRatio = float64(stats.CacheHit) / float64(stats.Total)
+	if stats.Done-stats.Skipped > 0 {
+		overallCacheHitRatio = float64(stats.CacheHit) / float64(stats.Done-stats.Skipped)
 	}
 	return &pb.RbeBuildMetrics{
 		NumRecords: int64(stats.Done - stats.Skipped),

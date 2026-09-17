@@ -83,8 +83,8 @@ func TestRBEBuildMetrics(t *testing.T) {
 	if !cmp.Equal(metrics.TwoPhaseCacheHitRatio, 0.2, cmpopts.EquateApprox(0, 0.000001)) {
 		t.Errorf("TwoPhaseCacheHitRatio = %f; want %f", metrics.TwoPhaseCacheHitRatio, 0.2)
 	}
-	if !cmp.Equal(metrics.BuildCacheHitRatio, 0.45, cmpopts.EquateApprox(0, 0.000001)) {
-		t.Errorf("BuildCacheHitRatio = %f; want %f", metrics.BuildCacheHitRatio, 0.45)
+	if !cmp.Equal(metrics.BuildCacheHitRatio, 0.50, cmpopts.EquateApprox(0, 0.000001)) {
+		t.Errorf("BuildCacheHitRatio = %f; want %f", metrics.BuildCacheHitRatio, 0.50)
 	}
 	if len(metrics.Stats) != 1 {
 		t.Fatalf("len(metrics.Stats) = %d; want 1", len(metrics.Stats))
