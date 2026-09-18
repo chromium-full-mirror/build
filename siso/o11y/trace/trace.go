@@ -132,6 +132,13 @@ func (te *Tracer) Enabled() bool {
 
 var startTime = time.Now()
 
+// Micros converts d for Event.T and Event.Dur. Whole microseconds would
+// truncate a shorter span to zero width, and a zero-width slice holds no
+// timestamp for anything to bind to.
+func Micros(d time.Duration) float64 {
+	return float64(d) / float64(time.Microsecond)
+}
+
 // StartTime returns start time of tracer.
 // Event.T should be time.Since(trace.StartTime()).
 func StartTime() time.Time {
@@ -311,9 +318,9 @@ type Event struct {
 	// of event being output.
 	Ph string `json:"ph"`
 
-	// The tracing clock timestamp of the event.
-	// The timestamps are provided at microsecond granularity.
-	T int64 `json:"ts"`
+	// The tracing clock timestamp of the event, in microseconds.
+	// Fractional, so a span shorter than a microsecond keeps its width.
+	T float64 `json:"ts"`
 
 	// The process ID of the process that output this event.
 	Pid int64 `json:"pid"`
@@ -323,7 +330,7 @@ type Event struct {
 
 	// The tracing clock duration of complete events in microseconds.
 	// Used for "ph"="X".
-	Dur int64 `json:"dur,omitzero"`
+	Dur float64 `json:"dur,omitzero"`
 
 	// Any arguments provided for the event.
 	Args map[string]any `json:"args,omitempty"`
@@ -403,7 +410,7 @@ func (te *Tracer) traceMemStats(t time.Time) []Event {
 		{
 			Name: "memstats",
 			Ph:   "C",
-			T:    t.Sub(startTime).Microseconds(),
+			T:    Micros(t.Sub(startTime)),
 			Pid:  te.mainPid,
 			Tid:  sisoTid,
 			Args: map[string]any{
@@ -426,7 +433,7 @@ func (te *Tracer) traceSemaphore(t time.Time, sema Semaphore, reqs *int) []Event
 		{
 			Name: sema.Name(),
 			Ph:   "C",
-			T:    t.Sub(startTime).Microseconds(),
+			T:    Micros(t.Sub(startTime)),
 			Pid:  te.semaPid,
 			Tid:  sisoTid,
 			Args: map[string]any{
@@ -443,7 +450,7 @@ func (te *Tracer) traceIOMetrics(t time.Time, pid int64, m *iometrics.IOMetrics,
 
 	o := Event{
 		Ph:  "C",
-		T:   t.Sub(startTime).Microseconds(),
+		T:   Micros(t.Sub(startTime)),
 		Pid: pid,
 		Tid: sisoTid,
 	}
@@ -546,7 +553,7 @@ func (te *Tracer) Begin(ctx context.Context, name string, region *Region) *Regio
 	te.write(ctx, Event{
 		Name: name,
 		Ph:   "B",
-		T:    time.Since(startTime).Microseconds(),
+		T:    Micros(time.Since(startTime)),
 		Pid:  region.Pid,
 		Tid:  int64(region.Tid),
 	})
@@ -560,7 +567,7 @@ func (r *Region) End() {
 	}
 	r.te.write(r.ctx, Event{
 		Ph:  "E",
-		T:   time.Since(startTime).Microseconds(),
+		T:   Micros(time.Since(startTime)),
 		Pid: r.Pid,
 		Tid: int64(r.Tid),
 	})
