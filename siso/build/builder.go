@@ -255,6 +255,7 @@ type Builder struct {
 	traceExporter        *trace.Exporter
 	tracer               *trace.Tracer
 	traceStats           *traceStats
+	traceDeps            *depRecorder
 	tracePprof           *tracePprof
 	pprofUploader        sisopprof.Uploader
 	resultSink           ResultSink
@@ -442,6 +443,7 @@ func New(ctx context.Context, graph Graph, opts Options) (_ *Builder, err error)
 		traceExporter:         opts.TraceExporter,
 		tracer:                opts.Tracer,
 		traceStats:            newTraceStats(),
+		traceDeps:             newDepRecorder(opts.Tracer),
 		tracePprof:            newTracePprof(opts.Pprof),
 		pprofUploader:         opts.PprofUploader,
 		resultSink:            opts.ResultSink,
@@ -748,7 +750,10 @@ func (b *Builder) Build(ctx context.Context, name string, args ...string) (err e
 		b.reapiclient.IOMetrics(),
 		// TODO: cache iometrics?
 	})
-	defer b.tracer.Stop()
+	defer func() {
+		b.traceDeps.record() // queues events, so before the writer stops
+		b.tracer.Stop()
+	}()
 	b.tracePidPreproc = b.tracer.Process(ctx, "preproc")
 	b.tracePidLocal = b.tracer.Process(ctx, "local-exec")
 	b.tracePidRemote = b.tracer.Process(ctx, "remote-exec")

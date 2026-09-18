@@ -6,6 +6,7 @@ package build
 
 import (
 	"context"
+	"math"
 	"sort"
 	"strings"
 	"sync"
@@ -13,6 +14,157 @@ import (
 
 	"go.chromium.org/build/siso/o11y/trace"
 )
+
+const (
+	flowCat  = "flow"
+	flowName = "dep"
+)
+
+// flowPoint is where one end of an arrow attaches, in microseconds.
+type flowPoint struct {
+	ts  float64
+	pid int64
+	tid int64
+}
+
+type depStep struct {
+	prev string
+	// anchored means a slice of this step has width, so an arrow can end
+	// inside it at dst, the start of its first slice, or leave it from src,
+	// the middle of its last. Handler-only steps such as copy emit no slice.
+	src, dst flowPoint
+	anchored bool
+}
+
+// depRecorder draws an arrow into each step from the input that finished
+// last, the step the scheduler recorded as prev. Steps finalize in any order,
+// so links are collected during the build and joined afterwards.
+//
+// The Builder holds a nil recorder when tracing is off; add, drain and record
+// accept that. The rest run under drain's lock.
+type depRecorder struct {
+	tracer *trace.Tracer
+
+	mu    sync.Mutex
+	steps map[string]depStep // nil once drained
+}
+
+func newDepRecorder(tracer *trace.Tracer) *depRecorder {
+	if !tracer.Enabled() {
+		return nil
+	}
+	return &depRecorder{tracer: tracer, steps: make(map[string]depStep)}
+}
+
+// add records a step even with no slice to anchor an arrow, so the chain can
+// pass through it.
+func (r *depRecorder) add(id, prev string, events []trace.Event) {
+	if r == nil || id == "" {
+		return
+	}
+	src, dst, anchored := flowEnds(events)
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.steps == nil {
+		return // drain already ran; a step can finish after Build returned.
+	}
+	r.steps[id] = depStep{prev: prev, src: src, dst: dst, anchored: anchored}
+}
+
+// source walks back to the nearest step with a slice of its own; some emit
+// none and still unblock others. Skipped and phony steps never get here:
+// plan.completeStep already forwards prev past them.
+//
+// The caller holds r.mu.
+func (r *depRecorder) source(prev string) (flowPoint, bool) {
+	// A chain cannot be longer than the table unless it loops.
+	for range len(r.steps) {
+		step, ok := r.steps[prev]
+		if !ok {
+			return flowPoint{}, false
+		}
+		if step.anchored {
+			return step.src, true
+		}
+		prev = step.prev
+	}
+	return flowPoint{}, false
+}
+
+// flows returns both ends of every arrow. Ids come from the tracer because
+// several builders share one file.
+//
+// The caller holds r.mu.
+func (r *depRecorder) flows() []trace.Event {
+	events := make([]trace.Event, 0, 2*len(r.steps))
+	for _, step := range r.steps {
+		if !step.anchored || step.prev == "" {
+			continue
+		}
+		src, ok := r.source(step.prev)
+		if !ok {
+			continue
+		}
+		id := r.tracer.NextFlowID()
+		events = append(events,
+			trace.Event{Name: flowName, Cat: flowCat, Ph: "s", ID: id, T: src.ts, Pid: src.pid, Tid: src.tid},
+			trace.Event{Name: flowName, Cat: flowCat, Ph: "f", Bp: "e", ID: id, T: step.dst.ts, Pid: step.dst.pid, Tid: step.dst.tid})
+	}
+	return events
+}
+
+// drain returns everything to draw and releases the step table.
+func (r *depRecorder) drain() []trace.Event {
+	if r == nil {
+		return nil
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	events := r.flows()
+	r.steps = nil
+	return events
+}
+
+func (r *depRecorder) record() {
+	if r == nil {
+		return
+	}
+	r.tracer.Record(r.drain())
+}
+
+// flowEnds picks a point inside the step's last slice and the start of its
+// first. An arrow binds to the slice holding its timestamp, so a zero-width
+// slice can hold none.
+func flowEnds(events []trace.Event) (src, dst flowPoint, ok bool) {
+	var first, last trace.Event
+	for _, ev := range events {
+		if ev.Dur <= 0 {
+			continue
+		}
+		if !ok || ev.T < first.T {
+			first = ev
+		}
+		if !ok || ev.T+ev.Dur > last.T+last.Dur {
+			last = ev
+		}
+		ok = true
+	}
+	if !ok {
+		return src, dst, false
+	}
+	// A slice covers [ts, ts+dur), so its end would bind to whatever follows
+	// on the track. The middle is inside at any width.
+	src = flowPoint{ts: nanos(last.T + last.Dur/2), pid: last.Pid, tid: last.Tid}
+	dst = flowPoint{ts: first.T, pid: first.Pid, tid: first.Tid}
+	return src, dst, true
+}
+
+// nanos rounds a microsecond value to whole nanoseconds, the resolution of
+// every timestamp in the file. Arithmetic on two of them leaves noise digits
+// otherwise.
+func nanos(us float64) float64 {
+	return math.Round(us*1e3) / 1e3
+}
 
 func (b *Builder) traceEvents(ctx context.Context, tc *trace.Context) []trace.Event {
 	spans := tc.Spans()
@@ -45,6 +197,7 @@ func (b *Builder) traceEvents(ctx context.Context, tc *trace.Context) []trace.Ev
 		}
 		events = append(events, obj)
 	}
+	b.traceDeps.add(attr.id, attr.prevID, events)
 	return events
 }
 

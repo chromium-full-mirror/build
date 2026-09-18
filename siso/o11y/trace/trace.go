@@ -13,6 +13,7 @@ import (
 	"os"
 	"runtime/metrics"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"go.chromium.org/build/siso/build/metadata"
@@ -64,6 +65,9 @@ type Tracer struct {
 	semaPid int64
 
 	threads []*threadMap // string -> int
+
+	// last flow id handed out; unique across the file. Atomic, not under mu.
+	flowID atomic.Int64
 }
 
 type Semaphore interface {
@@ -123,6 +127,15 @@ func NewTracer(ctx context.Context, fname string) (*Tracer, error) {
 	te.sysPid = te.Process(ctx, "sys")
 	te.mainPid = te.Process(ctx, "siso")
 	return te, nil
+}
+
+// NextFlowID returns an id no other flow in this file will use. Several
+// builders share one tracer, so a per-builder counter would collide.
+func (te *Tracer) NextFlowID() int64 {
+	if te == nil {
+		return 0
+	}
+	return te.flowID.Add(1)
 }
 
 // Enabled reports whether the tracer is active (i.e., writing to a file).
@@ -331,6 +344,14 @@ type Event struct {
 	// The tracing clock duration of complete events in microseconds.
 	// Used for "ph"="X".
 	Dur float64 `json:"dur,omitzero"`
+
+	// The identifier pairing the two ends of one flow.
+	// Used for "ph"="s" and "ph"="f".
+	ID int64 `json:"id,omitempty"`
+
+	// The binding point of a flow end. "e" attaches it to the enclosing
+	// slice rather than to the next slice to begin on the track.
+	Bp string `json:"bp,omitempty"`
 
 	// Any arguments provided for the event.
 	Args map[string]any `json:"args,omitempty"`

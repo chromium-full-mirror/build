@@ -193,3 +193,119 @@ func TestBuild_Trace_remote(t *testing.T) {
 		t.Logf("trace json:\n%s", buf)
 	}
 }
+
+func TestBuild_Trace_flow(t *testing.T) {
+	if !runInSubProcess(t) {
+		return
+	}
+	ctx := t.Context()
+	dir := tempDir(t)
+	setupFiles(t, dir, t.Name(), nil)
+
+	runNinjaTest := func(t *testing.T) (build.Stats, error) {
+		t.Helper()
+		opt, graph, cleanup := setupBuild(ctx, t, dir, hashfs.Option{
+			StateFile: ".siso_fs_state",
+		})
+		defer cleanup()
+		tracer, err := trace.NewTracer(ctx, "siso_trace.json")
+		if err != nil {
+			return build.Stats{}, err
+		}
+		defer tracer.Close(ctx) // flushes the footer; read the file after
+
+		opt.Tracer = tracer
+		return ninjabuild.Run(ctx, graph, opt, nil, ninjabuild.RunNinjaOpts{})
+	}
+
+	stats, err := runNinjaTest(t)
+	if err != nil {
+		t.Fatalf("ninja %v; want nil err", err)
+	}
+	if stats.Done != stats.Total || stats.Local != 3 {
+		t.Errorf("done=%d local=%d total=%d; want done=total, local=3: %#v", stats.Done, stats.Local, stats.Total, stats)
+	}
+
+	buf, err := os.ReadFile(filepath.Join(dir, "out/siso/siso_trace.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var traceJSON struct {
+		TraceEvents []trace.Event `json:"traceEvents"`
+	}
+	err = json.Unmarshal(buf, &traceJSON)
+	if err != nil {
+		t.Fatalf("unmarshal siso_trace.json: %v", err)
+	}
+
+	var slices []trace.Event
+	starts := make(map[int64]trace.Event)
+	finishes := make(map[int64]trace.Event)
+	for _, ev := range traceJSON.TraceEvents {
+		switch ev.Ph {
+		case "X":
+			slices = append(slices, ev)
+		case "s":
+			if ev.Name != "dep" || ev.Cat != "flow" {
+				t.Errorf("flow start %q/%q; want dep/flow", ev.Name, ev.Cat)
+			}
+			if _, ok := starts[ev.ID]; ok {
+				t.Errorf("duplicate flow start id=%d", ev.ID)
+			}
+			starts[ev.ID] = ev
+		case "f":
+			if ev.Name != "dep" || ev.Cat != "flow" {
+				t.Errorf("flow finish %q/%q; want dep/flow", ev.Name, ev.Cat)
+			}
+			if ev.Bp != "e" {
+				t.Errorf("flow finish id=%d bp=%q; want e", ev.ID, ev.Bp)
+			}
+			if _, ok := finishes[ev.ID]; ok {
+				t.Errorf("duplicate flow finish id=%d", ev.ID)
+			}
+			finishes[ev.ID] = ev
+		}
+	}
+	// The chain is a -> b -> c, so two arrows.
+	if len(starts) != 2 || len(finishes) != 2 {
+		t.Fatalf("flow starts=%d finishes=%d; want 2 and 2:\n%s", len(starts), len(finishes), buf)
+	}
+
+	// Every end must land inside a slice, and follow the recorded step ids.
+	enclosing := func(e trace.Event) (trace.Event, bool) {
+		for _, s := range slices {
+			if s.Pid == e.Pid && s.Tid == e.Tid && e.T >= s.T && e.T < s.T+s.Dur {
+				return s, true
+			}
+		}
+		return trace.Event{}, false
+	}
+	stepArg := func(ev trace.Event, key string) string {
+		v, _ := ev.Args[key].(string)
+		return v
+	}
+	for id, start := range starts {
+		finish, ok := finishes[id]
+		if !ok {
+			t.Errorf("flow id=%d has a start but no finish", id)
+			continue
+		}
+		src, ok := enclosing(start)
+		if !ok {
+			t.Errorf("flow id=%d start %+v is not inside any slice", id, start)
+			continue
+		}
+		dst, ok := enclosing(finish)
+		if !ok {
+			t.Errorf("flow id=%d finish %+v is not inside any slice", id, finish)
+			continue
+		}
+		if got, want := stepArg(dst, "prev_id"), stepArg(src, "id"); got != want {
+			t.Errorf("flow id=%d points %s -> %s; the target's prev_id is %s, not the source step %s",
+				id, src.Name, dst.Name, got, want)
+		}
+		if start.T > finish.T {
+			t.Errorf("flow id=%d runs backwards: start ts %g > finish ts %g", id, start.T, finish.T)
+		}
+	}
+}
