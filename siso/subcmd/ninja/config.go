@@ -375,6 +375,13 @@ func (c *Command) changeToWorkdir(ctx context.Context) (*build.Path, error) {
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, fmt.Errorf("%s not found in %s. need `-C <dir>`?", c.fname, filepath.Join(workspaceRoot, dir))
 	}
+	if c.subtool == "" && c.quiet {
+		q, ok := ui.Default.(quietUI)
+		if !ok {
+			q = quietUI{}
+		}
+		q.printPsHint(c.outDir.Dir)
+	}
 	return build.NewPath(workspaceRoot, dir), err
 }
 

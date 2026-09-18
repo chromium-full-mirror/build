@@ -75,6 +75,14 @@ func (q quietUI) Errorf(format string, args ...any) {
 	fmt.Fprintf(q.stderrWriter(), format, args...)
 }
 
+func (q quietUI) printPsHint(outDir string) {
+	cmd := "siso ps"
+	if outDir != "." && outDir != "" {
+		cmd = fmt.Sprintf("siso ps -C %s", outDir)
+	}
+	fmt.Fprintf(q.stderrWriter(), "Run `%s` in another terminal to see build status.\n", cmd)
+}
+
 type quietSpinner struct {
 	w               io.Writer
 	cancel          context.CancelFunc
