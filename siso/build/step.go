@@ -636,8 +636,10 @@ func newCmd(ctx context.Context, b *Builder, stepDef StepDef, stepManifest *step
 		AuxiliaryLogOutputFiles: stepDef.AuxiliaryLogOutputFiles(ctx),
 		AuxiliaryLogOutputDirs:  stepDef.AuxiliaryLogOutputDirs(ctx),
 
-		Restat:        stepDef.Binding("restat") != "",
-		RestatContent: stepDef.Binding("restat_content") != "",
+		Restat: stepDef.Binding("restat") != "",
+		// TODO(b/561799494): Enable RestatContent by default when Restat is true and
+		// stepDef.IsRemoteRule() is true, unless stepDef.Binding("restat_content") == "false".
+		RestatContent: stepDef.Binding("restat_content") == "true",
 
 		Pure: stepDef.Pure(),
 

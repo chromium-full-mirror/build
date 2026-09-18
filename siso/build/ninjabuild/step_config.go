@@ -91,7 +91,7 @@ type StepRule struct {
 
 	// RestatContent means output will be considered as clean
 	// if output content is the same as before.
-	RestatContent bool `json:"restat_content,omitzero"`
+	RestatContent *bool `json:"restat_content,omitzero"`
 
 	// PlatformRef is reference to platform properties.
 	PlatformRef string `json:"platform_ref,omitempty"`

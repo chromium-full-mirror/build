@@ -476,3 +476,122 @@ build target1: __rule ../../source1.cc target2.h target3.h
 		t.Errorf("ExpandedInputs: diff -want +got:\n%s", diff)
 	}
 }
+
+func TestStepDefBinding_RestatContent(t *testing.T) {
+	ctx := t.Context()
+	state := ninjautil.NewState()
+	p := ninjautil.NewManifestParser(state)
+	dir := t.TempDir()
+	fname := filepath.Join(dir, "build.ninja")
+	err := os.WriteFile(fname, []byte(`
+rule rule_restat_content
+  command = echo ${in} > ${out}
+  restat = 1
+  restat_content = 1
+
+rule rule_plain
+  command = echo ${in} > ${out}
+  restat = 1
+
+rule rule_unset
+  command = echo ${in} > ${out}
+  restat = 1
+
+build out0: rule_unset in1
+build out1: rule_plain in1
+build out2: rule_plain in1
+  restat_content = false
+build out3: rule_plain in1
+  restat_content = 0
+build out4: rule_restat_content in1
+build out5: rule_restat_content in1
+  restat_content = false
+build out6: rule_restat_content in1
+  restat_content = 0
+build out7: rule_restat_content in1
+`), 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = p.Load(ctx, fname)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	boolPtr := func(b bool) *bool { return &b }
+
+	graph := &Graph{
+		visited: make(map[*ninjautil.Edge]*build.Edge),
+		globals: &globals{
+			nstate: state,
+			path:   build.NewPath(dir, "out/Default"),
+			stepConfig: &StepConfig{
+				Rules: []*StepRule{
+					{
+						Name:          "starlark_disable_out7",
+						ActionOuts:    []string{"./out7"},
+						RestatContent: boolPtr(false),
+					},
+					{
+						Name:          "starlark_enable_plain",
+						ActionName:    "rule_plain",
+						RestatContent: boolPtr(true),
+					},
+					{
+						Name:       "default_rule",
+						ActionName: "rule_restat_content",
+					},
+				},
+			},
+			targetPaths: make([]path.Path, state.NumNodes()),
+			edgeRules:   make([]edgeRuleHolder, state.NumNodes()),
+		},
+	}
+	err = graph.globals.stepConfig.Init(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	newStepDef := func(target string) *StepDef {
+		node, ok := state.LookupNodeByPath(target)
+		if !ok {
+			t.Fatalf("target %q not found in build.ninja", target)
+		}
+		edge, ok := node.InEdge()
+		if !ok {
+			t.Fatalf("target %q has no edge", target)
+		}
+		s := graph.newStepDef(ctx, edge, nil)
+		s.EnsureRule(ctx)
+		return s
+	}
+
+	tests := []struct {
+		target string
+		want   string
+	}{
+		// Both Starlark and Ninja unset -> ""
+		{target: "out0", want: ""},
+		// Starlark enables restat_content, Ninja unset -> "true"
+		{target: "out1", want: "true"},
+		// Starlark enables restat_content, Ninja sets restat_content = false -> "true" (Starlark takes precedence)
+		{target: "out2", want: "true"},
+		// Starlark enables restat_content, Ninja sets restat_content = 0 -> "true" (Starlark takes precedence)
+		{target: "out3", want: "true"},
+		// Starlark unset, Ninja rule sets restat_content = 1 -> "true"
+		{target: "out4", want: "true"},
+		// Starlark unset, Ninja rule sets restat_content = 1, edge sets false -> "false"
+		{target: "out5", want: "false"},
+		// Starlark unset, Ninja rule sets restat_content = 1, edge sets 0 -> "false"
+		{target: "out6", want: "false"},
+		// Ninja rule sets restat_content = 1, Starlark rule sets restat_content = false -> "false"
+		{target: "out7", want: "false"},
+	}
+
+	for _, tc := range tests {
+		s := newStepDef(tc.target)
+		if got := s.Binding("restat_content"); got != tc.want {
+			t.Errorf("%s: Binding(\"restat_content\") = %q; want %q", tc.target, got, tc.want)
+		}
+	}
+}

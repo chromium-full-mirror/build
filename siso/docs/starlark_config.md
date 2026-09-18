@@ -238,6 +238,7 @@ to register handlers and step configs.
              mtime is not changed (same as ninja's restat).
           * `restat_content`: true if step cmd considers output is clean if
              content is not changed (like ninja's restat, but not use mtime).
+             false to disable it.
           * `platform_ref`: reference to platform properties
           * `platform`: additional platform properties
           * `remote`: use remote exec or not

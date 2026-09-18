@@ -48,6 +48,7 @@ mtime. i.e. step cmd considers output is clean if content is not changed.
 It would be useful for restat=true with remote execution.
 It could not be used for step that produces the same content but
 update mtime to make it dirty.
+`restat_content = false` or `restat_content = 0` can be used to disable `restat_content`.
 
 ### sandbox_disabled
 
