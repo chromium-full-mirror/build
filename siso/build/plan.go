@@ -952,6 +952,7 @@ func (p *plan) hasReady() bool {
 
 // completeStep updates waiting pools and pushes unblocked steps to ready pool.
 func (p *plan) completeStep(ctx context.Context, step *Step) {
+	step.releaseTime = time.Now()
 	outs := step.outputs
 	p.mu.Lock()
 	defer p.mu.Unlock()

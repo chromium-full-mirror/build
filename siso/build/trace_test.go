@@ -8,8 +8,10 @@ import (
 	"path/filepath"
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 
 	"go.chromium.org/build/siso/o11y/trace"
 )
@@ -112,6 +114,20 @@ func slice(ts, dur float64, pid, tid int64) []trace.Event {
 	return []trace.Event{{T: ts, Dur: dur, Pid: pid, Tid: tid}}
 }
 
+// step is a stepTrace with just the ids an arrow needs.
+func step(id, prev string) stepTrace {
+	return stepTrace{attr: spanEventAttr{id: id, prevID: prev}}
+}
+
+// critical is a step the critical path can draw: name labels its slice, the
+// times bound it.
+func critical(id, prev, name string, start, release, end time.Duration) stepTrace {
+	st := step(id, prev)
+	st.attr.output0 = name
+	st.start, st.release, st.end = start, release, end
+	return st
+}
+
 // flowArrow is one arrow rebuilt from its event pair.
 type flowArrow struct {
 	src, dst flowPoint
@@ -163,12 +179,12 @@ func arrows(t *testing.T, events []trace.Event) []flowArrow {
 var allowFlowUnexported = cmp.AllowUnexported(flowArrow{}, flowPoint{})
 
 func TestDepRecorder(t *testing.T) {
-	f := newDepRecorder(newTestTracer(t))
-	f.add("root", "", slice(10, 40, 2, 1))
-	f.add("mid", "root", slice(60, 20, 3, 4))
-	f.add("leaf", "mid", slice(90, 5, 3, 5))
-	f.add("orphan", "untraced", slice(95, 5, 3, 6)) // predecessor never traced
-	f.add("empty", "root", nil)                     // no slices at all
+	f := newDepRecorder(t.Context(), newTestTracer(t))
+	f.add(step("root", ""), slice(10, 40, 2, 1))
+	f.add(step("mid", "root"), slice(60, 20, 3, 4))
+	f.add(step("leaf", "mid"), slice(90, 5, 3, 5))
+	f.add(step("orphan", "untraced"), slice(95, 5, 3, 6)) // predecessor never traced
+	f.add(step("empty", "root"), nil)                     // no slices at all
 
 	want := []flowArrow{
 		{src: flowPoint{ts: 30, pid: 2, tid: 1}, dst: flowPoint{ts: 60, pid: 3, tid: 4}},
@@ -181,12 +197,12 @@ func TestDepRecorder(t *testing.T) {
 
 // A step with no slice of its own must pass the arrow on, not swallow it.
 func TestDepRecorderWalksThroughUnanchoredSteps(t *testing.T) {
-	f := newDepRecorder(newTestTracer(t))
-	f.add("root", "", slice(10, 40, 2, 1))
-	f.add("hub", "root", slice(60, 0, 3, 4))
-	f.add("hub2", "hub", slice(61, 0, 3, 4))
-	f.add("leaf", "hub2", slice(90, 5, 3, 5))
-	f.add("leaf2", "hub", slice(95, 5, 3, 6))
+	f := newDepRecorder(t.Context(), newTestTracer(t))
+	f.add(step("root", ""), slice(10, 40, 2, 1))
+	f.add(step("hub", "root"), slice(60, 0, 3, 4))
+	f.add(step("hub2", "hub"), slice(61, 0, 3, 4))
+	f.add(step("leaf", "hub2"), slice(90, 5, 3, 5))
+	f.add(step("leaf2", "hub"), slice(95, 5, 3, 6))
 
 	// Both reach past the two sliceless steps, back to root.
 	want := []flowArrow{
@@ -199,9 +215,9 @@ func TestDepRecorderWalksThroughUnanchoredSteps(t *testing.T) {
 }
 
 func TestDepRecorderChainStopsAtUnanchoredRoot(t *testing.T) {
-	f := newDepRecorder(newTestTracer(t))
-	f.add("root", "", slice(10, 0, 2, 1))
-	f.add("leaf", "root", slice(90, 5, 3, 5))
+	f := newDepRecorder(t.Context(), newTestTracer(t))
+	f.add(step("root", ""), slice(10, 0, 2, 1))
+	f.add(step("leaf", "root"), slice(90, 5, 3, 5))
 	if got := f.drain(); len(got) != 0 {
 		t.Errorf("drain() = %v; want none", got)
 	}
@@ -209,10 +225,10 @@ func TestDepRecorderChainStopsAtUnanchoredRoot(t *testing.T) {
 
 // A cycle must not spin forever.
 func TestDepRecorderBoundsTheWalk(t *testing.T) {
-	f := newDepRecorder(newTestTracer(t))
-	f.add("a", "b", slice(10, 0, 2, 1))
-	f.add("b", "a", slice(20, 0, 2, 1))
-	f.add("leaf", "a", slice(90, 5, 3, 5))
+	f := newDepRecorder(t.Context(), newTestTracer(t))
+	f.add(step("a", "b"), slice(10, 0, 2, 1))
+	f.add(step("b", "a"), slice(20, 0, 2, 1))
+	f.add(step("leaf", "a"), slice(90, 5, 3, 5))
 	if got := f.drain(); len(got) != 0 {
 		t.Errorf("drain() = %v; want none", got)
 	}
@@ -224,9 +240,9 @@ func TestDepRecorderIDsAreUniquePerTracer(t *testing.T) {
 	tracer := newTestTracer(t)
 	seen := map[int64]bool{}
 	for range 2 {
-		f := newDepRecorder(tracer)
-		f.add("root", "", slice(10, 40, 2, 1))
-		f.add("leaf", "root", slice(60, 20, 3, 4))
+		f := newDepRecorder(t.Context(), tracer)
+		f.add(step("root", ""), slice(10, 40, 2, 1))
+		f.add(step("leaf", "root"), slice(60, 20, 3, 4))
 		for _, ev := range f.drain() {
 			if ev.ID == 0 {
 				t.Errorf("flow event with no id: %+v", ev)
@@ -246,24 +262,112 @@ func TestDepRecorderIDsAreUniquePerTracer(t *testing.T) {
 
 // A build can return before its steps do.
 func TestDepRecorderAddAfterDrain(t *testing.T) {
-	f := newDepRecorder(newTestTracer(t))
-	f.add("root", "", slice(10, 40, 2, 1))
+	f := newDepRecorder(t.Context(), newTestTracer(t))
+	f.add(step("root", ""), slice(10, 40, 2, 1))
 	f.drain()
-	f.add("late", "root", slice(60, 20, 3, 4))
+	f.add(step("late", "root"), slice(60, 20, 3, 4))
 	if got := f.drain(); len(got) != 0 {
 		t.Errorf("drain() = %v; want none after the table is released", got)
 	}
 }
 
 func TestDepRecorderDisabled(t *testing.T) {
-	f := newDepRecorder(nil)
+	f := newDepRecorder(t.Context(), nil)
 	if f != nil {
-		t.Fatalf("newDepRecorder(nil) = %v; want nil", f)
+		t.Fatalf("newDepRecorder(t.Context(), nil) = %v; want nil", f)
 	}
 	// Must stay inert rather than panic.
-	f.add("root", "", slice(10, 40, 2, 1))
+	f.add(step("root", ""), slice(10, 40, 2, 1))
 	if got := f.drain(); got != nil {
 		t.Errorf("drain() = %v; want nil", got)
 	}
 	f.record()
+}
+
+func TestDepRecorderCriticalPath(t *testing.T) {
+	f := newDepRecorder(t.Context(), newTestTracer(t))
+	const us = time.Microsecond
+	// a -> b -> d is the chain; c is a branch that finished earlier. b keeps
+	// working for 20us after releasing d, which is off the path; d's tail
+	// counts, nothing came after it.
+	f.add(critical("a", "", "a.o", 0, 10*us, 12*us), slice(0, 10, 2, 1))
+	f.add(critical("b", "a", "b.o", 15*us, 40*us, 60*us), slice(15, 25, 2, 1))
+	f.add(critical("c", "a", "c.o", 15*us, 20*us, 20*us), slice(15, 5, 2, 2))
+	f.add(critical("d", "b", "d.so", 45*us, 90*us, 95*us), slice(45, 45, 2, 1))
+
+	var slices, hops []trace.Event
+	for _, ev := range f.drain() {
+		switch {
+		case ev.Ph == "X":
+			slices = append(slices, ev)
+		case ev.Cat == criticalCat:
+			hops = append(hops, ev)
+		}
+	}
+	want := []trace.Event{
+		{Name: "a.o", Cat: criticalCat, Ph: "X", T: 0, Dur: 10, Pid: f.pid, Tid: f.tid},
+		{Name: "b.o", Cat: criticalCat, Ph: "X", T: 15, Dur: 25, Pid: f.pid, Tid: f.tid},
+		{Name: "d.so", Cat: criticalCat, Ph: "X", T: 45, Dur: 50, Pid: f.pid, Tid: f.tid},
+	}
+	if diff := cmp.Diff(want, slices, cmpopts.IgnoreFields(trace.Event{}, "Args")); diff != "" {
+		t.Errorf("critical path slices diff -want +got:\n%s", diff)
+	}
+	if len(slices) == 3 {
+		if got, want := slices[1].Args["prev_id"], "a"; got != want {
+			t.Errorf("b.o prev_id = %v; want %v", got, want)
+		}
+		if got, want := slices[1].Args["after_release_ms"], 0.02; got != want {
+			t.Errorf("b.o after_release_ms = %v; want %v", got, want)
+		}
+	}
+	if len(hops) != 4 {
+		t.Fatalf("got %d hop events; want 2 hops", len(hops))
+	}
+	for i := 0; i < len(hops); i += 2 {
+		start, finish := hops[i], hops[i+1]
+		if start.Ph != "s" || finish.Ph != "f" || finish.Bp != "e" || start.ID != finish.ID {
+			t.Errorf("hop %d malformed: %+v %+v", i/2, start, finish)
+		}
+		if !inSlice(slices, start) || !startsSlice(slices, finish) {
+			t.Errorf("hop %d does not connect two slices: %g -> %g", i/2, start.T, finish.T)
+		}
+	}
+}
+
+func TestDepRecorderCriticalPathArgs(t *testing.T) {
+	st := critical("a", "", "a.o", 0, 100*time.Millisecond, 112*time.Millisecond)
+	st.attr.action = "cxx"
+	st.times = stepTimes{cache: 1500 * time.Microsecond, materializeOutputs: 48239648071}
+	want := map[string]any{
+		"id":                     "a",
+		"description":            "",
+		"action":                 "cxx",
+		"command":                "",
+		"backtrace":              "",
+		"prev_id":                "",
+		"cache_ms":               1.5,
+		"materialize_outputs_ms": 48239.648,
+		"after_release_ms":       12.0,
+	}
+	if diff := cmp.Diff(want, st.args()); diff != "" {
+		t.Errorf("args diff -want +got:\n%s", diff)
+	}
+}
+
+func inSlice(slices []trace.Event, ev trace.Event) bool {
+	for _, s := range slices {
+		if s.Pid == ev.Pid && s.Tid == ev.Tid && ev.T >= s.T && ev.T < s.T+s.Dur {
+			return true
+		}
+	}
+	return false
+}
+
+func startsSlice(slices []trace.Event, ev trace.Event) bool {
+	for _, s := range slices {
+		if s.Pid == ev.Pid && s.Tid == ev.Tid && s.T == ev.T {
+			return true
+		}
+	}
+	return false
 }

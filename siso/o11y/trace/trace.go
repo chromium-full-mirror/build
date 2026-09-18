@@ -60,6 +60,7 @@ type Tracer struct {
 
 	mu      sync.Mutex
 	procs   map[string]int64
+	sorted  map[int64]bool // pids with a sort index written
 	sysPid  int64
 	mainPid int64
 	semaPid int64
@@ -82,9 +83,10 @@ type threadMap struct {
 	m  map[string]int
 }
 
-func (tm *threadMap) get(name string) int {
+// get returns name's tid, and whether this call assigned it.
+func (tm *threadMap) get(name string) (int, bool) {
 	if tm == nil {
-		return sisoTid
+		return sisoTid, false
 	}
 	tm.mu.Lock()
 	defer tm.mu.Unlock()
@@ -93,11 +95,11 @@ func (tm *threadMap) get(name string) int {
 	}
 	tid, ok := tm.m[name]
 	if ok {
-		return tid
+		return tid, false
 	}
 	tid = len(tm.m) + sisoTid + 1
 	tm.m[name] = tid
-	return tid
+	return tid, true
 }
 
 // NewTracer creates new trace json in fname.
@@ -283,7 +285,36 @@ func (te *Tracer) Process(ctx context.Context, name string) int64 {
 	return pid
 }
 
-// Thread returns tid for thread name in pid.
+// ProcessSortIndex orders pid among the process tracks; lower sorts first.
+// Written once per pid, since builders sharing the tracer ask again.
+func (te *Tracer) ProcessSortIndex(ctx context.Context, pid int64, index int) {
+	if te == nil {
+		return
+	}
+	te.mu.Lock()
+	seen := te.sorted[pid]
+	if !seen {
+		if te.sorted == nil {
+			te.sorted = make(map[int64]bool)
+		}
+		te.sorted[pid] = true
+	}
+	te.mu.Unlock()
+	if seen {
+		return
+	}
+	te.write(ctx, Event{
+		Name: "process_sort_index",
+		Ph:   "M",
+		Pid:  pid,
+		Tid:  sisoTid,
+		Args: map[string]any{
+			"sort_index": index,
+		},
+	})
+}
+
+// Thread returns tid for thread name in pid, writing its thread_name once.
 func (te *Tracer) Thread(ctx context.Context, pid int64, name string) int {
 	if te == nil {
 		return sisoTid
@@ -295,8 +326,8 @@ func (te *Tracer) Thread(ctx context.Context, pid int64, name string) int {
 		m = te.threads[i]
 	}
 	te.mu.Unlock()
-	tid := m.get(name)
-	if tid != sisoTid {
+	tid, added := m.get(name)
+	if added {
 		te.write(ctx, Event{
 			Name: "thread_name",
 			Ph:   "M",

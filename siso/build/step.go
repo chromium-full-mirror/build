@@ -166,6 +166,11 @@ type Step struct {
 	queueSize     int
 	queueDuration time.Duration
 
+	// releaseTime is when completeStep handed the outputs to the steps
+	// waiting on them. Work after it, such as the depfile flush, delays
+	// nothing downstream.
+	releaseTime time.Time
+
 	// startTime is the time that the step starts running in a dedicated goroutine.
 	// There might be other semaphore throttling for local exec, scandeps, remote exec.
 	startTime time.Time

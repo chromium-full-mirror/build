@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -107,7 +108,8 @@ func TestBuild_Trace_remote(t *testing.T) {
 		t.Fatalf("traceEvents is not array: %v", v)
 	}
 	names := make(map[string]int)
-	var localPID, preprocPID, remotePID, rbePID int
+	var localPID, preprocPID, remotePID, rbePID, criticalPID int
+	var critical int
 	for i, v := range events {
 		ev, ok := v.(map[string]any)
 		if !ok {
@@ -129,6 +131,13 @@ func TestBuild_Trace_remote(t *testing.T) {
 		name, ok := ev["name"].(string)
 		if !ok {
 			t.Errorf("no name in traceEvents[%d] %v", i, v)
+			continue
+		}
+		if cat, _ := ev["cat"].(string); cat == "critical" {
+			critical++
+			if pid, _ := ev["pid"].(float64); int(pid) != criticalPID {
+				t.Errorf("pid of critical %s: %d; want %d", name, int(pid), criticalPID)
+			}
 			continue
 		}
 		names[name]++
@@ -159,6 +168,8 @@ func TestBuild_Trace_remote(t *testing.T) {
 				remotePID = int(pid)
 			case "rbe":
 				rbePID = int(pid)
+			case "critical path":
+				criticalPID = int(pid)
 			}
 			continue
 		case "out/siso/gen/remote/foo.out":
@@ -183,14 +194,19 @@ func TestBuild_Trace_remote(t *testing.T) {
 		}
 	}
 	want := map[string]int{
-		"process_name":                9,
+		"process_name":                10,
+		"process_sort_index":          1, // critical path
 		"out/siso/gen/remote/foo.out": 3, // preproc, remote-exec and rbe
 		"out/siso/gen/local/foo.out":  1,
-		"thread_name":                 1,
+		"thread_name":                 2, // critical path and rbe worker
 	}
 	if diff := cmp.Diff(want, names); diff != "" {
 		t.Errorf("event names diff -want +got:\n%s", diff)
 		t.Logf("trace json:\n%s", buf)
+	}
+	// Both steps are roots, so the path is just whichever finished last.
+	if critical != 1 {
+		t.Errorf("critical path slices: %d; want 1", critical)
 	}
 }
 
@@ -238,32 +254,64 @@ func TestBuild_Trace_flow(t *testing.T) {
 		t.Fatalf("unmarshal siso_trace.json: %v", err)
 	}
 
-	var slices []trace.Event
+	pids := make(map[string]int64)
+	tids := make(map[string]int64)
+	var slices, critical []trace.Event
 	starts := make(map[int64]trace.Event)
 	finishes := make(map[int64]trace.Event)
+	hopStarts := make(map[int64]trace.Event)
+	hopFinishes := make(map[int64]trace.Event)
 	for _, ev := range traceJSON.TraceEvents {
 		switch ev.Ph {
+		case "M":
+			name, _ := ev.Args["name"].(string)
+			switch ev.Name {
+			case "process_name":
+				pids[name] = ev.Pid
+			case "thread_name":
+				tids[name] = ev.Tid
+			}
 		case "X":
-			slices = append(slices, ev)
+			if ev.Cat == "critical" {
+				critical = append(critical, ev)
+			} else {
+				slices = append(slices, ev)
+			}
 		case "s":
-			if ev.Name != "dep" || ev.Cat != "flow" {
-				t.Errorf("flow start %q/%q; want dep/flow", ev.Name, ev.Cat)
+			if ev.Name != "dep" || (ev.Cat != "flow" && ev.Cat != "critical") {
+				t.Errorf("flow start %q/%q; want dep/flow or dep/critical", ev.Name, ev.Cat)
+				continue
 			}
-			if _, ok := starts[ev.ID]; ok {
-				t.Errorf("duplicate flow start id=%d", ev.ID)
+			if ev.Cat == "critical" {
+				if _, ok := hopStarts[ev.ID]; ok {
+					t.Errorf("duplicate hop start id=%d", ev.ID)
+				}
+				hopStarts[ev.ID] = ev
+			} else {
+				if _, ok := starts[ev.ID]; ok {
+					t.Errorf("duplicate flow start id=%d", ev.ID)
+				}
+				starts[ev.ID] = ev
 			}
-			starts[ev.ID] = ev
 		case "f":
-			if ev.Name != "dep" || ev.Cat != "flow" {
-				t.Errorf("flow finish %q/%q; want dep/flow", ev.Name, ev.Cat)
+			if ev.Name != "dep" || (ev.Cat != "flow" && ev.Cat != "critical") {
+				t.Errorf("flow finish %q/%q; want dep/flow or dep/critical", ev.Name, ev.Cat)
+				continue
 			}
 			if ev.Bp != "e" {
-				t.Errorf("flow finish id=%d bp=%q; want e", ev.ID, ev.Bp)
+				t.Errorf("%s finish id=%d bp=%q; want e", ev.Cat, ev.ID, ev.Bp)
 			}
-			if _, ok := finishes[ev.ID]; ok {
-				t.Errorf("duplicate flow finish id=%d", ev.ID)
+			if ev.Cat == "critical" {
+				if _, ok := hopFinishes[ev.ID]; ok {
+					t.Errorf("duplicate hop finish id=%d", ev.ID)
+				}
+				hopFinishes[ev.ID] = ev
+			} else {
+				if _, ok := finishes[ev.ID]; ok {
+					t.Errorf("duplicate flow finish id=%d", ev.ID)
+				}
+				finishes[ev.ID] = ev
 			}
-			finishes[ev.ID] = ev
 		}
 	}
 	// The chain is a -> b -> c, so two arrows.
@@ -272,7 +320,7 @@ func TestBuild_Trace_flow(t *testing.T) {
 	}
 
 	// Every end must land inside a slice, and follow the recorded step ids.
-	enclosing := func(e trace.Event) (trace.Event, bool) {
+	enclosing := func(e trace.Event, slices []trace.Event) (trace.Event, bool) {
 		for _, s := range slices {
 			if s.Pid == e.Pid && s.Tid == e.Tid && e.T >= s.T && e.T < s.T+s.Dur {
 				return s, true
@@ -290,12 +338,12 @@ func TestBuild_Trace_flow(t *testing.T) {
 			t.Errorf("flow id=%d has a start but no finish", id)
 			continue
 		}
-		src, ok := enclosing(start)
+		src, ok := enclosing(start, slices)
 		if !ok {
 			t.Errorf("flow id=%d start %+v is not inside any slice", id, start)
 			continue
 		}
-		dst, ok := enclosing(finish)
+		dst, ok := enclosing(finish, slices)
 		if !ok {
 			t.Errorf("flow id=%d finish %+v is not inside any slice", id, finish)
 			continue
@@ -306,6 +354,60 @@ func TestBuild_Trace_flow(t *testing.T) {
 		}
 		if start.T > finish.T {
 			t.Errorf("flow id=%d runs backwards: start ts %g > finish ts %g", id, start.T, finish.T)
+		}
+	}
+
+	// The critical path is the whole chain, oldest first, on one row of its
+	// own track, each slice covering the step's exec slice.
+	sort.Slice(critical, func(i, j int) bool { return critical[i].T < critical[j].T })
+	var names []string
+	for _, c := range critical {
+		names = append(names, c.Name)
+	}
+	want := []string{"out/siso/gen/a.out", "out/siso/gen/b.out", "out/siso/gen/c.out"}
+	if diff := cmp.Diff(want, names); diff != "" {
+		t.Fatalf("critical path diff -want +got:\n%s\n%s", diff, buf)
+	}
+	for i, c := range critical {
+		if c.Pid != pids["critical path"] || c.Tid != tids["critical path"] {
+			t.Errorf("%s: pid=%d tid=%d; want the critical path track %d/%d", c.Name, c.Pid, c.Tid, pids["critical path"], tids["critical path"])
+		}
+		if i > 0 {
+			if got, want := stepArg(c, "prev_id"), stepArg(critical[i-1], "id"); got != want {
+				t.Errorf("%s: prev_id %q; want %q, the step before it", c.Name, got, want)
+			}
+			if prev := critical[i-1]; c.T < prev.T+prev.Dur {
+				t.Errorf("%s starts at %g, before %s ends at %g", c.Name, c.T, prev.Name, prev.T+prev.Dur)
+			}
+		}
+		for _, s := range slices {
+			if s.Name == c.Name && !(c.T <= s.T && s.T+s.Dur <= c.T+c.Dur) {
+				t.Errorf("%s: critical slice [%g, %g] does not cover its %s slice [%g, %g]", c.Name, c.T, c.T+c.Dur, s.Cat, s.T, s.T+s.Dur)
+			}
+		}
+	}
+	if len(hopStarts) != 2 || len(hopFinishes) != 2 {
+		t.Fatalf("critical hop starts=%d finishes=%d; want 2 and 2", len(hopStarts), len(hopFinishes))
+	}
+	for id, start := range hopStarts {
+		finish, ok := hopFinishes[id]
+		if !ok {
+			t.Errorf("hop id=%d has a start but no finish", id)
+			continue
+		}
+		src, ok := enclosing(start, critical)
+		if !ok {
+			t.Errorf("hop id=%d start %+v is not inside any critical slice", id, start)
+			continue
+		}
+		dst, ok := enclosing(finish, critical)
+		if !ok || dst.T != finish.T {
+			t.Errorf("hop id=%d finish %+v does not start a critical slice", id, finish)
+			continue
+		}
+		if got, want := stepArg(dst, "prev_id"), stepArg(src, "id"); got != want {
+			t.Errorf("hop id=%d points %s -> %s; the target's prev_id is %s, not the source step %s",
+				id, src.Name, dst.Name, got, want)
 		}
 	}
 }

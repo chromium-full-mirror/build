@@ -443,7 +443,7 @@ func New(ctx context.Context, graph Graph, opts Options) (_ *Builder, err error)
 		traceExporter:         opts.TraceExporter,
 		tracer:                opts.Tracer,
 		traceStats:            newTraceStats(),
-		traceDeps:             newDepRecorder(opts.Tracer),
+		traceDeps:             newDepRecorder(ctx, opts.Tracer),
 		tracePprof:            newTracePprof(opts.Pprof),
 		pprofUploader:         opts.PprofUploader,
 		resultSink:            opts.ResultSink,
@@ -1461,11 +1461,11 @@ func (b *Builder) TraceEnabled() bool {
 	return b.tracer.Enabled() || b.traceExporter != nil || b.tracePprof.Enabled()
 }
 
-func (b *Builder) finalizeTrace(ctx context.Context, tc *trace.Context) {
+func (b *Builder) finalizeTrace(ctx context.Context, tc *trace.Context, step *Step) {
 	if tc == nil {
 		return
 	}
-	b.tracer.Record(b.traceEvents(ctx, tc))
+	b.tracer.Record(b.traceEvents(ctx, tc, step))
 	b.traceStats.update(tc)
 	b.traceExporter.Export(ctx, tc)
 	b.tracePprof.Add(ctx, tc)
