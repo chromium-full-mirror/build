@@ -44,6 +44,9 @@ type Request struct {
 	// absolute paths. e.g. /bin
 	PublicDirs []string `json:"public_dirs,omitempty"`
 
+	// absolute paths. e.g. /dev
+	WritableDirs []string `json:"writable_dirs,omitempty"`
+
 	WorkspaceRoot string `json:"workspace_root"`    // absolute path to workspace root
 	WorkDir       string `json:"workdir,omitempty"` // working dir, relative to WorkspaceRoot
 
@@ -129,7 +132,7 @@ func New(ctx context.Context, fsys fs.FS, req Request) (_ *NSJail, err error) {
 	// TODO: Consider adding customizable env vars in the ninja file.
 	jail.config.Envar = append(jail.config.Envar, "TMPDIR=/tmp")
 
-	if req.PublicDirs == nil {
+	if req.PublicDirs == nil && req.WritableDirs == nil {
 		req.PublicDirs = []string{
 			"/bin",
 			"/lib",
@@ -160,6 +163,15 @@ func New(ctx context.Context, fsys fs.FS, req Request) (_ *NSJail, err error) {
 			Dst:    proto.String(dir),
 			IsBind: proto.Bool(true),
 			IsDir:  proto.Bool(true),
+		})
+	}
+	for _, dir := range req.WritableDirs {
+		jail.config.Mount = append(jail.config.Mount, &pb.MountPt{
+			Src:    proto.String(dir),
+			Dst:    proto.String(dir),
+			IsBind: proto.Bool(true),
+			IsDir:  proto.Bool(true),
+			Rw:     proto.Bool(true),
 		})
 	}
 	jail.config.MountProc = proto.Bool(true)

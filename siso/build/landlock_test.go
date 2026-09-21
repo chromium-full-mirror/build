@@ -133,3 +133,83 @@ func TestLandlockExecutor_OutputDirs(t *testing.T) {
 		})
 	}
 }
+
+func TestLandlockExecutor_DefaultDirs(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("Landlock is only supported on linux")
+	}
+	t.Setenv("TMPDIR", "")
+	for _, tc := range []struct {
+		name          string
+		sandboxConfig map[string]string
+		wantRODirs    []string
+		wantRWDirs    []string
+	}{
+		{
+			name:          "default when unset",
+			sandboxConfig: nil,
+			wantRODirs: []string{
+				"/bin",
+				"/lib",
+				"/lib64",
+				"/usr/bin",
+				"/usr/lib",
+				"/usr/lib32",
+				"/usr/lib64",
+			},
+			wantRWDirs: []string{"out/gen", "/tmp", "/dev", "/proc"},
+		},
+		{
+			name: "only default_readable_dirs set replaces both default lists",
+			sandboxConfig: map[string]string{
+				"default_readable_dirs": "/custom/bin:/custom/lib",
+			},
+			wantRODirs: []string{"/custom/bin", "/custom/lib"},
+			wantRWDirs: []string{"out/gen", "/tmp"},
+		},
+		{
+			name: "only default_writable_dirs set replaces both default lists",
+			sandboxConfig: map[string]string{
+				"default_writable_dirs": "/custom/rw1:/custom/rw2",
+			},
+			wantRODirs: []string{},
+			wantRWDirs: []string{"out/gen", "/tmp", "/custom/rw1", "/custom/rw2"},
+		},
+		{
+			name: "both default_readable_dirs and default_writable_dirs set",
+			sandboxConfig: map[string]string{
+				"default_readable_dirs": "/custom/bin",
+				"default_writable_dirs": "/custom/rw",
+			},
+			wantRODirs: []string{"/custom/bin"},
+			wantRWDirs: []string{"out/gen", "/tmp", "/custom/rw"},
+		},
+		{
+			name: "explicit empty default_readable_dirs clears defaults",
+			sandboxConfig: map[string]string{
+				"default_readable_dirs": "",
+			},
+			wantRODirs: []string{},
+			wantRWDirs: []string{"out/gen", "/tmp"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fake := &fakeExecutor{}
+			executor := newLandlockExecutor(fake, tc.sandboxConfig)
+			cmd := &execute.Cmd{
+				Outputs: path.Paths([]string{"out/gen/foo.h"}),
+			}
+			ctx := t.Context()
+			err := executor.Run(ctx, cmd)
+			if err != nil {
+				t.Fatalf("executor.Run: %v", err)
+			}
+			if diff := cmp.Diff(tc.wantRODirs, fake.req.RODirs); diff != "" {
+				t.Errorf("RODirs mismatch (-want +got):\n%s", diff)
+			}
+			if diff := cmp.Diff(tc.wantRWDirs, fake.req.RWDirs); diff != "" {
+				t.Errorf("RWDirs mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}

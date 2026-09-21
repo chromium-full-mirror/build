@@ -51,12 +51,31 @@ func newNSJailExecutor(ctx context.Context, b *Builder, executor execute.Executo
 	if log.V(1) {
 		clog.Infof(ctx, "use nsjail=%q", exePath)
 	}
+	var publicDirs, writableDirs []string
+	_, hasReadable := sandboxConfig["default_readable_dirs"]
+	_, hasWritable := sandboxConfig["default_writable_dirs"]
+	if hasReadable || hasWritable {
+		publicDirs = splitDirs(sandboxConfig["default_readable_dirs"])
+		for i, d := range publicDirs {
+			if !filepath.IsAbs(d) && b.path.WorkspaceRoot != "" {
+				publicDirs[i] = filepath.Join(b.path.WorkspaceRoot, d)
+			}
+		}
+		writableDirs = splitDirs(sandboxConfig["default_writable_dirs"])
+		for i, d := range writableDirs {
+			if !filepath.IsAbs(d) && b.path.WorkspaceRoot != "" {
+				writableDirs[i] = filepath.Join(b.path.WorkspaceRoot, d)
+			}
+		}
+	}
 	return &nsjailExecutor{
 		b:        b,
 		executor: executor,
 		req: nsjailutil.Request{
 			ExePath:       exePath,
 			JailRootDir:   workDir,
+			PublicDirs:    publicDirs,
+			WritableDirs:  writableDirs,
 			WorkspaceRoot: b.path.WorkspaceRoot,
 			WorkDir:       b.path.BaseDir,
 			OutDir:        outDir,

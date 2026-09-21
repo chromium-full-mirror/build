@@ -25,20 +25,57 @@ import (
 )
 
 type landlockExecutor struct {
-	innerExecutor execute.Executor
-	tool          string
+	innerExecutor       execute.Executor
+	tool                string
+	defaultReadableDirs []string
+	defaultWritableDirs []string
 }
 
 var _ execute.Executor = (*landlockExecutor)(nil)
 
 func newLandlockExecutor(executor execute.Executor, sandboxConfig map[string]string) *landlockExecutor {
+	var defaultReadableDirs []string
+	var defaultWritableDirs []string
+	_, hasReadable := sandboxConfig["default_readable_dirs"]
+	_, hasWritable := sandboxConfig["default_writable_dirs"]
+	if hasReadable || hasWritable {
+		defaultReadableDirs = splitDirs(sandboxConfig["default_readable_dirs"])
+		defaultWritableDirs = splitDirs(sandboxConfig["default_writable_dirs"])
+	} else {
+		// /dev/null and some /proc files need to be writable
+		defaultWritableDirs = []string{
+			"/dev",
+			"/proc",
+		}
+		defaultReadableDirs = []string{
+			"/bin",
+			"/lib",
+			"/lib64",
+			"/usr/bin",
+			"/usr/lib",
+			"/usr/lib32",
+			"/usr/lib64",
+		}
+	}
 	return &landlockExecutor{
 		innerExecutor: executor,
 		// Users can provide a custom tool to do the landlocking.
 		// If not provided, siso will re-exec itself as the tool.
 		// Using a custom tool can be faster due to siso's large size.
-		tool: sandboxConfig["landlock_tool_path"],
+		tool:                sandboxConfig["landlock_tool_path"],
+		defaultReadableDirs: defaultReadableDirs,
+		defaultWritableDirs: defaultWritableDirs,
 	}
+}
+
+func splitDirs(s string) []string {
+	dirs := []string{}
+	for _, d := range filepath.SplitList(s) {
+		if d != "" {
+			dirs = append(dirs, d)
+		}
+	}
+	return dirs
 }
 
 func (l *landlockExecutor) Run(ctx context.Context, cmd *execute.Cmd) error {
@@ -99,22 +136,21 @@ func (l *landlockExecutor) Run(ctx context.Context, cmd *execute.Cmd) error {
 		outputDirs = append(outputDirs, "/tmp")
 	}
 
-	// /dev/null and some /proc files need to be writable
-	// TODO(b/558383898): make this configurable
-	outputDirs = append(outputDirs, "/dev", "/proc")
-
-	// TODO(b/558383898): make this configurable (also need to do this in nsjail backend)
-	roDirs := []string{
-		"/bin",
-		"/lib",
-		"/lib64",
-		"/usr/bin",
-		"/usr/lib",
-		"/usr/lib32",
-		"/usr/lib64",
+	for _, d := range l.defaultWritableDirs {
+		if !filepath.IsAbs(d) && workspaceRoot != "" {
+			d = filepath.Join(workspaceRoot, d)
+		}
+		outputDirs = append(outputDirs, d)
 	}
 
 	allInputs := cmd.AllInputs()
+	roDirs := make([]string, 0, len(l.defaultReadableDirs)+len(allInputs))
+	for _, d := range l.defaultReadableDirs {
+		if !filepath.IsAbs(d) && workspaceRoot != "" {
+			d = filepath.Join(workspaceRoot, d)
+		}
+		roDirs = append(roDirs, d)
+	}
 	roFiles := make([]string, 0, len(allInputs))
 	for _, in := range allInputs {
 		p := in.String()
