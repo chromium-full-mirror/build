@@ -194,8 +194,8 @@ to register handlers and step configs.
           * "unsupported-macro": use clang scandeps when unsupported macro detected.
           * "scandeps-err": use clang scandeps when builtin scandeps failed.
         * `step_inputs`: [path_filter](#path_filter) specify what inputs from the ninja graph are used in addition to tool_inputs, scandeps results.
-     * `bad_deps`
-       * key: output target known to have bad deps
+     * `missing_deps` (or legacy `bad_deps`)
+       * key: output target known to have missing deps
        * value: annotation (usually bug link)
      * `executables`
        * (Windows only) a list of filenames for executables.

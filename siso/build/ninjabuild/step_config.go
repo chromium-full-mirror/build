@@ -250,14 +250,17 @@ type StepConfig struct {
 	// Rules lists step rules.
 	Rules []*StepRule `json:"rules,omitempty"`
 
-	// BadDeps specifies known targets with bad deps,
+	// MissingDeps specifies known targets with missing dependencies,
 	// i.e. target has other generated targets not in direct/indirect
 	// dependencies in depfile.
-	// This target won't cause error with bad deps even with
-	// `SISO_EXPERIMENTS=fail-on-bad-deps` to make it easy to
-	// detect new bad deps.
-	// key is output target known to have bad deps.
+	// This target won't cause error with missing deps even with
+	// `-missing_deps=error/fatal` or `SISO_EXPERIMENTS=fail-on-bad-deps`
+	// to make it easy to detect new missing deps.
+	// key is output target known to have missing deps.
 	// value is annotation (usually bug link).
+	MissingDeps map[string]string `json:"missing_deps,omitempty"`
+
+	// BadDeps is the legacy name for MissingDeps.
 	BadDeps map[string]string `json:"bad_deps,omitempty"`
 
 	// Executables are files that need to have executable bit on Linux worker.
@@ -336,6 +339,14 @@ func (sc *StepConfig) Init(ctx context.Context) error {
 	sc.Scandeps.stepInputsFilter = sc.Scandeps.StepInputs.Filter(ctx, "scandeps.step_inputs")
 	if sc.InputDeps == nil {
 		sc.InputDeps = make(map[string][]string)
+	}
+	if sc.MissingDeps == nil {
+		sc.MissingDeps = make(map[string]string)
+	}
+	for k, v := range sc.BadDeps {
+		if _, ok := sc.MissingDeps[k]; !ok {
+			sc.MissingDeps[k] = v
+		}
 	}
 	return nil
 }
