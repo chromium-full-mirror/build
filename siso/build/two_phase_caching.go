@@ -108,7 +108,7 @@ func (rt reapiTwoPhaseCaching) Check(ctx context.Context, lookupKey string, step
 			return fmt.Errorf("list actions: %w", err)
 		}
 		if nactions > maxCandidates {
-			clog.Warningf(ctx, "too many cancidates in %q: %d", lookupKey, nactions)
+			clog.Warningf(ctx, "too many candidates in %q: %d", lookupKey, nactions)
 			return fmt.Errorf("cache not found. too many candidates %d for %s", nactions, lookupKey)
 		}
 		inputs, outputs, err := rt.matchAction(ctx, step, action)
