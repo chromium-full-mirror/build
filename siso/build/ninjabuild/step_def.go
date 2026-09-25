@@ -334,6 +334,16 @@ func (s *StepDef) Binding(name string) string {
 			return "true"
 		}
 		return ""
+	case "sandbox_disabled":
+		if s.rule.SandboxDisabled {
+			return "true"
+		}
+		return s.edge.Binding(name)
+	case "cache_disabled":
+		if s.rule.CacheDisabled {
+			return "true"
+		}
+		return s.edge.Binding(name)
 	case "timeout":
 		return s.rule.Timeout
 	case "exec_timeout":

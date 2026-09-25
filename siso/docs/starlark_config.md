@@ -271,6 +271,8 @@ to register handlers and step configs.
           * `ignore_extra_output_pattern`: regexp to allow if it is generated,
              but not listed in outputs.
           * `impure`: mark it as not pure. i.e. not check inputs/outputs
+          * `sandbox_disabled`: disable sandbox.
+          * `cache_disabled`: disable cache.
           * `replace`: if any output of this step is used in other steps,
              those steps will use the inputs of this step as inputs
              instead of the outputs of this step.

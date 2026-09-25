@@ -173,6 +173,12 @@ type StepRule struct {
 	// Impure disables file access trace.
 	Impure bool `json:"impure,omitzero"`
 
+	// SandboxDisabled marks the step disables sandbox.
+	SandboxDisabled bool `json:"sandbox_disabled,omitzero"`
+
+	// CacheDisabled marks the step disables cache.
+	CacheDisabled bool `json:"cache_disabled,omitzero"`
+
 	// Replace replaces the outputs, when used by other step,
 	// to the inputs of the step.
 	// e.g. stamp.
