@@ -381,7 +381,7 @@ func TestBuild_Trace_flow(t *testing.T) {
 			}
 		}
 		for _, s := range slices {
-			if s.Name == c.Name && !(c.T <= s.T && s.T+s.Dur <= c.T+c.Dur) {
+			if s.Name == c.Name && (c.T > s.T || s.T+s.Dur > c.T+c.Dur) {
 				t.Errorf("%s: critical slice [%g, %g] does not cover its %s slice [%g, %g]", c.Name, c.T, c.T+c.Dur, s.Cat, s.T, s.T+s.Dur)
 			}
 		}
