@@ -6,7 +6,6 @@ package build
 
 import (
 	"context"
-	"math"
 	"slices"
 	"sort"
 	"strings"
@@ -24,9 +23,9 @@ const (
 	criticalCat = "critical"
 )
 
-// flowPoint is where one end of an arrow attaches, in microseconds.
+// flowPoint is where one end of an arrow attaches.
 type flowPoint struct {
-	ts  float64
+	ts  trace.Micros
 	pid int64
 	tid int64
 }
@@ -282,16 +281,9 @@ func flowEnds(events []trace.Event) (src, dst flowPoint, ok bool) {
 	}
 	// A slice covers [ts, ts+dur), so its end would bind to whatever follows
 	// on the track. The middle is inside at any width.
-	src = flowPoint{ts: nanos(last.T + last.Dur/2), pid: last.Pid, tid: last.Tid}
+	src = flowPoint{ts: last.T + last.Dur/2, pid: last.Pid, tid: last.Tid}
 	dst = flowPoint{ts: first.T, pid: first.Pid, tid: first.Tid}
 	return src, dst, true
-}
-
-// nanos rounds a microsecond value to whole nanoseconds, the resolution of
-// every timestamp in the file. Arithmetic on two of them leaves noise digits
-// otherwise.
-func nanos(us float64) float64 {
-	return math.Round(us*1e3) / 1e3
 }
 
 func (b *Builder) traceEvents(ctx context.Context, tc *trace.Context, step *Step) []trace.Event {

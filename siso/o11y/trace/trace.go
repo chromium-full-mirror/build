@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"runtime/metrics"
 	"sync"
@@ -147,11 +148,28 @@ func (te *Tracer) Enabled() bool {
 
 var startTime = time.Now()
 
-// Micros converts d for Event.T and Event.Dur. Whole microseconds would
-// truncate a shorter span to zero width, and a zero-width slice holds no
-// timestamp for anything to bind to.
-func Micros(d time.Duration) float64 {
-	return float64(d) / float64(time.Microsecond)
+// Micros is a time.Duration (int64 nanoseconds) for Event.T and Event.Dur that
+// marshals to and from JSON as fractional microseconds (float64). Whole
+// microseconds would truncate a shorter span to zero width, while keeping
+// int64 nanoseconds in memory avoids IEEE 754 float64 rounding errors during
+// arithmetic and comparisons.
+type Micros time.Duration
+
+func (m Micros) MarshalJSON() ([]byte, error) {
+	return json.Marshal(float64(m) / float64(time.Microsecond))
+}
+
+func (m *Micros) UnmarshalJSON(b []byte) error {
+	var us float64
+	if err := json.Unmarshal(b, &us); err != nil {
+		return err
+	}
+	*m = Micros(math.Round(us * float64(time.Microsecond)))
+	return nil
+}
+
+func (m Micros) Format(f fmt.State, verb rune) {
+	fmt.Fprintf(f, fmt.FormatString(f, verb), float64(m)/float64(time.Microsecond))
 }
 
 // StartTime returns start time of tracer.
@@ -362,9 +380,9 @@ type Event struct {
 	// of event being output.
 	Ph string `json:"ph"`
 
-	// The tracing clock timestamp of the event, in microseconds.
-	// Fractional, so a span shorter than a microsecond keeps its width.
-	T float64 `json:"ts"`
+	// The tracing clock timestamp of the event, in microseconds in JSON
+	// (stored in memory as int64 nanoseconds).
+	T Micros `json:"ts"`
 
 	// The process ID of the process that output this event.
 	Pid int64 `json:"pid"`
@@ -372,9 +390,10 @@ type Event struct {
 	// The thread ID of the thread that output this event.
 	Tid int64 `json:"tid"`
 
-	// The tracing clock duration of complete events in microseconds.
+	// The tracing clock duration of complete events, in microseconds in JSON
+	// (stored in memory as int64 nanoseconds).
 	// Used for "ph"="X".
-	Dur float64 `json:"dur,omitzero"`
+	Dur Micros `json:"dur,omitzero"`
 
 	// The identifier pairing the two ends of one flow.
 	// Used for "ph"="s" and "ph"="f".

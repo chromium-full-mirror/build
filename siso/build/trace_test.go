@@ -49,19 +49,19 @@ func TestFlowEnds(t *testing.T) {
 			want: true,
 		},
 		{
-			// Fractional microseconds keep a short span anchorable.
+			// Sub-microsecond spans (in nanoseconds) keep a non-zero width.
 			name:   "sub_microsecond",
-			events: []trace.Event{{T: 100, Dur: 0.5, Pid: 2, Tid: 7}},
-			src:    flowPoint{ts: 100.25, pid: 2, tid: 7},
-			dst:    flowPoint{ts: 100, pid: 2, tid: 7},
+			events: []trace.Event{{T: 100000, Dur: 500, Pid: 2, Tid: 7}},
+			src:    flowPoint{ts: 100250, pid: 2, tid: 7},
+			dst:    flowPoint{ts: 100000, pid: 2, tid: 7},
 			want:   true,
 		},
 		{
-			// 7473.334 + 26073.276/2 leaves noise digits in float64.
-			name:   "rounded_midpoint",
-			events: []trace.Event{{T: 7473.334, Dur: 26073.276, Pid: 2, Tid: 7}},
-			src:    flowPoint{ts: 20509.972, pid: 2, tid: 7},
-			dst:    flowPoint{ts: 7473.334, pid: 2, tid: 7},
+			// Exact nanosecond arithmetic needs no float64 rounding.
+			name:   "exact_midpoint",
+			events: []trace.Event{{T: 7473334, Dur: 26073276, Pid: 2, Tid: 7}},
+			src:    flowPoint{ts: 20509972, pid: 2, tid: 7},
+			dst:    flowPoint{ts: 7473334, pid: 2, tid: 7},
 			want:   true,
 		},
 		{
@@ -110,7 +110,7 @@ func newTestTracer(t *testing.T) *trace.Tracer {
 	return tracer
 }
 
-func slice(ts, dur float64, pid, tid int64) []trace.Event {
+func slice(ts, dur trace.Micros, pid, tid int64) []trace.Event {
 	return []trace.Event{{T: ts, Dur: dur, Pid: pid, Tid: tid}}
 }
 
@@ -305,9 +305,9 @@ func TestDepRecorderCriticalPath(t *testing.T) {
 		}
 	}
 	want := []trace.Event{
-		{Name: "a.o", Cat: criticalCat, Ph: "X", T: 0, Dur: 10, Pid: f.pid, Tid: f.tid},
-		{Name: "b.o", Cat: criticalCat, Ph: "X", T: 15, Dur: 25, Pid: f.pid, Tid: f.tid},
-		{Name: "d.so", Cat: criticalCat, Ph: "X", T: 45, Dur: 50, Pid: f.pid, Tid: f.tid},
+		{Name: "a.o", Cat: criticalCat, Ph: "X", T: 0, Dur: trace.Micros(10 * us), Pid: f.pid, Tid: f.tid},
+		{Name: "b.o", Cat: criticalCat, Ph: "X", T: trace.Micros(15 * us), Dur: trace.Micros(25 * us), Pid: f.pid, Tid: f.tid},
+		{Name: "d.so", Cat: criticalCat, Ph: "X", T: trace.Micros(45 * us), Dur: trace.Micros(50 * us), Pid: f.pid, Tid: f.tid},
 	}
 	if diff := cmp.Diff(want, slices, cmpopts.IgnoreFields(trace.Event{}, "Args")); diff != "" {
 		t.Errorf("critical path slices diff -want +got:\n%s", diff)
@@ -329,7 +329,7 @@ func TestDepRecorderCriticalPath(t *testing.T) {
 			t.Errorf("hop %d malformed: %+v %+v", i/2, start, finish)
 		}
 		if !inSlice(slices, start) || !startsSlice(slices, finish) {
-			t.Errorf("hop %d does not connect two slices: %g -> %g", i/2, start.T, finish.T)
+			t.Errorf("hop %d does not connect two slices: %v -> %v", i/2, start.T, finish.T)
 		}
 	}
 }
