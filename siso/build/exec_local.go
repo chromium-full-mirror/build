@@ -185,12 +185,15 @@ func (b *Builder) execLocal(ctx context.Context, step *Step) (retErr error) {
 	if err != nil {
 		return err
 	}
-	if ctx.Err() == nil && b.allowCacheWrite(step) {
+	if ctx.Err() == nil {
+		// check allowCacheWrite after tapCanonicalCmd.
+		// step.cmd.Pure may have been set true in updateDeps,
+		// but set it in tapCanonicalizeCmd.
 		if step.metrics.TwoPhaseCachingKey != "" {
 			err := b.tapCanonicalizeCmd(ctx, step.cmd)
 			if err != nil {
 				clog.Errorf(ctx, "two phase caching: canonicalize cmd %v", err)
-			} else {
+			} else if b.allowCacheWrite(step) {
 				err := b.cacheWrite(ctx, step)
 				if errors.Is(err, errNoCacheWrite) {
 					clog.Infof(ctx, "two phase cache: write ignored %q: %v", step.metrics.TwoPhaseCachingKey, err)
@@ -203,7 +206,7 @@ func (b *Builder) execLocal(ctx context.Context, step *Step) (retErr error) {
 					}
 				}
 			}
-		} else {
+		} else if b.allowCacheWrite(step) {
 			err := b.cacheWrite(ctx, step)
 			if errors.Is(err, errNoCacheWrite) {
 				clog.Infof(ctx, "cache write ignored: %v", err)

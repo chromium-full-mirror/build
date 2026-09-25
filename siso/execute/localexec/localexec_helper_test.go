@@ -64,7 +64,7 @@ func TestMain(m *testing.M) {
 	exe, err := os.Executable()
 	if err == nil {
 		if c, lerr := spawnhelper.Launch([]string{exe, "spawn-helper"}, "", false); lerr == nil {
-			helper.Store(c)
+			SetSpawnHelper(c)
 		}
 	}
 	m.Run()
@@ -111,12 +111,12 @@ func TestRunViaHelperExecutableLookup(t *testing.T) {
 	}
 }
 
-// TestStopHelperAccountsChildCPU is the regression test for b/531402317: an action
+// TestStopSpawnHelperAccountsChildCPU is the regression test for b/531402317: an action
 // runs under the out-of-process spawn helper, which reaps it, so the action's CPU
-// lands in the helper's rusage. StopHelper must wait on the helper so that CPU rolls
+// lands in the helper's rusage. StopSpawnHelper must wait on the helper so that CPU rolls
 // up into this process's RUSAGE_CHILDREN. Without the wait it is orphaned to init and
 // getrusage never sees it, which is what made `time siso` report almost no CPU.
-func TestStopHelperAccountsChildCPU(t *testing.T) {
+func TestStopSpawnHelperAccountsChildCPU(t *testing.T) {
 	exe, err := os.Executable()
 	if err != nil {
 		t.Fatal(err)
@@ -128,8 +128,8 @@ func TestStopHelperAccountsChildCPU(t *testing.T) {
 	if err != nil {
 		t.Fatalf("launch helper: %v", err)
 	}
-	orig := helper.Swap(c)
-	t.Cleanup(func() { helper.Store(orig) })
+	orig := SetSpawnHelper(c)
+	t.Cleanup(func() { SetSpawnHelper(orig) })
 
 	const burn = 500 * time.Millisecond
 	cmd := &execute.Cmd{
@@ -151,7 +151,7 @@ func TestStopHelperAccountsChildCPU(t *testing.T) {
 	if err := unix.Getrusage(unix.RUSAGE_CHILDREN, &before); err != nil {
 		t.Fatalf("getrusage before: %v", err)
 	}
-	if err := StopHelper(t.Context()); err != nil {
+	if err := StopSpawnHelper(t.Context()); err != nil {
 		t.Fatalf("StopHelper: %v", err)
 	}
 	var after unix.Rusage
@@ -163,7 +163,7 @@ func TestStopHelperAccountsChildCPU(t *testing.T) {
 	// The child burned ~burn of user CPU; require at least half to absorb noise while
 	// still failing hard (delta ~0) if the helper's CPU was not rolled up.
 	if want := burn / 2; got < want {
-		t.Errorf("RUSAGE_CHILDREN user time delta after StopHelper = %v, want >= %v; child CPU was not accounted (helper not reaped)", got, want)
+		t.Errorf("RUSAGE_CHILDREN user time delta after StopSpawnHelper = %v, want >= %v; child CPU was not accounted (helper not reaped)", got, want)
 	}
 }
 
@@ -172,8 +172,8 @@ func TestStopHelperAccountsChildCPU(t *testing.T) {
 // runViaHelper runs the action in-process instead of re-exec'ing (which would
 // fork-bomb a test binary that has no spawn-helper subcommand).
 func TestRunViaHelperInProcessFallback(t *testing.T) {
-	orig := helper.Swap(nil)
-	t.Cleanup(func() { helper.Store(orig) })
+	orig := SetSpawnHelper(nil)
+	t.Cleanup(func() { SetSpawnHelper(orig) })
 
 	cmd := &execute.Cmd{
 		Args:          []string{"true"},

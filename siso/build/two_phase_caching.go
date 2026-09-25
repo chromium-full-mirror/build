@@ -134,6 +134,7 @@ func (rt reapiTwoPhaseCaching) Check(ctx context.Context, lookupKey string, step
 				return s == step.cmd.Depfile
 			})
 		}
+		step.cmd.InitOutputs()
 		if log.V(2) {
 			clog.Infof(ctx, "inputs %q", step.cmd.Inputs)
 			clog.Infof(ctx, "outputs %q", step.cmd.Outputs)
@@ -181,6 +182,9 @@ func (rt reapiTwoPhaseCaching) matchAction(ctx context.Context, step *Step, acti
 	// TODO: check environment variables
 
 	for _, output := range cmd.GetOutputFiles() { //nolint:staticcheck // existing deprecation
+		outputs = append(outputs, rt.b.path.MaybeFromRelative(ctx, output))
+	}
+	for _, output := range cmd.GetOutputDirectories() { //nolint:staticcheck // existing deprecation
 		outputs = append(outputs, rt.b.path.MaybeFromRelative(ctx, output))
 	}
 	for _, output := range cmd.GetOutputPaths() {

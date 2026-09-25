@@ -15,10 +15,15 @@ import (
 	"go.chromium.org/build/siso/path"
 )
 
-// Spawner is the localexec implementation of spawnhelper.Spawner.
+// Spawner is the localexec implementation of spawnhelper.Spawner and SpawnHelper.
 // The spawn helper calls it for each action, so the helper shares all of
 // localexec's spawn, wait, cancel, rusage, and OOM handling.
 type Spawner struct{}
+
+// Run implements SpawnHelper by calling Spawn.
+func (s Spawner) Run(ctx context.Context, req *epb.SpawnRequest) (*epb.SpawnResult, error) {
+	return s.Spawn(ctx, req)
+}
 
 // Spawn runs req as a local subprocess via run() and returns its
 // ActionResult packed into a SpawnResult.

@@ -10,22 +10,89 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"testing"
+
+	"google.golang.org/protobuf/types/known/anypb"
 
 	rpb "go.chromium.org/build/remote-apis/build/bazel/remote/execution/v2"
 
 	"go.chromium.org/build/siso/build"
 	"go.chromium.org/build/siso/build/ninjabuild"
+	"go.chromium.org/build/siso/execute/localexec"
+	epb "go.chromium.org/build/siso/execute/proto"
 	"go.chromium.org/build/siso/hashfs"
 	"go.chromium.org/build/siso/reapi/reapitest"
 )
 
+// mockTapHelper wraps localexec.Spawner and attaches a TapResult into
+// ActionResult.ExecutionMetadata.AuxiliaryMetadata.
+type mockTapHelper struct {
+	localexec.Spawner
+}
+
+func (h mockTapHelper) Run(ctx context.Context, req *epb.SpawnRequest) (*epb.SpawnResult, error) {
+	res, err := h.Spawn(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	ar := &rpb.ActionResult{}
+	if err := res.ActionResult.UnmarshalTo(ar); err != nil {
+		return nil, err
+	}
+	if ar.ExitCode != 0 {
+		return res, nil
+	}
+	cwd := filepath.Join(req.GetWorkspaceRoot(), req.GetWorkDir())
+	abs := func(p string) string {
+		if filepath.IsAbs(p) {
+			return p
+		}
+		return filepath.Clean(filepath.Join(cwd, p))
+	}
+	var reads, writes []string
+	for _, arg := range req.GetArgs()[1:] {
+		if v, ok := strings.CutPrefix(arg, "--output="); ok {
+			writes = append(writes, abs(v))
+		} else if v, ok := strings.CutPrefix(arg, "--mkdir="); ok {
+			writes = append(writes, abs(v))
+		} else if v, ok := strings.CutPrefix(arg, "--check-dir="); ok {
+			reads = append(reads, abs(v))
+		} else if !strings.HasPrefix(arg, "-") {
+			reads = append(reads, abs(arg))
+		}
+	}
+	tapData := &epb.TapResult{
+		Reads:  reads,
+		Writes: writes,
+	}
+	anyTap, err := anypb.New(tapData)
+	if err != nil {
+		return nil, err
+	}
+	if ar.ExecutionMetadata == nil {
+		ar.ExecutionMetadata = &rpb.ExecutedActionMetadata{}
+	}
+	ar.ExecutionMetadata.AuxiliaryMetadata = append(ar.ExecutionMetadata.AuxiliaryMetadata, anyTap)
+	anyRes, err := anypb.New(ar)
+	if err != nil {
+		return nil, err
+	}
+	return &epb.SpawnResult{ActionResult: anyRes}, nil
+}
+
 func TestBuild_TwoPhaseCaching_RestatContent(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("two phase caching is available on linux only")
+	}
 	if !runInSubProcess(t) {
 		return
 	}
 	ctx := t.Context()
 	dir := tempDir(t)
+	t.Setenv("TMPDIR", tempDir(t))
+	t.Setenv("TMP", tempDir(t))
 
 	build.SetExperimentForTest("two-phase-caching,two-phase-caching-local-action-cache-map")
 	userCacheDir := tempDir(t)
@@ -193,6 +260,131 @@ func TestBuild_TwoPhaseCaching_RestatContent(t *testing.T) {
 		}
 		if !built["bar.out"] {
 			t.Errorf("bar.out was not built")
+		}
+	}()
+}
+
+// Regression test for b/564415739: empty directory created by a local tapped
+// action must be cached as an OutputDirectory and materialized on a two-phase
+// cache hit.
+func TestBuild_TwoPhaseCaching_EmptyDir(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("two phase caching is available on linux only")
+	}
+	if !runInSubProcess(t) {
+		return
+	}
+	ctx := t.Context()
+	dir := tempDir(t)
+	t.Setenv("TMPDIR", tempDir(t))
+	t.Setenv("TMP", tempDir(t))
+
+	build.SetExperimentForTest("two-phase-caching,two-phase-caching-local-action-cache-map")
+	userCacheDir := tempDir(t)
+	t.Setenv("XDG_CACHE_HOME", userCacheDir)
+	t.Setenv("LocalAppData", userCacheDir)
+
+	fakere := &reapitest.Fake{}
+	var ds build.DataSource
+	defer func() {
+		err := ds.Close(ctx)
+		if err != nil {
+			t.Error(err)
+		}
+	}()
+	ds.Client = reapitest.New(ctx, t, fakere)
+	err := ds.Client.Init(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ds.Cache = ds.Client.CacheStore()
+
+	runNinja := func(ctx context.Context, t *testing.T, metricsBuffer *syncBuffer) (build.Stats, error) {
+		t.Helper()
+		hashfsOpts := hashfs.Option{
+			StateFile:   ".siso_fs_state",
+			OutputLocal: func(context.Context, string) bool { return true },
+			DataSource:  ds,
+		}
+		opt, graph, cleanup := setupBuild(ctx, t, dir, hashfsOpts)
+		defer cleanup()
+		bcache, err := build.NewCache(ctx, build.CacheOptions{
+			Store:      ds.Cache,
+			EnableRead: true,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		opt.Cache = bcache
+		opt.RECacheEnableRead = true
+		opt.RECacheEnableWrite = true
+		opt.REAPIClient = ds.Client
+		opt.REExecEnable = true
+		if metricsBuffer != nil {
+			opt.MetricsJSONWriter = metricsBuffer
+		}
+		return ninjabuild.Run(ctx, graph, opt, []string{"all"}, ninjabuild.RunNinjaOpts{})
+	}
+
+	setupFiles(t, dir, t.Name(), nil)
+	origHelper := localexec.SetSpawnHelper(mockTapHelper{})
+	defer localexec.SetSpawnHelper(origHelper)
+
+	func() {
+		t.Logf("--- first build: local execution with mock spawn helper populates 2PC cache with empty_dir")
+		var metricsBuffer syncBuffer
+		_, err := runNinja(ctx, t, &metricsBuffer)
+		if err != nil {
+			t.Fatal(err)
+		}
+		fi, err := os.Stat(filepath.Join(dir, "out/siso/empty_dir"))
+		if err != nil || !fi.IsDir() {
+			t.Fatalf("empty_dir stat=%v, err=%v; want directory", fi, err)
+		}
+		dec := json.NewDecoder(bytes.NewReader(metricsBuffer.buf.Bytes()))
+		for dec.More() {
+			var m build.StepMetric
+			if err := dec.Decode(&m); err != nil {
+				t.Errorf("decode %v", err)
+			}
+			if filepath.Base(m.Output()) == "foo.out" && !m.CacheWrite {
+				t.Errorf("foo.out CacheWrite=%t; want true", m.CacheWrite)
+			}
+		}
+	}()
+
+	func() {
+		t.Logf("--- second build: clean out/siso outputs and state, expect 2PC cache hit and empty_dir materialized")
+		for _, p := range []string{"foo.out", "bar.out", "empty_dir", ".siso_fs_state"} {
+			if err := os.RemoveAll(filepath.Join(dir, "out/siso", p)); err != nil {
+				t.Fatal(err)
+			}
+		}
+		var metricsBuffer syncBuffer
+		_, err := runNinja(ctx, t, &metricsBuffer)
+		if err != nil {
+			t.Fatal(err)
+		}
+		fi, err := os.Stat(filepath.Join(dir, "out/siso/empty_dir"))
+		if err != nil || !fi.IsDir() {
+			t.Errorf("empty_dir not materialized from 2PC cache: stat=%v, err=%v", fi, err)
+		}
+		dec := json.NewDecoder(bytes.NewReader(metricsBuffer.buf.Bytes()))
+		foundFoo := false
+		for dec.More() {
+			var m build.StepMetric
+			if err := dec.Decode(&m); err != nil {
+				t.Errorf("decode %v", err)
+			}
+			if filepath.Base(m.Output()) == "foo.out" {
+				foundFoo = true
+				if !m.TwoPhaseCacheHit {
+					t.Errorf("foo.out TwoPhaseCacheHit=%t; want true", m.TwoPhaseCacheHit)
+				}
+			}
+		}
+		if !foundFoo {
+			t.Errorf("foo.out not found in metrics")
 		}
 	}()
 }

@@ -11,6 +11,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	log "github.com/golang/glog"
@@ -135,6 +136,7 @@ func (b *Builder) tapCanonicalizeCmd(ctx context.Context, cmd *execute.Cmd) erro
 		seen[output] = true
 		nOutputs++
 	}
+	var outputDirs []path.Path
 	for _, output := range tapData.Writes {
 		if shouldIgnore("writes", path.New(output)) {
 			ignored++
@@ -157,16 +159,14 @@ func (b *Builder) tapCanonicalizeCmd(ctx context.Context, cmd *execute.Cmd) erro
 			continue
 		}
 		tapDetected++
-		if fi.IsDir() {
-			// don't include output directories
-			// as it would forget all entries in the directory
-			// by hashfs Update.
-			continue
-		}
 		if seen[relPath] {
 			continue
 		}
 		seen[relPath] = true
+		if fi.IsDir() {
+			outputDirs = append(outputDirs, relPath)
+			continue
+		}
 		if underOutputDir(relPath) {
 			// relPath is covered by cmd.OutputDirs or
 			// AuxiliaryLogOutputDirs, so no need to
@@ -176,6 +176,22 @@ func (b *Builder) tapCanonicalizeCmd(ctx context.Context, cmd *execute.Cmd) erro
 		}
 		cmd.Outputs = append(cmd.Outputs, relPath)
 	}
+	emptyDirs := slices.DeleteFunc(outputDirs, func(outDir path.Path) bool {
+		for _, out := range cmd.Outputs {
+			if out.HasPrefix(outDir) {
+				return true
+			}
+		}
+		dents, err := b.hashFS.ReadDir(ctx, b.path.WorkspaceRoot, outDir)
+		if err != nil || len(dents) > 0 {
+			return true
+		}
+		// empty directory
+		return false
+
+	})
+	cmd.OutputDirs = append(cmd.OutputDirs, emptyDirs...)
+	cmd.InitOutputs()
 	for _, del := range tapData.Deletes {
 		rel, err := filepath.Rel(b.path.WorkspaceRoot, del)
 		if err != nil {
@@ -193,7 +209,7 @@ func (b *Builder) tapCanonicalizeCmd(ctx context.Context, cmd *execute.Cmd) erro
 		b.hashFS.Forget(ctx, b.path.WorkspaceRoot, []path.Path{relPath})
 		clog.Infof(ctx, "delete %q", relPath)
 	}
-	clog.Infof(ctx, "tap canonicalized detected=%d inputs=%d (discarded:%d) ->%d outputs=%d (indir:%d discarded:%d) ->%d ignored=%d", tapDetected, nInputs, nInputsDiscarded, len(cmd.Inputs), nOutputs, nOutputsInDir, nOutputsDiscarded, len(cmd.Outputs), ignored)
+	clog.Infof(ctx, "tap canonicalized detected=%d inputs=%d (discarded:%d) ->%d outputs=%d (indir:%d discarded:%d emptyDir:%d) ->%d ignored=%d", tapDetected, nInputs, nInputsDiscarded, len(cmd.Inputs), nOutputs, nOutputsInDir, nOutputsDiscarded, len(emptyDirs), len(cmd.Outputs), ignored)
 	if tapDetected == 0 {
 		return fmt.Errorf("tap detected=0: %s", tapData)
 	}

@@ -233,8 +233,8 @@ func TestHelperDeathUnblocksRun(t *testing.T) {
 	if err != nil {
 		t.Fatalf("launch: %v", err)
 	}
-	orig := helper.Swap(c)
-	t.Cleanup(func() { helper.Store(orig) })
+	orig := SetSpawnHelper(c)
+	t.Cleanup(func() { SetSpawnHelper(orig) })
 
 	// ctx stays live while we wait below; the unblock under test must come from
 	// the helper dying, not from ctx cancellation (which only happens at cleanup).
@@ -278,8 +278,8 @@ func TestHelperDrainsOnConnClose(t *testing.T) {
 	if err != nil {
 		t.Fatalf("launch: %v", err)
 	}
-	orig := helper.Swap(c)
-	t.Cleanup(func() { helper.Store(orig) })
+	orig := SetSpawnHelper(c)
+	t.Cleanup(func() { SetSpawnHelper(orig) })
 
 	tmp := t.TempDir()
 	pidfile := filepath.Join(tmp, "pid")

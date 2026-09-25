@@ -195,6 +195,11 @@ func TestTapCanonicalizeCmd(t *testing.T) {
 		t.Errorf("cmd.Outputs = %v; want %v", cmd.Outputs, wantOutputs)
 	}
 
+	wantOutputDirs := []path.Path{path.New("out/siso/output_dir")}
+	if !slices.Equal(cmd.OutputDirs, wantOutputDirs) {
+		t.Errorf("cmd.OutputDirs = %v; want %v", cmd.OutputDirs, wantOutputDirs)
+	}
+
 	// Verify to_delete.txt is forgotten from hashFS and returns ErrNotExist
 	_, err = hfs.Stat(ctx, wsDir, path.New("to_delete.txt"))
 	if !errors.Is(err, fs.ErrNotExist) {
