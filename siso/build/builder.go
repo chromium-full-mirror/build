@@ -1352,7 +1352,7 @@ func (b *Builder) outputs(ctx context.Context, step *Step) error {
 			localOutputs = append(localOutputs, dir+"/")
 		}
 	}
-	if len(localOutputs) > 0 && !b.hashFS.OnCartFS() {
+	if len(localOutputs) > 0 {
 		_, mspan := trace.NewSpan(ctx, spanMaterializeOutputs)
 		err := b.hashFS.Flush(ctx, step.cmd.WorkspaceRoot, localOutputs)
 		mspan.Close(nil)
