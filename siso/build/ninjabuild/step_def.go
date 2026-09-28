@@ -1110,10 +1110,11 @@ func (s *StepDef) CheckMissingDeps(ctx context.Context, depInputs []path.Path) (
 	for _, dep := range depInputs {
 		deps[dep] = true
 	}
+	visited := make(map[*ninjautil.Edge]bool)
 	seen := make(map[path.Path]bool)
 	// resolve deps from s.edge's inputs.
 	// it doesn't check output of s.edge.
-	edges := resolveEdgeDeps(s.globals, s.edge, false, deps, seen)
+	edges := resolveEdgeDeps(s.globals, s.edge, false, deps, visited, seen)
 	// avoid recursion for memory efficiency (e.g. avoid deep stack)
 	for len(edges) > 0 {
 		edge := edges[0]
@@ -1123,7 +1124,7 @@ func (s *StepDef) CheckMissingDeps(ctx context.Context, depInputs []path.Path) (
 		edges[len(edges)-1] = nil
 		edges = edges[:len(edges)-1]
 		// resolve deps for edge's inputs and outputs.
-		edges = append(edges, resolveEdgeDeps(s.globals, edge, true, deps, seen)...)
+		edges = append(edges, resolveEdgeDeps(s.globals, edge, true, deps, visited, seen)...)
 		if len(deps) == 0 {
 			return false, nil
 		}
@@ -1154,7 +1155,7 @@ func (s *StepDef) CheckMissingDeps(ctx context.Context, depInputs []path.Path) (
 	return known, errors.New(desc)
 }
 
-func resolveEdgeDeps(globals *globals, edge *ninjautil.Edge, checkOutputs bool, deps, seen map[path.Path]bool) []*ninjautil.Edge {
+func resolveEdgeDeps(globals *globals, edge *ninjautil.Edge, checkOutputs bool, deps map[path.Path]bool, visited map[*ninjautil.Edge]bool, seen map[path.Path]bool) []*ninjautil.Edge {
 	if len(deps) == 0 {
 		return nil
 	}
@@ -1175,6 +1176,10 @@ func resolveEdgeDeps(globals *globals, edge *ninjautil.Edge, checkOutputs bool, 
 		if !ok {
 			continue
 		}
+		if _, ok := visited[inEdge]; ok {
+			continue
+		}
+		visited[inEdge] = true
 		edges = append(edges, inEdge)
 	}
 	if checkOutputs {
