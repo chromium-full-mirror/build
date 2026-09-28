@@ -476,7 +476,7 @@ func (c *Command) initBuildOpts(ctx context.Context, projectID string, buildPath
 	}
 
 	cache, err := build.NewCache(ctx, build.CacheOptions{
-		Store:      ds.Cache,
+		Store:      ds.CacheStore(),
 		EnableRead: c.cacheEnableRead,
 	})
 	if err != nil {

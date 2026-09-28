@@ -41,13 +41,7 @@ func (c CacheStore) GetActionResult(ctx context.Context, d digest.Digest) (*rpb.
 // SetActionResult sets action result for the action identified by the digest.
 // If a failing action is provided, caching will be skipped.
 func (c CacheStore) SetActionResult(ctx context.Context, d digest.Digest, ar *rpb.ActionResult) error {
-	// Intentionally no-op. Setting the action result could allow a malicious
-	// actor to perform arbitrary code execution.
-	// May reconsider in the future for trusted workers, but for now, do nothing.
-
-	// Intentionally return no error, as it is intended for this function to be
-	// called.
-	return nil
+	return c.client.SetActionResult(ctx, d, ar)
 }
 
 // GetContent gets contents for the fname identified by the digest.
@@ -69,6 +63,9 @@ func (c CacheStore) SetContent(ctx context.Context, d digest.Digest, fname strin
 
 // HasContent returns whether digest is in cache store.
 func (c CacheStore) HasContent(ctx context.Context, d digest.Digest) bool {
+	if c.client.opt.LocalCache != nil && c.client.opt.LocalCache.HasContent(ctx, d) {
+		return true
+	}
 	missing, err := c.client.Missing(ctx, []digest.Digest{d})
 	if err != nil {
 		clog.Warningf(ctx, "failed to call missing [%s]: %v", d, err)
@@ -87,7 +84,6 @@ func (c CacheStore) Source(_ context.Context, d digest.Digest, fname string) blo
 }
 
 type digestSourceReader struct {
-	r      io.Closer
 	rd     io.ReadCloser
 	n      int
 	size   int64
@@ -112,12 +108,11 @@ func (r *digestSourceReader) Close() error {
 		eofErr = expectEOF(r.rd)
 	}
 	rdCloseErr := r.rd.Close()
-	rCloseErr := r.r.Close()
-	r.c.m.ReadDone(r.n, cmp.Or(rdCloseErr, rCloseErr, eofErr))
+	r.c.m.ReadDone(r.n, cmp.Or(rdCloseErr, eofErr))
 	if r.cancel != nil {
 		r.cancel()
 	}
-	return cmp.Or(rdCloseErr, rCloseErr)
+	return rdCloseErr
 }
 
 type digestSource struct {
@@ -138,14 +133,7 @@ func (s digestSource) Open(ctx context.Context) (io.ReadCloser, error) {
 		s.c.m.ReadDone(0, err)
 		return nil, err
 	}
-	rd, err := s.c.newDecoder(r, s.d)
-	if err != nil {
-		r.Close()
-		cancel()
-		s.c.m.ReadDone(0, err)
-		return nil, err
-	}
-	return &digestSourceReader{r: r, rd: rd, size: s.d.SizeBytes, c: s.c, cancel: cancel}, err
+	return &digestSourceReader{rd: r, size: s.d.SizeBytes, c: s.c, cancel: cancel}, nil
 }
 
 // ReadAll returns the full blob content in a single CAS fetch, retrying on

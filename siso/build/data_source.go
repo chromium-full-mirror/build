@@ -19,17 +19,12 @@ import (
 )
 
 func NewDataSource(ctx context.Context, localCache *reapi.LocalCache, reapiClient *reapi.Client) DataSource {
-	layeredCache := NewLayeredCache()
-	if localCache != nil {
-		layeredCache.AddLayer(localCache)
-		localCache.GarbageCollectIfRequired(ctx)
-	}
-	if reapiClient != nil {
-		layeredCache.AddLayer(reapiClient.CacheStore())
-	}
 	var ds DataSource
 	ds.Client = reapiClient
-	ds.Cache = layeredCache
+	if localCache != nil {
+		localCache.GarbageCollectIfRequired(ctx)
+		ds.Cache = localCache
+	}
 	return ds
 }
 
@@ -45,6 +40,14 @@ func (ds DataSource) Close(ctx context.Context) error {
 		return nil
 	}
 	return ds.Client.Close()
+}
+
+// CacheStore returns cachestore for this data store.
+func (ds DataSource) CacheStore() cachestore.CacheStore {
+	if ds.Client != nil {
+		return ds.Client.CacheStore()
+	}
+	return ds.Cache
 }
 
 // DigestData creates a new blob.Data from the given digest and filename,

@@ -845,8 +845,31 @@ func keepFirstAttempt(callCtx context.Context, timeoutCause, callErr error) bool
 	return !cutByOurTimeout
 }
 
+// ValidateActionResult checks whether the action result is valid.
+func ValidateActionResult(result *rpb.ActionResult) bool {
+	if result == nil {
+		return false
+	}
+	if result.ExitCode == 0 && len(result.GetOutputFiles()) == 0 && len(result.GetOutputDirectories()) == 0 && len(result.GetOutputSymlinks()) == 0 &&
+		len(result.GetOutputFileSymlinks()) == 0 && len(result.GetOutputDirectorySymlinks()) == 0 { //nolint:staticcheck // existing deprecation
+		// succeeded result should have at least one output. b/350360391
+		// A dir-only output has no OutputFiles but does have an
+		// OutputDirectory, so accept that too (else it re-executes every build).
+		return false
+	}
+	return true
+}
+
 // GetActionResult gets the action result by the digest.
 func (c *Client) GetActionResult(ctx context.Context, d digest.Digest) (*rpb.ActionResult, error) {
+	if c.opt.LocalCache != nil {
+		ar, err := c.opt.LocalCache.GetActionResult(ctx, d)
+		if err == nil {
+			if ar.ExitCode != 0 || ValidateActionResult(ar) {
+				return ar, nil
+			}
+		}
+	}
 	client := rpb.NewActionCacheClient(c.casConn)
 	req := &rpb.GetActionResultRequest{
 		InstanceName:   c.opt.Instance,
@@ -870,6 +893,11 @@ func (c *Client) GetActionResult(ctx context.Context, d digest.Digest) (*rpb.Act
 		clog.Infof(ctx, "GetActionResult keep=%t err=%v", keep, err)
 		if keep {
 			c.m.OpsDone(err)
+			if err == nil && result.ExitCode == 0 && ValidateActionResult(result) && c.opt.LocalCache != nil {
+				if werr := c.opt.LocalCache.SetActionResult(ctx, d, result); werr != nil {
+					clog.Warningf(ctx, "failed to write action result with digest %s to local cache: %v", d.String(), werr)
+				}
+			}
 			return result, err
 		}
 		monitoring.RecordCancellation(ctx, "cache-check", "pre_first_byte")
@@ -881,7 +909,20 @@ func (c *Client) GetActionResult(ctx context.Context, d digest.Digest) (*rpb.Act
 		monitoring.RecordRetryDuration(ctx, "cache-check", time.Since(start), err)
 	}
 	c.m.OpsDone(err)
+	if err == nil && result.ExitCode == 0 && ValidateActionResult(result) && c.opt.LocalCache != nil {
+		if werr := c.opt.LocalCache.SetActionResult(ctx, d, result); werr != nil {
+			clog.Warningf(ctx, "failed to write action result with digest %s to local cache: %v", d.String(), werr)
+		}
+	}
 	return result, err
+}
+
+// SetActionResult sets the action result in local cache if configured.
+func (c *Client) SetActionResult(ctx context.Context, d digest.Digest, ar *rpb.ActionResult) error {
+	if c.opt.LocalCache != nil {
+		return c.opt.LocalCache.SetActionResult(ctx, d, ar)
+	}
+	return nil
 }
 
 // UpdateActionResultEnabled reports whether UpdateActionResult is supported or not.

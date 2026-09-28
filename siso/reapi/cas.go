@@ -326,10 +326,17 @@ func (c *Client) Get(ctx context.Context, d digest.Digest, name string) ([]byte,
 	defer span.Close(nil)
 	span.SetAttr("sizebytes", d.SizeBytes)
 
+	var buf []byte
+	var err error
 	if d.SizeBytes < c.opt.ByteStreamReadThreshold {
-		return c.getWithBatchReadBlobs(ctx, d, name)
+		buf, err = c.getWithBatchReadBlobs(ctx, d, name)
+	} else {
+		buf, err = c.getWithByteStream(ctx, d, name)
 	}
-	return c.getWithByteStream(ctx, d, name)
+	if err != nil {
+		return nil, err
+	}
+	return buf, nil
 }
 
 // GetReader returns an io.ReadCloser to stream the blob content from CAS.
@@ -343,7 +350,6 @@ func (c *Client) GetReader(ctx context.Context, d digest.Digest, name string) (i
 	if d.SizeBytes == 0 {
 		return io.NopCloser(bytes.NewReader(nil)), nil
 	}
-
 	if d.SizeBytes < c.opt.ByteStreamReadThreshold {
 		buf, err := c.getWithBatchReadBlobs(ctx, d, name)
 		if err != nil {
@@ -364,6 +370,9 @@ func (c *Client) getWithBatchReadBlobs(ctx context.Context, d digest.Digest, nam
 	started := time.Now()
 	if log.V(1) {
 		clog.Infof(ctx, "getWithBatchReadBlobs %s", d)
+	}
+	if c.opt.LocalCache != nil && c.opt.LocalCache.HasContent(ctx, d) {
+		return c.opt.LocalCache.GetContent(ctx, d, name)
 	}
 	casClient := rpb.NewContentAddressableStorageClient(c.casConn)
 	var resp *rpb.BatchReadBlobsResponse
@@ -391,6 +400,12 @@ func (c *Client) getWithBatchReadBlobs(ctx context.Context, d digest.Digest, nam
 		return nil, fmt.Errorf("failed to decompress blobs %s for %s in %s: %w", d, name, time.Since(started), err)
 	}
 	c.m.ReadDone(len(data), nil)
+	if c.opt.LocalCache != nil {
+		err := c.opt.LocalCache.SetContent(ctx, d, name, data)
+		if err != nil {
+			clog.Warningf(ctx, "failed to write digest %s to local cache: %v", d, err)
+		}
+	}
 	return data, nil
 }
 
@@ -427,11 +442,15 @@ func expectEOF(r io.Reader) error {
 }
 
 func (c *Client) bytestreamioOpen(ctx context.Context, d digest.Digest, fname string) (io.ReadCloser, error) {
+	if d.SizeBytes == 0 {
+		return io.NopCloser(bytes.NewReader(nil)), nil
+	}
 	if d.SizeBytes > c.opt.ChunkedBlobsThreshold {
 		c.mu.Lock()
 		splitBlobSupport := c.capabilities.GetCacheCapabilities().GetSplitBlobSupport()
 		c.mu.Unlock()
 		if splitBlobSupport {
+			// chunkReader would use LocalCache for chunk data.
 			r, err := c.chunkReader(ctx, d, fname)
 			if err == nil {
 				return r, nil
@@ -440,11 +459,46 @@ func (c *Client) bytestreamioOpen(ctx context.Context, d digest.Digest, fname st
 		}
 		// not supported, or chunkReader failed. fallback.
 	}
+	if c.opt.LocalCache != nil && c.opt.LocalCache.HasContent(ctx, d) {
+		return c.opt.LocalCache.Source(ctx, d, fname).Open(ctx)
+	}
 	r, err := bytestreamio.Open(ctx, bpb.NewByteStreamClient(c.casDataConn), c.resourceName(d))
 	if err != nil {
 		return nil, err
 	}
-	return io.NopCloser(r), nil
+	rd, err := c.newDecoder(r, d)
+	if err != nil {
+		return nil, err
+	}
+	if c.opt.LocalCache != nil {
+		w, err := c.opt.LocalCache.ContentSink(ctx, d, fname)
+		if err != nil {
+			clog.Warningf(ctx, "failed to write digest %s to local cache: %v", d, err)
+		} else if w != nil {
+			tr := io.TeeReader(rd, w)
+			return &teeCloser{r: tr, rc: rd, wc: w}, nil
+		}
+	}
+	return rd, nil
+}
+
+type teeCloser struct {
+	r  io.Reader
+	rc io.Closer
+	wc io.Closer
+}
+
+func (r *teeCloser) Read(p []byte) (n int, err error) {
+	return r.r.Read(p)
+}
+
+func (r *teeCloser) Close() error {
+	err := r.rc.Close()
+	werr := r.wc.Close()
+	if err == nil {
+		err = werr
+	}
+	return err
 }
 
 // getWithByteStream fetches the content of blob using the ByteStream API
@@ -464,18 +518,12 @@ func (c *Client) getWithByteStream(ctx context.Context, d digest.Digest, name st
 			return err
 		}
 		defer r.Close()
-		rd, err := c.newDecoder(r, d)
-		if err != nil {
-			c.m.ReadDone(0, err)
-			return err
-		}
-		defer rd.Close()
-		n, err := io.ReadFull(rd, buf)
+		n, err := io.ReadFull(r, buf)
 		c.m.ReadDone(n, err)
 		if err != nil {
 			return err
 		}
-		if err := expectEOF(rd); err != nil {
+		if err := expectEOF(r); err != nil {
 			clog.Warningf(ctx, "blob %s for %s: %v", d, name, err)
 		}
 		return nil
@@ -488,6 +536,9 @@ func (c *Client) getWithByteStream(ctx context.Context, d digest.Digest, name st
 
 // Missing returns digests of missing blobs.
 func (c *Client) Missing(ctx context.Context, blobs []digest.Digest) ([]digest.Digest, error) {
+	if len(blobs) == 0 {
+		return nil, nil
+	}
 	blobspb := make([]*rpb.Digest, 0, len(blobs))
 	for _, b := range blobs {
 		blobspb = append(blobspb, b.Proto())

@@ -25,6 +25,7 @@ import (
 	"go.chromium.org/build/siso/o11y/clog"
 	"go.chromium.org/build/siso/o11y/trace"
 	sisopath "go.chromium.org/build/siso/path"
+	"go.chromium.org/build/siso/reapi"
 )
 
 // StepDef is a build step definition.
@@ -784,18 +785,7 @@ func stepDescription(stepDef StepDef) string {
 }
 
 func validateRemoteActionResult(result *rpb.ActionResult) bool {
-	if result == nil {
-		return false
-	}
-
-	if result.ExitCode == 0 && len(result.GetOutputFiles()) == 0 && len(result.GetOutputDirectories()) == 0 && len(result.GetOutputSymlinks()) == 0 &&
-		len(result.GetOutputFileSymlinks()) == 0 && len(result.GetOutputDirectorySymlinks()) == 0 { //nolint:staticcheck // existing deprecation
-		// succeeded result should have at least one output. b/350360391
-		// A dir-only output has no OutputFiles but does have an
-		// OutputDirectory, so accept that too (else it re-executes every build).
-		return false
-	}
-	return true
+	return reapi.ValidateActionResult(result)
 }
 
 type envfile struct {
