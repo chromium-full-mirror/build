@@ -179,6 +179,7 @@ func TestRoutes_Outdirs(t *testing.T) {
 		{"/out/Default/builds/cros-rev/steps/step-1/", http.StatusNotFound},
 		{"/out/Default/builds/test-rev/details/", http.StatusOK},
 		{"/out/Default/builds/test-rev/aggregates/", http.StatusOK},
+		{"/out/Default/builds/test-rev/aggregates_lit/", http.StatusOK},
 		{"/out/Default/targets/all/", http.StatusOK},
 		{"/out/Default/targets/foo.o/", http.StatusOK},
 		{"/out/Default/targets/nonexistent.o/", http.StatusNotFound},
@@ -249,6 +250,7 @@ func TestRoutes_UploadedMetrics(t *testing.T) {
 		{"/uploads/view/builds/uploaded-build-id/details/", http.StatusOK},
 		{"/uploads/view/builds/nonexistent-rev/steps/", http.StatusNotFound},
 		{"/uploads/view/builds/uploaded-build-id/aggregates/", http.StatusOK},
+		{"/uploads/view/builds/uploaded-build-id/aggregates_lit/", http.StatusOK},
 	} {
 		rec := httptest.NewRecorder()
 		s.mux().ServeHTTP(rec, httptest.NewRequest("GET", tc.path, nil))
@@ -371,6 +373,7 @@ func TestBreadcrumbs(t *testing.T) {
 		{"/out/Default/builds/test-rev/steps_lit/step-1/", []string{outdirAbbrev, "Invocations", "test-rev", "Build Steps (Lit)", "out1.o"}},
 		{"/out/Default/builds/test-rev/details/", []string{outdirAbbrev, "Invocations", "test-rev", "Details"}},
 		{"/out/Default/builds/test-rev/aggregates/", []string{outdirAbbrev, "Invocations", "test-rev", "Aggregates"}},
+		{"/out/Default/builds/test-rev/aggregates_lit/", []string{outdirAbbrev, "Invocations", "test-rev", "Aggregates (Lit)"}},
 		{"/out/Default/targets/all/", []string{outdirAbbrev, "Targets", "all"}},
 		{"/out/Default/targets/foo.o/", []string{outdirAbbrev, "Targets", "foo.o"}},
 		{"/out/Default/builds/test-rev/logs/.siso_config", []string{outdirAbbrev, "Invocations", "test-rev", "Raw Logs", ".siso_config"}},

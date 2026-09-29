@@ -231,6 +231,14 @@ func (s *WebuiServer) handleOutdirViewLog(w http.ResponseWriter, r *http.Request
 }
 
 func (s *WebuiServer) handleInvocationAggregates(w http.ResponseWriter, r *http.Request) {
+	s.renderInvocationAggregates(w, r, false)
+}
+
+func (s *WebuiServer) handleInvocationAggregatesLit(w http.ResponseWriter, r *http.Request) {
+	s.renderInvocationAggregates(w, r, true)
+}
+
+func (s *WebuiServer) renderInvocationAggregates(w http.ResponseWriter, r *http.Request, useLit bool) {
 	series, err := s.invocationSeriesFor(r)
 	if err != nil {
 		s.renderBuildViewError(http.StatusNotFound, fmt.Sprintf("failed to load invocation(s) for %s: %v", r.URL, err), w, r)
@@ -242,29 +250,32 @@ func (s *WebuiServer) handleInvocationAggregates(w http.ResponseWriter, r *http.
 		return
 	}
 
-	aggregates := make(map[string]aggregateMetric)
-	for _, m := range metrics.StepMetrics() {
-		// Aggregate by rule if exists otherwise action.
-		aggregateBy := m.Action
-		if len(m.Rule) > 0 {
-			aggregateBy = m.Rule
+	var sortedAggregates []aggregateMetric
+	if !useLit {
+		aggregates := make(map[string]aggregateMetric)
+		for _, m := range metrics.StepMetrics() {
+			// Aggregate by rule if exists otherwise action.
+			aggregateBy := m.Action
+			if len(m.Rule) > 0 {
+				aggregateBy = m.Rule
+			}
+			entry, ok := aggregates[aggregateBy]
+			if !ok {
+				entry.AggregateBy = aggregateBy
+			}
+			entry.Count++
+			entry.TotalUtime += m.Utime
+			entry.TotalDuration += m.Duration
+			entry.TotalWeightedDuration += m.WeightedDuration
+			aggregates[aggregateBy] = entry
 		}
-		entry, ok := aggregates[aggregateBy]
-		if !ok {
-			entry.AggregateBy = aggregateBy
-		}
-		entry.Count++
-		entry.TotalUtime += m.Utime
-		entry.TotalDuration += m.Duration
-		entry.TotalWeightedDuration += m.WeightedDuration
-		aggregates[aggregateBy] = entry
-	}
 
-	// Sort by utime descending.
-	sortedAggregates := slices.Collect(maps.Values(aggregates))
-	slices.SortFunc(sortedAggregates, func(a, b aggregateMetric) int {
-		return cmp.Compare(b.TotalUtime, a.TotalUtime)
-	})
+		// Sort by utime descending.
+		sortedAggregates = slices.Collect(maps.Values(aggregates))
+		slices.SortFunc(sortedAggregates, func(a, b aggregateMetric) int {
+			return cmp.Compare(b.TotalUtime, a.TotalUtime)
+		})
+	}
 
 	tmpl, err := s.loadView("invocation_aggregates.html")
 	if err != nil {
@@ -273,6 +284,7 @@ func (s *WebuiServer) handleInvocationAggregates(w http.ResponseWriter, r *http.
 	}
 
 	err = s.renderBuildView(w, r, tmpl, map[string]any{
+		"useLit":     useLit,
 		"aggregates": sortedAggregates,
 	})
 	if err != nil {

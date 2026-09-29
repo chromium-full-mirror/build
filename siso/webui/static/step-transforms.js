@@ -174,3 +174,35 @@ export function trimOutputPrefix(output, outdirRel) {
   return output;
 }
 
+/**
+ * Computes aggregated metrics grouped by rule (or action if rule is absent).
+ * @param {!Array<!object>} steps
+ * @return {!Array<!object>}
+ */
+export function computeAggregates(steps) {
+  if (!steps || steps.length === 0) {
+    return [];
+  }
+  const aggregates = new Map();
+  for (const step of steps) {
+    const key = step.rule || step.action || '';
+    let entry = aggregates.get(key);
+    if (!entry) {
+      entry = {
+        aggregateBy: key,
+        isRule: Boolean(step.rule),
+        count: 0,
+        totalUtime: 0,
+        totalDuration: 0,
+        totalWeightedDuration: 0,
+      };
+      aggregates.set(key, entry);
+    }
+    entry.count++;
+    entry.totalUtime += step.utime_nanos || 0;
+    entry.totalDuration += step.duration_nanos || 0;
+    entry.totalWeightedDuration += step.weighted_duration_nanos || 0;
+  }
+  return Array.from(aggregates.values());
+}
+
