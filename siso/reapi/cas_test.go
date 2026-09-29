@@ -85,10 +85,6 @@ func TestCreateBatchUpdateBlobsRequests(t *testing.T) {
 	for i := 1; i < 15; i++ {
 		ds.Set(testdata(fmt.Sprintf("data %d", i), 1024*1024))
 	}
-	uploadOps := make(map[digest.Digest]*uploadOp)
-	for _, d := range ds.List() {
-		uploadOps[d] = newUploadOp()
-	}
 	sizeLimit := int64(10 * 1024 * 1024)
 	numLimit := 10
 	c := &Client{}
@@ -577,10 +573,6 @@ func TestCreateBatchUpdateBlobsRequestsWithCompression(t *testing.T) {
 	ds.Set(testdata("data 0", 1023))
 	ds.Set(testdata("data 1", 1024))
 	ds.Set(testdata("data 2", 1025))
-	uploadOps := make(map[digest.Digest]*uploadOp)
-	for _, d := range ds.List() {
-		uploadOps[d] = newUploadOp()
-	}
 	sizeLimit := int64(3*1024 - 1)
 	numLimit := 10
 	c := &Client{

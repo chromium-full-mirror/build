@@ -85,20 +85,34 @@ func selectCompressor(serverSupported []rpb.Compressor_Value) rpb.Compressor_Val
 }
 
 type uploadOp struct {
-	ch  chan struct{}
-	err error
+	c    *Client
+	d    digest.Digest
+	once sync.Once
+	ch   chan struct{}
+	err  error
 }
 
-func newUploadOp() *uploadOp {
+func newUploadOp(c *Client, d digest.Digest) *uploadOp {
 	return &uploadOp{
+		c:   c,
+		d:   d,
 		ch:  make(chan struct{}),
 		err: errUploadNotFinished,
 	}
 }
 
+// done completes the uploadOp once, updating knownDigests before closing ch so
+// any waiting callers observe the updated knownDigests state upon waking up.
 func (u *uploadOp) done(err error) {
-	u.err = err
-	close(u.ch)
+	u.once.Do(func() {
+		u.err = err
+		if err == nil {
+			u.c.knownDigests.CompareAndSwap(u.d, u, struct{}{})
+		} else {
+			u.c.knownDigests.CompareAndDelete(u.d, u)
+		}
+		close(u.ch)
+	})
 }
 
 func (u *uploadOp) wait(ctx context.Context) error {
@@ -612,10 +626,10 @@ func (c *Client) UploadAll(ctx context.Context, ds *blob.Store) (numUploaded int
 	pendingBlobs := make(map[digest.Digest]*uploadOp)
 	skippedBlobs := 0
 	for _, d := range blobs {
-		uop, loaded := c.knownDigests.LoadOrStore(d, newUploadOp())
+		uop, loaded := c.knownDigests.LoadOrStore(d, newUploadOp(c, d))
 		if loaded {
 			switch v := uop.(type) {
-			case bool:
+			case struct{}:
 				// Case 1: This blob is already present in the CAS, we're done.
 				skippedBlobs++
 			case *uploadOp:
@@ -629,82 +643,77 @@ func (c *Client) UploadAll(ctx context.Context, ds *blob.Store) (numUploaded int
 		// Case 3: We need to upload this blob after confirming that it's missing.
 		newBlobs[d] = uop.(*uploadOp)
 	}
-	var foundBlobs map[digest.Digest]bool
-	var durFindMissing time.Duration
-	var durUpload time.Duration
-	var durWaitPending time.Duration
-	defer func() {
-		for d, uop := range newBlobs {
-			if uop.err == nil {
-				// uop.done(nil) was called
-				c.knownDigests.CompareAndSwap(d, uop, true)
-				continue
-			}
-			var s string
-			if data, ok := ds.Get(d); ok {
-				s = data.String()
-			} else {
-				s = d.String()
-			}
-			if errors.Is(uop.err, errUploadNotFinished) {
-				// uop.done(err) is not called
-				if err != nil {
-					uop.err = err
-				}
-				clog.Warningf(ctx, "upload %s not finished: %v", s, err)
-				close(uop.ch)
-			} else {
-				// uop.done(err) was called with non-nil err.
-				clog.Warningf(ctx, "upload %s failed: %v", s, uop.err)
-			}
-			// forget this digest, so next will try to upload again.
-			c.knownDigests.CompareAndDelete(d, uop)
-		}
-		clog.Infof(ctx, "upload all: blobs=%d -> {uploaded=%d, found=%d, pending=%d, skipped=%d}, timing: {find_missing=%s, upload=%s, wait_pending=%s}: %v",
-			len(blobs), len(newBlobs), len(foundBlobs), len(pendingBlobs), skippedBlobs,
-			durFindMissing.Round(time.Microsecond),
-			durUpload.Round(time.Microsecond),
-			durWaitPending.Round(time.Microsecond),
-			err)
-	}()
-
 	span.SetAttr("upload", len(newBlobs))
 	span.SetAttr("pending", len(pendingBlobs))
 	span.SetAttr("skipped", skippedBlobs)
 
+	if len(newBlobs) > 0 {
+		numUploaded, err = c.uploadNewBlobs(ctx, ds, newBlobs, span)
+		if err != nil {
+			return numUploaded, err
+		}
+	}
+
+	// Finally, wait for any blobs that are being uploaded by other threads, before we return.
+	var durWaitPending time.Duration
+	if len(pendingBlobs) > 0 {
+		t := time.Now()
+		for d, uop := range pendingBlobs {
+			if err := uop.wait(ctx); err != nil {
+				return numUploaded, fmt.Errorf("wait for digest=%s: %w", d, err)
+			}
+		}
+		durWaitPending = time.Since(t)
+	}
+	clog.Infof(ctx, "upload all: blobs=%d -> {uploaded=%d, pending=%d, skipped=%d}, wait_pending=%s: %v",
+		len(blobs), numUploaded, len(pendingBlobs), skippedBlobs,
+		durWaitPending.Round(time.Microsecond), err)
+
+	return numUploaded, nil
+}
+
+// uploadNewBlobs checks which blobs in newBlobs are missing in the remote CAS
+// and uploads them. On return, all uploadOps in newBlobs are guaranteed to be
+// completed.
+func (c *Client) uploadNewBlobs(ctx context.Context, ds *blob.Store, newBlobs map[digest.Digest]*uploadOp, span *trace.Span) (numUploaded int, err error) {
+	var foundBlobs map[digest.Digest]*uploadOp
+	var missingBlobs []digest.Digest
+	var durFindMissing, durUpload time.Duration
+	defer func() {
+		finErr := err
+		if finErr == nil {
+			finErr = errUploadNotFinished
+		}
+		for _, uop := range newBlobs {
+			uop.done(finErr)
+		}
+		clog.Infof(ctx, "upload new blobs: new=%d -> {uploaded=%d, missing=%d, found=%d}, timing: {find_missing=%s, upload=%s}: %v",
+			len(newBlobs), numUploaded, len(missingBlobs), len(foundBlobs),
+			durFindMissing.Round(time.Microsecond),
+			durUpload.Round(time.Microsecond),
+			err)
+	}()
+
 	// For all "new" blobs, use FindMissingBlobs to ask the remote CAS which of them are
 	// really still missing - they might already be present and we just don't know about it yet.
-	var missingBlobs []digest.Digest
-	if len(newBlobs) > 0 {
-		t := time.Now()
-		newBlobDigests := make([]digest.Digest, 0, len(newBlobs))
-		foundBlobs = make(map[digest.Digest]bool, len(newBlobs))
-		for d := range newBlobs {
-			newBlobDigests = append(newBlobDigests, d)
-			foundBlobs[d] = true
-		}
-		missingBlobs, err = c.Missing(ctx, newBlobDigests)
-		if err != nil {
-			for _, v := range newBlobs {
-				v.done(err)
-			}
-			return 0, err
-		}
-		// All "new" blobs that the remote CAS did *not* report as missing are by inverse confirmed
-		// to be present, so we can memoize this in the knownDigests map and notify any other
-		// threads waiting for them.
-		for _, d := range missingBlobs {
-			delete(foundBlobs, d)
-		}
-		for d := range foundBlobs {
-			c.knownDigests.CompareAndSwap(d, newBlobs[d], true)
-			newBlobs[d].done(nil)
-			delete(newBlobs, d)
-		}
-		span.SetAttr("missing", len(missingBlobs))
-		span.SetAttr("founds", len(foundBlobs))
-		durFindMissing = time.Since(t)
+	t := time.Now()
+	missingBlobs, err = c.Missing(ctx, slices.Collect(maps.Keys(newBlobs)))
+	if err != nil {
+		return 0, err
 	}
+	// All "new" blobs that the remote CAS did *not* report as missing are by inverse confirmed
+	// to be present, so we can memoize this in the knownDigests map and notify any other
+	// threads waiting for them.
+	foundBlobs = maps.Clone(newBlobs)
+	for _, d := range missingBlobs {
+		delete(foundBlobs, d)
+	}
+	for _, uop := range foundBlobs {
+		uop.done(nil)
+	}
+	span.SetAttr("missing", len(missingBlobs))
+	span.SetAttr("founds", len(foundBlobs))
+	durFindMissing = time.Since(t)
 
 	// Let's upload the blobs that we know are still missing.
 	if len(missingBlobs) > 0 {
@@ -716,19 +725,7 @@ func (c *Client) UploadAll(ctx context.Context, ds *blob.Store) (numUploaded int
 		span.SetAttr("uploaded", numUploaded)
 		durUpload = time.Since(t)
 	}
-
-	// Finally, wait for any blobs that are being uploaded by other threads, before we return.
-	if len(pendingBlobs) > 0 {
-		t := time.Now()
-		for d, uop := range pendingBlobs {
-			if err := uop.wait(ctx); err != nil {
-				return numUploaded, fmt.Errorf("wait for digest=%s: %w", d, err)
-			}
-		}
-		durWaitPending = time.Since(t)
-	}
-
-	return numUploaded, err
+	return numUploaded, nil
 }
 
 // CheckWritable checks reapi instance writable permission.
@@ -742,7 +739,7 @@ func (c *Client) CheckWritable(ctx context.Context) error {
 	ds.Set(data)
 	blobs := []digest.Digest{data.Digest()}
 	uploads := map[digest.Digest]*uploadOp{
-		data.Digest(): newUploadOp(),
+		data.Digest(): newUploadOp(c, data.Digest()),
 	}
 	_, err := c.upload(ctx, ds, blobs, uploads)
 	if err != nil {
@@ -889,9 +886,9 @@ func (c *Client) uploadWithBatchUpdateBlobs(ctx context.Context, digests []diges
 // processBatchUpdateBlobsReq sends one BatchUpdateBlobs RPC and reconciles the response.
 func (c *Client) processBatchUpdateBlobsReq(ctx context.Context, casClient rpb.ContentAddressableStorageClient, batchReq *rpb.BatchUpdateBlobsRequest, uploads map[digest.Digest]*uploadOp, ds *blob.Store, missingBlobs *missingBlobs) error {
 	var batchResp *rpb.BatchUpdateBlobsResponse
-	checkBlobs := make(map[digest.Digest]bool)
+	checkBlobs := make(map[digest.Digest]struct{}, len(batchReq.Requests))
 	for _, req := range batchReq.Requests {
-		checkBlobs[digest.FromProto(req.Digest)] = true
+		checkBlobs[digest.FromProto(req.Digest)] = struct{}{}
 	}
 	// TODO(b/328332495): grpc should retry by service config?
 	err := retry.Do(ctx, func() error {

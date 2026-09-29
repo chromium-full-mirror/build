@@ -354,7 +354,7 @@ type Client struct {
 	capabilities *rpb.ServerCapabilities
 	apiVersion   *semverpb.SemVer
 
-	knownDigests sync.Map // key:digest.Digest, value: *uploadOp or true
+	knownDigests sync.Map // key:digest.Digest, value: *uploadOp or struct{}{}
 
 	zstdDecoderPool *sync.Pool
 
@@ -637,7 +637,7 @@ func NewFromConn(ctx context.Context, opt Option, cred cred.Cred, conn, casConn,
 		zstdDecoderPool: zstdDecoderPool,
 		m:               iometrics.New("reapi"),
 	}
-	c.knownDigests.Store(c.digestFn.Empty(), true)
+	c.knownDigests.Store(c.digestFn.Empty(), struct{}{})
 	return c, nil
 }
 
