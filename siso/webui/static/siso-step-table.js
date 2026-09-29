@@ -3,7 +3,13 @@
 // found in the LICENSE file.
 
 import { LitElement, html } from 'lit';
-import { filterSteps, sortSteps } from './step-transforms.js';
+import {
+  filterSteps,
+  formatIntervalMetricHuman,
+  formatIntervalMetricTimestamp,
+  sortSteps,
+  trimOutputPrefix,
+} from './step-transforms.js';
 import { stepQueryState } from './step-query-state.js';
 export class SisoStepTable extends LitElement {
   static properties = {
@@ -43,46 +49,6 @@ export class SisoStepTable extends LitElement {
   disconnectedCallback() {
     super.disconnectedCallback();
     this.queryState.removeEventListener('change', this._onQueryChange);
-  }
-
-  /**
-   * Formats an interval in nanoseconds to "XmYY.ZZs".
-   * @param {number} ns
-   * @return {string}
-   */
-  formatIntervalMetricTimestamp(ns) {
-    if (ns === null || ns === undefined || Number.isNaN(ns)) {
-      return '0m00.00s';
-    }
-    const totalMs = ns / 1e6;
-    const minute = Math.floor(totalMs / 60000);
-    const second = Math.floor((totalMs % 60000) / 1000);
-    const ms = Math.round((totalMs % 1000) / 10);
-    return `${minute}m${String(second).padStart(2, '0')}.${String(ms).padStart(2, '0')}s`;
-  }
-
-  /**
-   * Formats an interval in nanoseconds into a human-friendly duration.
-   * @param {number} ns
-   * @return {string}
-   */
-  formatIntervalMetricHuman(ns) {
-    if (ns === null || ns === undefined || Number.isNaN(ns)) {
-      return '0.00s';
-    }
-    const ms = ns / 1e6;
-    if (ms > 10) {
-      const totalSec = ms / 1000;
-      const mins = Math.floor(totalSec / 60);
-      const secs = totalSec % 60;
-      if (mins > 0) {
-        return `${mins}m${secs < 10 ? '0' : ''}${secs.toFixed(2)}s`;
-      }
-      return `${secs.toFixed(2)}s`;
-    } else {
-      const us = (ns % 1e6) / 1000;
-      return `${Math.floor(ms)}.${String(Math.round(us / 10)).padStart(2, '0')}ms`;
-    }
   }
 
   /**
@@ -328,12 +294,9 @@ export class SisoStepTable extends LitElement {
           <tbody id="data-table-body">
             ${currentSubset.map((step) => {
               const output = step.outputs?.[0] || "";
-              const trimmedOutput =
-                outdirRel && output.startsWith(outdirRel + '/')
-                  ? output.slice(outdirRel.length + 1)
-                  : output;
+              const trimmedOutput = trimOutputPrefix(output, outdirRel);
               const stepUrl = this.baseUrl
-                ? `${this.baseUrl}/steps/${encodeURIComponent(step.step_id || "")}/`
+                ? `${this.baseUrl}/steps_lit/${encodeURIComponent(step.step_id || "")}/`
                 : "#";
               const isLocal = step.is_local;
               const isCached = step.cached;
@@ -368,13 +331,13 @@ export class SisoStepTable extends LitElement {
                           : ""}
                   </td>
                   <td class="timestamp">
-                    ${this.formatIntervalMetricTimestamp(step.ready_nanos || 0)}
+                    ${formatIntervalMetricTimestamp(step.ready_nanos || 0)}
                   </td>
                   <td class="timestamp">
-                    ${this.formatIntervalMetricHuman(step.duration_nanos || 0)}
+                    ${formatIntervalMetricHuman(step.duration_nanos || 0)}
                   </td>
                   <td class="timestamp">
-                    ${this.formatIntervalMetricTimestamp(
+                    ${formatIntervalMetricTimestamp(
                       (step.ready_nanos || 0) + (step.duration_nanos || 0),
                     )}
                   </td>

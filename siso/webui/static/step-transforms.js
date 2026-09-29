@@ -111,3 +111,66 @@ export function sortSteps(steps, queryState) {
   });
   return result;
 }
+
+/**
+ * Formats an interval in nanoseconds to "XmYY.ZZs".
+ *
+ * TODO: add unit tests.
+ *
+ * @param {number} ns
+ * @return {string}
+ */
+export function formatIntervalMetricTimestamp(ns) {
+  if (ns === null || ns === undefined || Number.isNaN(ns)) {
+    return '0m00.00s';
+  }
+  const totalMs = ns / 1e6;
+  const minute = Math.floor(totalMs / 60000);
+  const second = Math.floor((totalMs % 60000) / 1000);
+  const ms = Math.round((totalMs % 1000) / 10);
+  return `${minute}m${String(second).padStart(2, '0')}.${String(ms).padStart(2, '0')}s`;
+}
+
+/**
+ * Formats an interval in nanoseconds into a human-friendly duration.
+ *
+ * TODO: add unit tests.
+ *
+ * @param {number} ns
+ * @return {string}
+ */
+export function formatIntervalMetricHuman(ns) {
+  if (ns === null || ns === undefined || Number.isNaN(ns)) {
+    return '0.00s';
+  }
+  const ms = ns / 1e6;
+  if (ms > 10) {
+    const totalSec = ms / 1000;
+    const mins = Math.floor(totalSec / 60);
+    const secs = totalSec % 60;
+    if (mins > 0) {
+      return `${mins}m${secs < 10 ? '0' : ''}${secs.toFixed(2)}s`;
+    }
+    return `${secs.toFixed(2)}s`;
+  } else {
+    const us = (ns % 1e6) / 1000;
+    return `${Math.floor(ms)}.${String(Math.round(us / 10)).padStart(2, '0')}ms`;
+  }
+}
+
+/**
+ * Trims the outdirRel prefix from an output path if present.
+ * @param {string} output
+ * @param {string} outdirRel
+ * @return {string}
+ */
+export function trimOutputPrefix(output, outdirRel) {
+  if (!output) {
+    return '';
+  }
+  if (outdirRel && output.startsWith(outdirRel + '/')) {
+    return output.slice(outdirRel.length + 1);
+  }
+  return output;
+}
+

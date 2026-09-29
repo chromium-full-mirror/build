@@ -473,8 +473,10 @@ func (s *WebuiServer) mux() http.Handler {
 	outdirRouter.HandleFunc("/{outroot}/{outsub}/builds/{rev}/aggregates/", s.handleInvocationAggregates)
 	outdirRouter.HandleFunc("POST /{outroot}/{outsub}/builds/{rev}/steps/{id}/recall/", s.handleInvocationStepRecall)
 	outdirRouter.HandleFunc("/{outroot}/{outsub}/builds/{rev}/steps/{id}/", s.handleInvocationViewStep)
+	outdirRouter.HandleFunc("/{outroot}/{outsub}/builds/{rev}/steps_lit/{id}/", s.handleInvocationViewStepLit)
 	outdirRouter.HandleFunc("/{outroot}/{outsub}/builds/{rev}/steps/", s.handleInvocationListSteps)
 	outdirRouter.HandleFunc("/{outroot}/{outsub}/builds/{rev}/steps_lit/", s.handleInvocationListStepsLit)
+	outdirRouter.HandleFunc("/{outroot}/{outsub}/builds/{rev}/api/steps/{id}", s.handleAPIInvocationStep)
 	outdirRouter.HandleFunc("/{outroot}/{outsub}/builds/{rev}/api/steps", s.handleAPIInvocationSteps)
 	outdirRouter.HandleFunc("/{outroot}/{outsub}/targets/{target}/", s.handleOutdirListTargets)
 
@@ -492,8 +494,10 @@ func (s *WebuiServer) mux() http.Handler {
 	uploadsRouter.HandleFunc("/uploads/view/builds/{rev}/aggregates/", s.handleInvocationAggregates)
 	uploadsRouter.HandleFunc("POST /uploads/view/builds/{rev}/steps/{id}/recall/", s.handleInvocationStepRecall)
 	uploadsRouter.HandleFunc("/uploads/view/builds/{rev}/steps/{id}/", s.handleInvocationViewStep)
+	uploadsRouter.HandleFunc("/uploads/view/builds/{rev}/steps_lit/{id}/", s.handleInvocationViewStepLit)
 	uploadsRouter.HandleFunc("/uploads/view/builds/{rev}/steps/", s.handleInvocationListSteps)
 	uploadsRouter.HandleFunc("/uploads/view/builds/{rev}/steps_lit/", s.handleInvocationListStepsLit)
+	uploadsRouter.HandleFunc("/uploads/view/builds/{rev}/api/steps/{id}", s.handleAPIInvocationStep)
 	uploadsRouter.HandleFunc("/uploads/view/builds/{rev}/api/steps", s.handleAPIInvocationSteps)
 	mux.HandleFunc("/uploads/view/", func(w http.ResponseWriter, r *http.Request) {
 		// This is how we hack around the hardcoded assumption that URLs are /{outroot}/{outsub}/.

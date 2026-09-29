@@ -316,6 +316,53 @@ func (s *WebuiServer) handleInvocationStepRecall(w http.ResponseWriter, r *http.
 }
 
 func (s *WebuiServer) handleInvocationViewStep(w http.ResponseWriter, r *http.Request) {
+	s.renderInvocationViewStep(w, r, false)
+}
+
+func (s *WebuiServer) handleInvocationViewStepLit(w http.ResponseWriter, r *http.Request) {
+	s.renderInvocationViewStep(w, r, true)
+}
+
+type apiInvocationStepResponse struct {
+	Step      *build.StepMetric `json:"step"`
+	OutdirRel string            `json:"outdirRel"`
+}
+
+func (s *WebuiServer) handleAPIInvocationStep(w http.ResponseWriter, r *http.Request) {
+	series, err := s.invocationSeriesFor(r)
+	if err != nil {
+		s.renderBuildViewError(http.StatusNotFound, fmt.Sprintf("failed to load invocation(s) for %s: %v", r.URL, err), w, r)
+		return
+	}
+	metrics := series.Get(r.PathValue("rev"))
+	if metrics == nil {
+		s.renderBuildViewError(http.StatusNotFound, fmt.Sprintf("no metrics found for request %s", r.URL), w, r)
+		return
+	}
+
+	stepData, ok := metrics.stepByStepID[r.PathValue("id")]
+	if !ok {
+		s.renderBuildViewError(http.StatusNotFound, fmt.Sprintf("stepID %s not found", r.PathValue("id")), w, r)
+		return
+	}
+
+	outdirRel := ""
+	if outdirInfo, ok := series.(*outdirInfo); ok {
+		outdirRel = outdirInfo.pathRel
+	}
+
+	data := apiInvocationStepResponse{
+		Step:      stepData,
+		OutdirRel: outdirRel,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(data); err != nil {
+		clog.Warningf(r.Context(), "failed to encode JSON for %s: %v", r.URL, err)
+	}
+}
+
+func (s *WebuiServer) renderInvocationViewStep(w http.ResponseWriter, r *http.Request, useLit bool) {
 	series, err := s.invocationSeriesFor(r)
 	if err != nil {
 		s.renderBuildViewError(http.StatusNotFound, fmt.Sprintf("failed to load invocation(s) for %s: %v", r.URL, err), w, r)
@@ -350,18 +397,29 @@ func (s *WebuiServer) handleInvocationViewStep(w http.ResponseWriter, r *http.Re
 		}
 	}
 
-	// We will only have special handling for a subset of stats, so provide the raw step for everything else.
-	var stepRaw map[string]any
-	asJSON, err := json.Marshal(stepData)
-	if err != nil {
-		s.renderBuildViewError(http.StatusInternalServerError, fmt.Sprintf("failed to marshal metrics: %v", err), w, r)
+	outdirRel := ""
+	if outdirInfo, ok := series.(*outdirInfo); ok {
+		outdirRel = outdirInfo.pathRel
 	}
-	err = json.Unmarshal(asJSON, &stepRaw)
-	if err != nil {
-		s.renderBuildViewError(http.StatusInternalServerError, fmt.Sprintf("failed to unmarshal metrics: %v", err), w, r)
+
+	var stepRaw map[string]any
+	if !useLit {
+		// We will only have special handling for a subset of stats, so provide the raw step for everything else.
+		asJSON, err := json.Marshal(stepData)
+		if err != nil {
+			s.renderBuildViewError(http.StatusInternalServerError, fmt.Sprintf("failed to marshal metrics: %v", err), w, r)
+			return
+		}
+		err = json.Unmarshal(asJSON, &stepRaw)
+		if err != nil {
+			s.renderBuildViewError(http.StatusInternalServerError, fmt.Sprintf("failed to unmarshal metrics: %v", err), w, r)
+			return
+		}
 	}
 
 	err = s.renderBuildView(w, r, tmpl, map[string]any{
+		"useLit":      useLit,
+		"outdirRel":   outdirRel,
 		"step":        stepData,
 		"stepRaw":     stepRaw,
 		"inOtherRevs": inOtherRevs,
