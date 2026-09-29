@@ -22,11 +22,13 @@ import (
 	"go.chromium.org/build/siso/path"
 )
 
+var errNoTapData = errors.New("no tap data")
+
 func (b *Builder) tapCanonicalizeCmd(ctx context.Context, cmd *execute.Cmd) error {
 	res, _ := cmd.ActionResult()
 	tapData, tapped := localexec.ExtractTapResult(res)
 	if !tapped {
-		return errors.New("no tap data")
+		return errNoTapData
 	}
 	if tapData.Error != "" {
 		return fmt.Errorf("tap error: %v", tapData.Error)
