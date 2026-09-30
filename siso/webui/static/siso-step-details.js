@@ -8,6 +8,10 @@ import {
   trimOutputPrefix,
 } from './step-transforms.js';
 
+// TODO: make these configurable; hardcoded to match the SSR recall form for now.
+const RECALL_PROJECT = 'rbe-chrome-untrusted';
+const RECALL_REAPI_INSTANCE = 'default_instance';
+
 export class SisoStepDetails extends LitElement {
   static properties = {
     endpoint: { type: String },
@@ -135,7 +139,27 @@ export class SisoStepDetails extends LitElement {
                       <md-icon>content_copy</md-icon>
                     </md-icon-button>
                   </clipboard-copy>
-                  <!-- TODO: Port the "Recall..." button and <md-dialog> to show recall CLI instructions. -->
+                  <md-outlined-button @click=${() => this.querySelector('#recall-dialog').show()}>
+                    Recall...
+                  </md-outlined-button>
+                  <md-dialog id="recall-dialog">
+                    <div slot="headline">Recall step</div>
+                    <form slot="content" id="recall-dialog-form" method="dialog">
+                      <p>You can perform this recall with:</p>
+                      <div class="code-block">
+                        <pre id="recall-${stepId}"><code>siso recall -project="${RECALL_PROJECT}" -reapi_instance="${RECALL_REAPI_INSTANCE}" &lt;output_directory&gt; ${step.digest}</code></pre>
+                        <clipboard-copy for="recall-${stepId}">
+                          <md-icon-button>
+                            <md-icon>content_copy</md-icon>
+                          </md-icon-button>
+                        </clipboard-copy>
+                      </div>
+                      <p>Native recall in this webui is still TODO.</p>
+                    </form>
+                    <div slot="actions">
+                      <md-text-button form="recall-dialog-form">Ok</md-text-button>
+                    </div>
+                  </md-dialog>
                 </li>
               `
             : ''}
