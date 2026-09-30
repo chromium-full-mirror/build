@@ -169,6 +169,7 @@ func TestRoutes_Outdirs(t *testing.T) {
 		{"/out/Default/builds/test-rev/steps/", http.StatusOK},
 		{"/out/Default/builds/test-rev/steps_lit/", http.StatusOK},
 		{"/out/Default/builds/test-rev/api/steps", http.StatusOK},
+		{"/out/Default/builds/test-rev/api/invocation", http.StatusOK},
 		{"/out/Default/builds/test-rev/api/steps/step-1", http.StatusOK},
 		{"/out/Default/builds/test-rev/api/steps/step-0", http.StatusNotFound},
 		{"/out/Default/builds/test-rev/steps/step-1/", http.StatusOK},
@@ -178,6 +179,7 @@ func TestRoutes_Outdirs(t *testing.T) {
 		{"/out/Default/builds/nonexistent-rev/steps/step-1/", http.StatusNotFound},
 		{"/out/Default/builds/cros-rev/steps/step-1/", http.StatusNotFound},
 		{"/out/Default/builds/test-rev/details/", http.StatusOK},
+		{"/out/Default/builds/test-rev/details_lit/", http.StatusOK},
 		{"/out/Default/builds/test-rev/aggregates/", http.StatusOK},
 		{"/out/Default/builds/test-rev/aggregates_lit/", http.StatusOK},
 		{"/out/Default/builds/test-rev/logs_lit/", http.StatusOK},
@@ -243,12 +245,14 @@ func TestRoutes_UploadedMetrics(t *testing.T) {
 		{"/uploads/view/builds/uploaded-build-id/steps/", http.StatusOK},
 		{"/uploads/view/builds/uploaded-build-id/steps_lit/", http.StatusOK},
 		{"/uploads/view/builds/uploaded-build-id/api/steps", http.StatusOK},
+		{"/uploads/view/builds/uploaded-build-id/api/invocation", http.StatusOK},
 		{"/uploads/view/builds/uploaded-build-id/api/steps/step-1", http.StatusOK},
 		{"/uploads/view/builds/uploaded-build-id/api/steps/step-0", http.StatusNotFound},
 		{"/uploads/view/builds/uploaded-build-id/steps/step-1/", http.StatusOK},
 		{"/uploads/view/builds/uploaded-build-id/steps_lit/step-1/", http.StatusOK},
 		{"/uploads/view/builds/uploaded-build-id/steps_lit/step-0/", http.StatusNotFound},
 		{"/uploads/view/builds/uploaded-build-id/details/", http.StatusOK},
+		{"/uploads/view/builds/uploaded-build-id/details_lit/", http.StatusOK},
 		{"/uploads/view/builds/nonexistent-rev/steps/", http.StatusNotFound},
 		{"/uploads/view/builds/uploaded-build-id/aggregates/", http.StatusOK},
 		{"/uploads/view/builds/uploaded-build-id/aggregates_lit/", http.StatusOK},
@@ -373,6 +377,7 @@ func TestBreadcrumbs(t *testing.T) {
 		{"/out/Default/builds/test-rev/steps/step-1/", []string{outdirAbbrev, "Invocations", "test-rev", "Build Steps", "out1.o"}},
 		{"/out/Default/builds/test-rev/steps_lit/step-1/", []string{outdirAbbrev, "Invocations", "test-rev", "Build Steps (Lit)", "out1.o"}},
 		{"/out/Default/builds/test-rev/details/", []string{outdirAbbrev, "Invocations", "test-rev", "Details"}},
+		{"/out/Default/builds/test-rev/details_lit/", []string{outdirAbbrev, "Invocations", "test-rev", "Details (Lit)"}},
 		{"/out/Default/builds/test-rev/aggregates/", []string{outdirAbbrev, "Invocations", "test-rev", "Aggregates"}},
 		{"/out/Default/builds/test-rev/aggregates_lit/", []string{outdirAbbrev, "Invocations", "test-rev", "Aggregates (Lit)"}},
 		{"/out/Default/builds/test-rev/logs_lit/", []string{outdirAbbrev, "Invocations", "test-rev", "Raw Logs (Lit)"}},
@@ -556,5 +561,31 @@ func TestAPIInvocationSteps(t *testing.T) {
 	}
 	if data.BuildDurationNanos < 0 {
 		t.Errorf("expected non-negative BuildDurationNanos, got %d", data.BuildDurationNanos)
+	}
+}
+
+func TestAPIInvocation(t *testing.T) {
+	s, _ := mustServer(t)
+	rec := httptest.NewRecorder()
+	s.mux().ServeHTTP(rec, httptest.NewRequest("GET", "/out/Default/builds/test-rev/api/invocation", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /api/invocation = %d; want 200", rec.Code)
+	}
+
+	contentType := rec.Header().Get("Content-Type")
+	if !strings.HasPrefix(contentType, "application/json") {
+		t.Errorf("Content-Type = %q; want application/json", contentType)
+	}
+
+	var data apiInvocationResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &data); err != nil {
+		t.Fatalf("failed to decode JSON response: %v", err)
+	}
+
+	if data.BuildID != "test-rev" {
+		t.Errorf("BuildID = %q; want %q", data.BuildID, "test-rev")
+	}
+	if data.TotalSteps != 2 {
+		t.Errorf("TotalSteps = %d; want 2", data.TotalSteps)
 	}
 }

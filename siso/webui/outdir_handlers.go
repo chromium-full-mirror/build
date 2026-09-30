@@ -17,8 +17,10 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"go.chromium.org/build/siso/build"
+	"go.chromium.org/build/siso/build/metadata"
 	"go.chromium.org/build/siso/o11y/clog"
 	"go.chromium.org/build/siso/toolsupport/ninjautil"
 )
@@ -89,6 +91,14 @@ func (s *WebuiServer) handleInvocationSeriesRoot(w http.ResponseWriter, r *http.
 }
 
 func (s *WebuiServer) handleInvocationDetails(w http.ResponseWriter, r *http.Request) {
+	s.renderInvocationDetails(w, r, false)
+}
+
+func (s *WebuiServer) handleInvocationDetailsLit(w http.ResponseWriter, r *http.Request) {
+	s.renderInvocationDetails(w, r, true)
+}
+
+func (s *WebuiServer) renderInvocationDetails(w http.ResponseWriter, r *http.Request, useLit bool) {
 	series, err := s.invocationSeriesFor(r)
 	if err != nil {
 		s.renderBuildViewError(http.StatusNotFound, fmt.Sprintf("failed to load invocation(s) for %s: %v", r.URL, err), w, r)
@@ -107,6 +117,7 @@ func (s *WebuiServer) handleInvocationDetails(w http.ResponseWriter, r *http.Req
 	}
 
 	err = s.renderBuildView(w, r, tmpl, map[string]any{
+		"useLit":  useLit,
 		"metrics": metrics,
 	})
 	if err != nil {
@@ -512,6 +523,57 @@ func (s *WebuiServer) handleAPIInvocationSteps(w http.ResponseWriter, r *http.Re
 		Steps:              metrics.StepMetrics(),
 		BuildDurationNanos: int64(metrics.buildDuration),
 		OutdirRel:          outdirRel,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(data); err != nil {
+		clog.Warningf(r.Context(), "failed to encode JSON for %s: %v", r.URL, err)
+	}
+}
+
+type apiInvocationStarted struct {
+	Time     string `json:"time"`
+	Inferred bool   `json:"inferred"`
+}
+
+type apiInvocationResponse struct {
+	BuildID            string                   `json:"buildId"`
+	Status             string                   `json:"status"`
+	BuildDurationNanos int64                    `json:"buildDurationNanos"`
+	FailedSteps        int                      `json:"failedSteps"`
+	TotalSteps         int                      `json:"totalSteps"`
+	Started            *apiInvocationStarted    `json:"started"`
+	Info               *metadata.InvocationInfo `json:"info"`
+}
+
+func (s *WebuiServer) handleAPIInvocation(w http.ResponseWriter, r *http.Request) {
+	series, err := s.invocationSeriesFor(r)
+	if err != nil {
+		s.renderBuildViewError(http.StatusNotFound, fmt.Sprintf("failed to load invocation(s) for %s: %v", r.URL, err), w, r)
+		return
+	}
+	metrics := series.Get(r.PathValue("rev"))
+	if metrics == nil {
+		s.renderBuildViewError(http.StatusNotFound, fmt.Sprintf("no metrics found for request %s", r.URL), w, r)
+		return
+	}
+
+	var started *apiInvocationStarted
+	if st := metrics.Started(); !st.IsZero() {
+		started = &apiInvocationStarted{
+			Time:     st.Time.Format(time.RFC3339),
+			Inferred: st.Inferred,
+		}
+	}
+
+	data := apiInvocationResponse{
+		BuildID:            metrics.Rev,
+		Status:             string(metrics.Status),
+		BuildDurationNanos: int64(metrics.BuildDuration()),
+		FailedSteps:        metrics.FailedSteps,
+		TotalSteps:         len(metrics.StepMetrics()),
+		Started:            started,
+		Info:               metrics.Info,
 	}
 
 	w.Header().Set("Content-Type", "application/json")

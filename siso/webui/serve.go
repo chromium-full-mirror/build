@@ -469,6 +469,7 @@ func (s *WebuiServer) mux() http.Handler {
 	outdirRouter.HandleFunc("/{outroot}/{outsub}/watch/", s.handleOutdirWatch)
 	outdirRouter.HandleFunc("/{outroot}/{outsub}/builds/", s.handleInvocationSeriesList)
 	outdirRouter.HandleFunc("/{outroot}/{outsub}/builds/{rev}/details/", s.handleInvocationDetails)
+	outdirRouter.HandleFunc("/{outroot}/{outsub}/builds/{rev}/details_lit/", s.handleInvocationDetailsLit)
 	outdirRouter.HandleFunc("/{outroot}/{outsub}/builds/{rev}/logs/{file}", s.handleOutdirViewLog)
 	outdirRouter.HandleFunc("/{outroot}/{outsub}/builds/{rev}/logs_lit/", s.handleOutdirLogsLit)
 	outdirRouter.HandleFunc("/{outroot}/{outsub}/builds/{rev}/aggregates/", s.handleInvocationAggregates)
@@ -480,6 +481,7 @@ func (s *WebuiServer) mux() http.Handler {
 	outdirRouter.HandleFunc("/{outroot}/{outsub}/builds/{rev}/steps_lit/", s.handleInvocationListStepsLit)
 	outdirRouter.HandleFunc("/{outroot}/{outsub}/builds/{rev}/api/steps/{id}", s.handleAPIInvocationStep)
 	outdirRouter.HandleFunc("/{outroot}/{outsub}/builds/{rev}/api/steps", s.handleAPIInvocationSteps)
+	outdirRouter.HandleFunc("/{outroot}/{outsub}/builds/{rev}/api/invocation", s.handleAPIInvocation)
 	outdirRouter.HandleFunc("/{outroot}/{outsub}/targets/{target}/", s.handleOutdirListTargets)
 
 	// Handlers for uploaded metrics.
@@ -493,6 +495,7 @@ func (s *WebuiServer) mux() http.Handler {
 	uploadsRouter.HandleFunc("/uploads/view/", s.handleInvocationSeriesRoot)
 	uploadsRouter.HandleFunc("/uploads/view/builds/", s.handleInvocationSeriesList)
 	uploadsRouter.HandleFunc("/uploads/view/builds/{rev}/details/", s.handleInvocationDetails)
+	uploadsRouter.HandleFunc("/uploads/view/builds/{rev}/details_lit/", s.handleInvocationDetailsLit)
 	uploadsRouter.HandleFunc("/uploads/view/builds/{rev}/aggregates/", s.handleInvocationAggregates)
 	uploadsRouter.HandleFunc("/uploads/view/builds/{rev}/aggregates_lit/", s.handleInvocationAggregatesLit)
 	uploadsRouter.HandleFunc("POST /uploads/view/builds/{rev}/steps/{id}/recall/", s.handleInvocationStepRecall)
@@ -502,6 +505,7 @@ func (s *WebuiServer) mux() http.Handler {
 	uploadsRouter.HandleFunc("/uploads/view/builds/{rev}/steps_lit/", s.handleInvocationListStepsLit)
 	uploadsRouter.HandleFunc("/uploads/view/builds/{rev}/api/steps/{id}", s.handleAPIInvocationStep)
 	uploadsRouter.HandleFunc("/uploads/view/builds/{rev}/api/steps", s.handleAPIInvocationSteps)
+	uploadsRouter.HandleFunc("/uploads/view/builds/{rev}/api/invocation", s.handleAPIInvocation)
 	mux.HandleFunc("/uploads/view/", func(w http.ResponseWriter, r *http.Request) {
 		// This is how we hack around the hardcoded assumption that URLs are /{outroot}/{outsub}/.
 		// Common code paths will then have checks to handle this special case.

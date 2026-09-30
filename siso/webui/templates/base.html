@@ -116,6 +116,8 @@ found in the LICENSE file. */}}
                 {{$activeTab := "steps"}}
                 {{if urlPathHasPrefix .currentURL (printf "%s/builds/%s/steps_lit/" .outdirBaseURL .currentRev)}}
                   {{$activeTab = "steps_lit"}}
+                {{else if urlPathHasPrefix .currentURL (printf "%s/builds/%s/details_lit/" .outdirBaseURL .currentRev)}}
+                  {{$activeTab = "details_lit"}}
                 {{else if urlPathHasPrefix .currentURL (printf "%s/builds/%s/details/" .outdirBaseURL .currentRev)}}
                   {{$activeTab = "details"}}
                 {{else if urlPathHasPrefix .currentURL (printf "%s/builds/%s/aggregates/" .outdirBaseURL .currentRev)}}
