@@ -595,3 +595,84 @@ build out7: rule_restat_content in1
 		}
 	}
 }
+
+func TestStepDefSandbox_Disabled(t *testing.T) {
+	ctx := t.Context()
+	state := ninjautil.NewState()
+	p := ninjautil.NewManifestParser(state)
+	dir := t.TempDir()
+	fname := filepath.Join(dir, "build.ninja")
+	err := os.WriteFile(fname, []byte(`
+rule rule_plain
+  command = touch ${out}
+
+rule rule_ninja_disabled
+  command = touch ${out}
+  sandbox_disabled = true
+
+rule rule_starlark_disabled
+  command = touch ${out}
+
+build out0: rule_plain
+build out1: rule_ninja_disabled
+build out2: rule_starlark_disabled
+`), 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = p.Load(ctx, fname)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	graph := &Graph{
+		visited: make(map[*ninjautil.Edge]*build.Edge),
+		globals: &globals{
+			nstate: state,
+			path:   build.NewPath(dir, "out/Default"),
+			stepConfig: &StepConfig{
+				Sandbox: map[string]string{"type": "test"},
+				Rules: []*StepRule{
+					{
+						Name:            "starlark_disable_sandbox",
+						ActionName:      "rule_starlark_disabled",
+						SandboxDisabled: true,
+					},
+				},
+			},
+			targetPaths: make([]path.Path, state.NumNodes()),
+			edgeRules:   make([]edgeRuleHolder, state.NumNodes()),
+		},
+	}
+	err = graph.globals.stepConfig.Init(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tests := []struct {
+		target      string
+		wantSandbox bool
+	}{
+		// Neither Starlark nor Ninja disables the sandbox.
+		{target: "out0", wantSandbox: true},
+		// Ninja rule sets sandbox_disabled = true.
+		{target: "out1", wantSandbox: false},
+		// Starlark rule sets sandbox_disabled.
+		{target: "out2", wantSandbox: false},
+	}
+	for _, tc := range tests {
+		node, ok := state.LookupNodeByPath(tc.target)
+		if !ok {
+			t.Fatalf("target %q not found in build.ninja", tc.target)
+		}
+		edge, ok := node.InEdge()
+		if !ok {
+			t.Fatalf("target %q has no edge", tc.target)
+		}
+		s := graph.newStepDef(ctx, edge, nil)
+		s.EnsureRule(ctx)
+		if got := s.Sandbox() != nil; got != tc.wantSandbox {
+			t.Errorf("%s: Sandbox() != nil is %t; want %t", tc.target, got, tc.wantSandbox)
+		}
+	}
+}

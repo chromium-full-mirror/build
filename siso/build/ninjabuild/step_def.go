@@ -1275,8 +1275,9 @@ func (s *StepDef) Sandbox() map[string]string {
 	if s.edge.Pool().Name() == "console" {
 		return nil
 	}
-	// disable sandbox if "sandbox_disabled" binding is explicitly set.
-	if s.edge.Binding("sandbox_disabled") == "true" {
+	// disable sandbox if "sandbox_disabled" is set in the ninja file
+	// or in the siso config rule.
+	if s.Binding("sandbox_disabled") == "true" {
 		return nil
 	}
 	return s.globals.stepConfig.Sandbox
