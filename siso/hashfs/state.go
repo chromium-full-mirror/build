@@ -702,7 +702,17 @@ func (ies *initialEntryStates) initFile(ctx context.Context, es *entryState, fi 
 		src := ies.osfs.FileSource(es.ent.Name, fi.Size())
 		data, err := localDigest(ctx, ies.osfs.DigestFunction(), src, es.ent.Name)
 		if err == nil && data.Digest() == es.e.d {
+			if es.et == entryAfterLocal {
+				// initStateEntry queued true to lready for entryAfterLocal (meaning
+				// local file is not ready and needs flush). Since the local file
+				// digest matches state, drain and close lready to mark it ready on
+				// disk like entryEqLocal.
+				lready := make(chan bool, 1)
+				close(lready)
+				es.e.lready = lready
+			}
 			es.et = entryEqLocal
+			es.e.src = src
 			err = ies.osfs.Chtimes(ctx, es.ent.Name, time.Now(), es.e.mtime)
 			clog.Infof(ctx, "reconcile mtime %q %v -> %v: %v", es.ent.Name, fi.ModTime(), es.e.mtime, err)
 		} else {
@@ -745,11 +755,26 @@ func (ies *initialEntryStates) handleBeforeLocal(ctx context.Context, es *entryS
 		es.ftype = ""
 		return nil
 	}
+	if es.ftype == "file" {
+		src := ies.osfs.FileSource(es.ent.Name, fi.Size())
+		data, err := localDigest(ctx, ies.osfs.DigestFunction(), src, es.ent.Name)
+		if err != nil {
+			clog.Warningf(ctx, "failed to calculate digest for tainted %q: %v", es.ent.Name, err)
+			es.ftype = ""
+			return nil
+		}
+		es.e.size = fi.Size()
+		es.e.src = src
+		es.e.d = data.Digest()
+	}
 	es.tainted = true
 	clog.Warningf(ctx, "keep tainted %s %q: state:%s disk:%s", es.ftype, es.ent.Name, es.e.mtime, fi.ModTime())
 	// keep this entry to preserve cmdhash
 	// but use mtime of actual file.
 	es.e.mtime = fi.ModTime()
+	if es.e.updatedTime.Before(es.e.mtime) {
+		es.e.updatedTime = es.e.mtime
+	}
 	return nil
 }
 

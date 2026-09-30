@@ -464,15 +464,9 @@ func (s dataSource) Open(ctx context.Context) (io.ReadCloser, error) {
 	cname := filepath.Join(s.c.dir, "contents", name[:2], name[2:])
 	r, err := os.Open(cname)
 	if err != nil {
-		var err2 error
-		r, err2 = os.Open(s.fname)
-		if err2 != nil {
-			clog.Warningf(ctx, "failed to open cached-digest data %s for %s: %v %v", s.d, s.fname, err, err2)
-			s.m.ReadDone(0, err)
-			return nil, err
-		}
-		clog.Infof(ctx, "use %s (failed to open cached-digest data %s: %v)", s.fname, s.d, err)
-		return &dataReadCloser{ReadCloser: r, m: s.m}, nil
+		clog.Warningf(ctx, "failed to open cached-digest data %s for %s: %v", s.d, s.fname, err)
+		s.m.ReadDone(0, err)
+		return nil, err
 	}
 	zr, err := zstd.NewReader(r)
 	if err != nil {

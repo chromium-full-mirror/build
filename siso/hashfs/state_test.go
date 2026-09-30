@@ -1245,6 +1245,10 @@ func TestState_DirOutput_StaleInnerFileReconcile(t *testing.T) {
 		if !bytes.Equal(ent.GetCmdHash(), cmdhash) {
 			t.Errorf("CmdHash=%x; want %x (the tag that keeps the member as generated output)", ent.GetCmdHash(), cmdhash)
 		}
+		wantDg := blob.FromBytes(digest.SHA256, "gendir/hello.txt", []byte("modified")).Digest()
+		if gotHash := ent.GetDigest().GetHash(); gotHash != wantDg.Hash {
+			t.Errorf("Digest.Hash=%s; want %s (digest of modified content)", gotHash, wantDg.Hash)
+		}
 	})
 }
 

@@ -6,10 +6,9 @@ package build
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
-	"os"
-	"path/filepath"
 
 	"go.chromium.org/build/hashigo/digest"
 
@@ -85,11 +84,10 @@ func (s source) Open(ctx context.Context) (io.ReadCloser, error) {
 		// fallback
 	}
 	if s.dataSource.Client != nil {
-		r, err := s.dataSource.Client.GetReader(ctx, s.d, s.fname)
+		r, err = s.dataSource.Client.GetReader(ctx, s.d, s.fname)
 		if err == nil {
 			return r, nil
 		}
-		// fallback
 	}
 	// ctx may be deadline exceeded or canceled.
 	// if so, return such error.
@@ -97,17 +95,10 @@ func (s source) Open(ctx context.Context) (io.ReadCloser, error) {
 	if ctx.Err() != nil {
 		return nil, context.Cause(ctx)
 	}
-	// siso process runs at some directory, but
-	// s.fname may not be relative to the working directory.
-	// Actually, it is workspace relative if it is created by
-	// *Cmd.entriesFromResult, and failed to open as such path
-	// doesn't exist. return with better error message.
-	if !filepath.IsAbs(s.fname) {
-		return nil, fmt.Errorf("failed to fetch source %v for %q: %w", s.d, s.fname, err)
+	if err != nil {
+		return nil, err
 	}
-	// no reapi configured. use local file?
-	f, err := os.Open(s.fname)
-	return f, err
+	return nil, errors.New("no client or cache in datasource")
 }
 
 func (s source) String() string {
