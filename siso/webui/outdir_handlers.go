@@ -114,6 +114,50 @@ func (s *WebuiServer) handleInvocationDetails(w http.ResponseWriter, r *http.Req
 	}
 }
 
+var allowedLogFilesMap = map[string]string{
+	".siso_config":     ".siso_config%.0s",
+	".siso_filegroups": ".siso_filegroups%.0s",
+	"siso_localexec":   "siso_localexec.%s",
+	"siso_output":      "siso_output.%s",
+	"siso_trace.json":  "siso_trace.%s.json",
+}
+
+func allowedLogFiles() []string {
+	return slices.Sorted(maps.Keys(allowedLogFilesMap))
+}
+
+func (s *WebuiServer) handleOutdirLogsLit(w http.ResponseWriter, r *http.Request) {
+	series, err := s.invocationSeriesFor(r)
+	if err != nil {
+		s.renderBuildViewError(http.StatusNotFound, fmt.Sprintf("failed to load invocation(s) for %s: %v", r.URL, err), w, r)
+		return
+	}
+	_, ok := series.(*outdirInfo)
+	if !ok {
+		s.renderBuildViewError(http.StatusNotFound, "only outdirs are currently supported", w, r)
+		return
+	}
+	metrics := series.Get(r.PathValue("rev"))
+	if metrics == nil {
+		s.renderBuildViewError(http.StatusNotFound, fmt.Sprintf("no metrics found for request %s", r.URL), w, r)
+		return
+	}
+
+	tmpl, err := s.loadView("invocation_logs.html")
+	if err != nil {
+		s.renderBuildViewError(http.StatusInternalServerError, fmt.Sprintf("failed to load view: %s", err), w, r)
+		return
+	}
+
+	err = s.renderBuildView(w, r, tmpl, map[string]any{
+		"useLit":       true,
+		"allowedFiles": allowedLogFiles(),
+	})
+	if err != nil {
+		s.renderBuildViewError(http.StatusInternalServerError, fmt.Sprintf("failed to render view: %v", err), w, r)
+	}
+}
+
 func (s *WebuiServer) handleOutdirViewLog(w http.ResponseWriter, r *http.Request) {
 	series, err := s.invocationSeriesFor(r)
 	if err != nil {
@@ -133,17 +177,9 @@ func (s *WebuiServer) handleOutdirViewLog(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	allowedFilesMap := map[string]string{
-		".siso_config":     ".siso_config%.0s",
-		".siso_filegroups": ".siso_filegroups%.0s",
-		"siso_localexec":   "siso_localexec.%s",
-		"siso_output":      "siso_output.%s",
-		"siso_trace.json":  "siso_trace.%s.json",
-	}
-
 	// Make sure this file is allowed.
 	requestedFile := r.PathValue("file")
-	revFileFormatter, ok := allowedFilesMap[requestedFile]
+	revFileFormatter, ok := allowedLogFilesMap[requestedFile]
 	if !ok {
 		s.renderBuildViewError(http.StatusNotFound, fmt.Sprintf("unknown file: %s", requestedFile), w, r)
 		return
@@ -218,7 +254,7 @@ func (s *WebuiServer) handleOutdirViewLog(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	allowedFiles := slices.Sorted(maps.Keys(allowedFilesMap))
+	allowedFiles := allowedLogFiles()
 
 	err = s.renderBuildView(w, r, tmpl, map[string]any{
 		"allowedFiles": allowedFiles,

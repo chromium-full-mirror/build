@@ -122,6 +122,8 @@ found in the LICENSE file. */}}
                   {{$activeTab = "aggregates"}}
                 {{else if urlPathHasPrefix .currentURL (printf "%s/builds/%s/aggregates_lit/" .outdirBaseURL .currentRev)}}
                   {{$activeTab = "aggregates_lit"}}
+                {{else if urlPathHasPrefix .currentURL (printf "%s/builds/%s/logs_lit/" .outdirBaseURL .currentRev)}}
+                  {{$activeTab = "logs_lit"}}
                 {{else if urlPathHasPrefix .currentURL (printf "%s/builds/%s/logs/" .outdirBaseURL .currentRev)}}
                   {{$activeTab = "logs"}}
                 {{end}}

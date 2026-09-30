@@ -3,7 +3,11 @@ Use of this source code is governed by a BSD-style license that can be
 found in the LICENSE file. */}}
 
 {{define "breadcrumbs"}}
-  {{if .file}}
+  {{if .useLit}}
+    <div class="breadcrumb">
+      <span class="breadcrumb-label">Raw Logs (Lit)</span>
+    </div>
+  {{else if .file}}
     <div class="breadcrumb">
       <a href="{{.outdirRevBaseURL}}/logs/" class="breadcrumb-label">Raw Logs</a>
     </div>
@@ -21,6 +25,12 @@ found in the LICENSE file. */}}
   {{template "invocation_tabs" .}}
 {{end}}
 
+{{define "scripts"}}
+{{if .useLit}}
+<script type="module" src="/static/siso-log-links.js"></script>
+{{end}}
+{{end}}
+
 {{define "sidebar"}}
 {{$outdirRevBaseURL:=.outdirRevBaseURL}}
 {{$currentURL:=.currentURL}}
@@ -30,7 +40,7 @@ found in the LICENSE file. */}}
   <ul class="revs-timeline">
     {{range $r := .revs}}
     <li{{if eq $r.Rev $currentRev}} class="selected"{{end}}>
-      <a class="rev-label" href="{{$outdirRevBaseURL}}/../{{.Rev}}/logs/">
+      <a class="rev-label" href="{{$outdirRevBaseURL}}/../{{.Rev}}/{{if $.useLit}}logs_lit{{else}}logs{{end}}/">
         <span class="rev-label-note">Logs in</span>
         {{buildTimeHumanReadable $r}}
         <md-ripple></md-ripple>
@@ -39,7 +49,7 @@ found in the LICENSE file. */}}
         {{if not .Started.IsZero}}
         <relative-time datetime="{{timeRFC3339 .Started.Time}}"></relative-time>{{if .Started.Inferred}} <abbr title="Inferred start time (file modification time minus duration)">*</abbr>{{end}}
         {{end}}
-        {{if eq $r.Rev $currentRev}}
+        {{if and (eq $r.Rev $currentRev) (not $.useLit)}}
         <ul class="rev-sublinks">
           {{range $allowedFile := $allowedFiles}}
             {{$logURL := printf "%s/logs/%s" $outdirRevBaseURL $allowedFile}}
@@ -64,6 +74,13 @@ found in the LICENSE file. */}}
 {{$currentRev:=.currentRev}}
 {{$allowedFiles:=.allowedFiles}}
 <div class="surface">
+{{if .useLit}}
+  <siso-log-links
+    base-url="{{.outdirRevBaseURL}}"
+    files="{{joinStrings .allowedFiles ","}}">
+  </siso-log-links>
+{{else}}
 <pre><code>{{.fileContents}}</code></pre>
+{{end}}
 </div>
 {{end}}

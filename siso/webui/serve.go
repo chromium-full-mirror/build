@@ -470,6 +470,7 @@ func (s *WebuiServer) mux() http.Handler {
 	outdirRouter.HandleFunc("/{outroot}/{outsub}/builds/", s.handleInvocationSeriesList)
 	outdirRouter.HandleFunc("/{outroot}/{outsub}/builds/{rev}/details/", s.handleInvocationDetails)
 	outdirRouter.HandleFunc("/{outroot}/{outsub}/builds/{rev}/logs/{file}", s.handleOutdirViewLog)
+	outdirRouter.HandleFunc("/{outroot}/{outsub}/builds/{rev}/logs_lit/", s.handleOutdirLogsLit)
 	outdirRouter.HandleFunc("/{outroot}/{outsub}/builds/{rev}/aggregates/", s.handleInvocationAggregates)
 	outdirRouter.HandleFunc("/{outroot}/{outsub}/builds/{rev}/aggregates_lit/", s.handleInvocationAggregatesLit)
 	outdirRouter.HandleFunc("POST /{outroot}/{outsub}/builds/{rev}/steps/{id}/recall/", s.handleInvocationStepRecall)
