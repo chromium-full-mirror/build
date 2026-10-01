@@ -51,13 +51,26 @@ func (s *casSpy) dialOptions() []grpc.DialOption {
 // to the WalkDir callback, keyed by its name.
 func walk(ctx context.Context, cl *reapi.Client, d digest.Digest) (map[string]string, error) {
 	got := make(map[string]string)
-	err := cl.WalkDir(ctx, d, func(dname string, dir *rpb.Directory) error {
+	// refs maps each directory name to the digest its parent refers to
+	// it by. WalkDir visits a parent before its subdirectories.
+	refs := map[string]digest.Digest{"": d}
+	err := cl.WalkDir(ctx, d, func(dname string, dd digest.Digest, dir *rpb.Directory) error {
+		// dd must be the digest dir is referred to by (d for the root),
+		// which is not necessarily the digest of re-marshalling dir.
+		if want, ok := refs[dname]; !ok || dd != want {
+			return fmt.Errorf("dir %q: dd=%s; want %s", dname, dd, want)
+		}
 		var files, dirs, symlinks []string
 		for _, file := range dir.Files {
 			files = append(files, file.GetName())
 		}
 		for _, subdir := range dir.Directories {
 			dirs = append(dirs, subdir.GetName())
+			subname := subdir.GetName()
+			if dname != "" {
+				subname = dname + "/" + subname
+			}
+			refs[subname] = digest.FromProto(subdir.GetDigest())
 		}
 		for _, symlink := range dir.Symlinks {
 			symlinks = append(symlinks, symlink.GetName())

@@ -37,7 +37,7 @@ func TestWalkDirSharesCachedDirectories(t *testing.T) {
 			walk := func() map[string]*rpb.Directory {
 				t.Helper()
 				dirs := make(map[string]*rpb.Directory)
-				err := cl.WalkDir(ctx, d, func(dname string, dir *rpb.Directory) error {
+				err := cl.WalkDir(ctx, d, func(dname string, _ digest.Digest, dir *rpb.Directory) error {
 					dirs[dname] = dir
 					return nil
 				})

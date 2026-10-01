@@ -46,7 +46,7 @@ func (c *Client) loadWalkdir(d digest.Digest) (*rpb.Directory, bool) {
 // WalkDir walks the directory tree rooted identified by d,
 // calling fn for each directory in the tree, including root.
 // dir is shared with other walks and must not be modified.
-func (c *Client) WalkDir(ctx context.Context, d digest.Digest, fn func(dname string, dir *rpb.Directory) error) error {
+func (c *Client) WalkDir(ctx context.Context, d digest.Digest, fn func(dname string, dd digest.Digest, dir *rpb.Directory) error) error {
 	if c == nil {
 		return fmt.Errorf("reapi is not configured")
 	}
@@ -72,7 +72,7 @@ func (c *Client) WalkDir(ctx context.Context, d digest.Digest, fn func(dname str
 				for _, dname := range dnames {
 					dirs[dname] = d
 					started := time.Now()
-					err := fn(dname, dir)
+					err := fn(dname, d, dir)
 					stats.cbDur += time.Since(started)
 					stats.ndirs++
 					if err != nil {

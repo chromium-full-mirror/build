@@ -213,7 +213,7 @@ func (rt reapiTwoPhaseCaching) matchInputRoot(ctx context.Context, inputRootDige
 	ctx, span := trace.NewSpan(ctx, "twophasecaching-match-input-root")
 	defer span.Close(nil)
 	var inputs, emptyDirs []string
-	err := rt.b.reapiclient.WalkDir(ctx, inputRootDigest, func(dname string, dir *rpb.Directory) error {
+	err := rt.b.reapiclient.WalkDir(ctx, inputRootDigest, func(dname string, _ digest.Digest, dir *rpb.Directory) error {
 		if log.V(2) {
 			clog.Infof(ctx, "walkdir dir %q: %v", dname, dir)
 		}
