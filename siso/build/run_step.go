@@ -220,10 +220,6 @@ func (b *Builder) runStep(ctx context.Context, step *Step) (retErr error) {
 		depsClean(ctx, b, step, err)
 	}()
 
-	// expand inputs to get full action inputs unless deps=gcc,msvc with main supported source files such as .c, .cc, .mm etc.
-	// deps gcc,msvc for rust and cxx module compiles will still rely on `depsExpandInputs` instead of scandeps.
-	depsExpandInputs(ctx, b, step)
-
 	// BuildActionStarted is called just before remote exec calls or
 	// local execution.
 	defer b.actionFinished(ctx, step)

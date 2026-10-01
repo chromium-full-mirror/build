@@ -156,6 +156,20 @@ func depsExpandInputs(ctx context.Context, b *Builder, step *Step) {
 	step.cmd.Inputs = inputs
 }
 
+// ensureExpanded runs depsExpandInputs and dedupInputs once per step.
+// preprocCmd and execLocal (after its two phase cache lookup) call it, so
+// every execution path sees the expanded inputs, and a two phase cache
+// hit, which replaces the inputs with the matched action's input root,
+// never expands them.
+func ensureExpanded(ctx context.Context, b *Builder, step *Step) {
+	if step.depsExpanded {
+		return
+	}
+	step.depsExpanded = true
+	depsExpandInputs(ctx, b, step)
+	dedupInputs(ctx, step.cmd)
+}
+
 // depsFixCmd checks the purity of the command by checking step inputs and deps.
 func depsFixCmd(ctx context.Context, b *Builder, step *Step, deps []path.Path) {
 	depPaths := step.def.ExpandedCaseSensitives(ctx, deps)

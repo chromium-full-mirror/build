@@ -35,6 +35,7 @@ func (b *Builder) execLocal(ctx context.Context, step *Step) (retErr error) {
 			return err
 		}
 	}
+	ensureExpanded(ctx, b, step)
 	sandbox, sandboxOption := b.selectSandbox(ctx, step)
 	clog.Infof(ctx, "exec local %s sandbox:%s", step.cmd.Desc, sandbox)
 	step.setPhase(stepInput)

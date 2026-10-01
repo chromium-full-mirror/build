@@ -15,6 +15,7 @@ import (
 )
 
 func preprocCmd(ctx context.Context, b *Builder, step *Step) error {
+	ensureExpanded(ctx, b, step)
 	step.setPhase(stepPreproc)
 	err := b.preprocSema.Do(ctx, step.weight, func(ctx context.Context) error {
 		ctx, span := trace.NewSpan(ctx, spanPreproc)

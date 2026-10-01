@@ -192,6 +192,9 @@ type Step struct {
 	finishReported *sync.Once
 
 	state *stepState
+
+	// depsExpanded is set once depsExpandInputs has run. See ensureExpanded.
+	depsExpanded bool
 }
 
 // Clone creates a shallow clone of the step with a cloned Cmd
@@ -210,6 +213,7 @@ func (s *Step) Clone() *Step {
 		startReported:  s.startReported,
 		finishReported: s.finishReported,
 		metrics:        s.metrics,
+		depsExpanded:   s.depsExpanded,
 	}
 }
 
