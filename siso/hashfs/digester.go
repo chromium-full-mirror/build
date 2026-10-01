@@ -66,6 +66,21 @@ type digester struct {
 	done chan struct{}
 }
 
+// popQueueLocked removes and returns the oldest request in d.queue.
+// d.mu must be held and d.queue must not be empty.
+//
+// It advances the slice instead of shifting it: with a cold cache the
+// queue can hold hundreds of thousands of requests, and copying them
+// on every pop was O(n) under d.mu. append reallocates when it reaches
+// the end of the backing array and copies only the live requests, so
+// this is amortized O(1).
+func (d *digester) popQueueLocked() digestReq {
+	req := d.queue[0]
+	d.queue[0] = digestReq{} // don't retain the entry in the backing array.
+	d.queue = d.queue[1:]
+	return req
+}
+
 func (d *digester) start(ctx context.Context) {
 	defer close(d.done)
 	n := runtime.GOMAXPROCS(0) - 1
@@ -112,9 +127,7 @@ func (d *digester) worker(ctx context.Context) {
 			if len(d.queue) > 0 {
 				select {
 				case d.q <- d.queue[0]:
-					copy(d.queue, d.queue[1:])
-					d.queue[len(d.queue)-1] = digestReq{}
-					d.queue = d.queue[:len(d.queue)-1]
+					d.popQueueLocked()
 				default:
 				}
 			}
@@ -132,7 +145,7 @@ func (d *digester) stop(ctx context.Context) {
 	d.q = nil
 	d.mu.Unlock()
 	close(q)
-	clog.Infof(ctx, "run pending digest chan:%d + queue:%d", len(d.q), len(d.queue))
+	clog.Infof(ctx, "run pending digest chan:%d + queue:%d", len(q), len(d.queue))
 	if d.quitEarly {
 		clog.Infof(ctx, "finish digester early")
 		return
