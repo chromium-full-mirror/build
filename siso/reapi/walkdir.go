@@ -104,7 +104,10 @@ func (c *Client) WalkDir(ctx context.Context, d digest.Digest, fn func(dname str
 				}
 				dd, dir := ent.d, ent.dir
 				if known[dd] != nil {
-					clog.Warningf(ctx, "duplicate dir %s", dd)
+					// WalkDir already handled this directory.
+					if log.V(1) {
+						clog.Infof(ctx, "duplicate dir %s", dd)
+					}
 					continue
 				}
 				known[dd] = dir
@@ -117,7 +120,9 @@ func (c *Client) WalkDir(ctx context.Context, d digest.Digest, fn func(dname str
 		}
 		return nil
 	})
-	clog.Infof(ctx, "walkdir %s %s", d, stats.String())
+	if log.V(1) {
+		clog.Infof(ctx, "walkdir %s %s", d, stats.String())
+	}
 	return err
 }
 
