@@ -101,6 +101,12 @@ func (rt reapiTwoPhaseCaching) Check(ctx context.Context, lookupKey string, step
 	// i.e. cheap action should be small, but heavy action could be large.
 	const maxCandidates = 10
 	nactions := 0
+	// Build our own Command before examining candidates: a match
+	// rewrites step.cmd.Outputs, which feed the Command.
+	localCmd, localDigest, err := ocmd.REAPICommand(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("failed to build command: %w", err)
+	}
 	for action, err := range rt.actionCacheMap.List(ctx, lookupKey) {
 		nactions++
 		if err != nil {
@@ -111,7 +117,7 @@ func (rt reapiTwoPhaseCaching) Check(ctx context.Context, lookupKey string, step
 			clog.Warningf(ctx, "too many candidates in %q: %d", lookupKey, nactions)
 			return fmt.Errorf("cache not found. too many candidates %d for %s", nactions, lookupKey)
 		}
-		inputs, outputs, err := rt.matchAction(ctx, step, action)
+		inputs, outputs, err := rt.matchAction(ctx, step, action, localCmd, localDigest)
 		if err != nil {
 			clog.Infof(ctx, "mismatch action %s: %v", action, err)
 			continue
@@ -161,16 +167,20 @@ func (rt reapiTwoPhaseCaching) Check(ctx context.Context, lookupKey string, step
 	return fmt.Errorf("cache miss %d for %s", nactions, lookupKey)
 }
 
-func (rt reapiTwoPhaseCaching) matchAction(ctx context.Context, step *Step, action *rpb.Action) (inputs, outputs []string, retErr error) {
+// matchAction checks whether action matches step.
+// localCmd is step's own Command and localDigest its digest. A candidate
+// with the same command digest has the same Command, so it is not fetched.
+func (rt reapiTwoPhaseCaching) matchAction(ctx context.Context, step *Step, action *rpb.Action, localCmd *rpb.Command, localDigest digest.Digest) (inputs, outputs []string, retErr error) {
 	ctx, span := trace.NewSpan(ctx, "twophasecaching-match-action")
 	defer span.Close(nil)
-	// TODO: check by digest, and fetch only if digest mismatch?
-	// if match digest, outputs should be the same in action.
 	cmdDigest := digest.FromProto(action.GetCommandDigest())
-	cmd := &rpb.Command{}
-	err := rt.b.reapiclient.Proto(ctx, cmdDigest, cmd)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to fetch command for %s: %w", cmdDigest, err)
+	cmd := localCmd
+	if cmdDigest != localDigest {
+		cmd = &rpb.Command{}
+		err := rt.b.reapiclient.Proto(ctx, cmdDigest, cmd)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to fetch command for %s: %w", cmdDigest, err)
+		}
 	}
 	// check command line
 	if !slices.Equal(step.cmd.Args, cmd.GetArguments()) {
@@ -193,7 +203,7 @@ func (rt reapiTwoPhaseCaching) matchAction(ctx context.Context, step *Step, acti
 
 	// check input root
 	inputRootDigest := digest.FromProto(action.GetInputRootDigest())
-	inputs, err = rt.matchInputRoot(ctx, inputRootDigest)
+	inputs, err := rt.matchInputRoot(ctx, inputRootDigest)
 	if err != nil {
 		return nil, nil, fmt.Errorf("input_root mismatch with %s: %w", inputRootDigest, err)
 	}

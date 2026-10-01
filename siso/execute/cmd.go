@@ -526,7 +526,7 @@ func (c *Cmd) Digest(ctx context.Context, ds *blob.Store) (actionDigest digest.D
 	}
 	treeDuration = time.Since(started)
 
-	commandDigest, err = c.commandDigest(ctx, ds)
+	_, commandDigest, err = c.REAPICommand(ctx, ds)
 	if err != nil {
 		return digest.Digest{}, fmt.Errorf("failed to build command for %s: %w", c, err)
 	}
@@ -824,8 +824,10 @@ func (c *Cmd) remoteExecutionPlatform() *rpb.Platform {
 	return platform
 }
 
-// commandDigest constructs the digest of the command line.
-func (c *Cmd) commandDigest(ctx context.Context, ds *blob.Store) (digest.Digest, error) {
+// REAPICommand returns the REAPI Command of the cmd, i.e. the one that
+// Digest puts in the Action, and its digest. It stores the Command blob
+// in ds if ds is not nil.
+func (c *Cmd) REAPICommand(ctx context.Context, ds *blob.Store) (*rpb.Command, digest.Digest, error) {
 	var outFiles, outDirs []string
 	process := func(res []string, paths ...path.Path) []string {
 		for _, out := range paths {
@@ -850,7 +852,7 @@ func (c *Cmd) commandDigest(ctx context.Context, ds *blob.Store) (digest.Digest,
 	sort.Strings(outDirs)
 	args, err := c.remoteArgsWithWrapper()
 	if err != nil {
-		return digest.Digest{}, err
+		return nil, digest.Digest{}, err
 	}
 	dir := c.WorkDir
 	if c.CanonicalizeDir {
@@ -896,12 +898,12 @@ func (c *Cmd) commandDigest(ctx context.Context, ds *blob.Store) (digest.Digest,
 	})
 	data, err := blob.FromProtoMessage(c.HashFS.DigestFunction(), command)
 	if err != nil {
-		return digest.Digest{}, err
+		return nil, digest.Digest{}, err
 	}
 	if ds != nil {
 		ds.Set(data)
 	}
-	return data.Digest(), nil
+	return command, data.Digest(), nil
 }
 
 // SetActionResult sets action result to the cmd.

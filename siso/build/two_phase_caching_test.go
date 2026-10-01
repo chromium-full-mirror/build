@@ -9,13 +9,17 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	"google.golang.org/protobuf/proto"
 
 	"go.chromium.org/build/hashigo/digest"
+	rpb "go.chromium.org/build/remote-apis/build/bazel/remote/execution/v2"
 
 	"go.chromium.org/build/siso/blob"
+	"go.chromium.org/build/siso/execute"
 	"go.chromium.org/build/siso/hashfs"
 	"go.chromium.org/build/siso/path"
 	"go.chromium.org/build/siso/reapi/merkletree"
@@ -248,5 +252,93 @@ func TestMatchInputRoot(t *testing.T) {
 		if diff := cmp.Diff(tc.wantInputs, inputs); diff != "" {
 			t.Errorf("matchInputRoot: inputs -want +got:\n%s", diff)
 		}
+	}
+}
+
+// TestMatchActionLocalCommand checks that a candidate Action built from
+// the same cmd (as siso builds and records it) matches with the local
+// Command, without fetching the candidate's Command from CAS.
+func TestMatchActionLocalCommand(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("two phase caching test is only on linux")
+	}
+	ctx := t.Context()
+	dir, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The input root has the working directory.
+	if err := os.MkdirAll(filepath.Join(dir, "out/siso"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	hashFS, err := hashfs.New(ctx, hashfs.Option{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer hashFS.Close(context.WithoutCancel(ctx))
+	if err := hashFS.WaitReady(ctx); err != nil {
+		t.Fatal(err)
+	}
+	cmd := &execute.Cmd{
+		ID:            "test",
+		Args:          []string{"touch", "foo.o"},
+		Env:           []string{"B=2", "A=1"},
+		WorkspaceRoot: dir,
+		WorkDir:       "out/siso",
+		Outputs:       []path.Path{"out/siso/foo.o"},
+		Pure:          true,
+		HashFS:        hashFS,
+	}
+
+	// The candidate: the Action that cmd.Digest builds, with everything
+	// but its Command uploaded to CAS.
+	ds := blob.NewStore()
+	actionDigest, err := cmd.Digest(ctx, ds)
+	if err != nil {
+		t.Fatal(err)
+	}
+	actionData, ok := ds.Get(actionDigest)
+	if !ok {
+		t.Fatalf("action %s not in store", actionDigest)
+	}
+	buf, err := blob.DataToBytes(ctx, actionData)
+	if err != nil {
+		t.Fatal(err)
+	}
+	action := &rpb.Action{}
+	if err := proto.Unmarshal(buf, action); err != nil {
+		t.Fatal(err)
+	}
+	cmdDigest := digest.FromProto(action.GetCommandDigest())
+	ds.Delete(cmdDigest)
+	reclient := reapitest.New(ctx, t, &reapitest.Fake{})
+	if _, err := reclient.UploadAll(ctx, ds); err != nil {
+		t.Fatal(err)
+	}
+	rt := reapiTwoPhaseCaching{b: &Builder{
+		path:        NewPath(dir, "out/siso"),
+		hashFS:      hashFS,
+		reapiclient: reclient,
+	}}
+
+	localCmd, localDigest, err := cmd.REAPICommand(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if localDigest != cmdDigest {
+		t.Fatalf("REAPICommand digest=%s; want the action's %s", localDigest, cmdDigest)
+	}
+	_, outputs, err := rt.matchAction(ctx, &Step{cmd: cmd}, action, localCmd, localDigest)
+	if err != nil {
+		t.Fatalf("matchAction=%v; want nil", err)
+	}
+	if diff := cmp.Diff([]string{"out/siso/foo.o"}, outputs); diff != "" {
+		t.Errorf("matchAction outputs -want +got:\n%s", diff)
+	}
+
+	// Without the local digest, the Command is fetched, and it is not in CAS.
+	_, _, err = rt.matchAction(ctx, &Step{cmd: cmd}, action, localCmd, digest.Digest{})
+	if err == nil || !strings.Contains(err.Error(), "failed to fetch command") {
+		t.Errorf("matchAction(other digest)=%v; want fetch error", err)
 	}
 }
