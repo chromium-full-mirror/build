@@ -7,7 +7,6 @@ package build
 import (
 	"context"
 	"fmt"
-	"maps"
 	"path/filepath"
 	"slices"
 	"time"
@@ -213,14 +212,20 @@ func (rt reapiTwoPhaseCaching) matchAction(ctx context.Context, step *Step, acti
 func (rt reapiTwoPhaseCaching) matchInputRoot(ctx context.Context, inputRootDigest digest.Digest) ([]string, error) {
 	ctx, span := trace.NewSpan(ctx, "twophasecaching-match-input-root")
 	defer span.Close(nil)
-	var inputs []string
-	leafDir := make(map[string]bool)
+	var inputs, emptyDirs []string
 	err := rt.b.reapiclient.WalkDir(ctx, inputRootDigest, func(dname string, dir *rpb.Directory) error {
 		if log.V(2) {
 			clog.Infof(ctx, "walkdir dir %q: %v", dname, dir)
 		}
-		if len(dir.Files) > 0 || len(dir.Directories) > 0 || len(dir.Symlinks) > 0 {
-			delete(leafDir, dname)
+		if len(dir.Files) == 0 && len(dir.Directories) == 0 && len(dir.Symlinks) == 0 {
+			// An empty directory is an input by itself. WalkDir visits
+			// a directory only after its parent's callback succeeded,
+			// and that callback verified that it exists locally as a
+			// directory. The root has no parent and is not an input.
+			if dname != "" {
+				emptyDirs = append(emptyDirs, dname)
+			}
+			return nil
 		}
 		m := make(map[string]merkletree.Entry)
 		var names []string
@@ -239,7 +244,6 @@ func (rt reapiTwoPhaseCaching) matchInputRoot(ctx context.Context, inputRootDige
 			m[name] = merkletree.Entry{
 				Name: path.Path(name),
 			}
-			leafDir[name] = true
 		}
 		for _, symlink := range dir.Symlinks {
 			name := filepath.ToSlash(filepath.Join(dname, symlink.Name))
@@ -311,7 +315,8 @@ func (rt reapiTwoPhaseCaching) matchInputRoot(ctx context.Context, inputRootDige
 	if err != nil {
 		return nil, err
 	}
-	inputs = append(inputs, slices.Sorted(maps.Keys(leafDir))...)
+	slices.Sort(emptyDirs)
+	inputs = append(inputs, slices.Compact(emptyDirs)...)
 	return inputs, nil
 }
 

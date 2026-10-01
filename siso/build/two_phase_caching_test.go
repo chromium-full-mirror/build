@@ -199,6 +199,38 @@ func TestMatchInputRoot(t *testing.T) {
 				"lib64",
 			},
 		},
+		{
+			// Empty directories at several depths, next to a non-empty
+			// directory that only holds an empty directory. Empty
+			// directories come last, sorted.
+			name: "nested_empty_dirs",
+			setup: func(t *testing.T, dir string) []merkletree.Entry {
+				t.Helper()
+				for _, d := range []string{"z", "a/empty", "a/b/empty", "a/c"} {
+					if err := os.MkdirAll(filepath.Join(dir, d), 0755); err != nil {
+						t.Fatal(err)
+					}
+				}
+				if err := os.WriteFile(filepath.Join(dir, "a/c/f"), []byte("f"), 0644); err != nil {
+					t.Fatal(err)
+				}
+				return []merkletree.Entry{
+					{Name: "z"},
+					{Name: "a/empty"},
+					{Name: "a/b/empty"},
+					{
+						Name: "a/c/f",
+						Data: blob.FromBytes(digest.SHA256, "a/c/f", []byte("f")),
+					},
+				}
+			},
+			wantInputs: []string{
+				"a/c/f",
+				"a/b/empty",
+				"a/empty",
+				"z",
+			},
+		},
 	} {
 		ctx := t.Context()
 		dir := t.TempDir()
