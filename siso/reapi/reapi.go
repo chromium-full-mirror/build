@@ -360,7 +360,7 @@ type Client struct {
 
 	m *iometrics.IOMetrics
 
-	walkdirCache sync.Map // key:digest.Digest, value:serialized *rpb.Directory
+	walkdirCache sync.Map // key:digest.Digest, value:*rpb.Directory, shared; must not be modified
 }
 
 // serviceConfig is gRPC service config for RE API.
