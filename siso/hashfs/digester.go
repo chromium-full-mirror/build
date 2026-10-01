@@ -18,8 +18,16 @@ import (
 	"go.chromium.org/build/siso/sync/semaphore"
 )
 
-// DigestSemaphore is a semaphore to control concurrent digest calculation.
-var DigestSemaphore = semaphore.New("file-digest", runtime.GOMAXPROCS(0))
+// localDigestSemaphore limits concurrent digest calculation on a local file
+// system, where a digest reads and hashes the file: CPU- and disk-bound.
+var localDigestSemaphore = semaphore.New("file-digest", runtime.GOMAXPROCS(0))
+
+// abfsDigestSemaphore limits concurrent digest calculation on ABFS. There a
+// digest is an HTTP call to the ABFS mount, which fetches the blob when its
+// cache is cold: latency-bound, so GOMAXPROCS calls in flight leave the mount
+// mostly idle, and two-phase caching's first checks wait for the digests of
+// thousands of shared inputs (headers) at once.
+var abfsDigestSemaphore = semaphore.New("file-digest", 1024)
 
 var noLazyForTests map[string]bool
 
@@ -57,6 +65,7 @@ type digestReq struct {
 type digester struct {
 	fn        digest.Function
 	quitEarly bool
+	sema      *semaphore.Semaphore
 	q         chan digestReq
 
 	mu    sync.Mutex
@@ -83,10 +92,10 @@ func (d *digester) popQueueLocked() digestReq {
 
 func (d *digester) start(ctx context.Context) {
 	defer close(d.done)
-	n := runtime.GOMAXPROCS(0) - 1
-	if n == 0 {
-		n = 1
-	}
+	// one worker fewer than the semaphore's capacity, so a foreground
+	// caller of compute (Entries, Flush, Copy, ...) never waits for a slot
+	// behind background work alone.
+	n := max(d.sema.Capacity()-1, 1)
 	var wg sync.WaitGroup
 	for range n {
 		wg.Go(func() {
@@ -211,7 +220,7 @@ func (d *digester) compute(ctx context.Context, fname string, e *entry) {
 	if eErr != nil || src == nil || !ed.IsZero() {
 		return
 	}
-	err := DigestSemaphore.Do(ctx, func(ctx context.Context) error {
+	err := d.sema.Do(ctx, func(ctx context.Context) error {
 		select {
 		case <-ctx.Done():
 			clog.Warningf(ctx, "ignore compute %s: %v", fname, context.Cause(ctx))

@@ -525,7 +525,7 @@ func (b *Builder) SemaStats() []semaphore.Stat {
 		b.twoPhaseCachingSema.Stat(),
 		scandeps.CPPScanSema.Stat(),
 		b.fastLocalSema.Stat(),
-		hashfs.DigestSemaphore.Stat(),
+		b.hashFS.DigestSemaphore().Stat(),
 		localexec.ForkSema.Stat(),
 		b.hashFS.ActiveFlushGate().Stat(),
 		b.localSema.Stat(),

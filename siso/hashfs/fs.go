@@ -67,6 +67,12 @@ type FlushGater interface {
 	Stat() semaphore.Stat
 }
 
+// DigestSemaphore returns the semaphore that limits this HashFS's concurrent
+// file digests.
+func (hfs *HashFS) DigestSemaphore() *semaphore.Semaphore {
+	return hfs.digester.sema
+}
+
 // ActiveFlushGate reports the flush admission mechanism in use: the
 // adaptive Gradient2 gate when the adaptive-flush experiment set
 // opt.FlushGate, otherwise the static FlushSemaphore.
@@ -176,6 +182,10 @@ func New(ctx context.Context, opt Option) (*HashFS, error) {
 	opt.OSFSOption.CartFS = opt.CartFS
 	opt.OSFSOption.ABFS = opt.ABFS
 	opt.OSFSOption.DigestFunction = opt.DigestFunction
+	digestSema := localDigestSemaphore
+	if opt.ABFS != nil {
+		digestSema = abfsDigestSemaphore
+	}
 	fsys := &HashFS{
 		opt:       opt,
 		directory: &directory{isRoot: true},
@@ -184,6 +194,7 @@ func New(ctx context.Context, opt Option) (*HashFS, error) {
 		digester: digester{
 			fn:        opt.DigestFunction,
 			quitEarly: opt.DeferDigest,
+			sema:      digestSema,
 			q:         make(chan digestReq, 1000),
 			quit:      make(chan struct{}),
 			done:      make(chan struct{}),
