@@ -245,11 +245,16 @@ func (c *Client) getTreeIter(ctx context.Context, d digest.Digest, stats *walkDi
 						return
 					}
 					dd = c.digestFn.FromBytes(data)
-					if _, ok := seen[dd]; !ok {
-						stats.ncached++
-						c.walkdirCache.Store(dd, dir)
-						seen[dd] = struct{}{}
+					if _, ok := seen[dd]; ok {
+						// Already yielded or queued from walkdirCache:
+						// the stream repeats a directory once per parent,
+						// and does not know what the cache supplied.
+						delete(waits, dd)
+						continue
 					}
+					stats.ncached++
+					c.walkdirCache.Store(dd, dir)
+					seen[dd] = struct{}{}
 				}
 				delete(waits, dd)
 				if !yield(walkDirEntry{d: dd, dir: dir}, nil) {
