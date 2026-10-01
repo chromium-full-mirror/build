@@ -5,50 +5,54 @@
 package reapi_test
 
 import (
-	"maps"
-	"slices"
+	"context"
+	"fmt"
+	"strings"
+	"sync/atomic"
 	"testing"
+
+	"github.com/google/go-cmp/cmp"
+	"google.golang.org/grpc"
 
 	"go.chromium.org/build/hashigo/digest"
 	rpb "go.chromium.org/build/remote-apis/build/bazel/remote/execution/v2"
 
 	"go.chromium.org/build/siso/blob"
 	"go.chromium.org/build/siso/path"
+	"go.chromium.org/build/siso/reapi"
 	"go.chromium.org/build/siso/reapi/merkletree"
 	"go.chromium.org/build/siso/reapi/reapitest"
 )
 
-func TestWalkDir(t *testing.T) {
-	ctx := t.Context()
-	ds := blob.NewStore()
-	tree := merkletree.New(digest.SHA256, ds)
-	for _, s := range []string{
-		"file1",
-		"subdir1/file1",
-		"subdir2/file1",
-		"subdir2/subdir2.1/file1",
-		"subdir2/subdir2.2/file1",
-	} {
-		tree.Set(merkletree.Entry{
-			Name: path.Path(s),
-			Data: blob.FromBytes(digest.SHA256, "empty", nil),
-		})
-	}
-	d, err := tree.Build(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
+// casSpy counts the CAS reads WalkDir makes.
+type casSpy struct {
+	reads atomic.Int32
+}
 
-	fakere := &reapitest.Fake{}
-	cl := reapitest.New(ctx, t, fakere)
-
-	t.Logf("-- upload tree %s", d)
-	n, err := cl.UploadAll(ctx, ds)
-	if err != nil {
-		t.Fatalf("UploadAll()=%d, %v; want _, nil", n, err)
+func (s *casSpy) dialOptions() []grpc.DialOption {
+	return []grpc.DialOption{
+		grpc.WithChainUnaryInterceptor(func(ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
+			err := invoker(ctx, method, req, reply, cc, opts...)
+			if strings.HasSuffix(method, "/BatchReadBlobs") {
+				s.reads.Add(1)
+			}
+			return err
+		}),
+		grpc.WithChainStreamInterceptor(func(ctx context.Context, desc *grpc.StreamDesc, cc *grpc.ClientConn, method string, streamer grpc.Streamer, opts ...grpc.CallOption) (grpc.ClientStream, error) {
+			if strings.HasSuffix(method, "/GetTree") {
+				s.reads.Add(1)
+			}
+			return streamer(ctx, desc, cc, method, opts...)
+		}),
 	}
+}
 
-	names := func(dir *rpb.Directory) (files, dirs, symlinks []string) {
+// walk walks the tree d and returns a summary of each directory passed
+// to the WalkDir callback, keyed by its name.
+func walk(ctx context.Context, cl *reapi.Client, d digest.Digest) (map[string]string, error) {
+	got := make(map[string]string)
+	err := cl.WalkDir(ctx, d, func(dname string, dir *rpb.Directory) error {
+		var files, dirs, symlinks []string
 		for _, file := range dir.Files {
 			files = append(files, file.GetName())
 		}
@@ -58,50 +62,69 @@ func TestWalkDir(t *testing.T) {
 		for _, symlink := range dir.Symlinks {
 			symlinks = append(symlinks, symlink.GetName())
 		}
-		return files, dirs, symlinks
-	}
-	seen := make(map[string]bool)
-
-	err = cl.WalkDir(ctx, d, func(dname string, dir *rpb.Directory) error {
-		seen[dname] = true
-		files, dirs, _ := names(dir)
-		switch dname {
-		case "":
-			wantFiles := []string{"file1"}
-			wantDirs := []string{"subdir1", "subdir2"}
-			if !slices.Equal(files, wantFiles) || !slices.Equal(dirs, wantDirs) {
-				t.Errorf("dir:%q files=%q dirs=%q; want: files=%q dirs=%q",
-					dname, files, dirs, wantFiles, wantDirs)
-			}
-		case "subdir1", "subdir2/subdir2.1":
-			wantFiles := []string{"file1"}
-			var wantDirs []string
-			if !slices.Equal(files, wantFiles) || !slices.Equal(dirs, wantDirs) {
-				t.Errorf("dir:%q files=%q dirs=%q; want: files=%q dirs=%q",
-					dname, files, dirs, wantFiles, wantDirs)
-			}
-
-		case "subdir2":
-			wantFiles := []string{"file1"}
-			wantDirs := []string{"subdir2.1", "subdir2.2"}
-			if !slices.Equal(files, wantFiles) || !slices.Equal(dirs, wantDirs) {
-				t.Errorf("dir:%q files=%q dirs=%q; want: files=%q dirs=%q",
-					dname, files, dirs, wantFiles, wantDirs)
-			}
-		}
+		got[dname] = fmt.Sprintf("files=%q dirs=%q symlinks=%q", files, dirs, symlinks)
 		return nil
 	})
+	return got, err
+}
+
+func uploadTree(ctx context.Context, t *testing.T, cl *reapi.Client, files ...string) digest.Digest {
+	t.Helper()
+	ds := blob.NewStore()
+	tree := merkletree.New(digest.SHA256, ds)
+	for _, s := range files {
+		tree.Set(merkletree.Entry{
+			Name: path.Path(s),
+			Data: blob.FromBytes(digest.SHA256, "empty", nil),
+		})
+	}
+	d, err := tree.Build(ctx)
 	if err != nil {
-		t.Errorf("WalkDir=%v; want nil", err)
+		t.Fatal(err)
 	}
-	wantSeen := map[string]bool{
-		"":                  true,
-		"subdir1":           true,
-		"subdir2":           true,
-		"subdir2/subdir2.1": true,
-		"subdir2/subdir2.2": true,
+	n, err := cl.UploadAll(ctx, ds)
+	if err != nil {
+		t.Fatalf("UploadAll()=%d, %v; want _, nil", n, err)
 	}
-	if !maps.Equal(seen, wantSeen) {
-		t.Errorf("seen=%v; want=%v", seen, wantSeen)
+	return d
+}
+
+func TestWalkDir(t *testing.T) {
+	ctx := t.Context()
+	want := map[string]string{
+		"":                  `files=["file1"] dirs=["subdir1" "subdir2"] symlinks=[]`,
+		"subdir1":           `files=["file1"] dirs=[] symlinks=[]`,
+		"subdir2":           `files=["file1"] dirs=["subdir2.1" "subdir2.2"] symlinks=[]`,
+		"subdir2/subdir2.1": `files=["file1"] dirs=[] symlinks=[]`,
+		"subdir2/subdir2.2": `files=["file1"] dirs=[] symlinks=[]`,
+	}
+	for _, stream := range []bool{false, true} {
+		t.Run(fmt.Sprintf("stream=%t", stream), func(t *testing.T) {
+			var spy casSpy
+			cl := reapitest.NewWithOption(ctx, t, &reapitest.Fake{}, reapi.Option{WalkDirStream: stream}, spy.dialOptions()...)
+			d := uploadTree(ctx, t, cl,
+				"file1",
+				"subdir1/file1",
+				"subdir2/file1",
+				"subdir2/subdir2.1/file1",
+				"subdir2/subdir2.2/file1")
+
+			// The first walk reads from CAS and fills the walk cache.
+			// The second is served from the cache, by digest.
+			for _, pass := range []string{"fetch", "cached"} {
+				before := spy.reads.Load()
+				got, err := walk(ctx, cl, d)
+				if err != nil {
+					t.Fatalf("%s: WalkDir=%v; want nil", pass, err)
+				}
+				if diff := cmp.Diff(want, got); diff != "" {
+					t.Errorf("%s: WalkDir diff -want +got:\n%s", pass, diff)
+				}
+				reads := spy.reads.Load() - before
+				if (pass == "cached") != (reads == 0) {
+					t.Errorf("%s: %d CAS reads", pass, reads)
+				}
+			}
+		})
 	}
 }

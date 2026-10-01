@@ -20,11 +20,19 @@ import (
 	"go.chromium.org/build/hashigo/digest"
 	rpb "go.chromium.org/build/remote-apis/build/bazel/remote/execution/v2"
 
-	"go.chromium.org/build/siso/blob"
 	"go.chromium.org/build/siso/o11y/clog"
 	"go.chromium.org/build/siso/o11y/trace"
 	"go.chromium.org/build/siso/reapi/retry"
 )
+
+// walkDirEntry is a directory produced by a walkDirIter iterator.
+// d is the digest of dir: the digest it was looked up by in walkdirCache or
+// fetched by from CAS, or, for a directory streamed by GetTree, the digest
+// of its serialization.
+type walkDirEntry struct {
+	d   digest.Digest
+	dir *rpb.Directory
+}
 
 // WalkDir walks the directory tree rooted identified by d,
 // calling fn for each directory in the tree, including root.
@@ -80,20 +88,17 @@ func (c *Client) WalkDir(ctx context.Context, d digest.Digest, fn func(dname str
 				}
 				return nil
 			}
-			for dir, err := range c.walkDirIter(ctx, d, &stats) {
+			for ent, err := range c.walkDirIter(ctx, d, &stats) {
 				if err != nil {
 					return err
 				}
-				dd, derr := blob.FromProtoMessage(c.digestFn, dir)
-				if derr != nil {
-					return derr
-				}
-				if known[dd.Digest()] != nil {
-					clog.Warningf(ctx, "duplicate dir %s", dd.Digest())
+				dd, dir := ent.d, ent.dir
+				if known[dd] != nil {
+					clog.Warningf(ctx, "duplicate dir %s", dd)
 					continue
 				}
-				known[dd.Digest()] = dir
-				err := handleDir(dd.Digest(), dir)
+				known[dd] = dir
+				err := handleDir(dd, dir)
 				if err != nil {
 					return err
 				}
@@ -127,7 +132,7 @@ func (s *walkDirStats) String() string {
 		s.nrecvs, s.apiDur, avgAPIDur, s.ndirs, s.cbDur, avgCBDur, s.ncached, s.nhit)
 }
 
-func (c *Client) walkDirIter(ctx context.Context, d digest.Digest, stats *walkDirStats) iter.Seq2[*rpb.Directory, error] {
+func (c *Client) walkDirIter(ctx context.Context, d digest.Digest, stats *walkDirStats) iter.Seq2[walkDirEntry, error] {
 	_, ok := c.walkdirCache.Load(d)
 	if ok {
 		iter, err := c.cachedTreeIter(d, stats)
@@ -141,8 +146,8 @@ func (c *Client) walkDirIter(ctx context.Context, d digest.Digest, stats *walkDi
 	return c.readDirIter(ctx, d, stats)
 }
 
-func (c *Client) cachedTreeIter(d digest.Digest, stats *walkDirStats) (iter.Seq2[*rpb.Directory, error], error) {
-	var dirs []*rpb.Directory
+func (c *Client) cachedTreeIter(d digest.Digest, stats *walkDirStats) (iter.Seq2[walkDirEntry, error], error) {
+	var dirs []walkDirEntry
 	pendings := []digest.Digest{d}
 	seen := make(map[digest.Digest]struct{})
 	seen[d] = struct{}{}
@@ -159,7 +164,7 @@ func (c *Client) cachedTreeIter(d digest.Digest, stats *walkDirStats) (iter.Seq2
 		if err != nil {
 			return nil, fmt.Errorf("unmarshal directory for %s: %w", d, err)
 		}
-		dirs = append(dirs, dir)
+		dirs = append(dirs, walkDirEntry{d: d, dir: dir})
 		for _, subdir := range dir.Directories {
 			sd := digest.FromProto(subdir.Digest)
 			if _, ok := seen[sd]; ok {
@@ -169,18 +174,18 @@ func (c *Client) cachedTreeIter(d digest.Digest, stats *walkDirStats) (iter.Seq2
 			seen[sd] = struct{}{}
 		}
 	}
-	return func(yield func(*rpb.Directory, error) bool) {
-		for _, dir := range dirs {
-			if !yield(dir, nil) {
+	return func(yield func(walkDirEntry, error) bool) {
+		for _, ent := range dirs {
+			if !yield(ent, nil) {
 				return
 			}
 		}
 	}, nil
 }
 
-func (c *Client) getTreeIter(ctx context.Context, d digest.Digest, stats *walkDirStats) iter.Seq2[*rpb.Directory, error] {
+func (c *Client) getTreeIter(ctx context.Context, d digest.Digest, stats *walkDirStats) iter.Seq2[walkDirEntry, error] {
 	casClient := rpb.NewContentAddressableStorageClient(c.casConn)
-	return func(yield func(*rpb.Directory, error) bool) {
+	return func(yield func(walkDirEntry, error) bool) {
 		seen := make(map[digest.Digest]struct{})
 		waits := make(map[digest.Digest]struct{})
 		waits[d] = struct{}{}
@@ -193,7 +198,7 @@ func (c *Client) getTreeIter(ctx context.Context, d digest.Digest, stats *walkDi
 			DigestFunction: c.digestFn.Value(),
 		})
 		if err != nil {
-			yield(nil, err)
+			yield(walkDirEntry{}, err)
 			return
 		}
 		for len(waits) > 0 {
@@ -209,30 +214,35 @@ func (c *Client) getTreeIter(ctx context.Context, d digest.Digest, stats *walkDi
 				return
 			}
 			if err != nil {
-				yield(nil, err)
+				yield(walkDirEntry{}, err)
 				return
 			}
-			dirs := resp.Directories
+			// Directories streamed by GetTree carry no digest, so
+			// compute it (and store them in walkdirCache). Those
+			// taken from walkdirCache below keep their cache key.
+			dirs := make([]walkDirEntry, 0, len(resp.Directories))
+			for _, dir := range resp.Directories {
+				dirs = append(dirs, walkDirEntry{dir: dir})
+			}
 			for len(dirs) > 0 {
-				dir := dirs[0]
+				dir := dirs[0].dir
+				dd := dirs[0].d
 				dirs = dirs[1:]
-				dd, err := blob.FromProtoMessage(c.digestFn, dir)
-				if err != nil {
-					yield(dir, err)
-					return
+				if dd.IsZero() {
+					data, err := proto.Marshal(dir)
+					if err != nil {
+						yield(walkDirEntry{dir: dir}, err)
+						return
+					}
+					dd = c.digestFn.FromBytes(data)
+					if _, ok := seen[dd]; !ok {
+						stats.ncached++
+						c.walkdirCache.Store(dd, data)
+						seen[dd] = struct{}{}
+					}
 				}
-				data, err := proto.Marshal(dir)
-				if err != nil {
-					yield(dir, err)
-					return
-				}
-				if _, ok := seen[dd.Digest()]; !ok {
-					stats.ncached++
-					c.walkdirCache.Store(dd.Digest(), data)
-					seen[dd.Digest()] = struct{}{}
-				}
-				delete(waits, dd.Digest())
-				if !yield(dir, nil) {
+				delete(waits, dd)
+				if !yield(walkDirEntry{d: dd, dir: dir}, nil) {
 					return
 				}
 				for _, sdn := range dir.Directories {
@@ -250,12 +260,12 @@ func (c *Client) getTreeIter(ctx context.Context, d digest.Digest, stats *walkDi
 						subdir := &rpb.Directory{}
 						err := proto.Unmarshal(data.([]byte), subdir)
 						if err != nil {
-							yield(nil, err)
+							yield(walkDirEntry{}, err)
 							return
 						}
 						stats.nhit++
 						seen[sd] = struct{}{}
-						dirs = append(dirs, subdir)
+						dirs = append(dirs, walkDirEntry{d: sd, dir: subdir})
 						continue
 					}
 					waits[sd] = struct{}{}
@@ -267,9 +277,9 @@ func (c *Client) getTreeIter(ctx context.Context, d digest.Digest, stats *walkDi
 	}
 }
 
-func (c *Client) readDirIter(ctx context.Context, d digest.Digest, stats *walkDirStats) iter.Seq2[*rpb.Directory, error] {
+func (c *Client) readDirIter(ctx context.Context, d digest.Digest, stats *walkDirStats) iter.Seq2[walkDirEntry, error] {
 	casClient := rpb.NewContentAddressableStorageClient(c.casConn)
-	return func(yield func(*rpb.Directory, error) bool) {
+	return func(yield func(walkDirEntry, error) bool) {
 		pendings := []digest.Digest{d}
 		seen := make(map[digest.Digest]struct{})
 		seen[d] = struct{}{}
@@ -302,30 +312,38 @@ func (c *Client) readDirIter(ctx context.Context, d digest.Digest, stats *walkDi
 				stats.apiDur += dur
 				stats.nrecvs++
 				if err != nil {
-					yield(nil, err)
+					yield(walkDirEntry{}, err)
 					return
 				}
 			}
-			for _, rd := range append(responses, resp.GetResponses()...) {
+			for i, rd := range append(responses, resp.GetResponses()...) {
 				dd := digest.FromProto(rd.Digest)
 				if rd.Status.GetCode() != 0 {
-					yield(nil, fmt.Errorf("blob %s resp: %w", dd, status.FromProto(rd.Status).Err()))
+					yield(walkDirEntry{}, fmt.Errorf("blob %s resp: %w", dd, status.FromProto(rd.Status).Err()))
 					return
 				}
 				data, err := c.decodeForBatchRead(dd, rd.Data, rd.Compressor)
 				if err != nil {
-					yield(nil, fmt.Errorf("blob %s decode: %w", dd, err))
+					yield(walkDirEntry{}, fmt.Errorf("blob %s decode: %w", dd, err))
 					return
+				}
+				if i >= len(responses) {
+					// Fetched from CAS. WalkDir and walkdirCache use
+					// dd as the digest of data, so check it.
+					if got := c.digestFn.FromBytes(data); got != dd {
+						yield(walkDirEntry{}, fmt.Errorf("blob %s digest mismatch: got %s", dd, got))
+						return
+					}
 				}
 				dir := &rpb.Directory{}
 				err = proto.Unmarshal(data, dir)
 				if err != nil {
-					yield(nil, fmt.Errorf("blob %s unmarshal: %w", dd, err))
+					yield(walkDirEntry{}, fmt.Errorf("blob %s unmarshal: %w", dd, err))
 					return
 				}
 				stats.ncached++
 				c.walkdirCache.Store(dd, data)
-				if !yield(dir, nil) {
+				if !yield(walkDirEntry{d: dd, dir: dir}, nil) {
 					return
 				}
 				for _, subdir := range dir.Directories {
