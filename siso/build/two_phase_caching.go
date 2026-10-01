@@ -227,6 +227,13 @@ func (rt reapiTwoPhaseCaching) matchInputRoot(ctx context.Context, inputRootDige
 			return nil
 		}
 		spec := rt.b.dirSpec(dname, dd, dir)
+		if spec.children != nil && rt.b.hashFS.MatchDir(ctx, spec.fulldir, spec.children) {
+			// Same result as the check below: every file and
+			// directory is already known to match. The inputs
+			// are the files, in order.
+			inputs = append(inputs, spec.names[:spec.nfiles]...)
+			return nil
+		}
 		names := spec.names
 		m := make(map[string]merkletree.Entry, len(names))
 		i := 0

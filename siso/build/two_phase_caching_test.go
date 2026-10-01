@@ -11,6 +11,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/protobuf/proto"
@@ -376,5 +377,117 @@ func TestMatchActionLocalCommand(t *testing.T) {
 	_, _, err = rt.matchAction(ctx, &Step{cmd: cmd}, action, localCmd, digest.Digest{})
 	if err == nil || !strings.Contains(err.Error(), "failed to fetch command") {
 		t.Errorf("matchAction(other digest)=%v; want fetch error", err)
+	}
+}
+
+// TestMatchInputRootAfterChange checks that a later walk sees a local change
+// made through hashfs after an earlier walk matched, now that the earlier
+// walk left everything loaded for hashfs.MatchDir.
+func TestMatchInputRootAfterChange(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("two phase caching test is only on linux")
+	}
+	for _, tc := range []struct {
+		name    string
+		change  func(context.Context, *hashfs.HashFS, string) error
+		wantErr bool
+	}{
+		{
+			name: "content",
+			change: func(ctx context.Context, hfs *hashfs.HashFS, dir string) error {
+				return hfs.WriteFile(ctx, dir, "a/b/g", []byte("new"), false, time.Now(), nil, nil)
+			},
+			wantErr: true,
+		},
+		{
+			name: "executable",
+			change: func(ctx context.Context, hfs *hashfs.HashFS, dir string) error {
+				return hfs.WriteFile(ctx, dir, "a/b/g", []byte("g"), true, time.Now(), nil, nil)
+			},
+			wantErr: true,
+		},
+		{
+			name: "remove_file",
+			change: func(ctx context.Context, hfs *hashfs.HashFS, dir string) error {
+				return hfs.Remove(ctx, dir, "a/f")
+			},
+			wantErr: true,
+		},
+		{
+			name: "remove_dir",
+			change: func(ctx context.Context, hfs *hashfs.HashFS, dir string) error {
+				return hfs.RemoveAll(ctx, dir, "a/b")
+			},
+			wantErr: true,
+		},
+		{
+			name: "dir_to_symlink",
+			change: func(ctx context.Context, hfs *hashfs.HashFS, dir string) error {
+				if err := hfs.RemoveAll(ctx, dir, "a"); err != nil {
+					return err
+				}
+				return hfs.Symlink(ctx, dir, "y", "a", time.Now(), nil, nil)
+			},
+			wantErr: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := t.Context()
+			dir, err := filepath.EvalSymlinks(t.TempDir())
+			if err != nil {
+				t.Fatal(err)
+			}
+			for name, data := range map[string]string{"a/f": "f", "a/b/g": "g", "y/b/g": "y", "y/f": "f"} {
+				if err := os.MkdirAll(filepath.Dir(filepath.Join(dir, name)), 0755); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(dir, name), []byte(data), 0644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			ds := blob.NewStore()
+			tree := merkletree.New(digest.SHA256, ds)
+			for name, data := range map[string]string{"a/f": "f", "a/b/g": "g"} {
+				tree.Set(merkletree.Entry{Name: path.Path(name), Data: blob.FromBytes(digest.SHA256, name, []byte(data))})
+			}
+			inputRootDigest, err := tree.Build(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			reclient := reapitest.New(ctx, t, &reapitest.Fake{})
+			if _, err := reclient.UploadAll(ctx, ds); err != nil {
+				t.Fatal(err)
+			}
+			hashFS, err := hashfs.New(ctx, hashfs.Option{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer hashFS.Close(context.WithoutCancel(ctx))
+			if err := hashFS.WaitReady(ctx); err != nil {
+				t.Fatal(err)
+			}
+			rt := reapiTwoPhaseCaching{b: &Builder{
+				path:        NewPath(dir, "out/siso"),
+				hashFS:      hashFS,
+				reapiclient: reclient,
+			}}
+
+			for _, walk := range []string{"first", "second"} {
+				inputs, err := rt.matchInputRoot(ctx, inputRootDigest)
+				if err != nil {
+					t.Fatalf("%s matchInputRoot: %v; want nil", walk, err)
+				}
+				if diff := cmp.Diff([]string{"a/f", "a/b/g"}, inputs); diff != "" {
+					t.Errorf("%s matchInputRoot: inputs -want +got:\n%s", walk, diff)
+				}
+			}
+			if err := tc.change(ctx, hashFS, dir); err != nil {
+				t.Fatal(err)
+			}
+			inputs, err := rt.matchInputRoot(ctx, inputRootDigest)
+			if gotErr := err != nil; gotErr != tc.wantErr {
+				t.Errorf("matchInputRoot after change = %q, %v; want err %t", inputs, err, tc.wantErr)
+			}
+		})
 	}
 }
