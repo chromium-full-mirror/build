@@ -244,6 +244,9 @@ type Builder struct {
 	// two phase caching
 	twoPhaseCachingSema *semaphore.Semaphore
 	twoPhaseCaching     twoPhaseCaching
+	// dirSpecs caches what matchInputRoot derives from a Directory at a
+	// path. dirSpecKey -> *dirSpec. See dirspec.go.
+	dirSpecs sync.Map
 
 	explainWriter        io.Writer
 	ninjaLogWriter       io.Writer

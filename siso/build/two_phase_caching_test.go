@@ -277,12 +277,16 @@ func TestMatchInputRoot(t *testing.T) {
 		}
 		rt := reapiTwoPhaseCaching{b: b}
 
-		inputs, err := rt.matchInputRoot(ctx, inputRootDigest)
-		if gotErr := err != nil; gotErr != tc.wantErr {
-			t.Fatalf("matchInputRoot: %v; want %v", err, tc.wantErr)
-		}
-		if diff := cmp.Diff(tc.wantInputs, inputs); diff != "" {
-			t.Errorf("matchInputRoot: inputs -want +got:\n%s", diff)
+		// The second walk reuses what the first one cached on the
+		// Builder, and must agree with it.
+		for _, walk := range []string{"first", "second"} {
+			inputs, err := rt.matchInputRoot(ctx, inputRootDigest)
+			if gotErr := err != nil; gotErr != tc.wantErr {
+				t.Fatalf("%s: %s matchInputRoot: %v; want %v", tc.name, walk, err, tc.wantErr)
+			}
+			if diff := cmp.Diff(tc.wantInputs, inputs); diff != "" {
+				t.Errorf("%s: %s matchInputRoot: inputs -want +got:\n%s", tc.name, walk, diff)
+			}
 		}
 	}
 }

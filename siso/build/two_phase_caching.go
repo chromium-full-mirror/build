@@ -7,7 +7,6 @@ package build
 import (
 	"context"
 	"fmt"
-	"path/filepath"
 	"slices"
 	"time"
 
@@ -213,7 +212,7 @@ func (rt reapiTwoPhaseCaching) matchInputRoot(ctx context.Context, inputRootDige
 	ctx, span := trace.NewSpan(ctx, "twophasecaching-match-input-root")
 	defer span.Close(nil)
 	var inputs, emptyDirs []string
-	err := rt.b.reapiclient.WalkDir(ctx, inputRootDigest, func(dname string, _ digest.Digest, dir *rpb.Directory) error {
+	err := rt.b.reapiclient.WalkDir(ctx, inputRootDigest, func(dname string, dd digest.Digest, dir *rpb.Directory) error {
 		if log.V(2) {
 			clog.Infof(ctx, "walkdir dir %q: %v", dname, dir)
 		}
@@ -227,31 +226,30 @@ func (rt reapiTwoPhaseCaching) matchInputRoot(ctx context.Context, inputRootDige
 			}
 			return nil
 		}
-		m := make(map[string]merkletree.Entry)
-		var names []string
+		spec := rt.b.dirSpec(dname, dd, dir)
+		names := spec.names
+		m := make(map[string]merkletree.Entry, len(names))
+		i := 0
 		for _, file := range dir.Files {
-			name := filepath.ToSlash(filepath.Join(dname, file.Name))
-			names = append(names, name)
-			m[name] = merkletree.Entry{
-				Name:         path.Path(name),
+			m[names[i]] = merkletree.Entry{
+				Name:         path.Path(names[i]),
 				Data:         blob.NewData(nil, digest.FromProto(file.Digest)),
 				IsExecutable: file.IsExecutable,
 			}
+			i++
 		}
-		for _, dir := range dir.Directories {
-			name := filepath.ToSlash(filepath.Join(dname, dir.Name))
-			names = append(names, name)
-			m[name] = merkletree.Entry{
-				Name: path.Path(name),
+		for range dir.Directories {
+			m[names[i]] = merkletree.Entry{
+				Name: path.Path(names[i]),
 			}
+			i++
 		}
 		for _, symlink := range dir.Symlinks {
-			name := filepath.ToSlash(filepath.Join(dname, symlink.Name))
-			names = append(names, name)
-			m[name] = merkletree.Entry{
-				Name:   path.Path(name),
+			m[names[i]] = merkletree.Entry{
+				Name:   path.Path(names[i]),
 				Target: symlink.Target,
 			}
+			i++
 		}
 		if log.V(2) {
 			clog.Infof(ctx, "walkdir check %q", names)
