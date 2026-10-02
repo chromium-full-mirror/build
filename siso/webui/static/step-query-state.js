@@ -9,6 +9,13 @@
 export class StepQueryState extends EventTarget {
   constructor() {
     super();
+    this.reset();
+  }
+
+  /**
+   * Resets all query state fields to their default values.
+   */
+  reset() {
     this.searchQuery = '';
     this.view = '';
     this.actionFilters = new Set();
@@ -21,14 +28,16 @@ export class StepQueryState extends EventTarget {
 
   /**
    * Initializes state from URL query parameters.
+   * Any parameter missing from the URL is reset to its default.
    * @param {string} [search] Optional search query string; defaults to window.location.search.
    */
   initFromURL(search) {
+    this.reset();
     try {
       const searchStr =
         search !== undefined
           ? search
-          : typeof window !== 'undefined'
+          : typeof window !== 'undefined' && window.location
             ? window.location.search
             : '';
       const params = new URLSearchParams(searchStr);

@@ -77,6 +77,19 @@ historical reasons to use a web bundler, such as:
   one historically common reason to require a build step for CSS preprocessing,
   is available as part of [Baseline 2023][css-nesting-baseline].
 
+### JavaScript tests
+
+Plain JavaScript modules (i.e. not web components) can be unit tested with
+Node's built-in [`node:test`][node-test] runner and `node:assert`, without any
+npm dependencies. Prefer moving logic out of web components and into such
+modules so that it can be tested this way.
+
+- Name test files `*_test.mjs` next to the module under test. The `.mjs`
+  extension keeps them out of the `static/*.js` files embedded by `serve.go`.
+- Run them from this directory with `node --test`.
+- `NODEJS_VERSION` pins the Node version used by CI. The `buildinfra` recipe
+  runs `node --test` in every directory that contains a `NODEJS_VERSION` file.
+
 ## Architecture
 
 ### Server-Sent Events
@@ -114,3 +127,4 @@ attribute determines which of them are responded to.
 [perfetto-deep-linking]: https://perfetto.dev/docs/visualization/deep-linking-to-perfetto-ui
 [popover-baseline]: https://web.dev/blog/popover-baseline
 [css-nesting-baseline]: https://web.dev/blog/baseline2023#more-features
+[node-test]: https://nodejs.org/api/test.html
