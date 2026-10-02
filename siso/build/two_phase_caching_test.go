@@ -358,23 +358,23 @@ func TestMatchActionLocalCommand(t *testing.T) {
 		reapiclient: reclient,
 	}}
 
-	localCmd, localDigest, err := cmd.REAPICommand(ctx, nil)
+	localDigest, err := cmd.CommandDigest(ctx, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if localDigest != cmdDigest {
-		t.Fatalf("REAPICommand digest=%s; want the action's %s", localDigest, cmdDigest)
+		t.Fatalf("CommandDigest digest=%s; want the action's %s", localDigest, cmdDigest)
 	}
-	_, outputs, err := rt.matchAction(ctx, &Step{cmd: cmd}, action, localCmd, localDigest)
+	_, outputs, err := rt.matchAction(ctx, &Step{cmd: cmd}, action, localDigest)
 	if err != nil {
 		t.Fatalf("matchAction=%v; want nil", err)
 	}
-	if diff := cmp.Diff([]string{"out/siso/foo.o"}, outputs); diff != "" {
-		t.Errorf("matchAction outputs -want +got:\n%s", diff)
+	if len(outputs) != 0 {
+		t.Errorf("matchAction outputs=%q want empty", outputs)
 	}
 
 	// Without the local digest, the Command is fetched, and it is not in CAS.
-	_, _, err = rt.matchAction(ctx, &Step{cmd: cmd}, action, localCmd, digest.Digest{})
+	_, _, err = rt.matchAction(ctx, &Step{cmd: cmd}, action, digest.Digest{})
 	if err == nil || !strings.Contains(err.Error(), "failed to fetch command") {
 		t.Errorf("matchAction(other digest)=%v; want fetch error", err)
 	}

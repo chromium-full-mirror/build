@@ -91,6 +91,10 @@ func (rt reapiTwoPhaseCaching) Check(ctx context.Context, lookupKey string, step
 		step.metrics.CacheTime = IntervalMetric(time.Since(started))
 	}()
 
+	commandDigest, err := step.cmd.CommandDigest(ctx, nil)
+	if err != nil {
+		clog.Warningf(ctx, "failed to compute command digest: %v", err)
+	}
 	// RBE returns Order: newest / most recently added first.
 	// The 2PC proposal (go/2-phase-caching-api-proposal) noted from ABFS
 	// metrics that matching candidates are almost always found within
@@ -99,12 +103,6 @@ func (rt reapiTwoPhaseCaching) Check(ctx context.Context, lookupKey string, step
 	// i.e. cheap action should be small, but heavy action could be large.
 	const maxCandidates = 10
 	nactions := 0
-	// Build our own Command before examining candidates: a match
-	// rewrites step.cmd.Outputs, which feed the Command.
-	localCmd, localDigest, err := ocmd.REAPICommand(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("failed to build command: %w", err)
-	}
 	for action, err := range rt.actionCacheMap.List(ctx, lookupKey) {
 		nactions++
 		if err != nil {
@@ -115,7 +113,7 @@ func (rt reapiTwoPhaseCaching) Check(ctx context.Context, lookupKey string, step
 			clog.Warningf(ctx, "too many candidates in %q: %d", lookupKey, nactions)
 			return fmt.Errorf("cache not found. too many candidates %d for %s", nactions, lookupKey)
 		}
-		inputs, outputs, err := rt.matchAction(ctx, step, action, localCmd, localDigest)
+		inputs, outputs, err := rt.matchAction(ctx, step, action, commandDigest)
 		if err != nil {
 			clog.Infof(ctx, "mismatch action %s: %v", action, err)
 			continue
@@ -130,15 +128,19 @@ func (rt reapiTwoPhaseCaching) Check(ctx context.Context, lookupKey string, step
 		}
 		// use the same inputs, outputs as action.
 		step.cmd.Inputs = path.Paths(inputs)
-		step.cmd.Outputs = path.Paths(outputs)
-		if step.cmd.Depfile != "" {
-			// but need to delete depfile from outputs.
-			// depfile is added in AllOutputs.
-			step.cmd.Outputs = slices.DeleteFunc(step.cmd.Outputs, func(s path.Path) bool {
-				return s == step.cmd.Depfile
-			})
+		// if outputs returned matchAction is empty, it means
+		// it matches by digest, so no need to modify step.cmd.Outputs
+		if len(outputs) > 0 {
+			step.cmd.Outputs = path.Paths(outputs)
+			if step.cmd.Depfile != "" {
+				// but need to delete depfile from outputs.
+				// depfile is added in AllOutputs.
+				step.cmd.Outputs = slices.DeleteFunc(step.cmd.Outputs, func(s path.Path) bool {
+					return s == step.cmd.Depfile
+				})
+			}
+			step.cmd.InitOutputs()
 		}
-		step.cmd.InitOutputs()
 		if log.V(2) {
 			clog.Infof(ctx, "inputs %q", step.cmd.Inputs)
 			clog.Infof(ctx, "outputs %q", step.cmd.Outputs)
@@ -166,37 +168,34 @@ func (rt reapiTwoPhaseCaching) Check(ctx context.Context, lookupKey string, step
 }
 
 // matchAction checks whether action matches step.
-// localCmd is step's own Command and localDigest its digest. A candidate
-// with the same command digest has the same Command, so it is not fetched.
-func (rt reapiTwoPhaseCaching) matchAction(ctx context.Context, step *Step, action *rpb.Action, localCmd *rpb.Command, localDigest digest.Digest) (inputs, outputs []string, retErr error) {
+func (rt reapiTwoPhaseCaching) matchAction(ctx context.Context, step *Step, action *rpb.Action, localDigest digest.Digest) (inputs, outputs []string, retErr error) {
 	ctx, span := trace.NewSpan(ctx, "twophasecaching-match-action")
 	defer span.Close(nil)
 	cmdDigest := digest.FromProto(action.GetCommandDigest())
-	cmd := localCmd
 	if cmdDigest != localDigest {
-		cmd = &rpb.Command{}
+		cmd := &rpb.Command{}
 		err := rt.b.reapiclient.Proto(ctx, cmdDigest, cmd)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to fetch command for %s: %w", cmdDigest, err)
 		}
-	}
-	// check command line
-	if !slices.Equal(step.cmd.Args, cmd.GetArguments()) {
-		return nil, nil, fmt.Errorf("arguments mismatch with %s", cmdDigest)
-	}
-	if string(step.cmd.WorkDir) != cmd.GetWorkingDirectory() {
-		return nil, nil, fmt.Errorf("working_dir mismatch %q != %q", step.cmd.WorkDir, cmd.GetWorkingDirectory())
-	}
-	// TODO: check environment variables
+		// check command line
+		if !slices.Equal(step.cmd.Args, cmd.GetArguments()) {
+			return nil, nil, fmt.Errorf("arguments mismatch with %s", cmdDigest)
+		}
+		if string(step.cmd.WorkDir) != cmd.GetWorkingDirectory() {
+			return nil, nil, fmt.Errorf("working_dir mismatch %q != %q", step.cmd.WorkDir, cmd.GetWorkingDirectory())
+		}
+		// TODO: check environment variables
 
-	for _, output := range cmd.GetOutputFiles() { //nolint:staticcheck // existing deprecation
-		outputs = append(outputs, rt.b.path.MaybeFromRelative(ctx, output))
-	}
-	for _, output := range cmd.GetOutputDirectories() { //nolint:staticcheck // existing deprecation
-		outputs = append(outputs, rt.b.path.MaybeFromRelative(ctx, output))
-	}
-	for _, output := range cmd.GetOutputPaths() {
-		outputs = append(outputs, rt.b.path.MaybeFromRelative(ctx, output))
+		for _, output := range cmd.GetOutputFiles() { //nolint:staticcheck // existing deprecation
+			outputs = append(outputs, rt.b.path.MaybeFromRelative(ctx, output))
+		}
+		for _, output := range cmd.GetOutputDirectories() { //nolint:staticcheck // existing deprecation
+			outputs = append(outputs, rt.b.path.MaybeFromRelative(ctx, output))
+		}
+		for _, output := range cmd.GetOutputPaths() {
+			outputs = append(outputs, rt.b.path.MaybeFromRelative(ctx, output))
+		}
 	}
 
 	// check input root
