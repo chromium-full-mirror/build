@@ -166,6 +166,29 @@ type Options struct {
 	MissingDeps MissingDepsMode
 }
 
+// EnvConfig is a config for environment variables.
+type EnvConfig struct {
+	// Inherits lists environment variable names to inherit from Siso's environment.
+	// Mutually exclusive with Excludes.
+	Inherits []string `json:"inherits,omitempty"`
+
+	// Excludes lists environment variable names that are not passed to step commands
+	// when inheriting Siso's environment. Mutually exclusive with Inherits.
+	Excludes []string `json:"excludes,omitempty"`
+
+	// CacheKeyOmits lists environment variable names that are passed to step commands,
+	// but not included in cache keys (e.g. two-phase caching).
+	CacheKeyOmits []string `json:"cache_key_omits,omitempty"`
+
+	// CacheKeySubstitutions maps strings to their replacements when normalizing
+	// environment variable values for cache keys.
+	CacheKeySubstitutions map[string]string `json:"cache_key_substitutions,omitempty"`
+
+	// CacheKeyTrimPrefixes lists prefixes to strip from normalized environment
+	// variable values when the value does not contain a path list separator.
+	CacheKeyTrimPrefixes []string `json:"cache_key_trim_prefixes,omitempty"`
+}
+
 // MissingDepsMode specifies how to handle missing dependencies.
 type MissingDepsMode string
 
@@ -267,6 +290,22 @@ type Builder struct {
 
 	// envfiles: filename -> *envfile
 	envFiles sync.Map
+
+	// env is the environment variables inherited by local build steps.
+	env []string
+
+	// envCacheKeyOmits are environment variable names omitted when recording environment variables in cache keys.
+	envCacheKeyOmits map[string]bool
+
+	// envCacheKeySubstitutions maps strings to their replacements when normalizing environment variable values for cache keys.
+	envCacheKeySubstitutions map[string]string
+
+	// envCacheKeyTrimPrefixes are prefixes stripped from normalized environment variable values when they do not contain a path list separator.
+	envCacheKeyTrimPrefixes []string
+
+	// envHash is a hash of the normalized, non-omitted environment variables in env,
+	// used to invalidate local steps on incremental builds when environment variables change.
+	envHash []byte
 
 	clobber bool
 
@@ -466,6 +505,35 @@ func New(ctx context.Context, graph Graph, opts Options) (_ *Builder, err error)
 		lastFailureTargets:    make(map[string]struct{}),
 		buildLabel:            opts.BuildLabel,
 		missingDeps:           opts.MissingDeps,
+	}
+	if envCfg := graph.EnvConfig(ctx); envCfg != nil {
+		if len(envCfg.Inherits) > 0 {
+			for _, k := range envCfg.Inherits {
+				if v, ok := os.LookupEnv(k); ok {
+					b.env = append(b.env, k+"="+v)
+				}
+			}
+		} else {
+			excludes := make(map[string]bool, len(envCfg.Excludes))
+			for _, k := range envCfg.Excludes {
+				excludes[k] = true
+			}
+			for _, kv := range os.Environ() {
+				k, _, _ := strings.Cut(kv, "=")
+				if !excludes[k] {
+					b.env = append(b.env, kv)
+				}
+			}
+		}
+		if len(envCfg.CacheKeyOmits) > 0 {
+			b.envCacheKeyOmits = make(map[string]bool, len(envCfg.CacheKeyOmits))
+			for _, k := range envCfg.CacheKeyOmits {
+				b.envCacheKeyOmits[k] = true
+			}
+		}
+		b.envCacheKeySubstitutions = envCfg.CacheKeySubstitutions
+		b.envCacheKeyTrimPrefixes = envCfg.CacheKeyTrimPrefixes
+		b.envHash = calculateEnvHash(b.env, b.envCacheKeySubstitutions, b.envCacheKeyTrimPrefixes, b.envCacheKeyOmits)
 	}
 	for _, t := range opts.LastFailureTargets {
 		b.lastFailureTargets[t] = struct{}{}

@@ -87,6 +87,9 @@ type Graph interface {
 	// ClangScandeps returns clang scandeps mode.
 	ClangScandeps(context.Context) string
 
+	// EnvConfig returns environment configuration for build steps.
+	EnvConfig(context.Context) *EnvConfig
+
 	// StepLimits returns a map of maximum number of concurrent
 	// steps by pool name.
 	StepLimits(context.Context) map[string]int

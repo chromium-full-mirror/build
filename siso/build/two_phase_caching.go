@@ -191,7 +191,11 @@ func (rt reapiTwoPhaseCaching) matchAction(ctx context.Context, step *Step, acti
 		if string(step.cmd.WorkDir) != cmd.GetWorkingDirectory() {
 			return nil, nil, fmt.Errorf("working_dir mismatch %q != %q", step.cmd.WorkDir, cmd.GetWorkingDirectory())
 		}
-		// TODO: check environment variables
+		if !slices.EqualFunc(step.cmd.EnvVars(), cmd.GetEnvironmentVariables(), func(a, b *rpb.Command_EnvironmentVariable) bool {
+			return a.GetName() == b.GetName() && a.GetValue() == b.GetValue()
+		}) {
+			return nil, nil, fmt.Errorf("environment_variables mismatch with %s", cmdDigest)
+		}
 
 		for _, output := range cmd.GetOutputFiles() { //nolint:staticcheck // existing deprecation
 			outputs = append(outputs, rt.b.path.MaybeFromRelative(ctx, output))

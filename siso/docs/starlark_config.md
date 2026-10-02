@@ -201,6 +201,12 @@ to register handlers and step configs.
        * (Windows only) a list of filenames for executables.
          This is used to send Linux executables from Windows machine.
          e.g. node binary for typescript action.
+     * `env`
+       * `inherits`: a list of environment variable names to inherit from Siso's environment for local actions. Mutually exclusive with `excludes`.
+       * `excludes`: a list of environment variable names to not pass to step commands when inheriting Siso's environment for local actions. Mutually exclusive with `inherits`.
+       * `cache_key_omits`: a list of environment variable names that are passed to step commands, but not included in cache keys (e.g. two-phase caching).
+       * `cache_key_substitutions`: a dict mapping strings to replacement values when normalizing environment variable values for cache keys (e.g. `{"/path/to/workspace": "CWD"}`).
+       * `cache_key_trim_prefixes`: a list of prefixes to strip from normalized environment variable values (when the value does not contain a path list separator) for cache keys (e.g. `["CWD/"]`).
      * `rules` list of `StepRule`.
         path is workspace relative, or ninja dir relative if it starts with "./"
         * identifier

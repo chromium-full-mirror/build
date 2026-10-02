@@ -491,3 +491,116 @@ func TestMatchInputRootAfterChange(t *testing.T) {
 		})
 	}
 }
+
+func TestMatchAction_EnvVars(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("two phase caching test is only on linux")
+	}
+	for _, tc := range []struct {
+		name      string
+		cmdEnv    []string
+		actionEnv []*rpb.Command_EnvironmentVariable
+		wantErr   bool
+	}{
+		{
+			name: "both_empty",
+		},
+		{
+			name:   "matching_env",
+			cmdEnv: []string{"B=2", "A=1"},
+			actionEnv: []*rpb.Command_EnvironmentVariable{
+				{Name: "A", Value: "1"},
+				{Name: "B", Value: "2"},
+			},
+		},
+		{
+			name:   "mismatch_value",
+			cmdEnv: []string{"A=1", "B=2"},
+			actionEnv: []*rpb.Command_EnvironmentVariable{
+				{Name: "A", Value: "1"},
+				{Name: "B", Value: "different"},
+			},
+			wantErr: true,
+		},
+		{
+			name:    "missing_in_action",
+			cmdEnv:  []string{"A=1"},
+			wantErr: true,
+		},
+		{
+			name: "extra_in_action",
+			actionEnv: []*rpb.Command_EnvironmentVariable{
+				{Name: "A", Value: "1"},
+			},
+			wantErr: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := t.Context()
+			dir := t.TempDir()
+			dir, err := filepath.EvalSymlinks(dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			ds := blob.NewStore()
+			tree := merkletree.New(digest.SHA256, ds)
+			inputRootDigest, err := tree.Build(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			cmdProto := &rpb.Command{
+				Arguments:            []string{"clang", "-c", "foo.c"},
+				WorkingDirectory:     "out/siso",
+				EnvironmentVariables: tc.actionEnv,
+				OutputPaths:          []string{"foo.o"},
+			}
+			cmdData, err := blob.FromProtoMessage(digest.SHA256, cmdProto)
+			if err != nil {
+				t.Fatal(err)
+			}
+			ds.Set(cmdData)
+
+			actionProto := &rpb.Action{
+				CommandDigest:   cmdData.Digest().Proto(),
+				InputRootDigest: inputRootDigest.Proto(),
+			}
+
+			fakere := &reapitest.Fake{}
+			reclient := reapitest.New(ctx, t, fakere)
+			_, err = reclient.UploadAll(ctx, ds)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			hashFS, err := hashfs.New(ctx, hashfs.Option{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer hashFS.Close(context.WithoutCancel(ctx))
+			if err := hashFS.WaitReady(ctx); err != nil {
+				t.Fatal(err)
+			}
+
+			b := &Builder{
+				path:        NewPath(dir, "out/siso"),
+				hashFS:      hashFS,
+				reapiclient: reclient,
+			}
+			rt := reapiTwoPhaseCaching{b: b}
+			step := &Step{
+				cmd: &execute.Cmd{
+					Args:    []string{"clang", "-c", "foo.c"},
+					WorkDir: "out/siso",
+					Env:     tc.cmdEnv,
+				},
+			}
+
+			_, _, err = rt.matchAction(ctx, step, actionProto, digest.Digest{})
+			if gotErr := err != nil; gotErr != tc.wantErr {
+				t.Fatalf("matchAction() err = %v; wantErr %t", err, tc.wantErr)
+			}
+		})
+	}
+}

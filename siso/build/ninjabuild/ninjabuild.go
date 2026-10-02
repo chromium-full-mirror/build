@@ -672,6 +672,11 @@ func (g *Graph) ClangScandeps(ctx context.Context) string {
 	return g.globals.stepConfig.Scandeps.UseClang
 }
 
+// EnvConfig returns environment configuration for build steps.
+func (g *Graph) EnvConfig(ctx context.Context) *build.EnvConfig {
+	return g.globals.stepConfig.Env
+}
+
 // StepLimits returns a map of maximum number of concurrent steps by pool name.
 func (g *Graph) StepLimits(ctx context.Context) map[string]int {
 	m := make(map[string]int)

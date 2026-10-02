@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"os"
 	"path/filepath"
 	"runtime"
 	"slices"
@@ -58,6 +59,18 @@ type Cmd struct {
 
 	// Env specifies the environment of the process.
 	Env []string
+
+	// EnvCacheKeyOmits specifies environment variable names to omit when
+	// constructing RBE Command_EnvironmentVariable entries.
+	EnvCacheKeyOmits map[string]bool
+
+	// EnvCacheKeySubstitutions maps strings to their replacements when normalizing
+	// environment variable values for RBE Command_EnvironmentVariable entries.
+	EnvCacheKeySubstitutions map[string]string
+
+	// EnvCacheKeyTrimPrefixes lists prefixes to strip from normalized environment
+	// variable values when the value does not contain a path list separator.
+	EnvCacheKeyTrimPrefixes []string
 
 	// RSPFile is the filename of the response file for the cmd.
 	// If set,  Siso will write the RSPFileContent to the file before executing the action, and delete the file after executing the cmd successfully.
@@ -881,19 +894,13 @@ func (c *Cmd) CommandDigest(ctx context.Context, ds *blob.Store) (digest.Digest,
 		command.OutputFiles = outFiles      //nolint:staticcheck // existing deprecation
 		command.OutputDirectories = outDirs //nolint:staticcheck // existing deprecation
 	}
-	for _, env := range c.Env {
-		k, v, ok := strings.Cut(env, "=")
-		if !ok {
-			continue
-		}
-		command.EnvironmentVariables = append(command.EnvironmentVariables, &rpb.Command_EnvironmentVariable{
-			Name:  k,
-			Value: v,
-		})
-	}
-	sort.Slice(command.EnvironmentVariables, func(i, j int) bool {
-		return command.EnvironmentVariables[i].Name < command.EnvironmentVariables[j].Name
-	})
+	// For remote execution (RBE), c.Env only contains step-level environment variables
+	// (such as macOS SDK/Xcode paths), and c.EnvCacheKeyOmits / c.EnvCacheKeySubstitutions
+	// are nil. For local execution (Builder.runLocal), c.Env, c.EnvCacheKeyOmits, and
+	// c.EnvCacheKeySubstitutions are populated from the "env" config, and rpb.Command is
+	// only constructed to compute cache keys (e.g. two-phase caching lookup key and
+	// Phase 2 action upload), never for remote execution requests.
+	command.EnvironmentVariables = c.EnvVars()
 	data, err := blob.FromProtoMessage(c.HashFS.DigestFunction(), command)
 	if err != nil {
 		return digest.Digest{}, err
@@ -902,6 +909,87 @@ func (c *Cmd) CommandDigest(ctx context.Context, ds *blob.Store) (digest.Digest,
 		ds.Set(data)
 	}
 	return data.Digest(), nil
+}
+
+// NormalizeEnvVars returns a map of environment variables that have been normalized
+// using the given substitutions (e.g., replacing the workspace root with "CWD").
+// Any matching prefix in trimPrefixes is removed from the normalized value when the
+// value does not contain a path list separator.
+// The keep function is used to filter environment variables. If keep returns true, the
+// variable is included in the result.
+func NormalizeEnvVars(osVars []string, substitutions map[string]string, trimPrefixes []string, keep func(string) bool) map[string]string {
+	result := make(map[string]string, len(osVars))
+	var replacer *strings.Replacer
+	if len(substitutions) > 0 {
+		keys := make([]string, 0, len(substitutions))
+		for k := range substitutions {
+			if k != "" {
+				keys = append(keys, k)
+			}
+		}
+		slices.SortFunc(keys, func(a, b string) int {
+			if len(a) != len(b) {
+				return len(b) - len(a)
+			}
+			return strings.Compare(a, b)
+		})
+		oldnew := make([]string, 0, len(keys)*2)
+		for _, k := range keys {
+			oldnew = append(oldnew, k, substitutions[k])
+		}
+		if len(oldnew) > 0 {
+			replacer = strings.NewReplacer(oldnew...)
+		}
+	}
+	for _, kv := range osVars {
+		ss := strings.SplitN(kv, "=", 2)
+		if len(ss) < 2 {
+			continue
+		}
+		key, value := ss[0], ss[1]
+		if keep != nil && !keep(key) {
+			continue
+		}
+		if replacer != nil {
+			value = replacer.Replace(value)
+		}
+		// Do not trim path list prefixes (such as $PATH), where entries must remain
+		// distinguishable from relative paths.
+		if len(trimPrefixes) > 0 && !strings.Contains(value, string(os.PathListSeparator)) {
+			for _, p := range trimPrefixes {
+				if after, ok := strings.CutPrefix(value, p); ok {
+					value = after
+					break
+				}
+			}
+		}
+		result[key] = value
+	}
+	return result
+}
+
+// EnvVars returns the sorted, deduplicated, normalized RBE Command_EnvironmentVariable list for the cmd.
+func (c *Cmd) EnvVars() []*rpb.Command_EnvironmentVariable {
+	if len(c.Env) == 0 {
+		return nil
+	}
+	envMap := NormalizeEnvVars(c.Env, c.EnvCacheKeySubstitutions, c.EnvCacheKeyTrimPrefixes, func(key string) bool {
+		return !c.EnvCacheKeyOmits[key]
+	})
+	if len(envMap) == 0 {
+		return nil
+	}
+	vars := make([]*rpb.Command_EnvironmentVariable, 0, len(envMap))
+	for k, v := range envMap {
+		vars = append(vars, &rpb.Command_EnvironmentVariable{
+			Name:  k,
+			Value: v,
+		})
+	}
+	sort.Slice(vars, func(i, j int) bool {
+		return vars[i].Name < vars[j].Name
+	})
+	return vars
 }
 
 // SetActionResult sets action result to the cmd.

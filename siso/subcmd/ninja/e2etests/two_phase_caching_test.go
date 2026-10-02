@@ -269,6 +269,306 @@ func TestBuild_TwoPhaseCaching_RestatContent(t *testing.T) {
 	}()
 }
 
+type recordingTapHelper struct {
+	mockTapHelper
+	lastEnv []string
+}
+
+func (h *recordingTapHelper) Run(ctx context.Context, req *epb.SpawnRequest) (*epb.SpawnResult, error) {
+	h.lastEnv = req.GetEnv()
+	return h.mockTapHelper.Run(ctx, req)
+}
+
+func TestBuild_TwoPhaseCaching_PassEnv(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("two phase caching is available on linux only")
+	}
+	if !runInSubProcess(t) {
+		return
+	}
+	ctx := t.Context()
+	dir := tempDir(t)
+	t.Setenv("TMPDIR", tempDir(t))
+	t.Setenv("TMP", tempDir(t))
+
+	build.SetExperimentForTest("two-phase-caching")
+	t.Setenv("SOONG_METRICS_AGGREGATION_DIR", "/workspace/out/soong/metrics_aggregation")
+	t.Setenv("CIPD_PROXY_URL", "unix:///workspace/out/soong/.temp/cipd123/proxy.unix")
+	t.Setenv("RBE_metrics_project", "test-metrics-project")
+
+	content := []byte("output of foo.o\n")
+	depContent := []byte("foo.o: ../../base/foo.cc ../../base/foo.h\n")
+	var remoteEnvVars []*rpb.Command_EnvironmentVariable
+	fakere := &reapitest.Fake{
+		ExecuteFunc: func(fakere *reapitest.Fake, action *rpb.Action) (*rpb.ActionResult, error) {
+			cmd := &rpb.Command{}
+			if err := fakere.FetchProto(ctx, action.GetCommandDigest(), cmd); err != nil {
+				return nil, err
+			}
+			remoteEnvVars = cmd.GetEnvironmentVariables()
+			dg, err := fakere.Put(ctx, content)
+			if err != nil {
+				return nil, err
+			}
+			depDg, err := fakere.Put(ctx, depContent)
+			if err != nil {
+				return nil, err
+			}
+			return &rpb.ActionResult{
+				ExitCode: 0,
+				OutputFiles: []*rpb.OutputFile{
+					{
+						Path:   "foo.o",
+						Digest: dg,
+					},
+					{
+						Path:   "foo.o.d",
+						Digest: depDg,
+					},
+				},
+			}, nil
+		},
+	}
+	var ds build.DataSource
+	defer func() {
+		err := ds.Close(ctx)
+		if err != nil {
+			t.Error(err)
+		}
+	}()
+	localCache, err := reapi.NewLocalCache(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	ds.Client = reapitest.NewWithOption(ctx, t, fakere, reapi.Option{
+		LocalCache:                    localCache,
+		DisableTwoPhaseCachingMethods: true,
+	})
+	err = ds.Client.Init(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ds.Cache = ds.Client.CacheStore()
+
+	runNinja := func(ctx context.Context, t *testing.T, metricsBuffer *syncBuffer) (build.Stats, error) {
+		t.Helper()
+		hashfsOpts := hashfs.Option{
+			StateFile:   ".siso_fs_state",
+			OutputLocal: func(context.Context, string) bool { return true },
+			DataSource:  ds,
+		}
+		opt, graph, cleanup := setupBuild(ctx, t, dir, hashfsOpts)
+		defer cleanup()
+		bcache, err := build.NewCache(ctx, build.CacheOptions{
+			Store:      ds.Cache,
+			EnableRead: true,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		opt.Cache = bcache
+		opt.RECacheEnableRead = true
+		opt.RECacheEnableWrite = true
+		opt.REAPIClient = ds.Client
+		opt.REExecEnable = true
+		if metricsBuffer != nil {
+			opt.MetricsJSONWriter = metricsBuffer
+		}
+		return ninjabuild.Run(ctx, graph, opt, []string{"all"}, ninjabuild.RunNinjaOpts{})
+	}
+
+	setupFiles(t, dir, t.Name(), nil)
+	tapHelper := &recordingTapHelper{}
+	origHelper := localexec.SetSpawnHelper(tapHelper)
+	defer localexec.SetSpawnHelper(origHelper)
+
+	envMapFromSlice := func(envs []string) map[string]string {
+		m := make(map[string]string, len(envs))
+		for _, e := range envs {
+			if k, v, ok := strings.Cut(e, "="); ok {
+				m[k] = v
+			}
+		}
+		return m
+	}
+
+	var firstBarKey, firstBarDigest string
+	func() {
+		t.Logf("--- first build: remote foo.o has no env in REAPI payload; local bar.out gets env (without excluded RBE_metrics_project) and records normalized env in 2PC cache")
+		var metricsBuffer syncBuffer
+		_, err := runNinja(ctx, t, &metricsBuffer)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(remoteEnvVars) != 0 {
+			t.Errorf("remote RBE Command EnvironmentVariables = %v; want empty", remoteEnvVars)
+		}
+		localEnv := envMapFromSlice(tapHelper.lastEnv)
+		wantAggDir := "/workspace/out/soong/metrics_aggregation"
+		if got := localEnv["SOONG_METRICS_AGGREGATION_DIR"]; got != wantAggDir {
+			t.Errorf("local action env[SOONG_METRICS_AGGREGATION_DIR] = %q; want %q", got, wantAggDir)
+		}
+		wantCIPD := "unix:///workspace/out/soong/.temp/cipd123/proxy.unix"
+		if got := localEnv["CIPD_PROXY_URL"]; got != wantCIPD {
+			t.Errorf("local action env[CIPD_PROXY_URL] = %q; want %q", got, wantCIPD)
+		}
+		if _, ok := localEnv["RBE_metrics_project"]; ok {
+			t.Errorf("local action env unexpectedly contains RBE_metrics_project=%q", localEnv["RBE_metrics_project"])
+		}
+		dec := json.NewDecoder(bytes.NewReader(metricsBuffer.buf.Bytes()))
+		for dec.More() {
+			var m build.StepMetric
+			if err := dec.Decode(&m); err != nil {
+				t.Errorf("decode %v", err)
+			}
+			if filepath.Base(m.Output()) == "bar.out" {
+				firstBarKey = m.TwoPhaseCachingKey
+				firstBarDigest = m.Digest
+				if !m.CacheWrite {
+					t.Errorf("bar.out CacheWrite=%t; want true", m.CacheWrite)
+				}
+			}
+		}
+		if firstBarKey == "" {
+			t.Fatalf("firstBarKey is empty")
+		}
+		if firstBarDigest == "" {
+			t.Fatalf("firstBarDigest is empty")
+		}
+	}()
+
+	func() {
+		t.Logf("--- second build: incremental build with normalized relative path and changed omitted CIPD_PROXY_URL should be a no-op")
+		t.Setenv("SOONG_METRICS_AGGREGATION_DIR", "out/soong/metrics_aggregation")
+		t.Setenv("CIPD_PROXY_URL", "unix:///workspace/out/soong/.temp/cipd999/proxy.unix")
+		stats, err := runNinja(ctx, t, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if stats.Skipped != stats.Total {
+			t.Errorf("stats.Skipped=%d; want %d (no-op incremental build)", stats.Skipped, stats.Total)
+		}
+	}()
+
+	func() {
+		t.Logf("--- third build: clean local bar.out and state, expect two-phase cache hit and same lookup key")
+		for _, p := range []string{"bar.out", ".siso_fs_state"} {
+			if err := os.RemoveAll(filepath.Join(dir, "out/siso", p)); err != nil {
+				t.Fatal(err)
+			}
+		}
+		var metricsBuffer syncBuffer
+		_, err := runNinja(ctx, t, &metricsBuffer)
+		if err != nil {
+			t.Fatal(err)
+		}
+		dec := json.NewDecoder(bytes.NewReader(metricsBuffer.buf.Bytes()))
+		foundBar := false
+		for dec.More() {
+			var m build.StepMetric
+			if err := dec.Decode(&m); err != nil {
+				t.Errorf("decode %v", err)
+			}
+			if filepath.Base(m.Output()) == "bar.out" {
+				foundBar = true
+				if m.TwoPhaseCachingKey != firstBarKey {
+					t.Errorf("bar.out TwoPhaseCachingKey=%q; want %q", m.TwoPhaseCachingKey, firstBarKey)
+				}
+				if !m.TwoPhaseCacheHit {
+					t.Errorf("bar.out TwoPhaseCacheHit=%t; want true", m.TwoPhaseCacheHit)
+				}
+			}
+		}
+		if !foundBar {
+			t.Errorf("bar.out not found in metrics")
+		}
+	}()
+
+	func() {
+		t.Logf("--- fourth build: incremental build with changed non-omitted environment variable invalidates local bar.out (without invalidating remote foo.o)")
+		t.Setenv("SOONG_METRICS_AGGREGATION_DIR", "out/soong/metrics_aggregation_v2")
+		var metricsBuffer syncBuffer
+		_, err := runNinja(ctx, t, &metricsBuffer)
+		if err != nil {
+			t.Fatal(err)
+		}
+		localEnv := envMapFromSlice(tapHelper.lastEnv)
+		if got := localEnv["SOONG_METRICS_AGGREGATION_DIR"]; got != "out/soong/metrics_aggregation_v2" {
+			t.Errorf("local action env[SOONG_METRICS_AGGREGATION_DIR] = %q; want %q", got, "out/soong/metrics_aggregation_v2")
+		}
+		dec := json.NewDecoder(bytes.NewReader(metricsBuffer.buf.Bytes()))
+		foundBar := false
+		for dec.More() {
+			var m build.StepMetric
+			if err := dec.Decode(&m); err != nil {
+				t.Errorf("decode %v", err)
+			}
+			if filepath.Base(m.Output()) == "foo.o" {
+				t.Errorf("remote foo.o unexpectedly reran on env change: %+v", m)
+			}
+			if filepath.Base(m.Output()) == "bar.out" {
+				foundBar = true
+				if m.TwoPhaseCachingKey == "" || m.TwoPhaseCachingKey == firstBarKey {
+					t.Errorf("bar.out TwoPhaseCachingKey=%q; want distinct non-empty key != %q", m.TwoPhaseCachingKey, firstBarKey)
+				}
+				if m.TwoPhaseCacheHit {
+					t.Errorf("bar.out TwoPhaseCacheHit=%t; want false when env changed", m.TwoPhaseCacheHit)
+				}
+				if m.Digest == "" || m.Digest == firstBarDigest {
+					t.Errorf("bar.out Digest=%q; want distinct non-empty digest != %q", m.Digest, firstBarDigest)
+				}
+			}
+		}
+		if !foundBar {
+			t.Errorf("bar.out not found in metrics")
+		}
+	}()
+
+	func() {
+		t.Logf("--- fifth build: subsequent incremental build with same environment is a no-op")
+		stats, err := runNinja(ctx, t, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if stats.Skipped != stats.Total {
+			t.Errorf("stats.Skipped=%d; want %d (no-op incremental build)", stats.Skipped, stats.Total)
+		}
+	}()
+
+	func() {
+		t.Logf("--- sixth build: incremental build switching back to first environment invalidates bar.out and hits 2PC cache without cleaning state")
+		t.Setenv("SOONG_METRICS_AGGREGATION_DIR", "out/soong/metrics_aggregation")
+		var metricsBuffer syncBuffer
+		_, err := runNinja(ctx, t, &metricsBuffer)
+		if err != nil {
+			t.Fatal(err)
+		}
+		dec := json.NewDecoder(bytes.NewReader(metricsBuffer.buf.Bytes()))
+		foundBar := false
+		for dec.More() {
+			var m build.StepMetric
+			if err := dec.Decode(&m); err != nil {
+				t.Errorf("decode %v", err)
+			}
+			if filepath.Base(m.Output()) == "foo.o" {
+				t.Errorf("remote foo.o unexpectedly reran on env change: %+v", m)
+			}
+			if filepath.Base(m.Output()) == "bar.out" {
+				foundBar = true
+				if m.TwoPhaseCachingKey != firstBarKey {
+					t.Errorf("bar.out TwoPhaseCachingKey=%q; want %q", m.TwoPhaseCachingKey, firstBarKey)
+				}
+				if !m.TwoPhaseCacheHit {
+					t.Errorf("bar.out TwoPhaseCacheHit=%t; want true", m.TwoPhaseCacheHit)
+				}
+			}
+		}
+		if !foundBar {
+			t.Errorf("bar.out not found in metrics")
+		}
+	}()
+}
+
 // Regression test for b/564415739: empty directory created by a local tapped
 // action must be cached as an OutputDirectory and materialized on a two-phase
 // cache hit.

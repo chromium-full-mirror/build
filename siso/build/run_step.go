@@ -115,7 +115,7 @@ func (b *Builder) runStep(ctx context.Context, step *Step) (retErr error) {
 		step.cmd = nil
 	}(span)
 
-	stepManifest := newStepManifest(ctx, step.def)
+	stepManifest := b.newStepManifest(ctx, step.def)
 
 	if !b.needToRun(ctx, step.def, stepManifest) {
 		step.metrics.skip = true

@@ -474,3 +474,54 @@ func TestStepConfigInit_MissingDeps(t *testing.T) {
 		t.Errorf("sc.MissingDeps diff -want +got:\n%s", diff)
 	}
 }
+
+func TestStepConfigInit_Env(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		env     *build.EnvConfig
+		wantErr bool
+	}{
+		{
+			name: "nil_env",
+		},
+		{
+			name: "excludes_omits_and_substitutions",
+			env: &build.EnvConfig{
+				Excludes:      []string{"RBE_metrics_project"},
+				CacheKeyOmits: []string{"HOME", "USER", "HOSTNAME", "TOP", "CIPD_PROXY_URL"},
+				CacheKeySubstitutions: map[string]string{
+					"/path/to/workspace": "CWD",
+				},
+				CacheKeyTrimPrefixes: []string{"CWD/"},
+			},
+		},
+		{
+			name: "inherits_with_omits_and_substitutions",
+			env: &build.EnvConfig{
+				Inherits:      []string{"FOO", "BAR", "HOME"},
+				CacheKeyOmits: []string{"HOME"},
+				CacheKeySubstitutions: map[string]string{
+					"/path/to/workspace": "CWD",
+				},
+				CacheKeyTrimPrefixes: []string{"CWD/"},
+			},
+		},
+		{
+			name: "error_both_inherits_and_excludes",
+			env: &build.EnvConfig{
+				Inherits: []string{"FOO"},
+				Excludes: []string{"HOME"},
+			},
+			wantErr: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := t.Context()
+			sc := StepConfig{Env: tc.env}
+			err := sc.Init(ctx)
+			if gotErr := err != nil; gotErr != tc.wantErr {
+				t.Errorf("sc.Init(ctx) = %v; gotErr %t, wantErr %t", err, gotErr, tc.wantErr)
+			}
+		})
+	}
+}

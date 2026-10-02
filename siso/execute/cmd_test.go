@@ -998,3 +998,128 @@ func TestRecordOutputsFromLocal_JailNestedDirOutput(t *testing.T) {
 		t.Errorf("nested output gen/foo.h lost during jail capture: %v (the directory output's RemoveAll clobbered it)", err)
 	}
 }
+
+func TestNormalizeEnvVars(t *testing.T) {
+	for _, tc := range []struct {
+		name          string
+		substitutions map[string]string
+		trimPrefixes  []string
+		env           []string
+		excludes      map[string]bool
+		want          map[string]string
+	}{
+		{
+			name: "replace_cwd_and_strip_prefix",
+			substitutions: map[string]string{
+				"/home/user/project": "CWD",
+			},
+			trimPrefixes: []string{"CWD/"},
+			env: []string{
+				"DIST_DIR=/home/user/project/out/dist",
+				"OTHER_DIR=/other/path",
+			},
+			want: map[string]string{
+				"DIST_DIR":  "out/dist",
+				"OTHER_DIR": "/other/path",
+			},
+		},
+		{
+			name: "replace_cwd_without_trim_prefixes",
+			substitutions: map[string]string{
+				"/home/user/project": "CWD",
+			},
+			env: []string{
+				"DIST_DIR=/home/user/project/out/dist",
+			},
+			want: map[string]string{
+				"DIST_DIR": "CWD/out/dist",
+			},
+		},
+		{
+			name: "relative_path",
+			substitutions: map[string]string{
+				"/home/user/project": "CWD",
+			},
+			trimPrefixes: []string{"CWD/"},
+			env: []string{
+				"DIST_DIR=out/dist",
+			},
+			want: map[string]string{
+				"DIST_DIR": "out/dist",
+			},
+		},
+		{
+			name: "excludes",
+			substitutions: map[string]string{
+				"/home/user/project": "CWD",
+			},
+			trimPrefixes: []string{"CWD/"},
+			env: []string{
+				"HOME=/home/user",
+				"USER=user",
+			},
+			excludes: map[string]bool{
+				"HOME": true,
+				"USER": true,
+			},
+			want: map[string]string{},
+		},
+		{
+			name: "path_list",
+			substitutions: map[string]string{
+				"/home/user/project": "CWD",
+			},
+			trimPrefixes: []string{"CWD/"},
+			env: []string{
+				"PATH=/home/user/project/bin" + string(os.PathListSeparator) + "/usr/bin" + string(os.PathListSeparator) + "/home/user/project/out/.path" + string(os.PathListSeparator) + "rel/path",
+			},
+			want: map[string]string{
+				"PATH": "CWD/bin" + string(os.PathListSeparator) + "/usr/bin" + string(os.PathListSeparator) + "CWD/out/.path" + string(os.PathListSeparator) + "rel/path",
+			},
+		},
+		{
+			name: "cwd_prefix_without_slash",
+			substitutions: map[string]string{
+				"/home/user/project": "CWD",
+			},
+			trimPrefixes: []string{"CWD/"},
+			env: []string{
+				"SOME_VAR=/home/user/project_suffix",
+			},
+			want: map[string]string{
+				"SOME_VAR": "CWD_suffix",
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := NormalizeEnvVars(tc.env, tc.substitutions, tc.trimPrefixes, func(key string) bool {
+				return !tc.excludes[key]
+			})
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Errorf("NormalizeEnvVars() diff -want +got:\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestEnvVars(t *testing.T) {
+	c := &Cmd{
+		WorkspaceRoot:    "/home/user/project",
+		Env:              []string{"Z=last", "A=1", "MALFORMED", "A=2", "M=mid=val", "HOME=/home/user", "DIST_DIR=/home/user/project/out/dist"},
+		EnvCacheKeyOmits: map[string]bool{"HOME": true},
+		EnvCacheKeySubstitutions: map[string]string{
+			"/home/user/project": "CWD",
+		},
+		EnvCacheKeyTrimPrefixes: []string{"CWD/"},
+	}
+	got := c.EnvVars()
+	want := []*rpb.Command_EnvironmentVariable{
+		{Name: "A", Value: "2"},
+		{Name: "DIST_DIR", Value: "out/dist"},
+		{Name: "M", Value: "mid=val"},
+		{Name: "Z", Value: "last"},
+	}
+	if diff := cmp.Diff(want, got, cmpopts.IgnoreUnexported(rpb.Command_EnvironmentVariable{})); diff != "" {
+		t.Errorf("EnvVars() diff -want +got:\n%s", diff)
+	}
+}

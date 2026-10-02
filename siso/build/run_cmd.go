@@ -6,6 +6,7 @@ package build
 
 import (
 	"context"
+	"slices"
 	"time"
 
 	"go.chromium.org/build/siso/o11y/trace"
@@ -66,6 +67,14 @@ func (b *Builder) runStrategy(step *Step) func(context.Context, *Step) error {
 func (b *Builder) runLocal(ctx context.Context, step *Step) error {
 	if len(b.localActionSalt) > 0 {
 		step.cmd.ActionSalt = b.localActionSalt
+	}
+	if len(b.env) > 0 {
+		step.cmd.Env = slices.Concat(b.env, step.cmd.Env)
+	}
+	if len(step.cmd.Env) > 0 {
+		step.cmd.EnvCacheKeyOmits = b.envCacheKeyOmits
+		step.cmd.EnvCacheKeySubstitutions = b.envCacheKeySubstitutions
+		step.cmd.EnvCacheKeyTrimPrefixes = b.envCacheKeyTrimPrefixes
 	}
 	// preproc performs scandeps to list up all inputs, so
 	// we can flush these inputs before local execution.

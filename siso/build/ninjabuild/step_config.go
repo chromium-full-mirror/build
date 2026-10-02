@@ -275,6 +275,9 @@ type StepConfig struct {
 
 	// Sandbox is sandbox config
 	Sandbox map[string]string `json:"sandbox,omitempty"`
+
+	// Env specifies environment variable configuration.
+	Env *build.EnvConfig `json:"env,omitempty"`
 }
 
 // ScandepsConfig is a config for scandeps.
@@ -299,6 +302,9 @@ type ScandepsConfig struct {
 
 // Init initializes StepConfig.
 func (sc *StepConfig) Init(ctx context.Context) error {
+	if sc.Env != nil && len(sc.Env.Inherits) > 0 && len(sc.Env.Excludes) > 0 {
+		return fmt.Errorf("env: cannot specify both inherits and excludes")
+	}
 	seen := make(map[string]bool)
 	for _, rule := range sc.Rules {
 		if rule == nil {
