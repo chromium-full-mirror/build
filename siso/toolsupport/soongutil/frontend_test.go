@@ -44,10 +44,11 @@ func (f fakeStepDef) Binding(name string) string {
 	return ""
 }
 
-func (fakeStepDef) Depfile(context.Context) path.Path         { return "" }
-func (fakeStepDef) Rspfile(context.Context) path.Path         { return "" }
-func (fakeStepDef) Inputs(context.Context) []path.Path        { return nil }
-func (fakeStepDef) TriggerInputs(context.Context) []path.Path { return nil }
+func (fakeStepDef) Depfile(context.Context) path.Path                 { return "" }
+func (fakeStepDef) Rspfile(context.Context) path.Path                 { return "" }
+func (fakeStepDef) Inputs(context.Context) []path.Path                { return nil }
+func (fakeStepDef) TriggerInputs(context.Context) []path.Path         { return nil }
+func (fakeStepDef) ExpandedTriggerInputs(context.Context) []path.Path { return nil }
 func (fakeStepDef) DepInputs(context.Context) (iter.Seq[path.Path], error) {
 	return func(yield func(path.Path) bool) {}, nil
 }

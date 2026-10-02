@@ -464,6 +464,56 @@ func (s *StepDef) TriggerInputs(ctx context.Context) []path.Path {
 	return targets
 }
 
+// ExpandedTriggerInputs returns trigger inputs of the step with phony targets
+// expanded recursively to their underlying trigger inputs.
+func (s *StepDef) ExpandedTriggerInputs(ctx context.Context) []path.Path {
+	globals := s.globals
+	inputs := s.edge.TriggerInputs()
+	type idxid struct {
+		idx, id int
+	}
+	inIDs := make([]idxid, 0, len(inputs))
+	for i, in := range inputs {
+		inIDs = append(inIDs, idxid{idx: i, id: in.ID()})
+	}
+	slices.SortStableFunc(inIDs, func(a, b idxid) int {
+		return cmp.Compare(a.id, b.id)
+	})
+	inIDs = slices.CompactFunc(inIDs, func(a, b idxid) bool {
+		return a.id == b.id
+	})
+	slices.SortFunc(inIDs, func(a, b idxid) int {
+		return cmp.Compare(a.idx, b.idx)
+	})
+	targets := make([]path.Path, 0, len(inIDs))
+	var phonyEdges []*ninjautil.Edge
+	for _, i := range inIDs {
+		in := inputs[i.idx]
+		if inEdge, ok := in.InEdge(); ok && inEdge.IsPhony() {
+			phonyEdges = append(phonyEdges, inEdge)
+			continue
+		}
+		p := globals.targetPath(in)
+		targets = append(targets, p)
+	}
+	if len(phonyEdges) > 0 {
+		seen := seenSetPool.Get().(map[path.Path]bool)
+		defer func() {
+			clear(seen)
+			seenSetPool.Put(seen)
+		}()
+		for _, p := range targets {
+			seen[p] = true
+		}
+		visited := make(map[*ninjautil.Edge]bool)
+		for _, inEdge := range phonyEdges {
+			p := globals.targetPath(inEdge.Outputs()[0])
+			targets = replacePhony(ctx, globals, visited, seen, p, inEdge, s.rule.Debug, targets)
+		}
+	}
+	return targets
+}
+
 // DepInputs returns inputs stored in depfile / depslog. The parse runs
 // once per StepDef; concurrent callers share the result via depsOnce.
 func (s *StepDef) DepInputs(ctx context.Context) (iter.Seq[path.Path], error) {
@@ -603,10 +653,11 @@ func (s *StepDef) DepsBaseInputs(ctx context.Context, toolInputs []path.Path, in
 		stepInputs = s.TriggerInputs(ctx)
 		nodes = s.edge.TriggerInputs()
 	}
+	visited := make(map[*ninjautil.Edge]bool)
 	for _, in := range nodes {
 		p := s.globals.targetPath(in)
 		if inEdge, ok := in.InEdge(); ok && inEdge.IsPhony() {
-			stepInputs = replacePhony(ctx, s.globals, seen, p, inEdge, s.rule.Debug, stepInputs)
+			stepInputs = replacePhony(ctx, s.globals, visited, seen, p, inEdge, s.rule.Debug, stepInputs)
 			if s.rule.Debug {
 				clog.Infof(ctx, "deps base input: expand phony %q", in)
 			}
@@ -911,11 +962,14 @@ func (s *StepDef) ExpandedInputs(ctx context.Context) []path.Path {
 		}
 		// and need to expand inputs for toolchain input etc.
 	}
-	for _, inEdge := range phonyEdges {
-		// replace phony inputs here before ExpandInput,
-		// since ExpandInputs removes non-exist inputs.
-		p := globals.targetPath(inEdge.Outputs()[0])
-		inputs = replacePhony(ctx, globals, seen, p, inEdge, s.rule.Debug, inputs)
+	if len(phonyEdges) > 0 {
+		visited := make(map[*ninjautil.Edge]bool)
+		for _, inEdge := range phonyEdges {
+			// replace phony inputs here before ExpandInput,
+			// since ExpandInputs removes non-exist inputs.
+			p := globals.targetPath(inEdge.Outputs()[0])
+			inputs = replacePhony(ctx, globals, visited, seen, p, inEdge, s.rule.Debug, inputs)
+		}
 	}
 
 	inputs = globals.stepConfig.ExpandInputs(ctx, globals.path, globals.hashFS, inputs)
@@ -1019,7 +1073,11 @@ func (s *StepDef) ExpandedInputs(ctx context.Context) []path.Path {
 	return newInputsPaths
 }
 
-func replacePhony(ctx context.Context, globals *globals, seen map[path.Path]bool, target path.Path, edge *ninjautil.Edge, debug bool, inputs []path.Path) []path.Path {
+func replacePhony(ctx context.Context, globals *globals, visited map[*ninjautil.Edge]bool, seen map[path.Path]bool, target path.Path, edge *ninjautil.Edge, debug bool, inputs []path.Path) []path.Path {
+	if visited[edge] {
+		return inputs
+	}
+	visited[edge] = true
 	for _, in := range edge.TriggerInputs() {
 		p := globals.targetPath(in)
 		if seen[p] {
@@ -1030,7 +1088,7 @@ func replacePhony(ctx context.Context, globals *globals, seen map[path.Path]bool
 			clog.Infof(ctx, "input from ninja(phony): %s -> %s", target, p)
 		}
 		if inEdge, ok := in.InEdge(); ok && inEdge.IsPhony() {
-			inputs = replacePhony(ctx, globals, seen, p, inEdge, debug, inputs)
+			inputs = replacePhony(ctx, globals, visited, seen, p, inEdge, debug, inputs)
 			continue
 		}
 		inputs = append(inputs, p)

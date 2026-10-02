@@ -156,6 +156,87 @@ build target1: __rule target2 | ../../source1 || target3
 	}
 }
 
+func TestTriggerInputs_phony(t *testing.T) {
+	ctx := t.Context()
+	state := ninjautil.NewState()
+	p := ninjautil.NewManifestParser(state)
+	dir := t.TempDir()
+	fname := filepath.Join(dir, "build.ninja")
+	err := os.WriteFile(fname, []byte(`
+rule __rule
+  command = ....
+build phony_empty: phony
+build phony_nested_empty: phony
+build phony_leaf: phony ../../source2 phony_nested_empty
+build phony_mid1: phony ../../tool1 phony_leaf
+build phony_mid2: phony ../../source2 ../../tool2 phony_leaf
+build phony_order_only: phony ../../source3
+build target1: __rule ../../source1 | ../../tool1 phony_mid1 phony_mid2 phony_empty || phony_order_only ../../source4
+`), 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = p.Load(ctx, fname)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	hashFS, err := hashfs.New(ctx, hashfs.Option{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer hashFS.Close(ctx)
+
+	graph := &Graph{
+		visited: make(map[*ninjautil.Edge]*build.Edge),
+		globals: &globals{
+			nstate:      state,
+			path:        build.NewPath(dir, "out/Default"),
+			hashFS:      hashFS,
+			stepConfig:  &StepConfig{},
+			targetPaths: make([]path.Path, state.NumNodes()),
+			edgeRules:   make([]edgeRuleHolder, state.NumNodes()),
+		},
+	}
+	err = graph.globals.stepConfig.Init(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	node, ok := state.LookupNodeByPath("target1")
+	if !ok {
+		t.Fatalf("target1 not found in build.ninja")
+	}
+	edge, ok := node.InEdge()
+	if !ok {
+		t.Fatalf("target1 has no edge")
+	}
+	s := graph.newStepDef(ctx, edge, nil)
+	s.EnsureRule(ctx)
+
+	got := path.Strings(s.TriggerInputs(ctx))
+	want := []string{
+		"source1",
+		"tool1",
+		"out/Default/phony_mid1",
+		"out/Default/phony_mid2",
+		"out/Default/phony_empty",
+	}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("TriggerInputs: diff -want +got:\n%s", diff)
+	}
+
+	got = path.Strings(s.ExpandedTriggerInputs(ctx))
+	want = []string{
+		"source1",
+		"tool1",
+		"source2",
+		"tool2",
+	}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("ExpandedTriggerInputs: diff -want +got:\n%s", diff)
+	}
+}
+
 func TestExpandedInputs_replace_accumulate(t *testing.T) {
 	ctx := t.Context()
 	state := ninjautil.NewState()

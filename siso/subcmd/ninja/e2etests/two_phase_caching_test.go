@@ -697,3 +697,217 @@ func TestBuild_TwoPhaseCaching_EmptyDir(t *testing.T) {
 		}
 	}()
 }
+
+func TestBuild_TwoPhaseCaching_PhonyAndOrderOnly(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("two phase caching is available on linux only")
+	}
+	if !runInSubProcess(t) {
+		return
+	}
+	ctx := t.Context()
+	dir := tempDir(t)
+	t.Setenv("TMPDIR", tempDir(t))
+	t.Setenv("TMP", tempDir(t))
+
+	build.SetExperimentForTest("two-phase-caching,expand-phony-trigger-inputs")
+
+	fakere := &reapitest.Fake{}
+	var ds build.DataSource
+	defer func() {
+		err := ds.Close(ctx)
+		if err != nil {
+			t.Error(err)
+		}
+	}()
+	localCache, err := reapi.NewLocalCache(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	ds.Client = reapitest.NewWithOption(ctx, t, fakere, reapi.Option{
+		LocalCache:                    localCache,
+		DisableTwoPhaseCachingMethods: true,
+	})
+	err = ds.Client.Init(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ds.Cache = ds.Client.CacheStore()
+
+	runNinja := func(ctx context.Context, t *testing.T, metricsBuffer *syncBuffer) (build.Stats, error) {
+		t.Helper()
+		hashfsOpts := hashfs.Option{
+			StateFile:   ".siso_fs_state",
+			OutputLocal: func(context.Context, string) bool { return true },
+			DataSource:  ds,
+		}
+		opt, graph, cleanup := setupBuild(ctx, t, dir, hashfsOpts)
+		defer cleanup()
+		bcache, err := build.NewCache(ctx, build.CacheOptions{
+			Store:      ds.Cache,
+			EnableRead: true,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		opt.Cache = bcache
+		opt.RECacheEnableRead = true
+		opt.RECacheEnableWrite = true
+		opt.REAPIClient = ds.Client
+		opt.REExecEnable = true
+		if metricsBuffer != nil {
+			opt.MetricsJSONWriter = metricsBuffer
+		}
+		return ninjabuild.Run(ctx, graph, opt, []string{"all"}, ninjabuild.RunNinjaOpts{})
+	}
+
+	setupFiles(t, dir, t.Name(), nil)
+	origHelper := localexec.SetSpawnHelper(mockTapHelper{})
+	defer localexec.SetSpawnHelper(origHelper)
+
+	var firstKey string
+	func() {
+		t.Logf("--- first build: populate 2PC cache with phony trigger input, read order-only input, and unread order-only inputs")
+		var metricsBuffer syncBuffer
+		_, err := runNinja(ctx, t, &metricsBuffer)
+		if err != nil {
+			t.Fatal(err)
+		}
+		dec := json.NewDecoder(bytes.NewReader(metricsBuffer.buf.Bytes()))
+		for dec.More() {
+			var m build.StepMetric
+			if err := dec.Decode(&m); err != nil {
+				t.Errorf("decode %v", err)
+			}
+			if filepath.Base(m.Output()) == "foo.out" {
+				firstKey = m.TwoPhaseCachingKey
+				if !m.CacheWrite {
+					t.Errorf("foo.out CacheWrite=%t; want true", m.CacheWrite)
+				}
+			}
+		}
+		if firstKey == "" {
+			t.Fatalf("firstKey is empty")
+		}
+	}()
+
+	func() {
+		t.Logf("--- second build: modify unread order-only inputs (direct and via phony), expect 2PC cache hit with same lookup key")
+		modifyFile(t, dir, "base/unread.in", func(buf []byte) []byte {
+			return []byte("unread v2 modified\n")
+		})
+		modifyFile(t, dir, "base/unread_via_phony.in", func(buf []byte) []byte {
+			return []byte("unread via phony v2 modified\n")
+		})
+		for _, p := range []string{"foo.out", ".siso_fs_state"} {
+			if err := os.RemoveAll(filepath.Join(dir, "out/siso", p)); err != nil {
+				t.Fatal(err)
+			}
+		}
+		var metricsBuffer syncBuffer
+		_, err := runNinja(ctx, t, &metricsBuffer)
+		if err != nil {
+			t.Fatal(err)
+		}
+		dec := json.NewDecoder(bytes.NewReader(metricsBuffer.buf.Bytes()))
+		foundFoo := false
+		for dec.More() {
+			var m build.StepMetric
+			if err := dec.Decode(&m); err != nil {
+				t.Errorf("decode %v", err)
+			}
+			if filepath.Base(m.Output()) == "foo.out" {
+				foundFoo = true
+				if m.TwoPhaseCachingKey != firstKey {
+					t.Errorf("foo.out TwoPhaseCachingKey=%q; want %q", m.TwoPhaseCachingKey, firstKey)
+				}
+				if !m.TwoPhaseCacheHit {
+					t.Errorf("foo.out TwoPhaseCacheHit=%t; want true when only unread order-only inputs changed", m.TwoPhaseCacheHit)
+				}
+			}
+		}
+		if !foundFoo {
+			t.Errorf("foo.out not found in metrics")
+		}
+	}()
+
+	func() {
+		t.Logf("--- third build: modify read order-only input, expect same Phase 1 lookup key but Phase 2 miss")
+		modifyFile(t, dir, "base/read_order_only.in", func(buf []byte) []byte {
+			return []byte("read order only v2 modified\n")
+		})
+		for _, p := range []string{"foo.out", ".siso_fs_state"} {
+			if err := os.RemoveAll(filepath.Join(dir, "out/siso", p)); err != nil {
+				t.Fatal(err)
+			}
+		}
+		var metricsBuffer syncBuffer
+		_, err := runNinja(ctx, t, &metricsBuffer)
+		if err != nil {
+			t.Fatal(err)
+		}
+		dec := json.NewDecoder(bytes.NewReader(metricsBuffer.buf.Bytes()))
+		foundFoo := false
+		for dec.More() {
+			var m build.StepMetric
+			if err := dec.Decode(&m); err != nil {
+				t.Errorf("decode %v", err)
+			}
+			if filepath.Base(m.Output()) == "foo.out" {
+				foundFoo = true
+				if m.TwoPhaseCachingKey != firstKey {
+					t.Errorf("foo.out TwoPhaseCachingKey=%q; want %q", m.TwoPhaseCachingKey, firstKey)
+				}
+				if m.TwoPhaseCacheHit {
+					t.Errorf("foo.out TwoPhaseCacheHit=%t; want false when read order-only input changed", m.TwoPhaseCacheHit)
+				}
+				if m.TwoPhaseCachingActions != 1 {
+					t.Errorf("foo.out TwoPhaseCachingActions=%d; want 1 candidate checked on Phase 2 miss", m.TwoPhaseCachingActions)
+				}
+			}
+		}
+		if !foundFoo {
+			t.Errorf("foo.out not found in metrics")
+		}
+	}()
+
+	func() {
+		t.Logf("--- fourth build: modify tool behind phony trigger input, expect distinct 2PC lookup key")
+		modifyFile(t, dir, "tools/gen.py", func(buf []byte) []byte {
+			return append(buf, []byte("\n# tool modified\n")...)
+		})
+		for _, p := range []string{"foo.out", ".siso_fs_state"} {
+			if err := os.RemoveAll(filepath.Join(dir, "out/siso", p)); err != nil {
+				t.Fatal(err)
+			}
+		}
+		var metricsBuffer syncBuffer
+		_, err := runNinja(ctx, t, &metricsBuffer)
+		if err != nil {
+			t.Fatal(err)
+		}
+		dec := json.NewDecoder(bytes.NewReader(metricsBuffer.buf.Bytes()))
+		foundFoo := false
+		for dec.More() {
+			var m build.StepMetric
+			if err := dec.Decode(&m); err != nil {
+				t.Errorf("decode %v", err)
+			}
+			if filepath.Base(m.Output()) == "foo.out" {
+				foundFoo = true
+				if m.TwoPhaseCachingKey == "" || m.TwoPhaseCachingKey == firstKey {
+					t.Errorf("foo.out TwoPhaseCachingKey=%q; want distinct non-empty key != %q", m.TwoPhaseCachingKey, firstKey)
+				}
+				if m.TwoPhaseCacheHit {
+					t.Errorf("foo.out TwoPhaseCacheHit=%t; want false when tool behind phony changed", m.TwoPhaseCacheHit)
+				}
+				if m.TwoPhaseCachingActions != 0 {
+					t.Errorf("foo.out TwoPhaseCachingActions=%d; want 0 for new lookup key", m.TwoPhaseCachingActions)
+				}
+			}
+		}
+		if !foundFoo {
+			t.Errorf("foo.out not found in metrics")
+		}
+	}()
+}

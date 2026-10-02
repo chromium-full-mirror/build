@@ -77,7 +77,11 @@ type reapiTwoPhaseCaching struct {
 
 func (reapiTwoPhaseCaching) ComputeLookupKey(ctx context.Context, step *Step) (string, error) {
 	pcmd := step.cmd.Clone()
-	pcmd.Inputs = step.def.TriggerInputs(ctx)
+	if experiments.Enabled("expand-phony-trigger-inputs", "") {
+		pcmd.Inputs = step.def.ExpandedTriggerInputs(ctx)
+	} else {
+		pcmd.Inputs = step.def.TriggerInputs(ctx)
+	}
 	pcmd.Pure = true // not pure, but to make calculate digest.
 	d, err := pcmd.Digest(ctx, nil)
 	if err != nil {

@@ -29,7 +29,8 @@ var knownExperiments = map[string]string{
 	"allow-fallback-low":          "",
 	// check-deps checks deps (e.g. *.d) has source or direct/indirect deps only.
 	// TODO(crbug.com/556026322): deprecate once migrated to -undeclared_deps.
-	"check-deps": "",
+	"check-deps":                  "",
+	"expand-phony-trigger-inputs": "",
 	// TODO(crbug.com/556026322): deprecate once migrated to -undeclared_deps.
 	"fail-on-bad-deps":            "",
 	"fail-on-stdouterr":           "",

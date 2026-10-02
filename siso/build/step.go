@@ -72,6 +72,10 @@ type StepDef interface {
 	// For  deps in deps log, use DepInputs.
 	TriggerInputs(context.Context) []sisopath.Path
 
+	// ExpandedTriggerInputs returns trigger inputs of the step with phony
+	// targets expanded recursively to their underlying trigger inputs.
+	ExpandedTriggerInputs(context.Context) []sisopath.Path
+
 	// DepInputs returns iterator for inputs via depfile of the step.
 	// if depfile is not set, returns emptyIter, nil
 	// if depfile or deplog is not found, returns wrapped ErrMissingDeps.

@@ -191,6 +191,15 @@ func (b *Builder) execLocal(ctx context.Context, step *Step) (retErr error) {
 		// step.cmd.Pure may have been set true in updateDeps,
 		// but set it in tapCanonicalizeCmd.
 		if step.metrics.TwoPhaseCachingKey != "" {
+			if experiments.Enabled("expand-phony-trigger-inputs", "") {
+				// ensureExpanded populated step.cmd.Inputs with ExpandedInputs
+				// (including order-only and any over-specified trigger inputs)
+				// to materialize local inputs before execution. Clear it before
+				// tapCanonicalizeCmd (which appends tapData.Reads to cmd.Inputs)
+				// so the Phase 2 Action key records only inputs actually read
+				// during execution.
+				step.cmd.Inputs = nil
+			}
 			err := b.tapCanonicalizeCmd(ctx, step.cmd)
 			if err != nil {
 				if !errors.Is(err, errNoTapData) {
