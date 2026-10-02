@@ -543,11 +543,11 @@ func (c *Command) Run(ctx context.Context) (stats build.Stats, finalErr error) {
 
 	var localCache *reapi.LocalCache
 	if c.cacheDir != "" && c.localCacheEnable {
-		var err error
-		localCache, err = reapi.NewLocalCache(c.cacheDir)
+		lc, err := reapi.NewLocalCache(c.cacheDir)
 		if err != nil {
 			return stats, err
 		}
+		localCache = lc
 	}
 	c.reopt.LocalCache = localCache
 

@@ -160,6 +160,10 @@ type Option struct {
 
 	// LocalCache is local cache for reapi.
 	LocalCache *LocalCache
+
+	// Disable Two Phase Caching method (for test).
+	// TODO: implement Two Phase Caching method in kajiya
+	DisableTwoPhaseCachingMethods bool
 }
 
 // Envs returns environment flags for reapi.
@@ -819,11 +823,27 @@ func (c *Client) IOMetrics() *iometrics.IOMetrics {
 
 // Proto fetches contents of digest into proto message.
 func (c *Client) Proto(ctx context.Context, d digest.Digest, p proto.Message) error {
+	if c != nil && c.opt.LocalCache != nil {
+		err := c.opt.LocalCache.Proto(ctx, d, p)
+		if err == nil {
+			return nil
+		}
+	}
 	b, err := c.Get(ctx, d, fmt.Sprintf("%s -> %T", d, p))
 	if err != nil {
 		return err
 	}
-	return proto.Unmarshal(b, p)
+	err = proto.Unmarshal(b, p)
+	if err != nil {
+		return err
+	}
+	if c != nil && c.opt.LocalCache != nil {
+		err = c.opt.LocalCache.SetProto(ctx, d, p)
+		if err != nil {
+			clog.Warningf(ctx, "store proto %s: %v", d, err)
+		}
+	}
+	return nil
 }
 
 // GetActionResultTimeout caps a single GetActionResult attempt.
@@ -862,7 +882,7 @@ func ValidateActionResult(result *rpb.ActionResult) bool {
 
 // GetActionResult gets the action result by the digest.
 func (c *Client) GetActionResult(ctx context.Context, d digest.Digest) (*rpb.ActionResult, error) {
-	if c.opt.LocalCache != nil {
+	if c != nil && c.opt.LocalCache != nil {
 		ar, err := c.opt.LocalCache.GetActionResult(ctx, d)
 		if err == nil {
 			if ar.ExitCode != 0 || ValidateActionResult(ar) {
@@ -893,7 +913,7 @@ func (c *Client) GetActionResult(ctx context.Context, d digest.Digest) (*rpb.Act
 		clog.Infof(ctx, "GetActionResult keep=%t err=%v", keep, err)
 		if keep {
 			c.m.OpsDone(err)
-			if err == nil && result.ExitCode == 0 && ValidateActionResult(result) && c.opt.LocalCache != nil {
+			if err == nil && result != nil && result.ExitCode == 0 && ValidateActionResult(result) && c.opt.LocalCache != nil {
 				if werr := c.opt.LocalCache.SetActionResult(ctx, d, result); werr != nil {
 					clog.Warningf(ctx, "failed to write action result with digest %s to local cache: %v", d.String(), werr)
 				}
@@ -909,7 +929,7 @@ func (c *Client) GetActionResult(ctx context.Context, d digest.Digest) (*rpb.Act
 		monitoring.RecordRetryDuration(ctx, "cache-check", time.Since(start), err)
 	}
 	c.m.OpsDone(err)
-	if err == nil && result.ExitCode == 0 && ValidateActionResult(result) && c.opt.LocalCache != nil {
+	if err == nil && result != nil && result.ExitCode == 0 && ValidateActionResult(result) && c.opt.LocalCache != nil {
 		if werr := c.opt.LocalCache.SetActionResult(ctx, d, result); werr != nil {
 			clog.Warningf(ctx, "failed to write action result with digest %s to local cache: %v", d.String(), werr)
 		}

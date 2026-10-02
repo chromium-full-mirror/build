@@ -23,6 +23,7 @@ import (
 	"go.chromium.org/build/siso/execute/localexec"
 	epb "go.chromium.org/build/siso/execute/proto"
 	"go.chromium.org/build/siso/hashfs"
+	"go.chromium.org/build/siso/reapi"
 	"go.chromium.org/build/siso/reapi/reapitest"
 )
 
@@ -94,10 +95,7 @@ func TestBuild_TwoPhaseCaching_RestatContent(t *testing.T) {
 	t.Setenv("TMPDIR", tempDir(t))
 	t.Setenv("TMP", tempDir(t))
 
-	build.SetExperimentForTest("two-phase-caching,two-phase-caching-local-action-cache-map")
-	userCacheDir := tempDir(t)
-	t.Setenv("XDG_CACHE_HOME", userCacheDir)
-	t.Setenv("LocalAppData", userCacheDir)
+	build.SetExperimentForTest("two-phase-caching")
 
 	exists := func(fname string) error {
 		_, err := os.Stat(filepath.Join(dir, "out/siso", fname))
@@ -139,8 +137,15 @@ func TestBuild_TwoPhaseCaching_RestatContent(t *testing.T) {
 			t.Error(err)
 		}
 	}()
-	ds.Client = reapitest.New(ctx, t, fakere)
-	err := ds.Client.Init(ctx)
+	localCache, err := reapi.NewLocalCache(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	ds.Client = reapitest.NewWithOption(ctx, t, fakere, reapi.Option{
+		LocalCache:                    localCache,
+		DisableTwoPhaseCachingMethods: true,
+	})
+	err = ds.Client.Init(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -279,10 +284,7 @@ func TestBuild_TwoPhaseCaching_EmptyDir(t *testing.T) {
 	t.Setenv("TMPDIR", tempDir(t))
 	t.Setenv("TMP", tempDir(t))
 
-	build.SetExperimentForTest("two-phase-caching,two-phase-caching-local-action-cache-map")
-	userCacheDir := tempDir(t)
-	t.Setenv("XDG_CACHE_HOME", userCacheDir)
-	t.Setenv("LocalAppData", userCacheDir)
+	build.SetExperimentForTest("two-phase-caching")
 
 	fakere := &reapitest.Fake{}
 	var ds build.DataSource
@@ -292,8 +294,15 @@ func TestBuild_TwoPhaseCaching_EmptyDir(t *testing.T) {
 			t.Error(err)
 		}
 	}()
-	ds.Client = reapitest.New(ctx, t, fakere)
-	err := ds.Client.Init(ctx)
+	localCache, err := reapi.NewLocalCache(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	ds.Client = reapitest.NewWithOption(ctx, t, fakere, reapi.Option{
+		LocalCache:                    localCache,
+		DisableTwoPhaseCachingMethods: true,
+	})
+	err = ds.Client.Init(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}

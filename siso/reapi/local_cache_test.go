@@ -96,3 +96,126 @@ func TestGarbageCollector(t *testing.T) {
 		t.Errorf("cache.HasContent() should return false after successful GC")
 	}
 }
+
+func TestProtoCache(t *testing.T) {
+	ctx := t.Context()
+	cache, err := NewLocalCache(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cmd := &rpb.Command{
+		Arguments:        []string{"clang++", "-c", "foo.cc"},
+		WorkingDirectory: "out/Default",
+	}
+	d := makeDigest("cmd-1")
+	gotCmd := &rpb.Command{}
+	err = cache.Proto(ctx, d, gotCmd)
+	if err == nil {
+		t.Errorf("Proto unexpectedly succeeded on empty cache")
+	}
+
+	err = cache.SetProto(ctx, d, cmd)
+	if err != nil {
+		t.Fatalf("SetProto: %v", err)
+	}
+
+	err = cache.Proto(ctx, d, gotCmd)
+	if err != nil {
+		t.Fatalf("Proto: %v", err)
+	}
+	if !proto.Equal(cmd, gotCmd) {
+		t.Errorf("Proto = %v, want %v", gotCmd, cmd)
+	}
+}
+
+func TestActionLookupCache(t *testing.T) {
+	ctx := t.Context()
+	cache, err := NewLocalCache(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	lookupKey := "lookup-key-1/size"
+	action1 := makeDigest("action-1")
+	action2 := makeDigest("action-2")
+
+	// Empty list
+	var found []digest.Digest
+	for d, err := range cache.ListActionDigests(ctx, lookupKey) {
+		if err != nil {
+			t.Fatalf("ListActionDigests: %v", err)
+		}
+		found = append(found, d)
+	}
+	if len(found) != 0 {
+		t.Errorf("ListActionDigests on empty = %v, want empty", found)
+	}
+
+	// Add actions
+	err = cache.AddActionLookup(ctx, lookupKey, action1)
+	if err != nil {
+		t.Fatalf("AddActionLookup(action1): %v", err)
+	}
+	err = cache.AddActionLookup(ctx, lookupKey, action2)
+	if err != nil {
+		t.Fatalf("AddActionLookup(action2): %v", err)
+	}
+
+	found = nil
+	for d, err := range cache.ListActionDigests(ctx, lookupKey) {
+		if err != nil {
+			t.Fatalf("ListActionDigests: %v", err)
+		}
+		found = append(found, d)
+	}
+	if len(found) != 2 {
+		t.Fatalf("ListActionDigests returned %d actions, want 2: %v", len(found), found)
+	}
+}
+
+func TestLocalActionCacheMap(t *testing.T) {
+	ctx := t.Context()
+	cache, err := NewLocalCache(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	acm := &ActionCacheMap{
+		c: &Client{
+			opt: Option{
+				LocalCache:                    cache,
+				DisableTwoPhaseCachingMethods: true,
+			},
+		},
+	}
+	lookupKey := "lookup-key-test/100"
+	actionDigest := makeDigest("action-digest-1")
+
+	wantAction := &rpb.Action{
+		CommandDigest: makeDigest("cmd-digest-1").Proto(),
+	}
+	err = cache.SetProto(ctx, actionDigest, wantAction)
+	if err != nil {
+		t.Fatalf("SetProto: %v", err)
+	}
+
+	err = acm.Add(ctx, lookupKey, actionDigest)
+	if err != nil {
+		t.Fatalf("acm.Add: %v", err)
+	}
+
+	var actions []*rpb.Action
+	for action, err := range acm.List(ctx, lookupKey) {
+		if err != nil {
+			t.Fatalf("acm.List: %v", err)
+		}
+		actions = append(actions, action)
+	}
+	if len(actions) != 1 {
+		t.Fatalf("acm.List got %d actions, want 1", len(actions))
+	}
+	if !proto.Equal(actions[0], wantAction) {
+		t.Errorf("acm.List action = %v, want %v", actions[0], wantAction)
+	}
+}

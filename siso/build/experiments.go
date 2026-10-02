@@ -56,8 +56,7 @@ var knownExperiments = map[string]string{
 	"racing":                       "",
 	"simulate-remote-cache-misses": "",
 
-	"two-phase-caching":                        "",
-	"two-phase-caching-local-action-cache-map": "",
+	"two-phase-caching": "",
 }
 
 type experimentFeature struct {

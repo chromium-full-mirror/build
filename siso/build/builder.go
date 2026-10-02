@@ -481,20 +481,10 @@ func New(ctx context.Context, graph Graph, opts Options) (_ *Builder, err error)
 		makeutil.IgnoreMissingOut = true
 	}
 	if experiments.Enabled("two-phase-caching", "") {
-		// TODO: add abfs twoPhaseCaching.
 		if b.reapiclient != nil {
-			rt := reapiTwoPhaseCaching{b: b}
-			if experiments.Enabled("two-phase-caching-local-action-cache-map", "") {
-				cacheDir, err := os.UserCacheDir()
-				if err != nil {
-					return nil, err
-				}
-				rt.actionCacheMap = localActionCacheMap{
-					dir:         filepath.Join(cacheDir, "siso/action_cache_map"),
-					reapiclient: b.reapiclient,
-				}
-			} else {
-				rt.actionCacheMap = b.reapiclient.ActionCacheMap()
+			rt := reapiTwoPhaseCaching{
+				b:              b,
+				actionCacheMap: b.reapiclient.ActionCacheMap(),
 			}
 			b.twoPhaseCaching = rt
 		}

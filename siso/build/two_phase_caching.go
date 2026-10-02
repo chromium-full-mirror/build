@@ -7,6 +7,7 @@ package build
 import (
 	"context"
 	"fmt"
+	"iter"
 	"slices"
 	"time"
 
@@ -62,6 +63,11 @@ func (b *Builder) twoPhaseCachingLookup(ctx context.Context, step *Step) (bool, 
 	}
 	clog.Warningf(ctx, "two phase cache: %v", err)
 	return false, err
+}
+
+type actionCacheMap interface {
+	Add(context.Context, string, digest.Digest) error
+	List(context.Context, string) iter.Seq2[*rpb.Action, error]
 }
 
 type reapiTwoPhaseCaching struct {

@@ -10,10 +10,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"iter"
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/klauspost/compress/zstd"
@@ -80,6 +83,19 @@ func (c *LocalCache) actionCacheFilename(d digest.Digest) string {
 func (c *LocalCache) contentCacheFilename(d digest.Digest) string {
 	name := fmt.Sprintf("%s-%d.zst", d.Hash, d.SizeBytes)
 	return filepath.Join(c.dir, "contents", name[:2], name[2:])
+}
+
+func (c *LocalCache) lookupDir(lookupKey string) string {
+	safeKey := strings.ReplaceAll(lookupKey, "/", "-")
+	if len(safeKey) < 2 {
+		return filepath.Join(c.dir, "lookups", safeKey)
+	}
+	return filepath.Join(c.dir, "lookups", safeKey[:2], safeKey[2:])
+}
+
+func (c *LocalCache) lookupCacheFilename(lookupKey string, action digest.Digest) string {
+	name := fmt.Sprintf("%s-%d", action.Hash, action.SizeBytes)
+	return filepath.Join(c.lookupDir(lookupKey), name)
 }
 
 // GetActionResult gets the action result of the action identified by the digest.
@@ -151,6 +167,125 @@ func (c *LocalCache) SetActionResult(ctx context.Context, d digest.Digest, ar *r
 		return nil, err
 	})
 	return err
+}
+
+// Proto gets a proto message identified by the digest from the local cache.
+func (c *LocalCache) Proto(ctx context.Context, d digest.Digest, msg proto.Message) error {
+	if c == nil {
+		return status.Error(codes.NotFound, "cache is not configured")
+	}
+	b, err := c.GetContent(ctx, d, d.String())
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return status.Errorf(codes.NotFound, "not found %s: %v", d, err)
+		}
+		return err
+	}
+	err = proto.Unmarshal(b, msg)
+	if err != nil {
+		return fmt.Errorf("failed to unmarshal proto for %s: %w", d, err)
+	}
+	return nil
+}
+
+// SetProto stores a proto message identified by the digest into the local cache.
+func (c *LocalCache) SetProto(ctx context.Context, d digest.Digest, msg proto.Message) error {
+	if c == nil {
+		return nil
+	}
+	buf, err := proto.Marshal(msg)
+	if err != nil {
+		return err
+	}
+	return c.SetContent(ctx, d, d.String(), buf)
+}
+
+// AddActionLookup adds action digest to lookupKey in the local cache.
+func (c *LocalCache) AddActionLookup(ctx context.Context, lookupKey string, action digest.Digest) error {
+	if c == nil {
+		return nil
+	}
+	if lookupKey == "" {
+		return errors.New("lookupKey is empty")
+	}
+	if action.IsZero() {
+		return errors.New("action is zero digest")
+	}
+	fname := c.lookupCacheFilename(lookupKey, action)
+	dir := filepath.Dir(fname)
+	return LocalCacheSemaphore.Do(ctx, func(ctx context.Context) error {
+		err := os.MkdirAll(dir, 0755)
+		c.m.OpsDone(err)
+		if err != nil {
+			return fmt.Errorf("mkdir for %q: %w", dir, err)
+		}
+		err = os.WriteFile(fname, nil, 0644)
+		c.m.OpsDone(err)
+		if err != nil {
+			return fmt.Errorf("add %q in action cache map: %w", action, err)
+		}
+		_ = os.Chtimes(fname, c.timestamp, c.timestamp)
+		return nil
+	})
+}
+
+// ListActionDigests lists action digests associated with lookupKey in the local cache.
+func (c *LocalCache) ListActionDigests(ctx context.Context, lookupKey string) iter.Seq2[digest.Digest, error] {
+	return func(yield func(digest.Digest, error) bool) {
+		if c == nil {
+			return
+		}
+		dir := c.lookupDir(lookupKey)
+		var ents []os.DirEntry
+		err := LocalCacheSemaphore.Do(ctx, func(ctx context.Context) error {
+			d, err := os.Open(dir)
+			if err != nil {
+				if errors.Is(err, os.ErrNotExist) {
+					return nil
+				}
+				return err
+			}
+			defer d.Close()
+			ents, err = d.ReadDir(-1)
+			return err
+		})
+		if err != nil {
+			yield(digest.Digest{}, err)
+			return
+		}
+		slices.SortFunc(ents, func(a, b os.DirEntry) int {
+			afi, aerr := a.Info()
+			bfi, berr := b.Info()
+			if aerr != nil && berr != nil {
+				return 0
+			}
+			if berr != nil {
+				return -1
+			}
+			if aerr != nil {
+				return 1
+			}
+			return bfi.ModTime().Compare(afi.ModTime())
+		})
+		const maxListActions = 5
+		threshold := min(maxListActions, len(ents))
+		ents, olds := ents[:threshold], ents[threshold:]
+		for _, ent := range olds {
+			os.Remove(filepath.Join(dir, ent.Name()))
+		}
+		for _, ent := range ents {
+			d, err := digest.Parse(strings.Replace(ent.Name(), "-", "/", 1))
+			if err != nil {
+				if !yield(digest.Digest{}, err) {
+					return
+				}
+				continue
+			}
+			if !yield(d, nil) {
+				return
+			}
+		}
+	}
 }
 
 // GetContent returns content of the fname identified by the digest.
@@ -397,8 +532,9 @@ func (c *LocalCache) garbageCollect(ctx context.Context, ttl time.Duration) {
 	threshold := c.timestamp.Add(-ttl)
 	nFiles, spaceReclaimed := garbageCollect(ctx, filepath.Join(c.dir, "contents"), threshold)
 	nActions, sActions := garbageCollect(ctx, filepath.Join(c.dir, "actions"), threshold)
-	nFiles += nActions
-	spaceReclaimed += sActions
+	nLookups, sLookups := garbageCollect(ctx, filepath.Join(c.dir, "lookups"), threshold)
+	nFiles += nActions + nLookups
+	spaceReclaimed += sActions + sLookups
 	if nFiles > 0 {
 		clog.Infof(ctx, "Garbage collected local cache: Removed %d files totalling %d MB", nFiles, spaceReclaimed/1000000)
 	}

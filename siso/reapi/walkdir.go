@@ -34,13 +34,29 @@ type walkDirEntry struct {
 	dir *rpb.Directory
 }
 
-// loadWalkdir returns the directory d from walkdirCache.
-func (c *Client) loadWalkdir(d digest.Digest) (*rpb.Directory, bool) {
+// loadWalkdir returns the directory d from walkdirCache or LocalCache.
+func (c *Client) loadWalkdir(ctx context.Context, d digest.Digest) (*rpb.Directory, bool) {
 	v, ok := c.walkdirCache.Load(d)
-	if !ok {
+	if ok {
+		return v.(*rpb.Directory), true
+	}
+	if c.opt.LocalCache == nil {
 		return nil, false
 	}
+	dir := &rpb.Directory{}
+	err := c.opt.LocalCache.Proto(ctx, d, dir)
+	if err != nil {
+		return nil, false
+	}
+	v, _ = c.walkdirCache.LoadOrStore(d, dir)
 	return v.(*rpb.Directory), true
+}
+
+func (c *Client) storeWalkdir(ctx context.Context, d digest.Digest, dir *rpb.Directory) {
+	c.walkdirCache.Store(d, dir)
+	if c.opt.LocalCache != nil {
+		_ = c.opt.LocalCache.SetProto(ctx, d, dir)
+	}
 }
 
 // WalkDir walks the directory tree rooted identified by d,
@@ -148,9 +164,9 @@ func (s *walkDirStats) String() string {
 }
 
 func (c *Client) walkDirIter(ctx context.Context, d digest.Digest, stats *walkDirStats) iter.Seq2[walkDirEntry, error] {
-	_, ok := c.walkdirCache.Load(d)
+	_, ok := c.loadWalkdir(ctx, d)
 	if ok {
-		iter, err := c.cachedTreeIter(d, stats)
+		iter, err := c.cachedTreeIter(ctx, d, stats)
 		if err == nil {
 			return iter
 		}
@@ -161,7 +177,7 @@ func (c *Client) walkDirIter(ctx context.Context, d digest.Digest, stats *walkDi
 	return c.readDirIter(ctx, d, stats)
 }
 
-func (c *Client) cachedTreeIter(d digest.Digest, stats *walkDirStats) (iter.Seq2[walkDirEntry, error], error) {
+func (c *Client) cachedTreeIter(ctx context.Context, d digest.Digest, stats *walkDirStats) (iter.Seq2[walkDirEntry, error], error) {
 	var dirs []walkDirEntry
 	pendings := []digest.Digest{d}
 	seen := make(map[digest.Digest]struct{})
@@ -169,7 +185,7 @@ func (c *Client) cachedTreeIter(d digest.Digest, stats *walkDirStats) (iter.Seq2
 	for len(pendings) > 0 {
 		d := pendings[0]
 		pendings = pendings[1:]
-		dir, ok := c.loadWalkdir(d)
+		dir, ok := c.loadWalkdir(ctx, d)
 		if !ok {
 			return nil, fmt.Errorf("no directory for %s", d)
 		}
@@ -253,7 +269,7 @@ func (c *Client) getTreeIter(ctx context.Context, d digest.Digest, stats *walkDi
 						continue
 					}
 					stats.ncached++
-					c.walkdirCache.Store(dd, dir)
+					c.storeWalkdir(ctx, dd, dir)
 					seen[dd] = struct{}{}
 				}
 				delete(waits, dd)
@@ -270,7 +286,7 @@ func (c *Client) getTreeIter(ctx context.Context, d digest.Digest, stats *walkDi
 						stats.nhit++
 						continue
 					}
-					subdir, ok := c.loadWalkdir(sd)
+					subdir, ok := c.loadWalkdir(ctx, sd)
 					if ok {
 						stats.nhit++
 						seen[sd] = struct{}{}
@@ -313,7 +329,7 @@ func (c *Client) readDirIter(ctx context.Context, d digest.Digest, stats *walkDi
 			}
 			var cached []walkDirEntry
 			for _, d := range pendings {
-				dir, ok := c.loadWalkdir(d)
+				dir, ok := c.loadWalkdir(ctx, d)
 				if ok {
 					stats.nhit++
 					cached = append(cached, walkDirEntry{d: d, dir: dir})
@@ -364,7 +380,7 @@ func (c *Client) readDirIter(ctx context.Context, d digest.Digest, stats *walkDi
 					return
 				}
 				stats.ncached++
-				c.walkdirCache.Store(dd, dir)
+				c.storeWalkdir(ctx, dd, dir)
 				if !visit(walkDirEntry{d: dd, dir: dir}) {
 					return
 				}
