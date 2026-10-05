@@ -115,7 +115,7 @@ func (itemRedefinedSuberror) HelpText() string { return "" }
 
 // Unwrap returns a single suberror to indicate where the previous definition of the item was seen.
 func (e ItemRedefinedError) Unwrap() error {
-	return itemRedefinedSuberror{OriginNode: parse.OriginNode{Node: e.previousOrigin}}
+	return itemRedefinedSuberror{Node: e.previousOrigin}
 }
 
 // ItemTypeMismatchError is returned when encountering a reference to an item that
@@ -175,7 +175,7 @@ type ImportError struct {
 
 // makeImportError wraps an error in an ImportError, preserving the unwrap chain if the cause is an ImportError.
 func makeImportError(nodeForErr parse.Node, file fs.SourceFile, err error) *ImportError {
-	ret := &ImportError{OriginNode: parse.OriginNode{Node: nodeForErr}, file: file}
+	ret := &ImportError{Node: nodeForErr, file: file}
 	if e, ok := errors.AsType[*ImportError](err); ok {
 		// Don't mutate the slice held by the wrapped ImportError.
 		ret.stack = slices.Concat(e.stack, []error{err})

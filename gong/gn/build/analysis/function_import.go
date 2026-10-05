@@ -58,8 +58,8 @@ func (importFunction) Run(scope *resolve.Scope, call *parse.FunctionCallNode, ar
 
 	if len(args) != 1 {
 		return nil, resolve.ArgumentCountError{
-			OriginFunction: resolve.OriginFunction{Call: call},
-			Msg:            "This function requires a single string argument.",
+			Call: call,
+			Msg:  "This function requires a single string argument.",
 		}
 	}
 

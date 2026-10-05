@@ -63,7 +63,7 @@ func (b *Builder) RecordDefinedItem(item graph.Item) ([]environment.LabelWithOri
 		// Check types, if the record was not just created.
 		if !record.item.CompatibleWith(item) {
 			return nil, nil, ItemTypeMismatchError{
-				OriginNode:        parse.OriginNode{Node: item.DefinedFrom()},
+				Node:              item.DefinedFrom(),
 				label:             label,
 				itemOrPlaceholder: item,
 				existingRecord:    record,
@@ -378,7 +378,7 @@ func (b *Builder) resolveTarget(target *graph.Target, record *builderRecord) ([]
 						}
 					default:
 						yield(graph.Resolution{}, ItemTypeMismatchError{
-							OriginNode:        parse.OriginNode{Node: dep.Origin},
+							Node:              dep.Origin,
 							label:             t.Label(),
 							itemOrPlaceholder: &graph.Target{},
 							existingRecord:    depRecord,
@@ -430,7 +430,7 @@ func (b *Builder) recordFor(label environment.Label, requestFrom parse.Node, ite
 		// Check types, if the record was not just created.
 		if !record.item.CompatibleWith(itemOrPlaceholder) {
 			return nil, ItemTypeMismatchError{
-				OriginNode:        parse.OriginNode{Node: requestFrom},
+				Node:              requestFrom,
 				label:             label,
 				itemOrPlaceholder: itemOrPlaceholder,
 				existingRecord:    record,

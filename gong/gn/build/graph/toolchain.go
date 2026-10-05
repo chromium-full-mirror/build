@@ -35,9 +35,7 @@ func NewToolchain(dir fs.SourceDir, scope *resolve.Scope, call *parse.FunctionCa
 	label := environment.Label{Dir: dir, Name: name}
 
 	toolchain := &Toolchain{
-		ItemInfo: ItemInfo{
-			label: label,
-		},
+		label: label,
 		Tools: make(map[string]*Tool),
 	}
 	toolchain.definedFrom = call

@@ -61,8 +61,8 @@ func ResolveLabel(currentDir fs.SourceDir, currentToolchain Label, input resolve
 	str := stringValue.RawGNString()
 	if str == "" {
 		return Label{}, &LabelFormatError{
-			OriginValue: resolve.OriginValue{Value: input},
-			message:     "Dependency string is empty.",
+			Value:   input,
+			message: "Dependency string is empty.",
 		}
 	}
 
@@ -83,8 +83,8 @@ func ResolveLabel(currentDir fs.SourceDir, currentToolchain Label, input resolve
 
 	if labelName == "" {
 		return Label{}, &LabelFormatError{
-			OriginValue: resolve.OriginValue{Value: input},
-			message:     "NOT YET IMPLEMENTED: Implicit target name not yet supported.",
+			Value:   input,
+			message: "NOT YET IMPLEMENTED: Implicit target name not yet supported.",
 		}
 	}
 
@@ -98,8 +98,8 @@ func ResolveLabel(currentDir fs.SourceDir, currentToolchain Label, input resolve
 		}
 		if toolchainName == "" {
 			return Label{}, &LabelFormatError{
-				OriginValue: resolve.OriginValue{Value: input},
-				message:     "NOT YET IMPLEMENTED: Implicit toolchain name not yet supported.",
+				Value:   input,
+				message: "NOT YET IMPLEMENTED: Implicit toolchain name not yet supported.",
 			}
 		}
 		// For now, naively derive the toolchain directory from the location.
@@ -169,16 +169,16 @@ func splitLabelComponents(str string, origin resolve.Value, isToolchain bool) (l
 		// Remove it now, and ensure we aren't parsing a nested toolchain.
 		if isToolchain {
 			return "", "", "", &LabelFormatError{
-				OriginValue: resolve.OriginValue{Value: origin},
-				message:     "Toolchain has a toolchain.",
-				helpText:    `Your toolchain definition (inside the parens) seems to itself have a toolchain. Don't do this.`,
+				Value:    origin,
+				message:  "Toolchain has a toolchain.",
+				helpText: `Your toolchain definition (inside the parens) seems to itself have a toolchain. Don't do this.`,
 			}
 		}
 		if tc[len(tc)-1] != ')' {
 			return "", "", "", &LabelFormatError{
-				OriginValue: resolve.OriginValue{Value: origin},
-				message:     "Bad toolchain name.",
-				helpText:    `Toolchain name must end in a ")" at the end of the label.`,
+				Value:    origin,
+				message:  "Bad toolchain name.",
+				helpText: `Toolchain name must end in a ")" at the end of the label.`,
 			}
 		}
 		tc = tc[:len(tc)-1]
@@ -191,8 +191,8 @@ func splitLabelComponents(str string, origin resolve.Value, isToolchain bool) (l
 	if loc == "" && name == "" {
 		// Can't use both implicit filename and name (":").
 		return "", "", "", &LabelFormatError{
-			OriginValue: resolve.OriginValue{Value: origin},
-			message:     "This doesn't specify a dependency.",
+			Value:   origin,
+			message: "This doesn't specify a dependency.",
 		}
 	}
 

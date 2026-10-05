@@ -51,9 +51,9 @@ func (stringHashFunction) Run(scope *resolve.Scope, call *parse.FunctionCallNode
 	// Check usage: Number of arguments.
 	if len(args) != 1 {
 		return nil, resolve.ArgumentCountError{
-			OriginFunction: resolve.OriginFunction{Call: call},
-			Msg:            "Wrong number of arguments to string_hash().",
-			Help:           "Expecting exactly one. usage: string_hash(string)",
+			Call: call,
+			Msg:  "Wrong number of arguments to string_hash().",
+			Help: "Expecting exactly one. usage: string_hash(string)",
 		}
 	}
 

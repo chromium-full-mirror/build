@@ -22,14 +22,14 @@ func (configFunction) Run(scope *resolve.Scope, call *parse.FunctionCallNode, ar
 		return nil, err
 	}
 	if ctx.isProcessingBuildConfig() {
-		return nil, ItemInBuildConfigError{OriginFunction: resolve.OriginFunction{Call: call}}
+		return nil, ItemInBuildConfigError{Call: call}
 	}
 
 	if len(args) != 1 {
 		return nil, resolve.ArgumentCountError{
-			OriginFunction: resolve.OriginFunction{Call: call},
-			Msg:            "Incorrect arguments.",
-			Help:           "This function requires a single string argument.",
+			Call: call,
+			Msg:  "Incorrect arguments.",
+			Help: "This function requires a single string argument.",
 		}
 	}
 	nameValue, err := resolve.AsValue[*resolve.StringValue](args[0])

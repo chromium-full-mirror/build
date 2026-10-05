@@ -152,11 +152,9 @@ func TestQuietUI_ChangeToWorkdir(t *testing.T) {
 			Stderr: &stderr,
 		}
 		c := &Command{
-			NinjaFlags: NinjaFlags{
-				outDir: ninjabuild.DirFlag{Dir: "out/Default"},
-				quiet:  true,
-				fname:  "build.ninja",
-			},
+			outDir: ninjabuild.DirFlag{Dir: "out/Default"},
+			quiet:  true,
+			fname:  "build.ninja",
 		}
 		_, err := c.changeToWorkdir(t.Context())
 		if err != nil {
@@ -179,12 +177,10 @@ func TestQuietUI_ChangeToWorkdir(t *testing.T) {
 			Stderr: &stderr,
 		}
 		c := &Command{
-			NinjaFlags: NinjaFlags{
-				outDir:  ninjabuild.DirFlag{Dir: "out/Default"},
-				quiet:   true,
-				subtool: "cleandead",
-				fname:   "build.ninja",
-			},
+			outDir:  ninjabuild.DirFlag{Dir: "out/Default"},
+			quiet:   true,
+			subtool: "cleandead",
+			fname:   "build.ninja",
 		}
 		_, err := c.changeToWorkdir(t.Context())
 		if err != nil {

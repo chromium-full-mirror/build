@@ -65,9 +65,9 @@ func (ToolFunction) Run(scope *resolve.Scope, call *parse.FunctionCallNode, args
 
 	if len(args) != 1 {
 		return nil, resolve.ArgumentCountError{
-			OriginFunction: resolve.OriginFunction{Call: call},
-			Msg:            "Incorrect arguments.",
-			Help:           "This function requires a single string argument.",
+			Call: call,
+			Msg:  "Incorrect arguments.",
+			Help: "This function requires a single string argument.",
 		}
 	}
 	nameValue, err := resolve.AsValue[*resolve.StringValue](args[0])
@@ -91,8 +91,8 @@ func (ToolFunction) Run(scope *resolve.Scope, call *parse.FunctionCallNode, args
 	gotCommand := v != nil
 	if gotCommand != wantCommand {
 		err := ToolError{
-			OriginNode: parse.OriginNode{Node: tool.definedFrom},
-			message:    "This tool's command is bad.",
+			Node:    tool.definedFrom,
+			message: "This tool's command is bad.",
 		}
 		if !wantCommand {
 			err.helpText = `This tool doesn't support "command".`

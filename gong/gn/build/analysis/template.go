@@ -22,9 +22,9 @@ func (t *template) IsTarget() bool    { return false }
 func (t *template) Run(scope *resolve.Scope, call *parse.FunctionCallNode, args []resolve.Value, block *parse.BlockNode) (resolve.Value, error) {
 	if len(args) == 0 {
 		return nil, resolve.ArgumentCountError{
-			OriginFunction: resolve.OriginFunction{Call: call},
-			Msg:            "Incorrect arguments.",
-			Help:           "This function requires a single string argument.",
+			Call: call,
+			Msg:  "Incorrect arguments.",
+			Help: "This function requires a single string argument.",
 		}
 	}
 	targetName := args[0]

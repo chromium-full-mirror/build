@@ -39,9 +39,9 @@ func (stringJoinFunction) Run(scope *resolve.Scope, call *parse.FunctionCallNode
 	// Check usage: Number of arguments.
 	if len(args) != 2 {
 		return nil, resolve.ArgumentCountError{
-			OriginFunction: resolve.OriginFunction{Call: call},
-			Msg:            "Wrong number of arguments to string_join().",
-			Help:           "Expecting exactly two. usage: string_join(separator, strings)",
+			Call: call,
+			Msg:  "Wrong number of arguments to string_join().",
+			Help: "Expecting exactly two. usage: string_join(separator, strings)",
 		}
 	}
 

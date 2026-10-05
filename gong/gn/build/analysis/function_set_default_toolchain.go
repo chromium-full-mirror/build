@@ -65,7 +65,7 @@ func (setDefaultToolchainFunction) Run(scope *resolve.Scope, call *parse.Functio
 	}
 
 	if !ctx.isProcessingBuildConfig() {
-		return nil, OutsideBuildConfigError{OriginFunction: resolve.OriginFunction{Call: call}}
+		return nil, OutsideBuildConfigError{Call: call}
 	}
 
 	// TODO: we should be a noop if the loader isn't expecting a default toolchain to be set (because it's already been set)

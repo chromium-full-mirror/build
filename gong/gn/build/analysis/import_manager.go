@@ -43,9 +43,9 @@ func (im *ImportManager) DoImport(file fs.SourceFile, nodeForErr parse.Node, des
 	if ctx, err := contextFromScope(destScope); err == nil {
 		if slices.Contains(ctx.importChain, file) {
 			return &ImportLoopError{
-				OriginNode: parse.OriginNode{Node: nodeForErr},
-				cause:      file,
-				chain:      ctx.importChain,
+				Node:  nodeForErr,
+				cause: file,
+				chain: ctx.importChain,
 			}
 		}
 	}

@@ -47,9 +47,9 @@ func (stringSplitFunction) Run(scope *resolve.Scope, call *parse.FunctionCallNod
 	// Check usage: argument count.
 	if len(args) != 1 && len(args) != 2 {
 		return nil, resolve.ArgumentCountError{
-			OriginFunction: resolve.OriginFunction{Call: call},
-			Msg:            "Wrong number of arguments to string_split().",
-			Help:           "Usage: string_split(str[, sep])",
+			Call: call,
+			Msg:  "Wrong number of arguments to string_split().",
+			Help: "Usage: string_split(str[, sep])",
 		}
 	}
 
@@ -70,9 +70,9 @@ func (stringSplitFunction) Run(scope *resolve.Scope, call *parse.FunctionCallNod
 		sep = sepVal.RawGNString()
 		if sep == "" {
 			return nil, resolve.ValueError{
-				OriginFunction: resolve.OriginFunction{Call: call},
-				Msg:            "Separator argument to string_split() cannot be empty string",
-				Help:           "Usage: string_split(str[, sep])",
+				Call: call,
+				Msg:  "Separator argument to string_split() cannot be empty string",
+				Help: "Usage: string_split(str[, sep])",
 			}
 		}
 	}

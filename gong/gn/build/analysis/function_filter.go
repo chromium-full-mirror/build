@@ -77,8 +77,8 @@ const (
 func runFilter(call *parse.FunctionCallNode, args []resolve.Value, selection filterSelection) (resolve.Value, error) {
 	if len(args) != 2 {
 		return nil, resolve.ArgumentCountError{
-			OriginFunction: resolve.OriginFunction{Call: call},
-			Msg:            "Expecting exactly two arguments.",
+			Call: call,
+			Msg:  "Expecting exactly two arguments.",
 		}
 	}
 

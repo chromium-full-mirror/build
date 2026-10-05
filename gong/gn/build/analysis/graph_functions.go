@@ -27,13 +27,13 @@ func (f targetFunction) Run(scope *resolve.Scope, call *parse.FunctionCallNode, 
 		return nil, err
 	}
 	if ctx.isProcessingBuildConfig() {
-		return nil, ItemInBuildConfigError{OriginFunction: resolve.OriginFunction{Call: call}}
+		return nil, ItemInBuildConfigError{Call: call}
 	}
 
 	if len(args) == 0 {
 		return nil, resolve.ArgumentCountError{
-			OriginFunction: resolve.OriginFunction{Call: call},
-			Msg:            "Target name is missing.",
+			Call: call,
+			Msg:  "Target name is missing.",
 		}
 	}
 	nameValue, err := resolve.AsValue[*resolve.StringValue](args[0])
@@ -61,14 +61,14 @@ func (f toolchainFunction) Run(scope *resolve.Scope, call *parse.FunctionCallNod
 		return nil, err
 	}
 	if ctx.isProcessingBuildConfig() {
-		return nil, ItemInBuildConfigError{OriginFunction: resolve.OriginFunction{Call: call}}
+		return nil, ItemInBuildConfigError{Call: call}
 	}
 
 	if len(args) == 0 {
 		return nil, resolve.ArgumentCountError{
-			OriginFunction: resolve.OriginFunction{Call: call},
-			Msg:            "Incorrect arguments.",
-			Help:           "This function requires a single string argument.",
+			Call: call,
+			Msg:  "Incorrect arguments.",
+			Help: "This function requires a single string argument.",
 		}
 	}
 	nameValue, err := resolve.AsValue[*resolve.StringValue](args[0])

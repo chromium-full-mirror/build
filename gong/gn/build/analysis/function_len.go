@@ -35,8 +35,8 @@ func (lenFunction) IsTarget() bool { return false }
 func (lenFunction) Run(_ *resolve.Scope, call *parse.FunctionCallNode, args []resolve.Value) (resolve.Value, error) {
 	if len(args) != 1 {
 		return nil, resolve.ArgumentCountError{
-			OriginFunction: resolve.OriginFunction{Call: call},
-			Msg:            "Expecting exactly one argument.",
+			Call: call,
+			Msg:  "Expecting exactly one argument.",
 		}
 	}
 

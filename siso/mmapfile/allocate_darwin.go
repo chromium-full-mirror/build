@@ -19,7 +19,7 @@ func allocate(f *os.File, size int64) error {
 		Offset:  0,
 		Length:  size,
 	}
-	err := unix.FcntlFstore(uintptr(f.Fd()), unix.F_PREALLOCATE, &fstore)
+	err := unix.FcntlFstore(f.Fd(), unix.F_PREALLOCATE, &fstore)
 	if err != nil {
 		return err
 	}

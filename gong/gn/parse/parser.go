@@ -57,8 +57,8 @@ func ParseExpression(tokens []syntax.Token) (Node, error) {
 	}
 	if !p.atEnd() {
 		return nil, TokenError{
-			OriginToken: syntax.OriginToken{Token: p.curOrLastToken()},
-			message:     "Trailing garbage",
+			Token:   p.curOrLastToken(),
+			message: "Trailing garbage",
 		}
 	}
 	return expr, nil
@@ -161,8 +161,8 @@ func (p *parser) parseFile() (Node, error) {
 	// https://gn.googlesource.com/gn/+/26baf4ba17029ceabd1b4aef1ab8690e13e58a63
 	if !p.atEnd() {
 		return nil, TokenError{
-			OriginToken: syntax.OriginToken{Token: p.curOrLastToken()},
-			message:     "Unexpected here, should be newline.",
+			Token:   p.curOrLastToken(),
+			message: "Unexpected here, should be newline.",
 		}
 	}
 	return &file, nil
@@ -186,16 +186,16 @@ func (p *parser) parseCondition() (Node, error) {
 	// Consume "if ("
 	if ifToken, ok := p.consumeOnly(syntax.TokenIf); !ok {
 		return nil, TokenError{
-			OriginToken: syntax.OriginToken{Token: p.curOrLastToken()},
-			message:     "Expected 'if'",
+			Token:   p.curOrLastToken(),
+			message: "Expected 'if'",
 		}
 	} else {
 		conditionNode.IfToken = ifToken
 	}
 	if _, ok := p.consumeOnly(syntax.TokenLeftParen); !ok {
 		return nil, TokenError{
-			OriginToken: syntax.OriginToken{Token: p.curOrLastToken()},
-			message:     "Expected '(' after 'if'",
+			Token:   p.curOrLastToken(),
+			message: "Expected '(' after 'if'",
 		}
 	}
 
@@ -217,16 +217,16 @@ func (p *parser) parseCondition() (Node, error) {
 	// Consume ")".
 	if _, ok := p.consumeOnly(syntax.TokenRightParen); !ok {
 		return nil, TokenError{
-			OriginToken: syntax.OriginToken{Token: p.curOrLastToken()},
-			message:     "Expected ')' after condition of 'if'",
+			Token:   p.curOrLastToken(),
+			message: "Expected ')' after condition of 'if'",
 		}
 	}
 
 	// Consume the true block.
 	if leftBrace, ok := p.consumeOnly(syntax.TokenLeftBrace); !ok {
 		return nil, TokenError{
-			OriginToken: syntax.OriginToken{Token: p.curOrLastToken()},
-			message:     "Expected '{' to start 'if' block",
+			Token:   p.curOrLastToken(),
+			message: "Expected '{' to start 'if' block",
 		}
 	} else {
 		if block, err := p.parseBlock(leftBrace, DiscardsResult); err == nil {
@@ -252,8 +252,8 @@ func (p *parser) parseCondition() (Node, error) {
 			}
 		} else {
 			return nil, TokenError{
-				OriginToken: syntax.OriginToken{Token: p.curOrLastToken()},
-				message:     "Expected '{' or 'if' after 'else'",
+				Token:   p.curOrLastToken(),
+				message: "Expected '{' or 'if' after 'else'",
 			}
 		}
 	}
@@ -308,8 +308,8 @@ func (p *parser) parsePrefix(token syntax.Token) (Node, error) {
 		}
 		if _, ok := p.consumeOnly(syntax.TokenRightParen); !ok {
 			return nil, TokenError{
-				OriginToken: syntax.OriginToken{Token: p.curToken()},
-				message:     "Expected ')'",
+				Token:   p.curToken(),
+				message: "Expected ')'",
 			}
 		}
 		return expr, nil
@@ -321,8 +321,8 @@ func (p *parser) parsePrefix(token syntax.Token) (Node, error) {
 		}
 		if _, ok := p.consumeOnly(syntax.TokenRightBracket); !ok {
 			return nil, TokenError{
-				OriginToken: syntax.OriginToken{Token: p.curToken()},
-				message:     "Expected ']'",
+				Token:   p.curToken(),
+				message: "Expected ']'",
 			}
 		}
 		return &list, nil
@@ -335,7 +335,7 @@ func (p *parser) parsePrefix(token syntax.Token) (Node, error) {
 		return &BlockCommentNode{token}, nil
 	}
 	return nil, TokenError{
-		OriginToken: syntax.OriginToken{Token: token},
+		Token: token,
 		// Error with single quotes to match GN, rather than using %q.
 		message: fmt.Sprintf("Unexpected token '%s'", token.Value()),
 	}
@@ -360,8 +360,8 @@ func (p *parser) parseInfix(left Node, token syntax.Token) (Node, error) {
 		}
 		if value == nil {
 			return nil, TokenError{
-				OriginToken: syntax.OriginToken{Token: token},
-				message:     "Expected right-hand side of assignment.",
+				Token:   token,
+				message: "Expected right-hand side of assignment.",
 			}
 		}
 		return &BinaryOpNode{
@@ -385,9 +385,9 @@ func (p *parser) parseInfix(left Node, token syntax.Token) (Node, error) {
 		rightIdentifier, isIdentifier := right.(*IdentifierNode)
 		if !isIdentifier {
 			return nil, TokenError{
-				OriginToken: syntax.OriginToken{Token: token},
-				message:     `Expected identifier for right-hand-side of "."`,
-				helpText:    "Good: a.cookies\nBad: a.42\nLooks good but still bad: a.cookies()",
+				Token:    token,
+				message:  `Expected identifier for right-hand-side of "."`,
+				helpText: "Good: a.cookies\nBad: a.42\nLooks good but still bad: a.cookies()",
 			}
 		}
 		return &AccessorNode{
@@ -409,8 +409,8 @@ func (p *parser) parseInfix(left Node, token syntax.Token) (Node, error) {
 		}
 		if _, ok := p.consumeOnly(syntax.TokenRightBracket); !ok {
 			return nil, TokenError{
-				OriginToken: syntax.OriginToken{Token: token},
-				message:     "Expecting ']' after subscript.",
+				Token:   token,
+				message: "Expecting ']' after subscript.",
 			}
 		}
 		return &AccessorNode{
@@ -431,7 +431,7 @@ func (p *parser) parseInfix(left Node, token syntax.Token) (Node, error) {
 		if err != nil {
 			if _, ok := errors.AsType[*EOF](err); ok {
 				return nil, TokenError{
-					OriginToken: syntax.OriginToken{Token: token},
+					Token: token,
 					// Error with single quotes to match GN, rather than using %q.
 					message: fmt.Sprintf("Expected right-hand side for '%s'.", token.Value()),
 				}
@@ -447,8 +447,8 @@ func (p *parser) parseInfix(left Node, token syntax.Token) (Node, error) {
 		return p.parseIdentifierOrCall(left, token)
 	}
 	return nil, TokenError{
-		OriginToken: syntax.OriginToken{Token: token},
-		message:     fmt.Sprintf("don't know how to parse %q yet", token.Value()),
+		Token:   token,
+		message: fmt.Sprintf("don't know how to parse %q yet", token.Value()),
 	}
 }
 
@@ -494,8 +494,8 @@ func (p *parser) parseIdentifierOrCall(left Node, token syntax.Token) (Node, err
 			}
 			if _, ok := p.consumeOnly(syntax.TokenRightParen); !ok {
 				return nil, TokenError{
-					OriginToken: syntax.OriginToken{Token: token},
-					message:     "Expected ')' after call",
+					Token:   token,
+					message: "Expected ')' after call",
 				}
 			}
 			args = &parsedList
@@ -547,8 +547,8 @@ func (p *parser) parseList(startToken syntax.Token, stopBefore syntax.TokenType,
 		if !firstTime && !lastWasComma {
 			// Require commas separate things in lists.
 			return ListNode{}, TokenError{
-				OriginToken: syntax.OriginToken{Token: startToken},
-				message:     "Expected comma between items.",
+				Token:   startToken,
+				message: "Expected comma between items.",
 			}
 		}
 		firstTime = false
@@ -563,8 +563,8 @@ func (p *parser) parseList(startToken syntax.Token, stopBefore syntax.TokenType,
 		list.appendItem(expr)
 		if p.atEnd() {
 			return ListNode{}, TokenError{
-				OriginToken: syntax.OriginToken{Token: startToken},
-				message:     "Unexpected end of file in list.",
+				Token:   startToken,
+				message: "Unexpected end of file in list.",
 			}
 		}
 		// TODO: If GN sees BlockCommentNode as last node it will pretend a
@@ -573,8 +573,8 @@ func (p *parser) parseList(startToken syntax.Token, stopBefore syntax.TokenType,
 	}
 	if lastWasComma && !allowTrailingComma {
 		return ListNode{}, TokenError{
-			OriginToken: syntax.OriginToken{Token: startToken},
-			message:     "Trailing comma",
+			Token:   startToken,
+			message: "Trailing comma",
 		}
 	}
 	// Do not consume end node, this should be responsibility of the caller.

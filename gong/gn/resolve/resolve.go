@@ -26,8 +26,8 @@ func ExecuteNode(n parse.Node, s *Scope) (Value, error) {
 			return executeScopeAccess(n.Base, n.Member.Value.Value(), n.Member.LocationRange(), s)
 		}
 		return nil, ASTError{
-			OriginNode: parse.OriginNode{Node: n},
-			details:    "Found an AccessorNode without a subscript or member defined.",
+			Node:    n,
+			details: "Found an AccessorNode without a subscript or member defined.",
 		}
 
 	case *parse.BinaryOpNode:
@@ -56,7 +56,7 @@ func ExecuteNode(n parse.Node, s *Scope) (Value, error) {
 			switch cur.(type) {
 			case *parse.ListNode, *parse.LiteralNode, *parse.UnaryOpNode, *parse.IdentifierNode, *parse.BlockNode:
 				return nil, FloatingScopeError{
-					OriginNode: parse.OriginNode{Node: cur},
+					Node: cur,
 				}
 			}
 			_, err = ExecuteNode(cur, execScope)
@@ -84,7 +84,7 @@ func ExecuteNode(n parse.Node, s *Scope) (Value, error) {
 		info, ok := s.Function(name.Value())
 		if !ok {
 			return nil, UnknownFunctionError{
-				OriginToken: syntax.OriginToken{Token: name},
+				Token: name,
 			}
 		}
 		argsValue, err := ExecuteNode(n.Args, s)
@@ -124,7 +124,7 @@ statement or a target declaration.`,
 	case *parse.IdentifierNode:
 		value := s.Value(n.Value.Value(), true)
 		if value == nil {
-			return nil, UndefinedIdentifierError{OriginToken: syntax.OriginToken{Token: n.Value}}
+			return nil, UndefinedIdentifierError{Token: n.Value}
 		}
 		// TODO: EnsureNotReadingFromSameDeclareArgs
 		value.setOrigin(n)
@@ -170,20 +170,20 @@ statement or a target declaration.`,
 			if (strings.HasPrefix(s, "0") && len(s) > 1) || strings.HasPrefix(s, "-0") {
 				if s == "-0" {
 					return nil, IntegerLiteralError{
-						OriginNode: parse.OriginNode{Node: n},
-						message:    "Negative zero doesn't make sense",
+						Node:    n,
+						message: "Negative zero doesn't make sense",
 					}
 				}
 				return nil, IntegerLiteralError{
-					OriginNode: parse.OriginNode{Node: n},
-					message:    "Leading zeros not allowed",
+					Node:    n,
+					message: "Leading zeros not allowed",
 				}
 			}
 			i, err := strconv.ParseInt(s, 10, 64)
 			if err != nil {
 				return nil, IntegerLiteralError{
-					OriginNode: parse.OriginNode{Node: n},
-					message:    "This does not look like an integer",
+					Node:    n,
+					message: "This does not look like an integer",
 				}
 			}
 			return &IntegerValue{
@@ -199,8 +199,8 @@ statement or a target declaration.`,
 			return str, nil
 		}
 		return nil, ASTError{
-			OriginNode: parse.OriginNode{Node: n},
-			details:    "Found a LiteralNode that wasn't a boolean, integer, or string",
+			Node:    n,
+			details: "Found a LiteralNode that wasn't a boolean, integer, or string",
 		}
 
 	case *parse.BlockCommentNode:
@@ -224,8 +224,8 @@ statement or a target declaration.`,
 			// Additional check to what C++ GN does, it always assumes the true block exists.
 			if n.IfTrue == nil {
 				return nil, ASTError{
-					OriginNode: parse.OriginNode{Node: n},
-					details:    "Found a ConditionNode without true block",
+					Node:    n,
+					details: "Found a ConditionNode without true block",
 				}
 			}
 			// Execute the true block if the boolean evaluated to true.
@@ -243,8 +243,8 @@ statement or a target declaration.`,
 	}
 
 	return nil, ASTError{
-		OriginNode: parse.OriginNode{Node: n},
-		details:    "Unknown node type.",
+		Node:    n,
+		details: "Unknown node type.",
 	}
 }
 
@@ -253,7 +253,7 @@ statement or a target declaration.`,
 func executeSubscriptAccess(n *parse.AccessorNode, scope *Scope) (Value, error) {
 	baseValue := scope.Value(n.Base.Value(), false)
 	if baseValue == nil {
-		return nil, UndefinedIdentifierError{OriginToken: syntax.OriginToken{Token: n.Base}}
+		return nil, UndefinedIdentifierError{Token: n.Base}
 	}
 	switch baseValue.valueType() {
 	case ValueTypeList:
@@ -335,9 +335,9 @@ func computeAndValidateListIndex(n *parse.AccessorNode, s *Scope, maxLen int) (i
 	indexInt := integerValue.value
 	if maxLen == 0 || indexInt < 0 || indexInt >= int64(maxLen) {
 		return -1, SubscriptError{
-			OriginNode: parse.OriginNode{Node: n.Subscript},
-			index:      indexInt,
-			len:        maxLen,
+			Node:  n.Subscript,
+			index: indexInt,
+			len:   maxLen,
 		}
 	}
 	return indexInt, nil

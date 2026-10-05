@@ -49,11 +49,9 @@ func (s *Schema) Generate(dir fs.SourceDir, scope *resolve.Scope, toolchain envi
 	}
 
 	target := &Target{
-		ItemInfo: ItemInfo{
-			label:       label,
-			definedFrom: call,
-		},
-		Schema: s,
+		label:       label,
+		definedFrom: call,
+		Schema:      s,
 		Values: map[string]ProcessedValue{
 			"name": StringValue{
 				origin: nameValue,

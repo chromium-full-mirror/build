@@ -278,11 +278,9 @@ func (s *tokenizer) advanceToEndOfToken(location Location, tokenType TokenType) 
 			c := s.curChar()
 			if !s.isCurrentWhitespace() && !couldBeOperator(c) && !isScoperChar(c) && c != ',' {
 				return NonNumericError{
-					err: err{
-						start:   location,
-						end:     s.getCurrentLocation(),
-						message: "This is not a valid number.",
-					},
+					start:   location,
+					end:     s.getCurrentLocation(),
+					message: "This is not a valid number.",
 				}
 			}
 		}
@@ -293,12 +291,10 @@ func (s *tokenizer) advanceToEndOfToken(location Location, tokenType TokenType) 
 		for {
 			if s.atEnd() {
 				return UnterminatedStringError{
-					err: err{
-						start:    location,
-						end:      s.getCurrentLocation(),
-						message:  "Unterminated string literal.",
-						helpText: "Don't leave me hanging like this!",
-					},
+					start:    location,
+					end:      s.getCurrentLocation(),
+					message:  "Unterminated string literal.",
+					helpText: "Don't leave me hanging like this!",
 				}
 			}
 			if s.isCurrentStringTerminator(initial) {
@@ -306,11 +302,9 @@ func (s *tokenizer) advanceToEndOfToken(location Location, tokenType TokenType) 
 				break
 			} else if s.isCurrentNewline() {
 				return NewlineInStringConstant{
-					err: err{
-						start:   location,
-						end:     s.getCurrentLocation(),
-						message: "Newline in string constant.",
-					},
+					start:   location,
+					end:     s.getCurrentLocation(),
+					message: "Newline in string constant.",
 				}
 			}
 			s.advance()
@@ -348,12 +342,10 @@ func (s *tokenizer) advanceToEndOfToken(location Location, tokenType TokenType) 
 	default:
 		// Should not occur. Non-exhaustive switch.
 		return IllegalStateError{
-			err: err{
-				start:    location,
-				end:      s.getCurrentLocation(),
-				message:  "Everything is all messed up",
-				helpText: "Please insert system disk in drive A: and press any key.",
-			},
+			start:    location,
+			end:      s.getCurrentLocation(),
+			message:  "Everything is all messed up",
+			helpText: "Please insert system disk in drive A: and press any key.",
 		}
 	}
 	return nil
@@ -442,11 +434,9 @@ func (s *tokenizer) getErrorForInvalidToken(location Location) error {
 		}
 	}
 	return InvalidTokenError{
-		err: err{
-			start:    location,
-			message:  "Invalid token.",
-			helpText: help,
-		},
+		start:    location,
+		message:  "Invalid token.",
+		helpText: help,
 	}
 }
 

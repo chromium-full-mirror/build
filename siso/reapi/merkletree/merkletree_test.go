@@ -32,12 +32,10 @@ func TestSet(t *testing.T) {
 		wantDirs []string
 	}{
 		{
-			Entry: Entry{
-				Name:         "third_party/llvm-build/Release+Asserts/bin/clang",
-				Data:         blob.FromBytes(digest.SHA256, "clang binary", []byte("clang binary")),
-				IsExecutable: true,
-			},
-			wantName: "clang",
+			Name:         "third_party/llvm-build/Release+Asserts/bin/clang",
+			Data:         blob.FromBytes(digest.SHA256, "clang binary", []byte("clang binary")),
+			IsExecutable: true,
+			wantName:     "clang",
 			wantNode: &rpb.FileNode{
 				Name: "third_party/llvm-build/Release+Asserts/bin/clang",
 			},
@@ -50,10 +48,8 @@ func TestSet(t *testing.T) {
 			},
 		},
 		{
-			Entry: Entry{
-				Name:   "third_party/llvm-build/Release+Asserts/bin/clang++",
-				Target: "clang",
-			},
+			Name:     "third_party/llvm-build/Release+Asserts/bin/clang++",
+			Target:   "clang",
 			wantName: "clang++",
 			wantNode: &rpb.SymlinkNode{
 				Name:   "third_party/llvm-build/Release+Asserts/bin/clang++",
@@ -68,9 +64,7 @@ func TestSet(t *testing.T) {
 			},
 		},
 		{
-			Entry: Entry{
-				Name: "path/../name",
-			},
+			Name: "path/../name",
 			// create 'path' dir and 'name' dir.
 			wantDirs: []string{
 				"",
@@ -79,16 +73,12 @@ func TestSet(t *testing.T) {
 			},
 		},
 		{
-			Entry: Entry{
-				Name: "../path/name",
-			},
+			Name: "../path/name",
 			// out of root.
 			wantErr: true,
 		},
 		{
-			Entry: Entry{
-				Name: "path/name/..",
-			},
+			Name: "path/name/..",
 			// create 'path/name' dir.
 			wantDirs: []string{
 				"",
@@ -97,9 +87,7 @@ func TestSet(t *testing.T) {
 			},
 		},
 		{
-			Entry: Entry{
-				Name: "path/name/.",
-			},
+			Name: "path/name/.",
 			wantDirs: []string{
 				"",
 				"path",
@@ -107,9 +95,7 @@ func TestSet(t *testing.T) {
 			},
 		},
 		{
-			Entry: Entry{
-				Name: "path/./name",
-			},
+			Name: "path/./name",
 			wantDirs: []string{
 				"",
 				"path",
@@ -117,9 +103,7 @@ func TestSet(t *testing.T) {
 			},
 		},
 		{
-			Entry: Entry{
-				Name: "path//name",
-			},
+			Name: "path//name",
 			wantDirs: []string{
 				"",
 				"path",
@@ -127,30 +111,22 @@ func TestSet(t *testing.T) {
 			},
 		},
 		{
-			Entry: Entry{
-				Name: "..",
-			},
+			Name: "..",
 			// out of root.
 			wantErr: true,
 		},
 		{
-			Entry: Entry{
-				Name: "path/name/.",
-				Data: blob.FromBytes(digest.SHA256, "file", []byte("file")),
-			},
+			Name:    "path/name/.",
+			Data:    blob.FromBytes(digest.SHA256, "file", []byte("file")),
 			wantErr: true,
 		},
 		{
-			Entry: Entry{
-				Name: "path/name/..",
-				Data: blob.FromBytes(digest.SHA256, "file", []byte("file")),
-			},
+			Name:    "path/name/..",
+			Data:    blob.FromBytes(digest.SHA256, "file", []byte("file")),
 			wantErr: true,
 		},
 		{
-			Entry: Entry{
-				Name: "path/name/../../foo",
-			},
+			Name: "path/name/../../foo",
 			// "foo" dir
 			wantDirs: []string{
 				"",
@@ -160,10 +136,8 @@ func TestSet(t *testing.T) {
 			},
 		},
 		{
-			Entry: Entry{
-				Name: "path/name/../../foo",
-				Data: blob.FromBytes(digest.SHA256, "file", []byte("file")),
-			},
+			Name: "path/name/../../foo",
+			Data: blob.FromBytes(digest.SHA256, "file", []byte("file")),
 			// "foo" file
 			wantName: "foo",
 			wantNode: &rpb.FileNode{
@@ -176,9 +150,7 @@ func TestSet(t *testing.T) {
 			},
 		},
 		{
-			Entry: Entry{
-				Name: "path/name/../..",
-			},
+			Name: "path/name/../..",
 			// root dir
 			wantDirs: []string{
 				"",
@@ -187,24 +159,18 @@ func TestSet(t *testing.T) {
 			},
 		},
 		{
-			Entry: Entry{
-				Name: "path/name/../..",
-				Data: blob.FromBytes(digest.SHA256, "file", []byte("file")),
-			},
+			Name: "path/name/../..",
+			Data: blob.FromBytes(digest.SHA256, "file", []byte("file")),
 			// .. should not be file.
 			wantErr: true,
 		},
 		{
-			Entry: Entry{
-				Name: "path/name/../../../path/foo",
-			},
+			Name: "path/name/../../../path/foo",
 			// go outside of root.
 			wantErr: true,
 		},
 		{
-			Entry: Entry{
-				Name: "/full/path/name",
-			},
+			Name:    "/full/path/name",
 			wantErr: true,
 		},
 	} {

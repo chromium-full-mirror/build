@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"go.chromium.org/build/gong/gn/build/fs"
-	"go.chromium.org/build/gong/gn/resolve"
 )
 
 // ConfigValues holds GN config() values.
@@ -108,8 +107,8 @@ func extractFrameworkList(values map[string]ProcessedValue, key string) ([]strin
 		for _, str := range slv.list {
 			if !strings.HasSuffix(str, ".framework") {
 				return nil, &FrameworkMissingExtension{
-					OriginValue: resolve.OriginValue{Value: v.value()},
-					framework:   str,
+					Value:     v.value(),
+					framework: str,
 				}
 			}
 		}

@@ -315,7 +315,7 @@ func prepareAssignOp(opNode *parse.BinaryOpNode, scope *Scope) (lvalue valueDest
 			// TODO(b/388723392): GN makes an error "Suspicious in-place modification" with a detailed
 			// help message if the value is found in a parent scope.
 			// But we don't support import() yet, so there's no point in doing this currently.
-			return nil, nil, UndefinedIdentifierError{OriginToken: syntax.OriginToken{Token: left.Base}}
+			return nil, nil, UndefinedIdentifierError{Token: left.Base}
 		}
 		if left.Subscript != nil {
 			// List access `a[b] = c`, where base = `a`.
@@ -353,15 +353,15 @@ func prepareAssignOp(opNode *parse.BinaryOpNode, scope *Scope) (lvalue valueDest
 			lvalue = scopeValue.scope.access(left.Member.Value)
 		} else {
 			return nil, nil, ASTError{
-				OriginNode: parse.OriginNode{Node: opNode},
-				details:    "Got an AccessorNode without a member or subscript.",
+				Node:    opNode,
+				details: "Got an AccessorNode without a member or subscript.",
 			}
 		}
 
 	default:
 		return nil, nil, ASTError{
-			OriginNode: parse.OriginNode{Node: opNode},
-			details:    "Got a BinaryOpNode for assign operation where lvalue was not an ident, scope, list.",
+			Node:    opNode,
+			details: "Got a BinaryOpNode for assign operation where lvalue was not an ident, scope, list.",
 		}
 	}
 	// Then prepare rvalue.
@@ -563,7 +563,7 @@ func executeBinaryOperator(opNode *parse.BinaryOpNode, scope *Scope) (Value, err
 	}
 
 	return nil, ASTError{
-		OriginNode: parse.OriginNode{Node: opNode},
-		details:    fmt.Sprintf("Unrecognized binary operation %q", opNode.Op.Value()),
+		Node:    opNode,
+		details: fmt.Sprintf("Unrecognized binary operation %q", opNode.Op.Value()),
 	}
 }

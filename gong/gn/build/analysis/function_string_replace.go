@@ -44,9 +44,9 @@ func (stringReplaceFunction) IsTarget() bool { return false }
 func (stringReplaceFunction) Run(scope *resolve.Scope, call *parse.FunctionCallNode, args []resolve.Value) (resolve.Value, error) {
 	if len(args) < 3 || len(args) > 4 {
 		return nil, resolve.ArgumentCountError{
-			OriginFunction: resolve.OriginFunction{Call: call},
-			Msg:            "Wrong number of arguments to string_replace().",
-			Help:           "Usage: string_replace(str, old, new[, max])",
+			Call: call,
+			Msg:  "Wrong number of arguments to string_replace().",
+			Help: "Usage: string_replace(str, old, new[, max])",
 		}
 	}
 
@@ -77,9 +77,9 @@ func (stringReplaceFunction) Run(scope *resolve.Scope, call *parse.FunctionCallN
 		max = iv.Value()
 		if max <= 0 {
 			return nil, resolve.ValueError{
-				OriginFunction: resolve.OriginFunction{Call: call},
-				Msg:            "Requested number of replacements is not positive.",
-				Help:           "Usage: string_replace(str, old, new[, max])",
+				Call: call,
+				Msg:  "Requested number of replacements is not positive.",
+				Help: "Usage: string_replace(str, old, new[, max])",
 			}
 		}
 	}

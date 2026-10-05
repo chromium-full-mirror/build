@@ -114,7 +114,7 @@ type scopeAccess struct {
 // ensureValue implements valueDestination.
 func (a scopeAccess) ensureValue() error {
 	if a.scope.Value(a.name.Value(), false) == nil {
-		return UndefinedIdentifierError{OriginToken: syntax.OriginToken{Token: a.name}}
+		return UndefinedIdentifierError{Token: a.name}
 	}
 	return nil
 }

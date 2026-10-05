@@ -29,9 +29,9 @@ func NewOriginlessListValue(list []Value) *ListValue {
 func (v *ListValue) access(index int64, origin parse.Node) (valueDestination, error) {
 	if len(v.list) == 0 || index < 0 || index >= int64(len(v.list)) {
 		return nil, SubscriptError{
-			OriginNode: parse.OriginNode{Node: origin},
-			index:      index,
-			len:        len(v.list),
+			Node:  origin,
+			index: index,
+			len:   len(v.list),
 		}
 	}
 	return listValue{

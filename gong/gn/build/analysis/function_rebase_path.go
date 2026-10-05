@@ -182,8 +182,8 @@ func (rebasePathFunction) Run(scope *resolve.Scope, call *parse.FunctionCallNode
 
 	if len(args) < 1 || len(args) > 3 {
 		return nil, resolve.ArgumentCountError{
-			OriginFunction: resolve.OriginFunction{Call: call},
-			Msg:            "Wrong # of arguments for rebase_path.",
+			Call: call,
+			Msg:  "Wrong # of arguments for rebase_path.",
 		}
 	}
 

@@ -72,10 +72,8 @@ func NewConfig(dir fs.SourceDir, scope *resolve.Scope, toolchain environment.Lab
 	}
 
 	cfg := &Config{
-		ItemInfo: ItemInfo{
-			label:       label,
-			definedFrom: call,
-		},
+		label:         label,
+		definedFrom:   call,
 		DefinedValues: make(map[string]ProcessedValue),
 	}
 

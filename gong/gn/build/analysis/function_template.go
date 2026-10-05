@@ -170,8 +170,8 @@ func (templateFunction) IsTarget() bool { return false }
 func (templateFunction) Run(scope *resolve.Scope, call *parse.FunctionCallNode, args []resolve.Value, block *parse.BlockNode) (resolve.Value, error) {
 	if len(args) != 1 {
 		return nil, resolve.ArgumentCountError{
-			OriginFunction: resolve.OriginFunction{Call: call},
-			Msg:            "Need exactly one string arg to template.",
+			Call: call,
+			Msg:  "Need exactly one string arg to template.",
 		}
 	}
 
@@ -185,8 +185,8 @@ func (templateFunction) Run(scope *resolve.Scope, call *parse.FunctionCallNode, 
 	// and overriding inbuilt targets (allowed).
 	if _, found := scope.Function(name); found {
 		return nil, NotImplementedError{
-			OriginFunction: resolve.OriginFunction{Call: call},
-			what:           "overriding existing functions",
+			Call: call,
+			what: "overriding existing functions",
 		}
 	}
 

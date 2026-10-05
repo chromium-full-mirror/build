@@ -42,9 +42,9 @@ type SimpleFunctionInfo interface {
 func EnsureSingleStringArg(function *parse.FunctionCallNode, args []Value) (*StringValue, error) {
 	if len(args) != 1 {
 		return nil, ArgumentCountError{
-			OriginFunction: OriginFunction{Call: function},
-			Msg:            "Incorrect arguments.",
-			Help:           "This function requires a single string argument.",
+			Call: function,
+			Msg:  "Incorrect arguments.",
+			Help: "This function requires a single string argument.",
 		}
 	}
 	return AsValue[*StringValue](args[0])
@@ -95,8 +95,8 @@ func (AssertFunction) Run(scope *Scope, call *parse.FunctionCallNode, args []Val
 	if !assertValue.value {
 		// TODO: use args[0].origin to add extra hint "this is where it was set"
 		return nil, AssertError{
-			OriginFunction: OriginFunction{Call: call},
-			Details:        assertMessage,
+			Call:    call,
+			Details: assertMessage,
 		}
 	}
 	return nil, nil
@@ -133,9 +133,9 @@ func (AssertFailureFunction) IsTarget() bool { return false }
 func (AssertFailureFunction) Run(scope *Scope, call *parse.FunctionCallNode, args []Value, block *parse.BlockNode) (Value, error) {
 	if len(args) < 1 || len(args) > 2 {
 		return nil, ArgumentCountError{
-			OriginFunction: OriginFunction{Call: call},
-			Msg:            "Wrong number of arguments for assert_failure.",
-			Help:           fmt.Sprintf("assert_failure() takes one or two arguments, but %d were given.", len(args))}
+			Call: call,
+			Msg:  "Wrong number of arguments for assert_failure.",
+			Help: fmt.Sprintf("assert_failure() takes one or two arguments, but %d were given.", len(args))}
 	}
 
 	_, err := ExecuteNode(block, scope)
@@ -150,8 +150,8 @@ func (AssertFailureFunction) Run(scope *Scope, call *parse.FunctionCallNode, arg
 		assertMessage := assertMessageValue.value
 		if gnErr.Message() != assertMessage {
 			return nil, AssertError{
-				OriginFunction: OriginFunction{Call: call},
-				Details:        fmt.Sprintf("Wanted %q, got %q", assertMessage, gnErr.Message()),
+				Call:    call,
+				Details: fmt.Sprintf("Wanted %q, got %q", assertMessage, gnErr.Message()),
 			}
 		}
 
@@ -166,8 +166,8 @@ func (AssertFailureFunction) Run(scope *Scope, call *parse.FunctionCallNode, arg
 			helpMessage := helpMessageValue.value
 			if gnErr.HelpText() != helpMessage {
 				return nil, AssertError{
-					OriginFunction: OriginFunction{Call: call},
-					Details:        fmt.Sprintf("Wanted %q, got %q", helpMessage, gnErr.HelpText()),
+					Call:    call,
+					Details: fmt.Sprintf("Wanted %q, got %q", helpMessage, gnErr.HelpText()),
 				}
 			}
 		}
@@ -175,13 +175,13 @@ func (AssertFailureFunction) Run(scope *Scope, call *parse.FunctionCallNode, arg
 	}
 	if err != nil {
 		return nil, AssertError{
-			OriginFunction: OriginFunction{Call: call},
-			Details:        fmt.Sprintf("Non-GN error encountered during execution of this block: %v", err),
+			Call:    call,
+			Details: fmt.Sprintf("Non-GN error encountered during execution of this block: %v", err),
 		}
 	}
 	return nil, AssertError{
-		OriginFunction: OriginFunction{Call: call},
-		Details:        "Block did not fail.",
+		Call:    call,
+		Details: "Block did not fail.",
 	}
 }
 
@@ -196,8 +196,8 @@ func (mockFunction) IsTarget() bool    { return false }
 func (f *mockFunction) Run(scope *Scope, call *parse.FunctionCallNode, args []Value) (Value, error) {
 	if len(args) != 1 {
 		return nil, ArgumentCountError{
-			OriginFunction: OriginFunction{Call: call},
-			Msg:            "Expected 1 argument",
+			Call: call,
+			Msg:  "Expected 1 argument",
 		}
 	}
 	intVal, ok := args[0].(*IntegerValue)

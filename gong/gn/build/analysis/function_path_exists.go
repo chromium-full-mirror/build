@@ -32,8 +32,8 @@ func (pathExistsFunction) IsTarget() bool { return false }
 func (pathExistsFunction) Run(scope *resolve.Scope, call *parse.FunctionCallNode, args []resolve.Value) (resolve.Value, error) {
 	if len(args) != 1 {
 		return nil, resolve.ArgumentCountError{
-			OriginFunction: resolve.OriginFunction{Call: call},
-			Msg:            "Expecting exactly one argument.",
+			Call: call,
+			Msg:  "Expecting exactly one argument.",
 		}
 	}
 	pathVal, err := resolve.AsValue[*resolve.StringValue](args[0])
