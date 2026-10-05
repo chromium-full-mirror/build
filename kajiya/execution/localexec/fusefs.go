@@ -412,35 +412,33 @@ func MountCASFS(mountpoint string) (*CASRoot, *fuse.Server, error) {
 		AttrTimeout:     &cacheTimeout,
 		EntryTimeout:    &cacheTimeout,
 		NegativeTimeout: &cacheTimeout,
-		MountOptions: fuse.MountOptions{
-			FsName: "kajiya-cas",
-			Name:   "kajiya",
-			// DirectMount uses syscall.Mount instead of the fusermount
-			// helper, avoiding the overhead of spawning a subprocess.
-			DirectMount: true,
-			// Symlinks in CAS are immutable, so the kernel can cache
-			// Readlink results indefinitely.
-			EnableSymlinkCaching: true,
-			// The FUSE layer has no extended attributes. Returning ENOSYS
-			// once tells the kernel to skip all future xattr queries,
-			// which avoids round-trips from overlayfs checking for
-			// user.overlay.opaque on lower-layer directories.
-			DisableXAttrs: true,
-			// Conditionally disable the splice fast path based on the
-			// pipe-user-pages-soft limit. When set to "unlimited", the
-			// splice fast path can be used safely, otherwise it is
-			// disabled to prevent F_SETPIPE_SZ failures under heavy
-			// parallel reads.
-			DisableSplice: disableSplice,
-			// Use 1 MiB buffers to reduce kernel-userspace round-trips
-			// for large file reads.
-			MaxWrite:     1 << 20,
-			MaxReadAhead: 1 << 20,
-			// Allow the kernel to queue more async I/O requests (readahead,
-			// async reads) before blocking. The default of 12 is far too low
-			// for parallel build actions.
-			MaxBackground: 512,
-		},
+		FsName:          "kajiya-cas",
+		Name:            "kajiya",
+		// DirectMount uses syscall.Mount instead of the fusermount
+		// helper, avoiding the overhead of spawning a subprocess.
+		DirectMount: true,
+		// Symlinks in CAS are immutable, so the kernel can cache
+		// Readlink results indefinitely.
+		EnableSymlinkCaching: true,
+		// The FUSE layer has no extended attributes. Returning ENOSYS
+		// once tells the kernel to skip all future xattr queries,
+		// which avoids round-trips from overlayfs checking for
+		// user.overlay.opaque on lower-layer directories.
+		DisableXAttrs: true,
+		// Conditionally disable the splice fast path based on the
+		// pipe-user-pages-soft limit. When set to "unlimited", the
+		// splice fast path can be used safely, otherwise it is
+		// disabled to prevent F_SETPIPE_SZ failures under heavy
+		// parallel reads.
+		DisableSplice: disableSplice,
+		// Use 1 MiB buffers to reduce kernel-userspace round-trips
+		// for large file reads.
+		MaxWrite:     1 << 20,
+		MaxReadAhead: 1 << 20,
+		// Allow the kernel to queue more async I/O requests (readahead,
+		// async reads) before blocking. The default of 12 is far too low
+		// for parallel build actions.
+		MaxBackground:   512,
 		NullPermissions: true,
 	}
 
