@@ -107,7 +107,7 @@ func (u *uploadOp) done(err error) {
 	u.once.Do(func() {
 		u.err = err
 		if err == nil {
-			u.c.knownDigests.CompareAndSwap(u.d, u, struct{}{})
+			u.c.knownDigests.CompareAndSwap(u.d, u, true)
 		} else {
 			u.c.knownDigests.CompareAndDelete(u.d, u)
 		}
@@ -629,7 +629,7 @@ func (c *Client) UploadAll(ctx context.Context, ds *blob.Store) (numUploaded int
 		uop, loaded := c.knownDigests.LoadOrStore(d, newUploadOp(c, d))
 		if loaded {
 			switch v := uop.(type) {
-			case struct{}:
+			case bool:
 				// Case 1: This blob is already present in the CAS, we're done.
 				skippedBlobs++
 			case *uploadOp:
