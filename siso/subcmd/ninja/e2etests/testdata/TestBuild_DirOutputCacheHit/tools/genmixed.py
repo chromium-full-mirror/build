@@ -13,29 +13,29 @@ import sys
 
 def main():
   parser = argparse.ArgumentParser()
-  parser.add_argument('--out', required=True)
-  parser.add_argument('--out_dir', required=True)
-  parser.add_argument('inputs', nargs='*')
+  parser.add_argument("--out", required=True)
+  parser.add_argument("--out_dir", required=True)
+  parser.add_argument("inputs", nargs="*")
   options = parser.parse_args()
 
-  data = ''
+  data = ""
   for input_path in options.inputs:
     with open(input_path) as f:
       data += f.read()
 
   # newline='' so \n is not rewritten to \r\n on Windows; the build captures
   # the bytes verbatim, and the test compares exact content.
-  with open(options.out, 'w', newline='') as f:
-    f.write('FILE:' + data)
-  os.makedirs(os.path.join(options.out_dir, 'sub'), exist_ok=True)
-  with open(os.path.join(options.out_dir, 'inner.txt'), 'w', newline='') as f:
-    f.write('INNER:' + data)
+  with open(options.out, "w", newline="") as f:
+    f.write("FILE:" + data)
+  os.makedirs(os.path.join(options.out_dir, "sub"), exist_ok=True)
+  with open(os.path.join(options.out_dir, "inner.txt"), "w", newline="") as f:
+    f.write("INNER:" + data)
   with open(
-    os.path.join(options.out_dir, 'sub', 'nested.txt'), 'w', newline=''
+    os.path.join(options.out_dir, "sub", "nested.txt"), "w", newline=""
   ) as f:
-    f.write('NESTED:' + data)
+    f.write("NESTED:" + data)
   return 0
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
   sys.exit(main())

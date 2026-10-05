@@ -12,7 +12,7 @@ import zipfile
 def main():
   parser = argparse.ArgumentParser()
   parser.add_argument("output", help="output zip filename")
-  parser.add_argument("inputs", nargs='*')
+  parser.add_argument("inputs", nargs="*")
   options = parser.parse_args()
 
   with zipfile.ZipFile(options.output, "w") as zf:

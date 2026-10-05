@@ -12,16 +12,16 @@ import sys
 def main():
   parser = argparse.ArgumentParser()
   parser.add_argument(
-    "inputs", nargs='*', type=argparse.FileType(), help="inputs"
+    "inputs", nargs="*", type=argparse.FileType(), help="inputs"
   )
-  parser.add_argument("-o", type=argparse.FileType(mode='w'), help="output")
+  parser.add_argument("-o", type=argparse.FileType(mode="w"), help="output")
   options = parser.parse_args()
 
-  data = ''
+  data = ""
   for input_file in options.inputs:
-    data += input_file.name + '\n'
+    data += input_file.name + "\n"
     data += input_file.read()
-    data += '\n'
+    data += "\n"
   options.o.write(data)
 
 

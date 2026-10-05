@@ -12,13 +12,13 @@ import sys
 def main():
   parser = argparse.ArgumentParser()
   parser.add_argument("-c", help="create archive")
-  parser.add_argument("inputs", nargs='*', help="inputs")
+  parser.add_argument("inputs", nargs="*", help="inputs")
   options = parser.parse_args()
 
-  data = ''
+  data = ""
   for input_path in options.inputs:
-    data += input_path + '\n'
-  with open(options.c, 'w') as f:
+    data += input_path + "\n"
+  with open(options.c, "w") as f:
     f.write(data)
 
 

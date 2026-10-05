@@ -16,13 +16,13 @@ import sys
 
 def main():
   parser = argparse.ArgumentParser()
-  parser.add_argument('--out_dir', required=True)
-  parser.add_argument('src')
+  parser.add_argument("--out_dir", required=True)
+  parser.add_argument("src")
   options = parser.parse_args()
 
   shutil.copytree(options.src, options.out_dir)
   return 0
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
   sys.exit(main())

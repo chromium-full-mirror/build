@@ -8,18 +8,18 @@ import sys
 
 def main():
   parser = argparse.ArgumentParser()
-  parser.add_argument('--output', required=True)
-  parser.add_argument('inputs', nargs='*')
+  parser.add_argument("--output", required=True)
+  parser.add_argument("inputs", nargs="*")
   options = parser.parse_args()
 
-  data = ''
+  data = ""
   for inp in options.inputs:
     with open(inp) as f:
       data += f.read()
-  with open(options.output, 'w') as f:
+  with open(options.output, "w") as f:
     f.write(data)
   return 0
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
   sys.exit(main())

@@ -16,8 +16,8 @@ import sys
 
 def main():
   parser = argparse.ArgumentParser()
-  parser.add_argument('--out_dir', required=True)
-  parser.add_argument('inputs', nargs='*')
+  parser.add_argument("--out_dir", required=True)
+  parser.add_argument("inputs", nargs="*")
   options = parser.parse_args()
   # Read inputs so the action depends on them (cache key), but produce
   # only an empty directory.
@@ -28,5 +28,5 @@ def main():
   return 0
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
   sys.exit(main())

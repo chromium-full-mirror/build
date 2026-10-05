@@ -11,11 +11,11 @@ import sys
 
 def main():
   parser = argparse.ArgumentParser()
-  parser.add_argument('--out_dir', required=True)
+  parser.add_argument("--out_dir", required=True)
   options = parser.parse_args()
   os.makedirs(options.out_dir, exist_ok=True)
   return 0
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
   sys.exit(main())

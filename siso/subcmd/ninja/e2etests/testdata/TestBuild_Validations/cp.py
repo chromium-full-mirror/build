@@ -9,7 +9,7 @@ import sys
 def main():
   parser = argparse.ArgumentParser()
   parser.add_argument("input", type=argparse.FileType())
-  parser.add_argument("output", type=argparse.FileType(mode='w'))
+  parser.add_argument("output", type=argparse.FileType(mode="w"))
   options = parser.parse_args()
 
   options.output.write(options.input.read())

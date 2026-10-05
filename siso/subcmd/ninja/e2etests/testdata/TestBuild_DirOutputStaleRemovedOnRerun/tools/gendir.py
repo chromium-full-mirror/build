@@ -14,8 +14,8 @@ import sys
 
 def main():
   parser = argparse.ArgumentParser()
-  parser.add_argument('--out_dir', required=True)
-  parser.add_argument('manifest')
+  parser.add_argument("--out_dir", required=True)
+  parser.add_argument("manifest")
   options = parser.parse_args()
 
   with open(options.manifest) as f:
@@ -28,10 +28,10 @@ def main():
     if parent:
       os.makedirs(parent, exist_ok=True)
     # newline='' so \n is not rewritten to \r\n on Windows.
-    with open(path, 'w', newline='') as g:
-      g.write('content\n')
+    with open(path, "w", newline="") as g:
+      g.write("content\n")
   return 0
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
   sys.exit(main())

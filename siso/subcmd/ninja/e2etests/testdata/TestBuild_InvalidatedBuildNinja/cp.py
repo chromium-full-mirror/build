@@ -8,9 +8,9 @@ import sys
 
 def main():
   parser = argparse.ArgumentParser()
-  parser.add_argument("-r", action='store_true')
+  parser.add_argument("-r", action="store_true")
   parser.add_argument("input", type=argparse.FileType())
-  parser.add_argument("output", type=argparse.FileType(mode='w'))
+  parser.add_argument("output", type=argparse.FileType(mode="w"))
   options = parser.parse_args()
 
   data = options.input.read()

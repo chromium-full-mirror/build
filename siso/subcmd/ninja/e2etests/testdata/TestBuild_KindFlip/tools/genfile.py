@@ -14,11 +14,11 @@ import sys
 
 def main():
   parser = argparse.ArgumentParser()
-  parser.add_argument('--out', required=True)
-  parser.add_argument('inputs', nargs='*')
+  parser.add_argument("--out", required=True)
+  parser.add_argument("inputs", nargs="*")
   options = parser.parse_args()
 
-  data = ''
+  data = ""
   for input_path in options.inputs:
     with open(input_path) as f:
       data += f.read()
@@ -38,10 +38,10 @@ def main():
   if parent:
     os.makedirs(parent, exist_ok=True)
   # newline='' so \n is not rewritten to \r\n on Windows.
-  with open(options.out, 'w', newline='') as f:
+  with open(options.out, "w", newline="") as f:
     f.write(data)
   return 0
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
   sys.exit(main())

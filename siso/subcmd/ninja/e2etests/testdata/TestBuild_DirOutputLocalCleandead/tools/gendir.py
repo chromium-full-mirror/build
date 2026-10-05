@@ -13,22 +13,22 @@ import sys
 
 def main():
   parser = argparse.ArgumentParser()
-  parser.add_argument('--out_dir', required=True)
-  parser.add_argument('inputs', nargs='*')
+  parser.add_argument("--out_dir", required=True)
+  parser.add_argument("inputs", nargs="*")
   options = parser.parse_args()
 
-  data = ''
+  data = ""
   for input_path in options.inputs:
     with open(input_path) as f:
       data += f.read()
 
-  os.makedirs(os.path.join(options.out_dir, 'sub'), exist_ok=True)
-  with open(os.path.join(options.out_dir, 'data'), 'w') as f:
+  os.makedirs(os.path.join(options.out_dir, "sub"), exist_ok=True)
+  with open(os.path.join(options.out_dir, "data"), "w") as f:
     f.write(data)
-  with open(os.path.join(options.out_dir, 'sub', 'nested'), 'w') as f:
+  with open(os.path.join(options.out_dir, "sub", "nested"), "w") as f:
     f.write(data)
   return 0
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
   sys.exit(main())

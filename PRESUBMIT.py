@@ -7,20 +7,20 @@ See http://dev.chromium.org/developers/how-tos/depottools/presubmit-scripts for
 details on the presubmit API built into gcl.
 """
 
-PRESUBMIT_VERSION = '2.0.0'
+PRESUBMIT_VERSION = "2.0.0"
 USE_PYTHON3 = True
 
 THIRD_PARTY_DIRS = [
-  'siso/third_party',
+  "siso/third_party",
 ]
 
 # Go version used on presubmit bots, which every go.mod must also require.
-GO_VERSION = '1.27.1'
+GO_VERSION = "1.27.1"
 
 # Repository-relative go.mod path -> Go version, for modules that must differ
 # from GO_VERSION. Each entry should have a comment explaining why.
 GO_VERSION_EXCEPTIONS = {
-  # 'example/go.mod': '1.26.0',  # b/XXXXXXXXX: reason
+  # "example/go.mod": "1.26.0",  # b/XXXXXXXXX: reason
 }
 
 
@@ -30,9 +30,9 @@ def CheckChange(input_api, output_api):
   def source_file_filter_incl_go(path):
     return input_api.FilterSourceFile(
       path,
-      files_to_check=list(input_api.DEFAULT_FILES_TO_CHECK) + [r'.+\.go$'],
-      files_to_skip=[r'.*pb[^/]*\.go$']
-      + [rf'{d}/.*' for d in THIRD_PARTY_DIRS],
+      files_to_check=list(input_api.DEFAULT_FILES_TO_CHECK) + [r".+\.go$"],
+      files_to_skip=[r".*pb[^/]*\.go$"]
+      + [rf"{d}/.*" for d in THIRD_PARTY_DIRS],
     )
 
   results = []
@@ -57,14 +57,14 @@ def CheckChange(input_api, output_api):
 def _GoModFiles(input_api):
   """Returns sorted repository-relative paths of first-party go.mod files."""
   paths = input_api.subprocess.check_output(
-    ['git', 'ls-files', '--', ':(glob)**/go.mod'],
+    ["git", "ls-files", "--", ":(glob)**/go.mod"],
     cwd=input_api.change.RepositoryRoot(),
     text=True,
   ).splitlines()
   return sorted(
     path
     for path in paths
-    if not any(path.startswith(d + '/') for d in THIRD_PARTY_DIRS)
+    if not any(path.startswith(d + "/") for d in THIRD_PARTY_DIRS)
   )
 
 
@@ -73,34 +73,34 @@ def CheckGoVersionsConsistent(input_api, output_api):
   # mistake is forgetting to update a module that the change doesn't touch.
   root = input_api.change.RepositoryRoot()
   directive_re = input_api.re.compile(
-    r'^\s*(go|toolchain)\s+(\S+)', input_api.re.MULTILINE
+    r"^\s*(go|toolchain)\s+(\S+)", input_api.re.MULTILINE
   )
   errors = []
   for path in _GoModFiles(input_api):
     want = GO_VERSION_EXCEPTIONS.get(path, GO_VERSION)
-    with open(input_api.os_path.join(root, path), encoding='utf-8') as f:
+    with open(input_api.os_path.join(root, path), encoding="utf-8") as f:
       content = f.read()
     for directive, got in directive_re.findall(content):
-      if directive == 'toolchain':
-        got = got.removeprefix('go')
+      if directive == "toolchain":
+        got = got.removeprefix("go")
       if got != want:
-        errors.append(f'{path}: {directive} {got} (want {want})')
+        errors.append(f"{path}: {directive} {got} (want {want})")
   if not errors:
     return []
   return [
     output_api.PresubmitError(
-      'go.mod Go versions must match GO_VERSION in PRESUBMIT.py, or be '
-      'listed in GO_VERSION_EXCEPTIONS.',
+      "go.mod Go versions must match GO_VERSION in PRESUBMIT.py, or be "
+      "listed in GO_VERSION_EXCEPTIONS.",
       items=errors,
     )
   ]
 
 
 SUBTEST_CHECK_DIRS = [
-  r'^gong/gn/build/ninjawriter$',
-  r'^siso/execute$',
-  r'^siso/reapi/merkletree$',
-  r'^siso/toolsupport/nsjailutil$',
+  r"^gong/gn/build/ninjawriter$",
+  r"^siso/execute$",
+  r"^siso/reapi/merkletree$",
+  r"^siso/toolsupport/nsjailutil$",
 ]
 
 
@@ -114,9 +114,9 @@ def _IsSubtestCheckEnabledForDir(input_api, dirpath):
 # touch (e.g. a Go version bump enables new modernize analyzers), so they make
 # golangci-lint run on every Go module instead of only on affected dirs.
 FULL_GO_LINT_TRIGGERS = [
-  r'PRESUBMIT\.py$',  # GO_VERSION and golangci-lint CIPD versions are pinned here.
-  r'\.golangci\.yml$',
-  r'(.+/)?go\.mod$',
+  r"PRESUBMIT\.py$",  # GO_VERSION and golangci-lint CIPD versions are pinned here.
+  r"\.golangci\.yml$",
+  r"(.+/)?go\.mod$",
 ]
 
 
@@ -124,8 +124,8 @@ def CheckGoChanges(input_api, output_api):
   def file_filter(path):
     return input_api.FilterSourceFile(
       path,
-      files_to_check=[r'.*\.go$'],
-      files_to_skip=THIRD_PARTY_DIRS + [r'.*\.pb\.go$', r'.*\.gen\.go$'],
+      files_to_check=[r".*\.go$"],
+      files_to_skip=THIRD_PARTY_DIRS + [r".*\.pb\.go$", r".*\.gen\.go$"],
     )
 
   def full_lint_trigger_filter(path):
@@ -161,55 +161,55 @@ def CheckGoChanges(input_api, output_api):
   # golangci-lint should always be fetched to ensure errors are consistent
   # between local developer machines and presubmit bots.
   cipd_root = input_api.os_path.join(
-    input_api.change.RepositoryRoot(), '.cipd_bin'
+    input_api.change.RepositoryRoot(), ".cipd_bin"
   )
   ensure_file_content = (
-    'infra/3pp/tools/golangci-lint/${platform} version:3@2.13.1.chromium.1\n'
+    "infra/3pp/tools/golangci-lint/${platform} version:3@2.13.1.chromium.1\n"
   )
-  go = 'go'
-  golangci_lint = input_api.os_path.join(cipd_root, 'golangci-lint')
+  go = "go"
+  golangci_lint = input_api.os_path.join(cipd_root, "golangci-lint")
   env = input_api.environ.copy()
   if input_api.is_committing and input_api.gerrit:
     # Go is only needed on presubmit bots.
     # This is because we use go.mod to manage the expected Go version on local
     # developer machines, and expect Go to be available on $PATH.
     ensure_file_content += (
-      f'infra/3pp/tools/go/${{platform}} version:3@{GO_VERSION}\n'
+      f"infra/3pp/tools/go/${{platform}} version:3@{GO_VERSION}\n"
     )
-    go = input_api.os_path.join(cipd_root, 'bin', 'go')
-    env['PATH'] = input_api.os_path.join(cipd_root, 'bin') + ':' + env['PATH']
-  if input_api.platform.startswith('linux'):
+    go = input_api.os_path.join(cipd_root, "bin", "go")
+    env["PATH"] = input_api.os_path.join(cipd_root, "bin") + ":" + env["PATH"]
+  if input_api.platform.startswith("linux"):
     ensure_file_content += (
-      'infra/3pp/static_libs/libseccomp/${platform} latest\n'
+      "infra/3pp/static_libs/libseccomp/${platform} latest\n"
     )
-    seccomp_include = input_api.os_path.join(cipd_root, 'include')
-    seccomp_lib = input_api.os_path.join(cipd_root, 'lib')
-    seccomp_pkgconfig = input_api.os_path.join(seccomp_lib, 'pkgconfig')
-    env['CGO_ENABLED'] = '1'
-    env['CGO_CFLAGS'] = f'-I{seccomp_include}'
-    env['CGO_LDFLAGS'] = f'-L{seccomp_lib} -lseccomp'
-    env['PKG_CONFIG_PATH'] = seccomp_pkgconfig + (
-      ':' + env['PKG_CONFIG_PATH'] if 'PKG_CONFIG_PATH' in env else ''
+    seccomp_include = input_api.os_path.join(cipd_root, "include")
+    seccomp_lib = input_api.os_path.join(cipd_root, "lib")
+    seccomp_pkgconfig = input_api.os_path.join(seccomp_lib, "pkgconfig")
+    env["CGO_ENABLED"] = "1"
+    env["CGO_CFLAGS"] = f"-I{seccomp_include}"
+    env["CGO_LDFLAGS"] = f"-L{seccomp_lib} -lseccomp"
+    env["PKG_CONFIG_PATH"] = seccomp_pkgconfig + (
+      ":" + env["PKG_CONFIG_PATH"] if "PKG_CONFIG_PATH" in env else ""
     )
   input_api.subprocess.check_call(
     [
-      'cipd',
-      'ensure',
-      '-log-level',
-      'warning',
-      '-root',
+      "cipd",
+      "ensure",
+      "-log-level",
+      "warning",
+      "-root",
       str(cipd_root),
-      '-ensure-file',
-      '-',
+      "-ensure-file",
+      "-",
     ],
-    stdin=ensure_file_content.encode('utf-8'),
+    stdin=ensure_file_content.encode("utf-8"),
     cwd=input_api.change.RepositoryRoot(),
   )
 
   # Make sure Go is available on $PATH.
   try:
     input_api.subprocess.check_call(
-      [go, 'version'],
+      [go, "version"],
       stdout=input_api.subprocess.PIPE,
       stderr=input_api.subprocess.PIPE,
     )
@@ -229,7 +229,7 @@ def CheckGoChanges(input_api, output_api):
 
   # Build custom AST vettool and run on enabled directories.
   subtestanalyzer_dir = input_api.os_path.join(
-    input_api.change.RepositoryRoot(), 'infra', 'subtestanalyzer'
+    input_api.change.RepositoryRoot(), "infra", "subtestanalyzer"
   )
   subtest_affected_dirs = {
     input_api.os_path.dirname(f.AbsoluteLocalPath()): input_api.os_path.dirname(
@@ -241,22 +241,22 @@ def CheckGoChanges(input_api, output_api):
     )
   }
   if input_api.os_path.exists(subtestanalyzer_dir) and subtest_affected_dirs:
-    vettool_bin = input_api.os_path.join(subtestanalyzer_dir, 'subtestanalyzer')
+    vettool_bin = input_api.os_path.join(subtestanalyzer_dir, "subtestanalyzer")
     try:
       input_api.subprocess.check_call(
-        [go, 'build', '-o', vettool_bin, '.'],
+        [go, "build", "-o", vettool_bin, "."],
         cwd=subtestanalyzer_dir,
         stdout=input_api.subprocess.PIPE,
         stderr=input_api.subprocess.PIPE,
       )
       for absolute, pretty in sorted(subtest_affected_dirs.items()):
-        kwargs = {'cwd': absolute}
+        kwargs = {"cwd": absolute}
         if env:
-          kwargs['env'] = env
+          kwargs["env"] = env
         tests.append(
           input_api.Command(
-            name=f'Check subtest names via go vet on {pretty}',
-            cmd=[go, 'vet', f'-vettool={vettool_bin}', './...'],
+            name=f"Check subtest names via go vet on {pretty}",
+            cmd=[go, "vet", f"-vettool={vettool_bin}", "./..."],
             kwargs=kwargs,
             message=error_type,
           )
@@ -264,7 +264,7 @@ def CheckGoChanges(input_api, output_api):
     except input_api.subprocess.CalledProcessError as e:
       results.append(
         output_api.PresubmitPromptOrNotify(
-          f'Failed to build subtestanalyzer vettool: {e}'
+          f"Failed to build subtestanalyzer vettool: {e}"
         )
       )
 
@@ -273,37 +273,37 @@ def CheckGoChanges(input_api, output_api):
     lint_dirs = sorted(
       {input_api.os_path.dirname(f.LocalPath()) for f in affected_files}
     )
-    lint_pattern = '.'
+    lint_pattern = "."
   else:
     lint_dirs = [
       input_api.os_path.dirname(path) for path in _GoModFiles(input_api)
     ]
-    lint_pattern = './...'
+    lint_pattern = "./..."
     results.append(
       output_api.PresubmitNotifyResult(
-        'Running golangci-lint on all Go modules because lint-affecting '
-        'files changed.',
+        "Running golangci-lint on all Go modules because lint-affecting "
+        "files changed.",
         items=full_lint_triggers,
       )
     )
   for lint_dir in lint_dirs:
     kwargs = {
-      'cwd': input_api.os_path.join(input_api.change.RepositoryRoot(), lint_dir)
+      "cwd": input_api.os_path.join(input_api.change.RepositoryRoot(), lint_dir)
     }
     if env:
-      kwargs['env'] = env
+      kwargs["env"] = env
     # e.g. "siso/subcmd/ninja" or "siso/...".
     pretty = input_api.os_path.normpath(
       input_api.os_path.join(lint_dir, lint_pattern)
     )
     tests.append(
       input_api.Command(
-        name=f'Check golangci-lint on {pretty}',
+        name=f"Check golangci-lint on {pretty}",
         cmd=[
           golangci_lint,
-          'run',
-          '--timeout=15m',
-          '--allow-parallel-runners',
+          "run",
+          "--timeout=15m",
+          "--allow-parallel-runners",
           lint_pattern,
         ],
         kwargs=kwargs,
@@ -315,7 +315,7 @@ def CheckGoChanges(input_api, output_api):
 
 def CheckPythonChanges(input_api, output_api):
   files_to_skip = list(input_api.DEFAULT_FILES_TO_SKIP)
-  files_to_skip += [rf'{d}/.*' for d in THIRD_PARTY_DIRS]
+  files_to_skip += [rf"{d}/.*" for d in THIRD_PARTY_DIRS]
   return input_api.RunTests(
     input_api.canned_checks.GetRuff(
       input_api,

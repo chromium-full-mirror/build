@@ -13,8 +13,8 @@ import sys
 
 def main():
   parser = argparse.ArgumentParser()
-  parser.add_argument('--out', required=True)
-  parser.add_argument('manifest')
+  parser.add_argument("--out", required=True)
+  parser.add_argument("manifest")
   # The -gsplit-dwarf / -flto flags the handler keys on are passed through.
   options, _ = parser.parse_known_args()
 
@@ -22,17 +22,17 @@ def main():
     units = [line.strip() for line in f if line.strip()]
 
   # newline='' so \n is not rewritten to \r\n on Windows.
-  with open(options.out, 'w', newline='') as f:
+  with open(options.out, "w", newline="") as f:
     for unit in units:
-      f.write('dwo_id=%s\n' % unit)
+      f.write("dwo_id=%s\n" % unit)
 
-  dwo_dir = options.out + '-dwo'
+  dwo_dir = options.out + "-dwo"
   os.makedirs(dwo_dir, exist_ok=True)
   for unit in units:
-    with open(os.path.join(dwo_dir, unit + '.dwo'), 'w', newline='') as f:
-      f.write('dwo_id=%s\n' % unit)
+    with open(os.path.join(dwo_dir, unit + ".dwo"), "w", newline="") as f:
+      f.write("dwo_id=%s\n" % unit)
   return 0
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
   sys.exit(main())

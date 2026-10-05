@@ -10,8 +10,8 @@ def main():
   parser = argparse.ArgumentParser()
   parser.add_argument("-MF", help="deps filename")
   parser.add_argument("-o", help="output filename")
-  parser.add_argument("-c", help="compile", action='store_true')
-  parser.add_argument("inputs", nargs='*')
+  parser.add_argument("-c", help="compile", action="store_true")
+  parser.add_argument("inputs", nargs="*")
   options = parser.parse_args()
 
   if options.c:

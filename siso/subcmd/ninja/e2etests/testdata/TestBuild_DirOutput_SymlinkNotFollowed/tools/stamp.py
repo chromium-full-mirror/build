@@ -14,20 +14,20 @@ import sys
 
 def main():
   parser = argparse.ArgumentParser()
-  parser.add_argument('--out', required=True)
-  parser.add_argument('in_dir')
+  parser.add_argument("--out", required=True)
+  parser.add_argument("in_dir")
   options = parser.parse_args()
 
-  data = ''
+  data = ""
   for root, _, files in os.walk(options.in_dir):
     for name in sorted(files):
       with open(os.path.join(root, name)) as f:
         data += f.read()
 
-  with open(options.out, 'w') as f:
+  with open(options.out, "w") as f:
     f.write(data)
   return 0
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
   sys.exit(main())

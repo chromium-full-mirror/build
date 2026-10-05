@@ -18,7 +18,7 @@ def main():
   with open(options.output, "w") as w:
     w.write(data)
     for _ in range(0, 1024 * 1024):
-      w.write(' ')
+      w.write(" ")
   return 0
 
 

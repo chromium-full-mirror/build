@@ -12,26 +12,26 @@ import sys
 
 def main():
   parser = argparse.ArgumentParser()
-  parser.add_argument('--out_dir', required=True)
-  parser.add_argument('inputs', nargs='*')
+  parser.add_argument("--out_dir", required=True)
+  parser.add_argument("inputs", nargs="*")
   options = parser.parse_args()
 
-  data = ''
+  data = ""
   for input_path in options.inputs:
     with open(input_path) as f:
       data += f.read()
 
-  os.makedirs(os.path.join(options.out_dir, 'sub'), exist_ok=True)
+  os.makedirs(os.path.join(options.out_dir, "sub"), exist_ok=True)
   # newline='' so \n is not rewritten to \r\n on Windows; the test compares
   # exact content.
-  with open(os.path.join(options.out_dir, 'data'), 'w', newline='') as f:
+  with open(os.path.join(options.out_dir, "data"), "w", newline="") as f:
     f.write(data)
   with open(
-    os.path.join(options.out_dir, 'sub', 'nested'), 'w', newline=''
+    os.path.join(options.out_dir, "sub", "nested"), "w", newline=""
   ) as f:
     f.write(data)
   return 0
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
   sys.exit(main())
