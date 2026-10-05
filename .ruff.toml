@@ -2,8 +2,6 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-# Formatting settings match the previous .style.yapf (based_on_style = yapf)
-# to minimise churn.
 line-length = 80
 indent-width = 2
 
@@ -12,7 +10,7 @@ extend-exclude = [
 ]
 
 [format]
-quote-style = "preserve"
+quote-style = "double"
 
 [lint]
 select = [
