@@ -54,6 +54,15 @@ THIRD_PARTY_DIRS = [
     'siso/third_party',
 ]
 
+# Go version used on presubmit bots, which every go.mod must also require.
+GO_VERSION = '1.27.1'
+
+# Repository-relative go.mod path -> Go version, for modules that must differ
+# from GO_VERSION. Each entry should have a comment explaining why.
+GO_VERSION_EXCEPTIONS = {
+    # 'example/go.mod': '1.26.0',  # b/XXXXXXXXX: reason
+}
+
 
 def CheckChange(input_api, output_api):
   # Default source file filter doesn't include Go.
@@ -81,6 +90,37 @@ def CheckChange(input_api, output_api):
       input_api, output_api, source_file_filter=source_file_filter_incl_go)
 
   return results
+
+
+def CheckGoVersionsConsistent(input_api, output_api):
+  # Check every go.mod rather than only affected ones, since the most likely
+  # mistake is forgetting to update a module that the change doesn't touch.
+  root = input_api.change.RepositoryRoot()
+  paths = input_api.subprocess.check_output(
+      ['git', 'ls-files', '--', ':(glob)**/go.mod'], cwd=root,
+      text=True).splitlines()
+  directive_re = input_api.re.compile(r'^\s*(go|toolchain)\s+(\S+)',
+                                      input_api.re.MULTILINE)
+  errors = []
+  for path in sorted(paths):
+    if any(path.startswith(d + '/') for d in THIRD_PARTY_DIRS):
+      continue
+    want = GO_VERSION_EXCEPTIONS.get(path, GO_VERSION)
+    with open(input_api.os_path.join(root, path), encoding='utf-8') as f:
+      content = f.read()
+    for directive, got in directive_re.findall(content):
+      if directive == 'toolchain':
+        got = got.removeprefix('go')
+      if got != want:
+        errors.append(f'{path}: {directive} {got} (want {want})')
+  if not errors:
+    return []
+  return [
+      output_api.PresubmitError(
+          'go.mod Go versions must match GO_VERSION in PRESUBMIT.py, or be '
+          'listed in GO_VERSION_EXCEPTIONS.',
+          items=errors)
+  ]
 
 
 SUBTEST_CHECK_DIRS = [
@@ -132,7 +172,7 @@ def CheckGoChanges(input_api, output_api):
     # This is because we use go.mod to manage the expected Go version on local
     # developer machines, and expect Go to be available on $PATH.
     ensure_file_content += ('infra/3pp/tools/go/${platform} '
-                            'version:3@1.27.1\n')
+                            f'version:3@{GO_VERSION}\n')
     go = input_api.os_path.join(cipd_root, 'bin', 'go')
     env['PATH'] = input_api.os_path.join(cipd_root, 'bin') + ':' + env['PATH']
   if input_api.platform.startswith('linux'):
