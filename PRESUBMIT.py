@@ -132,7 +132,7 @@ def CheckGoChanges(input_api, output_api):
     # This is because we use go.mod to manage the expected Go version on local
     # developer machines, and expect Go to be available on $PATH.
     ensure_file_content += ('infra/3pp/tools/go/${platform} '
-                            'version:3@1.26.8\n')
+                            'version:3@1.27.1\n')
     go = input_api.os_path.join(cipd_root, 'bin', 'go')
     env['PATH'] = input_api.os_path.join(cipd_root, 'bin') + ':' + env['PATH']
   if input_api.platform.startswith('linux'):
