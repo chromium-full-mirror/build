@@ -29,10 +29,10 @@ from pathlib import Path
 
 
 class UserException(Exception):
-    """
-    An error caused by invalid user input. Used to report a user-friendly error message and cleanly
-    exit the script.
-    """
+  """
+  An error caused by invalid user input. Used to report a user-friendly error message and cleanly
+  exit the script.
+  """
 
 
 # TODO: The year should be set to the current year when generating a new Android.bp file, but retain
@@ -73,37 +73,37 @@ ANDROID_BP_HEADER = """
 
 # Maps SHA256 hashes of LICENSE files in our repo to their SPDX identifier.
 KNOWN_LICENSES = {
-    # LICENSE
-    "5302de9920375a88356bd1802ee7de92b0f6a39e61e3a34516d26748b01c4ae3": (
-        "SPDX-license-identifier-BSD-3-Clause"
-    ),
-    # siso/third_party/material_web_components/LICENSE
-    "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30": (
-        "SPDX-license-identifier-Apache-2.0"
-    ),
-    # siso/third_party/material_web_components/components-chromium/node_modules/@lit/reactive-element/LICENSE
-    # siso/third_party/material_web_components/components-chromium/node_modules/@lit/task/LICENSE
-    # siso/third_party/material_web_components/components-chromium/node_modules/lit-element/LICENSE
-    # siso/third_party/material_web_components/components-chromium/node_modules/lit/LICENSE
-    "45d31799d0db956cc3eb5469346abbd9b7025babc5ff29fab10d7095da992ef1": (
-        "SPDX-license-identifier-BSD-3-Clause"
-    ),
-    # siso/third_party/material_web_components/components-chromium/node_modules/@material/web/LICENSE
-    "295cdb4364b782931c914f5ca8c47fac87c732fa7e448b788a47aa5b25728212": (
-        "SPDX-license-identifier-Apache-2.0"
-    ),
-    # siso/third_party/material_web_components/components-chromium/node_modules/@types/trusted-types/LICENSE
-    "c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383": (
-        "SPDX-license-identifier-MIT"
-    ),
-    # siso/third_party/material_web_components/components-chromium/node_modules/lit-html/LICENSE
-    "2b66f9390afde29edfe4314daff93f01fb182e1178053e228120178987e5db75": (
-        "SPDX-license-identifier-BSD-3-Clause"
-    ),
-    # siso/third_party/material_web_components/components-chromium/node_modules/tslib/LICENSE.txt
-    "210b19e543130388c68654b7497e967119ce17145f66ab7d85688fbd70f08751": (
-        "SPDX-license-identifier-0BSD"
-    ),
+  # LICENSE
+  "5302de9920375a88356bd1802ee7de92b0f6a39e61e3a34516d26748b01c4ae3": (
+    "SPDX-license-identifier-BSD-3-Clause"
+  ),
+  # siso/third_party/material_web_components/LICENSE
+  "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30": (
+    "SPDX-license-identifier-Apache-2.0"
+  ),
+  # siso/third_party/material_web_components/components-chromium/node_modules/@lit/reactive-element/LICENSE
+  # siso/third_party/material_web_components/components-chromium/node_modules/@lit/task/LICENSE
+  # siso/third_party/material_web_components/components-chromium/node_modules/lit-element/LICENSE
+  # siso/third_party/material_web_components/components-chromium/node_modules/lit/LICENSE
+  "45d31799d0db956cc3eb5469346abbd9b7025babc5ff29fab10d7095da992ef1": (
+    "SPDX-license-identifier-BSD-3-Clause"
+  ),
+  # siso/third_party/material_web_components/components-chromium/node_modules/@material/web/LICENSE
+  "295cdb4364b782931c914f5ca8c47fac87c732fa7e448b788a47aa5b25728212": (
+    "SPDX-license-identifier-Apache-2.0"
+  ),
+  # siso/third_party/material_web_components/components-chromium/node_modules/@types/trusted-types/LICENSE
+  "c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383": (
+    "SPDX-license-identifier-MIT"
+  ),
+  # siso/third_party/material_web_components/components-chromium/node_modules/lit-html/LICENSE
+  "2b66f9390afde29edfe4314daff93f01fb182e1178053e228120178987e5db75": (
+    "SPDX-license-identifier-BSD-3-Clause"
+  ),
+  # siso/third_party/material_web_components/components-chromium/node_modules/tslib/LICENSE.txt
+  "210b19e543130388c68654b7497e967119ce17145f66ab7d85688fbd70f08751": (
+    "SPDX-license-identifier-0BSD"
+  ),
 }
 
 # Maps URLs of Go packages to their corresponding Soong module name.
@@ -179,264 +179,266 @@ PACKAGE_DICT = {
 
 
 def translate_go_module_to_soong_module(url):
-    # These are easy, because we are generating these names deterministically ourselves in this
-    # script.
-    if url.startswith("go.chromium.org/build"):
-        return url.replace("/", "-")
-    # Other Soong module names don't follow a standardized naming pattern, so we need to use a
-    # lookup table to convert them.
-    try:
-        return PACKAGE_DICT[url]
-    except KeyError as e:
-        raise UserException(
-            f"ERROR: {url} is unknown, please add a mapping to the script!"
-        ) from e
+  # These are easy, because we are generating these names deterministically ourselves in this
+  # script.
+  if url.startswith("go.chromium.org/build"):
+    return url.replace("/", "-")
+  # Other Soong module names don't follow a standardized naming pattern, so we need to use a
+  # lookup table to convert them.
+  try:
+    return PACKAGE_DICT[url]
+  except KeyError as e:
+    raise UserException(
+      f"ERROR: {url} is unknown, please add a mapping to the script!"
+    ) from e
 
 
 def serialize(data, indent_level=0):
-    """
-    Serializes an object into Android.bp's custom JSON-like format with
-    specific indentation, newlines for multi-element lists, and trailing
-    commas.
-    """
-    # Base indentation for the closing brace/bracket of a container
-    indent = "    " * indent_level
-    # Indentation for the items within a container
-    next_indent = "    " * (indent_level + 1)
+  """
+  Serializes an object into Android.bp's custom JSON-like format with
+  specific indentation, newlines for multi-element lists, and trailing
+  commas.
+  """
+  # Base indentation for the closing brace/bracket of a container
+  indent = "    " * indent_level
+  # Indentation for the items within a container
+  next_indent = "    " * (indent_level + 1)
 
-    if isinstance(data, dict):
-        if not data:
-            return "{}"
-        items = []
-        for key, value in data.items():
-            serialized_value = serialize(value, indent_level + 1)
-            items += [f"{next_indent}{key}: {serialized_value},"]
-        return "{\n" + "\n".join(items) + f"\n{indent}}}"
+  if isinstance(data, dict):
+    if not data:
+      return "{}"
+    items = []
+    for key, value in data.items():
+      serialized_value = serialize(value, indent_level + 1)
+      items += [f"{next_indent}{key}: {serialized_value},"]
+    return "{\n" + "\n".join(items) + f"\n{indent}}}"
 
-    if isinstance(data, list):
-        # Single-element or empty lists are kept on one line.
-        if len(data) <= 1:
-            items = [serialize(item, indent_level) for item in data]
-            return f"[{', '.join(items)}]"
-        # Multi-element lists are split across multiple lines.
-        items = []
-        for item in data:
-            serialized_item = serialize(item, indent_level + 1)
-            items += [f"{next_indent}{serialized_item},"]
-        return "[\n" + "\n".join(items) + f"\n{indent}]"
+  if isinstance(data, list):
+    # Single-element or empty lists are kept on one line.
+    if len(data) <= 1:
+      items = [serialize(item, indent_level) for item in data]
+      return f"[{', '.join(items)}]"
+    # Multi-element lists are split across multiple lines.
+    items = []
+    for item in data:
+      serialized_item = serialize(item, indent_level + 1)
+      items += [f"{next_indent}{serialized_item},"]
+    return "[\n" + "\n".join(items) + f"\n{indent}]"
 
-    # Use json.dumps for primitives to ensure proper formatting, e.g.
-    # correct quoting/escaping for strings and "true"/"false" for booleans.
-    return json.dumps(data)
+  # Use json.dumps for primitives to ensure proper formatting, e.g.
+  # correct quoting/escaping for strings and "true"/"false" for booleans.
+  return json.dumps(data)
 
 
 def module(module_name, **attrs):
-    """
-    Returns the canonical string representation of an Android.bp module.
+  """
+  Returns the canonical string representation of an Android.bp module.
 
-    Args:
-        module_name: The name of the module (e.g., "cc_library", "java_library").
-        **attrs: Keyword arguments representing the attributes of the module.
-            Values can be strings, booleans, lists, or dictionaries.
-    """
-    return module_name + " " + serialize(dict(attrs))
+  Args:
+      module_name: The name of the module (e.g., "cc_library", "java_library").
+      **attrs: Keyword arguments representing the attributes of the module.
+          Values can be strings, booleans, lists, or dictionaries.
+  """
+  return module_name + " " + serialize(dict(attrs))
 
 
 def go_package_info(path):
-    return json.loads(
-        subprocess.check_output(
-            [
-                "go",
-                "list",
-                "-C",
-                path,
-                "-e",
-                "-json=Target,Dir,ImportPath,GoFiles,TestGoFiles,Imports,TestImports",
-            ],
-            # GOOS and GOARCH influence which source files `go list` will consider to be part of the
-            # build. By setting them to the fixed values that matter for Android, this script will
-            # deterministically always generate the same Android.bp files, no matter which platform
-            # it is being run on.
-            env={**os.environ, "GOOS": "linux", "GOARCH": "amd64"},
-            text=True,
-        )
+  return json.loads(
+    subprocess.check_output(
+      [
+        "go",
+        "list",
+        "-C",
+        path,
+        "-e",
+        "-json=Target,Dir,ImportPath,GoFiles,TestGoFiles,Imports,TestImports",
+      ],
+      # GOOS and GOARCH influence which source files `go list` will consider to be part of the
+      # build. By setting them to the fixed values that matter for Android, this script will
+      # deterministically always generate the same Android.bp files, no matter which platform
+      # it is being run on.
+      env={**os.environ, "GOOS": "linux", "GOARCH": "amd64"},
+      text=True,
     )
+  )
 
 
 def go_module(path, with_tests):
-    """
-    Returns a list of `bootstrap_go_package` modules, one for each Go package
-    found in the Go module.
+  """
+  Returns a list of `bootstrap_go_package` modules, one for each Go package
+  found in the Go module.
 
-    Args:
-        path: The path to the root of the Go module.
-    """
-    modules = []
+  Args:
+      path: The path to the root of the Go module.
+  """
+  modules = []
 
-    packages = {d: None for d in sorted(set(f.parent for f in path.glob("**/*.go")))}
-    with ThreadPoolExecutor() as executor:
-        for result in zip(
-            packages.keys(), executor.map(go_package_info, packages.keys())
-        ):
-            packages[result[0]] = result[1]
+  packages = {
+    d: None for d in sorted(set(f.parent for f in path.glob("**/*.go")))
+  }
+  with ThreadPoolExecutor() as executor:
+    for result in zip(
+      packages.keys(), executor.map(go_package_info, packages.keys())
+    ):
+      packages[result[0]] = result[1]
 
-    for pkg_info in packages.values():
-        parts = os.path.relpath(pkg_info["Dir"]).split(os.path.sep, maxsplit=1)
-        path = parts[1] if len(parts) == 2 else ""
-        pkg_path = pkg_info["ImportPath"]
-        pkg_name = pkg_path.replace("/", "-")
-        sources = pkg_info.get("GoFiles", [])
-        test_sources = pkg_info.get("TestGoFiles", []) if with_tests else []
-        raw_imports = set(pkg_info.get("Imports", []))
-        if with_tests:
-            raw_imports |= set(pkg_info.get("TestImports", []))
-        pkg_deps = sorted(
-            translate_go_module_to_soong_module(x) for x in raw_imports if "." in x
+  for pkg_info in packages.values():
+    parts = os.path.relpath(pkg_info["Dir"]).split(os.path.sep, maxsplit=1)
+    path = parts[1] if len(parts) == 2 else ""
+    pkg_path = pkg_info["ImportPath"]
+    pkg_name = pkg_path.replace("/", "-")
+    sources = pkg_info.get("GoFiles", [])
+    test_sources = pkg_info.get("TestGoFiles", []) if with_tests else []
+    raw_imports = set(pkg_info.get("Imports", []))
+    if with_tests:
+      raw_imports |= set(pkg_info.get("TestImports", []))
+    pkg_deps = sorted(
+      translate_go_module_to_soong_module(x) for x in raw_imports if "." in x
+    )
+    modules += [
+      module(
+        "bootstrap_go_package",
+        name=pkg_name,
+        pkgPath=pkg_path,
+        deps=pkg_deps,
+        srcs=[os.path.join(path, s) for s in sources],
+        testSrcs=[os.path.join(path, s) for s in test_sources],
+      )
+    ]
+    pkg_target = pkg_info.get("Target")
+    if pkg_target:
+      modules += [
+        module(
+          "blueprint_go_binary",
+          name=Path(pkg_target).name,
+          deps=[pkg_name],
         )
-        modules += [
-            module(
-                "bootstrap_go_package",
-                name=pkg_name,
-                pkgPath=pkg_path,
-                deps=pkg_deps,
-                srcs=[os.path.join(path, s) for s in sources],
-                testSrcs=[os.path.join(path, s) for s in test_sources],
-            )
-        ]
-        pkg_target = pkg_info.get("Target")
-        if pkg_target:
-            modules += [
-                module(
-                    "blueprint_go_binary",
-                    name=Path(pkg_target).name,
-                    deps=[pkg_name],
-                )
-            ]
+      ]
 
-    return modules
+  return modules
 
 
 def main(args):
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "-r",
-        "--repo",
-        default=os.getcwd(),
-        help=f"path to the root of the chromium/build repository (default: {os.getcwd()})",
-    )
-    parser.add_argument(
-        "-t",
-        "--with_tests",
-        action="store_true",
-        default=False,
-        help="also include test sources and their deps in the generated Android.bp files",
-    )
-    parser.add_argument(
-        "projects",
-        nargs="*",
-        default=["siso"],
-        help="which top-level Go projects to generate full Android.bp files for (default: siso)",
-    )
-    args = parser.parse_args(args)
-    os.chdir(args.repo)
+  parser = argparse.ArgumentParser()
+  parser.add_argument(
+    "-r",
+    "--repo",
+    default=os.getcwd(),
+    help=f"path to the root of the chromium/build repository (default: {os.getcwd()})",
+  )
+  parser.add_argument(
+    "-t",
+    "--with_tests",
+    action="store_true",
+    default=False,
+    help="also include test sources and their deps in the generated Android.bp files",
+  )
+  parser.add_argument(
+    "projects",
+    nargs="*",
+    default=["siso"],
+    help="which top-level Go projects to generate full Android.bp files for (default: siso)",
+  )
+  args = parser.parse_args(args)
+  os.chdir(args.repo)
 
-    # Generate the top-level Android.bp in the root of the repository, which
-    # defines the license applicable to all projects.
-    with open("Android.bp", "w") as f:
-        modules = [
-            ANDROID_BP_HEADER,
-            module(
-                "package",
-                default_applicable_licenses=["external_chromium_build_license"],
-            ),
-            module(
-                "license",
-                name="external_chromium_build_license",
-                visibility=[":__subpackages__"],
-                license_kinds=["SPDX-license-identifier-BSD-3-Clause"],
-                license_text=["LICENSE"],
-            ),
-        ]
-        f.write("\n\n".join(modules) + "\n")
+  # Generate the top-level Android.bp in the root of the repository, which
+  # defines the license applicable to all projects.
+  with open("Android.bp", "w") as f:
+    modules = [
+      ANDROID_BP_HEADER,
+      module(
+        "package",
+        default_applicable_licenses=["external_chromium_build_license"],
+      ),
+      module(
+        "license",
+        name="external_chromium_build_license",
+        visibility=[":__subpackages__"],
+        license_kinds=["SPDX-license-identifier-BSD-3-Clause"],
+        license_text=["LICENSE"],
+      ),
+    ]
+    f.write("\n\n".join(modules) + "\n")
 
-    # Get a list of all projects in our repository.
-    with os.scandir() as it:
-        project_dirs = [
-            Path(e.path).absolute()
-            for e in it
-            if e.is_dir() and not e.name.startswith(".")
-        ]
+  # Get a list of all projects in our repository.
+  with os.scandir() as it:
+    project_dirs = [
+      Path(e.path).absolute()
+      for e in it
+      if e.is_dir() and not e.name.startswith(".")
+    ]
 
-    # Generate Android.bp files for each project.
-    for dir in project_dirs:
-        print(f"Creating Android.bp for {dir}...")
+  # Generate Android.bp files for each project.
+  for dir in project_dirs:
+    print(f"Creating Android.bp for {dir}...")
 
-        # First, we need to check if the project contains any extra LICENSE
-        # files that need to be defined in the Android.bp file.
-        modules = []
-        licenses = ["external_chromium_build_license"]
-        for license in sorted(dir.glob("**/LICENSE*")):
-            # Transform the path of the LICENSE file into a valid identifier.
-            license_name = (
-                "external_chromium_build_"
-                + license.relative_to(dir)
-                .as_posix()
-                .replace("@", "")
-                .replace("/", "_")
-                .replace(".", "_")
-            ).lower()
-            licenses += [license_name]
+    # First, we need to check if the project contains any extra LICENSE
+    # files that need to be defined in the Android.bp file.
+    modules = []
+    licenses = ["external_chromium_build_license"]
+    for license in sorted(dir.glob("**/LICENSE*")):
+      # Transform the path of the LICENSE file into a valid identifier.
+      license_name = (
+        "external_chromium_build_"
+        + license.relative_to(dir)
+        .as_posix()
+        .replace("@", "")
+        .replace("/", "_")
+        .replace(".", "_")
+      ).lower()
+      licenses += [license_name]
 
-            # Determine the kind of license by matching the SHA256 digest of
-            # the file against a map of known licenses.
-            with open(license, "rb") as f:
-                license_digest = hashlib.sha256(f.read()).hexdigest()
-            license_kind = KNOWN_LICENSES.get(license_digest)
-            if not license_kind:
-                print(
-                    f"Error: Unknown LICENSE found in {license} (hash {license_digest}).",
-                    file=sys.stderr,
-                )
-                return 1
+      # Determine the kind of license by matching the SHA256 digest of
+      # the file against a map of known licenses.
+      with open(license, "rb") as f:
+        license_digest = hashlib.sha256(f.read()).hexdigest()
+      license_kind = KNOWN_LICENSES.get(license_digest)
+      if not license_kind:
+        print(
+          f"Error: Unknown LICENSE found in {license} (hash {license_digest}).",
+          file=sys.stderr,
+        )
+        return 1
 
-            # Add a `license` module for this license to the Android.bp file.
-            modules += [
-                module(
-                    "license",
-                    name=license_name,
-                    visibility=[":__subpackages__"],
-                    license_kinds=[license_kind],
-                    license_text=[str(license.relative_to(dir))],
-                )
-            ]
+      # Add a `license` module for this license to the Android.bp file.
+      modules += [
+        module(
+          "license",
+          name=license_name,
+          visibility=[":__subpackages__"],
+          license_kinds=[license_kind],
+          license_text=[str(license.relative_to(dir))],
+        )
+      ]
 
-        # The license header and `package` module need to go first, so we
-        # prepend them to the modules. For simplicity, we declare that all
-        # found licenses are applicable for this entire project.
-        modules = [
-            ANDROID_BP_HEADER,
-            module(
-                "package",
-                default_applicable_licenses=licenses,
-            ),
-        ] + modules
+    # The license header and `package` module need to go first, so we
+    # prepend them to the modules. For simplicity, we declare that all
+    # found licenses are applicable for this entire project.
+    modules = [
+      ANDROID_BP_HEADER,
+      module(
+        "package",
+        default_applicable_licenses=licenses,
+      ),
+    ] + modules
 
-        # If we don't need to generate full Android.bp files for this project, we're done.
-        if dir.name in args.projects:
-            # If this project contains a Go module, generate corresponding
-            # `bootstrap_go_package` modules for the Android.bp file.
-            if os.path.exists(dir / "go.mod"):
-                modules += go_module(dir, with_tests=args.with_tests)
+    # If we don't need to generate full Android.bp files for this project, we're done.
+    if dir.name in args.projects:
+      # If this project contains a Go module, generate corresponding
+      # `bootstrap_go_package` modules for the Android.bp file.
+      if os.path.exists(dir / "go.mod"):
+        modules += go_module(dir, with_tests=args.with_tests)
 
-        with open(dir / "Android.bp", "w") as f:
-            f.write("\n\n".join(modules) + "\n")
+    with open(dir / "Android.bp", "w") as f:
+      f.write("\n\n".join(modules) + "\n")
 
-    return 0
+  return 0
 
 
 if __name__ == "__main__":
-    try:
-        sys.exit(main(sys.argv[1:]))
-    except UserException as e:
-        print(e, file=sys.stderr)
-        sys.exit(1)
+  try:
+    sys.exit(main(sys.argv[1:]))
+  except UserException as e:
+    print(e, file=sys.stderr)
+    sys.exit(1)

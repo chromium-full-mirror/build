@@ -26,9 +26,11 @@ def main():
     with open(os.path.join(dwo_dir, name)) as f:
       dwo_id = f.read().strip()
     if dwo_id not in referenced:
-      print('dwo_id mismatch: %s/%s has %s, not referenced by %s' %
-            (dwo_dir, name, dwo_id, options.binary),
-            file=sys.stderr)
+      print(
+        'dwo_id mismatch: %s/%s has %s, not referenced by %s'
+        % (dwo_dir, name, dwo_id, options.binary),
+        file=sys.stderr,
+      )
       return 1
 
   with open(options.out, 'w', newline='') as f:

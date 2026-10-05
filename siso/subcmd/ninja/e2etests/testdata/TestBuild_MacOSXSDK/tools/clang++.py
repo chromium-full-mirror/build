@@ -10,7 +10,8 @@ import sys
 def main():
   parser = argparse.ArgumentParser()
   parser.add_argument(
-      "-MMD", action='store_true', help="generate dependency file")
+    "-MMD", action='store_true', help="generate dependency file"
+  )
   parser.add_argument("-MF", help="dependenfy file")
   # -isysroot and -F are not used in this script,
   # but need to handle these flags on command line

@@ -26,7 +26,9 @@ def main():
   # exact content.
   with open(os.path.join(options.out_dir, 'data'), 'w', newline='') as f:
     f.write(data)
-  with open(os.path.join(options.out_dir, 'sub', 'nested'), 'w', newline='') as f:
+  with open(
+    os.path.join(options.out_dir, 'sub', 'nested'), 'w', newline=''
+  ) as f:
     f.write(data)
   return 0
 

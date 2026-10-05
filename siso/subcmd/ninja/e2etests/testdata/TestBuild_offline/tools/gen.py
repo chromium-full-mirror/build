@@ -11,10 +11,10 @@ output = None
 for arg in sys.argv:
   print(arg)
   if arg.startswith('--input='):
-    input = arg[len('--input='):]
+    input = arg[len('--input=') :]
     print('input=' + input)
   if arg.startswith('--output='):
-    output = arg[len('--output='):]
+    output = arg[len('--output=') :]
     print('output=' + output)
 
 if not output:

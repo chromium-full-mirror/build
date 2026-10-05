@@ -10,7 +10,8 @@ import sys
 def main():
   parser = argparse.ArgumentParser()
   parser.add_argument(
-      "-MMD", action='store_true', help="generate dependency file")
+    "-MMD", action='store_true', help="generate dependency file"
+  )
   parser.add_argument("-MF", help="dependenfy file")
   parser.add_argument("-I", help="include dir")
   parser.add_argument("-isysroot", help="sysroot dir")

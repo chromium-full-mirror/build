@@ -5,5 +5,6 @@
 import sys
 import os
 import shutil
+
 os.makedirs(os.path.dirname(sys.argv[2]), exist_ok=True)
 shutil.copyfile(sys.argv[1], sys.argv[2])

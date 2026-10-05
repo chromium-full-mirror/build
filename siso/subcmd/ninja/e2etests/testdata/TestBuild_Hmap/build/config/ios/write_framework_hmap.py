@@ -12,8 +12,9 @@ import sys
 def Main(args):
   if len(args) < 4:
     print(
-        "Usage: %s output.hmap Foo.framework header1.h..." % args[0],
-        file=sys.stderr)
+      "Usage: %s output.hmap Foo.framework header1.h..." % args[0],
+      file=sys.stderr,
+    )
     return 1
 
   (out, framework, all_headers) = args[1], args[2], args[3:]
@@ -30,7 +31,7 @@ def Main(args):
 
 
 def NextGreaterPowerOf2(x):
-  return 2**(x).bit_length()
+  return 2 ** (x).bit_length()
 
 
 def WriteHmap(output_name, filelist):
@@ -56,8 +57,17 @@ def WriteHmap(output_name, filelist):
 
   out = open(output_name, 'wb')
   out.write(
-      struct.pack('<LHHLLLL', magic, version, _reserved, strings_offset, count,
-                  capacity, max_value_length))
+    struct.pack(
+      '<LHHLLLL',
+      magic,
+      version,
+      _reserved,
+      strings_offset,
+      count,
+      capacity,
+      max_value_length,
+    )
+  )
 
   # Create empty hashmap buckets.
   buckets = [None] * capacity

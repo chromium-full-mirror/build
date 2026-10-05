@@ -12,7 +12,8 @@ import sys
 def main():
   parser = argparse.ArgumentParser()
   parser.add_argument(
-      "inputs", nargs='*', type=argparse.FileType(), help="inputs")
+    "inputs", nargs='*', type=argparse.FileType(), help="inputs"
+  )
   parser.add_argument("-o", type=argparse.FileType(mode='w'), help="output")
   options = parser.parse_args()
 

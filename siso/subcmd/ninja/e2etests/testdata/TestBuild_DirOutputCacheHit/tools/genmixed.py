@@ -30,7 +30,9 @@ def main():
   os.makedirs(os.path.join(options.out_dir, 'sub'), exist_ok=True)
   with open(os.path.join(options.out_dir, 'inner.txt'), 'w', newline='') as f:
     f.write('INNER:' + data)
-  with open(os.path.join(options.out_dir, 'sub', 'nested.txt'), 'w', newline='') as f:
+  with open(
+    os.path.join(options.out_dir, 'sub', 'nested.txt'), 'w', newline=''
+  ) as f:
     f.write('NESTED:' + data)
   return 0
 

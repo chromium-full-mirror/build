@@ -15,7 +15,8 @@ def main():
   parser.add_argument('--root', help='root dir')
   parser.add_argument('-q', help='quiet', action='store_true')
   parser.add_argument(
-      '--regeneration', help='regenerate build.ninja', action='store_true')
+    '--regeneration', help='regenerate build.ninja', action='store_true'
+  )
   # cmd: gen / clean only
   parser.add_argument('cmd')
   parser.add_argument('outdir')
