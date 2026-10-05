@@ -16,8 +16,8 @@ def main():
   options = parser.parse_args()
 
   data = ''
-  for input in options.inputs:
-    data += input + '\n'
+  for input_path in options.inputs:
+    data += input_path + '\n'
   with open(options.c, 'w') as f:
     f.write(data)
 

@@ -14,8 +14,8 @@ def main():
   options = parser.parse_args()
 
   data = ''
-  for input in options.inputs:
-    with open(input) as f:
+  for input_path in options.inputs:
+    with open(input_path) as f:
       data += f.read()
 
   time.sleep(0.1)

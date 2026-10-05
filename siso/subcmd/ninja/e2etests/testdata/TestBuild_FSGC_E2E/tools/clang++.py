@@ -20,8 +20,8 @@ def main():
     if options.MF:
       with open(options.MF, "w") as f:
         f.write("%s:" % options.o)
-        for input in options.inputs:
-          f.write(" %s" % input)
+        for input_path in options.inputs:
+          f.write(" %s" % input_path)
     return 0
   with open(options.o, "w") as f:
     f.write("link result of %s" % options.inputs)

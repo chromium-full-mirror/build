@@ -21,8 +21,8 @@ def main():
   options = parser.parse_args()
   # Read inputs so the action depends on them (cache key), but produce
   # only an empty directory.
-  for input in options.inputs:
-    with open(input) as f:
+  for input_path in options.inputs:
+    with open(input_path) as f:
       f.read()
   os.makedirs(options.out_dir, exist_ok=True)
   return 0

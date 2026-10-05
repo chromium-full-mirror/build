@@ -18,8 +18,8 @@ def main():
   options = parser.parse_args()
 
   data = ''
-  for input in options.inputs:
-    with open(input) as f:
+  for input_path in options.inputs:
+    with open(input_path) as f:
       data += f.read()
 
   os.makedirs(os.path.join(options.out_dir, 'sub'), exist_ok=True)

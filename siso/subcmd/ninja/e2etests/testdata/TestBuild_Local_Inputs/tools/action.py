@@ -15,12 +15,12 @@ def main():
   )
 
   options = parser.parse_args()
-  for input in options.inputs:
+  for input_file in options.inputs:
     output = os.path.normpath(
-      os.path.join(options.out_dir, "out/siso", input.name)
+      os.path.join(options.out_dir, "out/siso", input_file.name)
     )
     with open(output, mode='w') as w:
-      w.write(input.read())
+      w.write(input_file.read())
 
 
 if __name__ == "__main__":

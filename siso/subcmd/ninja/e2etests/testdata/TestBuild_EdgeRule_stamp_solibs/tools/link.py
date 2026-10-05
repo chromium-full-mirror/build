@@ -18,9 +18,9 @@ def main():
   options = parser.parse_args()
 
   data = ''
-  for input in options.inputs:
-    data += input.name + '\n'
-    data += input.read()
+  for input_file in options.inputs:
+    data += input_file.name + '\n'
+    data += input_file.read()
     data += '\n'
   options.o.write(data)
 

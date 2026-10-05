@@ -370,18 +370,18 @@ def main(args):
     ]
 
   # Generate Android.bp files for each project.
-  for dir in project_dirs:
-    print(f"Creating Android.bp for {dir}...")
+  for project_dir in project_dirs:
+    print(f"Creating Android.bp for {project_dir}...")
 
     # First, we need to check if the project contains any extra LICENSE
     # files that need to be defined in the Android.bp file.
     modules = []
     licenses = ["external_chromium_build_license"]
-    for license in sorted(dir.glob("**/LICENSE*")):
+    for license_file in sorted(project_dir.glob("**/LICENSE*")):
       # Transform the path of the LICENSE file into a valid identifier.
       license_name = (
         "external_chromium_build_"
-        + license.relative_to(dir)
+        + license_file.relative_to(project_dir)
         .as_posix()
         .replace("@", "")
         .replace("/", "_")
@@ -391,12 +391,12 @@ def main(args):
 
       # Determine the kind of license by matching the SHA256 digest of
       # the file against a map of known licenses.
-      with open(license, "rb") as f:
+      with open(license_file, "rb") as f:
         license_digest = hashlib.sha256(f.read()).hexdigest()
       license_kind = KNOWN_LICENSES.get(license_digest)
       if not license_kind:
         print(
-          f"Error: Unknown LICENSE found in {license} (hash {license_digest}).",
+          f"Error: Unknown LICENSE found in {license_file} (hash {license_digest}).",
           file=sys.stderr,
         )
         return 1
@@ -408,7 +408,7 @@ def main(args):
           name=license_name,
           visibility=[":__subpackages__"],
           license_kinds=[license_kind],
-          license_text=[str(license.relative_to(dir))],
+          license_text=[str(license_file.relative_to(project_dir))],
         )
       ]
 
@@ -424,13 +424,13 @@ def main(args):
     ] + modules
 
     # If we don't need to generate full Android.bp files for this project, we're done.
-    if dir.name in args.projects:
+    if project_dir.name in args.projects:
       # If this project contains a Go module, generate corresponding
       # `bootstrap_go_package` modules for the Android.bp file.
-      if os.path.exists(dir / "go.mod"):
-        modules += go_module(dir, with_tests=args.with_tests)
+      if os.path.exists(project_dir / "go.mod"):
+        modules += go_module(project_dir, with_tests=args.with_tests)
 
-    with open(dir / "Android.bp", "w") as f:
+    with open(project_dir / "Android.bp", "w") as f:
       f.write("\n\n".join(modules) + "\n")
 
   return 0

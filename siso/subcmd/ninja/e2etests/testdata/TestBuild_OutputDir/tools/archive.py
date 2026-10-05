@@ -16,8 +16,8 @@ def main():
   options = parser.parse_args()
 
   with zipfile.ZipFile(options.output, "w") as zf:
-    for input in options.inputs:
-      zf.write(input, arcname=os.path.basename(input))
+    for input_path in options.inputs:
+      zf.write(input_path, arcname=os.path.basename(input_path))
   return 0
 
 

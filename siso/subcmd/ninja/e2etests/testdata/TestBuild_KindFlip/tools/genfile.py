@@ -19,8 +19,8 @@ def main():
   options = parser.parse_args()
 
   data = ''
-  for input in options.inputs:
-    with open(input) as f:
+  for input_path in options.inputs:
+    with open(input_path) as f:
       data += f.read()
 
   # Clear any stale output (cross-platform replacement for a `rm -rf ${out} &&`

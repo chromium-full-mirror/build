@@ -15,7 +15,16 @@ extend-exclude = [
 quote-style = "preserve"
 
 [lint]
-select = ["E", "F", "W"]
+select = [
+    # Default rule sets
+    "E",
+    "F",
+    "W",
+
+    # Additional individually-enabled rules
+    "A001",  # Variable shadows a builtin
+    "B007",  # Loop variable unused in the loop body
+]
 ignore = [
     "E501",  # Line length is handled by formatter
 ]

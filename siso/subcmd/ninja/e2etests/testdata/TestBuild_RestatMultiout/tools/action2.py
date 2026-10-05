@@ -14,9 +14,9 @@ def main():
   options = parser.parse_args()
 
   data = ''
-  for input in options.inputs:
-    print('input=%s' % input)
-    with open(input) as f:
+  for input_path in options.inputs:
+    print('input=%s' % input_path)
+    with open(input_path) as f:
       data += f.read()
 
   # first output becomes dirty,
