@@ -6,7 +6,6 @@
 # ${in} may be multiple.
 
 import argparse
-import shutil
 import sys
 
 

@@ -13,3 +13,9 @@ extend-exclude = [
 
 [format]
 quote-style = "preserve"
+
+[lint]
+select = ["E", "F", "W"]
+ignore = [
+    "E501",  # Line length is handled by formatter
+]

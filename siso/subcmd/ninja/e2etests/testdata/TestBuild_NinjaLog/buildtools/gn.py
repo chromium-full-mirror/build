@@ -4,7 +4,6 @@
 
 import argparse
 import os
-import shutil
 import sys
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
