@@ -6,12 +6,14 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"strings"
 	"syscall"
 	"testing"
 	"time"
@@ -298,5 +300,46 @@ func TestSisoTap_SupervisorDoesNotExitOnPollHUPUntilDone(t *testing.T) {
 		}
 	case <-time.After(500 * time.Millisecond):
 		t.Fatal("s.Run did not terminate after <-done was closed")
+	}
+}
+
+func TestSisoTap_LookPathFailure(t *testing.T) {
+	bin := buildSisoTap(t)
+
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, bin, "--", "/nonexistent-command-for-siso-tap-test")
+	out, err := cmd.CombinedOutput()
+	if ctx.Err() != nil {
+		t.Fatalf("siso-tap hung when supervised lookpath failed: %v\noutput:\n%s", ctx.Err(), string(out))
+	}
+	if err == nil {
+		t.Fatalf("expected error for nonexistent command, got nil\noutput:\n%s", string(out))
+	}
+	if !strings.Contains(string(out), "lookpath") {
+		t.Errorf("expected lookpath error in output, got:\n%s", string(out))
+	}
+}
+
+func TestSisoTap_NestedSeccompFailure(t *testing.T) {
+	bin := buildSisoTap(t)
+
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+
+	// Running siso-tap inside siso-tap causes the inner supervised process
+	// to fail at installNotifyFilter() ("install seccomp: load: operation canceled")
+	// and exit before sendfd(). Verify it fails immediately instead of hanging.
+	cmd := exec.CommandContext(ctx, bin, "--", bin, "--", "/bin/sh", "-c", "exit 0")
+	out, err := cmd.CombinedOutput()
+	if ctx.Err() != nil {
+		t.Fatalf("siso-tap hung when installNotifyFilter failed: %v\noutput:\n%s", ctx.Err(), string(out))
+	}
+	if err == nil {
+		t.Fatalf("expected error when running nested siso-tap, got nil\noutput:\n%s", string(out))
+	}
+	if !strings.Contains(string(out), "install seccomp:") {
+		t.Errorf("expected 'install seccomp:' in output, got:\n%s", string(out))
 	}
 }

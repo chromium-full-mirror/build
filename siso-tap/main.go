@@ -234,7 +234,6 @@ func startTarget() (*exec.Cmd, seccomp.ScmpFd, error) {
 	rfd := os.NewFile(uintptr(fds[0]), "fdpassing.r")
 	defer rfd.Close()
 	wfd := os.NewFile(uintptr(fds[1]), "fdpassing.w")
-	defer wfd.Close()
 
 	args := []string{
 		"--supervised",
@@ -246,6 +245,7 @@ func startTarget() (*exec.Cmd, seccomp.ScmpFd, error) {
 	cmd.Stderr = os.Stderr
 	cmd.ExtraFiles = []*os.File{wfd}
 	err = cmd.Start()
+	wfd.Close()
 	if err != nil {
 		return nil, 0, err
 	}
