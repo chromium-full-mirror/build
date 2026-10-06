@@ -24,34 +24,34 @@ func TestParseBytestreamURI(t *testing.T) {
 		wantErr       bool
 	}{
 		{
-			name:          "no digest-function segment",
+			name:          "no_digest_function_segment",
 			uri:           "bytestream://remotebuildexecution.googleapis.com/projects/p/instances/default_instance/blobs/" + hash + "/123",
 			wantDigestStr: hash + "/123",
 			wantInstance:  "projects/p/instances/default_instance",
 		},
 		{
-			name:          "explicit blake3 segment, as emitted by Client.FileURI",
+			name:          "explicit_blake3_segment",
 			uri:           "bytestream://remotebuildexecution.googleapis.com/projects/p/instances/default_instance/blobs/blake3/" + hash + "/123",
 			wantDigestStr: hash + "/123",
 			wantInstance:  "projects/p/instances/default_instance",
 			wantFunction:  "blake3",
 		},
 		{
-			name:          "omitted segment with 40-hex hash infers sha1",
+			name:          "infer_sha1_from_40_hex_hash",
 			uri:           "bytestream://remotebuildexecution.googleapis.com/projects/p/instances/default_instance/blobs/" + sha1Hash + "/123",
 			wantDigestStr: sha1Hash + "/123",
 			wantInstance:  "projects/p/instances/default_instance",
 			wantFunction:  "sha1",
 		},
 		{
-			name:          "omitted segment with 128-hex hash infers sha512",
+			name:          "infer_sha512_from_128_hex_hash",
 			uri:           "bytestream://remotebuildexecution.googleapis.com/projects/p/instances/default_instance/blobs/" + sha512Hash + "/123",
 			wantDigestStr: sha512Hash + "/123",
 			wantInstance:  "projects/p/instances/default_instance",
 			wantFunction:  "sha512",
 		},
 		{
-			name:          "omitted segment with 64-hex hash keeps configured blake3",
+			name:          "64_hex_hash_keeps_configured_blake3",
 			uri:           "bytestream://remotebuildexecution.googleapis.com/projects/p/instances/default_instance/blobs/" + hash + "/123",
 			preFunction:   "blake3",
 			wantDigestStr: hash + "/123",
@@ -59,7 +59,7 @@ func TestParseBytestreamURI(t *testing.T) {
 			wantFunction:  "blake3",
 		},
 		{
-			name:          "omitted segment with 40-hex hash overrides mismatching sha256 flag",
+			name:          "40_hex_hash_overrides_sha256_flag",
 			uri:           "bytestream://remotebuildexecution.googleapis.com/projects/p/instances/default_instance/blobs/" + sha1Hash + "/123",
 			preFunction:   "sha256",
 			wantDigestStr: sha1Hash + "/123",
@@ -67,7 +67,7 @@ func TestParseBytestreamURI(t *testing.T) {
 			wantFunction:  "sha1",
 		},
 		{
-			name:          "explicit segment wins over configured flag",
+			name:          "explicit_segment_overrides_flag",
 			uri:           "bytestream://remotebuildexecution.googleapis.com/projects/p/instances/default_instance/blobs/blake3/" + hash + "/123",
 			preFunction:   "sha256",
 			wantDigestStr: hash + "/123",
@@ -75,12 +75,12 @@ func TestParseBytestreamURI(t *testing.T) {
 			wantFunction:  "blake3",
 		},
 		{
-			name:    "too few path elements",
+			name:    "too_few_path_elements",
 			uri:     "bytestream://host/projects/p/instances/default_instance/blobs/" + hash,
 			wantErr: true,
 		},
 		{
-			name:    "extra segment that is not a digest function",
+			name:    "unknown_digest_function_segment",
 			uri:     "bytestream://host/projects/p/instances/default_instance/blobs/bogus/" + hash + "/123",
 			wantErr: true,
 		},

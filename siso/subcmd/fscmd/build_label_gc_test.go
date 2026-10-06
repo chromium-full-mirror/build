@@ -18,37 +18,37 @@ func TestGcCommand_Run_ValidationErrors(t *testing.T) {
 		wantErrSubstr string
 	}{
 		{
-			name:          "no args",
+			name:          "no_args",
 			args:          []string{},
 			wantErrSubstr: "must specify either build labels to evict or --retain_last_x",
 		},
 		{
-			name:          "both args",
+			name:          "both_args",
 			args:          []string{"--retain_last_x=3", "label1"},
 			wantErrSubstr: "cannot use both build labels and --retain_last_x simultaneously",
 		},
 		{
-			name:          "negative retain_last_x",
+			name:          "negative_retain_last_x",
 			args:          []string{"--retain_last_x=-1"},
 			wantErrSubstr: "retain_last_x must be non-negative",
 		},
 		{
-			name:          "list_active_labels with build labels",
+			name:          "list_active_labels_with_build_labels",
 			args:          []string{"--list_active_labels", "some_label"},
 			wantErrSubstr: "--list_active_labels cannot be used with",
 		},
 		{
-			name:          "list_active_labels with retain_last_x",
+			name:          "list_active_labels_with_retain_last_x",
 			args:          []string{"--list_active_labels", "--retain_last_x=3"},
 			wantErrSubstr: "--list_active_labels cannot be used with",
 		},
 		{
-			name:          "list_active_labels with dry_run",
+			name:          "list_active_labels_with_dry_run",
 			args:          []string{"--list_active_labels", "--dry_run"},
 			wantErrSubstr: "--list_active_labels cannot be used with",
 		},
 		{
-			name:          "list_active_labels with output_file",
+			name:          "list_active_labels_with_output_file",
 			args:          []string{"--list_active_labels", "--output_file=out.txt"},
 			wantErrSubstr: "--list_active_labels cannot be used with",
 		},

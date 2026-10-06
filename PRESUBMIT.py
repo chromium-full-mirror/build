@@ -100,6 +100,7 @@ SUBTEST_CHECK_DIRS = [
   r"^gong/gn/build/ninjawriter$",
   r"^siso/execute$",
   r"^siso/reapi/merkletree$",
+  r"^siso/subcmd/",
   r"^siso/toolsupport/nsjailutil$",
 ]
 

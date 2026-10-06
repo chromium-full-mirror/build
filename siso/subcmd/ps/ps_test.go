@@ -35,7 +35,7 @@ func TestFormatHeader(t *testing.T) {
 		want     string
 	}{
 		{
-			name: "no progress total",
+			name: "no_progress_total",
 			loc:  "/path/to/out",
 			progress: build.ProgressInfo{
 				Done:  0,
@@ -44,7 +44,7 @@ func TestFormatHeader(t *testing.T) {
 			want: "Siso is running in /path/to/out",
 		},
 		{
-			name: "with progress",
+			name: "with_progress",
 			loc:  "/path/to/out",
 			progress: build.ProgressInfo{
 				Done:  120,
@@ -53,7 +53,7 @@ func TestFormatHeader(t *testing.T) {
 			want: "Siso is running in /path/to/out [120/500 (remaining: 380)]",
 		},
 		{
-			name: "done exceeds total",
+			name: "done_exceeds_total",
 			loc:  "/path/to/out",
 			progress: build.ProgressInfo{
 				Done:  550,
