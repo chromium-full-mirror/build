@@ -38,16 +38,16 @@ func TestExpectEOF(t *testing.T) {
 		wantErrs error // if non-nil, expectEOF's error must match via errors.Is
 	}{
 		{
-			name:    "clean EOF",
+			name:    "clean_eof",
 			r:       bytes.NewReader(nil),
 			wantEOF: true,
 		},
 		{
-			name: "trailing data",
+			name: "trailing_data",
 			r:    bytes.NewReader([]byte("x")),
 		},
 		{
-			name:     "read error",
+			name:     "read_error",
 			r:        errReader{err: sentinel},
 			wantErrs: sentinel,
 		},

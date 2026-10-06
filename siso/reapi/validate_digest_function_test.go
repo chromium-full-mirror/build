@@ -28,37 +28,37 @@ func TestValidateDigestFunction(t *testing.T) {
 		wantErr bool
 	}{
 		{
-			name:    "empty list, sha256 client: old server, inferred ok",
+			name:    "empty_list_sha256_inferred_ok",
 			current: rpb.DigestFunction_SHA256,
 			capa:    capWith(),
 			wantErr: false,
 		},
 		{
-			name:    "empty list, blake3 client: rejected",
+			name:    "empty_list_blake3_rejected",
 			current: rpb.DigestFunction_BLAKE3,
 			capa:    capWith(),
 			wantErr: true,
 		},
 		{
-			name:    "non-empty list without sha256, sha256 client: rejected",
+			name:    "missing_sha256_rejected",
 			current: rpb.DigestFunction_SHA256,
 			capa:    capWith(rpb.DigestFunction_BLAKE3),
 			wantErr: true,
 		},
 		{
-			name:    "list with blake3, blake3 client: ok",
+			name:    "blake3_supported",
 			current: rpb.DigestFunction_BLAKE3,
 			capa:    capWith(rpb.DigestFunction_SHA256, rpb.DigestFunction_BLAKE3),
 			wantErr: false,
 		},
 		{
-			name:    "list with sha256, sha256 client: ok",
+			name:    "sha256_supported",
 			current: rpb.DigestFunction_SHA256,
 			capa:    capWith(rpb.DigestFunction_SHA256, rpb.DigestFunction_BLAKE3),
 			wantErr: false,
 		},
 		{
-			name:    "exec enabled but only supports sha256, blake3 client: rejected",
+			name:    "exec_missing_blake3_rejected",
 			current: rpb.DigestFunction_BLAKE3,
 			capa: &rpb.ServerCapabilities{
 				CacheCapabilities: &rpb.CacheCapabilities{
@@ -72,7 +72,7 @@ func TestValidateDigestFunction(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name:    "exec enabled and supports blake3, blake3 client: ok",
+			name:    "exec_blake3_supported",
 			current: rpb.DigestFunction_BLAKE3,
 			capa: &rpb.ServerCapabilities{
 				CacheCapabilities: &rpb.CacheCapabilities{
@@ -86,7 +86,7 @@ func TestValidateDigestFunction(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name:    "exec enabled with only legacy singular blake3 field, blake3 client: ok",
+			name:    "exec_legacy_singular_blake3_supported",
 			current: rpb.DigestFunction_BLAKE3,
 			capa: &rpb.ServerCapabilities{
 				CacheCapabilities: &rpb.CacheCapabilities{
@@ -100,7 +100,7 @@ func TestValidateDigestFunction(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name:    "exec enabled with no digest functions at all, blake3 client: rejected",
+			name:    "exec_no_digest_functions_rejected",
 			current: rpb.DigestFunction_BLAKE3,
 			capa: &rpb.ServerCapabilities{
 				CacheCapabilities: &rpb.CacheCapabilities{
@@ -113,7 +113,7 @@ func TestValidateDigestFunction(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name:    "exec disabled, blake3 client with cache support: ok",
+			name:    "exec_disabled_cache_blake3_supported",
 			current: rpb.DigestFunction_BLAKE3,
 			capa: &rpb.ServerCapabilities{
 				CacheCapabilities: &rpb.CacheCapabilities{

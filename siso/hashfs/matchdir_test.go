@@ -109,13 +109,13 @@ func TestMatchDir(t *testing.T) {
 	}{
 		{
 			// e and s are not listed: other children don't matter.
-			name:     "all match",
+			name:     "all_match",
 			dir:      "a",
 			children: []hashfs.DirChild{f, g, d},
 			want:     true,
 		},
 		{
-			name: "no children",
+			name: "no_children",
 			dir:  "a",
 			want: true,
 		},
@@ -123,51 +123,51 @@ func TestMatchDir(t *testing.T) {
 		// A file must have exactly the wanted digest and executable
 		// bit. g's digest is just some other real digest.
 		{
-			name:     "f with g's digest",
+			name:     "f_with_g_digest",
 			dir:      "a",
 			children: []hashfs.DirChild{{Name: "f", Digest: g.Digest, IsExecutable: f.IsExecutable}},
 		},
 		{
-			name:     "f with the executable bit flipped",
+			name:     "f_executable_bit_flipped",
 			dir:      "a",
 			children: []hashfs.DirChild{{Name: "f", Digest: f.Digest, IsExecutable: !f.IsExecutable}},
 		},
 		{
-			name:     "g with the executable bit flipped",
+			name:     "g_executable_bit_flipped",
 			dir:      "a",
 			children: []hashfs.DirChild{{Name: "g", Digest: g.Digest, IsExecutable: !g.IsExecutable}},
 		},
 
 		// A zero digest means "want a directory".
 		{
-			name:     "file f wanted as a directory",
+			name:     "file_wanted_as_dir",
 			dir:      "a",
 			children: []hashfs.DirChild{{Name: "f"}},
 		},
 		{
-			name:     "directory d wanted as a file",
+			name:     "dir_wanted_as_file",
 			dir:      "a",
 			children: []hashfs.DirChild{{Name: "d", Digest: f.Digest}},
 		},
 
 		// MatchDir only says true for loaded files and directories.
 		{
-			name:     "symlink s wanted as a file",
+			name:     "symlink_wanted_as_file",
 			dir:      "a",
 			children: []hashfs.DirChild{{Name: "s", Digest: f.Digest}},
 		},
 		{
-			name:     "symlink s wanted as a directory",
+			name:     "symlink_wanted_as_dir",
 			dir:      "a",
 			children: []hashfs.DirChild{{Name: "s"}},
 		},
 		{
-			name:     "child recorded as missing",
+			name:     "child_recorded_as_missing",
 			dir:      "a",
 			children: []hashfs.DirChild{{Name: "missing", Digest: f.Digest}},
 		},
 		{
-			name:     "child never loaded",
+			name:     "child_never_loaded",
 			dir:      "a",
 			children: []hashfs.DirChild{{Name: "never", Digest: f.Digest}},
 		},
@@ -175,12 +175,12 @@ func TestMatchDir(t *testing.T) {
 		// The directory itself must be loaded and not reached through
 		// a symlink.
 		{
-			name:     "a through symlink l",
+			name:     "dir_through_symlink",
 			dir:      "l",
 			children: []hashfs.DirChild{f, g, d},
 		},
 		{
-			name:     "unknown directory",
+			name:     "unknown_dir",
 			dir:      "nope",
 			children: []hashfs.DirChild{f, g, d},
 		},

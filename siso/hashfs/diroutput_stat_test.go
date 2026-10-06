@@ -57,7 +57,8 @@ func TestStat_BuildWithoutBytesDirOutput(t *testing.T) {
 		return hfs, dir
 	}
 
-	t.Run("with action digest reports present", func(t *testing.T) {
+	// TODO: consider splitting into separate test functions.
+	t.Run("with_action_digest", func(t *testing.T) {
 		hfs, dir := setup(t, digest.Digest{Hash: "actionhash", SizeBytes: 10})
 		fi, err := hfs.Stat(t.Context(), dir, name)
 		if err != nil {
@@ -68,7 +69,8 @@ func TestStat_BuildWithoutBytesDirOutput(t *testing.T) {
 		}
 	})
 
-	t.Run("without action digest reports missing", func(t *testing.T) {
+	// TODO: consider splitting into separate test functions.
+	t.Run("without_action_digest", func(t *testing.T) {
 		hfs, dir := setup(t, digest.Digest{})
 		if _, err := hfs.Stat(t.Context(), dir, name); !errors.Is(err, fs.ErrNotExist) {
 			t.Errorf("Stat(%q)=_, %v; want %v (no action digest is not CAS-backed)", name, err, fs.ErrNotExist)
@@ -80,7 +82,8 @@ func TestStat_BuildWithoutBytesDirOutput(t *testing.T) {
 	// trailing slash must reach the same hashfs entry as the bare name. A miss
 	// here made deps drop a build-without-bytes dir input as missing, so it was
 	// never flushed for a local consumer.
-	t.Run("trailing slash reaches the same entry", func(t *testing.T) {
+	// TODO: consider splitting into separate test functions.
+	t.Run("trailing_slash", func(t *testing.T) {
 		hfs, dir := setup(t, digest.Digest{Hash: "actionhash", SizeBytes: 10})
 		fi, err := hfs.Stat(t.Context(), dir, name+"/")
 		if err != nil {
