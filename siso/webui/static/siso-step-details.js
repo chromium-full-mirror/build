@@ -7,6 +7,7 @@ import {
   formatIntervalMetricHuman,
   trimOutputPrefix,
 } from './step-transforms.js';
+import { Task, initialState } from '@lit/task';
 
 // TODO: make these configurable; hardcoded to match the SSR recall form for now.
 const RECALL_PROJECT = 'rbe-chrome-untrusted';
@@ -15,9 +16,6 @@ const RECALL_REAPI_INSTANCE = 'default_instance';
 export class SisoStepDetails extends LitElement {
   static properties = {
     endpoint: { type: String },
-    data: { type: Object },
-    _loading: { state: true },
-    _error: { state: true },
   };
 
   createRenderRoot() {
@@ -29,62 +27,46 @@ export class SisoStepDetails extends LitElement {
   constructor() {
     super();
     this.endpoint = '';
-    this.data = null;
-    this._loading = false;
-    this._error = '';
-  }
-
-  willUpdate(changedProperties) {
-    super.willUpdate(changedProperties);
-    if (changedProperties.has('endpoint') && this.endpoint && !this.data) {
-      this.fetchData();
-    }
-  }
-
-  async fetchData() {
-    if (!this.endpoint) {
-      return;
-    }
-    this._loading = true;
-    this._error = '';
-    try {
-      const response = await fetch(this.endpoint);
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      this.data = await response.json();
-    } catch (e) {
-      this._error = e.message;
-    } finally {
-      this._loading = false;
-    }
+    this._task = new Task(this, {
+      task: async ([endpoint], { signal }) => {
+        if (!endpoint) {
+          return initialState;
+        }
+        const response = await fetch(endpoint, { signal });
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        return response.json();
+      },
+      args: () => [this.endpoint],
+    });
   }
 
   render() {
-    if (this._loading) {
-      return html`
+    return this._task.render({
+      pending: () => html`
         <div class="surface" style="padding: 2rem; text-align: center;">
           <md-linear-progress indeterminate style="width: 100%; max-width: 360px; margin: 0 auto 16px;"></md-linear-progress>
           <p style="color: var(--md-sys-color-on-surface-variant); margin: 0;">Loading build step...</p>
         </div>
-      `;
-    }
-
-    if (this._error) {
-      return html`
+      `,
+      error: (e) => html`
         <div class="surface build-status failure">
           <md-icon>cancel</md-icon>
-          <span>Failed to load build step: ${this._error}</span>
+          <span>Failed to load build step: ${e.message}</span>
         </div>
-      `;
-    }
+      `,
+      complete: (data) => this.renderStep(data),
+    });
+  }
 
-    const step = this.data?.step;
+  renderStep(data) {
+    const step = data?.step;
     if (!step) {
       return html``;
     }
 
-    const outdirRel = this.data?.outdirRel || '';
+    const outdirRel = data?.outdirRel || '';
     const outputs = step.outputs || [];
     const primaryOutput = outputs[0] || '';
     const trimmedOutput = trimOutputPrefix(primaryOutput, outdirRel);

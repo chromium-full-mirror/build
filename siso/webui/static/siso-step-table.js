@@ -11,13 +11,12 @@ import {
   trimOutputPrefix,
 } from './step-transforms.js';
 import { stepQueryState } from './step-query-state.js';
+import { Task, TaskStatus, initialState } from '@lit/task';
+
 export class SisoStepTable extends LitElement {
   static properties = {
     endpoint: { type: String },
     baseUrl: { type: String, attribute: 'base-url' },
-    _loading: { state: true },
-    _error: { state: true },
-    _data: { state: true },
   };
 
   createRenderRoot() {
@@ -29,11 +28,22 @@ export class SisoStepTable extends LitElement {
     super();
     this.endpoint = '';
     this.baseUrl = '';
-    this._loading = false;
-    this._error = '';
-    this._data = null;
     this._actionCounts = [];
     this._ruleCounts = [];
+    this._countsData = null;
+    this._task = new Task(this, {
+      task: async ([endpoint], { signal }) => {
+        if (!endpoint) {
+          return initialState;
+        }
+        const response = await fetch(endpoint, { signal });
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        return response.json();
+      },
+      args: () => [this.endpoint],
+    });
 
     this.queryState = queryState;
     this._onQueryChange = () => this.requestUpdate();
@@ -43,7 +53,6 @@ export class SisoStepTable extends LitElement {
     super.connectedCallback();
     this.queryState.addEventListener('change', this._onQueryChange);
     this.queryState.initFromURL();
-    this.fetchData();
   }
 
   disconnectedCallback() {
@@ -52,25 +61,10 @@ export class SisoStepTable extends LitElement {
   }
 
   /**
-   * Fetches step metrics data from endpoint.
+   * Step metrics data from the most recent successful fetch, or null.
    */
-  async fetchData() {
-    if (!this.endpoint) {
-      return;
-    }
-    this._loading = true;
-    this._error = '';
-    try {
-      const response = await fetch(this.endpoint);
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      this._data = await response.json();
-    } catch (e) {
-      this._error = e.message;
-    } finally {
-      this._loading = false;
-    }
+  get _data() {
+    return this._task.status === TaskStatus.COMPLETE ? this._task.value : null;
   }
 
   get filteredSteps() {
@@ -174,7 +168,10 @@ export class SisoStepTable extends LitElement {
 
   updated(changedProperties) {
     super.updated(changedProperties);
-    if (changedProperties.has('_data')) {
+    // Task-driven updates don't appear in changedProperties, so track the
+    // data identity directly.
+    if (this._data !== this._countsData) {
+      this._countsData = this._data;
       this._actionCounts = this.computeActionCounts();
       this._ruleCounts = this.computeRuleCounts();
     }
@@ -193,24 +190,25 @@ export class SisoStepTable extends LitElement {
   }
 
   render() {
-    if (this._loading) {
-      return html`
+    return this._task.render({
+      pending: () => html`
         <div class="surface" style="padding: 2rem; text-align: center;">
           <md-linear-progress indeterminate style="width: 100%; max-width: 360px; margin: 0 auto 16px;"></md-linear-progress>
           <p style="color: var(--md-sys-color-on-surface-variant); margin: 0;">Loading build steps...</p>
         </div>
-      `;
-    }
-
-    if (this._error) {
-      return html`
+      `,
+      error: (e) => html`
         <div class="surface build-status failure">
           <md-icon>cancel</md-icon>
-          <span>Failed to load build steps: ${this._error}</span>
+          <span>Failed to load build steps: ${e.message}</span>
         </div>
-      `;
-    }
+      `,
+      initial: () => this.renderTable(),
+      complete: () => this.renderTable(),
+    });
+  }
 
+  renderTable() {
     const sorted = this.sortedSteps;
     const pagination = this.queryState.getPagination(sorted.length);
     const currentSubset = sorted.slice(pagination.itemsFirst, pagination.itemsLast);

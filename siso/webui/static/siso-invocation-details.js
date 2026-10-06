@@ -4,6 +4,7 @@
 
 import { LitElement, html } from 'lit';
 import { formatIntervalMetricHuman } from './step-transforms.js';
+import { Task, initialState } from '@lit/task';
 
 const BYTE_UNITS = ['KiB', 'MiB', 'GiB', 'TiB', 'PiB', 'EiB'];
 
@@ -27,9 +28,6 @@ function formatBytes(b) {
 export class SisoInvocationDetails extends LitElement {
   static properties = {
     endpoint: { type: String },
-    data: { type: Object },
-    _loading: { state: true },
-    _error: { state: true },
   };
 
   createRenderRoot() {
@@ -40,57 +38,40 @@ export class SisoInvocationDetails extends LitElement {
   constructor() {
     super();
     this.endpoint = '';
-    this.data = null;
-    this._loading = false;
-    this._error = '';
-  }
-
-  willUpdate(changedProperties) {
-    super.willUpdate(changedProperties);
-    if (changedProperties.has('endpoint') && this.endpoint && !this.data) {
-      this.fetchData();
-    }
-  }
-
-  async fetchData() {
-    if (!this.endpoint) {
-      return;
-    }
-    this._loading = true;
-    this._error = '';
-    try {
-      const response = await fetch(this.endpoint);
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      this.data = await response.json();
-    } catch (e) {
-      this._error = e.message;
-    } finally {
-      this._loading = false;
-    }
+    this._task = new Task(this, {
+      task: async ([endpoint], { signal }) => {
+        if (!endpoint) {
+          return initialState;
+        }
+        const response = await fetch(endpoint, { signal });
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        return response.json();
+      },
+      args: () => [this.endpoint],
+    });
   }
 
   render() {
-    if (this._loading) {
-      return html`
+    return this._task.render({
+      pending: () => html`
         <div class="surface" style="padding: 2rem; text-align: center;">
           <md-linear-progress indeterminate style="width: 100%; max-width: 360px; margin: 0 auto 16px;"></md-linear-progress>
           <p style="color: var(--md-sys-color-on-surface-variant); margin: 0;">Loading invocation details...</p>
         </div>
-      `;
-    }
-
-    if (this._error) {
-      return html`
+      `,
+      error: (e) => html`
         <div class="surface build-status failure">
           <md-icon>cancel</md-icon>
-          <span>Failed to load invocation details: ${this._error}</span>
+          <span>Failed to load invocation details: ${e.message}</span>
         </div>
-      `;
-    }
+      `,
+      complete: (data) => this.renderDetails(data),
+    });
+  }
 
-    const data = this.data;
+  renderDetails(data) {
     if (!data) {
       return html``;
     }

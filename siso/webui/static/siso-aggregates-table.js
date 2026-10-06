@@ -7,6 +7,7 @@ import {
   computeAggregates,
   formatIntervalMetricTimestamp,
 } from './step-transforms.js';
+import { Task, TaskStatus, initialState } from '@lit/task';
 
 export class SisoAggregatesTable extends LitElement {
   static properties = {
@@ -14,9 +15,6 @@ export class SisoAggregatesTable extends LitElement {
     baseUrl: { type: String, attribute: 'base-url' },
     sortBy: { state: true },
     sortDsc: { state: true },
-    _loading: { state: true },
-    _error: { state: true },
-    _data: { state: true },
   };
 
   createRenderRoot() {
@@ -30,36 +28,26 @@ export class SisoAggregatesTable extends LitElement {
     this.baseUrl = '';
     this.sortBy = 'utime';
     this.sortDsc = true;
-    this._loading = false;
-    this._error = '';
-    this._data = null;
-  }
-
-  connectedCallback() {
-    super.connectedCallback();
-    this.fetchData();
+    this._task = new Task(this, {
+      task: async ([endpoint], { signal }) => {
+        if (!endpoint) {
+          return initialState;
+        }
+        const response = await fetch(endpoint, { signal });
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        return response.json();
+      },
+      args: () => [this.endpoint],
+    });
   }
 
   /**
-   * Fetches step metrics data from endpoint.
+   * Step metrics data from the most recent successful fetch, or null.
    */
-  async fetchData() {
-    if (!this.endpoint) {
-      return;
-    }
-    this._loading = true;
-    this._error = '';
-    try {
-      const response = await fetch(this.endpoint);
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      this._data = await response.json();
-    } catch (e) {
-      this._error = e.message;
-    } finally {
-      this._loading = false;
-    }
+  get _data() {
+    return this._task.status === TaskStatus.COMPLETE ? this._task.value : null;
   }
 
   toggleSort(column) {
@@ -117,23 +105,24 @@ export class SisoAggregatesTable extends LitElement {
   }
 
   render() {
-    if (this._loading) {
-      return html`
+    return this._task.render({
+      pending: () => html`
         <div class="surface build-status">
           <p style="color: var(--md-sys-color-on-surface-variant); margin: 0;">Loading aggregates...</p>
         </div>
-      `;
-    }
-
-    if (this._error) {
-      return html`
+      `,
+      error: (e) => html`
         <div class="surface build-status failure">
           <md-icon>cancel</md-icon>
-          <span>Failed to load aggregates: ${this._error}</span>
+          <span>Failed to load aggregates: ${e.message}</span>
         </div>
-      `;
-    }
+      `,
+      initial: () => this.renderTable(),
+      complete: () => this.renderTable(),
+    });
+  }
 
+  renderTable() {
     const aggregates = this.sortedAggregates;
 
     return html`
