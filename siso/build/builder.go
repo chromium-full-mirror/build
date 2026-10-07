@@ -1562,12 +1562,5 @@ func (b *Builder) missingDepsMode() MissingDepsMode {
 	case MissingDepsIgnore, MissingDepsWarn, MissingDepsError, MissingDepsFatal:
 		return b.missingDeps
 	}
-	// TODO(crbug.com/556026322): deprecate fail-on-bad-deps and check-deps experiments once migrated to -missing_deps.
-	if experiments.Enabled("fail-on-bad-deps", "") {
-		return MissingDepsFatal
-	}
-	if experiments.Enabled("check-deps", "") {
-		return MissingDepsWarn
-	}
 	return MissingDepsIgnore
 }

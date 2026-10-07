@@ -86,7 +86,7 @@ func TestMissingDepsFlag(t *testing.T) {
 		{
 			name:     "default",
 			args:     []string{"-C", "out/siso"},
-			wantMode: "",
+			wantMode: "ignore",
 		},
 		{
 			name:     "single_dash_warn",
@@ -107,6 +107,11 @@ func TestMissingDepsFlag(t *testing.T) {
 			name:     "fatal",
 			args:     []string{"-C", "out/siso", "-missing_deps=fatal"},
 			wantMode: "fatal",
+		},
+		{
+			name:    "empty",
+			args:    []string{"-C", "out/siso", "-missing_deps="},
+			wantErr: true,
 		},
 		{
 			name:    "invalid",

@@ -17,7 +17,7 @@ import (
 	"go.chromium.org/build/siso/hashfs"
 )
 
-func TestBuild_CheckDeps(t *testing.T) {
+func TestBuild_MissingDepsFatalNoFallback(t *testing.T) {
 	if !runInSubProcess(t) {
 		return
 	}
@@ -26,7 +26,7 @@ func TestBuild_CheckDeps(t *testing.T) {
 
 	runNinjaTest := func(t *testing.T, target string, w io.Writer) (build.Stats, error) {
 		t.Helper()
-		build.SetExperimentForTest("check-deps")
+		build.SetExperimentForTest("no-fallback")
 		defer func() {
 			build.SetExperimentForTest("")
 		}()
@@ -35,10 +35,11 @@ func TestBuild_CheckDeps(t *testing.T) {
 		})
 		defer cleanup()
 		opt.OutputLogWriter = w
+		opt.MissingDeps = build.MissingDepsFatal
 		return ninjabuild.Run(ctx, graph, opt, []string{target}, ninjabuild.RunNinjaOpts{})
 	}
 
-	setupFiles(t, dir, t.Name(), nil)
+	setupFiles(t, dir, "TestBuild_CheckDeps", nil)
 	var sisoOutput bytes.Buffer
 	t.Logf("-- first build bar.h")
 	stats, err := runNinjaTest(t, "bar.h", &sisoOutput)
@@ -49,58 +50,9 @@ func TestBuild_CheckDeps(t *testing.T) {
 		t.Errorf("done=%d total=%d; want done=total=1", stats.Done, stats.Total)
 	}
 
-	t.Logf("-- second build all")
-	stats, err = runNinjaTest(t, "all", &sisoOutput)
-	if err != nil {
-		t.Fatalf("ninja err: %v", err)
-	}
-	if stats.Done != stats.Total || stats.Total != 5 {
-		t.Errorf("done=%d total=%d; want done=total=4", stats.Done, stats.Total)
-	}
-
-	t.Logf("siso_output:\n%s", sisoOutput.String())
-
-	want := `missing deps warn: deps inputs have no dependencies from "./obj/foo.o" to ["bar.h"]`
-	if !strings.Contains(sisoOutput.String(), want) {
-		t.Errorf("unexpected siso_output\ngot:\n%s\nwant contains\n%s", sisoOutput.String(), want)
-	}
-}
-
-func TestBuild_FailOnBadDeps(t *testing.T) {
-	if !runInSubProcess(t) {
-		return
-	}
-	ctx := t.Context()
-	dir := tempDir(t)
-
-	runNinjaTest := func(t *testing.T, target string, w io.Writer, experiment string) (build.Stats, error) {
-		t.Helper()
-		build.SetExperimentForTest(experiment)
-		defer func() {
-			build.SetExperimentForTest("")
-		}()
-		opt, graph, cleanup := setupBuild(ctx, t, dir, hashfs.Option{
-			StateFile: ".siso_fs_state",
-		})
-		defer cleanup()
-		opt.OutputLogWriter = w
-		return ninjabuild.Run(ctx, graph, opt, []string{target}, ninjabuild.RunNinjaOpts{})
-	}
-
-	setupFiles(t, dir, "TestBuild_CheckDeps", nil)
-	var sisoOutput bytes.Buffer
-	t.Logf("-- first build bar.h")
-	stats, err := runNinjaTest(t, "bar.h", &sisoOutput, "fail-on-bad-deps,no-fallback")
-	if err != nil {
-		t.Fatalf("ninja err: %v", err)
-	}
-	if stats.Done != stats.Total || stats.Total != 1 {
-		t.Errorf("done=%d total=%d; want done=total=1", stats.Done, stats.Total)
-	}
-
-	t.Logf("-- second build all with fail-on-bad-deps,no-fallback")
+	t.Logf("-- second build all with -missing_deps=fatal and no-fallback")
 	sisoOutput.Reset()
-	_, err = runNinjaTest(t, "all", &sisoOutput, "fail-on-bad-deps,no-fallback")
+	_, err = runNinjaTest(t, "all", &sisoOutput)
 	if err == nil {
 		t.Fatalf("ninja err: got nil, want error")
 	}

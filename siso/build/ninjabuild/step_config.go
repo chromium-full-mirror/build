@@ -260,8 +260,7 @@ type StepConfig struct {
 	// i.e. target has other generated targets not in direct/indirect
 	// dependencies in depfile.
 	// This target won't cause error with missing deps even with
-	// `-missing_deps=error/fatal` or `SISO_EXPERIMENTS=fail-on-bad-deps`
-	// to make it easy to detect new missing deps.
+	// `-missing_deps=error/fatal` to make it easy to detect new missing deps.
 	// key is output target known to have missing deps.
 	// value is annotation (usually bug link).
 	MissingDeps map[string]string `json:"missing_deps,omitempty"`
