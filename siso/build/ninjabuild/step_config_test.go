@@ -451,30 +451,6 @@ build obj/foo.o: cxx ../../foo.cc
 	}
 }
 
-func TestStepConfigInit_MissingDeps(t *testing.T) {
-	ctx := t.Context()
-	sc := StepConfig{
-		MissingDeps: map[string]string{
-			"./obj/foo.o": "crbug.com/1",
-		},
-		BadDeps: map[string]string{
-			"./obj/foo.o": "crbug.com/legacy_ignore",
-			"./obj/bar.o": "crbug.com/2",
-		},
-	}
-	err := sc.Init(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := map[string]string{
-		"./obj/foo.o": "crbug.com/1",
-		"./obj/bar.o": "crbug.com/2",
-	}
-	if diff := cmp.Diff(want, sc.MissingDeps); diff != "" {
-		t.Errorf("sc.MissingDeps diff -want +got:\n%s", diff)
-	}
-}
-
 func TestStepConfigInit_Env(t *testing.T) {
 	for _, tc := range []struct {
 		name    string

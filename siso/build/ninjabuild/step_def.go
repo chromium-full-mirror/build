@@ -1203,9 +1203,6 @@ func (s *StepDef) CheckMissingDeps(ctx context.Context, depInputs []path.Path) (
 	}
 	reason := "unknown"
 	v, known := s.globals.stepConfig.MissingDeps[outputPath]
-	if !known && s.globals.stepConfig.BadDeps != nil {
-		v, known = s.globals.stepConfig.BadDeps[outputPath]
-	}
 	if known {
 		reason = v
 	}

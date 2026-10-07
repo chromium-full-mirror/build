@@ -265,9 +265,6 @@ type StepConfig struct {
 	// value is annotation (usually bug link).
 	MissingDeps map[string]string `json:"missing_deps,omitempty"`
 
-	// BadDeps is the legacy name for MissingDeps.
-	BadDeps map[string]string `json:"bad_deps,omitempty"`
-
 	// Executables are files that need to have executable bit on Linux worker.
 	// This field is used to upload Linux executables from Windows host.
 	Executables []string `json:"executables,omitempty"`
@@ -350,14 +347,6 @@ func (sc *StepConfig) Init(ctx context.Context) error {
 	sc.Scandeps.stepInputsFilter = sc.Scandeps.StepInputs.Filter(ctx, "scandeps.step_inputs")
 	if sc.InputDeps == nil {
 		sc.InputDeps = make(map[string][]string)
-	}
-	if sc.MissingDeps == nil {
-		sc.MissingDeps = make(map[string]string)
-	}
-	for k, v := range sc.BadDeps {
-		if _, ok := sc.MissingDeps[k]; !ok {
-			sc.MissingDeps[k] = v
-		}
 	}
 	return nil
 }
