@@ -63,8 +63,8 @@ func TestFilesDiff_DirTargetCoversDescendants(t *testing.T) {
 		name     string
 		declared []string
 	}{
-		{name: "output (slash-stripped)", declared: []string{"out/siso/gen/extracted"}},
-		{name: "input (trailing slash)", declared: []string{"out/siso/gen/extracted/"}},
+		{name: "output_slash_stripped", declared: []string{"out/siso/gen/extracted"}},
+		{name: "input_trailing_slash", declared: []string{"out/siso/gen/extracted/"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			adds, dels, _, errs := filesDiff(ctx, b, tc.declared, nil, traced, "")

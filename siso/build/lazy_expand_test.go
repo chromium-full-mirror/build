@@ -72,11 +72,11 @@ func TestLazyExpand(t *testing.T) {
 		tpcHit     bool
 		wantLocal  bool
 	}{
-		{name: "local/no-two-phase-caching", noTPC: true, wantLocal: true},
-		{name: "local/two-phase-cache-miss", wantLocal: true},
-		{name: "local/two-phase-cache-hit", tpcHit: true},
+		{name: "local_no_two_phase_caching", noTPC: true, wantLocal: true},
+		{name: "local_two_phase_cache_miss", wantLocal: true},
+		{name: "local_two_phase_cache_hit", tpcHit: true},
 		{name: "remote", remote: true},
-		{name: "remote/start-local", remote: true, startLocal: true, wantLocal: true},
+		{name: "remote_start_local", remote: true, startLocal: true, wantLocal: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx := t.Context()
