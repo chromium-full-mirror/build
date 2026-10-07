@@ -98,15 +98,7 @@ def CheckGoVersionsConsistent(input_api, output_api):
 
 SUBTEST_CHECK_DIRS = [
   r"^gong/gn/build/ninjawriter$",
-  r"^siso/build/(buildconfig|metadata)$",
-  r"^siso/execute(/|$)",
-  r"^siso/hashfs(/|$)",
-  r"^siso/o11y(/|$)",
-  r"^siso/reapi(/|$)",
-  r"^siso/scandeps$",
-  r"^siso/subcmd/",
-  r"^siso/toolsupport(/|$)",
-  r"^siso/webui$",
+  r"^siso(/|$)",
 ]
 
 
