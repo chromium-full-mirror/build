@@ -13,6 +13,8 @@ extend-exclude = [
 quote-style = "double"
 
 [lint]
+preview = true  # Opt-in to preview rules, but...
+explicit-preview-rules = true  # ... only explicitly selected rules
 select = [
     # Default rule sets
     "E",
@@ -22,6 +24,9 @@ select = [
     # Additional individually-enabled rules
     "A001",  # Variable shadows a builtin
     "B007",  # Loop variable unused in the loop body
+
+    # Preview-only rules
+    "ISC004",  # Implicit str concat in collection literal (stable in v0.16.0)
 ]
 ignore = [
     "E501",  # Line length is handled by formatter
