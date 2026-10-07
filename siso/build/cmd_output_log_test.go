@@ -182,7 +182,7 @@ func TestFormatAuxiliaryOutput(t *testing.T) {
 		want     string
 	}{
 		{
-			name:     "sha256 emits no digest-function flag",
+			name:     "sha256_emits_no_digest_function_flag",
 			fname:    "foo.d",
 			d:        digest.Digest{Hash: sha256Hash, SizeBytes: 3},
 			instance: "instance",
@@ -190,7 +190,7 @@ func TestFormatAuxiliaryOutput(t *testing.T) {
 			want:     "foo.d\t" + sha256Hash + "/3\tsiso fetch -reapi_instance instance " + sha256Hash + "/3 foo.d",
 		},
 		{
-			name:     "sha1 emits digest-function flag",
+			name:     "sha1_emits_digest_function_flag",
 			fname:    "foo.d",
 			d:        digest.Digest{Hash: sha1Hash, SizeBytes: 3},
 			instance: "instance",
@@ -198,7 +198,7 @@ func TestFormatAuxiliaryOutput(t *testing.T) {
 			want:     "foo.d\t" + sha1Hash + "/3\tsiso fetch -reapi_instance instance -reapi_digest_function sha1 " + sha1Hash + "/3 foo.d",
 		},
 		{
-			name:  "tree with sha1 keeps type flag",
+			name:  "tree_with_sha1_keeps_type_flag",
 			fname: "bar/",
 			d:     digest.Digest{Hash: sha1Hash, SizeBytes: 3},
 			fn:    sha1fn,

@@ -82,7 +82,7 @@ func TestFilesDiff_DirTargetCoversDescendants(t *testing.T) {
 
 	// An unrelated traced file outside any declared target must still be
 	// flagged, so the directory-coverage fix does not suppress real findings.
-	t.Run("unrelated file still flagged", func(t *testing.T) {
+	t.Run("unrelated_file_still_flagged", func(t *testing.T) {
 		adds, _, _, errs := filesDiff(ctx, b, []string{"out/siso/gen/extracted"}, nil,
 			append(slices.Clone(traced), "other/stray.h"), "")
 		if len(errs) != 0 {

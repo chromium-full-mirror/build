@@ -19,31 +19,31 @@ func TestIsRequiredOutput(t *testing.T) {
 		want       bool
 	}{
 		{
-			name:       "file output required",
+			name:       "file_output_required",
 			out:        "obj/foo.o",
 			defOutputs: []string{"obj/foo.o", "obj/bar.o"},
 			want:       true,
 		},
 		{
-			name:       "file output not in def",
+			name:       "file_output_not_in_def",
 			out:        "obj/baz.o",
 			defOutputs: []string{"obj/foo.o", "obj/bar.o"},
 			want:       false,
 		},
 		{
-			name:       "dir output required (trailing slash in def)",
+			name:       "dir_output_required_trailing_slash_in_def",
 			out:        "obj/extracted",
 			defOutputs: []string{"obj/extracted/"},
 			want:       true,
 		},
 		{
-			name:       "mixed file and dir outputs",
+			name:       "mixed_file_and_dir_outputs",
 			out:        "obj/extracted",
 			defOutputs: []string{"obj/repackaged.zip", "obj/extracted/"},
 			want:       true,
 		},
 		{
-			name:       "dir output not in def",
+			name:       "dir_output_not_in_def",
 			out:        "obj/other",
 			defOutputs: []string{"obj/extracted/"},
 			want:       false,

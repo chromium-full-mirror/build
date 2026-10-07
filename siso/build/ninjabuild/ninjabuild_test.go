@@ -159,7 +159,7 @@ func TestOutermostPaths_Cleandead(t *testing.T) {
 		want []path.Path
 	}{
 		{
-			name: "directory contents not judged individually",
+			name: "directory_contents_not_judged_individually",
 			in:   []path.Path{"gen/foo", "gen/foo/a.o", "gen/foo/sub/b.o"},
 			want: []path.Path{"gen/foo"},
 		},
@@ -167,22 +167,22 @@ func TestOutermostPaths_Cleandead(t *testing.T) {
 			// A sibling file output sorts between the directory root and its
 			// contents ('.' 0x2E < '/' 0x2F); the skip prefix must not reset
 			// and expose gen/foo/a.o to individual judgement.
-			name: "interleaved sibling does not expose dir contents",
+			name: "interleaved_sibling_does_not_expose_dir_contents",
 			in:   []path.Path{"gen/foo", "gen/foo.stamp", "gen/foo/a.o", "gen/foo/sub/b.o"},
 			want: []path.Path{"gen/foo", "gen/foo.stamp"},
 		},
 		{
-			name: "independent siblings all judged",
+			name: "independent_siblings_all_judged",
 			in:   []path.Path{"a.o", "b.o", "c.o"},
 			want: []path.Path{"a.o", "b.o", "c.o"},
 		},
 		{
-			name: "two directory outputs side by side",
+			name: "two_directory_outputs_side_by_side",
 			in:   []path.Path{"gen/a", "gen/a/x", "gen/b", "gen/b/y"},
 			want: []path.Path{"gen/a", "gen/b"},
 		},
 		{
-			name: "sibling with char above slash sorts after subtree",
+			name: "sibling_with_char_above_slash_sorts_after_subtree",
 			in:   []path.Path{"gen/foo", "gen/foo/a.o", "gen/foo0"},
 			want: []path.Path{"gen/foo", "gen/foo0"},
 		},

@@ -28,13 +28,13 @@ func TestNewNSJailExecutor_DefaultDirs(t *testing.T) {
 		wantWritableDirs []string
 	}{
 		{
-			name:             "default when unset",
+			name:             "default_when_unset",
 			extraConfig:      nil,
 			wantPublicDirs:   nil,
 			wantWritableDirs: nil,
 		},
 		{
-			name: "only default_readable_dirs set replaces both default lists",
+			name: "only_default_readable_dirs_set_replaces_both_default_lists",
 			extraConfig: map[string]string{
 				"default_readable_dirs": "/custom/bin:/custom/lib",
 			},
@@ -42,7 +42,7 @@ func TestNewNSJailExecutor_DefaultDirs(t *testing.T) {
 			wantWritableDirs: []string{},
 		},
 		{
-			name: "only default_writable_dirs set replaces both default lists",
+			name: "only_default_writable_dirs_set_replaces_both_default_lists",
 			extraConfig: map[string]string{
 				"default_writable_dirs": "/custom/rw1:/custom/rw2",
 			},
@@ -50,7 +50,7 @@ func TestNewNSJailExecutor_DefaultDirs(t *testing.T) {
 			wantWritableDirs: []string{"/custom/rw1", "/custom/rw2"},
 		},
 		{
-			name: "both default_readable_dirs and default_writable_dirs set",
+			name: "both_default_readable_dirs_and_default_writable_dirs_set",
 			extraConfig: map[string]string{
 				"default_readable_dirs": "/custom/bin:rel/read",
 				"default_writable_dirs": "/custom/rw:rel/write",
@@ -59,7 +59,7 @@ func TestNewNSJailExecutor_DefaultDirs(t *testing.T) {
 			wantWritableDirs: []string{"/custom/rw", filepath.Join(wsRoot, "rel/write")},
 		},
 		{
-			name: "explicit empty default_readable_dirs clears defaults",
+			name: "explicit_empty_default_readable_dirs_clears_defaults",
 			extraConfig: map[string]string{
 				"default_readable_dirs": "",
 			},

@@ -108,7 +108,7 @@ func TestUpdateStepMetricsFromTrace_CanonicalRunTime(t *testing.T) {
 			want: IntervalMetric(7 * time.Second),
 		},
 		{
-			name:    "remote exec",
+			name:    "remote_exec",
 			metrics: StepMetric{IsRemote: true},
 			spans: []trace.SpanData{
 				// If there was multiple attempts, the last one is the winner.
@@ -119,7 +119,7 @@ func TestUpdateStepMetricsFromTrace_CanonicalRunTime(t *testing.T) {
 			want: IntervalMetric(12 * time.Second),
 		},
 		{
-			name:    "remote exec attempt only",
+			name:    "remote_exec_attempt_only",
 			metrics: StepMetric{IsRemote: true},
 			spans: []trace.SpanData{
 				testSpan(spanExecRemoteExecAttempt, time.Second, 9*time.Second),
@@ -127,7 +127,7 @@ func TestUpdateStepMetricsFromTrace_CanonicalRunTime(t *testing.T) {
 			want: IntervalMetric(9 * time.Second),
 		},
 		{
-			name:    "cache hit",
+			name:    "cache_hit",
 			metrics: StepMetric{IsRemote: false, Cached: true},
 			spans: []trace.SpanData{
 				testSpan(spanExecRemoteCacheCheck, time.Second, 1500*time.Millisecond),
@@ -141,7 +141,7 @@ func TestUpdateStepMetricsFromTrace_CanonicalRunTime(t *testing.T) {
 			// result. In this case, IsRemote and Cached are both true.
 			// No spanExecRemoteCacheRun is logged on that path, so
 			// checking Cached first would report a zero RunTime.
-			name:    "RBE cache hit",
+			name:    "RBE_cache_hit",
 			metrics: StepMetric{IsRemote: true, Cached: true},
 			spans: []trace.SpanData{
 				testSpan(spanExecRemoteExecAttempt, time.Second, 3*time.Second),
@@ -150,7 +150,7 @@ func TestUpdateStepMetricsFromTrace_CanonicalRunTime(t *testing.T) {
 		},
 		{
 			// Local fallback leaves IsRemote set from the failed remote attempt.
-			name:    "local fallback after remote",
+			name:    "local_fallback_after_remote",
 			metrics: StepMetric{IsRemote: true, IsLocal: true, Fallback: true},
 			spans: []trace.SpanData{
 				testSpan(spanExecRemoteExecAttempt, time.Second, 4*time.Second),
@@ -161,7 +161,7 @@ func TestUpdateStepMetricsFromTrace_CanonicalRunTime(t *testing.T) {
 		{
 			// Racing clears IsRemote when local wins, but the losing remote
 			// attempt still logged its span into the shared trace context.
-			name:    "racing, local won",
+			name:    "racing_local_won",
 			metrics: StepMetric{IsLocal: true, Racing: true, RacingWinner: "local"},
 			spans: []trace.SpanData{
 				testSpan(spanExecRemoteExecAttempt, time.Second, 8*time.Second),
@@ -172,7 +172,7 @@ func TestUpdateStepMetricsFromTrace_CanonicalRunTime(t *testing.T) {
 		{
 			// Racing clears IsLocal when remote wins; the canceled local racer
 			// still logged a span.
-			name:    "racing, remote won",
+			name:    "racing_remote_won",
 			metrics: StepMetric{IsRemote: true, Racing: true, RacingWinner: "remote"},
 			spans: []trace.SpanData{
 				testSpan(spanExecLocalRun, time.Second, 8*time.Second),
@@ -182,7 +182,7 @@ func TestUpdateStepMetricsFromTrace_CanonicalRunTime(t *testing.T) {
 		},
 		{
 			// Retries log one attempt span each; the last one produced the result.
-			name:    "remote exec retried",
+			name:    "remote_exec_retried",
 			metrics: StepMetric{IsRemote: true, RemoteRetry: 2},
 			spans: []trace.SpanData{
 				// Span start times deliberately out-of-order.
@@ -193,13 +193,13 @@ func TestUpdateStepMetricsFromTrace_CanonicalRunTime(t *testing.T) {
 			want: IntervalMetric(4 * time.Second),
 		},
 		{
-			name:    "no run spans",
+			name:    "no_run_spans",
 			metrics: StepMetric{IsRemote: true},
 			spans:   []trace.SpanData{testSpan(spanMaterializeInputs, time.Second, time.Second)},
 			want:    0,
 		},
 		{
-			name:    "no strategy flags",
+			name:    "no_strategy_flags",
 			metrics: StepMetric{},
 			spans:   []trace.SpanData{testSpan(spanExecLocalRun, time.Second, time.Second)},
 			want:    0,

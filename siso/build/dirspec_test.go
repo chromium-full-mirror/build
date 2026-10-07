@@ -75,7 +75,7 @@ func TestNewDirSpecMatchDir(t *testing.T) {
 			},
 		},
 		{
-			name:  "no symlink, at the root",
+			name:  "no_symlink_at_the_root",
 			dname: "",
 			dir: &rpb.Directory{
 				Files:       []*rpb.FileNode{{Name: "f", Digest: fdig.Proto(), IsExecutable: true}},

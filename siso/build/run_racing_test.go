@@ -76,27 +76,27 @@ func TestIsContextCanceledErr(t *testing.T) {
 			want: false,
 		},
 		{
-			name: "context.Canceled",
+			name: "context_canceled",
 			err:  context.Canceled,
 			want: true,
 		},
 		{
-			name: "wrapped context.Canceled",
+			name: "wrapped_context_canceled",
 			err:  fmt.Errorf("something: %w", context.Canceled),
 			want: true,
 		},
 		{
-			name: "grpc Canceled status",
+			name: "grpc_canceled_status",
 			err:  status.Error(codes.Canceled, "context canceled"),
 			want: true,
 		},
 		{
-			name: "wrapped grpc Canceled status",
+			name: "wrapped_grpc_canceled_status",
 			err:  fmt.Errorf("find missing: %w", status.Error(codes.Canceled, "context canceled")),
 			want: true,
 		},
 		{
-			name: "deeply wrapped grpc Canceled (CAS upload path)",
+			name: "deeply_wrapped_grpc_canceled_cas_upload_path",
 			err: fmt.Errorf("failed to upload all foo: %w",
 				fmt.Errorf("wait for digest=abc/123: %w",
 					fmt.Errorf("find missing: %w",
@@ -104,17 +104,17 @@ func TestIsContextCanceledErr(t *testing.T) {
 			want: true,
 		},
 		{
-			name: "grpc DeadlineExceeded status",
+			name: "grpc_deadline_exceeded_status",
 			err:  status.Error(codes.DeadlineExceeded, "deadline exceeded"),
 			want: false,
 		},
 		{
-			name: "grpc Unavailable status",
+			name: "grpc_unavailable_status",
 			err:  status.Error(codes.Unavailable, "unavailable"),
 			want: false,
 		},
 		{
-			name: "unrelated error",
+			name: "unrelated_error",
 			err:  fmt.Errorf("something went wrong"),
 			want: false,
 		},

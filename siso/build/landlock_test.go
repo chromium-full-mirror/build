@@ -84,32 +84,32 @@ func TestLandlockExecutor_OutputDirs(t *testing.T) {
 		wantRWDirs    []string
 	}{
 		{
-			name:       "exact duplicates",
+			name:       "exact_duplicates",
 			outputs:    []string{"out/gen/foo.h", "out/gen/bar.h"},
 			wantRWDirs: []string{"out/gen", "/tmp", "/dev", "/proc"},
 		},
 		{
-			name:       "ancestor first, descendant later",
+			name:       "ancestor_first_descendant_later",
 			outputs:    []string{"out/gen/foo.h", "out/gen/sub/bar.h", "out/gen/sub/nested/baz.h"},
 			wantRWDirs: []string{"out/gen", "/tmp", "/dev", "/proc"},
 		},
 		{
-			name:       "descendant first, ancestor later",
+			name:       "descendant_first_ancestor_later",
 			outputs:    []string{"out/gen/sub/bar.h", "out/gen/sub2/baz.h", "out/gen/foo.h"},
 			wantRWDirs: []string{"out/gen", "/tmp", "/dev", "/proc"},
 		},
 		{
-			name:       "deep hierarchy",
+			name:       "deep_hierarchy",
 			outputs:    []string{"a/b/c/d/e.o", "a/b/c/d.o", "a/b.o"},
 			wantRWDirs: []string{"a", "/tmp", "/dev", "/proc"},
 		},
 		{
-			name:       "multiple independent trees",
+			name:       "multiple_independent_trees",
 			outputs:    []string{"tree1/sub1/a.o", "tree2/sub2/sub3/b.o", "tree1/c.o", "tree2/sub2/d.o"},
 			wantRWDirs: []string{"tree1", "tree2/sub2", "/tmp", "/dev", "/proc"},
 		},
 		{
-			name:          "workspace root under /tmp does not grant /tmp",
+			name:          "workspace_root_under_tmp_does_not_grant_tmp",
 			outputs:       []string{"out/gen/foo.h"},
 			workspaceRoot: "/tmp/my_test_workspace",
 			wantRWDirs:    []string{"/tmp/my_test_workspace/out/gen", "/dev", "/proc"},
@@ -146,7 +146,7 @@ func TestLandlockExecutor_DefaultDirs(t *testing.T) {
 		wantRWDirs    []string
 	}{
 		{
-			name:          "default when unset",
+			name:          "default_when_unset",
 			sandboxConfig: nil,
 			wantRODirs: []string{
 				"/bin",
@@ -160,7 +160,7 @@ func TestLandlockExecutor_DefaultDirs(t *testing.T) {
 			wantRWDirs: []string{"out/gen", "/tmp", "/dev", "/proc"},
 		},
 		{
-			name: "only default_readable_dirs set replaces both default lists",
+			name: "only_default_readable_dirs_set_replaces_both_default_lists",
 			sandboxConfig: map[string]string{
 				"default_readable_dirs": "/custom/bin:/custom/lib",
 			},
@@ -168,7 +168,7 @@ func TestLandlockExecutor_DefaultDirs(t *testing.T) {
 			wantRWDirs: []string{"out/gen", "/tmp"},
 		},
 		{
-			name: "only default_writable_dirs set replaces both default lists",
+			name: "only_default_writable_dirs_set_replaces_both_default_lists",
 			sandboxConfig: map[string]string{
 				"default_writable_dirs": "/custom/rw1:/custom/rw2",
 			},
@@ -176,7 +176,7 @@ func TestLandlockExecutor_DefaultDirs(t *testing.T) {
 			wantRWDirs: []string{"out/gen", "/tmp", "/custom/rw1", "/custom/rw2"},
 		},
 		{
-			name: "both default_readable_dirs and default_writable_dirs set",
+			name: "both_default_readable_dirs_and_default_writable_dirs_set",
 			sandboxConfig: map[string]string{
 				"default_readable_dirs": "/custom/bin",
 				"default_writable_dirs": "/custom/rw",
@@ -185,7 +185,7 @@ func TestLandlockExecutor_DefaultDirs(t *testing.T) {
 			wantRWDirs: []string{"out/gen", "/tmp", "/custom/rw"},
 		},
 		{
-			name: "explicit empty default_readable_dirs clears defaults",
+			name: "explicit_empty_default_readable_dirs_clears_defaults",
 			sandboxConfig: map[string]string{
 				"default_readable_dirs": "",
 			},
