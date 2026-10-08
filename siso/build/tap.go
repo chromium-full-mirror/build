@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"time"
 
 	log "github.com/golang/glog"
 
@@ -131,14 +132,46 @@ func (b *Builder) tapCanonicalizeCmd(ctx context.Context, cmd *execute.Cmd) erro
 		}
 	}
 	clear(seen)
-	// need to use both original outputs and detected outputs.
-	// it might not detect output for restat action.
-	// it might detect unspecified outputs.
+
+	// remember declared outputs.
 	for _, output := range cmd.AllOutputs() {
 		seen[output] = true
 		nOutputs++
 	}
-	var outputDirs []path.Path
+
+	// handle deletes first.
+	// rbetap and tapr may report unordered sets of writes and deletes,
+	// so both unlink-before-write (output recreated), and
+	// write-before-unlink (temp file deleted before exit) appear in
+	// both writes and deletes.
+	// Forget undeclared deletes from HashFS first. the write pass
+	// below will re-check local disk to distinguish the two cases.
+	for _, del := range tapData.Deletes {
+		rel, err := filepath.Rel(b.path.WorkspaceRoot, del)
+		if err != nil {
+			clog.Warningf(ctx, "deletes relpath %q: %v", del, err)
+			continue
+		}
+		if !filepath.IsLocal(rel) {
+			continue
+		}
+		relPath := path.New(rel)
+		if seen[relPath] || underOutputDir(relPath) {
+			// declared outputs and output dirs are already updated from local disk by RecordOutputsFromLocal.
+			// if Forget, it would lost cmdhash etc.
+			continue
+		}
+		_, err = b.hashFS.Stat(ctx, b.path.WorkspaceRoot, relPath)
+		if errors.Is(err, fs.ErrNotExist) {
+			continue
+		}
+		b.hashFS.Forget(ctx, b.path.WorkspaceRoot, []path.Path{relPath})
+		clog.Infof(ctx, "delete %q", relPath)
+	}
+
+	// check undeclared but tap discovered outputs.
+	// we need to capture them from local disk and update them in hashfs.
+	var tapDiscoveredOutputs []path.Path
 	for _, output := range tapData.Writes {
 		if shouldIgnore("writes", path.New(output)) {
 			ignored++
@@ -155,29 +188,66 @@ func (b *Builder) tapCanonicalizeCmd(ctx context.Context, cmd *execute.Cmd) erro
 			continue
 		}
 		relPath := path.New(rel)
-		fi, err := b.hashFS.Stat(ctx, b.path.WorkspaceRoot, relPath)
-		if err != nil {
-			nOutputsDiscarded++
-			continue
-		}
-		tapDetected++
 		if seen[relPath] {
+			_, err := b.hashFS.Stat(ctx, b.path.WorkspaceRoot, relPath)
+			if err != nil {
+				nOutputsDiscarded++
+				continue
+			}
+			tapDetected++
 			continue
 		}
 		seen[relPath] = true
-		if fi.IsDir() {
-			outputDirs = append(outputDirs, relPath)
-			continue
-		}
 		if underOutputDir(relPath) {
+			_, err := b.hashFS.Stat(ctx, b.path.WorkspaceRoot, relPath)
+			if err != nil {
+				nOutputsDiscarded++
+				continue
+			}
+			tapDetected++
 			// relPath is covered by cmd.OutputDirs or
 			// AuxiliaryLogOutputDirs, so no need to
 			// add as output files. b/555559994
 			nOutputsInDir++
 			continue
 		}
-		cmd.Outputs = append(cmd.Outputs, relPath)
+		tapDiscoveredOutputs = append(tapDiscoveredOutputs, relPath)
 	}
+	var outputDirs []path.Path
+	var nOutputsDiscovered int
+	if len(tapDiscoveredOutputs) > 0 {
+		// RetrieveUpdateEntriesFromLocal checks local disk for each path
+		// - unlink-before-write: file exists on disk -> returned in
+		//   tapDiscoveredEnts, updated in HashFS, and added to
+		//   cmd.Outputs.
+		// - write-before-unlink: file does not exist on disk ->
+		//   omitted from tapDiscoveredEnts (counted in
+		//   nOutputsDiscarded) and excluded from cmd.Outputs.
+		tapDiscoveredEnts := b.hashFS.RetrieveUpdateEntriesFromLocal(ctx, b.path.WorkspaceRoot, tapDiscoveredOutputs)
+		nOutputsDiscarded += len(tapDiscoveredOutputs) - len(tapDiscoveredEnts)
+		tapDetected += len(tapDiscoveredEnts)
+		now := time.Now()
+		for i, ent := range tapDiscoveredEnts {
+			ent.ModTime = now
+			ent.UpdatedTime = now
+			ent.IsChanged = true
+			ent.IsLocal = true
+			// cmdhash is only set for declared outputs
+			ent.Action = cmd.ActionDigest()
+			tapDiscoveredEnts[i] = ent
+			if ent.Mode.IsDir() {
+				outputDirs = append(outputDirs, ent.Name)
+				continue
+			}
+			cmd.Outputs = append(cmd.Outputs, ent.Name)
+		}
+		err := b.hashFS.Update(ctx, b.path.WorkspaceRoot, tapDiscoveredEnts)
+		if err != nil {
+			return fmt.Errorf("tap update entries %q: %v", tapDiscoveredOutputs, err)
+		}
+		nOutputsDiscovered = len(tapDiscoveredEnts)
+	}
+
 	emptyDirs := slices.DeleteFunc(outputDirs, func(outDir path.Path) bool {
 		for _, out := range cmd.Outputs {
 			if out.HasPrefix(outDir) {
@@ -194,24 +264,7 @@ func (b *Builder) tapCanonicalizeCmd(ctx context.Context, cmd *execute.Cmd) erro
 	})
 	cmd.OutputDirs = append(cmd.OutputDirs, emptyDirs...)
 	cmd.InitOutputs()
-	for _, del := range tapData.Deletes {
-		rel, err := filepath.Rel(b.path.WorkspaceRoot, del)
-		if err != nil {
-			clog.Warningf(ctx, "deletes relpath %q: %v", del, err)
-			continue
-		}
-		if !filepath.IsLocal(rel) {
-			continue
-		}
-		relPath := path.New(rel)
-		_, err = b.hashFS.Stat(ctx, b.path.WorkspaceRoot, relPath)
-		if errors.Is(err, fs.ErrNotExist) {
-			continue
-		}
-		b.hashFS.Forget(ctx, b.path.WorkspaceRoot, []path.Path{relPath})
-		clog.Infof(ctx, "delete %q", relPath)
-	}
-	clog.Infof(ctx, "tap canonicalized detected=%d inputs=%d (discarded:%d) ->%d outputs=%d (indir:%d discarded:%d emptyDir:%d) ->%d ignored=%d", tapDetected, nInputs, nInputsDiscarded, len(cmd.Inputs), nOutputs, nOutputsInDir, nOutputsDiscarded, len(emptyDirs), len(cmd.Outputs), ignored)
+	clog.Infof(ctx, "tap canonicalized detected=%d inputs=%d (discarded:%d) ->%d outputs=%d (indir:%d discarded:%d discovered:%d emptyDir:%d) ->%d ignored=%d", tapDetected, nInputs, nInputsDiscarded, len(cmd.Inputs), nOutputs, nOutputsInDir, nOutputsDiscarded, nOutputsDiscovered, len(emptyDirs), len(cmd.Outputs), ignored)
 	if tapDetected == 0 {
 		return fmt.Errorf("tap detected=0: %s", tapData)
 	}

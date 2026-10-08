@@ -595,3 +595,161 @@ func TestTapCanonicalizeCmd_OutputDir(t *testing.T) {
 		t.Errorf("cmd.Outputs = %v; want %v", cmd.Outputs, wantOutputs)
 	}
 }
+
+// Regression test for b/570100436:
+//   - Declared outputs that unlink-before-write (reported in both Writes and
+//     Deletes by rbetap) must retain their CmdHash/EdgeHash recorded by
+//     RecordOutputsFromLocal.
+//   - Tap-discovered undeclared outputs (whether overwritten in-place, unlinked
+//     then recreated, or previously negative-cached as ErrNotExist in HashFS)
+//     must be updated from local disk with fresh digests.
+//   - Files that were written then deleted during execution (absent on local
+//     disk when the command finishes) must be forgotten and excluded from
+//     cmd.Outputs.
+func TestTapCanonicalizeCmd_UnlinkBeforeWriteAndDiscoveredOutputs(t *testing.T) {
+	ctx := t.Context()
+	dir, _ := setupDirForTapTest(t)
+	wsDir := filepath.Join(dir, "workspace")
+
+	hfs, err := hashfs.New(ctx, hashfs.Option{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer hfs.Close(ctx)
+	if err := hfs.WaitReady(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	writeFile := func(rel, content string) string {
+		t.Helper()
+		abs := filepath.Join(wsDir, rel)
+		if err := os.MkdirAll(filepath.Dir(abs), 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(abs, []byte(content), 0644); err != nil {
+			t.Fatal(err)
+		}
+		return abs
+	}
+
+	b := &Builder{
+		hashFS: hfs,
+		path:   NewPath(wsDir, "out/siso"),
+	}
+
+	inputAbs := writeFile("input.txt", "input")
+
+	// Pre-populate files from a prior build / prior step in HashFS.
+	declaredRel := path.New("out/siso/declared.o")
+	declaredAbs := writeFile(string(declaredRel), "old declared")
+
+	discoveredStaleRel := path.New("out/siso/discovered_stale.o")
+	discoveredStaleAbs := writeFile(string(discoveredStaleRel), "old stale")
+
+	discoveredRecreatedRel := path.New("out/siso/discovered_recreated.o")
+	discoveredRecreatedAbs := writeFile(string(discoveredRecreatedRel), "old recreated")
+
+	tempDeletedRel := path.New("out/siso/temp_deleted.o")
+	tempDeletedAbs := writeFile(string(tempDeletedRel), "temp content")
+
+	// Force HashFS to cache the old entries and digests (and a negative entry
+	// for discovered_neg.o) before the command runs.
+	preExecPaths := []path.Path{declaredRel, discoveredStaleRel, discoveredRecreatedRel, tempDeletedRel}
+	if _, err := hfs.Entries(ctx, wsDir, preExecPaths); err != nil {
+		t.Fatalf("hfs.Entries(ctx, %q, %v) = _, %v; want _, nil", wsDir, preExecPaths, err)
+	}
+	discoveredNegRel := path.New("out/siso/discovered_neg.o")
+	if fi, err := hfs.Stat(ctx, wsDir, discoveredNegRel); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("hfs.Stat(ctx, %q, %q) = %v, %v; want nil, %v", wsDir, discoveredNegRel, fi, err, fs.ErrNotExist)
+	}
+
+	// Simulate command execution on local disk:
+	// 1. declared.o is unlinked and recreated with new content.
+	writeFile(string(declaredRel), "new declared")
+	// 2. discovered_stale.o is overwritten in place (not in Deletes).
+	writeFile(string(discoveredStaleRel), "new stale")
+	// 3. discovered_recreated.o is unlinked and recreated (in both Writes and Deletes).
+	writeFile(string(discoveredRecreatedRel), "new recreated")
+	// 4. discovered_neg.o is newly created on disk (in Writes only).
+	discoveredNegAbs := writeFile(string(discoveredNegRel), "new neg")
+	// 5. temp_deleted.o is written then deleted before the command exits.
+	if err := os.Remove(tempDeletedAbs); err != nil {
+		t.Fatal(err)
+	}
+
+	cmdHash := []byte("declared-cmd-hash")
+	edgeHash := []byte("declared-edge-hash")
+	cmd := &execute.Cmd{
+		WorkspaceRoot: wsDir,
+		WorkDir:       "out/siso",
+		Inputs:        []path.Path{path.New("input.txt")},
+		Outputs:       []path.Path{declaredRel},
+		CmdHash:       cmdHash,
+		EdgeHash:      edgeHash,
+		HashFS:        hfs,
+	}
+	cmd.InitOutputs()
+
+	// LocalExec.Run calls RecordOutputsFromLocal before Builder.execLocal calls tapCanonicalizeCmd.
+	if err := cmd.RecordOutputsFromLocal(ctx, b.start); err != nil {
+		t.Fatalf("cmd.RecordOutputsFromLocal(ctx, %v) = %v; want nil", b.start, err)
+	}
+
+	err = setTapResult(cmd,
+		[]string{inputAbs},
+		[]string{declaredAbs, discoveredStaleAbs, discoveredRecreatedAbs, discoveredNegAbs, tempDeletedAbs},
+		[]string{declaredAbs, discoveredRecreatedAbs, tempDeletedAbs},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := b.tapCanonicalizeCmd(ctx, cmd); err != nil {
+		t.Fatalf("b.tapCanonicalizeCmd(ctx, cmd) = %v; want nil", err)
+	}
+
+	// 1. Declared output must retain its CmdHash and EdgeHash in HashFS.
+	fi, err := hfs.Stat(ctx, wsDir, declaredRel)
+	if err != nil {
+		t.Fatalf("hfs.Stat(ctx, %q, %q) = nil, %v; want _, nil", wsDir, declaredRel, err)
+	}
+	if got := fi.CmdHash(); !slices.Equal(got, cmdHash) {
+		t.Errorf("fi.CmdHash() for %q = %q; want %q", declaredRel, got, cmdHash)
+	}
+	if got := fi.EdgeHash(); !slices.Equal(got, edgeHash) {
+		t.Errorf("fi.EdgeHash() for %q = %q; want %q", declaredRel, got, edgeHash)
+	}
+
+	// 2. cmd.Outputs must include declared output and all 3 live discovered outputs,
+	//    and exclude temp_deleted.o.
+	wantOutputs := []path.Path{
+		declaredRel,
+		discoveredStaleRel,
+		discoveredRecreatedRel,
+		discoveredNegRel,
+	}
+	if !slices.Equal(cmd.Outputs, wantOutputs) {
+		t.Errorf("cmd.Outputs = %v; want %v", cmd.Outputs, wantOutputs)
+	}
+
+	// 3. temp_deleted.o must be forgotten from HashFS.
+	if fi, err := hfs.Stat(ctx, wsDir, tempDeletedRel); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("hfs.Stat(ctx, %q, %q) = %v, %v; want nil, %v", wsDir, tempDeletedRel, fi, err, fs.ErrNotExist)
+	}
+
+	// 4. All live outputs in HashFS must reflect the new on-disk contents.
+	for _, tc := range []struct {
+		rel  path.Path
+		want string
+	}{
+		{declaredRel, "new declared"},
+		{discoveredStaleRel, "new stale"},
+		{discoveredRecreatedRel, "new recreated"},
+		{discoveredNegRel, "new neg"},
+	} {
+		got, err := hfs.ReadFile(ctx, wsDir, tc.rel)
+		if err != nil || string(got) != tc.want {
+			t.Errorf("hfs.ReadFile(ctx, %q, %q) = %q, %v; want %q, nil", wsDir, tc.rel, got, err, tc.want)
+		}
+	}
+}

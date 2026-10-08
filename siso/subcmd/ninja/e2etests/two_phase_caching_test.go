@@ -8,6 +8,9 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -52,21 +55,30 @@ func (h mockTapHelper) Run(ctx context.Context, req *epb.SpawnRequest) (*epb.Spa
 		}
 		return filepath.Clean(filepath.Join(cwd, p))
 	}
-	var reads, writes []string
+	var reads, writes, deletes []string
 	for _, arg := range req.GetArgs()[1:] {
 		if v, ok := strings.CutPrefix(arg, "--output="); ok {
 			writes = append(writes, abs(v))
+		} else if v, ok := strings.CutPrefix(arg, "--unlink-output="); ok {
+			writes = append(writes, abs(v))
+			deletes = append(deletes, abs(v))
+		} else if v, ok := strings.CutPrefix(arg, "--temp-file="); ok {
+			writes = append(writes, abs(v))
+			deletes = append(deletes, abs(v))
 		} else if v, ok := strings.CutPrefix(arg, "--mkdir="); ok {
 			writes = append(writes, abs(v))
 		} else if v, ok := strings.CutPrefix(arg, "--check-dir="); ok {
+			reads = append(reads, abs(v))
+		} else if v, ok := strings.CutPrefix(arg, "--check-file="); ok {
 			reads = append(reads, abs(v))
 		} else if !strings.HasPrefix(arg, "-") {
 			reads = append(reads, abs(arg))
 		}
 	}
 	tapData := &epb.TapResult{
-		Reads:  reads,
-		Writes: writes,
+		Reads:   reads,
+		Writes:  writes,
+		Deletes: deletes,
 	}
 	anyTap, err := anypb.New(tapData)
 	if err != nil {
@@ -903,6 +915,179 @@ func TestBuild_TwoPhaseCaching_PhonyAndOrderOnly(t *testing.T) {
 				}
 				if m.TwoPhaseCachingActions != 0 {
 					t.Errorf("foo.out TwoPhaseCachingActions=%d; want 0 for new lookup key", m.TwoPhaseCachingActions)
+				}
+			}
+		}
+		if !foundFoo {
+			t.Errorf("foo.out not found in metrics")
+		}
+	}()
+}
+
+// Regression test for b/570100436:
+//   - Declared outputs that unlink-before-write (reported in both Writes and
+//     Deletes) must retain their CmdHash in .siso_fs_state so a subsequent
+//     incremental build is a no-op instead of rebuilding due to
+//     "command line not found in log".
+//   - Undeclared outputs discovered by tap (both overwritten in-place and
+//     unlinked-before-write) must be refreshed in HashFS and uploaded to the
+//     2PC cache with their latest contents, while temporary files written then
+//     deleted during execution must be forgotten and excluded.
+func TestBuild_TwoPhaseCaching_TapOutputsAndDeletes(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("two phase caching is available on linux only")
+	}
+	if !runInSubProcess(t) {
+		return
+	}
+	ctx := t.Context()
+	dir := tempDir(t)
+	t.Setenv("TMPDIR", tempDir(t))
+	t.Setenv("TMP", tempDir(t))
+
+	build.SetExperimentForTest("two-phase-caching")
+
+	fakere := &reapitest.Fake{}
+	var ds build.DataSource
+	defer func() {
+		err := ds.Close(ctx)
+		if err != nil {
+			t.Error(err)
+		}
+	}()
+	localCache, err := reapi.NewLocalCache(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	ds.Client = reapitest.NewWithOption(ctx, t, fakere, reapi.Option{
+		LocalCache:                    localCache,
+		DisableTwoPhaseCachingMethods: true,
+	})
+	err = ds.Client.Init(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ds.Cache = ds.Client.CacheStore()
+
+	runNinja := func(ctx context.Context, t *testing.T, metricsBuffer *syncBuffer) (build.Stats, error) {
+		t.Helper()
+		hashfsOpts := hashfs.Option{
+			StateFile:   ".siso_fs_state",
+			OutputLocal: func(context.Context, string) bool { return true },
+			DataSource:  ds,
+		}
+		opt, graph, cleanup := setupBuild(ctx, t, dir, hashfsOpts)
+		defer cleanup()
+		bcache, err := build.NewCache(ctx, build.CacheOptions{
+			Store:      ds.Cache,
+			EnableRead: true,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		opt.Cache = bcache
+		opt.RECacheEnableRead = true
+		opt.RECacheEnableWrite = true
+		opt.REAPIClient = ds.Client
+		opt.REExecEnable = true
+		if metricsBuffer != nil {
+			opt.MetricsJSONWriter = metricsBuffer
+		}
+		return ninjabuild.Run(ctx, graph, opt, []string{"all"}, ninjabuild.RunNinjaOpts{})
+	}
+
+	setupFiles(t, dir, t.Name(), nil)
+	origHelper := localexec.SetSpawnHelper(mockTapHelper{})
+	defer localexec.SetSpawnHelper(origHelper)
+
+	checkOutputs := func(want string) error {
+		var errs []error
+		for _, fname := range []string{"foo.out", "bar.out", "undeclared.out", "undeclared_recreated.out"} {
+			got, err := os.ReadFile(filepath.Join(dir, "out/siso", fname))
+			if err != nil || string(got) != want {
+				errs = append(errs, fmt.Errorf("os.ReadFile(%q) = %q, %v; want %q, nil", fname, string(got), err, want))
+			}
+		}
+		if fi, err := os.Stat(filepath.Join(dir, "out/siso/temp.tmp")); !errors.Is(err, fs.ErrNotExist) {
+			errs = append(errs, fmt.Errorf("os.Stat(%q) = %v, %v; want nil, %v", "temp.tmp", fi, err, fs.ErrNotExist))
+		}
+		return errors.Join(errs...)
+	}
+
+	func() {
+		t.Logf("--- first build: populate .siso_fs_state and 2PC cache")
+		var metricsBuffer syncBuffer
+		stats, err := runNinja(ctx, t, &metricsBuffer)
+		if err != nil {
+			t.Fatalf("runNinja(ctx, t) = %v, %v; want _, nil", stats, err)
+		}
+		if err := checkOutputs("v1\n"); err != nil {
+			t.Errorf("checkOutputs(%q): %v", "v1\n", err)
+		}
+		dec := json.NewDecoder(bytes.NewReader(metricsBuffer.buf.Bytes()))
+		for dec.More() {
+			var m build.StepMetric
+			if err := dec.Decode(&m); err != nil {
+				t.Errorf("dec.Decode(&m) = %v; want nil", err)
+			}
+			if filepath.Base(m.Output()) == "foo.out" && !m.CacheWrite {
+				t.Errorf("foo.out CacheWrite = %t; want true", m.CacheWrite)
+			}
+		}
+	}()
+
+	func() {
+		t.Logf("--- second build: incremental build must be a no-op (declared output foo.out retains CmdHash despite unlink-before-write)")
+		stats, err := runNinja(ctx, t, nil)
+		if err != nil {
+			t.Fatalf("runNinja(ctx, t) = %v, %v; want _, nil", stats, err)
+		}
+		if stats.Skipped != stats.Total {
+			t.Errorf("runNinja(ctx, t) stats.Skipped = %d; want %d (no-op incremental build)", stats.Skipped, stats.Total)
+		}
+	}()
+
+	func() {
+		t.Logf("--- third build: modify base/foo.in in incremental build so undeclared outputs are overwritten/recreated and re-cached")
+		modifyFile(t, dir, "base/foo.in", func(buf []byte) []byte {
+			return []byte("v2\n")
+		})
+		var metricsBuffer syncBuffer
+		stats, err := runNinja(ctx, t, &metricsBuffer)
+		if err != nil {
+			t.Fatalf("runNinja(ctx, t) = %v, %v; want _, nil", stats, err)
+		}
+		if err := checkOutputs("v2\n"); err != nil {
+			t.Errorf("checkOutputs(%q): %v", "v2\n", err)
+		}
+	}()
+
+	func() {
+		t.Logf("--- fourth build: clean outputs and state, expect 2PC cache hit with updated v2 contents for discovered outputs")
+		for _, p := range []string{"foo.out", "bar.out", "undeclared.out", "undeclared_recreated.out", ".siso_fs_state"} {
+			if err := os.RemoveAll(filepath.Join(dir, "out/siso", p)); err != nil {
+				t.Fatalf("os.RemoveAll(%q) = %v; want nil", p, err)
+			}
+		}
+		var metricsBuffer syncBuffer
+		stats, err := runNinja(ctx, t, &metricsBuffer)
+		if err != nil {
+			t.Fatalf("runNinja(ctx, t) = %v, %v; want _, nil", stats, err)
+		}
+		if err := checkOutputs("v2\n"); err != nil {
+			t.Errorf("checkOutputs(%q): %v", "v2\n", err)
+		}
+		dec := json.NewDecoder(bytes.NewReader(metricsBuffer.buf.Bytes()))
+		foundFoo := false
+		for dec.More() {
+			var m build.StepMetric
+			if err := dec.Decode(&m); err != nil {
+				t.Errorf("dec.Decode(&m) = %v; want nil", err)
+			}
+			if filepath.Base(m.Output()) == "foo.out" {
+				foundFoo = true
+				if !m.TwoPhaseCacheHit {
+					t.Errorf("foo.out TwoPhaseCacheHit = %t; want true", m.TwoPhaseCacheHit)
 				}
 			}
 		}
