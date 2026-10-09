@@ -25,12 +25,6 @@ found in the LICENSE file. */}}
   {{template "invocation_tabs" .}}
 {{end}}
 
-{{define "scripts"}}
-{{if .useLit}}
-<script type="module" src="/static/siso-log-links.js"></script>
-{{end}}
-{{end}}
-
 {{define "sidebar"}}
 {{$outdirRevBaseURL:=.outdirRevBaseURL}}
 {{$currentURL:=.currentURL}}

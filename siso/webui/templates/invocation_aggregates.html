@@ -12,12 +12,6 @@ found in the LICENSE file. */}}
   {{template "invocation_tabs" .}}
 {{end}}
 
-{{define "scripts"}}
-{{if .useLit}}
-<script type="module" src="/static/siso-aggregates-table.js"></script>
-{{end}}
-{{end}}
-
 {{define "content"}}
 <div class="surface">
 <h2>Aggregates prototype{{if .useLit}} (Lit){{end}}</h2>

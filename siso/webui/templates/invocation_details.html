@@ -12,12 +12,6 @@ found in the LICENSE file. */}}
   {{template "invocation_tabs" .}}
 {{end}}
 
-{{define "scripts"}}
-{{if .useLit}}
-<script type="module" src="/static/siso-invocation-details.js"></script>
-{{end}}
-{{end}}
-
 {{define "content"}}
 {{if .useLit}}
 <siso-invocation-details endpoint="{{.outdirRevBaseURL}}/api/invocation"></siso-invocation-details>

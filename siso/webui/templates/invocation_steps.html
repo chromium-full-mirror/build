@@ -12,13 +12,6 @@ found in the LICENSE file. */}}
   {{template "invocation_tabs" .}}
 {{end}}
 
-{{define "scripts"}}
-{{if .useLit}}
-<script type="module" src="/static/siso-step-sidebar.js"></script>
-<script type="module" src="/static/siso-step-table.js"></script>
-{{end}}
-{{end}}
-
 {{define "sidebar"}}
 {{$outdirRevBaseURL:=.outdirRevBaseURL}}
 {{$currentRev:=.currentRev}}

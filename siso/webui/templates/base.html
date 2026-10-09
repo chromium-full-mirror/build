@@ -28,6 +28,7 @@ found in the LICENSE file. */}}
     }
   </script>
   <script type="module" src="/third_party/@material/web/all.js"></script>
+  <script type="module" src="/static/components.js"></script>
   <script type="module">
     import '/static/htmx-errors.js';
     import {toggleDarkMode, openInPerfetto} from '/static/main.js';
@@ -37,7 +38,6 @@ found in the LICENSE file. */}}
   {{/* Styles. */}}
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200">
   <link rel="stylesheet" href="{{.combinedCSSPath}}">
-  {{block "scripts" .}}{{end}}
 </head>
 <body
   hx-ext="ext-md-filter-chip-as-checkbox"
