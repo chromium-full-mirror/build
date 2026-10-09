@@ -15,7 +15,7 @@ THIRD_PARTY_DIRS = [
 ]
 
 # Go version used on presubmit bots, which every go.mod must also require.
-GO_VERSION = "1.27.1"
+GO_VERSION = "1.27.2"
 
 # Repository-relative go.mod path -> Go version, for modules that must differ
 # from GO_VERSION. Each entry should have a comment explaining why.
@@ -162,7 +162,7 @@ def CheckGoChanges(input_api, output_api):
     input_api.change.RepositoryRoot(), ".cipd_bin"
   )
   ensure_file_content = (
-    "infra/3pp/tools/golangci-lint/${platform} version:3@2.13.1.chromium.1\n"
+    "infra/3pp/tools/golangci-lint/${platform} version:3@2.14.0.chromium.1\n"
   )
   go = "go"
   golangci_lint = input_api.os_path.join(cipd_root, "golangci-lint")

@@ -1,6 +1,6 @@
 module go.chromium.org/build/siso-tap
 
-go 1.27.1
+go 1.27.2
 
 require (
 	github.com/golang/glog v1.2.5
