@@ -10,6 +10,8 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/sync/errgroup"
+
 	"go.chromium.org/build/hashigo/digest"
 
 	"go.chromium.org/build/siso/blob"
@@ -159,20 +161,29 @@ func (d *digester) stop(ctx context.Context) {
 		clog.Infof(ctx, "finish digester early")
 		return
 	}
+	eg, ctx := errgroup.WithContext(ctx)
+	eg.SetLimit(runtime.GOMAXPROCS(0))
 	for req := range q {
-		dctx := ctx
-		if req.id != "" {
-			dctx = trace.NewContext(dctx, trace.New(dctx, req.id))
-		}
-		d.compute(dctx, req.fname, req.e)
+		eg.Go(func() error {
+			dctx := ctx
+			if req.id != "" {
+				dctx = trace.NewContext(dctx, trace.New(dctx, req.id))
+			}
+			d.compute(dctx, req.fname, req.e)
+			return nil
+		})
 	}
 	for _, req := range d.queue {
-		dctx := ctx
-		if req.id != "" {
-			dctx = trace.NewContext(dctx, trace.New(dctx, req.id))
-		}
-		d.compute(dctx, req.fname, req.e)
+		eg.Go(func() error {
+			dctx := ctx
+			if req.id != "" {
+				dctx = trace.NewContext(dctx, trace.New(dctx, req.id))
+			}
+			d.compute(dctx, req.fname, req.e)
+			return nil
+		})
 	}
+	eg.Wait()
 	d.queue = nil
 	clog.Infof(ctx, "finish digester")
 }
