@@ -14,7 +14,7 @@ func TestParse(t *testing.T) {
 		want  Digest
 	}{
 		{
-			name:  "hash/size",
+			name:  "hash-with-size",
 			input: "6400fa014f9e835db82d6f27fb71e100d623eba0ab346fa890304412367e798c/310",
 			want: Digest{
 				Hash:      "6400fa014f9e835db82d6f27fb71e100d623eba0ab346fa890304412367e798c",
