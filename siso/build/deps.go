@@ -91,8 +91,8 @@ func depsExpandInputs(ctx context.Context, b *Builder, step *Step) {
 	// but need to use DepsBaseInputs to get expand phony in build graph inputs.
 	includeOrderOnly := false
 	sandbox, _ := b.selectSandbox(ctx, step)
-	if sandbox == "nsjail" {
-		// for nsjail sandbox, we need to include order-only files.
+	if sandbox != "" {
+		// for sandbox, we need to include order-only files.
 		// action will use subset of inputs and record them in depfile.
 		includeOrderOnly = true
 	}
