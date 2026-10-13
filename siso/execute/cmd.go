@@ -1246,17 +1246,13 @@ func (c *Cmd) RecordOutputs(ctx context.Context, ds hashfs.DataSource, now time.
 	entries, additionalEntries := c.entriesFromResult(ctx, ds, now)
 	clog.Infof(ctx, "output entries %d+%d", len(entries), len(additionalEntries))
 	entries = c.computeOutputEntries(entries, now, c.CmdHash)
+	if len(additionalEntries) > 0 {
+		additionalEntries = c.computeOutputEntries(additionalEntries, now, nil)
+		entries = append(entries, additionalEntries...)
+	}
 	err := c.HashFS.Update(ctx, c.WorkspaceRoot, entries)
 	if err != nil {
 		return fmt.Errorf("failed to update hashfs from remote: %w", err)
-	}
-	if len(additionalEntries) == 0 {
-		return nil
-	}
-	additionalEntries = c.computeOutputEntries(additionalEntries, now, nil)
-	err = c.HashFS.Update(ctx, c.WorkspaceRoot, additionalEntries)
-	if err != nil {
-		return fmt.Errorf("failed to update hashfs from remote[additional]: %w", err)
 	}
 	return nil
 }
@@ -1421,6 +1417,7 @@ func (c *Cmd) RecordOutputsFromLocal(ctx context.Context, now time.Time) error {
 			additionalOutputs = append(additionalOutputs, out)
 		}
 	}
+	var additionalEntries []hashfs.UpdateEntry
 	if len(additionalOutputs) > 0 {
 		slices.SortFunc(additionalOutputs, func(a, b path.Path) int {
 			if a < b {
@@ -1432,11 +1429,7 @@ func (c *Cmd) RecordOutputsFromLocal(ctx context.Context, now time.Time) error {
 			return 0
 		})
 		entries := c.HashFS.RetrieveUpdateEntriesFromLocal(ctx, c.WorkspaceRoot, additionalOutputs)
-		entries = c.computeOutputEntries(entries, now, nil)
-		err := c.HashFS.Update(ctx, c.WorkspaceRoot, entries)
-		if err != nil {
-			return fmt.Errorf("failed to update hashfs from local[additional]: %w", err)
-		}
+		additionalEntries = c.computeOutputEntries(entries, now, nil)
 	}
 	outs := make([]path.Path, 0, len(c.outfiles))
 	for out := range c.outfiles {
@@ -1453,6 +1446,7 @@ func (c *Cmd) RecordOutputsFromLocal(ctx context.Context, now time.Time) error {
 	})
 	entries := c.HashFS.RetrieveUpdateEntriesFromLocal(ctx, c.WorkspaceRoot, outs)
 	entries = c.computeOutputEntries(entries, now, c.CmdHash)
+	entries = append(entries, additionalEntries...)
 	err := c.HashFS.Update(ctx, c.WorkspaceRoot, entries)
 	if err != nil {
 		return fmt.Errorf("failed to update hashfs from local: %w", err)
