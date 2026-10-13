@@ -1073,10 +1073,10 @@ func (c *zstdCompressor) Compress(out, data []byte) (int, error) {
 	indexPayload := 4 + c.numFrames*8
 	headerSize := len(zstdEmptyFrame) + 8 + indexPayload
 	type frameSlot struct {
-		dataStart  int // offset in out where compressed data begins
-		maxSize    int // worst-case compressed size for this frame
-		compSize   int // actual compressed size (filled after compression)
-		uncompSize int // uncompressed size of the input chunk
+		dataStart  int    // offset in out where compressed data begins
+		maxSize    int    // worst-case compressed size for this frame
+		result     []byte // compressed data (may be backed by out[dataStart:] or reallocated)
+		uncompSize int    // uncompressed size of the input chunk
 	}
 	slots := make([]frameSlot, c.numFrames)
 	offset := headerSize
@@ -1096,8 +1096,7 @@ func (c *zstdCompressor) Compress(out, data []byte) (int, error) {
 		slot := &slots[i]
 		eg.Go(func() error {
 			dst := out[slot.dataStart : slot.dataStart : slot.dataStart+slot.maxSize]
-			result := c.enc.EncodeAll(chunk, dst)
-			slot.compSize = len(result)
+			slot.result = c.enc.EncodeAll(chunk, dst)
 			return nil
 		})
 		offset += maxSize
@@ -1107,14 +1106,15 @@ func (c *zstdCompressor) Compress(out, data []byte) (int, error) {
 	}
 
 	// Compact: move each frame's actual data to be contiguous (removing
-	// the gaps from worst-case over-estimation).
+	// the gaps from worst-case over-estimation, or copying from a
+	// reallocated buffer if EncodeAll grew past dst's capacity).
 	writePos := headerSize
 	for i := range slots {
 		s := &slots[i]
-		if writePos != s.dataStart {
-			copy(out[writePos:], out[s.dataStart:s.dataStart+s.compSize])
+		if len(s.result) > 0 && &s.result[0] != &out[writePos] {
+			copy(out[writePos:], s.result)
 		}
-		writePos += s.compSize
+		writePos += len(s.result)
 	}
 
 	// Write the empty frame + skippable frame header + index at the beginning.
@@ -1126,7 +1126,7 @@ func (c *zstdCompressor) Compress(out, data []byte) (int, error) {
 	binary.LittleEndian.PutUint32(out[pos:], zstdIndexVersion)
 	pos += 4
 	for _, s := range slots {
-		binary.LittleEndian.PutUint32(out[pos:], uint32(s.compSize))
+		binary.LittleEndian.PutUint32(out[pos:], uint32(len(s.result)))
 		pos += 4
 		binary.LittleEndian.PutUint32(out[pos:], uint32(s.uncompSize))
 		pos += 4

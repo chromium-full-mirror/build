@@ -172,6 +172,51 @@ func TestLoadSave(t *testing.T) {
 	}
 }
 
+// TestLoadSaveSmallState tests saving and loading a small state (~3kB) split
+// across many compression threads, where individual chunks (~100B) may cause
+// zstd's EncodeAll to reallocate its destination buffer during sequence encoding.
+func TestLoadSaveSmallState(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+	savedState := &pb.State{}
+	for i := range 20 {
+		savedState.Entries = append(savedState.Entries, &pb.Entry{
+			Id:      &pb.FileID{ModTime: int64(i + 1)},
+			Name:    fmt.Sprintf("/path/to/workspace/out/siso/gen/dir%d/file%d.h", i/3, i),
+			Digest:  &pb.Digest{Hash: fmt.Sprintf("%064x", i+1), SizeBytes: int64(i * 10)},
+			CmdHash: []byte("someCommandHash"),
+		})
+	}
+
+	dir := t.TempDir()
+	dir, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, useMmap := range []bool{false, true} {
+		t.Run(fmt.Sprintf("mmap_%v", useMmap), func(t *testing.T) {
+			opts := hashfs.Option{
+				StateFile:       filepath.Join(dir, fmt.Sprintf(".siso_fs_state_%v", useMmap)),
+				CompressLevel:   1,
+				CompressThreads: 32,
+				UseMmap:         useMmap,
+			}
+			if err := hashfs.Save(ctx, savedState, opts); err != nil {
+				t.Fatalf("Save(...)=%v; want nil", err)
+			}
+			loadedState, err := hashfs.Load(ctx, opts)
+			if err != nil {
+				t.Fatalf("Load(...)=%v, %v; want nil err", loadedState, err)
+			}
+			if diff := cmp.Diff(savedState, loadedState, protocmp.Transform()); diff != "" {
+				t.Errorf("Load(...) diff -want +got:\n%s", diff)
+			}
+		})
+	}
+}
+
 // TestLoadLegacyGzip tests that old gzip-compressed state files can still be loaded.
 func TestLoadLegacyGzip(t *testing.T) {
 	t.Parallel()
