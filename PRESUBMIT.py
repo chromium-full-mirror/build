@@ -97,7 +97,13 @@ def CheckGoVersionsConsistent(input_api, output_api):
 
 
 SUBTEST_CHECK_DIRS = [
+  r"^bench(/|$)",
   r"^gong/gn/build/ninjawriter$",
+  r"^hashigo(/|$)",
+  r"^kajiya(/|$)",
+  r"^kzipinfo(/|$)",
+  r"^remote-apis(/|$)",
+  r"^infra/subtestanalyzer(/|$)",
   r"^siso(/|$)",
 ]
 
