@@ -112,6 +112,7 @@ func NewStepConfig(ctx context.Context, fn digest.Function, config *buildconfig.
 	if err != nil {
 		return nil, err
 	}
+	defer tempHashFS.Close(ctx)
 	s, strict, err := config.Init(ctx, tempHashFS, p)
 	if err != nil {
 		return nil, err
