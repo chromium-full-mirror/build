@@ -6,6 +6,7 @@ package reapi
 
 import (
 	"bytes"
+	"cmp"
 	"compress/flate"
 	"context"
 	"errors"
@@ -85,34 +86,39 @@ func selectCompressor(serverSupported []rpb.Compressor_Value) rpb.Compressor_Val
 }
 
 type uploadOp struct {
-	c    *Client
-	d    digest.Digest
-	once sync.Once
-	ch   chan struct{}
-	err  error
+	c   *Client
+	d   digest.Digest
+	ch  chan struct{}
+	err error
 }
 
 func newUploadOp(c *Client, d digest.Digest) *uploadOp {
 	return &uploadOp{
-		c:   c,
-		d:   d,
-		ch:  make(chan struct{}),
-		err: errUploadNotFinished,
+		c:  c,
+		d:  d,
+		ch: make(chan struct{}),
 	}
 }
 
-// done completes the uploadOp once, updating knownDigests before closing ch so
-// any waiting callers observe the updated knownDigests state upon waking up.
+// done completes the uploadOp if not already completed, updating knownDigests
+// before closing ch so any waiting callers observe the updated knownDigests
+// state upon waking up.
+// Each uploadOp is owned by a single uploadNewBlobs call (completed when the
+// blob finishes or in defer for any remaining blobs), so done is never called
+// concurrently.
 func (u *uploadOp) done(err error) {
-	u.once.Do(func() {
-		u.err = err
-		if err == nil {
-			u.c.knownDigests.CompareAndSwap(u.d, u, true)
-		} else {
-			u.c.knownDigests.CompareAndDelete(u.d, u)
-		}
-		close(u.ch)
-	})
+	select {
+	case <-u.ch:
+		return
+	default:
+	}
+	u.err = err
+	if err == nil {
+		u.c.knownDigests.CompareAndSwap(u.d, u, true)
+	} else {
+		u.c.knownDigests.CompareAndDelete(u.d, u)
+	}
+	close(u.ch)
 }
 
 func (u *uploadOp) wait(ctx context.Context) error {
@@ -680,12 +686,8 @@ func (c *Client) uploadNewBlobs(ctx context.Context, ds *blob.Store, newBlobs ma
 	var missingBlobs []digest.Digest
 	var durFindMissing, durUpload time.Duration
 	defer func() {
-		finErr := err
-		if finErr == nil {
-			finErr = errUploadNotFinished
-		}
 		for _, uop := range newBlobs {
-			uop.done(finErr)
+			uop.done(cmp.Or(err, errUploadNotFinished))
 		}
 		clog.Infof(ctx, "upload new blobs: new=%d -> {uploaded=%d, missing=%d, found=%d}, timing: {find_missing=%s, upload=%s}: %v",
 			len(newBlobs), numUploaded, len(missingBlobs), len(foundBlobs),
