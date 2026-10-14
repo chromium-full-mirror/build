@@ -115,24 +115,29 @@ func TestDigestFunctionScoping(t *testing.T) {
 	}
 }
 
-// TestValidateActionOutputDirectories verifies that validateAction flattens an
-// output directory's RootDirectoryDigest (not the action digest) and accepts a
-// valid ActionResult referencing an output directory tree.
-func TestValidateActionOutputDirectories(t *testing.T) {
+// TestValidateActionOutputDirectoryDigests verifies that validateAction
+// accepts an output directory described by TreeDigest, RootDirectoryDigest, or
+// both, reports the blobs each form references, and rejects an output directory
+// with neither digest, with a Tree blob that is missing from the CAS, or with a
+// Tree that lists a file that is missing from the CAS.
+func TestValidateActionOutputDirectoryDigests(t *testing.T) {
+	// Create a CAS.
 	cas, err := blobstore.NewWithOpts(t.Context(), t.TempDir(), blobstore.Options{})
 	if err != nil {
 		t.Fatalf("blobstore.NewWithOpts: %v", err)
 	}
 	fn := digest.SHA256
 
-	// Store an output file and a Directory referencing it in the CAS.
+	// Store an output file, a Directory referencing it, and the equivalent
+	// Tree in the CAS.
 	fileDigest, err := cas.Put(fn, []byte("output file content"))
 	if err != nil {
 		t.Fatalf("cas.Put(file): %v", err)
 	}
-	dirBytes, err := proto.MarshalOptions{Deterministic: true}.Marshal(&repb.Directory{
+	dir := &repb.Directory{
 		Files: []*repb.FileNode{{Name: "f", Digest: fileDigest.Proto()}},
-	})
+	}
+	dirBytes, err := proto.MarshalOptions{Deterministic: true}.Marshal(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -140,25 +145,92 @@ func TestValidateActionOutputDirectories(t *testing.T) {
 	if err != nil {
 		t.Fatalf("cas.Put(directory): %v", err)
 	}
+	treeBytes, err := proto.MarshalOptions{Deterministic: true}.Marshal(&repb.Tree{Root: dir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	treeDigest, err := cas.Put(fn, treeBytes)
+	if err != nil {
+		t.Fatalf("cas.Put(tree): %v", err)
+	}
+	missingDigest := fn.FromBytes([]byte("never stored"))
+	missingFileTreeBytes, err := proto.MarshalOptions{Deterministic: true}.Marshal(&repb.Tree{
+		Root: &repb.Directory{Files: []*repb.FileNode{{Name: "f", Digest: missingDigest.Proto()}}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	missingFileTreeDigest, err := cas.Put(fn, missingFileTreeBytes)
+	if err != nil {
+		t.Fatalf("cas.Put(tree with missing file): %v", err)
+	}
 
+	// Open an action cache backed by that CAS.
 	ac, err := NewWithOpts(t.Context(), t.TempDir(), cas, Options{})
 	if err != nil {
 		t.Fatalf("NewWithOpts: %v", err)
 	}
-	actionDigest := fn.FromBytes([]byte("some action"))
-	if err := ac.Put(fn, actionDigest, &repb.ActionResult{
-		OutputDirectories: []*repb.OutputDirectory{{Path: "out", RootDirectoryDigest: dirDigest.Proto()}},
-	}); err != nil {
-		t.Fatalf("ac.Put: %v", err)
-	}
 
-	blobs, err := ac.validateAction(fn, actionDigest)
-	if err != nil {
-		t.Fatalf("validateAction: %v", err)
-	}
-	for _, want := range []digest.Digest{dirDigest, fileDigest} {
-		if !slices.Contains(blobs, want) {
-			t.Errorf("validateAction blobs = %v, want to contain %s", blobs, want)
-		}
+	for _, tc := range []struct {
+		name      string
+		outDir    *repb.OutputDirectory
+		wantErr   bool
+		wantBlobs []digest.Digest
+	}{
+		{
+			name:      "tree_digest_only",
+			outDir:    &repb.OutputDirectory{Path: "out", TreeDigest: treeDigest.Proto()},
+			wantBlobs: []digest.Digest{treeDigest, fileDigest},
+		},
+		{
+			name:      "root_directory_digest_only",
+			outDir:    &repb.OutputDirectory{Path: "out", RootDirectoryDigest: dirDigest.Proto()},
+			wantBlobs: []digest.Digest{dirDigest, fileDigest},
+		},
+		{
+			name: "both_digests",
+			outDir: &repb.OutputDirectory{
+				Path:                "out",
+				TreeDigest:          treeDigest.Proto(),
+				RootDirectoryDigest: dirDigest.Proto(),
+			},
+			wantBlobs: []digest.Digest{treeDigest, dirDigest, fileDigest},
+		},
+		{
+			name:    "neither_digest",
+			outDir:  &repb.OutputDirectory{Path: "out"},
+			wantErr: true,
+		},
+		{
+			name:    "missing_tree_blob",
+			outDir:  &repb.OutputDirectory{Path: "out", TreeDigest: missingDigest.Proto()},
+			wantErr: true,
+		},
+		{
+			name:    "missing_file_in_tree",
+			outDir:  &repb.OutputDirectory{Path: "out", TreeDigest: missingFileTreeDigest.Proto()},
+			wantErr: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			// Cache a result with the output directory and validate it.
+			actionDigest := fn.FromBytes([]byte(tc.name))
+			if err := ac.Put(fn, actionDigest, &repb.ActionResult{
+				OutputDirectories: []*repb.OutputDirectory{tc.outDir},
+			}); err != nil {
+				t.Fatalf("ac.Put: %v", err)
+			}
+			blobs, err := ac.validateAction(fn, actionDigest)
+			if got, want := err != nil, tc.wantErr; got != want {
+				t.Fatalf("validateAction: got error %v, want error: %t", err, want)
+			}
+
+			// Check that the referenced blobs are reported.
+			for _, want := range tc.wantBlobs {
+				if !slices.Contains(blobs, want) {
+					t.Errorf("validateAction blobs = %v, want to contain %s", blobs, want)
+				}
+			}
+		})
 	}
 }

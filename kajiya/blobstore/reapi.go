@@ -54,6 +54,15 @@ func (c *ContentAddressableStorage) Directory(fn digest.Function, dirDigest dige
 	return dir, nil
 }
 
+// Tree reads a Tree message with the given digest from the CAS.
+func (c *ContentAddressableStorage) Tree(fn digest.Function, treeDigest digest.Digest) (*repb.Tree, error) {
+	tree := &repb.Tree{}
+	if err := c.proto(fn, treeDigest, tree); err != nil {
+		return nil, fmt.Errorf("failed to get Tree message from CAS: %w", err)
+	}
+	return tree, nil
+}
+
 // FlattenDirectory reads a Directory message with the given digest from the CAS and returns flat
 // lists with the digests as well as the messages of the root directory and all subdirectories,
 // in breadth-first order. Subdirectories use the same digest function as the root. If directories

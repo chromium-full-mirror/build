@@ -194,7 +194,8 @@ func (c *ActionCache) validateRoot(ctx context.Context, g *errgroup.Group, blobs
 }
 
 // validateAction checks that the action with the given digest is present, valid
-// and that all blobs referenced by it exist in the CAS.
+// and that the blobs referenced by it exist in the CAS, and returns the blobs it
+// checked.
 func (c *ActionCache) validateAction(fn digest.Function, d digest.Digest) (blobs []digest.Digest, err error) {
 	// Get the ActionResult from the cache.
 	actionResult, err := c.Get(fn, d)
@@ -242,25 +243,48 @@ func (c *ActionCache) validateAction(fn digest.Function, d digest.Digest) (blobs
 		return nil, err
 	}
 	for _, dir := range actionResult.OutputDirectories {
+		// Check the TreeDigest, the RootDirectoryDigest, or both, whichever is
+		// set. A Tree carries its Directory messages inline, so the Tree blob
+		// and the files it lists must exist. A RootDirectoryDigest is walked,
+		// so every nested Directory and File blob must exist.
+		if dir.TreeDigest == nil && dir.RootDirectoryDigest == nil {
+			return nil, errors.New("action result from CAS had an output dir with neither TreeDigest nor RootDirectoryDigest")
+		}
 		if dir.TreeDigest != nil {
-			return nil, fmt.Errorf("action result from CAS unexpectedly had an output dir with a tree digest")
+			if err = addBlob(dir.TreeDigest); err != nil {
+				return nil, err
+			}
+			treeDigest, err := fn.FromProto(dir.TreeDigest)
+			if err != nil {
+				return nil, fmt.Errorf("invalid tree digest: %w", err)
+			}
+			tree, err := c.cas.Tree(fn, treeDigest)
+			if err != nil {
+				return nil, err
+			}
+			for _, treeDir := range append([]*repb.Directory{tree.Root}, tree.Children...) {
+				for _, file := range treeDir.GetFiles() {
+					if err = addBlob(file.Digest); err != nil {
+						return nil, err
+					}
+				}
+			}
 		}
-		if dir.RootDirectoryDigest == nil {
-			return nil, fmt.Errorf("action result from CAS had an output dir with a missing root directory digest")
-		}
-		rootDigest, err := fn.FromProto(dir.RootDirectoryDigest)
-		if err != nil {
-			return nil, err
-		}
-		dirDigests, dirs, err := c.cas.FlattenDirectory(fn, rootDigest)
-		if err != nil {
-			return nil, err
-		}
-		blobs = append(blobs, dirDigests...)
-		for _, dir := range dirs {
-			for _, file := range dir.Files {
-				if err = addBlob(file.Digest); err != nil {
-					return nil, err
+		if dir.RootDirectoryDigest != nil {
+			rootDigest, err := fn.FromProto(dir.RootDirectoryDigest)
+			if err != nil {
+				return nil, fmt.Errorf("invalid root directory digest: %w", err)
+			}
+			dirDigests, dirs, err := c.cas.FlattenDirectory(fn, rootDigest)
+			if err != nil {
+				return nil, err
+			}
+			blobs = append(blobs, dirDigests...)
+			for _, dir := range dirs {
+				for _, file := range dir.Files {
+					if err = addBlob(file.Digest); err != nil {
+						return nil, err
+					}
 				}
 			}
 		}
