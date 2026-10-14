@@ -376,7 +376,7 @@ func deleteSandbox(dir string) {
 	// directories or marker files without any permission bits set. We need to reset them so
 	// that os.RemoveAll() below can successfully delete this dir.
 	_ = filepath.WalkDir(filepath.Join(dir, "work"), func(path string, d fs.DirEntry, err error) error {
-		if d.IsDir() {
+		if err == nil && d.IsDir() {
 			_ = os.Chmod(path, 0700)
 		}
 		return nil
@@ -391,6 +391,9 @@ func deleteSandbox(dir string) {
 	// If that didn't work, the action probably created a directory with restrictive
 	// permissions, so we need to walk through all directories and make them writable.
 	_ = filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
 		if d.IsDir() {
 			fi, err := d.Info()
 			if err != nil {
