@@ -326,6 +326,15 @@ func (sb *Sandbox) UploadOutputs(action *model.Action, actionResult *repb.Action
 			}
 
 			if lfi.Mode()&os.ModeSymlink != 0 {
+				// Read the target stored in the link, with the / separators
+				// that REAPI uses on every platform.
+				var target string
+				target, err = os.Readlink(fullPath)
+				if err != nil {
+					return true
+				}
+				target = filepath.ToSlash(target)
+
 				var fi os.FileInfo
 				fi, err = os.Stat(fullPath)
 				if err != nil {
@@ -346,12 +355,12 @@ func (sb *Sandbox) UploadOutputs(action *model.Action, actionResult *repb.Action
 					case model.Directory:
 						actionResult.OutputDirectorySymlinks = append(actionResult.OutputDirectorySymlinks, &repb.OutputSymlink{ //nolint:staticcheck
 							Path:   pathFromWorkDir,
-							Target: fi.Name(),
+							Target: target,
 						})
 					case model.Unknown:
 						actionResult.OutputSymlinks = append(actionResult.OutputSymlinks, &repb.OutputSymlink{
 							Path:   pathFromWorkDir,
-							Target: fi.Name(),
+							Target: target,
 						})
 					}
 				} else if fi.Mode().IsRegular() {
@@ -359,7 +368,7 @@ func (sb *Sandbox) UploadOutputs(action *model.Action, actionResult *repb.Action
 					case model.File:
 						actionResult.OutputFileSymlinks = append(actionResult.OutputFileSymlinks, &repb.OutputSymlink{ //nolint:staticcheck
 							Path:   pathFromWorkDir,
-							Target: fi.Name(),
+							Target: target,
 						})
 					case model.Directory:
 						violations = append(violations, &errpb.PreconditionFailure_Violation{
@@ -371,7 +380,7 @@ func (sb *Sandbox) UploadOutputs(action *model.Action, actionResult *repb.Action
 					case model.Unknown:
 						actionResult.OutputSymlinks = append(actionResult.OutputSymlinks, &repb.OutputSymlink{
 							Path:   pathFromWorkDir,
-							Target: fi.Name(),
+							Target: target,
 						})
 					}
 				} else {
