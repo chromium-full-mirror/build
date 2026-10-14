@@ -14,14 +14,18 @@ import (
 	"net"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/google/uuid"
 	"github.com/klauspost/compress/zstd"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
 	"google.golang.org/grpc/test/bufconn"
+	"google.golang.org/protobuf/proto"
 
 	"go.chromium.org/build/hashigo/digest"
 	repb "go.chromium.org/build/remote-apis/build/bazel/remote/execution/v2"
@@ -1061,5 +1065,153 @@ func TestBatchOperationsBlobsLargeBlobs(t *testing.T) {
 	}
 	if got, want := readResp.Responses[0].Data, blobData; !bytes.Equal(got, want) {
 		t.Errorf("Data for blob does not match uploaded data")
+	}
+}
+
+// marshalDir encodes d in the wire format that the CAS stores Directory
+// messages in.
+func marshalDir(t *testing.T, d *repb.Directory) []byte {
+	t.Helper()
+	b, err := proto.Marshal(d)
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	return b
+}
+
+// putBlob uploads data to the CAS with BatchUpdateBlobs and returns its
+// SHA-256 digest.
+func putBlob(ctx context.Context, t *testing.T, casClient repb.ContentAddressableStorageClient, data []byte) *repb.Digest {
+	t.Helper()
+
+	// Upload the blob.
+	d := digest.SHA256.FromBytes(data).Proto()
+	resp, err := casClient.BatchUpdateBlobs(ctx, &repb.BatchUpdateBlobsRequest{
+		Requests: []*repb.BatchUpdateBlobsRequest_Request{{Digest: d, Data: data}},
+	})
+	if err != nil {
+		t.Fatalf("BatchUpdateBlobs: %v", err)
+	}
+
+	// Check that the CAS stored it.
+	if got, want := codes.Code(resp.Responses[0].Status.Code), codes.OK; got != want {
+		t.Fatalf("BatchUpdateBlobs status = %v, want %v", got, want)
+	}
+	return d
+}
+
+// getTree reads the whole GetTree stream for root and returns the directories
+// of all responses in order, or the error that ended the stream.
+func getTree(ctx context.Context, t *testing.T, casClient repb.ContentAddressableStorageClient, root *repb.Digest) ([]*repb.Directory, error) {
+	t.Helper()
+
+	// Start the stream.
+	stream, err := casClient.GetTree(ctx, &repb.GetTreeRequest{RootDigest: root})
+	if err != nil {
+		return nil, err
+	}
+
+	// Collect the directories of every response until the stream ends.
+	var dirs []*repb.Directory
+	for {
+		resp, err := stream.Recv()
+		if errors.Is(err, io.EOF) {
+			return dirs, nil
+		}
+		if err != nil {
+			return dirs, err
+		}
+		dirs = append(dirs, resp.Directories...)
+	}
+}
+
+// TestGetTreeMissingDescendants verifies that GetTree fails with
+// FailedPrecondition and a MISSING violation for each missing Directory that
+// the present part of the tree refers to, and sends no directories.
+func TestGetTreeMissingDescendants(t *testing.T) {
+	// Start a CAS server.
+	ctx := t.Context()
+	_, casClient := setupTest(ctx, t, server.Config{})
+
+	// Upload root -> {kept -> {gone, leaf}, lost -> {orphan}}, where gone and
+	// lost are missing. orphan is missing too, but only lost refers to it.
+	fileDigest := digest.SHA256.FromBytes([]byte("file")).Proto()
+	orphan := &repb.Directory{Files: []*repb.FileNode{{Name: "orphan.txt", Digest: fileDigest}}}
+	lost := &repb.Directory{Directories: []*repb.DirectoryNode{{Name: "orphan", Digest: digest.SHA256.FromBytes(marshalDir(t, orphan)).Proto()}}}
+	leaf := &repb.Directory{Files: []*repb.FileNode{{Name: "leaf.txt", Digest: fileDigest}}}
+	gone := digest.SHA256.FromBytes([]byte("never uploaded"))
+	kept := &repb.Directory{Directories: []*repb.DirectoryNode{
+		{Name: "gone", Digest: gone.Proto()},
+		{Name: "leaf", Digest: putBlob(ctx, t, casClient, marshalDir(t, leaf))},
+	}}
+	lostDigest := digest.SHA256.FromBytes(marshalDir(t, lost))
+	root := &repb.Directory{Directories: []*repb.DirectoryNode{
+		{Name: "kept", Digest: putBlob(ctx, t, casClient, marshalDir(t, kept))},
+		{Name: "lost", Digest: lostDigest.Proto()},
+	}}
+	rootDigest := putBlob(ctx, t, casClient, marshalDir(t, root))
+
+	// Fetch the tree and check that the call fails without directories.
+	dirs, err := getTree(ctx, t, casClient, rootDigest)
+	if got, want := status.Code(err), codes.FailedPrecondition; got != want {
+		t.Fatalf("GetTree: status code = %v, want %v (err: %v)", got, want, err)
+	}
+	if len(dirs) != 0 {
+		t.Errorf("GetTree sent %d directories before failing, want none", len(dirs))
+	}
+
+	// Check that the violations name exactly gone and lost.
+	var got []string
+	for _, detail := range status.Convert(err).Details() {
+		pf, ok := detail.(*errdetails.PreconditionFailure)
+		if !ok {
+			continue
+		}
+		for _, v := range pf.GetViolations() {
+			if v.GetType() != "MISSING" {
+				t.Errorf("violation type = %q, want MISSING", v.GetType())
+			}
+			got = append(got, v.GetSubject())
+		}
+	}
+	want := []string{
+		fmt.Sprintf("blobs/%s/%d", gone.Hash, gone.SizeBytes),
+		fmt.Sprintf("blobs/%s/%d", lostDigest.Hash, lostDigest.SizeBytes),
+	}
+	if diff := cmp.Diff(want, got, cmpopts.SortSlices(func(a, b string) bool { return a < b })); diff != "" {
+		t.Errorf("MISSING subjects mismatch (-want +got):\n%s", diff)
+	}
+}
+
+// TestGetTreeRootMissing verifies that GetTree fails with NotFound when the
+// root Directory is not in the CAS.
+func TestGetTreeRootMissing(t *testing.T) {
+	// Start a CAS server.
+	ctx := t.Context()
+	_, casClient := setupTest(ctx, t, server.Config{})
+
+	// Fetch a tree whose root was never uploaded.
+	_, err := getTree(ctx, t, casClient, digest.SHA256.FromBytes([]byte("never uploaded")).Proto())
+	if got, want := status.Code(err), codes.NotFound; got != want {
+		t.Errorf("GetTree: status code = %v, want %v (err: %v)", got, want, err)
+	}
+}
+
+// TestGetTreeMalformedDescendant verifies that GetTree fails, rather than
+// omitting the Directory, when a descendant is in the CAS but doesn't parse
+// as a Directory.
+func TestGetTreeMalformedDescendant(t *testing.T) {
+	// Start a CAS server.
+	ctx := t.Context()
+	_, casClient := setupTest(ctx, t, server.Config{})
+
+	// Upload a root whose subdirectory blob is not a Directory message.
+	root := putBlob(ctx, t, casClient, marshalDir(t, &repb.Directory{
+		Directories: []*repb.DirectoryNode{{Name: "bad", Digest: putBlob(ctx, t, casClient, []byte("not a Directory"))}},
+	}))
+
+	// Fetch the tree and check that the call fails.
+	if dirs, err := getTree(ctx, t, casClient, root); err == nil {
+		t.Errorf("GetTree returned %d directories, want an error", len(dirs))
 	}
 }

@@ -5,7 +5,9 @@
 package blobstore
 
 import (
+	"errors"
 	"fmt"
+	"slices"
 
 	"google.golang.org/protobuf/proto"
 
@@ -53,21 +55,32 @@ func (c *ContentAddressableStorage) Directory(fn digest.Function, dirDigest dige
 }
 
 // FlattenDirectory reads a Directory message with the given digest from the CAS and returns flat
-// lists with the digests as well as the messages of the root directory and all subdirectories.
-// Subdirectories use the same digest function as the root.
+// lists with the digests as well as the messages of the root directory and all subdirectories,
+// in breadth-first order. Subdirectories use the same digest function as the root. If directories
+// are missing, it returns the rest of the tree along with a *MissingBlobsError that lists them.
 func (c *ContentAddressableStorage) FlattenDirectory(fn digest.Function, rootDigest digest.Digest) (dirDigests []digest.Digest, dirs []*repb.Directory, err error) {
 	// Create a queue of directories to process and add the root directory.
-	dirDigests = []digest.Digest{rootDigest}
+	queue := []digest.Digest{rootDigest}
+	var missing []digest.Digest
 
 	// Iteratively process the directories.
-	for i := 0; i < len(dirDigests); i++ {
-		// Get the blob for the directory message from the CAS.
-		directory, err := c.Directory(fn, dirDigests[i])
+	for i := 0; i < len(queue); i++ {
+		// Get the blob for the directory message from the CAS. A missing
+		// directory's own subdirectories never enter the queue, so its whole
+		// subtree is left out.
+		directory, err := c.Directory(fn, queue[i])
+		if _, ok := errors.AsType[*MissingBlobsError](err); ok {
+			if !slices.Contains(missing, queue[i]) {
+				missing = append(missing, queue[i])
+			}
+			continue
+		}
 		if err != nil {
 			return nil, nil, err
 		}
 
 		// Add the directory to the response.
+		dirDigests = append(dirDigests, queue[i])
 		dirs = append(dirs, directory)
 
 		// Add all subdirectory nodes to the queue.
@@ -77,9 +90,13 @@ func (c *ContentAddressableStorage) FlattenDirectory(fn digest.Function, rootDig
 			if err != nil {
 				return nil, nil, fmt.Errorf("invalid digest: %v", err)
 			}
-			dirDigests = append(dirDigests, subDigest)
+			queue = append(queue, subDigest)
 		}
 	}
 
+	// Report the missing directories along with the rest of the tree.
+	if len(missing) > 0 {
+		return dirDigests, dirs, &MissingBlobsError{Fn: fn, Blobs: missing}
+	}
 	return dirDigests, dirs, nil
 }

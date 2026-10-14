@@ -801,6 +801,12 @@ func (s *Service) BatchReadBlobs(ctx context.Context, request *repb.BatchReadBlo
 }
 
 // GetTree implements the ContentAddressableStorage.GetTree RPC.
+//
+// It fails with NOT_FOUND if the root Directory is missing from the CAS. If
+// any other Directory of the tree is missing, it sends nothing and fails with
+// FAILED_PRECONDITION and a MISSING violation for each one that it can reach.
+// REAPI asks for the part of the tree that is present instead, but a client
+// that doesn't check every DirectoryNode takes that for the whole tree.
 func (s *Service) GetTree(request *repb.GetTreeRequest, treeServer repb.ContentAddressableStorage_GetTreeServer) (err error) {
 	defer func() {
 		if err != nil {
@@ -816,12 +822,15 @@ func (s *Service) GetTree(request *repb.GetTreeRequest, treeServer repb.ContentA
 		return err
 	}
 
-	// Flatten the directory tree.
+	// Flatten the directory tree, and fail if any of it is missing.
 	_, dirs, err := s.cas.FlattenDirectory(fn, d)
-	if err != nil {
-		if _, ok := errors.AsType[*MissingBlobsError](err); ok {
+	if mbe, ok := errors.AsType[*MissingBlobsError](err); ok {
+		if len(dirs) == 0 {
 			return status.Errorf(codes.NotFound, "root directory not found: %v", err)
 		}
+		return mbe.Status().Err()
+	}
+	if err != nil {
 		return err
 	}
 
