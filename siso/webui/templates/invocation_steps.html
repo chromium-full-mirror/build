@@ -170,6 +170,7 @@ found in the LICENSE file. */}}
 <div class="surface">
 {{if .useLit}}
   <siso-step-table
+      build-id="{{$currentRev}}"
       endpoint="{{$outdirRevBaseURL}}/api/steps"
       base-url="{{$outdirRevBaseURL}}">
   </siso-step-table>

@@ -17,6 +17,7 @@ found in the LICENSE file. */}}
 <h2>Aggregates prototype{{if .useLit}} (Lit){{end}}</h2>
 {{if .useLit}}
   <siso-aggregates-table
+      build-id="{{.currentRev}}"
       endpoint="{{.outdirRevBaseURL}}/api/steps"
       base-url="{{.outdirRevBaseURL}}">
   </siso-aggregates-table>

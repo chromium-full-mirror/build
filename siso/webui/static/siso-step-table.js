@@ -11,10 +11,12 @@ import {
   trimOutputPrefix,
 } from './step-transforms.js';
 import { stepQueryState } from './step-query-state.js';
+import { fetchSteps } from './steps-store.js';
 import { Task, TaskStatus, initialState } from '@lit/task';
 
 export class SisoStepTable extends LitElement {
   static properties = {
+    buildId: { type: String, attribute: 'build-id' },
     endpoint: { type: String },
     baseUrl: { type: String, attribute: 'base-url' },
   };
@@ -26,23 +28,20 @@ export class SisoStepTable extends LitElement {
 
   constructor(queryState = stepQueryState) {
     super();
+    this.buildId = '';
     this.endpoint = '';
     this.baseUrl = '';
     this._actionCounts = [];
     this._ruleCounts = [];
     this._countsData = null;
     this._task = new Task(this, {
-      task: async ([endpoint], { signal }) => {
-        if (!endpoint) {
+      task: async ([buildId, endpoint], { signal }) => {
+        if (!buildId) {
           return initialState;
         }
-        const response = await fetch(endpoint, { signal });
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
-        }
-        return response.json();
+        return fetchSteps(buildId, endpoint, { signal });
       },
-      args: () => [this.endpoint],
+      args: () => [this.buildId, this.endpoint],
     });
 
     this.queryState = queryState;

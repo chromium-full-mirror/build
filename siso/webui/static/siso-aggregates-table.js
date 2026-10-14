@@ -7,10 +7,12 @@ import {
   computeAggregates,
   formatIntervalMetricTimestamp,
 } from './step-transforms.js';
+import { fetchSteps } from './steps-store.js';
 import { Task, TaskStatus, initialState } from '@lit/task';
 
 export class SisoAggregatesTable extends LitElement {
   static properties = {
+    buildId: { type: String, attribute: 'build-id' },
     endpoint: { type: String },
     baseUrl: { type: String, attribute: 'base-url' },
     sortBy: { state: true },
@@ -24,22 +26,19 @@ export class SisoAggregatesTable extends LitElement {
 
   constructor() {
     super();
+    this.buildId = '';
     this.endpoint = '';
     this.baseUrl = '';
     this.sortBy = 'utime';
     this.sortDsc = true;
     this._task = new Task(this, {
-      task: async ([endpoint], { signal }) => {
-        if (!endpoint) {
+      task: async ([buildId, endpoint], { signal }) => {
+        if (!buildId) {
           return initialState;
         }
-        const response = await fetch(endpoint, { signal });
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
-        }
-        return response.json();
+        return fetchSteps(buildId, endpoint, { signal });
       },
-      args: () => [this.endpoint],
+      args: () => [this.buildId, this.endpoint],
     });
   }
 
