@@ -19,6 +19,7 @@ import (
 	"sync/atomic"
 	"syscall"
 	"testing"
+	"time"
 
 	"github.com/hanwen/go-fuse/v2/fs"
 	iradix "github.com/hashicorp/go-immutable-radix/v2"
@@ -947,7 +948,7 @@ func TestFuseUnregisterSandboxUnlinksFiles(t *testing.T) {
 	root.fileInodes.Range(func(key, value any) bool {
 		files++
 		if name, parent := value.(*fs.Inode).Parent(); parent != nil {
-			t.Errorf("file inode for %s is still linked as %q", key, name)
+			t.Errorf("file inode for %s is still linked as %q", key.(fileKey).casPath, name)
 		}
 		return true
 	})
@@ -994,6 +995,99 @@ func TestFuseSandboxSameDirectoryAtTwoPaths(t *testing.T) {
 	}
 	if got, want := outputs, []string{"a/x/out " + fileDigest.Hash, "b/x/out " + fileDigest.Hash}; !slices.Equal(got, want) {
 		t.Errorf("output files = %v, want %v", got, want)
+	}
+}
+
+// TestFuseIdenticalFilesKeepTheirAttributes checks that files with the same
+// content but different modes or mtimes each report their own, in one
+// sandbox and across sandboxes.
+func TestFuseIdenticalFilesKeepTheirAttributes(t *testing.T) {
+	skipUnlessFuseWorks(t)
+
+	// Mount the FUSE filesystem.
+	cas, err := blobstore.New(t.Context(), t.TempDir())
+	if err != nil {
+		t.Fatalf("blobstore.New: %v", err)
+	}
+	fuseMountpoint := t.TempDir()
+	root, server, err := MountCASFS(fuseMountpoint)
+	if err != nil {
+		t.Fatalf("MountCASFS: %v", err)
+	}
+	t.Cleanup(func() {
+		root.Close()
+		server.Unmount()
+	})
+
+	// Register two sandboxes, each with three files of the same content.
+	d := putTestBlob(t, cas, []byte("#!/bin/sh\n"))
+	mtime := time.Date(2020, 1, 2, 3, 4, 5, 6, time.UTC)
+	files := []model.KajiyaFile{
+		{Name: "data", Digest: d, UnixMode: 0644},
+		{Name: "stamped", Digest: d, UnixMode: 0644, Mtime: mtime},
+		{Name: "tool", Digest: d, UnixMode: 0755},
+	}
+	txn := iradix.New[*model.KajiyaDirectory]().Txn()
+	txn.Insert([]byte(""), &model.KajiyaDirectory{Files: files, UnixMode: 0755})
+	trie := txn.Commit()
+	var lowerDirs []string
+	for _, sandboxID := range []string{"attr-test-1", "attr-test-2"} {
+		lowerDir, err := root.RegisterSandbox(sandboxID, trie, digest.SHA256, cas, fuseMountpoint, nil)
+		if err != nil {
+			t.Fatalf("RegisterSandbox(%s): %v", sandboxID, err)
+		}
+		t.Cleanup(func() { root.UnregisterSandbox(sandboxID) })
+		lowerDirs = append(lowerDirs, lowerDir)
+	}
+
+	// Check every file's mode and mtime in both sandboxes.
+	for _, lowerDir := range lowerDirs {
+		for _, f := range files {
+			fi, err := os.Stat(filepath.Join(lowerDir, f.Name))
+			if err != nil {
+				t.Fatalf("Stat: %v", err)
+			}
+			if got, want := fi.Mode().Perm(), f.UnixMode; got != want {
+				t.Errorf("%s: mode = %v, want %v", f.Name, got, want)
+			}
+			if got, want := fi.ModTime(), f.Mtime; !got.Equal(want) {
+				t.Errorf("%s: mtime = %v, want %v", f.Name, got, want)
+			}
+		}
+	}
+}
+
+// TestFuseSandboxWriteToIdenticalFile runs an action under the FuseFS
+// strategy that appends to one of two input files with the same content,
+// and checks that the other one keeps its content.
+func TestFuseSandboxWriteToIdenticalFile(t *testing.T) {
+	skipUnlessNsjailWorks(t)
+	skipUnlessFuseWorks(t)
+
+	// Store an input root that holds the same file at a/f and b/f, in
+	// directories that differ otherwise.
+	cas, err := blobstore.New(t.Context(), filepath.Join(t.TempDir(), "cas"))
+	if err != nil {
+		t.Fatalf("blobstore.New: %v", err)
+	}
+	fileDigest := putTestBlob(t, cas, []byte("hello\n")).Proto()
+	a := putTestMessage(t, cas, &repb.Directory{
+		Files: []*repb.FileNode{{Name: "f", Digest: fileDigest}},
+	})
+	b := putTestMessage(t, cas, &repb.Directory{
+		Files: []*repb.FileNode{
+			{Name: "f", Digest: fileDigest},
+			{Name: "g", Digest: putTestBlob(t, cas, []byte("only in b\n")).Proto()},
+		},
+	})
+	inputRoot := putTestMessage(t, cas, &repb.Directory{
+		Directories: []*repb.DirectoryNode{{Name: "a", Digest: a}, {Name: "b", Digest: b}},
+	})
+
+	// Run the action, and check what it read from b/f.
+	result := runFuseTestAction(t, cas, inputRoot, []string{"/bin/sh", "-c", "echo x >> a/f && cat b/f"}, nil)
+	if got, want := readTestBlob(t, cas, result.StdoutDigest), "hello\n"; got != want {
+		t.Errorf("b/f = %q, want %q", got, want)
 	}
 }
 

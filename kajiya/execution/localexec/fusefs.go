@@ -50,11 +50,10 @@ type CASRoot struct {
 	mu        sync.Mutex
 	sandboxes map[string]*sandboxTree
 
-	// fileInodes caches persistent inodes for CAS files, keyed by CAS path
-	// (which embeds the digest function's root). All paths that serve a
-	// blob, in all sandboxes, share its inode, because a regular file may
-	// have any number of names. They share its page cache while the kernel
-	// holds a dentry for any of them.
+	// fileInodes caches persistent inodes for CAS files. All paths that
+	// serve a blob with the same attributes, in all sandboxes, share its
+	// inode, because a regular file may have any number of names. They
+	// share its page cache while the kernel holds a dentry for any of them.
 	//
 	// Directory inodes are never shared. RegisterSandbox creates one for
 	// each directory of each input tree, even where two paths, in one tree
@@ -65,7 +64,14 @@ type CASRoot struct {
 	// inode, so it serves two paths of one sandbox with one inode: once one
 	// of them gets an upper directory (a declared output's parent, or a
 	// copy-up), lookups through the other fail with ESTALE.
-	fileInodes sync.Map // map[string]*fs.Inode (CAS path -> file inode)
+	fileInodes sync.Map // map[fileKey]*fs.Inode
+}
+
+// fileKey identifies a shared file inode by the CAS path of its blob, which
+// embeds the digest function's root, and by the attributes it reports.
+type fileKey struct {
+	casPath string
+	attr    fuse.Attr
 }
 
 // sandboxTree is the inode tree that RegisterSandbox built for one sandbox.
@@ -146,26 +152,31 @@ func (r *CASRoot) RegisterSandbox(sandboxID string, trie *model.DirectoryTrie, f
 		// enabled, create per-sandbox inodes so each carries the recorder
 		// and input-root-relative path.
 		for _, f := range dir.Files {
-			casPath := cas.Path(fn, f.Digest)
+			key := fileKey{
+				casPath: cas.Path(fn, f.Digest),
+				attr: fuse.Attr{
+					Mode: uint32(f.UnixMode),
+					Size: uint64(f.Digest.SizeBytes),
+					// With nlink > 1, overlayfs gives each path its own inode.
+					Nlink:     2,
+					Owner:     fuseOwner,
+					Mtime:     uint64(f.Mtime.Unix()),
+					Mtimensec: uint32(f.Mtime.Nanosecond()),
+				},
+			}
 			// Look up the shared inode before creating one, which takes
 			// go-fuse's global lock.
 			var fileInode *fs.Inode
 			if recorder == nil {
-				if cached, ok := r.fileInodes.Load(casPath); ok {
+				if cached, ok := r.fileInodes.Load(key); ok {
 					fileInode = cached.(*fs.Inode)
 				}
 			}
 			if fileInode == nil {
 				cf := casFile{
-					casPath:  casPath,
+					casPath:  key.casPath,
 					recorder: recorder,
-					attr: fuse.Attr{
-						Mode:      uint32(f.UnixMode),
-						Size:      uint64(f.Digest.SizeBytes),
-						Owner:     fuseOwner,
-						Mtime:     uint64(f.Mtime.Unix()),
-						Mtimensec: uint32(f.Mtime.Nanosecond()),
-					},
+					attr:     key.attr,
 				}
 				// When tracing, record the file path relative to the input
 				// root so we can report back which input files were accessed
@@ -178,9 +189,9 @@ func (r *CASRoot) RegisterSandbox(sandboxID string, trie *model.DirectoryTrie, f
 				// cache it for reuse by future sandboxes. This lets the kernel
 				// share page cache entries for the file across sandboxes. Use
 				// LoadOrStore to avoid a TOCTOU race: if another goroutine
-				// already cached an inode for this CAS path, reuse it.
+				// already cached an inode for this key, reuse it.
 				if recorder == nil {
-					cached, _ := r.fileInodes.LoadOrStore(casPath, fileInode)
+					cached, _ := r.fileInodes.LoadOrStore(key, fileInode)
 					fileInode = cached.(*fs.Inode)
 				}
 			}
