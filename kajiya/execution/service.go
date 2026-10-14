@@ -178,6 +178,7 @@ func (s *Service) Execute(request *repb.ExecuteRequest, executeServer repb.Execu
 	if err != nil {
 		return err
 	}
+	action.SkipCacheLookup = request.SkipCacheLookup
 
 	// Tell the client that we're in QUEUED stage now.
 	reply, err := executionStage(request.ActionDigest, opName, repb.ExecutionStage_QUEUED)
@@ -191,7 +192,7 @@ func (s *Service) Execute(request *repb.ExecuteRequest, executeServer repb.Execu
 	// According to the REAPI specification, in-flight requests for the same `Action` may be
 	// merged unless the `DoNotCache` bit is set. This improves efficiency and performance by
 	// avoiding duplicate work.
-	ar, err, _ := s.actionDigestDeduper.Do(dedupKey(fn, actionDigest, opName, action.DoNotCache), func() (any, error) {
+	ar, err, _ := s.actionDigestDeduper.Do(dedupKey(fn, actionDigest, opName, action.DoNotCache, action.SkipCacheLookup), func() (any, error) {
 		// Acquire a semaphore to limit the number of concurrent executions.
 		err = s.sem.Acquire(executeServer.Context(), 1)
 		if err != nil {
@@ -244,11 +245,17 @@ func (s *Service) Execute(request *repb.ExecuteRequest, executeServer repb.Execu
 // so two requests sharing a hash string under different functions don't merge
 // and return the wrong ActionResult. Uncacheable requests (DoNotCache) get the
 // unique operation name so they never merge.
-func dedupKey(fn digest.Function, actionDigest digest.Digest, opName uuid.UUID, doNotCache bool) string {
+func dedupKey(fn digest.Function, actionDigest digest.Digest, opName uuid.UUID, doNotCache, skipCacheLookup bool) string {
 	if doNotCache {
 		return opName.String()
 	}
-	return blobstore.DigestKey(fn, actionDigest)
+	key := blobstore.DigestKey(fn, actionDigest)
+
+	// Ensure that requests with skip_cache_lookup merge only with each other.
+	if skipCacheLookup {
+		key += "/skip_cache_lookup"
+	}
+	return key
 }
 
 // executionStage returns an Operation message with an update on the current state of opName

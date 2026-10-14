@@ -101,7 +101,8 @@ type Action struct {
 	InputRootDigest digest.Digest
 
 	// Parameters influencing the use of caching.
-	DoNotCache bool
+	DoNotCache      bool
+	SkipCacheLookup bool
 
 	// Parameters influencing the execution.
 	Args           []string
