@@ -48,18 +48,51 @@ var fuseOwner = fuse.Owner{
 type CASRoot struct {
 	fs.Inode
 	mu        sync.Mutex
-	sandboxes map[string]*fs.Inode
+	sandboxes map[string]*sandboxTree
 
 	// fileInodes caches persistent inodes for CAS files, keyed by CAS path
-	// (which embeds the digest function's root). dirInodes caches persistent
-	// inodes for directories, keyed by digest function + REAPI directory
-	// digest: the cached subtree's file inodes bake in that function's CAS
-	// paths, so the same hash under another function must not share it.
-	// Sharing inodes across sandboxes means the kernel's page cache, dentry
-	// cache, and readdir cache are all shared — accesses in one sandbox warm
-	// caches for all others.
+	// (which embeds the digest function's root). All paths that serve a
+	// blob, in all sandboxes, share its inode, because a regular file may
+	// have any number of names. They share its page cache while the kernel
+	// holds a dentry for any of them.
+	//
+	// Directory inodes are never shared. RegisterSandbox creates one for
+	// each directory of each input tree, even where two paths, in one tree
+	// or in two, hold the same Directory. The kernel keeps a single dentry
+	// per directory inode, so a lookup through another path moves it there
+	// (d_splice_alias), or fails with ESTALE if it can't take the locks for
+	// the move right away. And overlayfs hashes its inodes by their lower
+	// inode, so it serves two paths of one sandbox with one inode: once one
+	// of them gets an upper directory (a declared output's parent, or a
+	// copy-up), lookups through the other fail with ESTALE.
 	fileInodes sync.Map // map[string]*fs.Inode (CAS path -> file inode)
-	dirInodes  sync.Map // map[string]*fs.Inode ("<function>/<hash>" -> dir subtree inode)
+}
+
+// sandboxTree is the inode tree that RegisterSandbox built for one sandbox.
+type sandboxTree struct {
+	root *fs.Inode
+
+	// dirs lists every directory inode of the tree with the files linked
+	// into it.
+	dirs []sandboxDir
+}
+
+// sandboxDir is a directory inode of a sandboxTree and the files linked
+// into it.
+type sandboxDir struct {
+	inode *fs.Inode
+	files []model.KajiyaFile
+}
+
+// unlinkFiles removes the tree's links to its file inodes. go-fuse records
+// every link in the linked inode, so a shared file inode would otherwise
+// keep the directories of every sandbox that ever linked it alive.
+func (t *sandboxTree) unlinkFiles() {
+	for _, d := range t.dirs {
+		for _, f := range d.files {
+			d.inode.RmChild(f.Name)
+		}
+	}
 }
 
 var _ = (fs.NodeGetattrer)((*CASRoot)(nil))
@@ -80,19 +113,19 @@ func (r *CASRoot) RegisterSandbox(sandboxID string, trie *model.DirectoryTrie, f
 	// Map from trie path to inode for building the tree.
 	inodes := map[string]*fs.Inode{}
 
-	var sandboxInode *fs.Inode
+	tree := &sandboxTree{}
 	var walkErr error
 
 	trie.Root().Walk(func(k []byte, dir *model.KajiyaDirectory) bool {
 		triePath := string(k) // e.g. "" for root, "src/" for a child.
 		trieDir := strings.TrimSuffix(triePath, "/")
 
-		if sandboxInode == nil {
+		if tree.root == nil {
 			// The sandbox root is always per-sandbox (unique sandbox ID).
-			sandboxInode = r.EmbeddedInode().NewPersistentInode(ctx, &casDir{
+			tree.root = r.EmbeddedInode().NewPersistentInode(ctx, &casDir{
 				attr: dirAttr(dir),
 			}, fs.StableAttr{Mode: syscall.S_IFDIR})
-			inodes[triePath] = sandboxInode
+			inodes[triePath] = tree.root
 		}
 
 		dirInode, ok := inodes[triePath]
@@ -100,55 +133,7 @@ func (r *CASRoot) RegisterSandbox(sandboxID string, trie *model.DirectoryTrie, f
 			walkErr = fmt.Errorf("parent inode not found for path %q", triePath)
 			return true
 		}
-
-		// When tracing is disabled, check if we already have a cached inode
-		// subtree for this directory digest under this digest function. If
-		// so, reuse it: all files, symlinks, and subdirectories are already
-		// children of the cached inode, so we only need to wire up the inodes
-		// map for the trie walk.
-		digestKey := ""
-		if dir.Digest.Hash != "" {
-			digestKey = blobstore.DigestKey(fn, dir.Digest)
-		}
-		if recorder == nil && digestKey != "" && dirInode != sandboxInode {
-			if cached, ok := r.dirInodes.Load(digestKey); ok {
-				cachedInode := cached.(*fs.Inode)
-
-				// The placeholder inode was added as a child of its parent
-				// during the parent's subdir loop. Replace it with the
-				// cached inode. The path is "parent/name/" so we derive
-				// the child name from the last path component.
-				childName := path.Base(trieDir)
-				parentKey := path.Dir(trieDir)
-				if parentKey == "." {
-					// The parent of a root child such as "src/" is the
-					// empty root key, not path.Dir's "." sentinel.
-					parentKey = ""
-				} else {
-					parentKey += "/"
-				}
-				parentInode, ok := inodes[parentKey]
-				if !ok {
-					walkErr = fmt.Errorf("parent inode not found for cached path %q (parent %q)", triePath, parentKey)
-					return true
-				}
-				parentInode.AddChild(childName, cachedInode, true)
-
-				inodes[triePath] = cachedInode
-				dirInode = cachedInode
-
-				// Wire up subdirectory entries in the inodes map so the
-				// trie walk can find children when it visits them next.
-				for _, sd := range dir.Dirs {
-					childKey := path.Join(trieDir, sd) + "/"
-					if child := dirInode.GetChild(sd); child != nil {
-						inodes[childKey] = child
-					}
-				}
-
-				return false
-			}
-		}
+		tree.dirs = append(tree.dirs, sandboxDir{inode: dirInode, files: dir.Files})
 
 		// Update attrs if the inode was pre-created by a parent's Dirs list
 		// with default attributes.
@@ -162,32 +147,42 @@ func (r *CASRoot) RegisterSandbox(sandboxID string, trie *model.DirectoryTrie, f
 		// and input-root-relative path.
 		for _, f := range dir.Files {
 			casPath := cas.Path(fn, f.Digest)
-			cf := casFile{
-				casPath:  casPath,
-				recorder: recorder,
-				attr: fuse.Attr{
-					Mode:      uint32(f.UnixMode),
-					Size:      uint64(f.Digest.SizeBytes),
-					Owner:     fuseOwner,
-					Mtime:     uint64(f.Mtime.Unix()),
-					Mtimensec: uint32(f.Mtime.Nanosecond()),
-				},
-			}
-			// When tracing, record the file path relative to the input
-			// root so we can report back which input files were accessed
-			// by the action.
-			if recorder != nil {
-				cf.inputPath = path.Join(trieDir, f.Name)
-			}
-			fileInode := dirInode.NewPersistentInode(ctx, &cf, fs.StableAttr{Mode: syscall.S_IFREG})
-			// When not tracing, the casFile has no per-sandbox state, so
-			// cache it for reuse by future sandboxes. This lets the kernel
-			// share page cache entries for the file across sandboxes. Use
-			// LoadOrStore to avoid a TOCTOU race: if another goroutine
-			// already cached an inode for this CAS path, reuse it.
+			// Look up the shared inode before creating one, which takes
+			// go-fuse's global lock.
+			var fileInode *fs.Inode
 			if recorder == nil {
-				cached, _ := r.fileInodes.LoadOrStore(casPath, fileInode)
-				fileInode = cached.(*fs.Inode)
+				if cached, ok := r.fileInodes.Load(casPath); ok {
+					fileInode = cached.(*fs.Inode)
+				}
+			}
+			if fileInode == nil {
+				cf := casFile{
+					casPath:  casPath,
+					recorder: recorder,
+					attr: fuse.Attr{
+						Mode:      uint32(f.UnixMode),
+						Size:      uint64(f.Digest.SizeBytes),
+						Owner:     fuseOwner,
+						Mtime:     uint64(f.Mtime.Unix()),
+						Mtimensec: uint32(f.Mtime.Nanosecond()),
+					},
+				}
+				// When tracing, record the file path relative to the input
+				// root so we can report back which input files were accessed
+				// by the action.
+				if recorder != nil {
+					cf.inputPath = path.Join(trieDir, f.Name)
+				}
+				fileInode = dirInode.NewPersistentInode(ctx, &cf, fs.StableAttr{Mode: syscall.S_IFREG})
+				// When not tracing, the casFile has no per-sandbox state, so
+				// cache it for reuse by future sandboxes. This lets the kernel
+				// share page cache entries for the file across sandboxes. Use
+				// LoadOrStore to avoid a TOCTOU race: if another goroutine
+				// already cached an inode for this CAS path, reuse it.
+				if recorder == nil {
+					cached, _ := r.fileInodes.LoadOrStore(casPath, fileInode)
+					fileInode = cached.(*fs.Inode)
+				}
 			}
 			dirInode.AddChild(f.Name, fileInode, true)
 		}
@@ -203,33 +198,22 @@ func (r *CASRoot) RegisterSandbox(sandboxID string, trie *model.DirectoryTrie, f
 		// Create subdirectory inodes. Their attributes will be updated when
 		// the trie walk visits them (parent directories are always visited
 		// before children due to lexicographic ordering with trailing slashes).
-		// Reuse existing children from shared inodes (via dirInodes cache).
 		for _, sd := range dir.Dirs {
-			childKey := path.Join(trieDir, sd) + "/"
-			if existing := dirInode.GetChild(sd); existing != nil {
-				inodes[childKey] = existing
-			} else {
-				childInode := dirInode.NewPersistentInode(ctx, &casDir{}, fs.StableAttr{Mode: syscall.S_IFDIR})
-				dirInode.AddChild(sd, childInode, true)
-				inodes[childKey] = childInode
-			}
-		}
-
-		// Cache this directory subtree for reuse by future sandboxes.
-		// When tracing, don't cache: the subtree contains per-sandbox
-		// file inodes with recorders that must not be reused.
-		if recorder == nil && digestKey != "" && dirInode != sandboxInode {
-			r.dirInodes.Store(digestKey, dirInode)
+			childInode := dirInode.NewPersistentInode(ctx, &casDir{}, fs.StableAttr{Mode: syscall.S_IFDIR})
+			dirInode.AddChild(sd, childInode, true)
+			inodes[path.Join(trieDir, sd)+"/"] = childInode
 		}
 
 		return false
 	})
 
 	if walkErr != nil {
+		// Unlink the partial tree's files, as UnregisterSandbox would.
+		tree.unlinkFiles()
 		return "", walkErr
 	}
 
-	if sandboxInode == nil {
+	if tree.root == nil {
 		return "", fmt.Errorf("empty input trie")
 	}
 
@@ -237,8 +221,8 @@ func (r *CASRoot) RegisterSandbox(sandboxID string, trie *model.DirectoryTrie, f
 	// map update. The subtree construction above is lock-free because each
 	// sandbox operates on its own independent inode subtree.
 	r.mu.Lock()
-	r.EmbeddedInode().AddChild(sandboxID, sandboxInode, true)
-	r.sandboxes[sandboxID] = sandboxInode
+	r.EmbeddedInode().AddChild(sandboxID, tree.root, true)
+	r.sandboxes[sandboxID] = tree
 	r.mu.Unlock()
 
 	return filepath.Join(fuseMountpoint, sandboxID), nil
@@ -246,18 +230,30 @@ func (r *CASRoot) RegisterSandbox(sandboxID string, trie *model.DirectoryTrie, f
 
 // UnregisterSandbox removes the virtual directory tree for the given sandbox.
 func (r *CASRoot) UnregisterSandbox(sandboxID string) {
+	// Detach the sandbox's tree from the root.
 	r.mu.Lock()
-	if _, ok := r.sandboxes[sandboxID]; ok {
+	tree, ok := r.sandboxes[sandboxID]
+	if ok {
 		r.EmbeddedInode().RmChild(sandboxID)
 		delete(r.sandboxes, sandboxID)
 	}
 	r.mu.Unlock()
+	if !ok {
+		return
+	}
 
-	// Only the sandbox root is detached. If inode caching is enabled, shared
-	// directory and file subtrees remain alive in dirInodes/fileInodes for
-	// reuse by other sandboxes. The sandbox root inode becomes unreachable
-	// and will be reclaimed by go-fuse when its kernel lookup count drops
-	// to zero.
+	// Unlink the shared file inodes, which remain in fileInodes for reuse
+	// by other sandboxes. The rest of the tree becomes garbage once the
+	// kernel forgets the inodes it looked up.
+	tree.unlinkFiles()
+
+	// Drop the kernel's dentries for the tree, so that it forgets the tree's
+	// inodes now instead of under memory pressure. The page cache of shared
+	// files that no other dentry holds goes with them. ENOENT only means
+	// that the kernel holds no dentry for the sandbox.
+	if errno := r.EmbeddedInode().NotifyEntry(sandboxID); errno != 0 && errno != syscall.ENOENT {
+		slog.Warn("failed to invalidate FUSE sandbox entry", "sandbox", sandboxID, "err", errno)
+	}
 }
 
 // Close releases resources held by the CASRoot. Must be called before unmount.
@@ -400,7 +396,7 @@ func disableSpliceForPipeSoftLimit(path string) bool {
 // The returned server must be unmounted via server.Unmount() on shutdown.
 func MountCASFS(mountpoint string) (*CASRoot, *fuse.Server, error) {
 	root := &CASRoot{
-		sandboxes: make(map[string]*fs.Inode),
+		sandboxes: make(map[string]*sandboxTree),
 	}
 	disableSplice := disableSpliceForPipeSoftLimit(pipeUserPagesSoftPath)
 

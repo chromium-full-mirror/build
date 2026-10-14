@@ -14,14 +14,17 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"syscall"
 	"testing"
 
+	"github.com/hanwen/go-fuse/v2/fs"
 	iradix "github.com/hashicorp/go-immutable-radix/v2"
 
 	"go.chromium.org/build/hashigo/digest"
+	repb "go.chromium.org/build/remote-apis/build/bazel/remote/execution/v2"
 
 	"go.chromium.org/build/kajiya/blobstore"
 	"go.chromium.org/build/kajiya/execution/model"
@@ -516,11 +519,9 @@ func TestFuseSandboxDirLayout(t *testing.T) {
 	t.Logf("source file digest: %s/%d", wantDigest.Hash, wantDigest.SizeBytes)
 }
 
-// TestFuseOutputInodeLeak verifies that output directory inodes from one
-// sandbox do not leak into another sandbox that shares the same input
-// directory (same digest). This is a regression test for the bug where
-// createOutputInodes was called on a shared cached directory inode,
-// accumulating output directories from all sandboxes that reuse it.
+// TestFuseOutputInodeLeak verifies that output directories from one sandbox
+// do not show up in another sandbox that has the same input directory (same
+// digest), and that RegisterSandbox doesn't create them in the FUSE layer.
 func TestFuseOutputInodeLeak(t *testing.T) {
 	if _, err := exec.LookPath("fusermount3"); err != nil {
 		t.Skip("fusermount3 not found in PATH")
@@ -549,9 +550,8 @@ func TestFuseOutputInodeLeak(t *testing.T) {
 		t.Fatalf("cas.Put: %v", err)
 	}
 
-	// sharedDigest is the REAPI digest of the shared input directory.
-	// Both tries reference the same digest, so the second sandbox will
-	// hit the dirInodes cache.
+	// sharedDigest is the REAPI digest of the shared input directory, which
+	// both tries reference.
 	sharedDigest := digest.Digest{Hash: "shared-dir-digest-for-test", SizeBytes: 42}
 
 	// buildTrie creates a trie with a "shared/" directory (using sharedDigest)
@@ -578,16 +578,14 @@ func TestFuseOutputInodeLeak(t *testing.T) {
 	trieA := buildTrie("gen_a")
 	trieB := buildTrie("gen_b")
 
-	// Register sandbox A. This populates the dirInodes cache for sharedDigest
-	// and calls createOutputInodes, which creates "gen_a/" under the shared inode.
+	// Register sandbox A, which declares an output under "gen_a/".
 	lowerA, err := root.RegisterSandbox("sandbox-a", trieA, digest.SHA256, cas, fuseMountpoint, nil)
 	if err != nil {
 		t.Fatalf("RegisterSandbox(a): %v", err)
 	}
 	t.Cleanup(func() { root.UnregisterSandbox("sandbox-a") })
 
-	// Register sandbox B. This hits the dirInodes cache and calls
-	// createOutputInodes on the SAME shared inode, creating "gen_b/".
+	// Register sandbox B, which declares an output under "gen_b/".
 	lowerB, err := root.RegisterSandbox("sandbox-b", trieB, digest.SHA256, cas, fuseMountpoint, nil)
 	if err != nil {
 		t.Fatalf("RegisterSandbox(b): %v", err)
@@ -629,12 +627,11 @@ func TestFuseOutputInodeLeak(t *testing.T) {
 	}
 }
 
-// TestFuseDirInodeCacheDigestFunctionNamespacing verifies that the shared
-// dirInodes cache is namespaced by digest function: two sandboxes whose input
-// directories share the same digest hash under different functions must not
-// share cached inodes, since the cached subtree's file inodes bake in the
-// registering function's CAS paths.
-func TestFuseDirInodeCacheDigestFunctionNamespacing(t *testing.T) {
+// TestFuseDigestFunctionNamespacing verifies that two sandboxes whose input
+// directories and files have the same digest hashes under different digest
+// functions each serve their own function's blob, although file inodes are
+// shared across sandboxes.
+func TestFuseDigestFunctionNamespacing(t *testing.T) {
 	if _, err := exec.LookPath("fusermount3"); err != nil {
 		t.Skip("fusermount3 not found in PATH")
 	}
@@ -665,9 +662,7 @@ func TestFuseDirInodeCacheDigestFunctionNamespacing(t *testing.T) {
 		}
 	}
 
-	// The shared input directory has the same digest hash under both
-	// functions, so the second sandbox would hit the first one's cached
-	// subtree if the cache were not namespaced by function.
+	// The input directory has the same digest hash under both functions.
 	sharedDigest := digest.Digest{Hash: "shared-dir-digest-for-fn-test", SizeBytes: 42}
 	txn := iradix.New[*model.KajiyaDirectory]().Txn()
 	txn.Insert([]byte(""), &model.KajiyaDirectory{
@@ -842,4 +837,204 @@ func TestFuseTracedSandbox(t *testing.T) {
 	if got, want := inputs[0], "src/hello.cc"; got != want {
 		t.Errorf("ObservedInputs()[0] = %q, want %q", got, want)
 	}
+}
+
+// TestFuseDirectoryInodePerPath checks that RegisterSandbox gives a directory
+// that appears at two paths an inode per path and per sandbox, while the
+// file in it keeps one inode everywhere.
+func TestFuseDirectoryInodePerPath(t *testing.T) {
+	skipUnlessFuseWorks(t)
+
+	// Mount the FUSE filesystem.
+	cas, err := blobstore.New(t.Context(), t.TempDir())
+	if err != nil {
+		t.Fatalf("blobstore.New: %v", err)
+	}
+	fuseMountpoint := t.TempDir()
+	root, server, err := MountCASFS(fuseMountpoint)
+	if err != nil {
+		t.Fatalf("MountCASFS: %v", err)
+	}
+	t.Cleanup(func() {
+		root.Close()
+		server.Unmount()
+	})
+
+	// Register two sandboxes whose input roots hold the same directory at
+	// a/ and b/. Both keys share one *KajiyaDirectory, so that neither its
+	// digest nor its address tells the paths apart.
+	srcDigest := putTestBlob(t, cas, []byte("source"))
+	shared := &model.KajiyaDirectory{
+		Digest:   digest.Digest{Hash: "shared-dir-digest-for-path-test", SizeBytes: 42},
+		Files:    []model.KajiyaFile{{Name: "input.cc", Digest: srcDigest, UnixMode: 0644}},
+		UnixMode: 0755,
+	}
+	txn := iradix.New[*model.KajiyaDirectory]().Txn()
+	txn.Insert([]byte(""), &model.KajiyaDirectory{Dirs: []string{"a", "b"}, UnixMode: 0755})
+	txn.Insert([]byte("a/"), shared)
+	txn.Insert([]byte("b/"), shared)
+	trie := txn.Commit()
+	var lowerDirs []string
+	for _, sandboxID := range []string{"path-test-1", "path-test-2"} {
+		lowerDir, err := root.RegisterSandbox(sandboxID, trie, digest.SHA256, cas, fuseMountpoint, nil)
+		if err != nil {
+			t.Fatalf("RegisterSandbox(%s): %v", sandboxID, err)
+		}
+		t.Cleanup(func() { root.UnregisterSandbox(sandboxID) })
+		lowerDirs = append(lowerDirs, lowerDir)
+	}
+
+	// Check that every directory path has an inode of its own, and that
+	// every path of the file has the same one.
+	inode := func(p string) uint64 {
+		t.Helper()
+		fi, err := os.Stat(p)
+		if err != nil {
+			t.Fatalf("Stat: %v", err)
+		}
+		return fi.Sys().(*syscall.Stat_t).Ino
+	}
+	dirPaths := map[uint64]string{}
+	fileInodes := map[uint64]bool{}
+	for _, lowerDir := range lowerDirs {
+		for _, name := range []string{"a", "b"} {
+			p := filepath.Join(lowerDir, name)
+			ino := inode(p)
+			if other, ok := dirPaths[ino]; ok {
+				t.Errorf("%s has the inode of %s", p, other)
+			}
+			dirPaths[ino] = p
+			fileInodes[inode(filepath.Join(p, "input.cc"))] = true
+		}
+	}
+	if got, want := len(fileInodes), 1; got != want {
+		t.Errorf("input.cc has %d distinct inodes, want %d", got, want)
+	}
+}
+
+// TestFuseUnregisterSandboxUnlinksFiles checks that UnregisterSandbox removes
+// the sandbox's links to the shared file inodes, which would otherwise keep
+// its directories alive.
+func TestFuseUnregisterSandboxUnlinksFiles(t *testing.T) {
+	skipUnlessFuseWorks(t)
+
+	// Mount the FUSE filesystem, then register and unregister a sandbox.
+	cas, err := blobstore.New(t.Context(), t.TempDir())
+	if err != nil {
+		t.Fatalf("blobstore.New: %v", err)
+	}
+	fuseMountpoint := t.TempDir()
+	root, server, err := MountCASFS(fuseMountpoint)
+	if err != nil {
+		t.Fatalf("MountCASFS: %v", err)
+	}
+	t.Cleanup(func() {
+		root.Close()
+		server.Unmount()
+	})
+	lowerDir, err := root.RegisterSandbox("unlink-test", buildTestTrie(t, cas), digest.SHA256, cas, fuseMountpoint, nil)
+	if err != nil {
+		t.Fatalf("RegisterSandbox: %v", err)
+	}
+	if _, err := os.ReadFile(filepath.Join(lowerDir, "src", "hello.cc")); err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	root.UnregisterSandbox("unlink-test")
+
+	// Check that the shared inode of the sandbox's only file has no parent
+	// left.
+	var files int
+	root.fileInodes.Range(func(key, value any) bool {
+		files++
+		if name, parent := value.(*fs.Inode).Parent(); parent != nil {
+			t.Errorf("file inode for %s is still linked as %q", key, name)
+		}
+		return true
+	})
+	if files == 0 {
+		t.Errorf("fileInodes is empty, want the sandbox's file inode")
+	}
+}
+
+// TestFuseSandboxSameDirectoryAtTwoPaths runs an action under the FuseFS
+// strategy whose input root holds one directory at both a/x and b/x, and
+// which copies a file out of each path into a declared output next to it.
+func TestFuseSandboxSameDirectoryAtTwoPaths(t *testing.T) {
+	skipUnlessNsjailWorks(t)
+	skipUnlessFuseWorks(t)
+
+	// Store an input root that holds the same directory x/ in a/ and in b/,
+	// which differ otherwise.
+	cas, err := blobstore.New(t.Context(), filepath.Join(t.TempDir(), "cas"))
+	if err != nil {
+		t.Fatalf("blobstore.New: %v", err)
+	}
+	fileDigest := putTestBlob(t, cas, []byte("hello\n"))
+	x := putTestMessage(t, cas, &repb.Directory{
+		Files: []*repb.FileNode{{Name: "f", Digest: fileDigest.Proto()}},
+	})
+	a := putTestMessage(t, cas, &repb.Directory{
+		Directories: []*repb.DirectoryNode{{Name: "x", Digest: x}},
+	})
+	b := putTestMessage(t, cas, &repb.Directory{
+		Files:       []*repb.FileNode{{Name: "g", Digest: putTestBlob(t, cas, []byte("only in b\n")).Proto()}},
+		Directories: []*repb.DirectoryNode{{Name: "x", Digest: x}},
+	})
+	inputRoot := putTestMessage(t, cas, &repb.Directory{
+		Directories: []*repb.DirectoryNode{{Name: "a", Digest: a}, {Name: "b", Digest: b}},
+	})
+
+	// Run the action, and check that both copies succeeded.
+	result := runFuseTestAction(t, cas, inputRoot,
+		[]string{"/bin/sh", "-c", "cp a/x/f a/x/out && cp b/x/f b/x/out"},
+		[]string{"a/x/out", "b/x/out"})
+	var outputs []string
+	for _, f := range result.OutputFiles {
+		outputs = append(outputs, f.Path+" "+f.Digest.Hash)
+	}
+	if got, want := outputs, []string{"a/x/out " + fileDigest.Hash, "b/x/out " + fileDigest.Hash}; !slices.Equal(got, want) {
+		t.Errorf("output files = %v, want %v", got, want)
+	}
+}
+
+// runFuseTestAction runs args under the FuseFS strategy on the host
+// filesystem, with the input root inputRoot and the declared outputs
+// outputs. It fails the test unless the action exits with code 0, and
+// returns the action's result.
+func runFuseTestAction(t *testing.T, cas *blobstore.ContentAddressableStorage, inputRoot *repb.Digest, args, outputs []string) *repb.ActionResult {
+	t.Helper()
+
+	// Store the action.
+	actionDigest, err := digest.SHA256.FromProto(putTestMessage(t, cas, &repb.Action{
+		CommandDigest:   putTestMessage(t, cas, &repb.Command{Arguments: args, OutputPaths: outputs}),
+		InputRootDigest: inputRoot,
+	}))
+	if err != nil {
+		t.Fatalf("FromProto: %v", err)
+	}
+
+	// Run it in a new executor.
+	executor, err := New(filepath.Join(t.TempDir(), "exec"), cas, FuseFS, true, false)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := executor.Close(); err != nil {
+			t.Errorf("Close: %v", err)
+		}
+	})
+	action, err := model.LoadAction(digest.SHA256, actionDigest, cas)
+	if err != nil {
+		t.Fatalf("LoadAction: %v", err)
+	}
+	result, err := executor.Execute(action)
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	// Check that it succeeded.
+	if got, want := result.ExitCode, int32(0); got != want {
+		t.Fatalf("exit code = %d, want %d; stderr: %s", got, want, readTestBlob(t, cas, result.StderrDigest))
+	}
+	return result
 }

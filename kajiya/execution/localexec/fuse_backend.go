@@ -95,8 +95,8 @@ func (b *fuseBackend) RegisterSandbox(sandboxID string, trie *model.DirectoryTri
 }
 
 // UnregisterSandbox removes the sandbox's virtual subtree, dropping its
-// reference from the FUSE root inode. Shared file/directory inodes
-// remain alive for reuse by other sandboxes.
+// reference from the FUSE root inode. Shared file inodes remain alive
+// for reuse by other sandboxes.
 func (b *fuseBackend) UnregisterSandbox(sandboxID string) {
 	b.root.UnregisterSandbox(sandboxID)
 }
