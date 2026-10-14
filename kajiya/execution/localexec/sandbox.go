@@ -230,19 +230,33 @@ func (sb *Sandbox) Prepare(action *model.Action) (err error) {
 
 // buildMerkleTree recursively walks through the given directory and builds a
 // merkle tree of the directory. The returned slice contains the root directory
-// and all subdirectories.
+// and all subdirectories. Files are moved into the CAS. Symlinks stay in place
+// and become SymlinkNodes with the target stored in the link, whether that
+// target is a file, a directory, or doesn't exist.
 func (sb *Sandbox) buildMerkleTree(path string) ([]*repb.Directory, error) {
 	dir := &repb.Directory{}
 	dirs := []*repb.Directory{}
 
+	// List the directory. os.ReadDir sorts the entries by name, so the nodes
+	// of dir need no further sorting.
 	dirEntries, err := os.ReadDir(path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read directory: %w", err)
 	}
 
+	// Add each entry to dir.
 	for _, dirEntry := range dirEntries {
-		// TODO: Add symlink support?
-		if dirEntry.IsDir() {
+		switch {
+		case dirEntry.Type()&fs.ModeSymlink != 0:
+			target, err := os.Readlink(filepath.Join(path, dirEntry.Name()))
+			if err != nil {
+				return nil, fmt.Errorf("failed to read symlink: %w", err)
+			}
+			dir.Symlinks = append(dir.Symlinks, &repb.SymlinkNode{
+				Name:   dirEntry.Name(),
+				Target: filepath.ToSlash(target),
+			})
+		case dirEntry.IsDir():
 			subDirs, err := sb.buildMerkleTree(filepath.Join(path, dirEntry.Name()))
 			if err != nil {
 				return nil, fmt.Errorf("failed to build merkle tree: %w", err)
@@ -256,7 +270,7 @@ func (sb *Sandbox) buildMerkleTree(path string) ([]*repb.Directory, error) {
 				Digest: d.Proto(),
 			})
 			dirs = append(dirs, subDirs...)
-		} else {
+		default:
 			d, err := sb.digestFn.FromFile(filepath.Join(path, dirEntry.Name()))
 			if err != nil {
 				return nil, fmt.Errorf("failed to get digest: %w", err)
@@ -278,6 +292,7 @@ func (sb *Sandbox) buildMerkleTree(path string) ([]*repb.Directory, error) {
 		}
 	}
 
+	// Store dir in the CAS.
 	dirBytes, err := proto.Marshal(dir)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal directory: %w", err)
