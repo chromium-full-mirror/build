@@ -389,7 +389,9 @@ func deleteSandbox(dir string) {
 	}
 
 	// If that didn't work, the action probably created a directory with restrictive
-	// permissions, so we need to walk through all directories and make them writable.
+	// permissions, so we need to walk through all directories and give their owner full
+	// access. RemoveAll reads a directory to list its entries, and unlinking them needs
+	// write and search permission.
 	_ = filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return nil
@@ -401,8 +403,8 @@ func deleteSandbox(dir string) {
 				return nil
 			}
 			mode := fi.Mode()
-			if mode&0200 == 0 {
-				err = os.Chmod(path, mode|0200)
+			if mode&0700 != 0700 {
+				err = os.Chmod(path, mode|0700)
 				if err != nil {
 					slog.Error("failed to chmod", "path", path, "error", err)
 				}
