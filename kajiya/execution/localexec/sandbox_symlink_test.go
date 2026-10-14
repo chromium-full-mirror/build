@@ -23,7 +23,9 @@ import (
 )
 
 // TestUploadOutputsReportsSymlinkTarget checks that a symlink output is
-// reported with the target stored in the link, not with the link's own name.
+// reported with the target stored in the link, not with the link's own name,
+// in the list for the type that the action declared, even when the target is
+// of another type or missing.
 func TestUploadOutputsReportsSymlinkTarget(t *testing.T) {
 	for _, tc := range []struct {
 		name     string
@@ -60,6 +62,19 @@ func TestUploadOutputsReportsSymlinkTarget(t *testing.T) {
 			mkTarget: makeTestDir,
 			symlinks: func(ar *repb.ActionResult) []*repb.OutputSymlink { return ar.OutputSymlinks },
 		},
+		{
+			name:     "dir_link_declared_file",
+			decl:     model.File,
+			target:   "data/dir",
+			mkTarget: makeTestDir,
+			symlinks: func(ar *repb.ActionResult) []*repb.OutputSymlink { return ar.OutputFileSymlinks }, //nolint:staticcheck
+		},
+		{
+			name:     "dangling_link_declared_file",
+			decl:     model.File,
+			target:   "data/missing",
+			symlinks: func(ar *repb.ActionResult) []*repb.OutputSymlink { return ar.OutputFileSymlinks }, //nolint:staticcheck
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			// Create a Files-strategy sandbox whose root declares one output.
@@ -78,8 +93,11 @@ func TestUploadOutputsReportsSymlinkTarget(t *testing.T) {
 			tx.Insert(nil, root)
 			action := &model.Action{WorkingDir: ".", InputTrie: tx.Commit()}
 
-			// Make the output a relative symlink to an existing target.
-			tc.mkTarget(t, filepath.Join(sb.sandboxDir, tc.target))
+			// Make the output a relative symlink, and create its target
+			// unless the case leaves it missing.
+			if tc.mkTarget != nil {
+				tc.mkTarget(t, filepath.Join(sb.sandboxDir, tc.target))
+			}
 			if err := os.Symlink(tc.target, filepath.Join(sb.sandboxDir, "link")); err != nil {
 				t.Fatalf("os.Symlink: %v", err)
 			}

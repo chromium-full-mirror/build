@@ -350,61 +350,18 @@ func (sb *Sandbox) UploadOutputs(action *model.Action, actionResult *repb.Action
 				}
 				target = filepath.ToSlash(target)
 
-				var fi os.FileInfo
-				fi, err = os.Stat(fullPath)
-				if err != nil {
-					// Ignore dangling symlinks.
-					slog.Warn("ignoring dangling symlink output", "path", fullPath)
-					err = nil
-					continue
-				}
-				if fi.Mode().IsDir() {
-					switch outputPath.Type {
-					case model.File:
-						violations = append(violations, &errpb.PreconditionFailure_Violation{
-							Type:        "INVALID_ARGUMENT",
-							Subject:     pathFromWorkDir,
-							Description: fmt.Sprintf("output %q links to directory, but was expected to link to a file", pathFromWorkDir),
-						})
-						continue
-					case model.Directory:
-						actionResult.OutputDirectorySymlinks = append(actionResult.OutputDirectorySymlinks, &repb.OutputSymlink{ //nolint:staticcheck
-							Path:   pathFromWorkDir,
-							Target: target,
-						})
-					case model.Unknown:
-						actionResult.OutputSymlinks = append(actionResult.OutputSymlinks, &repb.OutputSymlink{
-							Path:   pathFromWorkDir,
-							Target: target,
-						})
-					}
-				} else if fi.Mode().IsRegular() {
-					switch outputPath.Type {
-					case model.File:
-						actionResult.OutputFileSymlinks = append(actionResult.OutputFileSymlinks, &repb.OutputSymlink{ //nolint:staticcheck
-							Path:   pathFromWorkDir,
-							Target: target,
-						})
-					case model.Directory:
-						violations = append(violations, &errpb.PreconditionFailure_Violation{
-							Type:        "INVALID_ARGUMENT",
-							Subject:     pathFromWorkDir,
-							Description: fmt.Sprintf("output %q links to a file, but was expected to link to a directory", pathFromWorkDir),
-						})
-						continue
-					case model.Unknown:
-						actionResult.OutputSymlinks = append(actionResult.OutputSymlinks, &repb.OutputSymlink{
-							Path:   pathFromWorkDir,
-							Target: target,
-						})
-					}
-				} else {
-					violations = append(violations, &errpb.PreconditionFailure_Violation{
-						Type:        "INVALID_ARGUMENT",
-						Subject:     pathFromWorkDir,
-						Description: fmt.Sprintf("output %q links to a special file (mode: %q), which is not supported", pathFromWorkDir, fi.Mode().String()),
-					})
-					continue
+				// Report the link with the type expected by the action, without
+				// resolving it, because a link to an input dangles in an
+				// overlay sandbox's upper layer. This deviates from REAPI 2.0,
+				// which uses the target's type.
+				link := &repb.OutputSymlink{Path: pathFromWorkDir, Target: target}
+				switch outputPath.Type {
+				case model.File:
+					actionResult.OutputFileSymlinks = append(actionResult.OutputFileSymlinks, link) //nolint:staticcheck
+				case model.Directory:
+					actionResult.OutputDirectorySymlinks = append(actionResult.OutputDirectorySymlinks, link) //nolint:staticcheck
+				case model.Unknown:
+					actionResult.OutputSymlinks = append(actionResult.OutputSymlinks, link)
 				}
 			} else if lfi.IsDir() {
 				if outputPath.Type == model.File {
