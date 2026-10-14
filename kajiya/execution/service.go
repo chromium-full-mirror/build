@@ -18,7 +18,6 @@ import (
 	"github.com/google/uuid"
 	"golang.org/x/sync/semaphore"
 	"golang.org/x/sync/singleflight"
-	errpb "google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -115,7 +114,7 @@ func (s *Service) Execute(request *repb.ExecuteRequest, executeServer repb.Execu
 			var iaerr *model.InvalidActionError
 			switch {
 			case errors.As(err, &mberr):
-				err = formatMissingBlobsError(mberr)
+				err = mberr.Status().Err()
 			case errors.As(err, &iaerr):
 				// Client-supplied Action/Command was malformed or unsupported on
 				// this server. Use InvalidArgument so clients do not retry.
@@ -238,37 +237,6 @@ func (s *Service) Execute(request *repb.ExecuteRequest, executeServer repb.Execu
 		return fmt.Errorf("failed to send result to client: %w", err)
 	}
 	return nil
-}
-
-// Return the list of missing blobs as a "FailedPrecondition" error as described in the Remote
-// Execution API.
-func formatMissingBlobsError(e *blobstore.MissingBlobsError) error {
-	violations := make([]*errpb.PreconditionFailure_Violation, 0, len(e.Blobs))
-	seg := ""
-	if !e.Fn.IsZero() {
-		seg = e.Fn.ResourceNameSegment()
-	}
-	for _, b := range e.Blobs {
-		// The subject uses the ByteStream resource-name format (with the
-		// function's segment, if any) so clients retry uploads into the
-		// correct digest namespace.
-		subject := fmt.Sprintf("blobs/%s/%d", b.Hash, b.SizeBytes)
-		if seg != "" {
-			subject = fmt.Sprintf("blobs/%s/%s/%d", seg, b.Hash, b.SizeBytes)
-		}
-		violations = append(violations, &errpb.PreconditionFailure_Violation{
-			Type:    "MISSING",
-			Subject: subject,
-		})
-	}
-
-	st, err := status.New(codes.FailedPrecondition, "missing blobs").WithDetails(&errpb.PreconditionFailure{
-		Violations: violations,
-	})
-	if err != nil {
-		return status.Errorf(codes.Internal, "failed to create status: %v", err)
-	}
-	return st.Err()
 }
 
 // dedupKey returns the singleflight key for an in-flight Execute request.
