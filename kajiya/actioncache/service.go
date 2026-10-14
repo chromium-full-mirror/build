@@ -94,6 +94,11 @@ func (s *Service) UpdateActionResult(ctx context.Context, request *repb.UpdateAc
 		}
 	}()
 
+	// Check that the request has an action result to store.
+	if request.ActionResult == nil {
+		return nil, status.Error(codes.InvalidArgument, "action_result is required")
+	}
+
 	// Check that the client didn't send inline stdout / stderr data.
 	if request.ActionResult.StdoutRaw != nil {
 		return nil, status.Error(codes.InvalidArgument, "client should not populate stdout_raw during upload")
