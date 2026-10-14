@@ -196,6 +196,10 @@ func fnNames(fns []digest.Function) string {
 	return strings.Join(names, ",")
 }
 
+// MaxParallelism returns 0, which means no limit: actions run on the
+// upstream, which schedules them on its own workers.
+func (e *Executor) MaxParallelism() int { return 0 }
+
 // Execute implements execution.ExecutorInterface. It uploads any blobs the
 // upstream is missing, calls Execute upstream, and pulls every output blob
 // into the local CAS before returning.

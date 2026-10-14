@@ -7,13 +7,14 @@ package execution
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"path/filepath"
-	"runtime"
 	"slices"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"cloud.google.com/go/longrunning/autogen/longrunningpb"
@@ -133,12 +134,6 @@ func TestExecutePassesSkipCacheLookup(t *testing.T) {
 // execution of its own, with SkipCacheLookup set, instead of joining the
 // running one, whose executor may serve it a result from before the request.
 func TestExecuteSkipCacheLookupDoesNotMerge(t *testing.T) {
-	// The service admits GOMAXPROCS executions at once, and this test needs
-	// two.
-	if runtime.GOMAXPROCS(0) < 2 {
-		t.Skip("needs GOMAXPROCS >= 2 to run two executions at once")
-	}
-
 	// Start a service whose executor blocks every execution until released.
 	exec := &gatedExecutor{
 		entered: make(chan *model.Action, 2),
@@ -195,6 +190,63 @@ func TestExecuteSkipCacheLookupDoesNotMerge(t *testing.T) {
 	}
 }
 
+// TestExecuteRespectsMaxParallelism checks that the service runs at most as
+// many actions at once as the executor's MaxParallelism allows, and runs the
+// queued ones once the running ones finish.
+func TestExecuteRespectsMaxParallelism(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		// Start a service whose executor allows two executions at once and
+		// blocks every execution until released.
+		const numActions = 5
+		exec := &gatedExecutor{
+			entered: make(chan *model.Action, numActions),
+			release: make(chan struct{}),
+		}
+		client, cas := startTestService(t, exec)
+		release := sync.OnceFunc(func() { close(exec.release) })
+		t.Cleanup(release)
+
+		// Start distinct actions, which the service doesn't merge, and wait
+		// until each one runs or waits for a slot.
+		var streams []repb.Execution_ExecuteClient
+		for i := range numActions {
+			stream, err := client.Execute(t.Context(), &repb.ExecuteRequest{
+				ActionDigest: putTrivialAction(t, cas, fmt.Sprint(i)).Proto(),
+			})
+			if err != nil {
+				t.Fatalf("Execute: %v", err)
+			}
+			streams = append(streams, stream)
+		}
+		synctest.Wait()
+		if got, want := len(exec.entered), 2; got != want {
+			t.Fatalf("got %d running executor calls, want %d", got, want)
+		}
+
+		// Release the executions, and check that every request completes.
+		release()
+		for _, stream := range streams {
+			var last *longrunningpb.Operation
+			for {
+				op, err := stream.Recv()
+				if errors.Is(err, io.EOF) {
+					break
+				}
+				if err != nil {
+					t.Fatalf("Recv: %v", err)
+				}
+				last = op
+			}
+			if got, want := last.GetDone(), true; got != want {
+				t.Errorf("last operation Done = %t, want %t", got, want)
+			}
+		}
+		if got, want := len(exec.entered), numActions; got != want {
+			t.Errorf("got %d executor calls, want %d", got, want)
+		}
+	})
+}
+
 // testBufSize is the buffer size of the in-memory listener that test
 // services serve on.
 const testBufSize = 4 * 1024 * 1024
@@ -237,8 +289,10 @@ func startTestService(t *testing.T, exec ExecutorInterface) (repb.ExecutionClien
 }
 
 // putTrivialAction uploads the smallest Action that model.LoadAction accepts,
-// a no-op command over an empty input root, and returns its digest.
-func putTrivialAction(t *testing.T, cas *blobstore.ContentAddressableStorage) digest.Digest {
+// a no-op command over an empty input root, and returns its digest. The
+// command passes extraArgs to /bin/true, so different extraArgs give actions
+// with different digests, which the service doesn't merge.
+func putTrivialAction(t *testing.T, cas *blobstore.ContentAddressableStorage, extraArgs ...string) digest.Digest {
 	t.Helper()
 	put := func(m proto.Message) *repb.Digest {
 		t.Helper()
@@ -253,7 +307,7 @@ func putTrivialAction(t *testing.T, cas *blobstore.ContentAddressableStorage) di
 		return d.Proto()
 	}
 	rootDigest := put(&repb.Directory{})
-	cmdDigest := put(&repb.Command{Arguments: []string{"/bin/true"}})
+	cmdDigest := put(&repb.Command{Arguments: append([]string{"/bin/true"}, extraArgs...)})
 	d, err := digest.SHA256.FromProto(put(&repb.Action{CommandDigest: cmdDigest, InputRootDigest: rootDigest}))
 	if err != nil {
 		t.Fatalf("action digest: %v", err)
@@ -277,6 +331,11 @@ func (r *recordingExecutor) Execute(action *model.Action) (*repb.ActionResult, e
 	return &repb.ActionResult{}, nil
 }
 
+// MaxParallelism returns 0, which means no limit.
+func (r *recordingExecutor) MaxParallelism() int {
+	return 0
+}
+
 // calls returns the Action of every Execute call so far, in call order.
 func (r *recordingExecutor) calls() []*model.Action {
 	r.mu.Lock()
@@ -290,6 +349,11 @@ func (r *recordingExecutor) calls() []*model.Action {
 type gatedExecutor struct {
 	entered chan *model.Action
 	release chan struct{}
+}
+
+// MaxParallelism returns 2, so that two executions can block at once.
+func (g *gatedExecutor) MaxParallelism() int {
+	return 2
 }
 
 // Execute sends action to entered, waits for release to close, and returns an

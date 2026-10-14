@@ -1266,6 +1266,9 @@ func (c *countingExecutor) Execute(a *model.Action) (*repb.ActionResult, error) 
 	return c.inner.Execute(a)
 }
 
+// MaxParallelism returns the limit of the wrapped executor.
+func (c *countingExecutor) MaxParallelism() int { return c.inner.MaxParallelism() }
+
 // helloExecutor runs the actions that putActionWithInputs builds without a
 // sandbox: it stores "hello\n" in its CAS and reports it as out/result.txt,
 // which is what their command writes.
@@ -1283,6 +1286,9 @@ func (h *helloExecutor) Execute(a *model.Action) (*repb.ActionResult, error) {
 		OutputFiles: []*repb.OutputFile{{Path: "out/result.txt", Digest: d.Proto()}},
 	}, nil
 }
+
+// MaxParallelism returns 0, which means no limit.
+func (h *helloExecutor) MaxParallelism() int { return 0 }
 
 // loopback is a "frontend" Kajiya that proxies execution to an "upstream"
 // Kajiya, both running in-process over bufconn.

@@ -73,6 +73,9 @@ func (f *Fake) Execute(action *model.Action) (*rpb.ActionResult, error) {
 	})
 }
 
+// MaxParallelism returns 0, which means no limit.
+func (f *Fake) MaxParallelism() int { return 0 }
+
 type testServer struct {
 	addr     string
 	cleanups []func()

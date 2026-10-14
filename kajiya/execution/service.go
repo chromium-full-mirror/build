@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"io/fs"
 	"log/slog"
-	"runtime"
 	"time"
 
 	"cloud.google.com/go/longrunning/autogen/longrunningpb"
@@ -51,6 +50,10 @@ type Service struct {
 // ExecutorInterface is an interface of Executor.
 type ExecutorInterface interface {
 	Execute(*model.Action) (*repb.ActionResult, error)
+
+	// MaxParallelism returns the maximum number of Execute calls that may
+	// run at once, or a value <= 0 for no limit. Register calls it once.
+	MaxParallelism() int
 }
 
 // Register creates and registers a new Service with the given gRPC server.
@@ -63,11 +66,20 @@ func Register(s *grpc.Server, executor ExecutorInterface, ac *actioncache.Action
 		return fmt.Errorf("cas must be set")
 	}
 
+	// Limit concurrent Execute calls as the executor asks. A limit far above
+	// any realistic number of concurrent actions stands in for no limit.
+	parallelism := executor.MaxParallelism()
+	if parallelism <= 0 {
+		parallelism = 1 << 20
+	}
+	slog.Info("execution service parallelism", "max", parallelism)
+
+	// Create and register the service.
 	service := &Service{
 		executor:    executor,
 		actionCache: ac,
 		cas:         cas,
-		sem:         semaphore.NewWeighted(int64(runtime.GOMAXPROCS(0))),
+		sem:         semaphore.NewWeighted(int64(parallelism)),
 		config:      cfg,
 	}
 

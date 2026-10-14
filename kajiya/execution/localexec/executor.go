@@ -146,6 +146,11 @@ func (e *Executor) Close() error {
 	return e.fuse.Close()
 }
 
+// MaxParallelism returns GOMAXPROCS, because local actions are CPU-bound.
+func (e *Executor) MaxParallelism() int {
+	return runtime.GOMAXPROCS(0)
+}
+
 // Execute executes the given action and returns the result.
 func (e *Executor) Execute(action *model.Action) (*repb.ActionResult, error) {
 	// Build a sandbox directory for the action.
