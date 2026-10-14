@@ -59,6 +59,8 @@ func (t *TreeRepository) Path(fn digest.Function, dirDigest digest.Digest) strin
 
 // EnsureDirectory ensures that the *repb.Directory for a given digest.Digest, is present in the
 // tree repository, including all its subdirectories, materializing them first if necessary.
+// It stops at the first directory that fails to materialize and returns that directory's error,
+// which wraps a *blobstore.MissingBlobsError if one of its files is missing from the CAS.
 func (t *TreeRepository) EnsureDirectory(fn digest.Function, dirTrie *model.DirectoryTrie) (err error) {
 	dirTrie.Root().Walk(func(k []byte, kd *model.KajiyaDirectory) bool {
 		// Check if we already have the directory materialized on disk.
@@ -105,7 +107,9 @@ func (t *TreeRepository) EnsureDirectory(fn digest.Function, dirTrie *model.Dire
 			}
 		}
 
-		return false
+		// Stop at the first failure, because walking on would overwrite err
+		// with the result of a later directory.
+		return err != nil
 	})
 
 	return err

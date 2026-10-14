@@ -5,9 +5,11 @@
 package localexec
 
 import (
+	"errors"
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -95,5 +97,62 @@ func TestTreeRepositoryDigestFunctionNamespacing(t *testing.T) {
 		if got, want := found[contents[fn]], 1; got != want {
 			t.Errorf("materialized %d copies of the %v content, want %d (found: %v)", got, fn, want, found)
 		}
+	}
+}
+
+// TestTreeRepository_EnsureDirectoryReturnsFirstError checks that
+// EnsureDirectory stops at the first directory that fails to materialize and
+// returns that directory's error, a *blobstore.MissingBlobsError that names its
+// missing file, rather than the error of a directory that fails later in the
+// walk.
+func TestTreeRepository_EnsureDirectoryReturnsFirstError(t *testing.T) {
+	// Build a trie whose root and "later/" each list a different file that
+	// is missing from the CAS, and whose "good/" materializes fine. The trie
+	// walks its keys in lexicographic order: "", "good/", "later/".
+	cas, err := blobstore.NewWithOpts(t.Context(), t.TempDir(), blobstore.Options{})
+	if err != nil {
+		t.Fatalf("blobstore.NewWithOpts: %v", err)
+	}
+	rootMissing := digest.SHA256.FromBytes([]byte("root file, never uploaded"))
+	laterMissing := digest.SHA256.FromBytes([]byte("later file, never uploaded"))
+	good := &model.KajiyaDirectory{
+		Digest:   digest.SHA256.FromBytes([]byte("good")),
+		UnixMode: 0o755,
+	}
+	txn := iradix.New[*model.KajiyaDirectory]().Txn()
+	txn.Insert([]byte(""), &model.KajiyaDirectory{
+		Digest:   digest.SHA256.FromBytes([]byte("root")),
+		Files:    []model.KajiyaFile{{Name: "missing.txt", Digest: rootMissing, UnixMode: 0o644}},
+		Dirs:     []string{"good", "later"},
+		UnixMode: 0o755,
+	})
+	txn.Insert([]byte("good/"), good)
+	txn.Insert([]byte("later/"), &model.KajiyaDirectory{
+		Digest:   digest.SHA256.FromBytes([]byte("later")),
+		Files:    []model.KajiyaFile{{Name: "missing.txt", Digest: laterMissing, UnixMode: 0o644}},
+		UnixMode: 0o755,
+	})
+	trie := txn.Commit()
+
+	// Ensure the trie's directories.
+	trees, err := newTreeRepository(filepath.Join(t.TempDir(), "trees"), cas)
+	if err != nil {
+		t.Fatalf("newTreeRepository: %v", err)
+	}
+	err = trees.EnsureDirectory(digest.SHA256, trie)
+
+	// Check that only the root's missing file is reported.
+	mberr, ok := errors.AsType[*blobstore.MissingBlobsError](err)
+	if !ok {
+		t.Fatalf("EnsureDirectory = %v, want a *blobstore.MissingBlobsError", err)
+	}
+	if got, want := mberr.Blobs, []digest.Digest{rootMissing}; !slices.Equal(got, want) {
+		t.Errorf("missing blobs = %v, want %v", got, want)
+	}
+
+	// Check that the walk stopped before materializing "good/".
+	goodPath := trees.Path(digest.SHA256, good.Digest)
+	if _, err := os.Stat(goodPath); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("os.Stat(%q) = %v, want %v", goodPath, err, fs.ErrNotExist)
 	}
 }
