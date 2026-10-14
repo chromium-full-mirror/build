@@ -244,7 +244,7 @@ func TestFuseAttrValues(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := &model.KajiyaDirectory{UnixMode: tc.unixMode}
-			attr := dirAttr(dir)
+			attr := dirAttr(dir, time.Now())
 			// go-fuse applies: (attr.Mode & 07777) | stableAttr.Mode
 			gotPerm := attr.Mode & 07777
 			if gotPerm != tc.wantPerm {
@@ -1040,7 +1040,12 @@ func TestFuseIdenticalFilesKeepTheirAttributes(t *testing.T) {
 		lowerDirs = append(lowerDirs, lowerDir)
 	}
 
-	// Check every file's mode and mtime in both sandboxes.
+	// Check every file's mode and mtime in both sandboxes. Files without an
+	// mtime report the blob's.
+	blobInfo, err := os.Stat(cas.Path(digest.SHA256, d))
+	if err != nil {
+		t.Fatalf("Stat: %v", err)
+	}
 	for _, lowerDir := range lowerDirs {
 		for _, f := range files {
 			fi, err := os.Stat(filepath.Join(lowerDir, f.Name))
@@ -1050,10 +1055,78 @@ func TestFuseIdenticalFilesKeepTheirAttributes(t *testing.T) {
 			if got, want := fi.Mode().Perm(), f.UnixMode; got != want {
 				t.Errorf("%s: mode = %v, want %v", f.Name, got, want)
 			}
-			if got, want := fi.ModTime(), f.Mtime; !got.Equal(want) {
+			want := f.Mtime
+			if want.IsZero() {
+				want = blobInfo.ModTime()
+			}
+			if got := fi.ModTime(); !got.Equal(want) {
 				t.Errorf("%s: mtime = %v, want %v", f.Name, got, want)
 			}
 		}
+	}
+}
+
+// TestFuseInputsWithoutMtime checks that an input file without an mtime
+// reports its CAS blob's, as a hard link to the blob would, and that an input
+// directory without one reports the time of its sandbox's registration. A
+// file whose mtime is the Unix epoch keeps it.
+func TestFuseInputsWithoutMtime(t *testing.T) {
+	skipUnlessFuseWorks(t)
+
+	// Mount the FUSE filesystem.
+	cas, err := blobstore.New(t.Context(), t.TempDir())
+	if err != nil {
+		t.Fatalf("blobstore.New: %v", err)
+	}
+	fuseMountpoint := t.TempDir()
+	root, server, err := MountCASFS(fuseMountpoint)
+	if err != nil {
+		t.Fatalf("MountCASFS: %v", err)
+	}
+	t.Cleanup(func() {
+		root.Close()
+		server.Unmount()
+	})
+
+	// Register a sandbox with a directory and two files of the same content,
+	// one without an mtime and one at the epoch.
+	d := putTestBlob(t, cas, []byte("content\n"))
+	epoch := time.Unix(0, 0)
+	txn := iradix.New[*model.KajiyaDirectory]().Txn()
+	txn.Insert([]byte(""), &model.KajiyaDirectory{
+		Dirs: []string{"dir"},
+		Files: []model.KajiyaFile{
+			{Name: "epoch", Digest: d, UnixMode: 0644, Mtime: epoch},
+			{Name: "plain", Digest: d, UnixMode: 0644},
+		},
+		UnixMode: 0755,
+	})
+	txn.Insert([]byte("dir/"), &model.KajiyaDirectory{UnixMode: 0755})
+	before := time.Now()
+	lowerDir, err := root.RegisterSandbox("mtime-test", txn.Commit(), digest.SHA256, cas, fuseMountpoint, nil)
+	if err != nil {
+		t.Fatalf("RegisterSandbox: %v", err)
+	}
+	after := time.Now()
+	t.Cleanup(func() { root.UnregisterSandbox("mtime-test") })
+
+	// Check the mtimes.
+	modTime := func(p string) time.Time {
+		t.Helper()
+		fi, err := os.Stat(p)
+		if err != nil {
+			t.Fatalf("Stat: %v", err)
+		}
+		return fi.ModTime()
+	}
+	if got, want := modTime(filepath.Join(lowerDir, "plain")), modTime(cas.Path(digest.SHA256, d)); !got.Equal(want) {
+		t.Errorf("plain: mtime = %v, want %v", got, want)
+	}
+	if got, want := modTime(filepath.Join(lowerDir, "epoch")), epoch; !got.Equal(want) {
+		t.Errorf("epoch: mtime = %v, want %v", got, want)
+	}
+	if got := modTime(filepath.Join(lowerDir, "dir")); got.Before(before) || got.After(after) {
+		t.Errorf("dir: mtime = %v, want between %v and %v", got, before, after)
 	}
 }
 

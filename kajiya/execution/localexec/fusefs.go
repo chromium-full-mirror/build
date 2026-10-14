@@ -115,6 +115,7 @@ func (r *CASRoot) Getattr(ctx context.Context, fh fs.FileHandle, out *fuse.AttrO
 // overlayfs lower directory.
 func (r *CASRoot) RegisterSandbox(sandboxID string, trie *model.DirectoryTrie, fn digest.Function, cas *blobstore.ContentAddressableStorage, fuseMountpoint string, recorder *AccessRecorder) (string, error) {
 	ctx := context.Background()
+	now := time.Now()
 
 	// Map from trie path to inode for building the tree.
 	inodes := map[string]*fs.Inode{}
@@ -129,7 +130,7 @@ func (r *CASRoot) RegisterSandbox(sandboxID string, trie *model.DirectoryTrie, f
 		if tree.root == nil {
 			// The sandbox root is always per-sandbox (unique sandbox ID).
 			tree.root = r.EmbeddedInode().NewPersistentInode(ctx, &casDir{
-				attr: dirAttr(dir),
+				attr: dirAttr(dir, now),
 			}, fs.StableAttr{Mode: syscall.S_IFDIR})
 			inodes[triePath] = tree.root
 		}
@@ -144,7 +145,7 @@ func (r *CASRoot) RegisterSandbox(sandboxID string, trie *model.DirectoryTrie, f
 		// Update attrs if the inode was pre-created by a parent's Dirs list
 		// with default attributes.
 		if dirOps, ok := dirInode.Operations().(*casDir); ok {
-			dirOps.attr = dirAttr(dir)
+			dirOps.attr = dirAttr(dir, now)
 		}
 
 		// Add files. When tracing is disabled, reuse shared inodes so the
@@ -271,7 +272,10 @@ func (r *CASRoot) UnregisterSandbox(sandboxID string) {
 func (r *CASRoot) Close() {
 }
 
-func dirAttr(dir *model.KajiyaDirectory) fuse.Attr {
+// dirAttr returns the attributes of a sandbox directory for dir. Without an
+// mtime, it reports registered, the time its sandbox was registered, as a
+// directory created for the sandbox would.
+func dirAttr(dir *model.KajiyaDirectory, registered time.Time) fuse.Attr {
 	// Always include write permission for all users. The FUSE filesystem
 	// serves as the lower layer of an overlayfs, so all writes are redirected
 	// to the upper layer. Without write permission on lower-layer directories,
@@ -280,10 +284,12 @@ func dirAttr(dir *model.KajiyaDirectory) fuse.Attr {
 		Mode:  uint32(dir.UnixMode) | 0222,
 		Owner: fuseOwner,
 	}
-	if !dir.Mtime.IsZero() {
-		attr.Mtime = uint64(dir.Mtime.Unix())
-		attr.Mtimensec = uint32(dir.Mtime.Nanosecond())
+	mtime := dir.Mtime
+	if mtime.IsZero() {
+		mtime = registered
 	}
+	attr.Mtime = uint64(mtime.Unix())
+	attr.Mtimensec = uint32(mtime.Nanosecond())
 	return attr
 }
 
@@ -315,8 +321,19 @@ type casFile struct {
 var _ = (fs.NodeGetattrer)((*casFile)(nil))
 var _ = (fs.NodeOpener)((*casFile)(nil))
 
+// Getattr reports the file's attributes, with the CAS blob's mtime for an
+// input without one, as a hard link to the blob would show.
 func (f *casFile) Getattr(ctx context.Context, fh fs.FileHandle, out *fuse.AttrOut) syscall.Errno {
 	out.Attr = f.attr
+	// RegisterSandbox stores the zero time for an input without an mtime.
+	if int64(f.attr.Mtime) == (time.Time{}).Unix() {
+		var st syscall.Stat_t
+		if err := syscall.Stat(f.casPath, &st); err != nil {
+			return fs.ToErrno(err)
+		}
+		out.Mtime = uint64(st.Mtim.Sec)
+		out.Mtimensec = uint32(st.Mtim.Nsec)
+	}
 	return 0
 }
 
