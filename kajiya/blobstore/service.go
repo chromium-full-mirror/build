@@ -662,11 +662,12 @@ func (s *Service) BatchUpdateBlobs(ctx context.Context, request *repb.BatchUpdat
 		return nil, err
 	}
 
-	// Enforce the max batch total size limit.
+	// Enforce the max batch total size limit. The getter counts a missing
+	// digest as empty; parsing the digest below rejects it.
 	if s.config.MaxBatchTotalSizeBytes > 0 {
 		var totalSize int64
 		for _, blob := range request.Requests {
-			totalSize += blob.Digest.SizeBytes
+			totalSize += blob.GetDigest().GetSizeBytes()
 		}
 		if totalSize > s.config.MaxBatchTotalSizeBytes {
 			return nil, status.Errorf(codes.InvalidArgument, "total batch size %d exceeds the maximum allowed %d bytes", totalSize, s.config.MaxBatchTotalSizeBytes)
@@ -740,11 +741,12 @@ func (s *Service) BatchReadBlobs(ctx context.Context, request *repb.BatchReadBlo
 		return nil, err
 	}
 
-	// Enforce the max batch total size limit.
+	// Enforce the max batch total size limit. The getter counts a missing
+	// digest as empty; parsing the digest below rejects it.
 	if s.config.MaxBatchTotalSizeBytes > 0 {
 		var totalSize int64
 		for _, d := range request.Digests {
-			totalSize += d.SizeBytes
+			totalSize += d.GetSizeBytes()
 		}
 		if totalSize > s.config.MaxBatchTotalSizeBytes {
 			return nil, status.Errorf(codes.InvalidArgument, "total batch size %d exceeds the maximum allowed %d bytes", totalSize, s.config.MaxBatchTotalSizeBytes)

@@ -1068,6 +1068,57 @@ func TestBatchOperationsBlobsLargeBlobs(t *testing.T) {
 	}
 }
 
+// TestBatchBlobsRejectsNilDigest verifies that BatchUpdateBlobs and
+// BatchReadBlobs reject a blob without a digest as InvalidArgument when the
+// batch size is limited, which makes them add up the blobs' sizes first.
+func TestBatchBlobsRejectsNilDigest(t *testing.T) {
+	// Start a server with a batch size limit, and create a service with the
+	// same limit to call directly. BatchUpdateBlobs goes over gRPC, because
+	// a client can omit a blob's digest on the wire. gRPC decodes a nil
+	// element of BatchReadBlobs' digest list as an empty digest, so only an
+	// in-process caller can pass one.
+	cfg := server.Config{MaxBatchTotalSizeBytes: 3000}
+	_, client := setupTest(t.Context(), t, cfg)
+	cas, err := NewWithOpts(t.Context(), t.TempDir(), Options{})
+	if err != nil {
+		t.Fatalf("NewWithOpts: %v", err)
+	}
+	s := &Service{cas: cas, config: cfg}
+
+	// Call each method with a blob that has no digest and check the code.
+	for _, tc := range []struct {
+		name string
+		call func() error
+	}{
+		{
+			name: "batch_update_blobs",
+			call: func() error {
+				_, err := client.BatchUpdateBlobs(t.Context(), &repb.BatchUpdateBlobsRequest{
+					Requests:       []*repb.BatchUpdateBlobsRequest_Request{{Data: []byte("no digest")}},
+					DigestFunction: repb.DigestFunction_SHA256,
+				})
+				return err
+			},
+		},
+		{
+			name: "batch_read_blobs",
+			call: func() error {
+				_, err := s.BatchReadBlobs(t.Context(), &repb.BatchReadBlobsRequest{
+					Digests:        []*repb.Digest{nil},
+					DigestFunction: repb.DigestFunction_SHA256,
+				})
+				return err
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got, want := status.Code(tc.call()), codes.InvalidArgument; got != want {
+				t.Errorf("status code = %v, want %v", got, want)
+			}
+		})
+	}
+}
+
 // marshalDir encodes d in the wire format that the CAS stores Directory
 // messages in.
 func marshalDir(t *testing.T, d *repb.Directory) []byte {
