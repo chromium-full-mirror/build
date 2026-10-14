@@ -184,3 +184,32 @@ func TestGetCapabilitiesDefaultSHA256Only(t *testing.T) {
 		t.Errorf("ExecutionCapabilities.DigestFunction = %v, want %v", got, want)
 	}
 }
+
+// TestGetCapabilitiesNarrowedExecutionSet verifies that a configured
+// ExecutionDigestFunctions set (e.g. the set negotiated with an upstream
+// proxy) narrows only ExecutionCapabilities; the cache keeps the full set.
+func TestGetCapabilitiesNarrowedExecutionSet(t *testing.T) {
+	// Get the capabilities of a server that executes only BLAKE3 but caches
+	// SHA-256 too.
+	blake3Fn, err := digest.Lookup(repb.DigestFunction_BLAKE3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp := getCapabilities(t, server.Config{
+		DigestFunctions:          []digest.Function{digest.SHA256, blake3Fn},
+		ExecutionDigestFunctions: []digest.Function{blake3Fn},
+	})
+
+	// Check that only the execution capabilities are narrowed.
+	wantCache := []repb.DigestFunction_Value{repb.DigestFunction_SHA256, repb.DigestFunction_BLAKE3}
+	if diff := cmp.Diff(wantCache, resp.GetCacheCapabilities().GetDigestFunctions(), protocmp.Transform()); diff != "" {
+		t.Errorf("CacheCapabilities.DigestFunctions mismatch (-want +got):\n%s", diff)
+	}
+	wantExec := []repb.DigestFunction_Value{repb.DigestFunction_BLAKE3}
+	if diff := cmp.Diff(wantExec, resp.GetExecutionCapabilities().GetDigestFunctions(), protocmp.Transform()); diff != "" {
+		t.Errorf("ExecutionCapabilities.DigestFunctions mismatch (-want +got):\n%s", diff)
+	}
+	if got, want := resp.GetExecutionCapabilities().GetDigestFunction(), repb.DigestFunction_BLAKE3; got != want {
+		t.Errorf("ExecutionCapabilities.DigestFunction = %v, want %v", got, want)
+	}
+}

@@ -29,6 +29,12 @@ type Config struct {
 	EnableChunkedBlobs bool
 	FastCDC_2020Params *repb.FastCdc2020Params
 	RepMaxCDCParams    *repb.RepMaxCdcParams
+
+	// ExecutionDigestFunctions lists the digest functions advertised in
+	// ExecutionCapabilities. Empty means the full advertised set. In
+	// upstream proxy mode, it lists only the functions negotiated with the
+	// upstream, while the cache services keep accepting the full set.
+	ExecutionDigestFunctions []digest.Function
 }
 
 // RecommendedMaxRecvMsgSize returns the maximum gRPC receive message size

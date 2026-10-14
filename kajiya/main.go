@@ -38,6 +38,7 @@ import (
 	"go.chromium.org/build/kajiya/capabilities"
 	"go.chromium.org/build/kajiya/execution"
 	"go.chromium.org/build/kajiya/execution/localexec"
+	"go.chromium.org/build/kajiya/execution/upstreamexec"
 	"go.chromium.org/build/kajiya/log"
 	"go.chromium.org/build/kajiya/server"
 
@@ -80,6 +81,10 @@ var (
 	skipCASValidation = flag.Bool("skip_cas_validation", false, "skip CAS integrity validation on startup (faster startup, but won't detect corrupted blobs)")
 	allowHostFS       = flag.Bool("allow_host_fs", false, "allow actions without a container image to run with access to the host filesystem")
 	traceInputs       = flag.Bool("trace_inputs", false, "trace which input files each action opens and report as auxiliary metadata (FuseFS sandbox only)")
+	upstreamProxy     = flag.Bool("upstream_proxy", false, "if true, proxy Execute requests to an upstream REAPI backend instead of running them locally")
+	upstreamREAPI     = flag.String("upstream_reapi", "remotebuildexecution.googleapis.com:443", "upstream REAPI endpoint to proxy Execute requests to (used when --upstream_proxy is set)")
+	upstreamInstance  = flag.String("upstream_instance", "projects/rbe-chromium-untrusted/instances/default_instance", "upstream REAPI instance name (used when --upstream_proxy is set)")
+	upstreamInsecure  = flag.Bool("upstream_insecure", false, "skip OAuth2/TLS and dial the upstream over plain gRPC, for an upstream on a trusted network")
 
 	sb localexec.SandboxStrategy
 )
@@ -118,19 +123,31 @@ func run(ctx context.Context) int {
 		Level: level,
 	})))
 
-	// Validate the sandbox strategy flag.
-	if *sandboxStrategy == "files" {
-		sb = localexec.Files
-	} else if *sandboxStrategy == "overlayfs" && runtime.GOOS == "linux" {
-		sb = localexec.OverlayFS
-	} else if *sandboxStrategy == "nested-overlayfs" && runtime.GOOS == "linux" {
-		sb = localexec.NestedOverlayFS
-	} else if *sandboxStrategy == "fuse" && runtime.GOOS == "linux" {
-		sb = localexec.FuseFS
+	// Validate the sandbox strategy flag, which only local execution uses.
+	if !*upstreamProxy {
+		if *sandboxStrategy == "files" {
+			sb = localexec.Files
+		} else if *sandboxStrategy == "overlayfs" && runtime.GOOS == "linux" {
+			sb = localexec.OverlayFS
+		} else if *sandboxStrategy == "nested-overlayfs" && runtime.GOOS == "linux" {
+			sb = localexec.NestedOverlayFS
+		} else if *sandboxStrategy == "fuse" && runtime.GOOS == "linux" {
+			sb = localexec.FuseFS
+		} else {
+			slog.Error("invalid sandbox strategy", "name", *sandboxStrategy)
+			flag.Usage()
+			return 2
+		}
 	} else {
-		slog.Error("invalid sandbox strategy", "name", *sandboxStrategy)
-		flag.Usage()
-		return 2
+		// Warn about local-execution flags, which proxy mode ignores.
+		if isFlagSet("sandbox") || isFlagSet("allow_host_fs") || isFlagSet("trace_inputs") {
+			slog.Warn("ignoring local-execution flags in upstream proxy mode",
+				"upstream_reapi", *upstreamREAPI)
+		}
+		if *upstreamREAPI == "" {
+			slog.Error("--upstream_proxy is set but --upstream_reapi is empty")
+			return 2
+		}
 	}
 
 	// Reset the umask to a known value, so we know which permissions newly
@@ -377,9 +394,6 @@ func createServer(ctx context.Context, dataDir string) (*grpc.Server, func(), er
 
 	s := grpc.NewServer(opts...)
 
-	capabilities.Register(s, cfg)
-	slog.Info("capabilities service registered")
-
 	// Create a CAS backed by a local filesystem.
 	casDir := filepath.Join(dataDir, "cas")
 	cas, err := blobstore.NewWithOpts(ctx, casDir, blobstore.Options{
@@ -418,14 +432,41 @@ func createServer(ctx context.Context, dataDir string) (*grpc.Server, func(), er
 
 	// Execution service.
 	if *enableExecution {
-		execDir := filepath.Join(dataDir, "exec")
-		executor, err := localexec.New(execDir, cas, sb, *allowHostFS, *traceInputs)
-		if err != nil {
-			return nil, cleanup, err
-		}
-		cleanup = func() {
-			if err := executor.Close(); err != nil {
-				slog.Error("failed to close executor", "error", err)
+		var executor execution.ExecutorInterface
+		if *upstreamProxy {
+			conn, err := upstreamexec.Dial(*upstreamREAPI, *upstreamInsecure)
+			if err != nil {
+				return nil, cleanup, fmt.Errorf("failed to dial upstream REAPI: %w", err)
+			}
+			ue, err := upstreamexec.New(ctx, conn, cas, *upstreamInstance, cfg.AdvertisedDigestFunctions())
+			if err != nil {
+				_ = conn.Close()
+				return nil, cleanup, fmt.Errorf("failed to create upstream executor: %w", err)
+			}
+			executor = ue
+			cleanup = func() {
+				if err := conn.Close(); err != nil {
+					slog.Error("failed to close upstream connection", "error", err)
+				}
+			}
+			// Advertise only the negotiated digest functions for execution.
+			cfg.ExecutionDigestFunctions = ue.DigestFunctions()
+			slog.Info("execution proxied upstream",
+				"endpoint", *upstreamREAPI,
+				"instance", *upstreamInstance,
+				"insecure", *upstreamInsecure,
+				"digest_functions", cfg.ExecutionDigestFunctions)
+		} else {
+			execDir := filepath.Join(dataDir, "exec")
+			le, err := localexec.New(execDir, cas, sb, *allowHostFS, *traceInputs)
+			if err != nil {
+				return nil, cleanup, err
+			}
+			executor = le
+			cleanup = func() {
+				if err := le.Close(); err != nil {
+					slog.Error("failed to close executor", "error", err)
+				}
 			}
 		}
 
@@ -437,6 +478,12 @@ func createServer(ctx context.Context, dataDir string) (*grpc.Server, func(), er
 	} else {
 		slog.Warn("execution service disabled")
 	}
+
+	// Register the capabilities service after the execution setup, so that
+	// ExecutionCapabilities lists the digest functions negotiated with an
+	// upstream proxy.
+	capabilities.Register(s, cfg)
+	slog.Info("capabilities service registered")
 
 	// Register the reflection service provided by gRPC.
 	reflection.Register(s)
@@ -495,6 +542,18 @@ func startPeriodicMemprofile(base string, interval time.Duration, gc bool) func(
 		<-doneCh
 		dump()
 	}
+}
+
+// isFlagSet reports whether the flag with the given name was set on the
+// command line.
+func isFlagSet(name string) bool {
+	found := false
+	flag.Visit(func(f *flag.Flag) {
+		if f.Name == name {
+			found = true
+		}
+	})
+	return found
 }
 
 // HandleInterrupt calls 'fn' in a separate goroutine on SIGTERM or Ctrl+C.

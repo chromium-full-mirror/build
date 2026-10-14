@@ -47,6 +47,13 @@ func (s *Service) GetCapabilities(ctx context.Context, request *repb.GetCapabili
 		values[i] = fn.Value()
 	}
 
+	// Collect the digest functions advertised for execution.
+	execAdvertised := s.config.AdvertisedExecutionDigestFunctions()
+	execValues := make([]repb.DigestFunction_Value, len(execAdvertised))
+	for i, fn := range execAdvertised {
+		execValues[i] = fn.Value()
+	}
+
 	// Return the capabilities.
 	return &repb.ServerCapabilities{
 		CacheCapabilities: &repb.CacheCapabilities{
@@ -74,8 +81,8 @@ func (s *Service) GetCapabilities(ctx context.Context, request *repb.GetCapabili
 			RepMaxCdcParams:    s.config.RepMaxCDCParams,
 		},
 		ExecutionCapabilities: &repb.ExecutionCapabilities{
-			DigestFunction:  values[0],
-			DigestFunctions: values,
+			DigestFunction:  execValues[0],
+			DigestFunctions: execValues,
 			ExecEnabled:     true,
 			ExecutionPriorityCapabilities: &repb.PriorityCapabilities{
 				Priorities: []*repb.PriorityCapabilities_PriorityRange{

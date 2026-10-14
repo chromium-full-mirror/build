@@ -59,6 +59,17 @@ func (c Config) AdvertisedDigestFunctions() []digest.Function {
 	return c.DigestFunctions
 }
 
+// AdvertisedExecutionDigestFunctions returns the digest functions the server
+// advertises for execution. An unset Config.ExecutionDigestFunctions means
+// the full advertised set. The returned slice is shared and must not be
+// modified.
+func (c Config) AdvertisedExecutionDigestFunctions() []digest.Function {
+	if len(c.ExecutionDigestFunctions) == 0 {
+		return c.AdvertisedDigestFunctions()
+	}
+	return c.ExecutionDigestFunctions
+}
+
 // advertisedNames returns the advertised digest-function names for error
 // messages.
 func (c Config) advertisedNames() string {

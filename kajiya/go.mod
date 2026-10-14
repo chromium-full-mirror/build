@@ -11,6 +11,7 @@ require (
 	github.com/klauspost/compress v1.20.3
 	go.chromium.org/build/hashigo v0.0.0-20260805080330-7d621b551da7
 	go.chromium.org/build/remote-apis v0.0.0-20260805080330-7d621b551da7
+	golang.org/x/oauth2 v0.36.0
 	golang.org/x/sync v0.23.0
 	golang.org/x/sys v0.48.0
 	google.golang.org/genproto/googleapis/bytestream v0.0.0-20260803160001-6ac0973c030d
@@ -20,6 +21,7 @@ require (
 )
 
 require (
+	cloud.google.com/go/compute/metadata v0.9.0 // indirect
 	github.com/hashicorp/golang-lru/v2 v2.0.7 // indirect
 	github.com/klauspost/cpuid/v2 v2.4.0 // indirect
 	github.com/twmb/murmur3 v1.1.8 // indirect
