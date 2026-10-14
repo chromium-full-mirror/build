@@ -159,7 +159,7 @@ func TestGetCapabilities(t *testing.T) {
 				},
 			},
 			DigestFunctions:         advertised,
-			SupportedNodeProperties: []string{"MTime", "UnixMode"},
+			SupportedNodeProperties: []string{"mtime", "unix_mode"},
 		},
 	}
 

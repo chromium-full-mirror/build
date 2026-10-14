@@ -85,7 +85,7 @@ func (s *Service) GetCapabilities(ctx context.Context, request *repb.GetCapabili
 					},
 				},
 			},
-			SupportedNodeProperties: []string{"MTime", "UnixMode"},
+			SupportedNodeProperties: []string{"mtime", "unix_mode"},
 		},
 		LowApiVersion:  &semverpb.SemVer{Major: 2, Minor: 0},
 		HighApiVersion: &semverpb.SemVer{Major: 2, Minor: 0}, // RBE does not support higher versions, so we don't either.
