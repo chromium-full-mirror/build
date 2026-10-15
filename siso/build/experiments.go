@@ -27,6 +27,7 @@ var knownExperiments = map[string]string{
 	"allow-unexpected-rsp-remove": "",
 	"allow-fallback-high":         "",
 	"allow-fallback-low":          "",
+	"disable-ensure-output-dirs":  "",
 	"expand-phony-trigger-inputs": "",
 	"fail-on-stdouterr":           "",
 	"fallback-on-exec-error":      "",

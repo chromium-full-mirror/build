@@ -383,8 +383,10 @@ func schedule(ctx context.Context, sched *scheduler, graph Graph, args ...string
 		sched.plan.targets[t].requested = true
 	}
 
-	sched.actionOutputDirs.init()
-	go sched.actionOutputDirs.run(ctx, sched.path)
+	if !experiments.Enabled("disable-ensure-action-output-dirs", "") {
+		sched.actionOutputDirs.init()
+		go sched.actionOutputDirs.run(ctx, sched.path)
+	}
 
 	// validationQueue collects validation targets found during scheduling.
 	var validationQueue []Target
@@ -1120,9 +1122,9 @@ func suggestTargets(ctx context.Context, sched *scheduler, graph Graph, args ...
 // to minimize mkdir operations.
 // if we create out dirs before each action concurrently,
 // need to check the dir many times and worry about race.
-// TODO: remove this once generator makes sure out dirs in gen time.
+// SISO_EXPERIMENTS=disable-ensure-output-dirs disables this.
 // gn: https://crbug.com/gn/461698357
-// soong: b/461917619
+// soong: b/461917619 - ok to disable
 type ensureActionOutputDirs struct {
 	req       chan path.Path
 	done      chan error
@@ -1184,10 +1186,16 @@ func (e *ensureActionOutputDirs) run(ctx context.Context, bpath *Path) {
 }
 
 func (e *ensureActionOutputDirs) ensure(fname path.Path) {
+	if e.req == nil {
+		return
+	}
 	e.req <- fname
 }
 
 func (e *ensureActionOutputDirs) wait() error {
+	if e.req == nil {
+		return nil
+	}
 	close(e.req)
 	return <-e.done
 }
