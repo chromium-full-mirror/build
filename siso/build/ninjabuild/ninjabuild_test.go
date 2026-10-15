@@ -511,3 +511,92 @@ build all: phony
 		t.Error("NewStepConfig succeeded with unknown keys, but should have failed")
 	}
 }
+
+func TestInputDeps_InputsLabel(t *testing.T) {
+	ctx := t.Context()
+	dir := t.TempDir()
+	err := os.MkdirAll(filepath.Join(dir, "build/config/siso"), 0755)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = os.WriteFile(filepath.Join(dir, "build/config/siso/main.star"), []byte(`
+load("@builtin//struct.star", "module")
+
+def init(ctx):
+  return module(
+    "config",
+    step_config = '{"input_deps": {"out/siso/ndk/sysroot:headers": ["out/siso/ndk_headers_phony:inputs"]}}',
+    filegroups = {},
+    handlers = {},
+  )
+`), 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
+	config, err := buildconfig.New(ctx, "@config//main.star", map[string]string{}, map[string]fs.FS{
+		"config":           os.DirFS(filepath.Join(dir, "build/config/siso")),
+		"config_overrides": os.DirFS(filepath.Join(dir, ".siso_remote")),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = os.MkdirAll(filepath.Join(dir, "out/siso"), 0755)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(filepath.Join(dir, "out/siso"))
+	path := build.NewPath(dir, "out/siso")
+	hashFS, err := hashfs.New(ctx, hashfs.Option{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := hashFS.Close(ctx); err != nil {
+			t.Errorf("hashFS.Close=%v", err)
+		}
+	})
+
+	err = os.WriteFile(filepath.Join(dir, "out/siso/build.ninja"), []byte(`
+rule cp
+  command = cp ${in} ${out}
+
+build ndk/sysroot/usr/include/a.h: cp ../../ndk/a.h
+build ndk/sysroot/usr/include/b.h: cp ../../ndk/b.h
+build ndk/sysroot/usr/include/c.h: cp ../../ndk/c.h
+build ndk_headers_sub1: phony ndk/sysroot/usr/include/a.h
+build ndk_headers_sub2: phony ndk/sysroot/usr/include/b.h
+build ndk_headers_phony: phony ndk_headers_sub1 ndk_headers_sub2 ndk/sysroot/usr/include/c.h
+build all: phony ndk_headers_phony
+`), 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
+	depsLog, err := NewDepsLog(ctx, ".siso_deps")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if err := depsLog.Close(); err != nil {
+			t.Error(err)
+		}
+	}()
+	stepConfig, err := NewStepConfig(ctx, digest.SHA256, config, path, "build.ninja", ".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	nstate, err := Load(ctx, "build.ninja", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	g := NewGraph(ctx, "build.ninja", nstate, config, path, hashFS, stepConfig, depsLog)
+
+	got := g.InputDeps(ctx)["out/siso/ndk_headers_phony:inputs"]
+	want := []string{
+		"out/siso/ndk/sysroot/usr/include/a.h",
+		"out/siso/ndk/sysroot/usr/include/b.h",
+		"out/siso/ndk/sysroot/usr/include/c.h",
+	}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("InputDeps[\"out/siso/ndk_headers_phony:inputs\"] diff -want +got:\n%s", diff)
+	}
+}

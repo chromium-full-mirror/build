@@ -418,10 +418,12 @@ func (g *Graph) initGlobals(ctx context.Context) {
 			clog.Warningf(ctx, "no inputs for %q (%q)", label, target)
 			continue
 		}
-		inputNodes := edge.Inputs()
-		inputs := make([]string, 0, len(inputNodes))
-		for _, n := range inputNodes {
-			inputs = append(inputs, string(g.globals.targetPath(n)))
+		visited := make(map[*ninjautil.Edge]bool)
+		seen := make(map[path.Path]bool)
+		stepInputs := replacePhony(ctx, g.globals, visited, seen, g.globals.targetPath(n), edge, false, nil)
+		inputs := make([]string, 0, len(stepInputs))
+		for _, n := range stepInputs {
+			inputs = append(inputs, string(n))
 		}
 		clog.Infof(ctx, "add %q (%q) in input_deps: %d", label, target, len(inputs))
 		g.globals.stepConfig.InputDeps[label] = inputs

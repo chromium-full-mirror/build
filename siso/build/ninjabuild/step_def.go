@@ -1078,7 +1078,23 @@ func replacePhony(ctx context.Context, globals *globals, visited map[*ninjautil.
 		return inputs
 	}
 	visited[edge] = true
-	for _, in := range edge.TriggerInputs() {
+	edgeInputs := edge.TriggerInputs()
+	if len(edgeInputs) == 0 {
+		// empty phony target.
+		// https://ninja-build.org/manual.html#_the_literal_phony_literal_rule
+		// phony can also be used to create dummy targets for files
+		// which may not exist at build time.
+		// If a phony build statement is written without any
+		// dependencies, the target will be considered out of date
+		// if it does not exist.
+		// so, phony target may exist as file, or may not.
+		_, err := globals.hashFS.Stat(ctx, globals.path.WorkspaceRoot, target)
+		if err == nil {
+			inputs = append(inputs, target)
+		}
+		return inputs
+	}
+	for _, in := range edgeInputs {
 		p := globals.targetPath(in)
 		if seen[p] {
 			continue
