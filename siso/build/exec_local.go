@@ -43,6 +43,15 @@ func (b *Builder) execLocal(ctx context.Context, step *Step) (retErr error) {
 	if err != nil && !experiments.Enabled("ignore-missing-local-inputs", "step %s missing inputs: %v", step, err) {
 		return err
 	}
+	if experiments.Enabled("disable-ensure-output-dirs", "") {
+		// disable-ensure-output-dirs doesn't create out dirs during
+		// scheduling, so that it needs to make sure output dirs
+		// before each local exec.
+		err := b.prepareLocalOutdirs(ctx, step)
+		if err != nil {
+			return err
+		}
+	}
 	step.cmd.RecordPreOutputs(ctx)
 	if err := b.resetDirOutputs(ctx, step); err != nil {
 		return err
@@ -421,6 +430,30 @@ func (b *Builder) prepareLocalInputs(ctx context.Context, step *Step) error {
 		step.cmd.Inputs = inputs
 	}
 	return err
+}
+
+func (b *Builder) prepareLocalOutdirs(ctx context.Context, step *Step) error {
+	ctx, span := trace.NewSpan(ctx, "prepare-local-outdirs")
+	defer span.Close(nil)
+
+	seen := make(map[path.Path]bool)
+	for _, out := range step.cmd.Outputs {
+		outdir := out.Dir()
+		if seen[outdir] {
+			continue
+		}
+		if fi, err := b.hashFS.Stat(ctx, b.path.WorkspaceRoot, outdir); err == nil && fi.IsDir() {
+			seen[outdir] = true
+			continue
+		}
+		clog.Infof(ctx, "prepare outdirs %s", outdir)
+		err := b.hashFS.Mkdir(ctx, b.path.WorkspaceRoot, outdir, nil, nil)
+		if err != nil {
+			return fmt.Errorf("prepare outdir %q: %w", outdir, err)
+		}
+		seen[outdir] = true
+	}
+	return nil
 }
 
 // resetDirOutputs wipes each declared directory output before the command runs,
