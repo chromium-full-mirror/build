@@ -383,7 +383,7 @@ func schedule(ctx context.Context, sched *scheduler, graph Graph, args ...string
 		sched.plan.targets[t].requested = true
 	}
 
-	if !experiments.Enabled("disable-ensure-action-output-dirs", "") {
+	if !experiments.Enabled("disable-ensure-output-dirs", "") {
 		sched.actionOutputDirs.init()
 		go sched.actionOutputDirs.run(ctx, sched.path)
 	}
