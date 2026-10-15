@@ -60,32 +60,22 @@ func (re *RemoteExec) prepareInputs(ctx context.Context, cmd *execute.Cmd) (dige
 	return actionDigest, err
 }
 
-// Run runs a cmd. uploadCtx is used for CAS input uploads
-// (prepareInputs); execCtx is used for the remote execution RPC.
-// In the non-racing path both contexts are the same. In racing
-// mode, uploadCtx is the build context (survives race cancellation)
-// while execCtx is the race context (canceled when the race decides).
-// This mirrors reclient's approach of using a background context for
-// CAS uploads so that shared upload operations are not poisoned when
-// a racing goroutine's context is canceled.
 // Execute runs the remote command and waits for completion.
 // It does not download outputs or stdout/stderr.
 // It returns the ActionResult, whether it was cached, and any execution error.
-func (re *RemoteExec) Execute(uploadCtx, execCtx context.Context, cmd *execute.Cmd) (*rpb.ActionResult, bool, error) {
-	execCtx, span := trace.NewSpan(execCtx, "remote-exec")
+//
+// Canceling ctx stops waiting for CAS input uploads, but does not cancel
+// the uploads themselves: they run as upload operations owned by the
+// reapi client, shared with other commands that need the same blobs.
+func (re *RemoteExec) Execute(ctx context.Context, cmd *execute.Cmd) (*rpb.ActionResult, bool, error) {
+	ctx, span := trace.NewSpan(ctx, "remote-exec")
 	defer span.Close(nil)
-	actionDigest, err := re.prepareInputs(uploadCtx, cmd)
+	actionDigest, err := re.prepareInputs(ctx, cmd)
 	if err != nil {
 		return nil, false, err
 	}
-	// If the execution context was canceled during upload (e.g.
-	// the race was decided while CAS uploads were finishing),
-	// return early without starting remote execution.
-	if execCtx.Err() != nil {
-		return nil, false, context.Cause(execCtx)
-	}
 
-	cctx, cspan := trace.NewSpan(execCtx, "execute-and-wait")
+	cctx, cspan := trace.NewSpan(ctx, "execute-and-wait")
 	if cmd.Timeout > 0 {
 		var cancel context.CancelFunc
 		cctx, cancel = context.WithTimeoutCause(cctx, cmd.Timeout, fmt.Errorf("remote exec timeout=%v: %w", cmd.Timeout, context.DeadlineExceeded))
@@ -97,32 +87,25 @@ func (re *RemoteExec) Execute(uploadCtx, execCtx context.Context, cmd *execute.C
 		DigestFunction:  re.client.DigestFunction().Value(),
 	})
 	cspan.Close(nil)
-	clog.Infof(execCtx, "digest: %s, skipCacheLookup:%t opName: %s", actionDigest, cmd.SkipCacheLookup, opName)
+	clog.Infof(ctx, "digest: %s, skipCacheLookup:%t opName: %s", actionDigest, cmd.SkipCacheLookup, opName)
 	if log.V(1) {
-		clog.Infof(execCtx, "response: %s", resp)
+		clog.Infof(ctx, "response: %s", resp)
 	}
 	if err != nil {
-		clog.Warningf(execCtx, "digest: %s, err: %v", actionDigest, err)
+		clog.Warningf(ctx, "digest: %s, err: %v", actionDigest, err)
 	}
 	result := resp.GetResult()
-	re.recordExecuteMetadata(execCtx, result, resp.GetCachedResult(), span)
+	re.recordExecuteMetadata(ctx, result, resp.GetCachedResult(), span)
 	if result != nil {
 		cmd.SetActionResult(result, resp.GetCachedResult())
 	}
 	return result, resp.GetCachedResult(), err
 }
 
-// Run runs a cmd. uploadCtx is used for CAS input uploads
-// (prepareInputs); execCtx is used for the remote execution RPC.
-// In the non-racing path both contexts are the same. In racing
-// mode, uploadCtx is the build context (survives race cancellation)
-// while execCtx is the race context (canceled when the race decides).
-// This mirrors reclient's approach of using a background context for
-// CAS uploads so that shared upload operations are not poisoned when
-// a racing goroutine's context is canceled.
-func (re *RemoteExec) Run(uploadCtx, execCtx context.Context, cmd *execute.Cmd) error {
-	result, cached, err := re.Execute(uploadCtx, execCtx, cmd)
-	return re.ProcessResult(execCtx, cmd, result, cached, err)
+// Run runs a cmd.
+func (re *RemoteExec) Run(ctx context.Context, cmd *execute.Cmd) error {
+	result, cached, err := re.Execute(ctx, cmd)
+	return re.ProcessResult(ctx, cmd, result, cached, err)
 }
 
 func (re *RemoteExec) recordExecuteMetadata(ctx context.Context, result *rpb.ActionResult, cached bool, span *trace.Span) {

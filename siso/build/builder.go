@@ -598,6 +598,7 @@ func (b *Builder) SemaStats() []semaphore.Stat {
 		b.reWorkerStat,
 		reapi.FileSemaphore.Stat(),
 		remoteexec.Semaphore.Stat(), // remoteexec-digest
+		b.reapiclient.UploadSemaphore().Stat(),
 		b.rewrapSema.Stat(),
 		b.remoteSema.Stat(),
 		b.scanDepsSema.Stat(),
@@ -805,6 +806,9 @@ func (b *Builder) Build(ctx context.Context, name string, args ...string) (err e
 		gccutil.Semaphore,
 		msvcutil.Semaphore,
 		remoteexec.Semaphore,
+	}
+	if sema := b.reapiclient.UploadSemaphore(); sema != nil {
+		semas = append(semas, sema)
 	}
 	b.tracer.Start(ctx, semas, []*iometrics.IOMetrics{
 		b.hashFS.OS.IOMetrics,

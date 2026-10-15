@@ -350,7 +350,10 @@ func (c *Client) chunkUpload(ctx context.Context, d digest.Digest, fname string,
 	}
 	// TODO: uploadChunk to optimize for chunk upload?
 	// e.g. upload chunks with multiple BatchUploadBlobs in parallel
-	n, err := c.UploadAll(ctx, bs)
+	//
+	// Upload inline: chunkUpload already runs inside an upload operation
+	// (or a caller that owns ctx), so don't detach again.
+	n, err := c.uploadAll(ctx, bs, false)
 	clog.Infof(ctx, "upload chunks %d out of %d: %v", n, len(spliceReq.ChunkDigests), err)
 	if err != nil {
 		return err

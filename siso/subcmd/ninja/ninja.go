@@ -559,6 +559,7 @@ func (c *Command) Run(ctx context.Context) (stats build.Stats, finalErr error) {
 			stop := c.enableAdaptiveFlushGate(ctx)
 			defer stop()
 		}
+		c.reopt.UploadLimit = limits.Upload
 		reapiClient, err = reapi.New(ctx, credential, *c.reopt)
 		if err != nil {
 			return stats, err

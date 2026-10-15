@@ -90,11 +90,11 @@ func (b *Builder) runRacing(ctx context.Context, step *Step) error {
 	// Post-processing runs after the race is decided to avoid hashFS
 	// races with the local goroutine's RecordOutputsFromLocal.
 	go func() {
-		// ctx is the build context; raceCtx is canceled when the
-		// race decides. Use ctx for CAS uploads so they survive
-		// race cancellation and don't poison shared upload
-		// operations used by other steps (reclient-style).
-		err := b.execRemoteExecute(ctx, raceCtx, step)
+		// raceCtx is canceled when the race decides. CAS input uploads
+		// are owned by the reapi client (not by this goroutine), so
+		// cancellation returns promptly without waiting for, or
+		// poisoning, uploads shared with other steps. b/565765743
+		err := b.execRemoteExecute(raceCtx, step)
 		if isContextCanceledErr(err) {
 			ch <- raceResult{resultType: raceCanceled, err: err}
 			return
@@ -135,7 +135,7 @@ func (b *Builder) runRacing(ctx context.Context, step *Step) error {
 	switch first.resultType {
 	case raceCanceled:
 		// First result was a cancellation (e.g. couldn't acquire
-		// semaphore, or gRPC canceled from shared CAS upload).
+		// semaphore, or the build is shutting down).
 		// Wait for the second result instead.
 		winner = <-ch
 		// Both goroutines have now sent their results;

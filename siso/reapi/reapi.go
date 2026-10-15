@@ -49,6 +49,7 @@ import (
 	"go.chromium.org/build/siso/o11y/trace"
 	"go.chromium.org/build/siso/reapi/firstbyte"
 	"go.chromium.org/build/siso/reapi/retry"
+	"go.chromium.org/build/siso/sync/semaphore"
 	"go.chromium.org/build/siso/version"
 
 	_ "embed"
@@ -133,10 +134,14 @@ type Option struct {
 	// (e.g. "sha256", "sha1", "blake3"). Empty means "sha256".
 	DigestFunction string
 
-	// UploadConcurrency caps in-flight upload RPCs per UploadAll call.
+	// UploadConcurrency caps in-flight upload RPCs per upload request.
 	// Zero (default) means serial; set to max(32, GOMAXPROCS*4) or similar
 	// for callers that benefit from parallel upload (e.g. `siso isolate`).
 	UploadConcurrency int
+
+	// UploadLimit caps the number of UploadAll requests in flight at
+	// once (the "reapi-upload" semaphore). Zero means DefaultUploadLimit.
+	UploadLimit int
 
 	// MaxRetries is the maximum number of retries for retriable errors.
 	MaxRetries int
@@ -359,6 +364,13 @@ type Client struct {
 	apiVersion   *semverpb.SemVer
 
 	knownDigests sync.Map // key:digest.Digest, value: *uploadOp or true
+
+	// uploader runs the CAS upload requests made by UploadAll, owned by
+	// the Client (lifetime derived from the context given to
+	// New/NewFromConn, closed by Close), so in-flight uploads are
+	// canceled when the build stops, not when an individual requester
+	// gives up.
+	uploader *uploader
 
 	zstdDecoderPool *sync.Pool
 
@@ -642,6 +654,7 @@ func NewFromConn(ctx context.Context, opt Option, cred cred.Cred, conn, casConn,
 		m:               iometrics.New("reapi"),
 	}
 	c.knownDigests.Store(c.digestFn.Empty(), true)
+	c.uploader = newUploader(ctx, c, opt.UploadLimit)
 	return c, nil
 }
 
@@ -794,9 +807,13 @@ func checkAdvertisedDigestFunctions(fn digest.Function, advertised []rpb.DigestF
 	return fmt.Errorf("digest function %s is not supported by the server's %s capabilities; advertised: %v", fn, capability, advertised)
 }
 
-// Close closes the client's connections, including the separate CAS
+// Close cancels in-flight upload requests, stops the upload workers,
+// and closes the client's connections, including the separate CAS
 // connection when one was dialed.
 func (c *Client) Close() error {
+	if c.uploader != nil {
+		c.uploader.close(ErrClientClosed)
+	}
 	err := c.conn.Close()
 	if c.casConn != nil && c.casConn != c.conn {
 		cerr := c.casConn.Close()
@@ -811,6 +828,15 @@ func (c *Client) Close() error {
 		}
 	}
 	return err
+}
+
+// UploadSemaphore returns the semaphore that bounds in-flight UploadAll
+// requests, for stats. It returns nil for a nil client.
+func (c *Client) UploadSemaphore() *semaphore.Semaphore {
+	if c == nil || c.uploader == nil {
+		return nil
+	}
+	return c.uploader.sema
 }
 
 // IOMetrics returns an IOMetrics of the client.

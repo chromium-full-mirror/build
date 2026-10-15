@@ -23,13 +23,11 @@ import (
 // It handles retry, semaphore acquisition, and remote execution,
 // but does NOT download outputs or stdout/stderr.
 //
-// uploadCtx controls CAS input uploads; execCtx controls execution and
-// retry/semaphore. In the non-racing path both are the same context.
-// In racing mode, uploadCtx is the build context (not canceled by
-// race cancellation) so that shared CAS upload operations are not
-// poisoned when the race goroutine's execCtx is canceled.
-func (b *Builder) execRemoteExecute(uploadCtx, execCtx context.Context, step *Step) error {
-	ctx, span := trace.NewSpan(execCtx, "exec-remote-execute")
+// Canceling ctx (e.g. when the local racer wins) makes this return
+// promptly even while CAS input uploads are in flight; the uploads are
+// owned by the reapi client and keep running for other steps.
+func (b *Builder) execRemoteExecute(ctx context.Context, step *Step) error {
+	ctx, span := trace.NewSpan(ctx, "exec-remote-execute")
 	defer span.Close(nil)
 	noFallback := !b.localFallbackEnabled(step)
 	var timeout time.Duration
@@ -64,7 +62,7 @@ func (b *Builder) execRemoteExecute(uploadCtx, execCtx context.Context, step *St
 			b.actionStartedTime(step, attemptStart)
 			clog.Infof(ctx, "step state: remote exec [%s]", phase)
 			phase = stepRetryRun
-			result, cached, err := b.remoteExec.Execute(uploadCtx, ctx, step.cmd)
+			result, cached, err := b.remoteExec.Execute(ctx, step.cmd)
 			step.setPhase(stepOutput)
 			step.metrics.IsRemote = true
 			if !cached {
@@ -77,7 +75,7 @@ func (b *Builder) execRemoteExecute(uploadCtx, execCtx context.Context, step *St
 				step.metrics.RemoteRetry++
 				step.cmd.SkipCacheLookup = true
 				step.setPhase(phase)
-				result, cached, err = b.remoteExec.Execute(uploadCtx, ctx, step.cmd)
+				result, cached, err = b.remoteExec.Execute(ctx, step.cmd)
 				step.setPhase(stepOutput)
 				step.metrics.IsRemote = true
 				if !cached {
@@ -176,7 +174,7 @@ func (b *Builder) updateREStat(result *rpb.ActionResult, err error) {
 }
 
 func (b *Builder) execRemote(ctx context.Context, step *Step) error {
-	execErr := b.execRemoteExecute(ctx, ctx, step)
+	execErr := b.execRemoteExecute(ctx, step)
 
 	ctx, span := trace.NewSpan(ctx, spanExecRemoteExecPostProc)
 	defer span.Close(nil)

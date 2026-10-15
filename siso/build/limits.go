@@ -14,6 +14,7 @@ import (
 	"sync"
 
 	"go.chromium.org/build/siso/o11y/clog"
+	"go.chromium.org/build/siso/reapi"
 	"go.chromium.org/build/siso/ui"
 )
 
@@ -44,7 +45,10 @@ type Limits struct {
 	REWrap        int
 	Cache         int
 	TwoPhaseCache int
-	Thread        int
+	// Upload limits the number of CAS upload requests in flight
+	// (reapi.Option.UploadLimit).
+	Upload int
+	Thread int
 }
 
 var (
@@ -73,6 +77,7 @@ func DefaultLimits(ctx context.Context) Limits {
 			REWrap:        limitForREWrapper(ctx, numCPU),
 			Cache:         stepLimitFactor * numCPU,
 			TwoPhaseCache: stepLimitFactor * numCPU,
+			Upload:        reapi.DefaultUploadLimit(),
 		}
 		// On many cores machine, it would hit default max thread limit = 10000.
 		// Usually, it would require 1/3 of stepLimit threads (cache miss case?).
@@ -119,6 +124,8 @@ func DefaultLimits(ctx context.Context) Limits {
 				defaultLimits.Cache = n
 			case "two_phase_cache":
 				defaultLimits.TwoPhaseCache = n
+			case "upload":
+				defaultLimits.Upload = n
 			case "thread":
 				defaultLimits.Thread = n
 			default:
@@ -146,6 +153,7 @@ func UnitTestLimits(ctx context.Context) Limits {
 		REWrap:        2,
 		Cache:         2,
 		TwoPhaseCache: 2,
+		Upload:        2,
 	}
 }
 

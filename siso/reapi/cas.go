@@ -135,6 +135,10 @@ var (
 	errUploadNoResponse  = errors.New("upload no response")
 )
 
+// ErrClientClosed is the error upload requests fail with when the Client
+// is closed while they are waiting or in flight.
+var ErrClientClosed = errors.New("reapi: client closed")
+
 // compressor returns a compressor for ByteStream Read/Write APIs.
 func (c *Client) compressor(d digest.Digest) rpb.Compressor_Value {
 	c.mu.Lock()
@@ -617,7 +621,28 @@ func (c *Client) Missing(ctx context.Context, blobs []digest.Digest) ([]digest.D
 }
 
 // UploadAll uploads all blobs specified in ds that are still missing in the CAS.
+//
+// The upload itself is detached from ctx: blobs not yet known to be in
+// the CAS are handed as one request to the Client's upload workers,
+// which run with the Client's lifetime context (canceled by Close), so
+// that other callers waiting on the same blobs are not affected when
+// this caller's ctx is canceled. ctx only bounds how long this call
+// waits for the result. If ctx is canceled, UploadAll returns the
+// cancellation error immediately while the request is still processed
+// in the background.
 func (c *Client) UploadAll(ctx context.Context, ds *blob.Store) (numUploaded int, err error) {
+	return c.uploadAll(ctx, ds, true)
+}
+
+// uploadAll implements UploadAll.
+//
+// When detach is false, the call runs inline on the caller's goroutine
+// with ctx and never waits on an upload owned by someone else: blobs
+// that are pending in another request are uploaded again by this call
+// (CAS uploads are idempotent). This is used for nested uploads issued
+// from inside an upload worker (chunkUpload); waiting there on a request
+// that is still queued for a worker could deadlock the bounded pool.
+func (c *Client) uploadAll(ctx context.Context, ds *blob.Store, detach bool) (numUploaded int, err error) {
 	if c.casConn == nil {
 		return 0, status.Error(codes.FailedPrecondition, "conn is not configured")
 	}
@@ -639,7 +664,14 @@ func (c *Client) UploadAll(ctx context.Context, ds *blob.Store) (numUploaded int
 				// Case 1: This blob is already present in the CAS, we're done.
 				skippedBlobs++
 			case *uploadOp:
-				// Case 2: We need to wait for another thread to upload this blob.
+				if !detach {
+					// Inline: upload it ourselves rather than wait.
+					// This op is not registered in knownDigests, so
+					// its done() leaves the owner's entry untouched.
+					newBlobs[d] = newUploadOp(c, d)
+					continue
+				}
+				// Case 2: We need to wait for another upload operation to upload this blob.
 				pendingBlobs[d] = v
 			default:
 				panic(fmt.Sprintf("unknown type %T", v))
@@ -653,14 +685,22 @@ func (c *Client) UploadAll(ctx context.Context, ds *blob.Store) (numUploaded int
 	span.SetAttr("pending", len(pendingBlobs))
 	span.SetAttr("skipped", skippedBlobs)
 
+	var durWaitUpload time.Duration
 	if len(newBlobs) > 0 {
-		numUploaded, err = c.uploadNewBlobs(ctx, ds, newBlobs, span)
+		t := time.Now()
+		if detach {
+			req := c.uploader.submit(ds, newBlobs)
+			numUploaded, err = req.wait(ctx)
+		} else {
+			numUploaded, err = c.uploadNewBlobs(ctx, ds, newBlobs, span)
+		}
+		durWaitUpload = time.Since(t)
 		if err != nil {
-			return numUploaded, err
+			return numUploaded, fmt.Errorf("upload %d blobs: %w", len(newBlobs), err)
 		}
 	}
 
-	// Finally, wait for any blobs that are being uploaded by other threads, before we return.
+	// Finally, wait for any blobs that are being uploaded by other upload operations, before we return.
 	var durWaitPending time.Duration
 	if len(pendingBlobs) > 0 {
 		t := time.Now()
@@ -671,9 +711,10 @@ func (c *Client) UploadAll(ctx context.Context, ds *blob.Store) (numUploaded int
 		}
 		durWaitPending = time.Since(t)
 	}
-	clog.Infof(ctx, "upload all: blobs=%d -> {uploaded=%d, pending=%d, skipped=%d}, wait_pending=%s: %v",
+	clog.Infof(ctx, "upload all: blobs=%d -> {uploaded=%d, pending=%d, skipped=%d}, wait_upload=%s wait_pending=%s",
 		len(blobs), numUploaded, len(pendingBlobs), skippedBlobs,
-		durWaitPending.Round(time.Microsecond), err)
+		durWaitUpload.Round(time.Microsecond),
+		durWaitPending.Round(time.Microsecond))
 
 	return numUploaded, nil
 }
