@@ -7,16 +7,27 @@ package reapi_test
 import (
 	"context"
 	"fmt"
+	"net"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/experimental"
+	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
+	"google.golang.org/grpc/test/bufconn"
+	"google.golang.org/protobuf/encoding/protowire"
+	"google.golang.org/protobuf/proto"
 
 	"go.chromium.org/build/hashigo/digest"
 	rpb "go.chromium.org/build/remote-apis/build/bazel/remote/execution/v2"
 
+	"go.chromium.org/build/siso/auth/cred"
 	"go.chromium.org/build/siso/blob"
 	"go.chromium.org/build/siso/path"
 	"go.chromium.org/build/siso/reapi"
@@ -50,6 +61,11 @@ func (s *casSpy) dialOptions() []grpc.DialOption {
 // walk walks the tree d and returns a summary of each directory passed
 // to the WalkDir callback, keyed by its name.
 func walk(ctx context.Context, cl *reapi.Client, d digest.Digest) (map[string]string, error) {
+	return walkHook(ctx, cl, d, nil)
+}
+
+// walkHook is walk, but also calls hook, if not nil, for each directory.
+func walkHook(ctx context.Context, cl *reapi.Client, d digest.Digest, hook func(dname string, dir *rpb.Directory) error) (map[string]string, error) {
 	got := make(map[string]string)
 	// refs maps each directory name to the digest its parent refers to
 	// it by. WalkDir visits a parent before its subdirectories.
@@ -59,6 +75,14 @@ func walk(ctx context.Context, cl *reapi.Client, d digest.Digest) (map[string]st
 		// which is not necessarily the digest of re-marshalling dir.
 		if want, ok := refs[dname]; !ok || dd != want {
 			return fmt.Errorf("dir %q: dd=%s; want %s", dname, dd, want)
+		}
+		if _, ok := got[dname]; ok {
+			return fmt.Errorf("dir %q visited twice", dname)
+		}
+		if hook != nil {
+			if err := hook(dname, dir); err != nil {
+				return err
+			}
 		}
 		var files, dirs, symlinks []string
 		for _, file := range dir.Files {
@@ -137,6 +161,250 @@ func TestWalkDir(t *testing.T) {
 				if (pass == "cached") != (reads == 0) {
 					t.Errorf("%s: %d CAS reads", pass, reads)
 				}
+			}
+		})
+	}
+}
+
+// treeCAS is a CAS server that serves only GetTree, from trees.
+type treeCAS struct {
+	rpb.UnimplementedContentAddressableStorageServer
+
+	// trees has the responses to send for each root digest.
+	trees map[digest.Digest][]*rpb.GetTreeResponse
+	// first, if set, is the only response to the first call.
+	first *rpb.GetTreeResponse
+	calls atomic.Int32
+}
+
+func (s *treeCAS) GetTree(req *rpb.GetTreeRequest, stream grpc.ServerStreamingServer[rpb.GetTreeResponse]) error {
+	// RBE rejects other content-types, e.g. "application/grpc+proto",
+	// which WalkDir's GetTree codec must not cause.
+	md, _ := metadata.FromIncomingContext(stream.Context())
+	if ct := md.Get("content-type"); len(ct) != 1 || ct[0] != "application/grpc" {
+		return status.Errorf(codes.Unimplemented, "unexpected content-type %q", ct)
+	}
+	if s.calls.Add(1) == 1 && s.first != nil {
+		return stream.Send(s.first)
+	}
+	resps, ok := s.trees[digest.FromProto(req.RootDigest)]
+	if !ok {
+		return status.Errorf(codes.NotFound, "no tree %v", req.RootDigest)
+	}
+	for _, resp := range resps {
+		if err := stream.Send(resp); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// poisonPool is a mem.BufferPool that overwrites buffers returned to it,
+// so that reading a buffer after it was freed gives garbage.
+type poisonPool struct{}
+
+func (poisonPool) Get(n int) *[]byte {
+	b := make([]byte, n)
+	return &b
+}
+
+func (poisonPool) Put(b *[]byte) {
+	for i := range *b {
+		(*b)[i] = 0xff
+	}
+}
+
+// newTreeClient returns a client that walks with GetTree on cas, and
+// whose received buffers are overwritten once grpc frees them.
+func newTreeClient(t *testing.T, cas *treeCAS) *reapi.Client {
+	t.Helper()
+	lis := bufconn.Listen(1 << 20)
+	srv := grpc.NewServer()
+	rpb.RegisterContentAddressableStorageServer(srv, cas)
+	go srv.Serve(lis)
+	t.Cleanup(srv.Stop)
+	conn, err := grpc.NewClient("passthrough:///bufnet",
+		grpc.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) {
+			return lis.DialContext(ctx)
+		}),
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		experimental.WithBufferPool(poisonPool{}),
+	)
+	if err != nil {
+		t.Fatalf("grpc.NewClient: %v", err)
+	}
+	cl, err := reapi.NewFromConn(t.Context(), reapi.Option{WalkDirStream: true}, cred.Cred{}, conn, conn, conn)
+	if err != nil {
+		t.Fatalf("NewFromConn: %v", err)
+	}
+	t.Cleanup(func() { cl.Close() })
+	return cl
+}
+
+// fileNodes returns empty files with names.
+func fileNodes(names ...string) []*rpb.FileNode {
+	var files []*rpb.FileNode
+	for _, name := range names {
+		files = append(files, &rpb.FileNode{Name: name, Digest: digest.SHA256.Empty().Proto()})
+	}
+	return files
+}
+
+// dirDigest returns the digest of dir.
+func dirDigest(t *testing.T, dir *rpb.Directory) digest.Digest {
+	t.Helper()
+	b, err := proto.Marshal(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return digest.SHA256.FromBytes(b)
+}
+
+// dirNode returns the node for dir named name.
+func dirNode(t *testing.T, name string, dir *rpb.Directory) *rpb.DirectoryNode {
+	t.Helper()
+	return &rpb.DirectoryNode{Name: name, Digest: dirDigest(t, dir).Proto()}
+}
+
+// TestWalkDirRepeatedDirectories checks WalkDir on a GetTree stream that
+// sends a directory once for every place it occurs, as RBE does, over
+// several messages larger than 1 KiB (so grpc hands them over in pooled
+// buffers, which are freed after use), with empty directories.
+func TestWalkDirRepeatedDirectories(t *testing.T) {
+	ctx := t.Context()
+	// Each non-empty directory has enough long file names to be over
+	// 1 KiB.
+	var names []string
+	for i := range 10 {
+		names = append(names, fmt.Sprintf("file-with-a-long-name-for-a-large-directory-%02d", i))
+	}
+	x := &rpb.Directory{Files: fileNodes(names...)}
+	a := &rpb.Directory{Files: fileNodes(append(slices.Clone(names), "only")...), Directories: []*rpb.DirectoryNode{dirNode(t, "x", x)}}
+	b := &rpb.Directory{Files: fileNodes(names...), Directories: []*rpb.DirectoryNode{dirNode(t, "x", x)}}
+	e := &rpb.Directory{}
+	root := &rpb.Directory{
+		Files: fileNodes(names...),
+		Directories: []*rpb.DirectoryNode{
+			dirNode(t, "a0", a), dirNode(t, "b0", b), dirNode(t, "b1", b), dirNode(t, "e0", e), dirNode(t, "e1", e),
+		},
+	}
+	cas := &treeCAS{trees: map[digest.Digest][]*rpb.GetTreeResponse{
+		dirDigest(t, root): {
+			{Directories: []*rpb.Directory{root, a, b}},
+			{Directories: []*rpb.Directory{b, e, e}},
+			{Directories: []*rpb.Directory{x, x, x}},
+		},
+		dirDigest(t, b): {
+			{Directories: []*rpb.Directory{b, x}},
+		},
+	}}
+	cl := newTreeClient(t, cas)
+	q := func(fs ...string) string {
+		return fmt.Sprintf("%q", fs)
+	}
+	big := q(names...)
+	want := map[string]string{
+		"":     "files=" + big + ` dirs=["a0" "b0" "b1" "e0" "e1"] symlinks=[]`,
+		"a0":   "files=" + q(append(slices.Clone(names), "only")...) + ` dirs=["x"] symlinks=[]`,
+		"a0/x": "files=" + big + " dirs=[] symlinks=[]",
+		"b0":   "files=" + big + ` dirs=["x"] symlinks=[]`,
+		"b0/x": "files=" + big + " dirs=[] symlinks=[]",
+		"b1":   "files=" + big + ` dirs=["x"] symlinks=[]`,
+		"b1/x": "files=" + big + " dirs=[] symlinks=[]",
+		"e0":   "files=[] dirs=[] symlinks=[]",
+		"e1":   "files=[] dirs=[] symlinks=[]",
+	}
+
+	// While WalkDir handles a0, after root listed b0 as not cached,
+	// another walk caches b. WalkDir then passes that walk's copy for b0
+	// rather than decoding its own.
+	var cachedB, gotB0 *rpb.Directory
+	got, err := walkHook(ctx, cl, dirDigest(t, root), func(dname string, dir *rpb.Directory) error {
+		switch dname {
+		case "a0":
+			return cl.WalkDir(ctx, dirDigest(t, b), func(dname string, _ digest.Digest, dir *rpb.Directory) error {
+				if dname == "" {
+					cachedB = dir
+				}
+				return nil
+			})
+		case "b0":
+			gotB0 = dir
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("WalkDir=%v; want nil", err)
+	}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("WalkDir diff -want +got:\n%s", diff)
+	}
+	if cachedB == nil || gotB0 != cachedB {
+		t.Errorf("WalkDir passed b0 %p; want the cached copy %p", gotB0, cachedB)
+	}
+}
+
+// TestWalkDirChildBeforeParent checks that WalkDir handles a GetTree
+// stream that sends directories before the parents that list them.
+func TestWalkDirChildBeforeParent(t *testing.T) {
+	ctx := t.Context()
+	sub21 := &rpb.Directory{Files: fileNodes("file1")}
+	sub2 := &rpb.Directory{Files: fileNodes("file1"), Directories: []*rpb.DirectoryNode{dirNode(t, "subdir2.1", sub21)}}
+	sub1 := &rpb.Directory{Files: fileNodes("file1", "file2")}
+	root := &rpb.Directory{Files: fileNodes("file1"), Directories: []*rpb.DirectoryNode{dirNode(t, "subdir1", sub1), dirNode(t, "subdir2", sub2)}}
+	cas := &treeCAS{trees: map[digest.Digest][]*rpb.GetTreeResponse{
+		dirDigest(t, root): {
+			{Directories: []*rpb.Directory{sub21, sub2, sub1, root}},
+		},
+	}}
+	cl := newTreeClient(t, cas)
+	want := map[string]string{
+		"":                  `files=["file1"] dirs=["subdir1" "subdir2"] symlinks=[]`,
+		"subdir1":           `files=["file1" "file2"] dirs=[] symlinks=[]`,
+		"subdir2":           `files=["file1"] dirs=["subdir2.1"] symlinks=[]`,
+		"subdir2/subdir2.1": `files=["file1"] dirs=[] symlinks=[]`,
+	}
+	got, err := walk(ctx, cl, dirDigest(t, root))
+	if err != nil {
+		t.Fatalf("WalkDir=%v; want nil", err)
+	}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("WalkDir diff -want +got:\n%s", diff)
+	}
+}
+
+// TestWalkDirRetriesBadResponse checks that WalkDir retries a GetTree
+// response it cannot decode, as it did when grpc decoded it.
+func TestWalkDirRetriesBadResponse(t *testing.T) {
+	// A directories field whose length runs past the end.
+	badResp := &rpb.GetTreeResponse{}
+	badResp.ProtoReflect().SetUnknown(protowire.AppendVarint(protowire.AppendTag(nil, 1, protowire.BytesType), 5))
+	// A directory with a field tag but no value.
+	badDir := &rpb.Directory{}
+	badDir.ProtoReflect().SetUnknown(protowire.AppendTag(nil, 1, protowire.VarintType))
+	for _, tc := range []struct {
+		name  string
+		first *rpb.GetTreeResponse
+	}{
+		{name: "response", first: badResp},
+		{name: "directory", first: &rpb.GetTreeResponse{Directories: []*rpb.Directory{badDir}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := t.Context()
+			sub := &rpb.Directory{Files: fileNodes("file1")}
+			root := &rpb.Directory{Files: fileNodes("file1"), Directories: []*rpb.DirectoryNode{dirNode(t, "subdir1", sub)}}
+			cas := &treeCAS{
+				first: tc.first,
+				trees: map[digest.Digest][]*rpb.GetTreeResponse{
+					dirDigest(t, root): {{Directories: []*rpb.Directory{root, sub}}},
+				},
+			}
+			cl := newTreeClient(t, cas)
+			if _, err := walk(ctx, cl, dirDigest(t, root)); err != nil {
+				t.Fatalf("WalkDir=%v; want nil", err)
+			}
+			if got := cas.calls.Load(); got != 2 {
+				t.Errorf("GetTree calls=%d; want 2", got)
 			}
 		})
 	}
