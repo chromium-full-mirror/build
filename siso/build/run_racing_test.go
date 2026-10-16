@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -26,6 +27,7 @@ import (
 	"go.chromium.org/build/siso/blob"
 	"go.chromium.org/build/siso/execute"
 	"go.chromium.org/build/siso/hashfs"
+	"go.chromium.org/build/siso/o11y/clog"
 	"go.chromium.org/build/siso/path"
 	"go.chromium.org/build/siso/reapi"
 	"go.chromium.org/build/siso/reapi/merkletree"
@@ -875,5 +877,246 @@ func TestRunRacing_RemoteFailureWithLocalWin(t *testing.T) {
 				t.Errorf("stubs.jar content=%q; want %q", got, content)
 			}
 		})
+	}
+}
+
+// waitForLocalKilledLog returns a context whose clog logger closes ch once
+// runRacing logs "racing: local killed".
+func waitForLocalKilledLog(ctx context.Context) (context.Context, <-chan struct{}) {
+	ch := make(chan struct{})
+	var once sync.Once
+	w := writerFunc(func(p []byte) (int, error) {
+		if strings.Contains(string(p), "racing: local killed") {
+			once.Do(func() { close(ch) })
+		}
+		return len(p), nil
+	})
+	return clog.NewContext(ctx, clog.FromContext(ctx).WithWriter(w)), ch
+}
+
+// remoteSucceedsAfter returns a fake remote execution that waits until ready
+// is closed, then finishes with stubs.jar containing content.
+func remoteSucceedsAfter(ctx context.Context, ready <-chan struct{}, content []byte) func(*reapitest.Fake, *rpb.Action) (*rpb.ActionResult, error) {
+	return func(fakere *reapitest.Fake, action *rpb.Action) (*rpb.ActionResult, error) {
+		select {
+		case <-ready:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+		dg, err := fakere.Put(ctx, content)
+		if err != nil {
+			return nil, err
+		}
+		return &rpb.ActionResult{
+			ExitCode: 0,
+			OutputFiles: []*rpb.OutputFile{
+				{
+					Path:   "stubs.jar",
+					Digest: dg,
+				},
+			},
+		}, nil
+	}
+}
+
+// remoteFailsAfter returns a fake remote execution that waits until ready is
+// closed, then fails with exitCode.
+func remoteFailsAfter(ctx context.Context, ready <-chan struct{}, exitCode int32) func(*reapitest.Fake, *rpb.Action) (*rpb.ActionResult, error) {
+	return func(fakere *reapitest.Fake, action *rpb.Action) (*rpb.ActionResult, error) {
+		select {
+		case <-ready:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+		return &rpb.ActionResult{ExitCode: exitCode}, nil
+	}
+}
+
+// newShRacingCmd returns a pure racing test command that runs script with
+// /bin/sh in the env's workspace and declares stubs.jar as its output.
+func newShRacingCmd(env *racingTestEnv, script string) *execute.Cmd {
+	cmd := &execute.Cmd{
+		Args:          []string{"/bin/sh", "-c", script},
+		Outputs:       []path.Path{"stubs.jar"},
+		WorkspaceRoot: env.dir,
+		HashFS:        env.hashFS,
+		Platform:      map[string]string{"container-image": "docker://ubuntu"},
+		Pure:          true,
+		CmdHash:       []byte("cmdhash"),
+	}
+	cmd.InitOutputs()
+	return cmd
+}
+
+// TestRunRacing_LocalKilledBySignal_RemoteWins checks that when the local
+// racer is killed by a signal (e.g. by the kernel OOM killer) while the
+// remote racer is still running, runRacing waits for the remote result
+// instead of canceling it and failing the step. b/571235311
+func TestRunRacing_LocalKilledBySignal_RemoteWins(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("test runs /bin/sh")
+	}
+	for _, tc := range []struct {
+		name   string
+		script string
+	}{
+		{
+			// localexec reports exit=-1 for a process killed by a signal.
+			name:   "SIGKILL",
+			script: "kill -9 $$",
+		},
+		{
+			// Sandbox wrappers such as nsjail exit with 128+SIGKILL.
+			name:   "exit137",
+			script: "exit 137",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx, localKilled := waitForLocalKilledLog(t.Context())
+			content := []byte("remote content")
+			fakere := &reapitest.Fake{
+				// Finish only after runRacing has seen the local racer
+				// killed, so that the local racer always finishes first.
+				ExecuteFunc: remoteSucceedsAfter(ctx, localKilled, content),
+			}
+			env := newRacingTestEnv(t, fakere)
+			b := env.newBuilder(t, nil)
+			step := newRacingTestStep(newShRacingCmd(env, tc.script), []string{"stubs.jar"})
+
+			err := b.runRacing(ctx, step)
+			if err != nil {
+				t.Fatalf("runRacing=%v; want nil err (remote result after local was killed)", err)
+			}
+			if got, want := step.metrics.RacingWinner, "remote"; got != want {
+				t.Errorf("RacingWinner=%q; want %q", got, want)
+			}
+			if step.metrics.Fallback {
+				t.Errorf("metrics.Fallback=true; want false")
+			}
+			if got := b.numFallback.Load(); got != 0 {
+				t.Errorf("b.numFallback=%d; want 0", got)
+			}
+			got, err := os.ReadFile(filepath.Join(env.dir, "stubs.jar"))
+			if err != nil {
+				t.Fatalf("stubs.jar not materialized from remote: %v", err)
+			}
+			if !bytes.Equal(got, content) {
+				t.Errorf("stubs.jar content=%q; want %q", got, content)
+			}
+		})
+	}
+}
+
+// TestRunRacing_LocalKilledBySignal_RemoteFails_FallsBackToLocal checks that
+// when the local racer is killed by a signal and the remote racer then fails
+// too, runRacing applies the usual remote failure policy: it claims a
+// fallback and runs the step locally once more.
+func TestRunRacing_LocalKilledBySignal_RemoteFails_FallsBackToLocal(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("test runs /bin/sh")
+	}
+	ctx, localKilled := waitForLocalKilledLog(t.Context())
+	content := []byte("fallback content")
+	fakere := &reapitest.Fake{
+		// Fail with exit code 137 (remote OOM, eligible for local
+		// fallback) only after runRacing has seen the local racer killed.
+		ExecuteFunc: remoteFailsAfter(ctx, localKilled, 137),
+	}
+	env := newRacingTestEnv(t, fakere)
+	// The first run (the local racer) kills itself; the second run (the
+	// fallback) writes the output.
+	marker := filepath.Join(t.TempDir(), "killed")
+	script := fmt.Sprintf("if [ -e %[1]q ]; then printf 'fallback content' > stubs.jar; else touch %[1]q; kill -9 $$; fi", marker)
+	b := env.newBuilder(t, nil)
+	step := newRacingTestStep(newShRacingCmd(env, script), []string{"stubs.jar"})
+
+	err := b.runRacing(ctx, step)
+	if err != nil {
+		t.Fatalf("runRacing=%v; want nil err (local fallback)", err)
+	}
+	if !step.metrics.Fallback {
+		t.Errorf("metrics.Fallback=false; want true")
+	}
+	if got := b.numFallback.Load(); got != 1 {
+		t.Errorf("b.numFallback=%d; want 1", got)
+	}
+	got, err := os.ReadFile(filepath.Join(env.dir, "stubs.jar"))
+	if err != nil {
+		t.Fatalf("stubs.jar not generated by local fallback: %v", err)
+	}
+	if !bytes.Equal(got, content) {
+		t.Errorf("stubs.jar content=%q; want %q", got, content)
+	}
+}
+
+// TestRunRacing_LocalKilledBySignal_RemoteFails_NoFallback checks that when
+// the local racer is killed by a signal, the remote racer fails too, and
+// fallback is not allowed, the step fails without running the command
+// locally again.
+func TestRunRacing_LocalKilledBySignal_RemoteFails_NoFallback(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("test runs /bin/sh")
+	}
+	ctx, localKilled := waitForLocalKilledLog(t.Context())
+	fakere := &reapitest.Fake{
+		// Fail only after runRacing has seen the local racer killed.
+		ExecuteFunc: remoteFailsAfter(ctx, localKilled, 137),
+	}
+	env := newRacingTestEnv(t, fakere)
+	runs := filepath.Join(t.TempDir(), "runs")
+	script := fmt.Sprintf("echo run >> %q; kill -9 $$", runs)
+	b := env.newBuilder(t, nil)
+	// No fallback budget left: the first claim exceeds the limit.
+	b.maxFallbackAllowed = 1
+	step := newRacingTestStep(newShRacingCmd(env, script), []string{"stubs.jar"})
+
+	err := b.runRacing(ctx, step)
+	wantErr := execute.ExitError{ExitCode: 137}
+	if fallbackErr, ok := errors.AsType[TooManyFallbackError](err); !ok {
+		t.Fatalf("runRacing=%v (%T); want TooManyFallbackError", err, err)
+	} else if !errors.Is(fallbackErr.Err, wantErr) {
+		t.Fatalf("fallbackErr.Err=%v; want %v", fallbackErr.Err, wantErr)
+	}
+	if step.metrics.Fallback {
+		t.Errorf("metrics.Fallback=true; want false")
+	}
+	buf, err := os.ReadFile(runs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Count(string(buf), "run"); got != 1 {
+		t.Errorf("local command ran %d times; want 1", got)
+	}
+}
+
+// TestRunRacing_LocalFailure_DoesNotWaitForRemote checks that an ordinary
+// local failure (e.g. a compile error) still wins the race right away and
+// cancels the remote racer, so build errors are reported without waiting
+// for the remote result.
+func TestRunRacing_LocalFailure_DoesNotWaitForRemote(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("test runs /bin/sh")
+	}
+	ctx, localKilled := waitForLocalKilledLog(t.Context())
+	fakere := &reapitest.Fake{
+		// Simulate a slow remote execution that would fail with the same
+		// exit code: it doesn't finish before the test ends unless
+		// runRacing logs "racing: local killed" and waits for it.
+		ExecuteFunc: remoteFailsAfter(ctx, localKilled, 1),
+	}
+	env := newRacingTestEnv(t, fakere)
+	b := env.newBuilder(t, nil)
+	step := newRacingTestStep(newShRacingCmd(env, "exit 1"), []string{"stubs.jar"})
+
+	err := b.runRacing(ctx, step)
+	eerr, ok := errors.AsType[execute.ExitError](err)
+	if !ok || eerr.ExitCode != 1 {
+		t.Fatalf("runRacing=%v; want exit=1 from the local racer", err)
+	}
+	if got, want := step.metrics.RacingWinner, "local"; got != want {
+		t.Errorf("RacingWinner=%q; want %q", got, want)
+	}
+	if step.metrics.Fallback {
+		t.Errorf("metrics.Fallback=true; want false")
 	}
 }

@@ -143,6 +143,33 @@ func (b *Builder) runRacing(ctx context.Context, step *Step) error {
 		// Do not cancel local, wait for it to finish.
 		winner = <-ch
 	default:
+		if first.resultType == raceLocal && isKilledBySignal(first.err) {
+			// The local racer was killed by a signal, most likely by the
+			// kernel OOM killer (with the oom-score-adj experiment, local
+			// actions run with oom_score_adj=1000, so they are picked before
+			// siso). The remote racer is unaffected, so let it finish instead
+			// of failing the step. b/571235311
+			clog.Warningf(ctx, "racing: local killed (%v), waiting for remote", first.err)
+			second := <-ch
+			switch {
+			case second.resultType == raceRemote && second.err == nil:
+				winner = second
+			case second.resultType == raceRemote && ctx.Err() == nil:
+				// Remote failed too: same policy as any other remote failure.
+				ok, ferr := b.remoteClaimFallbackIfAllowed(ctx, step, second.err)
+				if !ok {
+					winner = raceResult{resultType: raceRemote, err: ferr}
+					break
+				}
+				b.setupFallback(ctx, step, second.err)
+				// The local racer already died above, so re-run the step
+				// locally as the fallback.
+				return b.execLocal(ctx, step)
+			default:
+				winner = first
+			}
+			break
+		}
 		// Cancel the loser.
 		raceCancel()
 		// Wait for the second goroutine to finish before returning,
@@ -269,4 +296,16 @@ func isContextCanceledErr(err error) bool {
 		return se.GRPCStatus().Code() == codes.Canceled
 	}
 	return false
+}
+
+// isKilledBySignal reports whether err is a local command exit caused by a
+// signal, e.g. SIGKILL from the kernel OOM killer. localexec reports -1 for
+// a process killed by a signal, and sandbox wrappers such as nsjail exit
+// with 128+signal (137 for SIGKILL).
+func isKilledBySignal(err error) bool {
+	eerr, ok := errors.AsType[execute.ExitError](err)
+	if !ok {
+		return false
+	}
+	return eerr.ExitCode == -1 || eerr.ExitCode == 128+9 // 9: SIGKILL
 }
