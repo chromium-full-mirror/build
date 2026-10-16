@@ -6,10 +6,12 @@ package reapi_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"slices"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 
@@ -407,5 +409,80 @@ func TestWalkDirRetriesBadResponse(t *testing.T) {
 				t.Errorf("GetTree calls=%d; want 2", got)
 			}
 		})
+	}
+}
+
+// TestWalkDirParallel checks that concurrent walks, which reuse each
+// other's maps through a pool, each see only their own tree.
+func TestWalkDirParallel(t *testing.T) {
+	ctx := t.Context()
+	cl := reapitest.NewWithOption(ctx, t, &reapitest.Fake{}, reapi.Option{WalkDirStream: true})
+	const trees = 8
+	var roots []digest.Digest
+	var wants []map[string]string
+	for i := range trees {
+		top := fmt.Sprintf("t%d", i)
+		roots = append(roots, uploadTree(ctx, t, cl, top+"/file", top+"/sub/file", "shared/file"))
+		wants = append(wants, map[string]string{
+			"":           fmt.Sprintf(`files=[] dirs=["shared" %q] symlinks=[]`, top),
+			"shared":     `files=["file"] dirs=[] symlinks=[]`,
+			top:          `files=["file"] dirs=["sub"] symlinks=[]`,
+			top + "/sub": `files=["file"] dirs=[] symlinks=[]`,
+		})
+	}
+	// The first round streams the trees, later rounds are served from
+	// the walk cache.
+	for round := range 3 {
+		var wg sync.WaitGroup
+		for i, d := range roots {
+			wg.Go(func() {
+				got, err := walk(ctx, cl, d)
+				if err != nil {
+					t.Errorf("round %d tree %d: WalkDir=%v; want nil", round, i, err)
+					return
+				}
+				if diff := cmp.Diff(wants[i], got); diff != "" {
+					t.Errorf("round %d tree %d: WalkDir diff -want +got:\n%s", round, i, diff)
+				}
+			})
+		}
+		wg.Wait()
+	}
+}
+
+// TestWalkDirAfterAbortedWalk checks that a walk does not see the names
+// an aborted walk left for subdirectories it never visited. Two phase
+// caching aborts most walks, at the first mismatch.
+func TestWalkDirAfterAbortedWalk(t *testing.T) {
+	ctx := t.Context()
+	cl := reapitest.NewWithOption(ctx, t, &reapitest.Fake{}, reapi.Option{WalkDirStream: true})
+	errAbort := errors.New("abort")
+	// walkStatePool may drop a state, so repeat until a walk has
+	// likely reused the aborted walk's state.
+	for i := range 10 {
+		y := fmt.Sprintf("y%d", i)
+		// c in the second tree has the same digest as b in the first.
+		d1 := uploadTree(ctx, t, cl, fmt.Sprintf("a/x%d", i), "b/"+y)
+		d2 := uploadTree(ctx, t, cl, "c/"+y)
+		err := cl.WalkDir(ctx, d1, func(dname string, _ digest.Digest, _ *rpb.Directory) error {
+			if dname == "a" {
+				return errAbort
+			}
+			return nil
+		})
+		if !errors.Is(err, errAbort) {
+			t.Fatalf("WalkDir=%v; want %v", err, errAbort)
+		}
+		got, err := walk(ctx, cl, d2)
+		if err != nil {
+			t.Fatalf("WalkDir=%v; want nil", err)
+		}
+		want := map[string]string{
+			"":  `files=[] dirs=["c"] symlinks=[]`,
+			"c": fmt.Sprintf(`files=[%q] dirs=[] symlinks=[]`, y),
+		}
+		if diff := cmp.Diff(want, got); diff != "" {
+			t.Errorf("WalkDir diff -want +got:\n%s", diff)
+		}
 	}
 }

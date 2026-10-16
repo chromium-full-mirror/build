@@ -11,6 +11,7 @@ import (
 	"io"
 	"iter"
 	"path"
+	"sync"
 	"time"
 
 	log "github.com/golang/glog"
@@ -75,10 +76,12 @@ func (c *Client) WalkDir(ctx context.Context, d digest.Digest, fn func(dname str
 	ctx, span := trace.NewSpan(ctx, "reapi-walkdir")
 	defer span.Close(nil)
 
-	dirs := make(map[string]digest.Digest)      // dname -> digest
-	waiting := make(map[digest.Digest][]string) // digest -> dnames
+	ws := walkStatePool.Get().(*walkState)
+	defer ws.release()
+	dirs := ws.dirs       // dname -> digest
+	waiting := ws.waiting // digest -> dnames
 	waiting[d] = append(waiting[d], "")
-	known := make(map[digest.Digest]*rpb.Directory)
+	known := ws.known
 	var stats walkDirStats
 	err := retry.Do(ctx, func() error {
 		ctx, cancel := context.WithCancel(ctx)
@@ -146,6 +149,42 @@ func (c *Client) WalkDir(ctx context.Context, d digest.Digest, fn func(dname str
 		clog.Infof(ctx, "walkdir %s %s", d, stats.String())
 	}
 	return err
+}
+
+// walkState holds the maps of one WalkDir call, reused via walkStatePool.
+type walkState struct {
+	dirs    map[string]digest.Digest
+	waiting map[digest.Digest][]string
+	known   map[digest.Digest]*rpb.Directory
+}
+
+// walkStatePool holds cleared walkStates for later WalkDir calls.
+var walkStatePool = sync.Pool{
+	New: func() any {
+		return &walkState{
+			dirs:    make(map[string]digest.Digest),
+			waiting: make(map[digest.Digest][]string),
+			known:   make(map[digest.Digest]*rpb.Directory),
+		}
+	},
+}
+
+// maxPooledWalkDirs caps the entries in each map of a pooled walkState.
+// It is above the number of directory names in the input trees two phase
+// caching usually walks, so most walks reuse the maps, and a pooled
+// walkState holds at most about 1 MB.
+const maxPooledWalkDirs = 1 << 12
+
+// release clears ws and puts it back into walkStatePool, unless one of
+// its maps grew above maxPooledWalkDirs entries.
+func (ws *walkState) release() {
+	if len(ws.dirs) > maxPooledWalkDirs || len(ws.waiting) > maxPooledWalkDirs || len(ws.known) > maxPooledWalkDirs {
+		return
+	}
+	clear(ws.dirs)
+	clear(ws.waiting)
+	clear(ws.known)
+	walkStatePool.Put(ws)
 }
 
 type walkDirStats struct {
