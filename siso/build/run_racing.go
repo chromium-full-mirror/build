@@ -104,16 +104,6 @@ func (b *Builder) runRacing(ctx context.Context, step *Step) error {
 				err = execute.ExitError{ExitCode: int(result.GetExitCode())}
 			}
 		}
-		if err != nil {
-			ok, ferr := b.remoteClaimFallbackIfAllowed(ctx, step, err)
-			if !ok {
-				ch <- raceResult{resultType: raceRemote, err: ferr}
-				return
-			}
-			b.setupFallback(ctx, step, err)
-			ch <- raceResult{resultType: raceRemoteFallback, err: err}
-			return
-		}
 		ch <- raceResult{resultType: raceRemote, err: err}
 	}()
 
@@ -129,6 +119,14 @@ func (b *Builder) runRacing(ctx context.Context, step *Step) error {
 
 	// Wait for the first non-canceled result.
 	first := <-ch
+	if first.resultType == raceRemote && first.err != nil {
+		if ok, err := b.remoteClaimFallbackIfAllowed(ctx, step, first.err); ok {
+			b.setupFallback(ctx, step, first.err)
+			first.resultType = raceRemoteFallback
+		} else {
+			first.err = err
+		}
+	}
 
 	// Determine the winner.
 	var winner raceResult

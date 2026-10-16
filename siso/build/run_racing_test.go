@@ -753,3 +753,127 @@ func TestRunRacing_LocalWinDoesNotWaitForRemoteUpload(t *testing.T) {
 		t.Errorf("stubs.jar content=%q; want %q", got, content)
 	}
 }
+
+type writerFunc func([]byte) (int, error)
+
+func (f writerFunc) Write(p []byte) (int, error) {
+	return f(p)
+}
+
+// TestRunRacing_RemoteFailureWithLocalWin checks fallback accounting when the
+// remote racer fails with a fallbackable error (ExitCode 137) and the local
+// racer succeeds:
+//   - local_wins_first: local finishes before remote fails; must be recorded
+//     as a clean local win without claiming fallback.
+//   - remote_fails_first: remote fails while local is still running; must
+//     claim fallback and wait for the local racer to finish.
+func TestRunRacing_RemoteFailureWithLocalWin(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("test runs /bin/sh")
+	}
+	for _, tc := range []struct {
+		name          string
+		remoteFirst   bool
+		wantFallback  bool
+		wantFallbacks int64
+	}{
+		{
+			name:          "local_wins_first",
+			remoteFirst:   false,
+			wantFallback:  false,
+			wantFallbacks: 0,
+		},
+		{
+			name:          "remote_fails_first",
+			remoteFirst:   true,
+			wantFallback:  true,
+			wantFallbacks: 1,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := t.Context()
+			content := []byte("output content")
+
+			var releaseLocal func()
+			raceCanceled := make(chan struct{})
+			fakere := &reapitest.Fake{
+				ExecuteFunc: func(fakere *reapitest.Fake, action *rpb.Action) (*rpb.ActionResult, error) {
+					if !tc.remoteFirst {
+						// Unblock the local racer once remote execution has started,
+						// then wait for the local racer to win and trigger raceCancel()
+						// before returning the remote failure.
+						releaseLocal()
+						<-raceCanceled
+					}
+					// ExitCode 137 (SIGKILL/OOM) fails immediately without REAPI
+					// RPC retries and is eligible for local fallback.
+					return &rpb.ActionResult{ExitCode: 137}, nil
+				},
+			}
+			// In the local_wins_first case, raceCancel() would normally abort the
+			// gRPC Execute stream with codes.Canceled before the fake server's
+			// ExitCode 137 response is received. Observe raceCancel() on ctx via
+			// AfterFunc, but strip cancellation from the stream context so the
+			// remote goroutine receives ExitCode 137 instead of context.Canceled.
+			streamOpt := grpc.WithStreamInterceptor(func(ctx context.Context, desc *grpc.StreamDesc, cc *grpc.ClientConn, method string, streamer grpc.Streamer, opts ...grpc.CallOption) (grpc.ClientStream, error) {
+				if !tc.remoteFirst && method == rpb.Execution_Execute_FullMethodName {
+					context.AfterFunc(ctx, func() { close(raceCanceled) })
+					ctx = context.WithoutCancel(ctx)
+				}
+				return streamer(ctx, desc, cc, method, opts...)
+			})
+			env := newRacingTestEnv(t, fakere, streamOpt)
+			b := env.newBuilder(t, func(opts *Options) {
+				if tc.remoteFirst {
+					// b.setupFallback synchronously writes a FALLBACK entry to
+					// OutputLogWriter; use that write to unblock the local racer
+					// only after remote failure has been processed as a fallback.
+					opts.OutputLogWriter = writerFunc(func(p []byte) (int, error) {
+						releaseLocal()
+						return len(p), nil
+					})
+				}
+			})
+			// Pre-acquire the single local semaphore slot (Limits.Local = 1) so
+			// the local racer blocks until releaseLocal() is called at the exact
+			// point required by each test case.
+			_, done, err := b.localSema.WaitAcquire(ctx, 1)
+			if err != nil {
+				t.Fatal(err)
+			}
+			releaseLocal = sync.OnceFunc(func() { done(nil) })
+
+			cmd := &execute.Cmd{
+				Args:          []string{"/bin/sh", "-c", "printf 'output content' > stubs.jar"},
+				Outputs:       []path.Path{"stubs.jar"},
+				WorkspaceRoot: env.dir,
+				HashFS:        env.hashFS,
+				Platform:      map[string]string{"container-image": "docker://ubuntu"},
+				Pure:          true,
+				CmdHash:       []byte("cmdhash"),
+			}
+			cmd.InitOutputs()
+			step := newRacingTestStep(cmd, []string{"stubs.jar"})
+
+			if err := b.runRacing(ctx, step); err != nil {
+				t.Fatalf("runRacing=%v; want nil err", err)
+			}
+			if got, want := step.metrics.RacingWinner, "local"; got != want {
+				t.Errorf("RacingWinner=%q; want %q", got, want)
+			}
+			if got := step.metrics.Fallback; got != tc.wantFallback {
+				t.Errorf("metrics.Fallback=%t; want %t", got, tc.wantFallback)
+			}
+			if got := b.numFallback.Load(); got != tc.wantFallbacks {
+				t.Errorf("b.numFallback=%d; want %d", got, tc.wantFallbacks)
+			}
+			got, err := os.ReadFile(filepath.Join(env.dir, "stubs.jar"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Equal(got, content) {
+				t.Errorf("stubs.jar content=%q; want %q", got, content)
+			}
+		})
+	}
+}
