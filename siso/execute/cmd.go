@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	stdpath "path"
 	"path/filepath"
 	"runtime"
 	"slices"
@@ -621,6 +622,7 @@ func (c *Cmd) inputTree(ctx context.Context) ([]merkletree.Entry, error) {
 		inputs = newInputs
 	}
 
+	inputs = c.dropSubtreeInputs(inputs)
 	ents, err := c.HashFS.Entries(ctx, c.WorkspaceRoot, inputs)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get entries for inputs in %s: %w", c.WorkspaceRoot, err)
@@ -689,6 +691,55 @@ func (c *Cmd) inputTree(ctx context.Context) ([]merkletree.Entry, error) {
 		return ents[i].Name < ents[j].Name
 	})
 	return ents, nil
+}
+
+// dropSubtreeInputs removes inputs at or under a precomputed subtree of
+// c.TreeInputs before their entries are looked up. treeDigest ignores
+// such entries (Set stops at the subtree with ErrPrecomputedSubTree), so
+// the input root digest is unchanged. Like SetTree, it skips a subtree
+// that overlaps an earlier one. Nothing is dropped if a subtree name is
+// invalid, or for remote chroot or remote inputs, which rename entries
+// after the lookup.
+func (c *Cmd) dropSubtreeInputs(inputs []path.Path) []path.Path {
+	if len(c.TreeInputs) == 0 || c.RemoteChroot() || len(c.RemoteInputs) > 0 {
+		return inputs
+	}
+	var cdir path.Path
+	if c.CanonicalizeDir {
+		cdir = c.canonicalDir()
+	}
+	canon := func(p path.Path) path.Path {
+		if cdir == "" {
+			return p
+		}
+		return canonicalizePath(p, c.WorkDir, cdir)
+	}
+	names := make([]path.Path, 0, len(c.TreeInputs))
+	for _, t := range c.TreeInputs {
+		n := canon(t.Name)
+		if t.Digest.IsZero() || n == "." || !filepath.IsLocal(string(n)) || stdpath.Clean(string(n)) != string(n) {
+			return inputs
+		}
+		if slices.ContainsFunc(names, func(a path.Path) bool { return n.HasPrefix(a) || a.HasPrefix(n) }) {
+			continue
+		}
+		names = append(names, n)
+	}
+	under := func(p path.Path) bool {
+		if cdir != "" {
+			// HashFS.Entries expands a directory input "d/" to its
+			// files, and those under c.WorkDir are moved out of d.
+			d := path.Path(strings.TrimSuffix(string(p), "/"))
+			if d != c.WorkDir && c.WorkDir.HasPrefix(d) {
+				return false
+			}
+		}
+		return slices.ContainsFunc(names, canon(p).HasPrefix)
+	}
+	if !slices.ContainsFunc(inputs, under) {
+		return inputs
+	}
+	return slices.DeleteFunc(slices.Clone(inputs), under)
 }
 
 // treeDigest returns a digest for the Merkle tree entries.
