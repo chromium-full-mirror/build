@@ -52,7 +52,6 @@ func (b *Builder) execLocal(ctx context.Context, step *Step) (retErr error) {
 			return err
 		}
 	}
-	step.cmd.RecordPreOutputs(ctx)
 	if err := b.resetDirOutputs(ctx, step); err != nil {
 		return err
 	}

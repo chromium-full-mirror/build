@@ -22,6 +22,9 @@ type fakeStepDef struct {
 	actionName     string
 	command        string
 	outputs        []path.Path
+	pure           bool
+	platform       map[string]string
+	bindings       map[string]string
 	expandedInputs func(context.Context) []path.Path
 }
 
@@ -38,6 +41,9 @@ func (f fakeStepDef) Args(context.Context) []string {
 func (fakeStepDef) IsPhony() bool   { return false }
 func (fakeStepDef) CmdHash() []byte { return []byte("<cmdhash>") }
 func (f fakeStepDef) Binding(b string) string {
+	if v, ok := f.bindings[b]; ok {
+		return v
+	}
 	switch b {
 	case "command":
 		return f.command
@@ -87,8 +93,8 @@ func (fakeStepDef) AuxiliaryLogOutputFiles(context.Context) []path.Path { return
 func (fakeStepDef) AuxiliaryLogOutputDirs(context.Context) []path.Path  { return nil }
 
 func (fakeStepDef) LocalOutputs(context.Context) []path.Path { return nil }
-func (fakeStepDef) Pure() bool                               { return false }
-func (fakeStepDef) Platform() map[string]string              { return nil }
+func (f fakeStepDef) Pure() bool                             { return f.pure }
+func (f fakeStepDef) Platform() map[string]string            { return f.platform }
 func (fakeStepDef) IsRemoteRule() bool                       { return false }
 func (fakeStepDef) Sandbox() map[string]string               { return nil }
 func (fakeStepDef) RecordDeps(context.Context, string, time.Time, digest.Digest, []string) (bool, error) {

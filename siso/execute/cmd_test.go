@@ -542,16 +542,18 @@ func TestRecordPreOutputs(t *testing.T) {
 	cmd.RecordPreOutputs(ctx)
 
 	// (1) restat: both the on-disk output and the hashFS-only (cached, not
-	// materialized locally) output must be in the snapshot, so a later
-	// RecordOutputs can compare pre/post content. Dropping either dirties
-	// downstream steps under restat_content.
-	got := map[string]bool{}
-	for _, e := range cmd.preOutputEntries {
-		got[string(e.Name)] = true
-	}
-	for _, want := range []string{onDisk, hashfsOnly} {
-		if !got[want] {
-			t.Errorf("preOutputEntries missing %q; restat_content snapshot lost (have %v)", want, got)
+	// materialized locally) output must be in the snapshot (and preserved
+	// across Clone), so a later RecordOutputs can compare pre/post content.
+	// Dropping either dirties downstream steps under restat_content.
+	for name, c := range map[string]*Cmd{"orig": cmd, "clone": cmd.Clone()} {
+		got := map[string]bool{}
+		for _, e := range c.preOutputEntries {
+			got[string(e.Name)] = true
+		}
+		for _, want := range []string{onDisk, hashfsOnly} {
+			if !got[want] {
+				t.Errorf("%s: preOutputEntries missing %q; restat_content snapshot lost (have %v)", name, want, got)
+			}
 		}
 	}
 

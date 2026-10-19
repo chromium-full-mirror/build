@@ -223,6 +223,9 @@ func (b *Builder) runStep(ctx context.Context, step *Step) (retErr error) {
 	// BuildActionStarted is called just before remote exec calls or
 	// local execution.
 	defer b.actionFinished(ctx, step)
+	if step.cmd.Restat || step.cmd.RestatContent {
+		step.cmd.RecordPreOutputs(ctx)
+	}
 	runCmd := b.runStrategy(step)
 	err = runCmd(ctx, step)
 	clog.Infof(ctx, "done err=%v", err)

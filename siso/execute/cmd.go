@@ -261,12 +261,12 @@ type Cmd struct {
 // Clone creates a shallow clone of the Cmd suitable for use as
 // the local racer in racing mode. All public fields are shared (they are
 // read-only during execution), but private mutable state (action result,
-// stdout/stderr buffers, output entries) is freshly initialized so the
+// stdout/stderr buffers) is freshly initialized so the
 // two racers don't interfere with each other.
 func (c *Cmd) Clone() *Cmd {
 	clone := *c // shallow copy of all fields
+	clone.preOutputEntries = slices.Clone(c.preOutputEntries)
 	// Reset mutable state so the clone is independent.
-	clone.preOutputEntries = nil
 	clone.stdoutBuffer = nil
 	clone.stderrBuffer = nil
 	clone.actionDigest = digest.Digest{}

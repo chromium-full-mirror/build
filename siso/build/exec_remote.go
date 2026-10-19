@@ -38,7 +38,6 @@ func (b *Builder) execRemoteExecute(ctx context.Context, step *Step) error {
 		// However, this will lose the opportunity to cache long actions.
 		timeout = step.cmd.Timeout * 4
 	}
-	step.cmd.RecordPreOutputs(ctx)
 	clog.Infof(ctx, "exec remote execute %s", step.cmd.Desc)
 	phase := stepRemoteRun
 	var reExecDur time.Duration
