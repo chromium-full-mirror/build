@@ -7,7 +7,12 @@ package reapi_test
 import (
 	"context"
 	"errors"
+	"fmt"
+	"sync"
 	"testing"
+
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/stats"
 
 	"go.chromium.org/build/hashigo/digest"
 	rpb "go.chromium.org/build/remote-apis/build/bazel/remote/execution/v2"
@@ -162,4 +167,70 @@ func TestUploadAll_QueuedRequestsCompleteAndCloseFailsThem(t *testing.T) {
 		}
 	}
 	<-closed
+}
+
+type outPayloadHandler struct {
+	method  string
+	onSent  func()
+	release chan struct{}
+	once    sync.Once
+}
+
+type rpcMethodKey struct{}
+
+func (h *outPayloadHandler) TagRPC(ctx context.Context, info *stats.RPCTagInfo) context.Context {
+	return context.WithValue(ctx, rpcMethodKey{}, info.FullMethodName)
+}
+
+func (h *outPayloadHandler) HandleRPC(ctx context.Context, rs stats.RPCStats) {
+	if _, ok := rs.(*stats.OutPayload); ok {
+		if m, ok := ctx.Value(rpcMethodKey{}).(string); ok && m == h.method {
+			h.once.Do(func() {
+				h.onSent()
+				<-h.release
+			})
+		}
+	}
+}
+
+func (h *outPayloadHandler) TagConn(ctx context.Context, _ *stats.ConnTagInfo) context.Context {
+	return ctx
+}
+
+func (h *outPayloadHandler) HandleConn(context.Context, stats.ConnStats) {}
+
+// TestUploadAll_ServerShutdownWaitsForInFlightHandler checks that shutting
+// down a reapitest server while a detached BatchUpdateBlobs RPC is still
+// writing blobs into its CAS dir waits for the handler to finish before
+// t.TempDir's RemoveAll cleanup runs. b/575196094
+func TestUploadAll_ServerShutdownWaitsForInFlightHandler(t *testing.T) {
+	ctx := t.Context()
+	reqCtx, reqCancel := context.WithCancel(ctx)
+	defer reqCancel()
+	sh := &outPayloadHandler{
+		method:  rpb.ContentAddressableStorage_BatchUpdateBlobs_FullMethodName,
+		onSent:  reqCancel,
+		release: make(chan struct{}),
+	}
+	defer close(sh.release)
+	cl := reapitest.NewWithOption(ctx, t, &reapitest.Fake{}, reapi.Option{}, grpc.WithStatsHandler(sh))
+	t.Cleanup(func() {
+		if err := cl.Close(); err != nil {
+			t.Error(err)
+		}
+	})
+
+	ds := blob.NewStore()
+	for i := range 200 {
+		name := fmt.Sprintf("blob-%d", i)
+		ds.Set(blob.FromBytes(digest.SHA256, name, []byte(name)))
+	}
+
+	// Cancel reqCtx and hold the client goroutine inside OutPayload (after
+	// the request frame has been queued to the transport) until UploadAll
+	// observes the cancellation, so UploadAll deterministically returns
+	// context.Canceled while the server handler is writing blobs.
+	if _, err := cl.UploadAll(reqCtx, ds); !errors.Is(err, context.Canceled) {
+		t.Errorf("UploadAll(canceled)=%v; want %v", err, context.Canceled)
+	}
 }

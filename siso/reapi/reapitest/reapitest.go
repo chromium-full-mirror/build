@@ -95,7 +95,10 @@ func newServer(ctx context.Context, t *testing.T, fake *Fake) *testServer {
 	t.Logf("fake reapi at %s", s.addr)
 
 	dir := t.TempDir()
-	serv := grpc.NewServer()
+	// Wait for in-flight RPC handlers (e.g. detached CAS uploads via
+	// BatchUpdateBlobs) to return before Stop returns, so they don't race
+	// with dir's t.TempDir RemoveAll cleanup. b/575196094
+	serv := grpc.NewServer(grpc.WaitForHandlers(true))
 	s.cleanups = append(s.cleanups, func() {
 		serv.Stop()
 	})
