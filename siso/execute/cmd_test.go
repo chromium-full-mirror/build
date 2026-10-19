@@ -748,6 +748,71 @@ func TestComputeOutputEntries_DirOnlyEdgeHash(t *testing.T) {
 	}
 }
 
+func TestComputeOutputEntries_RestatContentEmptyFile(t *testing.T) {
+	emptyData := blob.FromBytes(digest.SHA256, "empty", nil)
+	preTime := time.Unix(1000, 0)
+	postTime := time.Unix(2000, 0)
+
+	for _, tc := range []struct {
+		name                             string
+		restatContentAppliesToEmptyFiles bool
+		wantChanged                      bool
+		wantModTime                      time.Time
+	}{
+		{
+			name:                             "disabled",
+			restatContentAppliesToEmptyFiles: false,
+			wantChanged:                      true,
+			wantModTime:                      postTime,
+		},
+		{
+			name:                             "enabled",
+			restatContentAppliesToEmptyFiles: true,
+			wantChanged:                      false,
+			wantModTime:                      preTime,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := &Cmd{
+				WorkDir:                          "out/Default",
+				Outputs:                          []path.Path{"out/Default/foo.stamp"},
+				RestatContent:                    true,
+				RestatContentAppliesToEmptyFiles: tc.restatContentAppliesToEmptyFiles,
+				CmdHash:                          []byte("cmd-hash"),
+				EdgeHash:                         []byte("edge-hash"),
+				preOutputEntries: []hashfs.UpdateEntry{
+					{
+						Name:    "out/Default/foo.stamp",
+						Entry:   &merkletree.Entry{Name: "out/Default/foo.stamp", Data: emptyData},
+						ModTime: preTime,
+					},
+				},
+			}
+			entries := []hashfs.UpdateEntry{
+				{
+					Name:      "out/Default/foo.stamp",
+					Entry:     &merkletree.Entry{Name: "out/Default/foo.stamp", Data: emptyData},
+					ModTime:   postTime,
+					IsChanged: true,
+				},
+			}
+			got := c.computeOutputEntries(entries, postTime, c.CmdHash)
+			if len(got) != 1 {
+				t.Fatalf("len(got)=%d; want 1", len(got))
+			}
+			if got[0].IsChanged != tc.wantChanged {
+				t.Errorf("got[0].IsChanged=%v; want %v", got[0].IsChanged, tc.wantChanged)
+			}
+			if !got[0].ModTime.Equal(tc.wantModTime) {
+				t.Errorf("got[0].ModTime=%v; want %v", got[0].ModTime, tc.wantModTime)
+			}
+			if !got[0].UpdatedTime.Equal(postTime) {
+				t.Errorf("got[0].UpdatedTime=%v; want %v", got[0].UpdatedTime, postTime)
+			}
+		})
+	}
+}
+
 // singleFileDirTree registers a REAPI tree blob (and its content blob) for a
 // directory containing exactly one file, and returns the tree digest.
 func singleFileDirTree(t *testing.T, ds *blob.Store, member, content string) digest.Digest {

@@ -42,16 +42,17 @@ var knownExperiments = map[string]string{
 	// TODO(b/374179435): remove this once BUILD_BROKEN_MISSING_OUTPUTS is removed.
 	"ignore-missing-outputs": "",
 
-	"ignore-missing-targets":       "",
-	"keep-going-handle-error":      "",
-	"keep-going-impure":            "check siso_localexec",
-	"oom-score-adj":                "",
-	"no-fallback":                  "",
-	"no-fast-deps":                 "",
-	"no-fast-deps-fallback":        "",
-	"prepare-header-only":          "",
-	"racing":                       "",
-	"simulate-remote-cache-misses": "",
+	"ignore-missing-targets":                "",
+	"keep-going-handle-error":               "",
+	"keep-going-impure":                     "check siso_localexec",
+	"oom-score-adj":                         "",
+	"no-fallback":                           "",
+	"no-fast-deps":                          "",
+	"no-fast-deps-fallback":                 "",
+	"prepare-header-only":                   "",
+	"racing":                                "",
+	"restat-content-applies-to-empty-files": "",
+	"simulate-remote-cache-misses":          "",
 
 	"two-phase-caching": "",
 }
