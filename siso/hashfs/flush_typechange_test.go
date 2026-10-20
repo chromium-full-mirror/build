@@ -241,8 +241,11 @@ func TestFlush_StaleFileAtParentDir(t *testing.T) {
 	cmdhash := []byte("cmd")
 	action := digest.Digest{Hash: "actionhash", SizeBytes: 10}
 
-	for _, member := range []string{"file", "dir"} {
+	for _, member := range []string{"file", "symlink", "dir"} {
 		t.Run(member, func(t *testing.T) {
+			if runtime.GOOS == "windows" && member == "symlink" {
+				t.Skip("no symlink on windows")
+			}
 			ctx := t.Context()
 			root := t.TempDir()
 			root, err := filepath.EvalSymlinks(root)
@@ -265,6 +268,10 @@ func TestFlush_StaleFileAtParentDir(t *testing.T) {
 			case "file":
 				if err := hfs.WriteFile(ctx, root, name, []byte("data"), false, mtime, cmdhash, nil); err != nil {
 					t.Fatalf("writefile: %v", err)
+				}
+			case "symlink":
+				if err := hfs.Symlink(ctx, root, "target", name, mtime, cmdhash, nil); err != nil {
+					t.Fatalf("symlink: %v", err)
 				}
 			case "dir":
 				if err := hfs.Update(ctx, root, []UpdateEntry{{
@@ -305,6 +312,14 @@ func TestFlush_StaleFileAtParentDir(t *testing.T) {
 				}
 				if got, want := string(b), "data"; got != want {
 					t.Errorf("on-disk content=%q; want %q", got, want)
+				}
+			case "symlink":
+				got, err := os.Readlink(p)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if want := "target"; got != want {
+					t.Errorf("on-disk symlink target=%q; want %q", got, want)
 				}
 			case "dir":
 				fi, err := os.Lstat(p)

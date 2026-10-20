@@ -2048,7 +2048,7 @@ func init() {
 	if runtime.GOOS != "windows" {
 		flushTestNames = append(flushTestNames, "subdir/hardlink", "subdir/symlink")
 	}
-	flushTestNames = append(flushTestNames, "new-entry")
+	flushTestNames = append(flushTestNames, "new-entry", "new-subdir/new-entry")
 }
 
 func setupForFlush(t *testing.T) (*hashfs.HashFS, string) {
@@ -2116,7 +2116,8 @@ func setupForFlush(t *testing.T) (*hashfs.HashFS, string) {
 
 	for _, name := range flushTestNames {
 		_, err := hashFS.Stat(ctx, dir, path.Path(name))
-		if name == "new-entry" {
+		switch name {
+		case "new-entry", "new-subdir/new-entry":
 			if err == nil {
 				t.Errorf("Stat(ctx, dir, %q)=_, %v; want error", name, err)
 			}
@@ -2137,7 +2138,7 @@ func TestMkdirFlush(t *testing.T) {
 			hashFS, dir := setupForFlush(t)
 			err := hashFS.Mkdir(ctx, dir, path.Path(name), nil, nil)
 			switch name {
-			case "empty-dir", "subdir", "new-entry":
+			case "empty-dir", "subdir", "new-entry", "new-subdir/new-entry":
 				if err != nil {
 					t.Fatalf("Mkdir(ctx, dir, %q)=%v; want nil err", name, err)
 				}
@@ -2622,7 +2623,7 @@ func TestUpdate_WithLocalFlush(t *testing.T) {
 			hashFS, dir := setupForFlush(t)
 			now := time.Now()
 			switch name {
-			case "empty-dir", "subdir", "new-entry":
+			case "empty-dir", "subdir", "new-entry", "new-subdir/new-entry":
 				return
 			}
 			data, err := blob.FromLocalFile(ctx, digest.SHA256, osfs.FileSource(filepath.Join(dir, name), -1))

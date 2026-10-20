@@ -537,6 +537,15 @@ func (e *entry) flushSymlink(ctx context.Context, fname string, osfs *osfs.OSFS)
 		if rerr := removeStaleForFlush(ctx, fname, "a stale entry", osfs); rerr != nil {
 			return rerr
 		}
+	} else {
+		// needed for SISO_EXPERIMENTS=disable-ensure-output-dirs,
+		// since the parent directory of symlink may not exist yet
+		// and symlink below would fail.
+		err = mkdirAllForFlush(ctx, filepath.Dir(fname), osfs)
+		if err != nil {
+			clog.Warningf(ctx, "flush %s: mkdir: %v", fname, err)
+			return fmt.Errorf("failed to create directory for %s: %w", fname, err)
+		}
 	}
 	e.mu.Lock()
 	defer e.mu.Unlock()
