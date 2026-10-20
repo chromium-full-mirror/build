@@ -1,6 +1,6 @@
 module go.chromium.org/build/infra/subtestanalyzer
 
-go 1.27.2
+go 1.27.3
 
 require golang.org/x/tools v0.48.0
 

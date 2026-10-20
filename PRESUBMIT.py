@@ -15,7 +15,7 @@ THIRD_PARTY_DIRS = [
 ]
 
 # Go version used on presubmit bots, which every go.mod must also require.
-GO_VERSION = "1.27.2"
+GO_VERSION = "1.27.3"
 
 # Repository-relative go.mod path -> Go version, for modules that must differ
 # from GO_VERSION. Each entry should have a comment explaining why.

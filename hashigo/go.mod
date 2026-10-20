@@ -1,6 +1,6 @@
 module go.chromium.org/build/hashigo
 
-go 1.27.2
+go 1.27.3
 
 require (
 	github.com/twmb/murmur3 v1.1.8
