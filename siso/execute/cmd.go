@@ -159,10 +159,6 @@ type Cmd struct {
 	// but update UpdateTime and IsChagned to be false.
 	RestatContent bool
 
-	// If RestatContentAppliesToEmptyFiles is true, RestatContent will also apply
-	// to empty files (they won't be considered changed if unchanged).
-	RestatContentAppliesToEmptyFiles bool
-
 	// Pure indicates whether the cmd is pure.
 	// This is analogue to pure function.
 	// For example, a cmd is pure when the inputs/outputs of the cmd are fully specified,
@@ -1436,10 +1432,7 @@ func (c *Cmd) computeOutputEntries(entries []hashfs.UpdateEntry, updatedTime tim
 		case c.RestatContent:
 			ent.IsChanged = true
 			if pent.Entry != nil && !pent.Entry.Data.IsZero() && ent.Entry != nil && !ent.Entry.Data.IsZero() {
-				// empty file (e.g. stamp file) always
-				// considered as changed unless
-				// RestatContentAppliesToEmptyFiles is true.
-				ent.IsChanged = pent.Entry.Data.Digest() != ent.Entry.Data.Digest() || (!c.RestatContentAppliesToEmptyFiles && ent.Entry.Data.Digest().SizeBytes == 0)
+				ent.IsChanged = pent.Entry.Data.Digest() != ent.Entry.Data.Digest()
 			}
 			if ent.IsChanged {
 				ent.ModTime = updatedTime
