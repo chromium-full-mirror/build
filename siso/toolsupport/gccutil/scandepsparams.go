@@ -92,6 +92,11 @@ func ExtractScanDepsParams(ctx context.Context, args, env []string, fsys fs.FS) 
 			i++
 			defineMacro(res.Defines, args[i])
 			continue
+		case "-o", "-MF", "-MT", "-MQ":
+			// these flags take output filenames, so ignore args
+			// not to use args as source/inputs.
+			i++
+			continue
 		}
 		switch {
 		case strings.HasPrefix(arg, "@"):
