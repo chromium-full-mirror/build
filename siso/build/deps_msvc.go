@@ -127,6 +127,12 @@ func (depsMSVC) DepsAfterRun(ctx context.Context, b *Builder, step *Step) ([]str
 		m[d] = true
 	}
 
+	// Replace stdout/stderr with the filtered output before checkDeps.
+	// Cmd.StderrWriter() resets the stderr buffer, so calling it after
+	// checkDeps would drop the "missing deps" messages it prints.
+	step.cmd.StdoutWriter().Write(filteredOutput)
+	step.cmd.StderrWriter().Write(nil)
+
 	err := checkDeps(ctx, b, step, deps)
 	if err != nil {
 		return nil, fmt.Errorf("error in MSVC deps check: %w", err)
@@ -134,8 +140,6 @@ func (depsMSVC) DepsAfterRun(ctx context.Context, b *Builder, step *Step) ([]str
 	dspan.SetAttr("deps", len(deps))
 	dspan.Close(nil)
 
-	step.cmd.StdoutWriter().Write(filteredOutput)
-	step.cmd.StderrWriter().Write(nil)
 	// /showIncludes doesn't include source file.
 	for _, arg := range step.cmd.Args {
 		switch ext := filepath.Ext(arg); ext {
