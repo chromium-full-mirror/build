@@ -21,6 +21,7 @@ import (
 type fakeStepDef struct {
 	actionName     string
 	command        string
+	triggerInputs  []path.Path
 	outputs        []path.Path
 	pure           bool
 	platform       map[string]string
@@ -55,7 +56,7 @@ func (f fakeStepDef) Depfile(context.Context) path.Path { return "" }
 func (f fakeStepDef) Rspfile(context.Context) path.Path { return "" }
 
 func (fakeStepDef) Inputs(context.Context) []path.Path                { return nil }
-func (fakeStepDef) TriggerInputs(context.Context) []path.Path         { return nil }
+func (f fakeStepDef) TriggerInputs(context.Context) []path.Path       { return f.triggerInputs }
 func (fakeStepDef) ExpandedTriggerInputs(context.Context) []path.Path { return nil }
 
 func (fakeStepDef) DepInputs(context.Context) (iter.Seq[path.Path], error) {

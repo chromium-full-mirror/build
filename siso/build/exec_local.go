@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"slices"
 	"time"
 
@@ -486,10 +487,17 @@ func (b *Builder) checkLocalOutputs(ctx context.Context, step *Step) error {
 
 	defOutputs := step.def.Outputs(ctx)
 
+	var dirFsys fs.FS
+	if len(step.cmd.OutputDirs) > 0 {
+		dirFsys = step.cmd.HashFS.FileSystem(ctx, step.cmd.WorkspaceRoot)
+	}
 	// Check declared outputs only; the depfile is not declared (updateDeps handles it).
-	for _, out := range step.cmd.DeclaredOutputs() {
-		_, err := step.cmd.HashFS.Stat(ctx, step.cmd.WorkspaceRoot, out)
+	for i, out := range step.cmd.DeclaredOutputs() {
+		fi, err := step.cmd.HashFS.Stat(ctx, step.cmd.WorkspaceRoot, out)
 		if err != nil {
+			b.targets.Store(string(out), targetState{
+				dirtyErr: err,
+			})
 			required := isRequiredOutput(out, defOutputs)
 			if !required {
 				clog.Warningf(ctx, "ignore missing outputs %s: %v", out, err)
@@ -502,6 +510,22 @@ func (b *Builder) checkLocalOutputs(ctx context.Context, step *Step) error {
 			}
 			return fmt.Errorf("missing local outputs %s: %w", out, err)
 		}
+		isDir := i >= len(step.cmd.Outputs)
+		mtime, walkErr := effectiveMtime(dirFsys, string(out), fi.ModTime(), isDir)
+		if walkErr != nil {
+			b.targets.Store(string(out), targetState{
+				dirtyErr: walkErr,
+			})
+			if isRequiredOutput(out, defOutputs) && !experiments.Enabled("ignore-missing-outputs", "") {
+				return fmt.Errorf("walk dir output %s: %w", out, walkErr)
+			}
+			clog.Warningf(ctx, "walk dir output %s: %v", out, walkErr)
+			continue
+		}
+		b.targets.Store(string(out), targetState{
+			mtime:   mtime,
+			changed: fi.IsChanged(),
+		})
 	}
 	// don't set result.OutputFiles etc to lazily calculate digest
 	// for outputs. b/311312613

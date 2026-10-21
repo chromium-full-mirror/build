@@ -1397,16 +1397,20 @@ func (b *Builder) outputs(ctx context.Context, step *Step) error {
 		}
 		mtime, walkErr := effectiveMtime(dirFsys, string(dir), fi.ModTime(), true)
 		if walkErr != nil {
+			b.targets.Store(targetKey, targetState{
+				dirtyErr: walkErr,
+			})
 			// Can't fully read the output: hard-fail if required, else warn.
 			if isRequiredOutput(dir, defOutputs) && !experiments.Enabled("ignore-missing-outputs", "") {
 				return fmt.Errorf("walk dir output %s: %w", dir, walkErr)
 			}
 			clog.Warningf(ctx, "walk dir output %s: %v", dir, walkErr)
+		} else {
+			b.targets.Store(targetKey, targetState{
+				mtime:   mtime,
+				changed: fi.IsChanged(),
+			})
 		}
-		b.targets.Store(targetKey, targetState{
-			mtime:   mtime,
-			changed: fi.IsChanged(),
-		})
 		// Flush only when output_local wants it (NeedFlush); otherwise
 		// consumers materialize the tree on demand. Don't test disk presence:
 		// an output_local=false dir output never lands locally.
