@@ -140,3 +140,49 @@ func TestMissingDepsFlag(t *testing.T) {
 		})
 	}
 }
+
+func TestCleandeadFlag(t *testing.T) {
+	for _, tc := range []struct {
+		name          string
+		args          []string
+		wantCleandead bool
+		wantSubtool   string
+	}{
+		{
+			name:          "default",
+			args:          []string{"-C", "out/siso"},
+			wantCleandead: false,
+			wantSubtool:   "",
+		},
+		{
+			name:          "cleandead_flag",
+			args:          []string{"-C", "out/siso", "-cleandead"},
+			wantCleandead: true,
+			wantSubtool:   "",
+		},
+		{
+			name:          "subtool_cleandead",
+			args:          []string{"-C", "out/siso", "-t", "cleandead"},
+			wantCleandead: true,
+			wantSubtool:   "cleandead",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := &Command{}
+			flagSet := flag.NewFlagSet("ninja", flag.ContinueOnError)
+			c.SetFlags(flagSet)
+			if err := flagSet.Parse(tc.args); err != nil {
+				t.Fatalf("flag parse: %v", err)
+			}
+			if err := c.resolveFlags(); err != nil {
+				t.Fatalf("resolveFlags: %v", err)
+			}
+			if c.cleandead != tc.wantCleandead {
+				t.Errorf("c.cleandead = %t, want %t", c.cleandead, tc.wantCleandead)
+			}
+			if c.subtool != tc.wantSubtool {
+				t.Errorf("c.subtool = %q, want %q", c.subtool, tc.wantSubtool)
+			}
+		})
+	}
+}

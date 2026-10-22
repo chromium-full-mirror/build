@@ -393,9 +393,12 @@ func (c *Command) resolveFlags() error {
 	if err != nil {
 		return flagError{err: err}
 	}
-	c.cleandead, err = checkSubtool(c.subtool)
+	cleandead, err := checkSubtool(c.subtool)
 	if err != nil {
 		return err
+	}
+	if cleandead {
+		c.cleandead = true
 	}
 
 	if c.ninjaJobs >= 0 {
