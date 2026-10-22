@@ -186,3 +186,22 @@ func TestCleandeadFlag(t *testing.T) {
 		})
 	}
 }
+
+func TestSetupOutputLocal_CleandeadPreservesNonLocal(t *testing.T) {
+	ctx := t.Context()
+	c := &Command{}
+	flagSet := flag.NewFlagSet("ninja", flag.ContinueOnError)
+	c.SetFlags(flagSet)
+	if err := flagSet.Parse([]string{"-C", "out/siso", "-t", "cleandead"}); err != nil {
+		t.Fatalf("flag parse: %v", err)
+	}
+	if err := c.resolveFlags(); err != nil {
+		t.Fatalf("resolveFlags: %v", err)
+	}
+	if err := c.setupOutputLocal(ctx); err != nil {
+		t.Fatalf("setupOutputLocal: %v", err)
+	}
+	if c.outputLocal(ctx, "clang_x64/obj/third_party/libwebp/cwebp/cwebp.o") {
+		t.Errorf("c.outputLocal for cleandead returned true; want false so remote-only entries in .siso_fs_state are preserved")
+	}
+}

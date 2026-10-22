@@ -541,6 +541,28 @@ func defaultCacheDir() string {
 	return filepath.Join(d, "siso")
 }
 
+// setupOutputLocal initializes c.outputLocal (and c.locallyNeeded for "graph").
+func (c *Command) setupOutputLocal(ctx context.Context) error {
+	if c.subtool == "cleandead" {
+		// Subtool "cleandead" only cleans dead generated files and does not
+		// materialize build outputs, so preserve remote-only entries in
+		// .siso_fs_state regardless of -output_local_strategy.
+		c.outputLocal = func(context.Context, string) bool { return false }
+		return nil
+	}
+	// "graph" is the one stateful strategy: the scheduler fills a set the
+	// predicate reads. Create it here so the predicate (c.outputLocal) and the
+	// scheduler's target (LocallyNeeded in the build options) are the same set.
+	if c.outputLocalStrategy == "graph" {
+		c.locallyNeeded = build.NewLocallyNeededSet()
+		c.outputLocal = c.locallyNeeded.OutputLocal
+		return nil
+	}
+	var err error
+	c.outputLocal, err = initOutputLocal(ctx, c.outputLocalStrategy)
+	return err
+}
+
 // initOutputLocal returns the predicate for the chosen output_local strategy
 // (which outputs to write to local disk vs leave in the cache). The "graph"
 // strategy is stateful (the scheduler fills a set the predicate reads) and is

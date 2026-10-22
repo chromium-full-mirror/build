@@ -478,14 +478,7 @@ func (c *Command) Run(ctx context.Context) (stats build.Stats, finalErr error) {
 	// initBuildOpts (loadNinjaFiles goroutine) and setupHashFS (main
 	// goroutine) both read it; previously they raced through
 	// c.fsopt.OutputLocal.
-	//
-	// "graph" is the one stateful strategy: the scheduler fills a set the
-	// predicate reads. Create it here so the predicate (c.outputLocal) and the
-	// scheduler's target (LocallyNeeded in the build options) are the same set.
-	if c.outputLocalStrategy == "graph" {
-		c.locallyNeeded = build.NewLocallyNeededSet()
-		c.outputLocal = c.locallyNeeded.OutputLocal
-	} else if c.outputLocal, err = initOutputLocal(ctx, c.outputLocalStrategy); err != nil {
+	if err = c.setupOutputLocal(ctx); err != nil {
 		return stats, err
 	}
 
