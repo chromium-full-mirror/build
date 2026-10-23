@@ -498,7 +498,7 @@ func (c *Command) callLocal(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if !filepath.IsLocal(command.WorkingDirectory) {
+	if command.WorkingDirectory != "" && !filepath.IsLocal(command.WorkingDirectory) {
 		return fmt.Errorf("working_directory %q is not under exec_root", command.WorkingDirectory)
 	}
 	wd := filepath.Join(root, command.WorkingDirectory)

@@ -191,7 +191,7 @@ func (rt reapiTwoPhaseCaching) matchAction(ctx context.Context, step *Step, acti
 		if !slices.Equal(step.cmd.Args, cmd.GetArguments()) {
 			return nil, nil, fmt.Errorf("arguments mismatch with %s", cmdDigest)
 		}
-		if string(step.cmd.WorkDir) != cmd.GetWorkingDirectory() {
+		if !step.cmd.WorkDir.Equal(path.New(cmd.GetWorkingDirectory())) {
 			return nil, nil, fmt.Errorf("working_dir mismatch %q != %q", step.cmd.WorkDir, cmd.GetWorkingDirectory())
 		}
 		if !slices.EqualFunc(step.cmd.EnvVars(), cmd.GetEnvironmentVariables(), func(a, b *rpb.Command_EnvironmentVariable) bool {

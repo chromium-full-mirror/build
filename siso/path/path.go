@@ -96,6 +96,19 @@ func cleanSlashPath(s string) Path {
 	return Path(cleaned)
 }
 
+// Equal reports whether two Paths are the same after canonicalization,
+// treating "" and "." as the same (root) path.
+func (p Path) Equal(other Path) bool {
+	norm := func(x Path) Path {
+		c := New(string(x))
+		if c == "." {
+			return ""
+		}
+		return c
+	}
+	return norm(p) == norm(other)
+}
+
 // FromClean converts a string that is already normalized (forward-slash,
 // cleaned) into a Path without re-cleaning. Use this instead of a bare
 // Path(s) cast to make intentional unchecked conversions grep-able.

@@ -888,6 +888,21 @@ func (c *Cmd) remoteExecutionPlatform() *rpb.Platform {
 	return platform
 }
 
+// WorkingDirectory returns working_directory for rpb.Command.
+func (c *Cmd) WorkingDirectory() string {
+	dir := c.WorkDir
+	if c.CanonicalizeDir {
+		dir = c.canonicalDir()
+	}
+	if dir == "." {
+		dir = ""
+	}
+	if c.RemoteChroot() {
+		dir = path.JoinRoot(c.WorkspaceRoot, dir)[1:]
+	}
+	return string(dir)
+}
+
 // CommandDigest constructs the digest of the command line.
 func (c *Cmd) CommandDigest(ctx context.Context, ds *blob.Store) (digest.Digest, error) {
 	var outFiles, outDirs []string
@@ -916,17 +931,10 @@ func (c *Cmd) CommandDigest(ctx context.Context, ds *blob.Store) (digest.Digest,
 	if err != nil {
 		return digest.Digest{}, err
 	}
-	dir := c.WorkDir
-	if c.CanonicalizeDir {
-		dir = c.canonicalDir()
-	}
-	if c.RemoteChroot() {
-		dir = path.JoinRoot(c.WorkspaceRoot, dir)[1:]
-	}
 	// out files are cwd relative.
 	command := &rpb.Command{
 		Arguments:        args,
-		WorkingDirectory: string(dir),
+		WorkingDirectory: c.WorkingDirectory(),
 		// TODO(b/273152496): `Platform` in `Command` is deprecated. should specify it in `Action`.
 		// https://github.com/bazelbuild/remote-apis/blob/55153ba61dcf6277849562a30bca9fa3906ad9a0/build/bazel/remote/execution/v2/remote_execution.proto#L661-L664
 		// https://github.com/bazelbuild/remote-apis/blob/55153ba61dcf6277849562a30bca9fa3906ad9a0/build/bazel/remote/execution/v2/remote_execution.proto#L519-L521

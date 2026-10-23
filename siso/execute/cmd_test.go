@@ -15,6 +15,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
+	"google.golang.org/protobuf/proto"
 
 	"go.chromium.org/build/hashigo/digest"
 	rpb "go.chromium.org/build/remote-apis/build/bazel/remote/execution/v2"
@@ -1165,5 +1166,272 @@ func TestEnvVars(t *testing.T) {
 	}
 	if diff := cmp.Diff(want, got, cmpopts.IgnoreUnexported(rpb.Command_EnvironmentVariable{})); diff != "" {
 		t.Errorf("EnvVars() diff -want +got:\n%s", diff)
+	}
+}
+
+func TestCommandDigest_DotWorkDir(t *testing.T) {
+	ctx := t.Context()
+	hashFS, err := hashfs.New(ctx, hashfs.Option{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer hashFS.Close(ctx)
+
+	// WorkDir "." is what a build rooted at the workspace root produces.
+	// Two phase caching disables CanonicalizeDir, and CommandDigest must
+	// still emit working_directory "" so the digest matches non-2PC builds.
+	cmdDotCanon := &Cmd{
+		Args:            []string{"cc", "-c", "foo.c"},
+		WorkDir:         ".",
+		CanonicalizeDir: true,
+		HashFS:          hashFS,
+	}
+	cmdDotNoCanon := &Cmd{
+		Args:            []string{"cc", "-c", "foo.c"},
+		WorkDir:         ".",
+		CanonicalizeDir: false,
+		HashFS:          hashFS,
+	}
+	cmdEmptyNoCanon := &Cmd{
+		Args:            []string{"cc", "-c", "foo.c"},
+		WorkDir:         "",
+		CanonicalizeDir: false,
+		HashFS:          hashFS,
+	}
+
+	ds := blob.NewStore()
+	d1, err := cmdDotCanon.CommandDigest(ctx, ds)
+	if err != nil {
+		t.Fatal(err)
+	}
+	d2, err := cmdDotNoCanon.CommandDigest(ctx, ds)
+	if err != nil {
+		t.Fatal(err)
+	}
+	d3, err := cmdEmptyNoCanon.CommandDigest(ctx, ds)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if d1 != d2 {
+		t.Errorf("CommandDigest mismatch for dot WorkDir: CanonicalizeDir=true got %s, CanonicalizeDir=false got %s", d1, d2)
+	}
+	if d1 != d3 {
+		t.Errorf("CommandDigest mismatch: WorkDir=\".\" got %s, WorkDir=\"\" got %s", d1, d3)
+	}
+
+	for _, tc := range []struct {
+		name   string
+		digest digest.Digest
+	}{
+		{"dot-canon", d1},
+		{"dot-nocanon", d2},
+		{"empty-nocanon", d3},
+	} {
+		data, ok := ds.Get(tc.digest)
+		if !ok {
+			t.Fatalf("%s: digest not found in blob store: %s", tc.name, tc.digest)
+		}
+		b, err := blob.DataToBytes(ctx, data)
+		if err != nil {
+			t.Fatalf("%s: failed to read blob: %v", tc.name, err)
+		}
+		cmd := &rpb.Command{}
+		if err := proto.Unmarshal(b, cmd); err != nil {
+			t.Fatalf("%s: failed to unmarshal command: %v", tc.name, err)
+		}
+		if cmd.WorkingDirectory != "" {
+			t.Errorf("%s: WorkingDirectory = %q; want %q", tc.name, cmd.WorkingDirectory, "")
+		}
+	}
+}
+
+func TestCommandDigest_NonRootWorkDir(t *testing.T) {
+	ctx := t.Context()
+	hashFS, err := hashfs.New(ctx, hashfs.Option{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer hashFS.Close(ctx)
+
+	cmdCanon := &Cmd{
+		Args:            []string{"cc", "-c", "foo.c"},
+		WorkDir:         "out/Default",
+		CanonicalizeDir: true,
+		HashFS:          hashFS,
+	}
+	cmdNoCanon := &Cmd{
+		Args:            []string{"cc", "-c", "foo.c"},
+		WorkDir:         "out/Default",
+		CanonicalizeDir: false,
+		HashFS:          hashFS,
+	}
+
+	ds := blob.NewStore()
+	dCanon, err := cmdCanon.CommandDigest(ctx, ds)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dNoCanon, err := cmdNoCanon.CommandDigest(ctx, ds)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dCanon == dNoCanon {
+		t.Errorf("expected different digests for out/Default with CanonicalizeDir true vs false")
+	}
+
+	dataCanon, ok := ds.Get(dCanon)
+	if !ok {
+		t.Fatalf("dCanon not found in blob store")
+	}
+	bCanon, err := blob.DataToBytes(ctx, dataCanon)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cCanon := &rpb.Command{}
+	if err := proto.Unmarshal(bCanon, cCanon); err != nil {
+		t.Fatal(err)
+	}
+	if cCanon.WorkingDirectory != "out/x" {
+		t.Errorf("CanonicalizeDir=true WorkingDirectory = %q; want %q", cCanon.WorkingDirectory, "out/x")
+	}
+
+	dataNoCanon, ok := ds.Get(dNoCanon)
+	if !ok {
+		t.Fatalf("dNoCanon not found in blob store")
+	}
+	bNoCanon, err := blob.DataToBytes(ctx, dataNoCanon)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cNoCanon := &rpb.Command{}
+	if err := proto.Unmarshal(bNoCanon, cNoCanon); err != nil {
+		t.Fatal(err)
+	}
+	if cNoCanon.WorkingDirectory != "out/Default" {
+		t.Errorf("CanonicalizeDir=false WorkingDirectory = %q; want %q", cNoCanon.WorkingDirectory, "out/Default")
+	}
+}
+
+func TestCommandDigest_RemoteChrootDotWorkDir(t *testing.T) {
+	ctx := t.Context()
+	hashFS, err := hashfs.New(ctx, hashfs.Option{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer hashFS.Close(ctx)
+
+	cmdChrootDot := &Cmd{
+		Args:            []string{"cc", "-c", "foo.c"},
+		WorkspaceRoot:   "/workspace",
+		WorkDir:         ".",
+		CanonicalizeDir: false,
+		HashFS:          hashFS,
+		Platform:        map[string]string{"dockerChrootPath": "."},
+	}
+	cmdChrootEmpty := &Cmd{
+		Args:            []string{"cc", "-c", "foo.c"},
+		WorkspaceRoot:   "/workspace",
+		WorkDir:         "",
+		CanonicalizeDir: true,
+		HashFS:          hashFS,
+		Platform:        map[string]string{"dockerChrootPath": "."},
+	}
+
+	ds := blob.NewStore()
+	dDot, err := cmdChrootDot.CommandDigest(ctx, ds)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dEmpty, err := cmdChrootEmpty.CommandDigest(ctx, ds)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dDot != dEmpty {
+		t.Errorf("chroot digest mismatch: %s != %s", dDot, dEmpty)
+	}
+
+	dataDot, ok := ds.Get(dDot)
+	if !ok {
+		t.Fatalf("dDot not found in blob store")
+	}
+	b, err := blob.DataToBytes(ctx, dataDot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd := &rpb.Command{}
+	if err := proto.Unmarshal(b, cmd); err != nil {
+		t.Fatal(err)
+	}
+	if cmd.WorkingDirectory != "workspace" {
+		t.Errorf("chroot WorkingDirectory = %q; want %q", cmd.WorkingDirectory, "workspace")
+	}
+}
+
+func TestCmdWorkingDirectory(t *testing.T) {
+	for _, tc := range []struct {
+		name            string
+		workDir         path.Path
+		canonicalizeDir bool
+		workspaceRoot   string
+		platform        map[string]string
+		want            string
+	}{
+		{
+			name:            "dot_canon_true",
+			workDir:         ".",
+			canonicalizeDir: true,
+			want:            "",
+		},
+		{
+			name:            "dot_canon_false",
+			workDir:         ".",
+			canonicalizeDir: false,
+			want:            "",
+		},
+		{
+			name:            "empty",
+			workDir:         "",
+			canonicalizeDir: false,
+			want:            "",
+		},
+		{
+			name:            "empty_canon_true",
+			workDir:         "",
+			canonicalizeDir: true,
+			want:            "",
+		},
+		{
+			name:            "out_default_canon_true",
+			workDir:         "out/Default",
+			canonicalizeDir: true,
+			want:            "out/x",
+		},
+		{
+			name:            "out_default_canon_false",
+			workDir:         "out/Default",
+			canonicalizeDir: false,
+			want:            "out/Default",
+		},
+		{
+			name:          "remote_chroot",
+			workDir:       ".",
+			workspaceRoot: "/workspace",
+			platform:      map[string]string{"dockerChrootPath": "."},
+			want:          "workspace",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cmd := &Cmd{
+				WorkDir:         tc.workDir,
+				CanonicalizeDir: tc.canonicalizeDir,
+				WorkspaceRoot:   tc.workspaceRoot,
+				Platform:        tc.platform,
+			}
+			got := cmd.WorkingDirectory()
+			if got != tc.want {
+				t.Errorf("cmd.WorkingDirectory() = %q, want %q", got, tc.want)
+			}
+		})
 	}
 }

@@ -59,6 +59,28 @@ func TestNewIdempotent(t *testing.T) {
 	}
 }
 
+func TestPathEqual(t *testing.T) {
+	tests := []struct {
+		p1, p2 Path
+		want   bool
+	}{
+		{"", "", true},
+		{".", "", true},
+		{".", ".", true},
+		{"out", "out", true},
+		{"out/siso", "out/siso/", true},
+		{"out", "out/siso", false},
+		{".", "out", false},
+		{"", "out", false},
+	}
+	for _, tt := range tests {
+		got := tt.p1.Equal(tt.p2)
+		if got != tt.want {
+			t.Errorf("(%q).Equal(%q) = %t, want %t", tt.p1, tt.p2, got, tt.want)
+		}
+	}
+}
+
 func TestJoin(t *testing.T) {
 	tests := []struct {
 		base Path
