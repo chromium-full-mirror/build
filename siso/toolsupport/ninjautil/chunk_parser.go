@@ -88,11 +88,16 @@ type chunk struct {
 
 // splitIntoChunks splits buf into chunks.
 func splitIntoChunks(ctx context.Context, buf []byte) []chunk {
+	if len(buf) == 0 {
+		return nil
+	}
 	defer trace.StartRegion(ctx, "ninja.split").End()
 	chunkCount := runtime.GOMAXPROCS(0)
 	chunkSize := max(1024*1024, len(buf)/chunkCount+1)
 
-	chunks := make([]chunk, 0, chunkCount)
+	// Most subninja files fit in one chunk. Avoid reserving one slot per CPU
+	// for every file.
+	chunks := make([]chunk, 0, (len(buf)-1)/chunkSize+1)
 	start := 0
 	for start < len(buf) {
 		next := min(start+chunkSize, len(buf))

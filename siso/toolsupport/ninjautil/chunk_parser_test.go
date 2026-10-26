@@ -5,10 +5,21 @@
 package ninjautil
 
 import (
+	"runtime"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
 )
+
+func TestSplitIntoChunksCapacity(t *testing.T) {
+	old := runtime.GOMAXPROCS(4)
+	defer runtime.GOMAXPROCS(old)
+
+	chunks := splitIntoChunks(t.Context(), []byte("rule cc\n"))
+	if got, want := cap(chunks), 1; got != want {
+		t.Errorf("cap(splitIntoChunks(small manifest)) = %d, want %d", got, want)
+	}
+}
 
 // TestCompactBuildStatements_Empty verifies the (nil, nil) early return.
 func TestCompactBuildStatements_Empty(t *testing.T) {
