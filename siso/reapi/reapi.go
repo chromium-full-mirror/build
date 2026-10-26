@@ -385,14 +385,26 @@ type Client struct {
 //go:embed service_config.json
 var serviceConfig string
 
+// keepaliveDialOptions returns the dial options that enable client keepalive
+// with params, or none if every parameter is zero, which disables keepalive.
+// grpc.WithKeepaliveParams can't express that: grpc-go raises a zero interval
+// to its 10 s minimum.
+func keepaliveDialOptions(params keepalive.ClientParameters) []grpc.DialOption {
+	if params.Time == 0 && params.Timeout == 0 && !params.PermitWithoutStream {
+		return nil
+	}
+	return []grpc.DialOption{grpc.WithKeepaliveParams(params)}
+}
+
 func DialOptions(keepAliveParams keepalive.ClientParameters) []grpc.DialOption {
 	// TODO(b/273639326): handle auth failures gracefully.
 
 	// https://github.com/grpc/grpc/blob/c16338581dba2b054bf52484266b79e6934bbc1c/doc/service_config.md
 	// https://github.com/grpc/proposal/blob/9f993b522267ed297fe54c9ee32cfc13699166c7/A6-client-retries.md
 	// timeout=300s may cause deadline exceeded to fetch large *.so file?
-	dopts := append([]grpc.DialOption(nil),
-		grpc.WithKeepaliveParams(keepAliveParams),
+	var dopts []grpc.DialOption
+	dopts = append(dopts, keepaliveDialOptions(keepAliveParams)...)
+	dopts = append(dopts,
 		grpc.WithDisableServiceConfig(),
 		grpc.WithDefaultServiceConfig(serviceConfig),
 		// active streams and per-RPC stages into bytestream.* histograms

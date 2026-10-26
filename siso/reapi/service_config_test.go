@@ -9,6 +9,7 @@ import (
 	"net"
 	"sync"
 	"testing"
+	"time"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -19,6 +20,16 @@ import (
 
 	rpb "go.chromium.org/build/remote-apis/build/bazel/remote/execution/v2"
 )
+
+func TestDialOptionsOmitZeroKeepalive(t *testing.T) {
+	if got, want := len(keepaliveDialOptions(keepalive.ClientParameters{})), 0; got != want {
+		t.Errorf("len(keepaliveDialOptions(zero keepalive)) = %d; want %d", got, want)
+	}
+	params := keepalive.ClientParameters{Time: 30 * time.Second, Timeout: 20 * time.Second}
+	if got, want := len(keepaliveDialOptions(params)), 1; got != want {
+		t.Errorf("len(keepaliveDialOptions(configured keepalive)) = %d; want %d", got, want)
+	}
+}
 
 // flakyActionCache counts GetActionResult attempts and lets the test decide
 // what each attempt returns. Retries are transparent to the client, so the
