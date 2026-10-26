@@ -166,3 +166,67 @@ func TestStepMetrics(t *testing.T) {
 		t.Errorf("s.Metrics()=%+v; want=%+v", got, m)
 	}
 }
+
+func TestStepReadyToRunRecordsLastTwoInputs(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		releases []string // releasing step per wait, in completion order
+		wantPrev string
+		want2    string
+	}{
+		{
+			name:     "NoInputs",
+			releases: nil,
+		},
+		{
+			name:     "SingleInput",
+			releases: []string{"a"},
+			wantPrev: "a",
+		},
+		{
+			name:     "ThreeInputs",
+			releases: []string{"a", "b", "c"},
+			wantPrev: "c",
+			want2:    "b",
+		},
+		{
+			name:     "SameStepReleasesLastTwoWaits",
+			releases: []string{"a", "b", "b"},
+			wantPrev: "b",
+			want2:    "a",
+		},
+		{
+			// A release forwarded from a skipped root has no step ID; it
+			// still counts as an input, so prev2 reports it as unknown.
+			name:     "ForwardedRootRelease",
+			releases: []string{"a", "", "b"},
+			wantPrev: "b",
+			want2:    "",
+		},
+		{
+			name:     "ForwardedRootReleaseLast",
+			releases: []string{"a", ""},
+			wantPrev: "",
+			want2:    "a",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := NewStepForTest(1, fakeStepDef{})
+			s.nwaits = len(tc.releases)
+			if len(tc.releases) == 0 {
+				if !s.ReadyToRun("", Target(0)) {
+					t.Fatal("ReadyToRun with no waits = false; want true")
+				}
+			}
+			for i, prev := range tc.releases {
+				got := s.ReadyToRun(prev, Target(i+1))
+				if want := i == len(tc.releases)-1; got != want {
+					t.Fatalf("ReadyToRun(%q) #%d = %t; want %t", prev, i, got, want)
+				}
+			}
+			if s.prevStepIDs != [2]string{tc.wantPrev, tc.want2} {
+				t.Errorf("prevStepIDs=%q; want [%q %q]", s.prevStepIDs, tc.wantPrev, tc.want2)
+			}
+		})
+	}
+}

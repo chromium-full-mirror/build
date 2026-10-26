@@ -165,8 +165,10 @@ type Step struct {
 
 	cmd *execute.Cmd
 
-	readyTime     time.Time
-	prevStepID    string
+	readyTime time.Time
+	// prevStepIDs[0] is the step that most recently released one of this
+	// step's inputs, prevStepIDs[1] the distinct one before it.
+	prevStepIDs   [2]string
 	queueTime     time.Time
 	queueSize     int
 	queueDuration time.Duration
@@ -361,10 +363,13 @@ func (s *Step) ReadyToRun(prev string, out Target) bool {
 	if out != 0 {
 		s.nwaits--
 	}
+	if prev != s.prevStepIDs[0] {
+		s.prevStepIDs[1] = s.prevStepIDs[0]
+		s.prevStepIDs[0] = prev
+	}
 	ready := s.nwaits == 0
 	if ready {
 		s.readyTime = time.Now()
-		s.prevStepID = prev
 	}
 	return ready
 }

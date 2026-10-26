@@ -288,7 +288,7 @@ func stepStartLog(ctx context.Context, logger *clog.Logger, step *Step, descript
 
 func (b *Builder) stepSpanInit(ctx context.Context, span *trace.Span, step *Step, description, spanName string) {
 	span.SetAttr("ready_time", time.Since(step.readyTime).Milliseconds())
-	span.SetAttr("prev", step.prevStepID)
+	span.SetAttr("prev", step.prevStepIDs[0])
 	span.SetAttr("queue_time", time.Since(step.queueTime).Milliseconds())
 	span.SetAttr("queue_size", step.queueSize)
 	span.SetAttr("build_id", b.id)

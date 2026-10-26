@@ -978,7 +978,7 @@ func (p *plan) completeStep(ctx context.Context, step *Step) {
 		for _, s := range p.targets[out].waits {
 			prevProcessed := step.String()
 			if step.metrics.skip || step.def.IsPhony() {
-				prevProcessed = step.prevStepID
+				prevProcessed = step.prevStepIDs[0]
 			}
 			if s.ReadyToRun(prevProcessed, out) {
 				nready++

@@ -132,6 +132,12 @@ type StepMetric struct {
 	// the output that is used as part of this step's inputs.
 	PrevStepID string `json:"prev,omitempty"`
 
+	// The ID of the step that updated one of this step's inputs second to
+	// last, i.e. the step that would have released this step had the
+	// "previous" step finished earlier. Empty when at most one distinct
+	// step released this step's inputs.
+	Prev2StepID string `json:"prev2,omitempty"`
+
 	// Ready, Start and Duration are measured by Siso's scheduler,
 	// independently of the measurements provided by the execution
 	// strategies (see RunTime, QueueTime, ExecTime below).
@@ -320,7 +326,8 @@ func (m *StepMetric) init(ctx context.Context, b *Builder, step *Step, stepStart
 	m.Rule = step.def.RuleName()
 	m.Action = step.def.ActionName()
 	m.GNTarget = step.def.Binding("gn_target")
-	m.PrevStepID = step.prevStepID
+	m.PrevStepID = step.prevStepIDs[0]
+	m.Prev2StepID = step.prevStepIDs[1]
 	m.Ready = IntervalMetric(step.readyTime.Sub(b.start))
 	m.Start = IntervalMetric(stepStart.Sub(step.readyTime))
 }
