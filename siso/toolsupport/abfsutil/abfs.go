@@ -95,6 +95,15 @@ type setRBEDigestsReq struct {
 	Digests []rbePathStat `json:"digests"`
 }
 
+// InDir reports whether fname is within the abfs mount directory.
+func (c *Client) InDir(fname string) bool {
+	if c == nil || c.dir == "" {
+		return false
+	}
+	relpath, err := filepath.Rel(c.dir, fname)
+	return err == nil && filepath.IsLocal(relpath)
+}
+
 // Digest returns digest of the file.
 // file is absolute path.
 func (c *Client) Digest(ctx context.Context, fname string) (digest.Digest, error) {

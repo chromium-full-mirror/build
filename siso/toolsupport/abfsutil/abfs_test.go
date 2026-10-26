@@ -905,3 +905,24 @@ func TestBatchDigests_NetworkError(t *testing.T) {
 		t.Fatalf("BatchDigests() = nil, want network error")
 	}
 }
+
+func TestClient_InDir(t *testing.T) {
+	ctx := t.Context()
+	rootDir := filepath.Join(t.TempDir(), "src")
+	client, err := New(ctx, "http://dummy", rootDir)
+	if err != nil {
+		t.Fatalf("abfsutil.New() = %v", err)
+	}
+	defer client.Close()
+
+	var nilClient *Client
+	if nilClient.InDir(filepath.Join(rootDir, "foo.h")) {
+		t.Errorf("nilClient.InDir() = true, want false")
+	}
+	if !client.InDir(filepath.Join(rootDir, "out/Default/foo.h")) {
+		t.Errorf("client.InDir(inside) = false, want true")
+	}
+	if client.InDir(filepath.Join(rootDir, "../outside.h")) {
+		t.Errorf("client.InDir(outside) = true, want false")
+	}
+}

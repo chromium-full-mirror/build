@@ -193,9 +193,11 @@ func New(ctx context.Context, opt Option) (*HashFS, error) {
 
 		digester: digester{
 			fn:        opt.DigestFunction,
+			abfs:      opt.ABFS,
 			quitEarly: opt.DeferDigest,
 			sema:      digestSema,
 			q:         make(chan digestReq, 1000),
+			wake:      make(chan struct{}, 1),
 			quit:      make(chan struct{}),
 			done:      make(chan struct{}),
 		},
@@ -1691,10 +1693,10 @@ func (hfs *HashFS) resolveInputEntries(ctx context.Context, root string, inputs 
 		batch.start(ctx, string(fname), ee)
 	}
 	_, wspan := trace.NewSpan(ctx, "fs-entries-wait")
-	nwait, err := batch.wait(ctx)
+	nwait := batch.wait(ctx)
 	wspan.SetAttr("waits", nwait)
 	wspan.Close(nil)
-	return ents, err
+	return ents, nil
 }
 
 // buildMerkletreeEntries converts resolved entries to merkletree format,

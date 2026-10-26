@@ -29,7 +29,7 @@ func TestDigestSemaphore(t *testing.T) {
 		want int
 	}{
 		{name: "local", want: initGOMAXPROCS},
-		{name: "abfs", opt: hashfs.Option{ABFS: abfs}, want: 1024},
+		{name: "abfs", opt: hashfs.Option{ABFS: abfs}, want: min(16, initGOMAXPROCS)},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			hfs, err := hashfs.New(ctx, tc.opt)
