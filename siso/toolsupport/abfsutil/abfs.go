@@ -16,8 +16,11 @@ import (
 	"net/http"
 	"net/url"
 	"path/filepath"
+	"runtime"
 	"strings"
+	"sync"
 	"syscall"
+	"time"
 
 	log "github.com/golang/glog"
 
@@ -27,20 +30,46 @@ import (
 	"go.chromium.org/build/siso/reapi/merkletree"
 )
 
+const (
+	defaultBatchDelay = 1 * time.Millisecond
+	maxBatchSize      = 16
+)
+
 // Client is abfs client.
 type Client struct {
 	endpoint string
 	dir      string
 	client   *http.Client
+
+	mu         sync.Mutex
+	batchDelay time.Duration
+
+	wg         sync.WaitGroup
+	regCh      chan registerReq
+	regWorkers int
+	regDone    func()
+}
+
+type registerItem struct {
+	stat rbePathStat
+	ent  *Registration
+}
+
+type registerReq struct {
+	items []registerItem
+	resp  chan error
 }
 
 // New creates new abfs client mounted at dir.
 func New(ctx context.Context, endpoint, dir string) (*Client, error) {
+	numCPU := runtime.GOMAXPROCS(0)
 	tr := &http.Transport{
 		// no proxy
 		Proxy: func(*http.Request) (*url.URL, error) {
 			return nil, nil
 		},
+		MaxIdleConns:        numCPU,
+		MaxIdleConnsPerHost: numCPU,
 	}
 	endpoint = strings.TrimSuffix(endpoint, "/")
 	sockPath, ok := strings.CutPrefix(endpoint, "unix://")
@@ -55,17 +84,27 @@ func New(ctx context.Context, endpoint, dir string) (*Client, error) {
 		// go's http requires http or https scheme.
 		endpoint = "http://unix"
 	}
-	return &Client{
+	c := &Client{
 		endpoint: endpoint,
 		dir:      dir,
 		client: &http.Client{
 			Transport: tr,
 		},
-	}, nil
+		batchDelay: defaultBatchDelay,
+		regCh:      make(chan registerReq, numCPU),
+		regWorkers: numCPU,
+	}
+	c.registerBatcher(ctx)
+	return c, nil
 }
 
 // Close closes client to abfs server.
 func (c *Client) Close() error {
+	if c == nil || c.regDone == nil {
+		return nil
+	}
+	c.regDone()
+	c.wg.Wait()
 	return nil
 }
 
@@ -215,11 +254,10 @@ func (c *Client) BatchDigests(ctx context.Context, fnames []string) ([]digest.Di
 
 // RegisterFiles registers entries under dir.
 func (c *Client) RegisterFiles(ctx context.Context, dir string, entries []*Registration) error {
-	if c == nil || c.endpoint == "" || c.dir == "" || c.client == nil {
+	if c == nil || c.endpoint == "" || c.dir == "" || c.client == nil || c.regCh == nil {
 		return errors.ErrUnsupported
 	}
-	m := make(map[string]*Registration)
-	var reqMsg setRBEDigestsReq
+	items := make([]registerItem, 0, len(entries))
 	for _, ent := range entries {
 		if ent == nil {
 			continue
@@ -240,7 +278,6 @@ func (c *Client) RegisterFiles(ctx context.Context, dir string, entries []*Regis
 			continue
 		}
 		relpath = filepath.ToSlash(relpath)
-		m[relpath] = ent
 		d := ent.Entry.Data.Digest()
 		if d.IsZero() {
 			ent.Err = fmt.Errorf("abfs: empty digest: %q", ent.Entry.Name)
@@ -251,12 +288,121 @@ func (c *Client) RegisterFiles(ctx context.Context, dir string, entries []*Regis
 		if ent.Entry.IsExecutable {
 			mode |= 0o111
 		}
-		reqMsg.Digests = append(reqMsg.Digests, rbePathStat{
-			Path:   relpath,
-			SHA256: d.Hash,
-			Size:   d.SizeBytes,
-			Mode:   uint32(mode),
+		items = append(items, registerItem{
+			stat: rbePathStat{
+				Path:   relpath,
+				SHA256: d.Hash,
+				Size:   d.SizeBytes,
+				Mode:   uint32(mode),
+			},
+			ent: ent,
 		})
+	}
+	return c.registerFiles(ctx, items)
+}
+
+func (c *Client) registerFiles(ctx context.Context, items []registerItem) error {
+	if len(items) == 0 {
+		return nil
+	}
+	resp := make(chan error, 1)
+	select {
+	case <-ctx.Done():
+		return context.Cause(ctx)
+	case c.regCh <- registerReq{items: items, resp: resp}:
+	}
+	select {
+	case <-ctx.Done():
+		return context.Cause(ctx)
+	case err := <-resp:
+		return err
+	}
+}
+
+func (c *Client) registerBatcher(ctx context.Context) {
+	ctx, cancel := context.WithCancel(context.WithoutCancel(ctx))
+	c.regDone = cancel
+	type batch struct {
+		items []registerItem
+		resps []chan error
+	}
+	ch := make(chan batch, 1000)
+	c.wg.Go(func() {
+		for {
+			var items []registerItem
+			var resps []chan error
+			select {
+			case <-ctx.Done():
+				return
+			case req := <-c.regCh:
+				items = append(items, req.items...)
+				resps = append(resps, req.resp)
+			}
+			if len(items) >= maxBatchSize {
+				select {
+				case <-ctx.Done():
+					for _, resp := range resps {
+						resp <- context.Cause(ctx)
+					}
+					return
+				case ch <- batch{items: items, resps: resps}:
+				}
+				continue
+			}
+			c.mu.Lock()
+			delay := c.batchDelay
+			c.mu.Unlock()
+			timer := time.After(delay)
+		batchLoop:
+			for len(items) < maxBatchSize {
+				select {
+				case <-ctx.Done():
+					for _, resp := range resps {
+						resp <- context.Cause(ctx)
+					}
+					return
+				case <-timer:
+					break batchLoop
+				case req := <-c.regCh:
+					items = append(items, req.items...)
+					resps = append(resps, req.resp)
+				}
+			}
+			select {
+			case <-ctx.Done():
+				for _, resp := range resps {
+					resp <- context.Cause(ctx)
+				}
+				return
+			case ch <- batch{items: items, resps: resps}:
+			}
+		}
+
+	})
+	for range c.regWorkers {
+		c.wg.Go(func() {
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case b := <-ch:
+					err := c.sendRegisterBatch(ctx, b.items, len(b.resps))
+					for _, resp := range b.resps {
+						resp <- err
+					}
+				}
+			}
+		})
+	}
+}
+
+func (c *Client) sendRegisterBatch(ctx context.Context, items []registerItem, numCalls int) error {
+	started := time.Now()
+	reqMsg := setRBEDigestsReq{
+		Digests: make([]rbePathStat, len(items)),
+	}
+	for i, item := range items {
+		reqMsg.Digests[i] = item.stat
 	}
 	reqBody, err := json.Marshal(reqMsg)
 	if err != nil {
@@ -269,6 +415,7 @@ func (c *Client) RegisterFiles(ctx context.Context, dir string, entries []*Regis
 	req.Header.Add("Content-Type", "application/json")
 	resp, err := c.client.Do(req)
 	if err != nil {
+		clog.Warningf(ctx, "abfs set-rbe-digests %d files (%d calls) in %v: %v", len(items), numCalls, time.Since(started), err)
 		return fmt.Errorf("abfs: set digests: post request: %w", err)
 	}
 	defer resp.Body.Close()
@@ -281,6 +428,7 @@ func (c *Client) RegisterFiles(ctx context.Context, dir string, entries []*Regis
 	default:
 		return fmt.Errorf("abfs: set digests: error %d: %s", resp.StatusCode, body)
 	}
+	clog.Infof(ctx, "abfs set-rbe-digests %d files (%d calls) in %v", len(items), numCalls, time.Since(started))
 	if len(body) == 0 {
 		return nil
 	}
@@ -289,13 +437,20 @@ func (c *Client) RegisterFiles(ctx context.Context, dir string, entries []*Regis
 	if err != nil {
 		return fmt.Errorf("abfs: set digests: parse resp %q: %w", body, err)
 	}
-	for k, v := range result {
-		ent, ok := m[k]
-		if !ok {
-			clog.Warningf(ctx, "abfs: set digests: resp unknown path %q: %s", k, v)
-			continue
+	if len(result) == 0 {
+		return nil
+	}
+	matched := make(map[string]bool, len(result))
+	for _, item := range items {
+		if v, ok := result[item.stat.Path]; ok {
+			item.ent.Err = errors.New(v)
+			matched[item.stat.Path] = true
 		}
-		ent.Err = errors.New(v)
+	}
+	for k, v := range result {
+		if !matched[k] {
+			clog.Warningf(ctx, "abfs: set digests: resp unknown path %q: %s", k, v)
+		}
 	}
 	return nil
 }

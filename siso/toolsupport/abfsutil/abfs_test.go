@@ -14,8 +14,11 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"sync"
+	"sync/atomic"
 	"syscall"
 	"testing"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
 
@@ -924,5 +927,84 @@ func TestClient_InDir(t *testing.T) {
 	}
 	if client.InDir(filepath.Join(rootDir, "../outside.h")) {
 		t.Errorf("client.InDir(outside) = true, want false")
+	}
+}
+
+func TestRegisterFiles_Batching(t *testing.T) {
+	ctx := t.Context()
+	rootDir := "/src"
+	buildDir := filepath.Join(rootDir, "out/Default")
+
+	var rpcCount atomic.Int32
+	var totalDigests atomic.Int32
+
+	endpoint := newTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		rpcCount.Add(1)
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		var req setRBEDigestsReq
+		if err := json.Unmarshal(body, &req); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		totalDigests.Add(int32(len(req.Digests)))
+		resp := make(map[string]string)
+		for _, d := range req.Digests {
+			if d.Path == "out/Default/gen/file_3.h" {
+				resp[d.Path] = "failed on file 3"
+			}
+		}
+		respBody, _ := json.Marshal(resp)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write(respBody)
+	}))
+
+	client, err := New(ctx, endpoint, rootDir)
+	if err != nil {
+		t.Fatalf("abfsutil.New() = %v", err)
+	}
+	client.mu.Lock()
+	client.batchDelay = 20 * time.Millisecond
+	client.mu.Unlock()
+	defer client.Close()
+
+	const numCallers = 10
+	regs := make([]*Registration, numCallers)
+	var wg sync.WaitGroup
+	for i := range numCallers {
+		regs[i] = &Registration{
+			Entry: merkletree.Entry{
+				Name: path.Path(fmt.Sprintf("gen/file_%d.h", i)),
+				Data: blob.NewData(nil, digest.Digest{Hash: fmt.Sprintf("hash_%d", i), SizeBytes: int64(i + 1)}),
+			},
+		}
+		wg.Add(1)
+		go func(ent *Registration) {
+			defer wg.Done()
+			if err := client.RegisterFiles(ctx, buildDir, []*Registration{ent}); err != nil {
+				t.Errorf("RegisterFiles() = %v, want nil", err)
+			}
+		}(regs[i])
+	}
+	wg.Wait()
+
+	if got := rpcCount.Load(); got != 1 {
+		t.Errorf("rpcCount = %d, want 1", got)
+	}
+	if got := totalDigests.Load(); got != numCallers {
+		t.Errorf("totalDigests = %d, want %d", got, numCallers)
+	}
+	for i, reg := range regs {
+		if i == 3 {
+			if reg.Err == nil || reg.Err.Error() != "failed on file 3" {
+				t.Errorf("regs[3].Err = %v, want %q", reg.Err, "failed on file 3")
+			}
+		} else if reg.Err != nil {
+			t.Errorf("regs[%d].Err = %v, want nil", i, reg.Err)
+		}
 	}
 }

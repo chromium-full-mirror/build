@@ -363,6 +363,18 @@ func (hfs *HashFS) shouldSkipSave() bool {
 func (hfs *HashFS) Close(ctx context.Context) error {
 	clog.Infof(ctx, "fs close")
 	hfs.digester.stop(ctx)
+	if hfs.opt.CartFS != nil {
+		cerr := hfs.opt.CartFS.Close()
+		if cerr != nil {
+			clog.Errorf(ctx, "close cartfs: %v", cerr)
+		}
+	}
+	if hfs.opt.ABFS != nil {
+		cerr := hfs.opt.ABFS.Close()
+		if cerr != nil {
+			clog.Errorf(ctx, "close abfs: %v", cerr)
+		}
+	}
 	if hfs.opt.StateFile == "" {
 		return nil
 	}
