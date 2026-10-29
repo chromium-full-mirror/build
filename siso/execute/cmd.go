@@ -26,7 +26,6 @@ import (
 
 	"go.chromium.org/build/hashigo/digest"
 	rpb "go.chromium.org/build/remote-apis/build/bazel/remote/execution/v2"
-	semverpb "go.chromium.org/build/remote-apis/build/bazel/semver"
 
 	"go.chromium.org/build/siso/blob"
 	"go.chromium.org/build/siso/hashfs"
@@ -179,7 +178,7 @@ type Cmd struct {
 	HashFS *hashfs.HashFS
 
 	// REAPI version
-	REAPIVersion *semverpb.SemVer
+	REAPIVersion reapi.Version
 
 	// Platform is a platform properties for remote execution.
 	// e.g. OSFamily: {Linux, Windows}
@@ -562,7 +561,7 @@ func (c *Cmd) Digest(ctx context.Context, ds *blob.Store) (actionDigest digest.D
 		DoNotCache:      c.DoNotCache,
 		Salt:            c.ActionSalt,
 	}
-	if reapi.UseActionForPlatformProperties(c.REAPIVersion) {
+	if c.REAPIVersion.UseActionForPlatformProperties() {
 		actionMsg.Platform = c.remoteExecutionPlatform()
 	}
 	action, err := blob.FromProtoMessage(c.HashFS.DigestFunction(), actionMsg)
@@ -944,7 +943,7 @@ func (c *Cmd) CommandDigest(ctx context.Context, ds *blob.Store) (digest.Digest,
 	}
 	// `OutputFiles` is deprecated. should use `OutputPaths` instead.
 	// https://github.com/bazelbuild/remote-apis/blob/main/build/bazel/remote/execution/v2/remote_execution.proto#L592
-	if reapi.UseOutputPaths(c.REAPIVersion) {
+	if c.REAPIVersion.UseOutputPaths() {
 		command.OutputPaths = make([]string, 0, len(outFiles)+len(outDirs))
 		command.OutputPaths = append(command.OutputPaths, outFiles...)
 		command.OutputPaths = append(command.OutputPaths, outDirs...)

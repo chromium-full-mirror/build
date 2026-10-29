@@ -6,6 +6,7 @@
 package reapi
 
 import (
+	"cmp"
 	"context"
 	"crypto/tls"
 	"crypto/x509"
@@ -16,6 +17,7 @@ import (
 	"os"
 	"path"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -126,8 +128,8 @@ type Option struct {
 
 	// RE API version to use by siso, in format of v<major>.<minor>
 	// e.g. "v2.0".
-	// default to use high api version advertised by the server
-	// capabilities.
+	// default to use the highest version that both siso and the server
+	// support.
 	REAPIVersion string
 
 	// DigestFunction selects the content digest function by name
@@ -245,7 +247,7 @@ func (o *Option) RegisterFlags(fs *flag.FlagSet, envs map[string]string) {
 	fs.DurationVar(&o.KeepAliveParams.Timeout, o.Prefix+"_grpc_keepalive_timeout", 20*time.Second, "grpc keepalive timeout"+purpose)
 	fs.BoolVar(&o.KeepAliveParams.PermitWithoutStream, o.Prefix+"_grpc_keepalive_permit_without_stream", false, "grpc keepalive permit without stream"+purpose)
 
-	fs.StringVar(&o.REAPIVersion, o.Prefix+"_version_to_use", "", "specify re api version to use, in format of v<major>.<minor>. e.g. v2.0")
+	fs.StringVar(&o.REAPIVersion, o.Prefix+"_version_to_use", "", "specify re api version to use, in format of v<major>.<minor>. e.g. v2.0. default: the highest version both siso and the server support")
 
 	fs.StringVar(&o.DigestFunction, o.Prefix+"_digest_function", "sha256", "content digest function: sha256, sha1, gitsha1, blake3, md5, sha384, sha512, murmur3, vso, or sha256tree"+purpose)
 
@@ -361,7 +363,7 @@ type Client struct {
 
 	mu           sync.Mutex
 	capabilities *rpb.ServerCapabilities
-	apiVersion   *semverpb.SemVer
+	apiVersion   Version
 
 	knownDigests sync.Map // key:digest.Digest, value: *uploadOp or true
 
@@ -739,26 +741,10 @@ func (c *Client) Init(ctx context.Context) error {
 		}
 	}
 	clog.Infof(ctx, "byte stream read threshold: %d", c.opt.ByteStreamReadThreshold)
-	var apiVersion *semverpb.SemVer
-	if c.opt.REAPIVersion != "" {
-		var major, minor int32
-		_, err := fmt.Sscanf(c.opt.REAPIVersion, "v%d.%d", &major, &minor)
-		if err != nil {
-			clog.Warningf(ctx, "failed to parse reapi version %q: %v", c.opt.REAPIVersion, err)
-		} else {
-			apiVersion = &semverpb.SemVer{
-				Major: major,
-				Minor: minor,
-			}
-			highVer := capa.GetHighApiVersion()
-			if highVer.GetMajor() < major || (highVer.GetMajor() == major && highVer.GetMinor() < minor) {
-				clog.Errorf(ctx, "higher api version is specified than server capabilities: %v > %v", apiVersion, highVer)
-			}
-			lowVer := capa.GetLowApiVersion()
-			if lowVer.GetMajor() > major || (lowVer.GetMajor() == major && lowVer.GetMinor() > minor) {
-				clog.Errorf(ctx, "lower api version is specified than server capabilities: %v < %v", apiVersion, lowVer)
-			}
-		}
+	apiVersion, err := negotiateAPIVersion(capa, c.opt.REAPIVersion)
+	if err != nil {
+		c.Close()
+		return err
 	}
 	// prefer compressed bytestream.
 	chunkBatchThreshold := c.opt.CompressedBlob
@@ -995,7 +981,7 @@ func (c *Client) UpdateActionResultEnabled() bool {
 
 // UpdateActionResult updates the action result by the digest.
 func (c *Client) UpdateActionResult(ctx context.Context, d digest.Digest, result *rpb.ActionResult) error {
-	if !useOutputSymlinks(c.APIVersion()) {
+	if !c.APIVersion().useOutputSymlinks() {
 		// backend may not support output_symlinks.
 		// use output_file_symlinks instead.
 		result = proto.CloneOf(result)
@@ -1014,17 +1000,14 @@ func (c *Client) UpdateActionResult(ctx context.Context, d digest.Digest, result
 	return err
 }
 
-// APIVersion returns api version to use.
-func (c *Client) APIVersion() *semverpb.SemVer {
+// APIVersion returns the api version negotiated by Init.
+func (c *Client) APIVersion() Version {
 	if c == nil {
-		return nil
+		return Version{}
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.apiVersion != nil {
-		return c.apiVersion
-	}
-	return c.capabilities.GetHighApiVersion()
+	return c.apiVersion
 }
 
 // Instance returns the instance name.
@@ -1033,6 +1016,26 @@ func (c *Client) Instance() string {
 		return ""
 	}
 	return c.opt.Instance
+}
+
+// Version is a RE API version.
+type Version struct {
+	Major, Minor int32
+}
+
+// versionOf converts a SemVer to a Version.
+func versionOf(v *semverpb.SemVer) Version {
+	return Version{Major: v.GetMajor(), Minor: v.GetMinor()}
+}
+
+// AtLeast reports whether v is the same as or newer than w.
+func (v Version) AtLeast(w Version) bool {
+	return v.Major > w.Major || v.Major == w.Major && v.Minor >= w.Minor
+}
+
+// String returns v as <major>.<minor>.
+func (v Version) String() string {
+	return fmt.Sprintf("%d.%d", v.Major, v.Minor)
 }
 
 // UseActionForPlatformProperties returns true
@@ -1047,8 +1050,8 @@ func (c *Client) Instance() string {
 //	 // DEPRECATED as of v2.2: platform properties are now specified directly
 //	 // in the action.
 //	 Platform platform
-func UseActionForPlatformProperties(apiVer *semverpb.SemVer) bool {
-	return apiVer.GetMajor() >= 2 && apiVer.GetMinor() >= 2
+func (v Version) UseActionForPlatformProperties() bool {
+	return v.AtLeast(Version{2, 2})
 }
 
 // UseOutputPaths returns true
@@ -1066,8 +1069,8 @@ func UseActionForPlatformProperties(apiVer *semverpb.SemVer) bool {
 //	  // and `output_directories` fields.  If `output_paths` is used,
 //	  // `output_files` and `output_directories` will be ignored!
 //	  repeated string output_paths
-func UseOutputPaths(apiVer *semverpb.SemVer) bool {
-	return apiVer.GetMajor() >= 2 && apiVer.GetMinor() >= 1
+func (v Version) UseOutputPaths() bool {
+	return v.AtLeast(Version{2, 1})
 }
 
 // useOutputSymlinks returns true
@@ -1089,8 +1092,57 @@ func UseOutputPaths(apiVer *semverpb.SemVer) bool {
 //	     // `output_paths` field was used, and not the pre v2.1
 //	     // `output_files` or `output_directories` fields.
 //	     repeated string output_symlinks
-func useOutputSymlinks(apiVer *semverpb.SemVer) bool {
-	return apiVer.GetMajor() >= 2 && apiVer.GetMinor() >= 1
+func (v Version) useOutputSymlinks() bool {
+	return v.AtLeast(Version{2, 1})
+}
+
+// Range of RE API versions that siso implements.
+var (
+	minAPIVersion = Version{2, 0}
+	maxAPIVersion = Version{2, 3}
+)
+
+// negotiateAPIVersion returns the requested api version (v<major>.<minor>),
+// or if empty, the highest version that both siso and the server support.
+// It fails if that version is outside either range.
+// A server that doesn't advertise a version is treated as v2.0.
+func negotiateAPIVersion(capa *rpb.ServerCapabilities, requested string) (Version, error) {
+	v20 := Version{2, 0}
+	serverLow := cmp.Or(versionOf(capa.GetLowApiVersion()), v20)
+	serverHigh := cmp.Or(versionOf(capa.GetHighApiVersion()), v20)
+	low, high := minAPIVersion, maxAPIVersion
+	if serverLow.AtLeast(low) {
+		low = serverLow
+	}
+	if high.AtLeast(serverHigh) {
+		high = serverHigh
+	}
+	ranges := fmt.Sprintf("server supports %s..%s, siso supports %s..%s", serverLow, serverHigh, minAPIVersion, maxAPIVersion)
+	if requested == "" {
+		if !high.AtLeast(low) {
+			return Version{}, fmt.Errorf("no common reapi version: %s", ranges)
+		}
+		return high, nil
+	}
+	v, err := parseAPIVersion(requested)
+	if err != nil {
+		return Version{}, err
+	}
+	if !v.AtLeast(low) || !high.AtLeast(v) {
+		return Version{}, fmt.Errorf("unsupported reapi version %s: %s", requested, ranges)
+	}
+	return v, nil
+}
+
+// parseAPIVersion parses an api version in format of v<major>.<minor>.
+func parseAPIVersion(s string) (Version, error) {
+	majorStr, minorStr, ok := strings.Cut(strings.TrimPrefix(s, "v"), ".")
+	major, majorErr := strconv.ParseUint(majorStr, 10, 31)
+	minor, minorErr := strconv.ParseUint(minorStr, 10, 31)
+	if !strings.HasPrefix(s, "v") || !ok || majorErr != nil || minorErr != nil {
+		return Version{}, fmt.Errorf("invalid reapi version %q: want v<major>.<minor>", s)
+	}
+	return Version{Major: int32(major), Minor: int32(minor)}, nil
 }
 
 // NewContext returns new context with request metadata.

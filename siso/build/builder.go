@@ -543,7 +543,7 @@ func New(ctx context.Context, graph Graph, opts Options) (_ *Builder, err error)
 	}
 	if b.reapiclient != nil {
 		reapiVer := b.reapiclient.APIVersion()
-		clog.Infof(ctx, "reapi version=%v; output_paths=%t action.platform=%t", reapiVer, reapi.UseOutputPaths(reapiVer), reapi.UseActionForPlatformProperties(reapiVer))
+		clog.Infof(ctx, "reapi version=%v; output_paths=%t action.platform=%t", reapiVer, reapiVer.UseOutputPaths(), reapiVer.UseActionForPlatformProperties())
 	}
 	if experiments.Enabled("ignore-missing-out-in-depfile", "ignore missing out error in depfile") {
 		makeutil.IgnoreMissingOut = true
