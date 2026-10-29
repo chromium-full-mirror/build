@@ -36,6 +36,30 @@ func TestParser_Empty(t *testing.T) {
 	}
 }
 
+// TestParser_PoolAtEnd checks that a pool can be the last statement.
+func TestParser_PoolAtEnd(t *testing.T) {
+	ctx := t.Context()
+	dir := t.TempDir()
+	err := os.WriteFile(filepath.Join(dir, "build.ninja"), []byte("pool p\n  depth = 3\n"), 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	state := NewState()
+	p := NewManifestParser(state)
+	p.SetWd(dir)
+	if err := p.Load(ctx, "build.ninja"); err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	pool, ok := state.LookupPool("p")
+	if !ok {
+		t.Fatal("missing pool p")
+	}
+	if got, want := pool.Depth(), 3; got != want {
+		t.Errorf("pool depth=%d; want=%d", got, want)
+	}
+}
+
 func TestParser_Rules(t *testing.T) {
 	ctx := t.Context()
 	dir := t.TempDir()

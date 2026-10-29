@@ -764,7 +764,7 @@ func (ch *chunk) parsePool(i int, pool *Pool) (int, error) {
 	n := ch.countStatement(i, statementPoolVar)
 	poolScope.set(ch.buf, ch.statements[i:i+n])
 	i += n
-	v, ok := poolScope.lookupVar(ch.statements[i].pos, []byte("depth"))
+	v, ok := poolScope.lookupVar(ch.statements[i-1].pos+1, []byte("depth"))
 	if !ok {
 		return 0, fmt.Errorf("line:%d expect 'depth=' line", lineno(ch.buf, st.s))
 	}
