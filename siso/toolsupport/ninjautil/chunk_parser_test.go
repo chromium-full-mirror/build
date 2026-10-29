@@ -7,6 +7,7 @@ package ninjautil
 import (
 	"runtime"
 	"testing"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
 )
@@ -18,6 +19,28 @@ func TestSplitIntoChunksCapacity(t *testing.T) {
 	chunks := splitIntoChunks(t.Context(), []byte("rule cc\n"))
 	if got, want := cap(chunks), 1; got != want {
 		t.Errorf("cap(splitIntoChunks(small manifest)) = %d, want %d", got, want)
+	}
+}
+
+// TestParseChunk_TrailingComment checks that a comment on the last line
+// without a newline ends the chunk instead of looping forever.
+func TestParseChunk_TrailingComment(t *testing.T) {
+	ch := splitIntoChunks(t.Context(), []byte("rule cc\n  command = cc\n# trailing"))[0]
+	done := make(chan error, 1)
+	go func() { done <- ch.parseChunk(t.Context()) }()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("parseChunk didn't return")
+	}
+	if got, want := ch.ncomment, 1; got != want {
+		t.Errorf("ncomment = %d, want %d", got, want)
+	}
+	if got, want := len(ch.statements), 2; got != want {
+		t.Errorf("len(statements) = %d, want %d", got, want)
 	}
 }
 

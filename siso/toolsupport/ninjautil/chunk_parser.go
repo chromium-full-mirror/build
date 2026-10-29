@@ -163,12 +163,12 @@ loop:
 			continue
 		case '#':
 			// comment line
+			ch.ncomment++
 			j := bytes.IndexByte(buf[i+1:], '\n')
-			if i < 0 { // each EOF
+			if j < 0 { // each EOF
 				break loop
 			}
 			i = i + j + 1
-			ch.ncomment++
 			continue
 
 		case '\t':
