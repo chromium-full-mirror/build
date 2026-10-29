@@ -18,26 +18,24 @@ import (
 type Node struct {
 	next *Node // for bigMap
 
-	id   int
 	path string
 
 	inEdge atomic.Pointer[Edge] // the edge that generates the file for this node.
 
-	nouts atomic.Int64
-
-	outs []*Edge
+	id     int32
+	hasOut atomic.Bool
 }
 
-func (n *Node) ID() int { return n.id }
+func (n *Node) ID() int { return int(n.id) }
 
 func (n *Node) String() string { return n.path }
 
 // Path is the path of the node.
 func (n *Node) Path() string { return n.path }
 
-// OutEdges returns out-edges of the node.
-func (n *Node) OutEdges() []*Edge {
-	return n.outs
+// HasOut reports whether the node has any out-edges.
+func (n *Node) HasOut() bool {
+	return n.hasOut.Load()
 }
 
 func (n *Node) setInEdge(edge *Edge) bool {

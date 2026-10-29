@@ -766,6 +766,5 @@ func (g *Graph) isDead(fname string) bool {
 		}
 	}
 	_, ok = n.InEdge()
-	outs := n.OutEdges()
-	return !ok && len(outs) == 0
+	return !ok && !n.HasOut()
 }

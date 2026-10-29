@@ -626,8 +626,9 @@ func (ch *chunk) parseBuild(i int) (int, error) {
 			return 0, err
 		}
 		edge.inputs = append(edge.inputs, n)
-		n.nouts.Add(1)
-		// link out edge later
+		if !n.hasOut.Load() {
+			n.hasOut.Store(true)
+		}
 	}
 	edge.implicitDeps = implicit
 	edge.orderOnlyDeps = orderOnly

@@ -65,16 +65,9 @@ func (p *ManifestParser) Load(ctx context.Context, fname string) (retErr error) 
 	if err := p.loadFiles(ctx, fname); err != nil {
 		return err
 	}
-	p.state.nodes, p.state.dirOutputs = p.state.nodeMap.freeze(ctx)
-	for _, edge := range p.state.edges {
-		for _, in := range edge.inputs {
-			if in.outs == nil {
-				in.outs = make([]*Edge, 0, in.nouts.Load())
-			}
-			in.outs = append(in.outs, edge)
-		}
-	}
-	return nil
+	var err error
+	p.state.nodes, p.state.dirOutputs, err = p.state.nodeMap.freeze(ctx)
+	return err
 }
 
 // loadFiles loads fname and its subninjas, parsing at most
@@ -147,14 +140,7 @@ func (p *ManifestParser) LoadSingle(ctx context.Context, fname string) (retErr e
 	if err := fp.parseFile(ctx, fname); err != nil {
 		return err
 	}
-	p.state.nodes, p.state.dirOutputs = p.state.nodeMap.freeze(ctx)
-	for _, edge := range p.state.edges {
-		for _, in := range edge.inputs {
-			if in.outs == nil {
-				in.outs = make([]*Edge, 0, in.nouts.Load())
-			}
-			in.outs = append(in.outs, edge)
-		}
-	}
-	return nil
+	var err error
+	p.state.nodes, p.state.dirOutputs, err = p.state.nodeMap.freeze(ctx)
+	return err
 }

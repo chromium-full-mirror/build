@@ -803,7 +803,7 @@ func (s *WebuiServer) handleOutdirListTargets(w http.ResponseWriter, r *http.Req
 			}
 		}
 	}
-	for _, edge := range targetNode.OutEdges() {
+	for _, edge := range outdirInfo.ninjaState.OutEdges(targetNode) {
 		outs := edge.Outputs()
 		if len(outs) == 0 {
 			continue

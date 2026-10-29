@@ -157,3 +157,78 @@ func BenchmarkLoadChromium(b *testing.B) {
 		}
 	}
 }
+
+// benchAndroidDir returns the absolute Android top dir and relative combined
+// ninja manifest path (e.g. "out/combined-<product>.ninja"), or skips.
+//
+//	SISO_BENCH_ANDROID_DIR=~/src/android-main \
+//	  go test ./build/ninjabuild/ -run='^$' -bench=BenchmarkLoadAndroid -benchmem
+func benchAndroidDir(b *testing.B) (dir, fname string) {
+	b.Helper()
+	dir = os.Getenv("SISO_BENCH_ANDROID_DIR")
+	if dir == "" {
+		dir = os.Getenv("SISO_BENCH_NINJA_DIR")
+	}
+	if dir == "" {
+		b.Skip("set SISO_BENCH_ANDROID_DIR to an Android checkout with out/combined-*.ninja")
+	}
+	abs, err := filepath.Abs(dir)
+	if err != nil {
+		b.Fatal(err)
+	}
+	fname = os.Getenv("SISO_BENCH_ANDROID_NINJA")
+	if fname != "" {
+		if _, err := os.Stat(filepath.Join(abs, fname)); err != nil {
+			b.Skipf("no %s under %s: %v", fname, abs, err)
+		}
+		return abs, fname
+	}
+	pattern := filepath.Join(abs, AndroidOutDir(), "combined-*.ninja")
+	matches, err := filepath.Glob(pattern)
+	if err != nil {
+		b.Fatal(err)
+	}
+	if len(matches) == 0 {
+		b.Skipf("no %s found", pattern)
+	}
+	var newest string
+	var newestTime int64
+	for _, m := range matches {
+		fi, err := os.Stat(m)
+		if err != nil {
+			continue
+		}
+		if newest == "" || fi.ModTime().UnixNano() > newestTime {
+			newest = m
+			newestTime = fi.ModTime().UnixNano()
+		}
+	}
+	if newest == "" {
+		b.Skipf("no stat-able %s found", pattern)
+	}
+	rel, err := filepath.Rel(abs, newest)
+	if err != nil {
+		b.Fatal(err)
+	}
+	return abs, filepath.ToSlash(rel)
+}
+
+// BenchmarkLoadAndroid times full Load on an Android combined-*.ninja graph,
+// matching how build/soong/ui/build/ninja.go invokes siso from the workspace
+// root with -f out/combined-<product>.ninja.
+func BenchmarkLoadAndroid(b *testing.B) {
+	dir, fname := benchAndroidDir(b)
+	ctx := b.Context()
+	b.Chdir(dir)
+	bp := build.NewPath(dir, ".")
+	b.Logf("loading %s in %s", fname, dir)
+	var numNodes int
+	for b.Loop() {
+		state, err := Load(ctx, fname, bp)
+		if err != nil {
+			b.Fatal(err)
+		}
+		numNodes = state.NumNodes()
+	}
+	b.ReportMetric(float64(numNodes), "nodes")
+}
