@@ -7,7 +7,9 @@ package build
 import (
 	"context"
 	"errors"
+	"math"
 	"runtime"
+	"slices"
 	"testing"
 	"time"
 )
@@ -284,8 +286,11 @@ func TestScheduler_MultiOutputWeightPropagation(t *testing.T) {
 	sched := newScheduler(ctx, schedulerOption{
 		NumTargets: 7,
 		Path:       NewPath(t.TempDir(), "out/Default"),
-		KnownWeights: map[Target]int{
-			tMojomH: 10,
+		StepWeight: func(step *Step) int {
+			if slices.Contains(step.outputs, tMojomH) {
+				return 10
+			}
+			return 1
 		},
 	})
 
@@ -294,7 +299,7 @@ func TestScheduler_MultiOutputWeightPropagation(t *testing.T) {
 	sched.plan.targets[tStamp].step = stampStep
 	sched.plan.targets[tStamp].edge = &Edge{Outputs: []Target{tStamp}}
 
-	// Multi-output step scheduled via tMojomCC, while KnownWeights and
+	// Multi-output step scheduled via tMojomCC, while StepWeight and
 	// downstream consumers only reference sibling output tMojomH.
 	mojomStep := NewStepForTest(2, fakeStepDef{actionName: "__mojom__rule"})
 	mojomStep.outputs = []Target{tMojomCC, tMojomH}
@@ -334,7 +339,7 @@ func TestScheduler_MultiOutputWeightPropagation(t *testing.T) {
 		t.Fatalf("sched.finish() failed: %v", err)
 	}
 
-	// bin (1) + obj (1) + phony (0) + mojom (KnownWeights[tMojomH]=10) + stamp (1).
+	// bin (1) + obj (1) + phony (0) + mojom (StepWeight[tMojomH]=10) + stamp (1).
 	if binStep.weight != 1 {
 		t.Errorf("binStep.weight = %d, want 1", binStep.weight)
 	}
@@ -349,5 +354,103 @@ func TestScheduler_MultiOutputWeightPropagation(t *testing.T) {
 	}
 	if stampStep.weight != 13 {
 		t.Errorf("stampStep.weight = %d, want 13", stampStep.weight)
+	}
+}
+
+func TestScheduler_StepWeight(t *testing.T) {
+	ctx := t.Context()
+	const (
+		tSrc Target = iota
+		tStamp
+		tObj
+		tPhony
+		tBin
+		tFailed
+	)
+	g := classifyGraph{paths: map[Target]string{
+		tSrc:    "base/foo.cc",
+		tStamp:  "out/Default/gen/input.stamp",
+		tObj:    "out/Default/obj/foo.o",
+		tPhony:  "out/Default/phony_deps",
+		tBin:    "out/Default/chrome",
+		tFailed: "out/Default/obj/failed.o",
+	}}
+	sched := newScheduler(ctx, schedulerOption{
+		NumTargets: 6,
+		Path:       NewPath(t.TempDir(), "out/Default"),
+		StepWeight: func(step *Step) int {
+			if slices.Contains(step.outputs, tFailed) {
+				return math.MaxInt
+			}
+			switch step.def.ActionName() {
+			case "link":
+				return 15000
+			case "cxx":
+				return 7500
+			case "stamp":
+				// Non-positive weights must clamp to 1 on non-phony steps.
+				return 0
+			default:
+				return 500
+			}
+		},
+	})
+	sched.plan.targets[tSrc].source = true
+
+	stampStep := NewStepForTest(1, fakeStepDef{actionName: "stamp"})
+	stampStep.outputs = []Target{tStamp}
+	sched.plan.targets[tStamp].step = stampStep
+	sched.plan.targets[tStamp].edge = &Edge{Outputs: []Target{tStamp}}
+
+	objStep := NewStepForTest(2, fakeStepDef{actionName: "cxx"})
+	objStep.outputs = []Target{tObj}
+	objStep.nwaits = 1
+	sched.plan.targets[tStamp].waits = []*Step{objStep}
+	sched.plan.targets[tObj].step = objStep
+	sched.plan.targets[tObj].edge = &Edge{Inputs: []Target{tSrc, tStamp}, Outputs: []Target{tObj}}
+
+	phonyStep := NewStepForTest(3, classifyStepDef{phony: true})
+	phonyStep.outputs = []Target{tPhony}
+	phonyStep.nwaits = 1
+	sched.plan.targets[tObj].waits = []*Step{phonyStep}
+	sched.plan.targets[tPhony].step = phonyStep
+	sched.plan.targets[tPhony].edge = &Edge{Inputs: []Target{tObj}, Outputs: []Target{tPhony}}
+
+	binStep := NewStepForTest(4, fakeStepDef{actionName: "link"})
+	binStep.outputs = []Target{tBin}
+	binStep.nwaits = 1
+	sched.plan.targets[tPhony].waits = []*Step{binStep}
+	sched.plan.targets[tBin].step = binStep
+	sched.plan.targets[tBin].edge = &Edge{Inputs: []Target{tPhony}, Outputs: []Target{tBin}}
+
+	failedStep := NewStepForTest(5, fakeStepDef{actionName: "cxx"})
+	failedStep.outputs = []Target{tFailed}
+	sched.plan.targets[tFailed].step = failedStep
+	sched.plan.targets[tFailed].edge = &Edge{Inputs: []Target{tSrc}, Outputs: []Target{tFailed}}
+
+	sched.addStep(ctx, stampStep, g, tStamp)
+	sched.addStep(ctx, objStep, g, tObj)
+	sched.addStep(ctx, phonyStep, g, tPhony)
+	sched.addStep(ctx, binStep, g, tBin)
+	sched.addStep(ctx, failedStep, g, tFailed)
+	if err := sched.finish(ctx, time.Now(), g); err != nil {
+		t.Fatalf("sched.finish() failed: %v", err)
+	}
+
+	// link (15000) + phony (0, ignores StepWeight=500) + obj (7500) + stamp (0 clamped to 1).
+	if binStep.weight != 15000 {
+		t.Errorf("binStep.weight = %d, want 15000", binStep.weight)
+	}
+	if phonyStep.weight != 15000 {
+		t.Errorf("phonyStep.weight = %d, want 15000", phonyStep.weight)
+	}
+	if objStep.weight != 22500 {
+		t.Errorf("objStep.weight = %d, want 22500", objStep.weight)
+	}
+	if stampStep.weight != 22501 {
+		t.Errorf("stampStep.weight = %d, want 22501", stampStep.weight)
+	}
+	if failedStep.weight != math.MaxInt {
+		t.Errorf("failedStep.weight = %d, want math.MaxInt (%d)", failedStep.weight, math.MaxInt)
 	}
 }

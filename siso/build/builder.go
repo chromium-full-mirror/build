@@ -666,14 +666,25 @@ func (b *Builder) Build(ctx context.Context, name string, args ...string) (err e
 
 	// scheduling
 	// TODO: run asynchronously?
-	knownTargetWeights := make(map[Target]int)
+	var stepWeightFn func(*Step) int
 	if len(b.lastFailureTargets) > 0 {
 		targets, err := b.graph.Targets(ctx, slices.Collect(maps.Keys(b.lastFailureTargets))...)
 		if err != nil {
-			clog.Warningf(ctx, "failed to get targets for known weights: %v", err)
+			clog.Warningf(ctx, "failed to get last failure targets: %v", err)
 		}
-		for _, t := range targets {
-			knownTargetWeights[t] = math.MaxInt
+		if len(targets) > 0 {
+			failedTargets := make(map[Target]struct{}, len(targets))
+			for _, t := range targets {
+				failedTargets[t] = struct{}{}
+			}
+			stepWeightFn = func(step *Step) int {
+				for _, out := range step.outputs {
+					if _, ok := failedTargets[out]; ok {
+						return math.MaxInt
+					}
+				}
+				return 1
+			}
 		}
 	}
 	schedOpts := schedulerOption{
@@ -681,7 +692,7 @@ func (b *Builder) Build(ctx context.Context, name string, args ...string) (err e
 		Path:          b.path,
 		HashFS:        b.hashFS,
 		Prepare:       b.prepare,
-		KnownWeights:  knownTargetWeights,
+		StepWeight:    stepWeightFn,
 		LocallyNeeded: b.locallyNeeded,
 	}
 	sched := newScheduler(ctx, schedOpts)

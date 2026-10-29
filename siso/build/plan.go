@@ -295,12 +295,16 @@ func (pq *priorityQueue) Pop() any {
 
 // schedulerOption is scheduler option.
 type schedulerOption struct {
-	NumTargets   int
-	Path         *Path
-	HashFS       *hashfs.HashFS
-	Prepare      bool
-	EnableTrace  bool
-	KnownWeights map[Target]int
+	NumTargets  int
+	Path        *Path
+	HashFS      *hashfs.HashFS
+	Prepare     bool
+	EnableTrace bool
+
+	// StepWeight, if non-nil, returns the intrinsic weight for a non-phony
+	// step; values < 1 are clamped to 1. When nil, non-phony steps have
+	// weight 1.
+	StepWeight func(*Step) int
 
 	// LocallyNeeded, if non-nil, is filled at plan finalization with the
 	// outputs a downstream local step consumes. Must be unfrozen when passed.
@@ -317,6 +321,8 @@ type scheduler struct {
 	plan *plan
 
 	locallyNeeded *LocallyNeededSet
+
+	stepWeight func(*Step) int
 
 	// number of steps scheduled.
 	total int
@@ -678,14 +684,9 @@ func newScheduler(ctx context.Context, opt schedulerOption) *scheduler {
 	targets := make([]targetInfo, opt.NumTargets)
 	for i := range opt.NumTargets {
 		// Default weight is 1.
-		// If there is a known weight, it will be overridden.
+		// If StepWeight is set, non-phony steps override this in addStep.
 		// If the target is phony, it will be set to 0 during scheduling.
 		targets[i].weight = 1
-	}
-	for t, w := range opt.KnownWeights {
-		if t >= 0 && int(t) < len(targets) {
-			targets[t].weight = w
-		}
 	}
 	return &scheduler{
 		path:   opt.Path,
@@ -697,6 +698,7 @@ func newScheduler(ctx context.Context, opt schedulerOption) *scheduler {
 			targetsSorted: make([]Target, 0, opt.NumTargets),
 		},
 		locallyNeeded:     opt.LocallyNeeded,
+		stepWeight:        opt.StepWeight,
 		prepare:           opt.Prepare,
 		prepareHeaderOnly: prepareHeaderOnly,
 		enableTrace:       opt.EnableTrace,
@@ -896,11 +898,14 @@ func (s *scheduler) addStep(ctx context.Context, step *Step, graph Graph, target
 			s.plan.targets[output].weight = 0
 		}
 	} else {
-		var stepWeight int
+		stepWeight := 1
+		if s.stepWeight != nil {
+			stepWeight = max(s.stepWeight(step), 1)
+		}
 		// don't add output for phony targets. https://crbug.com/1517575
 		for _, output := range step.outputs {
 			s.plan.targets[output].output = true
-			stepWeight = max(stepWeight, s.plan.targets[output].weight)
+			s.plan.targets[output].weight = stepWeight
 			tp := targetPath(ctx, graph, output)
 			// Clear a stale file sitting where a dir output now lives, so
 			// the action can create its directory there.
@@ -910,9 +915,6 @@ func (s *scheduler) addStep(ctx context.Context, step *Step, graph Graph, target
 				}
 			}
 			s.actionOutputDirs.ensure(tp)
-		}
-		for _, output := range step.outputs {
-			s.plan.targets[output].weight = stepWeight
 		}
 	}
 	if log.V(1) {
