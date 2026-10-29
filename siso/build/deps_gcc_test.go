@@ -30,6 +30,8 @@ func (fakeGraph) Targets(ctx context.Context, args ...string) ([]Target, error) 
 	return nil, nil
 }
 
+func (fakeGraph) LookupTarget(string) (Target, bool) { return 0, false }
+
 func (fakeGraph) SpellcheckTarget(string) (string, error) { return "", errors.New("spellcheck error") }
 
 func (fakeGraph) TargetPath(ctx context.Context, target Target) (string, error) {

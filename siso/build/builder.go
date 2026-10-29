@@ -158,6 +158,10 @@ type Options struct {
 	// LastFailureTargets is a list of targets that failed in the previous build.
 	LastFailureTargets []string
 
+	// WeightsFile is an optional path to a JSON(.gz) file specifying positive
+	// integer step weights for critical-path step scheduling.
+	WeightsFile string
+
 	// BuildLabel to attach to output files
 	BuildLabel string
 
@@ -334,6 +338,7 @@ type Builder struct {
 	rebuildManifest string
 
 	lastFailureTargets map[string]struct{}
+	weightsFile        string
 
 	buildLabel  string
 	missingDeps MissingDepsMode
@@ -503,6 +508,7 @@ func New(ctx context.Context, graph Graph, opts Options) (_ *Builder, err error)
 		rebuildManifest:       opts.RebuildManifest,
 		UploadBuildNinjaFiles: opts.UploadBuildNinjaFiles,
 		lastFailureTargets:    make(map[string]struct{}),
+		weightsFile:           opts.WeightsFile,
 		buildLabel:            opts.BuildLabel,
 		missingDeps:           opts.MissingDeps,
 	}
@@ -666,26 +672,27 @@ func (b *Builder) Build(ctx context.Context, name string, args ...string) (err e
 
 	// scheduling
 	// TODO: run asynchronously?
-	var stepWeightFn func(*Step) int
+	var sw *stepWeights
+	var weightsStart time.Time
+	if b.rebuildManifest == "" && b.weightsFile != "" {
+		weightsStart = time.Now()
+		var werr error
+		sw, werr = loadStepWeights(b.weightsFile)
+		if werr != nil {
+			clog.Warningf(ctx, "failed to load weights file %q: %v", b.weightsFile, werr)
+		}
+	}
+	var failedTargets []Target
 	if len(b.lastFailureTargets) > 0 {
-		targets, err := b.graph.Targets(ctx, slices.Collect(maps.Keys(b.lastFailureTargets))...)
+		var err error
+		failedTargets, err = b.graph.Targets(ctx, slices.Collect(maps.Keys(b.lastFailureTargets))...)
 		if err != nil {
 			clog.Warningf(ctx, "failed to get last failure targets: %v", err)
 		}
-		if len(targets) > 0 {
-			failedTargets := make(map[Target]struct{}, len(targets))
-			for _, t := range targets {
-				failedTargets[t] = struct{}{}
-			}
-			stepWeightFn = func(step *Step) int {
-				for _, out := range step.outputs {
-					if _, ok := failedTargets[out]; ok {
-						return math.MaxInt
-					}
-				}
-				return 1
-			}
-		}
+	}
+	stepWeightFn, matchedWeights := newStepWeightFn(b.graph, sw, failedTargets)
+	if sw != nil {
+		clog.Infof(ctx, "loaded %d output weights (%d matched graph targets), %d action rules (default=%d) from %q in %s", len(sw.outputs), matchedWeights, len(sw.rules), sw.defaultWeight, b.weightsFile, time.Since(weightsStart))
 	}
 	schedOpts := schedulerOption{
 		NumTargets:    b.graph.NumTargets(),

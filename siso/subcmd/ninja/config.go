@@ -121,6 +121,7 @@ type NinjaFlags struct {
 	locallyNeeded *build.LocallyNeededSet
 
 	depsLogFile string
+	weightsFile string
 
 	missingDeps string
 
@@ -232,6 +233,7 @@ func (c *Command) SetFlags(flagSet *flag.FlagSet) {
 	flagSet.StringVar(&c.configFilename, "load", "@config//main.star", "config filename (@config// is --config_repo_dir)")
 	flagSet.StringVar(&c.outputLocalStrategy, "output_local_strategy", "full", `strategy for output_local. "full": download all outputs. "greedy": downloads most outputs except intermediate objs. "minimum": downloads as few as possible. "graph": downloads only remote outputs that a local step will consume, decided at schedule time from the dep graph, spreading downloads over the compile burst. "pathfilter:<path_filter>": use path filter. "patterns:<pattern-list>": colon-separated pathfilter's patterns`)
 	flagSet.StringVar(&c.depsLogFile, "deps_log", ".siso_deps", "deps log filename (relative to -C, -state_dir)")
+	flagSet.StringVar(&c.weightsFile, "weights_file", os.Getenv("SISO_WEIGHTS_FILE"), "path to step weights JSON(.gz) file (relative to workspace). can be set by $SISO_WEIGHTS_FILE")
 	flagSet.StringVar(&c.missingDeps, "missing_deps", "ignore", "how to handle missing dependencies: ignore (skip check), warn (warning on stderr), error (fail build at completion), fatal (fail step immediately)")
 
 	flagSet.StringVar(&c.stateDir, "state_dir", "", "state directory (relative to -C) [default: same dir as build.ninja]")
@@ -489,6 +491,7 @@ func (c *Command) initBuildOpts(ctx context.Context, projectID string, buildPath
 	if resultstoreUploader != nil {
 		resultSink = resultstoreUploader
 	}
+	weightsFile := c.resolveWeightsFlag(buildPath)
 	return build.Options{
 		JobID:                 c.jobID,
 		ID:                    c.buildID,
@@ -527,9 +530,17 @@ func (c *Command) initBuildOpts(ctx context.Context, projectID string, buildPath
 		KeepDepfile:           c.debugMode.Keepdepfile,
 		Limits:                limits,
 		UploadBuildNinjaFiles: c.enableBuildNinjaFilesUpload,
+		WeightsFile:           weightsFile,
 		BuildLabel:            c.fsopt.BuildLabel,
 		MissingDeps:           build.MissingDepsMode(c.missingDeps),
 	}
+}
+
+func (c *Command) resolveWeightsFlag(buildPath *build.Path) string {
+	if c.weightsFile == "" || filepath.IsAbs(c.weightsFile) || buildPath == nil || buildPath.WorkspaceRoot == "" {
+		return c.weightsFile
+	}
+	return filepath.Join(buildPath.WorkspaceRoot, c.weightsFile)
 }
 
 func defaultCacheDir() string {

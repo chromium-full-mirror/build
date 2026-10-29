@@ -571,6 +571,15 @@ func (g *Graph) Targets(ctx context.Context, args ...string) ([]build.Target, er
 	return targets, err
 }
 
+// LookupTarget returns the target ID for a build-dir-relative target path.
+func (g *Graph) LookupTarget(target string) (build.Target, bool) {
+	n, ok := g.globals.nstate.LookupNodeByPath(target)
+	if !ok {
+		return 0, false
+	}
+	return build.Target(n.ID()), true
+}
+
 // SpellcheckTarget finds closest target name from t.
 func (g *Graph) SpellcheckTarget(t string) (string, error) {
 	return g.globals.nstate.SpellcheckTarget(t)

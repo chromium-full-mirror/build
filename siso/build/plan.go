@@ -60,6 +60,9 @@ type Graph interface {
 	// Targets may return known targets even if err != nil.
 	Targets(context.Context, ...string) ([]Target, error)
 
+	// LookupTarget returns the target ID for a build-dir-relative target path.
+	LookupTarget(string) (Target, bool)
+
 	// SpellcheckTarget returns the most similar target from given target.
 	SpellcheckTarget(string) (string, error)
 

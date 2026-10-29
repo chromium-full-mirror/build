@@ -6,9 +6,12 @@ package ninja
 
 import (
 	"flag"
+	"path/filepath"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+
+	"go.chromium.org/build/siso/build"
 )
 
 // enableOfflineMode replaces the reapi options, but must keep the digest
@@ -203,5 +206,65 @@ func TestSetupOutputLocal_CleandeadPreservesNonLocal(t *testing.T) {
 	}
 	if c.outputLocal(ctx, "clang_x64/obj/third_party/libwebp/cwebp/cwebp.o") {
 		t.Errorf("c.outputLocal for cleandead returned true; want false so remote-only entries in .siso_fs_state are preserved")
+	}
+}
+
+func TestResolveWeightsFlag(t *testing.T) {
+	wsRoot := t.TempDir()
+	absWeights := filepath.Join(wsRoot, "custom", "weights.json.gz")
+	buildPath := build.NewPath(wsRoot, "out/Default")
+
+	for _, tc := range []struct {
+		name        string
+		weightsFile string
+		startDir    string
+		buildPath   *build.Path
+		want        string
+	}{
+		{
+			name:        "empty",
+			weightsFile: "",
+			startDir:    filepath.Join(wsRoot, "out", "Default"),
+			buildPath:   buildPath,
+			want:        "",
+		},
+		{
+			name:        "workspace_relative_from_outdir",
+			weightsFile: "build/config/siso/weights_linux.json.gz",
+			startDir:    filepath.Join(wsRoot, "out", "Default"),
+			buildPath:   buildPath,
+			want:        filepath.Join(wsRoot, "build", "config", "siso", "weights_linux.json.gz"),
+		},
+		{
+			name:        "parent_relative_from_workspace",
+			weightsFile: "../../../siso_weights/weights_linux.json.gz",
+			startDir:    filepath.Join(wsRoot, "out", "Default"),
+			buildPath:   buildPath,
+			want:        filepath.Join(wsRoot, "..", "..", "..", "siso_weights", "weights_linux.json.gz"),
+		},
+		{
+			name:        "absolute_path",
+			weightsFile: absWeights,
+			startDir:    filepath.Join(wsRoot, "out", "Default"),
+			buildPath:   buildPath,
+			want:        absWeights,
+		},
+		{
+			name:        "nil_build_path",
+			weightsFile: "weights.json.gz",
+			startDir:    wsRoot,
+			buildPath:   nil,
+			want:        "weights.json.gz",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := &Command{
+				weightsFile: tc.weightsFile,
+				startDir:    tc.startDir,
+			}
+			if got := c.resolveWeightsFlag(tc.buildPath); got != tc.want {
+				t.Errorf("resolveWeightsFlag() = %q, want %q", got, tc.want)
+			}
+		})
 	}
 }
