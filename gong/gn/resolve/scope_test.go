@@ -35,7 +35,7 @@ func TestScope_NonRecursiveMergeTo(t *testing.T) {
 		wantErr       bool
 	}{
 		{
-			name:   "Detect value collision",
+			name:   "detect_value_collision",
 			source: sourceScope,
 			dest: &Scope{
 				values: map[string]record{
@@ -48,7 +48,7 @@ func TestScope_NonRecursiveMergeTo(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name:   "Clobber colliding values",
+			name:   "clobber_colliding_values",
 			source: sourceScope,
 			dest: &Scope{
 				values: map[string]record{
@@ -61,7 +61,7 @@ func TestScope_NonRecursiveMergeTo(t *testing.T) {
 			wantDestValue: &StringValue{value: "hello"},
 		},
 		{
-			name:   "No error on same value",
+			name:   "no_error_on_same_value",
 			source: sourceScope,
 			dest: &Scope{
 				values: map[string]record{
@@ -72,7 +72,7 @@ func TestScope_NonRecursiveMergeTo(t *testing.T) {
 			wantDestValue: &StringValue{value: "hello"},
 		},
 		{
-			name:   "No error on empty source",
+			name:   "no_error_on_empty_source",
 			source: &Scope{},
 			dest: &Scope{
 				values: map[string]record{
@@ -104,7 +104,7 @@ func TestScope_NonRecursiveMergeTo(t *testing.T) {
 		})
 	}
 
-	t.Run("Copy private values", func(t *testing.T) {
+	t.Run("copy_private_values", func(t *testing.T) {
 		dest := NewScope(nil, nil)
 		err := sourceScope.NonRecursiveMergeTo(dest, ScopeMergeOptions{})
 		if err != nil {
@@ -115,7 +115,7 @@ func TestScope_NonRecursiveMergeTo(t *testing.T) {
 		}
 	})
 
-	t.Run("Skip private values", func(t *testing.T) {
+	t.Run("skip_private_values", func(t *testing.T) {
 		dest := NewScope(nil, nil)
 		err := sourceScope.NonRecursiveMergeTo(dest, ScopeMergeOptions{SkipPrivateVars: true})
 		if err != nil {
@@ -126,7 +126,7 @@ func TestScope_NonRecursiveMergeTo(t *testing.T) {
 		}
 	})
 
-	t.Run("Excluded values", func(t *testing.T) {
+	t.Run("excluded_values", func(t *testing.T) {
 		dest := NewScope(nil, nil)
 		err := sourceScope.NonRecursiveMergeTo(dest, ScopeMergeOptions{
 			ExcludedValues: map[string]struct{}{
@@ -144,7 +144,7 @@ func TestScope_NonRecursiveMergeTo(t *testing.T) {
 		}
 	})
 
-	t.Run("Don't mark used", func(t *testing.T) {
+	t.Run("dont_mark_used", func(t *testing.T) {
 		dest := NewScope(nil, nil)
 		err := sourceScope.NonRecursiveMergeTo(dest, ScopeMergeOptions{})
 		if err != nil {
@@ -155,7 +155,7 @@ func TestScope_NonRecursiveMergeTo(t *testing.T) {
 		}
 	})
 
-	t.Run("Mark dest used", func(t *testing.T) {
+	t.Run("mark_dest_used", func(t *testing.T) {
 		dest := NewScope(nil, nil)
 		err := sourceScope.NonRecursiveMergeTo(dest, ScopeMergeOptions{DestinationMarkUsed: true})
 		if err != nil {

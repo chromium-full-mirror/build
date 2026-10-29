@@ -53,13 +53,13 @@ func TestResolveLabel(t *testing.T) {
 			},
 		},
 		{
-			name:    "implicit target name not yet supported",
+			name:    "implicit_target_name_not_yet_supported",
 			input:   "//foo/bar",
 			wd:      "//chrome/browser/",
 			wantErr: &LabelFormatError{},
 		},
 		{
-			name:      "implicit target dir",
+			name:      "implicit_target_dir",
 			input:     ":baz",
 			wd:        "//chrome/browser/",
 			toolchain: Label{Dir: mustDir(t, "//t/"), Name: "d"},
@@ -71,7 +71,7 @@ func TestResolveLabel(t *testing.T) {
 			},
 		},
 		{
-			name:      "explicit toolchain",
+			name:      "explicit_toolchain",
 			input:     "//foo:bar(//t:two)",
 			wd:        "//chrome/browser/",
 			toolchain: Label{Dir: mustDir(t, "//t/"), Name: "d"},
@@ -83,14 +83,14 @@ func TestResolveLabel(t *testing.T) {
 			},
 		},
 		{
-			name:      "invalid toolchain format",
+			name:      "invalid_toolchain_format",
 			input:     "//foo:bar(//t:two",
 			wd:        "//chrome/browser/",
 			toolchain: Label{Dir: mustDir(t, "//t/"), Name: "d"},
 			wantErr:   &LabelFormatError{},
 		},
 		{
-			name:      "toolchain in toolchain",
+			name:      "toolchain_in_toolchain",
 			input:     "//foo:bar(//t:two(//t2:t2))",
 			wd:        "//chrome/browser/",
 			toolchain: Label{Dir: mustDir(t, "//t/"), Name: "d"},
@@ -128,7 +128,7 @@ func TestLabel_UserVisibleString(t *testing.T) {
 		wantWithTc string
 	}{
 		{
-			name: "label in root",
+			name: "label_in_root",
 			label: Label{
 				Dir:           mustDir(t, "//"),
 				Name:          "name",
@@ -139,7 +139,7 @@ func TestLabel_UserVisibleString(t *testing.T) {
 			wantWithTc: "//:name(//t:tn)",
 		},
 		{
-			name: "label in subdir",
+			name: "label_in_subdir",
 			label: Label{
 				Dir:           mustDir(t, "//dir"),
 				Name:          "name",
@@ -150,7 +150,7 @@ func TestLabel_UserVisibleString(t *testing.T) {
 			wantWithTc: "//dir:name(//t:tn)",
 		},
 		{
-			name: "toolchain dir is empty",
+			name: "toolchain_dir_is_empty",
 			label: Label{
 				Dir:           mustDir(t, "//dir"),
 				Name:          "name",
@@ -161,7 +161,7 @@ func TestLabel_UserVisibleString(t *testing.T) {
 			wantWithTc: "//dir:name()",
 		},
 		{
-			name: "label dir is empty hence label is empty",
+			name: "label_dir_is_empty_hence_label_is_empty",
 			label: Label{
 				Dir:           fs.SourceDir{},
 				Name:          "name",
@@ -172,7 +172,7 @@ func TestLabel_UserVisibleString(t *testing.T) {
 			wantWithTc: "",
 		},
 		{
-			name:       "empty label",
+			name:       "empty_label",
 			label:      Label{},
 			wantOmitTc: "",
 			wantWithTc: "",

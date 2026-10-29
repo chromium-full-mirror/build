@@ -55,7 +55,7 @@ func TestPool_NinjaName(t *testing.T) {
 			want:             "baz",
 		},
 		{
-			name: "with toolchain",
+			name: "with_toolchain",
 			pool: Pool{
 				ItemInfo: ItemInfo{
 					label: environment.Label{
@@ -70,7 +70,7 @@ func TestPool_NinjaName(t *testing.T) {
 			want:             "tc_gcc_foo_bar",
 		},
 		{
-			name: "with toolchain at root",
+			name: "with_toolchain_at_root",
 			pool: Pool{
 				ItemInfo: ItemInfo{
 					label: environment.Label{
@@ -85,7 +85,7 @@ func TestPool_NinjaName(t *testing.T) {
 			want:             "gcc_bar",
 		},
 		{
-			name: "error label dir system absolute",
+			name: "error_label_dir_system_absolute",
 			pool: Pool{
 				ItemInfo: ItemInfo{
 					label: environment.Label{
@@ -98,7 +98,7 @@ func TestPool_NinjaName(t *testing.T) {
 			wantErr:          true,
 		},
 		{
-			name: "error toolchain dir system absolute",
+			name: "error_toolchain_dir_system_absolute",
 			pool: Pool{
 				ItemInfo: ItemInfo{
 					label: environment.Label{

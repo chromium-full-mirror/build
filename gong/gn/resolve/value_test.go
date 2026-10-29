@@ -60,7 +60,8 @@ bar"`,
 		},
 		{
 			// Test copied from GN, don't use ` to quote string so that we can see it's identical.
-			name:            "crbug.com/470217",
+			// See crbug.com/470217.
+			name:            "backslashes",
 			input:           &StringValue{value: "\\foo\\\\bar\\"},
 			expectedRaw:     "\\foo\\\\bar\\",
 			expectedLiteral: "\"\\foo\\\\\\bar\\\\\"",

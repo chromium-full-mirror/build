@@ -25,7 +25,7 @@ func TestRebasePathFunction(t *testing.T) {
 		wantErr any
 	}{
 		{
-			name: "source-absolute paths",
+			name: "source-absolute_paths",
 			args: []resolve.Value{
 				resolve.NewOriginlessStringValue("//foo/bar.txt"),
 				resolve.NewOriginlessStringValue("//foo/"),
@@ -33,7 +33,7 @@ func TestRebasePathFunction(t *testing.T) {
 			want: "bar.txt",
 		},
 		{
-			name: "source-absolute up one level",
+			name: "source-absolute_up_one_level",
 			args: []resolve.Value{
 				resolve.NewOriginlessStringValue("//foo/bar.txt"),
 				resolve.NewOriginlessStringValue("//baz/"),
@@ -41,7 +41,7 @@ func TestRebasePathFunction(t *testing.T) {
 			want: "../foo/bar.txt",
 		},
 		{
-			name: "directory path",
+			name: "directory_path",
 			args: []resolve.Value{
 				resolve.NewOriginlessStringValue("//foo/bar/"),
 				resolve.NewOriginlessStringValue("//baz/"),
@@ -49,7 +49,7 @@ func TestRebasePathFunction(t *testing.T) {
 			want: "../foo/bar/",
 		},
 		{
-			name: "new_base is a file",
+			name: "new_base_is_a_file",
 			args: []resolve.Value{
 				resolve.NewOriginlessStringValue("//foo/bar.txt"),
 				resolve.NewOriginlessStringValue("//baz/qux.txt"),
@@ -61,17 +61,17 @@ func TestRebasePathFunction(t *testing.T) {
 			want: "../../foo/bar.txt",
 		},
 		{
-			name:    "too few args",
+			name:    "too_few_args",
 			args:    []resolve.Value{},
 			wantErr: &resolve.ArgumentCountError{},
 		},
 		{
-			name:    "too many args",
+			name:    "too_many_args",
 			args:    []resolve.Value{&resolve.StringValue{}, &resolve.StringValue{}, &resolve.StringValue{}, &resolve.StringValue{}},
 			wantErr: &resolve.ArgumentCountError{},
 		},
 		{
-			name: "invalid rebase input type",
+			name: "invalid_rebase_input_type",
 			args: []resolve.Value{
 				&resolve.IntegerValue{},
 				resolve.NewOriginlessStringValue("//foo/"),
@@ -79,7 +79,7 @@ func TestRebasePathFunction(t *testing.T) {
 			wantErr: &resolve.TypeError{},
 		},
 		{
-			name: "invalid rebase new_base type",
+			name: "invalid_rebase_new_base_type",
 			args: []resolve.Value{
 				resolve.NewOriginlessStringValue("//foo"),
 				&resolve.IntegerValue{},
@@ -87,7 +87,7 @@ func TestRebasePathFunction(t *testing.T) {
 			wantErr: &resolve.TypeError{},
 		},
 		{
-			name: "list input",
+			name: "list_input",
 			args: []resolve.Value{
 				resolve.NewOriginlessListValue([]resolve.Value{
 					resolve.NewOriginlessStringValue("foo.txt"),
@@ -100,7 +100,7 @@ func TestRebasePathFunction(t *testing.T) {
 			want:   `["../../gn/foo.txt", "../../gn/bar.txt"]`,
 		},
 		{
-			name: "relative input",
+			name: "relative_input",
 			args: []resolve.Value{
 				resolve.NewOriginlessStringValue("foo/bar.txt"),
 				resolve.NewOriginlessStringValue("//foo/"),
@@ -109,7 +109,7 @@ func TestRebasePathFunction(t *testing.T) {
 			want:   "bar.txt",
 		},
 		{
-			name: "relative input with non-root curDir",
+			name: "relative_input_with_non-root_curdir",
 			args: []resolve.Value{
 				resolve.NewOriginlessStringValue("bar.txt"),
 				resolve.NewOriginlessStringValue("//"),
@@ -118,7 +118,7 @@ func TestRebasePathFunction(t *testing.T) {
 			want:   "foo/bar.txt",
 		},
 		{
-			name: "relative input trailing slash preserved",
+			name: "relative_input_trailing_slash_preserved",
 			args: []resolve.Value{
 				resolve.NewOriginlessStringValue("bar/"),
 				resolve.NewOriginlessStringValue("//"),
@@ -127,7 +127,7 @@ func TestRebasePathFunction(t *testing.T) {
 			want:   "foo/bar/",
 		},
 		{
-			name: "input with slash but output dot",
+			name: "input_with_slash_but_output_dot",
 			args: []resolve.Value{
 				resolve.NewOriginlessStringValue("./"),
 				resolve.NewOriginlessStringValue("."),
@@ -136,7 +136,7 @@ func TestRebasePathFunction(t *testing.T) {
 			want:   "./",
 		},
 		{
-			name: "source-absolute directory to empty new_base",
+			name: "source-absolute_directory_to_empty_new_base",
 			args: []resolve.Value{
 				resolve.NewOriginlessStringValue("//foo/bar/"),
 				resolve.NewOriginlessStringValue(""),
@@ -144,7 +144,7 @@ func TestRebasePathFunction(t *testing.T) {
 			want: "foo/bar/",
 		},
 		{
-			name: "empty new_base (explicit)",
+			name: "empty_new_base_explicit",
 			args: []resolve.Value{
 				resolve.NewOriginlessStringValue("//foo/bar.txt"),
 				resolve.NewOriginlessStringValue(""),
@@ -152,14 +152,14 @@ func TestRebasePathFunction(t *testing.T) {
 			want: "foo/bar.txt",
 		},
 		{
-			name: "empty new_base (default)",
+			name: "empty_new_base_default",
 			args: []resolve.Value{
 				resolve.NewOriginlessStringValue("//foo/bar.txt"),
 			},
 			want: "foo/bar.txt",
 		},
 		{
-			name: "empty new_base with directory input",
+			name: "empty_new_base_with_directory_input",
 			args: []resolve.Value{
 				resolve.NewOriginlessStringValue("//foo/bar/"),
 				resolve.NewOriginlessStringValue(""),
@@ -167,7 +167,7 @@ func TestRebasePathFunction(t *testing.T) {
 			want: "foo/bar/",
 		},
 		{
-			name: "empty new_base with list input",
+			name: "empty_new_base_with_list_input",
 			args: []resolve.Value{
 				resolve.NewOriginlessListValue([]resolve.Value{
 					resolve.NewOriginlessStringValue("//foo/bar.txt"),
@@ -178,7 +178,7 @@ func TestRebasePathFunction(t *testing.T) {
 			want: `["foo/bar.txt", "baz/qux/"]`,
 		},
 		{
-			name: "relative new_base",
+			name: "relative_new_base",
 			args: []resolve.Value{
 				resolve.NewOriginlessStringValue("//foo/bar.txt"),
 				resolve.NewOriginlessStringValue("baz/"),
@@ -187,7 +187,7 @@ func TestRebasePathFunction(t *testing.T) {
 			want:   "../foo/bar.txt",
 		},
 		{
-			name: "relative new_base with non-root curDir",
+			name: "relative_new_base_with_non-root_curdir",
 			args: []resolve.Value{
 				resolve.NewOriginlessStringValue("//foo/bar.txt"),
 				resolve.NewOriginlessStringValue("."),
@@ -196,7 +196,7 @@ func TestRebasePathFunction(t *testing.T) {
 			want:   "../foo/bar.txt",
 		},
 		{
-			name: "relative input and new_base with non-root curDir",
+			name: "relative_input_and_new_base_with_non-root_curdir",
 			args: []resolve.Value{
 				resolve.NewOriginlessStringValue("sub/file.txt"),
 				resolve.NewOriginlessStringValue("."),
@@ -205,7 +205,7 @@ func TestRebasePathFunction(t *testing.T) {
 			want:   "sub/file.txt",
 		},
 		{
-			name: "relative new_base with non-root curDir and absolute input",
+			name: "relative_new_base_with_non-root_curdir_and_absolute_input",
 			args: []resolve.Value{
 				resolve.NewOriginlessStringValue("//foo/bar.txt"),
 				resolve.NewOriginlessStringValue("baz/"),
@@ -214,7 +214,7 @@ func TestRebasePathFunction(t *testing.T) {
 			want:   "../../../foo/bar.txt",
 		},
 		{
-			name: "directory path with non-root curDir",
+			name: "directory_path_with_non-root_curdir",
 			args: []resolve.Value{
 				resolve.NewOriginlessStringValue("sub/dir/"),
 				resolve.NewOriginlessStringValue("//"),
@@ -223,7 +223,7 @@ func TestRebasePathFunction(t *testing.T) {
 			want:   "foo/sub/dir/",
 		},
 		{
-			name: "relative input dot",
+			name: "relative_input_dot",
 			args: []resolve.Value{
 				resolve.NewOriginlessStringValue("."),
 				resolve.NewOriginlessStringValue("//"),
@@ -232,7 +232,7 @@ func TestRebasePathFunction(t *testing.T) {
 			want:   "foo",
 		},
 		{
-			name: "relative input double dot",
+			name: "relative_input_double_dot",
 			args: []resolve.Value{
 				resolve.NewOriginlessStringValue(".."),
 				resolve.NewOriginlessStringValue("//"),
@@ -241,7 +241,7 @@ func TestRebasePathFunction(t *testing.T) {
 			want:   "foo",
 		},
 		{
-			name: "relative input path with dot",
+			name: "relative_input_path_with_dot",
 			args: []resolve.Value{
 				resolve.NewOriginlessStringValue("sub/."),
 				resolve.NewOriginlessStringValue("//"),
@@ -250,7 +250,7 @@ func TestRebasePathFunction(t *testing.T) {
 			want:   "foo/sub",
 		},
 		{
-			name: "relative input empty string",
+			name: "relative_input_empty_string",
 			args: []resolve.Value{
 				resolve.NewOriginlessStringValue(""),
 				resolve.NewOriginlessStringValue("//"),
@@ -259,7 +259,7 @@ func TestRebasePathFunction(t *testing.T) {
 			wantErr: &resolve.ValueError{},
 		},
 		{
-			name: "relative input with current_base",
+			name: "relative_input_with_current_base",
 			args: []resolve.Value{
 				resolve.NewOriginlessStringValue("bar.txt"),
 				resolve.NewOriginlessStringValue("//baz/"),
@@ -268,7 +268,7 @@ func TestRebasePathFunction(t *testing.T) {
 			want: "../foo/bar.txt",
 		},
 		{
-			name: "relative input with relative current_base",
+			name: "relative_input_with_relative_current_base",
 			args: []resolve.Value{
 				resolve.NewOriginlessStringValue("bar.txt"),
 				resolve.NewOriginlessStringValue("//baz/"),
@@ -278,7 +278,7 @@ func TestRebasePathFunction(t *testing.T) {
 			want:   "../base/foo/bar.txt",
 		},
 		{
-			name: "relative input with relative current_base and empty new_base",
+			name: "relative_input_with_relative_current_base_and_empty_new_base",
 			args: []resolve.Value{
 				resolve.NewOriginlessStringValue("bar.txt"),
 				resolve.NewOriginlessStringValue(""),
