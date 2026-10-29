@@ -9,6 +9,7 @@ import (
 	"errors"
 	"runtime"
 	"testing"
+	"time"
 )
 
 func TestLocallyNeededSet(t *testing.T) {
@@ -257,5 +258,96 @@ func TestClassifyLocallyNeeded_AbsoluteTargetPath(t *testing.T) {
 	// the workspace root), matching how NeedFlush queries the predicate.
 	if !set.Has(absPath) {
 		t.Errorf("absolute target path should be keyed as-is, not joined; set=%v", set.m)
+	}
+}
+
+func TestScheduler_MultiOutputWeightPropagation(t *testing.T) {
+	ctx := t.Context()
+	const (
+		tStamp Target = iota
+		tMojomCC
+		tMojomH
+		tPhonyA
+		tPhonyB
+		tObj
+		tBin
+	)
+	g := classifyGraph{paths: map[Target]string{
+		tStamp:   "out/Default/gen/input.stamp",
+		tMojomCC: "out/Default/gen/foo.mojom.cc",
+		tMojomH:  "out/Default/gen/foo.mojom.h",
+		tPhonyA:  "out/Default/phony_a",
+		tPhonyB:  "out/Default/phony_b",
+		tObj:     "out/Default/obj/bar.o",
+		tBin:     "out/Default/chrome",
+	}}
+	sched := newScheduler(ctx, schedulerOption{
+		NumTargets: 7,
+		Path:       NewPath(t.TempDir(), "out/Default"),
+		KnownWeights: map[Target]int{
+			tMojomH: 10,
+		},
+	})
+
+	stampStep := NewStepForTest(1, fakeStepDef{actionName: "stamp"})
+	stampStep.outputs = []Target{tStamp}
+	sched.plan.targets[tStamp].step = stampStep
+	sched.plan.targets[tStamp].edge = &Edge{Outputs: []Target{tStamp}}
+
+	// Multi-output step scheduled via tMojomCC, while KnownWeights and
+	// downstream consumers only reference sibling output tMojomH.
+	mojomStep := NewStepForTest(2, fakeStepDef{actionName: "__mojom__rule"})
+	mojomStep.outputs = []Target{tMojomCC, tMojomH}
+	mojomStep.nwaits = 1
+	sched.plan.targets[tStamp].waits = []*Step{mojomStep}
+	sched.plan.targets[tMojomCC].step = mojomStep
+	sched.plan.targets[tMojomCC].edge = &Edge{Inputs: []Target{tStamp}, Outputs: []Target{tMojomCC, tMojomH}}
+
+	// Multi-output phony step scheduled via tPhonyA, consumed via sibling tPhonyB.
+	phonyStep := NewStepForTest(3, classifyStepDef{phony: true})
+	phonyStep.outputs = []Target{tPhonyA, tPhonyB}
+	phonyStep.nwaits = 1
+	sched.plan.targets[tMojomH].waits = []*Step{phonyStep}
+	sched.plan.targets[tPhonyA].step = phonyStep
+	sched.plan.targets[tPhonyA].edge = &Edge{Inputs: []Target{tMojomH}, Outputs: []Target{tPhonyA, tPhonyB}}
+
+	objStep := NewStepForTest(4, fakeStepDef{actionName: "cxx"})
+	objStep.outputs = []Target{tObj}
+	objStep.nwaits = 1
+	sched.plan.targets[tPhonyB].waits = []*Step{objStep}
+	sched.plan.targets[tObj].step = objStep
+	sched.plan.targets[tObj].edge = &Edge{Inputs: []Target{tPhonyB}, Outputs: []Target{tObj}}
+
+	binStep := NewStepForTest(5, fakeStepDef{actionName: "link"})
+	binStep.outputs = []Target{tBin}
+	binStep.nwaits = 1
+	sched.plan.targets[tObj].waits = []*Step{binStep}
+	sched.plan.targets[tBin].step = binStep
+	sched.plan.targets[tBin].edge = &Edge{Inputs: []Target{tObj}, Outputs: []Target{tBin}}
+
+	sched.addStep(ctx, stampStep, g, tStamp)
+	sched.addStep(ctx, mojomStep, g, tMojomCC)
+	sched.addStep(ctx, phonyStep, g, tPhonyA)
+	sched.addStep(ctx, objStep, g, tObj)
+	sched.addStep(ctx, binStep, g, tBin)
+	if err := sched.finish(ctx, time.Now(), g); err != nil {
+		t.Fatalf("sched.finish() failed: %v", err)
+	}
+
+	// bin (1) + obj (1) + phony (0) + mojom (KnownWeights[tMojomH]=10) + stamp (1).
+	if binStep.weight != 1 {
+		t.Errorf("binStep.weight = %d, want 1", binStep.weight)
+	}
+	if objStep.weight != 2 {
+		t.Errorf("objStep.weight = %d, want 2", objStep.weight)
+	}
+	if phonyStep.weight != 2 {
+		t.Errorf("phonyStep.weight = %d, want 2", phonyStep.weight)
+	}
+	if mojomStep.weight != 12 {
+		t.Errorf("mojomStep.weight = %d, want 12", mojomStep.weight)
+	}
+	if stampStep.weight != 13 {
+		t.Errorf("stampStep.weight = %d, want 13", stampStep.weight)
 	}
 }

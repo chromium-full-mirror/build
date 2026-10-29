@@ -681,8 +681,10 @@ func newScheduler(ctx context.Context, opt schedulerOption) *scheduler {
 		// If there is a known weight, it will be overridden.
 		// If the target is phony, it will be set to 0 during scheduling.
 		targets[i].weight = 1
-		if w, ok := opt.KnownWeights[Target(i)]; ok {
-			targets[i].weight = w
+	}
+	for t, w := range opt.KnownWeights {
+		if t >= 0 && int(t) < len(targets) {
+			targets[t].weight = w
 		}
 	}
 	return &scheduler{
@@ -809,25 +811,26 @@ func (s *scheduler) finish(ctx context.Context, started time.Time, graph Graph) 
 	// Propagate and accumulate weights in reverse topological order.
 	for _, t := range slices.Backward(s.plan.targetsSorted) {
 		curTarget := &s.plan.targets[t]
-		if len(curTarget.waits) == 0 {
-			curTarget.criticalPathWeight = curTarget.weight
-			if curTarget.step != nil {
-				curTarget.step.weight = curTarget.criticalPathWeight
-			}
+		// Downstream steps may consume any sibling output in edge.Outputs,
+		// accumulating criticalPathWeight (which already includes
+		// outTarget.weight) onto that sibling rather than t. Including
+		// outTarget.weight in max also seeds terminal steps that have no
+		// downstream consumers (criticalPathWeight == 0).
+		var cpw int
+		for _, out := range curTarget.edge.Outputs {
+			outTarget := &s.plan.targets[out]
+			cpw = max(cpw, outTarget.criticalPathWeight, outTarget.weight)
+		}
+		curTarget.criticalPathWeight = cpw
+		if curTarget.step != nil {
+			curTarget.step.weight = cpw
 		}
 		for _, in := range append(curTarget.edge.Inputs, curTarget.edge.OrderOnly...) {
 			inTarget := &s.plan.targets[in]
 			if inTarget.source {
 				continue
 			}
-			if curTarget.criticalPathWeight == math.MaxInt || inTarget.weight == math.MaxInt {
-				// Avoid overflow if either of the weights above is max int.
-				inTarget.criticalPathWeight = math.MaxInt
-			} else {
-				// Otherwise, `curTarget.criticalPathWeight+inTarget.weight` should fit in the max int in practice.
-				// When inTarget.criticalPathWeight is already max int, it will be kept as is.
-				inTarget.criticalPathWeight = max(inTarget.criticalPathWeight, curTarget.criticalPathWeight+inTarget.weight)
-			}
+			inTarget.criticalPathWeight = max(inTarget.criticalPathWeight, addCriticalPathWeight(curTarget.criticalPathWeight, inTarget.weight))
 			if inTarget.step != nil {
 				inTarget.step.weight = inTarget.criticalPathWeight
 			}
@@ -863,6 +866,13 @@ func (s *scheduler) finish(ctx context.Context, started time.Time, graph Graph) 
 	return err
 }
 
+func addCriticalPathWeight(a, b int) int {
+	if a == math.MaxInt || b == math.MaxInt || (b > 0 && a > math.MaxInt-b) {
+		return math.MaxInt
+	}
+	return a + b
+}
+
 // addStep adds a Step to the scheduler.
 // This is called before finish().
 func (s *scheduler) addStep(ctx context.Context, step *Step, graph Graph, target Target) {
@@ -882,11 +892,15 @@ func (s *scheduler) addStep(ctx context.Context, step *Step, graph Graph, target
 	s.plan.targetsSorted = append(s.plan.targetsSorted, target)
 	if step.def.IsPhony() {
 		// It turned out that the step is phony, which doesn't have any weight.
-		s.plan.targets[target].weight = 0
+		for _, output := range step.outputs {
+			s.plan.targets[output].weight = 0
+		}
 	} else {
+		var stepWeight int
 		// don't add output for phony targets. https://crbug.com/1517575
 		for _, output := range step.outputs {
 			s.plan.targets[output].output = true
+			stepWeight = max(stepWeight, s.plan.targets[output].weight)
 			tp := targetPath(ctx, graph, output)
 			// Clear a stale file sitting where a dir output now lives, so
 			// the action can create its directory there.
@@ -896,6 +910,9 @@ func (s *scheduler) addStep(ctx context.Context, step *Step, graph Graph, target
 				}
 			}
 			s.actionOutputDirs.ensure(tp)
+		}
+		for _, output := range step.outputs {
+			s.plan.targets[output].weight = stepWeight
 		}
 	}
 	if log.V(1) {
