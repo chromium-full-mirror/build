@@ -44,6 +44,19 @@ func TestParseChunk_TrailingComment(t *testing.T) {
 	}
 }
 
+// TestParseChunk_TrailingKeyword checks that a keyword at the end of the
+// buffer is an error instead of a panic.
+func TestParseChunk_TrailingKeyword(t *testing.T) {
+	for _, kw := range []string{"build", "default", "include", "pool", "rule", "subninja"} {
+		t.Run(kw, func(t *testing.T) {
+			ch := splitIntoChunks(t.Context(), []byte("rule cc\n  command = cc\n"+kw))[0]
+			if err := ch.parseChunk(t.Context()); err == nil {
+				t.Errorf("parseChunk: got statements %v; want error", ch.statements)
+			}
+		})
+	}
+}
+
 // TestCompactBuildStatements_Empty verifies the (nil, nil) early return.
 func TestCompactBuildStatements_Empty(t *testing.T) {
 	ch := &chunk{}
