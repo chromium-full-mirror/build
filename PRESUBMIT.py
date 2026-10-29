@@ -96,24 +96,6 @@ def CheckGoVersionsConsistent(input_api, output_api):
   ]
 
 
-SUBTEST_CHECK_DIRS = [
-  r"^bench(/|$)",
-  r"^gong/gn/build/ninjawriter$",
-  r"^hashigo(/|$)",
-  r"^kajiya(/|$)",
-  r"^kzipinfo(/|$)",
-  r"^remote-apis(/|$)",
-  r"^infra/subtestanalyzer(/|$)",
-  r"^siso(/|$)",
-]
-
-
-def _IsSubtestCheckEnabledForDir(input_api, dirpath):
-  return any(
-    input_api.re.search(pattern, dirpath) for pattern in SUBTEST_CHECK_DIRS
-  )
-
-
 # Changes to these files can change golangci-lint results for code they don't
 # touch (e.g. a Go version bump enables new modernize analyzers), so they make
 # golangci-lint run on every Go module instead of only on affected dirs.
@@ -121,6 +103,23 @@ FULL_GO_LINT_TRIGGERS = [
   r"PRESUBMIT\.py$",  # GO_VERSION and golangci-lint CIPD versions are pinned here.
   r"\.golangci\.yml$",
   r"(.+/)?go\.mod$",
+]
+
+# Changes to these files can change subtest name check results for code they
+# don't touch (e.g. a stricter rule), so they make the check run on every Go
+# module instead of only on affected dirs. The analyzer is purely syntactic, so
+# go.mod and .golangci.yml changes don't affect it.
+FULL_SUBTEST_CHECK_TRIGGERS = [
+  r"PRESUBMIT\.py$",  # Decides which files the check runs on.
+  r"infra/subtestanalyzer/",
+]
+
+# Go modules that can only be vetted on Linux, so the subtest name check skips
+# them elsewhere. runmc is entirely `//go:build linux`, and siso-tap needs
+# libseccomp via cgo, which CheckGoChanges only fetches on Linux.
+LINUX_ONLY_GO_MODULES = [
+  "runmc",
+  "siso-tap",
 ]
 
 
@@ -139,6 +138,13 @@ def CheckGoChanges(input_api, output_api):
       files_to_skip=THIRD_PARTY_DIRS,
     )
 
+  def full_subtest_trigger_filter(path):
+    return input_api.FilterSourceFile(
+      path,
+      files_to_check=FULL_SUBTEST_CHECK_TRIGGERS,
+      files_to_skip=THIRD_PARTY_DIRS,
+    )
+
   affected_files = sorted(
     [
       # TODO(b/430465030): Fix this.
@@ -154,7 +160,15 @@ def CheckGoChanges(input_api, output_api):
     f.LocalPath()
     for f in input_api.AffectedFiles(file_filter=full_lint_trigger_filter)
   )
-  if not affected_files and not full_lint_triggers:
+  full_subtest_triggers = sorted(
+    f.LocalPath()
+    for f in input_api.AffectedFiles(file_filter=full_subtest_trigger_filter)
+  )
+  if (
+    not affected_files
+    and not full_lint_triggers
+    and not full_subtest_triggers
+  ):
     return []
 
   results = []
@@ -231,20 +245,42 @@ def CheckGoChanges(input_api, output_api):
 
   tests = []
 
-  # Build custom AST vettool and run on enabled directories.
+  # Build custom AST vettool and run on affected directories by default,
+  # otherwise all modules.
   subtestanalyzer_dir = input_api.os_path.join(
     input_api.change.RepositoryRoot(), "infra", "subtestanalyzer"
   )
-  subtest_affected_dirs = {
-    input_api.os_path.dirname(f.AbsoluteLocalPath()): input_api.os_path.dirname(
-      f.LocalPath()
+  if not full_subtest_triggers:
+    subtest_dirs = {
+      input_api.os_path.dirname(f.LocalPath()) for f in affected_files
+    }
+  else:
+    subtest_dirs = {
+      input_api.os_path.dirname(path) for path in _GoModFiles(input_api)
+    }
+    results.append(
+      output_api.PresubmitNotifyResult(
+        "Checking subtest names on all Go modules because files affecting "
+        "the check changed.",
+        items=full_subtest_triggers,
+      )
     )
-    for f in affected_files
-    if _IsSubtestCheckEnabledForDir(
-      input_api, input_api.os_path.dirname(f.LocalPath())
+  if not input_api.platform.startswith("linux"):
+    skipped = sorted(
+      d
+      for d in subtest_dirs
+      if any(d == m or d.startswith(m + "/") for m in LINUX_ONLY_GO_MODULES)
     )
-  }
-  if input_api.os_path.exists(subtestanalyzer_dir) and subtest_affected_dirs:
+    if skipped:
+      subtest_dirs.difference_update(skipped)
+      results.append(
+        output_api.PresubmitNotifyResult(
+          "Skipping subtest name check on Linux-only Go modules; presubmit "
+          "bots will check them.",
+          items=skipped,
+        )
+      )
+  if input_api.os_path.exists(subtestanalyzer_dir) and subtest_dirs:
     vettool_bin = input_api.os_path.join(subtestanalyzer_dir, "subtestanalyzer")
     try:
       input_api.subprocess.check_call(
@@ -253,13 +289,17 @@ def CheckGoChanges(input_api, output_api):
         stdout=input_api.subprocess.PIPE,
         stderr=input_api.subprocess.PIPE,
       )
-      for absolute, pretty in sorted(subtest_affected_dirs.items()):
-        kwargs = {"cwd": absolute}
+      for subtest_dir in sorted(subtest_dirs):
+        kwargs = {
+          "cwd": input_api.os_path.join(
+            input_api.change.RepositoryRoot(), subtest_dir
+          )
+        }
         if env:
           kwargs["env"] = env
         tests.append(
           input_api.Command(
-            name=f"Check subtest names via go vet on {pretty}",
+            name=f"Check subtest names via go vet on {subtest_dir}",
             cmd=[go, "vet", f"-vettool={vettool_bin}", "./..."],
             kwargs=kwargs,
             message=error_type,
