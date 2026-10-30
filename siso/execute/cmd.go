@@ -1522,7 +1522,7 @@ func (c *Cmd) RecordOutputsFromLocal(ctx context.Context, now time.Time) error {
 			return fmt.Errorf("failed to update hashfs from local dir %q: %w", ent.Name, err)
 		}
 	}
-	if c.Restat {
+	if c.Restat || c.RestatContent {
 		pre := make(map[path.Path]hashfs.UpdateEntry)
 		for _, ent := range c.preOutputEntries {
 			pre[ent.Name] = ent
@@ -1550,7 +1550,17 @@ func (c *Cmd) RecordOutputsFromLocal(ctx context.Context, now time.Time) error {
 				clog.Warningf(ctx, "restat: empty file %q %s->%s", ent.Name, pent.ModTime, ent.ModTime)
 				continue
 			}
-			clog.Warningf(ctx, "restat: changed but not modified %q %s %s->%s", ent.Name, ent.Entry.Data.Digest(), pent.ModTime, ent.ModTime)
+			if c.RestatContent {
+				// Locally written outputs use mtime for restat even
+				// when restat_content is set (computeOutputEntries
+				// checks Restat && IsLocal first). The output is
+				// considered changed here, but would be considered
+				// unchanged if the step had run remotely, so the
+				// results diverge between local and remote execution.
+				clog.Warningf(ctx, "restat_content: local output mtime updated but content unchanged %q %s %s->%s", ent.Name, d, pent.ModTime, ent.ModTime)
+				continue
+			}
+			clog.Warningf(ctx, "restat: changed but not modified %q %s %s->%s", ent.Name, d, pent.ModTime, ent.ModTime)
 		}
 	}
 	return nil
