@@ -11,6 +11,7 @@ package blob
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"slices"
@@ -151,7 +152,9 @@ func FromLocalFile(ctx context.Context, fn digest.Function, src Source) (Data, e
 				source: src,
 			}, nil
 		}
-		clog.Warningf(ctx, "failed to get digest from FS for %q: %v", src, err)
+		if !errors.Is(err, errors.ErrUnsupported) {
+			clog.Warningf(ctx, "failed to get digest from FS for %q: %v", src, err)
+		}
 	}
 	_, ok = src.(LocalFileSource)
 	if !ok {

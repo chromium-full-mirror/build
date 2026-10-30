@@ -7,6 +7,7 @@ package blob
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -14,6 +15,8 @@ import (
 	"testing"
 
 	"go.chromium.org/build/hashigo/digest"
+
+	"go.chromium.org/build/siso/o11y/clog"
 )
 
 // testDigestStr123 is the digest string for []byte{1, 2, 3}.
@@ -112,5 +115,82 @@ func TestLocalFileSource(t *testing.T) {
 	wantStr := fmt.Sprintf("%s file://%s", testDigestStr123, fname)
 	if gotStr != wantStr {
 		t.Errorf("d.String() = %q, want %q", gotStr, wantStr)
+	}
+}
+
+type localFileDigesterSource struct {
+	localFileSource
+	fsDigest digest.Digest
+	fsErr    error
+}
+
+func (s localFileDigesterSource) FileDigestFromFS(context.Context) (digest.Digest, error) {
+	return s.fsDigest, s.fsErr
+}
+
+func TestFromLocalFile_FileDigester(t *testing.T) {
+	dir := t.TempDir()
+	fname := filepath.Join(dir, "123")
+	b := []byte{1, 2, 3}
+	if err := os.WriteFile(fname, b, 0644); err != nil {
+		t.Fatalf("os.WriteFile(%q) failed: %v", fname, err)
+	}
+
+	fsDigest := digest.SHA256.FromBytes([]byte{4, 5, 6})
+	fileDigest := digest.SHA256.FromBytes(b)
+	tests := []struct {
+		name       string
+		fsDigest   digest.Digest
+		fsErr      error
+		wantDigest digest.Digest
+		wantLog    string
+	}{
+		{
+			name:       "digest_from_fs",
+			fsDigest:   fsDigest,
+			wantDigest: fsDigest,
+			wantLog:    "",
+		},
+		{
+			name:       "unsupported_falls_back_silently",
+			fsErr:      errors.ErrUnsupported,
+			wantDigest: fileDigest,
+			wantLog:    "",
+		},
+		{
+			name:       "wrapped_unsupported_falls_back_silently",
+			fsErr:      fmt.Errorf("no xattr: %w", errors.ErrUnsupported),
+			wantDigest: fileDigest,
+			wantLog:    "",
+		},
+		{
+			name:       "unexpected_error_logs_warning_and_falls_back",
+			fsErr:      errors.New("io failure"),
+			wantDigest: fileDigest,
+			wantLog:    fmt.Sprintf("failed to get digest from FS for %q: io failure\n", fmt.Sprintf("file://%s", fname)),
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var logBuf bytes.Buffer
+			ctx := clog.NewContext(t.Context(), clog.FromContext(t.Context()).WithWriter(&logBuf))
+			src := localFileDigesterSource{
+				name:     fname,
+				fsDigest: tc.fsDigest,
+				fsErr:    tc.fsErr,
+			}
+
+			got, err := FromLocalFile(ctx, digest.SHA256, src)
+			if err != nil {
+				t.Fatalf("FromLocalFile(ctx, SHA256, %q) failed: %v", src, err)
+			}
+			if got.Digest() != tc.wantDigest {
+				t.Errorf("FromLocalFile(ctx, SHA256, %q).Digest() = %v, want %v", src, got.Digest(), tc.wantDigest)
+			}
+			if gotLog := logBuf.String(); gotLog != tc.wantLog {
+				t.Errorf("FromLocalFile(ctx, SHA256, %q) log = %q, want %q", src, gotLog, tc.wantLog)
+			}
+		})
 	}
 }
