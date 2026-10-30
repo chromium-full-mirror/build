@@ -149,6 +149,65 @@ func TestStepSpanName(t *testing.T) {
 	}
 }
 
+func TestStepRestatContent(t *testing.T) {
+	for _, tc := range []struct {
+		name          string
+		experiment    bool
+		restat        bool
+		restatContent string
+		want          bool
+	}{
+		{
+			name:   "experiment_off_restat",
+			restat: true,
+			want:   false,
+		},
+		{
+			name:       "experiment_on_restat",
+			experiment: true,
+			restat:     true,
+			want:       true,
+		},
+		{
+			name:       "experiment_on_without_restat",
+			experiment: true,
+			want:       false,
+		},
+		{
+			name:          "experiment_on_explicit_restat_content_false",
+			experiment:    true,
+			restat:        true,
+			restatContent: "false",
+			want:          false,
+		},
+		{
+			name:          "experiment_off_explicit_restat_content_true",
+			restatContent: "true",
+			want:          true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.experiment {
+				SetExperimentForTest("auto-restat-content")
+			} else {
+				SetExperimentForTest("")
+			}
+			t.Cleanup(func() { SetExperimentForTest("") })
+			bindings := map[string]string{}
+			if tc.restat {
+				bindings["restat"] = "true"
+			}
+			if tc.restatContent != "" {
+				bindings["restat_content"] = tc.restatContent
+			}
+			stepDef := fakeStepDef{bindings: bindings}
+			if got := stepRestatContent(stepDef); got != tc.want {
+				t.Errorf("stepRestatContent()=%t; want %t", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestStepMetrics(t *testing.T) {
 	m := StepMetric{
 		BuildID: "my-build-id",

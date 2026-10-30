@@ -50,6 +50,13 @@ It could not be used for step that produces the same content but
 update mtime to make it dirty.
 `restat_content = false` or `restat_content = 0` can be used to disable `restat_content`.
 
+With `SISO_EXPERIMENTS=auto-restat-content`, `restat = true` is treated as
+`restat_content = true`, unless `restat_content` is set explicitly (in the
+Ninja rule/build or the step config).
+Outputs written locally, including local execution, local fallback and racing
+results, still use mtime for `restat`, so this only affects outputs produced
+by remote execution.
+
 ### sandbox_disabled
 
 `sandbox_disabled = true` can be used to disable sandboxing for a specific rule in an otherwise

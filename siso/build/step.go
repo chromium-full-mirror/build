@@ -655,10 +655,8 @@ func newCmd(ctx context.Context, b *Builder, stepDef StepDef, stepManifest *step
 		AuxiliaryLogOutputFiles: stepDef.AuxiliaryLogOutputFiles(ctx),
 		AuxiliaryLogOutputDirs:  stepDef.AuxiliaryLogOutputDirs(ctx),
 
-		Restat: stepDef.Binding("restat") != "",
-		// TODO(b/561799494): Enable RestatContent by default when Restat is true and
-		// stepDef.IsRemoteRule() is true, unless stepDef.Binding("restat_content") == "false".
-		RestatContent: stepDef.Binding("restat_content") == "true",
+		Restat:        stepDef.Binding("restat") != "",
+		RestatContent: stepRestatContent(stepDef),
 
 		Pure: stepDef.Pure(),
 
@@ -715,6 +713,23 @@ func newCmd(ctx context.Context, b *Builder, stepDef StepDef, stepManifest *step
 		cmd.OOMScoreAdj = &score
 	}
 	return cmd
+}
+
+// stepRestatContent reports whether the step should use content-based restat.
+// An explicit restat_content binding (in the Ninja rule/edge or the Starlark
+// step config) always wins. Otherwise, with the auto-restat-content
+// experiment, restat=true is treated as restat_content.
+// Outputs written locally still restat by mtime; see computeOutputEntries.
+func stepRestatContent(stepDef StepDef) bool {
+	switch stepDef.Binding("restat_content") {
+	case "true":
+		return true
+	case "false":
+		return false
+	}
+	// TODO(b/575621006): enable by default once validated on builders.
+	return stepDef.Binding("restat") != "" &&
+		experiments.Enabled("auto-restat-content", "restat=true is treated as restat_content")
 }
 
 func stepTimeout(ctx context.Context, d string) time.Duration {

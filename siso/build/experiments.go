@@ -27,6 +27,9 @@ var knownExperiments = map[string]string{
 	"allow-unexpected-rsp-remove": "",
 	"allow-fallback-high":         "",
 	"allow-fallback-low":          "",
+	// TODO(b/575621006): remove once restat_content is the default
+	// for restat=true remote rules.
+	"auto-restat-content":         "(set restat_content=false on a rule to opt out)",
 	"disable-ensure-output-dirs":  "",
 	"expand-phony-trigger-inputs": "",
 	"fail-on-stdouterr":           "",
