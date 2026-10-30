@@ -108,8 +108,24 @@ Siso rejects an output produced under another step's directory output.
   * **Siso:** Rejects absolute paths in `include` and `subninja` statements.
       Use relative paths instead.
 
+## Path normalization
+
+  * **Ninja:** Normalizes target paths when parsing `.ninja` files (e.g.
+      collapsing redundant `/`, `.`, and `..` path segments).
+  * **Siso:** Only strips a leading `./` and does not normalize target paths
+      when parsing `.ninja` files to keep manifest parsing fast at scale (e.g.
+      Android builds with >10GB `.ninja` manifests). Siso expects the build
+      generator to emit normalized paths. See
+      [crbug.com/578639457](https://crbug.com/578639457).
+
 ## Unsupported features
 
-   Siso may not support Ninja features if they are not used for Chromium
-   builds. e.g. [dynamic dependencies](https://ninja-build.org/manual.html#ref_dyndep), `ninja -t browse` etc
+   Siso mainly intends to support `gn` (Chromium) and `soong` (Android).
+   Support for other generators such as `cmake` is optional (see
+   [crbug.com/448631316](https://crbug.com/448631316)).
+
+   Siso may not support Ninja features if they are not used for Chromium or
+   Android builds, e.g.
+   [dynamic dependencies](https://ninja-build.org/manual.html#ref_dyndep),
+   `ninja -t browse` etc.
 
