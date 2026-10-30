@@ -41,9 +41,6 @@ type Client struct {
 	dir      string
 	client   *http.Client
 
-	mu         sync.Mutex
-	batchDelay time.Duration
-
 	wg         sync.WaitGroup
 	regCh      chan registerReq
 	regWorkers int
@@ -90,7 +87,6 @@ func New(ctx context.Context, endpoint, dir string) (*Client, error) {
 		client: &http.Client{
 			Transport: tr,
 		},
-		batchDelay: defaultBatchDelay,
 		regCh:      make(chan registerReq, numCPU),
 		regWorkers: numCPU,
 	}
@@ -349,10 +345,7 @@ func (c *Client) registerBatcher(ctx context.Context) {
 				}
 				continue
 			}
-			c.mu.Lock()
-			delay := c.batchDelay
-			c.mu.Unlock()
-			timer := time.After(delay)
+			timer := time.After(defaultBatchDelay)
 		batchLoop:
 			for len(items) < maxBatchSize {
 				select {
