@@ -182,58 +182,46 @@ func (e *entry) compute(ctx context.Context, fn digest.Function, fname string) e
 		e.mu.Unlock()
 		return nil
 	}
-	if e.dch != nil {
-		// Another goroutine is already computing; wait for it.
-		dch := e.dch
+	dch := e.dch
+	if dch == nil {
+		// We're the first caller: claim the computation.
+		dch = make(chan struct{})
+		e.dch = dch
+		src := e.src
 		e.mu.Unlock()
-		select {
-		case <-ctx.Done():
-			return context.Cause(ctx)
-		case <-dch:
-		}
-		e.mu.Lock()
-		defer e.mu.Unlock()
-		return e.err
-	}
-	// We're the first caller: claim the computation.
-	e.dch = make(chan struct{})
-	e.mu.Unlock()
 
-	// Run in a goroutine so we can bail on context cancellation
-	// without blocking on disk I/O.
-	type result struct {
-		data blob.Data
-		err  error
+		// Run in a goroutine so callers can bail on context cancellation
+		// without blocking on disk I/O. Detach from the first caller's
+		// cancellation so a canceled caller does not poison e.err with
+		// context.Canceled or fail concurrent/subsequent waiters.
+		dctx := context.WithoutCancel(ctx)
+		go func() {
+			data, err := localDigest(dctx, fn, src, fname)
+			// Only write e.err on the error path. ReadDir's Range callback
+			// reads ee.err without holding e.mu, so an unconditional write
+			// (even of nil) would race with that read.
+			e.mu.Lock()
+			if err != nil {
+				e.err = err
+			} else {
+				e.d = data.Digest()
+			}
+			e.entryErrLogged.Store(false)
+			close(dch)
+			e.mu.Unlock()
+		}()
+	} else {
+		e.mu.Unlock()
 	}
-	ch := make(chan result, 1)
-	go func() {
-		data, err := localDigest(ctx, fn, e.src, fname)
-		ch <- result{data, err}
-	}()
 
-	var err error
-	var d digest.Digest
 	select {
 	case <-ctx.Done():
-		err = context.Cause(ctx)
-	case r := <-ch:
-		err = r.err
-		d = r.data.Digest()
+		return context.Cause(ctx)
+	case <-dch:
 	}
-
-	// Only write e.err on the error path. ReadDir's Range callback
-	// reads ee.err without holding e.mu, so an unconditional write
-	// (even of nil) would race with that read.
 	e.mu.Lock()
-	if err != nil {
-		e.err = err
-	} else {
-		e.d = d
-	}
-	e.entryErrLogged.Store(false)
-	close(e.dch)
-	e.mu.Unlock()
-	return err
+	defer e.mu.Unlock()
+	return e.err
 }
 
 func (e *entry) digest() digest.Digest {
