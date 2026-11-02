@@ -224,7 +224,13 @@ func New(ctx context.Context, client *logging.Client, logID, accessLogID string,
 	}
 
 	// recommends to use logging.CommonResource to set default resource for log entry.
-	opts = append(opts, logging.CommonResource(res))
+	// Also use multiple concurrent writers so the bundler can keep up with
+	// high-throughput step logging without accumulating hundreds of MBs of
+	// unsent entries in memory and timing out on Close.
+	opts = append(opts,
+		logging.CommonResource(res),
+		logging.ConcurrentWriteLimit(runtime.GOMAXPROCS(0)),
+	)
 	var cl, acl *logging.Logger
 	if directClient != nil {
 		directClient.OnError = func(err error) {
