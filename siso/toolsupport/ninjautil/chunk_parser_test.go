@@ -44,6 +44,59 @@ func TestParseChunk_TrailingComment(t *testing.T) {
 	}
 }
 
+func TestParseChunk_AllocCounts(t *testing.T) {
+	manifest := []byte(`v1 = a
+v2 = b
+pool p
+  depth = 1
+rule cc
+  command = cc $in -o $out
+  description = CC $out
+build out: cc in
+  b1 = 1
+  b2 = 2
+  b3 = 3
+  b4 = 4
+  b5 = 5
+  b6 = 6
+  b7 = 7
+  b8 = 8
+`)
+	fp := &fileParser{
+		state: NewState(),
+		scope: newFileScope(nil),
+		sema:  make(chan struct{}, 1),
+		buf:   manifest,
+	}
+	fp.chunks = splitIntoChunks(t.Context(), fp.buf)
+	if err := fp.parseChunks(t.Context()); err != nil {
+		t.Fatalf("parseChunks: %v", err)
+	}
+	fp.alloc(t.Context())
+
+	if got, want := fp.full.nvar, 2; got != want {
+		t.Errorf("fp.full.nvar = %d, want %d", got, want)
+	}
+	if got, want := fp.full.nrulevar, 2; got != want {
+		t.Errorf("fp.full.nrulevar = %d, want %d", got, want)
+	}
+	if got, want := fp.full.nbuildvar, 8; got != want {
+		t.Errorf("fp.full.nbuildvar = %d, want %d", got, want)
+	}
+	if got, want := fp.full.npoolvar, 1; got != want {
+		t.Errorf("fp.full.npoolvar = %d, want %d", got, want)
+	}
+	if got, want := len(fp.bindingArena.allocs), 2; got != want {
+		t.Errorf("len(fp.bindingArena.allocs) = %d, want %d", got, want)
+	}
+	if got, want := len(fp.chunks[0].bindingArena.allocs), 2; got != want {
+		t.Errorf("len(fp.chunks[0].bindingArena.allocs) = %d, want %d", got, want)
+	}
+	if got, want := len(fp.scope.bindings.shards), 1; got != want {
+		t.Errorf("len(fp.scope.bindings.shards) = %d, want %d", got, want)
+	}
+}
+
 // TestParseChunk_TrailingKeyword checks that a keyword at the end of the
 // buffer is an error instead of a panic.
 func TestParseChunk_TrailingKeyword(t *testing.T) {

@@ -207,7 +207,6 @@ loop:
 				e: e,
 			})
 			i = e
-			ch.nvar++
 			continue
 
 		case 'b':
