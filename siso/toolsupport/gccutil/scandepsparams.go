@@ -24,7 +24,7 @@ import (
 // after dropping "PWD=/proc/self/cwd " if it exists.
 // TODO: b/432599730 - remove the workaround
 func normalizeArgs(args []string) ([]string, error) {
-	if len(args) == 3 && args[0] == "/bin/sh" && args[1] == "-c" {
+	if len(args) == 3 && (filepath.Base(args[0]) == "sh" || filepath.Base(args[0]) == "bash") && args[1] == "-c" {
 		if !strings.HasPrefix(args[2], "PWD=/proc/self/cwd ") {
 			return nil, errors.New("unsupported commandline. no PWD=/proc/self/cwd prefix")
 		}

@@ -78,7 +78,6 @@ func TestParseFlagsFully(t *testing.T) {
 		})
 	}
 }
-
 func TestMissingDepsFlag(t *testing.T) {
 	for _, tc := range []struct {
 		name     string
@@ -143,7 +142,6 @@ func TestMissingDepsFlag(t *testing.T) {
 		})
 	}
 }
-
 func TestCleandeadFlag(t *testing.T) {
 	for _, tc := range []struct {
 		name          string
@@ -189,7 +187,6 @@ func TestCleandeadFlag(t *testing.T) {
 		})
 	}
 }
-
 func TestSetupOutputLocal_CleandeadPreservesNonLocal(t *testing.T) {
 	ctx := t.Context()
 	c := &Command{}

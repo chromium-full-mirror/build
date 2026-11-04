@@ -356,7 +356,10 @@ func setupBuild(ctx context.Context, t *testing.T, dir string, fsopt hashfs.Opti
 		t.Fatal(err)
 	}
 
-	graph := ninjabuild.NewGraph(ctx, "build.ninja", nstate, config, path, hashFS, stepConfig, depsLog)
+	graph, err := ninjabuild.NewGraph(ctx, "build.ninja", nstate, config, path, hashFS, stepConfig, depsLog)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	cachestore, err := reapi.NewLocalCache(".siso_cache")
 	if err != nil {

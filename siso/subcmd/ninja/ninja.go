@@ -695,7 +695,10 @@ func (c *Command) Run(ctx context.Context) (stats build.Stats, finalErr error) {
 		return stats, err
 	}
 	spin.Stop(nil)
-	graph := ninjabuild.NewGraph(ctx, c.fname, nstate, config, buildPath, hashFS, stepConfig, localDepsLog)
+	graph, err := ninjabuild.NewGraph(ctx, c.fname, nstate, config, buildPath, hashFS, stepConfig, localDepsLog)
+	if err != nil {
+		return stats, err
+	}
 
 	// Set last failure targets if necessary, and remove the last failed targets file unconditionally.
 	if c.fastLastFailure && !c.clobber {

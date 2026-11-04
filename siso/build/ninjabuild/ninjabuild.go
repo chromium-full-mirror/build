@@ -8,10 +8,12 @@ package ninjabuild
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"maps"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"sync/atomic"
@@ -29,6 +31,12 @@ import (
 	"go.chromium.org/build/siso/o11y/trace"
 	"go.chromium.org/build/siso/path"
 	"go.chromium.org/build/siso/toolsupport/ninjautil"
+)
+
+var (
+	errShellPathNotCleanOrLocal = errors.New("shell path must be clean and local")
+	errInvalidShellBasename     = errors.New("shell basename must be 'sh' or 'bash'")
+	errShellNotExecutable       = errors.New("shell must be marked executable")
 )
 
 // Graph holds build graph, i.e. all step defs described in build.ninja.
@@ -49,6 +57,9 @@ type globals struct {
 
 	buildConfig *buildconfig.Config
 	stepConfig  *StepConfig
+
+	shellCmd    string
+	shellInputs []path.Path
 
 	// node id -> path.Path
 	targetPaths []path.Path
@@ -300,7 +311,7 @@ func (t *dirTrieNode) containingDir(p string) string {
 }
 
 // NewGraph creates new Graph from fname (usually "build.ninja") with stepConfig.
-func NewGraph(ctx context.Context, fname string, nstate *ninjautil.State, config *buildconfig.Config, p *build.Path, hashFS *hashfs.HashFS, stepConfig *StepConfig, depsLog *DepsLog) *Graph {
+func NewGraph(ctx context.Context, fname string, nstate *ninjautil.State, config *buildconfig.Config, p *build.Path, hashFS *hashfs.HashFS, stepConfig *StepConfig, depsLog *DepsLog) (*Graph, error) {
 	defer trace.Begin(ctx, "ninjabuild.NewGraph").End()
 	graph := &Graph{
 		fname: fname,
@@ -323,13 +334,77 @@ func NewGraph(ctx context.Context, fname string, nstate *ninjautil.State, config
 			executables:    make(map[string]bool),
 		},
 	}
-	graph.initGlobals(ctx)
-	return graph
+	err := graph.initGlobals(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return graph, nil
 }
 
 // StateDir returns state dir.
 func (g *Graph) StateDir() string {
 	return g.globals.stepConfig.StateDir
+}
+
+// Shell returns the hermetic shell binary path, or empty if not set.
+func (g *Graph) Shell() string {
+	return g.globals.stepConfig.Shell
+}
+
+func (g *Graph) setShell(ctx context.Context) error {
+	shell := g.globals.stepConfig.Shell
+	if shell == "" {
+		g.globals.shellCmd = ""
+		g.globals.shellInputs = nil
+		return nil
+	}
+	shellCmd, shellInput, err := resolveShellPath(ctx, g.globals.hashFS, g.globals.path, shell)
+	if err != nil {
+		return err
+	}
+	g.globals.shellCmd = shellCmd
+	shellInputs := []path.Path{shellInput}
+	shellInputs = g.globals.stepConfig.ExpandInputs(ctx, g.globals.path, g.globals.hashFS, shellInputs)
+	if !slices.Contains(shellInputs, shellInput) {
+		shellInputs = append([]path.Path{shellInput}, shellInputs...)
+	}
+	g.globals.shellInputs = shellInputs
+	return nil
+}
+
+func resolveShellPath(ctx context.Context, hashFS *hashfs.HashFS, p *build.Path, shell string) (string, path.Path, error) {
+	if shell == "" {
+		return "", "", nil
+	}
+	if runtime.GOOS == "windows" {
+		return "", "", fmt.Errorf("shell cannot be specified on windows, got %q: %w", shell, errors.ErrUnsupported)
+	}
+	if shell != filepath.Clean(shell) || !filepath.IsLocal(shell) {
+		return "", "", fmt.Errorf("%w, got: %q", errShellPathNotCleanOrLocal, shell)
+	}
+	// Enforce that the shell's basename is either "sh" or "bash" to match the
+	// hardcoded names in normalizeArgs().
+	// TODO: b/432599730 - remove the workaround
+	if base := filepath.Base(shell); base != "sh" && base != "bash" {
+		return "", "", fmt.Errorf("%w, got: %q", errInvalidShellBasename, base)
+	}
+
+	shellPath := path.New(shell)
+
+	if info, err := hashFS.Stat(ctx, p.WorkspaceRoot, shellPath); err != nil {
+		return "", "", fmt.Errorf("could not stat shell %q: %w", shell, err)
+	} else if info.Mode()&0o111 == 0 {
+		return "", "", fmt.Errorf("shell %q: %w (mode: %O)", shell, errShellNotExecutable, info.Mode())
+	}
+
+	shellCmd := p.MaybeToRelative(ctx, shell)
+
+	// Need a / in the path so that execve doesn't do $PATH lookup
+	if !strings.Contains(shellCmd, "/") {
+		shellCmd = "./" + shellCmd
+	}
+
+	return shellCmd, shellPath, nil
 }
 
 // Reload reloads hashfs, filegroups and build.ninja.
@@ -357,8 +432,7 @@ func (g *Graph) Reload(ctx context.Context) error {
 		return err
 	}
 	g.globals.nstate = newState
-	g.reset(ctx)
-	return nil
+	return g.reset(ctx)
 }
 
 // Reset resets graph status and hashfs.
@@ -368,11 +442,10 @@ func (g *Graph) Reset(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	g.reset(ctx)
-	return nil
+	return g.reset(ctx)
 }
 
-func (g *Graph) reset(ctx context.Context) {
+func (g *Graph) reset(ctx context.Context) error {
 	g.visited = make(map[*ninjautil.Edge]*build.Edge)
 	g.globals.depsLog.Reset()
 	g.globals.targetPaths = make([]path.Path, g.globals.nstate.NumNodes())
@@ -382,10 +455,10 @@ func (g *Graph) reset(ctx context.Context) {
 	g.globals.caseSensitives = make(map[string][]path.Path)
 	g.globals.gnTargets = make(map[*ninjautil.Edge]gnTarget)
 	g.globals.executables = make(map[string]bool)
-	g.initGlobals(ctx)
+	return g.initGlobals(ctx)
 }
 
-func (g *Graph) initGlobals(ctx context.Context) {
+func (g *Graph) initGlobals(ctx context.Context) error {
 	// initialize caseSensitives.
 	for _, f := range g.globals.stepConfig.CaseSensitiveInputs {
 		cif := strings.ToLower(f)
@@ -443,12 +516,17 @@ func (g *Graph) initGlobals(ctx context.Context) {
 	}
 	g.globals.hashFS.SetExecutables(ctx, hfsExecutables)
 
+	err := g.setShell(ctx)
+	if err != nil {
+		return err
+	}
+
 	// TODO: find a better way to distinguish between gn build.ninja and other generator's one.
 	if _, ok := g.globals.nstate.LookupNodeByPath(g.fname); !ok {
 		// no node for g.fname (e.g. "build.ninja").
 		// so probably not build.ninja generated by gn.
 		clog.Infof(ctx, "no %s target. not gn?", g.fname)
-		return
+		return nil
 	}
 
 	// infer gn target.
@@ -530,6 +608,7 @@ func (g *Graph) initGlobals(ctx context.Context) {
 		}
 	}
 	clog.Infof(ctx, "gn_targets=%d edges=%d in %s", nGNTargets, len(g.globals.gnTargets), time.Since(started))
+	return nil
 }
 
 // Filename returns filename of build manifest (e.g. build.ninja).

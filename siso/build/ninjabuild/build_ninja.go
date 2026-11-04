@@ -138,7 +138,7 @@ func loadCheckGraph(ctx context.Context, filename string, buildPath *build.Path,
 
 	// zero step config. no remote exec for gn gen?
 	stepConfig := &StepConfig{}
-	return NewGraph(ctx, filename, nstate, config, buildPath, hashFS, stepConfig, localDepsLog), nil
+	return NewGraph(ctx, filename, nstate, config, buildPath, hashFS, stepConfig, localDepsLog)
 }
 
 // Run runs a ninja build.

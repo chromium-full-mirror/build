@@ -46,6 +46,9 @@ type StepDef struct {
 	edge *ninjautil.Edge
 	next build.StepDef
 
+	shellOnce sync.Once
+	needShell bool
+
 	ruleReady bool
 	rule      StepRule
 	pure      bool
@@ -206,9 +209,47 @@ func (s *StepDef) ActionName() string {
 	return s.edge.RuleName()
 }
 
+// Returns if we need to use the hermetic global shell because
+// the command line is too complicated to exec directly.
+func (s *StepDef) usesShell() bool {
+	s.shellOnce.Do(func() {
+		if s.edge == nil {
+			return
+		}
+		if runtime.GOOS == "windows" {
+			// hermetic shells are not supported on windows currently.
+			s.needShell = false
+		} else {
+			cmdline := s.edge.Binding("command")
+			_, err := shutil.Split(cmdline)
+			s.needShell = err != nil
+		}
+	})
+	return s.needShell
+}
+
+// Adds the inputs for the global shell to inputs and returns the modified slice.
+// Seen is optional, if provided, it will be used to deduplicate paths. Otherwise,
+// an n^2 deduplication will be used.
+func (s *StepDef) addShellInputs(inputs []path.Path, seen map[path.Path]bool) []path.Path {
+	if s.usesShell() {
+		for _, in := range s.globals.shellInputs {
+			if seen != nil {
+				if !seen[in] {
+					seen[in] = true
+					inputs = append(inputs, in)
+				}
+			} else if !slices.Contains(inputs, in) {
+				inputs = append(inputs, in)
+			}
+		}
+	}
+	return inputs
+}
+
 // Args returns command line arguments of the step.
 func (s *StepDef) Args(ctx context.Context) []string {
-	args := stepArgs(s.edge)
+	args := s.stepArgs()
 	if len(args) > 3 && args[0] == "ninja" && args[1] == "-t" && args[2] == "msvc" {
 		flagSet := flag.NewFlagSet("ninja-msvc", flag.ContinueOnError)
 		tool := "msvc"
@@ -229,8 +270,11 @@ func (s *StepDef) Args(ctx context.Context) []string {
 	return args
 }
 
-func stepArgs(edge *ninjautil.Edge) []string {
-	cmdline := edge.Binding("command")
+func (s *StepDef) stepArgs() []string {
+	if s.edge == nil {
+		return nil
+	}
+	cmdline := s.edge.Binding("command")
 	if runtime.GOOS == "windows" {
 		args, err := cmdutil.Split(cmdline) //nolint:staticcheck // SA4023: cmdutil.Split can return nil on windows.
 		if err != nil {                     //nolint:staticcheck // SA4023: cmdutil.Split can return nil on windows.
@@ -240,7 +284,11 @@ func stepArgs(edge *ninjautil.Edge) []string {
 	}
 	args, err := shutil.Split(cmdline)
 	if err != nil {
-		return []string{"/bin/sh", "-c", cmdline}
+		shell := "/bin/sh"
+		if s.globals.shellCmd != "" {
+			shell = s.globals.shellCmd
+		}
+		return []string{shell, "-c", cmdline}
 	}
 	return args
 }
@@ -426,6 +474,7 @@ func (s *StepDef) Inputs(ctx context.Context) []path.Path {
 	}
 	targets = fixInputs(ctx, s, targets, s.rule.ExcludeInputPatterns)
 	targets = append(targets, s.ToolInputs(ctx)...)
+	targets = s.addShellInputs(targets, seen)
 	if s.rule.Debug {
 		clog.Infof(ctx, "targets=%q", targets)
 	}
@@ -455,12 +504,13 @@ func (s *StepDef) TriggerInputs(ctx context.Context) []path.Path {
 	slices.SortFunc(inIDs, func(a, b idxid) int {
 		return cmp.Compare(a.idx, b.idx)
 	})
-	targets := make([]path.Path, 0, len(inIDs))
+	targets := make([]path.Path, 0, len(inIDs)+len(globals.shellInputs))
 	for _, i := range inIDs {
 		in := inputs[i.idx]
 		p := globals.targetPath(in)
 		targets = append(targets, p)
 	}
+	targets = s.addShellInputs(targets, nil)
 	return targets
 }
 
@@ -485,7 +535,7 @@ func (s *StepDef) ExpandedTriggerInputs(ctx context.Context) []path.Path {
 	slices.SortFunc(inIDs, func(a, b idxid) int {
 		return cmp.Compare(a.idx, b.idx)
 	})
-	targets := make([]path.Path, 0, len(inIDs))
+	targets := make([]path.Path, 0, len(inIDs)+len(globals.shellInputs))
 	var phonyEdges []*ninjautil.Edge
 	for _, i := range inIDs {
 		in := inputs[i.idx]
@@ -511,6 +561,7 @@ func (s *StepDef) ExpandedTriggerInputs(ctx context.Context) []path.Path {
 			targets = replacePhony(ctx, globals, visited, seen, p, inEdge, s.rule.Debug, targets)
 		}
 	}
+	targets = s.addShellInputs(targets, nil)
 	return targets
 }
 
@@ -696,11 +747,13 @@ func (s *StepDef) ToolInputs(ctx context.Context) []path.Path {
 	ctx, span := trace.NewSpan(ctx, "stepdef-tool-inputs")
 	defer span.Close(nil)
 
-	inputs := make([]path.Path, 0, len(s.rule.Inputs))
+	inputs := make([]path.Path, 0, len(s.rule.Inputs)+len(s.globals.shellInputs))
 	for _, in := range s.rule.Inputs {
 		inputs = append(inputs, fromConfigPath(ctx, s.globals.path, in))
 	}
-	return s.globals.stepConfig.ExpandInputs(ctx, s.globals.path, s.globals.hashFS, inputs)
+	inputs = s.globals.stepConfig.ExpandInputs(ctx, s.globals.path, s.globals.hashFS, inputs)
+	inputs = s.addShellInputs(inputs, nil)
+	return inputs
 }
 
 func fixInputs(ctx context.Context, stepDef *StepDef, inputs []path.Path, excludes []string) []path.Path {
@@ -1062,6 +1115,7 @@ func (s *StepDef) ExpandedInputs(ctx context.Context) []path.Path {
 		}
 	}
 	newInputsPaths := fixInputs(ctx, s, newInputs, s.rule.ExcludeInputPatterns)
+	newInputsPaths = s.addShellInputs(newInputsPaths, nil)
 	if changed {
 		result := make([]path.Path, len(newInputsPaths))
 		copy(result, newInputsPaths)

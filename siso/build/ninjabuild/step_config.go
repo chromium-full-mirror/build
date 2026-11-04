@@ -269,6 +269,12 @@ type StepConfig struct {
 	// This field is used to upload Linux executables from Windows host.
 	Executables []string `json:"executables,omitempty"`
 
+	// Shell specifies the path to the hermetic shell binary to use, when the
+	// command cannot be simply exec'd. If not given, /bin/sh will be used.
+	// The basename of the shell must be 'sh' or 'bash' currently.
+	// Not supported on windows.
+	Shell string `json:"shell,omitempty"`
+
 	// Sandbox is sandbox config
 	Sandbox map[string]string `json:"sandbox,omitempty"`
 

@@ -5,9 +5,13 @@
 package ninjabuild
 
 import (
+	"context"
 	"os"
 	"path/filepath"
+	"runtime"
+	"slices"
 	"sort"
+	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -754,6 +758,223 @@ build out2: rule_starlark_disabled
 		s.EnsureRule(ctx)
 		if got := s.Sandbox() != nil; got != tc.wantSandbox {
 			t.Errorf("%s: Sandbox() != nil is %t; want %t", tc.target, got, tc.wantSandbox)
+		}
+	}
+}
+
+func setupShellStepDefTest(ctx context.Context, t *testing.T) (*ninjautil.State, *build.Path, *hashfs.HashFS) {
+	t.Helper()
+	dir := t.TempDir()
+	workspaceRoot := dir
+	outDir := "out/Default"
+	ninjaDir := filepath.Join(dir, outDir)
+	err := os.MkdirAll(ninjaDir, 0755)
+	if err != nil {
+		t.Fatal(err)
+	}
+	binDir := filepath.Join(dir, "bin")
+	err = os.MkdirAll(binDir, 0755)
+	if err != nil {
+		t.Fatal(err)
+	}
+	shellPath := filepath.Join(binDir, "sh")
+	err = os.WriteFile(shellPath, []byte("#!/bin/sh\nexit 0\n"), 0755)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	buildNinja := filepath.Join(ninjaDir, "build.ninja")
+	err = os.WriteFile(buildNinja, []byte(`
+rule nontrivial
+  command = cat in.txt > out_nontrivial.txt
+rule trivial
+  command = cp in.txt out_trivial.txt
+
+build out_nontrivial.txt: nontrivial in.txt
+build out_trivial.txt: trivial in.txt
+`), 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	bpath := build.NewPath(workspaceRoot, outDir)
+	hashFS, err := hashfs.New(ctx, hashfs.Option{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := hashFS.Close(context.WithoutCancel(ctx)); err != nil {
+			t.Errorf("hashFS.Close=%v", err)
+		}
+	})
+
+	nstate := ninjautil.NewState()
+	p := ninjautil.NewManifestParser(nstate)
+	err = p.Load(ctx, buildNinja)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return nstate, bpath, hashFS
+}
+
+func TestStepDef_DefaultShell(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("These tests don't work on windows")
+	}
+	ctx := t.Context()
+	nstate, bpath, hashFS := setupShellStepDefTest(ctx, t)
+	stepConfig := &StepConfig{}
+	depsLog := &DepsLog{}
+	graph, err := NewGraph(ctx, "build.ninja", nstate, nil, bpath, hashFS, stepConfig, depsLog)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	nodeNontrivial, _ := nstate.LookupNodeByPath("out_nontrivial.txt")
+	edgeNontrivial, _ := nodeNontrivial.InEdge()
+	stepNontrivial := graph.newStepDef(ctx, edgeNontrivial, nil)
+
+	args := stepNontrivial.Args(ctx)
+	if diff := cmp.Diff([]string{"/bin/sh", "-c", "cat in.txt > out_nontrivial.txt"}, args); diff != "" {
+		t.Errorf("Args without hermetic shell diff -want +got:\n%s", diff)
+	}
+	for _, in := range stepNontrivial.Inputs(ctx) {
+		if strings.Contains(string(in), "sh") {
+			t.Errorf("Inputs without hermetic shell should not contain shell, got %v", in)
+		}
+	}
+	for _, in := range stepNontrivial.TriggerInputs(ctx) {
+		if strings.Contains(string(in), "sh") {
+			t.Errorf("TriggerInputs without hermetic shell should not contain shell, got %v", in)
+		}
+	}
+
+	nodeTrivial, _ := nstate.LookupNodeByPath("out_trivial.txt")
+	edgeTrivial, _ := nodeTrivial.InEdge()
+	stepTrivial := graph.newStepDef(ctx, edgeTrivial, nil)
+	if diff := cmp.Diff([]string{"cp", "in.txt", "out_trivial.txt"}, stepTrivial.Args(ctx)); diff != "" {
+		t.Errorf("trivial Args diff -want +got:\n%s", diff)
+	}
+}
+
+func TestStepDef_HermeticShell(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("These tests don't work on windows")
+	}
+	ctx := t.Context()
+	nstate, bpath, hashFS := setupShellStepDefTest(ctx, t)
+	stepConfig := &StepConfig{
+		Shell: "bin/sh",
+	}
+	depsLog := &DepsLog{}
+	graph, err := NewGraph(ctx, "build.ninja", nstate, nil, bpath, hashFS, stepConfig, depsLog)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	nodeNontrivial, _ := nstate.LookupNodeByPath("out_nontrivial.txt")
+	edgeNontrivial, _ := nodeNontrivial.InEdge()
+	stepNontrivial := graph.newStepDef(ctx, edgeNontrivial, nil)
+
+	args := stepNontrivial.Args(ctx)
+	if diff := cmp.Diff([]string{"../../bin/sh", "-c", "cat in.txt > out_nontrivial.txt"}, args); diff != "" {
+		t.Errorf("Args with hermetic shell diff -want +got:\n%s", diff)
+	}
+
+	wantShellInput := path.Path("bin/sh")
+	if !slices.Contains(stepNontrivial.Inputs(ctx), wantShellInput) {
+		t.Errorf("Inputs with hermetic shell should contain %s, got %v", wantShellInput, stepNontrivial.Inputs(ctx))
+	}
+	if !slices.Contains(stepNontrivial.TriggerInputs(ctx), wantShellInput) {
+		t.Errorf("TriggerInputs with hermetic shell should contain %s, got %v", wantShellInput, stepNontrivial.TriggerInputs(ctx))
+	}
+	if !slices.Contains(stepNontrivial.ExpandedTriggerInputs(ctx), wantShellInput) {
+		t.Errorf("ExpandedTriggerInputs with hermetic shell should contain %s, got %v", wantShellInput, stepNontrivial.ExpandedTriggerInputs(ctx))
+	}
+	if !slices.Contains(stepNontrivial.ToolInputs(ctx), wantShellInput) {
+		t.Errorf("ToolInputs with hermetic shell should contain %s, got %v", wantShellInput, stepNontrivial.ToolInputs(ctx))
+	}
+	if !slices.Contains(stepNontrivial.ExpandedInputs(ctx), wantShellInput) {
+		t.Errorf("ExpandedInputs with hermetic shell should contain %s, got %v", wantShellInput, stepNontrivial.ExpandedInputs(ctx))
+	}
+
+	nodeTrivial, _ := nstate.LookupNodeByPath("out_trivial.txt")
+	edgeTrivial, _ := nodeTrivial.InEdge()
+	stepTrivial := graph.newStepDef(ctx, edgeTrivial, nil)
+	if diff := cmp.Diff([]string{"cp", "in.txt", "out_trivial.txt"}, stepTrivial.Args(ctx)); diff != "" {
+		t.Errorf("trivial Args diff -want +got:\n%s", diff)
+	}
+	if slices.Contains(stepTrivial.Inputs(ctx), wantShellInput) {
+		t.Errorf("trivial Inputs should NOT contain %s, got %v", wantShellInput, stepTrivial.Inputs(ctx))
+	}
+	if slices.Contains(stepTrivial.TriggerInputs(ctx), wantShellInput) {
+		t.Errorf("trivial TriggerInputs should NOT contain %s, got %v", wantShellInput, stepTrivial.TriggerInputs(ctx))
+	}
+}
+
+func TestStepDef_HermeticShell_InputDeps(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("These tests don't work on windows")
+	}
+	ctx := t.Context()
+	nstate, bpath, hashFS := setupShellStepDefTest(ctx, t)
+	libDir := filepath.Join(bpath.WorkspaceRoot, "lib")
+	err := os.MkdirAll(libDir, 0755)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = os.WriteFile(filepath.Join(libDir, "libc.so"), []byte("/* libc */"), 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	stepConfig := &StepConfig{
+		Shell: "bin/sh",
+		InputDeps: map[string][]string{
+			"bin/sh": {
+				"lib/libc.so",
+			},
+		},
+	}
+	depsLog := &DepsLog{}
+	graph, err := NewGraph(ctx, "build.ninja", nstate, nil, bpath, hashFS, stepConfig, depsLog)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	nodeNontrivial, _ := nstate.LookupNodeByPath("out_nontrivial.txt")
+	edgeNontrivial, _ := nodeNontrivial.InEdge()
+	stepNontrivial := graph.newStepDef(ctx, edgeNontrivial, nil)
+
+	wantShellInput := path.Path("bin/sh")
+	wantDepInput := path.Path("lib/libc.so")
+	for _, want := range []path.Path{wantShellInput, wantDepInput} {
+		if !slices.Contains(stepNontrivial.Inputs(ctx), want) {
+			t.Errorf("Inputs with hermetic shell should contain %s, got %v", want, stepNontrivial.Inputs(ctx))
+		}
+		if !slices.Contains(stepNontrivial.TriggerInputs(ctx), want) {
+			t.Errorf("TriggerInputs with hermetic shell should contain %s, got %v", want, stepNontrivial.TriggerInputs(ctx))
+		}
+		if !slices.Contains(stepNontrivial.ExpandedTriggerInputs(ctx), want) {
+			t.Errorf("ExpandedTriggerInputs with hermetic shell should contain %s, got %v", want, stepNontrivial.ExpandedTriggerInputs(ctx))
+		}
+		if !slices.Contains(stepNontrivial.ToolInputs(ctx), want) {
+			t.Errorf("ToolInputs with hermetic shell should contain %s, got %v", want, stepNontrivial.ToolInputs(ctx))
+		}
+		if !slices.Contains(stepNontrivial.ExpandedInputs(ctx), want) {
+			t.Errorf("ExpandedInputs with hermetic shell should contain %s, got %v", want, stepNontrivial.ExpandedInputs(ctx))
+		}
+	}
+
+	nodeTrivial, _ := nstate.LookupNodeByPath("out_trivial.txt")
+	edgeTrivial, _ := nodeTrivial.InEdge()
+	stepTrivial := graph.newStepDef(ctx, edgeTrivial, nil)
+	for _, notWant := range []path.Path{wantShellInput, wantDepInput} {
+		if slices.Contains(stepTrivial.Inputs(ctx), notWant) {
+			t.Errorf("trivial Inputs should NOT contain %s, got %v", notWant, stepTrivial.Inputs(ctx))
+		}
+		if slices.Contains(stepTrivial.TriggerInputs(ctx), notWant) {
+			t.Errorf("trivial TriggerInputs should NOT contain %s, got %v", notWant, stepTrivial.TriggerInputs(ctx))
 		}
 	}
 }

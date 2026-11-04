@@ -5,10 +5,13 @@
 package ninjabuild
 
 import (
+	"context"
+	"errors"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 
@@ -23,6 +26,7 @@ import (
 	"go.chromium.org/build/siso/hashfs"
 	pb "go.chromium.org/build/siso/hashfs/proto"
 	"go.chromium.org/build/siso/path"
+	"go.chromium.org/build/siso/toolsupport/ninjautil"
 )
 
 // TestLoad_RejectsNestedDirOutput verifies Load errors when one step produces
@@ -255,7 +259,7 @@ build foo.o: touch foo.cc
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		if err := hashFS.Close(ctx); err != nil {
+		if err := hashFS.Close(context.WithoutCancel(ctx)); err != nil {
 			t.Errorf("hashFS.Close=%v", err)
 		}
 	})
@@ -304,7 +308,10 @@ build foo.o: touch foo.cc
 	if err != nil {
 		t.Fatal(err)
 	}
-	g := NewGraph(ctx, "build.ninja", nstate, config, path, hashFS, stepConfig, depsLog)
+	g, err := NewGraph(ctx, "build.ninja", nstate, config, path, hashFS, stepConfig, depsLog)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	// Make dead.o undeletable via its read-only parent.
 	if err := os.Chmod(outDir, 0555); err != nil {
@@ -420,7 +427,10 @@ build all: phony exe
 		t.Fatal(err)
 	}
 
-	g := NewGraph(ctx, "build.ninja", nstate, config, path, hashFS, stepConfig, depsLog)
+	g, err := NewGraph(ctx, "build.ninja", nstate, config, path, hashFS, stepConfig, depsLog)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	for _, tc := range []struct {
 		args []string
@@ -551,7 +561,7 @@ def init(ctx):
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		if err := hashFS.Close(ctx); err != nil {
+		if err := hashFS.Close(context.WithoutCancel(ctx)); err != nil {
 			t.Errorf("hashFS.Close=%v", err)
 		}
 	})
@@ -588,7 +598,10 @@ build all: phony ndk_headers_phony
 	if err != nil {
 		t.Fatal(err)
 	}
-	g := NewGraph(ctx, "build.ninja", nstate, config, path, hashFS, stepConfig, depsLog)
+	g, err := NewGraph(ctx, "build.ninja", nstate, config, path, hashFS, stepConfig, depsLog)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	got := g.InputDeps(ctx)["out/siso/ndk_headers_phony:inputs"]
 	want := []string{
@@ -598,5 +611,266 @@ build all: phony ndk_headers_phony
 	}
 	if diff := cmp.Diff(want, got); diff != "" {
 		t.Errorf("InputDeps[\"out/siso/ndk_headers_phony:inputs\"] diff -want +got:\n%s", diff)
+	}
+}
+
+func setupFiles(t *testing.T, dir string, files map[string]string) {
+	t.Helper()
+	for k, v := range files {
+		fname := filepath.Join(dir, k)
+		err := os.MkdirAll(filepath.Dir(fname), 0755)
+		if err != nil {
+			t.Fatal(err)
+		}
+		mode := fs.FileMode(0644)
+		if strings.HasPrefix(k, "bin/") || strings.HasPrefix(v, "#!") {
+			mode = 0755
+		}
+		err = os.WriteFile(fname, []byte(v), mode)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func TestGraph_ShellFromStepConfig(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("These tests don't work on windows")
+	}
+	ctx := t.Context()
+	dir := t.TempDir()
+	setupFiles(t, dir, map[string]string{
+		"bin/sh":   "#!/bin/sh\nexit 0\n",
+		"bin/bash": "#!/bin/bash\nexit 0\n",
+		"build/config/siso/main.star": `
+load("@builtin//encoding.star", "json")
+load("@builtin//struct.star", "module")
+
+def init(ctx):
+  step_config = {
+    "shell": "bin/sh",
+  }
+  return module(
+    "config",
+    step_config = json.encode(step_config),
+    filegroups = {},
+    handlers = {},
+  )
+`,
+		"out/siso/build.ninja": `
+rule nontrivial
+  command = cat ${in} > ${out} && echo "nontrivial" >> ${out}
+
+build out.txt: nontrivial in.txt
+`,
+	})
+
+	config, err := buildconfig.New(ctx, "@config//main.star", map[string]string{}, map[string]fs.FS{
+		"config":           os.DirFS(filepath.Join(dir, "build/config/siso")),
+		"config_overrides": os.DirFS(filepath.Join(dir, ".siso_remote")),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(filepath.Join(dir, "out/siso"))
+	path := build.NewPath(dir, "out/siso")
+	hashFS, err := hashfs.New(ctx, hashfs.Option{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := hashFS.Close(context.WithoutCancel(ctx)); err != nil {
+			t.Errorf("hashFS.Close=%v", err)
+		}
+	})
+
+	depsLog, err := NewDepsLog(ctx, ".siso_deps")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if err := depsLog.Close(); err != nil {
+			t.Error(err)
+		}
+	}()
+	stepConfig, err := NewStepConfig(ctx, digest.SHA256, config, path, "build.ninja", ".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stepConfig.Shell != "bin/sh" {
+		t.Errorf("stepConfig.Shell = %q, want \"bin/sh\"", stepConfig.Shell)
+	}
+
+	nstate, err := Load(ctx, "build.ninja", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	g, err := NewGraph(ctx, "build.ninja", nstate, config, path, hashFS, stepConfig, depsLog)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if g.Shell() != "bin/sh" {
+		t.Errorf("g.Shell() = %q, want \"bin/sh\"", g.Shell())
+	}
+
+	node, _ := nstate.LookupNodeByPath("out.txt")
+	edge, _ := node.InEdge()
+	stepDef := g.newStepDef(ctx, edge, nil)
+
+	args := stepDef.Args(ctx)
+	if len(args) < 1 || args[0] != "../../bin/sh" {
+		t.Errorf("stepDef.Args(ctx)[0] = %q, want \"../../bin/sh\"", args)
+	}
+	if !slices.Contains(stepDef.Inputs(ctx), "bin/sh") {
+		t.Errorf("stepDef.Inputs(ctx) should contain bin/sh, got %v", stepDef.Inputs(ctx))
+	}
+}
+
+func TestGraph_Shell_Validation(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("These tests don't work on windows")
+	}
+	ctx := t.Context()
+	dir := t.TempDir()
+	setupFiles(t, dir, map[string]string{
+		"bin/sh":        "#!/bin/sh\nexit 0\n",
+		"bin/bash":      "#!/bin/bash\nexit 0\n",
+		"bin/zsh":       "#!/bin/zsh\nexit 0\n",
+		"bin/noexec/sh": "echo non-executable\n",
+		"build/config/siso/main.star": `
+load("@builtin//struct.star", "module")
+
+def init(ctx):
+  return module(
+    "config",
+    step_config = "{}",
+    filegroups = {},
+    handlers = {},
+  )
+`,
+		"out/siso/build.ninja": `
+build all: phony
+`,
+	})
+	if err := os.Chmod(filepath.Join(dir, "bin/noexec/sh"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	config, err := buildconfig.New(ctx, "@config//main.star", map[string]string{}, map[string]fs.FS{
+		"config":           os.DirFS(filepath.Join(dir, "build/config/siso")),
+		"config_overrides": os.DirFS(filepath.Join(dir, ".siso_remote")),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(filepath.Join(dir, "out/siso"))
+	path := build.NewPath(dir, "out/siso")
+	hashFS, err := hashfs.New(ctx, hashfs.Option{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := hashFS.Close(context.WithoutCancel(ctx)); err != nil {
+			t.Errorf("hashFS.Close=%v", err)
+		}
+	})
+
+	depsLog, err := NewDepsLog(ctx, ".siso_deps")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if err := depsLog.Close(); err != nil {
+			t.Error(err)
+		}
+	}()
+	nstate, err := Load(ctx, "build.ninja", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, tc := range []struct {
+		name    string
+		shell   string
+		wantErr error
+	}{
+		{
+			name:    "empty",
+			shell:   "",
+			wantErr: nil,
+		},
+		{
+			name:    "valid_sh",
+			shell:   "bin/sh",
+			wantErr: nil,
+		},
+		{
+			name:    "valid_bash",
+			shell:   "bin/bash",
+			wantErr: nil,
+		},
+		{
+			name:    "not_clean",
+			shell:   "./bin/sh",
+			wantErr: errShellPathNotCleanOrLocal,
+		},
+		{
+			name:    "not_local_parent",
+			shell:   "../../bin/sh",
+			wantErr: errShellPathNotCleanOrLocal,
+		},
+		{
+			name:    "not_local_abs",
+			shell:   "/bin/sh",
+			wantErr: errShellPathNotCleanOrLocal,
+		},
+		{
+			name:    "invalid_basename",
+			shell:   "bin/zsh",
+			wantErr: errInvalidShellBasename,
+		},
+		{
+			name:    "not_found",
+			shell:   "bin/nonexistent/sh",
+			wantErr: fs.ErrNotExist,
+		},
+		{
+			name:    "not_executable",
+			shell:   "bin/noexec/sh",
+			wantErr: errShellNotExecutable,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			stepConfig := &StepConfig{Shell: tc.shell}
+			_, err := NewGraph(ctx, "build.ninja", nstate, config, path, hashFS, stepConfig, depsLog)
+			if !errors.Is(err, tc.wantErr) {
+				t.Errorf("NewGraph(..., shell=%q) err = %v; want %v", tc.shell, err, tc.wantErr)
+			}
+		})
+	}
+}
+
+func TestGraph_Shell_Windows(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("This test only works on windows")
+	}
+	ctx := t.Context()
+	dir := t.TempDir()
+	path := build.NewPath(dir, "out/siso")
+	hashFS, err := hashfs.New(ctx, hashfs.Option{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := hashFS.Close(context.WithoutCancel(ctx)); err != nil {
+			t.Errorf("hashFS.Close=%v", err)
+		}
+	})
+	nstate := ninjautil.NewState()
+	stepConfig := &StepConfig{Shell: "bin/sh"}
+	depsLog := &DepsLog{}
+	_, err = NewGraph(ctx, "build.ninja", nstate, nil, path, hashFS, stepConfig, depsLog)
+	if !errors.Is(err, errors.ErrUnsupported) {
+		t.Errorf("NewGraph on windows with shell err = %v, want %v", err, errors.ErrUnsupported)
 	}
 }
