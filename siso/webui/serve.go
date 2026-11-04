@@ -562,7 +562,7 @@ func (s *WebuiServer) Serve() int {
 			fmt.Printf("- http://localhost:%d/uploads/view/builds/%s/steps/\n", s.port, file.metrics.ID())
 		}
 	}
-	err := http.ListenAndServe(fmt.Sprintf(":%d", s.port), s.mux())
+	err := http.ListenAndServe(fmt.Sprintf("localhost:%d", s.port), s.mux())
 	if errors.Is(err, http.ErrServerClosed) {
 		fmt.Printf("server closed\n")
 	} else if err != nil {
