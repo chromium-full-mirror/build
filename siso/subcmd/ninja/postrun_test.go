@@ -7,16 +7,21 @@ package ninja
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/google/subcommands"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
+	"go.chromium.org/build/siso/auth/cred"
 	"go.chromium.org/build/siso/build"
 	"go.chromium.org/build/siso/build/ninjabuild"
 	"go.chromium.org/build/siso/execute"
+	"go.chromium.org/build/siso/reapi"
 )
 
 func TestPostRun_ResultInfraFailure(t *testing.T) {
@@ -57,6 +62,39 @@ func TestPostRun_ResultInfraFailure(t *testing.T) {
 			err: ninjabuild.BuildError{
 				Err: build.TooManyFallbackError{
 					Err: errors.New("remote exec worker unavailable"),
+				},
+			},
+			wantInfraFailure: true,
+		},
+		{
+			name:             "auth_error",
+			err:              fmt.Errorf("failed to initialize credentials: %w", cred.AuthError{Err: errors.New("need to run `siso login`")}),
+			wantInfraFailure: true,
+		},
+		{
+			name:             "unauthenticated",
+			err:              fmt.Errorf("failed to get capabilities: %w", status.Error(codes.Unauthenticated, "invalid authentication credentials")),
+			wantInfraFailure: true,
+		},
+		{
+			name:             "permission_denied",
+			err:              fmt.Errorf("failed to check writable: %w", status.Error(codes.PermissionDenied, "caller does not have permission")),
+			wantInfraFailure: true,
+		},
+		{
+			name: "build_auth_error",
+			err: ninjabuild.BuildError{
+				Err: build.StepError{
+					Cause: status.Error(codes.Unauthenticated, "invalid authentication credentials"),
+				},
+			},
+			wantInfraFailure: true,
+		},
+		{
+			name: "bad_platform_container_image",
+			err: ninjabuild.BuildError{
+				Err: build.StepError{
+					Cause: fmt.Errorf("%w: %w", reapi.ErrBadPlatformContainerImage, status.Error(codes.PermissionDenied, "container image not found")),
 				},
 			},
 			wantInfraFailure: true,

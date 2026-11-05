@@ -256,7 +256,7 @@ func (c *Command) initCredentials(ctx context.Context) (cred.Cred, error) {
 
 	credential, err := cred.New(ctx, c.reopt.ServiceURI(), c.authOpts())
 	if err != nil {
-		return cred.Cred{}, err
+		return cred.Cred{}, fmt.Errorf("failed to initialize credentials: %w", err)
 	}
 	return credential, nil
 }
@@ -802,6 +802,17 @@ func (c *Command) postRun(ctx context.Context, stats build.Stats, runErr error) 
 				}
 				// fallthrough if too many fallback with exit error or deps error.
 			}
+			if isInfraError(errBuild.Err) {
+				msgPrefix := "Infra failure"
+				result.InfraFailure = true
+				result.Message = fmt.Sprintf("%s: %v", msgPrefix, errBuild.Err)
+				if ui.IsTerminal() {
+					dur = ui.SGR(ui.Bold, dur)
+					msgPrefix = ui.SGR(ui.BackgroundRed, msgPrefix)
+				}
+				ui.Default.Errorf("\n%6s %s: %v\n", dur, msgPrefix, errBuild.Err)
+				return subcommands.ExitFailure
+			}
 			msgPrefix := "Build Failure"
 			result.Message = fmt.Sprintf("%s: %v", msgPrefix, runErr)
 			if ui.IsTerminal() {
@@ -826,6 +837,10 @@ func (c *Command) postRun(ctx context.Context, stats build.Stats, runErr error) 
 			ui.Default.Warningf("%s\n", suggest)
 		} else {
 			msgPrefix := "Error"
+			if isInfraError(runErr) {
+				msgPrefix = "Infra failure"
+				result.InfraFailure = true
+			}
 			result.Message = fmt.Sprintf("%s: %v", msgPrefix, runErr)
 			if ui.IsTerminal() {
 				msgPrefix = ui.SGR(ui.BackgroundRed, msgPrefix)
@@ -975,6 +990,20 @@ func isBuildError(err error) bool {
 		return true
 	}
 	if _, ok := errors.AsType[build.DepsError](err); ok {
+		return true
+	}
+	return false
+}
+
+func isInfraError(err error) bool {
+	if _, ok := errors.AsType[cred.AuthError](err); ok {
+		return true
+	}
+	if errors.Is(err, reapi.ErrBadPlatformContainerImage) {
+		return true
+	}
+	switch status.Code(err) {
+	case codes.Unauthenticated, codes.PermissionDenied:
 		return true
 	}
 	return false
