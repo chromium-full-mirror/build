@@ -6,6 +6,7 @@ package ninjautil
 
 import (
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -105,6 +106,70 @@ func TestParseChunk_TrailingKeyword(t *testing.T) {
 			ch := splitIntoChunks(t.Context(), []byte("rule cc\n  command = cc\n"+kw))[0]
 			if err := ch.parseChunk(t.Context()); err == nil {
 				t.Errorf("parseChunk: got statements %v; want error", ch.statements)
+			}
+		})
+	}
+}
+
+// TestParseChunk_IndentedBindingCounts checks that comments and
+// whitespace-only lines between bindings do not contribute to the pool,
+// rule, or build binding counts.
+func TestParseChunk_IndentedBindingCounts(t *testing.T) {
+	const manifest = `pool p
+  depth = 1
+rule cc
+  command = cc $in -o $out
+  description = CC $out
+build out: cc in
+  b1 = 1
+  b2 = 2
+  b3 = 3
+`
+	for _, tc := range []struct {
+		name    string
+		skipped string
+	}{
+		{name: "bindings_only"},
+		{name: "comments", skipped: "  # ignored\n"},
+		{name: "whitespace", skipped: "  \n"},
+		{name: "comments_and_whitespace", skipped: "  # ignored\n  \n"},
+		{name: "top_level_comments", skipped: "# ignored\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, newline := range []string{"\n", "\r\n"} {
+				name := "LF"
+				if newline == "\r\n" {
+					name = "CRLF"
+				}
+				t.Run(name, func(t *testing.T) {
+					// Add skipped lines before and after each binding.
+					var buf strings.Builder
+					for line := range strings.SplitSeq(manifest, "\n") {
+						if strings.HasPrefix(line, "  ") {
+							buf.WriteString(tc.skipped)
+							buf.WriteString(line + "\n")
+							buf.WriteString(tc.skipped)
+						} else {
+							buf.WriteString(line + "\n")
+						}
+					}
+					ch := splitIntoChunks(t.Context(), []byte(strings.ReplaceAll(buf.String(), "\n", newline)))[0]
+					if err := ch.parseChunk(t.Context()); err != nil {
+						t.Fatal(err)
+					}
+					if got, want := ch.npoolvar, 1; got != want {
+						t.Errorf("npoolvar = %d, want %d", got, want)
+					}
+					if got, want := ch.nrulevar, 2; got != want {
+						t.Errorf("nrulevar = %d, want %d", got, want)
+					}
+					if got, want := ch.nbuildvar, 3; got != want {
+						t.Errorf("nbuildvar = %d, want %d", got, want)
+					}
+					if got, want := len(ch.statements), 9; got != want {
+						t.Errorf("len(statements) = %d, want %d", got, want)
+					}
+				})
 			}
 		})
 	}

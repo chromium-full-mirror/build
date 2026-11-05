@@ -180,13 +180,10 @@ loop:
 			switch lastStatement {
 			case statementBuild:
 				st = statementBuildVar
-				ch.nbuildvar++
 			case statementPool:
 				st = statementPoolVar
-				ch.npoolvar++
 			case statementRule:
 				st = statementRuleVar
-				ch.nrulevar++
 			default:
 				return fmt.Errorf("line:%d: unexpected indent: %q", lineno(buf, i), buf[i:e])
 			}
@@ -199,6 +196,14 @@ loop:
 					continue
 				}
 				return fmt.Errorf("line:%d: wrong var binding? %q", lineno(buf, i), buf[i:e])
+			}
+			switch st {
+			case statementBuildVar:
+				ch.nbuildvar++
+			case statementPoolVar:
+				ch.npoolvar++
+			case statementRuleVar:
+				ch.nrulevar++
 			}
 			ch.statements = append(ch.statements, statement{
 				t: st,
