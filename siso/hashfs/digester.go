@@ -63,6 +63,9 @@ func localDigest(ctx context.Context, fn digest.Function, src blob.Source, fname
 	return d, err
 }
 
+// Batches > 1000 would hurt tail latency.
+const maxDigestBatchSize = 512
+
 type digestReq struct {
 	id    string
 	fname string
@@ -92,7 +95,6 @@ func (d *digester) computeReq(ctx context.Context, req digestReq) {
 }
 
 func (d *digester) batchDigestForABFS(ctx context.Context, reqs []digestReq) {
-	fnames := make([]string, 0, len(reqs))
 	batchReqs := make([]digestReq, 0, len(reqs))
 	for _, req := range reqs {
 		req.e.mu.Lock()
@@ -107,10 +109,9 @@ func (d *digester) batchDigestForABFS(ctx context.Context, reqs []digestReq) {
 			d.computeReq(ctx, req)
 			continue
 		}
-		fnames = append(fnames, req.fname)
 		batchReqs = append(batchReqs, req)
 	}
-	if len(fnames) == 0 {
+	if len(batchReqs) == 0 {
 		return
 	}
 	started := time.Now()
@@ -122,18 +123,39 @@ func (d *digester) batchDigestForABFS(ctx context.Context, reqs []digestReq) {
 			return context.Cause(ctx)
 		default:
 		}
+		// in waiting d.sema, req.e.d may have been computed
+		// by other batch (lazy vs Entries).
+		// If it is already computed, no need to ask again.
+		fnames := make([]string, 0, len(batchReqs))
+		reqs := make([]digestReq, 0, len(batchReqs))
+		for _, req := range batchReqs {
+			req.e.mu.Lock()
+			eErr := req.e.err
+			src := req.e.src
+			ed := req.e.d
+			req.e.mu.Unlock()
+			if eErr != nil || src == nil || !ed.IsZero() {
+				continue
+			}
+			fnames = append(fnames, req.fname)
+			reqs = append(reqs, req)
+		}
+		if len(fnames) == 0 {
+			return nil
+		}
+		batchReqs = reqs
 		var err error
 		digests, err = d.abfs.BatchDigests(ctx, fnames)
 		return err
 	})
 	if err != nil {
-		clog.Warningf(ctx, "abfs batch digests %d in %s: %v", len(fnames), time.Since(started), err)
+		clog.Warningf(ctx, "abfs batch digests %d in %s: %v", len(batchReqs), time.Since(started), err)
 		for _, req := range batchReqs {
 			d.computeReq(ctx, req)
 		}
 		return
 	}
-	clog.Infof(ctx, "abfs batch digests %d in %s", len(fnames), time.Since(started))
+	clog.Infof(ctx, "abfs batch digests %d in %s", len(batchReqs), time.Since(started))
 	for i, dg := range digests {
 		e := batchReqs[i].e
 		e.mu.Lock()
@@ -150,13 +172,11 @@ func (d *digester) batchDigestForABFS(ctx context.Context, reqs []digestReq) {
 // the end of the backing array and copies only the live requests, so
 // this is amortized O(1).
 //
-// When abfs available, it processes up to maxBatchSize requests in d.queue in a batch.
+// When abfs available, it processes up to maxDigestBatchSize requests in d.queue in a batch.
 func (d *digester) popQueue(ctx context.Context) {
 	if d.abfs != nil {
-		// Batches > 1000 would hurt tail latency.
-		const maxBatchSize = 512
 		d.mu.Lock()
-		n := min(len(d.queue), maxBatchSize)
+		n := min(len(d.queue), maxDigestBatchSize)
 		var dqueue []digestReq
 		if n > 0 {
 			dqueue = slices.Clone(d.queue[:n])
@@ -389,7 +409,9 @@ func (b *batchDigester) start(ctx context.Context, fname string, e *entry) {
 
 func (b *batchDigester) wait(ctx context.Context) int {
 	if b.hfs.opt.ABFS != nil {
-		b.hfs.digester.batchDigestForABFS(ctx, b.reqs)
+		for chunk := range slices.Chunk(b.reqs, maxDigestBatchSize) {
+			b.hfs.digester.batchDigestForABFS(ctx, chunk)
+		}
 		return b.nwait
 	}
 	b.wg.Wait()
