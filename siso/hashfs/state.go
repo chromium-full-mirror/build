@@ -1514,7 +1514,7 @@ func loadJournal(ctx context.Context, fn digest.Function, fname string, state *p
 	}
 	var cnt int
 	var broken bool
-	m := StateMap(fn, state)
+	var m map[string]*pb.Entry
 	for dec.More() {
 		ent := &pb.Entry{}
 		err := dec.Decode(&ent)
@@ -1522,6 +1522,10 @@ func loadJournal(ctx context.Context, fn digest.Function, fname string, state *p
 			clog.Warningf(ctx, "Failed to decode journal: %v", err)
 			broken = true
 			break
+		}
+		if m == nil {
+			// Mapping a large state is slow, so do it only if there's an entry to merge.
+			m = StateMap(fn, state)
 		}
 		m[ent.Name] = ent
 		if log.V(1) {
