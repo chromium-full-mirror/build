@@ -19,6 +19,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -476,19 +477,24 @@ func (ies *initialEntryStates) prepare(ctx context.Context, state *pb.State) {
 func (ies *initialEntryStates) updateFromDisk(ctx context.Context) ([]path.Path, []string, error) {
 	started := time.Now()
 	eg, ctx := errgroup.WithContext(ctx)
-	eg.SetLimit(runtime.GOMAXPROCS(0))
-	for i := range ies.alloc {
+	// Split the entries into one contiguous chunk per worker instead of starting a goroutine
+	// per entry, which costs more than the stat itself for states with many entries.
+	nworkers := runtime.GOMAXPROCS(0)
+	for chunk := range slices.Chunk(ies.alloc, max(1, (len(ies.alloc)+nworkers-1)/nworkers)) {
 		eg.Go(func() error {
-			if i%1000 == 0 {
-				select {
-				case <-ctx.Done():
-					err := context.Cause(ctx)
+			for i := range chunk {
+				if i%1000 == 0 {
+					select {
+					case <-ctx.Done():
+						return context.Cause(ctx)
+					default:
+					}
+				}
+				if err := ies.updateEntryFromDisk(ctx, &chunk[i]); err != nil {
 					return err
-				default:
 				}
 			}
-			es := &ies.alloc[i]
-			return ies.updateEntryFromDisk(ctx, es)
+			return nil
 		})
 	}
 	err := eg.Wait()
