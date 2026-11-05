@@ -15,6 +15,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"sync"
 	"time"
 
@@ -429,7 +430,7 @@ readLoop:
 	clog.Infof(ctx, "siso deps %s => paths=%d, deps=%d total=%d unique=%d recompact=%t (broken:%t)", d.fname, len(d.paths), len(d.deps), totalRecords, uniqueRecords, d.needsRecompact, broken)
 	d.rPaths = d.paths
 	maps.Copy(d.rPathIdx, d.pathIdx)
-	d.rDeps = d.deps
+	d.rDeps = slices.Clone(d.deps)
 	return nil
 }
 
@@ -497,7 +498,7 @@ func (d *depsLog) Reset() {
 	d.mu.Lock()
 	d.rPaths = d.paths
 	maps.Copy(d.rPathIdx, d.pathIdx)
-	d.rDeps = d.deps
+	d.rDeps = slices.Clone(d.deps)
 	d.mu.Unlock()
 }
 
@@ -554,8 +555,9 @@ func (d *depsLog) recompactIfNeeded(ctx context.Context) error {
 
 	d.mu.Lock()
 	d.rPaths = nd.paths
+	clear(d.rPathIdx)
 	maps.Copy(d.rPathIdx, nd.pathIdx)
-	d.rDeps = nd.deps
+	d.rDeps = slices.Clone(nd.deps)
 
 	d.paths = nd.paths
 	d.pathIdx = nd.pathIdx

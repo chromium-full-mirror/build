@@ -6,6 +6,7 @@ package ninjabuild
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -13,8 +14,11 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
+
+	"go.chromium.org/build/hashigo/digest"
 
 	"go.chromium.org/build/siso/build"
 	"go.chromium.org/build/siso/hashfs"
@@ -976,5 +980,164 @@ func TestStepDef_HermeticShell_InputDeps(t *testing.T) {
 		if slices.Contains(stepTrivial.TriggerInputs(ctx), notWant) {
 			t.Errorf("trivial TriggerInputs should NOT contain %s, got %v", notWant, stepTrivial.TriggerInputs(ctx))
 		}
+	}
+}
+
+func TestStepDef_DepInputs_RecompactDroppedPath(t *testing.T) {
+	ctx := t.Context()
+	dir := t.TempDir()
+	ninjaDir := filepath.Join(dir, "out/Default")
+	if err := os.MkdirAll(ninjaDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	buildNinja := filepath.Join(ninjaDir, "build.ninja")
+	if err := os.WriteFile(buildNinja, []byte(`
+rule cc
+  command = cc -c ${in} -o ${out}
+  deps = gcc
+build gen.h: cc gen.cc
+build out.o: cc out.cc gen.h
+build other.o: cc other.cc
+`), 0644); err != nil {
+		t.Fatal(err)
+	}
+	nstate := ninjautil.NewState()
+	if err := ninjautil.NewManifestParser(nstate).Load(ctx, buildNinja); err != nil {
+		t.Fatal(err)
+	}
+	hashFS, err := hashfs.New(ctx, hashfs.Option{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := hashFS.Close(context.WithoutCancel(ctx)); err != nil {
+			t.Errorf("hashFS.Close=%v", err)
+		}
+	})
+	depsLogFile := filepath.Join(ninjaDir, ".siso_deps")
+	createNewDepsLogFile(ctx, depsLogFile)
+	depsLog, err := NewDepsLog(ctx, depsLogFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := depsLog.Close(); err != nil {
+			t.Errorf("depsLog.Close=%v", err)
+		}
+	})
+	if _, err := depsLog.Record(ctx, DepsLogKey{Target: "out.o", Mtime: time.Unix(1, 0)}, []string{"out.cc", "gen.h"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := depsLog.Record(ctx, DepsLogKey{Target: "other.o", Mtime: time.Unix(2, 0)}, []string{"other.cc"}); err != nil {
+		t.Fatal(err)
+	}
+	// Rebuild out.o without gen.h, then recompact .siso_deps.
+	if _, err := depsLog.Record(ctx, DepsLogKey{Target: "out.o", Mtime: time.Unix(3, 0)}, []string{"out.cc"}); err != nil {
+		t.Fatal(err)
+	}
+	depsLog.Reset()
+	depsLog.depsLog.needsRecompact = true
+	if err := depsLog.depsLog.recompactIfNeeded(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	bpath := build.NewPath(dir, "out/Default")
+	graph, err := NewGraph(ctx, "build.ninja", nstate, nil, bpath, hashFS, &StepConfig{}, depsLog)
+	if err != nil {
+		t.Fatal(err)
+	}
+	nodeGenH, ok := nstate.LookupNodeByPath("gen.h")
+	if !ok {
+		t.Fatal("gen.h not found")
+	}
+	edgeGenH, ok := nodeGenH.InEdge()
+	if !ok {
+		t.Fatal("gen.h has no in-edge")
+	}
+	stepGenH := graph.newStepDef(ctx, edgeGenH, nil)
+	if _, err := stepGenH.DepInputs(ctx); !errors.Is(err, ErrNoDepsLog) {
+		t.Errorf("stepGenH.DepInputs(ctx)=_, %v; want error wrapping %v", err, ErrNoDepsLog)
+	}
+}
+
+func TestStepDef_DepInputs_RecordSnapshotIsolation(t *testing.T) {
+	ctx := t.Context()
+	dir := t.TempDir()
+	ninjaDir := filepath.Join(dir, "out/Default")
+	if err := os.MkdirAll(ninjaDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	buildNinja := filepath.Join(ninjaDir, "build.ninja")
+	if err := os.WriteFile(buildNinja, []byte(`
+rule cc
+  command = cc -c ${in} -o ${out}
+  deps = gcc
+build out.o: cc out.cc
+`), 0644); err != nil {
+		t.Fatal(err)
+	}
+	outFile := filepath.Join(ninjaDir, "out.o")
+	if err := os.WriteFile(outFile, nil, 0644); err != nil {
+		t.Fatal(err)
+	}
+	nstate := ninjautil.NewState()
+	if err := ninjautil.NewManifestParser(nstate).Load(ctx, buildNinja); err != nil {
+		t.Fatal(err)
+	}
+	hashFS, err := hashfs.New(ctx, hashfs.Option{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := hashFS.Close(context.WithoutCancel(ctx)); err != nil {
+			t.Errorf("hashFS.Close=%v", err)
+		}
+	})
+	fi, err := hashFS.Stat(ctx, dir, "out/Default/out.o")
+	if err != nil {
+		t.Fatal(err)
+	}
+	mtime := fi.ModTime()
+	depsLog, err := NewDepsLog(ctx, filepath.Join(ninjaDir, ".siso_deps"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := depsLog.Close(); err != nil {
+			t.Errorf("depsLog.Close=%v", err)
+		}
+	})
+	if _, err := depsLog.Record(ctx, DepsLogKey{Target: "out.o", Mtime: mtime}, []string{"out.cc", "foo.h", "bar.h"}); err != nil {
+		t.Fatal(err)
+	}
+	depsLog.Reset()
+
+	bpath := build.NewPath(dir, "out/Default")
+	graph, err := NewGraph(ctx, "build.ninja", nstate, nil, bpath, hashFS, &StepConfig{}, depsLog)
+	if err != nil {
+		t.Fatal(err)
+	}
+	nodeOut, ok := nstate.LookupNodeByPath("out.o")
+	if !ok {
+		t.Fatal("out.o not found")
+	}
+	edgeOut, ok := nodeOut.InEdge()
+	if !ok {
+		t.Fatal("out.o has no in-edge")
+	}
+	writerStep := graph.newStepDef(ctx, edgeOut, nil)
+	if _, err := writerStep.RecordDeps(ctx, "out.o", mtime, digest.Digest{}, []string{"out.cc", "foo.h"}); err != nil {
+		t.Fatal(err)
+	}
+	// Before depsLog.Reset(), a StepDef reading DepInputs must still see the committed snapshot.
+	readerStep := graph.newStepDef(ctx, edgeOut, nil)
+	seq, err := readerStep.DepInputs(ctx)
+	if err != nil {
+		t.Fatalf("readerStep.DepInputs(ctx)=_, %v; want nil err", err)
+	}
+	got := path.Strings(slices.Collect(seq))
+	want := []string{"out/Default/out.cc", "out/Default/foo.h", "out/Default/bar.h"}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("before Reset: DepInputs diff -want +got:\n%s", diff)
 	}
 }
