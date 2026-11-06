@@ -342,6 +342,149 @@ build obj/bar.o: cxx_simple ../../bar.cc
 	}
 }
 
+func TestStepConfigLookup_NinjaOutputLocal(t *testing.T) {
+	ctx := t.Context()
+	dir := t.TempDir()
+	path := build.NewPath(dir, "out/siso")
+	err := os.MkdirAll(filepath.Join(dir, "out/siso"), 0755)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = os.WriteFile(filepath.Join(dir, "out/siso/build.ninja"), []byte(`
+rule metalava
+  command = metalava ${in} -o ${out}
+  output_local = true
+
+rule javac
+  command = javac ${in} -o ${out}
+
+rule stamp
+  command = touch ${out}
+
+rule other
+  command = echo ${in} > ${out}
+  remote_enabled = true
+
+rule other_local
+  command = echo ${in} > ${out}
+
+build gen/foo_api.txt: metalava ../../foo.java
+build gen/bar.jar: javac ../../bar.java
+  output_local = false
+build gen/baz.jar: javac ../../baz.java
+build gen/foo.stamp: stamp ../../foo.java
+  output_local = true
+build gen/out.txt: other
+  output_local = true
+build gen/local.txt: other_local
+  output_local = true
+`), 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
+	state := ninjautil.NewState()
+	p := ninjautil.NewManifestParser(state)
+	err = p.Load(ctx, filepath.Join(dir, "out/siso/build.ninja"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	sc := StepConfig{
+		Platforms: map[string]map[string]string{
+			"default": {
+				"container-image": "default-image",
+			},
+		},
+		Rules: []*StepRule{
+			{
+				Name:       "metalava_rule",
+				ActionName: "metalava",
+				Remote:     true,
+			},
+			{
+				Name:        "javac_rule",
+				ActionName:  "javac",
+				Remote:      true,
+				OutputLocal: true,
+			},
+			{
+				Name:       "stamp_rule",
+				ActionName: "stamp",
+			},
+		},
+	}
+	err = sc.Init(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, tc := range []struct {
+		name            string
+		desc            string
+		out             string
+		wantOK          bool
+		wantOutputLocal bool
+	}{
+		{
+			name:            "ninja_rule_true",
+			desc:            "starlark rule without output_local, ninja rule has output_local = true",
+			out:             "gen/foo_api.txt",
+			wantOK:          true,
+			wantOutputLocal: true,
+		},
+		{
+			name:            "ninja_build_false_overrides_starlark",
+			desc:            "starlark rule has output_local, ninja build has output_local = false",
+			out:             "gen/bar.jar",
+			wantOK:          true,
+			wantOutputLocal: false,
+		},
+		{
+			name:            "starlark_without_binding",
+			desc:            "starlark rule has output_local, no ninja binding",
+			out:             "gen/baz.jar",
+			wantOK:          true,
+			wantOutputLocal: true,
+		},
+		{
+			name:            "ninja_build_true_on_local_rule",
+			desc:            "local starlark rule, ninja build has output_local = true",
+			out:             "gen/foo.stamp",
+			wantOK:          true,
+			wantOutputLocal: true,
+		},
+		{
+			name:            "ninja_build_true_with_remote_enabled",
+			desc:            "no starlark rule, ninja has remote_enabled = true and output_local = true",
+			out:             "gen/out.txt",
+			wantOK:          true,
+			wantOutputLocal: true,
+		},
+		{
+			name:            "ninja_build_true_only",
+			desc:            "no starlark rule, ninja has only output_local = true",
+			out:             "gen/local.txt",
+			wantOK:          false,
+			wantOutputLocal: false,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			node, ok := state.LookupNodeByPath(tc.out)
+			if !ok {
+				t.Fatalf("%s not found", tc.out)
+			}
+			edge, ok := node.InEdge()
+			if !ok {
+				t.Fatalf("no inEdge for %s", tc.out)
+			}
+			rule, ok := sc.Lookup(ctx, path, edge)
+			if ok != tc.wantOK || rule.OutputLocal != tc.wantOutputLocal {
+				t.Errorf("%s: Lookup(ctx, path, edge)=rule.OutputLocal=%t, %t; want %t, %t", tc.desc, rule.OutputLocal, ok, tc.wantOutputLocal, tc.wantOK)
+			}
+		})
+	}
+}
+
 func TestStepConfigInit_PlatformRefValidation(t *testing.T) {
 	ctx := t.Context()
 

@@ -408,6 +408,7 @@ func (sc StepConfig) Lookup(ctx context.Context, bpath *build.Path, edge *ninjau
 	remoteBinding := edge.Binding("remote_enabled")
 	platformRefBinding := edge.Binding("remote_platform_ref")
 	timeoutBinding := edge.Binding("remote_timeout")
+	outputLocalBinding := edge.Binding("output_local")
 
 loop:
 	for _, c := range sc.Rules {
@@ -446,6 +447,9 @@ loop:
 		}
 		if timeoutBinding != "" {
 			rule.Timeout = timeoutBinding
+		}
+		if outputLocalBinding != "" {
+			rule.OutputLocal = (outputLocalBinding == "true")
 		}
 
 		if rule.Remote {
@@ -513,6 +517,9 @@ loop:
 		return rule, !c.Impure
 	}
 
+	// output_local alone does not create a rule here, since a step without
+	// a matching rule or remote bindings runs locally (and its outputs are
+	// on local disk anyway), and creating a rule would make it pure.
 	if remoteBinding != "" || platformRefBinding != "" || timeoutBinding != "" {
 		clog.Infof(ctx, "miss, but configured in ninja: actionName:%q out:%q args0:%q", actionName, outPath, args0)
 		rule := StepRule{
@@ -523,6 +530,9 @@ loop:
 		}
 		if timeoutBinding != "" {
 			rule.Timeout = timeoutBinding
+		}
+		if outputLocalBinding != "" {
+			rule.OutputLocal = (outputLocalBinding == "true")
 		}
 		if rule.Remote {
 			if len(rule.Platform) == 0 {
@@ -540,7 +550,7 @@ loop:
 			}
 		}
 		if bool(log.V(1)) || rule.Debug {
-			clog.Infof(ctx, "hit ninja properties %s actionName:%q out:%q args0:%q -> remote:%t timeout:%q platform:%v", rule.Name, actionName, outConfig, args0, rule.Remote, rule.Timeout, rule.Platform)
+			clog.Infof(ctx, "hit ninja properties %s actionName:%q out:%q args0:%q -> remote:%t timeout:%q output-local:%t platform:%v", rule.Name, actionName, outConfig, args0, rule.Remote, rule.Timeout, rule.OutputLocal, rule.Platform)
 		}
 		return rule, true
 	}

@@ -41,6 +41,17 @@ as the fields with similar names in the StepConfig.
 Note that upstream ninja will error out on seeing these extra bindings. But the android fork of
 ninja has an exception to ignore them.
 
+### output_local
+
+`output_local = true` can be used to force writing all outputs of the action to local disk,
+regardless of `-output_local_strategy`. `output_local = false` disables `output_local` set in the
+StepConfig. It can be specified on either a ninja `rule` or `build`, and has the same effect as the
+`output_local` field in the StepConfig.
+
+It is applied when the action matches a StepConfig rule, or is configured with `remote_enabled`,
+`remote_platform_ref` or `remote_timeout`. Other actions run locally and their outputs are
+written to local disk anyway.
+
 ### restat_content
 
 `restat_content` would work like `restat` but uses content digest instead of
