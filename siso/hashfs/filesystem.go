@@ -377,7 +377,7 @@ resolve:
 		elems := strings.Split(name, "/")
 		for i := range elems {
 			pathname := strings.Join(elems[:i+1], "/")
-			fi, err := fsys.hashFS.Stat(fsys.ctx, fsys.dir, path.Path(pathname))
+			fi, err := fsys.hashFS.StatIfExists(fsys.ctx, fsys.dir, path.Path(pathname))
 			if err != nil {
 				clog.Warningf(fsys.ctx, "no intermediate dir for %s: %s: %v", name, pathname, err)
 				break resolve
@@ -398,6 +398,7 @@ resolve:
 				continue resolve
 			}
 		}
+		break
 	}
 	names = append(names, name)
 	return names
