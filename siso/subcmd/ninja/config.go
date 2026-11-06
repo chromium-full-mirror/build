@@ -622,9 +622,11 @@ func initOutputLocal(ctx context.Context, outputLocalStrategy string) (func(cont
 			// .h,/.hxx/.hpp/.inc/.c/.cc/.cxx/.cpp/.m/.mm for gcc deps or msvc showIncludes
 			// .json/.js/.ts for tsconfig.json, .js for grit etc.
 			// .py for protobuf py etc.
+			// .jdeps for Android javac/kotlin/ksp input-delta incremental
+			// compilation, which reads the prior build's .jdeps lookup caches.
 			// Strip a directory output's trailing slash (see "greedy").
 			switch filepath.Ext(strings.TrimSuffix(fname, "/")) {
-			case ".h", ".hxx", ".hpp", ".inc", ".c", ".cc", "cxx", ".cpp", ".m", ".mm", ".json", ".js", ".ts", ".py":
+			case ".h", ".hxx", ".hpp", ".inc", ".c", ".cc", ".cxx", ".cpp", ".m", ".mm", ".json", ".js", ".ts", ".py", ".jdeps":
 				return true
 			}
 			return false
