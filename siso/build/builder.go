@@ -1398,6 +1398,20 @@ func (b *Builder) outputs(ctx context.Context, step *Step) error {
 	dirFsys := b.hashFS.FileSystem(ctx, step.cmd.WorkspaceRoot)
 	for _, dir := range step.cmd.OutputDirs {
 		targetKey := string(dir)
+		// A flush only adds files, so prune members the new tree dropped (the
+		// local exec path instead wipes pre-run via ResetDirOutput). Prune
+		// before anything walks the tree: a walk picks up still-on-disk files
+		// into hashfs, so a walk before the prune would count the stale
+		// members as part of the directory output. Not gated on NeedFlush: a
+		// tree materialized by an earlier build must be pruned even when this
+		// build leaves materialization to a consumer, because the on-demand
+		// flush walks the tree (expandFlushDirs) and nothing prunes there.
+		if err := b.hashFS.RemoveStaleDirMembers(ctx, step.cmd.WorkspaceRoot, string(dir)); err != nil {
+			return fmt.Errorf("prune stale dir output %s: %w", dir, err)
+		}
+		// Flush when output_local requests it; otherwise consumers materialize
+		// the current tree on demand. Older contents may already exist on disk.
+		local := b.hashFS.NeedFlush(ctx, step.cmd.WorkspaceRoot, dir)
 		fi, err := b.hashFS.Stat(ctx, step.cmd.WorkspaceRoot, dir)
 		if err != nil {
 			b.targets.Store(targetKey, targetState{
@@ -1429,10 +1443,6 @@ func (b *Builder) outputs(ctx context.Context, step *Step) error {
 				changed: fi.IsChanged(),
 			})
 		}
-		// Flush only when output_local wants it (NeedFlush); otherwise
-		// consumers materialize the tree on demand. Don't test disk presence:
-		// an output_local=false dir output never lands locally.
-		local := b.hashFS.NeedFlush(ctx, step.cmd.WorkspaceRoot, dir)
 		if local {
 			// Trailing slash marks a declared directory artifact so Flush
 			// materializes its whole tree, not just the directory node.

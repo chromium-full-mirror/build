@@ -1229,6 +1229,76 @@ func (hfs *HashFS) ResetDirOutput(ctx context.Context, root, name string) error 
 	return hfs.OS.MkdirAll(ctx, filepath.Dir(string(fullpath)), 0755)
 }
 
+// RemoveStaleDirMembers removes on-disk entries under the directory output dir
+// that hashfs does not record as members of it. The remote/cache path records a
+// fresh tree (ForgetOutputs + Update) and flushes it, but a flush only adds
+// files; it never removes members the new tree dropped. So a directory output
+// that shrank across builds, materialized locally, would keep the prior build's
+// extra files on disk. Local execution avoids this with ResetDirOutput's pre-run
+// wipe; this is its remote/cache counterpart.
+//
+// A member is recorded with dir's own cmdhash, stamped on the directory, each
+// subdirectory and each file. Ownership rather than mere presence is the test
+// because a ReadDir walk picks up still-on-disk files into hashfs (updateDir)
+// as unowned records, without a cmdhash, so a stale member that a walk
+// already picked up is still pruned.
+// Nesting a produced output under a directory output is a graph-load error
+// (validateDirOutputs), so nothing else can legitimately live under dir.
+//
+// A stale member may still carry an unowned hashfs record, so each
+// removal goes through removeAll, which drops the records of whatever it
+// deleted, even on a partial failure, and invalidates the affected
+// directory-input expansions. Prunes only stale entries (no wholesale wipe +
+// re-flush), so an unchanged tree pays one walk.
+//
+// Deletion failures are logged and ignored; traversal errors other than
+// missing paths are returned to the caller. Deletion is best-effort like
+// cleandead: a member that can't be removed (e.g. held open on Windows) is left
+// behind rather than failing the step. A traversal error means part of the tree
+// could not be checked at all, so the prune cannot vouch for the directory and
+// fails instead, as ResetDirOutput's wipe would on the local exec path.
+func (hfs *HashFS) RemoveStaleDirMembers(ctx context.Context, root, dir string) error {
+	dirFull := makeFullpath(root, path.New(dir))
+	de, _, _, ok := hfs.directory.lookup(ctx, dirFull)
+	if !ok || de == nil || len(de.cmdhash) == 0 {
+		// Not a recorded directory output: nothing authoritative to prune against.
+		return nil
+	}
+	cmdhash := de.cmdhash
+	return filepath.WalkDir(string(dirFull), func(p string, d fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			if errors.Is(walkErr, fs.ErrNotExist) {
+				return nil // not materialized yet: nothing to prune
+			}
+			return walkErr
+		}
+		fname := path.New(p)
+		if fname == dirFull || hfs.ownedBy(ctx, fname, cmdhash) {
+			return nil // the directory root, or a member of the new tree
+		}
+		// A stale entry: remove it. removeAll covers a file, a symlink (the link,
+		// not its target), or a whole stale subtree; skip descending a removed dir.
+		// forget drops the record rather than recording the path absent, as
+		// ResetDirOutput does: a later build may recreate it.
+		if rmErr := hfs.removeAll(ctx, root, fname, true); rmErr != nil {
+			clog.Warningf(ctx, "prune stale dir member %s: %v", p, rmErr)
+		}
+		if d.IsDir() {
+			return fs.SkipDir
+		}
+		return nil
+	})
+}
+
+// ownedBy reports whether hashfs records fname as produced by cmdhash.
+func (hfs *HashFS) ownedBy(ctx context.Context, fname path.Path, cmdhash []byte) bool {
+	e, _, _, ok := hfs.directory.lookup(ctx, fname)
+	if !ok || e == nil || e.err != nil {
+		return false
+	}
+	return bytes.Equal(e.cmdhash, cmdhash)
+}
+
 // ClearStaleFileForDirOutput removes name (and its hashfs subtree) when a
 // previous build left a non-directory where a directory output is now
 // declared, so the action can create its directory there.
