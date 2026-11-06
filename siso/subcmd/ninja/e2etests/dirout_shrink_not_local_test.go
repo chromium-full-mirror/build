@@ -25,14 +25,13 @@ import (
 	"go.chromium.org/build/siso/reapi/reapitest"
 )
 
-// TestBuild_DirOutputShrinkPrunedWhenNotLocal covers the shrink case for a build
-// that leaves materialization to a consumer (output_local false for the dir).
-// Build 1 materializes gendir/{a,b}; build 2 shrinks it to gendir/{a} with
-// output_local off. Nothing flushes the tree in build 2, so a prune gated on
-// NeedFlush would skip it and leave gendir/b on disk. That is not merely a
-// leftover file: the on-demand flush walks the tree with ReadDir
-// (expandFlushDirs), which picks up still-on-disk files into hashfs, so a
-// later consumer would see gendir/b as a member of the directory output.
+// TestBuild_DirOutputShrinkPrunedWhenNotLocal covers a directory output that an
+// earlier build materialized and a later build rebuilds with output_local off.
+// Build 1 materializes gendir/{a,b}; build 2 shrinks it to gendir/{a}, with new
+// contents for a, and output_local off. NeedFlush is false in build 2, so a
+// prune gated on it would leave gendir/b on disk, and a flush never removes
+// it. Because the tree already exists on disk, build 2 flushes it anyway, so
+// gendir/a must hold the new contents, not a mix of the old and new trees.
 func TestBuild_DirOutputShrinkPrunedWhenNotLocal(t *testing.T) {
 	if !runInSubProcess(t) {
 		return
@@ -41,10 +40,10 @@ func TestBuild_DirOutputShrinkPrunedWhenNotLocal(t *testing.T) {
 	dir := tempDir(t)
 	setupFiles(t, dir, "TestBuild_DirOutputRemoteShrinkPruned", nil)
 
-	dirResult := func(re *reapitest.Fake, members ...string) (*rpb.ActionResult, error) {
+	dirResult := func(re *reapitest.Fake, version int, members ...string) (*rpb.ActionResult, error) {
 		var files []*rpb.FileNode
 		for _, m := range members {
-			content := []byte("content-" + m)
+			content := fmt.Appendf(nil, "content-%s-v%d", m, version)
 			if _, err := re.Put(ctx, content); err != nil {
 				return nil, err
 			}
@@ -77,7 +76,7 @@ func TestBuild_DirOutputShrinkPrunedWhenNotLocal(t *testing.T) {
 			if execCount >= 2 {
 				members = []string{"a"} // build 2: gendir/ shrinks (b dropped)
 			}
-			res, err := dirResult(re, members...)
+			res, err := dirResult(re, execCount, members...)
 			if err != nil {
 				return &rpb.ActionResult{ExitCode: 1, StderrRaw: fmt.Appendf(nil, "dirResult: %v", err)}, nil
 			}
@@ -131,6 +130,9 @@ func TestBuild_DirOutputShrinkPrunedWhenNotLocal(t *testing.T) {
 		t.Fatalf("step did not re-execute in build 2 (execCount=%d); the shrink path was not exercised", execCount)
 	}
 	if _, err := os.Stat(filepath.Join(dir, "out/siso/gendir/b")); !errors.Is(err, fs.ErrNotExist) {
-		t.Errorf("gendir/b still on disk after the dir output shrank (err=%v); the prune was skipped because the build did not flush the tree", err)
+		t.Errorf("gendir/b still on disk after the dir output shrank (err=%v); the prune was skipped because output_local is off", err)
+	}
+	if got, err := os.ReadFile(filepath.Join(dir, "out/siso/gendir/a")); err != nil || string(got) != "content-a-v2" {
+		t.Errorf("after build 2, gendir/a = %q, %v; want %q; the tree on disk was not refreshed", got, err, "content-a-v2")
 	}
 }

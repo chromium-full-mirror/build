@@ -1410,8 +1410,19 @@ func (b *Builder) outputs(ctx context.Context, step *Step) error {
 			return fmt.Errorf("prune stale dir output %s: %w", dir, err)
 		}
 		// Flush when output_local requests it; otherwise consumers materialize
-		// the current tree on demand. Older contents may already exist on disk.
+		// the current tree on demand. Like a file output, a tree that already
+		// exists on disk (an earlier build or a local consumer materialized
+		// it) is flushed too: the prune above only removes dropped members,
+		// so without a flush members whose contents changed would keep their
+		// old contents on disk.
 		local := b.hashFS.NeedFlush(ctx, step.cmd.WorkspaceRoot, dir)
+		if !local {
+			fullDir := sisopath.JoinRoot(step.cmd.WorkspaceRoot, dir)
+			if _, err := b.hashFS.OS.Lstat(ctx, string(fullDir)); err == nil {
+				clog.Infof(ctx, "output_local=false but local dir exists: %q", dir)
+				local = true
+			}
+		}
 		fi, err := b.hashFS.Stat(ctx, step.cmd.WorkspaceRoot, dir)
 		if err != nil {
 			b.targets.Store(targetKey, targetState{

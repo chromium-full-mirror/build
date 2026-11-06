@@ -31,7 +31,8 @@ import (
 // (the input changes between builds, forcing re-execution). With output_local
 // materialization, build 2 must leave only gendir/a on disk: the flush adds the
 // new tree but never removes members, so without RemoveStaleDirMembers the stale
-// gendir/b from build 1 would linger.
+// gendir/b from build 1 would linger. gendir/a stays a member but its contents
+// change, and the flush must rewrite it.
 func TestBuild_DirOutputRemoteShrinkPruned(t *testing.T) {
 	if !runInSubProcess(t) {
 		return
@@ -40,11 +41,12 @@ func TestBuild_DirOutputRemoteShrinkPruned(t *testing.T) {
 	dir := tempDir(t)
 	setupFiles(t, dir, t.Name(), nil)
 
-	// dirResult builds an ActionResult with gendir/ containing the named members.
-	dirResult := func(re *reapitest.Fake, members ...string) (*rpb.ActionResult, error) {
+	// dirResult builds an ActionResult with gendir/ containing the named
+	// members, each with contents specific to version.
+	dirResult := func(re *reapitest.Fake, version int, members ...string) (*rpb.ActionResult, error) {
 		var files []*rpb.FileNode
 		for _, m := range members {
-			content := []byte("content-" + m)
+			content := fmt.Appendf(nil, "content-%s-v%d", m, version)
 			if _, err := re.Put(ctx, content); err != nil {
 				return nil, err
 			}
@@ -77,7 +79,7 @@ func TestBuild_DirOutputRemoteShrinkPruned(t *testing.T) {
 			if execCount >= 2 {
 				members = []string{"a"} // build 2: gendir/ shrinks (b dropped)
 			}
-			res, err := dirResult(re, members...)
+			res, err := dirResult(re, execCount, members...)
 			if err != nil {
 				return &rpb.ActionResult{ExitCode: 1, StderrRaw: fmt.Appendf(nil, "dirResult: %v", err)}, nil
 			}
@@ -141,6 +143,9 @@ func TestBuild_DirOutputRemoteShrinkPruned(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(dir, "out/siso/gendir/a")); err != nil {
 		t.Errorf("after build 2, gendir/a: %v; want present", err)
+	}
+	if got, err := os.ReadFile(filepath.Join(dir, "out/siso/gendir/a")); err != nil || string(got) != "content-a-v2" {
+		t.Errorf("after build 2, gendir/a = %q, %v; want %q", got, err, "content-a-v2")
 	}
 	if _, err := os.Stat(filepath.Join(dir, "out/siso/gendir/b")); !errors.Is(err, fs.ErrNotExist) {
 		t.Errorf("gendir/b still on disk after the dir output shrank (err=%v); the stale member was not pruned", err)
