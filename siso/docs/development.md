@@ -83,16 +83,19 @@ So, modify code in kajiya and siso.
 
 To land the change,
 
-1.  Create a CL for kajiya change and siso change.
-    It can be built with `go.work`, but may fail without `go.work` if
-    kajiya API is incompatible. In this case, add `No-Without-Go-Work`
-    CL footer.
+1.  Create a CL for the kajiya change only.
+    CI builds and tests each module without `go.work`, so siso builds
+    against the kajiya version in its `go.mod`, and the CL must pass that
+    way. If the kajiya API changes incompatibly, siso fails to build with
+    `go.work` until the next step lands. Keeping the `go.work` build green
+    is best effort.
 2.  Once landed:
     1. In siso, run `go get go.chromium.org/build/kajiya@latest` to update
-       kajiya dependency for siso.
+       kajiya dependency for siso, and update siso for the kajiya API change.
        Make sure the build and tests pass with `GOWORK=off`.
     2. Run `go mod tidy` to tidy up `go.mod` and `go.sum`.
-    3. Create a CL for the `go.mod` and `go.sum` changes.
+    3. Create a CL for the siso change with the `go.mod` and `go.sum`
+       changes.
 
 Better to sync dependencies by `go work sync` and `go mod tidy` in siso and
 kajiya.
