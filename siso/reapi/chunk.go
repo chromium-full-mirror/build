@@ -231,6 +231,8 @@ func (c *Client) fetchChunks(ctx context.Context, chunks []chunk, fname string) 
 			return nil
 		}
 		// large chunk that not fit for BatchReadBlobs.
+		ctx, cancel := context.WithCancel(ctx)
+		defer cancel()
 		r, err := bytestreamio.Open(ctx, bpb.NewByteStreamClient(c.casDataConn), c.resourceName(chunks[0].d))
 		if err != nil {
 			return err
@@ -243,6 +245,10 @@ func (c *Client) fetchChunks(ctx context.Context, chunks []chunk, fname string) 
 		wr, err := c.opt.LocalCache.ContentSink(ctx, chunks[0].d, chunks[0].Name(fname))
 		if err != nil {
 			return err
+		}
+		if wr == nil {
+			// Another fetch has stored the chunk meanwhile.
+			return nil
 		}
 		_, err = io.Copy(wr, rd)
 		cerr := wr.Close()

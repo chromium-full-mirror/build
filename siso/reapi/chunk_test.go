@@ -16,6 +16,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	bpb "google.golang.org/genproto/googleapis/bytestream"
 	statuspb "google.golang.org/genproto/googleapis/rpc/status"
@@ -246,23 +247,23 @@ func (f *fakeCapabilities) GetCapabilities(ctx context.Context, req *rpb.GetCapa
 	}, nil
 }
 
-func setupChunkTestClientWithCapabilities(t *testing.T, fakeCAS *fakeChunkCAS, caps *rpb.ServerCapabilities, opt Option) (*Client, *LocalCache) {
+func setupChunkTestClientWithCapabilities(t *testing.T, fakeCAS *fakeChunkCAS, caps *rpb.ServerCapabilities, opt Option, srvOpts []grpc.ServerOption, dialOpts ...grpc.DialOption) (*Client, *LocalCache) {
 	t.Helper()
 	ctx := t.Context()
 	lis := bufconn.Listen(1 << 20)
-	srv := grpc.NewServer()
+	srv := grpc.NewServer(srvOpts...)
 	rpb.RegisterContentAddressableStorageServer(srv, fakeCAS)
 	bpb.RegisterByteStreamServer(srv, fakeCAS)
 	rpb.RegisterCapabilitiesServer(srv, &fakeCapabilities{capabilities: caps})
 	go srv.Serve(lis)
 	t.Cleanup(srv.Stop)
 
-	conn, err := grpc.NewClient("passthrough:///bufnet",
+	conn, err := grpc.NewClient("passthrough:///bufnet", append([]grpc.DialOption{
 		grpc.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) {
 			return lis.DialContext(ctx)
 		}),
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
-	)
+	}, dialOpts...)...)
 	if err != nil {
 		t.Fatalf("grpc.NewClient: %v", err)
 	}
@@ -290,7 +291,7 @@ func setupChunkTestClientWithCapabilities(t *testing.T, fakeCAS *fakeChunkCAS, c
 
 func setupChunkTestClient(t *testing.T, fakeCAS *fakeChunkCAS, opt Option) (*Client, *LocalCache) {
 	t.Helper()
-	return setupChunkTestClientWithCapabilities(t, fakeCAS, nil, opt)
+	return setupChunkTestClientWithCapabilities(t, fakeCAS, nil, opt, nil)
 }
 
 func makeChunkDigests(sizes ...int64) []*rpb.Digest {
@@ -846,7 +847,7 @@ func TestChunkUpload_SuccessMultiChunk(t *testing.T) {
 			},
 		},
 	}
-	client, localCache := setupChunkTestClientWithCapabilities(t, fakeCAS, caps, Option{})
+	client, localCache := setupChunkTestClientWithCapabilities(t, fakeCAS, caps, Option{}, nil)
 
 	data := generateTestData(16384)
 	fullDigest := digest.SHA256.FromBytes(data)
@@ -928,7 +929,7 @@ func TestChunkUpload_PreCachedChunks(t *testing.T) {
 			},
 		},
 	}
-	client, localCache := setupChunkTestClientWithCapabilities(t, fakeCAS, caps, Option{})
+	client, localCache := setupChunkTestClientWithCapabilities(t, fakeCAS, caps, Option{}, nil)
 
 	data := generateTestData(32768)
 	fullDigest := digest.SHA256.FromBytes(data)
@@ -1069,7 +1070,7 @@ func TestChunkUpload_BytestreamioUpload_Chunked(t *testing.T) {
 	}
 	client, _ := setupChunkTestClientWithCapabilities(t, fakeCAS, caps, Option{
 		ChunkedBlobsThreshold: 100,
-	})
+	}, nil)
 
 	data := generateTestData(24576)
 	fullDigest := digest.SHA256.FromBytes(data)
@@ -1113,7 +1114,7 @@ func TestChunkUpload_BytestreamioUpload_FallbackWhenNotSupported(t *testing.T) {
 	}
 	client, _ := setupChunkTestClientWithCapabilities(t, fakeCAS, caps, Option{
 		ChunkedBlobsThreshold: 100,
-	})
+	}, nil)
 
 	data := generateTestData(8192)
 	fullDigest := digest.SHA256.FromBytes(data)
@@ -1163,7 +1164,7 @@ func TestChunker(t *testing.T) {
 			},
 		},
 	}
-	client, _ := setupChunkTestClientWithCapabilities(t, fakeCAS, caps, Option{})
+	client, _ := setupChunkTestClientWithCapabilities(t, fakeCAS, caps, Option{}, nil)
 
 	// FastCDC with capability params
 	fastChunker, err := client.chunker(rpb.ChunkingFunction_FAST_CDC_2020)
@@ -1205,5 +1206,53 @@ func TestChunker(t *testing.T) {
 	_, err = client.chunker(rpb.ChunkingFunction_UNKNOWN)
 	if err == nil {
 		t.Fatal("chunker(UNKNOWN) succeeded; want error")
+	}
+}
+
+// TestChunkReader_ChunkCachedMeanwhile checks a large chunk that another
+// fetch stores in the local cache while this one reads it, and that the
+// fetch doesn't leave its stream open.
+func TestChunkReader_ChunkCachedMeanwhile(t *testing.T) {
+	ctx := t.Context()
+	// More than the client's stream window, so that the unread rest keeps
+	// the server's stream open.
+	data := bytes.Repeat([]byte("A"), 1<<20)
+	d := digest.SHA256.FromBytes(data)
+	fakeCAS := &fakeChunkCAS{
+		splitBlobMap: map[digest.Digest][]*rpb.Digest{d: {d.Proto()}},
+		blobs:        map[digest.Digest][]byte{d: data},
+	}
+	var localCache *LocalCache
+	cacheMeanwhile := grpc.WithStreamInterceptor(func(ctx context.Context, desc *grpc.StreamDesc, cc *grpc.ClientConn, method string, streamer grpc.Streamer, opts ...grpc.CallOption) (grpc.ClientStream, error) {
+		if method == "/google.bytestream.ByteStream/Read" {
+			if err := localCache.SetContent(ctx, d, "other.dat", data); err != nil {
+				return nil, err
+			}
+		}
+		return streamer(ctx, desc, cc, method, opts...)
+	})
+	client, lc := setupChunkTestClientWithCapabilities(t, fakeCAS, nil, Option{ByteStreamReadThreshold: 1},
+		[]grpc.ServerOption{grpc.MaxConcurrentStreams(1)},
+		cacheMeanwhile, grpc.WithInitialWindowSize(64<<10))
+	localCache = lc
+
+	r, err := client.chunkReader(ctx, d, "large.dat")
+	if err != nil {
+		t.Fatalf("chunkReader: %v", err)
+	}
+	defer r.Close()
+	got, err := io.ReadAll(r)
+	if err != nil {
+		t.Fatalf("ReadAll: %v", err)
+	}
+	if !bytes.Equal(got, data) {
+		t.Errorf("content mismatch: got %d bytes, want %d bytes", len(got), len(data))
+	}
+	// The fetch must end its read before r.Close: with one stream per
+	// connection, another RPC waits for a stream left open.
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	if _, err := rpb.NewCapabilitiesClient(client.casConn).GetCapabilities(ctx, &rpb.GetCapabilitiesRequest{}); err != nil {
+		t.Errorf("GetCapabilities after the fetch: %v", err)
 	}
 }
