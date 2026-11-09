@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"net"
 	"slices"
 	"strings"
@@ -484,5 +485,26 @@ func TestWalkDirAfterAbortedWalk(t *testing.T) {
 		if diff := cmp.Diff(want, got); diff != "" {
 			t.Errorf("WalkDir diff -want +got:\n%s", diff)
 		}
+	}
+}
+
+// TestWalkDirStreamMissingSubtree verifies that WalkDir fails when GetTree
+// leaves out part of the tree, instead of walking only the rest.
+func TestWalkDirStreamMissingSubtree(t *testing.T) {
+	// Serve a tree whose GetTree stream leaves out subdir2 and its subtree.
+	ctx := t.Context()
+	sub21 := &rpb.Directory{Files: fileNodes("file1")}
+	sub2 := &rpb.Directory{Files: fileNodes("lost"), Directories: []*rpb.DirectoryNode{dirNode(t, "subdir2.1", sub21)}}
+	sub1 := &rpb.Directory{Files: fileNodes("file1")}
+	root := &rpb.Directory{Files: fileNodes("file1"), Directories: []*rpb.DirectoryNode{dirNode(t, "subdir1", sub1), dirNode(t, "subdir2", sub2)}}
+	cas := &treeCAS{trees: map[digest.Digest][]*rpb.GetTreeResponse{
+		dirDigest(t, root): {{Directories: []*rpb.Directory{root, sub1}}},
+	}}
+	cl := newTreeClient(t, cas)
+
+	// Check that the walk fails.
+	got, err := walk(ctx, cl, dirDigest(t, root))
+	if err == nil {
+		t.Errorf("WalkDir=nil after walking %q; want an error", slices.Sorted(maps.Keys(got)))
 	}
 }

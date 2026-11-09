@@ -92,8 +92,8 @@ func (c *Client) WalkDir(ctx context.Context, d digest.Digest, fn func(dname str
 				if len(waiting[d]) == 0 {
 					return nil
 				}
-				var dnames []string
-				dnames, waiting[d] = waiting[d], nil
+				dnames := waiting[d]
+				delete(waiting, d)
 				for _, dname := range dnames {
 					dirs[dname] = d
 					started := time.Now()
@@ -140,6 +140,12 @@ func (c *Client) WalkDir(ctx context.Context, d digest.Digest, fn func(dname str
 				if err != nil {
 					return err
 				}
+			}
+
+			// GetTree may succeed without the subtrees that are
+			// missing from the CAS.
+			for sd, dnames := range waiting {
+				return fmt.Errorf("server did not return directory %q (%s)", dnames[0], sd)
 			}
 			break
 		}
