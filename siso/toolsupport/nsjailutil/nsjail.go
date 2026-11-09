@@ -191,22 +191,14 @@ func New(ctx context.Context, fsys fs.FS, req Request) (_ *NSJail, err error) {
 		Rw:     proto.Bool(true),
 	})
 
-	// Add the source directory. Normally this is not necessary,
-	// because the -R flags for the input files would cause nsjail
-	// to create it. But in cases where the action has no inputs
-	// or all the inputs are from an absolute out/ directory,
-	// it won't be created by nsjail automatically and the --cwd /src
-	// flag will fail.
-	srcDir := filepath.Join(jail.dir, execRootInSandbox)
-	err = os.MkdirAll(srcDir, 0755)
-	if err != nil {
-		return nil, err
-	}
+	// Mount the exec root as a tmpfs, read-only in the jail, so that
+	// nsjail creates the mount points for the out dir and the inputs
+	// on it instead of in a directory on the host.
 	jail.config.Mount = append(jail.config.Mount, &pb.MountPt{
-		Src:    proto.String(srcDir),
-		Dst:    proto.String(execRootInSandbox),
-		IsBind: proto.Bool(true),
-		IsDir:  proto.Bool(true),
+		Dst:     proto.String(execRootInSandbox),
+		Fstype:  proto.String("tmpfs"),
+		Options: proto.String("mode=0755"),
+		IsDir:   proto.Bool(true),
 	})
 
 	// Add the out directory.
