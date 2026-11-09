@@ -182,7 +182,11 @@ func (w *Writer) Close() error {
 			FinishWrite:  true,
 			// The client may leave 'data' empty.
 		})
-		if err != nil {
+		if errors.Is(err, io.EOF) {
+			// The server ended the stream, for example because another
+			// upload of the blob completed. CloseAndRecv gets its response.
+			clog.Infof(w.wr.Context(), "bytestream write %s for %s got EOF at finish: %v", w.resname, w.name, err)
+		} else if err != nil {
 			return fmt.Errorf("failed to finish for %s: %w", w.name, err)
 		}
 	}
