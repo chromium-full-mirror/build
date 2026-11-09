@@ -76,6 +76,7 @@ func TestLandlockExecutor_OutputDirs(t *testing.T) {
 	if runtime.GOOS != "linux" {
 		t.Skip("Landlock is only supported on linux")
 	}
+	// RWDirs depends on $TMPDIR.
 	t.Setenv("TMPDIR", "")
 	for _, tc := range []struct {
 		name          string
@@ -84,29 +85,34 @@ func TestLandlockExecutor_OutputDirs(t *testing.T) {
 		wantRWDirs    []string
 	}{
 		{
-			name:       "exact_duplicates",
-			outputs:    []string{"out/gen/foo.h", "out/gen/bar.h"},
-			wantRWDirs: []string{"out/gen", "/tmp", "/dev", "/proc"},
+			name:          "exact_duplicates",
+			outputs:       []string{"out/gen/foo.h", "out/gen/bar.h"},
+			workspaceRoot: "/workspace",
+			wantRWDirs:    []string{"/workspace/out/gen", "/tmp", "/dev", "/proc"},
 		},
 		{
-			name:       "ancestor_first_descendant_later",
-			outputs:    []string{"out/gen/foo.h", "out/gen/sub/bar.h", "out/gen/sub/nested/baz.h"},
-			wantRWDirs: []string{"out/gen", "/tmp", "/dev", "/proc"},
+			name:          "ancestor_first_descendant_later",
+			outputs:       []string{"out/gen/foo.h", "out/gen/sub/bar.h", "out/gen/sub/nested/baz.h"},
+			workspaceRoot: "/workspace",
+			wantRWDirs:    []string{"/workspace/out/gen", "/tmp", "/dev", "/proc"},
 		},
 		{
-			name:       "descendant_first_ancestor_later",
-			outputs:    []string{"out/gen/sub/bar.h", "out/gen/sub2/baz.h", "out/gen/foo.h"},
-			wantRWDirs: []string{"out/gen", "/tmp", "/dev", "/proc"},
+			name:          "descendant_first_ancestor_later",
+			outputs:       []string{"out/gen/sub/bar.h", "out/gen/sub2/baz.h", "out/gen/foo.h"},
+			workspaceRoot: "/workspace",
+			wantRWDirs:    []string{"/workspace/out/gen", "/tmp", "/dev", "/proc"},
 		},
 		{
-			name:       "deep_hierarchy",
-			outputs:    []string{"a/b/c/d/e.o", "a/b/c/d.o", "a/b.o"},
-			wantRWDirs: []string{"a", "/tmp", "/dev", "/proc"},
+			name:          "deep_hierarchy",
+			outputs:       []string{"a/b/c/d/e.o", "a/b/c/d.o", "a/b.o"},
+			workspaceRoot: "/workspace",
+			wantRWDirs:    []string{"/workspace/a", "/tmp", "/dev", "/proc"},
 		},
 		{
-			name:       "multiple_independent_trees",
-			outputs:    []string{"tree1/sub1/a.o", "tree2/sub2/sub3/b.o", "tree1/c.o", "tree2/sub2/d.o"},
-			wantRWDirs: []string{"tree1", "tree2/sub2", "/tmp", "/dev", "/proc"},
+			name:          "multiple_independent_trees",
+			outputs:       []string{"tree1/sub1/a.o", "tree2/sub2/sub3/b.o", "tree1/c.o", "tree2/sub2/d.o"},
+			workspaceRoot: "/workspace",
+			wantRWDirs:    []string{"/workspace/tree1", "/workspace/tree2/sub2", "/tmp", "/dev", "/proc"},
 		},
 		{
 			name:          "workspace_root_under_tmp_does_not_grant_tmp",
@@ -138,6 +144,7 @@ func TestLandlockExecutor_DefaultDirs(t *testing.T) {
 	if runtime.GOOS != "linux" {
 		t.Skip("Landlock is only supported on linux")
 	}
+	// RWDirs depends on $TMPDIR.
 	t.Setenv("TMPDIR", "")
 	for _, tc := range []struct {
 		name          string
@@ -157,7 +164,7 @@ func TestLandlockExecutor_DefaultDirs(t *testing.T) {
 				"/usr/lib32",
 				"/usr/lib64",
 			},
-			wantRWDirs: []string{"out/gen", "/tmp", "/dev", "/proc"},
+			wantRWDirs: []string{"/workspace/out/gen", "/tmp", "/dev", "/proc"},
 		},
 		{
 			name: "only_default_readable_dirs_set_replaces_both_default_lists",
@@ -165,7 +172,7 @@ func TestLandlockExecutor_DefaultDirs(t *testing.T) {
 				"default_readable_dirs": "/custom/bin:/custom/lib",
 			},
 			wantRODirs: []string{"/custom/bin", "/custom/lib"},
-			wantRWDirs: []string{"out/gen", "/tmp"},
+			wantRWDirs: []string{"/workspace/out/gen", "/tmp"},
 		},
 		{
 			name: "only_default_writable_dirs_set_replaces_both_default_lists",
@@ -173,7 +180,7 @@ func TestLandlockExecutor_DefaultDirs(t *testing.T) {
 				"default_writable_dirs": "/custom/rw1:/custom/rw2",
 			},
 			wantRODirs: []string{},
-			wantRWDirs: []string{"out/gen", "/tmp", "/custom/rw1", "/custom/rw2"},
+			wantRWDirs: []string{"/workspace/out/gen", "/tmp", "/custom/rw1", "/custom/rw2"},
 		},
 		{
 			name: "both_default_readable_dirs_and_default_writable_dirs_set",
@@ -182,7 +189,7 @@ func TestLandlockExecutor_DefaultDirs(t *testing.T) {
 				"default_writable_dirs": "/custom/rw",
 			},
 			wantRODirs: []string{"/custom/bin"},
-			wantRWDirs: []string{"out/gen", "/tmp", "/custom/rw"},
+			wantRWDirs: []string{"/workspace/out/gen", "/tmp", "/custom/rw"},
 		},
 		{
 			name: "explicit_empty_default_readable_dirs_clears_defaults",
@@ -190,14 +197,15 @@ func TestLandlockExecutor_DefaultDirs(t *testing.T) {
 				"default_readable_dirs": "",
 			},
 			wantRODirs: []string{},
-			wantRWDirs: []string{"out/gen", "/tmp"},
+			wantRWDirs: []string{"/workspace/out/gen", "/tmp"},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			fake := &fakeExecutor{}
 			executor := newLandlockExecutor(fake, tc.sandboxConfig)
 			cmd := &execute.Cmd{
-				Outputs: path.Paths([]string{"out/gen/foo.h"}),
+				Outputs:       path.Paths([]string{"out/gen/foo.h"}),
+				WorkspaceRoot: "/workspace",
 			}
 			ctx := t.Context()
 			err := executor.Run(ctx, cmd)
