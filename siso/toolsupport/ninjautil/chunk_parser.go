@@ -609,7 +609,7 @@ func (ch *chunk) parseBuild(i int) (int, error) {
 	} else {
 		edge.pool = defaultPool
 	}
-	edge.outputs = ch.edgePathSlab.slice(len(*outs))[:0]
+	edge.nodes = ch.edgePathSlab.slice(len(*outs) + len(*ins) + len(*validations))[:0]
 	// setup ch.env for this edge to evaluate paths
 	ch.env.edge = edge
 	for _, out := range *outs {
@@ -620,29 +620,30 @@ func (ch *chunk) parseBuild(i int) (int, error) {
 		if !n.setInEdge(edge) {
 			return 0, multipleRulesError{target: n.path}
 		}
-		edge.outputs = append(edge.outputs, n)
+		edge.nodes = append(edge.nodes, n)
 	}
-	edge.implicitOuts = implicitOuts
-	edge.inputs = ch.edgePathSlab.slice(len(*ins))[:0]
+	edge.nouts = uint32(len(*outs))
+	edge.implicitOuts = uint32(implicitOuts)
 	for _, in := range *ins {
 		n, err := ch.targetNode(&ch.env, &ch.scratchBuf, in)
 		if err != nil {
 			return 0, err
 		}
-		edge.inputs = append(edge.inputs, n)
+		edge.nodes = append(edge.nodes, n)
 		if !n.hasOut.Load() {
 			n.hasOut.Store(true)
 		}
 	}
-	edge.implicitDeps = implicit
-	edge.orderOnlyDeps = orderOnly
+	edge.nins = uint32(len(*ins))
+	edge.implicitDeps = uint32(implicit)
+	edge.orderOnlyDeps = uint32(orderOnly)
 
 	for _, validation := range *validations {
 		n, err := ch.targetNode(&ch.env, &ch.scratchBuf, validation)
 		if err != nil {
 			return 0, err
 		}
-		edge.validations = append(edge.validations, n)
+		edge.nodes = append(edge.nodes, n)
 	}
 	ch.env.edge = nil
 	return i, nil

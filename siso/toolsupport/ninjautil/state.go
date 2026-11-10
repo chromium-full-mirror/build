@@ -212,7 +212,7 @@ func (s *State) OutEdges(n *Node) []*Edge {
 func (s *State) buildOutEdges() {
 	idx := make([]int, len(s.nodes))
 	for _, edge := range s.edges {
-		for _, in := range edge.inputs {
+		for _, in := range edge.Inputs() {
 			idx[in.id]++
 		}
 	}
@@ -223,7 +223,7 @@ func (s *State) buildOutEdges() {
 	}
 	outEdges := make([]*Edge, total)
 	for _, edge := range s.edges {
-		for _, in := range edge.inputs {
+		for _, in := range edge.Inputs() {
 			pos := idx[in.id]
 			outEdges[pos] = edge
 			idx[in.id] = pos + 1
@@ -238,7 +238,7 @@ func (s *State) buildOutEdges() {
 func (s *State) RootNodes() ([]*Node, error) {
 	var roots []*Node
 	for _, e := range s.edges {
-		for _, out := range e.outputs {
+		for _, out := range e.Outputs() {
 			if !out.HasOut() {
 				roots = append(roots, out)
 			}

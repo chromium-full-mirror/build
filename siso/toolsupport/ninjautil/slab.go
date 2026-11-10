@@ -6,50 +6,43 @@ package ninjautil
 
 // slab is pre-batch allocated (without limits) memory to reduce allocations and impact to GC.
 type slab[T any] struct {
-	allocs []T
-	next   int
+	allocs []T // len for used, cap for allocated.
 }
 
 // newSlab creates new slab for n of T.
 func newSlab[T any](n int) slab[T] {
 	return slab[T]{
-		allocs: make([]T, n),
+		allocs: make([]T, 0, n),
 	}
 }
 
 // new returns *T from slab.
 func (s *slab[T]) new() *T {
-	if s.next >= len(s.allocs) {
-		s.allocs = make([]T, len(s.allocs))
-		s.next = 0
+	if len(s.allocs) >= cap(s.allocs) {
+		s.allocs = make([]T, 0, cap(s.allocs))
 	}
-	p := &s.allocs[s.next]
-	s.next++
-	return p
+	i := len(s.allocs)
+	s.allocs = s.allocs[:i+1]
+	return &s.allocs[i]
 }
 
 // unnew puts last *T returned by new back in slab.
 func (s *slab[T]) unnew() {
-	if s.next <= 0 {
-		return
+	if len(s.allocs) > 0 {
+		s.allocs = s.allocs[:len(s.allocs)-1]
 	}
-	s.next--
 }
 
 // slice returns slices [n]T.
 func (s *slab[T]) slice(n int) []T {
-	if s.next >= len(s.allocs) {
-		s.allocs = make([]T, len(s.allocs))
-		s.next = 0
-	}
-	// for large n, it will create new slice to avoid fragmentation.
-	if n >= len(s.allocs)/2 {
+	// for large n, create new slice to avoid fragmentation.
+	if n >= cap(s.allocs)/2 {
 		return make([]T, n)
 	}
-	if s.next+n > len(s.allocs) {
-		return make([]T, n)
+	if len(s.allocs)+n > cap(s.allocs) {
+		s.allocs = make([]T, 0, cap(s.allocs))
 	}
-	r := s.allocs[s.next : s.next+n : s.next+n]
-	s.next += n
-	return r
+	i := len(s.allocs)
+	s.allocs = s.allocs[:i+n]
+	return s.allocs[i : i+n : i+n]
 }

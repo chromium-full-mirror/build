@@ -242,7 +242,7 @@ func (p *fileParser) alloc(ctx context.Context) {
 		ch.edgeArena = p.edgeArena.chunk(ch.nbuild)
 		ch.poolArena = p.poolArena.chunk(ch.npool)
 		ch.bindingArena = p.bindingArena.chunk(ch.nrulevar)
-		ch.edgePathSlab = newSlab[*Node](ch.nbuild)
+		ch.edgePathSlab = newSlab[*Node](ch.nbuild * 4)
 
 		if log.V(2) {
 			clog.Infof(ctx, "chunk#%d edge:%d", i, ch.edgeArena.len())

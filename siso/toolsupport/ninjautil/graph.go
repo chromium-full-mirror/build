@@ -59,15 +59,19 @@ type Edge struct {
 	env   buildScope
 	scope *fileScope
 
-	inputs      []*Node
-	outputs     []*Node
-	validations []*Node
+	// nodes holds outputs, inputs, and validations contiguously:
+	//   outputs:     nodes[:nouts]
+	//   inputs:      nodes[nouts : nouts+nins]
+	//   validations: nodes[nouts+nins:]
+	nodes []*Node
 
-	// https://ninja-build.org/manual.html#ref_dependencies
-	implicitDeps  int
-	orderOnlyDeps int
 	// https://ninja-build.org/manual.html#ref_outputs
-	implicitOuts int
+	nouts        uint32
+	implicitOuts uint32
+	// https://ninja-build.org/manual.html#ref_dependencies
+	nins          uint32
+	implicitDeps  uint32
+	orderOnlyDeps uint32
 }
 
 type edgeEnv struct {
@@ -138,14 +142,12 @@ func (e *edgeEnv) lookupVar(pos int, key []byte) (evalString, bool) {
 		sep = "\n"
 		fallthrough
 	case "in":
-		n := len(e.edge.inputs) - e.edge.implicitDeps - e.edge.orderOnlyDeps
 		return evalString{
-			v: []byte(e.pathList(e.edge.inputs[:n], sep)),
+			v: []byte(e.pathList(e.edge.Ins(), sep)),
 		}, true
 	case "out":
-		n := len(e.edge.outputs) - e.edge.implicitOuts
 		return evalString{
-			v: []byte(e.pathList(e.edge.outputs[:n], sep)),
+			v: []byte(e.pathList(e.edge.ExplicitOutputs(), sep)),
 		}, true
 	}
 	ev, ok := e.edge.env.lookupVar(pos, key)
@@ -255,11 +257,9 @@ func (e *Edge) RawBinding(name string) string {
 		sep = "\n"
 		fallthrough
 	case "in":
-		n := len(env.edge.inputs) - env.edge.implicitDeps - env.edge.orderOnlyDeps
-		return env.pathList(env.edge.inputs[:n], sep)
+		return env.pathList(env.edge.Ins(), sep)
 	case "out":
-		n := len(env.edge.outputs) - env.edge.implicitOuts
-		return env.pathList(env.edge.outputs[:n], sep)
+		return env.pathList(env.edge.ExplicitOutputs(), sep)
 	}
 	val, ok := e.rawBinding([]byte(name))
 	if ok {
@@ -280,49 +280,54 @@ func (e *Edge) Pool() *Pool {
 
 // Inputs returns input nodes of the edge.
 func (e *Edge) Inputs() []*Node {
-	return e.inputs
+	end := e.nouts + e.nins
+	return e.nodes[e.nouts:end:end]
 }
 
 // Ins returns explicit input nodes (for $in) of the edge.
 func (e *Edge) Ins() []*Node {
-	n := len(e.inputs) - e.implicitDeps - e.orderOnlyDeps
-	return e.inputs[:n]
+	end := e.nouts + e.nins - e.implicitDeps - e.orderOnlyDeps
+	return e.nodes[e.nouts:end:end]
 }
 
 // ExplicitOutputs returns explicit output nodes of the edge.
 func (e *Edge) ExplicitOutputs() []*Node {
-	return e.outputs[:len(e.outputs)-e.implicitOuts]
+	end := e.nouts - e.implicitOuts
+	return e.nodes[:end:end]
 }
 
 // ImplicitOutputs returns implicit output nodes of the edge.
 func (e *Edge) ImplicitOutputs() []*Node {
-	return e.outputs[len(e.outputs)-e.implicitOuts:]
+	return e.nodes[e.nouts-e.implicitOuts : e.nouts : e.nouts]
 }
 
 // ImplicitInputs returns implicit input nodes of the edge.
 func (e *Edge) ImplicitInputs() []*Node {
-	return e.inputs[len(e.inputs)-e.orderOnlyDeps-e.implicitDeps : len(e.inputs)-e.orderOnlyDeps]
+	end := e.nouts + e.nins - e.orderOnlyDeps
+	return e.nodes[end-e.implicitDeps : end : end]
 }
 
 // OrderOnlyInputs returns order-only input nodes of the edge.
 func (e *Edge) OrderOnlyInputs() []*Node {
-	return e.inputs[len(e.inputs)-e.orderOnlyDeps:]
+	end := e.nouts + e.nins
+	return e.nodes[end-e.orderOnlyDeps : end : end]
 }
 
 // TriggerInputs returns inputs nodes of the edge that would trigger
 // the edge command. i.e. not including order_only inputs.
 func (e *Edge) TriggerInputs() []*Node {
-	return e.inputs[:len(e.inputs)-e.orderOnlyDeps]
+	end := e.nouts + e.nins - e.orderOnlyDeps
+	return e.nodes[e.nouts:end:end]
 }
 
 // Outputs returns output nodes of the edge.
 func (e *Edge) Outputs() []*Node {
-	return e.outputs
+	return e.nodes[:e.nouts:e.nouts]
 }
 
 // Validations returns validations node of the edge.
 func (e *Edge) Validations() []*Node {
-	return e.validations
+	return e.nodes[e.nouts+e.nins : len(e.nodes) : len(e.nodes)]
 }
 
 // IsPhony returns true iff phony edge.
@@ -343,16 +348,18 @@ func (e *Edge) Print(w io.Writer) {
 		fmt.Fprintf(w, "  %s = %s\n", rb.name, rb.value.v)
 	}
 	fmt.Fprintf(w, "\n")
-	if len(e.outputs) == 1 {
-		fmt.Fprintf(w, "build %s $\n", escapeNinjaToken(e.outputs[0].Path()))
+	outputs := e.Outputs()
+	explicitOuts := int(e.nouts - e.implicitOuts)
+	if len(outputs) == 1 {
+		fmt.Fprintf(w, "build %s $\n", escapeNinjaToken(outputs[0].Path()))
 	} else {
 		fmt.Fprintf(w, "build $\n")
-		for i, n := range e.outputs {
-			if i == len(e.outputs)-e.implicitOuts {
+		for i, n := range outputs {
+			if i == explicitOuts {
 				fmt.Fprintf(w, "  | $\n")
 			}
 			switch {
-			case i < len(e.outputs)-e.implicitOuts:
+			case i < explicitOuts:
 				fmt.Fprintf(w, "  %s $\n", escapeNinjaToken(n.Path()))
 			default:
 				fmt.Fprintf(w, "    %s $\n", escapeNinjaToken(n.Path()))
@@ -360,32 +367,36 @@ func (e *Edge) Print(w io.Writer) {
 		}
 	}
 	fmt.Fprintf(w, " : %s $\n", e.rule.Name())
-	for i, n := range e.inputs {
-		if i == len(e.inputs)-e.orderOnlyDeps-e.implicitDeps && e.implicitDeps > 0 {
+	inputs := e.Inputs()
+	explicitIns := int(e.nins - e.orderOnlyDeps - e.implicitDeps)
+	triggerIns := int(e.nins - e.orderOnlyDeps)
+	for i, n := range inputs {
+		if i == explicitIns && e.implicitDeps > 0 {
 			fmt.Fprintf(w, "  | $\n")
 		}
-		if i == len(e.inputs)-e.orderOnlyDeps {
+		if i == triggerIns {
 			fmt.Fprintf(w, "  || $\n")
 		}
 		switch {
-		case i < len(e.inputs)-e.orderOnlyDeps-e.implicitDeps:
+		case i < explicitIns:
 			fmt.Fprintf(w, "  %s", escapeNinjaToken(n.Path()))
-		case i < len(e.inputs)-e.orderOnlyDeps:
+		case i < triggerIns:
 			fmt.Fprintf(w, "    %s", escapeNinjaToken(n.Path()))
 		default:
 			fmt.Fprintf(w, "      %s", escapeNinjaToken(n.Path()))
 		}
-		if i < len(e.inputs)-1 {
+		if i < len(inputs)-1 {
 			fmt.Fprintf(w, " $\n")
 		} else {
 			fmt.Fprintf(w, "\n")
 		}
 	}
-	if len(e.validations) > 0 {
+	validations := e.Validations()
+	if len(validations) > 0 {
 		fmt.Fprintf(w, "  |@ $\n")
-		for i, n := range e.validations {
+		for i, n := range validations {
 			fmt.Fprintf(w, "  %s", escapeNinjaToken(n.Path()))
-			if i < len(e.validations)-1 {
+			if i < len(validations)-1 {
 				fmt.Fprintf(w, " $\n")
 			} else {
 				fmt.Fprintf(w, "\n")
