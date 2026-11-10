@@ -82,7 +82,7 @@ func TestShouldKeep_DiskMissDoesNotEvictBuildWithoutBytes(t *testing.T) {
 		if !present(ctx, t, hfs, root, member) {
 			t.Fatalf("member %q not recorded; want present before the disk probe", member)
 		}
-		if _, err := hfs.directory.store(ctx, makeFullpath(root, dir), negEntry(true)); err != nil {
+		if _, _, err := hfs.directory.store(ctx, makeFullpath(root, dir), negEntry(true)); err != nil {
 			t.Fatalf("store negative: %v", err)
 		}
 		if !presentDir(ctx, t, hfs, root, dir) {
@@ -99,7 +99,7 @@ func TestShouldKeep_DiskMissDoesNotEvictBuildWithoutBytes(t *testing.T) {
 		if !present(ctx, t, hfs, root, file) {
 			t.Fatalf("file %q not recorded; want present before the disk probe", file)
 		}
-		if _, err := hfs.directory.store(ctx, makeFullpath(root, file), negEntry(true)); err != nil {
+		if _, _, err := hfs.directory.store(ctx, makeFullpath(root, file), negEntry(true)); err != nil {
 			t.Fatalf("store negative: %v", err)
 		}
 		if !present(ctx, t, hfs, root, file) {
@@ -113,7 +113,7 @@ func TestShouldKeep_DiskMissDoesNotEvictBuildWithoutBytes(t *testing.T) {
 		if !present(ctx, t, hfs, root, link) {
 			t.Fatalf("symlink %q not recorded; want present before the disk probe", link)
 		}
-		if _, err := hfs.directory.store(ctx, makeFullpath(root, link), negEntry(true)); err != nil {
+		if _, _, err := hfs.directory.store(ctx, makeFullpath(root, link), negEntry(true)); err != nil {
 			t.Fatalf("store negative: %v", err)
 		}
 		if !present(ctx, t, hfs, root, link) {
@@ -127,7 +127,7 @@ func TestShouldKeep_DiskMissDoesNotEvictBuildWithoutBytes(t *testing.T) {
 		if !presentDir(ctx, t, hfs, root, dir) {
 			t.Fatalf("dir %q not recorded; want present before the removal", dir)
 		}
-		if _, err := hfs.directory.store(ctx, makeFullpath(root, dir), negEntry(false)); err != nil {
+		if _, _, err := hfs.directory.store(ctx, makeFullpath(root, dir), negEntry(false)); err != nil {
 			t.Fatalf("store negative: %v", err)
 		}
 		if _, err := hfs.Stat(ctx, root, dir); err == nil {

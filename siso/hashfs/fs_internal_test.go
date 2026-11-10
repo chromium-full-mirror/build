@@ -100,7 +100,7 @@ func TestReadFileStaleSizeDigest(t *testing.T) {
 	// A digestless entry capturing the old (small) size.
 	e := newLocalEntry()
 	e.init(ctx, fname, hfs.executables, hfs.OS)
-	if _, err := hfs.directory.store(ctx, path.Path(fname), e); err != nil {
+	if _, _, err := hfs.directory.store(ctx, path.Path(fname), e); err != nil {
 		t.Fatal(err)
 	}
 	// File grows on disk without a hashfs update.
@@ -177,7 +177,7 @@ func TestDirectoryLookup_Symlink(t *testing.T) {
 	}
 	e := newLocalEntry()
 	e.init(ctx, fname, nil, osfs)
-	_, err = d.store(ctx, path.New(fname), e)
+	_, _, err = d.store(ctx, path.New(fname), e)
 	if err != nil {
 		t.Fatalf("d.store(ctx, %q) %v; want nil err", fname, err)
 	}
@@ -189,7 +189,7 @@ func TestDirectoryLookup_Symlink(t *testing.T) {
 	}
 	e = newLocalEntry()
 	e.init(ctx, fname, nil, osfs)
-	_, err = d.store(ctx, path.New(fname), e)
+	_, _, err = d.store(ctx, path.New(fname), e)
 	if err != nil {
 		t.Fatalf("d.store(ctx, %q) %v; want nil err", fname, err)
 	}
@@ -356,13 +356,13 @@ func TestDirectoryLookupSymlink_DrivePath(t *testing.T) {
 
 	file := newLocalEntry()
 	file.mode = 0644
-	if _, err := d.store(ctx, path.Path("C:/a/b/f"), file); err != nil {
+	if _, _, err := d.store(ctx, path.Path("C:/a/b/f"), file); err != nil {
 		t.Fatalf("store file: %v", err)
 	}
 	link := newLocalEntry()
 	link.mode = 0644 | fs.ModeSymlink
 	link.target = "b"
-	if _, err := d.store(ctx, path.Path("C:/a/link"), link); err != nil {
+	if _, _, err := d.store(ctx, path.Path("C:/a/link"), link); err != nil {
 		t.Fatalf("store link: %v", err)
 	}
 	got, _, _, ok := d.lookup(ctx, path.Path("C:/a/link/f"))

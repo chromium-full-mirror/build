@@ -2914,6 +2914,69 @@ func TestEntries_EscapedSymlink(t *testing.T) {
 	}
 }
 
+func TestEntries_EscapedSymlinkChain(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skipf("no symlink on windows")
+	}
+	ctx := t.Context()
+	baseDir := t.TempDir()
+	baseDir, err := filepath.EvalSymlinks(baseDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ws := filepath.Join(baseDir, "ws")
+	if err := os.MkdirAll(ws, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(baseDir, "real/deep/sub"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	wantPayload := []byte("correct contents")
+	if err := os.WriteFile(filepath.Join(baseDir, "real/payload"), wantPayload, 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(baseDir, "payload"), []byte("different contents"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("real/deep", filepath.Join(baseDir, "alias")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("../../payload", filepath.Join(baseDir, "real/deep/sub/link")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("../alias/sub/link", filepath.Join(ws, "link")); err != nil {
+		t.Fatal(err)
+	}
+
+	hashFS, err := hashfs.New(ctx, hashfs.Option{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if err := hashFS.Close(ctx); err != nil {
+			t.Error(err)
+		}
+	}()
+
+	want := []merkletree.Entry{
+		{
+			Name: "link",
+			Data: blob.FromBytes(digest.SHA256, "real/payload", wantPayload),
+		},
+	}
+	for i := range 2 {
+		ents, err := hashFS.Entries(ctx, ws, []path.Path{"link"})
+		if err != nil {
+			t.Fatalf("call %d: hashFS.Entries()=%v; want nil err", i, err)
+		}
+		if diff := cmp.Diff(want, ents, cmp.Transformer("digest", func(d blob.Data) digest.Digest {
+			return d.Digest()
+		})); diff != "" {
+			t.Errorf("call %d: Entries diff -want +got:\n%s", i, diff)
+		}
+	}
+}
+
 func TestEntries_NonExistentIntermediateDirectory(t *testing.T) {
 	ctx := t.Context()
 

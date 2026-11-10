@@ -850,7 +850,7 @@ func (ies *initialEntryStates) storeEntries(ctx context.Context, hfs *HashFS, ke
 				if !keep(es.ftype) {
 					continue
 				}
-				if _, err := hfs.directory.store(ctx, path.Path(es.ent.Name), &es.e); err != nil {
+				if _, _, err := hfs.directory.store(ctx, path.Path(es.ent.Name), &es.e); err != nil {
 					return fmt.Errorf("failed to store %s %q: %w", es.ftype, es.ent.Name, err)
 				}
 			}

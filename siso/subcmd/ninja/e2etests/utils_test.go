@@ -283,6 +283,16 @@ func (w *syncBuffer) Bytes() []byte {
 
 func setupBuild(ctx context.Context, t *testing.T, dir string, fsopt hashfs.Option) (build.Options, *ninjabuild.Graph, func()) {
 	t.Helper()
+	return setupBuildWith(ctx, t, dir, "out/siso", "build.ninja", fsopt)
+}
+
+func setupAndroidBuild(ctx context.Context, t *testing.T, dir string, fsopt hashfs.Option) (build.Options, *ninjabuild.Graph, func()) {
+	t.Helper()
+	return setupBuildWith(ctx, t, dir, ".", "out/build.ninja", fsopt)
+}
+
+func setupBuildWith(ctx context.Context, t *testing.T, dir, cdir, fname string, fsopt hashfs.Option) (build.Options, *ninjabuild.Graph, func()) {
+	t.Helper()
 	var cleanups []func()
 	dir, err := filepath.EvalSymlinks(dir)
 	if err != nil {
@@ -301,13 +311,17 @@ func setupBuild(ctx context.Context, t *testing.T, dir string, fsopt hashfs.Opti
 			t.Fatal(err)
 		}
 	})
-	err = os.MkdirAll(filepath.Join(dir, "out/siso"), 0755)
+	stateDir := filepath.Dir(fname)
+	err = os.MkdirAll(filepath.Join(dir, cdir, stateDir), 0755)
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = os.Chdir(filepath.Join(dir, "out/siso"))
+	err = os.Chdir(filepath.Join(dir, cdir))
 	if err != nil {
 		t.Fatal(err)
+	}
+	if stateDir != "." && fsopt.StateFile != "" && !filepath.IsAbs(fsopt.StateFile) {
+		fsopt.StateFile = filepath.Join(stateDir, fsopt.StateFile)
 	}
 
 	var hashfsSetStateLog syncBuffer
@@ -336,8 +350,8 @@ func setupBuild(ctx context.Context, t *testing.T, dir string, fsopt hashfs.Opti
 	if err != nil {
 		t.Fatal(err)
 	}
-	path := build.NewPath(dir, "out/siso")
-	depsLog, err := ninjabuild.NewDepsLog(ctx, ".siso_deps")
+	path := build.NewPath(dir, cdir)
+	depsLog, err := ninjabuild.NewDepsLog(ctx, filepath.Join(stateDir, ".siso_deps"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -347,11 +361,11 @@ func setupBuild(ctx context.Context, t *testing.T, dir string, fsopt hashfs.Opti
 			t.Fatal(err)
 		}
 	})
-	stepConfig, err := ninjabuild.NewStepConfig(ctx, digest.SHA256, config, path, "build.ninja", ".")
+	stepConfig, err := ninjabuild.NewStepConfig(ctx, digest.SHA256, config, path, fname, stateDir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	nstate, err := ninjabuild.Load(ctx, "build.ninja", path)
+	nstate, err := ninjabuild.Load(ctx, fname, path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -361,7 +375,7 @@ func setupBuild(ctx context.Context, t *testing.T, dir string, fsopt hashfs.Opti
 		t.Fatal(err)
 	}
 
-	cachestore, err := reapi.NewLocalCache(".siso_cache")
+	cachestore, err := reapi.NewLocalCache(filepath.Join(stateDir, ".siso_cache"))
 	if err != nil {
 		t.Logf("no local cache enabled: %v", err)
 	}

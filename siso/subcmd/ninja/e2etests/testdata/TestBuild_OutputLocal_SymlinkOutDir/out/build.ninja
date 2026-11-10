@@ -1,0 +1,23 @@
+# Copyright 2026 The Chromium Authors
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+# Step A produces out/out0 and out/out1
+# Step B depends on out/out0, but implicitly access out/out1 and produces out/out2
+# Step C depends on out/out1 and out/out2, and produces out/out3
+# so, Step A remote, step B and C local, with output_local_strategy=minimum
+# out/out1 should be flushed before Step B.
+
+rule A
+  command = python3 action.py --input input --output out/out0 --output1 out/out1
+
+rule B
+  command = python3 action.py --input out/out1 --output out/out2
+
+rule C
+  command = python3 action.py --input out/out1 --output out/out3
+
+build out/out0 out/out1: A input
+build out/out2: B out/out0
+build out/out3: C out/out1 | out/out2
+default out/out3

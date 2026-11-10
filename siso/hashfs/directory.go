@@ -127,24 +127,24 @@ func (d *directory) lookupEntry(ctx context.Context, fname path.Path) (*entry, *
 
 var errRootSymlink = errors.New("symlink resolved from root")
 
-func (d *directory) store(ctx context.Context, fname path.Path, e *entry) (*entry, error) {
+func (d *directory) store(ctx context.Context, fname path.Path, e *entry) (*entry, path.Path, error) {
 	for range maxSymlinks {
 		ent, resolved, err := d.storeEntry(ctx, fname, e)
 		if resolved != "" {
 			if !d.isRoot {
 				if filepath.IsAbs(string(resolved)) {
-					return nil, fmt.Errorf("root symlink %s: %w", resolved, errRootSymlink)
+					return nil, fname, fmt.Errorf("root symlink %s: %w", resolved, errRootSymlink)
 				}
 				if !filepath.IsLocal(string(resolved)) {
-					return nil, fmt.Errorf("non local symlink %s: %w", resolved, errRootSymlink)
+					return nil, fname, fmt.Errorf("non local symlink %s: %w", resolved, errRootSymlink)
 				}
 			}
 			fname = resolved
 			continue
 		}
-		return ent, err
+		return ent, fname, err
 	}
-	return nil, fmt.Errorf("store %s: %w", fname, syscall.ELOOP)
+	return nil, fname, fmt.Errorf("store %s: %w", fname, syscall.ELOOP)
 }
 
 type storeRaceError struct {

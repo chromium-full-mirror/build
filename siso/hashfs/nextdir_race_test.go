@@ -38,7 +38,7 @@ func TestNextDirErrNotExistRace(t *testing.T) {
 			defer wg.Done()
 			nestedEntry := newLocalEntry()
 			nestedEntry.err = fs.ErrNotExist
-			_, storeErr = hfs.directory.store(ctx, "sysroot/usr/lib", nestedEntry)
+			_, _, storeErr = hfs.directory.store(ctx, "sysroot/usr/lib", nestedEntry)
 		}()
 
 		wg.Wait()
