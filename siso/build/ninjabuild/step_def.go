@@ -1243,16 +1243,12 @@ func (s *StepDef) CheckMissingDeps(ctx context.Context, depInputs []path.Path) (
 	// resolve deps from s.edge's inputs.
 	// it doesn't check output of s.edge.
 	edges := resolveEdgeDeps(s.globals, s.edge, false, deps, visited, seen)
-	// avoid recursion for memory efficiency (e.g. avoid deep stack)
-	for len(edges) > 0 {
-		edge := edges[0]
-		// reuse edege[0] space to minimize allocations.
-		remain := edges[1:]
-		copy(edges, remain)
-		edges[len(edges)-1] = nil
-		edges = edges[:len(edges)-1]
+	// avoid recursion for memory efficiency (e.g. avoid deep stack).
+	// consume the queue by index: popping the front with copy() moves the
+	// whole queue on every pop.
+	for head := 0; head < len(edges); head++ {
 		// resolve deps for edge's inputs and outputs.
-		edges = append(edges, resolveEdgeDeps(s.globals, edge, true, deps, visited, seen)...)
+		edges = append(edges, resolveEdgeDeps(s.globals, edges[head], true, deps, visited, seen)...)
 		if len(deps) == 0 {
 			return false, nil
 		}
