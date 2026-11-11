@@ -205,7 +205,10 @@ func TestRenderDumpAsText(t *testing.T) {
 					Value: syntax.MakeToken(syntax.TokenIdentifier, "bar"),
 				},
 			},
-			wantText: "ACCESSOR\n foo\n IDENTIFIER(bar)\n",
+			wantText: `ACCESSOR
+ foo
+ IDENTIFIER(bar)
+`,
 		},
 		{
 			name: "accessor_subscript",
@@ -218,7 +221,11 @@ func TestRenderDumpAsText(t *testing.T) {
 					},
 				},
 			},
-			wantText: "ACCESSOR\n foo\n UNARY_OP(!)\n  IDENTIFIER(bar)\n",
+			wantText: `ACCESSOR
+ foo
+ UNARY_OP(!)
+  IDENTIFIER(bar)
+`,
 		},
 		{
 			name: "block_comment",
@@ -238,7 +245,10 @@ func TestRenderDumpAsText(t *testing.T) {
 					Token: syntax.MakeToken(syntax.TokenInteger, "123"),
 				},
 			},
-			wantText: "BINARY(=)\n LITERAL(a)\n LITERAL(123)\n",
+			wantText: `BINARY(=)
+ LITERAL(a)
+ LITERAL(123)
+`,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

@@ -26,7 +26,9 @@ func TestSplitIntoChunksCapacity(t *testing.T) {
 // TestParseChunk_TrailingComment checks that a comment on the last line
 // without a newline ends the chunk instead of looping forever.
 func TestParseChunk_TrailingComment(t *testing.T) {
-	ch := splitIntoChunks(t.Context(), []byte("rule cc\n  command = cc\n# trailing"))[0]
+	ch := splitIntoChunks(t.Context(), []byte(`rule cc
+  command = cc
+# trailing`))[0]
 	done := make(chan error, 1)
 	go func() { done <- ch.parseChunk(t.Context()) }()
 	select {
@@ -226,7 +228,10 @@ func TestCompactBuildStatements_Single(t *testing.T) {
 // are rebased relative to first.s, and pos / type are preserved.
 func TestCompactBuildStatements_Multiple(t *testing.T) {
 	prefix := make([]byte, 1000)
-	region := []byte("  cflags = -O2\n  cppflags = -I/usr/include\n  ldflags = -lm\n")
+	region := []byte(`  cflags = -O2
+  cppflags = -I/usr/include
+  ldflags = -lm
+`)
 	buf := append(prefix, region...)
 
 	// statements[i].s/v/e are absolute offsets into buf.

@@ -893,7 +893,10 @@ build out4: rule_with_double_continuation_no_space in
 		},
 		// line continuation inside a name should fail if it is replaced by a space
 		{
-			ninjaContent: "rule my$\nrule\n  command = echo\n",
+			ninjaContent: `rule my$
+rule
+  command = echo
+`,
 		},
 	} {
 		dir := t.TempDir()

@@ -35,8 +35,12 @@ func writeFakeLuciAuth(t *testing.T, stdout, stderr string, exitCode int) (binPa
 	// Write the script.
 	argsPath = filepath.Join(dir, "args")
 	binPath = filepath.Join(dir, "luci-auth")
-	script := fmt.Sprintf("#!/bin/sh\nprintf '%%s\\n' \"$@\" > '%s'\ncat '%s'\ncat '%s' >&2\nexit %d\n",
-		argsPath, stdoutPath, stderrPath, exitCode)
+	script := fmt.Sprintf(`#!/bin/sh
+printf '%%s\n' "$@" > '%s'
+cat '%s'
+cat '%s' >&2
+exit %d
+`, argsPath, stdoutPath, stderrPath, exitCode)
 	if err := os.WriteFile(binPath, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}

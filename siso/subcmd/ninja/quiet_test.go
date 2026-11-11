@@ -58,7 +58,11 @@ func TestQuietUI_BuildActionFinished(t *testing.T) {
 		cmd.SetActionResult(&rpb.ActionResult{ExitCode: 1}, false)
 		cmd.StdoutWriter().Write([]byte("command stdout\n"))
 		cmd.StderrWriter().Write([]byte("error message\n"))
-		failedResult := "FAILED: foo.o\n/usr/bin/gcc -c foo.c -o foo.o\ncommand stdout\nerror message\n"
+		failedResult := `FAILED: foo.o
+/usr/bin/gcc -c foo.c -o foo.o
+command stdout
+error message
+`
 		cmd.SetOutputResult(failedResult)
 
 		step := build.NewStepForTest(1, nil)

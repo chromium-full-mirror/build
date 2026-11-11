@@ -375,7 +375,9 @@ func (p *parser) parseInfix(left Node, token syntax.Token) (Node, error) {
 			return nil, NodeError{
 				OriginNode: OriginNode{left},
 				message:    `May only use "." for identifiers.`,
-				helpText:   "The thing on the left hand side of the dot must be an identifier\nand not an expression. If you need this, you'll have to assign the\nvalue to a temporary first. Sorry.",
+				helpText: `The thing on the left hand side of the dot must be an identifier
+and not an expression. If you need this, you'll have to assign the
+value to a temporary first. Sorry.`,
 			}
 		}
 		right, err := p.parseExpression(precedenceDot)
@@ -385,9 +387,11 @@ func (p *parser) parseInfix(left Node, token syntax.Token) (Node, error) {
 		rightIdentifier, isIdentifier := right.(*IdentifierNode)
 		if !isIdentifier {
 			return nil, TokenError{
-				Token:    token,
-				message:  `Expected identifier for right-hand-side of "."`,
-				helpText: "Good: a.cookies\nBad: a.42\nLooks good but still bad: a.cookies()",
+				Token:   token,
+				message: `Expected identifier for right-hand-side of "."`,
+				helpText: `Good: a.cookies
+Bad: a.42
+Looks good but still bad: a.cookies()`,
 			}
 		}
 		return &AccessorNode{
@@ -400,7 +404,9 @@ func (p *parser) parseInfix(left Node, token syntax.Token) (Node, error) {
 			return nil, NodeError{
 				OriginNode: OriginNode{left},
 				message:    "May only subscript identifiers.",
-				helpText:   "The thing on the left hand side of the [] must be an identifier\nand not an expression. If you need this, you'll have to assign the\nvalue to a temporary before subscripting. Sorry.",
+				helpText: `The thing on the left hand side of the [] must be an identifier
+and not an expression. If you need this, you'll have to assign the
+value to a temporary before subscripting. Sorry.`,
 			}
 		}
 		value, err := p.parseExpression(precedenceNone)
