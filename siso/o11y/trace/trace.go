@@ -666,6 +666,8 @@ func (te *Tracer) Record(events []Event) {
 func (te *Tracer) Close(ctx context.Context) {
 	te.Stop()
 	clog.Infof(ctx, "trace finalize")
+	te.wmu.Lock()
+	defer te.wmu.Unlock()
 	te.writeTraceFooter(ctx)
 	if b, ok := te.w.(*bufio.Writer); ok {
 		if err := b.Flush(); err != nil {
@@ -676,7 +678,9 @@ func (te *Tracer) Close(ctx context.Context) {
 		if err := te.f.Close(); err != nil {
 			clog.Warningf(ctx, "Failed to close trace: %v", err)
 		}
+		te.f = nil
 	}
+	te.w = io.Discard
 	clog.Infof(ctx, "trace closed")
 }
 
