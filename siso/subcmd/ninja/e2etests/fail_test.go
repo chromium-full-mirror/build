@@ -231,8 +231,8 @@ func TestBuild_Fail_Signal(t *testing.T) {
 	if !strings.Contains(failureSummary.String(), "standard error") {
 		t.Errorf("ninja failure_summary=%q; want 'standard error'", failureSummary.String())
 	}
-	if !strings.Contains(failureSummary.String(), "exit=-1") {
-		t.Errorf("ninja failure_summary=%q; want 'exit=-1'", failureSummary.String())
+	if !strings.Contains(failureSummary.String(), "exit=137 # signal:killed") {
+		t.Errorf("ninja failure_summary=%q; want 'exit=137 # signal:killed'", failureSummary.String())
 	}
 	if !strings.Contains(outputLog.String(), "standard output") {
 		t.Errorf("ninja output_log=%q; want 'standard output'", outputLog.String())
@@ -240,11 +240,11 @@ func TestBuild_Fail_Signal(t *testing.T) {
 	if !strings.Contains(outputLog.String(), "standard error") {
 		t.Errorf("ninja output_log=%q; want 'standard error'", outputLog.String())
 	}
-	if !strings.Contains(outputLog.String(), "exit=-1") {
-		t.Errorf("ninja output_log=%q; want 'exit=-1'", outputLog.String())
+	if !strings.Contains(outputLog.String(), "exit=137 # signal:killed") {
+		t.Errorf("ninja output_log=%q; want 'exit=137 # signal:killed'", outputLog.String())
 	}
 	outString := stdout.String() + stderr.String()
-	if !strings.Contains(outString, "FAILED:") || !strings.Contains(outString, "standard output") || !strings.Contains(outString, "standard error") || !strings.Contains(outString, "exit=-1") {
-		t.Errorf("ninja output missing `FAILED:` or `standard output` or `standard error` or `exit=-1`\nstdout:\n%s\nstderr:\n%s", stdout.String(), stderr.String())
+	if !strings.Contains(outString, "FAILED:") || !strings.Contains(outString, "standard output") || !strings.Contains(outString, "standard error") || !strings.Contains(outString, "exit=137 # signal:killed") {
+		t.Errorf("ninja output missing `FAILED:` or `standard output` or `standard error` or `exit=137 # signal:killed`\nstdout:\n%s\nstderr:\n%s", stdout.String(), stderr.String())
 	}
 }

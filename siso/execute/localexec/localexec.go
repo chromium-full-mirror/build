@@ -301,5 +301,8 @@ func exitCode(err error) int32 {
 	if !ok {
 		return -1
 	}
+	if ws, ok := eerr.Sys().(syscall.WaitStatus); ok && ws.Signaled() {
+		return 128 + int32(ws.Signal())
+	}
 	return int32(eerr.ExitCode())
 }

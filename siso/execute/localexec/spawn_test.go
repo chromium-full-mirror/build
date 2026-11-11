@@ -373,3 +373,19 @@ func TestRunViaHelperWorkDir(t *testing.T) {
 		t.Errorf("action cwd = %q, want %q", got, want)
 	}
 }
+
+func TestRunSignaledExitCode(t *testing.T) {
+	cmd := helperCmd(t, "sh", "-c", "kill -9 $$")
+	err := LocalExec{}.Run(t.Context(), cmd)
+	ee, ok := errors.AsType[execute.ExitError](err)
+	if !ok {
+		t.Fatalf("Run err = %v, want execute.ExitError", err)
+	}
+	wantCode := 128 + int(syscall.SIGKILL)
+	if ee.ExitCode != wantCode {
+		t.Errorf("exit = %d, want %d", ee.ExitCode, wantCode)
+	}
+	if got, want := ee.Error(), "exit=137 # signal:killed"; got != want {
+		t.Errorf("err.Error() = %q, want %q", got, want)
+	}
+}
