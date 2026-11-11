@@ -16,6 +16,8 @@ import (
 
 	"go.chromium.org/build/siso/o11y/clog"
 	"go.chromium.org/build/siso/o11y/trace"
+	// Sets GOMAXPROCS before importers size package-level vars from it.
+	_ "go.chromium.org/build/siso/runtimex"
 )
 
 var tidCounter atomic.Int64
