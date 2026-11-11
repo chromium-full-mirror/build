@@ -404,6 +404,36 @@ resolve:
 	return names
 }
 
+// ExpandInputs expands intermediate symlink dirs in inputs and relocates
+// inputs under symlink dirs to their resolved paths.
+func (fsys FileSystem) ExpandInputs(inputs []string) []string {
+	resolvedDirs := make(map[string]string)
+	out := make([]string, 0, len(inputs))
+	for _, input := range inputs {
+		dir := filepath.ToSlash(filepath.Dir(input))
+		if dir == "." || !filepath.IsLocal(input) {
+			out = append(out, input)
+			continue
+		}
+		resolvedDir, ok := resolvedDirs[dir]
+		var symDirs []string
+		if !ok {
+			expanded := fsys.ExpandSymlinks(dir)
+			resolvedDir = expanded[len(expanded)-1]
+			resolvedDirs[dir] = resolvedDir
+			if len(expanded) > 1 {
+				symDirs = expanded[:len(expanded)-1]
+			}
+		}
+		out = append(out, symDirs...)
+		if resolvedDir != dir {
+			input = filepath.ToSlash(filepath.Join(resolvedDir, filepath.Base(input)))
+		}
+		out = append(out, input)
+	}
+	return out
+}
+
 // Sub returns an FS corresponding to the subtree rooted at dir.
 func (fsys FileSystem) Sub(dir string) (fs.FS, error) {
 	fi, err := fsys.Stat(dir)

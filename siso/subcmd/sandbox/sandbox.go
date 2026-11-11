@@ -110,6 +110,7 @@ func (c *Command) run(ctx context.Context) error {
 	}
 	req.WorkspaceRoot = workspaceRoot
 	req.WorkDir = outDir
+	req.Inputs = hashFS.FileSystem(ctx, workspaceRoot).ExpandInputs(req.Inputs)
 	clog.Infof(ctx, "req: %#v", req)
 	fsys := hashFS.FileSystem(ctx, "/")
 	jail, err := nsjailutil.New(ctx, fsys, req)

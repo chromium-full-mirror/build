@@ -455,3 +455,181 @@ func TestExpandSymlinks(t *testing.T) {
 		})
 	}
 }
+
+func TestExpandInputs(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("no symlink test on windows")
+		return
+	}
+	ctx := t.Context()
+	dir := t.TempDir()
+	dir, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hfs, err := New(ctx, Option{})
+	if err != nil {
+		t.Fatalf("New=%v", err)
+	}
+	defer func() {
+		if err := hfs.Close(ctx); err != nil {
+			t.Errorf("hfs.Close=%v", err)
+		}
+	}()
+
+	setupFile := func(fname string) {
+		t.Helper()
+		fullpath := filepath.Join(dir, fname)
+		if err := os.MkdirAll(filepath.Dir(fullpath), 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(fullpath, nil, 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	setupSymlink := func(symlink, target string) {
+		t.Helper()
+		fullpath := filepath.Join(dir, symlink)
+		if err := os.MkdirAll(filepath.Dir(fullpath), 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(target, fullpath); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	setupFile("frameworks/native/libs/gui/include/gui/AdditionalOptions.h")
+	setupSymlink("frameworks/native/include/gui", "../libs/gui/include/gui")
+	setupFile("system/libbase/include/android-base/errors.h")
+	setupSymlink("system/core/libutils/include/utils/Errors.h", "../../../../../system/libbase/include/android-base/errors.h")
+	setupSymlink("system/core/include/utils", "../libutils/include/utils/")
+	setupFile("other/foo.h")
+	setupSymlink("b/real/sub", "../../other")
+	setupSymlink("a/sym1", "../b/real")
+	setupSymlink("b/chain2", "../other")
+	setupSymlink("a/chain1", "../b/chain2")
+
+	otherDir := t.TempDir()
+	setupSymlink("a/abs_sym", otherDir)
+	setupSymlink("a/escape_sym", "../../outside")
+	setupSymlink("a/dangling_sym", "nonexistent_target")
+
+	fsys := hfs.FileSystem(ctx, dir)
+
+	for _, tc := range []struct {
+		name   string
+		inputs []string
+		want   []string
+	}{
+		{
+			name: "child_file_before_symlink_dir_b579246632",
+			inputs: []string{
+				"frameworks/native/include/gui/AdditionalOptions.h",
+				"frameworks/native/include/gui",
+			},
+			want: []string{
+				"frameworks/native/include/gui",
+				"frameworks/native/libs/gui/include/gui/AdditionalOptions.h",
+				"frameworks/native/include/gui",
+			},
+		},
+		{
+			name: "unlisted_intermediate_symlink_dir",
+			inputs: []string{
+				"frameworks/native/include/gui/AdditionalOptions.h",
+			},
+			want: []string{
+				"frameworks/native/include/gui",
+				"frameworks/native/libs/gui/include/gui/AdditionalOptions.h",
+			},
+		},
+		{
+			name: "symlink_dir_and_symlink_file",
+			inputs: []string{
+				"system/core/include/utils",
+				"system/core/include/utils/Errors.h",
+				"system/core/libutils/include/utils/Errors.h",
+				"system/libbase/include/android-base/errors.h",
+			},
+			want: []string{
+				"system/core/include/utils",
+				"system/core/include/utils",
+				"system/core/libutils/include/utils/Errors.h",
+				"system/core/libutils/include/utils/Errors.h",
+				"system/libbase/include/android-base/errors.h",
+			},
+		},
+		{
+			name: "nested_symlink_dirs_reverse_order",
+			inputs: []string{
+				"a/sym1/sub/foo.h",
+				"a/sym1/sub",
+				"a/sym1",
+			},
+			want: []string{
+				"a/sym1",
+				"b/real/sub",
+				"other/foo.h",
+				"a/sym1",
+				"b/real/sub",
+				"a/sym1",
+			},
+		},
+		{
+			name: "nested_symlink_dirs_intermediate_unlisted",
+			inputs: []string{
+				"a/sym1/sub/foo.h",
+			},
+			want: []string{
+				"a/sym1",
+				"b/real/sub",
+				"other/foo.h",
+			},
+		},
+		{
+			name: "chained_symlink_dirs_intermediate_unlisted",
+			inputs: []string{
+				"a/chain1/foo.h",
+				"a/chain1",
+			},
+			want: []string{
+				"a/chain1",
+				"b/chain2",
+				"other/foo.h",
+				"a/chain1",
+			},
+		},
+		{
+			name: "real_dir_with_symlink_resolving_outside_dir",
+			inputs: []string{
+				"b/real",
+				"b/real/sub/foo.h",
+			},
+			want: []string{
+				"b/real",
+				"b/real/sub",
+				"other/foo.h",
+			},
+		},
+		{
+			name: "leaf_symlinks_with_abs_nonlocal_or_dangling_target",
+			inputs: []string{
+				"a/abs_sym",
+				"a/escape_sym",
+				"a/dangling_sym",
+			},
+			want: []string{
+				"a/abs_sym",
+				"a/escape_sym",
+				"a/dangling_sym",
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := fsys.ExpandInputs(tc.inputs)
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Errorf("fsys.ExpandInputs(%v) diff -want +got:\n%s", tc.inputs, diff)
+			}
+		})
+	}
+}

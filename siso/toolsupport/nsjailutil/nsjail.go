@@ -221,24 +221,21 @@ func New(ctx context.Context, fsys fs.FS, req Request) (_ *NSJail, err error) {
 		Rw:     proto.Bool(true),
 	})
 
-	for _, input := range req.Inputs {
-		absInputPath := filepath.Join(req.WorkspaceRoot, input)
-		inputPathInSandbox := filepath.Join(execRootInSandbox, input)
-		fi, err := fs.Lstat(fsys, input)
-		if err != nil {
-			return nil, err
-		}
+	inputs, err := resolveInputs(fsys, req.Inputs)
+	if err != nil {
+		return nil, err
+	}
+	for _, input := range inputs {
+		absInputPath := filepath.Join(req.WorkspaceRoot, input.name)
+		inputPathInSandbox := filepath.Join(execRootInSandbox, input.name)
+		fi := input.fi
 		switch {
 		case fi.Mode()&fs.ModeType == fs.ModeSymlink:
 			// need to use symlink as symlink.
 			// android uses dangling symlink, and
 			// bind such dangling symlink will fail.
-			target, err := fs.ReadLink(fsys, input)
-			if err != nil {
-				return nil, err
-			}
 			jail.config.Mount = append(jail.config.Mount, &pb.MountPt{
-				Src:       proto.String(target),
+				Src:       proto.String(input.target),
 				Dst:       proto.String(inputPathInSandbox),
 				IsSymlink: proto.Bool(true),
 				IsDir:     proto.Bool(false),
@@ -251,7 +248,7 @@ func New(ctx context.Context, fsys fs.FS, req Request) (_ *NSJail, err error) {
 				IsDir:  proto.Bool(fi.IsDir()),
 			})
 		default:
-			return nil, fmt.Errorf("unsupported input file type %q: %v", input, fi.Mode())
+			return nil, fmt.Errorf("unsupported input file type %q: %v", input.name, fi.Mode())
 		}
 	}
 
@@ -309,6 +306,85 @@ func New(ctx context.Context, fsys fs.FS, req Request) (_ *NSJail, err error) {
 	}
 
 	return jail, nil
+}
+
+type inputMount struct {
+	name   string
+	fi     fs.FileInfo
+	target string
+}
+
+// resolveInputs deduplicates inputs, omits inputs shadowed by a mounted parent
+// directory, and rejects inputs nested under a symlink mount (b/579246632).
+// Callers are expected to expand intermediate symlink directories before
+// calling New.
+func resolveInputs(fsys fs.FS, rawInputs []string) ([]inputMount, error) {
+	entries := make(map[string]fs.FileInfo, len(rawInputs))
+	symlinks := make(map[string]string)
+	var inputDirs map[string]bool
+
+	inputs := make([]string, 0, len(rawInputs))
+	for _, rawInput := range rawInputs {
+		input := filepath.ToSlash(filepath.Clean(rawInput))
+		if input == "." {
+			continue
+		}
+		if !filepath.IsLocal(input) {
+			return nil, fmt.Errorf("input is not local path: %q", rawInput)
+		}
+		if _, ok := entries[input]; ok {
+			continue
+		}
+		fi, err := fs.Lstat(fsys, input)
+		if err != nil {
+			return nil, err
+		}
+		entries[input] = fi
+		switch {
+		case fi.IsDir():
+			if inputDirs == nil {
+				inputDirs = make(map[string]bool)
+			}
+			inputDirs[input] = true
+		case fi.Mode()&fs.ModeType == fs.ModeSymlink:
+			var target string
+			if tfi, ok := fi.(interface{ Target() string }); ok {
+				target = tfi.Target()
+			} else {
+				target, err = fs.ReadLink(fsys, input)
+				if err != nil {
+					return nil, err
+				}
+			}
+			symlinks[input] = target
+		}
+		inputs = append(inputs, input)
+	}
+
+	out := make([]inputMount, 0, len(inputs))
+loop:
+	for _, input := range inputs {
+		if len(inputDirs) > 0 || len(symlinks) > 0 {
+			for i := range len(input) {
+				if input[i] != '/' {
+					continue
+				}
+				dir := input[:i]
+				if inputDirs[dir] {
+					continue loop
+				}
+				if target, ok := symlinks[dir]; ok {
+					return nil, fmt.Errorf("cannot mount %q under symlink %q -> %q", input, dir, target)
+				}
+			}
+		}
+		out = append(out, inputMount{
+			name:   input,
+			fi:     entries[input],
+			target: symlinks[input],
+		})
+	}
+	return out, nil
 }
 
 // Dir returns jail dir.

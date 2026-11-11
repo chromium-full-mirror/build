@@ -97,7 +97,7 @@ func (n *nsjailExecutor) Close() error {
 func (n *nsjailExecutor) Run(ctx context.Context, cmd *execute.Cmd) (err error) {
 	fsys := n.b.hashFS.FileSystem(ctx, "/")
 	req := n.req
-	req.Inputs = path.Strings(cmd.AllInputs())
+	req.Inputs = n.b.hashFS.FileSystem(ctx, n.b.path.WorkspaceRoot).ExpandInputs(path.Strings(cmd.AllInputs()))
 	req.Outputs = path.Strings(cmd.AllOutputs())
 	req.Restat = cmd.Restat
 	jail, err := nsjailutil.New(ctx, fsys, req)
