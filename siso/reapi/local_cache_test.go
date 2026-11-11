@@ -142,7 +142,7 @@ func TestActionLookupCache(t *testing.T) {
 
 	// Empty list
 	var found []digest.Digest
-	for d, err := range cache.ListActionDigests(ctx, lookupKey) {
+	for d, err := range cache.ListActionDigests(ctx, lookupKey, 0) {
 		if err != nil {
 			t.Fatalf("ListActionDigests: %v", err)
 		}
@@ -163,7 +163,7 @@ func TestActionLookupCache(t *testing.T) {
 	}
 
 	found = nil
-	for d, err := range cache.ListActionDigests(ctx, lookupKey) {
+	for d, err := range cache.ListActionDigests(ctx, lookupKey, 0) {
 		if err != nil {
 			t.Fatalf("ListActionDigests: %v", err)
 		}
@@ -206,7 +206,7 @@ func TestLocalActionCacheMap(t *testing.T) {
 	}
 
 	var actions []*rpb.Action
-	for action, err := range acm.List(ctx, lookupKey) {
+	for action, err := range acm.List(ctx, lookupKey, 0) {
 		if err != nil {
 			t.Fatalf("acm.List: %v", err)
 		}

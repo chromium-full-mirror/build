@@ -67,7 +67,7 @@ func (b *Builder) twoPhaseCachingLookup(ctx context.Context, step *Step) (bool, 
 
 type actionCacheMap interface {
 	Add(context.Context, string, digest.Digest) error
-	List(context.Context, string) iter.Seq2[*rpb.Action, error]
+	List(context.Context, string, int) iter.Seq2[*rpb.Action, error]
 }
 
 type reapiTwoPhaseCaching struct {
@@ -113,7 +113,7 @@ func (rt reapiTwoPhaseCaching) Check(ctx context.Context, lookupKey string, step
 	// i.e. cheap action should be small, but heavy action could be large.
 	const maxCandidates = 10
 	nactions := 0
-	for action, err := range rt.actionCacheMap.List(ctx, lookupKey) {
+	for action, err := range rt.actionCacheMap.List(ctx, lookupKey, maxCandidates) {
 		nactions++
 		if err != nil {
 			step.cmd = ocmd

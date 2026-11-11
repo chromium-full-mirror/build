@@ -230,7 +230,7 @@ func (c *LocalCache) AddActionLookup(ctx context.Context, lookupKey string, acti
 }
 
 // ListActionDigests lists action digests associated with lookupKey in the local cache.
-func (c *LocalCache) ListActionDigests(ctx context.Context, lookupKey string) iter.Seq2[digest.Digest, error] {
+func (c *LocalCache) ListActionDigests(ctx context.Context, lookupKey string, max int) iter.Seq2[digest.Digest, error] {
 	return func(yield func(digest.Digest, error) bool) {
 		if c == nil {
 			return
@@ -269,6 +269,9 @@ func (c *LocalCache) ListActionDigests(ctx context.Context, lookupKey string) it
 		})
 		const maxListActions = 5
 		threshold := min(maxListActions, len(ents))
+		if max > 0 {
+			threshold = min(threshold, max)
+		}
 		ents, olds := ents[:threshold], ents[threshold:]
 		for _, ent := range olds {
 			os.Remove(filepath.Join(dir, ent.Name()))

@@ -282,7 +282,7 @@ func (c *Command) run(ctx context.Context) error {
 		}
 		return nil
 	case "action-list":
-		for action, err := range client.ActionCacheMap().List(ctx, d.String()) {
+		for action, err := range client.ActionCacheMap().List(ctx, d.String(), 0) {
 			if err != nil {
 				return fmt.Errorf("failed to list actions for %s: %w", d.String(), err)
 			}

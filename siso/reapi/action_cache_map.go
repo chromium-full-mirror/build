@@ -50,11 +50,11 @@ func (m ActionCacheMap) Add(ctx context.Context, lookupKey string, action digest
 }
 
 // List lists up actions associated to lookup key.
-func (m ActionCacheMap) List(ctx context.Context, lookupKey string) iter.Seq2[*rpb.Action, error] {
+func (m ActionCacheMap) List(ctx context.Context, lookupKey string, max int) iter.Seq2[*rpb.Action, error] {
 	return func(yield func(*rpb.Action, error) bool) {
 		seen := make(map[digest.Digest]struct{})
 		if m.c.opt.LocalCache != nil {
-			for d, err := range m.c.opt.LocalCache.ListActionDigests(ctx, lookupKey) {
+			for d, err := range m.c.opt.LocalCache.ListActionDigests(ctx, lookupKey, max) {
 				if err != nil {
 					yield(nil, err)
 					return
@@ -86,6 +86,7 @@ func (m ActionCacheMap) List(ctx context.Context, lookupKey string) iter.Seq2[*r
 			InstanceName:   m.c.opt.Instance,
 			LookupKey:      lookupKey,
 			DigestFunction: m.c.digestFn.Value(),
+			PageSize:       int32(max),
 		})
 		if err != nil {
 			yield(nil, err)
