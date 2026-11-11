@@ -236,7 +236,7 @@ func (o *Option) RegisterFlags(fs *flag.FlagSet, envs map[string]string) {
 
 	fs.BoolVar(&o.KeepExecStream, o.Prefix+"_keep_exec_stream", false, "keep Execute stream open as long as possible")
 
-	fs.BoolVar(&o.WalkDirStream, o.Prefix+"_walkdir_stream", false, "use GetTree for WalkDir")
+	fs.BoolVar(&o.WalkDirStream, o.Prefix+"_walkdir_stream", true, "use GetTree for WalkDir")
 
 	fs.IntVar(&o.ConnPool, o.Prefix+"_grpc_conn_pool", 25, "grpc connection pool")
 	fs.IntVar(&o.DataConnPool, o.Prefix+"_grpc_data_conn_pool", 25, "grpc connection pool for data (bytestream Read, Write)")
