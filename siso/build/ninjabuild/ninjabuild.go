@@ -692,6 +692,13 @@ func (g *globals) targetPath(node *ninjautil.Node) path.Path {
 	return p
 }
 
+// lookupNodeByTargetPath returns the node whose targetPath is p (workspace
+// relative). It doesn't find a node whose path is not clean in build.ninja
+// (e.g. "gen/./x.h").
+func (g *globals) lookupNodeByTargetPath(ctx context.Context, p path.Path) (*ninjautil.Node, bool) {
+	return g.nstate.LookupNodeByPath(g.path.MaybeToRelative(ctx, string(p)))
+}
+
 // Edge returns a new Edge to build target (workspace relative), needed for next.
 // top-level target will use nil for next.
 func (g *Graph) Edge(ctx context.Context, target build.Target, next build.StepDef) (*build.Edge, error) {
