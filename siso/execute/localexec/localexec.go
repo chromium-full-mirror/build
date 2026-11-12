@@ -91,8 +91,9 @@ func (LocalExec) Run(ctx context.Context, cmd *execute.Cmd) (err error) {
 	return cmd.RecordOutputsFromLocal(ctx, now)
 }
 
-// fix for http://b/278658064 windows: fork/exec: Not enough memory resources are available to process this command.
-var ForkSema = semaphore.New("fork", runtime.GOMAXPROCS(0))
+// ForkSema limits concurrent local process spawns, capped on Windows even when
+// GOMAXPROCS spans multiple processor groups.
+var ForkSema = semaphore.New("fork", concurrencyLimit(runtime.GOMAXPROCS(0)))
 
 // run runs cmd, retrying with bounded backoff when starting the process
 // fails with ETXTBSY, i.e. a write-mode fd to the executable is transiently
