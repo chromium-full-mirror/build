@@ -34,5 +34,8 @@ func main() {
 		fmt.Printf("inblock: %d\n", ru.Inblock)
 		fmt.Printf("oublock: %d\n", ru.Oublock)
 	}
+	if ws, ok := cmd.ProcessState.Sys().(syscall.WaitStatus); ok && ws.Signaled() {
+		os.Exit(128 + int(ws.Signal()))
+	}
 	os.Exit(cmd.ProcessState.ExitCode())
 }

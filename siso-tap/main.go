@@ -883,6 +883,9 @@ func main() {
 	// fmt.Printf("cmdErr: %v\n", cmdErr)
 	if cmdErr != nil {
 		if cmd.ProcessState != nil {
+			if ws, ok := cmd.ProcessState.Sys().(syscall.WaitStatus); ok && ws.Signaled() {
+				os.Exit(128 + int(ws.Signal()))
+			}
 			code := cmd.ProcessState.ExitCode()
 			if code != 0 {
 				os.Exit(code)

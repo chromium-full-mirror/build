@@ -961,7 +961,7 @@ func TestRunRacing_LocalKilledBySignal_RemoteWins(t *testing.T) {
 		script string
 	}{
 		{
-			// localexec reports exit=-1 for a process killed by a signal.
+			// localexec reports exit=137 for a process killed by SIGKILL.
 			name:   "SIGKILL",
 			script: "kill -9 $$",
 		},

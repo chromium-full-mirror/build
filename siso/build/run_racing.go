@@ -299,9 +299,8 @@ func isContextCanceledErr(err error) bool {
 }
 
 // isKilledBySignal reports whether err is a local command exit caused by a
-// signal, e.g. SIGKILL from the kernel OOM killer. localexec reports -1 for
-// a process killed by a signal, and sandbox wrappers such as nsjail exit
-// with 128+signal (137 for SIGKILL).
+// signal, e.g. SIGKILL from the kernel OOM killer. localexec and sandbox
+// wrappers such as nsjail exit with 128+signal (137 for SIGKILL).
 func isKilledBySignal(err error) bool {
 	eerr, ok := errors.AsType[execute.ExitError](err)
 	if !ok {

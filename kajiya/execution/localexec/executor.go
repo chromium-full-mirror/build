@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"syscall"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -368,8 +369,13 @@ func (e *Executor) executeCommand(sb *Sandbox, action *model.Action) (*repb.Acti
 		}
 	}
 
+	exitCode := int32(c.ProcessState.ExitCode())
+	if ws, ok := c.ProcessState.Sys().(syscall.WaitStatus); ok && ws.Signaled() {
+		exitCode = 128 + int32(ws.Signal())
+	}
+
 	return &repb.ActionResult{
-		ExitCode:  int32(c.ProcessState.ExitCode()),
+		ExitCode:  exitCode,
 		StdoutRaw: stdout.Bytes(),
 		StderrRaw: stderr.Bytes(),
 	}, nil

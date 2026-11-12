@@ -10,6 +10,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"go.chromium.org/build/siso/build"
@@ -168,5 +169,39 @@ func TestBuild_Landlock_Depfile(t *testing.T) {
 
 	if stats.Done != 2 || stats.Local != 1 || stats.Total != 2 {
 		t.Errorf("done=%d total=%d local=%d; want done=2 total=2 local=1 %#v", stats.Done, stats.Total, stats.Local, stats)
+	}
+}
+
+func TestBuild_Landlock_Signal(t *testing.T) {
+	if !runInSubProcess(t) {
+		return
+	}
+	skipUnlessLandlockUsable(t)
+	ctx := t.Context()
+	dir := tempDir(t)
+
+	setupFiles(t, dir, "TestBuild_Landlock_Basic", nil)
+	modifyFile(t, dir, "out/siso/build.ninja", func([]byte) []byte {
+		return []byte(`
+rule cp
+  command = /bin/sh -c "kill -9 $$$$"
+
+build out.txt: cp ../../in.txt
+`)
+	})
+
+	opt, graph, cleanup := setupBuild(ctx, t, dir, hashfs.Option{
+		StateFile: ".siso_fs_state",
+	})
+	defer cleanup()
+	var failureSummary bytes.Buffer
+	opt.FailureSummaryWriter = &failureSummary
+
+	_, err := ninjabuild.Run(ctx, graph, opt, nil, ninjabuild.RunNinjaOpts{})
+	if err == nil {
+		t.Fatalf("ninjabuild.Run succeeded; want error due to signal")
+	}
+	if !strings.Contains(failureSummary.String(), "exit=137 # signal:killed") {
+		t.Errorf("ninja failure_summary=%q; want 'exit=137 # signal:killed'", failureSummary.String())
 	}
 }

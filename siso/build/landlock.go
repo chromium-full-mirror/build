@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"syscall"
 
 	"github.com/google/subcommands"
 	"github.com/landlock-lsm/go-landlock/landlock"
@@ -294,6 +295,9 @@ func (l *LandLockCommand) Execute(ctx context.Context, f *flag.FlagSet, _ ...any
 	c.Stderr = os.Stderr
 	if err := c.Run(); err != nil {
 		if exitError, ok := errors.AsType[*exec.ExitError](err); ok {
+			if ws, ok := exitError.Sys().(syscall.WaitStatus); ok && ws.Signaled() {
+				return subcommands.ExitStatus(128 + int(ws.Signal()))
+			}
 			return subcommands.ExitStatus(exitError.ExitCode())
 		}
 		fmt.Fprintf(os.Stderr, "Failed to execute command %s: %s\n", strings.Join(req.Args, " "), err)

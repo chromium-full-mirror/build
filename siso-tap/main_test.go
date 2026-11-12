@@ -53,6 +53,17 @@ func TestSisoTap_ExitCode(t *testing.T) {
 	} else {
 		t.Fatalf("expected *exec.ExitError, got %v", err)
 	}
+
+	cmd = exec.Command(bin, "--", "/bin/sh", "-c", "kill -9 $$")
+	err = cmd.Run()
+	if exitErr, ok := errors.AsType[*exec.ExitError](err); ok {
+		want := 128 + int(syscall.SIGKILL)
+		if exitErr.ExitCode() != want {
+			t.Fatalf("expected exit code %d, got %d", want, exitErr.ExitCode())
+		}
+	} else {
+		t.Fatalf("expected *exec.ExitError, got %v", err)
+	}
 }
 
 func TestSisoTap_InvalidDirFd(t *testing.T) {
