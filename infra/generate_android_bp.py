@@ -140,7 +140,6 @@ PACKAGE_DICT = {
     "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2": "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2",
     "github.com/bazelbuild/remote-apis/build/bazel/semver": "github.com/bazelbuild/remote-apis/build/bazel/semver",
     "github.com/biogo/hts/bgzf": "github.com/biogo/hts/bgzf",
-    "github.com/google/uuid": "github.com/google/uuid",
     "github.com/klauspost/compress/zstd": "github.com/klauspost/compress/zstd",
     "github.com/klauspost/cpuid/v2": "github.com/klauspost/cpuid/v2",
     "github.com/pkg/xattr": "github.com/pkg/xattr",

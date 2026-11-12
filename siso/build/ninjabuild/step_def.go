@@ -5,10 +5,8 @@
 package ninjabuild
 
 import (
-	"bufio"
 	"cmp"
 	"context"
-	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -23,9 +21,9 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"uuid"
 
 	log "github.com/golang/glog"
-	"github.com/google/uuid"
 
 	"go.chromium.org/build/hashigo/digest"
 
@@ -120,10 +118,8 @@ func (er *edgeRule) ensure(ctx context.Context, globals *globals) (gotRule bool,
 	return true, rule, true
 }
 
-var randReader = bufio.NewReader(rand.Reader)
-
 func (g *Graph) newStepDef(ctx context.Context, edge *ninjautil.Edge, next build.StepDef) *StepDef {
-	id := uuid.Must(uuid.NewRandomFromReader(randReader)).String()
+	id := uuid.New().String()
 	stepDef := &StepDef{
 		id:      id,
 		edge:    edge,

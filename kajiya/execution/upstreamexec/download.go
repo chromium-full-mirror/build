@@ -11,8 +11,8 @@ import (
 	"io"
 	"path"
 	"strconv"
+	"uuid"
 
-	"github.com/google/uuid"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/protobuf/proto"

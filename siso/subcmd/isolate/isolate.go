@@ -18,11 +18,11 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"uuid"
 
 	"cloud.google.com/go/logging"
 	log "github.com/golang/glog"
 	"github.com/google/subcommands"
-	"github.com/google/uuid"
 	"golang.org/x/sync/errgroup"
 	mrpb "google.golang.org/genproto/googleapis/api/monitoredres"
 	"google.golang.org/grpc/grpclog"

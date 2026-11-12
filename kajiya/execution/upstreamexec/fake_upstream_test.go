@@ -15,9 +15,9 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"uuid"
 
 	"cloud.google.com/go/longrunning/autogen/longrunningpb"
-	"github.com/google/uuid"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 	errdetailpb "google.golang.org/genproto/googleapis/rpc/errdetails"
 	rpcstatuspb "google.golang.org/genproto/googleapis/rpc/status"

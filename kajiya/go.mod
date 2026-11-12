@@ -5,7 +5,6 @@ go 1.27.4
 require (
 	cloud.google.com/go/longrunning v1.2.0
 	github.com/google/go-cmp v0.7.0
-	github.com/google/uuid v1.6.0
 	github.com/hanwen/go-fuse/v2 v2.11.0
 	github.com/hashicorp/go-immutable-radix/v2 v2.1.0
 	github.com/klauspost/compress v1.20.3

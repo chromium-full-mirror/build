@@ -13,8 +13,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+	"uuid"
 
-	"github.com/google/uuid"
 	iradix "github.com/hashicorp/go-immutable-radix/v2"
 
 	"go.chromium.org/build/hashigo/digest"

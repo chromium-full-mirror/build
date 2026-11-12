@@ -13,8 +13,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
-
-	"github.com/google/uuid"
+	"uuid"
 
 	"go.chromium.org/build/hashigo/digest"
 )

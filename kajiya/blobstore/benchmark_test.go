@@ -14,8 +14,8 @@ import (
 	"net"
 	"os"
 	"testing"
+	"uuid"
 
-	"github.com/google/uuid"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"

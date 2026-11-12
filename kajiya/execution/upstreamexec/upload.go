@@ -12,8 +12,8 @@ import (
 	"path"
 	"slices"
 	"strconv"
+	"uuid"
 
-	"github.com/google/uuid"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -224,7 +224,7 @@ func (e *Executor) uploadByteStream(ctx context.Context, fn digest.Function, d d
 	// stream early, even in the middle of an upload; Send then returns io.EOF
 	// and CloseAndRecv reports the outcome. path.Join drops an empty
 	// instance name and digest function segment.
-	resourceName := path.Join(e.instanceName, "uploads", uuid.NewString(), "blobs", fn.ResourceNameSegment(), d.Hash, strconv.FormatInt(d.SizeBytes, 10))
+	resourceName := path.Join(e.instanceName, "uploads", uuid.New().String(), "blobs", fn.ResourceNameSegment(), d.Hash, strconv.FormatInt(d.SizeBytes, 10))
 	buf := make([]byte, min(d.SizeBytes, byteStreamChunkSize))
 	for sent := int64(0); sent < d.SizeBytes; {
 		n, err := io.ReadFull(rc, buf[:min(d.SizeBytes-sent, int64(len(buf)))])

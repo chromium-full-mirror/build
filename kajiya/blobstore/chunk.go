@@ -14,8 +14,8 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"uuid"
 
-	"github.com/google/uuid"
 	"google.golang.org/protobuf/proto"
 
 	"go.chromium.org/build/hashigo/digest"

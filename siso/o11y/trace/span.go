@@ -15,10 +15,10 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"uuid"
 
 	"cloud.google.com/go/trace/apiv2/tracepb"
 	log "github.com/golang/glog"
-	"github.com/google/uuid"
 	spb "google.golang.org/genproto/googleapis/rpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
 

@@ -13,8 +13,8 @@ import (
 	"slices"
 	"sync"
 	"time"
+	"uuid"
 
-	"github.com/google/uuid"
 	"google.golang.org/api/option"
 	"google.golang.org/api/transport"
 	rspb "google.golang.org/genproto/googleapis/devtools/resultstore/v2"

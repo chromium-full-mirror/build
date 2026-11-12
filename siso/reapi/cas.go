@@ -22,9 +22,9 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"uuid"
 
 	log "github.com/golang/glog"
-	"github.com/google/uuid"
 	"github.com/klauspost/compress/zstd"
 	"golang.org/x/sync/errgroup"
 	xsemaphore "golang.org/x/sync/semaphore"

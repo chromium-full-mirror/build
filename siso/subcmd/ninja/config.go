@@ -19,9 +19,9 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"uuid"
 
 	log "github.com/golang/glog"
-	"github.com/google/uuid"
 	"golang.org/x/term"
 
 	"go.chromium.org/build/siso/build"
@@ -421,7 +421,7 @@ func (c *Command) resolveFlags() error {
 		return flagError{err: fmt.Errorf("unknown missing_deps mode: %q. should be ignore/warn/error/fatal", c.missingDeps)}
 	}
 
-	if err = uuid.Validate(c.buildID); err != nil {
+	if _, err = uuid.Parse(c.buildID); err != nil {
 		return flagError{err: fmt.Errorf("%q is an invalid build ID. -build_id must be a UUID", c.buildID)}
 	}
 	if len(c.jobID) > 1024 {

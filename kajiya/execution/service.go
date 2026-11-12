@@ -12,9 +12,9 @@ import (
 	"io/fs"
 	"log/slog"
 	"time"
+	"uuid"
 
 	"cloud.google.com/go/longrunning/autogen/longrunningpb"
-	"github.com/google/uuid"
 	"golang.org/x/sync/semaphore"
 	"golang.org/x/sync/singleflight"
 	"google.golang.org/grpc"
@@ -153,7 +153,7 @@ func (s *Service) Execute(request *repb.ExecuteRequest, executeServer repb.Execu
 	}
 
 	// Generate a unique identifier for this operation.
-	opName := uuidgen.NewV7()
+	opName := uuid.NewV7()
 
 	fn, actionDigest, err := s.config.ResolveDigest(request.DigestFunction, request.ActionDigest)
 	if err != nil {

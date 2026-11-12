@@ -16,9 +16,9 @@ import (
 	"testing"
 	"testing/synctest"
 	"time"
+	"uuid"
 
 	"cloud.google.com/go/longrunning/autogen/longrunningpb"
-	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/test/bufconn"
