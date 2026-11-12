@@ -69,6 +69,16 @@ func (s *StepDef) missingDeps(ctx context.Context, depInputs []path.Path) []stri
 // inputWalker walks the transitive inputs of a step until it has reached
 // all the wanted nodes. It is pooled so that its bitmaps keep their
 // capacity across walks.
+//
+// wanted and reached are bitmap.Bitmap rather than maps because node ids
+// are dense (ninjautil numbers the nodes 1..N when it loads build.ninja):
+// a set of ids takes one bit per node, and a lookup indexes a word
+// instead of hashing a key. A walk can reach tens of thousands of nodes
+// and the check walks once per step, so the path-keyed maps it used
+// before, built per walk, allocated ~190 GB in a Chromium build and added
+// ~240 s of GC mark time (crbug.com/578308343). Set grows the bitmap on
+// demand, and Clear zeroes only the words in use and keeps the capacity,
+// so a pooled walker stops allocating after its first walks.
 type inputWalker struct {
 	wanted    bitmap.Bitmap // ids of the wanted nodes
 	remaining int           // number of wanted nodes not reached yet
