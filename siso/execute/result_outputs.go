@@ -67,7 +67,7 @@ func (c *Cmd) SetResultOutputs(ctx context.Context, result *rpb.ActionResult, ds
 // it is the action-cache key for the directory output, so an unstable digest
 // would defeat cache/CAS dedup of an unchanged output.
 func dirOutputTree(ctx context.Context, hashFS *hashfs.HashFS, root, dir string, ds *blob.Store) (digest.Digest, error) {
-	entries, err := hashFS.Entries(ctx, root, []path.Path{path.Path(dir + "/")})
+	entries, err := hashFS.RawEntries(ctx, root, []path.Path{path.Path(dir + "/")})
 	if err != nil {
 		return digest.Digest{}, fmt.Errorf("enumerate dir output %s: %w", dir, err)
 	}
@@ -89,7 +89,7 @@ func dirOutputTree(ctx context.Context, hashFS *hashfs.HashFS, root, dir string,
 			return digest.Digest{}, fmt.Errorf("merkletree set %s: %w", ent.Name, err)
 		}
 	}
-	// hashFS.Entries flattens to files, so empty subdirectories produce no
+	// hashFS.RawEntries flattens to files, so empty subdirectories produce no
 	// entry above. A remote backend records every subdirectory in the tree,
 	// so a cached local output must too, else a cache hit materializes the
 	// output missing its empty directories. mt.Set is idempotent here.

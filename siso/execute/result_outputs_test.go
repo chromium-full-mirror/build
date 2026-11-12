@@ -14,6 +14,7 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"time"
 
 	"go.chromium.org/build/hashigo/digest"
 	rpb "go.chromium.org/build/remote-apis/build/bazel/remote/execution/v2"
@@ -391,5 +392,124 @@ func TestSetResultOutputs_SymlinkOutput(t *testing.T) {
 	}
 	if len(result.OutputFiles) != 0 {
 		t.Errorf("OutputFiles = %v; want none (a symlink is not a file output)", result.OutputFiles)
+	}
+}
+
+// TestDirOutputTree_DanglingAndEscapingSymlinks is a regression test for
+// b/584976936: symlinks inside a directory output whose targets escape the
+// workspace root (such as dangling absolute Android device symlinks like
+// vendor/lib/modules -> /vendor_dlkm/lib/modules, or symlinks to host paths
+// outside root) must be recorded as SymlinkNodes in the OutputDirectory Tree,
+// never resolved by HashFS.Entries into empty directories.
+func TestDirOutputTree_DanglingAndEscapingSymlinks(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink not available on windows")
+	}
+	ctx := t.Context()
+	hashFS, root := newHashFS(t)
+	outsideDir := t.TempDir()
+
+	if err := os.MkdirAll(filepath.Join(root, "out/vendor/lib"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "out/vendor/prop.default"), []byte("ro.secure=1\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	wantSymlinks := map[string]string{
+		"vendor/lib/modules":  "/vendor_dlkm/lib/modules",
+		"vendor/lib/escape":   "../../../../nonexistent_outside_root",
+		"vendor/etc":          outsideDir,
+		"vendor/default.prop": "prop.default",
+	}
+	for rel, target := range wantSymlinks {
+		if err := os.Symlink(target, filepath.Join(root, "out", rel)); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	cmd := &Cmd{
+		WorkspaceRoot: root,
+		WorkDir:       "out",
+		HashFS:        hashFS,
+		OutputDirs:    []path.Path{"out/vendor"},
+		CmdHash:       []byte("cmdhash"),
+	}
+	cmd.InitOutputs()
+
+	ds := blob.NewStore()
+	result := &rpb.ActionResult{}
+	if err := cmd.SetResultOutputs(ctx, result, ds); err != nil {
+		t.Fatalf("SetResultOutputs: %v", err)
+	}
+	if len(result.OutputDirectories) != 1 {
+		t.Fatalf("OutputDirectories = %v; want 1", result.OutputDirectories)
+	}
+	td := digest.FromProto(result.OutputDirectories[0].GetTreeDigest())
+	treeData, ok := ds.Get(td)
+	if !ok {
+		t.Fatalf("tree blob %s not registered in store", td)
+	}
+	b, err := blob.DataToBytes(ctx, treeData)
+	if err != nil {
+		t.Fatalf("read tree blob: %v", err)
+	}
+	parseStore := blob.NewStore()
+	rootDir, err := reapi.ParseTree(ctx, digest.SHA256, b, parseStore)
+	if err != nil {
+		t.Fatalf("ParseTree: %v", err)
+	}
+	_, gotSymlinkNodes, gotDirNodes := merkletree.Traverse(ctx, digest.SHA256, "vendor", rootDir, parseStore)
+	gotSymlinks := make(map[string]string, len(gotSymlinkNodes))
+	for _, s := range gotSymlinkNodes {
+		gotSymlinks[filepath.ToSlash(s.GetPath())] = s.GetTarget()
+	}
+	if !maps.Equal(gotSymlinks, wantSymlinks) {
+		t.Errorf("tree symlinks = %v; want %v", gotSymlinks, wantSymlinks)
+	}
+	for _, d := range gotDirNodes {
+		p := filepath.ToSlash(d.GetPath())
+		if _, isLink := wantSymlinks[p]; isLink {
+			t.Errorf("symlink %q recorded as directory in tree (dirs=%v)", p, gotDirNodes)
+		}
+	}
+
+	// Simulate a 2PC cache hit in a clean workspace: RecordOutputs + Flush
+	// must materialize the symlinks as symlinks on disk, not as empty
+	// directories.
+	hashFS2, root2 := newHashFS(t)
+	cmd2 := &Cmd{
+		WorkspaceRoot: root2,
+		WorkDir:       "out",
+		HashFS:        hashFS2,
+		OutputDirs:    []path.Path{"out/vendor"},
+		CmdHash:       []byte("cmdhash"),
+	}
+	cmd2.InitOutputs()
+	cmd2.SetActionResult(result, true)
+	if err := cmd2.RecordOutputs(ctx, storeDataSource{s: ds}, time.Now()); err != nil {
+		t.Fatalf("RecordOutputs: %v", err)
+	}
+	if err := hashFS2.Flush(ctx, root2, cmd2.FlushOutputs()); err != nil {
+		t.Fatalf("Flush: %v", err)
+	}
+	for rel, wantTarget := range wantSymlinks {
+		full := filepath.Join(root2, "out", rel)
+		fi, err := os.Lstat(full)
+		if err != nil {
+			t.Errorf("Lstat(%s): %v", rel, err)
+			continue
+		}
+		if fi.Mode()&os.ModeSymlink == 0 {
+			t.Errorf("%s mode = %v; want symlink (was materialized as %s)", rel, fi.Mode(), fi.Mode().Type())
+			continue
+		}
+		gotTarget, err := os.Readlink(full)
+		if err != nil {
+			t.Errorf("Readlink(%s): %v", rel, err)
+			continue
+		}
+		if gotTarget != wantTarget {
+			t.Errorf("Readlink(%s) = %q; want %q", rel, gotTarget, wantTarget)
+		}
 	}
 }
