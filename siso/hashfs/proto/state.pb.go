@@ -25,6 +25,60 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+type Entry_Kind int32
+
+const (
+	// Written by older siso. hashfs.EntryKind infers the kind: digest means
+	// file, target means symlink, and neither means directory.
+	Entry_KIND_UNSPECIFIED Entry_Kind = 0
+	Entry_KIND_FILE        Entry_Kind = 1
+	Entry_KIND_DIR         Entry_Kind = 2
+	Entry_KIND_SYMLINK     Entry_Kind = 3
+)
+
+// Enum value maps for Entry_Kind.
+var (
+	Entry_Kind_name = map[int32]string{
+		0: "KIND_UNSPECIFIED",
+		1: "KIND_FILE",
+		2: "KIND_DIR",
+		3: "KIND_SYMLINK",
+	}
+	Entry_Kind_value = map[string]int32{
+		"KIND_UNSPECIFIED": 0,
+		"KIND_FILE":        1,
+		"KIND_DIR":         2,
+		"KIND_SYMLINK":     3,
+	}
+)
+
+func (x Entry_Kind) Enum() *Entry_Kind {
+	p := new(Entry_Kind)
+	*p = x
+	return p
+}
+
+func (x Entry_Kind) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (Entry_Kind) Descriptor() protoreflect.EnumDescriptor {
+	return file_state_proto_enumTypes[0].Descriptor()
+}
+
+func (Entry_Kind) Type() protoreflect.EnumType {
+	return &file_state_proto_enumTypes[0]
+}
+
+func (x Entry_Kind) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use Entry_Kind.Descriptor instead.
+func (Entry_Kind) EnumDescriptor() ([]byte, []int) {
+	return file_state_proto_rawDescGZIP(), []int{2, 0}
+}
+
 type FileID struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	ModTime       int64                  `protobuf:"varint,1,opt,name=mod_time,json=modTime,proto3" json:"mod_time,omitempty"` // unix nano sec.
@@ -130,11 +184,17 @@ type Entry struct {
 	// target is symlink target.
 	Target string `protobuf:"bytes,5,opt,name=target,proto3" json:"target,omitempty"`
 	// action, cmd, edge (inputs/outputs paths) that generated this file.
-	CmdHash       []byte  `protobuf:"bytes,6,opt,name=cmd_hash,json=cmdHash,proto3" json:"cmd_hash,omitempty"`
-	EdgeHash      []byte  `protobuf:"bytes,9,opt,name=edge_hash,json=edgeHash,proto3" json:"edge_hash,omitempty"`
-	Action        *Digest `protobuf:"bytes,7,opt,name=action,proto3" json:"action,omitempty"`
-	UpdatedTime   int64   `protobuf:"varint,8,opt,name=updated_time,json=updatedTime,proto3" json:"updated_time,omitempty"` // unix nano sec.
-	Local         bool    `protobuf:"varint,10,opt,name=local,proto3" json:"local,omitempty"`                               // local generated. not in RBE-CAS.
+	CmdHash     []byte  `protobuf:"bytes,6,opt,name=cmd_hash,json=cmdHash,proto3" json:"cmd_hash,omitempty"`
+	EdgeHash    []byte  `protobuf:"bytes,9,opt,name=edge_hash,json=edgeHash,proto3" json:"edge_hash,omitempty"`
+	Action      *Digest `protobuf:"bytes,7,opt,name=action,proto3" json:"action,omitempty"`
+	UpdatedTime int64   `protobuf:"varint,8,opt,name=updated_time,json=updatedTime,proto3" json:"updated_time,omitempty"` // unix nano sec.
+	Local       bool    `protobuf:"varint,10,opt,name=local,proto3" json:"local,omitempty"`                               // local generated. not in RBE-CAS.
+	// kind is the entry type. Read it through hashfs.EntryKind.
+	// A KIND_FILE without digest is a file that was statted, but not read.
+	// Older readers load it as a directory and discard it.
+	Kind Entry_Kind `protobuf:"varint,11,opt,name=kind,proto3,enum=siso.hashfs.Entry_Kind" json:"kind,omitempty"`
+	// size of a KIND_FILE without digest. Otherwise, use digest.size_bytes.
+	Size          int64 `protobuf:"varint,12,opt,name=size,proto3" json:"size,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -237,6 +297,20 @@ func (x *Entry) GetLocal() bool {
 		return x.Local
 	}
 	return false
+}
+
+func (x *Entry) GetKind() Entry_Kind {
+	if x != nil {
+		return x.Kind
+	}
+	return Entry_KIND_UNSPECIFIED
+}
+
+func (x *Entry) GetSize() int64 {
+	if x != nil {
+		return x.Size
+	}
+	return 0
 }
 
 type BuildTargets struct {
@@ -561,7 +635,7 @@ const file_state_proto_rawDesc = "" +
 	"\x06Digest\x12\x12\n" +
 	"\x04hash\x18\x01 \x01(\tR\x04hash\x12\x1d\n" +
 	"\n" +
-	"size_bytes\x18\x02 \x01(\x03R\tsizeBytes\"\xc8\x02\n" +
+	"size_bytes\x18\x02 \x01(\x03R\tsizeBytes\"\xd6\x03\n" +
 	"\x05Entry\x12#\n" +
 	"\x02id\x18\x01 \x01(\v2\x13.siso.hashfs.FileIDR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12+\n" +
@@ -573,7 +647,14 @@ const file_state_proto_rawDesc = "" +
 	"\x06action\x18\a \x01(\v2\x13.siso.hashfs.DigestR\x06action\x12!\n" +
 	"\fupdated_time\x18\b \x01(\x03R\vupdatedTime\x12\x14\n" +
 	"\x05local\x18\n" +
-	" \x01(\bR\x05local\"(\n" +
+	" \x01(\bR\x05local\x12+\n" +
+	"\x04kind\x18\v \x01(\x0e2\x17.siso.hashfs.Entry.KindR\x04kind\x12\x12\n" +
+	"\x04size\x18\f \x01(\x03R\x04size\"K\n" +
+	"\x04Kind\x12\x14\n" +
+	"\x10KIND_UNSPECIFIED\x10\x00\x12\r\n" +
+	"\tKIND_FILE\x10\x01\x12\f\n" +
+	"\bKIND_DIR\x10\x02\x12\x10\n" +
+	"\fKIND_SYMLINK\x10\x03\"(\n" +
 	"\fBuildTargets\x12\x18\n" +
 	"\atargets\x18\x01 \x03(\tR\atargets\"\xba\x03\n" +
 	"\x05State\x12,\n" +
@@ -608,31 +689,34 @@ func file_state_proto_rawDescGZIP() []byte {
 	return file_state_proto_rawDescData
 }
 
+var file_state_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
 var file_state_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
 var file_state_proto_goTypes = []any{
-	(*FileID)(nil),                    // 0: siso.hashfs.FileID
-	(*Digest)(nil),                    // 1: siso.hashfs.Digest
-	(*Entry)(nil),                     // 2: siso.hashfs.Entry
-	(*BuildTargets)(nil),              // 3: siso.hashfs.BuildTargets
-	(*State)(nil),                     // 4: siso.hashfs.State
-	(*BuildLabelDictionaryEntry)(nil), // 5: siso.hashfs.BuildLabelDictionaryEntry
-	(*FileBuildLabel)(nil),            // 6: siso.hashfs.FileBuildLabel
-	(*BuildLabelMetadata)(nil),        // 7: siso.hashfs.BuildLabelMetadata
+	(Entry_Kind)(0),                   // 0: siso.hashfs.Entry.Kind
+	(*FileID)(nil),                    // 1: siso.hashfs.FileID
+	(*Digest)(nil),                    // 2: siso.hashfs.Digest
+	(*Entry)(nil),                     // 3: siso.hashfs.Entry
+	(*BuildTargets)(nil),              // 4: siso.hashfs.BuildTargets
+	(*State)(nil),                     // 5: siso.hashfs.State
+	(*BuildLabelDictionaryEntry)(nil), // 6: siso.hashfs.BuildLabelDictionaryEntry
+	(*FileBuildLabel)(nil),            // 7: siso.hashfs.FileBuildLabel
+	(*BuildLabelMetadata)(nil),        // 8: siso.hashfs.BuildLabelMetadata
 }
 var file_state_proto_depIdxs = []int32{
-	0, // 0: siso.hashfs.Entry.id:type_name -> siso.hashfs.FileID
-	1, // 1: siso.hashfs.Entry.digest:type_name -> siso.hashfs.Digest
-	1, // 2: siso.hashfs.Entry.action:type_name -> siso.hashfs.Digest
-	2, // 3: siso.hashfs.State.entries:type_name -> siso.hashfs.Entry
-	3, // 4: siso.hashfs.State.build_targets:type_name -> siso.hashfs.BuildTargets
-	5, // 5: siso.hashfs.State.build_label_dictionary:type_name -> siso.hashfs.BuildLabelDictionaryEntry
-	6, // 6: siso.hashfs.State.file_build_labels:type_name -> siso.hashfs.FileBuildLabel
-	7, // 7: siso.hashfs.BuildLabelDictionaryEntry.metadata:type_name -> siso.hashfs.BuildLabelMetadata
-	8, // [8:8] is the sub-list for method output_type
-	8, // [8:8] is the sub-list for method input_type
-	8, // [8:8] is the sub-list for extension type_name
-	8, // [8:8] is the sub-list for extension extendee
-	0, // [0:8] is the sub-list for field type_name
+	1, // 0: siso.hashfs.Entry.id:type_name -> siso.hashfs.FileID
+	2, // 1: siso.hashfs.Entry.digest:type_name -> siso.hashfs.Digest
+	2, // 2: siso.hashfs.Entry.action:type_name -> siso.hashfs.Digest
+	0, // 3: siso.hashfs.Entry.kind:type_name -> siso.hashfs.Entry.Kind
+	3, // 4: siso.hashfs.State.entries:type_name -> siso.hashfs.Entry
+	4, // 5: siso.hashfs.State.build_targets:type_name -> siso.hashfs.BuildTargets
+	6, // 6: siso.hashfs.State.build_label_dictionary:type_name -> siso.hashfs.BuildLabelDictionaryEntry
+	7, // 7: siso.hashfs.State.file_build_labels:type_name -> siso.hashfs.FileBuildLabel
+	8, // 8: siso.hashfs.BuildLabelDictionaryEntry.metadata:type_name -> siso.hashfs.BuildLabelMetadata
+	9, // [9:9] is the sub-list for method output_type
+	9, // [9:9] is the sub-list for method input_type
+	9, // [9:9] is the sub-list for extension type_name
+	9, // [9:9] is the sub-list for extension extendee
+	0, // [0:9] is the sub-list for field type_name
 }
 
 func init() { file_state_proto_init() }
@@ -645,13 +729,14 @@ func file_state_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_state_proto_rawDesc), len(file_state_proto_rawDesc)),
-			NumEnums:      0,
+			NumEnums:      1,
 			NumMessages:   8,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
 		GoTypes:           file_state_proto_goTypes,
 		DependencyIndexes: file_state_proto_depIdxs,
+		EnumInfos:         file_state_proto_enumTypes,
 		MessageInfos:      file_state_proto_msgTypes,
 	}.Build()
 	File_state_proto = out.File

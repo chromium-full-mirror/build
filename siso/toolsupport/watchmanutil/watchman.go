@@ -169,7 +169,7 @@ func (fi FileInfo) Name() string {
 
 // Size returns length in bytes.
 func (fi FileInfo) Size() int64 {
-	return fi.ent.GetDigest().GetSizeBytes()
+	return hashfs.EntrySize(fi.ent)
 }
 
 // Mode returns file mode bits.
@@ -178,7 +178,7 @@ func (fi FileInfo) Mode() fs.FileMode {
 	if fi.ent.IsExecutable {
 		m |= 0111
 	}
-	if fi.ent.Target != "" {
+	if hashfs.EntryKind(fi.ent) == pb.Entry_KIND_SYMLINK {
 		m |= fs.ModeSymlink
 	}
 	if fi.IsDir() {
@@ -194,7 +194,7 @@ func (fi FileInfo) ModTime() time.Time {
 
 // IsDir returns abbreviation for Mode().IsDir().
 func (fi FileInfo) IsDir() bool {
-	return fi.ent.Target == "" && fi.ent.Digest.GetHash() == ""
+	return hashfs.EntryKind(fi.ent) == pb.Entry_KIND_DIR
 }
 
 // Sys returns underlying data source (*pb.Entry).

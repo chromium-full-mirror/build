@@ -34,6 +34,22 @@ message Entry {
   int64 updated_time = 8; // unix nano sec.
 
   bool local = 10; // local generated. not in RBE-CAS.
+
+  enum Kind {
+    // Written by older siso. hashfs.EntryKind infers the kind: digest means
+    // file, target means symlink, and neither means directory.
+    KIND_UNSPECIFIED = 0;
+    KIND_FILE = 1;
+    KIND_DIR = 2;
+    KIND_SYMLINK = 3;
+  }
+  // kind is the entry type. Read it through hashfs.EntryKind.
+  // A KIND_FILE without digest is a file that was statted, but not read.
+  // Older readers load it as a directory and discard it.
+  Kind kind = 11;
+
+  // size of a KIND_FILE without digest. Otherwise, use digest.size_bytes.
+  int64 size = 12;
 }
 
 message BuildTargets {

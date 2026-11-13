@@ -230,7 +230,7 @@ func checkStateDigestFunction(st *pb.State, clientFn digest.Function) error {
 }
 
 func isDirEnt(ent *pb.Entry) bool {
-	return toDigest(ent.Digest).IsZero() && ent.Target == ""
+	return hashfs.EntryKind(ent) == pb.Entry_KIND_DIR
 }
 
 // childEntries returns entries from stm that exists under fullpath.

@@ -75,3 +75,23 @@ func TestCheckStateDigestFunction(t *testing.T) {
 		}
 	}
 }
+
+func TestIsDirEnt(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		ent  *pb.Entry
+		want bool
+	}{
+		{name: "file", ent: &pb.Entry{Digest: &pb.Digest{Hash: "abc", SizeBytes: 3}}, want: false},
+		{name: "file_without_digest", ent: &pb.Entry{Kind: pb.Entry_KIND_FILE, Size: 3}, want: false},
+		{name: "symlink", ent: &pb.Entry{Target: "foo"}, want: false},
+		{name: "legacy_dir", ent: &pb.Entry{CmdHash: []byte("cmd")}, want: true},
+		{name: "dir", ent: &pb.Entry{Kind: pb.Entry_KIND_DIR}, want: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := isDirEnt(tc.ent); got != tc.want {
+				t.Errorf("isDirEnt(%v) = %t; want %t", tc.ent, got, tc.want)
+			}
+		})
+	}
+}

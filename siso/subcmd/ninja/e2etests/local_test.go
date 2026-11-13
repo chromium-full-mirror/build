@@ -17,6 +17,7 @@ import (
 	"go.chromium.org/build/siso/build"
 	"go.chromium.org/build/siso/build/ninjabuild"
 	"go.chromium.org/build/siso/hashfs"
+	pb "go.chromium.org/build/siso/hashfs/proto"
 )
 
 // Test schedule for abs path correctly. b/354792946
@@ -147,12 +148,12 @@ func TestBuild_Local_Inputs(t *testing.T) {
 		t.Errorf("done=%d total=%d local=%d; want done=total=3 local=2: %#v", stats.Done, stats.Total, stats.Local, stats)
 	}
 
-	t.Logf("-- check input file is recorded in missing_digests")
+	t.Logf("-- check input files are recorded as files without digest")
 	st, err := hashfs.Load(ctx, hashfs.Option{StateFile: filepath.Join(dir, "out/siso/.siso_fs_state")})
 	if err != nil {
 		t.Fatalf("hashfs load err: %v", err)
 	}
-	// All three source inputs land in missing_digests: mark uses
+	// All three source inputs are saved without digest: mark uses
 	// StatMtime (no compute queue) and these python-action inputs are
 	// not reached by scandeps, so no digest runs before state save.
 	want := []string{
@@ -160,11 +161,19 @@ func TestBuild_Local_Inputs(t *testing.T) {
 		filepath.ToSlash(filepath.Join(dir, "test/input1")),
 		fname, // test/input2, SetNoLazyForTest'd
 	}
-	got := slices.Clone(st.MissingDigests)
+	var got []string
+	for _, ent := range st.Entries {
+		if hashfs.EntryKind(ent) == pb.Entry_KIND_FILE && ent.Digest == nil {
+			got = append(got, ent.Name)
+		}
+	}
 	slices.Sort(got)
 	slices.Sort(want)
 	if !slices.Equal(got, want) {
-		t.Errorf("missing_digests=%q; want=%q", got, want)
+		t.Errorf("files without digest=%q; want=%q", got, want)
+	}
+	if len(st.MissingDigests) != 0 {
+		t.Errorf("missing_digests=%q; want empty", st.MissingDigests)
 	}
 
 	t.Logf("-- confirm no-op")

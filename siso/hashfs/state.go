@@ -406,6 +406,43 @@ func fromDigest(d digest.Digest) *pb.Digest {
 	}
 }
 
+// EntryKind returns the kind of a persisted entry.
+// Older siso didn't record the kind, so it is inferred from the other
+// fields: a digest means file, a symlink target means symlink, and neither
+// means directory.
+func EntryKind(ent *pb.Entry) pb.Entry_Kind {
+	switch k := ent.GetKind(); k {
+	case pb.Entry_KIND_FILE, pb.Entry_KIND_DIR, pb.Entry_KIND_SYMLINK:
+		return k
+	}
+	switch {
+	case ent.GetDigest().GetHash() != "":
+		return pb.Entry_KIND_FILE
+	case ent.GetTarget() != "":
+		return pb.Entry_KIND_SYMLINK
+	}
+	return pb.Entry_KIND_DIR
+}
+
+// EntrySize returns the size of a persisted file entry.
+func EntrySize(ent *pb.Entry) int64 {
+	if d := ent.GetDigest(); d.GetHash() != "" {
+		return d.GetSizeBytes()
+	}
+	return ent.GetSize()
+}
+
+// kind returns the kind to persist for the entry.
+func (e *entry) kind() pb.Entry_Kind {
+	switch {
+	case e.isDirectory():
+		return pb.Entry_KIND_DIR
+	case e.isSymlink():
+		return pb.Entry_KIND_SYMLINK
+	}
+	return pb.Entry_KIND_FILE
+}
+
 // entryState is used to convert *pb.Entry,local disk to *entry.
 type entryState struct {
 	ent *pb.Entry      // file entry state at the last build.
@@ -414,6 +451,7 @@ type entryState struct {
 	ftype string // valid if "dir","symlink" or "file"
 	e     entry  // file entry data
 
+	mtimeOnly     bool // if file has no digest (e.g. statted, but not read).
 	prevGenerated bool // if file is generated output of build step.
 	tainted       bool // if file is generated, but modified locally.
 }
@@ -459,13 +497,13 @@ func (ies *initialEntryStates) prepare(ctx context.Context, state *pb.State) {
 		}
 		ent.Name = filepath.ToSlash(ent.Name)
 		s.ent = ent
+		s.mtimeOnly = EntryKind(ent) == pb.Entry_KIND_FILE && ent.GetDigest().GetHash() == ""
 		if ies.ignore(ctx, ent.Name) {
 			clog.Infof(ctx, "ignore %q", ent.Name)
 			continue
 		}
 
-		if ent.Digest == nil && ent.Target == "" {
-			// directory
+		if EntryKind(ent) == pb.Entry_KIND_DIR {
 			ndirs++
 		}
 	}
@@ -563,6 +601,14 @@ func (ies *initialEntryStates) initNotExist(ctx context.Context, es *entryState)
 		clog.Infof(ctx, "not exist with no cmd hash: %q", es.ent.Name)
 		return
 	}
+	if es.mtimeOnly {
+		// without digest, the file can't be fetched from remote.
+		es.e.err = fs.ErrNotExist
+		ies.nnotexist.Add(1)
+		ies.dirty.Store(true)
+		clog.Warningf(ctx, "not exist output without digest: %q", es.ent.Name)
+		return
+	}
 	// recorded as output file, but missing on disk.
 	if es.ent.Local || ies.outputLocal(ctx, es.ent.Name) {
 		// command output file that is needed on the disk doesn't exist on the disk.
@@ -612,21 +658,27 @@ func (ies *initialEntryStates) initStateEntry(ctx context.Context, es *entryStat
 	var dir *directory
 	var src blob.Source
 	entDigest := toDigest(es.ent.Digest)
-	if !entDigest.IsZero() {
+	switch EntryKind(es.ent) {
+	case pb.Entry_KIND_FILE:
 		es.ftype = "file"
-		// regular file
-		if es.et == entryEqLocal {
+		switch {
+		case es.mtimeOnly:
+			// digest is calculated from the local file when
+			// needed.
+			if es.et == entryEqLocal {
+				src = ies.osfs.FileSource(es.ent.Name, es.ent.Size)
+			}
+		case es.et == entryEqLocal:
 			src = ies.osfs.FileSource(es.ent.Name, entDigest.SizeBytes)
-		} else {
+		default:
 			// not the same as local, but digest is in state.
 			// probably, eixsts in RBE side, or local cache.
 			src = ies.dataSource.Source(ctx, entDigest, es.ent.Name)
 		}
-	} else if es.ent.Target != "" {
+	case pb.Entry_KIND_SYMLINK:
 		es.ftype = "symlink"
-		// symlink
 		mode |= fs.ModeSymlink
-	} else {
+	default:
 		es.ftype = "dir"
 		// Only dir entries need a child map.
 		dir = &directory{}
@@ -637,7 +689,7 @@ func (ies *initialEntryStates) initStateEntry(ctx context.Context, es *entryStat
 		updatedTime = entTime
 	}
 	es.e.lready = lready
-	es.e.size = entDigest.SizeBytes
+	es.e.size = EntrySize(es.ent)
 	es.e.mtime = entTime
 	es.e.mode = mode
 	es.e.updatedTime = updatedTime
@@ -700,6 +752,28 @@ func (ies *initialEntryStates) initSymlink(ctx context.Context, es *entryState) 
 
 // initFile initializes as a file.
 func (ies *initialEntryStates) initFile(ctx context.Context, es *entryState, fi fs.FileInfo) bool {
+	if es.mtimeOnly {
+		// Without digest, only mtime, file type and size can tell
+		// whether the file was modified. mtime is checked in
+		// handleModTime as for other files.
+		var reason string
+		switch {
+		case !fi.Mode().IsRegular():
+			reason = fmt.Sprintf("mode=%s", fi.Mode())
+		case es.et == entryEqLocal && fi.Size() != es.e.size:
+			reason = fmt.Sprintf("size:%d->%d", es.e.size, fi.Size())
+		case es.prevGenerated && es.et != entryEqLocal:
+			// no digest to reconcile mtime with, or to fetch from remote.
+			reason = fmt.Sprintf("generated: state:%s disk:%s", es.e.mtime, fi.ModTime())
+		}
+		if reason != "" {
+			es.ftype = ""
+			clog.Warningf(ctx, "invalidate file without digest %q: %s", es.ent.Name, reason)
+			ies.ninvalidate.Add(1)
+			ies.dirty.Store(true)
+			return false
+		}
+	}
 	if es.prevGenerated && es.et != entryEqLocal && !ies.dirty.Load() {
 		// mtime differ for generated file?
 		// check digest is the same and fix mtime if it matches.
@@ -1340,6 +1414,7 @@ func (hfs *HashFS) State(ctx context.Context) *pb.State {
 			}
 			// need to record the entry for incremental build
 			ed := e.digest()
+			mtimeOnly := false
 			if !e.isDirectory() && !e.isSymlink() && ed.IsZero() {
 				// digest is not calculated yet?
 				if e.src == nil {
@@ -1360,15 +1435,18 @@ func (hfs *HashFS) State(ctx context.Context) *pb.State {
 						}
 					}
 				} else {
+					// statted, but not read. record it without
+					// digest. it is checked by mtime, type and size
+					// on load.
 					if log.V(1) {
-						clog.Warningf(ctx, "digest is unknown %s", name)
+						clog.Infof(ctx, "digest is unknown %s", name)
 					}
-					state.MissingDigests = append(state.MissingDigests, name)
+					mtimeOnly = true
 				}
 			}
-			if !ed.IsZero() || e.isSymlink() || (!e.isDirectory() && len(e.cmdhash) > 0) {
+			if !ed.IsZero() || e.isSymlink() || (!e.isDirectory() && len(e.cmdhash) > 0) || mtimeOnly {
 				e.mu.RLock()
-				state.Entries = append(state.Entries, &pb.Entry{
+				ent := &pb.Entry{
 					Id: &pb.FileID{
 						ModTime: e.mtime.UnixNano(),
 					},
@@ -1381,7 +1459,12 @@ func (hfs *HashFS) State(ctx context.Context) *pb.State {
 					Action:       fromDigest(e.action),
 					Local:        e.local,
 					UpdatedTime:  e.updatedTime.UnixNano(),
-				})
+					Kind:         e.kind(),
+				}
+				if ent.Kind == pb.Entry_KIND_FILE && e.d.IsZero() {
+					ent.Size = e.size
+				}
+				state.Entries = append(state.Entries, ent)
 				e.mu.RUnlock()
 			} else if e.isDirectory() && len(e.cmdhash) > 0 {
 				// preserve dir for cmdhash
@@ -1396,6 +1479,7 @@ func (hfs *HashFS) State(ctx context.Context) *pb.State {
 					Action:      fromDigest(e.action),
 					Local:       e.local,
 					UpdatedTime: e.updatedTime.UnixNano(),
+					Kind:        pb.Entry_KIND_DIR,
 				})
 				e.mu.RUnlock()
 			} else if len(e.cmdhash) > 0 {
@@ -1580,6 +1664,10 @@ func (hfs *HashFS) journalEntry(ctx context.Context, fname string, e *entry) {
 		Action:       fromDigest(e.action),
 		Local:        e.local,
 		UpdatedTime:  e.updatedTime.UnixNano(),
+		Kind:         e.kind(),
+	}
+	if ent.Kind == pb.Entry_KIND_FILE && e.d.IsZero() {
+		ent.Size = e.size
 	}
 	e.mu.Unlock()
 	err := JournalEntry(&hfs.journal, ent)
