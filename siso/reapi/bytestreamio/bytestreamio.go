@@ -204,32 +204,29 @@ func (w *Writer) Close() error {
 	// server deduplicated the request. `res.CommittedSize == w.size` always
 	// holds.
 	//
-	// For compressed uploads, the situation is more complex:
+	// For compressed uploads, the server may report:
 	//
-	//   - `res.CommittedSize == w.size`: we may upload the blob, and the server
-	//     responds with the actual size of the blob (i.e., after the server
-	//     decompressed the data).
+	//   - `w.size`: the size of the blob once decompressed, as RBE does.
 	//
-	//   - `res.CommittedSize == -1`: another concurrent upload won server
-	//     indicated it does not want to receive all bytes from this upload.
-	//     This is common for servers that normally sent `w.offset` for
-	//     successful compressed uploads since the server has no way of knowing
-	//     how many bytes it would have received since it cannot predict the
-	//     number of bytes the client would have sent.
+	//   - `w.offset`: the compressed bytes it consumed, as most other
+	//     servers do, if it didn't end the upload early.
+	//
+	//   - -1: another upload of the blob completed, so the server ended this
+	//     one early, as the spec asks. Buildfarm reports -1 for every
+	//     compressed upload.
 	//
 	// See https://github.com/bazelbuild/remote-apis/blob/e94a7ece2a1e8da1dcf278a0baf2edfe7baafb94/build/bazel/remote/execution/v2/remote_execution.proto#L277-L284
 
-	switch res.CommittedSize {
-	case w.size:
+	compressed := strings.Contains(w.resname, "compressed-blobs")
+	switch {
+	case res.CommittedSize == w.size:
 		return nil
 
-	case -1:
-		// Some servers use -1 as special value for `res.CommittedSize` when
-		// rejecting an upload in case the blob already exists.
-		if w.ok && strings.Contains(w.resname, "compressed-blobs") {
-			return nil
-		}
-		fallthrough
+	case compressed && res.CommittedSize == -1:
+		return nil
+
+	case compressed && !w.ok && res.CommittedSize == w.offset:
+		return nil
 
 	default:
 		return BadCommittedSizeError{

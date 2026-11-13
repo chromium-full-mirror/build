@@ -402,3 +402,32 @@ func TestWriterAlreadyExistsCompressed(t *testing.T) {
 		t.Errorf("write match? should not match for already exists resource")
 	}
 }
+
+// TestWriterAlreadyExistsCompressedOffset checks that a compressed upload
+// that the server ended early doesn't take the bytes sent until then as
+// committed_size.
+func TestWriterAlreadyExistsCompressedOffset(t *testing.T) {
+	t.Parallel()
+	resourceName := "resource-name/compressed-blobs/100"
+	committedSize := int64(0)
+	c := &stubByteStreamWriteClient{
+		resourceName:  resourceName,
+		chunksize:     8192,
+		alreadyExists: true,
+		committedSize: &committedSize,
+	}
+	w, err := Create(t.Context(), c, resourceName, "testdata")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := w.Write(make([]byte, 50)); err != nil {
+		t.Fatal(err)
+	}
+	if !w.ok || w.offset != committedSize {
+		t.Fatalf("writer.ok=%t offset=%d; want true, %d", w.ok, w.offset, committedSize)
+	}
+	var serr BadCommittedSizeError
+	if err := w.Close(); !errors.As(err, &serr) {
+		t.Errorf("Close()=%v; want BadCommittedSizeError", err)
+	}
+}
