@@ -2,7 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-package main
+// Package subtestnames defines an analyzer that checks Go subtest names.
+package subtestnames
 
 import (
 	"go/ast"
@@ -10,17 +11,14 @@ import (
 	"strings"
 
 	"golang.org/x/tools/go/analysis"
-	"golang.org/x/tools/go/analysis/singlechecker"
 )
 
+// Analyzer checks that subtest names follow
+// https://google.github.io/styleguide/go/decisions#subtest-names.
 var Analyzer = &analysis.Analyzer{
 	Name: "subtestnames",
 	Doc:  "checks that Go subtest names follow https://google.github.io/styleguide/go/decisions#subtest-names",
 	Run:  run,
-}
-
-func main() {
-	singlechecker.Main(Analyzer)
 }
 
 func run(pass *analysis.Pass) (any, error) {

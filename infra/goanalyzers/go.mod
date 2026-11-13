@@ -1,4 +1,4 @@
-module go.chromium.org/build/infra/subtestanalyzer
+module go.chromium.org/build/infra/goanalyzers
 
 go 1.27.4
 
