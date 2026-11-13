@@ -116,6 +116,7 @@ FULL_GO_ANALYZERS_TRIGGERS = [
 
 # Analyzers in infra/goanalyzers to run, as `go vet` flags.
 GO_ANALYZERS = [
+  "-rawstring",
   "-subtestnames",
 ]
 

@@ -13,11 +13,13 @@ package main
 import (
 	"golang.org/x/tools/go/analysis/multichecker"
 
+	"go.chromium.org/build/infra/goanalyzers/rawstring"
 	"go.chromium.org/build/infra/goanalyzers/subtestnames"
 )
 
 func main() {
 	multichecker.Main(
+		rawstring.Analyzer,
 		subtestnames.Analyzer,
 	)
 }

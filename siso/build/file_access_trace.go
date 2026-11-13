@@ -123,6 +123,7 @@ func (f *fileTraceExecutor) checkTrace(ctx context.Context, step *Step, dur time
 	if len(inadds) == 0 && len(indels) == 0 && len(inerrs) == 0 &&
 		len(outadds) == 0 && len(outdels) == 0 && len(outerrs) == 0 {
 		clog.Infof(ctx, "trace-diff pure")
+		//goanalyzer:ignore rawstring log format
 		log.V(1).Infof("trace-diff-platform %s\ninputs\n %s\noutputs\n %s", step, strings.Join(inplatforms, "\n "), strings.Join(outplatforms, "\n "))
 		var buf bytes.Buffer
 		fmt.Fprintf(&buf, `cmd: %s pure:%t/true restat:%t %s
@@ -144,7 +145,9 @@ inerr:%d outerr:%d
 	if len(inadds) == 0 && len(inerrs) == 0 &&
 		len(outadds) == 0 && len(outerrs) == 0 {
 		clog.Infof(ctx, "trace-diff can-be-pure")
+		//goanalyzer:ignore rawstring log format
 		log.V(1).Infof("%s trace-diff\ninputs\n-%s\noutputs\n-%s", step, strings.Join(indels, "\n-"), strings.Join(outdels, "\n-"))
+		//goanalyzer:ignore rawstring log format
 		log.V(1).Infof("%s trace-diff-platform\ninputs\n %s\noutputs\n %s", step, strings.Join(inplatforms, "\n "), strings.Join(outplatforms, "\n "))
 
 		var buf bytes.Buffer
@@ -168,6 +171,7 @@ outputs:
 		return nil
 	}
 	clog.Infof(ctx, "trace-diff impure")
+	//goanalyzer:ignore rawstring log format
 	log.V(1).Infof("%s trace-diff\ninputs\n+%s\n-%s\n?%s\noutputs\n+%s\n-%s\n?%s", step,
 		strings.Join(inadds, "\n+"),
 		strings.Join(indels, "\n-"),
@@ -175,6 +179,7 @@ outputs:
 		strings.Join(outadds, "\n+"),
 		strings.Join(outdels, "\n-"),
 		strings.Join(outerrs, "\n?"))
+	//goanalyzer:ignore rawstring log format
 	log.V(1).Infof("%s trace-diff-platform\ninputs\n %s\noutputs\n %s", step, strings.Join(inplatforms, "\n "), strings.Join(outplatforms, "\n "))
 
 	ruleBuf := step.def.RuleFix(ctx, inadds, outadds)
