@@ -748,7 +748,7 @@ func (e *entry) flushWrite(ctx context.Context, fname string, osfs *osfs.OSFS, s
 		srcname = lsrc.Fname
 	}
 	tmpname := filepath.Join(filepath.Dir(fname), "."+filepath.Base(fname)+".siso_tmp")
-	ctx, cancel := fetch.ContextWithTimeout(ctx, e.d)
+	ctx, cancel := fetch.ContextWithTimeout(ctx, d)
 	defer cancel()
 	// Skip the first-byte watchdog for local FileSource: no gRPC
 	// InPayload event can fire and a slow local copy would be falsely

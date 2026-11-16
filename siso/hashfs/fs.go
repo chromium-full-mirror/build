@@ -1015,7 +1015,7 @@ func (hfs *HashFS) Copy(ctx context.Context, root string, src, dst path.Path, mt
 		target:   e.target,
 		// use the same data source as src if any.
 		src:         e.src,
-		d:           e.d,
+		d:           e.digest(),
 		buf:         e.buf,
 		updatedTime: time.Now(),
 		isChanged:   true,
@@ -2486,7 +2486,7 @@ func (hfs *HashFS) Flush(ctx context.Context, workspaceRoot string, files []path
 			// Materialize a directory synchronously: a member's flush MkdirAll's
 			// its parent, so any stale file/symlink at the directory's path must
 			// be cleared before member flushes launch.
-			err = e.flush(ctx, string(fname), hfs.OS, max(fetch.Timeout(e.d), hfs.opt.MinFlushTimeout))
+			err = e.flush(ctx, string(fname), hfs.OS, max(fetch.Timeout(e.digest()), hfs.opt.MinFlushTimeout))
 			done(err)
 			if err != nil {
 				// Cancel and drain member flushes already launched, so no
@@ -2504,7 +2504,7 @@ func (hfs *HashFS) Flush(ctx context.Context, workspaceRoot string, files []path
 		}
 		eg.Go(func() (err error) {
 			defer func() { done(err) }()
-			err = e.flush(ctx, string(fname), hfs.OS, max(fetch.Timeout(e.d), hfs.opt.MinFlushTimeout))
+			err = e.flush(ctx, string(fname), hfs.OS, max(fetch.Timeout(e.digest()), hfs.opt.MinFlushTimeout))
 			// flush should not fail with cas not found error.
 			// but if it failed, current recorded digest should
 			// be wrong, so should delete from the hashfs.

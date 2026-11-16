@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"sync"
 	"testing"
+	"time"
 
 	"go.chromium.org/build/hashigo/digest"
 
@@ -182,6 +183,36 @@ func TestReadsDuringFailingDigest(t *testing.T) {
 				t.Errorf("entry.compute(ctx, %q) error = %v, want %v", fix.fname, err, openErr)
 			}
 		})
+	}
+}
+
+// TestCopyDuringCanceledDigest verifies that Copy with a canceled context
+// does not race with a digest computation that finishes afterwards.
+func TestCopyDuringCanceledDigest(t *testing.T) {
+	ctx := t.Context()
+	// A round misses the race when Copy locks the entry only after the
+	// digest is written, so run several.
+	for range 10 {
+		fix := setupBlockingInput(ctx, t)
+		computeErr := make(chan error, 1)
+		go func() {
+			computeErr <- fix.entry.compute(ctx, digest.SHA256, fix.fname)
+		}()
+		<-fix.started
+
+		cctx, cancel := context.WithCancel(ctx)
+		cancel()
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			// The error is irrelevant; only the race matters.
+			_ = fix.hfs.Copy(cctx, fix.dir, "in.txt", "out.txt", time.Now(), []byte("cmd"), nil)
+		}()
+		fix.release()
+		<-done
+		if err := <-computeErr; err != nil {
+			t.Errorf("entry.compute(ctx, %q) error = %v, want nil", fix.fname, err)
+		}
 	}
 }
 
