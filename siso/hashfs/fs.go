@@ -87,6 +87,9 @@ func (hfs *HashFS) ActiveFlushGate() FlushGater {
 // resource.Network when installed, otherwise the static FlushSemaphore.
 // Both expose the same release(error) callback.
 func acquireFlush(ctx context.Context, gate *resource.Network) (context.Context, func(error), error) {
+	if ctx.Err() != nil {
+		return ctx, func(error) {}, context.Cause(ctx)
+	}
 	if gate != nil {
 		return gate.Acquire(ctx)
 	}
@@ -1002,6 +1005,9 @@ func (hfs *HashFS) Copy(ctx context.Context, root string, src, dst path.Path, mt
 	}
 	if !e.isSymlink() {
 		hfs.digester.compute(ctx, string(srcfname), e)
+	}
+	if ctx.Err() != nil {
+		return fmt.Errorf("copy %s: %w", srcfname, context.Cause(ctx))
 	}
 	lready := make(chan bool, 1)
 	lready <- true

@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"os"
 	"path/filepath"
 	"sync"
 	"testing"
@@ -213,6 +214,65 @@ func TestCopyDuringCanceledDigest(t *testing.T) {
 		if err := <-computeErr; err != nil {
 			t.Errorf("entry.compute(ctx, %q) error = %v, want nil", fix.fname, err)
 		}
+	}
+}
+
+// TestCopyCanceledDuringDigest verifies that Copy gives up when its context
+// is canceled while the source's digest is computed, instead of recording
+// the copy.
+func TestCopyCanceledDuringDigest(t *testing.T) {
+	ctx := t.Context()
+	fix := setupBlockingInput(ctx, t)
+	computeErr := make(chan error, 1)
+	go func() {
+		computeErr <- fix.entry.compute(ctx, digest.SHA256, fix.fname)
+	}()
+	<-fix.started
+
+	cctx, cancel := context.WithCancel(ctx)
+	cancel()
+	err := fix.hfs.Copy(cctx, fix.dir, "in.txt", "out.txt", time.Now(), []byte("cmd"), nil)
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("Copy(canceled ctx) error = %v, want %v", err, context.Canceled)
+	}
+	if _, _, _, ok := fix.hfs.directory.lookup(ctx, makeFullpath(fix.dir, "out.txt")); ok {
+		t.Errorf("directory.lookup(%q) = true after a canceled Copy, want false", "out.txt")
+	}
+	fix.release()
+	if err := <-computeErr; err != nil {
+		t.Errorf("entry.compute(ctx, %q) error = %v, want nil", fix.fname, err)
+	}
+}
+
+// TestCopyCanceledSymlink verifies that Copy of a symlink also gives up on a
+// canceled context.
+func TestCopyCanceledSymlink(t *testing.T) {
+	ctx := t.Context()
+	dir := t.TempDir()
+	if err := os.Symlink("target", filepath.Join(dir, "link")); err != nil {
+		t.Fatal(err)
+	}
+	hfs, err := New(ctx, Option{})
+	if err != nil {
+		t.Fatalf("New() failed: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := hfs.Close(context.WithoutCancel(ctx)); err != nil {
+			t.Errorf("hfs.Close() error = %v, want nil", err)
+		}
+	})
+	if _, err := hfs.Stat(ctx, dir, "link"); err != nil {
+		t.Fatalf("Stat(%q) failed: %v", "link", err)
+	}
+
+	cctx, cancel := context.WithCancel(ctx)
+	cancel()
+	err = hfs.Copy(cctx, dir, "link", "out", time.Now(), []byte("cmd"), nil)
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("Copy(canceled ctx) error = %v, want %v", err, context.Canceled)
+	}
+	if _, _, _, ok := hfs.directory.lookup(ctx, makeFullpath(dir, "out")); ok {
+		t.Errorf("directory.lookup(%q) = true after a canceled Copy, want false", "out")
 	}
 }
 
