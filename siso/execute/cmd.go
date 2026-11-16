@@ -904,6 +904,22 @@ func (c *Cmd) WorkingDirectory() string {
 
 // CommandDigest constructs the digest of the command line.
 func (c *Cmd) CommandDigest(ctx context.Context, ds *blob.Store) (digest.Digest, error) {
+	command, err := c.Command(ctx)
+	if err != nil {
+		return digest.Digest{}, err
+	}
+	data, err := blob.FromProtoMessage(c.HashFS.DigestFunction(), command)
+	if err != nil {
+		return digest.Digest{}, err
+	}
+	if ds != nil {
+		ds.Set(data)
+	}
+	return data.Digest(), nil
+}
+
+// Command returns the REAPI Command that CommandDigest digests.
+func (c *Cmd) Command(ctx context.Context) (*rpb.Command, error) {
 	var outFiles, outDirs []string
 	process := func(res []string, paths ...path.Path) []string {
 		for _, out := range paths {
@@ -928,7 +944,7 @@ func (c *Cmd) CommandDigest(ctx context.Context, ds *blob.Store) (digest.Digest,
 	sort.Strings(outDirs)
 	args, err := c.remoteArgsWithWrapper()
 	if err != nil {
-		return digest.Digest{}, err
+		return nil, err
 	}
 	// out files are cwd relative.
 	command := &rpb.Command{
@@ -959,14 +975,7 @@ func (c *Cmd) CommandDigest(ctx context.Context, ds *blob.Store) (digest.Digest,
 	// only constructed to compute cache keys (e.g. two-phase caching lookup key and
 	// Phase 2 action upload), never for remote execution requests.
 	command.EnvironmentVariables = c.EnvVars()
-	data, err := blob.FromProtoMessage(c.HashFS.DigestFunction(), command)
-	if err != nil {
-		return digest.Digest{}, err
-	}
-	if ds != nil {
-		ds.Set(data)
-	}
-	return data.Digest(), nil
+	return command, nil
 }
 
 // NormalizeEnvVars returns a map of environment variables that have been normalized

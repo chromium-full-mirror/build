@@ -187,14 +187,19 @@ func (rt reapiTwoPhaseCaching) matchAction(ctx context.Context, step *Step, acti
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to fetch command for %s: %w", cmdDigest, err)
 		}
-		// check command line
-		if !slices.Equal(step.cmd.Args, cmd.GetArguments()) {
+		// The uploaded Command applies RemoteCommand and RemoteWrapper
+		// to the local command line, so compare with the step's Command.
+		local, err := step.cmd.Command(ctx)
+		if err != nil {
+			return nil, nil, err
+		}
+		if !slices.Equal(local.GetArguments(), cmd.GetArguments()) {
 			return nil, nil, fmt.Errorf("arguments mismatch with %s", cmdDigest)
 		}
-		if !step.cmd.WorkDir.Equal(path.New(cmd.GetWorkingDirectory())) {
-			return nil, nil, fmt.Errorf("working_dir mismatch %q != %q", step.cmd.WorkDir, cmd.GetWorkingDirectory())
+		if !path.New(local.GetWorkingDirectory()).Equal(path.New(cmd.GetWorkingDirectory())) {
+			return nil, nil, fmt.Errorf("working_dir mismatch %q != %q", local.GetWorkingDirectory(), cmd.GetWorkingDirectory())
 		}
-		if !slices.EqualFunc(step.cmd.EnvVars(), cmd.GetEnvironmentVariables(), func(a, b *rpb.Command_EnvironmentVariable) bool {
+		if !slices.EqualFunc(local.GetEnvironmentVariables(), cmd.GetEnvironmentVariables(), func(a, b *rpb.Command_EnvironmentVariable) bool {
 			return a.GetName() == b.GetName() && a.GetValue() == b.GetValue()
 		}) {
 			return nil, nil, fmt.Errorf("environment_variables mismatch with %s", cmdDigest)

@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -600,6 +601,94 @@ func TestMatchAction_EnvVars(t *testing.T) {
 			_, _, err = rt.matchAction(ctx, step, actionProto, digest.Digest{})
 			if gotErr := err != nil; gotErr != tc.wantErr {
 				t.Fatalf("matchAction() err = %v; wantErr %t", err, tc.wantErr)
+			}
+		})
+	}
+}
+
+func TestMatchAction_RemoteCommand(t *testing.T) {
+	ctx := t.Context()
+	dir, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	hashFS, err := hashfs.New(ctx, hashfs.Option{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer hashFS.Close(context.WithoutCancel(ctx))
+	if err := hashFS.WaitReady(ctx); err != nil {
+		t.Fatal(err)
+	}
+	newCmd := func(outputs ...path.Path) *execute.Cmd {
+		return &execute.Cmd{
+			Args:          []string{"../../host/python3", "gen.py"},
+			RemoteCommand: "../../linux-amd64/python3",
+			WorkDir:       "out/siso",
+			Outputs:       outputs,
+			HashFS:        hashFS,
+		}
+	}
+
+	for _, tc := range []struct {
+		name    string
+		stored  *execute.Cmd
+		wantErr bool
+	}{
+		{
+			// The tap found an undeclared output, so the stored Command
+			// differs from the step's Command only in its outputs.
+			name:   "discovered_output",
+			stored: newCmd("out/siso/gen.h", "out/siso/extra.h"),
+		},
+		{
+			name: "different_arguments",
+			stored: func() *execute.Cmd {
+				c := newCmd("out/siso/gen.h", "out/siso/extra.h")
+				c.Args = []string{"../../host/python3", "other.py"}
+				return c
+			}(),
+			wantErr: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ds := blob.NewStore()
+			cmdDigest, err := tc.stored.CommandDigest(ctx, ds)
+			if err != nil {
+				t.Fatal(err)
+			}
+			inputRootDigest, err := merkletree.New(digest.SHA256, ds).Build(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			reclient := reapitest.New(ctx, t, &reapitest.Fake{})
+			if _, err := reclient.UploadAll(ctx, ds); err != nil {
+				t.Fatal(err)
+			}
+			rt := reapiTwoPhaseCaching{b: &Builder{
+				path:        NewPath(dir, "out/siso"),
+				hashFS:      hashFS,
+				reapiclient: reclient,
+			}}
+			step := &Step{cmd: newCmd("out/siso/gen.h")}
+			localDigest, err := step.cmd.CommandDigest(ctx, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			action := &rpb.Action{
+				CommandDigest:   cmdDigest.Proto(),
+				InputRootDigest: inputRootDigest.Proto(),
+			}
+
+			_, outputs, err := rt.matchAction(ctx, step, action, localDigest)
+			if gotErr := err != nil; gotErr != tc.wantErr {
+				t.Fatalf("matchAction() err = %v; wantErr %t", err, tc.wantErr)
+			}
+			if err != nil {
+				return
+			}
+			if want := []string{"out/siso/extra.h", "out/siso/gen.h"}; !slices.Equal(outputs, want) {
+				t.Errorf("matchAction() outputs = %q; want %q", outputs, want)
 			}
 		})
 	}
