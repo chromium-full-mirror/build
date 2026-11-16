@@ -500,28 +500,40 @@ func (c *Command) Run(ctx context.Context) (stats build.Stats, finalErr error) {
 	c.fsopt.DigestFunction = digestFn
 
 	// When check manifest is done including regenerating manifest, it's ready to start loading Ninja files. This channel is used to start ninja loading
-	checkManifestDone := make(chan error)
-	go func() {
+	var checkeg errgroup.Group
+	checkeg.Go(func() error {
 		ctx := trace.NewThread(octx, "checkManifest")
 		// use temporary hashfs to check manifest and load manifest
 		// files.
 		tempHashFS, err := hashfs.New(ctx, hashfs.Option{DigestFunction: digestFn})
 		if err != nil {
-			checkManifestDone <- err
-			return
+			return err
 		}
 		defer tempHashFS.Close(ctx)
 		emptyDepsLog := &ninjabuild.DepsLog{}
 		tempDS := build.DataSource{}
 		bopts := c.initBuildOpts(ctx, projectID, buildPath, config, tempDS, tempHashFS, limits, tracer, nil, logWriters, nil)
 		needHashFSRefresh, err = ninjabuild.CheckManifest(ctx, c.fname, buildPath, config, tempHashFS, emptyDepsLog, &bopts)
-		if err != nil {
-			checkManifestDone <- err
-			return
-		}
 		ninjaLogWriter = bopts.NinjaLogWriter
+		if err != nil {
+			return err
+		}
 		clog.Infof(ctx, "check manifest done")
-		checkManifestDone <- nil
+		return nil
+	})
+	defer func() {
+		// check checkManifestDone when early return before initBuildOpts.
+		err := checkeg.Wait()
+		if err != nil {
+			clog.Warningf(ctx, "checkManifest: %v", err)
+			if finalErr == nil || errors.Is(finalErr, errNothingToDo) {
+				finalErr = err
+			}
+		}
+		if closer, ok := ninjaLogWriter.(io.Closer); ok {
+			cerr := closer.Close()
+			clog.Infof(ctx, "close .ninja_log: %v", cerr)
+		}
 	}()
 	var localDepsLog *ninjabuild.DepsLog
 	eg.Go(func() error {
@@ -533,6 +545,19 @@ func (c *Command) Run(ctx context.Context) (stats build.Stats, finalErr error) {
 		localDepsLog = depsLog
 		return nil
 	})
+	defer func() {
+		err := eg.Wait()
+		if err != nil {
+			clog.Warningf(ctx, "initDepsLog: %v", err)
+			if finalErr == nil || errors.Is(finalErr, errNothingToDo) {
+				finalErr = err
+			}
+		}
+		if localDepsLog != nil {
+			cerr := localDepsLog.Close()
+			clog.Infof(ctx, "close .siso_deps: %v", cerr)
+		}
+	}()
 
 	var localCache *reapi.LocalCache
 	if c.cacheDir != "" && c.localCacheEnable {
@@ -641,7 +666,7 @@ func (c *Command) Run(ctx context.Context) (stats build.Stats, finalErr error) {
 	}
 	bopts := c.initBuildOpts(ctx, projectID, buildPath, config, ds, hashFS, limits, tracer, traceExporter, logWriters, resultstoreUploader)
 
-	err = <-checkManifestDone
+	err = checkeg.Wait()
 	if err != nil {
 		return stats, err
 	}
@@ -672,9 +697,6 @@ func (c *Command) Run(ctx context.Context) (stats build.Stats, finalErr error) {
 			return stats, err
 		}
 		clog.Infof(ctx, "%s modified. refresh hashfs %s", c.fname, time.Since(started))
-	}
-	if localDepsLog != nil {
-		defer localDepsLog.Close()
 	}
 	// TODO(b/286501388): init concurrently for .siso_config/.siso_filegroups, build.ninja.
 	if c.fsopt.KeepTainted {

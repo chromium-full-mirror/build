@@ -153,15 +153,21 @@ func Run(ctx context.Context, graph *Graph, bopts build.Options, targets []strin
 
 	builddir := graph.Binding("builddir")
 	clog.Infof(ctx, "builddir=%q", builddir)
+	closeNinjaLog := bopts.NinjaLogWriter == nil
 	err = initNinjaLogWriter(&bopts, builddir)
 	if err != nil {
 		return build.Stats{}, err
 	}
-	if closer, ok := bopts.NinjaLogWriter.(io.Closer); ok {
-		defer func() {
-			cerr := closer.Close()
-			clog.Infof(ctx, "close .ninja_log: %v", cerr)
-		}()
+	if closeNinjaLog {
+		// close only if initNinjaLogWriter initialized ninja log writer.
+		// if bopts.NinjaLogWriter is given by caller, caller should
+		// close the ninja log writer.
+		if closer, ok := bopts.NinjaLogWriter.(io.Closer); ok {
+			defer func() {
+				cerr := closer.Close()
+				clog.Infof(ctx, "close .ninja_log: %v", cerr)
+			}()
+		}
 	}
 
 	for {
