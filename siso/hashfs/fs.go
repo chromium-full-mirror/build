@@ -741,15 +741,8 @@ func (hfs *HashFS) statNewEntry(ctx context.Context, root string, fname, fullnam
 	}
 	var err error
 	if dir != nil {
-		var resolved path.Path
-		e, resolved, err = dir.store(ctx, fullname.Base(), e)
-		if errors.Is(err, errRootSymlink) {
-			e, fullname, err = hfs.directory.store(ctx, fullname, e)
-		} else if resolved.IsAbs() {
-			fullname = resolved
-		} else {
-			fullname = fullname.Dir().JoinPath(resolved)
-		}
+		// Base name is a single element, so store never follows a symlink here.
+		e, _, err = dir.store(ctx, fullname.Base(), e)
 	} else {
 		e, fullname, err = hfs.directory.store(ctx, fullname, e)
 	}
