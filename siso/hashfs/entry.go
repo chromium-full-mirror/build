@@ -72,8 +72,8 @@ type entry struct {
 
 	target string // symlink.
 
-	src blob.Source
-	buf []byte // from WriteFile.
+	src blob.Source // never changes once e is stored; see getErr.
+	buf []byte      // from WriteFile.
 
 	mu sync.RWMutex
 	// mtime of entry in hashfs.
@@ -101,10 +101,7 @@ func newLocalEntry() *entry {
 }
 
 func (e *entry) String() string {
-	e.mu.Lock()
-	err := e.err
-	e.mu.Unlock()
-	if err != nil {
+	if err := e.getErr(); err != nil {
 		return fmt.Sprintf("err:%v", err)
 	}
 	return fmt.Sprintf("size:%d mode:%s mtime:%s", e.size, e.mode, e.getMtime())
@@ -197,9 +194,6 @@ func (e *entry) compute(ctx context.Context, fn digest.Function, fname string) e
 		dctx := context.WithoutCancel(ctx)
 		go func() {
 			data, err := localDigest(dctx, fn, src, fname)
-			// Only write e.err on the error path. ReadDir's Range callback
-			// reads ee.err without holding e.mu, so an unconditional write
-			// (even of nil) would race with that read.
 			e.mu.Lock()
 			if err != nil {
 				e.err = err
@@ -228,6 +222,18 @@ func (e *entry) digest() digest.Digest {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
 	return e.d
+}
+
+// getErr returns e.err. Once e is stored, only a digest computation changes
+// it, and only for an entry with a src. This relies on src never changing
+// after e is stored.
+func (e *entry) getErr() error {
+	if e.src == nil {
+		return e.err
+	}
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	return e.err
 }
 
 func (e *entry) getMtime() time.Time {
@@ -383,9 +389,7 @@ func (e *entry) flush(ctx context.Context, fname string, osfs *osfs.OSFS, timeou
 		close(e.lready)
 	}()
 
-	e.mu.Lock()
-	err := e.err
-	e.mu.Unlock()
+	err := e.getErr()
 	switch {
 	case errors.Is(err, fs.ErrNotExist):
 		return e.flushRemove(ctx, fname, osfs)

@@ -44,10 +44,8 @@ func (hfs *HashFS) MatchDir(ctx context.Context, fulldir string, want []DirChild
 		// Not recorded, or resolved through a symlink.
 		return false
 	}
-	// Only a file's digest computation writes e.err after e is published
-	// (under e.mu). A directory has no src, so its err is fixed.
 	d := e.getDir()
-	if d == nil || e.err != nil || e.isSymlink() {
+	if d == nil || e.getErr() != nil || e.isSymlink() {
 		return false
 	}
 	for _, w := range want {

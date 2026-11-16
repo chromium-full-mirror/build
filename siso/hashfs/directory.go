@@ -174,7 +174,7 @@ func shouldKeep(ctx context.Context, origFname path.Path, ee, e *entry) (*entry,
 	// target lives inline in the entry (symlinks are always recorded local,
 	// yet may be absent from disk). Explicit removals don't set diskMiss and
 	// still evict.
-	if e.diskMiss && ee.err == nil && len(ee.cmdhash) > 0 && (!ee.local || ee.isSymlink()) {
+	if e.diskMiss && ee.getErr() == nil && len(ee.cmdhash) > 0 && (!ee.local || ee.isSymlink()) {
 		return ee, true
 	}
 	eed := ee.digest()
@@ -280,8 +280,9 @@ func (d *directory) storeEntry(ctx context.Context, fname path.Path, e *entry) (
 		// elems[0], which the Windows branch below suffixes.
 		pe.elems = append(pe.elems, "/")
 	}
+	notExist := errors.Is(e.getErr(), fs.ErrNotExist)
 	nextDir := func(ctx context.Context, d *directory, pe pathElements, elem string) (*directory, string, bool) {
-		return storeNextDir(ctx, d, pe, elem, errors.Is(e.err, fs.ErrNotExist))
+		return storeNextDir(ctx, d, pe, elem, notExist)
 	}
 	s := string(fname)
 	for s != "" {
@@ -409,10 +410,11 @@ func lookupNextDir(ctx context.Context, d *directory, pe pathElements, elem stri
 	}
 	dent := v.(*entry)
 	if dent != nil {
-		if errors.Is(dent.err, fs.ErrNotExist) {
+		err := dent.getErr()
+		if errors.Is(err, fs.ErrNotExist) {
 			return nil, "", true
 		}
-		if dent.err != nil {
+		if err != nil {
 			return nil, "", false
 		}
 		target := dent.target
@@ -432,10 +434,14 @@ func storeNextDir(ctx context.Context, d *directory, pe pathElements, elem strin
 	v, ok := d.m.Load(elem)
 	if ok {
 		dent := v.(*entry)
-		if notExistEntry && dent != nil && errors.Is(dent.err, fs.ErrNotExist) {
+		var err error
+		if dent != nil {
+			err = dent.getErr()
+		}
+		if notExistEntry && dent != nil && errors.Is(err, fs.ErrNotExist) {
 			return nil, "", true
 		}
-		if dent != nil && dent.err == nil {
+		if dent != nil && err == nil {
 			target := dent.target
 			subdir := dent.getDir()
 			if log.V(9) {
@@ -533,7 +539,7 @@ func storeNextDir(ctx context.Context, d *directory, pe pathElements, elem strin
 			break
 		}
 		dent = v.(*entry)
-		if dent != nil && dent.err != nil && newDent.err == nil {
+		if dent != nil && dent.getErr() != nil && newDent.err == nil {
 			// A concurrent lstat may have cached an ErrNotExist
 			// here (e.g. one filegroup evaluates a missing
 			// 'sysroot', while another concurrently evaluates

@@ -113,6 +113,78 @@ func TestEntryCompute_CanceledCallerDoesNotFailWaiter(t *testing.T) {
 	}
 }
 
+// TestReadsDuringFailingDigest verifies that reading an entry's error does
+// not race with a failing digest computation that records it.
+func TestReadsDuringFailingDigest(t *testing.T) {
+	readDir := func(ctx context.Context, t *testing.T, fix *blockingInputFixture) {
+		t.Helper()
+		if _, err := fix.hfs.ReadDir(ctx, fix.dir, "."); err != nil {
+			t.Errorf("ReadDir(ctx, %q) unexpected error: %v", ".", err)
+		}
+	}
+	for _, tc := range []struct {
+		name string
+		// prepare runs before the digest computation starts.
+		prepare func(ctx context.Context, t *testing.T, fix *blockingInputFixture)
+		read    func(ctx context.Context, t *testing.T, fix *blockingInputFixture)
+	}{
+		{
+			name: "ReadDir",
+			// A scanned directory makes later ReadDir calls skip
+			// updateDir, which would lock in.txt before the read.
+			prepare: readDir,
+			read:    readDir,
+		},
+		{
+			name: "ownedBy",
+			read: func(ctx context.Context, t *testing.T, fix *blockingInputFixture) {
+				fix.hfs.ownedBy(ctx, makeFullpath(fix.dir, "in.txt"), nil)
+			},
+		},
+		{
+			name: "State",
+			read: func(ctx context.Context, t *testing.T, fix *blockingInputFixture) {
+				fix.hfs.State(ctx)
+			},
+		},
+		{
+			name: "lookupThroughFile",
+			read: func(ctx context.Context, t *testing.T, fix *blockingInputFixture) {
+				fix.hfs.directory.lookup(ctx, makeFullpath(fix.dir, "in.txt/x"))
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := t.Context()
+			fix := setupBlockingInput(ctx, t)
+			openErr := errors.New("injected open error")
+			fix.entry.src.(*blockingLocalFileSource).openErr = openErr
+			if tc.prepare != nil {
+				tc.prepare(ctx, t, fix)
+			}
+
+			computeErr := make(chan error, 1)
+			go func() {
+				computeErr <- fix.entry.compute(ctx, digest.SHA256, fix.fname)
+			}()
+			<-fix.started
+
+			var wg sync.WaitGroup
+			wg.Go(func() {
+				for range 100 {
+					tc.read(ctx, t, fix)
+				}
+			})
+			fix.release()
+			wg.Wait()
+
+			if err := <-computeErr; !errors.Is(err, openErr) {
+				t.Errorf("entry.compute(ctx, %q) error = %v, want %v", fix.fname, err, openErr)
+			}
+		})
+	}
+}
+
 type blockingInputFixture struct {
 	hfs     *HashFS
 	dir     string
@@ -189,10 +261,14 @@ type blockingLocalFileSource struct {
 	startedOnce sync.Once
 	started     chan<- struct{}
 	release     <-chan struct{}
+	openErr     error
 }
 
 func (s *blockingLocalFileSource) Open(ctx context.Context) (io.ReadCloser, error) {
 	s.startedOnce.Do(func() { close(s.started) })
 	<-s.release
+	if s.openErr != nil {
+		return nil, s.openErr
+	}
 	return s.LocalFileSource.Open(ctx)
 }

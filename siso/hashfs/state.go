@@ -1388,9 +1388,9 @@ func (hfs *HashFS) State(ctx context.Context) *pb.State {
 				continue
 			}
 			e := v.(*entry)
-			if e.err != nil {
-				if bool(log.V(1)) || !errors.Is(e.err, fs.ErrNotExist) {
-					clog.Infof(ctx, "ignore %s: err:%v", name, e.err)
+			if err := e.getErr(); err != nil {
+				if bool(log.V(1)) || !errors.Is(err, fs.ErrNotExist) {
+					clog.Infof(ctx, "ignore %s: err:%v", name, err)
 				}
 				continue
 			}

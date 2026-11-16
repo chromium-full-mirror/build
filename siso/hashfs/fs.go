@@ -537,10 +537,7 @@ func (hfs *HashFS) commitEntry(ctx context.Context, fname path.Path, e *entry) e
 func (hfs *HashFS) getOrCreateEntry(ctx context.Context, fname path.Path) (*entry, path.Path, error) {
 	e, fname, _, ok := hfs.directory.lookup(ctx, fname)
 	if ok {
-		e.mu.Lock()
-		err := e.err
-		e.mu.Unlock()
-		if err != nil {
+		if err := e.getErr(); err != nil {
 			return nil, fname, err
 		}
 		return e, fname, nil
@@ -555,8 +552,8 @@ func (hfs *HashFS) getOrCreateEntry(ctx context.Context, fname path.Path) (*entr
 		clog.Warningf(ctx, "failed to store %s %s: %v", fname, e, err)
 		return nil, fname, err
 	}
-	if e.err != nil {
-		return nil, fname, e.err
+	if err := e.getErr(); err != nil {
+		return nil, fname, err
 	}
 	clog.Infof(ctx, "stat new entry %s %s", fname, e)
 	return e, fname, nil
@@ -661,10 +658,7 @@ func (hfs *HashFS) stat(ctx context.Context, root string, fname path.Path, opts 
 }
 
 func (hfs *HashFS) statHit(ctx context.Context, root string, fname path.Path, e *entry, opts statOpts, tracer *statTracer) (*entry, error) {
-	e.mu.Lock()
-	err := e.err
-	e.mu.Unlock()
-	if err != nil {
+	if err := e.getErr(); err != nil {
 		return nil, err
 	}
 	if e.isDirectory() {
@@ -761,8 +755,8 @@ func (hfs *HashFS) statNewEntry(ctx context.Context, root string, fname, fullnam
 		clog.Warningf(ctx, "failed to store %s %s in %s: %v", fullname, e, dir, err)
 		return e, err
 	}
-	if e.err != nil {
-		return e, e.err
+	if err := e.getErr(); err != nil {
+		return e, err
 	}
 	if opts.needCompute {
 		hfs.digester.lazyCompute(ctx, string(fullname), e)
@@ -816,7 +810,7 @@ func (hfs *HashFS) ReadDir(ctx context.Context, root string, name path.Path) (de
 	e.directory.m.Range(func(k, v any) bool {
 		name := k.(string)
 		ee := v.(*entry)
-		if ee.err != nil {
+		if ee.getErr() != nil {
 			return true
 		}
 		ents = append(ents, DirEntry{
@@ -1300,7 +1294,7 @@ func (hfs *HashFS) RemoveStaleDirMembers(ctx context.Context, root, dir string) 
 // ownedBy reports whether hashfs records fname as produced by cmdhash.
 func (hfs *HashFS) ownedBy(ctx context.Context, fname path.Path, cmdhash []byte) bool {
 	e, _, _, ok := hfs.directory.lookup(ctx, fname)
-	if !ok || e == nil || e.err != nil {
+	if !ok || e == nil || e.getErr() != nil {
 		return false
 	}
 	return bytes.Equal(e.cmdhash, cmdhash)
@@ -1584,7 +1578,7 @@ func (hfs *HashFS) resolveEscapingSymlink(ctx context.Context, root string, fnam
 			}
 			hfs.digester.lazyCompute(ctx, string(name), elink)
 		}
-		if elink.err != nil || !elink.isSymlink() {
+		if elink.getErr() != nil || !elink.isSymlink() {
 			break
 		}
 	}
@@ -1797,10 +1791,11 @@ func (hfs *HashFS) buildMerkletreeEntries(ctx context.Context, root string, inpu
 	for i, e := range ents {
 		fname := inputs[i]
 		d := e.digest()
-		if e.err != nil || (d.IsZero() && !e.isSymlink() && !e.isDirectory()) {
+		err := e.getErr()
+		if err != nil || (d.IsZero() && !e.isSymlink() && !e.isDirectory()) {
 			// TODO(b/435555841): hard fail instead
 			if e.entryErrLogged.CompareAndSwap(false, true) {
-				clog.Warningf(ctx, "missing %s data:%v target:%q: %v", fname, e.d, e.target, e.err)
+				clog.Warningf(ctx, "missing %s data:%v target:%q: %v", fname, d, e.target, err)
 			}
 			continue
 		}
@@ -2101,8 +2096,8 @@ func (hfs *HashFS) resolveUpdateEntry(ctx context.Context, workspaceRoot string,
 		e.init(ctx, string(fname), hfs.executables, hfs.OS)
 		e.applyUpdateMetadata(ent)
 	}
-	if errors.Is(e.err, context.Canceled) {
-		return nil, e.err
+	if err := e.getErr(); errors.Is(err, context.Canceled) {
+		return nil, err
 	}
 	return e, nil
 }
