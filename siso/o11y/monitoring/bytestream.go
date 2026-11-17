@@ -21,7 +21,7 @@ import (
 // expose the value via public APIs.
 const PeerMaxConcurrentStreams int64 = 100
 
-// Populated by SetupViews. Recording into a nil instrument is a
+// Populated by Setup. Recording into a nil instrument is a
 // no-op so the stats handler is safe to invoke before init.
 var (
 	bsTTFB          metric.Float64Histogram
@@ -250,13 +250,7 @@ func recordMs(ctx context.Context, h metric.Float64Histogram, ns int64, extra []
 	if h == nil {
 		return
 	}
-	// Mirror staticMetricLabels so dashboards filtering on
-	// siso_version / os_family pick up these series; extra carries
-	// per-call attributes (e.g. server.address).
-	attrs := make([]attribute.KeyValue, 0, len(staticMetricLabels)+len(extra))
-	attrs = append(attrs, staticMetricLabels...)
-	attrs = append(attrs, extra...)
-	h.Record(ctx, float64(ns)/1e6, metric.WithAttributes(attrs...))
+	h.Record(ctx, float64(ns)/1e6, metric.WithAttributes(extra...))
 }
 
 func (h *bytestreamStatsHandler) TagConn(ctx context.Context, _ *stats.ConnTagInfo) context.Context {
@@ -265,7 +259,7 @@ func (h *bytestreamStatsHandler) TagConn(ctx context.Context, _ *stats.ConnTagIn
 
 func (h *bytestreamStatsHandler) HandleConn(_ context.Context, _ stats.ConnStats) {}
 
-// setupBytestreamMetrics registers OTel instruments. Called from SetupViews.
+// setupBytestreamMetrics registers OTel instruments. Called from Setup.
 func setupBytestreamMetrics() error {
 	var err error
 
@@ -274,7 +268,7 @@ func setupBytestreamMetrics() error {
 		metric.WithDescription("Peak active HTTP/2 streams observed across all live subconns since the previous metric scrape (high-water mark, reset on read). Catches brief saturation spikes between scrapes."),
 		metric.WithUnit("{stream}"),
 		metric.WithInt64Callback(func(_ context.Context, o metric.Int64Observer) error {
-			o.Observe(bsHandler.PeakActiveStreamsSinceReset(), metric.WithAttributes(staticMetricLabels...))
+			o.Observe(bsHandler.PeakActiveStreamsSinceReset())
 			return nil
 		}),
 	)

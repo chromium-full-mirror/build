@@ -55,11 +55,15 @@ var (
 	// observable (call=which RPC, outcome=ok|err).
 	reapiRetryDuration metric.Float64Histogram
 
-	// mu protects updating staticMetricLabels.
-	mu sync.Mutex
-	// staticMetricLabels are the labels for all metrics.
-	staticMetricLabels []attribute.KeyValue
+	setupMu sync.Mutex
+	setup   bool
 )
+
+// MetricConfig contains the views and static labels created by Setup.
+type MetricConfig struct {
+	views        []smetric.View
+	staticLabels []attribute.KeyValue
+}
 
 func otelHandleError(ctx context.Context) otel.ErrorHandlerFunc {
 	return func(err error) {
@@ -67,24 +71,25 @@ func otelHandleError(ctx context.Context) otel.ErrorHandlerFunc {
 	}
 }
 
-// SetupViews sets up monitoring views. This can only be run once.
-func SetupViews(ctx context.Context, version, rbeProject string, labels map[string]string) ([]smetric.View, error) {
+// Setup configures monitoring. This can only be run once.
+func Setup(ctx context.Context, version string, labels map[string]string) (*MetricConfig, error) {
 	otel.SetErrorHandler(otelHandleError(ctx))
 
-	if len(staticMetricLabels) != 0 {
-		return nil, errors.New("views were already setup, cannot overwrite")
+	setupMu.Lock()
+	defer setupMu.Unlock()
+	if setup {
+		return nil, errors.New("monitoring already set up")
 	}
-	mu.Lock()
-	defer mu.Unlock()
+	setup = true
 
-	staticMetricLabels = []attribute.KeyValue{
+	staticLabels := []attribute.KeyValue{
 		attribute.String(osFamilyKey, runtime.GOOS),
 		attribute.String(versionKey, version),
 	}
 	for k, v := range labels {
-		staticMetricLabels = append(staticMetricLabels, attribute.String(k, v))
+		staticLabels = append(staticLabels, attribute.String(k, v))
 	}
-	clog.Infof(ctx, "static labels for monitoring were set. %v", staticMetricLabels)
+	clog.Infof(ctx, "static labels for monitoring were set. %v", staticLabels)
 
 	var err error
 	actionCount, err = meter.Int64Counter(
@@ -193,11 +198,17 @@ func SetupViews(ctx context.Context, version, rbeProject string, labels map[stri
 			return s, true
 		},
 	}
-	return views, nil
+	return &MetricConfig{
+		views:        views,
+		staticLabels: staticLabels,
+	}, nil
 }
 
 // NewMetricProvider returns a new Cloud monitoring metrics provider.
-func NewMetricProvider(ctx context.Context, metricsProject, rbeProject string, exporter smetric.Exporter, views []smetric.View) (*smetric.MeterProvider, error) {
+func NewMetricProvider(ctx context.Context, metricsProject, rbeProject string, exporter smetric.Exporter, config *MetricConfig) (*smetric.MeterProvider, error) {
+	if config == nil {
+		return nil, errors.New("monitoring config is nil")
+	}
 	res, err := resource.New(ctx,
 		resource.WithTelemetrySDK(),
 		resource.WithOS(),
@@ -211,11 +222,12 @@ func NewMetricProvider(ctx context.Context, metricsProject, rbeProject string, e
 	if err != nil && !errors.Is(err, resource.ErrPartialResource) && !errors.Is(err, resource.ErrSchemaURLConflict) {
 		return nil, err
 	}
+	exporter = newStaticLabelExporter(exporter, config.staticLabels)
 	meterProvider := smetric.NewMeterProvider(
 		smetric.WithResource(res),
 		smetric.WithReader(smetric.NewPeriodicReader(exporter,
 			smetric.WithInterval(1*time.Minute))),
-		smetric.WithView(views...),
+		smetric.WithView(config.views...),
 	)
 	return meterProvider, nil
 }
@@ -227,11 +239,10 @@ func RecordCancellation(ctx context.Context, call, reason string) {
 	if reapiCancellations == nil {
 		return
 	}
-	attrs := append([]attribute.KeyValue(nil), staticMetricLabels...)
-	attrs = append(attrs,
+	attrs := []attribute.KeyValue{
 		attribute.String("call", call),
 		attribute.String("reason", reason),
-	)
+	}
 	reapiCancellations.Add(ctx, 1, metric.WithAttributes(attrs...))
 }
 
@@ -245,11 +256,10 @@ func RecordRetryDuration(ctx context.Context, call string, d time.Duration, err 
 	if err != nil {
 		outcome = "err"
 	}
-	attrs := append([]attribute.KeyValue(nil), staticMetricLabels...)
-	attrs = append(attrs,
+	attrs := []attribute.KeyValue{
 		attribute.String("call", call),
 		attribute.String("outcome", outcome),
-	)
+	}
 	reapiRetryDuration.Record(ctx, d.Seconds(), metric.WithAttributes(attrs...))
 }
 
@@ -287,13 +297,13 @@ func ExportActionMetrics(ctx context.Context, latency time.Duration, ar, remoteA
 	default:
 		remoteStatus = "SUCCESS"
 	}
-	attributes := append(staticMetricLabels, []attribute.KeyValue{
+	attributes := []attribute.KeyValue{
 		attribute.String(statusKey, st),
 		attribute.Int64(exitCodeKey, int64(exitCode)),
 		attribute.String(remoteStatusKey, remoteStatus),
 		attribute.Bool(isFallbackKey, isFallback),
 		attribute.Int64(remoteExitCodeKey, int64(remoteExitCode)),
-	}...)
+	}
 	actionCount.Add(ctx, 1, metric.WithAttributes(attributes...))
 	actionLatency.Record(ctx, float64(latency)/1e6, metric.WithAttributes(attributes...))
 }
@@ -307,9 +317,9 @@ func ExportBuildMetrics(ctx context.Context, latency time.Duration, cacheHitRati
 	if isErr {
 		status = "FAILURE"
 	}
-	attributes := append(staticMetricLabels, []attribute.KeyValue{
+	attributes := []attribute.KeyValue{
 		attribute.String(statusKey, status),
-	}...)
+	}
 	buildCount.Add(ctx, 1, metric.WithAttributes(attributes...))
 	buildLatency.Record(ctx, latency.Seconds(), metric.WithAttributes(attributes...))
 	buildCacheHitRatio.Record(ctx, cacheHitRatio, metric.WithAttributes(attributes...))

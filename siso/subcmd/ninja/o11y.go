@@ -175,7 +175,7 @@ func (c *Command) initCloudTrace(ctx context.Context, projectID string, credenti
 // It returns a meter provider and any error that occurred.
 func (c *Command) initCloudMonitoring(ctx context.Context, credential cred.Cred, metricsProject, rbeProjectID string, labels map[string]string) (*smetric.MeterProvider, error) {
 	clog.Infof(ctx, "enable cloud monitoring in %s", metricsProject)
-	views, err := monitoring.SetupViews(ctx, c.version, rbeProjectID, labels)
+	metricConfig, err := monitoring.Setup(ctx, c.version, labels)
 	if err != nil {
 		return nil, err
 	}
@@ -198,7 +198,7 @@ func (c *Command) initCloudMonitoring(ctx context.Context, credential cred.Cred,
 			return nil, err
 		}
 	}
-	mp, err := monitoring.NewMetricProvider(ctx, metricsProject, rbeProjectID, exporter, views)
+	mp, err := monitoring.NewMetricProvider(ctx, metricsProject, rbeProjectID, exporter, metricConfig)
 	if err != nil {
 		return nil, err
 	}
