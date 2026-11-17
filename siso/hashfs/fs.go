@@ -1541,22 +1541,18 @@ func escapesRoot(root, path string) bool {
 	return !strings.HasPrefix(path, root+"/")
 }
 
-// resolveEscapingSymlink follows a symlink chain that escapes root,
-// resolving through external targets (e.g. ../.cipd/pkgs/..), and
-// returns me updated with the final resolved data. The caller must
-// verify that e is a symlink whose first hop escapes root.
-func (hfs *HashFS) resolveEscapingSymlink(ctx context.Context, root string, fname path.Path, e *entry, me merkletree.Entry) (merkletree.Entry, error) {
-	name := path.JoinRoot(root, fname)
+// resolveEscapingSymlink follows a symlink chain that escapes the
+// workspace root, e.g. into ../.cipd/pkgs/.., to its end and returns me
+// updated with the data found there. The caller must verify that e is a
+// symlink whose target, resolved from the input name, escapes the root.
+// name is where e is stored, with intermediate symlinks resolved.
+func (hfs *HashFS) resolveEscapingSymlink(ctx context.Context, name path.Path, e *entry, me merkletree.Entry) (merkletree.Entry, error) {
 	elink := e
 	for range maxSymlinks {
 		tname := makeFullpath(filepath.Dir(string(name)), path.Path(elink.target))
 		if log.V(1) {
 			clog.Infof(ctx, "symlink %s -> %s", name, tname)
 		}
-		if !escapesRoot(root, string(tname)) {
-			break
-		}
-		// symlink to outside of workspace (e.g. ../.cipd/pkgs/..)
 		name = tname
 		var ok bool
 		elink, name, _, ok = hfs.directory.lookup(ctx, name)
@@ -1581,7 +1577,7 @@ func (hfs *HashFS) resolveEscapingSymlink(ctx context.Context, root string, fnam
 			break
 		}
 	}
-	clog.Infof(ctx, "resolve symlink %s to %s", fname, name)
+	clog.Infof(ctx, "resolve symlink %s to %s", me.Name, name)
 	hfs.digester.compute(ctx, string(name), elink)
 	d := elink.digest()
 	me.Data = blob.NewData(elink.src, d)
@@ -1613,11 +1609,11 @@ func (hfs *HashFS) entries(ctx context.Context, root string, inputs []path.Path,
 		clog.Infof(ctx, "entries resolveEscapedSymlinks=%t", resolveEscapedSymlinks)
 	}
 	inputs = path.Paths(hfs.expandDirInputs(ctx, root, path.Strings(inputs)))
-	ents, err := hfs.resolveInputEntries(ctx, root, inputs)
+	ents, names, err := hfs.resolveInputEntries(ctx, root, inputs)
 	if err != nil {
 		return nil, err
 	}
-	return hfs.buildMerkletreeEntries(ctx, root, inputs, ents, resolveEscapedSymlinks)
+	return hfs.buildMerkletreeEntries(ctx, root, inputs, names, ents, resolveEscapedSymlinks)
 }
 
 // expandDirInputs replaces each trailing-slash directory-target input with the
@@ -1735,17 +1731,21 @@ func pathHasPrefix(p, prefix string) bool {
 // resolveInputEntries looks up or creates entries for each input,
 // kicks off concurrent digest computation for regular files that
 // need it, and waits for all digests to finish before returning.
-func (hfs *HashFS) resolveInputEntries(ctx context.Context, root string, inputs []path.Path) ([]*entry, error) {
+// It also returns where each entry is stored, with intermediate
+// symlinks resolved.
+func (hfs *HashFS) resolveInputEntries(ctx context.Context, root string, inputs []path.Path) ([]*entry, []path.Path, error) {
 	ents := make([]*entry, 0, len(inputs))
+	names := make([]path.Path, 0, len(inputs))
 	batch := hfs.batchDigester()
 	for _, input := range inputs {
 		fname := makeFullpath(root, input)
-		e, _, _, ok := hfs.directory.lookup(ctx, fname)
+		e, name, _, ok := hfs.directory.lookup(ctx, fname)
 		if ok {
 			if log.V(2) {
 				clog.Infof(ctx, "tree cache hit %s", fname)
 			}
 			ents = append(ents, e)
+			names = append(names, name)
 			if e.mode.IsRegular() {
 				e.mu.RLock()
 				ready := !e.d.IsZero()
@@ -1759,7 +1759,7 @@ func (hfs *HashFS) resolveInputEntries(ctx context.Context, root string, inputs 
 		e = newLocalEntry()
 		e.init(ctx, string(fname), hfs.executables, hfs.OS)
 		if errors.Is(e.err, context.Canceled) {
-			return nil, e.err
+			return nil, nil, e.err
 		}
 		if log.V(1) {
 			clog.Infof(ctx, "tree new entry %s", fname)
@@ -1769,23 +1769,26 @@ func (hfs *HashFS) resolveInputEntries(ctx context.Context, root string, inputs 
 			// store may fail for missing dir. b/468142748
 			clog.Warningf(ctx, "entry %s %v: %v", fname, e.err, err)
 			ents = append(ents, e)
+			names = append(names, fname)
 			continue
 		}
 		ents = append(ents, ee)
+		names = append(names, fname)
 		batch.start(ctx, string(fname), ee)
 	}
 	_, wspan := trace.NewSpan(ctx, "fs-entries-wait")
 	nwait := batch.wait(ctx)
 	wspan.SetAttr("waits", nwait)
 	wspan.Close(nil)
-	return ents, nil
+	return ents, names, nil
 }
 
 // buildMerkletreeEntries converts resolved entries to merkletree format,
 // filtering entries with errors and resolving symlinks that escape root
 // if resolveEscapedSymlinks is true.
 // inputs are the original relative paths (used for merkletree entry names).
-func (hfs *HashFS) buildMerkletreeEntries(ctx context.Context, root string, inputs []path.Path, ents []*entry, resolveEscapedSymlinks bool) ([]merkletree.Entry, error) {
+// names are where ents are stored, with intermediate symlinks resolved.
+func (hfs *HashFS) buildMerkletreeEntries(ctx context.Context, root string, inputs, names []path.Path, ents []*entry, resolveEscapedSymlinks bool) ([]merkletree.Entry, error) {
 	entries := make([]merkletree.Entry, 0, len(inputs))
 	for i, e := range ents {
 		fname := inputs[i]
@@ -1805,11 +1808,12 @@ func (hfs *HashFS) buildMerkletreeEntries(ctx context.Context, root string, inpu
 			Target:       e.target,
 		}
 		if resolveEscapedSymlinks && e.isSymlink() {
+			// A remote worker resolves the target from the input name.
 			name := path.JoinRoot(root, fname)
 			tname := makeFullpath(filepath.Dir(string(name)), path.Path(e.target))
 			if escapesRoot(root, string(tname)) {
 				var err error
-				me, err = hfs.resolveEscapingSymlink(ctx, root, fname, e, me)
+				me, err = hfs.resolveEscapingSymlink(ctx, names[i], e, me)
 				if err != nil {
 					return nil, err
 				}

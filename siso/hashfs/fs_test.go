@@ -2977,6 +2977,130 @@ func TestEntries_EscapedSymlinkChain(t *testing.T) {
 	}
 }
 
+func TestEntries_SymlinkUnderSymlinkDir(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skipf("no symlink on windows")
+	}
+	for _, tc := range []struct {
+		name     string
+		symlinks map[string]string
+		files    []string
+		root     string
+		input    path.Path
+		// wantFile is the file whose contents the input resolves to.
+		wantFile   string
+		wantTarget string
+	}{
+		{
+			name: "EscapingTargetOutsideRoot",
+			symlinks: map[string]string{
+				"top/r/ws/a":        "x/y",
+				"top/r/ws/x/y/link": "../../../payload",
+			},
+			files:    []string{"top/r/payload", "top/payload"},
+			root:     "top/r/ws",
+			input:    "a/link",
+			wantFile: "top/r/payload",
+		},
+		{
+			name: "EscapingTargetInsideRoot",
+			symlinks: map[string]string{
+				"top/ws/a":          "x/y/z",
+				"top/ws/x/y/z/link": "../../../payload",
+			},
+			files:    []string{"top/ws/payload", "payload"},
+			root:     "top/ws",
+			input:    "a/link",
+			wantFile: "top/ws/payload",
+		},
+		{
+			name: "LocalTargetUnderEscapingDir",
+			symlinks: map[string]string{
+				"ws/out":         "../outside",
+				"outside/lib.so": "lib.so.1",
+			},
+			files:      []string{"outside/lib.so.1"},
+			root:       "ws",
+			input:      "out/lib.so",
+			wantTarget: "lib.so.1",
+		},
+		{
+			name: "EscapingTargetUnderEscapingDir",
+			symlinks: map[string]string{
+				"top/ws/out":         "../../outside/sub",
+				"outside/sub/lib.so": "../../lib.so.1",
+			},
+			files:    []string{"lib.so.1", "top/lib.so.1"},
+			root:     "top/ws",
+			input:    "out/lib.so",
+			wantFile: "lib.so.1",
+		},
+		{
+			name: "ChainBackIntoRoot",
+			symlinks: map[string]string{
+				"top/ws/link":  "../../outside/link",
+				"outside/link": "../top/ws/payload",
+			},
+			files:    []string{"top/ws/payload"},
+			root:     "top/ws",
+			input:    "link",
+			wantFile: "top/ws/payload",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := t.Context()
+			baseDir, err := filepath.EvalSymlinks(t.TempDir())
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, f := range tc.files {
+				fname := filepath.Join(baseDir, f)
+				if err := os.MkdirAll(filepath.Dir(fname), 0755); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(fname, []byte(f), 0644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			for name, target := range tc.symlinks {
+				fname := filepath.Join(baseDir, name)
+				if err := os.MkdirAll(filepath.Dir(fname), 0755); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Symlink(target, fname); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			hashFS, err := hashfs.New(ctx, hashfs.Option{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() {
+				if err := hashFS.Close(ctx); err != nil {
+					t.Error(err)
+				}
+			}()
+
+			want := []merkletree.Entry{{Name: tc.input, Target: tc.wantTarget}}
+			if tc.wantFile != "" {
+				want[0].Data = blob.FromBytes(digest.SHA256, tc.wantFile, []byte(tc.wantFile))
+			}
+			for i := range 2 {
+				ents, err := hashFS.Entries(ctx, filepath.Join(baseDir, tc.root), []path.Path{tc.input})
+				if err != nil {
+					t.Fatalf("call %d: hashFS.Entries()=%v; want nil err", i, err)
+				}
+				if diff := cmp.Diff(want, ents, cmp.Transformer("digest", func(d blob.Data) digest.Digest {
+					return d.Digest()
+				})); diff != "" {
+					t.Errorf("call %d: Entries diff -want +got:\n%s", i, diff)
+				}
+			}
+		})
+	}
+}
+
 func TestEntries_NonExistentIntermediateDirectory(t *testing.T) {
 	ctx := t.Context()
 
