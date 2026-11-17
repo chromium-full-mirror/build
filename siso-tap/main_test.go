@@ -397,3 +397,80 @@ ln -s in2 soft2
 		}
 	}
 }
+
+func TestSisoTap_RenamedDirContents(t *testing.T) {
+	bin := buildSisoTap(t)
+	tmpDir := t.TempDir()
+	tapOut := filepath.Join(tmpDir, "tap.json")
+
+	cmd := exec.Command(bin, "--tap_output="+tapOut, "--", "python3", "-c", `
+import os
+os.makedirs("tmp/s")
+open("tmp/a", "w").close()
+open("tmp/s/b", "w").close()
+os.rename("tmp", "outdir")
+`)
+	cmd.Dir = tmpDir
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("command failed: %v\noutput: %s", err, string(out))
+	}
+
+	data, err := os.ReadFile(tapOut)
+	if err != nil {
+		t.Fatalf("failed to read tap output: %v", err)
+	}
+	var tapData map[string][]string
+	if err := json.Unmarshal(data, &tapData); err != nil {
+		t.Fatalf("failed to parse tap output: %v", err)
+	}
+	for _, name := range []string{"outdir", "outdir/a", "outdir/s", "outdir/s/b"} {
+		if p := filepath.Join(tmpDir, name); !slices.Contains(tapData["writes"], p) {
+			t.Errorf("writes missing %q: got %v", p, tapData["writes"])
+		}
+	}
+	if p := filepath.Join(tmpDir, "tmp"); !slices.Contains(tapData["deletes"], p) {
+		t.Errorf("deletes missing %q: got %v", p, tapData["deletes"])
+	}
+}
+
+func TestSisoTap_RenameExchange(t *testing.T) {
+	bin := buildSisoTap(t)
+	tmpDir := t.TempDir()
+	for _, name := range []string{"x", "y"} {
+		if err := os.WriteFile(filepath.Join(tmpDir, name), []byte(name), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	tapOut := filepath.Join(tmpDir, "tap.json")
+
+	cmd := exec.Command(bin, "--tap_output="+tapOut, "--", "python3", "-c", `
+import ctypes
+libc = ctypes.CDLL(None, use_errno=True)
+AT_FDCWD, RENAME_EXCHANGE = -100, 2
+if libc.renameat2(AT_FDCWD, b"x", AT_FDCWD, b"y", RENAME_EXCHANGE) != 0:
+    raise OSError(ctypes.get_errno(), "renameat2")
+`)
+	cmd.Dir = tmpDir
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("command failed: %v\noutput: %s", err, string(out))
+	}
+
+	data, err := os.ReadFile(tapOut)
+	if err != nil {
+		t.Fatalf("failed to read tap output: %v", err)
+	}
+	var tapData map[string][]string
+	if err := json.Unmarshal(data, &tapData); err != nil {
+		t.Fatalf("failed to parse tap output: %v", err)
+	}
+	for _, name := range []string{"x", "y"} {
+		if p := filepath.Join(tmpDir, name); !slices.Contains(tapData["writes"], p) {
+			t.Errorf("writes missing %q: got %v", p, tapData["writes"])
+		}
+		if p := filepath.Join(tmpDir, name); slices.Contains(tapData["deletes"], p) {
+			t.Errorf("deletes has %q: got %v", p, tapData["deletes"])
+		}
+	}
+}

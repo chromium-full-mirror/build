@@ -17,6 +17,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io/fs"
 	"net"
 	"os"
 	"os/exec"
@@ -338,8 +339,31 @@ const (
 )
 
 type supervisor struct {
-	fops map[string]fop
-	cwds map[uint32]string
+	fops    map[string]fop
+	cwds    map[uint32]string
+	renamed map[string]struct{}
+}
+
+// addRenamedDirContents marks everything below the directories that the
+// command renamed into place as written, since the command wrote those
+// files under their old paths.
+func (s *supervisor) addRenamedDirContents() {
+	for dir := range s.renamed {
+		fi, err := os.Lstat(dir)
+		if err != nil || !fi.IsDir() {
+			continue
+		}
+		err = filepath.WalkDir(dir, func(p string, _ fs.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			s.fops[p] = writeOp
+			return nil
+		})
+		if err != nil {
+			glog.Warningf("walk renamed dir %q: %v", dir, err)
+		}
+	}
 }
 
 func (s *supervisor) invalidateCwd() {
@@ -381,6 +405,7 @@ func (s *supervisor) absname(pid uint32, atfd fileDesc, fname string) (string, e
 }
 
 func (s *supervisor) tapData() map[string][]string {
+	s.addRenamedDirContents()
 	m := make(map[string][]string)
 	var reads, writes, deletes []string
 	for k, v := range s.fops {
@@ -780,6 +805,7 @@ func (s *supervisor) handleNotif(fd seccomp.ScmpFd, req *seccomp.ScmpNotifReq) (
 		}
 		if newabs, ok := absname(AT_FDCWD, newpath); ok {
 			markAsWrite(newabs)
+			s.renamed[newabs] = struct{}{}
 		}
 		printTrace(" rename(%q, %q)\n", oldpath, newpath)
 	case "renameat", "renameat2":
@@ -787,11 +813,18 @@ func (s *supervisor) handleNotif(fd seccomp.ScmpFd, req *seccomp.ScmpNotifReq) (
 		oldpath := strInReq(1)
 		newatfd := fileDesc(req.Data.Args[2])
 		newpath := strInReq(3)
+		exchange := syscallName == "renameat2" && req.Data.Args[4]&unix.RENAME_EXCHANGE != 0
 		if oldabs, ok := absname(oldatfd, oldpath); ok {
-			markAsDelete(oldabs)
+			if exchange {
+				markAsWrite(oldabs)
+				s.renamed[oldabs] = struct{}{}
+			} else {
+				markAsDelete(oldabs)
+			}
 		}
 		if newabs, ok := absname(newatfd, newpath); ok {
 			markAsWrite(newabs)
+			s.renamed[newabs] = struct{}{}
 		}
 		printTrace(" %s(%v, %q, %v, %q)\n", syscallName, oldatfd, oldpath, newatfd, newpath)
 	case "stat":
@@ -890,8 +923,9 @@ func main() {
 
 	done := make(chan struct{})
 	s := &supervisor{
-		fops: make(map[string]fop),
-		cwds: make(map[uint32]string),
+		fops:    make(map[string]fop),
+		renamed: make(map[string]struct{}),
+		cwds:    make(map[uint32]string),
 	}
 	var eg errgroup.Group
 	var cmdErr error
