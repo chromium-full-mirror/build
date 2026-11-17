@@ -105,6 +105,7 @@ func installNotifyFilter() (seccomp.ScmpFd, error) {
 		"fstatfs",
 		"getdents64",
 		"getxattr",
+		"link",
 		"mkdir",
 		"newfstatat",
 		"open",
@@ -113,6 +114,7 @@ func installNotifyFilter() (seccomp.ScmpFd, error) {
 		"rmdir",
 		"statfs",
 		"statx",
+		"symlink",
 
 		// strace -trace=%file
 		"setxattr",
@@ -726,6 +728,43 @@ func (s *supervisor) handleNotif(fd seccomp.ScmpFd, req *seccomp.ScmpNotifReq) (
 			}
 		}
 		printTrace(" openat(%v, %q, 0x%x, %s)\n", atfd, pathname, req.Data.Args[2], os.FileMode(req.Data.Args[3]))
+	case "link":
+		oldpath := strInReq(0)
+		newpath := strInReq(1)
+		if abs, ok := absname(AT_FDCWD, oldpath); ok {
+			markAsRead(abs)
+		}
+		if abs, ok := absname(AT_FDCWD, newpath); ok {
+			markAsWrite(abs)
+		}
+		printTrace(" link(%q, %q)\n", oldpath, newpath)
+	case "linkat":
+		oldatfd := fileDesc(req.Data.Args[0])
+		oldpath := strInReq(1)
+		newatfd := fileDesc(req.Data.Args[2])
+		newpath := strInReq(3)
+		if abs, ok := absname(oldatfd, oldpath); ok {
+			markAsRead(abs)
+		}
+		if abs, ok := absname(newatfd, newpath); ok {
+			markAsWrite(abs)
+		}
+		printTrace(" linkat(%v, %q, %v, %q, 0x%x)\n", oldatfd, oldpath, newatfd, newpath, req.Data.Args[4])
+	case "symlink":
+		target := strInReq(0)
+		linkpath := strInReq(1)
+		if abs, ok := absname(AT_FDCWD, linkpath); ok {
+			markAsWrite(abs)
+		}
+		printTrace(" symlink(%q, %q)\n", target, linkpath)
+	case "symlinkat":
+		target := strInReq(0)
+		atfd := fileDesc(req.Data.Args[1])
+		linkpath := strInReq(2)
+		if abs, ok := absname(atfd, linkpath); ok {
+			markAsWrite(abs)
+		}
+		printTrace(" symlinkat(%q, %v, %q)\n", target, atfd, linkpath)
 	case "readlinkat":
 		atfd := fileDesc(req.Data.Args[0])
 		pathname := strInReq(1)

@@ -354,3 +354,46 @@ func TestSisoTap_NestedSeccompFailure(t *testing.T) {
 		t.Errorf("expected 'install seccomp:' in output, got:\n%s", string(out))
 	}
 }
+
+func TestSisoTap_Links(t *testing.T) {
+	bin := buildSisoTap(t)
+	tmpDir := t.TempDir()
+	for _, name := range []string{"in1", "in2"} {
+		if err := os.WriteFile(filepath.Join(tmpDir, name), []byte(name), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	tapOut := filepath.Join(tmpDir, "tap.json")
+
+	// Python's os.link and os.symlink use link and symlink, while ln uses
+	// linkat and symlinkat.
+	cmd := exec.Command(bin, "--tap_output="+tapOut, "--", "/bin/sh", "-c", `
+python3 -c 'import os; os.link("in1", "hard1"); os.symlink("in1", "soft1")'
+ln in2 hard2
+ln -s in2 soft2
+`)
+	cmd.Dir = tmpDir
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("command failed: %v\noutput: %s", err, string(out))
+	}
+
+	data, err := os.ReadFile(tapOut)
+	if err != nil {
+		t.Fatalf("failed to read tap output: %v", err)
+	}
+	var tapData map[string][]string
+	if err := json.Unmarshal(data, &tapData); err != nil {
+		t.Fatalf("failed to parse tap output: %v", err)
+	}
+	for _, name := range []string{"in1", "in2"} {
+		if p := filepath.Join(tmpDir, name); !slices.Contains(tapData["reads"], p) {
+			t.Errorf("reads missing link source %q: got %v", p, tapData["reads"])
+		}
+	}
+	for _, name := range []string{"hard1", "soft1", "hard2", "soft2"} {
+		if p := filepath.Join(tmpDir, name); !slices.Contains(tapData["writes"], p) {
+			t.Errorf("writes missing %q: got %v", p, tapData["writes"])
+		}
+	}
+}
