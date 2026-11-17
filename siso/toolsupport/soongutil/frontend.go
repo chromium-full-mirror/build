@@ -95,7 +95,7 @@ func (f *Frontend) PlanHasTotalSteps(total int) {
 	f.total = total
 	m := &pb.Status{
 		TotalEdges: &pb.Status_TotalEdges{
-			TotalEdges: proto.Uint32(uint32(f.total)),
+			TotalEdges: new(uint32(f.total)),
 		},
 	}
 	f.ch <- m
@@ -105,12 +105,12 @@ func (f *Frontend) PlanHasTotalSteps(total int) {
 func (f *Frontend) BuildActionStarted(step *build.Step, when time.Time) {
 	m := &pb.Status{
 		EdgeStarted: &pb.Status_EdgeStarted{
-			Id:        proto.Uint32(uint32(step.IDNum())),
-			StartTime: proto.Uint32(uint32(when.Sub(f.startTime).Milliseconds())),
+			Id:        new(uint32(step.IDNum())),
+			StartTime: new(uint32(when.Sub(f.startTime).Milliseconds())),
 			Outputs:   step.Outputs(),
-			Desc:      proto.String(step.Desc()),
-			Command:   proto.String(step.Command()),
-			Console:   proto.Bool(step.IsConsole()),
+			Desc:      new(step.Desc()),
+			Command:   new(step.Command()),
+			Console:   new(step.IsConsole()),
 			// TODO: pass more info?
 		},
 	}
@@ -138,19 +138,19 @@ func (f *Frontend) BuildActionFinished(step *build.Step) {
 	met := step.Metrics()
 	m := &pb.Status{
 		EdgeFinished: &pb.Status_EdgeFinished{
-			Id:              proto.Uint32(uint32(step.IDNum())),
-			EndTime:         proto.Uint32(uint32(time.Since(f.startTime).Milliseconds())),
-			Status:          proto.Int32(step.ExitCode()),
-			Output:          proto.String(sb.String()),
-			UserTime:        proto.Uint32(uint32(time.Duration(met.Utime).Milliseconds())),
-			SystemTime:      proto.Uint32(uint32(time.Duration(met.Stime).Milliseconds())),
-			MaxRssKb:        proto.Uint64(maxRSSKB(met)),
-			MajorPageFaults: proto.Uint64(uint64(met.Majflt)),
+			Id:              new(uint32(step.IDNum())),
+			EndTime:         new(uint32(time.Since(f.startTime).Milliseconds())),
+			Status:          new(step.ExitCode()),
+			Output:          new(sb.String()),
+			UserTime:        new(uint32(time.Duration(met.Utime).Milliseconds())),
+			SystemTime:      new(uint32(time.Duration(met.Stime).Milliseconds())),
+			MaxRssKb:        new(maxRSSKB(met)),
+			MajorPageFaults: new(uint64(met.Majflt)),
 			// TODO: pass more info?
 		},
 	}
 	if tags := step.Binding("tags"); tags != "" {
-		m.EdgeFinished.Tags = proto.String(tags)
+		m.EdgeFinished.Tags = new(tags)
 	}
 	f.ch <- m
 }
@@ -160,18 +160,18 @@ func (f *Frontend) BuildActionCanceled(step *build.Step) {
 	met := step.Metrics()
 	m := &pb.Status{
 		EdgeFinished: &pb.Status_EdgeFinished{
-			Id:              proto.Uint32(uint32(step.IDNum())),
-			EndTime:         proto.Uint32(uint32(time.Since(f.startTime).Milliseconds())),
+			Id:              new(uint32(step.IDNum())),
+			EndTime:         new(uint32(time.Since(f.startTime).Milliseconds())),
 			Status:          proto.Int32(-1),
-			Canceled:        proto.Bool(true),
-			UserTime:        proto.Uint32(uint32(time.Duration(met.Utime).Milliseconds())),
-			SystemTime:      proto.Uint32(uint32(time.Duration(met.Stime).Milliseconds())),
-			MaxRssKb:        proto.Uint64(maxRSSKB(met)),
-			MajorPageFaults: proto.Uint64(uint64(met.Majflt)),
+			Canceled:        new(true),
+			UserTime:        new(uint32(time.Duration(met.Utime).Milliseconds())),
+			SystemTime:      new(uint32(time.Duration(met.Stime).Milliseconds())),
+			MaxRssKb:        new(maxRSSKB(met)),
+			MajorPageFaults: new(uint64(met.Majflt)),
 		},
 	}
 	if tags := step.Binding("tags"); tags != "" {
-		m.EdgeFinished.Tags = proto.String(tags)
+		m.EdgeFinished.Tags = new(tags)
 	}
 	f.ch <- m
 }
@@ -205,7 +205,7 @@ func (f *Frontend) message(level pb.Status_Message_Level, msg string) {
 	m := &pb.Status{
 		Message: &pb.Status_Message{
 			Level:   level.Enum(),
-			Message: proto.String(msg),
+			Message: new(msg),
 		},
 	}
 	f.ch <- m

@@ -239,14 +239,14 @@ func (a *ideAnalyzer) analyzeTarget(ctx context.Context, target string) (*pb.Ana
 	if err != nil {
 		result.Status = &pb.AnalysisResult_Status{
 			Code:          pb.AnalysisResult_Status_CODE_NOT_FOUND,
-			StatusMessage: proto.String(err.Error()),
+			StatusMessage: new(err.Error()),
 		}
 		return result, nil
 	}
 	if len(nodes) == 0 {
 		result.Status = &pb.AnalysisResult_Status{
 			Code:          pb.AnalysisResult_Status_CODE_NOT_FOUND,
-			StatusMessage: proto.String(fmt.Sprintf("missing target=%q", target)),
+			StatusMessage: new(fmt.Sprintf("missing target=%q", target)),
 		}
 		return result, nil
 	}
@@ -268,7 +268,7 @@ func (a *ideAnalyzer) analyzeTarget(ctx context.Context, target string) (*pb.Ana
 		if !ok {
 			result.Status = &pb.AnalysisResult_Status{
 				Code:          pb.AnalysisResult_Status_CODE_BUILD_FAILED,
-				StatusMessage: proto.String(fmt.Sprintf("file not found: %q", node.Path())),
+				StatusMessage: new(fmt.Sprintf("file not found: %q", node.Path())),
 			}
 			return result, nil
 		}
@@ -278,14 +278,14 @@ func (a *ideAnalyzer) analyzeTarget(ctx context.Context, target string) (*pb.Ana
 	if !ok {
 		result.Status = &pb.AnalysisResult_Status{
 			Code:          pb.AnalysisResult_Status_CODE_NOT_FOUND,
-			StatusMessage: proto.String(fmt.Sprintf("no input edge for %s", node.Path())),
+			StatusMessage: new(fmt.Sprintf("no input edge for %s", node.Path())),
 		}
 		return result, nil
 	}
 	if len(inEdge.Inputs()) == 0 {
 		result.Status = &pb.AnalysisResult_Status{
 			Code:          pb.AnalysisResult_Status_CODE_NOT_FOUND,
-			StatusMessage: proto.String(fmt.Sprintf("no inputs for %s", node.Path())),
+			StatusMessage: new(fmt.Sprintf("no inputs for %s", node.Path())),
 		}
 		return result, nil
 	}
@@ -299,14 +299,14 @@ func (a *ideAnalyzer) analyzeTarget(ctx context.Context, target string) (*pb.Ana
 		if !ok {
 			result.Status = &pb.AnalysisResult_Status{
 				Code:          pb.AnalysisResult_Status_CODE_BUILD_FAILED,
-				StatusMessage: proto.String(fmt.Sprintf("input of %q not found: %q", node.Path(), input.Path())),
+				StatusMessage: new(fmt.Sprintf("input of %q not found: %q", node.Path(), input.Path())),
 			}
 			return result, nil
 		}
 		if nodeEnt != nil && nodeEnt.GetUpdatedTime() < ent.GetId().GetModTime() {
 			result.Status = &pb.AnalysisResult_Status{
 				Code:          pb.AnalysisResult_Status_CODE_BUILD_FAILED,
-				StatusMessage: proto.String(fmt.Sprintf("target is not up-to-date: %q(%d) is older than %q(%d)", node.Path(), nodeEnt.GetUpdatedTime(), input.Path(), ent.GetId().GetModTime())),
+				StatusMessage: new(fmt.Sprintf("target is not up-to-date: %q(%d) is older than %q(%d)", node.Path(), nodeEnt.GetUpdatedTime(), input.Path(), ent.GetId().GetModTime())),
 			}
 			return result, nil
 		}
@@ -400,7 +400,7 @@ func (a *ideAnalyzer) analyzeCPP(ctx context.Context, edge *ninjautil.Edge, resu
 	if err != nil {
 		result.Status = &pb.AnalysisResult_Status{
 			Code:          pb.AnalysisResult_Status_CODE_BUILD_FAILED,
-			StatusMessage: proto.String(fmt.Sprintf("failed to parse command=%q: %v", command, err)),
+			StatusMessage: new(fmt.Sprintf("failed to parse command=%q: %v", command, err)),
 		}
 		return result, nil
 	}
@@ -409,7 +409,7 @@ func (a *ideAnalyzer) analyzeCPP(ctx context.Context, edge *ninjautil.Edge, resu
 	if err != nil {
 		result.Status = &pb.AnalysisResult_Status{
 			Code:          pb.AnalysisResult_Status_CODE_BUILD_FAILED,
-			StatusMessage: proto.String(fmt.Sprintf("failed to extract scandeps params for %q: %v", cmdArgs, err)),
+			StatusMessage: new(fmt.Sprintf("failed to extract scandeps params for %q: %v", cmdArgs, err)),
 		}
 		return result, nil
 	}
@@ -438,7 +438,7 @@ func (a *ideAnalyzer) analyzeCPP(ctx context.Context, edge *ninjautil.Edge, resu
 	if err != nil {
 		result.Status = &pb.AnalysisResult_Status{
 			Code:          pb.AnalysisResult_Status_CODE_BUILD_FAILED,
-			StatusMessage: proto.String(fmt.Sprintf("failed to scandeps %#v: %v", req, err)),
+			StatusMessage: new(fmt.Sprintf("failed to scandeps %#v: %v", req, err)),
 		}
 		return result, nil
 	}
@@ -549,12 +549,12 @@ func (a *ideAnalyzer) invalidation(ctx context.Context) *pb.Invalidation {
 	inv := &pb.Invalidation{
 		Wildcards: []*pb.Invalidation_Wildcard{
 			{
-				Suffix:         proto.String(".gn"),
-				CanCrossFolder: proto.Bool(true),
+				Suffix:         new(".gn"),
+				CanCrossFolder: new(true),
 			},
 			{
-				Suffix:         proto.String(".gni"),
-				CanCrossFolder: proto.Bool(true),
+				Suffix:         new(".gni"),
+				CanCrossFolder: new(true),
 			},
 		},
 	}

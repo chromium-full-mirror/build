@@ -15,8 +15,6 @@ import (
 	"strings"
 	"time"
 
-	"google.golang.org/protobuf/proto"
-
 	"go.chromium.org/build/siso/o11y/clog"
 	sisopath "go.chromium.org/build/siso/path"
 	pb "go.chromium.org/build/siso/toolsupport/ciderutil/proto"
@@ -34,14 +32,14 @@ func (a *ideAnalyzer) analyzeJava(ctx context.Context, edge *ninjautil.Edge, res
 	if err != nil {
 		result.Status = &pb.AnalysisResult_Status{
 			Code:          pb.AnalysisResult_Status_CODE_BUILD_FAILED,
-			StatusMessage: proto.String(fmt.Sprintf("failed for java buildableUnit: %v", err)),
+			StatusMessage: new(fmt.Sprintf("failed for java buildableUnit: %v", err)),
 		}
 		return result, deps
 	}
 	if len(depIDs) == 0 {
 		result.Status = &pb.AnalysisResult_Status{
 			Code:          pb.AnalysisResult_Status_CODE_BUILD_FAILED,
-			StatusMessage: proto.String(fmt.Sprintf("failed for java buildableUnit: missing buildableUnit for %q", result.SourceFilePath)),
+			StatusMessage: new(fmt.Sprintf("failed for java buildableUnit: missing buildableUnit for %q", result.SourceFilePath)),
 		}
 		return result, deps
 	}

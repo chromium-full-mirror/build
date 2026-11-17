@@ -122,7 +122,7 @@ func TestFrontendEdgeFinishedTags(t *testing.T) {
 		{
 			name: "finished_with_tags",
 			tags: "module:example,type:android",
-			want: proto.String("module:example,type:android"),
+			want: new("module:example,type:android"),
 		},
 		{
 			name: "finished_empty_tags",
@@ -163,7 +163,7 @@ func TestFrontendEdgeCanceledTags(t *testing.T) {
 		{
 			name: "canceled_with_tags",
 			tags: "module:test,type:cc",
-			want: proto.String("module:test,type:cc"),
+			want: new("module:test,type:cc"),
 		},
 		{
 			name: "canceled_empty_tags",

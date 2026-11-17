@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
-	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
 
 	"go.chromium.org/build/hashigo/digest"
@@ -156,12 +155,12 @@ func testIDEAnalysis(t *testing.T, fn digest.Function) {
 						},
 						Wildcards: []*pb.Invalidation_Wildcard{
 							{
-								Suffix:         proto.String(".gn"),
-								CanCrossFolder: proto.Bool(true),
+								Suffix:         new(".gn"),
+								CanCrossFolder: new(true),
 							},
 							{
-								Suffix:         proto.String(".gni"),
-								CanCrossFolder: proto.Bool(true),
+								Suffix:         new(".gni"),
+								CanCrossFolder: new(true),
 							},
 						},
 					},
@@ -277,12 +276,12 @@ func testIDEAnalysis(t *testing.T, fn digest.Function) {
 						},
 						Wildcards: []*pb.Invalidation_Wildcard{
 							{
-								Suffix:         proto.String(".gn"),
-								CanCrossFolder: proto.Bool(true),
+								Suffix:         new(".gn"),
+								CanCrossFolder: new(true),
 							},
 							{
-								Suffix:         proto.String(".gni"),
-								CanCrossFolder: proto.Bool(true),
+								Suffix:         new(".gni"),
+								CanCrossFolder: new(true),
 							},
 						},
 					},
@@ -398,12 +397,12 @@ func testIDEAnalysis(t *testing.T, fn digest.Function) {
 						},
 						Wildcards: []*pb.Invalidation_Wildcard{
 							{
-								Suffix:         proto.String(".gn"),
-								CanCrossFolder: proto.Bool(true),
+								Suffix:         new(".gn"),
+								CanCrossFolder: new(true),
 							},
 							{
-								Suffix:         proto.String(".gni"),
-								CanCrossFolder: proto.Bool(true),
+								Suffix:         new(".gni"),
+								CanCrossFolder: new(true),
 							},
 						},
 					},
@@ -511,7 +510,7 @@ func testIDEAnalysis(t *testing.T, fn digest.Function) {
 					SourceFilePath: "../../foo/bar.h",
 					Status: &pb.AnalysisResult_Status{
 						Code:          pb.AnalysisResult_Status_CODE_NOT_FOUND,
-						StatusMessage: proto.String(`unknown target "../../foo/bar.h^"`),
+						StatusMessage: new(`unknown target "../../foo/bar.h^"`),
 					},
 				},
 			},

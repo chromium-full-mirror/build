@@ -116,13 +116,13 @@ func New(ctx context.Context, fsys fs.FS, req Request) (_ *NSJail, err error) {
 	// equivalent to -q, for quiet execution
 	jail.config.LogLevel = pb.LogLevel_WARNING.Enum()
 	// disable all rlimits, default to limits set by parent.
-	jail.config.DisableRl = proto.Bool(true)
+	jail.config.DisableRl = new(true)
 	// nsjail has a 10 minute time limit by default, disable it.
 	jail.config.TimeLimit = proto.Uint32(0)
 
-	jail.config.Cwd = proto.String(filepath.Join(execRootInSandbox, req.WorkDir))
+	jail.config.Cwd = new(filepath.Join(execRootInSandbox, req.WorkDir))
 	// TODO: better environment variable sandboxing
-	jail.config.KeepEnv = proto.Bool(true)
+	jail.config.KeepEnv = new(true)
 
 	// Some build systems (android) set TMPDIR to a folder in their
 	// output directory to avoid memory costs of using /tmp. The absolute
@@ -159,22 +159,22 @@ func New(ctx context.Context, fsys fs.FS, req Request) (_ *NSJail, err error) {
 	}
 	for _, dir := range req.PublicDirs {
 		jail.config.Mount = append(jail.config.Mount, &pb.MountPt{
-			Src:    proto.String(dir),
-			Dst:    proto.String(dir),
-			IsBind: proto.Bool(true),
-			IsDir:  proto.Bool(true),
+			Src:    new(dir),
+			Dst:    new(dir),
+			IsBind: new(true),
+			IsDir:  new(true),
 		})
 	}
 	for _, dir := range req.WritableDirs {
 		jail.config.Mount = append(jail.config.Mount, &pb.MountPt{
-			Src:    proto.String(dir),
-			Dst:    proto.String(dir),
-			IsBind: proto.Bool(true),
-			IsDir:  proto.Bool(true),
-			Rw:     proto.Bool(true),
+			Src:    new(dir),
+			Dst:    new(dir),
+			IsBind: new(true),
+			IsDir:  new(true),
+			Rw:     new(true),
 		})
 	}
-	jail.config.MountProc = proto.Bool(true)
+	jail.config.MountProc = new(true)
 	// Add a temp directory. Using a directory in the working directory
 	// instead of a tmpfs mount so that we don't have to worry about how
 	// big of a tmpfs to make.
@@ -184,21 +184,21 @@ func New(ctx context.Context, fsys fs.FS, req Request) (_ *NSJail, err error) {
 		return nil, err
 	}
 	jail.config.Mount = append(jail.config.Mount, &pb.MountPt{
-		Src:    proto.String(tmpDir),
-		Dst:    proto.String("/tmp"),
-		IsBind: proto.Bool(true),
-		IsDir:  proto.Bool(true),
-		Rw:     proto.Bool(true),
+		Src:    new(tmpDir),
+		Dst:    new("/tmp"),
+		IsBind: new(true),
+		IsDir:  new(true),
+		Rw:     new(true),
 	})
 
 	// Mount the exec root as a tmpfs, read-only in the jail, so that
 	// nsjail creates the mount points for the out dir and the inputs
 	// on it instead of in a directory on the host.
 	jail.config.Mount = append(jail.config.Mount, &pb.MountPt{
-		Dst:     proto.String(execRootInSandbox),
-		Fstype:  proto.String("tmpfs"),
-		Options: proto.String("mode=0755"),
-		IsDir:   proto.Bool(true),
+		Dst:     new(execRootInSandbox),
+		Fstype:  new("tmpfs"),
+		Options: new("mode=0755"),
+		IsDir:   new(true),
 	})
 
 	// Add the out directory.
@@ -214,11 +214,11 @@ func New(ctx context.Context, fsys fs.FS, req Request) (_ *NSJail, err error) {
 		return nil, err
 	}
 	jail.config.Mount = append(jail.config.Mount, &pb.MountPt{
-		Src:    proto.String(absOutDir),
-		Dst:    proto.String(outDirInSandbox),
-		IsBind: proto.Bool(true),
-		IsDir:  proto.Bool(true),
-		Rw:     proto.Bool(true),
+		Src:    new(absOutDir),
+		Dst:    new(outDirInSandbox),
+		IsBind: new(true),
+		IsDir:  new(true),
+		Rw:     new(true),
 	})
 
 	inputs, err := resolveInputs(fsys, req.Inputs)
@@ -235,17 +235,17 @@ func New(ctx context.Context, fsys fs.FS, req Request) (_ *NSJail, err error) {
 			// android uses dangling symlink, and
 			// bind such dangling symlink will fail.
 			jail.config.Mount = append(jail.config.Mount, &pb.MountPt{
-				Src:       proto.String(input.target),
-				Dst:       proto.String(inputPathInSandbox),
-				IsSymlink: proto.Bool(true),
-				IsDir:     proto.Bool(false),
+				Src:       new(input.target),
+				Dst:       new(inputPathInSandbox),
+				IsSymlink: new(true),
+				IsDir:     new(false),
 			})
 		case fi.IsDir() || fi.Mode().IsRegular():
 			jail.config.Mount = append(jail.config.Mount, &pb.MountPt{
-				Src:    proto.String(absInputPath),
-				Dst:    proto.String(inputPathInSandbox),
-				IsBind: proto.Bool(true),
-				IsDir:  proto.Bool(fi.IsDir()),
+				Src:    new(absInputPath),
+				Dst:    new(inputPathInSandbox),
+				IsBind: new(true),
+				IsDir:  new(fi.IsDir()),
 			})
 		default:
 			return nil, fmt.Errorf("unsupported input file type %q: %v", input.name, fi.Mode())
@@ -410,8 +410,8 @@ func (j *NSJail) Args(ctx context.Context, args ...string) ([]string, error) {
 	}
 
 	config.ExecBin = &pb.Exe{
-		Path: proto.String(arg0),
-		Arg0: proto.String(args[0]),
+		Path: new(arg0),
+		Arg0: new(args[0]),
 		Arg:  args[1:],
 	}
 
