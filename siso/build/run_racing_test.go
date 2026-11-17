@@ -398,22 +398,15 @@ func newRacingTestStep(cmd *execute.Cmd, outputs []string) *Step {
 	}
 }
 
-// TestRunRacing_StaleLocalReadyOutput checks that a racing remote win
-// self-heals a stale local-ready hashfs entry whose file was removed from
-// disk behind siso's back (e.g. by a pre-build cleanup step after
-// .siso_fs_state was loaded). b/522434556
+// TestRunRacing_StaleLocalReadyOutput checks that a stale local-ready
+// hashfs entry whose file was removed from disk behind siso's back (e.g.
+// by a pre-build cleanup step after .siso_fs_state was loaded) self-heals
+// on a remote cache hit.
 //
-// The scenario:
-//  1. hashfs has a local-ready entry for stubs.jar (lready closed),
-//     but the file is missing on disk.
-//  2. The remote cache hit for the step fails to flush (chtimes on the
-//     missing file), so runRacing treats it as a cache miss and races.
-//  3. The only local semaphore slot is held by the test, so the local
-//     racer never starts the command (cmdRunTime stays zero) and the
-//     remote racer wins.
-//  4. runRacing must forget the stale entry so that b.outputs()
-//     re-materializes stubs.jar from CAS instead of failing with
-//     "failed to flush outputs to local".
+// hashfs has a local-ready entry for stubs.jar (lready closed) but the
+// file is missing on disk. On the cache hit, RecordOutputs forgets the
+// stale entry before re-recording it from the cache, so b.outputs()
+// re-materializes stubs.jar from CAS without racing.
 func TestRunRacing_StaleLocalReadyOutput(t *testing.T) {
 	ctx := t.Context()
 	content := []byte("stubs content")
@@ -531,16 +524,13 @@ func TestRunRacing_StaleLocalReadyOutput(t *testing.T) {
 
 	step := newRacingTestStep(cmd, []string{"stubs.jar"})
 
-	// Hold the only local semaphore slot so the local racer can never
-	// start the command and the remote racer deterministically wins.
-	err = b.localSema.Do(ctx, 1, func(ctx context.Context) error {
-		return b.runRacing(ctx, step)
-	})
+	err = b.runRacing(ctx, step)
 	if err != nil {
 		t.Fatalf("runRacing=%v; want nil err", err)
 	}
-	if got, want := step.metrics.RacingWinner, "remote"; got != want {
-		t.Errorf("RacingWinner=%q; want %q", got, want)
+	// The cache hit healed the stale entry directly; no race was needed.
+	if got, want := step.metrics.RacingWinner, ""; got != want {
+		t.Errorf("RacingWinner=%q; want %q (healed at cache hit, no race)", got, want)
 	}
 	got, err := os.ReadFile(stubsPath)
 	if err != nil {

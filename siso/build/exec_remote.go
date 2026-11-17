@@ -182,6 +182,10 @@ func (b *Builder) execRemote(ctx context.Context, step *Step) error {
 	if downloadErr != nil {
 		return downloadErr
 	}
+	// Record the remote outputs in hashfs.
+	if err := step.cmd.RecordOutputs(ctx, step.cmd.HashFS.DataSource(), time.Now()); err != nil {
+		return err
+	}
 	// need to update deps for remote exec for deps=gcc with depsfile,
 	// or deps=msvc with showIncludes
 	if err := b.updateDeps(ctx, step); err != nil {

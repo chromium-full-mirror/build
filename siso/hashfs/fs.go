@@ -2143,7 +2143,7 @@ func (hfs *HashFS) updateMtimeIfNeeded(ctx context.Context, fname string, e *ent
 // already has an entry for (e.g. a remote output left in hashFS/CAS but not
 // materialized locally) is kept, so its cached digest stays in the snapshot that
 // RecordPreOutputs feeds to restat_content (used by the racing remote winner in
-// runRacing, which records outputs even though SkipRecordOutputs is set).
+// runRacing, which records outputs after the race is decided).
 func (hfs *HashFS) RetrieveUpdateEntries(ctx context.Context, root string, fnames []path.Path) []UpdateEntry {
 	ctx, span := trace.NewSpan(ctx, "fs-update-entries")
 	defer span.Close(nil)

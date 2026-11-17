@@ -10,7 +10,6 @@ import (
 	"errors"
 	"fmt"
 	"runtime"
-	"time"
 
 	log "github.com/golang/glog"
 
@@ -188,8 +187,6 @@ func (re *RemoteExec) ProcessResult(ctx context.Context, cmd *execute.Cmd, resul
 		}
 		return errors.New("no result")
 	}
-	now := time.Now()
-
 	// Record auxiliary outputs logs (e.g. crash reports) for debugging.
 	cmd.RecordAuxiliaryOutputDigests(ctx, result)
 
@@ -221,19 +218,7 @@ func (re *RemoteExec) ProcessResult(ctx context.Context, cmd *execute.Cmd, resul
 	if cmdErr != nil {
 		return cmdErr
 	}
-	// update output file only step succeeded.
-	if cmd.SkipRecordOutputs {
-		return nil
-	}
-	// hashfs may hold a stale local-ready entry for an output that was
-	// removed from disk behind Siso's back after .siso_fs_state was loaded.
-	// If the remote result has the same digest, the stale entry would be
-	// kept as-is, and with restat_content also the same mtime, so Flush
-	// would silently skip re-materializing the missing file. Forget the
-	// outputs so that re-recording them gives the entries a CAS-backed
-	// source and Flush verifies them against the local disk.
-	cmd.HashFS.ForgetOutputs(ctx, cmd.WorkspaceRoot, cmd.AllOutputs())
-	return cmd.RecordOutputs(ctx, cmd.HashFS.DataSource(), now)
+	return nil
 }
 
 // share it with localexec?

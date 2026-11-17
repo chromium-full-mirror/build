@@ -483,7 +483,8 @@ func (mockDataSource) Source(ctx context.Context, d digest.Digest, name string) 
 func (mockDataSource) Close(ctx context.Context) error { return nil }
 
 // TestRecordPreOutputs verifies the pre-execution output snapshot for a racing
-// remote racer (SkipRecordOutputs set, sharing hashFS with the local racer):
+// remote racer (sharing hashFS with the local racer; the caller records outputs
+// after the race is decided):
 //
 //   - Outputs that already exist on disk must be snapshotted, so that when the
 //     remote side wins, runRacing's RecordOutputs can compare pre/post content
@@ -533,11 +534,10 @@ func TestRecordPreOutputs(t *testing.T) {
 	}
 
 	cmd := &Cmd{
-		WorkspaceRoot:     dir,
-		Outputs:           []path.Path{path.Path(onDisk), path.Path(hashfsOnly)},
-		Depfile:           path.Path(depfile),
-		HashFS:            hashFS,
-		SkipRecordOutputs: true, // the racing remote racer
+		WorkspaceRoot: dir,
+		Outputs:       []path.Path{path.Path(onDisk), path.Path(hashfsOnly)},
+		Depfile:       path.Path(depfile),
+		HashFS:        hashFS,
 	}
 
 	cmd.RecordPreOutputs(ctx)

@@ -168,12 +168,6 @@ type Cmd struct {
 	// SkipCacheLookup specifies it won't lookup cache in remote execution.
 	SkipCacheLookup bool
 
-	// SkipRecordOutputs skips recording outputs in hashfs after
-	// remote execution.  Used in racing mode where the caller
-	// records outputs after the race is decided to avoid hashfs
-	// races with the local goroutine's RecordOutputsFromLocal.
-	SkipRecordOutputs bool
-
 	// HashFS is a hash fs that the cmd runs on.
 	HashFS *hashfs.HashFS
 
@@ -1140,19 +1134,9 @@ func (c *Cmd) entriesFromResult(ctx context.Context, ds hashfs.DataSource, updat
 			},
 			Mode: mode,
 			// ModTime must be the record time, never an mtime served by
-			// the backend (e.g. REAPI NodeProperties.mtime): the cache-hit
-			// path's self-healing for outputs removed from disk behind
-			// siso's back relies on it moving forward. A same-digest
-			// cache hit keeps the stale local-ready hashfs entry, and only
-			// the mtime change makes Flush attempt a chtimes that trips
-			// over the missing file, demoting the hit to a cache miss
-			// whose remote re-execution forgets and re-records the
-			// outputs. With an unchanged mtime, Flush would silently
-			// succeed without re-materializing the file. If served mtimes
-			// are ever honored here, the cache-hit path needs the same
-			// ForgetOutputs-before-RecordOutputs as ProcessResult (then
-			// cheap: with matching mtimes the flush is a single lstat via
-			// matchesFileInfo). (see b/522434556)
+			// the backend (e.g. REAPI NodeProperties.mtime): up-to-date
+			// checks compare it with input mtimes, so a backend mtime in
+			// the past would make a fresh output look stale.
 			ModTime:     updatedTime,
 			Action:      c.actionDigest,
 			UpdatedTime: updatedTime,
@@ -1309,7 +1293,10 @@ func (c *Cmd) RecordOutputs(ctx context.Context, ds hashfs.DataSource, now time.
 	// ForgetOutputs (not Forget) because a directory output is owned by this
 	// step: Forget is child-preserving and never evicts a directory node, so it
 	// would leave the old members in place.
-	c.HashFS.ForgetOutputs(ctx, c.WorkspaceRoot, c.OutputDirs)
+	// File outputs are forgotten too: Update would keep a same-digest
+	// local-ready entry even when its file was removed from disk, while a
+	// fresh CAS-backed entry makes Flush restore a missing file from CAS.
+	c.HashFS.ForgetOutputs(ctx, c.WorkspaceRoot, c.AllOutputs())
 	entries, additionalEntries := c.entriesFromResult(ctx, ds, now)
 	clog.Infof(ctx, "output entries %d+%d", len(entries), len(additionalEntries))
 	entries = c.computeOutputEntries(entries, now, c.CmdHash)
