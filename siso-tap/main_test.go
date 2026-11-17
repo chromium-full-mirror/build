@@ -474,3 +474,30 @@ if libc.renameat2(AT_FDCWD, b"x", AT_FDCWD, b"y", RENAME_EXCHANGE) != 0:
 		}
 	}
 }
+
+func TestSisoTap_NonUTF8Path(t *testing.T) {
+	bin := buildSisoTap(t)
+	tmpDir := t.TempDir()
+	tapOut := filepath.Join(tmpDir, "tap.json")
+
+	cmd := exec.Command(bin, "--tap_output="+tapOut, "--", "python3", "-c", `open(b"\xff", "w").close()`)
+	cmd.Dir = tmpDir
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("command failed: %v\noutput: %s", err, string(out))
+	}
+
+	data, err := os.ReadFile(tapOut)
+	if err != nil {
+		t.Fatalf("failed to read tap output: %v", err)
+	}
+	var tapData struct {
+		Error string `json:"error"`
+	}
+	if err := json.Unmarshal(data, &tapData); err != nil {
+		t.Fatalf("failed to parse tap output: %v", err)
+	}
+	if !strings.Contains(tapData.Error, "non-UTF-8") {
+		t.Errorf("error = %q; want a non-UTF-8 path error", tapData.Error)
+	}
+}

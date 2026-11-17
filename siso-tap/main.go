@@ -24,6 +24,7 @@ import (
 	"path/filepath"
 	"sort"
 	"syscall"
+	"unicode/utf8"
 
 	"github.com/golang/glog"
 	seccomp "github.com/seccomp/libseccomp-golang"
@@ -404,33 +405,34 @@ func (s *supervisor) absname(pid uint32, atfd fileDesc, fname string) (string, e
 	return filepath.Join(dir, fname), nil
 }
 
-func (s *supervisor) tapData() map[string][]string {
+// tapResult is the JSON form of siso/execute/proto/tap.proto's TapResult.
+type tapResult struct {
+	Reads   []string `json:"reads,omitempty"`
+	Writes  []string `json:"writes,omitempty"`
+	Deletes []string `json:"deletes,omitempty"`
+	Error   string   `json:"error,omitempty"`
+}
+
+func (s *supervisor) tapData() tapResult {
 	s.addRenamedDirContents()
-	m := make(map[string][]string)
-	var reads, writes, deletes []string
+	var r tapResult
 	for k, v := range s.fops {
+		if !utf8.ValidString(k) && r.Error == "" {
+			r.Error = fmt.Sprintf("non-UTF-8 path %q", k)
+		}
 		switch v {
 		case readOp:
-			reads = append(reads, k)
+			r.Reads = append(r.Reads, k)
 		case writeOp:
-			writes = append(writes, k)
+			r.Writes = append(r.Writes, k)
 		case deleteOp:
-			deletes = append(deletes, k)
+			r.Deletes = append(r.Deletes, k)
 		}
 	}
-	sort.Strings(reads)
-	if len(reads) > 0 {
-		m["reads"] = reads
-	}
-	sort.Strings(writes)
-	if len(writes) > 0 {
-		m["writes"] = writes
-	}
-	sort.Strings(deletes)
-	if len(deletes) > 0 {
-		m["deletes"] = deletes
-	}
-	return m
+	sort.Strings(r.Reads)
+	sort.Strings(r.Writes)
+	sort.Strings(r.Deletes)
+	return r
 }
 
 func (s *supervisor) Run(fd seccomp.ScmpFd, done <-chan struct{}) (retErr error) {
