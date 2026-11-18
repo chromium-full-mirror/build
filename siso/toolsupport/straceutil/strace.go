@@ -8,7 +8,9 @@ package straceutil
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -70,7 +72,7 @@ func New(ctx context.Context, id string, args []string, dir string) *Strace {
 // Close closes the strace cmd.
 func (s *Strace) Close(ctx context.Context) {
 	err := os.Remove(s.fname)
-	if err != nil {
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		clog.Warningf(ctx, "failed to remove %s: %v", s.fname, err)
 	}
 }
