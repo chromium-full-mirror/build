@@ -372,6 +372,66 @@ func TestScanDepsParams(t *testing.T) {
 				Defines: map[string]string{},
 			},
 		},
+		{
+			name: "multiple-env-vars-inline",
+			args: []string{
+				"/bin/sh",
+				"-c",
+				`PWD=/proc/self/cwd LD_LIBRARY_PATH=/foo/bar FOO="bar baz" prebuilts/clang/host/linux-x86/clang-r563880/bin/clang -c -Isystem/core/include -o foo.o foo.c`,
+			},
+			want: scandepsparams.ScanDepsParams{
+				Sources: []string{
+					"foo.c",
+				},
+				Dirs: []string{
+					"system/core/include",
+				},
+				Sysroots: []string{
+					"prebuilts/clang/host/linux-x86/clang-r563880",
+				},
+				Defines: map[string]string{},
+			},
+		},
+		{
+			name: "export-env-vars-and-pwd",
+			args: []string{
+				"/bin/sh",
+				"-c",
+				`PWD=/proc/self/cwd && export LD_LIBRARY_PATH=/foo/bar BAZ="a && b" && PWD=/proc/self/cwd prebuilts/clang/host/linux-x86/clang-r563880/bin/clang++ -c -Isystem/core/include -o foo.o foo.cc`,
+			},
+			want: scandepsparams.ScanDepsParams{
+				Sources: []string{
+					"foo.cc",
+				},
+				Dirs: []string{
+					"system/core/include",
+				},
+				Sysroots: []string{
+					"prebuilts/clang/host/linux-x86/clang-r563880",
+				},
+				Defines: map[string]string{},
+			},
+		},
+		{
+			name: "export-env-vars-semicolon",
+			args: []string{
+				"/bin/bash",
+				"-c",
+				`export FOO='a;b' BAR=1; prebuilts/clang/host/linux-x86/clang-r563880/bin/clang -c -Isystem/core/include -o foo.o foo.c`,
+			},
+			want: scandepsparams.ScanDepsParams{
+				Sources: []string{
+					"foo.c",
+				},
+				Dirs: []string{
+					"system/core/include",
+				},
+				Sysroots: []string{
+					"prebuilts/clang/host/linux-x86/clang-r563880",
+				},
+				Defines: map[string]string{},
+			},
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			got, err := ExtractScanDepsParams(ctx, tc.args, tc.env, os.DirFS("."))

@@ -6,7 +6,6 @@ package gccutil
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io/fs"
 	"path/filepath"
@@ -19,17 +18,13 @@ import (
 
 // stepArgs in ninjabuild uses "/bin/sh -c $command" when
 // $command is not simple command line.
-// soong puts ${g.cc.relPwd} ("PWD=/proc/self/cwd")
-// at the front of command line, so parse command line
-// after dropping "PWD=/proc/self/cwd " if it exists.
+// Strip leading environment variable settings (both `FOO=bar` and
+// `export FOO=bar &&` formats) before splitting the command line.
 // TODO: b/432599730 - remove the workaround
 func normalizeArgs(args []string) ([]string, error) {
 	if len(args) == 3 && (filepath.Base(args[0]) == "sh" || filepath.Base(args[0]) == "bash") && args[1] == "-c" {
-		if !strings.HasPrefix(args[2], "PWD=/proc/self/cwd ") {
-			return nil, errors.New("unsupported commandline. no PWD=/proc/self/cwd prefix")
-		}
 		// TODO: b/432374760 - need to strip ${postCmd} part?
-		cmdArgs, err := shutil.Split(strings.TrimPrefix(args[2], "PWD=/proc/self/cwd "))
+		cmdArgs, err := shutil.Split(shutil.StripEnvPrefix(args[2]))
 		if err != nil {
 			return nil, fmt.Errorf("failed to split %q: %v", args[2], err)
 		}
