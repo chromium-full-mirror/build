@@ -34,12 +34,14 @@ func RBEBuildMetrics(buildID string, version string, dur time.Duration, stats bu
 	if totalLocal > 0 {
 		localCacheHitRatio = float64(stats.TwoPhaseCacheHit) / float64(totalLocal)
 	}
-	// Calculate the overall cache hit ratio.
-	if stats.Done-stats.Skipped > 0 {
-		overallCacheHitRatio = float64(stats.CacheHit) / float64(stats.Done-stats.Skipped)
+	// Calculate the overall cache hit ratio, excluding handler-only (NoExec)
+	// actions from the denominator.
+	totalActions := stats.Done - stats.Skipped
+	if cacheableActions := totalActions - stats.NoExec; cacheableActions > 0 {
+		overallCacheHitRatio = float64(stats.CacheHit) / float64(cacheableActions)
 	}
 	return &pb.RbeBuildMetrics{
-		NumRecords: int64(stats.Done - stats.Skipped),
+		NumRecords: int64(totalActions),
 		Stats: []*pb.Stat{
 			completionStatus(stats),
 		},
@@ -116,6 +118,12 @@ func completionStatus(stats build.Stats) *pb.Stat {
 		s.CountsByValue = append(s.CountsByValue, &pb.Stat_Value{
 			Name:  "STATUS_LOCAL_EXECUTION",
 			Count: int64(stats.Local),
+		})
+	}
+	if stats.NoExec > 0 {
+		s.CountsByValue = append(s.CountsByValue, &pb.Stat_Value{
+			Name:  "STATUS_NO_EXEC",
+			Count: int64(stats.NoExec),
 		})
 	}
 	if stats.Fail > 0 {

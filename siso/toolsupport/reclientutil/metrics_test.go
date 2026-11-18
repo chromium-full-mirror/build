@@ -16,7 +16,8 @@ import (
 
 func TestCompletionStatus(t *testing.T) {
 	stats := build.Stats{
-		Done:             100,
+		Done:             105,
+		NoExec:           5,
 		CacheHit:         50,
 		CacheHitEarly:    30,
 		CacheHitLate:     20,
@@ -31,7 +32,7 @@ func TestCompletionStatus(t *testing.T) {
 
 	stat := completionStatus(stats)
 	if stat.Name != "CompletionStatus" {
-		t.Errorf("stat.Name = %q; want CompletionStatus", stat.Name)
+		t.Errorf("stat.Name = %q, want CompletionStatus", stat.Name)
 	}
 
 	counts := make(map[string]int64)
@@ -49,6 +50,7 @@ func TestCompletionStatus(t *testing.T) {
 		"STATUS_REMOTE_EXECUTION":    10,
 		"STATUS_LOCAL_FALLBACK":      2,
 		"STATUS_LOCAL_EXECUTION":     38,
+		"STATUS_NO_EXEC":             5,
 		"STATUS_NON_ZERO_EXIT":       1,
 	}
 
@@ -58,51 +60,92 @@ func TestCompletionStatus(t *testing.T) {
 }
 
 func TestRBEBuildMetrics(t *testing.T) {
-	stats := build.Stats{
-		Total:            100,
-		Done:             100,
-		Skipped:          10,
-		CacheHit:         45,
-		CacheHitEarly:    30,
-		CacheHitLate:     15,
-		RacingRemote:     20,
-		RacingLocal:      15,
-		LocalFallback:    2,
-		TwoPhaseCacheHit: 10,
-		Remote:           5,
-		Local:            40,
-	}
-
-	metrics := RBEBuildMetrics("build-123", "v1.0", 12*time.Second, stats)
-	if metrics.NumRecords != 90 {
-		t.Errorf("NumRecords = %d; want 90", metrics.NumRecords)
-	}
-	if !cmp.Equal(metrics.RemoteCacheHitRatio, 0.8653846, cmpopts.EquateApprox(0, 0.000001)) {
-		t.Errorf("RemoteCacheHitRatio = %f; want %f", metrics.RemoteCacheHitRatio, 0.8653846)
-	}
-	if !cmp.Equal(metrics.TwoPhaseCacheHitRatio, 0.2, cmpopts.EquateApprox(0, 0.000001)) {
-		t.Errorf("TwoPhaseCacheHitRatio = %f; want %f", metrics.TwoPhaseCacheHitRatio, 0.2)
-	}
-	if !cmp.Equal(metrics.BuildCacheHitRatio, 0.50, cmpopts.EquateApprox(0, 0.000001)) {
-		t.Errorf("BuildCacheHitRatio = %f; want %f", metrics.BuildCacheHitRatio, 0.50)
-	}
-	if len(metrics.Stats) != 1 {
-		t.Fatalf("len(metrics.Stats) = %d; want 1", len(metrics.Stats))
-	}
-	stat := metrics.Stats[0]
-	if stat.Name != "CompletionStatus" {
-		t.Errorf("stat.Name = %q; want CompletionStatus", stat.Name)
-	}
-
-	// Verify empty stats behavior (avoid division by 0)
-	emptyMetrics := RBEBuildMetrics("build-124", "v1.0", 5*time.Second, build.Stats{})
-	if emptyMetrics.BuildCacheHitRatio != 0 {
-		t.Errorf("BuildCacheHitRatio = %f; want 0", emptyMetrics.BuildCacheHitRatio)
-	}
-	if emptyMetrics.TwoPhaseCacheHitRatio != 0 {
-		t.Errorf("TwoPhaseCacheHitRatio = %f; want 0", emptyMetrics.TwoPhaseCacheHitRatio)
-	}
-	if emptyMetrics.RemoteCacheHitRatio != 0 {
-		t.Errorf("RemoteCacheHitRatio = %f; want 0", emptyMetrics.RemoteCacheHitRatio)
+	for _, tc := range []struct {
+		name          string
+		stats         build.Stats
+		wantRecords   int64
+		wantRemoteCHR float64
+		wantLocalCHR  float64
+		wantBuildCHR  float64
+	}{
+		{
+			name: "mixed_actions",
+			stats: build.Stats{
+				Total:            100,
+				Done:             100,
+				Skipped:          10,
+				CacheHit:         45,
+				CacheHitEarly:    30,
+				CacheHitLate:     15,
+				RacingRemote:     20,
+				RacingLocal:      15,
+				LocalFallback:    2,
+				TwoPhaseCacheHit: 10,
+				Remote:           5,
+				Local:            40,
+			},
+			wantRecords:   90,
+			wantRemoteCHR: 0.8653846,
+			wantLocalCHR:  0.2,
+			wantBuildCHR:  0.50,
+		},
+		{
+			name: "excludes_no_exec_from_chr",
+			stats: build.Stats{
+				Total:            100,
+				Done:             100,
+				Skipped:          10,
+				NoExec:           10,
+				CacheHit:         80,
+				CacheHitEarly:    60,
+				TwoPhaseCacheHit: 20,
+			},
+			wantRecords:   90,
+			wantRemoteCHR: 1.0,
+			wantLocalCHR:  1.0,
+			wantBuildCHR:  1.0,
+		},
+		{
+			name: "no_exec_only",
+			stats: build.Stats{
+				Total:  5,
+				Done:   5,
+				NoExec: 5,
+			},
+			wantRecords:   5,
+			wantRemoteCHR: 0,
+			wantLocalCHR:  0,
+			wantBuildCHR:  0,
+		},
+		{
+			name:          "empty_stats",
+			stats:         build.Stats{},
+			wantRecords:   0,
+			wantRemoteCHR: 0,
+			wantLocalCHR:  0,
+			wantBuildCHR:  0,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			metrics := RBEBuildMetrics("build-123", "v1.0", 12*time.Second, tc.stats)
+			if metrics.NumRecords != tc.wantRecords {
+				t.Errorf("NumRecords = %d, want %d", metrics.NumRecords, tc.wantRecords)
+			}
+			if !cmp.Equal(metrics.RemoteCacheHitRatio, tc.wantRemoteCHR, cmpopts.EquateApprox(0, 0.000001)) {
+				t.Errorf("RemoteCacheHitRatio = %f, want %f", metrics.RemoteCacheHitRatio, tc.wantRemoteCHR)
+			}
+			if !cmp.Equal(metrics.TwoPhaseCacheHitRatio, tc.wantLocalCHR, cmpopts.EquateApprox(0, 0.000001)) {
+				t.Errorf("TwoPhaseCacheHitRatio = %f, want %f", metrics.TwoPhaseCacheHitRatio, tc.wantLocalCHR)
+			}
+			if !cmp.Equal(metrics.BuildCacheHitRatio, tc.wantBuildCHR, cmpopts.EquateApprox(0, 0.000001)) {
+				t.Errorf("BuildCacheHitRatio = %f, want %f", metrics.BuildCacheHitRatio, tc.wantBuildCHR)
+			}
+			if len(metrics.Stats) != 1 {
+				t.Fatalf("len(metrics.Stats) = %d, want 1", len(metrics.Stats))
+			}
+			if metrics.Stats[0].Name != "CompletionStatus" {
+				t.Errorf("stat.Name = %q, want CompletionStatus", metrics.Stats[0].Name)
+			}
+		})
 	}
 }
