@@ -351,8 +351,8 @@ func Load(ctx context.Context, opts Option) (*pb.State, error) {
 	durUncompress := time.Since(start)
 
 	start = time.Now()
-	state := &pb.State{}
-	err = proto.Unmarshal(b, state)
+	// A large state is slow to decode on one goroutine, so decode the entries in parallel.
+	state, err := unmarshalState(b)
 	if err != nil {
 		return nil, err
 	}
