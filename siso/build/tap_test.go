@@ -404,6 +404,8 @@ func TestTapCanonicalizeCmd_Symlink(t *testing.T) {
 		t.Fatal(err)
 	}
 	outsideSymlinkInput := setupSymlink("symlink_outside.h", outsideFile)
+	setupFile("src/real.h")
+	outputSymlink := setupSymlink("out/siso/gen/link.h", "../../../src/real.h")
 
 	b := &Builder{
 		hashFS: hfs,
@@ -412,11 +414,12 @@ func TestTapCanonicalizeCmd_Symlink(t *testing.T) {
 
 	cmd := &execute.Cmd{
 		WorkspaceRoot: wsDir,
+		Outputs:       []path.Path{path.New("out/siso/gen/link.h")},
 	}
 
 	err = setTapResult(cmd,
-		[]string{symlinkInput, subSymlinkInput, outsideSymlinkInput},
-		nil,
+		[]string{symlinkInput, subSymlinkInput, outsideSymlinkInput, outputSymlink},
+		[]string{outputSymlink},
 		nil,
 	)
 	if err != nil {
@@ -434,9 +437,17 @@ func TestTapCanonicalizeCmd_Symlink(t *testing.T) {
 		path.New("symlink_sub.h"),
 		path.New("dir/target2.h"),
 		path.New("symlink_outside.h"),
+		path.New("src/real.h"),
 	}
 	if !slices.Equal(cmd.Inputs, wantInputs) {
 		t.Errorf("cmd.Inputs = %v; want %v", cmd.Inputs, wantInputs)
+	}
+
+	wantOutputs := []path.Path{
+		path.New("out/siso/gen/link.h"),
+	}
+	if !slices.Equal(cmd.Outputs, wantOutputs) {
+		t.Errorf("cmd.Outputs = %v; want %v", cmd.Outputs, wantOutputs)
 	}
 }
 
@@ -751,5 +762,260 @@ func TestTapCanonicalizeCmd_UnlinkBeforeWriteAndDiscoveredOutputs(t *testing.T) 
 		if err != nil || string(got) != tc.want {
 			t.Errorf("hfs.ReadFile(ctx, %q, %q) = %q, %v; want %q, nil", wsDir, tc.rel, got, err, tc.want)
 		}
+	}
+}
+
+func TestTapCanonicalizeCmd_ReadsWithWritesAndDeletes(t *testing.T) {
+	ctx := t.Context()
+	dir, _ := setupDirForTapTest(t)
+	wsDir := filepath.Join(dir, "workspace")
+
+	hfs, err := hashfs.New(ctx, hashfs.Option{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer hfs.Close(ctx)
+	if err := hfs.WaitReady(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	writeFile := func(rel, content string) string {
+		t.Helper()
+		abs := filepath.Join(wsDir, rel)
+		if err := os.MkdirAll(filepath.Dir(abs), 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(abs, []byte(content), 0644); err != nil {
+			t.Fatal(err)
+		}
+		return abs
+	}
+
+	b := &Builder{
+		hashFS: hfs,
+		path:   NewPath(wsDir, "out/siso"),
+	}
+
+	inputRel := path.New("input.txt")
+	inputAbs := writeFile(string(inputRel), "input")
+
+	discoveredInputRel := path.New("discovered_input.txt")
+	discoveredInputAbs := writeFile(string(discoveredInputRel), "discovered input")
+
+	// Pre-populate files from a prior build in HashFS.
+	declaredRWRel := path.New("out/siso/declared_rw.o")
+	declaredRWAbs := writeFile(string(declaredRWRel), "old declared rw")
+
+	declaredRestatRel := path.New("out/siso/declared_restat.o")
+	declaredRestatAbs := writeFile(string(declaredRestatRel), "unchanged declared restat")
+
+	discoveredReadWriteRel := path.New("out/siso/discovered_read_write.o")
+	discoveredReadWriteAbs := writeFile(string(discoveredReadWriteRel), "old read-before-write")
+
+	discoveredRWDRel := path.New("out/siso/discovered_rwd.o")
+	discoveredRWDAbs := writeFile(string(discoveredRWDRel), "old rwd")
+
+	tempRWDRel := path.New("out/siso/temp_rwd.o")
+	tempRWDAbs := writeFile(string(tempRWDRel), "old temp")
+
+	deletedReadRel := path.New("out/siso/deleted_read.o")
+	deletedReadAbs := writeFile(string(deletedReadRel), "to be read and deleted")
+
+	preExecPaths := []path.Path{
+		declaredRWRel,
+		declaredRestatRel,
+		discoveredReadWriteRel,
+		discoveredRWDRel,
+		tempRWDRel,
+		deletedReadRel,
+	}
+	if _, err := hfs.Entries(ctx, wsDir, preExecPaths); err != nil {
+		t.Fatalf("hfs.Entries(ctx, %q, %v) = _, %v; want _, nil", wsDir, preExecPaths, err)
+	}
+
+	// Simulate command execution on local disk:
+	// 1. declared_rw.o is read and updated.
+	writeFile(string(declaredRWRel), "new declared rw")
+	// 2. declared_restat.o is read only and left untouched on disk (restat).
+	// 3. discovered_write_read.o is newly created and read back (write-before-read).
+	discoveredWriteReadRel := path.New("out/siso/discovered_write_read.o")
+	discoveredWriteReadAbs := writeFile(string(discoveredWriteReadRel), "new write-before-read")
+	// 4. discovered_read_write.o is read then overwritten (read-before-write).
+	writeFile(string(discoveredReadWriteRel), "new read-before-write")
+	// 5. discovered_rwd.o is read, unlinked, and recreated (in Reads, Writes, Deletes).
+	writeFile(string(discoveredRWDRel), "new rwd")
+	// 6. temp_rwd.o is written, read, and unlinked before exit (in Reads, Writes, Deletes).
+	if err := os.Remove(tempRWDAbs); err != nil {
+		t.Fatal(err)
+	}
+	// 7. deleted_read.o is read and unlinked without write (in Reads and Deletes).
+	if err := os.Remove(deletedReadAbs); err != nil {
+		t.Fatal(err)
+	}
+
+	cmd := &execute.Cmd{
+		WorkspaceRoot: wsDir,
+		WorkDir:       "out/siso",
+		Inputs:        []path.Path{inputRel},
+		Outputs:       []path.Path{declaredRWRel, declaredRestatRel},
+		HashFS:        hfs,
+	}
+	cmd.InitOutputs()
+
+	if err := cmd.RecordOutputsFromLocal(ctx, b.start); err != nil {
+		t.Fatalf("cmd.RecordOutputsFromLocal(ctx, %v) = %v; want nil", b.start, err)
+	}
+
+	err = setTapResult(cmd,
+		[]string{
+			inputAbs,
+			discoveredInputAbs,
+			declaredRWAbs,
+			declaredRestatAbs,
+			discoveredWriteReadAbs,
+			discoveredReadWriteAbs,
+			discoveredRWDAbs,
+			tempRWDAbs,
+			deletedReadAbs,
+		},
+		[]string{
+			declaredRWAbs,
+			discoveredWriteReadAbs,
+			discoveredReadWriteAbs,
+			discoveredRWDAbs,
+			tempRWDAbs,
+		},
+		[]string{
+			discoveredRWDAbs,
+			tempRWDAbs,
+			deletedReadAbs,
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := b.tapCanonicalizeCmd(ctx, cmd); err != nil {
+		t.Fatalf("b.tapCanonicalizeCmd(ctx, cmd) = %v; want nil", err)
+	}
+
+	if !cmd.Pure {
+		t.Errorf("cmd.Pure = false; want true")
+	}
+
+	// Only pure reads (declared input and discovered input) should be in cmd.Inputs;
+	// outputs (declared or discovered) and deleted files must not be treated as inputs.
+	wantInputs := []path.Path{inputRel, discoveredInputRel}
+	if !slices.Equal(cmd.Inputs, wantInputs) {
+		t.Errorf("cmd.Inputs = %v; want %v", cmd.Inputs, wantInputs)
+	}
+
+	wantOutputs := []path.Path{
+		declaredRWRel,
+		declaredRestatRel,
+		discoveredWriteReadRel,
+		discoveredReadWriteRel,
+		discoveredRWDRel,
+	}
+	if !slices.Equal(cmd.Outputs, wantOutputs) {
+		t.Errorf("cmd.Outputs = %v; want %v", cmd.Outputs, wantOutputs)
+	}
+
+	for _, delRel := range []path.Path{tempRWDRel, deletedReadRel} {
+		if fi, err := hfs.Stat(ctx, wsDir, delRel); !errors.Is(err, fs.ErrNotExist) {
+			t.Errorf("hfs.Stat(ctx, %q, %q) = %v, %v; want nil, %v", wsDir, delRel, fi, err, fs.ErrNotExist)
+		}
+	}
+
+	for _, tc := range []struct {
+		rel  path.Path
+		want string
+	}{
+		{declaredRWRel, "new declared rw"},
+		{declaredRestatRel, "unchanged declared restat"},
+		{discoveredWriteReadRel, "new write-before-read"},
+		{discoveredReadWriteRel, "new read-before-write"},
+		{discoveredRWDRel, "new rwd"},
+	} {
+		got, err := hfs.ReadFile(ctx, wsDir, tc.rel)
+		if err != nil || string(got) != tc.want {
+			t.Errorf("hfs.ReadFile(ctx, %q, %q) = %q, %v; want %q, nil", wsDir, tc.rel, got, err, tc.want)
+		}
+	}
+}
+
+func TestTapCanonicalizeCmd_RestatReadsOnly(t *testing.T) {
+	ctx := t.Context()
+	dir, _ := setupDirForTapTest(t)
+	wsDir := filepath.Join(dir, "workspace")
+
+	hfs, err := hashfs.New(ctx, hashfs.Option{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer hfs.Close(ctx)
+	if err := hfs.WaitReady(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	writeFile := func(rel, content string) string {
+		t.Helper()
+		abs := filepath.Join(wsDir, rel)
+		if err := os.MkdirAll(filepath.Dir(abs), 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(abs, []byte(content), 0644); err != nil {
+			t.Fatal(err)
+		}
+		return abs
+	}
+
+	b := &Builder{
+		hashFS: hfs,
+		path:   NewPath(wsDir, "out/siso"),
+	}
+
+	inputRel := path.New("input.txt")
+	inputAbs := writeFile(string(inputRel), "input")
+
+	declaredOutRel := path.New("out/siso/output.o")
+	declaredOutAbs := writeFile(string(declaredOutRel), "existing output")
+
+	cmd := &execute.Cmd{
+		WorkspaceRoot: wsDir,
+		WorkDir:       "out/siso",
+		Inputs:        []path.Path{inputRel},
+		Outputs:       []path.Path{declaredOutRel},
+		HashFS:        hfs,
+	}
+	cmd.InitOutputs()
+
+	// In an incremental restat build, the action reads inputs and reads the
+	// existing declared output to compare contents, then exits without writing.
+	err = setTapResult(cmd,
+		[]string{inputAbs, declaredOutAbs},
+		nil,
+		nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := b.tapCanonicalizeCmd(ctx, cmd); err != nil {
+		t.Fatalf("b.tapCanonicalizeCmd(ctx, cmd) = %v; want nil", err)
+	}
+
+	if !cmd.Pure {
+		t.Errorf("cmd.Pure = false; want true")
+	}
+
+	wantInputs := []path.Path{inputRel}
+	if !slices.Equal(cmd.Inputs, wantInputs) {
+		t.Errorf("cmd.Inputs = %v; want %v", cmd.Inputs, wantInputs)
+	}
+
+	wantOutputs := []path.Path{declaredOutRel}
+	if !slices.Equal(cmd.Outputs, wantOutputs) {
+		t.Errorf("cmd.Outputs = %v; want %v", cmd.Outputs, wantOutputs)
 	}
 }

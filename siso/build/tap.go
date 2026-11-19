@@ -39,13 +39,7 @@ func (b *Builder) tapCanonicalizeCmd(ctx context.Context, cmd *execute.Cmd) erro
 	var nInputsDiscarded, nOutputsDiscarded int
 	var nOutputsInDir int
 	// ignore out of workspace root
-	// TODO: use with input root absolute path?
-	// TODO: just use detected inputs?
 	seen := make(map[path.Path]bool)
-	for _, input := range cmd.AllInputs() {
-		seen[input] = true
-		nInputs++
-	}
 	// os.TempDir() is $TMPDIR or /tmp.
 	ignores := map[path.Path]struct{}{path.New(os.TempDir()): {}}
 	ignored := 0
@@ -94,44 +88,6 @@ func (b *Builder) tapCanonicalizeCmd(ctx context.Context, cmd *execute.Cmd) erro
 	var tapDetected int
 
 	fsys := b.hashFS.FileSystem(ctx, b.path.WorkspaceRoot)
-
-	for _, input := range tapData.Reads {
-		if shouldIgnore("reads", path.New(input)) {
-			ignored++
-			continue
-		}
-		rel, err := filepath.Rel(b.path.WorkspaceRoot, input)
-		if err != nil {
-			clog.Warningf(ctx, "reads relpath %q: %v", input, err)
-			nInputsDiscarded++
-			continue
-		}
-		if !filepath.IsLocal(rel) {
-			nInputsDiscarded++
-			continue
-		}
-		relPath := path.New(rel)
-		fi, err := fsys.Stat(string(relPath))
-		if errors.Is(err, fs.ErrNotExist) {
-			nInputsDiscarded++
-			continue
-		}
-		tapDetected++
-		if seen[relPath] {
-			continue
-		}
-		seen[relPath] = true
-		cmd.Inputs = append(cmd.Inputs, relPath)
-		for _, p := range fsys.VisitedPaths(fi) {
-			pPath := path.New(p)
-			if seen[pPath] {
-				continue
-			}
-			seen[pPath] = true
-			cmd.Inputs = append(cmd.Inputs, pPath)
-		}
-	}
-	clear(seen)
 
 	// remember declared outputs.
 	for _, output := range cmd.AllOutputs() {
@@ -263,6 +219,50 @@ func (b *Builder) tapCanonicalizeCmd(ctx context.Context, cmd *execute.Cmd) erro
 
 	})
 	cmd.OutputDirs = append(cmd.OutputDirs, emptyDirs...)
+
+	// need to preserve declared inputs.
+	for _, input := range cmd.AllInputs() {
+		seen[input] = true
+		nInputs++
+	}
+	for _, input := range tapData.Reads {
+		if shouldIgnore("reads", path.New(input)) {
+			ignored++
+			continue
+		}
+		rel, err := filepath.Rel(b.path.WorkspaceRoot, input)
+		if err != nil {
+			clog.Warningf(ctx, "reads relpath %q: %v", input, err)
+			nInputsDiscarded++
+			continue
+		}
+		if !filepath.IsLocal(rel) {
+			nInputsDiscarded++
+			continue
+		}
+		relPath := path.New(rel)
+		fi, err := fsys.Stat(string(relPath))
+		if errors.Is(err, fs.ErrNotExist) {
+			nInputsDiscarded++
+			continue
+		}
+		tapDetected++
+		visited := fsys.VisitedPaths(fi)
+		if !seen[relPath] {
+			cmd.Inputs = append(cmd.Inputs, relPath)
+			seen[relPath] = true
+		}
+		for _, p := range visited {
+			pPath := path.New(p)
+			if seen[pPath] {
+				continue
+			}
+			seen[pPath] = true
+			cmd.Inputs = append(cmd.Inputs, pPath)
+		}
+	}
+	clear(seen)
+
 	cmd.InitOutputs()
 	clog.Infof(ctx, "tap canonicalized detected=%d inputs=%d (discarded:%d) ->%d outputs=%d (indir:%d discarded:%d discovered:%d emptyDir:%d) ->%d ignored=%d", tapDetected, nInputs, nInputsDiscarded, len(cmd.Inputs), nOutputs, nOutputsInDir, nOutputsDiscarded, nOutputsDiscovered, len(emptyDirs), len(cmd.Outputs), ignored)
 	if tapDetected == 0 {
