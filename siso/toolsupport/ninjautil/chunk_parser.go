@@ -23,7 +23,6 @@ import (
 
 var evalStringsPool = sync.Pool{
 	New: func() any {
-		// Chromium peaks at using ~5500, so this means we should never need to grow a slice.
 		slice := make([]evalString, 0, 6000)
 		return &slice
 	},
@@ -51,6 +50,8 @@ type chunk struct {
 	state *State
 	scope *fileScope
 	wd    string // working directory for resolving relative paths
+
+	pathsBuf []evalString
 
 	// includeAncestors tracks the chain of files leading to this
 	// chunk via include directives, used to detect include cycles.
@@ -473,6 +474,15 @@ func (ch *chunk) buildGraphInChunk(ctx context.Context, fileState *fileState) er
 		clog.Infof(ctx, "buildGraphInChunk statements=%d", len(ch.statements))
 	}
 	ch.scratchBuf.Grow(4096)
+	if ch.nbuild > 0 {
+		pathsPtr := getEvalStrings()
+		ch.pathsBuf = *pathsPtr
+		defer func() {
+			*pathsPtr = ch.pathsBuf[:0]
+			ch.pathsBuf = nil
+			putEvalStrings(pathsPtr)
+		}()
+	}
 	var err error
 	for i := 0; i < len(ch.statements); {
 		st := ch.statements[i]
@@ -550,15 +560,15 @@ func (ch *chunk) parseBuild(i int) (int, error) {
 	edge := ch.edgeArena.new()
 	edge.scope = ch.scope
 
-	outs := getEvalStrings()
-	defer putEvalStrings(outs)
+	paths := ch.pathsBuf[:0]
 	pp := newPathParser(ch.buf[st.v:st.e])
-	*outs, _ = pp.pathList(*outs)
+	paths, _ = pp.pathList(paths)
 	implicitOuts := 0
 	if pp.pipe() {
-		*outs, implicitOuts = pp.pathList(*outs)
+		paths, implicitOuts = pp.pathList(paths)
 	}
-	if len(*outs) == 0 {
+	nouts := len(paths)
+	if nouts == 0 {
 		return 0, fmt.Errorf("expected output path")
 	}
 
@@ -575,23 +585,24 @@ func (ch *chunk) parseBuild(i int) (int, error) {
 	}
 	edge.rule = rule
 
-	ins := getEvalStrings()
-	defer putEvalStrings(ins)
-	*ins, _ = pp.pathList(*ins)
+	paths, _ = pp.pathList(paths)
 	implicit := 0
 	if pp.pipe() {
-		*ins, implicit = pp.pathList(*ins)
+		paths, implicit = pp.pathList(paths)
 	}
 	orderOnly := 0
 	if pp.pipe2() {
-		*ins, orderOnly = pp.pathList(*ins)
+		paths, orderOnly = pp.pathList(paths)
 	}
+	nins := len(paths) - nouts
 
-	validations := getEvalStrings()
-	defer putEvalStrings(validations)
 	if pp.pipeAt() {
-		*validations, _ = pp.pathList(*validations)
+		paths, _ = pp.pathList(paths)
 	}
+	ch.pathsBuf = paths[:0]
+	outs := paths[:nouts]
+	ins := paths[nouts : nouts+nins]
+	validations := paths[nouts+nins:]
 
 	i++
 	n := ch.countStatement(i, statementBuildVar)
@@ -609,10 +620,10 @@ func (ch *chunk) parseBuild(i int) (int, error) {
 	} else {
 		edge.pool = defaultPool
 	}
-	edge.nodes = ch.edgePathSlab.slice(len(*outs) + len(*ins) + len(*validations))[:0]
+	edge.nodes = ch.edgePathSlab.slice(len(outs) + len(ins) + len(validations))[:0]
 	// setup ch.env for this edge to evaluate paths
 	ch.env.edge = edge
-	for _, out := range *outs {
+	for _, out := range outs {
 		n, err := ch.targetNode(&ch.env, &ch.scratchBuf, out)
 		if err != nil {
 			return 0, err
@@ -622,9 +633,9 @@ func (ch *chunk) parseBuild(i int) (int, error) {
 		}
 		edge.nodes = append(edge.nodes, n)
 	}
-	edge.nouts = uint32(len(*outs))
+	edge.nouts = uint32(len(outs))
 	edge.implicitOuts = uint32(implicitOuts)
-	for _, in := range *ins {
+	for _, in := range ins {
 		n, err := ch.targetNode(&ch.env, &ch.scratchBuf, in)
 		if err != nil {
 			return 0, err
@@ -634,11 +645,11 @@ func (ch *chunk) parseBuild(i int) (int, error) {
 			n.hasOut.Store(true)
 		}
 	}
-	edge.nins = uint32(len(*ins))
+	edge.nins = uint32(len(ins))
 	edge.implicitDeps = uint32(implicit)
 	edge.orderOnlyDeps = uint32(orderOnly)
 
-	for _, validation := range *validations {
+	for _, validation := range validations {
 		n, err := ch.targetNode(&ch.env, &ch.scratchBuf, validation)
 		if err != nil {
 			return 0, err

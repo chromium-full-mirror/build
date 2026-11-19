@@ -540,7 +540,7 @@ func TestParser_Validation(t *testing.T) {
 	err := os.WriteFile(filepath.Join(dir, "input"), []byte(`
 rule cat
    command = cat $in > $out
-build foo: cat bar |@ baz baz2
+build foo | foo2: cat bar | bar2 || bar3 |@ baz baz2
 `), 0644)
 	if err != nil {
 		t.Fatal(err)
@@ -560,14 +560,31 @@ build foo: cat bar |@ baz baz2
 	if !ok {
 		t.Fatalf("no inEdge of foo")
 	}
-	validations := edge.Validations()
-	var got []string
-	for _, v := range validations {
-		got = append(got, v.Path())
+	paths := func(nodes []*Node) []string {
+		var r []string
+		for _, n := range nodes {
+			r = append(r, n.Path())
+		}
+		return r
 	}
-	want := []string{"baz", "baz2"}
-	if diff := cmp.Diff(want, got); diff != "" {
-		t.Errorf("validations for foo: -want +got:\n%s", diff)
+	for _, tc := range []struct {
+		name string
+		got  []*Node
+		want []string
+	}{
+		{name: "Outputs", got: edge.Outputs(), want: []string{"foo", "foo2"}},
+		{name: "ExplicitOutputs", got: edge.ExplicitOutputs(), want: []string{"foo"}},
+		{name: "ImplicitOutputs", got: edge.ImplicitOutputs(), want: []string{"foo2"}},
+		{name: "Inputs", got: edge.Inputs(), want: []string{"bar", "bar2", "bar3"}},
+		{name: "Ins", got: edge.Ins(), want: []string{"bar"}},
+		{name: "ImplicitInputs", got: edge.ImplicitInputs(), want: []string{"bar2"}},
+		{name: "OrderOnlyInputs", got: edge.OrderOnlyInputs(), want: []string{"bar3"}},
+		{name: "TriggerInputs", got: edge.TriggerInputs(), want: []string{"bar", "bar2"}},
+		{name: "Validations", got: edge.Validations(), want: []string{"baz", "baz2"}},
+	} {
+		if diff := cmp.Diff(tc.want, paths(tc.got)); diff != "" {
+			t.Errorf("%s for foo: -want +got:\n%s", tc.name, diff)
+		}
 	}
 }
 
