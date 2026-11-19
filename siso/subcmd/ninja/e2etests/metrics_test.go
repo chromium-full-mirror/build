@@ -109,9 +109,12 @@ func TestBuild_Metrics(t *testing.T) {
 	opt.MetricsJSONWriter = &metricsBuffer
 
 	t.Logf("-- first build (should be remote execution)")
-	_, err = ninjabuild.Run(ctx, graph, opt, nil, ninjabuild.RunNinjaOpts{})
+	stats, err := ninjabuild.Run(ctx, graph, opt, nil, ninjabuild.RunNinjaOpts{})
 	if err != nil {
 		t.Fatalf("ninja err: %v", err)
+	}
+	if stats.CacheDisabled != 1 || stats.LocalCacheDisabled != 1 || stats.RemoteCacheDisabled != 0 {
+		t.Errorf("stats cache_disabled=%d local_cache_disabled=%d remote_cache_disabled=%d; want 1, 1, 0", stats.CacheDisabled, stats.LocalCacheDisabled, stats.RemoteCacheDisabled)
 	}
 
 	dec := json.NewDecoder(bytes.NewReader(metricsBuffer.buf.Bytes()))
@@ -134,6 +137,9 @@ func TestBuild_Metrics(t *testing.T) {
 			if !m.IsLocal {
 				t.Errorf("%s is_local=%t; want true", m.Output(), m.IsLocal)
 			}
+			if m.CacheDisabled {
+				t.Errorf("%s cache_disabled=%t; want false", m.Output(), m.CacheDisabled)
+			}
 			if m.IsRemote {
 				t.Errorf("%s is_remote=%t; want false", m.Output(), m.IsRemote)
 			}
@@ -149,9 +155,19 @@ func TestBuild_Metrics(t *testing.T) {
 			if m.ExecTime <= 0 {
 				t.Errorf("%s exec=%v; want positive", m.Output(), m.ExecTime)
 			}
+		case "local_nocache":
+			if !m.IsLocal {
+				t.Errorf("%s is_local=%t; want true", m.Output(), m.IsLocal)
+			}
+			if !m.CacheDisabled {
+				t.Errorf("%s cache_disabled=%t; want true", m.Output(), m.CacheDisabled)
+			}
 		case "remote":
 			if m.IsLocal {
 				t.Errorf("%s is_local=%t; want false", m.Output(), m.IsLocal)
+			}
+			if m.CacheDisabled {
+				t.Errorf("%s cache_disabled=%t; want false", m.Output(), m.CacheDisabled)
 			}
 			if !m.IsRemote {
 				t.Errorf("%s is_remote=%t; want true", m.Output(), m.IsRemote)

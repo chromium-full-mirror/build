@@ -24,20 +24,22 @@ func RBEBuildMetrics(buildID string, version string, dur time.Duration, stats bu
 	// locally (not found in the REAPI cache), or were run locally
 	// (cache-miss, the build failed, and succeeded when run locally).
 	totalRemoted := stats.Remote + stats.CacheHitEarly + stats.RacingLocal + stats.LocalFallback
-	if totalRemoted > 0 {
+	// TODO: RemoteCacheDisabled only counts remote-executed cache_disabled steps;
+	// revisit if remote rules with cache_disabled start using racing or fallback.
+	if cacheableRemoted := totalRemoted - stats.RemoteCacheDisabled; cacheableRemoted > 0 {
 		// Count late cache hits as cache hits.
-		remoteCacheHitRatio = float64(stats.CacheHitEarly+stats.CacheHitLate) / float64(totalRemoted)
+		remoteCacheHitRatio = float64(stats.CacheHitEarly+stats.CacheHitLate) / float64(cacheableRemoted)
 	}
 	// The two-phase-caching experiment means that local actions may be cached.
 	// Remoted actions never use the two-phase cache, making the calculation easier.
 	totalLocal := stats.Local + stats.TwoPhaseCacheHit
-	if totalLocal > 0 {
-		localCacheHitRatio = float64(stats.TwoPhaseCacheHit) / float64(totalLocal)
+	if cacheableLocal := totalLocal - stats.LocalCacheDisabled; cacheableLocal > 0 {
+		localCacheHitRatio = float64(stats.TwoPhaseCacheHit) / float64(cacheableLocal)
 	}
 	// Calculate the overall cache hit ratio, excluding handler-only (NoExec)
-	// actions from the denominator.
+	// and cache-disabled actions from the denominator.
 	totalActions := stats.Done - stats.Skipped
-	if cacheableActions := totalActions - stats.NoExec; cacheableActions > 0 {
+	if cacheableActions := totalActions - stats.NoExec - stats.CacheDisabled; cacheableActions > 0 {
 		overallCacheHitRatio = float64(stats.CacheHit) / float64(cacheableActions)
 	}
 	return &pb.RbeBuildMetrics{
@@ -124,6 +126,12 @@ func completionStatus(stats build.Stats) *pb.Stat {
 		s.CountsByValue = append(s.CountsByValue, &pb.Stat_Value{
 			Name:  "STATUS_NO_EXEC",
 			Count: int64(stats.NoExec),
+		})
+	}
+	if stats.CacheDisabled > 0 {
+		s.CountsByValue = append(s.CountsByValue, &pb.Stat_Value{
+			Name:  "STATUS_CACHE_DISABLED",
+			Count: int64(stats.CacheDisabled),
 		})
 	}
 	if stats.Fail > 0 {

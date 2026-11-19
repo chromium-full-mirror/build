@@ -84,6 +84,59 @@ func TestStepMetricsJSON_Spans(t *testing.T) {
 	}
 }
 
+func TestStepMetricsInit_CacheDisabled(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		bindings  map[string]string
+		wantField bool
+	}{
+		{
+			name:      "default_omitted",
+			bindings:  nil,
+			wantField: false,
+		},
+		{
+			name:      "cache_disabled_false_omitted",
+			bindings:  map[string]string{"cache_disabled": "false"},
+			wantField: false,
+		},
+		{
+			name:      "cache_disabled_true_recorded",
+			bindings:  map[string]string{"cache_disabled": "true"},
+			wantField: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			b := &Builder{start: buildStart}
+			step := &Step{
+				def:       fakeStepDef{actionName: "act", bindings: tc.bindings},
+				readyTime: buildStart.Add(time.Second),
+			}
+			var m StepMetric
+			m.init(t.Context(), b, step, buildStart.Add(2*time.Second))
+			if m.CacheDisabled != tc.wantField {
+				t.Errorf("m.CacheDisabled = %t, want %t", m.CacheDisabled, tc.wantField)
+			}
+			raw, err := json.Marshal(m)
+			if err != nil {
+				t.Fatalf("json.Marshal(m) unexpected error: %v", err)
+			}
+			var got map[string]any
+			if err := json.Unmarshal(raw, &got); err != nil {
+				t.Fatalf("json.Unmarshal() unexpected error: %v", err)
+			}
+			val, present := got["cache_disabled"]
+			if !tc.wantField {
+				if present {
+					t.Errorf(`got["cache_disabled"] = %v, want omitted`, val)
+				}
+			} else if val != true {
+				t.Errorf(`got["cache_disabled"] = %v (present=%t), want true`, val, present)
+			}
+		})
+	}
+}
+
 func TestUpdateStepMetricsFromTrace_CanonicalRunTime(t *testing.T) {
 	for _, tc := range []struct {
 		name    string

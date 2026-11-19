@@ -16,18 +16,20 @@ import (
 
 func TestCompletionStatus(t *testing.T) {
 	stats := build.Stats{
-		Done:             105,
-		NoExec:           5,
-		CacheHit:         50,
-		CacheHitEarly:    30,
-		CacheHitLate:     20,
-		RacingRemote:     25,
-		RacingLocal:      15,
-		Remote:           10,
-		LocalFallback:    2,
-		Local:            38,
-		Fail:             1,
-		TwoPhaseCacheHit: 10,
+		Done:               105,
+		NoExec:             5,
+		CacheHit:           50,
+		CacheHitEarly:      30,
+		CacheHitLate:       20,
+		RacingRemote:       25,
+		RacingLocal:        15,
+		Remote:             10,
+		LocalFallback:      2,
+		Local:              38,
+		CacheDisabled:      5,
+		LocalCacheDisabled: 5,
+		Fail:               1,
+		TwoPhaseCacheHit:   10,
 	}
 
 	stat := completionStatus(stats)
@@ -51,6 +53,7 @@ func TestCompletionStatus(t *testing.T) {
 		"STATUS_LOCAL_FALLBACK":      2,
 		"STATUS_LOCAL_EXECUTION":     38,
 		"STATUS_NO_EXEC":             5,
+		"STATUS_CACHE_DISABLED":      5,
 		"STATUS_NON_ZERO_EXIT":       1,
 	}
 
@@ -104,6 +107,56 @@ func TestRBEBuildMetrics(t *testing.T) {
 			wantRemoteCHR: 1.0,
 			wantLocalCHR:  1.0,
 			wantBuildCHR:  1.0,
+		},
+		{
+			name: "excludes_local_cache_disabled",
+			stats: build.Stats{
+				Total:              120,
+				Done:               120,
+				Skipped:            10,
+				NoExec:             5,
+				CacheHit:           80,
+				CacheHitEarly:      60,
+				TwoPhaseCacheHit:   20,
+				Local:              25,
+				CacheDisabled:      25,
+				LocalCacheDisabled: 25,
+			},
+			// NumRecords keeps all non-skipped actions (120 - 10 = 110).
+			wantRecords:   110,
+			wantRemoteCHR: 1.0,
+			wantLocalCHR:  1.0,
+			wantBuildCHR:  1.0,
+		},
+		{
+			name: "excludes_remote_cache_disabled",
+			stats: build.Stats{
+				Total:               50,
+				Done:                50,
+				CacheHit:            30,
+				CacheHitEarly:       30,
+				Remote:              20,
+				CacheDisabled:       10,
+				RemoteCacheDisabled: 10,
+			},
+			wantRecords:   50,
+			wantRemoteCHR: 0.75, // 30 / (30 + 20 - 10)
+			wantLocalCHR:  0,
+			wantBuildCHR:  0.75, // 30 / (50 - 10)
+		},
+		{
+			name: "all_cache_disabled",
+			stats: build.Stats{
+				Total:              10,
+				Done:               10,
+				Local:              10,
+				CacheDisabled:      10,
+				LocalCacheDisabled: 10,
+			},
+			wantRecords:   10,
+			wantRemoteCHR: 0,
+			wantLocalCHR:  0,
+			wantBuildCHR:  0,
 		},
 		{
 			name: "no_exec_only",

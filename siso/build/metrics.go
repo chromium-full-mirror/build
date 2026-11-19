@@ -179,6 +179,7 @@ type StepMetric struct {
 	StartLocal    bool   `json:"start_local,omitzero"`     // whether the action chooses local for start in incremental build.
 	CacheWrite    bool   `json:"cache_write,omitzero"`     // whether the action used cache write feature from local results.
 	CacheWriteErr bool   `json:"cache_write_err,omitzero"` // whether the action failed while using cache write feature.
+	CacheDisabled bool   `json:"cache_disabled,omitzero"`  // whether cache lookup and write were disabled for the action.
 	Cached        bool   `json:"cached,omitzero"`          // whether the action was a cache hit.
 	Fallback      bool   `json:"fallback,omitzero"`        // whether the action failed remotely and was retried locally.
 	Racing        bool   `json:"racing,omitzero"`          // whether the action used racing (local+remote in parallel).
@@ -326,6 +327,7 @@ func (m *StepMetric) init(ctx context.Context, b *Builder, step *Step, stepStart
 	m.Rule = step.def.RuleName()
 	m.Action = step.def.ActionName()
 	m.GNTarget = step.def.Binding("gn_target")
+	m.CacheDisabled = step.def.Binding("cache_disabled") == "true"
 	m.PrevStepID = step.prevStepIDs[0]
 	m.Prev2StepID = step.prevStepIDs[1]
 	m.Ready = IntervalMetric(step.readyTime.Sub(b.start))
