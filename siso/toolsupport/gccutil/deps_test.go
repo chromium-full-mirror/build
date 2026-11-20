@@ -52,6 +52,21 @@ func TestDepsArgs(t *testing.T) {
 				"-M",
 			},
 		},
+		{
+			name: "shellWithArgs",
+			args: []string{
+				"/bin/sh",
+				"-e",
+				"-u",
+				"-c",
+				"PWD=/proc/self/cwd clang++ -MMD -MF obj/base/version.o.d -c ../../base/version.cc -o obj/base/version.o",
+			},
+			want: []string{
+				"clang++",
+				"../../base/version.cc",
+				"-M",
+			},
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			got, err := gccutil.DepsArgs(tc.args)

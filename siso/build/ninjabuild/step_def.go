@@ -284,7 +284,11 @@ func (s *StepDef) stepArgs() []string {
 		if s.globals.shellCmd != "" {
 			shell = s.globals.shellCmd
 		}
-		return []string{shell, "-c", cmdline}
+		res := make([]string, 0, len(s.globals.shellArgs)+3)
+		res = append(res, shell)
+		res = append(res, s.globals.shellArgs...)
+		res = append(res, "-c", cmdline)
+		return res
 	}
 	return args
 }
@@ -296,7 +300,11 @@ func (s *StepDef) IsPhony() bool {
 
 // CmdHash returns command hash of the step.
 func (s *StepDef) CmdHash() []byte {
-	return s.edge.CmdHash()
+	var shellArgs []string
+	if s.usesShell() {
+		shellArgs = s.globals.shellArgs
+	}
+	return s.edge.CmdHash(shellArgs)
 }
 
 // Binding returns a binding of the step.

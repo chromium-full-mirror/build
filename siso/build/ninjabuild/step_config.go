@@ -275,6 +275,14 @@ type StepConfig struct {
 	// Not supported on windows.
 	Shell string `json:"shell,omitempty"`
 
+	// ShellArgs specifies default arguments to pass to the shell before "-c",
+	// when the command cannot be simply exec'd.
+	// e.g. ["-e", "-u"]
+	// Only applies to the top-level shell used to run the action, not any
+	// nested shells. (i.e. this is not SHELLOPTS)
+	// Not supported on windows.
+	ShellArgs []string `json:"shell_args,omitempty"`
+
 	// Sandbox is sandbox config
 	Sandbox map[string]string `json:"sandbox,omitempty"`
 

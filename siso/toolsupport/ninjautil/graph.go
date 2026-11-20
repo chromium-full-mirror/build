@@ -7,6 +7,7 @@ package ninjautil
 import (
 	"bytes"
 	"crypto/sha256"
+	"encoding/binary"
 	"fmt"
 	"io"
 	"strings"
@@ -188,7 +189,7 @@ var cmdhashBuf = sync.Pool{
 const unitSeparator = "\x1f"
 
 // CmdHash returns command hash of the edge.
-func (e *Edge) CmdHash() []byte {
+func (e *Edge) CmdHash(shellArgs []string) []byte {
 	buf := cmdhashBuf.Get().(*bytes.Buffer)
 	defer func() {
 		buf.Reset()
@@ -207,6 +208,17 @@ func (e *Edge) CmdHash() []byte {
 		h.Write([]byte(unitSeparator))
 		h.Write(rspfileContent)
 	}
+
+	if len(shellArgs) > 0 {
+		h.Write([]byte(unitSeparator + "shell_args"))
+		var n [4]byte
+		for _, arg := range shellArgs {
+			binary.LittleEndian.PutUint32(n[:], uint32(len(arg)))
+			h.Write(n[:])
+			h.Write([]byte(arg))
+		}
+	}
+
 	return h.Sum(nil)
 }
 

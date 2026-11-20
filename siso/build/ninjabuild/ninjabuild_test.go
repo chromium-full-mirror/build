@@ -649,6 +649,7 @@ load("@builtin//struct.star", "module")
 def init(ctx):
   step_config = {
     "shell": "bin/sh",
+    "shell_args": ["-e", "-u"],
   }
   return module(
     "config",
@@ -700,6 +701,10 @@ build out.txt: nontrivial in.txt
 	if stepConfig.Shell != "bin/sh" {
 		t.Errorf("stepConfig.Shell = %q, want \"bin/sh\"", stepConfig.Shell)
 	}
+	wantShellArgs := []string{"-e", "-u"}
+	if diff := cmp.Diff(wantShellArgs, stepConfig.ShellArgs); diff != "" {
+		t.Errorf("stepConfig.ShellArgs diff -want +got:\n%s", diff)
+	}
 
 	nstate, err := Load(ctx, "build.ninja", path)
 	if err != nil {
@@ -712,14 +717,18 @@ build out.txt: nontrivial in.txt
 	if g.Shell() != "bin/sh" {
 		t.Errorf("g.Shell() = %q, want \"bin/sh\"", g.Shell())
 	}
+	if diff := cmp.Diff(wantShellArgs, g.ShellArgs()); diff != "" {
+		t.Errorf("g.ShellArgs() diff -want +got:\n%s", diff)
+	}
 
 	node, _ := nstate.LookupNodeByPath("out.txt")
 	edge, _ := node.InEdge()
 	stepDef := g.newStepDef(ctx, edge, nil)
 
 	args := stepDef.Args(ctx)
-	if len(args) < 1 || args[0] != "../../bin/sh" {
-		t.Errorf("stepDef.Args(ctx)[0] = %q, want \"../../bin/sh\"", args)
+	wantArgs := []string{"../../bin/sh", "-e", "-u", "-c", `cat in.txt > out.txt && echo "nontrivial" >> out.txt`}
+	if diff := cmp.Diff(wantArgs, args); diff != "" {
+		t.Errorf("stepDef.Args(ctx) diff -want +got:\n%s", diff)
 	}
 	if !slices.Contains(stepDef.Inputs(ctx), "bin/sh") {
 		t.Errorf("stepDef.Inputs(ctx) should contain bin/sh, got %v", stepDef.Inputs(ctx))
@@ -872,5 +881,11 @@ func TestGraph_Shell_Windows(t *testing.T) {
 	_, err = NewGraph(ctx, "build.ninja", nstate, nil, path, hashFS, stepConfig, depsLog)
 	if !errors.Is(err, errors.ErrUnsupported) {
 		t.Errorf("NewGraph on windows with shell err = %v, want %v", err, errors.ErrUnsupported)
+	}
+
+	stepConfig = &StepConfig{ShellArgs: []string{"-e"}}
+	_, err = NewGraph(ctx, "build.ninja", nstate, nil, path, hashFS, stepConfig, depsLog)
+	if !errors.Is(err, errors.ErrUnsupported) {
+		t.Errorf("NewGraph on windows with shell_args err = %v, want %v", err, errors.ErrUnsupported)
 	}
 }

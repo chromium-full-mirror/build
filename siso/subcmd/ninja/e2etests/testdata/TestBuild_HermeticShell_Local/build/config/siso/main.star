@@ -8,6 +8,10 @@ load("@builtin//struct.star", "module")
 def init(ctx):
     step_config = {
         "shell": "bin/sh",
+        "shell_args": [
+            "-e",
+            "-u",
+        ],
     }
     return module(
         "config",

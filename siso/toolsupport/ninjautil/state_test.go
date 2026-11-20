@@ -302,7 +302,7 @@ build out/prog: link out/foo.o out/bar.o
 				RawRsp:       er.edge.RawBinding("rspfile_content"),
 				RawRspfile:   er.edge.RawBinding("rspfile"),
 				UnescapedCmd: er.edge.UnescapedBinding("command"),
-				CmdHash:      append([]byte(nil), er.edge.CmdHash()...),
+				CmdHash:      append([]byte(nil), er.edge.CmdHash(nil)...),
 				PrintOut:     pb.String(),
 			})
 		}

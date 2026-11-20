@@ -5,7 +5,10 @@
 package e2etests
 
 import (
+	"os"
+	"path/filepath"
 	"runtime"
+	"slices"
 	"testing"
 
 	rpb "go.chromium.org/build/remote-apis/build/bazel/remote/execution/v2"
@@ -78,6 +81,61 @@ func TestBuild_HermeticShell_Local(t *testing.T) {
 	if stats.Done != 2 || stats.Local != 2 {
 		t.Errorf("fourth build: done=%d local=%d; want done=2 local=2", stats.Done, stats.Local)
 	}
+
+	writeMainStar := func(shellArgsStar string) {
+		t.Helper()
+		content := `load("@builtin//encoding.star", "json")
+load("@builtin//struct.star", "module")
+
+def init(ctx):
+    step_config = {
+        "shell": "bin/sh",` + shellArgsStar + `
+    }
+    return module(
+        "config",
+        step_config = json.encode(step_config),
+        filegroups = {},
+        handlers = {},
+    )
+`
+		if err := os.WriteFile(filepath.Join(dir, "build/config/siso/main.star"), []byte(content), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	t.Logf("-- change shell_args")
+	writeMainStar(`
+        "shell_args": ["-e"],`)
+
+	t.Logf("-- fifth build (only nontrivial should rerun, trivial should be skipped)")
+	stats, err = runNinja(t)
+	if err != nil {
+		t.Fatalf("fifth build failed: %v", err)
+	}
+	if stats.Done != 2 || stats.Skipped != 1 || stats.Local != 1 {
+		t.Errorf("fifth build: done=%d skipped=%d local=%d; want done=2 skipped=1 local=1", stats.Done, stats.Skipped, stats.Local)
+	}
+
+	t.Logf("-- sixth build (should be no-op)")
+	stats, err = runNinja(t)
+	if err != nil {
+		t.Fatalf("sixth build failed: %v", err)
+	}
+	if stats.Done != 2 || stats.Skipped != 2 || stats.Local != 0 {
+		t.Errorf("sixth build: done=%d skipped=%d local=%d; want done=2 skipped=2 local=0", stats.Done, stats.Skipped, stats.Local)
+	}
+
+	t.Logf("-- remove shell_args")
+	writeMainStar("")
+
+	t.Logf("-- seventh build (only nontrivial should rerun, trivial should be skipped)")
+	stats, err = runNinja(t)
+	if err != nil {
+		t.Fatalf("seventh build failed: %v", err)
+	}
+	if stats.Done != 2 || stats.Skipped != 1 || stats.Local != 1 {
+		t.Errorf("seventh build: done=%d skipped=%d local=%d; want done=2 skipped=1 local=1", stats.Done, stats.Skipped, stats.Local)
+	}
 }
 
 func TestBuild_HermeticShell_Remote(t *testing.T) {
@@ -107,7 +165,8 @@ func TestBuild_HermeticShell_Remote(t *testing.T) {
 			node, err := tree.LookupFileNode(ctx, "bin/sh")
 
 			// Check command arguments
-			if len(cmd.Arguments) >= 3 && cmd.Arguments[0] == "../../bin/sh" && cmd.Arguments[1] == "-c" {
+			wantShellPrefix := []string{"../../bin/sh", "-e", "-u", "-c"}
+			if len(cmd.Arguments) >= len(wantShellPrefix) && slices.Equal(cmd.Arguments[:len(wantShellPrefix)], wantShellPrefix) {
 				sawNontrivialShell = true
 				if err == nil && node != nil {
 					sawNontrivialInCAS = true

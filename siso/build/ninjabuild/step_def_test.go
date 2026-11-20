@@ -5,6 +5,7 @@
 package ninjabuild
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"os"
@@ -861,6 +862,38 @@ func TestStepDef_DefaultShell(t *testing.T) {
 	}
 }
 
+func TestStepDef_DefaultShell_WithShellArgs(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("These tests don't work on windows")
+	}
+	ctx := t.Context()
+	nstate, bpath, hashFS := setupShellStepDefTest(ctx, t)
+	stepConfig := &StepConfig{
+		ShellArgs: []string{"-e", "-u"},
+	}
+	depsLog := &DepsLog{}
+	graph, err := NewGraph(ctx, "build.ninja", nstate, nil, bpath, hashFS, stepConfig, depsLog)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	nodeNontrivial, _ := nstate.LookupNodeByPath("out_nontrivial.txt")
+	edgeNontrivial, _ := nodeNontrivial.InEdge()
+	stepNontrivial := graph.newStepDef(ctx, edgeNontrivial, nil)
+
+	args := stepNontrivial.Args(ctx)
+	if diff := cmp.Diff([]string{"/bin/sh", "-e", "-u", "-c", "cat in.txt > out_nontrivial.txt"}, args); diff != "" {
+		t.Errorf("Args with default shell and shell args diff -want +got:\n%s", diff)
+	}
+
+	nodeTrivial, _ := nstate.LookupNodeByPath("out_trivial.txt")
+	edgeTrivial, _ := nodeTrivial.InEdge()
+	stepTrivial := graph.newStepDef(ctx, edgeTrivial, nil)
+	if diff := cmp.Diff([]string{"cp", "in.txt", "out_trivial.txt"}, stepTrivial.Args(ctx)); diff != "" {
+		t.Errorf("trivial Args diff -want +got:\n%s", diff)
+	}
+}
+
 func TestStepDef_HermeticShell(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("These tests don't work on windows")
@@ -913,6 +946,47 @@ func TestStepDef_HermeticShell(t *testing.T) {
 	}
 	if slices.Contains(stepTrivial.TriggerInputs(ctx), wantShellInput) {
 		t.Errorf("trivial TriggerInputs should NOT contain %s, got %v", wantShellInput, stepTrivial.TriggerInputs(ctx))
+	}
+}
+
+func TestStepDef_HermeticShell_WithShellArgs(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("These tests don't work on windows")
+	}
+	ctx := t.Context()
+	nstate, bpath, hashFS := setupShellStepDefTest(ctx, t)
+	stepConfig := &StepConfig{
+		Shell:     "bin/sh",
+		ShellArgs: []string{"-e", "-u"},
+	}
+	depsLog := &DepsLog{}
+	graph, err := NewGraph(ctx, "build.ninja", nstate, nil, bpath, hashFS, stepConfig, depsLog)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	nodeNontrivial, _ := nstate.LookupNodeByPath("out_nontrivial.txt")
+	edgeNontrivial, _ := nodeNontrivial.InEdge()
+	stepNontrivial := graph.newStepDef(ctx, edgeNontrivial, nil)
+
+	args := stepNontrivial.Args(ctx)
+	if diff := cmp.Diff([]string{"../../bin/sh", "-e", "-u", "-c", "cat in.txt > out_nontrivial.txt"}, args); diff != "" {
+		t.Errorf("Args with hermetic shell and shell args diff -want +got:\n%s", diff)
+	}
+
+	wantShellInput := path.Path("bin/sh")
+	if !slices.Contains(stepNontrivial.Inputs(ctx), wantShellInput) {
+		t.Errorf("Inputs with hermetic shell should contain %s, got %v", wantShellInput, stepNontrivial.Inputs(ctx))
+	}
+
+	nodeTrivial, _ := nstate.LookupNodeByPath("out_trivial.txt")
+	edgeTrivial, _ := nodeTrivial.InEdge()
+	stepTrivial := graph.newStepDef(ctx, edgeTrivial, nil)
+	if diff := cmp.Diff([]string{"cp", "in.txt", "out_trivial.txt"}, stepTrivial.Args(ctx)); diff != "" {
+		t.Errorf("trivial Args diff -want +got:\n%s", diff)
+	}
+	if slices.Contains(stepTrivial.Inputs(ctx), wantShellInput) {
+		t.Errorf("trivial Inputs should NOT contain %s, got %v", wantShellInput, stepTrivial.Inputs(ctx))
 	}
 }
 
@@ -1139,5 +1213,73 @@ build out.o: cc out.cc
 	want := []string{"out/Default/out.cc", "out/Default/foo.h", "out/Default/bar.h"}
 	if diff := cmp.Diff(want, got); diff != "" {
 		t.Errorf("before Reset: DepInputs diff -want +got:\n%s", diff)
+	}
+}
+
+func TestStepDef_CmdHash_ShellArgs(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell_args is not supported on windows")
+	}
+	ctx := t.Context()
+	nstate := ninjautil.NewState()
+	dir := t.TempDir()
+	fname := filepath.Join(dir, "build.ninja")
+	err := os.WriteFile(fname, []byte(`
+rule trivial
+  command = cp ${in} ${out}
+rule nontrivial
+  command = cat ${in} > ${out} && echo done >> ${out}
+build out_trivial: trivial in.txt
+build out_nontrivial: nontrivial in.txt
+`), 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ninjautil.NewManifestParser(nstate).Load(ctx, fname); err != nil {
+		t.Fatal(err)
+	}
+
+	cmdHashFor := func(target string, shellArgs []string) []byte {
+		t.Helper()
+		graph := &Graph{
+			visited: make(map[*ninjautil.Edge]*build.Edge),
+			globals: &globals{
+				nstate:      nstate,
+				path:        build.NewPath(dir, "out/Default"),
+				stepConfig:  &StepConfig{},
+				shellArgs:   shellArgs,
+				targetPaths: make([]path.Path, nstate.NumNodes()),
+				edgeRules:   make([]edgeRuleHolder, nstate.NumNodes()),
+			},
+		}
+		node, ok := nstate.LookupNodeByPath(target)
+		if !ok {
+			t.Fatalf("target %q not found", target)
+		}
+		edge, ok := node.InEdge()
+		if !ok {
+			t.Fatalf("target %q has no edge", target)
+		}
+		return graph.newStepDef(ctx, edge, nil).CmdHash()
+	}
+
+	trivialBase := cmdHashFor("out_trivial", nil)
+	trivialWithArgs := cmdHashFor("out_trivial", []string{"-e", "-u"})
+	if !bytes.Equal(trivialBase, trivialWithArgs) {
+		t.Errorf("trivial CmdHash changed when shellArgs set: %x vs %x", trivialBase, trivialWithArgs)
+	}
+
+	nontrivialBase := cmdHashFor("out_nontrivial", nil)
+	nontrivialEU := cmdHashFor("out_nontrivial", []string{"-e", "-u"})
+	nontrivialE := cmdHashFor("out_nontrivial", []string{"-e"})
+	nontrivialJoined := cmdHashFor("out_nontrivial", []string{"-e-u"})
+	if bytes.Equal(nontrivialBase, nontrivialEU) {
+		t.Errorf("nontrivial CmdHash did not change when shellArgs set")
+	}
+	if bytes.Equal(nontrivialEU, nontrivialE) {
+		t.Errorf("nontrivial CmdHash did not change when shellArgs changed")
+	}
+	if bytes.Equal(nontrivialEU, nontrivialJoined) {
+		t.Errorf("nontrivial CmdHash collided between [\"-e\", \"-u\"] and [\"-e-u\"]")
 	}
 }

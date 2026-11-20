@@ -59,6 +59,7 @@ type globals struct {
 	stepConfig  *StepConfig
 
 	shellCmd    string
+	shellArgs   []string
 	shellInputs []path.Path
 
 	// node id -> path.Path
@@ -351,7 +352,16 @@ func (g *Graph) Shell() string {
 	return g.globals.stepConfig.Shell
 }
 
+// ShellArgs returns the default shell arguments, or nil if not set.
+func (g *Graph) ShellArgs() []string {
+	return g.globals.stepConfig.ShellArgs
+}
+
 func (g *Graph) setShell(ctx context.Context) error {
+	if runtime.GOOS == "windows" && len(g.globals.stepConfig.ShellArgs) > 0 {
+		return fmt.Errorf("shell_args cannot be specified on windows, got %q: %w", g.globals.stepConfig.ShellArgs, errors.ErrUnsupported)
+	}
+	g.globals.shellArgs = slices.Clone(g.globals.stepConfig.ShellArgs)
 	shell := g.globals.stepConfig.Shell
 	if shell == "" {
 		g.globals.shellCmd = ""
