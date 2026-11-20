@@ -24,6 +24,8 @@ import (
 	"google.golang.org/protobuf/types/known/fieldmaskpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	rpb "go.chromium.org/build/remote-apis/build/bazel/remote/execution/v2"
+
 	"go.chromium.org/build/siso/blob"
 	"go.chromium.org/build/siso/hashfs"
 	"go.chromium.org/build/siso/o11y/clog"
@@ -175,7 +177,10 @@ loop:
 
 			case *blob.Store:
 				started := time.Now()
-				n, err := u.reapiClient.UploadAll(ctx, req)
+				rctx := reapi.NewContext(ctx, &rpb.RequestMetadata{
+					ToolInvocationId: u.invocationID,
+				})
+				n, err := u.reapiClient.UploadAll(rctx, req)
 				if err != nil {
 					clog.Warningf(ctx, "failed to upload files: n=%d, %s: %v", n, time.Since(started), err)
 				} else {

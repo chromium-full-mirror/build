@@ -1185,7 +1185,7 @@ func NewContext(ctx context.Context, rmd *rpb.RequestMetadata) context.Context {
 	} else {
 		md = md.Copy()
 	}
-	md.Set(requestMetadataKey, string(b))
+	md.Set(RequestMetadataKey, string(b))
 	return metadata.NewOutgoingContext(ctx, md)
 }
 
@@ -1195,7 +1195,7 @@ func MetadataFromOutgoingContext(ctx context.Context) (*rpb.RequestMetadata, boo
 	if !ok {
 		return nil, false
 	}
-	v, ok := md[requestMetadataKey]
+	v, ok := md[RequestMetadataKey]
 	if !ok {
 		return nil, false
 	}

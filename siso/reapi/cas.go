@@ -626,10 +626,13 @@ func (c *Client) Missing(ctx context.Context, blobs []digest.Digest) ([]digest.D
 // the CAS are handed as one request to the Client's upload workers,
 // which run with the Client's lifetime context (canceled by Close), so
 // that other callers waiting on the same blobs are not affected when
-// this caller's ctx is canceled. ctx only bounds how long this call
-// waits for the result. If ctx is canceled, UploadAll returns the
-// cancellation error immediately while the request is still processed
-// in the background.
+// this caller's ctx is canceled. Outgoing gRPC metadata (such as REAPI
+// RequestMetadata, including per-action fields) and OpenTelemetry trace
+// context are copied from ctx onto the upload request, though other
+// actions waiting on the same blobs may share the request. ctx only
+// bounds how long this call waits for the result. If ctx is canceled,
+// UploadAll returns the cancellation error immediately while the
+// request is still processed in the background.
 func (c *Client) UploadAll(ctx context.Context, ds *blob.Store) (numUploaded int, err error) {
 	return c.uploadAll(ctx, ds, true)
 }
@@ -689,7 +692,7 @@ func (c *Client) uploadAll(ctx context.Context, ds *blob.Store, detach bool) (nu
 	if len(newBlobs) > 0 {
 		t := time.Now()
 		if detach {
-			req := c.uploader.submit(ds, newBlobs)
+			req := c.uploader.submit(ctx, ds, newBlobs)
 			numUploaded, err = req.wait(ctx)
 		} else {
 			numUploaded, err = c.uploadNewBlobs(ctx, ds, newBlobs, span)

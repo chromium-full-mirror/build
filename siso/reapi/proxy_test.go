@@ -74,9 +74,9 @@ func TestForwardMetadataStreamInterceptor(t *testing.T) {
 	_ = conn.Invoke(ctx, "/probe.Service/Probe", &emptypb.Empty{}, &emptypb.Empty{})
 
 	md := <-gotMD
-	vals := md.Get(requestMetadataKey)
+	vals := md.Get(RequestMetadataKey)
 	if len(vals) != 1 {
-		t.Fatalf("outgoing %s entries = %d, want 1", requestMetadataKey, len(vals))
+		t.Fatalf("outgoing %s entries = %d, want 1", RequestMetadataKey, len(vals))
 	}
 	got := &rpb.RequestMetadata{}
 	if err := proto.Unmarshal([]byte(vals[0]), got); err != nil {
@@ -98,7 +98,7 @@ func TestForwardMetadataStreamInterceptor(t *testing.T) {
 // RequestMetadata.
 func TestForwardMetadataUnaryInterceptor(t *testing.T) {
 	want := &rpb.RequestMetadata{ToolInvocationId: "invocation-1"}
-	in := metadata.Pairs(requestMetadataKey, marshalRequestMetadata(t, want))
+	in := metadata.Pairs(RequestMetadataKey, marshalRequestMetadata(t, want))
 	ctx := metadata.NewIncomingContext(t.Context(), in)
 
 	var gotCtx context.Context
@@ -114,9 +114,9 @@ func TestForwardMetadataUnaryInterceptor(t *testing.T) {
 	if !ok {
 		t.Fatal("handler context has no outgoing metadata, want the forwarded request metadata")
 	}
-	vals := md.Get(requestMetadataKey)
+	vals := md.Get(RequestMetadataKey)
 	if len(vals) != 1 {
-		t.Fatalf("outgoing %s entries = %d, want 1", requestMetadataKey, len(vals))
+		t.Fatalf("outgoing %s entries = %d, want 1", RequestMetadataKey, len(vals))
 	}
 	got := &rpb.RequestMetadata{}
 	if err := proto.Unmarshal([]byte(vals[0]), got); err != nil {
@@ -152,7 +152,7 @@ func TestForwardMetadataUnaryInterceptorTraceContext(t *testing.T) {
 		0x01, // sampled
 	)
 	in := metadata.Pairs(
-		requestMetadataKey, marshalRequestMetadata(t, rmd),
+		RequestMetadataKey, marshalRequestMetadata(t, rmd),
 		traceBinKey, want,
 	)
 	ctx := metadata.NewIncomingContext(t.Context(), in)
@@ -175,8 +175,8 @@ func TestForwardMetadataUnaryInterceptorTraceContext(t *testing.T) {
 	if got := md.Get(traceBinKey); len(got) != 1 || got[0] != want {
 		t.Errorf("outgoing %s = %q, want exactly one entry %q", traceBinKey, got, want)
 	}
-	if got := md.Get(requestMetadataKey); len(got) != 1 {
-		t.Errorf("outgoing %s entries = %d, want 1", requestMetadataKey, len(got))
+	if got := md.Get(RequestMetadataKey); len(got) != 1 {
+		t.Errorf("outgoing %s entries = %d, want 1", RequestMetadataKey, len(got))
 	}
 }
 

@@ -28,10 +28,10 @@ import (
 	"go.chromium.org/build/siso/o11y/clog"
 )
 
-// requestMetadataKey is the gRPC metadata key that carries the marshaled
+// RequestMetadataKey is the gRPC metadata key that carries the marshaled
 // RE API RequestMetadata.
 // https://github.com/bazelbuild/remote-apis/blob/8f539af4b407a4f649707f9632fc2b715c9aa065/build/bazel/remote/execution/v2/remote_execution.proto#L2034-L2045
-const requestMetadataKey = "build.bazel.remote.execution.v2.requestmetadata-bin"
+const RequestMetadataKey = "build.bazel.remote.execution.v2.requestmetadata-bin"
 
 // traceBinKey is the gRPC metadata key that carries the caller's trace context
 // in the binary format RBE understands. See otelDialOption, which is what
@@ -43,7 +43,7 @@ const traceBinKey = "grpc-trace-bin"
 // so forwarding these values does not combine metadata from different callers.
 // The proxy must not set Option.TracerProvider: its client would then write
 // traceBinKey itself and duplicate the forwarded value.
-var forwardedMetadataKeys = []string{requestMetadataKey, traceBinKey}
+var forwardedMetadataKeys = []string{RequestMetadataKey, traceBinKey}
 
 // Proxy is RE API proxy.
 type Proxy struct {

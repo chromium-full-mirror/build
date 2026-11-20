@@ -11,13 +11,16 @@ import (
 	"sync"
 	"testing"
 
+	oteltrace "go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/stats"
 
 	"go.chromium.org/build/hashigo/digest"
 	rpb "go.chromium.org/build/remote-apis/build/bazel/remote/execution/v2"
 
 	"go.chromium.org/build/siso/blob"
+	"go.chromium.org/build/siso/o11y/trace"
 	"go.chromium.org/build/siso/reapi"
 	"go.chromium.org/build/siso/reapi/reapitest"
 )
@@ -232,5 +235,131 @@ func TestUploadAll_ServerShutdownWaitsForInFlightHandler(t *testing.T) {
 	// context.Canceled while the server handler is writing blobs.
 	if _, err := cl.UploadAll(reqCtx, ds); !errors.Is(err, context.Canceled) {
 		t.Errorf("UploadAll(canceled)=%v; want %v", err, context.Canceled)
+	}
+}
+
+const byteStreamWriteMethod = "/google.bytestream.ByteStream/Write"
+
+type observedUploadCall struct {
+	rmdCount int
+	rmd      *rpb.RequestMetadata
+	spanCtx  oteltrace.SpanContext
+}
+
+type uploadCallRecorder struct {
+	mu    sync.Mutex
+	calls map[string][]observedUploadCall
+}
+
+func (r *uploadCallRecorder) record(ctx context.Context, method string) {
+	md, _ := metadata.FromOutgoingContext(ctx)
+	rmd, _ := reapi.MetadataFromOutgoingContext(ctx)
+	r.mu.Lock()
+	r.calls[method] = append(r.calls[method], observedUploadCall{
+		rmdCount: len(md.Get(reapi.RequestMetadataKey)),
+		rmd:      rmd,
+		spanCtx:  oteltrace.SpanContextFromContext(ctx),
+	})
+	r.mu.Unlock()
+}
+
+func (r *uploadCallRecorder) forMethod(method string) []observedUploadCall {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]observedUploadCall(nil), r.calls[method]...)
+}
+
+func newRecordingUploadClient(ctx context.Context, t *testing.T) (*reapi.Client, *uploadCallRecorder) {
+	t.Helper()
+	rec := &uploadCallRecorder{
+		calls: make(map[string][]observedUploadCall),
+	}
+	unary := func(ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
+		rec.record(ctx, method)
+		return invoker(ctx, method, req, reply, cc, opts...)
+	}
+	stream := func(ctx context.Context, desc *grpc.StreamDesc, cc *grpc.ClientConn, method string, streamer grpc.Streamer, opts ...grpc.CallOption) (grpc.ClientStream, error) {
+		rec.record(ctx, method)
+		return streamer(ctx, desc, cc, method, opts...)
+	}
+	cl := reapitest.NewWithOption(ctx, t, &reapitest.Fake{}, reapi.Option{},
+		grpc.WithChainUnaryInterceptor(unary),
+		grpc.WithChainStreamInterceptor(stream),
+	)
+	t.Cleanup(func() {
+		if err := cl.Close(); err != nil {
+			t.Error(err)
+		}
+	})
+	return cl, rec
+}
+
+// TestUploadAll_PropagatesRequestMetadataAndTraceContext checks that detached
+// CAS uploads carry the submitting requester's REAPI RequestMetadata (including
+// per-action fields) and OpenTelemetry trace context on FindMissingBlobs,
+// BatchUpdateBlobs, and ByteStream.Write RPCs, without duplicating
+// requestmetadata-bin when the client's lifetime context already has one.
+// b/587969386
+func TestUploadAll_PropagatesRequestMetadataAndTraceContext(t *testing.T) {
+	// Simulate siso ninja creating the client with base RequestMetadata on
+	// the client's lifetime context.
+	clientCtx := reapi.NewContext(t.Context(), &rpb.RequestMetadata{
+		ToolInvocationId: "client-invocation",
+	})
+	cl, rec := newRecordingUploadClient(clientCtx, t)
+
+	tc := trace.New(t.Context(), "01234567-89ab-cdef-0123-456789abcdef")
+	reqCtx := trace.NewContext(t.Context(), tc)
+	reqCtx, span := trace.NewSpan(reqCtx, "run-step")
+	defer span.Close(nil)
+	wantTraceID, wantSpanID, ok := span.RawIDs()
+	if !ok {
+		t.Fatal("span.RawIDs() returned ok=false")
+	}
+	wantRMD := &rpb.RequestMetadata{
+		ToolInvocationId:        "step-invocation",
+		CorrelatedInvocationsId: "job-1",
+		ActionId:                "action-1",
+		ActionMnemonic:          "cxx",
+		TargetId:                "obj/foo.o",
+	}
+	reqCtx = reapi.NewContext(reqCtx, wantRMD)
+
+	ds := blob.NewStore()
+	ds.Set(blob.FromBytes(digest.SHA256, "small", []byte("small blob")))
+	ds.Set(blob.FromBytes(digest.SHA256, "large", make([]byte, 4*1024*1024)))
+	n, err := cl.UploadAll(reqCtx, ds)
+	if err != nil || n != 2 {
+		t.Fatalf("UploadAll()=%d,%v; want 2,nil", n, err)
+	}
+
+	wantMethods := []string{
+		rpb.ContentAddressableStorage_FindMissingBlobs_FullMethodName,
+		rpb.ContentAddressableStorage_BatchUpdateBlobs_FullMethodName,
+		byteStreamWriteMethod,
+	}
+	for _, m := range wantMethods {
+		got := rec.forMethod(m)
+		if len(got) == 0 {
+			t.Errorf("method %s: no calls recorded", m)
+			continue
+		}
+		for i, c := range got {
+			if c.rmdCount != 1 {
+				t.Errorf("%s[%d]: %s entries = %d, want 1", m, i, reapi.RequestMetadataKey, c.rmdCount)
+			}
+			if c.rmd.GetToolInvocationId() != wantRMD.GetToolInvocationId() ||
+				c.rmd.GetCorrelatedInvocationsId() != wantRMD.GetCorrelatedInvocationsId() ||
+				c.rmd.GetActionId() != wantRMD.GetActionId() ||
+				c.rmd.GetActionMnemonic() != wantRMD.GetActionMnemonic() ||
+				c.rmd.GetTargetId() != wantRMD.GetTargetId() {
+				t.Errorf("%s[%d]: RequestMetadata = %v, want %v", m, i, c.rmd, wantRMD)
+			}
+			if !c.spanCtx.IsValid() || c.spanCtx.TraceID() != wantTraceID || c.spanCtx.SpanID() != wantSpanID || !c.spanCtx.IsSampled() {
+				t.Errorf("%s[%d]: SpanContext = (valid=%v trace=%s span=%s sampled=%v), want (true %s %s true)",
+					m, i, c.spanCtx.IsValid(), c.spanCtx.TraceID(), c.spanCtx.SpanID(), c.spanCtx.IsSampled(),
+					oteltrace.TraceID(wantTraceID), oteltrace.SpanID(wantSpanID))
+			}
+		}
 	}
 }

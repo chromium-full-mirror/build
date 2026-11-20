@@ -9,9 +9,13 @@ import (
 	"runtime"
 	"sync"
 
+	oteltrace "go.opentelemetry.io/otel/trace"
+	"google.golang.org/grpc/metadata"
+
 	"go.chromium.org/build/hashigo/digest"
 
 	"go.chromium.org/build/siso/blob"
+	"go.chromium.org/build/siso/o11y/clog"
 	"go.chromium.org/build/siso/o11y/trace"
 	"go.chromium.org/build/siso/sync/semaphore"
 )
@@ -39,6 +43,14 @@ type uploadRequest struct {
 	ds   *blob.Store
 	ops  map[digest.Digest]*uploadOp
 	done chan uploadResp // buffered(1); sent exactly once.
+
+	// md and spanCtx are captured from the submitting requester's context
+	// so the detached CAS RPCs carry its gRPC outgoing metadata (including
+	// REAPI RequestMetadata with per-action fields such as ActionId and
+	// TargetId) and OpenTelemetry trace context. Other actions waiting on
+	// the same blobs via knownDigests may share this upload request.
+	md      metadata.MD
+	spanCtx oteltrace.SpanContext
 }
 
 // wait waits for the request to finish, or ctx to be canceled.
@@ -97,11 +109,23 @@ func newUploader(ctx context.Context, c *Client, limit int) *uploader {
 // submit hands newBlobs to the uploader as one request and returns
 // without waiting for it. Every op in newBlobs is guaranteed to be
 // completed eventually.
-func (u *uploader) submit(ds *blob.Store, newBlobs map[digest.Digest]*uploadOp) *uploadRequest {
+//
+// Outgoing gRPC metadata (such as REAPI RequestMetadata, including
+// per-action fields) and OpenTelemetry trace context are captured from
+// ctx so the detached upload RPCs carry them even though cancellation
+// is detached from ctx. Other actions waiting on the same blobs via
+// knownDigests may share this upload request.
+func (u *uploader) submit(ctx context.Context, ds *blob.Store, newBlobs map[digest.Digest]*uploadOp) *uploadRequest {
+	var md metadata.MD
+	if reqMD, ok := metadata.FromOutgoingContext(ctx); ok && len(reqMD) > 0 {
+		md = reqMD.Copy()
+	}
 	req := &uploadRequest{
-		ds:   ds,
-		ops:  newBlobs,
-		done: make(chan uploadResp, 1),
+		ds:      ds,
+		ops:     newBlobs,
+		done:    make(chan uploadResp, 1),
+		md:      md,
+		spanCtx: oteltrace.SpanContextFromContext(ctx),
 	}
 	u.mu.Lock()
 	defer u.mu.Unlock()
@@ -124,6 +148,26 @@ func (u *uploader) submit(ds *blob.Store, newBlobs map[digest.Digest]*uploadOp) 
 
 // process runs one upload request.
 func (u *uploader) process(ctx context.Context, req *uploadRequest) {
+	if len(req.md) > 0 {
+		// Merge onto u.ctx's outgoing metadata, replacing shared keys
+		// (such as requestmetadata-bin) rather than appending so we
+		// never send duplicate RequestMetadata entries.
+		md, ok := metadata.FromOutgoingContext(ctx)
+		if !ok {
+			md = req.md
+		} else {
+			md = md.Copy()
+			for k, v := range req.md {
+				md.Set(k, v...)
+			}
+		}
+		ctx = metadata.NewOutgoingContext(ctx, md)
+	} else {
+		clog.Errorf(ctx, "no metadata in uploadRequest")
+	}
+	if req.spanCtx.IsValid() {
+		ctx = oteltrace.ContextWithSpanContext(ctx, req.spanCtx)
+	}
 	ctx, span := trace.NewSpan(ctx, "upload-op")
 	defer span.Close(nil)
 	span.SetAttr("upload", len(req.ops))
