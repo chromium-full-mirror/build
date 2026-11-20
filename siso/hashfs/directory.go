@@ -126,8 +126,21 @@ func (d *directory) lookupEntry(ctx context.Context, fname path.Path) (*entry, *
 }
 
 func (d *directory) store(ctx context.Context, fname path.Path, e *entry) (*entry, path.Path, error) {
+	return d.storeWith(ctx, fname, e, false)
+}
+
+// storeProbe stores an entry populated by a read-only local-disk probe after
+// a lookup miss. Unlike store, it never evicts or mutates an entry already
+// populated by a concurrent mutation or probe, except that a positive probe
+// may replace an earlier negative disk probe.
+func (d *directory) storeProbe(ctx context.Context, fname path.Path, e *entry) (*entry, path.Path, error) {
+	e.diskProbe = true
+	return d.storeWith(ctx, fname, e, true)
+}
+
+func (d *directory) storeWith(ctx context.Context, fname path.Path, e *entry, isProbe bool) (*entry, path.Path, error) {
 	for range maxSymlinks {
-		ent, resolved, err := d.storeEntry(ctx, fname, e)
+		ent, resolved, err := d.storeEntry(ctx, fname, e, isProbe)
 		if resolved != "" {
 			fname = resolved
 			continue
@@ -154,17 +167,16 @@ func (e storeRaceError) Error() string {
 // from ee when appropriate and logs changes.
 // Returns (entry to use, keep bool).
 // If keep is true, the returned entry should be used as-is (no swap needed).
-func shouldKeep(ctx context.Context, origFname path.Path, ee, e *entry) (*entry, bool) {
+func shouldKeep(ctx context.Context, origFname path.Path, ee, e *entry, isProbe bool) (*entry, bool) {
 	if e == ee {
 		// if storing entry `e` is the same as stored entry `ee`, no need to update.
 		return e, true
 	}
-	// A build-without-the-bytes output must not be evicted by a local-disk
-	// miss: a not-local file or directory lives only in CAS, and a symlink's
-	// target lives inline in the entry (symlinks are always recorded local,
-	// yet may be absent from disk). Explicit removals don't set diskMiss and
-	// still evict.
-	if e.diskMiss && ee.getErr() == nil && len(ee.cmdhash) > 0 && (!ee.local || ee.isSymlink()) {
+	if isProbe {
+		// no need to keep negative probe if e is positive.
+		if ee.getErr() != nil && ee.isDiskProbe() && e.getErr() == nil {
+			return e, false
+		}
 		return ee, true
 	}
 	eed := ee.digest()
@@ -213,8 +225,9 @@ func shouldKeep(ctx context.Context, origFname path.Path, ee, e *entry) (*entry,
 			}{origFname, cmdchanged, edgechanged, actionchanged}
 			clog.Infof(ctx, "store %s: cmdchange:%t edgechanged:%t actionchange:%t", lv.origFname, lv.cmdchanged, lv.edgechanged, lv.actionchanged)
 		}
-	} else if ee.target == e.target && ee.size == e.size && ee.mode == e.mode && (e.d.IsZero() || eed == e.d) {
-		// no change?
+	} else if ee.target == e.target && ee.size == e.size && ee.mode == e.mode && (e.d.IsZero() || eed == e.d) && (ee.getErr() == nil || !ee.isDiskProbe()) {
+		// no change? (do not reuse a negative disk probe so explicit
+		// mutations like Remove replace its closed lready and err)
 
 		// if e.d is zero, it may be new local entry
 		// and ee.d has been calculated
@@ -227,6 +240,7 @@ func shouldKeep(ctx context.Context, origFname path.Path, ee, e *entry) (*entry,
 			ee.updatedTime = e.updatedTime
 		}
 		ee.isChanged = e.isChanged
+		ee.diskProbe = false
 		ee.mu.Unlock()
 		if log.V(1) {
 			// lv is to reduce the number of memory allocations when variables are escaping to heap.
@@ -254,7 +268,7 @@ func shouldKeep(ctx context.Context, origFname path.Path, ee, e *entry) (*entry,
 	return e, false
 }
 
-func (d *directory) storeEntry(ctx context.Context, fname path.Path, e *entry) (*entry, path.Path, error) {
+func (d *directory) storeEntry(ctx context.Context, fname path.Path, e *entry, isProbe bool) (*entry, path.Path, error) {
 	// Store a directory target named with a trailing slash ("gen/") under
 	// the bare name, the same key lookupEntry resolves it to.
 	fname = path.Path(strings.TrimRight(string(fname), "/"))
@@ -272,7 +286,7 @@ func (d *directory) storeEntry(ctx context.Context, fname path.Path, e *entry) (
 	}
 	notExist := errors.Is(e.getErr(), fs.ErrNotExist)
 	nextDir := func(ctx context.Context, d *directory, pe pathElements, elem string) (*directory, string, bool) {
-		return storeNextDir(ctx, d, pe, elem, notExist)
+		return storeNextDir(ctx, d, pe, elem, notExist, isProbe)
 	}
 	s := string(fname)
 	for s != "" {
@@ -293,7 +307,7 @@ func (d *directory) storeEntry(ctx context.Context, fname path.Path, e *entry) (
 				return e, "", nil
 			}
 			ee := v.(*entry)
-			result, keep := shouldKeep(ctx, pe.origFname, ee, e)
+			result, keep := shouldKeep(ctx, pe.origFname, ee, e, isProbe)
 			if keep {
 				return result, "", nil
 			}
@@ -420,7 +434,7 @@ func lookupNextDir(ctx context.Context, d *directory, pe pathElements, elem stri
 // next for store case.
 // storeNextDir will create next dir entry if needed.
 // storeNextDir will not create next dir if notExistEntry is true and entry has ErrNotExist.
-func storeNextDir(ctx context.Context, d *directory, pe pathElements, elem string, notExistEntry bool) (*directory, string, bool) {
+func storeNextDir(ctx context.Context, d *directory, pe pathElements, elem string, notExistEntry, isProbe bool) (*directory, string, bool) {
 	v, ok := d.m.Load(elem)
 	if ok {
 		dent := v.(*entry)
@@ -451,6 +465,9 @@ func storeNextDir(ctx context.Context, d *directory, pe pathElements, elem strin
 				return nil, "", false
 			}
 			return subdir, target, false
+		}
+		if isProbe && dent != nil && errors.Is(err, fs.ErrNotExist) && !dent.isDiskProbe() {
+			return nil, "", true
 		}
 		deleted := d.m.CompareAndDelete(elem, dent)
 		if log.V(9) {
@@ -509,10 +526,11 @@ func storeNextDir(ctx context.Context, d *directory, pe pathElements, elem strin
 	lready := make(chan bool, 1)
 	lready <- true
 	newDent := &entry{
-		lready: lready,
-		err:    err,
-		mode:   0o644 | fs.ModeDir,
-		mtime:  mtime,
+		lready:    lready,
+		err:       err,
+		mode:      0o644 | fs.ModeDir,
+		mtime:     mtime,
+		diskProbe: err != nil,
 	}
 	if newDent.err == nil {
 		// don't set directory.mtime for intermediate dir.
@@ -529,7 +547,14 @@ func storeNextDir(ctx context.Context, d *directory, pe pathElements, elem strin
 			break
 		}
 		dent = v.(*entry)
-		if dent != nil && dent.getErr() != nil && newDent.err == nil {
+		if dent == nil {
+			break
+		}
+		dentErr := dent.getErr()
+		if dentErr != nil && newDent.err == nil {
+			if isProbe && errors.Is(dentErr, fs.ErrNotExist) && !dent.isDiskProbe() {
+				return nil, "", true
+			}
 			// A concurrent lstat may have cached an ErrNotExist
 			// here (e.g. one filegroup evaluates a missing
 			// 'sysroot', while another concurrently evaluates

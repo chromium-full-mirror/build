@@ -62,9 +62,6 @@ type entry struct {
 
 	// local indicates the file is generated locally.
 	local bool
-	// diskMiss indicates this negative entry came from a local-disk probe
-	// (init found the path absent), as opposed to an explicit removal.
-	diskMiss bool
 	// isChanged indicates the file is changed in the session.
 	isChanged bool
 	// isMissingChecked indicates the file is checked in ForgetMissings.
@@ -84,6 +81,10 @@ type entry struct {
 	// need to distinguish from mtime for restat=1.
 	// updatedTime should be equal or newer than mtime.
 	updatedTime time.Time
+	// diskProbe indicates this entry was created by a read-only local-disk
+	// probe (storeProbe), as opposed to an explicit mutation (Update,
+	// Remove, etc.).
+	diskProbe bool
 
 	entryErrLogged atomic.Bool
 
@@ -116,7 +117,6 @@ func (e *entry) init(ctx context.Context, fname string, executables map[path.Pat
 			clog.Infof(ctx, "not exist %s", fname)
 		}
 		e.err = err
-		e.diskMiss = true
 		return
 	}
 	if err != nil {
@@ -248,6 +248,12 @@ func (e *entry) getUpdatedTime() time.Time {
 	return e.updatedTime
 }
 
+func (e *entry) isDiskProbe() bool {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	return e.diskProbe
+}
+
 func (e *entry) updateDir(ctx context.Context, hfs *HashFS, dname string) []string {
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -360,6 +366,7 @@ func (e *entry) applyUpdateMetadata(ent UpdateEntry) {
 	e.local = ent.IsLocal
 	e.updatedTime = ent.UpdatedTime
 	e.isChanged = ent.IsChanged
+	e.diskProbe = false
 	e.entryErrLogged.Store(false)
 }
 

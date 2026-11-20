@@ -550,7 +550,7 @@ func (hfs *HashFS) getOrCreateEntry(ctx context.Context, fname path.Path) (*entr
 	if errors.Is(e.err, context.Canceled) {
 		return nil, fname, e.err
 	}
-	e, fname, err := hfs.directory.store(ctx, fname, e)
+	e, fname, err := hfs.directory.storeProbe(ctx, fname, e)
 	if err != nil {
 		clog.Warningf(ctx, "failed to store %s %s: %v", fname, e, err)
 		return nil, fname, err
@@ -742,9 +742,9 @@ func (hfs *HashFS) statNewEntry(ctx context.Context, root string, fname, fullnam
 	var err error
 	if dir != nil {
 		// Base name is a single element, so store never follows a symlink here.
-		e, _, err = dir.store(ctx, fullname.Base(), e)
+		e, _, err = dir.storeProbe(ctx, fullname.Base(), e)
 	} else {
-		e, fullname, err = hfs.directory.store(ctx, fullname, e)
+		e, fullname, err = hfs.directory.storeProbe(ctx, fullname, e)
 	}
 	tracer.record("store")
 	if err != nil {
@@ -1567,7 +1567,7 @@ func (hfs *HashFS) resolveEscapingSymlink(ctx context.Context, name path.Path, e
 				clog.Infof(ctx, "tree new entry %s", name)
 			}
 			var err error
-			elink, name, err = hfs.directory.store(ctx, name, elink)
+			elink, name, err = hfs.directory.storeProbe(ctx, name, elink)
 			if err != nil {
 				return merkletree.Entry{}, err
 			}
@@ -1764,7 +1764,7 @@ func (hfs *HashFS) resolveInputEntries(ctx context.Context, root string, inputs 
 		if log.V(1) {
 			clog.Infof(ctx, "tree new entry %s", fname)
 		}
-		ee, fname, err := hfs.directory.store(ctx, fname, e)
+		ee, fname, err := hfs.directory.storeProbe(ctx, fname, e)
 		if err != nil {
 			// store may fail for missing dir. b/468142748
 			clog.Warningf(ctx, "entry %s %v: %v", fname, e.err, err)
