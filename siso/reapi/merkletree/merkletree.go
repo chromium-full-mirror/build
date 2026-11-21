@@ -42,6 +42,10 @@ type MerkleTree struct {
 	lastDir dirstate
 
 	pooled bool
+
+	// hasSymlinks is true once a symlink was set. Build only needs to
+	// resolve symlink dirs when it is true.
+	hasSymlinks bool
 }
 
 // New creates new merkle tree with digest function and digest store.
@@ -87,6 +91,7 @@ func (m *MerkleTree) Release() {
 	m.store = nil
 	m.lastDir = dirstate{}
 	m.pooled = false
+	m.hasSymlinks = false
 	merkleTreePool.Put(m)
 }
 
@@ -204,6 +209,7 @@ func (m *MerkleTree) Set(entry Entry) error {
 				}
 				m.lastDir = cur
 				if entry.IsSymlink() {
+					m.hasSymlinks = true
 					cur.dir.Symlinks = append(cur.dir.Symlinks, &rpb.SymlinkNode{
 						Name:   name,
 						Target: entry.Target,
@@ -403,9 +409,11 @@ func (m *MerkleTree) Build(ctx context.Context) (digest.Digest, error) {
 	// invalidate lastDir cache since we are resolving symlinks and might modify the tree structure
 	m.lastDir = dirstate{}
 
-	err := m.resolveSymlinkDir(ctx, m.RootDirectory(), "")
-	if err != nil {
-		return digest.Digest{}, err
+	if m.hasSymlinks {
+		err := m.resolveSymlinkDir(ctx, m.RootDirectory(), "")
+		if err != nil {
+			return digest.Digest{}, err
+		}
 	}
 	d, err := m.buildTree(ctx, m.RootDirectory(), "")
 	if err != nil {
