@@ -59,7 +59,15 @@ type arena struct {
 	dirNodes chunks[rpb.DirectoryNode]
 	symlinks chunks[rpb.SymlinkNode]
 	dirs     chunks[rpb.Directory]
+
+	// names maps reused by buildTree, one per recursion depth.
+	names []map[string]proto.Message
+	depth int
 }
+
+// maxPooledNames is the most names a directory can have to use a pooled
+// names map.
+const maxPooledNames = 4096
 
 const arenaChunk = 256
 
@@ -136,6 +144,34 @@ func (m *MerkleTree) newDirectory() *rpb.Directory {
 		return &rpb.Directory{}
 	}
 	return m.arena.dirs.alloc()
+}
+
+// getNames returns an empty map for buildTree's duplicate check; putNames
+// must be called when the caller is done with it.
+func (m *MerkleTree) getNames(n int) map[string]proto.Message {
+	if m.arena == nil {
+		return make(map[string]proto.Message, n)
+	}
+	a := m.arena
+	if a.depth == len(a.names) {
+		a.names = append(a.names, nil)
+	}
+	a.depth++
+	if n > maxPooledNames {
+		return make(map[string]proto.Message, n)
+	}
+	if a.names[a.depth-1] == nil {
+		a.names[a.depth-1] = make(map[string]proto.Message, n)
+	}
+	return a.names[a.depth-1]
+}
+
+func (m *MerkleTree) putNames() {
+	if m.arena == nil {
+		return
+	}
+	m.arena.depth--
+	clear(m.arena.names[m.arena.depth])
 }
 
 // digestProto returns d as a digest proto (nil for a zero digest, like d.Proto()).
@@ -629,7 +665,8 @@ func (m *MerkleTree) buildTree(ctx context.Context, curdir *rpb.Directory, dirna
 	// one, conflicting entries are an error. Exception: a directory
 	// sharing a name with a symlink is skipped (the symlink wins); see
 	// TestBuildDuplicateSymlinkDir.
-	names := make(map[string]proto.Message, len(curdir.Files)+len(curdir.Symlinks)+len(curdir.Directories))
+	names := m.getNames(len(curdir.Files) + len(curdir.Symlinks) + len(curdir.Directories))
+	defer m.putNames()
 	// Filter in place: the write index never passes the read index.
 	files := curdir.Files[:0]
 	for _, f := range curdir.Files {

@@ -187,6 +187,99 @@ func TestPooledTreeAboveArenaLimit(t *testing.T) {
 	}
 }
 
+// checkPooledNames checks that mt's buildTree names maps are empty and
+// not in use.
+func checkPooledNames(t *testing.T, name string, mt *MerkleTree) {
+	t.Helper()
+	if mt.arena.depth != 0 {
+		t.Errorf("%s: names depth = %d; want 0", name, mt.arena.depth)
+	}
+	for i, names := range mt.arena.names {
+		if len(names) != 0 {
+			t.Errorf("%s: names[%d] has %d entries; want 0", name, i, len(names))
+		}
+	}
+}
+
+// TestPooledTreeAboveMaxPooledNames builds a pooled tree with a
+// directory of more than maxPooledNames names, then reuses the pooled
+// tree for a small tree, and checks the digests against trees from New.
+func TestPooledTreeAboveMaxPooledNames(t *testing.T) {
+	ctx := t.Context()
+	fn := digest.SHA256
+	var ents []Entry
+	for f := range maxPooledNames + 1 {
+		name := fmt.Sprintf("dir/big/file%04d", f)
+		ents = append(ents, Entry{Name: path.Path(name), Data: blob.FromBytes(fn, name, []byte(name))})
+	}
+	ents = append(ents, Entry{Name: "dir/small/file", Data: blob.FromBytes(fn, "file", []byte("file"))})
+	for _, tc := range []struct {
+		name string
+		ents []Entry
+	}{
+		{"big", ents},
+		{"small", ents[len(ents)-10:]},
+	} {
+		want, err := buildRandomTree(ctx, New(fn, nil), tc.ents, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		mt := NewPooled(fn, nil)
+		got, err := buildRandomTree(ctx, mt, tc.ents, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got != want {
+			t.Errorf("%s: pooled digest = %s; want %s", tc.name, got, want)
+		}
+		checkPooledNames(t, tc.name, mt)
+		mt.Release()
+	}
+}
+
+// TestPooledTreeAfterBuildError builds a pooled tree that fails in a
+// subdirectory, then reuses the pooled tree for a tree that has one of
+// the conflicting files, and checks the digest against a tree from New.
+func TestPooledTreeAfterBuildError(t *testing.T) {
+	ctx := t.Context()
+	fn := digest.SHA256
+	file := func(name, content string) Entry {
+		return Entry{Name: path.Path(name), Data: blob.FromBytes(fn, content, []byte(content))}
+	}
+	ents := []Entry{
+		file("a/x", "x"),
+		file("a/b/y", "y"),
+		file("a/b/c/file", "1"),
+		file("a/b/c/file", "2"),
+	}
+	mt := NewPooled(fn, nil)
+	if d, err := buildRandomTree(ctx, mt, ents, nil); err == nil {
+		t.Fatalf("Build() = %s, nil; want error", d)
+	}
+	checkPooledNames(t, "failed", mt)
+	mt.Release()
+
+	ents = []Entry{
+		file("a/x", "x2"),
+		file("a/b/y", "y2"),
+		file("a/b/c/file", "3"),
+	}
+	want, err := buildRandomTree(ctx, New(fn, nil), ents, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mt = NewPooled(fn, nil)
+	got, err := buildRandomTree(ctx, mt, ents, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != want {
+		t.Errorf("pooled digest = %s; want %s", got, want)
+	}
+	checkPooledNames(t, "reused", mt)
+	mt.Release()
+}
+
 // BenchmarkTreeDigest builds a pooled tree of 3000 input files in 60
 // directories, as Cmd.Digest does for each step: with a nil store for the
 // 2PC lookup key, and with a store for remote execution.
