@@ -150,6 +150,24 @@ func TestExpandDirInputs_InvalidatedOnRemoveAll(t *testing.T) {
 	}
 }
 
+// TestExpandDirInputs_InvalidatedOnParentRemoveAll verifies removal of a
+// parent of a cached directory input drops the cached expansion.
+func TestExpandDirInputs_InvalidatedOnParentRemoveAll(t *testing.T) {
+	ctx := t.Context()
+	hfs, root := newDigestHashFS(t)
+	mkTreeForDigest(t, root, 5)
+
+	expandDirInputsWalks.Store(0)
+	hfs.expandDirInputs(ctx, root, []string{"gen/sub0/"})
+	if err := hfs.RemoveAll(ctx, root, path.Path("gen")); err != nil {
+		t.Fatal(err)
+	}
+	hfs.expandDirInputs(ctx, root, []string{"gen/sub0/"})
+	if w := expandDirInputsWalks.Load(); w != 2 {
+		t.Errorf("RemoveAll(gen) did not invalidate gen/sub0/: walks=%d; want 2", w)
+	}
+}
+
 // TestExpandDirInputs_InvalidatedByAllMutations covers the remaining
 // structural-mutation hooks (Remove, Forget, ForgetMissingsInDir) that must
 // drop a cached directory-input expansion (Update and RemoveAll are above).
@@ -210,4 +228,38 @@ func BenchmarkExpandDirInputs(b *testing.B) {
 		hfs.expandDirInputs(ctx, root, []string{"gen/"})
 	}
 	b.ReportMetric(float64(expandDirInputsWalks.Load())/float64(b.N), "walks/op")
+}
+
+func newDirInputCacheForBench(n int) *HashFS {
+	hfs := &HashFS{}
+	for i := range n {
+		hfs.dirInputCache.Store(fmt.Sprintf("/work/out/soong/.intermediates/vendor/module%d/android_arm64/gen", i), []string(nil))
+	}
+	hfs.dirInputCached.Store(true)
+	return hfs
+}
+
+// TestInvalidateDirInputCacheAllocs checks that checking the cached
+// directories against unrelated paths doesn't allocate.
+func TestInvalidateDirInputCacheAllocs(t *testing.T) {
+	hfs := newDirInputCacheForBench(100)
+	p := "/work/out/soong/.intermediates/frameworks/base/core/java/android/app/Activity.java"
+	// AllocsPerRun also counts allocations of goroutines left running
+	// by other tests, so take the minimum of a few attempts.
+	n := testing.AllocsPerRun(100, func() { hfs.invalidateDirInputCache(p) })
+	for i := 0; i < 10 && n != 0; i++ {
+		n = min(n, testing.AllocsPerRun(100, func() { hfs.invalidateDirInputCache(p) }))
+	}
+	if n != 0 {
+		t.Errorf("invalidateDirInputCache allocs=%v; want 0", n)
+	}
+}
+
+func BenchmarkInvalidateDirInputCache(b *testing.B) {
+	hfs := newDirInputCacheForBench(100)
+	p := "/work/out/soong/.intermediates/frameworks/base/core/java/android/app/Activity.java"
+	b.ReportAllocs()
+	for b.Loop() {
+		hfs.invalidateDirInputCache(p)
+	}
 }

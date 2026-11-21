@@ -1713,19 +1713,13 @@ func (hfs *HashFS) invalidateDirInputCache(fullpaths ...string) {
 	hfs.dirInputCache.Range(func(k, _ any) bool {
 		dir := k.(string)
 		for _, p := range fullpaths {
-			if p == dir || pathHasPrefix(p, dir) || pathHasPrefix(dir, p) {
+			if path.Path(p).HasPrefix(path.Path(dir)) || path.Path(dir).HasPrefix(path.Path(p)) {
 				hfs.dirInputCache.Delete(dir)
 				break
 			}
 		}
 		return true
 	})
-}
-
-// pathHasPrefix reports whether p is at or under the directory prefix
-// (component-aware: "a/b" is under "a", "a/bc" is not).
-func pathHasPrefix(p, prefix string) bool {
-	return strings.HasPrefix(p, prefix+"/")
 }
 
 // resolveInputEntries looks up or creates entries for each input,
