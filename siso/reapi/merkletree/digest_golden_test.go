@@ -134,6 +134,59 @@ func TestBuildDigestsGolden(t *testing.T) {
 	}
 }
 
+// TestPooledTreeAboveArenaLimit builds a pooled tree with more than
+// arenaMaxRetained file nodes, and checks that its digest matches a tree
+// from New, that Release drops it, and that a small pooled tree built
+// after it is correct.
+func TestPooledTreeAboveArenaLimit(t *testing.T) {
+	ctx := t.Context()
+	fn := digest.SHA256
+	var ents []Entry
+	for d := range 64 {
+		for f := range arenaMaxRetained/64 + 1 {
+			name := fmt.Sprintf("dir%02d/file%04d", d, f)
+			ents = append(ents, Entry{Name: path.Path(name), Data: blob.FromBytes(fn, name, []byte(name))})
+		}
+	}
+	var hugeTree *MerkleTree
+	for _, tc := range []struct {
+		name string
+		ents []Entry
+	}{
+		{"huge", ents},
+		{"small", ents[:100]},
+	} {
+		want, err := buildRandomTree(ctx, New(fn, nil), tc.ents, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		mt := NewPooled(fn, nil)
+		if mt == hugeTree {
+			t.Fatalf("%s: NewPooled returned the dropped huge tree", tc.name)
+		}
+		got, err := buildRandomTree(ctx, mt, tc.ents, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got != want {
+			t.Errorf("%s: pooled digest = %s; want %s", tc.name, got, want)
+		}
+		huge := tc.name == "huge"
+		if huge {
+			hugeTree = mt
+		}
+		if huge && mt.arena.retainable() {
+			t.Fatalf("%s: arena has %d file nodes; want > %d", tc.name, mt.arena.files.size(), arenaMaxRetained)
+		}
+		mt.Release()
+		// Release resets the arena only when the tree goes back to
+		// the pool.
+		if reset := mt.arena.files.n == 0; reset == huge {
+			t.Errorf("%s: arena reset at Release = %t; want %t", tc.name, reset, !huge)
+		}
+	}
+}
+
 // BenchmarkTreeDigest builds a pooled tree of 3000 input files in 60
 // directories, as Cmd.Digest does for each step: with a nil store for the
 // 2PC lookup key, and with a store for remote execution.

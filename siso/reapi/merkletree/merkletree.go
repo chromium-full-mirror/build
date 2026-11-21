@@ -46,6 +46,107 @@ type MerkleTree struct {
 	// hasSymlinks is true once a symlink was set. Build only needs to
 	// resolve symlink dirs when it is true.
 	hasSymlinks bool
+
+	// arena allocates the nodes of a pooled tree. It is nil for trees
+	// from New.
+	arena *arena
+}
+
+// arena allocates proto nodes in chunks for a pooled MerkleTree.
+type arena struct {
+	files    chunks[rpb.FileNode]
+	digests  chunks[rpb.Digest]
+	dirNodes chunks[rpb.DirectoryNode]
+	symlinks chunks[rpb.SymlinkNode]
+	dirs     chunks[rpb.Directory]
+}
+
+const arenaChunk = 256
+
+// arenaMaxRetained is the most nodes of one kind that a tree can have to
+// go back to the pool.
+const arenaMaxRetained = 1 << 16
+
+// chunks is a chunked slab of T. Pointers to elements stay valid until reset.
+type chunks[T any] struct {
+	c [][]T
+	n int // number of elements handed out
+}
+
+func (c *chunks[T]) alloc() *T {
+	i, j := c.n/arenaChunk, c.n%arenaChunk
+	if i == len(c.c) {
+		c.c = append(c.c, make([]T, arenaChunk))
+	}
+	c.n++
+	return &c.c[i][j]
+}
+
+// reset zeroes the elements handed out so far, so they don't retain
+// anything and are ready for reuse.
+func (c *chunks[T]) reset() {
+	for i := 0; c.n > 0; i++ {
+		k := min(c.n, arenaChunk)
+		clear(c.c[i][:k])
+		c.n -= k
+	}
+}
+
+func (c *chunks[T]) size() int { return len(c.c) * arenaChunk }
+
+// reset resets the arena for reuse.
+func (a *arena) reset() {
+	a.files.reset()
+	a.digests.reset()
+	a.dirNodes.reset()
+	a.symlinks.reset()
+	a.dirs.reset()
+}
+
+// retainable reports whether the arena is small enough to keep in the pool.
+func (a *arena) retainable() bool {
+	return a.files.size() <= arenaMaxRetained && a.digests.size() <= arenaMaxRetained &&
+		a.dirNodes.size() <= arenaMaxRetained && a.dirs.size() <= arenaMaxRetained &&
+		a.symlinks.size() <= arenaMaxRetained
+}
+
+func (m *MerkleTree) newFileNode() *rpb.FileNode {
+	if m.arena == nil {
+		return &rpb.FileNode{}
+	}
+	return m.arena.files.alloc()
+}
+
+func (m *MerkleTree) newSymlinkNode() *rpb.SymlinkNode {
+	if m.arena == nil {
+		return &rpb.SymlinkNode{}
+	}
+	return m.arena.symlinks.alloc()
+}
+
+func (m *MerkleTree) newDirectoryNode() *rpb.DirectoryNode {
+	if m.arena == nil {
+		return &rpb.DirectoryNode{}
+	}
+	return m.arena.dirNodes.alloc()
+}
+
+func (m *MerkleTree) newDirectory() *rpb.Directory {
+	if m.arena == nil {
+		return &rpb.Directory{}
+	}
+	return m.arena.dirs.alloc()
+}
+
+// digestProto returns d as a digest proto (nil for a zero digest, like d.Proto()).
+func (m *MerkleTree) digestProto(d digest.Digest) *rpb.Digest {
+	if m.arena == nil || d.IsZero() {
+		return d.Proto()
+	}
+	p := m.arena.digests.alloc()
+	p.Hash = d.Hash
+	p.SizeBytes = d.SizeBytes
+	return p
 }
 
 // New creates new merkle tree with digest function and digest store.
@@ -75,11 +176,15 @@ func NewPooled(fn digest.Function, store *blob.Store) *MerkleTree {
 	m.store = store
 	m.lastDir = dirstate{}
 	m.pooled = true
-	m.m[""] = &rpb.Directory{}
+	if m.arena == nil {
+		m.arena = &arena{}
+	}
+	m.m[""] = m.newDirectory()
 	return m
 }
 
-// Release returns the MerkleTree to the pool.
+// Release returns the MerkleTree to the pool, or drops it if it has more
+// than arenaMaxRetained nodes of one kind.
 // The MerkleTree must not be used after calling Release.
 // Release is idempotent: calls after the first are no-ops, and it is a
 // no-op for MerkleTrees created via New.
@@ -87,11 +192,17 @@ func (m *MerkleTree) Release() {
 	if !m.pooled {
 		return
 	}
+	m.pooled = false
+	if m.arena != nil && !m.arena.retainable() {
+		return
+	}
 	clear(m.m)
 	m.store = nil
 	m.lastDir = dirstate{}
-	m.pooled = false
 	m.hasSymlinks = false
+	if m.arena != nil {
+		m.arena.reset()
+	}
 	merkleTreePool.Put(m)
 }
 
@@ -210,10 +321,10 @@ func (m *MerkleTree) Set(entry Entry) error {
 				m.lastDir = cur
 				if entry.IsSymlink() {
 					m.hasSymlinks = true
-					cur.dir.Symlinks = append(cur.dir.Symlinks, &rpb.SymlinkNode{
-						Name:   name,
-						Target: entry.Target,
-					})
+					sn := m.newSymlinkNode()
+					sn.Name = name
+					sn.Target = entry.Target
+					cur.dir.Symlinks = append(cur.dir.Symlinks, sn)
 					return nil
 				}
 				_, err := m.setDir(cur, name)
@@ -236,11 +347,11 @@ func (m *MerkleTree) Set(entry Entry) error {
 			// would add per-Set work to this hot path (a linear scan or a
 			// per-directory map, both allocating) without changing the
 			// built proto.
-			cur.dir.Files = append(cur.dir.Files, &rpb.FileNode{
-				Name:         name,
-				Digest:       entry.Data.Digest().Proto(),
-				IsExecutable: entry.IsExecutable,
-			})
+			fn := m.newFileNode()
+			fn.Name = name
+			fn.Digest = m.digestProto(entry.Data.Digest())
+			fn.IsExecutable = entry.IsExecutable
+			cur.dir.Files = append(cur.dir.Files, fn)
 			m.lastDir = cur
 			return nil
 		}
@@ -288,12 +399,10 @@ func (m *MerkleTree) setDir(cur dirstate, name string) (dirstate, error) {
 	dirname := pathJoin(cur.name, name)
 	dir, exists := m.m[dirname]
 	if !exists {
-		dirnode := &rpb.DirectoryNode{
-			Name: name,
-			// compute digest later
-		}
+		dirnode := m.newDirectoryNode()
+		dirnode.Name = name // compute digest later
 		cur.dir.Directories = append(cur.dir.Directories, dirnode)
-		dir = &rpb.Directory{}
+		dir = m.newDirectory()
 		m.m[dirname] = dir
 	}
 	if dir == nil {
@@ -382,10 +491,9 @@ func (m *MerkleTree) SetTree(tentry TreeEntry) error {
 
 func (m *MerkleTree) setTree(cur dirstate, name string, d digest.Digest, store *blob.Store) {
 	dirname := pathJoin(cur.name, name)
-	dirnode := &rpb.DirectoryNode{
-		Name:   name,
-		Digest: d.Proto(),
-	}
+	dirnode := m.newDirectoryNode()
+	dirnode.Name = name
+	dirnode.Digest = m.digestProto(d)
 	cur.dir.Directories = append(cur.dir.Directories, dirnode)
 	_, exists := m.m[dirname]
 	if !exists {
@@ -607,7 +715,7 @@ func (m *MerkleTree) buildTree(ctx context.Context, curdir *rpb.Directory, dirna
 	if m.store != nil {
 		m.store.Set(data)
 	}
-	return data.Digest().Proto(), nil
+	return m.digestProto(data.Digest()), nil
 }
 
 // Directories returns directories in the merkle tree.
