@@ -170,7 +170,8 @@ func (m *MerkleTree) Set(entry Entry) error {
 	// and '/' separator instead of CutPrefix(fname, name+"/"), whose
 	// concatenation allocates per call (~18M allocs per cache-cold build).
 	var found bool
-	if m.lastDir.dir != nil && !strings.Contains(fname, "..") {
+	dotdot := strings.Contains(fname, "..")
+	if m.lastDir.dir != nil && !dotdot {
 		ln := len(m.lastDir.name)
 		if len(fname) > ln && fname[ln] == '/' && fname[:ln] == m.lastDir.name {
 			cur = m.lastDir
@@ -181,6 +182,7 @@ func (m *MerkleTree) Set(entry Entry) error {
 	if !found {
 		m.lastDir = dirstate{}
 	}
+	// dirstack is needed only to resolve "..".
 	var dirstack []dirstate
 	for {
 		name, next, found := strings.Cut(rest, "/")
@@ -250,7 +252,9 @@ func (m *MerkleTree) Set(entry Entry) error {
 			cur, dirstack = dirstack[len(dirstack)-1], dirstack[:len(dirstack)-1]
 			continue
 		}
-		dirstack = append(dirstack, cur)
+		if dotdot {
+			dirstack = append(dirstack, cur)
+		}
 		var err error
 		cur, err = m.setDir(cur, name)
 		if err != nil {
@@ -328,6 +332,8 @@ func (m *MerkleTree) SetTree(tentry TreeEntry) error {
 		name: ".",
 		dir:  m.RootDirectory(),
 	}
+	// dirstack is needed only to resolve "..".
+	dotdot := strings.Contains(dname, "..")
 	var dirstack []dirstate
 	rest := dname
 	for {
@@ -357,7 +363,9 @@ func (m *MerkleTree) SetTree(tentry TreeEntry) error {
 			cur, dirstack = dirstack[len(dirstack)-1], dirstack[:len(dirstack)-1]
 			continue
 		}
-		dirstack = append(dirstack, cur)
+		if dotdot {
+			dirstack = append(dirstack, cur)
+		}
 		var err error
 		cur, err = m.setDir(cur, name)
 		if err != nil {
@@ -390,6 +398,7 @@ func (m *MerkleTree) setTree(cur dirstate, name string, d digest.Digest, store *
 }
 
 // Build builds merkle tree and returns root's digest.
+// The tree must not be used after Build returns an error.
 func (m *MerkleTree) Build(ctx context.Context) (digest.Digest, error) {
 	// invalidate lastDir cache since we are resolving symlinks and might modify the tree structure
 	m.lastDir = dirstate{}
@@ -505,7 +514,8 @@ func (m *MerkleTree) buildTree(ctx context.Context, curdir *rpb.Directory, dirna
 	// sharing a name with a symlink is skipped (the symlink wins); see
 	// TestBuildDuplicateSymlinkDir.
 	names := make(map[string]proto.Message, len(curdir.Files)+len(curdir.Symlinks)+len(curdir.Directories))
-	var files []*rpb.FileNode
+	// Filter in place: the write index never passes the read index.
+	files := curdir.Files[:0]
 	for _, f := range curdir.Files {
 		p, found := names[f.Name]
 		if found {
@@ -526,7 +536,7 @@ func (m *MerkleTree) buildTree(ctx context.Context, curdir *rpb.Directory, dirna
 	})
 	curdir.Files = files
 
-	var symlinks []*rpb.SymlinkNode
+	symlinks := curdir.Symlinks[:0]
 	for _, s := range curdir.Symlinks {
 		p, found := names[s.Name]
 		if found {
@@ -544,24 +554,24 @@ func (m *MerkleTree) buildTree(ctx context.Context, curdir *rpb.Directory, dirna
 	})
 	curdir.Symlinks = symlinks
 
-	var dirs []*rpb.DirectoryNode
+	dirs := curdir.Directories[:0]
 	for _, subdir := range curdir.Directories {
-		dirname := pathJoin(dirname, subdir.Name)
-		dir, found := m.m[dirname]
+		subdirname := pathJoin(dirname, subdir.Name)
+		dir, found := m.m[subdirname]
 		if !found {
-			return nil, fmt.Errorf("directory not found: %s", dirname)
+			return nil, fmt.Errorf("directory not found: %s", subdirname)
 		}
 		p, found := names[subdir.Name]
 		if found {
 			switch p.(type) {
 			case *rpb.SymlinkNode:
-				clog.Infof(ctx, "use symlink for dir: %s", dirname)
+				clog.Infof(ctx, "use symlink for dir: %s", subdirname)
 				continue
 			}
 			// other checks later.
 		}
 		if dir != nil && subdir.Digest == nil {
-			digest, err := m.buildTree(ctx, dir, dirname)
+			digest, err := m.buildTree(ctx, dir, subdirname)
 			if err != nil {
 				return nil, err
 			}
