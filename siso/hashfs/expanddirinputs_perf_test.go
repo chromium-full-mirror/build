@@ -5,6 +5,7 @@
 package hashfs
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -48,7 +49,7 @@ func newDigestHashFS(t testing.TB) (*HashFS, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { hfs.Close(ctx) })
+	t.Cleanup(func() { hfs.Close(context.WithoutCancel(ctx)) })
 	if err := hfs.WaitReady(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -67,7 +68,7 @@ func TestExpandDirInputs_IncludesEmptySubdir(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "d", "file.txt"), []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	got := hfs.expandDirInputs(t.Context(), root, []string{"d/"})
+	got := hfs.expandDirInputs(t.Context(), root, []path.Path{"d/"})
 	if !slices.Contains(got, "d/empty") {
 		t.Errorf("expandDirInputs(d/) = %v; want it to include the empty subdir d/empty", got)
 	}
@@ -84,7 +85,7 @@ func TestExpandDirInputs_AmortizedAcrossActions(t *testing.T) {
 	const actions = 5
 	expandDirInputsWalks.Store(0)
 	for range actions {
-		got := hfs.expandDirInputs(ctx, root, []string{"gen/"})
+		got := hfs.expandDirInputs(ctx, root, []path.Path{"gen/"})
 		if len(got) != nFiles {
 			t.Fatalf("expandDirInputs returned %d files; want %d", len(got), nFiles)
 		}
@@ -104,8 +105,8 @@ func TestExpandDirInputs_InvalidatedOnUpdate(t *testing.T) {
 	mkTreeForDigest(t, root, 5)
 
 	expandDirInputsWalks.Store(0)
-	hfs.expandDirInputs(ctx, root, []string{"gen/"}) // walk 1, caches
-	hfs.expandDirInputs(ctx, root, []string{"gen/"}) // cache hit, no walk
+	hfs.expandDirInputs(ctx, root, []path.Path{"gen/"}) // walk 1, caches
+	hfs.expandDirInputs(ctx, root, []path.Path{"gen/"}) // cache hit, no walk
 	if walks := expandDirInputsWalks.Load(); walks != 1 {
 		t.Fatalf("before mutation: walks=%d; want 1 (second expand should hit cache)", walks)
 	}
@@ -120,7 +121,7 @@ func TestExpandDirInputs_InvalidatedOnUpdate(t *testing.T) {
 		t.Fatalf("Update: %v", err)
 	}
 
-	hfs.expandDirInputs(ctx, root, []string{"gen/"}) // must re-walk
+	hfs.expandDirInputs(ctx, root, []path.Path{"gen/"}) // must re-walk
 	if walks := expandDirInputsWalks.Load(); walks != 2 {
 		t.Errorf("Update under a cached dir input did not invalidate it: walks=%d; want 2 (stale expansion)", walks)
 	}
@@ -134,17 +135,17 @@ func TestExpandDirInputs_InvalidatedOnRemoveAll(t *testing.T) {
 	hfs, root := newDigestHashFS(t)
 	mkTreeForDigest(t, root, 6)
 
-	first := hfs.expandDirInputs(ctx, root, []string{"gen/"})
+	first := hfs.expandDirInputs(ctx, root, []path.Path{"gen/"})
 	victim := first[0]
 	if !slices.Contains(first, victim) {
 		t.Fatalf("setup: %q not in expansion %v", victim, first)
 	}
 
-	if err := hfs.RemoveAll(ctx, root, path.Path(victim)); err != nil {
+	if err := hfs.RemoveAll(ctx, root, victim); err != nil {
 		t.Fatalf("RemoveAll(%q): %v", victim, err)
 	}
 
-	second := hfs.expandDirInputs(ctx, root, []string{"gen/"})
+	second := hfs.expandDirInputs(ctx, root, []path.Path{"gen/"})
 	if slices.Contains(second, victim) {
 		t.Errorf("removed file %q still in expansion %v (stale cache after RemoveAll)", victim, second)
 	}
@@ -158,11 +159,11 @@ func TestExpandDirInputs_InvalidatedOnParentRemoveAll(t *testing.T) {
 	mkTreeForDigest(t, root, 5)
 
 	expandDirInputsWalks.Store(0)
-	hfs.expandDirInputs(ctx, root, []string{"gen/sub0/"})
+	hfs.expandDirInputs(ctx, root, []path.Path{"gen/sub0/"})
 	if err := hfs.RemoveAll(ctx, root, path.Path("gen")); err != nil {
 		t.Fatal(err)
 	}
-	hfs.expandDirInputs(ctx, root, []string{"gen/sub0/"})
+	hfs.expandDirInputs(ctx, root, []path.Path{"gen/sub0/"})
 	if w := expandDirInputsWalks.Load(); w != 2 {
 		t.Errorf("RemoveAll(gen) did not invalidate gen/sub0/: walks=%d; want 2", w)
 	}
@@ -193,20 +194,20 @@ func TestExpandDirInputs_InvalidatedByAllMutations(t *testing.T) {
 			hfs, root := newDigestHashFS(t)
 			mkTreeForDigest(t, root, 8)
 
-			first := hfs.expandDirInputs(ctx, root, []string{"gen/"})
+			first := hfs.expandDirInputs(ctx, root, []path.Path{"gen/"})
 			if len(first) == 0 {
 				t.Fatal("empty expansion in setup")
 			}
 			// Warm the cache, then count only post-warm walks.
 			expandDirInputsWalks.Store(0)
-			hfs.expandDirInputs(ctx, root, []string{"gen/"})
+			hfs.expandDirInputs(ctx, root, []path.Path{"gen/"})
 			if w := expandDirInputsWalks.Load(); w != 0 {
 				t.Fatalf("%s: cache not warm, pre-mutation expand re-walked (walks=%d)", tc.name, w)
 			}
 
-			tc.mutate(t, hfs, root, first[0])
+			tc.mutate(t, hfs, root, string(first[0]))
 
-			hfs.expandDirInputs(ctx, root, []string{"gen/"})
+			hfs.expandDirInputs(ctx, root, []path.Path{"gen/"})
 			if w := expandDirInputsWalks.Load(); w != 1 {
 				t.Errorf("%s did not invalidate the cached dir-input expansion: post-mutation walks=%d; want 1", tc.name, w)
 			}
@@ -220,20 +221,58 @@ func BenchmarkExpandDirInputs(b *testing.B) {
 	ctx := b.Context()
 	hfs, root := newDigestHashFS(b)
 	mkTreeForDigest(b, root, 1000)
-	hfs.expandDirInputs(ctx, root, []string{"gen/"}) // warm
+	hfs.expandDirInputs(ctx, root, []path.Path{"gen/"}) // warm
 
 	expandDirInputsWalks.Store(0)
 	b.ReportAllocs()
 	for b.Loop() {
-		hfs.expandDirInputs(ctx, root, []string{"gen/"})
+		hfs.expandDirInputs(ctx, root, []path.Path{"gen/"})
 	}
 	b.ReportMetric(float64(expandDirInputsWalks.Load())/float64(b.N), "walks/op")
+}
+
+// BenchmarkEntries measures Entries for 1000 file inputs, without and
+// with a directory input over the same files.
+func BenchmarkEntries(b *testing.B) {
+	const nFiles = 1000
+	files := make([]path.Path, 0, nFiles)
+	for i := range nFiles {
+		files = append(files, path.Path(fmt.Sprintf("gen/sub%d/f%d.dat", i%8, i)))
+	}
+	for _, bc := range []struct {
+		name   string
+		inputs []path.Path
+		want   int
+	}{
+		{"NoDirInput", files, nFiles},
+		// Entries keeps the files listed twice, explicitly and in gen/.
+		{"DirInput", append([]path.Path{"gen/"}, files...), 2 * nFiles},
+	} {
+		b.Run(bc.name, func(b *testing.B) {
+			ctx := b.Context()
+			hfs, root := newDigestHashFS(b)
+			mkTreeForDigest(b, root, nFiles)
+			ents, err := hfs.Entries(ctx, root, bc.inputs)
+			if err != nil {
+				b.Fatal(err)
+			}
+			if len(ents) != bc.want {
+				b.Fatalf("Entries returned %d entries; want %d", len(ents), bc.want)
+			}
+			b.ReportAllocs()
+			for b.Loop() {
+				if _, err := hfs.Entries(ctx, root, bc.inputs); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
 }
 
 func newDirInputCacheForBench(n int) *HashFS {
 	hfs := &HashFS{}
 	for i := range n {
-		hfs.dirInputCache.Store(fmt.Sprintf("/work/out/soong/.intermediates/vendor/module%d/android_arm64/gen", i), []string(nil))
+		hfs.dirInputCache.Store(fmt.Sprintf("/work/out/soong/.intermediates/vendor/module%d/android_arm64/gen", i), []path.Path(nil))
 	}
 	hfs.dirInputCached.Store(true)
 	return hfs

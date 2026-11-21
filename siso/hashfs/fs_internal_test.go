@@ -406,9 +406,9 @@ func TestExpandDirInputs_EmptyDir(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	got := hfs.expandDirInputs(ctx, root, []string{"empty/", "full/"})
+	got := hfs.expandDirInputs(ctx, root, []path.Path{"empty/", "full/"})
 	has := func(p string) bool {
-		return slices.Contains(got, p)
+		return slices.Contains(got, path.Path(p))
 	}
 	// An empty directory input must not vanish: keep the bare dir so the
 	// (empty) directory is still represented in the input tree.

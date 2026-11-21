@@ -153,7 +153,7 @@ type HashFS struct {
 	missingOutputs sync.Map
 
 	// dirInputCache memoizes expandDirInputs results within a build, keyed by
-	// the directory's full path -> []string of its files.
+	// the directory's full path -> []path.Path of its files.
 	dirInputCache sync.Map
 	// dirInputCached gates invalidation so builds with no directory inputs pay
 	// only an atomic load.
@@ -1608,7 +1608,7 @@ func (hfs *HashFS) entries(ctx context.Context, root string, inputs []path.Path,
 	if log.V(1) {
 		clog.Infof(ctx, "entries resolveEscapedSymlinks=%t", resolveEscapedSymlinks)
 	}
-	inputs = path.Paths(hfs.expandDirInputs(ctx, root, path.Strings(inputs)))
+	inputs = hfs.expandDirInputs(ctx, root, inputs)
 	ents, names, err := hfs.resolveInputEntries(ctx, root, inputs)
 	if err != nil {
 		return nil, err
@@ -1619,10 +1619,10 @@ func (hfs *HashFS) entries(ctx context.Context, root string, inputs []path.Path,
 // expandDirInputs replaces each trailing-slash directory-target input with the
 // files it contains, recursively, because REAPI input trees are built from
 // files. Inputs without a trailing slash are returned unchanged.
-func (hfs *HashFS) expandDirInputs(ctx context.Context, root string, inputs []string) []string {
+func (hfs *HashFS) expandDirInputs(ctx context.Context, root string, inputs []path.Path) []path.Path {
 	hasDir := false
 	for _, in := range inputs {
-		if strings.HasSuffix(in, "/") {
+		if strings.HasSuffix(string(in), "/") {
 			hasDir = true
 			break
 		}
@@ -1631,19 +1631,20 @@ func (hfs *HashFS) expandDirInputs(ctx context.Context, root string, inputs []st
 		return inputs
 	}
 	fsys := hfs.FileSystem(ctx, root)
-	expanded := make([]string, 0, len(inputs))
+	expanded := make([]path.Path, 0, len(inputs))
 	for _, input := range inputs {
-		if !strings.HasSuffix(input, "/") {
+		if !strings.HasSuffix(string(input), "/") {
 			expanded = append(expanded, input)
 			continue
 		}
-		dir := strings.TrimSuffix(input, "/")
+		dir := strings.TrimSuffix(string(input), "/")
 		cacheKey := string(makeFullpath(root, path.New(dir)))
 		if v, ok := hfs.dirInputCache.Load(cacheKey); ok {
-			expanded = append(expanded, v.([]string)...)
+			expanded = append(expanded, v.([]path.Path)...)
 			continue
 		}
-		var files, subdirs []string
+		var files []path.Path
+		var subdirs []string
 		expandDirInputsWalks.Add(1)
 		err := fs.WalkDir(fsys, dir, func(p string, d fs.DirEntry, err error) error {
 			if err != nil {
@@ -1655,20 +1656,20 @@ func (hfs *HashFS) expandDirInputs(ctx context.Context, root string, inputs []st
 				}
 				return nil
 			}
-			files = append(files, p)
+			files = append(files, path.Path(p))
 			return nil
 		})
 		if err != nil {
 			// Fall back to the directory path so resolveInputEntries surfaces
 			// the missing/erroring entry.
 			clog.Warningf(ctx, "expand dir input %s: %v", input, err)
-			expanded = append(expanded, dir)
+			expanded = append(expanded, path.Path(dir))
 			continue
 		}
 		if len(files) == 0 {
 			// Keep the bare dir so an empty directory input is still
 			// represented in the input tree. Not cached: re-walking is cheap.
-			expanded = append(expanded, dir)
+			expanded = append(expanded, path.Path(dir))
 			continue
 		}
 		// Also represent empty subdirectories (those with no file beneath
@@ -1678,7 +1679,7 @@ func (hfs *HashFS) expandDirInputs(ctx context.Context, root string, inputs []st
 		if len(subdirs) > 0 {
 			withFile := make(map[string]bool, len(files))
 			for _, f := range files {
-				for pd := stdpath.Dir(f); len(pd) > len(dir); pd = stdpath.Dir(pd) {
+				for pd := stdpath.Dir(string(f)); len(pd) > len(dir); pd = stdpath.Dir(pd) {
 					if withFile[pd] {
 						break
 					}
@@ -1687,7 +1688,7 @@ func (hfs *HashFS) expandDirInputs(ctx context.Context, root string, inputs []st
 			}
 			for _, sd := range subdirs {
 				if !withFile[sd] {
-					files = append(files, sd)
+					files = append(files, path.Path(sd))
 				}
 			}
 		}

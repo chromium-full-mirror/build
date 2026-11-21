@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"slices"
 	"testing"
+
+	"go.chromium.org/build/siso/path"
 )
 
 // TestExpandDirInputs_InvalidatedByRefresh verifies that Refresh drops the
@@ -39,7 +41,7 @@ func TestExpandDirInputs_InvalidatedByRefresh(t *testing.T) {
 	}
 
 	// First expansion walks the tree and memoizes [d/a] in dirInputCache.
-	first := hfs.expandDirInputs(ctx, root, []string{"d/"})
+	first := hfs.expandDirInputs(ctx, root, []path.Path{"d/"})
 	if !slices.Contains(first, "d/a") || len(first) != 1 {
 		t.Fatalf("first expansion = %v; want exactly [d/a]", first)
 	}
@@ -52,7 +54,7 @@ func TestExpandDirInputs_InvalidatedByRefresh(t *testing.T) {
 		t.Fatalf("Refresh: %v", err)
 	}
 
-	second := hfs.expandDirInputs(ctx, root, []string{"d/"})
+	second := hfs.expandDirInputs(ctx, root, []path.Path{"d/"})
 	if !slices.Contains(second, "d/b") {
 		t.Errorf("second expansion after Refresh = %v; want it to contain d/b "+
 			"(stale dirInputCache survived Refresh)", second)
