@@ -616,11 +616,14 @@ func (c *Cmd) inputTree(ctx context.Context) ([]merkletree.Entry, error) {
 	}
 
 	inputs = c.dropSubtreeInputs(inputs)
-	ents, err := c.HashFS.Entries(ctx, c.WorkspaceRoot, inputs)
+	// Leave room for the working directory entry, rootEnts and the
+	// remote entries.
+	ents := make([]merkletree.Entry, 0, 1+len(inputs)+len(rootEnts)+len(c.RemoteInputs))
+	ents = append(ents, merkletree.Entry{Name: c.WorkDir})
+	ents, err := c.HashFS.AppendEntries(ctx, ents, c.WorkspaceRoot, inputs)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get entries for inputs in %s: %w", c.WorkspaceRoot, err)
 	}
-	ents = append([]merkletree.Entry{{Name: c.WorkDir}}, ents...)
 	ents = append(ents, rootEnts...)
 
 	if len(c.RemoteInputs) == 0 {
