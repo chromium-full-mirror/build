@@ -624,9 +624,7 @@ func (c *Cmd) inputTree(ctx context.Context) ([]merkletree.Entry, error) {
 	ents = append(ents, rootEnts...)
 
 	if len(c.RemoteInputs) == 0 {
-		sort.Slice(ents, func(i, j int) bool {
-			return ents[i].Name < ents[j].Name
-		})
+		sortEntriesByName(ents)
 		return ents, nil
 	}
 	if log.V(1) {
@@ -680,11 +678,22 @@ func (c *Cmd) inputTree(ctx context.Context) ([]merkletree.Entry, error) {
 		ents = append(ents, re)
 	}
 
-	sort.Slice(ents, func(i, j int) bool {
-		return ents[i].Name < ents[j].Name
-	})
+	sortEntriesByName(ents)
 	return ents, nil
 }
+
+// sortEntriesByName sorts ents by Name. The order of entries with equal
+// names, such as a directory and a symlink, decides which of them ends up
+// in the input root.
+func sortEntriesByName(ents []merkletree.Entry) {
+	sort.Sort(entriesByName(ents))
+}
+
+type entriesByName []merkletree.Entry
+
+func (e entriesByName) Len() int           { return len(e) }
+func (e entriesByName) Less(i, j int) bool { return e[i].Name < e[j].Name }
+func (e entriesByName) Swap(i, j int)      { e[i], e[j] = e[j], e[i] }
 
 // dropSubtreeInputs removes inputs at or under a precomputed subtree of
 // c.TreeInputs before their entries are looked up. treeDigest ignores
