@@ -46,6 +46,8 @@ type groupSubtree struct {
 	// names are the entry names of the group, relative to the workspace
 	// root.
 	names map[path.Path]struct{}
+	// hasSymlink is true if the group has a symlink entry.
+	hasSymlink bool
 }
 
 // groupTree caches the groupSubtree of an InputGroup.
@@ -96,6 +98,7 @@ type InputGroupCache struct {
 	broken atomic.Bool
 
 	spliced    atomic.Int64
+	partial    atomic.Int64
 	fallbacks  atomic.Int64
 	verified   atomic.Int64
 	mismatches atomic.Int64
@@ -109,30 +112,35 @@ func NewInputGroupCache(excludeDir path.Path) *InputGroupCache {
 }
 
 // InputGroupsSpliced reports whether the last Digest of c used the
-// subtrees of its InputGroups.
+// subtrees of any of its InputGroups.
 func (c *Cmd) InputGroupsSpliced() bool {
-	return c.inputGroupsSpliced
+	return len(c.splicedInputGroups) > 0
+}
+
+// SplicedInputGroups returns the InputGroups whose subtrees the last
+// Digest of c used.
+func (c *Cmd) SplicedInputGroups() []InputGroup {
+	return c.splicedInputGroups
 }
 
 // ShouldVerifyKey reports whether the caller should verify a lookup key
-// computed with groups (after Digest; spliced is Cmd.InputGroupsSpliced)
-// against the flat key: always with SISO_VERIFY_INPUT_GROUPS, for the
-// first verifyFirstGroupUses spliced keys of each group, and for one in
-// verifyGroupKeysEvery keys with groups.
-func (gc *InputGroupCache) ShouldVerifyKey(groups []InputGroup, spliced bool) bool {
+// computed with groups (after Digest; spliced is
+// Cmd.SplicedInputGroups) against the flat key: always with
+// SISO_VERIFY_INPUT_GROUPS, for the first verifyFirstGroupUses keys that
+// spliced each group, and for one in verifyGroupKeysEvery keys with
+// groups.
+func (gc *InputGroupCache) ShouldVerifyKey(spliced []InputGroup) bool {
 	verify := verifyInputGroups
 	if gc.keys.Add(1)%verifyGroupKeysEvery == 0 {
 		verify = true
 	}
-	if spliced {
-		for _, g := range groups {
-			v, ok := gc.keyUses.Load(g.Key)
-			if !ok {
-				v, _ = gc.keyUses.LoadOrStore(g.Key, new(atomic.Int64))
-			}
-			if v.(*atomic.Int64).Add(1) <= verifyFirstGroupUses {
-				verify = true
-			}
+	for _, g := range spliced {
+		v, ok := gc.keyUses.Load(g.Key)
+		if !ok {
+			v, _ = gc.keyUses.LoadOrStore(g.Key, new(atomic.Int64))
+		}
+		if v.(*atomic.Int64).Add(1) <= verifyFirstGroupUses {
+			verify = true
 		}
 	}
 	if verify {
@@ -175,8 +183,9 @@ func (gc *InputGroupCache) ReportMismatch(ctx context.Context, step string, grou
 // InputGroupStats are the counters of an InputGroupCache.
 type InputGroupStats struct {
 	// Spliced and Fallbacks count the lookup keys with groups that
-	// used the group subtrees, or the group paths as inputs.
-	Spliced, Fallbacks int64
+	// used the group subtrees, or the group paths as inputs. Partial
+	// counts the spliced keys that used only some of their groups.
+	Spliced, Partial, Fallbacks int64
 	// Verified and Mismatches count the verified keys, and those that
 	// differed from the flat key.
 	Verified, Mismatches int64
@@ -186,6 +195,7 @@ type InputGroupStats struct {
 func (gc *InputGroupCache) Stats() InputGroupStats {
 	return InputGroupStats{
 		Spliced:    gc.spliced.Load(),
+		Partial:    gc.partial.Load(),
 		Fallbacks:  gc.fallbacks.Load(),
 		Verified:   gc.verified.Load(),
 		Mismatches: gc.mismatches.Load(),
@@ -195,7 +205,7 @@ func (gc *InputGroupCache) Stats() InputGroupStats {
 // LogStats logs one line with the counters (as error if a verification
 // found a mismatch), for example
 //
-//	input groups: keys=97012 spliced=96990 fallbacks=22 verified=391 mismatches=0 off=false
+//	input groups: keys=97012 spliced=96990 partial=12 fallbacks=22 verified=391 mismatches=0 off=false
 //
 // where keys = spliced + fallbacks.
 func (gc *InputGroupCache) LogStats(ctx context.Context) {
@@ -204,8 +214,8 @@ func (gc *InputGroupCache) LogStats(ctx context.Context) {
 	if keys == 0 {
 		return
 	}
-	msg := fmt.Sprintf("input groups: keys=%d spliced=%d fallbacks=%d verified=%d mismatches=%d off=%t",
-		keys, st.Spliced, st.Fallbacks, st.Verified, st.Mismatches, gc.Broken())
+	msg := fmt.Sprintf("input groups: keys=%d spliced=%d partial=%d fallbacks=%d verified=%d mismatches=%d off=%t",
+		keys, st.Spliced, st.Partial, st.Fallbacks, st.Verified, st.Mismatches, gc.Broken())
 	if st.Mismatches > 0 {
 		clog.Errorf(ctx, "%s", msg)
 		return
@@ -328,6 +338,7 @@ func (gc *InputGroupCache) newSubtree(ctx context.Context, c *Cmd, g InputGroup)
 	sortEntriesByName(ents)
 	prefix := dir + "/"
 	names := make(map[path.Path]struct{}, len(ents))
+	hasSymlink := false
 	t := merkletree.NewPooled(c.HashFS.DigestFunction(), nil)
 	defer t.Release()
 	for _, e := range ents {
@@ -339,8 +350,11 @@ func (gc *InputGroupCache) newSubtree(ctx context.Context, c *Cmd, g InputGroup)
 			return nil, fmt.Errorf("entry %q not under %q", name, dir)
 		}
 		rel := strings.TrimPrefix(name, prefix)
-		if e.IsSymlink() && !symlinkStaysIn(stdpath.Dir(rel), e.Target) {
-			return nil, fmt.Errorf("symlink %q -> %q leaves %q", name, e.Target, dir)
+		if e.IsSymlink() {
+			if !symlinkStaysIn(stdpath.Dir(rel), e.Target) {
+				return nil, fmt.Errorf("symlink %q -> %q leaves %q", name, e.Target, dir)
+			}
+			hasSymlink = true
 		}
 		names[e.Name] = struct{}{}
 		e.Name = path.Path(rel)
@@ -353,7 +367,7 @@ func (gc *InputGroupCache) newSubtree(ctx context.Context, c *Cmd, g InputGroup)
 	if err != nil {
 		return nil, err
 	}
-	return &groupSubtree{dir: path.Path(dir), digest: d, names: names}, nil
+	return &groupSubtree{dir: path.Path(dir), digest: d, names: names, hasSymlink: hasSymlink}, nil
 }
 
 // CommonDir returns the longest common directory of the slash-separated
@@ -376,41 +390,60 @@ func CommonDir(a, b string) string {
 }
 
 // inputRootDigestWithGroups computes the input root digest of c (without a
-// blob store) using the subtrees of c.InputGroups in gc. ok is false if a
-// group or the step's own inputs don't allow it.
-func (c *Cmd) inputRootDigestWithGroups(ctx context.Context, gc *InputGroupCache) (d digest.Digest, ok bool, err error) {
+// blob store) using the subtrees of c.InputGroups in gc. spliced are the
+// groups whose subtrees it used: all of them, only some of them (partial),
+// or none if a group or the step's own inputs don't allow it, in which
+// case the caller computes the digest from the flat inputs.
+func (c *Cmd) inputRootDigestWithGroups(ctx context.Context, gc *InputGroupCache) (d digest.Digest, spliced []InputGroup, err error) {
 	if len(c.TreeInputs) > 0 || c.RemoteChroot() || len(c.RemoteInputs) > 0 || c.CanonicalizeDir || c.UseSystemInput {
-		return digest.Digest{}, false, nil
+		return digest.Digest{}, nil, nil
 	}
 	gts := make([]*groupSubtree, 0, len(c.InputGroups))
 	for _, g := range c.InputGroups {
 		gt := gc.subtree(ctx, c, g)
 		if gt == nil {
-			return digest.Digest{}, false, nil
+			return digest.Digest{}, nil, nil
 		}
 		for _, o := range gts {
 			if o.dir == gt.dir || o.dir.HasPrefix(gt.dir) || gt.dir.HasPrefix(o.dir) {
-				return c.groupFallback(ctx, gc, "overlapping groups %s and %s", o.dir, gt.dir)
+				c.logGroupNotUsed(ctx, gc, "overlapping groups %s and %s", o.dir, gt.dir)
+				return digest.Digest{}, nil, nil
 			}
 		}
 		if c.WorkDir.HasPrefix(gt.dir) {
-			return c.groupFallback(ctx, gc, "workdir %s in group dir %s", c.WorkDir, gt.dir)
+			c.logGroupNotUsed(ctx, gc, "workdir %s in group dir %s", c.WorkDir, gt.dir)
+			return digest.Digest{}, nil, nil
 		}
 		gts = append(gts, gt)
 	}
-	// Own inputs at or under a group dir must be group members. Check
-	// the inputs before looking up their entries, and the entries
-	// (e.g. of directories and symlinks) below.
-	for _, p := range c.AllInputs() {
-		if gt := groupAt(gts, p); gt != nil {
-			if _, in := gt.names[p]; !in {
-				return c.groupFallback(ctx, gc, "input %s in group dir %s", p, gt.dir)
-			}
+	// A group whose dir holds an own input that is not a member is
+	// dropped, and its paths become own inputs. Check the inputs first,
+	// and their entries (e.g. of directories and symlinks) below.
+	drop := make([]bool, len(gts))
+	ndrop := 0
+	// inGroupDir reports whether p is at or under a group dir, and drops
+	// that group if p is not a member.
+	inGroupDir := func(p path.Path) bool {
+		i := groupIndexAt(gts, p)
+		if i < 0 {
+			return false
 		}
+		if _, in := gts[i].names[p]; !in && !drop[i] {
+			drop[i] = true
+			ndrop++
+			c.logGroupDropped(ctx, gc, c.InputGroups[i], "input %s in group dir %s", p, gts[i].dir)
+		}
+		return true
+	}
+	for _, p := range c.AllInputs() {
+		inGroupDir(p)
+	}
+	if ndrop > 0 {
+		return c.withoutGroups(ctx, gc, gts, drop, ndrop)
 	}
 	buf, err := c.inputTree(ctx)
 	if err != nil {
-		return digest.Digest{}, false, fmt.Errorf("failed to get input tree for %s: %w", c, err)
+		return digest.Digest{}, nil, fmt.Errorf("failed to get input tree for %s: %w", c, err)
 	}
 	defer putEntriesBuf(buf)
 	ents := *buf
@@ -419,19 +452,21 @@ func (c *Cmd) inputRootDigestWithGroups(ctx context.Context, gc *InputGroupCache
 	for _, e := range ents {
 		if n := string(e.Name); stdpath.Clean(n) != n {
 			// may reach into a group dir via "..".
-			return c.groupFallback(ctx, gc, "unclean input %s", e.Name)
+			c.logGroupNotUsed(ctx, gc, "unclean input %s", e.Name)
+			return digest.Digest{}, nil, nil
 		}
-		if gt := groupAt(gts, e.Name); gt != nil {
-			if _, in := gt.names[e.Name]; !in {
-				return c.groupFallback(ctx, gc, "input %s in group dir %s", e.Name, gt.dir)
-			}
+		if inGroupDir(e.Name) {
 			continue
 		}
 		if e.IsSymlink() {
 			// may resolve into a group dir.
-			return c.groupFallback(ctx, gc, "symlink input %s", e.Name)
+			c.logGroupNotUsed(ctx, gc, "symlink input %s", e.Name)
+			return digest.Digest{}, nil, nil
 		}
 		kept = append(kept, e)
+	}
+	if ndrop > 0 {
+		return c.withoutGroups(ctx, gc, gts, drop, ndrop)
 	}
 	subtrees := make([]merkletree.TreeEntry, 0, len(gts))
 	for _, gt := range gts {
@@ -439,28 +474,65 @@ func (c *Cmd) inputRootDigestWithGroups(ctx context.Context, gc *InputGroupCache
 	}
 	d, err = treeDigest(ctx, c.HashFS.DigestFunction(), subtrees, kept, nil)
 	if err != nil {
-		return digest.Digest{}, false, err
+		return digest.Digest{}, nil, err
 	}
-	return d, true, nil
+	return d, c.InputGroups, nil
 }
 
-// groupAt returns the subtree in gts whose dir is p or contains p, or nil.
-func groupAt(gts []*groupSubtree, p path.Path) *groupSubtree {
-	for _, gt := range gts {
+// withoutGroups computes the digest with the groups marked in drop added
+// to the own inputs, and the others spliced. spliced are the groups whose
+// subtrees it used, so it is partial if not empty. It falls back (nil
+// spliced) if all groups are dropped, or a dropped group has a symlink,
+// since an own symlink input falls back anyway.
+func (c *Cmd) withoutGroups(ctx context.Context, gc *InputGroupCache, gts []*groupSubtree, drop []bool, ndrop int) (d digest.Digest, spliced []InputGroup, err error) {
+	if ndrop == len(c.InputGroups) {
+		c.logGroupNotUsed(ctx, gc, "no usable group")
+		return digest.Digest{}, nil, nil
+	}
+	var dropped, kept []InputGroup
+	for i, g := range c.InputGroups {
+		if !drop[i] {
+			kept = append(kept, g)
+			continue
+		}
+		if gts[i].hasSymlink {
+			c.logGroupNotUsed(ctx, gc, "dropped group %s has a symlink", g.Name)
+			return digest.Digest{}, nil, nil
+		}
+		dropped = append(dropped, g)
+	}
+	fc := *c
+	fc.InputGroups = dropped
+	fc.Inputs = fc.flattenInputGroups()
+	fc.InputGroups = kept
+	return fc.inputRootDigestWithGroups(ctx, gc)
+}
+
+// groupIndexAt returns the index of the group in gts whose dir p is at or
+// under, or -1.
+func groupIndexAt(gts []*groupSubtree, p path.Path) int {
+	for i, gt := range gts {
 		if p.HasPrefix(gt.dir) {
-			return gt
+			return i
 		}
 	}
-	return nil
+	return -1
 }
 
-// groupFallback logs (for the first 100 calls) why c doesn't use its
-// groups, and returns ok=false.
-func (c *Cmd) groupFallback(ctx context.Context, gc *InputGroupCache, format string, args ...any) (digest.Digest, bool, error) {
+// logGroupNotUsed logs why the groups of c are not used, for the first
+// 100 log lines of gc.
+func (c *Cmd) logGroupNotUsed(ctx context.Context, gc *InputGroupCache, format string, args ...any) {
 	if gc.logged.Add(1) <= 100 {
 		clog.Infof(ctx, "input groups not used for %s: %s", c, fmt.Sprintf(format, args...))
 	}
-	return digest.Digest{}, false, nil
+}
+
+// logGroupDropped logs why group g of c is not used while the others may
+// be, for the first 100 log lines of gc.
+func (c *Cmd) logGroupDropped(ctx context.Context, gc *InputGroupCache, g InputGroup, format string, args ...any) {
+	if gc.logged.Add(1) <= 100 {
+		clog.Infof(ctx, "input group %s not used for %s: %s", g.Name, c, fmt.Sprintf(format, args...))
+	}
 }
 
 // flattenInputGroups returns c's inputs with the group paths appended,

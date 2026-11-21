@@ -114,9 +114,9 @@ type Cmd struct {
 	// the group paths are used as inputs.
 	InputGroupCache *InputGroupCache
 
-	// inputGroupsSpliced is true if the last Digest used the subtrees
-	// of InputGroups.
-	inputGroupsSpliced bool
+	// splicedInputGroups are the InputGroups whose subtrees the last
+	// Digest used.
+	splicedInputGroups []InputGroup
 
 	// TreeInputs are precomputed subtree inputs of the cmd.
 	TreeInputs []merkletree.TreeEntry
@@ -284,7 +284,7 @@ func (c *Cmd) Clone() *Cmd {
 	clone.remoteFallbackError = nil
 	clone.outputResult = ""
 	clone.AuxiliaryOutputDigests = nil
-	clone.inputGroupsSpliced = false
+	clone.splicedInputGroups = nil
 	// Re-initialize outfiles map from the shared Outputs slice.
 	clone.InitOutputs()
 	return &clone
@@ -574,18 +574,21 @@ func (c *Cmd) Digest(ctx context.Context, ds *blob.Store) (actionDigest digest.D
 // inputRootDigest computes the input root digest of the cmd, storing the
 // tree's blobs in ds if ds is not nil.
 func (c *Cmd) inputRootDigest(ctx context.Context, ds *blob.Store) (digest.Digest, error) {
-	c.inputGroupsSpliced = false
+	c.splicedInputGroups = nil
 	if len(c.InputGroups) == 0 {
 		return c.inputRootDigestFlat(ctx, ds)
 	}
 	if gc := c.InputGroupCache; ds == nil && gc != nil {
-		d, ok, err := c.inputRootDigestWithGroups(ctx, gc)
+		d, spliced, err := c.inputRootDigestWithGroups(ctx, gc)
 		if err != nil {
 			return digest.Digest{}, err
 		}
-		if ok {
+		if len(spliced) > 0 {
 			gc.spliced.Add(1)
-			c.inputGroupsSpliced = true
+			if len(spliced) < len(c.InputGroups) {
+				gc.partial.Add(1)
+			}
+			c.splicedInputGroups = spliced
 			return d, nil
 		}
 		gc.fallbacks.Add(1)

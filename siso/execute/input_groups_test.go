@@ -85,9 +85,15 @@ func TestCmdDigestInputGroups(t *testing.T) {
 
 	write("src/a.cc")
 	write("src/b.h")
+	write("src/c.cc")
 	write(tc + "/extra.txt")
 	symlink("a.cc", "src/link.cc")
 	write("out/gen/g.h")
+	// a group with a non-member in its dir, found only via the
+	// directory input lib/.
+	write("lib/inc/x.h")
+	write("lib/inc/y.h")
+	write("lib/inc/z.h")
 
 	hashFS, err := hashfs.New(ctx, hashfs.Option{})
 	if err != nil {
@@ -99,6 +105,7 @@ func TestCmdDigestInputGroups(t *testing.T) {
 	}
 
 	tcGroup := InputGroup{Key: "toolchain", Paths: toolchain}
+	libInc := InputGroup{Key: "lib-inc", Paths: []path.Path{"lib/inc/x.h", "lib/inc/y.h"}}
 	gc := NewInputGroupCache("")
 	for _, tt := range []struct {
 		name     string
@@ -106,6 +113,11 @@ func TestCmdDigestInputGroups(t *testing.T) {
 		inputs   []path.Path
 		groups   []InputGroup
 		wantHits int64 // subtree used
+		// wantPartial is 1 if only some of the groups are used.
+		wantPartial int64
+		// wantSpliced are the keys of the groups whose subtrees are
+		// used, if not nil.
+		wantSpliced []any
 	}{
 		{
 			name:     "source_and_group",
@@ -123,6 +135,39 @@ func TestCmdDigestInputGroups(t *testing.T) {
 			name:     "own_input_under_group_dir",
 			inputs:   []path.Path{"src/a.cc", path.Path(tc + "/extra.txt")},
 			groups:   []InputGroup{tcGroup},
+			wantHits: 0,
+		},
+		{
+			// src/c.cc is in the src group's dir but not a member, so
+			// only the toolchain group is used.
+			name:        "own_input_under_second_group_dir",
+			inputs:      []path.Path{"src/c.cc"},
+			groups:      []InputGroup{tcGroup, {Key: "src-b", Paths: []path.Path{"src/b.h", "src/a.cc"}}},
+			wantHits:    1,
+			wantPartial: 1,
+		},
+		{
+			// lib/inc/z.h is found only among the entries of lib/, so
+			// lib-inc is dropped in the entry loop.
+			name:        "own_dir_input_above_second_group_dir",
+			inputs:      []path.Path{"src/a.cc", "lib/"},
+			groups:      []InputGroup{libInc, tcGroup},
+			wantHits:    1,
+			wantPartial: 1,
+			wantSpliced: []any{"toolchain"},
+		},
+		{
+			name:     "own_dir_input_above_only_group_dir",
+			inputs:   []path.Path{"src/a.cc", "lib/"},
+			groups:   []InputGroup{libInc},
+			wantHits: 0,
+		},
+		{
+			// the toolchain group would be dropped, but it has
+			// symlinks, so the key falls back.
+			name:     "dropped_group_with_symlink",
+			inputs:   []path.Path{"src/a.cc", path.Path(tc + "/extra.txt")},
+			groups:   []InputGroup{tcGroup, libInc},
 			wantHits: 0,
 		},
 		{
@@ -226,8 +271,20 @@ func TestCmdDigestInputGroups(t *testing.T) {
 			if hits := st1.Spliced - st0.Spliced; hits != tt.wantHits {
 				t.Errorf("subtree used %d times; want %d", hits, tt.wantHits)
 			}
+			if partial := st1.Partial - st0.Partial; partial != tt.wantPartial {
+				t.Errorf("partial=%d; want %d", partial, tt.wantPartial)
+			}
 			if keys := st1.Spliced + st1.Fallbacks - st0.Spliced - st0.Fallbacks; keys != 1 {
 				t.Errorf("spliced+fallbacks=%d; want 1", keys)
+			}
+			if tt.wantSpliced != nil {
+				var keys []any
+				for _, g := range c.SplicedInputGroups() {
+					keys = append(keys, g.Key)
+				}
+				if !slices.Equal(keys, tt.wantSpliced) {
+					t.Errorf("SplicedInputGroups keys=%v; want %v", keys, tt.wantSpliced)
+				}
 			}
 			fc := &Cmd{
 				ID:            tt.name,
@@ -397,6 +454,9 @@ func TestCommonDir(t *testing.T) {
 // the toolchain as plain inputs, as an input group, and as an input group
 // that can't be used as a subtree.
 func BenchmarkDigestInputGroups(b *testing.B) {
+	if runtime.GOOS == "windows" {
+		b.Skip("uses symlinks")
+	}
 	ctx := b.Context()
 	dir := b.TempDir()
 	tc := "prebuilts/clang/host/linux-x86/clang-r1"
@@ -424,6 +484,19 @@ func BenchmarkDigestInputGroups(b *testing.B) {
 		}
 		srcs = append(srcs, path.Path(f))
 	}
+	// a toolchain file that is not in the group, and a symlink.
+	for _, f := range []string{tc + "/extra.txt", tc + "/bin/clang"} {
+		fname := filepath.Join(dir, f)
+		if err := os.MkdirAll(filepath.Dir(fname), 0755); err != nil {
+			b.Fatal(err)
+		}
+		if err := os.WriteFile(fname, []byte(f), 0644); err != nil {
+			b.Fatal(err)
+		}
+	}
+	if err := os.Symlink("clang", filepath.Join(dir, tc, "bin/clang++")); err != nil {
+		b.Fatal(err)
+	}
 	hashFS, err := hashfs.New(ctx, hashfs.Option{})
 	if err != nil {
 		b.Fatal(err)
@@ -438,10 +511,14 @@ func BenchmarkDigestInputGroups(b *testing.B) {
 		b.Fatal(err)
 	}
 	group := InputGroup{Key: "tc", Paths: toolchain}
+	// the toolchain with a symlink, and an include group whose dir holds
+	// the step's own source, like the BoringSSL modules.
+	tcLink := InputGroup{Key: "tc-link", Paths: append(slices.Clone(toolchain), path.Path(tc+"/bin/clang"), path.Path(tc+"/bin/clang++"))}
+	inc := InputGroup{Key: "inc", Paths: srcs[len(srcs)/2:]}
 	gc := NewInputGroupCache("")
 	// a cache in which the group is unusable.
 	excluded := NewInputGroupCache(path.Path(tc))
-	for _, mode := range []string{"flat", "groups", "fallback"} {
+	for _, mode := range []string{"flat", "groups", "fallback", "partial", "dropped_symlink"} {
 		b.Run(mode, func(b *testing.B) {
 			b.ReportAllocs()
 			i := 0
@@ -465,6 +542,18 @@ func BenchmarkDigestInputGroups(b *testing.B) {
 					c.Inputs = []path.Path{srcs[i%len(srcs)]}
 					c.InputGroups = []InputGroup{group}
 					c.InputGroupCache = excluded
+				case "partial":
+					// the source isn't in inc, so only the
+					// toolchain is spliced.
+					c.Inputs = []path.Path{srcs[i%(len(srcs)/2)]}
+					c.InputGroups = []InputGroup{group, inc}
+					c.InputGroupCache = gc
+				case "dropped_symlink":
+					// extra.txt drops tc-link, which has a
+					// symlink; the source is in inc.
+					c.Inputs = []path.Path{srcs[len(srcs)/2+i%(len(srcs)/2)], path.Path(tc + "/extra.txt")}
+					c.InputGroups = []InputGroup{tcLink, inc}
+					c.InputGroupCache = gc
 				}
 				if _, err := c.Digest(ctx, nil); err != nil {
 					b.Fatal(err)
@@ -472,5 +561,28 @@ func BenchmarkDigestInputGroups(b *testing.B) {
 				i++
 			}
 		})
+	}
+}
+
+// TestShouldVerifyKeySplicedGroups checks that only the groups a key
+// spliced use up their verification budget.
+func TestShouldVerifyKeySplicedGroups(t *testing.T) {
+	saved := verifyInputGroups
+	verifyInputGroups = false
+	t.Cleanup(func() { verifyInputGroups = saved })
+	gc := NewInputGroupCache("")
+	a := InputGroup{Key: "a"}
+	b := InputGroup{Key: "b"}
+	// keys that dropped a and spliced b.
+	for i := range verifyFirstGroupUses {
+		if !gc.ShouldVerifyKey([]InputGroup{b}) {
+			t.Errorf("key %d splicing b: ShouldVerifyKey=false; want true", i)
+		}
+	}
+	if gc.ShouldVerifyKey([]InputGroup{b}) {
+		t.Errorf("key %d splicing b: ShouldVerifyKey=true; want false", verifyFirstGroupUses)
+	}
+	if !gc.ShouldVerifyKey([]InputGroup{a}) {
+		t.Errorf("first key splicing a: ShouldVerifyKey=false; want true")
 	}
 }

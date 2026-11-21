@@ -96,7 +96,7 @@ func lookupKeyWithGroups(ctx context.Context, gc *execute.InputGroupCache, step 
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
-	if !gc.ShouldVerifyKey(pcmd.InputGroups, pcmd.InputGroupsSpliced()) {
+	if !gc.ShouldVerifyKey(pcmd.SplicedInputGroups()) {
 		return d.String(), nil
 	}
 	fcmd := step.cmd.Clone()
