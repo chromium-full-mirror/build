@@ -5,9 +5,13 @@
 package build
 
 import (
+	"fmt"
+	"slices"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+
+	"go.chromium.org/build/siso/path"
 )
 
 func TestUniqueFiles(t *testing.T) {
@@ -73,5 +77,117 @@ func TestUniqueFiles(t *testing.T) {
 				t.Errorf("uniqueFiles() returned diff (-want +got):\n%s", diff)
 			}
 		})
+	}
+}
+
+func TestUniquePathFiles(t *testing.T) {
+	testCases := []struct {
+		name  string
+		input [][]path.Path
+		want  []path.Path
+	}{
+		{
+			name:  "empty",
+			input: [][]path.Path{},
+			want:  []path.Path{},
+		},
+		{
+			name:  "one_slice_no_duplicates",
+			input: [][]path.Path{{"a", "b", "c"}},
+			want:  []path.Path{"a", "b", "c"},
+		},
+		{
+			name:  "one_slice_with_duplicates",
+			input: [][]path.Path{{"a", "b", "a"}},
+			want:  []path.Path{"a", "b"},
+		},
+		{
+			name:  "one_slice_with_empty_string",
+			input: [][]path.Path{{"a", "", "b"}},
+			want:  []path.Path{"a", "b"},
+		},
+		{
+			name:  "one_slice_with_leading_empty_string",
+			input: [][]path.Path{{"", "a", "b"}},
+			want:  []path.Path{"a", "b"},
+		},
+		{
+			name:  "one_slice_with_trailing_empty_string",
+			input: [][]path.Path{{"a", "b", ""}},
+			want:  []path.Path{"a", "b"},
+		},
+		{
+			name:  "multiple_slices_no_overlap",
+			input: [][]path.Path{{"a", "b"}, {"c", "d"}},
+			want:  []path.Path{"a", "b", "c", "d"},
+		},
+		{
+			name:  "multiple_slices_with_overlap",
+			input: [][]path.Path{{"a", "b"}, {"b", "c"}},
+			want:  []path.Path{"a", "b", "c"},
+		},
+		{
+			name:  "multiple_slices_with_empty_strings_and_duplicates",
+			input: [][]path.Path{{"a", ""}, {"b", "a", ""}, {"c"}},
+			want:  []path.Path{"a", "b", "c"},
+		},
+		{
+			name:  "mostly_duplicates",
+			input: [][]path.Path{{"a", "b"}, {"a", "b", "a", "b", "a"}},
+			want:  []path.Path{"a", "b"},
+		},
+		{
+			name:  "empty_slices",
+			input: [][]path.Path{{}, nil},
+			want:  []path.Path{},
+		},
+		{
+			name:  "all_empty",
+			input: [][]path.Path{{""}, {""}},
+			want:  []path.Path{},
+		},
+		{
+			name:  "nil_input",
+			input: nil,
+			want:  []path.Path{},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			before := slices.Clone(tc.input)
+			for i := range before {
+				before[i] = slices.Clone(before[i])
+			}
+			got := uniquePathFiles(tc.input...)
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Errorf("uniquePathFiles() returned diff (-want +got):\n%s", diff)
+			}
+			if cap(got) > 2*len(got) {
+				t.Errorf("uniquePathFiles() cap=%d len=%d; result retains too much", cap(got), len(got))
+			}
+			for i := range got {
+				got[i] = "changed"
+			}
+			if diff := cmp.Diff(before, tc.input); diff != "" {
+				t.Errorf("writing to the result changed the inputs (-before +after):\n%s", diff)
+			}
+		})
+	}
+}
+
+// BenchmarkUniquePathFiles merges deps base inputs with depfile inputs,
+// as depsCmd does.
+func BenchmarkUniquePathFiles(b *testing.B) {
+	var base, deps []path.Path
+	for i := range 3000 {
+		base = append(base, path.Path(fmt.Sprintf("frameworks/base/include/h%04d.h", i)))
+	}
+	for i := range 2000 {
+		deps = append(deps, path.Path(fmt.Sprintf("frameworks/base/include/h%04d.h", 2*i)))
+	}
+	b.ReportAllocs()
+	for b.Loop() {
+		uniquePathFiles(base, deps)
 	}
 }

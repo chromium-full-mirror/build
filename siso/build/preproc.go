@@ -7,6 +7,7 @@ package build
 import (
 	"context"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 
@@ -56,8 +57,13 @@ func uniqueFiles(inputsList ...[]string) []string {
 }
 
 func uniquePathFiles(inputsList ...[]path.Path) []path.Path {
-	seen := make(map[path.Path]bool)
-	var inputs []path.Path
+	// Most deps inputs are unique, so size for all.
+	n := 0
+	for _, ins := range inputsList {
+		n += len(ins)
+	}
+	seen := make(map[path.Path]bool, n)
+	inputs := make([]path.Path, 0, n)
 	for _, ins := range inputsList {
 		for _, in := range ins {
 			if in == "" {
@@ -70,9 +76,11 @@ func uniquePathFiles(inputsList ...[]path.Path) []path.Path {
 			inputs = append(inputs, in)
 		}
 	}
-	r := make([]path.Path, len(inputs))
-	copy(r, inputs)
-	return r
+	if cap(inputs) > 2*len(inputs) {
+		// many duplicates: don't keep the oversized array alive.
+		return slices.Clone(inputs)
+	}
+	return slices.Clip(inputs)
 }
 
 func (b *Builder) expandInputs(ctx context.Context, inputs []string) []string {
