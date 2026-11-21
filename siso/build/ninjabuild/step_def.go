@@ -551,11 +551,8 @@ func (s *StepDef) ExpandedTriggerInputs(ctx context.Context) []path.Path {
 		targets = append(targets, p)
 	}
 	if len(phonyEdges) > 0 {
-		seen := seenSetPool.Get().(map[path.Path]bool)
-		defer func() {
-			clear(seen)
-			seenSetPool.Put(seen)
-		}()
+		seen := getSeenSet()
+		defer putSeenSet(seen)
 		for _, p := range targets {
 			seen[p] = true
 		}
@@ -689,15 +686,12 @@ func depInputs(ctx context.Context, s *StepDef) (iter.Seq[path.Path], error) {
 // If includeOrderOnly is false, it will be combined with scandeps results.
 // If includeOrderOnly is true, it will be trimmed down by scandeps results, or depfile.
 func (s *StepDef) DepsBaseInputs(ctx context.Context, toolInputs []path.Path, includeOrderOnly bool) []path.Path {
-	var inputs []path.Path
 	// always use toolInputs.
 	if s.rule.Debug {
 		clog.Infof(ctx, "deps base tool inputs: %q order_only=%t", toolInputs, includeOrderOnly)
 	}
-	inputs = append(inputs, toolInputs...)
 	// TODO: per rule?
 	filter := s.globals.stepConfig.Scandeps.stepInputsFilter
-	seen := make(map[path.Path]bool)
 	var stepInputs []path.Path
 	var nodes []*ninjautil.Node
 	// need to expand phony targets here
@@ -708,6 +702,8 @@ func (s *StepDef) DepsBaseInputs(ctx context.Context, toolInputs []path.Path, in
 		stepInputs = s.TriggerInputs(ctx)
 		nodes = s.edge.TriggerInputs()
 	}
+	seen := getSeenSet()
+	defer putSeenSet(seen)
 	visited := make(map[*ninjautil.Edge]bool)
 	for _, in := range nodes {
 		p := s.globals.targetPath(in)
@@ -726,12 +722,15 @@ func (s *StepDef) DepsBaseInputs(ctx context.Context, toolInputs []path.Path, in
 			}
 		}
 	}
-	seen = make(map[path.Path]bool)
+	dedup := getDedupSet(len(stepInputs))
+	defer putDedupSet(dedup, len(stepInputs))
+	inputs := make([]path.Path, 0, len(toolInputs)+len(stepInputs))
+	inputs = append(inputs, toolInputs...)
 	for _, in := range stepInputs {
-		if seen[in] {
+		if dedup[in] {
 			continue
 		}
-		seen[in] = true
+		dedup[in] = true
 		if !filter(ctx, string(in), s.rule.Debug) {
 			if s.rule.Debug {
 				clog.Infof(ctx, "deps base inputs ignored: %s", in)
@@ -926,11 +925,58 @@ func (s *StepDef) expandLabels(ctx context.Context, inputs []path.Path) []path.P
 	return expanded
 }
 
-// seenSetPool pools the map[path.Path]bool dedup scratches used by
-// ExpandedInputs (~60k calls per build, ~1k entries each). Callers
-// must clear the map before returning it to the pool.
+// seenSetPool pools the seen maps of ExpandedInputs,
+// ExpandedTriggerInputs and DepsBaseInputs, whatever their size.
+// Get maps with getSeenSet and return them with putSeenSet.
 var seenSetPool = sync.Pool{
 	New: func() any { return make(map[path.Path]bool, 1024) },
+}
+
+func getSeenSet() map[path.Path]bool {
+	return seenSetPool.Get().(map[path.Path]bool)
+}
+
+func putSeenSet(seen map[path.Path]bool) {
+	clear(seen)
+	seenSetPool.Put(seen)
+}
+
+// dedupSetPool and bigDedupSetPool pool the dedup maps of
+// DepsBaseInputs, whose size is known when they are taken. Get maps with
+// getDedupSet and return them with putDedupSet.
+var (
+	dedupSetPool = sync.Pool{
+		New: func() any { return make(map[path.Path]bool, 1024) },
+	}
+	bigDedupSetPool sync.Pool
+)
+
+// maxSmallDedupSet is the size of the largest map in dedupSetPool.
+// Bigger maps go to bigDedupSetPool.
+const maxSmallDedupSet = 1 << 14
+
+// getDedupSet returns an empty map for at least n entries, from
+// bigDedupSetPool if n is above maxSmallDedupSet.
+func getDedupSet(n int) map[path.Path]bool {
+	if n <= maxSmallDedupSet {
+		return dedupSetPool.Get().(map[path.Path]bool)
+	}
+	if dedup, ok := bigDedupSetPool.Get().(map[path.Path]bool); ok {
+		return dedup
+	}
+	return make(map[path.Path]bool, n)
+}
+
+// putDedupSet clears dedup, got by getDedupSet(n), and returns it to
+// dedupSetPool, or to bigDedupSetPool if n or len(dedup) is above
+// maxSmallDedupSet.
+func putDedupSet(dedup map[path.Path]bool, n int) {
+	pool := &dedupSetPool
+	if n > maxSmallDedupSet || len(dedup) > maxSmallDedupSet {
+		pool = &bigDedupSetPool
+	}
+	clear(dedup)
+	pool.Put(dedup)
 }
 
 // ExpandedInputs returns expanded inputs
@@ -949,11 +995,8 @@ func (s *StepDef) ExpandedInputs(ctx context.Context) []path.Path {
 	}
 	// it takes too much memory in later build stages.
 	// keep Inputs as is, and expand them when calculating digest ?
-	seen := seenSetPool.Get().(map[path.Path]bool)
-	defer func() {
-		clear(seen)
-		seenSetPool.Put(seen)
-	}()
+	seen := getSeenSet()
+	defer putSeenSet(seen)
 	var phonyEdges []*ninjautil.Edge
 	inputs := make([]path.Path, 0, 2*len(s.edge.Inputs()))
 	globals := s.globals
@@ -1003,11 +1046,8 @@ func (s *StepDef) ExpandedInputs(ctx context.Context) []path.Path {
 		}
 		// need to use different seen, so that replaces/accumulates
 		// works even if indirect inputs see/ignore the inputs.
-		iseen := seenSetPool.Get().(map[path.Path]bool)
-		defer func() {
-			clear(iseen)
-			seenSetPool.Put(iseen)
-		}()
+		iseen := getSeenSet()
+		defer putSeenSet(iseen)
 		maps.Copy(iseen, seen)
 		filter := s.rule.IndirectInputs.Filter(ctx, "indirect_inputs")
 		for _, in := range s.edge.Inputs() {
