@@ -5,6 +5,7 @@
 package build
 
 import (
+	"cmp"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -274,6 +275,10 @@ type Builder struct {
 	// dirSpecs caches what matchInputRoot derives from a Directory at a
 	// path. dirSpecKey -> *dirSpec. See dirspec.go.
 	dirSpecs sync.Map
+
+	// inputGroups holds the input group subtrees of the two-phase
+	// cache lookup keys. nil if input groups are off.
+	inputGroups *execute.InputGroupCache
 
 	explainWriter        io.Writer
 	ninjaLogWriter       io.Writer
@@ -561,9 +566,24 @@ func New(ctx context.Context, graph Graph, opts Options) (_ *Builder, err error)
 				actionCacheMap: b.reapiclient.ActionCacheMap(),
 			}
 			b.twoPhaseCaching = rt
+			if !disableInputGroups {
+				b.inputGroups = execute.NewInputGroupCache(b.buildOutDir(ctx))
+			}
 		}
 	}
 	return b, nil
+}
+
+// buildOutDir returns the build output dir relative to the workspace
+// root, or "" if unknown.
+func (b *Builder) buildOutDir(ctx context.Context) sisopath.Path {
+	// builddir is relative to the build dir: "out" for Soong (run from the
+	// source root), "." or "" for GN (run in out/Default).
+	od := sisopath.Path(b.path.MaybeFromRelative(ctx, cmp.Or(b.graph.Binding("builddir"), ".")))
+	if od == "." || !filepath.IsLocal(string(od)) {
+		return ""
+	}
+	return od
 }
 
 // Close cleans up the builder.
@@ -628,6 +648,9 @@ func (b *Builder) Build(ctx context.Context, name string, args ...string) (err e
 	started := time.Now()
 	b.statusReporter.BuildStarted()
 	defer b.statusReporter.BuildFinished()
+	if b.inputGroups != nil {
+		defer b.inputGroups.LogStats(ctx)
+	}
 
 	// pctx is parent context, that is used to check
 	// original context is canceled or not.

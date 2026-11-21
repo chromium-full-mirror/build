@@ -8,6 +8,7 @@ import (
 	"context"
 	"fmt"
 	"iter"
+	"os"
 	"slices"
 	"time"
 
@@ -19,6 +20,7 @@ import (
 	rpb "go.chromium.org/build/remote-apis/build/bazel/remote/execution/v2"
 
 	"go.chromium.org/build/siso/blob"
+	"go.chromium.org/build/siso/execute"
 	"go.chromium.org/build/siso/o11y/clog"
 	"go.chromium.org/build/siso/o11y/trace"
 	"go.chromium.org/build/siso/path"
@@ -70,15 +72,77 @@ type actionCacheMap interface {
 	List(context.Context, string, int) iter.Seq2[*rpb.Action, error]
 }
 
+// inputGroupsStepDef is a StepDef that can return large phony expansions
+// as input groups (see execute.InputGroup).
+type inputGroupsStepDef interface {
+	ExpandedTriggerInputGroups(context.Context) ([]path.Path, []execute.InputGroup)
+}
+
+// disableInputGroups (SISO_DISABLE_INPUT_GROUPS) turns off input groups
+// for the two-phase cache lookup key.
+var disableInputGroups = os.Getenv("SISO_DISABLE_INPUT_GROUPS") != ""
+
+// lookupKeyWithGroups returns the lookup key of step computed with pcmd's
+// input groups. If gc.ShouldVerifyKey says so, it also computes the key
+// from ExpandedTriggerInputs; on a mismatch it reports it, which turns
+// input groups off, and returns that key.
+func lookupKeyWithGroups(ctx context.Context, gc *execute.InputGroupCache, step *Step, pcmd *execute.Cmd) (string, error) {
+	pcmd.Pure = true // not pure, but to make calculate digest.
+	d, err := pcmd.Digest(ctx, nil)
+	if err != nil {
+		return "", err
+	}
+	// HashFS may leave out entries whose digests a canceled ctx stopped.
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	if !gc.ShouldVerifyKey(pcmd.InputGroups, pcmd.InputGroupsSpliced()) {
+		return d.String(), nil
+	}
+	fcmd := step.cmd.Clone()
+	fcmd.Inputs = step.def.ExpandedTriggerInputs(ctx)
+	fcmd.Pure = true
+	fd, err := fcmd.Digest(ctx, nil)
+	if err != nil {
+		return "", err
+	}
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	if d != fd {
+		gc.ReportMismatch(ctx, step.String(), pcmd.InputGroups, d.String(), fd.String())
+		return fd.String(), nil
+	}
+	return d.String(), nil
+}
+
 type reapiTwoPhaseCaching struct {
 	b              *Builder
 	actionCacheMap actionCacheMap
 }
 
-func (reapiTwoPhaseCaching) ComputeLookupKey(ctx context.Context, step *Step) (string, error) {
+func (rt reapiTwoPhaseCaching) ComputeLookupKey(ctx context.Context, step *Step) (string, error) {
 	pcmd := step.cmd.Clone()
 	if experiments.Enabled("expand-phony-trigger-inputs", "") {
-		pcmd.Inputs = step.def.ExpandedTriggerInputs(ctx)
+		gd, ok := step.def.(inputGroupsStepDef)
+		var gc *execute.InputGroupCache
+		if rt.b != nil {
+			gc = rt.b.inputGroups
+		}
+		if ok && gc != nil && !gc.Broken() {
+			own, groups := gd.ExpandedTriggerInputGroups(ctx)
+			switch {
+			case len(groups) == 0:
+				pcmd.Inputs = own
+			case gc.SkipUnusable(groups):
+				pcmd.Inputs = step.def.ExpandedTriggerInputs(ctx)
+			default:
+				pcmd.Inputs, pcmd.InputGroups, pcmd.InputGroupCache = own, groups, gc
+				return lookupKeyWithGroups(ctx, gc, step, pcmd)
+			}
+		} else {
+			pcmd.Inputs = step.def.ExpandedTriggerInputs(ctx)
+		}
 	} else {
 		pcmd.Inputs = step.def.TriggerInputs(ctx)
 	}

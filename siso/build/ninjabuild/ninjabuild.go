@@ -79,6 +79,14 @@ type globals struct {
 	// and DepsBaseInputs: *ninjautil.Edge -> *phonyMemoEntry.
 	phonyMemo sync.Map
 
+	// uncleanTargets are the target paths of the nodes whose path is
+	// not canonical in the manifest (see sharesTargetPath).
+	uncleanTargetsOnce sync.Once
+	uncleanTargets     map[path.Path]bool
+
+	// groupPaths counts the paths of the group path lists in phonyMemo.
+	groupPaths atomic.Int64
+
 	// caseSensitives lists all case sensitive input filenames.
 	caseSensitives map[string][]path.Path
 
@@ -473,6 +481,9 @@ func (g *Graph) reset(ctx context.Context) error {
 	g.globals.executables = make(map[string]bool)
 	// phony expansions refer to the old graph's edges.
 	g.globals.phonyMemo.Clear()
+	g.globals.uncleanTargetsOnce = sync.Once{}
+	g.globals.uncleanTargets = nil
+	g.globals.groupPaths.Store(0)
 	return g.initGlobals(ctx)
 }
 
@@ -696,7 +707,15 @@ func (g *globals) targetPath(node *ninjautil.Node) path.Path {
 	if p != "" {
 		return p
 	}
-	raw := node.Path()
+	p = g.targetPathOf(node.Path())
+	g.targetPaths[node.ID()] = p
+	return p
+}
+
+// targetPathOf returns the target path of a node whose path in the
+// manifest is raw, without caching it.
+func (g *globals) targetPathOf(raw string) path.Path {
+	var p path.Path
 	if !filepath.IsAbs(raw) {
 		p = path.Path(filepath.ToSlash(filepath.Join(g.path.BaseDir, raw)))
 	} else {
@@ -706,7 +725,6 @@ func (g *globals) targetPath(node *ninjautil.Node) path.Path {
 	if strings.HasSuffix(raw, "/") && !strings.HasSuffix(string(p), "/") {
 		p += "/"
 	}
-	g.targetPaths[node.ID()] = p
 	return p
 }
 

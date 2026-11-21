@@ -106,6 +106,18 @@ type Cmd struct {
 	// deprecated: use scandeps.step_inputs to filter step inputs.
 	ToolInputs []path.Path
 
+	// InputGroups are large input sets shared by many steps, in addition
+	// to Inputs. See InputGroup.
+	InputGroups []InputGroup
+
+	// InputGroupCache holds the group subtrees for InputGroups. If nil,
+	// the group paths are used as inputs.
+	InputGroupCache *InputGroupCache
+
+	// inputGroupsSpliced is true if the last Digest used the subtrees
+	// of InputGroups.
+	inputGroupsSpliced bool
+
 	// TreeInputs are precomputed subtree inputs of the cmd.
 	TreeInputs []merkletree.TreeEntry
 
@@ -272,6 +284,7 @@ func (c *Cmd) Clone() *Cmd {
 	clone.remoteFallbackError = nil
 	clone.outputResult = ""
 	clone.AuxiliaryOutputDigests = nil
+	clone.inputGroupsSpliced = false
 	// Re-initialize outfiles map from the shared Outputs slice.
 	clone.InitOutputs()
 	return &clone
@@ -516,24 +529,9 @@ func (c *Cmd) Digest(ctx context.Context, ds *blob.Store) (actionDigest digest.D
 		clog.Infof(ctx, "action: %s {command; %s inputRoot: %s %d %s}: %v", actionDigest, commandDigest, inputRootDigest, ds.Size()-2, treeDuration, err)
 	}()
 	started := time.Now()
-	buf, err := c.inputTree(ctx)
+	inputRootDigest, err = c.inputRootDigest(ctx, ds)
 	if err != nil {
-		return digest.Digest{}, fmt.Errorf("failed to get input tree for %s: %w", c, err)
-	}
-	defer putEntriesBuf(buf)
-	ents := *buf
-
-	treeInputs := c.TreeInputs
-	if c.CanonicalizeDir {
-		ents, treeInputs = c.canonicalizeDir(ctx, ents, treeInputs)
-	}
-	if remoteChroot {
-		ents, treeInputs = c.chrootDir(ctx, ents, treeInputs)
-	}
-
-	inputRootDigest, err = treeDigest(ctx, c.HashFS.DigestFunction(), treeInputs, ents, ds)
-	if err != nil {
-		return digest.Digest{}, fmt.Errorf("failed to get input root for %s: %w", c, err)
+		return digest.Digest{}, err
 	}
 	treeDuration = time.Since(started)
 
@@ -571,6 +569,54 @@ func (c *Cmd) Digest(ctx context.Context, ds *blob.Store) (actionDigest digest.D
 	}
 	c.actionDigest = action.Digest()
 	return c.actionDigest, nil
+}
+
+// inputRootDigest computes the input root digest of the cmd, storing the
+// tree's blobs in ds if ds is not nil.
+func (c *Cmd) inputRootDigest(ctx context.Context, ds *blob.Store) (digest.Digest, error) {
+	c.inputGroupsSpliced = false
+	if len(c.InputGroups) == 0 {
+		return c.inputRootDigestFlat(ctx, ds)
+	}
+	if gc := c.InputGroupCache; ds == nil && gc != nil {
+		d, ok, err := c.inputRootDigestWithGroups(ctx, gc)
+		if err != nil {
+			return digest.Digest{}, err
+		}
+		if ok {
+			gc.spliced.Add(1)
+			c.inputGroupsSpliced = true
+			return d, nil
+		}
+		gc.fallbacks.Add(1)
+	}
+	fc := *c
+	fc.Inputs = c.flattenInputGroups()
+	fc.InputGroups = nil
+	return fc.inputRootDigestFlat(ctx, ds)
+}
+
+func (c *Cmd) inputRootDigestFlat(ctx context.Context, ds *blob.Store) (digest.Digest, error) {
+	buf, err := c.inputTree(ctx)
+	if err != nil {
+		return digest.Digest{}, fmt.Errorf("failed to get input tree for %s: %w", c, err)
+	}
+	defer putEntriesBuf(buf)
+	ents := *buf
+
+	treeInputs := c.TreeInputs
+	if c.CanonicalizeDir {
+		ents, treeInputs = c.canonicalizeDir(ctx, ents, treeInputs)
+	}
+	if c.RemoteChroot() {
+		ents, treeInputs = c.chrootDir(ctx, ents, treeInputs)
+	}
+
+	d, err := treeDigest(ctx, c.HashFS.DigestFunction(), treeInputs, ents, ds)
+	if err != nil {
+		return digest.Digest{}, fmt.Errorf("failed to get input root for %s: %w", c, err)
+	}
+	return d, nil
 }
 
 // inputTree returns Merkle tree entries for the cmd, in a buffer from

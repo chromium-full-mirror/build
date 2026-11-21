@@ -14,6 +14,8 @@ import (
 	"io/fs"
 	"iter"
 	"maps"
+	"math"
+	stdpath "path"
 	"path/filepath"
 	"runtime"
 	"slices"
@@ -489,13 +491,29 @@ func (s *StepDef) Inputs(ctx context.Context) []path.Path {
 func (s *StepDef) TriggerInputs(ctx context.Context) []path.Path {
 	globals := s.globals
 	inputs := s.edge.TriggerInputs()
+	inIDs := uniqueNodes(inputs)
+	targets := make([]path.Path, 0, len(inIDs)+len(globals.shellInputs))
+	for _, i := range inIDs {
+		in := inputs[i.idx]
+		p := globals.targetPath(in)
+		targets = append(targets, p)
+	}
+	targets = s.addShellInputs(targets, nil)
+	return targets
+}
+
+// idxid is the index and the ID of a node in a node list.
+type idxid struct {
+	idx, id int
+}
+
+// uniqueNodes returns the index and ID of the first occurrence of each
+// node in nodes, in order.
+func uniqueNodes(nodes []*ninjautil.Node) []idxid {
 	// map dedup is not fast enough here.
 	// dedup by sort+compact.
-	type idxid struct {
-		idx, id int
-	}
-	inIDs := make([]idxid, 0, len(inputs))
-	for i, in := range inputs {
+	inIDs := make([]idxid, 0, len(nodes))
+	for i, in := range nodes {
 		inIDs = append(inIDs, idxid{idx: i, id: in.ID()})
 	}
 	slices.SortStableFunc(inIDs, func(a, b idxid) int {
@@ -508,37 +526,38 @@ func (s *StepDef) TriggerInputs(ctx context.Context) []path.Path {
 	slices.SortFunc(inIDs, func(a, b idxid) int {
 		return cmp.Compare(a.idx, b.idx)
 	})
-	targets := make([]path.Path, 0, len(inIDs)+len(globals.shellInputs))
-	for _, i := range inIDs {
-		in := inputs[i.idx]
-		p := globals.targetPath(in)
-		targets = append(targets, p)
-	}
-	targets = s.addShellInputs(targets, nil)
-	return targets
+	return inIDs
 }
 
 // ExpandedTriggerInputs returns trigger inputs of the step with phony targets
 // expanded recursively to their underlying trigger inputs.
 func (s *StepDef) ExpandedTriggerInputs(ctx context.Context) []path.Path {
+	targets, _ := s.expandTriggerInputs(ctx, noInputGroups)
+	return targets
+}
+
+// minInputGroupPaths is the minimum size of a phony expansion that
+// ExpandedTriggerInputGroups returns as an input group (var for tests).
+var minInputGroupPaths = 512
+
+// ExpandedTriggerInputGroups is like ExpandedTriggerInputs, but returns the
+// expansions of large phony inputs of source files as input groups. The
+// paths of own and groups together are the same set as
+// ExpandedTriggerInputs. own may also contain group paths.
+func (s *StepDef) ExpandedTriggerInputGroups(ctx context.Context) (own []path.Path, groups []execute.InputGroup) {
+	return s.expandTriggerInputs(ctx, minInputGroupPaths)
+}
+
+// noInputGroups as minGroup of expandTriggerInputs disables input groups.
+const noInputGroups = math.MaxInt
+
+// expandTriggerInputs returns the trigger inputs of the step with phony
+// targets expanded, except that the phony inputs that phonyGroup accepts
+// are returned as groups.
+func (s *StepDef) expandTriggerInputs(ctx context.Context, minGroup int) ([]path.Path, []execute.InputGroup) {
 	globals := s.globals
 	inputs := s.edge.TriggerInputs()
-	type idxid struct {
-		idx, id int
-	}
-	inIDs := make([]idxid, 0, len(inputs))
-	for i, in := range inputs {
-		inIDs = append(inIDs, idxid{idx: i, id: in.ID()})
-	}
-	slices.SortStableFunc(inIDs, func(a, b idxid) int {
-		return cmp.Compare(a.id, b.id)
-	})
-	inIDs = slices.CompactFunc(inIDs, func(a, b idxid) bool {
-		return a.id == b.id
-	})
-	slices.SortFunc(inIDs, func(a, b idxid) int {
-		return cmp.Compare(a.idx, b.idx)
-	})
+	inIDs := uniqueNodes(inputs)
 	targets := make([]path.Path, 0, len(inIDs)+len(globals.shellInputs))
 	var phonyEdges []*ninjautil.Edge
 	for _, i := range inIDs {
@@ -550,6 +569,7 @@ func (s *StepDef) ExpandedTriggerInputs(ctx context.Context) []path.Path {
 		p := globals.targetPath(in)
 		targets = append(targets, p)
 	}
+	var groups []execute.InputGroup
 	if len(phonyEdges) > 0 {
 		seen := getSeenSet()
 		defer putSeenSet(seen)
@@ -559,11 +579,207 @@ func (s *StepDef) ExpandedTriggerInputs(ctx context.Context) []path.Path {
 		visited := make(map[*ninjautil.Edge]bool)
 		for _, inEdge := range phonyEdges {
 			p := globals.targetPath(inEdge.Outputs()[0])
+			if minGroup != noInputGroups && !s.rule.Debug && len(inEdge.TriggerInputs()) > 0 && !visited[inEdge] {
+				e := globals.phonyMemoEntry(inEdge)
+				if paths := globals.phonyGroup(e, minGroup); paths != nil {
+					// all paths of these edges are in the group, so
+					// later phony inputs skip them.
+					globals.markPhonyVisited(visited, e)
+					groups = append(groups, execute.InputGroup{Key: inEdge, Name: string(p), Paths: paths})
+					continue
+				}
+			}
 			targets = expandPhony(ctx, globals, visited, seen, p, inEdge, s.rule.Debug, targets)
 		}
 	}
 	targets = s.addShellInputs(targets, nil)
-	return targets
+	return targets, groups
+}
+
+// maxGroupPaths bounds the paths of all group path lists of a build, like
+// the names of execute's group subtrees.
+const maxGroupPaths = 4 << 20
+
+// phonyGroup returns the paths of the full expansion of e.edge in
+// replacePhony order if it can be an input group: it has at least minGroup
+// paths, none of them generated or an empty phony target, none of its
+// paths and nested phony targets is the target path of another node too,
+// and the paths have a common directory (execute.GroupDir). Otherwise it
+// returns nil. It is computed once per edge.
+func (g *globals) phonyGroup(e *phonyMemoEntry, minGroup int) []path.Path {
+	e.groupOnce.Do(func() {
+		n, dir, ok := g.groupCandidate(e, make(map[*ninjautil.Edge]bool), "")
+		if !ok || n < minGroup || dir == "" || dir == "." {
+			return
+		}
+		var paths []path.Path
+		if !g.collectGroup(e, make(map[*ninjautil.Edge]bool), make(map[path.Path]bool), &paths) || len(paths) < minGroup {
+			return
+		}
+		// The flat expansion skips or adds a path that another node
+		// also has differently than a group would.
+		if slices.ContainsFunc(paths, g.sharesTargetPath) {
+			return
+		}
+		if _, err := execute.GroupDir(paths); err != nil {
+			return
+		}
+		// Unlike the memo, group path lists are flat, so bound their
+		// total like execute's group subtrees.
+		if g.groupPaths.Add(int64(len(paths))) > maxGroupPaths {
+			g.groupPaths.Add(-int64(len(paths)))
+			return
+		}
+		e.group = slices.Clip(paths)
+	})
+	return e.group
+}
+
+// sharesTargetPath reports whether another node may have the target path
+// p. Only one manifest path of a target path is canonical (see
+// canonicalNodePath), so the target paths of the nodes whose path is not
+// canonical are collected once per build.
+func (g *globals) sharesTargetPath(p path.Path) bool {
+	g.uncleanTargetsOnce.Do(func() {
+		var base []string
+		if b := stdpath.Clean(filepath.ToSlash(g.path.BaseDir)); b != "." {
+			base = strings.Split(b, "/")
+		}
+		for id := range g.nstate.NumNodes() {
+			n, ok := g.nstate.LookupNode(id)
+			if !ok || canonicalNodePath(base, n.Path()) {
+				continue
+			}
+			if g.uncleanTargets == nil {
+				g.uncleanTargets = make(map[path.Path]bool)
+			}
+			// not g.targetPath, which caches it and may race with steps.
+			g.uncleanTargets[g.targetPathOf(n.Path())] = true
+		}
+	})
+	return g.uncleanTargets[p]
+}
+
+// canonicalNodePath reports whether raw is the canonical manifest path of
+// its target path, relative to the build dir whose elements are base: an
+// absolute path, or a clean relative path that doesn't leave the build dir
+// and come back into it, e.g. not "../Default/x" in out/Default. Two nodes
+// with different canonical paths have different target paths.
+func canonicalNodePath(base []string, raw string) bool {
+	if filepath.IsAbs(raw) {
+		// targetPath keeps absolute paths as they are.
+		return true
+	}
+	if strings.HasPrefix(raw, "/") || strings.Contains(raw, `\`) || filepath.VolumeName(raw) != "" {
+		// e.g. "/x" on Windows, which targetPath joins to the build dir.
+		return false
+	}
+	p := strings.TrimSuffix(raw, "/")
+	if stdpath.Clean(p) != p {
+		return false
+	}
+	up := 0
+	for p == ".." || strings.HasPrefix(p, "../") {
+		up++
+		p = strings.TrimPrefix(strings.TrimPrefix(p, ".."), "/")
+	}
+	if up == 0 || up > len(base) || p == "" {
+		return true
+	}
+	first, _, _ := strings.Cut(p, "/")
+	return first != base[len(base)-up]
+}
+
+// groupCandidate checks e.edge for phonyGroup without collecting its
+// paths: it returns the number of its leaves (with duplicates) and their
+// common directory, and false if a leaf is generated or it includes an
+// empty phony edge.
+func (g *globals) groupCandidate(e *phonyMemoEntry, visited map[*ninjautil.Edge]bool, dir string) (int, string, bool) {
+	if visited[e.edge] {
+		return 0, dir, true
+	}
+	visited[e.edge] = true
+	exp := g.phonyExpansionOf(e)
+	if exp.generated {
+		return 0, dir, false
+	}
+	n := len(exp.leaves)
+	for _, p := range exp.leaves {
+		if dir == "." {
+			break
+		}
+		d := stdpath.Dir(string(p))
+		if dir == "" {
+			dir = d
+		} else {
+			dir = execute.CommonDir(dir, d)
+		}
+	}
+	for _, sub := range exp.subs {
+		if sub.entry == nil {
+			return 0, dir, false
+		}
+		m, d, ok := g.groupCandidate(sub.entry, visited, dir)
+		if !ok {
+			return 0, dir, false
+		}
+		n += m
+		dir = d
+	}
+	return n, dir, true
+}
+
+// collectGroup appends the leaves of e.edge to paths like mergePhonyEntry.
+// It returns false if a leaf is generated, it includes an empty phony
+// edge, or a phony target is skipped as seen or shares its target path
+// with another node.
+func (g *globals) collectGroup(e *phonyMemoEntry, visited map[*ninjautil.Edge]bool, seen map[path.Path]bool, paths *[]path.Path) bool {
+	exp := g.phonyExpansionOf(e)
+	if exp.generated {
+		return false
+	}
+	visited[e.edge] = true
+	li := 0
+	for _, sub := range exp.subs {
+		*paths = appendUnseen(*paths, seen, exp.leaves[li:sub.at])
+		li = int(sub.at)
+		if g.sharesTargetPath(sub.target) {
+			return false
+		}
+		if seen[sub.target] {
+			if !visited[sub.edge] {
+				// another node has the same path, and replacePhony
+				// would skip this edge, which markPhonyVisited would
+				// mark visited.
+				return false
+			}
+			continue
+		}
+		seen[sub.target] = true
+		if sub.entry == nil {
+			return false
+		}
+		if visited[sub.edge] {
+			continue
+		}
+		if !g.collectGroup(sub.entry, visited, seen, paths) {
+			return false
+		}
+	}
+	*paths = appendUnseen(*paths, seen, exp.leaves[li:])
+	return true
+}
+
+// markPhonyVisited marks e.edge and the phony edges it includes as visited.
+// e must have a group, so it includes no empty phony edge.
+func (g *globals) markPhonyVisited(visited map[*ninjautil.Edge]bool, e *phonyMemoEntry) {
+	if e == nil || visited[e.edge] {
+		return
+	}
+	visited[e.edge] = true
+	for _, sub := range g.phonyExpansionOf(e).subs {
+		g.markPhonyVisited(visited, sub.entry)
+	}
 }
 
 // phonyExpansion holds the direct inputs of a non-empty phony edge in
@@ -572,6 +788,8 @@ func (s *StepDef) ExpandedTriggerInputs(ctx context.Context) []path.Path {
 type phonyExpansion struct {
 	leaves []path.Path
 	subs   []phonySub
+	// generated is true if a leaf is the output of a non-phony edge.
+	generated bool
 }
 
 // phonySub is a phony input of a phonyExpansion.
@@ -589,6 +807,10 @@ type phonyMemoEntry struct {
 	once sync.Once
 	edge *ninjautil.Edge
 	exp  *phonyExpansion
+
+	groupOnce sync.Once
+	// group is the result of phonyGroup.
+	group []path.Path
 }
 
 // mergePhonyExpansion appends the inputs of the non-empty phony edge to
@@ -1328,6 +1550,9 @@ func collectPhony(g *globals, edge *ninjautil.Edge) *phonyExpansion {
 			}
 			exp.subs = append(exp.subs, sub)
 			continue
+		}
+		if _, ok := in.InEdge(); ok {
+			exp.generated = true
 		}
 		exp.leaves = append(exp.leaves, p)
 	}
