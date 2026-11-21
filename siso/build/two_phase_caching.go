@@ -228,7 +228,9 @@ func (rt reapiTwoPhaseCaching) matchAction(ctx context.Context, step *Step, acti
 func (rt reapiTwoPhaseCaching) matchInputRoot(ctx context.Context, inputRootDigest digest.Digest) ([]string, error) {
 	ctx, span := trace.NewSpan(ctx, "twophasecaching-match-input-root")
 	defer span.Close(nil)
-	var inputs, emptyDirs []string
+	// Collect the inputs per directory and flatten them once at the end.
+	var segs [][]string
+	var loose, emptyDirs []string
 	err := rt.b.reapiclient.WalkDir(ctx, inputRootDigest, func(dname string, dd digest.Digest, dir *rpb.Directory) error {
 		if log.V(2) {
 			clog.Infof(ctx, "walkdir dir %q: %v", dname, dir)
@@ -248,7 +250,7 @@ func (rt reapiTwoPhaseCaching) matchInputRoot(ctx context.Context, inputRootDige
 			// Same result as the check below: every file and
 			// directory is already known to match. The inputs
 			// are the files, in order.
-			inputs = append(inputs, spec.names[:spec.nfiles]...)
+			segs = append(segs, spec.names[:spec.nfiles])
 			return nil
 		}
 		names := spec.names
@@ -289,6 +291,7 @@ func (rt reapiTwoPhaseCaching) matchInputRoot(ctx context.Context, inputRootDige
 		if len(ents) != len(names) {
 			return fmt.Errorf("missing some entries locally in %q (local:%d, expected:%d)", dname, len(ents), len(names))
 		}
+		lo := len(loose)
 		for _, ent := range ents {
 			e, ok := m[string(ent.Name)]
 			if !ok {
@@ -302,7 +305,7 @@ func (rt reapiTwoPhaseCaching) matchInputRoot(ctx context.Context, inputRootDige
 				if ent.IsExecutable != e.IsExecutable {
 					return fmt.Errorf("mismatch %q in %q: is_executable local:%t != want:%t", ent.Name, dname, ent.IsExecutable, e.IsExecutable)
 				}
-				inputs = append(inputs, string(e.Name))
+				loose = append(loose, string(e.Name))
 				continue
 			}
 			if e.Target != "" {
@@ -310,7 +313,7 @@ func (rt reapiTwoPhaseCaching) matchInputRoot(ctx context.Context, inputRootDige
 				if ent.Target != e.Target {
 					return fmt.Errorf("mismatch %q in %q: target local:%q != want:%q", ent.Name, dname, ent.Target, e.Target)
 				}
-				inputs = append(inputs, string(e.Name))
+				loose = append(loose, string(e.Name))
 				continue
 			}
 			// want dir
@@ -329,6 +332,7 @@ func (rt reapiTwoPhaseCaching) matchInputRoot(ctx context.Context, inputRootDige
 				// match if this is symlink to directory.
 			}
 		}
+		segs = append(segs, loose[lo:])
 		if log.V(2) {
 			clog.Infof(ctx, "walkdir dir %q: match", dname)
 		}
@@ -338,8 +342,8 @@ func (rt reapiTwoPhaseCaching) matchInputRoot(ctx context.Context, inputRootDige
 		return nil, err
 	}
 	slices.Sort(emptyDirs)
-	inputs = append(inputs, slices.Compact(emptyDirs)...)
-	return inputs, nil
+	segs = append(segs, slices.Compact(emptyDirs))
+	return slices.Concat(segs...), nil
 }
 
 func (rt reapiTwoPhaseCaching) Add(ctx context.Context, lookupKey string, step *Step) error {

@@ -82,7 +82,7 @@ type testServer struct {
 	closed   chan struct{}
 }
 
-func newServer(ctx context.Context, t *testing.T, fake *Fake) *testServer {
+func newServer(ctx context.Context, t testing.TB, fake *Fake) *testServer {
 	t.Helper()
 	s := &testServer{
 		closed: make(chan struct{}),
@@ -147,13 +147,13 @@ func (s *testServer) Close() {
 }
 
 // New starts new fake reapi grpc server and returns reapi client.
-func New(ctx context.Context, t *testing.T, fake *Fake) *reapi.Client {
+func New(ctx context.Context, t testing.TB, fake *Fake) *reapi.Client {
 	return NewWithOption(ctx, t, fake, reapi.Option{})
 }
 
 // NewWithOption starts new fake reapi grpc server with reapi option and returns reapi client.
 // Extra grpc.DialOption values are forwarded to the client connection.
-func NewWithOption(ctx context.Context, t *testing.T, fake *Fake, opt reapi.Option, dialOpts ...grpc.DialOption) *reapi.Client {
+func NewWithOption(ctx context.Context, t testing.TB, fake *Fake, opt reapi.Option, dialOpts ...grpc.DialOption) *reapi.Client {
 	t.Helper()
 	s := newServer(ctx, t, fake)
 	t.Cleanup(s.Close)
