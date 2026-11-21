@@ -129,3 +129,30 @@ func BenchmarkCmdDigest(b *testing.B) {
 		}
 	}
 }
+
+// BenchmarkCmdDigestAfterLargeStep computes action digests after a
+// large step has put its buffer into the pool.
+func BenchmarkCmdDigestAfterLargeStep(b *testing.B) {
+	for _, n := range []int{300, 3000} {
+		for _, seeded := range []bool{false, true} {
+			b.Run(fmt.Sprintf("inputs=%d/after64Ki=%t", n, seeded), func(b *testing.B) {
+				c := newDigestTestCmd(b, n)
+				for i := range entriesPools {
+					for range 4 {
+						entriesPools[i].Get() // start with empty pools
+					}
+				}
+				if seeded {
+					putEntriesBuf(getEntriesBuf(40000))
+				}
+				b.ReportAllocs()
+				for b.Loop() {
+					c.actionDigest = digest.Digest{}
+					if _, err := c.Digest(b.Context(), nil); err != nil {
+						b.Fatal(err)
+					}
+				}
+			})
+		}
+	}
+}

@@ -206,10 +206,11 @@ func TestCmdDigestSubtreeInputs(t *testing.T) {
 			// without TreeInputs.
 			nc := *c
 			nc.TreeInputs = nil
-			ents, err := nc.inputTree(ctx)
+			buf, err := nc.inputTree(ctx)
 			if err != nil {
 				t.Fatal(err)
 			}
+			ents := *buf
 			trees := c.TreeInputs
 			if c.CanonicalizeDir {
 				ents, trees = c.canonicalizeDir(ctx, ents, trees)

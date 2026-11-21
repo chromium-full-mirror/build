@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"math/bits"
 	"os"
 	stdpath "path"
 	"path/filepath"
@@ -18,6 +19,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -514,10 +516,12 @@ func (c *Cmd) Digest(ctx context.Context, ds *blob.Store) (actionDigest digest.D
 		clog.Infof(ctx, "action: %s {command; %s inputRoot: %s %d %s}: %v", actionDigest, commandDigest, inputRootDigest, ds.Size()-2, treeDuration, err)
 	}()
 	started := time.Now()
-	ents, err := c.inputTree(ctx)
+	buf, err := c.inputTree(ctx)
 	if err != nil {
 		return digest.Digest{}, fmt.Errorf("failed to get input tree for %s: %w", c, err)
 	}
+	defer putEntriesBuf(buf)
+	ents := *buf
 
 	treeInputs := c.TreeInputs
 	if c.CanonicalizeDir {
@@ -569,8 +573,9 @@ func (c *Cmd) Digest(ctx context.Context, ds *blob.Store) (actionDigest digest.D
 	return c.actionDigest, nil
 }
 
-// inputTree returns Merkle tree entries for the cmd.
-func (c *Cmd) inputTree(ctx context.Context) ([]merkletree.Entry, error) {
+// inputTree returns Merkle tree entries for the cmd, in a buffer from
+// getEntriesBuf.
+func (c *Cmd) inputTree(ctx context.Context) (*[]merkletree.Entry, error) {
 	inputs := c.AllInputs()
 	if log.V(1) {
 		clog.Infof(ctx, "tree @%s %s", c.WorkspaceRoot, inputs)
@@ -618,8 +623,8 @@ func (c *Cmd) inputTree(ctx context.Context) ([]merkletree.Entry, error) {
 	inputs = c.dropSubtreeInputs(inputs)
 	// Leave room for the working directory entry, rootEnts and the
 	// remote entries.
-	ents := make([]merkletree.Entry, 0, 1+len(inputs)+len(rootEnts)+len(c.RemoteInputs))
-	ents = append(ents, merkletree.Entry{Name: c.WorkDir})
+	buf := getEntriesBuf(1 + len(inputs) + len(rootEnts) + len(c.RemoteInputs))
+	ents := append(*buf, merkletree.Entry{Name: c.WorkDir})
 	ents, err := c.HashFS.AppendEntries(ctx, ents, c.WorkspaceRoot, inputs)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get entries for inputs in %s: %w", c.WorkspaceRoot, err)
@@ -628,7 +633,8 @@ func (c *Cmd) inputTree(ctx context.Context) ([]merkletree.Entry, error) {
 
 	if len(c.RemoteInputs) == 0 {
 		sortEntriesByName(ents)
-		return ents, nil
+		*buf = ents
+		return buf, nil
 	}
 	if log.V(1) {
 		clog.Infof(ctx, "remote tree @%s %s", c.WorkspaceRoot, c.RemoteInputs)
@@ -682,7 +688,46 @@ func (c *Cmd) inputTree(ctx context.Context) ([]merkletree.Entry, error) {
 	}
 
 	sortEntriesByName(ents)
-	return ents, nil
+	*buf = ents
+	return buf, nil
+}
+
+// entriesPools holds entry buffers for inputTree, one pool per power
+// of two capacity, from 1<<minEntriesClass to 1<<maxEntriesClass.
+var entriesPools [maxEntriesClass + 1]sync.Pool
+
+const (
+	minEntriesClass = 6
+	maxEntriesClass = 16
+)
+
+// getEntriesBuf returns an empty entry buffer with capacity for n entries.
+func getEntriesBuf(n int) *[]merkletree.Entry {
+	class := minEntriesClass
+	if n > 1<<minEntriesClass {
+		class = bits.Len(uint(n - 1))
+	}
+	if class > maxEntriesClass {
+		ents := make([]merkletree.Entry, 0, n)
+		return &ents
+	}
+	if buf, ok := entriesPools[class].Get().(*[]merkletree.Entry); ok {
+		return buf
+	}
+	ents := make([]merkletree.Entry, 0, 1<<class)
+	return &ents
+}
+
+// putEntriesBuf clears buf and returns it to the pool of its capacity.
+// buf must not be used after that.
+func putEntriesBuf(buf *[]merkletree.Entry) {
+	n := cap(*buf)
+	if n < 1<<minEntriesClass || n > 1<<maxEntriesClass {
+		return
+	}
+	clear(*buf)
+	*buf = (*buf)[:0]
+	entriesPools[bits.Len(uint(n))-1].Put(buf)
 }
 
 // sortEntriesByName sorts ents by Name. The order of entries with equal
