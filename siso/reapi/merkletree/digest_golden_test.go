@@ -187,6 +187,26 @@ func TestPooledTreeAboveArenaLimit(t *testing.T) {
 	}
 }
 
+// TestPooledTreeReleaseBuf checks that Release keeps a marshal buffer
+// of up to maxPooledBuf bytes and drops a larger one.
+func TestPooledTreeReleaseBuf(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		cap  int
+		kept bool
+	}{
+		{"at_limit", maxPooledBuf, true},
+		{"above_limit", maxPooledBuf + 1, false},
+	} {
+		mt := NewPooled(digest.SHA256, nil)
+		mt.buf = make([]byte, 0, tc.cap)
+		mt.Release()
+		if kept := mt.buf != nil; kept != tc.kept {
+			t.Errorf("%s: buf kept at Release = %t; want %t", tc.name, kept, tc.kept)
+		}
+	}
+}
+
 // checkPooledNames checks that mt's buildTree names maps are empty and
 // not in use.
 func checkPooledNames(t *testing.T, name string, mt *MerkleTree) {

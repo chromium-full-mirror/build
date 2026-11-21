@@ -47,6 +47,9 @@ type MerkleTree struct {
 	// resolve symlink dirs when it is true.
 	hasSymlinks bool
 
+	// buf is scratch space to marshal a Directory when there is no store.
+	buf []byte
+
 	// arena allocates the nodes of a pooled tree. It is nil for trees
 	// from New.
 	arena *arena
@@ -74,6 +77,10 @@ const arenaChunk = 256
 // arenaMaxRetained is the most nodes of one kind that a tree can have to
 // go back to the pool.
 const arenaMaxRetained = 1 << 16
+
+// maxPooledBuf is the capacity above which Release drops the marshal
+// buffer rather than keep it in the pool.
+const maxPooledBuf = 1 << 20
 
 // chunks is a chunked slab of T. Pointers to elements stay valid until reset.
 type chunks[T any] struct {
@@ -236,6 +243,9 @@ func (m *MerkleTree) Release() {
 	m.store = nil
 	m.lastDir = dirstate{}
 	m.hasSymlinks = false
+	if cap(m.buf) > maxPooledBuf {
+		m.buf = nil
+	}
 	if m.arena != nil {
 		m.arena.reset()
 	}
@@ -745,6 +755,15 @@ func (m *MerkleTree) buildTree(ctx context.Context, curdir *rpb.Directory, dirna
 	})
 	curdir.Directories = dirs
 
+	if m.store == nil {
+		// Only the digest is needed: marshal into the scratch buffer.
+		buf, err := proto.MarshalOptions{}.MarshalAppend(m.buf[:0], curdir)
+		if err != nil {
+			return nil, fmt.Errorf("directory digest %s: %w", dirname, err)
+		}
+		m.buf = buf
+		return m.digestProto(m.fn.FromBytes(buf)), nil
+	}
 	data, err := blob.FromProtoMessage(m.fn, curdir)
 	if err != nil {
 		return nil, fmt.Errorf("directory digest %s: %w", dirname, err)
