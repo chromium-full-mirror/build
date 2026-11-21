@@ -559,11 +559,102 @@ func (s *StepDef) ExpandedTriggerInputs(ctx context.Context) []path.Path {
 		visited := make(map[*ninjautil.Edge]bool)
 		for _, inEdge := range phonyEdges {
 			p := globals.targetPath(inEdge.Outputs()[0])
-			targets = replacePhony(ctx, globals, visited, seen, p, inEdge, s.rule.Debug, targets)
+			targets = expandPhony(ctx, globals, visited, seen, p, inEdge, s.rule.Debug, targets)
 		}
 	}
 	targets = s.addShellInputs(targets, nil)
 	return targets
+}
+
+// phonyExpansion holds the direct inputs of a non-empty phony edge in
+// replacePhony order: leaves are its non-phony inputs, and subs its phony
+// inputs, each of which comes before leaves[at].
+type phonyExpansion struct {
+	leaves []path.Path
+	subs   []phonySub
+}
+
+// phonySub is a phony input of a phonyExpansion.
+type phonySub struct {
+	at     int32
+	target path.Path
+	edge   *ninjautil.Edge
+	// entry is the memo entry of edge, or nil if edge is an empty phony
+	// edge.
+	entry *phonyMemoEntry
+}
+
+// phonyMemoEntry is a value of globals.phonyMemo.
+type phonyMemoEntry struct {
+	once sync.Once
+	edge *ninjautil.Edge
+	exp  *phonyExpansion
+}
+
+// mergePhonyExpansion appends the inputs of the non-empty phony edge to
+// inputs, the same as replacePhony without debug, but from the memoized
+// direct inputs of each phony edge, which are read from the graph once per
+// build rather than for every step.
+func (g *globals) mergePhonyExpansion(ctx context.Context, visited map[*ninjautil.Edge]bool, seen map[path.Path]bool, edge *ninjautil.Edge, inputs []path.Path) []path.Path {
+	if visited[edge] {
+		return inputs
+	}
+	return g.mergePhonyEntry(ctx, visited, seen, g.phonyMemoEntry(edge), inputs)
+}
+
+// mergePhonyEntry is replacePhony on the memoized expansion of e.edge.
+// Keep in sync with replacePhony.
+func (g *globals) mergePhonyEntry(ctx context.Context, visited map[*ninjautil.Edge]bool, seen map[path.Path]bool, e *phonyMemoEntry, inputs []path.Path) []path.Path {
+	exp := g.phonyExpansionOf(e)
+	visited[e.edge] = true
+	li := 0
+	for _, sub := range exp.subs {
+		inputs = appendUnseen(inputs, seen, exp.leaves[li:sub.at])
+		li = int(sub.at)
+		if seen[sub.target] {
+			continue
+		}
+		seen[sub.target] = true
+		if sub.entry == nil {
+			inputs = replacePhony(ctx, g, visited, seen, sub.target, sub.edge, false, inputs)
+			continue
+		}
+		if visited[sub.edge] {
+			continue
+		}
+		inputs = g.mergePhonyEntry(ctx, visited, seen, sub.entry, inputs)
+	}
+	return appendUnseen(inputs, seen, exp.leaves[li:])
+}
+
+// appendUnseen appends the paths not in seen to inputs and adds them to seen.
+func appendUnseen(inputs []path.Path, seen map[path.Path]bool, paths []path.Path) []path.Path {
+	for _, p := range paths {
+		if seen[p] {
+			continue
+		}
+		seen[p] = true
+		inputs = append(inputs, p)
+	}
+	return inputs
+}
+
+// phonyMemoEntry returns the memo entry of the non-empty phony edge,
+// creating it if needed.
+func (g *globals) phonyMemoEntry(edge *ninjautil.Edge) *phonyMemoEntry {
+	v, ok := g.phonyMemo.Load(edge)
+	if !ok {
+		v, _ = g.phonyMemo.LoadOrStore(edge, &phonyMemoEntry{edge: edge})
+	}
+	return v.(*phonyMemoEntry)
+}
+
+// phonyExpansionOf returns the expansion of e, computing it on first use.
+func (g *globals) phonyExpansionOf(e *phonyMemoEntry) *phonyExpansion {
+	e.once.Do(func() {
+		e.exp = collectPhony(g, e.edge)
+	})
+	return e.exp
 }
 
 // DepInputs returns inputs stored in depfile / depslog. The parse runs
@@ -708,7 +799,7 @@ func (s *StepDef) DepsBaseInputs(ctx context.Context, toolInputs []path.Path, in
 	for _, in := range nodes {
 		p := s.globals.targetPath(in)
 		if inEdge, ok := in.InEdge(); ok && inEdge.IsPhony() {
-			stepInputs = replacePhony(ctx, s.globals, visited, seen, p, inEdge, s.rule.Debug, stepInputs)
+			stepInputs = expandPhony(ctx, s.globals, visited, seen, p, inEdge, s.rule.Debug, stepInputs)
 			if s.rule.Debug {
 				clog.Infof(ctx, "deps base input: expand phony %q", in)
 			}
@@ -1171,6 +1262,19 @@ func (s *StepDef) ExpandedInputs(ctx context.Context) []path.Path {
 	return newInputsPaths
 }
 
+// expandPhony appends the inputs of the phony edge to inputs like
+// replacePhony, using the phony expansion memo unless debug is set or the
+// edge is empty.
+func expandPhony(ctx context.Context, globals *globals, visited map[*ninjautil.Edge]bool, seen map[path.Path]bool, target path.Path, edge *ninjautil.Edge, debug bool, inputs []path.Path) []path.Path {
+	if debug || len(edge.TriggerInputs()) == 0 {
+		return replacePhony(ctx, globals, visited, seen, target, edge, debug, inputs)
+	}
+	return globals.mergePhonyExpansion(ctx, visited, seen, edge, inputs)
+}
+
+// replacePhony appends the leaf inputs of the phony edge to inputs,
+// skipping those in seen and phony edges in visited.
+// Keep in sync with collectPhony and mergePhonyEntry.
 func replacePhony(ctx context.Context, globals *globals, visited map[*ninjautil.Edge]bool, seen map[path.Path]bool, target path.Path, edge *ninjautil.Edge, debug bool, inputs []path.Path) []path.Path {
 	if visited[edge] {
 		return inputs
@@ -1208,6 +1312,28 @@ func replacePhony(ctx context.Context, globals *globals, visited map[*ninjautil.
 		inputs = append(inputs, p)
 	}
 	return inputs
+}
+
+// collectPhony reads the direct inputs of the non-empty phony edge for its
+// memo entry. It doesn't expand nested phony edges, which have their own
+// entries. Keep in sync with replacePhony.
+func collectPhony(g *globals, edge *ninjautil.Edge) *phonyExpansion {
+	exp := &phonyExpansion{}
+	for _, in := range edge.TriggerInputs() {
+		p := g.targetPath(in)
+		if inEdge, ok := in.InEdge(); ok && inEdge.IsPhony() {
+			sub := phonySub{at: int32(len(exp.leaves)), target: p, edge: inEdge}
+			if len(inEdge.TriggerInputs()) > 0 {
+				sub.entry = g.phonyMemoEntry(inEdge)
+			}
+			exp.subs = append(exp.subs, sub)
+			continue
+		}
+		exp.leaves = append(exp.leaves, p)
+	}
+	exp.leaves = slices.Clip(exp.leaves)
+	exp.subs = slices.Clip(exp.subs)
+	return exp
 }
 
 // appendIndirectInputs appends indirect inputs edge into inputs that matches with filter function, and updates seen.

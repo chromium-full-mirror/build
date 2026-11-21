@@ -16,6 +16,7 @@ import (
 	"runtime"
 	"slices"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -62,7 +63,8 @@ type globals struct {
 	shellArgs   []string
 	shellInputs []path.Path
 
-	// node id -> path.Path
+	// node id -> path.Path. The paths of a step's inputs are set before
+	// the step runs, so concurrent steps only read them.
 	targetPaths []path.Path
 
 	// deps path id -> *depsPath
@@ -72,6 +74,10 @@ type globals struct {
 	edgeRules []edgeRuleHolder
 
 	phony map[string]bool
+
+	// phonyMemo memoizes phony edge expansions for ExpandedTriggerInputs
+	// and DepsBaseInputs: *ninjautil.Edge -> *phonyMemoEntry.
+	phonyMemo sync.Map
 
 	// caseSensitives lists all case sensitive input filenames.
 	caseSensitives map[string][]path.Path
@@ -465,6 +471,8 @@ func (g *Graph) reset(ctx context.Context) error {
 	g.globals.caseSensitives = make(map[string][]path.Path)
 	g.globals.gnTargets = make(map[*ninjautil.Edge]gnTarget)
 	g.globals.executables = make(map[string]bool)
+	// phony expansions refer to the old graph's edges.
+	g.globals.phonyMemo.Clear()
 	return g.initGlobals(ctx)
 }
 
