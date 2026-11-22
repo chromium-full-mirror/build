@@ -1377,6 +1377,79 @@ func TestState_DirOutput_BuildWithoutBytesReload(t *testing.T) {
 	}
 }
 
+func TestState_ReadDirSiblingsNotRecorded(t *testing.T) {
+	ctx := t.Context()
+	dir := t.TempDir()
+	dir, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, "sub"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"sub/used.h", "sub/used_deferred.h", "sub/used_mtime.h", "sub/unused.angledata.gz"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(name), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	deferredFull := filepath.ToSlash(filepath.Join(dir, "sub/used_deferred.h"))
+	mtimeFull := filepath.ToSlash(filepath.Join(dir, "sub/used_mtime.h"))
+	hashfs.SetNoLazyForTest(deferredFull)
+	defer hashfs.SetNoLazyForTest()
+
+	opts := hashfs.Option{
+		StateFile: filepath.Join(dir, ".siso_fs_state"),
+	}
+	hashFS, err := hashfs.New(ctx, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := hashFS.WaitReady(ctx); err != nil {
+		t.Fatalf("WaitReady=%v", err)
+	}
+
+	// ReadDir populates directory entries via updateDir (inReaddir=true, needCompute=false).
+	if _, err := hashFS.ReadDir(ctx, dir, "sub"); err != nil {
+		t.Fatalf("ReadDir=%v", err)
+	}
+	// Stat promotes used.h and used_deferred.h on statHit (needCompute=true),
+	// and StatMtime marks used_mtime.h as referenced without computing digest,
+	// leaving unused.angledata.gz unreferenced.
+	if _, err := hashFS.Stat(ctx, dir, "sub/used.h"); err != nil {
+		t.Fatalf("Stat(sub/used.h)=%v", err)
+	}
+	if _, err := hashFS.Stat(ctx, dir, "sub/used_deferred.h"); err != nil {
+		t.Fatalf("Stat(sub/used_deferred.h)=%v", err)
+	}
+	if _, err := hashFS.StatMtime(ctx, dir, "sub/used_mtime.h"); err != nil {
+		t.Fatalf("StatMtime(sub/used_mtime.h)=%v", err)
+	}
+	if err := hashFS.Close(ctx); err != nil {
+		t.Fatalf("Close=%v", err)
+	}
+
+	st, err := hashfs.Load(ctx, opts)
+	if err != nil {
+		t.Fatalf("Load=%v", err)
+	}
+	m := hashfs.StateMap(digest.SHA256, st)
+	usedFull := filepath.ToSlash(filepath.Join(dir, "sub/used.h"))
+	if ent, ok := m[usedFull]; !ok || ent.Digest == nil {
+		t.Errorf("StateMap[%q]=%v, %t; want entry with digest", usedFull, ent, ok)
+	}
+	unusedFull := filepath.ToSlash(filepath.Join(dir, "sub/unused.angledata.gz"))
+	if ent, ok := m[unusedFull]; ok {
+		t.Errorf("StateMap[%q]=%v; want not recorded in Entries", unusedFull, ent)
+	}
+	if ent, ok := m[deferredFull]; !ok || ent.Kind != pb.Entry_KIND_FILE || ent.Digest != nil {
+		t.Errorf("StateMap[%q]=%v, %t; want KIND_FILE entry without digest", deferredFull, ent, ok)
+	}
+	if ent, ok := m[mtimeFull]; !ok || ent.Kind != pb.Entry_KIND_FILE || ent.Digest != nil {
+		t.Errorf("StateMap[%q]=%v, %t; want KIND_FILE entry without digest", mtimeFull, ent, ok)
+	}
+}
+
 // createLargeBenchmarkState builds a protobuf state that approximates real
 // Chromium build state data in terms of field population rates, path
 // structure, and entry variety. The goal is to produce compression ratios

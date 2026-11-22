@@ -308,8 +308,12 @@ func (d *digester) lazyCompute(ctx context.Context, fname string, e *entry) {
 	eErr := e.err
 	src := e.src
 	ed := e.d
+	lcompute := e.lcompute
+	if eErr == nil && src != nil {
+		e.lcompute = true
+	}
 	e.mu.Unlock()
-	if eErr != nil || src == nil || !ed.IsZero() {
+	if eErr != nil || src == nil || !ed.IsZero() || lcompute {
 		return
 	}
 	if noLazyForTests != nil && noLazyForTests[fname] {

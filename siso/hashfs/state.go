@@ -1434,7 +1434,7 @@ func (hfs *HashFS) State(ctx context.Context) *pb.State {
 							state.MissingDigests = append(state.MissingDigests, name)
 						}
 					}
-				} else {
+				} else if !e.isUnreferenced() || e.needCompute() {
 					// statted, but not read. record it without
 					// digest. it is checked by mtime, type and size
 					// on load.
@@ -1442,6 +1442,11 @@ func (hfs *HashFS) State(ctx context.Context) *pb.State {
 						clog.Infof(ctx, "digest is unknown %s", name)
 					}
 					mtimeOnly = true
+				} else {
+					if log.V(1) {
+						clog.Infof(ctx, "ignore %s: not referenced", name)
+					}
+					continue
 				}
 			}
 			if !ed.IsZero() || e.isSymlink() || (!e.isDirectory() && len(e.cmdhash) > 0) || mtimeOnly {

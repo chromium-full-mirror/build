@@ -446,3 +446,111 @@ func TestEscapingSymlinkNameKeyForm(t *testing.T) {
 		}
 	}
 }
+
+// TestStat_SingleflightJoinsInReaddir verifies that when Stat joins an
+// in-flight statNewEntry started by updateDir (inReaddir=true), stat() marks
+// the resulting entry referenced and queues its digest computation.
+func TestStat_SingleflightJoinsInReaddir(t *testing.T) {
+	ctx := t.Context()
+	dir, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	fname := filepath.Join(dir, "used.h")
+	want := writePastFile(t, fname, "header content")
+
+	hfs, err := New(ctx, Option{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	fullname := makeFullpath(dir, "used.h")
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	leaderDone := make(chan struct{})
+	go func() {
+		defer close(leaderDone)
+		_, _, _ = hfs.singleflight.Do(string(fullname), func() (any, error) {
+			close(entered)
+			<-release
+			return hfs.statNewEntry(ctx, dir, "used.h", fullname, statOpts{inReaddir: true}, &statTracer{})
+		})
+	}()
+	<-entered
+
+	statErr := make(chan error, 1)
+	go func() {
+		_, err := hfs.Stat(ctx, dir, "used.h")
+		statErr <- err
+	}()
+	time.Sleep(10 * time.Millisecond)
+	close(release)
+
+	if err := <-statErr; err != nil {
+		t.Fatalf("Stat(used.h): %v", err)
+	}
+	<-leaderDone
+
+	if err := hfs.Close(ctx); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	e, _, _, ok := hfs.directory.lookup(ctx, fullname)
+	if !ok {
+		t.Fatal("entry missing for used.h")
+	}
+	if e.isUnreferenced() {
+		t.Errorf("e.isUnreferenced() = true after Stat joined singleflight; want false")
+	}
+	if got := e.digest(); got != want {
+		t.Errorf("e.digest() = %v; want %v", got, want)
+	}
+}
+
+// TestStatHit_DirLockFreeDuringUpdateDir verifies that statHit on a directory
+// (e.src == nil) does not acquire e.mu when skipping mtime refresh, so it
+// never blocks behind a concurrent updateDir holding the directory's e.mu.
+func TestStatHit_DirLockFreeDuringUpdateDir(t *testing.T) {
+	ctx := t.Context()
+	dir, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub := filepath.Join(dir, "sub")
+	if err := os.MkdirAll(sub, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	hfs, err := New(ctx, Option{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer hfs.Close(ctx)
+
+	if _, err := hfs.Stat(ctx, dir, "sub"); err != nil {
+		t.Fatalf("Stat(sub): %v", err)
+	}
+	e, _, _, ok := hfs.directory.lookup(ctx, makeFullpath(dir, "sub"))
+	if !ok {
+		t.Fatal("entry missing for sub")
+	}
+
+	// Simulate updateDir holding e.mu.Lock() on the directory entry.
+	e.mu.Lock()
+	done := make(chan error, 1)
+	go func() {
+		_, err := hfs.StatIfExists(ctx, dir, "sub")
+		done <- err
+	}()
+
+	select {
+	case err := <-done:
+		e.mu.Unlock()
+		if err != nil {
+			t.Fatalf("StatIfExists(sub): %v", err)
+		}
+	case <-time.After(500 * time.Millisecond):
+		e.mu.Unlock()
+		t.Fatal("StatIfExists(sub) blocked on directory e.mu")
+	}
+}

@@ -566,6 +566,7 @@ func (hfs *HashFS) getOrCreateEntry(ctx context.Context, fname path.Path) (*entr
 type statOpts struct {
 	needCompute         bool // queue a digest compute for a new entry
 	skipDirMtimeRefresh bool // skip dir cache-hit mtime-refresh Lstat (StatIfExists)
+	inReaddir           bool // called from updateDir; don't mark entry as referenced
 }
 
 // Stat returns a FileInfo at root/fname.
@@ -657,13 +658,34 @@ func (hfs *HashFS) stat(ctx context.Context, root string, fname path.Path, opts 
 		e = ev.(*entry)
 		break
 	}
+	hfs.markReferenced(ctx, root, fname, e, opts, &tracer)
 	return FileInfo{root: root, fname: fname, e: e}, nil
+}
+
+// markReferenced records a non-ReadDir access on a file entry and queues
+// lazyCompute when an unreferenced entry is promoted via Stat.
+// Safe without locking when e.src == nil because src never changes once stored,
+// and unreferenced only affects entries with a src.
+func (hfs *HashFS) markReferenced(ctx context.Context, root string, fname path.Path, e *entry, opts statOpts, tracer *statTracer) {
+	if opts.inReaddir || e.src == nil || !e.unreferenced.Load() {
+		return
+	}
+	e.mu.Lock()
+	unreferenced := e.unreferenced.Swap(false)
+	needCompute := unreferenced && opts.needCompute && e.err == nil && e.d.IsZero() && !e.lcompute
+	e.mu.Unlock()
+	if needCompute {
+		fullname := makeFullpath(root, fname)
+		hfs.digester.lazyCompute(ctx, string(fullname), e)
+		tracer.record("lazyCompute")
+	}
 }
 
 func (hfs *HashFS) statHit(ctx context.Context, root string, fname path.Path, e *entry, opts statOpts, tracer *statTracer) (*entry, error) {
 	if err := e.getErr(); err != nil {
 		return nil, err
 	}
+	hfs.markReferenced(ctx, root, fname, e, opts, tracer)
 	if e.isDirectory() {
 		if opts.skipDirMtimeRefresh {
 			// Skip the refresh Lstat: existence-only caller (StatIfExists).
@@ -731,6 +753,7 @@ func (hfs *HashFS) statNewEntry(ctx context.Context, root string, fname, fullnam
 		return hfs.statHit(ctx, root, fname, e, opts, tracer)
 	}
 	e = newLocalEntry()
+	e.unreferenced.Store(opts.inReaddir)
 	e.init(ctx, string(fullname), hfs.executables, hfs.OS)
 	tracer.record("init")
 	if log.V(1) {
@@ -2458,6 +2481,7 @@ func (hfs *HashFS) Flush(ctx context.Context, workspaceRoot string, files []path
 				}
 				err := e.err
 				generatedDir := e.isDirectory() && len(e.cmdhash) > 0
+				e.unreferenced.Store(false)
 				e.mu.Unlock()
 				if errors.Is(err, fs.ErrNotExist) || errors.Is(err, errNotRegular) {
 					clog.Warningf(ctx, "flush %s local-ready: %v", fname, err)
@@ -2678,6 +2702,9 @@ func (de DirEntry) Type() fs.FileMode {
 
 // Info returns a FileInfo.
 func (de DirEntry) Info() (fs.FileInfo, error) {
+	if de.fi.e != nil && de.fi.e.src != nil {
+		de.fi.e.unreferenced.Store(false)
+	}
 	return de.fi, nil
 }
 

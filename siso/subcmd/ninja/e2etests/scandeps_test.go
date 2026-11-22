@@ -6,6 +6,7 @@ package e2etests
 
 import (
 	"errors"
+	"path/filepath"
 	"testing"
 
 	"go.chromium.org/build/hashigo/digest"
@@ -224,5 +225,101 @@ func TestBuild_ScanDeps_StepInputs(t *testing.T) {
 	}
 	if stats.Done != stats.Total || stats.Remote != 1 || stats.Local != 0 {
 		t.Errorf("stats done=%d total=%d remote=%d local=%d; want remote=1 local=0", stats.Done, stats.Total, stats.Remote, stats.Local)
+	}
+}
+
+// Test that unreferenced sibling files in a directory scanned by scandeps
+// are not recorded in state entries or hashed on subsequent builds. b/360961799
+func TestBuild_ScanDeps_UnrelatedSibling(t *testing.T) {
+	if !runInSubProcess(t) {
+		return
+	}
+	ctx := t.Context()
+	dir := tempDir(t)
+
+	var ds build.DataSource
+	defer func() {
+		err := ds.Close(ctx)
+		if err != nil {
+			t.Error(err)
+		}
+	}()
+	fakere := &reapitest.Fake{
+		ExecuteFunc: func(fakere *reapitest.Fake, action *rpb.Action) (*rpb.ActionResult, error) {
+			depfile, err := fakere.Put(ctx, []byte("obj/base/base.o: ../../base/base.cc ../../base/base.h"))
+			if err != nil {
+				return &rpb.ActionResult{
+					ExitCode:  1,
+					StderrRaw: []byte("failed to write obj/base/base.o.d"),
+				}, nil
+			}
+			return &rpb.ActionResult{
+				ExitCode: 0,
+				OutputFiles: []*rpb.OutputFile{
+					{
+						Path:   "obj/base/base.o",
+						Digest: digest.SHA256.Empty().Proto(),
+					},
+					{
+						Path:   "obj/base/base.o.d",
+						Digest: depfile,
+					},
+				},
+			}, nil
+		},
+	}
+	ds.Client = reapitest.New(ctx, t, fakere)
+	ds.Cache = ds.Client.CacheStore()
+
+	runNinjaTest := func(t *testing.T) (build.Stats, error) {
+		t.Helper()
+		opt, graph, cleanup := setupBuild(ctx, t, dir, hashfs.Option{
+			StateFile:  ".siso_fs_state",
+			DataSource: ds,
+		})
+		defer cleanup()
+		opt.REAPIClient = ds.Client
+		return ninjabuild.Run(ctx, graph, opt, nil, ninjabuild.RunNinjaOpts{})
+	}
+
+	setupFiles(t, dir, t.Name(), nil)
+	unrelated := filepath.ToSlash(filepath.Join(dir, "base/unrelated.data"))
+
+	t.Logf("-- first build")
+	stats, err := runNinjaTest(t)
+	if err != nil {
+		t.Fatalf("ninja err: %v; want nil err", err)
+	}
+	if stats.Done != stats.Total || stats.Remote != 1 || stats.Local != 0 {
+		t.Errorf("stats done=%d total=%d remote=%d local=%d; want remote=1 local=0", stats.Done, stats.Total, stats.Remote, stats.Local)
+	}
+
+	st, err := hashfs.Load(ctx, hashfs.Option{StateFile: filepath.Join(dir, "out/siso/.siso_fs_state")})
+	if err != nil {
+		t.Fatalf("hashfs.Load err: %v", err)
+	}
+	for _, entry := range st.Entries {
+		if entry.Name == unrelated {
+			t.Errorf("state entries contains unreferenced sibling %q (digest=%v)", unrelated, entry.Digest)
+		}
+	}
+
+	t.Logf("-- second build (no-op)")
+	stats, err = runNinjaTest(t)
+	if err != nil {
+		t.Fatalf("ninja err: %v; want nil err", err)
+	}
+	if stats.Done != stats.Total || stats.Remote != 0 || stats.Local != 0 {
+		t.Errorf("stats done=%d total=%d remote=%d local=%d; want remote=0 local=0", stats.Done, stats.Total, stats.Remote, stats.Local)
+	}
+
+	st, err = hashfs.Load(ctx, hashfs.Option{StateFile: filepath.Join(dir, "out/siso/.siso_fs_state")})
+	if err != nil {
+		t.Fatalf("hashfs.Load err: %v", err)
+	}
+	for _, entry := range st.Entries {
+		if entry.Name == unrelated {
+			t.Errorf("state entries contains unreferenced sibling %q (digest=%v)", unrelated, entry.Digest)
+		}
 	}
 }

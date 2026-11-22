@@ -340,7 +340,7 @@ func (fsys *filesystem) getHmap(ctx context.Context, workspaceRoot string, fname
 
 func (fsys *filesystem) readFile(ctx context.Context, root string, fname path.Path) ([]byte, []string, error) {
 	hfsys := fsys.hashfs.FileSystem(ctx, root)
-	fi, err := hfsys.Stat(string(fname))
+	fi, err := hfsys.StatMtime(string(fname))
 	if err != nil {
 		return nil, nil, err
 	}
@@ -357,7 +357,7 @@ func (fsys *filesystem) readFile(ctx context.Context, root string, fname path.Pa
 
 func (fsys *filesystem) statFollowSymlink(ctx context.Context, root string, fname path.Path) (hashfs.FileInfo, error) {
 	hfsys := fsys.hashfs.FileSystem(ctx, root)
-	fi, err := hfsys.Stat(string(fname))
+	fi, err := hfsys.StatMtime(string(fname))
 	if err != nil {
 		return hashfs.FileInfo{}, err
 	}

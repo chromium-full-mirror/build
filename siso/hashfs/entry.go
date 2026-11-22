@@ -88,9 +88,11 @@ type entry struct {
 
 	entryErrLogged atomic.Bool
 
-	d         digest.Digest
-	dch       chan struct{} // wait for digest computation
-	directory *directory
+	d            digest.Digest
+	dch          chan struct{} // wait for digest computation
+	lcompute     bool          // lazyCompute or compute has been requested
+	unreferenced atomic.Bool   // created by updateDir and not yet referenced
+	directory    *directory
 }
 
 func newLocalEntry() *entry {
@@ -179,6 +181,7 @@ func (e *entry) compute(ctx context.Context, fn digest.Function, fname string) e
 		e.mu.Unlock()
 		return nil
 	}
+	e.lcompute = true
 	dch := e.dch
 	if dch == nil {
 		// We're the first caller: claim the computation.
@@ -234,6 +237,16 @@ func (e *entry) getErr() error {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
 	return e.err
+}
+
+func (e *entry) needCompute() bool {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	return e.lcompute
+}
+
+func (e *entry) isUnreferenced() bool {
+	return e.unreferenced.Load()
 }
 
 func (e *entry) getMtime() time.Time {
@@ -301,7 +314,7 @@ func (e *entry) updateDir(ctx context.Context, hfs *HashFS, dname string) []stri
 			}
 			wg.Go(func() {
 				// update entry in e.directory.
-				_, err := hfs.stat(ctx, dname, path.Path(name), statOpts{})
+				_, err := hfs.stat(ctx, dname, path.Path(name), statOpts{inReaddir: true})
 				if err != nil {
 					clog.Warningf(ctx, "updateDir stat %s: %v", name, err)
 				}
@@ -320,7 +333,7 @@ func (e *entry) updateDir(ctx context.Context, hfs *HashFS, dname string) []stri
 				continue
 			}
 			// update entry in e.directory.
-			_, err := hfs.stat(ctx, dname, path.Path(name), statOpts{})
+			_, err := hfs.stat(ctx, dname, path.Path(name), statOpts{inReaddir: true})
 			if err != nil {
 				clog.Warningf(ctx, "updateDir stat %s: %v", name, err)
 			}
