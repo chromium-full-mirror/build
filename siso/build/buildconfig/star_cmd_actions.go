@@ -205,7 +205,7 @@ func starActionsWrite(thread *starlark.Thread, fn *starlark.Builtin, args starla
 	var fname string
 	var content starlark.Bytes
 	var isExecutable bool
-	err := starlark.UnpackArgs("write", args, kwargs, "fname", &fname, "content?", &content, "is_executable?", isExecutable)
+	err := starlark.UnpackArgs("write", args, kwargs, "fname", &fname, "content?", &content, "is_executable?", &isExecutable)
 	if err != nil {
 		return starlark.None, err
 	}
