@@ -8,10 +8,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -526,11 +526,11 @@ func TestParser_CancelDuringLastParse(t *testing.T) {
 }
 
 func TestParser_LoadErrorWinsOverCancel(t *testing.T) {
-	// The include is read only after the held chunk permit is released, so
-	// it fails after the cancellation.
-	err := loadCancelledDuringParse(t, "include missing.ninja\n", errors.New("test cancel"))
-	if !errors.Is(err, fs.ErrNotExist) {
-		t.Errorf("loadFiles: %v; want %v", err, fs.ErrNotExist)
+	// The duplicate output is found only after the held chunk permit is
+	// released, so it fails after the cancellation.
+	err := loadCancelledDuringParse(t, "build out: phony\nbuild out: phony\n", errors.New("test cancel"))
+	if _, ok := errors.AsType[multipleRulesError](err); !ok {
+		t.Errorf("loadFiles: %v; want %v", err, multipleRulesError{})
 	}
 }
 
@@ -930,30 +930,15 @@ rule
 	}
 }
 
-// TestParser_IncludeInLastChunk is a regression test for crrev.com/c/7692413:
-// setup() used `if i < len(p.chunks)` to guard access to `p.chunks[i+1]`, but
-// the condition should be `if i+1 < len(p.chunks)`. When a file with an
-// include directive fit in a single chunk, the loop's only iteration (i=0)
-// passed the old guard (0 < 1) and tried to access p.chunks[1], panicking with
-// an index out of range.
-//
-// This test uses a minimal parent file whose only statement is an include
-// directive, ensuring a single chunk with ninclude > 0.
-func TestParser_IncludeInLastChunk(t *testing.T) {
+// TestParser_Include checks that include is a parse error, because neither
+// GN nor Soong uses it.
+func TestParser_Include(t *testing.T) {
 	ctx := t.Context()
 	dir := t.TempDir()
-
-	err := os.WriteFile(filepath.Join(dir, "rules.ninja"), []byte(`
+	err := os.WriteFile(filepath.Join(dir, "build.ninja"), []byte(`
 rule cc
   command = cc -c ${in} -o ${out}
-`), 0644)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	err = os.WriteFile(filepath.Join(dir, "build.ninja"), []byte(`
 include rules.ninja
-build obj/a.o: cc a.c
 `), 0644)
 	if err != nil {
 		t.Fatal(err)
@@ -963,236 +948,27 @@ build obj/a.o: cc a.c
 	p := NewManifestParser(state)
 	p.SetWd(dir)
 	err = p.Load(ctx, "build.ninja")
-	if err != nil {
-		t.Fatalf("Load: %v", err)
-	}
-
-	node, ok := state.LookupNodeByPath("obj/a.o")
-	if !ok {
-		t.Fatal("missing node for obj/a.o")
-	}
-	edge, ok := node.InEdge()
-	if !ok {
-		t.Fatal("no inEdge for obj/a.o")
-	}
-	if got, want := edge.RuleName(), "cc"; got != want {
-		t.Errorf("RuleName=%q; want=%q", got, want)
+	if err == nil || !strings.Contains(err.Error(), "line:4: include is not supported") {
+		t.Errorf("Load: %v; want an error for the include in line 4", err)
 	}
 }
 
-// TestParser_IncludeMoreStatementsThanParent is a regression test for
-// crrev.com/c/7692414: includeChunks() used to index into ch.statements
-// (the parent chunk) instead of cch.statements (the included chunk),
-// causing an out-of-bounds panic when the included file had more statements
-// than the parent chunk had remaining after the include directive.
-func TestParser_IncludeMoreStatementsThanParent(t *testing.T) {
+// TestParser_Filenames verifies that files loaded through subninja appear
+// in State.Filenames().
+func TestParser_Filenames(t *testing.T) {
 	ctx := t.Context()
 	dir := t.TempDir()
 
-	// The included file has many statements (more than the parent has
-	// after its include directive).
-	err := os.WriteFile(filepath.Join(dir, "included.ninja"), []byte(`
+	err := os.WriteFile(filepath.Join(dir, "build.ninja"), []byte(`
 rule cc
   command = cc -c ${in} -o ${out}
-
-rule link
-  command = cc ${in} -o ${out}
-
-build obj/a.o: cc a.c
-build obj/b.o: cc b.c
-build obj/c.o: cc c.c
-build prog: link obj/a.o obj/b.o obj/c.o
+subninja sub.ninja
 `), 0644)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	// The parent file has only the include directive and nothing after it,
-	// so the parent chunk has fewer statements than the included file.
-	err = os.WriteFile(filepath.Join(dir, "build.ninja"), []byte(`
-include included.ninja
-`), 0644)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	state := NewState()
-	p := NewManifestParser(state)
-	p.SetWd(dir)
-	err = p.Load(ctx, "build.ninja")
-	if err != nil {
-		t.Fatalf("Load: %v", err)
-	}
-
-	node, ok := state.LookupNodeByPath("prog")
-	if !ok {
-		t.Fatal("missing node for prog")
-	}
-	edge, ok := node.InEdge()
-	if !ok {
-		t.Fatal("no inEdge for prog")
-	}
-	if got, want := edge.RuleName(), "link"; got != want {
-		t.Errorf("RuleName=%q; want=%q", got, want)
-	}
-	if got, want := len(edge.Inputs()), 3; got != want {
-		t.Errorf("len(Inputs)=%d; want=%d", got, want)
-	}
-}
-
-// TestParser_IncludeResolvesRelativeToWd verifies that include directives are
-// resolved relative to the working directory set via SetWd, not the process
-// working directory (regression test for crrev.com/c/7692380).
-func TestParser_IncludeResolvesRelativeToWd(t *testing.T) {
-	ctx := t.Context()
-	dir := t.TempDir()
-
-	err := os.WriteFile(filepath.Join(dir, "included.ninja"), []byte(`
-rule cc
-  command = cc -c ${in} -o ${out}
-
-build obj/a.o: cc a.c
-`), 0644)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	err = os.WriteFile(filepath.Join(dir, "build.ninja"), []byte(`
-include included.ninja
-`), 0644)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	state := NewState()
-	p := NewManifestParser(state)
-	p.SetWd(dir)
-	err = p.Load(ctx, "build.ninja")
-	if err != nil {
-		t.Fatalf("Load: %v", err)
-	}
-
-	node, ok := state.LookupNodeByPath("obj/a.o")
-	if !ok {
-		t.Fatal("missing node for obj/a.o")
-	}
-	edge, ok := node.InEdge()
-	if !ok {
-		t.Fatal("no inEdge for obj/a.o")
-	}
-	if got, want := edge.RuleName(), "cc"; got != want {
-		t.Errorf("RuleName=%q; want=%q", got, want)
-	}
-}
-
-func TestParser_IncludeCycle(t *testing.T) {
-	ctx := t.Context()
-	dir := t.TempDir()
-
-	write := func(fname, content string) {
-		t.Helper()
-		fname = filepath.Join(dir, fname)
-		err := os.MkdirAll(filepath.Dir(fname), 0755)
-		if err != nil {
-			t.Fatal(err)
-		}
-		err = os.WriteFile(fname, []byte(content), 0644)
-		if err != nil {
-			t.Fatal(err)
-		}
-	}
-
-	t.Run("self_include", func(t *testing.T) {
-		write("self.ninja", "include self.ninja\n")
-
-		state := NewState()
-		p := NewManifestParser(state)
-		p.SetWd(dir)
-		err := p.Load(ctx, "self.ninja")
-		if err == nil {
-			t.Fatal("expected error for self-include, got nil")
-		}
-		t.Logf("got expected error: %v", err)
-	})
-
-	t.Run("mutual_include", func(t *testing.T) {
-		write("a.ninja", "include b.ninja\n")
-		write("b.ninja", "include a.ninja\n")
-
-		state := NewState()
-		p := NewManifestParser(state)
-		p.SetWd(dir)
-		err := p.Load(ctx, "a.ninja")
-		if err == nil {
-			t.Fatal("expected error for mutual include cycle, got nil")
-		}
-		t.Logf("got expected error: %v", err)
-	})
-
-	t.Run("diamond_include_across_subninjas", func(t *testing.T) {
-		write("build.ninja", "subninja sub_a.ninja\nsubninja sub_b.ninja\n")
-		write("sub_a.ninja", "include shared.ninja\n")
-		write("sub_b.ninja", "include shared.ninja\n")
-		write("shared.ninja", "rule cat\n  command = cat $in > $out\n")
-
-		state := NewState()
-		p := NewManifestParser(state)
-		p.SetWd(dir)
-		err := p.Load(ctx, "build.ninja")
-		if err != nil {
-			t.Fatalf("diamond include across subninjas should not be a cycle, got: %v", err)
-		}
-	})
-
-	t.Run("diamond_include_within_file", func(t *testing.T) {
-		write("main.ninja", "include common.ninja\ninclude common.ninja\n")
-		write("common.ninja", "myvar = hello\n")
-
-		state := NewState()
-		p := NewManifestParser(state)
-		p.SetWd(dir)
-		err := p.Load(ctx, "main.ninja")
-		if err != nil {
-			t.Fatalf("including the same file twice sequentially should not be a cycle, got: %v", err)
-		}
-	})
-
-	t.Run("symlink_cycle", func(t *testing.T) {
-		write("sym_target.ninja", "include sym_link.ninja\n")
-		linkPath := filepath.Join(dir, "sym_link.ninja")
-		os.Remove(linkPath) // remove if exists from prior test run
-		err := os.Symlink(filepath.Join(dir, "sym_target.ninja"), linkPath)
-		if err != nil {
-			t.Skipf("symlinks not supported: %v", err)
-		}
-
-		state := NewState()
-		p := NewManifestParser(state)
-		p.SetWd(dir)
-		err = p.Load(ctx, "sym_target.ninja")
-		if err == nil {
-			t.Fatal("expected error for symlink include cycle, got nil")
-		}
-		t.Logf("got expected error: %v", err)
-	})
-}
-
-// TestParser_IncludeFilenames verifies that files loaded via include
-// directives appear in State.Filenames().
-func TestParser_IncludeFilenames(t *testing.T) {
-	ctx := t.Context()
-	dir := t.TempDir()
-
-	err := os.WriteFile(filepath.Join(dir, "rules.ninja"), []byte(`
-rule cc
-  command = cc -c ${in} -o ${out}
-`), 0644)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	err = os.WriteFile(filepath.Join(dir, "build.ninja"), []byte(`
-include rules.ninja
+	err = os.WriteFile(filepath.Join(dir, "sub.ninja"), []byte(`
 build obj/a.o: cc a.c
 `), 0644)
 	if err != nil {
@@ -1211,7 +987,7 @@ build obj/a.o: cc a.c
 	slices.Sort(filenames)
 	want := []string{
 		filepath.Join(dir, "build.ninja"),
-		filepath.Join(dir, "rules.ninja"),
+		filepath.Join(dir, "sub.ninja"),
 	}
 	if diff := cmp.Diff(want, filenames); diff != "" {
 		t.Errorf("Filenames() mismatch (-want +got):\n%s", diff)
@@ -1225,13 +1001,12 @@ func TestParser_LoadFailureReleasesMmaps(t *testing.T) {
 	ctx := t.Context()
 	dir := t.TempDir()
 
-	// build.ninja parses cleanly through readFile + setup, then the
-	// invalid sub.ninja triggers an error during the include's parse.
+	// build.ninja parses cleanly, then parsing the invalid sub.ninja fails.
 	if err := os.WriteFile(filepath.Join(dir, "build.ninja"), []byte(`
 rule cc
   command = clang $in -o $out
 
-include sub.ninja
+subninja sub.ninja
 
 build out: cc src.cc
 `), 0644); err != nil {

@@ -8,8 +8,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"maps"
-	"path/filepath"
 	"runtime"
 	"runtime/trace"
 	"strconv"
@@ -45,20 +43,11 @@ type chunk struct {
 	start, end int    // this chunk sees buf[start:end]
 
 	statements []statement
-	includes   [][]chunk
 
 	state *State
 	scope *fileScope
-	wd    string // working directory for resolving relative paths
 
 	pathsBuf []evalString
-
-	// includeAncestors tracks the chain of files leading to this
-	// chunk via include directives, used to detect include cycles.
-	// It does NOT include files from sibling subninja trees, so
-	// diamond dependencies (two subninjas both including the same
-	// file) are correctly allowed.
-	includeAncestors map[string]bool
 
 	nodemap *localNodeMap
 
@@ -82,7 +71,6 @@ type chunk struct {
 	nbuild, nbuildvar int
 	npool, npoolvar   int
 	ndefault          int
-	ninclude          int
 	nsubninja         int
 	ncomment          int
 }
@@ -246,19 +234,8 @@ loop:
 				continue
 			}
 		case 'i':
-			v, ok := isStatement(buf, i, []byte("include"))
-			if ok {
-				e := findNextLine(buf, i)
-				ch.statements = append(ch.statements, statement{
-					t: statementInclude,
-					s: i,
-					v: v,
-					e: e,
-				})
-				i = e
-				lastStatement = statementInclude
-				ch.ninclude++
-				continue
+			if _, ok := isStatement(buf, i, []byte("include")); ok {
+				return fmt.Errorf("line:%d: include is not supported; use subninja", lineno(buf, i))
 			}
 		case 'p':
 			v, ok := isStatement(buf, i, []byte("pool"))
@@ -324,11 +301,11 @@ loop:
 	}
 
 	if log.V(1) {
-		clog.Infof(ctx, "scan var:%d rule:%d+%d build:%d+%d pool:%d+%d default:%d include:%d subninja:%d comment:%d: %s",
+		clog.Infof(ctx, "scan var:%d rule:%d+%d build:%d+%d pool:%d+%d default:%d subninja:%d comment:%d: %s",
 			ch.nvar, ch.nrule, ch.nrulevar,
 			ch.nbuild, ch.nbuildvar,
 			ch.npool, ch.npoolvar,
-			ch.ndefault, ch.ninclude, ch.nsubninja, ch.ncomment,
+			ch.ndefault, ch.nsubninja, ch.ncomment,
 			time.Since(t))
 	}
 	return nil
@@ -358,7 +335,7 @@ func (ch *chunk) countStatement(i int, t statementType) int {
 	return n
 }
 
-// setupInChunk processes var declarations / pool / rule / include.
+// setupInChunk processes var declarations / pool / rule.
 func (ch *chunk) setupInChunk(ctx context.Context) error {
 	var err error
 	for i := 0; i < len(ch.statements); {
@@ -394,51 +371,6 @@ func (ch *chunk) setupInChunk(ctx context.Context) error {
 		case statementDefault:
 			i++
 			continue
-		case statementInclude:
-			include, err := ch.parseInclude(i)
-			if err != nil {
-				return err
-			}
-			if filepath.IsAbs(include) {
-				return fmt.Errorf("line:%d absolute path %q not supported in include/subninja statements", lineno(ch.buf, st.s), include)
-			}
-			include = filepath.Join(ch.wd, include)
-
-			canonical := canonicalPath(include)
-			if ch.includeAncestors[canonical] {
-				return fmt.Errorf("line:%d include cycle: %q already included", lineno(ch.buf, st.s), include)
-			}
-			ancestors := maps.Clone(ch.includeAncestors)
-			ancestors[canonical] = true
-
-			fp := &fileParser{
-				state:            ch.state,
-				scope:            ch.scope,
-				sema:             make(chan struct{}, 1),
-				wd:               ch.wd,
-				includeAncestors: ancestors,
-			}
-			fp.buf, err = fp.readFile(ctx, include)
-			if err != nil {
-				return err
-			}
-			ch.state.addFilename(include)
-			fp.chunks = splitIntoChunks(ctx, fp.buf)
-			err = fp.parseChunks(ctx)
-			if err != nil {
-				return err
-			}
-			fp.alloc(ctx)
-			// Assign final positions before setup, so that
-			// variables stored during setup get correct positions
-			// for proper shadowing/ordering in the shared scope.
-			ch.includeChunks(i, fp.chunks)
-			err = fp.setup(ctx)
-			if err != nil {
-				return err
-			}
-			i++
-			continue
 		case statementSubninja:
 			i++
 			continue
@@ -447,24 +379,6 @@ func (ch *chunk) setupInChunk(ctx context.Context) error {
 		}
 	}
 	return nil
-}
-
-// includeChunks includes chunks's statements in ch.statements[i].
-func (ch *chunk) includeChunks(i int, chunks []chunk) {
-	st := ch.statements[i]
-	pos := st.pos + 1
-	for i := range chunks {
-		cch := &chunks[i]
-		for j := range cch.statements {
-			cch.statements[j].pos = pos
-			pos++
-		}
-	}
-	ch.includes = append(ch.includes, chunks)
-	for i = i + 1; i < len(ch.statements); i++ {
-		ch.statements[i].pos = pos
-		pos++
-	}
 }
 
 // buildGraphInChunk parses build / default / subninja,
@@ -512,9 +426,6 @@ func (ch *chunk) buildGraphInChunk(ctx context.Context, fileState *fileState) er
 				return err
 			}
 			fileState.addDefaults(nodes)
-			i++
-			continue
-		case statementInclude:
 			i++
 			continue
 		case statementSubninja:
@@ -853,21 +764,6 @@ func (ch *chunk) parseDefault(i int) ([]*Node, error) {
 	return nodes, nil
 }
 
-// parseInclude parses include statement at statements[i].
-func (ch *chunk) parseInclude(i int) (string, error) {
-	st := ch.statements[i]
-	pp := newPathParser(ch.buf[st.v:st.e])
-	paths, _ := pp.pathList(nil)
-	if len(paths) != 1 {
-		return "", fmt.Errorf("line:%d bad include paths=%d", lineno(ch.buf, st.s), len(paths))
-	}
-	include, err := ch.targetPath(ch.scope, &ch.scratchBuf, paths[0])
-	if err != nil {
-		return "", fmt.Errorf("line:%d bad include %q: %w", lineno(ch.buf, st.s), paths[0].v, err)
-	}
-	return string(include), nil
-}
-
 // parseSubninja parses subninja statement at statements[i].
 func (ch *chunk) parseSubninja(i int) (string, error) {
 	st := ch.statements[i]
@@ -881,17 +777,6 @@ func (ch *chunk) parseSubninja(i int) (string, error) {
 		return "", fmt.Errorf("line:%d bad subninja %q: %w", lineno(ch.buf, st.s), paths[0].v, err)
 	}
 	return string(subninja), nil
-}
-
-// canonicalPath returns a canonical form of path by resolving symlinks.
-// If the path cannot be resolved (e.g. file does not exist yet),
-// it falls back to filepath.Clean.
-func canonicalPath(path string) string {
-	resolved, err := filepath.EvalSymlinks(path)
-	if err != nil {
-		return filepath.Clean(path)
-	}
-	return resolved
 }
 
 func lineno(buf []byte, i int) int {

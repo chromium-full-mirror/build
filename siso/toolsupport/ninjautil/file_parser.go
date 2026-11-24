@@ -55,10 +55,6 @@ type fileParser struct {
 	full   chunk // for accumulated numbers from chunks
 	chunks []chunk
 
-	// includeAncestors tracks the chain of files leading to this
-	// fileParser via include directives, used to detect cycles.
-	includeAncestors map[string]bool
-
 	fileState fileState
 
 	// allocations
@@ -79,9 +75,6 @@ func (p *fileParser) parseFile(ctx context.Context, fname string) error {
 
 	p.fname = fname
 	p.fileState.filenames = append(p.fileState.filenames, fname)
-	if p.includeAncestors == nil {
-		p.includeAncestors = map[string]bool{canonicalPath(fname): true}
-	}
 
 	t := time.Now()
 	var err error
@@ -202,7 +195,6 @@ func (p *fileParser) alloc(ctx context.Context) {
 		p.full.npool += ch.npool
 		p.full.npoolvar += ch.npoolvar
 		p.full.ndefault += ch.ndefault
-		p.full.ninclude += ch.ninclude
 		p.full.nsubninja += ch.nsubninja
 		p.full.ncomment += ch.ncomment
 		for j := range ch.statements {
@@ -216,15 +208,8 @@ func (p *fileParser) alloc(ctx context.Context) {
 	p.poolArena.reserve(p.full.npool)
 	p.bindingArena.reserve(p.full.nrulevar)
 
-	// Only create new scope maps for fresh scopes. When the scope
-	// is reused from a parent (as with `include`), preserve existing
-	// rules and bindings.
-	if p.scope.rules == nil {
-		p.scope.rules = newRuleMap(p.full.nrule)
-	}
-	if p.scope.bindings == nil {
-		p.scope.bindings = newShardBindings(p.full.nvar)
-	}
+	p.scope.rules = newRuleMap(p.full.nrule)
+	p.scope.bindings = newShardBindings(p.full.nvar)
 
 	if log.V(1) {
 		clog.Infof(ctx, "alloc rule=%d edge=%d pool=%d var=%d binding=%d", p.full.nrule, p.full.nbuild, p.full.npool, p.full.nvar, p.full.nrulevar)
@@ -234,8 +219,6 @@ func (p *fileParser) alloc(ctx context.Context) {
 		ch := &p.chunks[i]
 		ch.state = p.state
 		ch.scope = p.scope
-		ch.wd = p.wd
-		ch.includeAncestors = p.includeAncestors
 		ch.nodemap = p.state.nodeMap.localNodeMap(ch.nbuild) // estimates # of nodes
 
 		ch.ruleArena = p.ruleArena.chunk(ch.nrule)
@@ -254,31 +237,13 @@ func (p *fileParser) alloc(ctx context.Context) {
 func (p *fileParser) setup(ctx context.Context) error {
 	defer trace.StartRegion(ctx, "ninja.setup").End()
 	var eg errgroup.Group
-	if p.full.ninclude > 0 {
-		eg.SetLimit(1)
-	}
 	for i := range p.chunks {
 		ch := &p.chunks[i]
 		eg.Go(func() error {
 			p.sema <- struct{}{}
 			defer func() { <-p.sema }()
 
-			err := ch.setupInChunk(ctx)
-			if err != nil {
-				return err
-			}
-			// adjust statement positions if there is any include in any chunk.
-			if p.full.ninclude > 0 {
-				pos := ch.statements[len(ch.statements)-1].pos
-				if i+1 < len(p.chunks) && p.chunks[i+1].statements[0].pos < pos {
-					nch := &p.chunks[i+1]
-					for j := range nch.statements {
-						nch.statements[j].pos = pos + 1
-						pos++
-					}
-				}
-			}
-			return nil
+			return ch.setupInChunk(ctx)
 		})
 	}
 	return eg.Wait()
@@ -296,18 +261,6 @@ func (p *fileParser) buildGraph(ctx context.Context) error {
 
 			return ch.buildGraphInChunk(ctx, &p.fileState)
 		})
-		for j := range ch.includes {
-			inc := ch.includes[j]
-			for k := range inc {
-				ich := &inc[k]
-				eg.Go(func() error {
-					p.sema <- struct{}{}
-					defer func() { <-p.sema }()
-
-					return ich.buildGraphInChunk(ctx, &p.fileState)
-				})
-			}
-		}
 	}
 	return eg.Wait()
 }
@@ -320,22 +273,6 @@ func (p *fileParser) finalize(ctx context.Context) error {
 		edge := p.edgeArena.at(i)
 		if edge.rule != nil {
 			p.fileState.edges = append(p.fileState.edges, edge)
-		}
-	}
-	// Also collect edges from included chunks, whose edges live
-	// in the included fileParser's arena, not the parent's.
-	for i := range p.chunks {
-		ch := &p.chunks[i]
-		for j := range ch.includes {
-			inc := ch.includes[j]
-			for k := range inc {
-				for l := range inc[k].edgeArena.used() {
-					edge := inc[k].edgeArena.at(l)
-					if edge.rule != nil {
-						p.fileState.edges = append(p.fileState.edges, edge)
-					}
-				}
-			}
 		}
 	}
 	p.state.mergeFileState(&p.fileState)

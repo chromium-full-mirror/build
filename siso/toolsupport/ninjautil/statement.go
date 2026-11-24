@@ -30,7 +30,6 @@ const (
 	statementBuild
 	statementBuildVar
 	statementDefault
-	statementInclude
 	statementSubninja
 )
 
@@ -52,8 +51,6 @@ func (s statementType) String() string {
 		return "build-var"
 	case statementDefault:
 		return "default"
-	case statementInclude:
-		return "include"
 	case statementSubninja:
 		return "subninja"
 	}

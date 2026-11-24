@@ -113,11 +113,11 @@ Siso rejects an output produced under another step's directory output.
  * **Siso:** similar with [n2](https://neugierig.org/software/blog/2022/03/n2.html),
      re-run when inputs/outputs list has changed too.
 
-## Absolute paths in include/subninja statements
+## include statements
 
-  * **Ninja:** Allows absolute paths in `include` and `subninja` statements.
-  * **Siso:** Rejects absolute paths in `include` and `subninja` statements.
-      Use relative paths instead.
+  * **Ninja:** Reads the file of an `include` statement into the current scope.
+  * **Siso:** Fails to parse a file with an `include` statement, because
+      neither GN nor Soong writes one. Use `subninja` instead.
 
 ## Path normalization
 
@@ -131,8 +131,8 @@ Siso rejects an output produced under another step's directory output.
 
 ## Unsupported features
 
-   Siso mainly intends to support `gn` (Chromium) and `soong` (Android).
-   Support for other generators such as `cmake` is optional (see
+   Siso only intends to support `gn` (Chromium) and `soong` (Android).
+   It doesn't support other generators such as `cmake` (see
    [crbug.com/448631316](https://crbug.com/448631316)).
 
    Siso may not support Ninja features if they are not used for Chromium or
