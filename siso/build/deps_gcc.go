@@ -33,20 +33,6 @@ type depsGCC struct {
 	treeInput func(context.Context, string) (merkletree.TreeEntry, error)
 }
 
-func (gcc depsGCC) DepsFastCmd(ctx context.Context, b *Builder, cmd *execute.Cmd) (*execute.Cmd, error) {
-	newCmd := &execute.Cmd{}
-	*newCmd = *cmd
-	inputs, err := gcc.fixCmdInputs(ctx, b, newCmd)
-	if err != nil {
-		return nil, err
-	}
-	// sets include dirs + sysroots to ToolInputs.
-	// Inputs will be overridden by deps log data.
-	newCmd.ToolInputs = append(newCmd.ToolInputs, path.Paths(inputs)...)
-	gcc.fixForSplitDwarf(ctx, newCmd)
-	return newCmd, nil
-}
-
 func (gcc depsGCC) fixCmdInputs(ctx context.Context, b *Builder, cmd *execute.Cmd) ([]string, error) {
 	params, err := gccutil.ExtractScanDepsParams(ctx, cmd.Args, cmd.Env, b.hashFS.FileSystem(ctx, filepath.Join(cmd.WorkspaceRoot, string(cmd.WorkDir))))
 	if err != nil {

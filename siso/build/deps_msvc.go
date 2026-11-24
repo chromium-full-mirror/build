@@ -32,19 +32,6 @@ type depsMSVC struct {
 	treeInput func(context.Context, string) (merkletree.TreeEntry, error)
 }
 
-func (msvc depsMSVC) DepsFastCmd(ctx context.Context, b *Builder, cmd *execute.Cmd) (*execute.Cmd, error) {
-	newCmd := &execute.Cmd{}
-	*newCmd = *cmd
-	inputs, err := msvc.fixCmdInputs(ctx, b, newCmd)
-	if err != nil {
-		return nil, err
-	}
-	// set include dirs + sysroots to ToolInputs
-	// Inputs will be overridden by deps log data.
-	newCmd.ToolInputs = append(newCmd.ToolInputs, path.Paths(inputs)...)
-	return newCmd, nil
-}
-
 func (msvc depsMSVC) fixCmdInputs(ctx context.Context, b *Builder, cmd *execute.Cmd) ([]string, error) {
 	params, err := msvcutil.ExtractScanDepsParams(ctx, cmd.Args, cmd.Env, b.hashFS.FileSystem(ctx, filepath.Join(cmd.WorkspaceRoot, string(cmd.WorkDir))))
 	if err != nil {

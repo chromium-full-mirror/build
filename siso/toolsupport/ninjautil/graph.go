@@ -228,11 +228,6 @@ func (e *Edge) Binding(name string) string {
 	return env.Lookup(name)
 }
 
-// BindingBool returns true if binding is defined in the edge.
-func (e *Edge) BindingBool(name string) bool {
-	return e.Binding(name) != ""
-}
-
 // UnescapedBinding returns binding value without shell escape.
 func (e *Edge) UnescapedBinding(name string) string {
 	env := edgeEnv{edge: e, shellEscape: false}

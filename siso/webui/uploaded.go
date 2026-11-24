@@ -41,13 +41,6 @@ func (u *metricsFileProvider) Get(metricsPath string) (invocation.Series[*buildM
 	return file, nil
 }
 
-// Invalidate drops the file from the loaded metrics.
-func (u *metricsFileProvider) Invalidate(metricsPath string) {
-	u.mu.Lock()
-	defer u.mu.Unlock()
-	delete(u.files, metricsPath)
-}
-
 type metricsFileInfo struct {
 	path    string
 	metrics *buildMetrics

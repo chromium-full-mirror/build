@@ -8,19 +8,12 @@ import (
 	"context"
 	"fmt"
 
-	"go.chromium.org/build/siso/execute"
 	"go.chromium.org/build/siso/o11y/clog"
 	"go.chromium.org/build/siso/path"
 	"go.chromium.org/build/siso/toolsupport/makeutil"
 )
 
 type depsDepfile struct{}
-
-func (depsDepfile) DepsFastCmd(ctx context.Context, b *Builder, cmd *execute.Cmd) (*execute.Cmd, error) {
-	newCmd := &execute.Cmd{}
-	*newCmd = *cmd
-	return newCmd, nil
-}
 
 func (depsDepfile) DepsAfterRun(ctx context.Context, b *Builder, step *Step) ([]string, error) {
 	_, err := b.hashFS.Stat(ctx, b.path.WorkspaceRoot, step.cmd.Depfile)

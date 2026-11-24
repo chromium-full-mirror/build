@@ -48,8 +48,7 @@ func (e StepError) Unwrap() error {
 //   - expand inputs with step defs (except deps=gcc, msvc)
 //   - run handler if set.
 //   - setup RSP file.
-//   - try cmd with deps log cache (fast deps)
-//   - if failed, preproc runs deps command (e.g.clang -M)
+//   - preproc runs deps command (e.g.clang -M)
 //   - run cmd
 //
 // can control the flows with the experiment ids, defined in experiments.go.

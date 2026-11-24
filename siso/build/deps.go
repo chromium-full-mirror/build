@@ -18,7 +18,6 @@ import (
 
 	log "github.com/golang/glog"
 
-	"go.chromium.org/build/siso/execute"
 	"go.chromium.org/build/siso/o11y/clog"
 	"go.chromium.org/build/siso/o11y/trace"
 	"go.chromium.org/build/siso/path"
@@ -28,9 +27,6 @@ import (
 )
 
 type depsProcessor interface {
-	// create new cmd for fast deps run
-	DepsFastCmd(context.Context, *Builder, *execute.Cmd) (*execute.Cmd, error)
-
 	// fix step.cmd and returns deps inputs.
 	// paths are workspace relative.
 	DepsCmd(context.Context, *Builder, *Step) ([]path.Path, error)
