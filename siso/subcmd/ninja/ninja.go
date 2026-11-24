@@ -458,7 +458,6 @@ func (c *Command) Run(ctx context.Context) (stats build.Stats, finalErr error) {
 		defer func() { _ = tp.Shutdown(ctx) }()
 		c.reopt.TracerProvider = tp
 	}
-	// upload build pprof
 
 	targets := c.Flags.Args()
 	config, err := c.initConfig(ctx, buildPath.WorkspaceRoot, targets)

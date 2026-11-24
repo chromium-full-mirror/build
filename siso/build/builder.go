@@ -49,7 +49,6 @@ import (
 	"go.chromium.org/build/siso/o11y/clog"
 	"go.chromium.org/build/siso/o11y/iometrics"
 	"go.chromium.org/build/siso/o11y/monitoring"
-	sisopprof "go.chromium.org/build/siso/o11y/pprof"
 	"go.chromium.org/build/siso/o11y/trace"
 	sisopath "go.chromium.org/build/siso/path"
 	"go.chromium.org/build/siso/reapi"
@@ -112,7 +111,6 @@ type Options struct {
 	Pprof                string
 	Tracer               *trace.Tracer
 	TraceExporter        *trace.Exporter
-	PprofUploader        sisopprof.Uploader
 	ResultSink           ResultSink
 
 	// Clobber forces to rebuild ignoring existing generated files.
@@ -292,7 +290,6 @@ type Builder struct {
 	traceStats           *traceStats
 	traceDeps            *depRecorder
 	tracePprof           *tracePprof
-	pprofUploader        sisopprof.Uploader
 	resultSink           ResultSink
 
 	tracePidPreproc, tracePidLocal, tracePidRemote, tracePidWorker int64
@@ -497,7 +494,6 @@ func New(ctx context.Context, graph Graph, opts Options) (_ *Builder, err error)
 		traceStats:            newTraceStats(),
 		traceDeps:             newDepRecorder(ctx, opts.Tracer),
 		tracePprof:            newTracePprof(opts.Pprof),
-		pprofUploader:         opts.PprofUploader,
 		resultSink:            opts.ResultSink,
 		clobber:               opts.Clobber,
 		fastExit:              opts.FastExit,
@@ -865,23 +861,10 @@ func (b *Builder) Build(ctx context.Context, name string, args ...string) (err e
 	b.tracePidRemote = b.tracer.Process(ctx, "remote-exec")
 	b.tracePidWorker = b.tracer.Process(ctx, "rbe")
 	b.tracePprof.SetMetadata(b.metadata)
-	if b.pprofUploader != nil {
-		b.pprofUploader.SetMetadata(ctx, b.metadata)
-	}
 	defer func(ctx context.Context) {
 		perr := b.tracePprof.Close(ctx)
 		if perr != nil {
 			clog.Warningf(ctx, "pprof close: %v", perr)
-		}
-		if b.pprofUploader != nil {
-			perr := b.pprofUploader.Upload(ctx, b.tracePprof.p)
-			if perr != nil {
-				clog.Warningf(ctx, "upload pprof: %v", perr)
-			} else {
-				clog.Infof(ctx, "uploaded pprof")
-			}
-		} else {
-			clog.Infof(ctx, "no pprof uploader")
 		}
 	}(ctx)
 	pstat := b.plan.stats()

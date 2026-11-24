@@ -27,7 +27,7 @@ type tracePprof struct {
 func newTracePprof(fname string) *tracePprof {
 	return &tracePprof{
 		fname: fname,
-		p:     pprof.New("build"),
+		p:     pprof.New(),
 	}
 }
 

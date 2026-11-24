@@ -7,7 +7,6 @@ package pprof
 
 import (
 	"compress/gzip"
-	"context"
 	"errors"
 	"io"
 	"sort"
@@ -17,42 +16,23 @@ import (
 
 	"google.golang.org/protobuf/proto"
 
-	"go.chromium.org/build/siso/build/metadata"
 	pb "go.chromium.org/build/siso/o11y/pprof/proto"
 )
 
-// Uploader defines interface for uploading pprof profiles.
-type Uploader interface {
-	SetMetadata(ctx context.Context, m metadata.Metadata)
-	Upload(ctx context.Context, p *Profile) error
-}
-
 // Profile is a profile entry.
 type Profile struct {
-	name     string
 	started  time.Time
 	mu       sync.Mutex
 	m        map[string][]time.Duration
 	comments []string
 }
 
-// New creates new profile for the name.
-func New(name string) *Profile {
+// New creates new profile.
+func New() *Profile {
 	return &Profile{
-		name:    name,
 		started: time.Now(),
 		m:       make(map[string][]time.Duration),
 	}
-}
-
-// Name returns name of the profile.
-func (p *Profile) Name() string {
-	return p.name
-}
-
-// Duration returns duration of the profile.
-func (p *Profile) Duration() time.Duration {
-	return time.Since(p.started)
 }
 
 func (p *Profile) key(backtraces []string) string {
