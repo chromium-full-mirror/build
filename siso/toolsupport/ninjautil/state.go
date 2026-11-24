@@ -486,11 +486,6 @@ func (s *State) PhonyNodes() []*Node {
 	return phony
 }
 
-// AddBinding adds bindings.
-func (s *State) AddBinding(name, value string) {
-	s.scope.setVar([]byte(name), evalString{v: []byte(value)})
-}
-
 // Binding returns top level binding.
 func (s *State) Binding(name string) string {
 	val, ok := s.scope.lookupVar(-1, []byte(name))

@@ -149,7 +149,7 @@ func (c *Command) createRequestFromCmdLine(ctx context.Context, buildPath *build
 
 func (c *Command) createRequestFromTarget(ctx context.Context, buildPath *build.Path) (scandeps.Request, error) {
 	buildNinjaPath := "build.ninja" // TODO: flag?
-	nstate, err := ninjabuild.Load(ctx, buildNinjaPath, buildPath)
+	nstate, err := ninjabuild.Load(ctx, buildNinjaPath)
 	if err != nil {
 		return scandeps.Request{}, fmt.Errorf("failed to load %s: %w", buildNinjaPath, err)
 	}

@@ -227,12 +227,10 @@ func updateFilegroups(ctx context.Context, config *buildconfig.Config, buildPath
 }
 
 // Load loads build.ninja file specified by fname and returns parsed states.
-func Load(ctx context.Context, fname string, buildPath *build.Path) (*ninjautil.State, error) {
+func Load(ctx context.Context, fname string) (*ninjautil.State, error) {
 	defer trace.Begin(ctx, "ninjabuild.Load").End()
 	started := time.Now()
 	state := ninjautil.NewState()
-	state.AddBinding("workspace_root", buildPath.WorkspaceRoot)
-	state.AddBinding("working_directory", buildPath.BaseDir)
 	p := ninjautil.NewManifestParser(state)
 	err := p.Load(ctx, fname)
 	if err != nil {
@@ -448,7 +446,7 @@ func (g *Graph) Reload(ctx context.Context) error {
 	})
 	eg.Go(func() error {
 		var err error
-		newState, err = Load(ctx, g.fname, g.globals.path)
+		newState, err = Load(ctx, g.fname)
 		return err
 	})
 	err := eg.Wait()

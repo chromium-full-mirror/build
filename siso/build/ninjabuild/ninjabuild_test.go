@@ -85,11 +85,10 @@ build all: phony gen/ gen/sub/
 				t.Fatal(err)
 			}
 			t.Chdir(filepath.Join(dir, "out/siso"))
-			path := build.NewPath(dir, "out/siso")
 			if err := os.WriteFile(filepath.Join(dir, "out/siso/build.ninja"), []byte(tc.manifest), 0644); err != nil {
 				t.Fatal(err)
 			}
-			_, err := Load(ctx, "build.ninja", path)
+			_, err := Load(ctx, "build.ninja")
 			if err == nil {
 				t.Fatal("Load succeeded; want error for an output nested under a directory output")
 			}
@@ -144,11 +143,10 @@ build all: phony gen/ generated.txt
 				t.Fatal(err)
 			}
 			t.Chdir(filepath.Join(dir, "out/siso"))
-			path := build.NewPath(dir, "out/siso")
 			if err := os.WriteFile(filepath.Join(dir, "out/siso/build.ninja"), []byte(tc.manifest), 0644); err != nil {
 				t.Fatal(err)
 			}
-			if _, err := Load(ctx, "build.ninja", path); err != nil {
+			if _, err := Load(ctx, "build.ninja"); err != nil {
 				t.Errorf("Load() = %v; want success for a valid directory-output graph", err)
 			}
 		})
@@ -304,7 +302,7 @@ build foo.o: touch foo.cc
 	if err != nil {
 		t.Fatal(err)
 	}
-	nstate, err := Load(ctx, "build.ninja", path)
+	nstate, err := Load(ctx, "build.ninja")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -422,7 +420,7 @@ build all: phony exe
 		t.Fatal(err)
 	}
 
-	nstate, err := Load(ctx, "build.ninja", path)
+	nstate, err := Load(ctx, "build.ninja")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -594,7 +592,7 @@ build all: phony ndk_headers_phony
 	if err != nil {
 		t.Fatal(err)
 	}
-	nstate, err := Load(ctx, "build.ninja", path)
+	nstate, err := Load(ctx, "build.ninja")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -706,7 +704,7 @@ build out.txt: nontrivial in.txt
 		t.Errorf("stepConfig.ShellArgs diff -want +got:\n%s", diff)
 	}
 
-	nstate, err := Load(ctx, "build.ninja", path)
+	nstate, err := Load(ctx, "build.ninja")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -793,7 +791,7 @@ build all: phony
 			t.Error(err)
 		}
 	}()
-	nstate, err := Load(ctx, "build.ninja", path)
+	nstate, err := Load(ctx, "build.ninja")
 	if err != nil {
 		t.Fatal(err)
 	}

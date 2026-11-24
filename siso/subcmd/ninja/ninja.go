@@ -671,7 +671,7 @@ func (c *Command) Run(ctx context.Context) (stats build.Stats, finalErr error) {
 		return stats, err
 	}
 	spin.Start("loading %s...", c.fname)
-	nstate, err := ninjabuild.Load(ctx, c.fname, buildPath)
+	nstate, err := ninjabuild.Load(ctx, c.fname)
 	if err != nil {
 		return stats, err
 	}

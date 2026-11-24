@@ -13,8 +13,6 @@ import (
 	"sort"
 	"strings"
 	"testing"
-
-	"go.chromium.org/build/siso/build"
 )
 
 // Benchmark validateDirOutputs/Load against a real build.ninja. Skipped unless
@@ -44,10 +42,10 @@ func benchNinjaDir(b *testing.B) string {
 }
 
 // realOutputDirs returns the n busiest real output dirs (deep, realistic homes
-// for a dir output). Caller must be chdir'd to dir.
-func realOutputDirs(b *testing.B, ctx context.Context, dir string, n int) []string {
+// for a dir output). Caller must be chdir'd to the build dir.
+func realOutputDirs(b *testing.B, ctx context.Context, n int) []string {
 	b.Helper()
-	state, err := Load(ctx, "build.ninja", buildPathFor(dir))
+	state, err := Load(ctx, "build.ninja")
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -111,23 +109,16 @@ func injectDirOutputs(b *testing.B, dir string, hostDirs []string) string {
 	return filepath.Base(f.Name())
 }
 
-// buildPathFor splits an out dir like .../src/out/Default into root + build dir.
-func buildPathFor(dir string) *build.Path {
-	base := filepath.Join(filepath.Base(filepath.Dir(dir)), filepath.Base(dir))
-	root := filepath.Dir(filepath.Dir(dir))
-	return build.NewPath(root, base)
-}
-
 // BenchmarkValidateDirOutputsChromium times the scan, swept by dir-output count.
 func BenchmarkValidateDirOutputsChromium(b *testing.B) {
 	dir := benchNinjaDir(b)
 	ctx := b.Context()
 	b.Chdir(dir)
-	hosts := realOutputDirs(b, ctx, dir, 64)
+	hosts := realOutputDirs(b, ctx, 64)
 	for _, nDirs := range []int{1, 8, 64} {
 		b.Run(fmt.Sprintf("dirs=%d", nDirs), func(b *testing.B) {
 			fname := injectDirOutputs(b, dir, hosts[:nDirs])
-			state, err := Load(ctx, fname, buildPathFor(dir))
+			state, err := Load(ctx, fname)
 			if err != nil {
 				b.Fatal(err)
 			}
@@ -148,11 +139,10 @@ func BenchmarkLoadChromium(b *testing.B) {
 	dir := benchNinjaDir(b)
 	ctx := b.Context()
 	b.Chdir(dir)
-	hosts := realOutputDirs(b, ctx, dir, 8)
+	hosts := realOutputDirs(b, ctx, 8)
 	fname := injectDirOutputs(b, dir, hosts)
-	bp := buildPathFor(dir)
 	for b.Loop() {
-		if _, err := Load(ctx, fname, bp); err != nil {
+		if _, err := Load(ctx, fname); err != nil {
 			b.Fatal(err)
 		}
 	}
@@ -220,11 +210,10 @@ func BenchmarkLoadAndroid(b *testing.B) {
 	dir, fname := benchAndroidDir(b)
 	ctx := b.Context()
 	b.Chdir(dir)
-	bp := build.NewPath(dir, ".")
 	b.Logf("loading %s in %s", fname, dir)
 	var numNodes int
 	for b.Loop() {
-		state, err := Load(ctx, fname, bp)
+		state, err := Load(ctx, fname)
 		if err != nil {
 			b.Fatal(err)
 		}

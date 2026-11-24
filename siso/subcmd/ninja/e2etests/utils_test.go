@@ -365,7 +365,7 @@ func setupBuildWith(ctx context.Context, t *testing.T, dir, cdir, fname string, 
 	if err != nil {
 		t.Fatal(err)
 	}
-	nstate, err := ninjabuild.Load(ctx, fname, path)
+	nstate, err := ninjabuild.Load(ctx, fname)
 	if err != nil {
 		t.Fatal(err)
 	}
