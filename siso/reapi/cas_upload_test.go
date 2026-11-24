@@ -15,6 +15,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/stats"
+	"google.golang.org/protobuf/proto"
 
 	"go.chromium.org/build/hashigo/digest"
 	rpb "go.chromium.org/build/remote-apis/build/bazel/remote/execution/v2"
@@ -251,9 +252,22 @@ type uploadCallRecorder struct {
 	calls map[string][]observedUploadCall
 }
 
+// requestMetadata returns the RequestMetadata that md carries, or nil.
+func requestMetadata(md metadata.MD) *rpb.RequestMetadata {
+	v := md.Get(reapi.RequestMetadataKey)
+	if len(v) == 0 {
+		return nil
+	}
+	rmd := &rpb.RequestMetadata{}
+	if err := proto.Unmarshal([]byte(v[0]), rmd); err != nil {
+		return nil
+	}
+	return rmd
+}
+
 func (r *uploadCallRecorder) record(ctx context.Context, method string) {
 	md, _ := metadata.FromOutgoingContext(ctx)
-	rmd, _ := reapi.MetadataFromOutgoingContext(ctx)
+	rmd := requestMetadata(md)
 	r.mu.Lock()
 	r.calls[method] = append(r.calls[method], observedUploadCall{
 		rmdCount: len(md.Get(reapi.RequestMetadataKey)),

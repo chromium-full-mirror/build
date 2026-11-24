@@ -128,11 +128,6 @@ func (s *State) addPool(pool *Pool) {
 	s.pools.Store(pool.name, pool)
 }
 
-// LookupPool looks up pool.
-func (s *State) LookupPool(poolName string) (*Pool, bool) {
-	return s.lookupPool([]byte(poolName))
-}
-
 func (s *State) lookupPool(poolName []byte) (*Pool, bool) {
 	p, ok := s.pools.Load(string(poolName))
 	if !ok {

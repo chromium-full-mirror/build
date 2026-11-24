@@ -51,7 +51,7 @@ func TestParser_PoolAtEnd(t *testing.T) {
 	if err := p.Load(ctx, "build.ninja"); err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	pool, ok := state.LookupPool("p")
+	pool, ok := state.lookupPool([]byte("p"))
 	if !ok {
 		t.Fatal("missing pool p")
 	}
