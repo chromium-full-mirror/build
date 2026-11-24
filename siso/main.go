@@ -35,7 +35,6 @@ import (
 	"go.chromium.org/build/siso/subcmd/metricscmd"
 	"go.chromium.org/build/siso/subcmd/ninja"
 	"go.chromium.org/build/siso/subcmd/ninjafrontend"
-	"go.chromium.org/build/siso/subcmd/proxy"
 	"go.chromium.org/build/siso/subcmd/ps"
 	"go.chromium.org/build/siso/subcmd/query"
 	"go.chromium.org/build/siso/subcmd/recall"
@@ -300,7 +299,6 @@ func subcommandsList(authOpts func() cred.Options) []subcommandEntry {
 		{cmd: recall.Cmd(authOpts), group: "reapi"},
 		{cmd: fetch.Cmd(authOpts), group: "reapi"},
 		{cmd: isolate.Cmd(authOpts), group: "reapi"},
-		{cmd: proxy.Cmd(authOpts), group: "reapi"},
 
 		{cmd: fscmd.Cmd(authOpts), group: "investigation"},
 		{cmd: metricscmd.Cmd(), group: "investigation"},

@@ -1145,6 +1145,11 @@ func parseAPIVersion(s string) (Version, error) {
 	return Version{Major: int32(major), Minor: int32(minor)}, nil
 }
 
+// RequestMetadataKey is the gRPC metadata key that carries the marshaled
+// RE API RequestMetadata.
+// https://github.com/bazelbuild/remote-apis/blob/8f539af4b407a4f649707f9632fc2b715c9aa065/build/bazel/remote/execution/v2/remote_execution.proto#L2034-L2045
+const RequestMetadataKey = "build.bazel.remote.execution.v2.requestmetadata-bin"
+
 // NewContext returns new context with request metadata.
 func NewContext(ctx context.Context, rmd *rpb.RequestMetadata) context.Context {
 	// Carry the current trace span (if any) as an OpenTelemetry span context so
