@@ -224,10 +224,6 @@ func setupEnvironment() error {
 	}
 
 	if *useSiso {
-		if !*depsCache {
-			sisoExperiments = append(sisoExperiments, "no-fast-deps")
-		}
-
 		if *racing && runtime.GOOS == "darwin" {
 			// Warn the user that Siso does not use fastlocal by default on a Mac.
 			fmt.Fprintf(os.Stderr,
