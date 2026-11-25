@@ -43,27 +43,27 @@ type walkDirEntry struct {
 
 // loadWalkdir returns the directory d from walkdirCache or LocalCache.
 func (c *Client) loadWalkdir(ctx context.Context, d digest.Digest) (*rpb.Directory, bool) {
-	v, ok := c.walkdirCache.Load(d)
+	dir, ok := c.walkdirCache.Load(d)
 	if ok {
-		return v.(*rpb.Directory), true
+		return dir, true
 	}
 	if c.opt.LocalCache == nil {
 		return nil, false
 	}
-	dir := &rpb.Directory{}
+	dir = &rpb.Directory{}
 	err := c.opt.LocalCache.Proto(ctx, d, dir)
 	if err != nil {
 		return nil, false
 	}
-	v, _ = c.walkdirCache.LoadOrStore(d, dir)
-	return v.(*rpb.Directory), true
+	return c.walkdirCache.LoadOrStore(d, dir), true
 }
 
-func (c *Client) storeWalkdir(ctx context.Context, d digest.Digest, dir *rpb.Directory) {
-	c.walkdirCache.Store(d, dir)
+func (c *Client) storeWalkdir(ctx context.Context, d digest.Digest, dir *rpb.Directory) *rpb.Directory {
+	dir = c.walkdirCache.LoadOrStore(d, dir)
 	if c.opt.LocalCache != nil {
 		_ = c.opt.LocalCache.SetProto(ctx, d, dir)
 	}
+	return dir
 }
 
 // WalkDir walks the directory tree rooted identified by d,
@@ -340,8 +340,8 @@ func (c *Client) getTreeIter(ctx context.Context, d digest.Digest, stats *walkDi
 						// it. Another walk may have stored it since:
 						// share that copy instead of decoding a
 						// second one.
-						if v, ok := c.walkdirCache.Load(dd); ok {
-							dir = v.(*rpb.Directory)
+						if cached, ok := c.walkdirCache.Load(dd); ok {
+							dir = cached
 						}
 					}
 					if dir == nil {
@@ -369,7 +369,7 @@ func (c *Client) getTreeIter(ctx context.Context, d digest.Digest, stats *walkDi
 								continue
 							}
 						}
-						c.storeWalkdir(ctx, dd, dir)
+						dir = c.storeWalkdir(ctx, dd, dir)
 					}
 					stats.ncached++
 					seen[dd] = struct{}{}
@@ -592,7 +592,7 @@ func (c *Client) readDirIter(ctx context.Context, d digest.Digest, stats *walkDi
 					return
 				}
 				stats.ncached++
-				c.storeWalkdir(ctx, dd, dir)
+				dir = c.storeWalkdir(ctx, dd, dir)
 				if !visit(walkDirEntry{d: dd, dir: dir}) {
 					return
 				}

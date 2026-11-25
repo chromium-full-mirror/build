@@ -16,6 +16,7 @@ import (
 	"io"
 	"os"
 	"path"
+	"runtime/debug"
 	"slices"
 	"strconv"
 	"strings"
@@ -51,6 +52,7 @@ import (
 	"go.chromium.org/build/siso/o11y/trace"
 	"go.chromium.org/build/siso/reapi/firstbyte"
 	"go.chromium.org/build/siso/reapi/retry"
+	"go.chromium.org/build/siso/sync/clockcache"
 	"go.chromium.org/build/siso/sync/semaphore"
 	"go.chromium.org/build/siso/version"
 
@@ -116,6 +118,11 @@ type Option struct {
 	// Use GetTree for WalkDir.
 	// If false, use BatchReadBlobs instead.
 	WalkDirStream bool
+
+	// WalkDirCacheBytes caps the estimated heap of the WalkDir directory
+	// cache. 0 uses 1/20 of GOMEMLIMIT, or no cap if GOMEMLIMIT is unset.
+	// < 0 means no cap.
+	WalkDirCacheBytes int64
 
 	ConnPool        int
 	DataConnPool    int
@@ -237,6 +244,8 @@ func (o *Option) RegisterFlags(fs *flag.FlagSet, envs map[string]string) {
 	fs.BoolVar(&o.KeepExecStream, o.Prefix+"_keep_exec_stream", false, "keep Execute stream open as long as possible")
 
 	fs.BoolVar(&o.WalkDirStream, o.Prefix+"_walkdir_stream", true, "use GetTree for WalkDir")
+
+	fs.Int64Var(&o.WalkDirCacheBytes, o.Prefix+"_walkdir_cache_bytes", 0, "cap in bytes on the estimated heap of the WalkDir directory cache (0: 1/20 of GOMEMLIMIT, no cap if unset; <0: no cap)")
 
 	fs.IntVar(&o.ConnPool, o.Prefix+"_grpc_conn_pool", 25, "grpc connection pool")
 	fs.IntVar(&o.DataConnPool, o.Prefix+"_grpc_data_conn_pool", 25, "grpc connection pool for data (bytestream Read, Write)")
@@ -378,7 +387,7 @@ type Client struct {
 
 	m *iometrics.IOMetrics
 
-	walkdirCache sync.Map // key:digest.Digest, value:*rpb.Directory, shared; must not be modified
+	walkdirCache clockcache.Cache[digest.Digest, *rpb.Directory] // shared; must not be modified
 }
 
 // serviceConfig is gRPC service config for RE API.
@@ -667,6 +676,10 @@ func NewFromConn(ctx context.Context, opt Option, cred cred.Cred, conn, casConn,
 		zstdDecoderPool: zstdDecoderPool,
 		m:               iometrics.New("reapi"),
 	}
+	if capBytes := clockcache.ResolveBytes(opt.WalkDirCacheBytes, debug.SetMemoryLimit(-1), walkdirCacheMemLimitDivisor); capBytes > 0 {
+		c.walkdirCache.Init(capBytes, walkdirEntryBytes)
+		clog.Infof(ctx, "walkdir cache limit: %d bytes", capBytes)
+	}
 	c.knownDigests.Store(c.digestFn.Empty(), true)
 	c.uploader = newUploader(ctx, c, opt.UploadLimit)
 	return c, nil
@@ -803,6 +816,14 @@ func checkAdvertisedDigestFunctions(fn digest.Function, advertised []rpb.DigestF
 		return nil
 	}
 	return fmt.Errorf("digest function %s is not supported by the server's %s capabilities; advertised: %v", fn, capability, advertised)
+}
+
+// WalkDirCacheStats returns the counters of the WalkDir directory cache.
+func (c *Client) WalkDirCacheStats() clockcache.Stats {
+	if c == nil {
+		return clockcache.Stats{}
+	}
+	return c.walkdirCache.Stats()
 }
 
 // Close cancels in-flight upload requests, stops the upload workers,

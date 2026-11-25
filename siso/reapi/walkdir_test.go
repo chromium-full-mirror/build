@@ -221,6 +221,12 @@ func (poisonPool) Put(b *[]byte) {
 // whose received buffers are overwritten once grpc frees them.
 func newTreeClient(t *testing.T, cas *treeCAS) *reapi.Client {
 	t.Helper()
+	return newTreeClientWithOption(t, cas, reapi.Option{WalkDirStream: true})
+}
+
+// newTreeClientWithOption is like newTreeClient, with opt.
+func newTreeClientWithOption(t *testing.T, cas *treeCAS, opt reapi.Option) *reapi.Client {
+	t.Helper()
 	lis := bufconn.Listen(1 << 20)
 	srv := grpc.NewServer()
 	rpb.RegisterContentAddressableStorageServer(srv, cas)
@@ -236,7 +242,7 @@ func newTreeClient(t *testing.T, cas *treeCAS) *reapi.Client {
 	if err != nil {
 		t.Fatalf("grpc.NewClient: %v", err)
 	}
-	cl, err := reapi.NewFromConn(t.Context(), reapi.Option{WalkDirStream: true}, cred.Cred{}, conn, conn, conn)
+	cl, err := reapi.NewFromConn(t.Context(), opt, cred.Cred{}, conn, conn, conn)
 	if err != nil {
 		t.Fatalf("NewFromConn: %v", err)
 	}
