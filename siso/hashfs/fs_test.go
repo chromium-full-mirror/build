@@ -461,6 +461,17 @@ func BenchmarkStat(b *testing.B) {
 	})
 }
 
+// minAllocsPerRun retries testing.AllocsPerRun up to 10 times while it
+// exceeds limit, because the digester workers that hashfs.New starts
+// allocate once when they first wait.
+func minAllocsPerRun(runs int, limit float64, f func()) float64 {
+	avg := testing.AllocsPerRun(runs, f)
+	for i := 0; i < 10 && avg > limit; i++ {
+		avg = min(avg, testing.AllocsPerRun(runs, f))
+	}
+	return avg
+}
+
 func TestStatAllocs(t *testing.T) {
 	allocBase := 0.0
 	if runtime.GOOS == "windows" {
@@ -494,12 +505,13 @@ func TestStatAllocs(t *testing.T) {
 		if log.V(1) {
 			num = 1
 		}
-		avg := testing.AllocsPerRun(num, func() {
+		stat := func() {
 			_, err := hfs.Stat(ctx, dir, path.Path(fname))
 			if !errors.Is(err, fs.ErrNotExist) {
 				t.Fatalf("hfs.Stat(ctx,%q,%q)=%v; want %v", dir, fname, err, fs.ErrNotExist)
 			}
-		})
+		}
+		avg := minAllocsPerRun(num, allocBase, stat)
 		if avg > allocBase+0 {
 			t.Errorf("alloc=%f; want <= %f", avg, allocBase+0)
 		}
@@ -515,12 +527,13 @@ func TestStatAllocs(t *testing.T) {
 		if log.V(1) {
 			num = 1
 		}
-		avg := testing.AllocsPerRun(num, func() {
+		stat := func() {
 			_, err := hfs.Stat(ctx, dir, path.Path(fname))
 			if err != nil {
 				t.Fatalf("hfs.Stat(ctx,%q,%q)=%v; want nil", dir, fname, err)
 			}
-		})
+		}
+		avg := minAllocsPerRun(num, allocBase, stat)
 		if avg > allocBase+0 {
 			t.Errorf("alloc=%f; want <= %f", avg, allocBase+0)
 		}
