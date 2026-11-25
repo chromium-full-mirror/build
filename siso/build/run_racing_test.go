@@ -691,7 +691,7 @@ func TestRunRacing_RemoteWinMissingOutputFallsBackToLocal(t *testing.T) {
 // of blocking until the upload completes. b/565765743
 //
 // The remote racer's BatchUpdateBlobs is held by an RPC gate for the
-// whole test; the local command finishes immediately.
+// whole test; the local command finishes once that RPC has arrived.
 func TestRunRacing_LocalWinDoesNotWaitForRemoteUpload(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("test runs /bin/sh")
@@ -710,7 +710,7 @@ func TestRunRacing_LocalWinDoesNotWaitForRemoteUpload(t *testing.T) {
 	dir := env.dir
 
 	cmd := &execute.Cmd{
-		Args:          []string{"/bin/sh", "-c", "printf 'stubs content' > stubs.jar"},
+		Args:          []string{"/bin/sh", "-c", "until [ -e upload-held ]; do sleep 0.01; done; printf 'stubs content' > stubs.jar"},
 		Outputs:       []path.Path{"stubs.jar"},
 		WorkspaceRoot: dir,
 		HashFS:        env.hashFS,
@@ -725,12 +725,13 @@ func TestRunRacing_LocalWinDoesNotWaitForRemoteUpload(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() { done <- b.runRacing(ctx, step) }()
-	// Make sure the remote racer really is stuck in the upload while
-	// the local racer runs. The gate stays held until cleanup, so
-	// runRacing can only return here if the local win did not wait for
-	// the upload; on the previous code this receive hangs (bounded by
-	// `go test -timeout`).
+	// The gate stays held until cleanup, so runRacing can only return
+	// if the local win did not wait for the upload; on the previous
+	// code this receive hangs (bounded by `go test -timeout`).
 	gate.WaitEntered(ctx, t)
+	if err := os.WriteFile(filepath.Join(dir, "upload-held"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
 	if err := <-done; err != nil {
 		t.Fatalf("runRacing=%v; want nil", err)
 	}
