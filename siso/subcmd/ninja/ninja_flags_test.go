@@ -265,3 +265,24 @@ func TestResolveWeightsFlag(t *testing.T) {
 		})
 	}
 }
+
+func TestDirSpecCacheBytesFlag(t *testing.T) {
+	for _, tc := range []struct {
+		args []string
+		want int64
+	}{
+		{args: []string{"-C", "out/siso"}, want: 0},
+		{args: []string{"-C", "out/siso", "-dirspec_cache_bytes=67108864"}, want: 67108864},
+		{args: []string{"-C", "out/siso", "-dirspec_cache_bytes=-1"}, want: -1},
+	} {
+		c := &Command{}
+		flagSet := flag.NewFlagSet("ninja", flag.ContinueOnError)
+		c.SetFlags(flagSet)
+		if err := flagSet.Parse(tc.args); err != nil {
+			t.Fatalf("flag parse %q: %v", tc.args, err)
+		}
+		if c.dirSpecCacheBytes != tc.want {
+			t.Errorf("%q: dirSpecCacheBytes=%d; want %d", tc.args, c.dirSpecCacheBytes, tc.want)
+		}
+	}
+}

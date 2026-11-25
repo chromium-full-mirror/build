@@ -125,6 +125,8 @@ type NinjaFlags struct {
 
 	missingDeps string
 
+	dirSpecCacheBytes int64
+
 	stateDir string
 
 	logDir             string
@@ -234,6 +236,7 @@ func (c *Command) SetFlags(flagSet *flag.FlagSet) {
 	flagSet.StringVar(&c.outputLocalStrategy, "output_local_strategy", "full", `strategy for output_local. "full": download all outputs. "greedy": downloads most outputs except intermediate objs. "minimum": downloads as few as possible. "graph": downloads only remote outputs that a local step will consume, decided at schedule time from the dep graph, spreading downloads over the compile burst. "pathfilter:<path_filter>": use path filter. "patterns:<pattern-list>": colon-separated pathfilter's patterns`)
 	flagSet.StringVar(&c.depsLogFile, "deps_log", ".siso_deps", "deps log filename (relative to -C, -state_dir)")
 	flagSet.StringVar(&c.weightsFile, "weights_file", os.Getenv("SISO_WEIGHTS_FILE"), "path to step weights JSON(.gz) file (relative to workspace). can be set by $SISO_WEIGHTS_FILE")
+	flagSet.Int64Var(&c.dirSpecCacheBytes, "dirspec_cache_bytes", 0, "cap in bytes on the estimated heap of what two-phase caching derives from input root directories (0: 1/20 of GOMEMLIMIT, no cap if unset; <0: no cap)")
 	flagSet.StringVar(&c.missingDeps, "missing_deps", "ignore", "how to handle missing dependencies: ignore (skip check), warn (warning on stderr), error (fail build at completion), fatal (fail step immediately)")
 
 	flagSet.StringVar(&c.stateDir, "state_dir", "", "state directory (relative to -C) [default: same dir as build.ninja]")
@@ -533,6 +536,7 @@ func (c *Command) initBuildOpts(ctx context.Context, projectID string, buildPath
 		WeightsFile:           weightsFile,
 		BuildLabel:            c.fsopt.BuildLabel,
 		MissingDeps:           build.MissingDepsMode(c.missingDeps),
+		DirSpecCacheBytes:     c.dirSpecCacheBytes,
 	}
 }
 

@@ -5,14 +5,18 @@
 package build
 
 import (
+	"fmt"
+	"runtime"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	"google.golang.org/protobuf/proto"
 
 	"go.chromium.org/build/hashigo/digest"
 	rpb "go.chromium.org/build/remote-apis/build/bazel/remote/execution/v2"
 
 	"go.chromium.org/build/siso/hashfs"
+	"go.chromium.org/build/siso/sync/clockcache"
 )
 
 func TestDirSpec(t *testing.T) {
@@ -99,4 +103,75 @@ func TestNewDirSpecMatchDir(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestDirSpecBounded checks that a bounded dirSpecs derives an evicted
+// dirSpec again, equal to the first one.
+func TestDirSpecBounded(t *testing.T) {
+	b := &Builder{path: NewPath("/ws", "out")}
+	b.dirSpecs.Init(1024, dirSpecBytes)
+	dir := &rpb.Directory{
+		Files:       []*rpb.FileNode{{Name: "f", Digest: digest.Digest{Hash: "abcd", SizeBytes: 3}.Proto()}},
+		Directories: []*rpb.DirectoryNode{{Name: "d"}},
+	}
+	dd := digest.Digest{Hash: "0123", SizeBytes: 4}
+	first := b.dirSpec("a/b", dd, dir)
+	for i := range 20 {
+		b.dirSpec(fmt.Sprintf("x/%d", i), dd, dir)
+	}
+	if st := b.DirSpecCacheStats(); st.Evictions == 0 || st.Bytes > 1024 {
+		t.Fatalf("DirSpecCacheStats()=%+v; want Evictions > 0, Bytes <= 1024", st)
+	}
+	got := b.dirSpec("a/b", dd, dir)
+	if got == first {
+		t.Errorf("dirSpec(%q) was not evicted", "a/b")
+	}
+	if diff := cmp.Diff(first, got, cmp.AllowUnexported(dirSpec{})); diff != "" {
+		t.Errorf("dirSpec(%q) after eviction diff -first +got:\n%s", "a/b", diff)
+	}
+}
+
+// TestDirSpecBytesHeap checks that dirSpecBytes is within 10% of the heap
+// that a cache of dirSpecs keeps after their Directories are gone, as when
+// walkdirCache has evicted them.
+func TestDirSpecBytesHeap(t *testing.T) {
+	const n = 20000
+	var c clockcache.Cache[dirSpecKey, *dirSpec]
+	c.Init(1<<40, dirSpecBytes)
+	runtime.GC()
+	runtime.GC()
+	var before runtime.MemStats
+	runtime.ReadMemStats(&before)
+	for i := range n {
+		dir := &rpb.Directory{}
+		for j := range 8 {
+			name := fmt.Sprintf("file%d_%d.h", j, i)
+			dir.Files = append(dir.Files, &rpb.FileNode{Name: name, Digest: digest.SHA256.FromBytes([]byte(name)).Proto()})
+		}
+		for j := range 2 {
+			name := fmt.Sprintf("sub%d_%d", j, i)
+			dir.Directories = append(dir.Directories, &rpb.DirectoryNode{Name: name, Digest: digest.SHA256.FromBytes([]byte(name)).Proto()})
+		}
+		b, err := proto.Marshal(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		decoded := &rpb.Directory{}
+		if err := proto.Unmarshal(b, decoded); err != nil {
+			t.Fatal(err)
+		}
+		dname := fmt.Sprintf("prebuilts/clang/host/linux-x86/clang-r1/include/c++/v1/d%06d", i)
+		key := dirSpecKey{dname: dname, dd: digest.SHA256.FromBytes(b)}
+		c.LoadOrStore(key, newDirSpec("/ws", dname, decoded))
+	}
+	runtime.GC()
+	runtime.GC()
+	var after runtime.MemStats
+	runtime.ReadMemStats(&after)
+	heap := float64(after.HeapAlloc) - float64(before.HeapAlloc)
+	est := float64(c.Stats().Bytes)
+	if r := heap / est; r < 0.9 || r > 1.1 {
+		t.Errorf("heap %.0f bytes for estimate %.0f (ratio %.2f); want within 10%%", heap, est, r)
+	}
+	runtime.KeepAlive(&c)
 }

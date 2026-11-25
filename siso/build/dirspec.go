@@ -6,13 +6,19 @@ package build
 
 import (
 	"path/filepath"
+	"unsafe"
 
 	"go.chromium.org/build/hashigo/digest"
 	rpb "go.chromium.org/build/remote-apis/build/bazel/remote/execution/v2"
 
 	"go.chromium.org/build/siso/hashfs"
 	"go.chromium.org/build/siso/path"
+	"go.chromium.org/build/siso/sync/clockcache"
 )
+
+// dirSpecMemLimitDivisor makes the default dirSpecs cap 1/20 of
+// GOMEMLIMIT (see clockcache.ResolveBytes).
+const dirSpecMemLimitDivisor = 20
 
 // dirSpecKey identifies one REAPI Directory at one path of an input root.
 type dirSpecKey struct {
@@ -77,7 +83,41 @@ func newDirSpec(root, dname string, dir *rpb.Directory) *dirSpec {
 	return s
 }
 
+// dirSpecBytes estimates the heap retained by caching s at key,
+// including the names and hashes it shares with the Directory.
+func dirSpecBytes(key dirSpecKey, s *dirSpec) int64 {
+	// dirSpec (80), and the cache entry, sync.Map nodes and boxed key.
+	n := 310 + allocBytes(len(key.dname)) + allocBytes(len(key.dd.Hash)) + allocBytes(len(s.fulldir))
+	n += allocBytes(int(unsafe.Sizeof("")) * cap(s.names))
+	for _, name := range s.names {
+		n += allocBytes(len(name))
+	}
+	n += allocBytes(int(unsafe.Sizeof(hashfs.DirChild{})) * cap(s.children))
+	for _, c := range s.children {
+		n += allocBytes(len(c.Name)) + allocBytes(len(c.Digest.Hash))
+	}
+	return n
+}
+
+// allocBytes approximates the heap that an allocation of n bytes takes,
+// rounded up like Go's size classes.
+func allocBytes(n int) int64 {
+	switch {
+	case n <= 0:
+		return 0
+	case n <= 8:
+		return 8
+	case n <= 256:
+		return int64((n + 15) &^ 15)
+	case n <= 1024:
+		return int64((n + 63) &^ 63)
+	default:
+		return int64((n + 127) &^ 127)
+	}
+}
+
 // dirSpec returns the dirSpec of dir at dname, whose digest is dd.
+// A bounded dirSpecs may have evicted it; it is then derived again.
 func (b *Builder) dirSpec(dname string, dd digest.Digest, dir *rpb.Directory) *dirSpec {
 	root := b.path.WorkspaceRoot
 	if dd.IsZero() {
@@ -85,9 +125,14 @@ func (b *Builder) dirSpec(dname string, dd digest.Digest, dir *rpb.Directory) *d
 		return newDirSpec(root, dname, dir)
 	}
 	key := dirSpecKey{dname: dname, dd: dd}
-	if v, ok := b.dirSpecs.Load(key); ok {
-		return v.(*dirSpec)
+	if s, ok := b.dirSpecs.Load(key); ok {
+		return s
 	}
-	v, _ := b.dirSpecs.LoadOrStore(key, newDirSpec(root, dname, dir))
-	return v.(*dirSpec)
+	return b.dirSpecs.LoadOrStore(key, newDirSpec(root, dname, dir))
+}
+
+// DirSpecCacheStats returns the counters of the cache of what two-phase
+// caching derives from input root directories.
+func (b *Builder) DirSpecCacheStats() clockcache.Stats {
+	return b.dirSpecs.Stats()
 }

@@ -272,22 +272,26 @@ func TestMatchInputRoot(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		b := &Builder{
-			path:        NewPath(dir, "out/siso"),
-			hashFS:      hashFS,
-			reapiclient: reclient,
-		}
-		rt := reapiTwoPhaseCaching{b: b}
-
-		// The second walk reuses what the first one cached on the
-		// Builder, and must agree with it.
-		for _, walk := range []string{"first", "second"} {
-			inputs, err := rt.matchInputRoot(ctx, inputRootDigest)
-			if gotErr := err != nil; gotErr != tc.wantErr {
-				t.Fatalf("%s: %s matchInputRoot: %v; want %v", tc.name, walk, err, tc.wantErr)
+		// 1 byte caches no dirSpec, and 512 bytes only some.
+		for _, cacheBytes := range []int64{0, 1, 512} {
+			b := &Builder{
+				path:        NewPath(dir, "out/siso"),
+				hashFS:      hashFS,
+				reapiclient: reclient,
 			}
-			if diff := cmp.Diff(tc.wantInputs, inputs); diff != "" {
-				t.Errorf("%s: %s matchInputRoot: inputs -want +got:\n%s", tc.name, walk, diff)
+			b.dirSpecs.Init(cacheBytes, dirSpecBytes)
+			rt := reapiTwoPhaseCaching{b: b}
+
+			// The second walk reuses what the first one cached on the
+			// Builder, and must agree with it.
+			for _, walk := range []string{"first", "second"} {
+				inputs, err := rt.matchInputRoot(ctx, inputRootDigest)
+				if gotErr := err != nil; gotErr != tc.wantErr {
+					t.Fatalf("%s: cacheBytes=%d: %s matchInputRoot: %v; want %v", tc.name, cacheBytes, walk, err, tc.wantErr)
+				}
+				if diff := cmp.Diff(tc.wantInputs, inputs); diff != "" {
+					t.Errorf("%s: cacheBytes=%d: %s matchInputRoot: inputs -want +got:\n%s", tc.name, cacheBytes, walk, diff)
+				}
 			}
 		}
 	}

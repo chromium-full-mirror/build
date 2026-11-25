@@ -359,6 +359,9 @@ func doBuild(ctx context.Context, graph *Graph, bopts build.Options, nopts RunNi
 	if st := bopts.REAPIClient.WalkDirCacheStats(); st.CapBytes > 0 && (st.Entries > 0 || st.Evictions > 0 || st.Oversized > 0) {
 		clog.Infof(ctx, "walkdir cache: cap=%d bytes=%d entries=%d evictions=%d oversized=%d", st.CapBytes, st.Bytes, st.Entries, st.Evictions, st.Oversized)
 	}
+	if st := b.DirSpecCacheStats(); st.CapBytes > 0 {
+		clog.Infof(ctx, "dirspec cache: cap=%d bytes=%d entries=%d evictions=%d oversized=%d", st.CapBytes, st.Bytes, st.Entries, st.Evictions, st.Oversized)
+	}
 	semaStats := b.SemaStats()
 	if len(semaStats) > 0 {
 		rut := dumpResourceUsageTable(semaStats)

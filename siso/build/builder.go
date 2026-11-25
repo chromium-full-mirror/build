@@ -54,6 +54,7 @@ import (
 	"go.chromium.org/build/siso/reapi"
 	"go.chromium.org/build/siso/reapi/merkletree"
 	"go.chromium.org/build/siso/scandeps"
+	"go.chromium.org/build/siso/sync/clockcache"
 	"go.chromium.org/build/siso/sync/semaphore"
 	"go.chromium.org/build/siso/toolsupport/gccutil"
 	"go.chromium.org/build/siso/toolsupport/makeutil"
@@ -167,6 +168,11 @@ type Options struct {
 	// MissingDeps specifies how to handle missing dependencies:
 	// "ignore" (default), "warn", "error", or "fatal".
 	MissingDeps MissingDepsMode
+
+	// DirSpecCacheBytes caps the estimated heap of what two-phase
+	// caching derives from input root directories. 0 uses 1/20 of
+	// GOMEMLIMIT, or no cap if GOMEMLIMIT is unset. < 0 means no cap.
+	DirSpecCacheBytes int64
 }
 
 // EnvConfig is a config for environment variables.
@@ -271,8 +277,8 @@ type Builder struct {
 	twoPhaseCachingSema *semaphore.Semaphore
 	twoPhaseCaching     twoPhaseCaching
 	// dirSpecs caches what matchInputRoot derives from a Directory at a
-	// path. dirSpecKey -> *dirSpec. See dirspec.go.
-	dirSpecs sync.Map
+	// path. See dirspec.go.
+	dirSpecs clockcache.Cache[dirSpecKey, *dirSpec]
 
 	// inputGroups holds the input group subtrees of the two-phase
 	// cache lookup keys. nil if input groups are off.
@@ -564,6 +570,11 @@ func New(ctx context.Context, graph Graph, opts Options) (_ *Builder, err error)
 			b.twoPhaseCaching = rt
 			if !disableInputGroups {
 				b.inputGroups = execute.NewInputGroupCache(b.buildOutDir(ctx))
+			}
+			// only two-phase caching uses dirSpecs.
+			if capBytes := clockcache.ResolveBytes(opts.DirSpecCacheBytes, debug.SetMemoryLimit(-1), dirSpecMemLimitDivisor); capBytes > 0 {
+				b.dirSpecs.Init(capBytes, dirSpecBytes)
+				clog.Infof(ctx, "dirspec cache limit: %d bytes", capBytes)
 			}
 		}
 	}
