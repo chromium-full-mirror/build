@@ -776,7 +776,15 @@ func (c *Client) uploadNewBlobs(ctx context.Context, ds *blob.Store, newBlobs ma
 
 // CheckWritable checks reapi instance writable permission.
 func (c *Client) CheckWritable(ctx context.Context) error {
-	defer trace.Begin(ctx, "reapi.CheckWritable").End()
+	// TODO(crbug.com/587969386): Set ToolInvocationId for the writable probe.
+	// Bazel always sets this field in RequestMetadata.
+	// Identify the writable probe for server-side accounting and compatibility
+	// with services that expect CAS writes to be action-scoped.
+	probeCtx := NewContext(ctx, &rpb.RequestMetadata{
+		ActionId:       "check-writable-" + uuid.New().String(),
+		ActionMnemonic: "CheckWritable",
+	})
+	defer trace.Begin(probeCtx, "reapi.CheckWritable").End()
 	if c.casConn == nil {
 		return status.Error(codes.FailedPrecondition, "conn is not configured")
 	}
@@ -787,7 +795,7 @@ func (c *Client) CheckWritable(ctx context.Context) error {
 	uploads := map[digest.Digest]*uploadOp{
 		data.Digest(): newUploadOp(c, data.Digest()),
 	}
-	_, err := c.upload(ctx, ds, blobs, uploads)
+	_, err := c.upload(probeCtx, ds, blobs, uploads)
 	if err != nil {
 		return fmt.Errorf("failed to check writable: %w", err)
 	}

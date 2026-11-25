@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"testing"
 
@@ -306,6 +307,24 @@ func newRecordingUploadClient(ctx context.Context, t *testing.T) (*reapi.Client,
 		}
 	})
 	return cl, rec
+}
+
+func TestCheckWritableAddsSyntheticActionID(t *testing.T) {
+	cl, rec := newRecordingUploadClient(t.Context(), t)
+	if err := cl.CheckWritable(t.Context()); err != nil {
+		t.Fatalf("CheckWritable()=%v; want nil", err)
+	}
+
+	got := rec.forMethod(rpb.ContentAddressableStorage_BatchUpdateBlobs_FullMethodName)
+	if len(got) != 1 {
+		t.Fatalf("BatchUpdateBlobs calls=%d; want 1", len(got))
+	}
+	if got[0].rmdCount != 1 {
+		t.Errorf("%s entries=%d; want 1", reapi.RequestMetadataKey, got[0].rmdCount)
+	}
+	if actionID := got[0].rmd.GetActionId(); !strings.HasPrefix(actionID, "check-writable-") {
+		t.Errorf("action_id=%q; want check-writable- prefix", actionID)
+	}
 }
 
 // TestUploadAll_PropagatesRequestMetadataAndTraceContext checks that detached
