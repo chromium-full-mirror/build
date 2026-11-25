@@ -76,7 +76,7 @@ func (gcc depsGCC) fixCmdInputs(ctx context.Context, b *Builder, cmd *execute.Cm
 	inputs = b.expandInputs(ctx, inputs)
 
 	fn := func(ctx context.Context, dir string) (merkletree.TreeEntry, error) {
-		return b.treeInput(ctx, dir, ":headers", nil)
+		return b.treeInput(ctx, dir, ":headers", nil, cmd.RemoteInputs)
 	}
 	if gcc.treeInput != nil {
 		fn = gcc.treeInput

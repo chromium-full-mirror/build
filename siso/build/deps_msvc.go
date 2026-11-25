@@ -86,7 +86,7 @@ func (msvc depsMSVC) fixCmdInputs(ctx context.Context, b *Builder, cmd *execute.
 	}
 
 	fn := func(ctx context.Context, dir string) (merkletree.TreeEntry, error) {
-		return b.treeInput(ctx, dir, ":headers", fixFn)
+		return b.treeInput(ctx, dir, ":headers", fixFn, cmd.RemoteInputs)
 	}
 	if msvc.treeInput != nil {
 		fn = msvc.treeInput

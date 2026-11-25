@@ -8,9 +8,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
+	"maps"
 	"path/filepath"
 	"slices"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -83,7 +86,9 @@ func (b *Builder) resolveSymlinkForInputDeps(ctx context.Context, dir, labelSuff
 	return "", nil, fmt.Errorf("not in input_deps %s", dir)
 }
 
-func (b *Builder) treeInput(ctx context.Context, dir, labelSuffix string, fixFn func(context.Context, []string) []string) (merkletree.TreeEntry, error) {
+// treeInput returns the precomputed subtree of dir. A file under dir that
+// remoteInputs maps to another local file is that file in the subtree.
+func (b *Builder) treeInput(ctx context.Context, dir, labelSuffix string, fixFn func(context.Context, []string) []string, remoteInputs map[path.Path]path.Path) (merkletree.TreeEntry, error) {
 	if b.reapiclient == nil {
 		return merkletree.TreeEntry{}, errors.New("reapi is not configured")
 	}
@@ -100,17 +105,19 @@ func (b *Builder) treeInput(ctx context.Context, dir, labelSuffix string, fixFn 
 	if err != nil {
 		return merkletree.TreeEntry{}, err
 	}
+	remote := remoteInputsUnder(path.Path(dir), remoteInputs)
+	key := subtreeKey(dir, remote)
 	st := &subtree{}
-	v, _ := b.trees.LoadOrStore(dir, st)
+	v, _ := b.trees.LoadOrStore(key, st)
 	st = v.(*subtree)
-	err = st.init(ctx, b, dir, files, fixFn)
+	err = st.init(ctx, b, dir, files, fixFn, remote)
 	if err != nil {
 		// If our context is still alive but init failed, the
 		// subtree was poisoned by external factors (e.g. a
 		// transient error). Evict it so the next caller gets a
 		// fresh sync.Once.
 		if ctx.Err() == nil {
-			b.trees.CompareAndDelete(dir, st)
+			b.trees.CompareAndDelete(key, st)
 		}
 		return merkletree.TreeEntry{}, err
 	}
@@ -118,6 +125,36 @@ func (b *Builder) treeInput(ctx context.Context, dir, labelSuffix string, fixFn 
 		Name:   path.Path(dir),
 		Digest: st.d,
 	}, nil
+}
+
+// remoteInputsUnder returns the remote inputs under dir, keyed by their
+// names relative to dir.
+func remoteInputsUnder(dir path.Path, remoteInputs map[path.Path]path.Path) map[path.Path]path.Path {
+	var m map[path.Path]path.Path
+	for r, l := range remoteInputs {
+		if r == dir || !r.HasPrefix(dir) {
+			continue
+		}
+		if m == nil {
+			m = make(map[path.Path]path.Path)
+		}
+		m[r.TrimPrefix(dir)] = l
+	}
+	return m
+}
+
+// subtreeKey returns the key of dir's subtree in Builder.trees, which
+// differs for each set of remote inputs under dir.
+func subtreeKey(dir string, remote map[path.Path]path.Path) string {
+	if len(remote) == 0 {
+		return dir
+	}
+	var sb strings.Builder
+	sb.WriteString(dir)
+	for _, name := range slices.Sorted(maps.Keys(remote)) {
+		fmt.Fprintf(&sb, "\x00%s=%s", name, remote[name])
+	}
+	return sb.String()
 }
 
 type subtree struct {
@@ -128,7 +165,7 @@ type subtree struct {
 	err error
 }
 
-func (st *subtree) init(ctx context.Context, b *Builder, dir string, files []string, fixFn func(context.Context, []string) []string) error {
+func (st *subtree) init(ctx context.Context, b *Builder, dir string, files []string, fixFn func(context.Context, []string) []string, remote map[path.Path]path.Path) error {
 	st.once.Do(func() {
 		files = b.expandInputs(ctx, files)
 		if fixFn != nil {
@@ -150,6 +187,9 @@ func (st *subtree) init(ctx context.Context, b *Builder, dir string, files []str
 		}
 		clog.Infof(ctx, "tree init root dir: %q (%q %q)", rootDir, b.path.WorkspaceRoot, dir)
 		ents, err := b.hashFS.Entries(ctx, rootDir, path.Paths(inputs))
+		if err == nil && len(remote) > 0 {
+			ents, err = b.substituteRemoteInputs(ctx, dirPath, ents, remote)
+		}
 		if err != nil {
 			clog.Warningf(ctx, "failed to get subtree entries %s: %v", dir, err)
 			st.err = err
@@ -221,4 +261,49 @@ func (st *subtree) init(ctx context.Context, b *Builder, dir string, files []str
 	st.mu.Lock()
 	defer st.mu.Unlock()
 	return st.err
+}
+
+var errDirRemoteInput = errors.New("directory values are not supported")
+
+// substituteRemoteInputs replaces the entries of a subtree that remote
+// maps, by name relative to the subtree at dir, to other local files. A
+// remote input that the subtree doesn't have stays out of it.
+func (b *Builder) substituteRemoteInputs(ctx context.Context, dir path.Path, ents []merkletree.Entry, remote map[path.Path]path.Path) ([]merkletree.Entry, error) {
+	indexes := make(map[path.Path][]int, len(remote))
+	locals := make([]path.Path, 0, len(remote))
+	for i, e := range ents {
+		local, ok := remote[e.Name]
+		if !ok {
+			continue
+		}
+		if strings.HasSuffix(string(local), "/") {
+			return nil, fmt.Errorf("remote_inputs value %q for %q is a directory: %w", local, dir.JoinPath(e.Name), errDirRemoteInput)
+		}
+		if len(indexes[local]) == 0 {
+			locals = append(locals, local)
+		}
+		indexes[local] = append(indexes[local], i)
+	}
+	if len(locals) == 0 {
+		return ents, nil
+	}
+	slices.Sort(locals)
+	rents, err := b.hashFS.Entries(ctx, b.path.WorkspaceRoot, locals)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get entries for remote inputs: %w", err)
+	}
+	for _, re := range rents {
+		for _, i := range indexes[re.Name] {
+			e := re
+			e.Name = ents[i].Name
+			ents[i] = e
+		}
+		delete(indexes, re.Name)
+	}
+	for _, local := range locals {
+		if is, ok := indexes[local]; ok {
+			return nil, fmt.Errorf("remote_inputs value %q for %q: %w; add it to the checkout or remove it from remote_inputs", local, dir.JoinPath(ents[is[0]].Name), fs.ErrNotExist)
+		}
+	}
+	return ents, nil
 }

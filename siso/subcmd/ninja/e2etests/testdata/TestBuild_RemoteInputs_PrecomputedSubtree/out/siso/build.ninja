@@ -1,0 +1,14 @@
+# Copyright 2026 The Chromium Authors
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+rule cxx
+  command = ../../toolchain/bin/clang++ -MMD -MF ${out}.d -c ${in} -o ${out}
+  deps = gcc
+  depfile = ${out}.d
+
+build obj/foo.o: cxx ../../src/foo.cc
+
+build all: phony obj/foo.o
+
+build build.ninja: phony
