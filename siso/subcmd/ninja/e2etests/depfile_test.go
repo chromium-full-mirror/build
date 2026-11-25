@@ -18,6 +18,7 @@ import (
 
 	"go.chromium.org/build/siso/build"
 	"go.chromium.org/build/siso/build/ninjabuild"
+	"go.chromium.org/build/siso/execute/localexec"
 	"go.chromium.org/build/siso/hashfs"
 	"go.chromium.org/build/siso/reapi/reapitest"
 )
@@ -248,6 +249,8 @@ func TestBuild_Depfile_SandboxedRestriction(t *testing.T) {
 		t.Skip("skip: no sandbox support on non-linux")
 		return
 	}
+	prev := localexec.SetSpawnHelper(mockTapHelper{})
+	defer localexec.SetSpawnHelper(prev)
 	ctx := t.Context()
 	dir := tempDir(t)
 
@@ -284,6 +287,8 @@ func TestBuild_Depfile_SandboxedRestriction_FirstRunWithoutSandboxing(t *testing
 		t.Skip("skip: no sandbox support on non-linux")
 		return
 	}
+	prev := localexec.SetSpawnHelper(mockTapHelper{})
+	defer localexec.SetSpawnHelper(prev)
 	ctx := t.Context()
 	dir := tempDir(t)
 
@@ -333,6 +338,8 @@ func TestBuild_Depfile_SandboxedRestriction_Multiple(t *testing.T) {
 		t.Skip("skip: no sandbox support on non-linux")
 		return
 	}
+	prev := localexec.SetSpawnHelper(mockTapHelper{})
+	defer localexec.SetSpawnHelper(prev)
 	ctx := t.Context()
 	dir := tempDir(t)
 

@@ -186,7 +186,7 @@ func TestRunViaHelperEnv(t *testing.T) {
 	}
 }
 
-// TestWrappedActionViaHelper exercises the nsjail/strace executor pattern (copy
+// TestWrappedActionViaHelper exercises the nsjail executor pattern (copy
 // the Cmd, wrap Args, delegate to Run) through the helper; `env` is the wrapper.
 func TestWrappedActionViaHelper(t *testing.T) {
 	inner := []string{"sh", "-c", "echo real-out; echo real-err 1>&2; exit 7"}

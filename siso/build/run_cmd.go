@@ -50,6 +50,11 @@ func (b *Builder) allowTwoPhaseCaching(step *Step) bool {
 	return true
 }
 
+func (b *Builder) cacheWriteEnabled() bool {
+	// TODO: support local cache.
+	return b.reapiclient != nil && b.reCacheEnableWrite
+}
+
 func (b *Builder) runStrategy(step *Step) func(context.Context, *Step) error {
 	// Check criteria for allowRemote.
 	// If the command doesn't meet either criteria, fallback to local.

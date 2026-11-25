@@ -8,6 +8,9 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
+	"runtime"
+	"sync"
 
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/types/known/anypb"
@@ -20,14 +23,49 @@ import (
 )
 
 // external tap command
-var tapCommand = os.Getenv("SISO_TAP_COMMAND")
+var (
+	tapCommand  = os.Getenv("SISO_TAP_COMMAND")
+	sisoTapOnce sync.Once
+	sisoTapPath string
+)
+
+func lookupTapCommand(ctx context.Context) string {
+	if tapCommand != "" {
+		return tapCommand
+	}
+	if runtime.GOOS != "linux" {
+		return ""
+	}
+	sisoTapOnce.Do(func() {
+		var err error
+		sisoTapPath, err = exec.LookPath("siso-tap")
+		if err != nil {
+			clog.Warningf(ctx, "siso-tap is not found: %v", err)
+			return
+		}
+		clog.Infof(ctx, "use siso-tap=%s", sisoTapPath)
+	})
+	return sisoTapPath
+}
+
+// TapAvailable reports whether tap is available.
+func TapAvailable(ctx context.Context) bool {
+	if helper.Load() != nil && !builtinHelper.Load() {
+		return true
+	}
+	return lookupTapCommand(ctx) != ""
+}
 
 // tapCmd converts cmd to use external tapping.
 // It also returns function that sets tap result in action result's metadata,
 // and cleans up temporary file.
-func tapCmd(cmd *execute.Cmd) (*execute.Cmd, func(context.Context, *rpb.ActionResult) error, error) {
-	if tapCommand == "" {
+func tapCmd(ctx context.Context, cmd *execute.Cmd) (*execute.Cmd, func(context.Context, *rpb.ActionResult) error, error) {
+	if !cmd.Tap {
 		return cmd, func(context.Context, *rpb.ActionResult) error { return nil }, nil
+	}
+	tcmdName := lookupTapCommand(ctx)
+	if tcmdName == "" {
+		return nil, nil, fmt.Errorf("tap is requested, but no siso-tap command found: put siso-tap on PATH or set SISO_TAP_COMMAND")
 	}
 	tcmd := cmd.Clone()
 	tapLogFile, err := os.CreateTemp("", fmt.Sprintf("tap-%s-*.json", tcmd.ID))
@@ -43,7 +81,7 @@ func tapCmd(cmd *execute.Cmd) (*execute.Cmd, func(context.Context, *rpb.ActionRe
 		return err
 	}
 	tcmd.Args = append([]string{
-		tapCommand,
+		tcmdName,
 		"--tap_output", tapLogFile.Name(),
 		"--",
 	}, cmd.Args...)

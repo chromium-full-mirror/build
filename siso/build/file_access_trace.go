@@ -9,10 +9,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	stdpath "path"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -20,10 +22,10 @@ import (
 	log "github.com/golang/glog"
 
 	"go.chromium.org/build/siso/execute"
+	"go.chromium.org/build/siso/execute/localexec"
 	"go.chromium.org/build/siso/o11y/clog"
 	"go.chromium.org/build/siso/o11y/trace"
 	"go.chromium.org/build/siso/path"
-	"go.chromium.org/build/siso/toolsupport/straceutil"
 )
 
 type fileTraceExecutor struct {
@@ -33,8 +35,8 @@ type fileTraceExecutor struct {
 }
 
 func newFileTraceExecutor(ctx context.Context, b *Builder, executor execute.Executor) (*fileTraceExecutor, error) {
-	if !straceutil.Available(ctx) {
-		return nil, errors.New("strace is not available")
+	if !localexec.TapAvailable(ctx) {
+		return nil, errors.New("siso-tap is not available: put siso-tap on PATH or set SISO_TAP_COMMAND")
 	}
 	return &fileTraceExecutor{
 		b:        b,
@@ -43,20 +45,39 @@ func newFileTraceExecutor(ctx context.Context, b *Builder, executor execute.Exec
 }
 
 func (f *fileTraceExecutor) Run(ctx context.Context, cmd *execute.Cmd) error {
-	st := straceutil.New(ctx, cmd.ID, cmd.Args, string(cmd.WorkDir))
-	defer st.Close(ctx)
-	cmd.StdoutWriter()
-	cmd.StderrWriter()
-	newCmd := &execute.Cmd{}
-	*newCmd = *cmd
-	newCmd.Args = st.Args(ctx)
-	err := f.executor.Run(ctx, newCmd)
+	cmd.Tap = true
+	err := f.executor.Run(ctx, cmd)
 	if err != nil {
 		return err
 	}
-	cmd.SetActionResult(newCmd.ActionResult())
-	f.inputs, f.outputs, err = st.PostProcess(ctx)
-	return err
+	res, _ := cmd.ActionResult()
+	tapData, tapped := localexec.ExtractTapResult(res)
+	if !tapped {
+		return errNoTapData
+	}
+	if tapData.Error != "" {
+		return fmt.Errorf("tap error: %v", tapData.Error)
+	}
+	fsys := f.b.hashFS.FileSystem(ctx, f.b.path.WorkspaceRoot)
+	var inputs []string
+	for _, in := range tapData.Reads {
+		rel, err := filepath.Rel(f.b.path.WorkspaceRoot, in)
+		if err != nil || !filepath.IsLocal(rel) {
+			inputs = append(inputs, in)
+			continue
+		}
+		rel = filepath.ToSlash(rel)
+		if _, err := fsys.StatIfExists(rel); errors.Is(err, fs.ErrNotExist) {
+			continue
+		}
+		for _, p := range fsys.ExpandSymlinks(rel) {
+			inputs = append(inputs, filepath.Join(f.b.path.WorkspaceRoot, p))
+		}
+	}
+	sort.Strings(inputs)
+	f.inputs = slices.Compact(inputs)
+	f.outputs = tapData.Writes
+	return nil
 }
 
 func (f *fileTraceExecutor) logLocalExec(ctx context.Context, step *Step, dur time.Duration) error {
@@ -96,7 +117,7 @@ func (f *fileTraceExecutor) checkTrace(ctx context.Context, step *Step, dur time
 		command = command[:256] + "..."
 	}
 	// TODO: collect files in precomputed trees too.
-	allInputs := path.Strings(step.cmd.AllInputs())
+	allInputs := b.hashFS.FileSystem(ctx, b.path.WorkspaceRoot).ExpandInputs(path.Strings(step.cmd.AllInputs()))
 	allOutputs := path.Strings(step.cmd.AllOutputs())
 	var output string
 	if len(allOutputs) > 0 {
@@ -248,6 +269,12 @@ func filesDiff(ctx context.Context, b *Builder, x, opts, y []string, ignorePatte
 		}
 	}
 	for _, pathname := range y {
+		if pathname == "" || pathname == "." {
+			continue
+		}
+		if strings.HasPrefix(pathname, "/proc/") || strings.HasPrefix(pathname, "/dev/") {
+			continue
+		}
 		if strings.Contains(pathname, "/__pycache__/") {
 			continue
 		}

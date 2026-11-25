@@ -33,5 +33,6 @@ func StartSpawnHelper(ctx context.Context, helperCommand, logFile string, blockN
 		return fmt.Errorf("spawn helper: %w", err)
 	}
 	SetSpawnHelper(c)
+	builtinHelper.Store(helperCommand == "")
 	return nil
 }

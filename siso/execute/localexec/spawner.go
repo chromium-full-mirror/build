@@ -39,6 +39,7 @@ func (Spawner) Spawn(ctx context.Context, req *epb.SpawnRequest) (*epb.SpawnResu
 		WorkspaceRoot: req.GetWorkspaceRoot(),
 		WorkDir:       path.New(req.GetWorkDir()),
 		OOMScoreAdj:   oomScoreAdj,
+		Tap:           req.GetTap(),
 	}
 
 	res, err := run(ctx, cmd)

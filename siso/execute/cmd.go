@@ -232,6 +232,9 @@ type Cmd struct {
 	// OOMScoreAdj is value to set oom_score_adj on local exec (linux only)
 	OOMScoreAdj *int
 
+	// Tap indicates the command should be tapped for file access on local exec.
+	Tap bool
+
 	// outfiles is outputs of the step in build graph.
 	// These outputs will be recorded with cmdhash.
 	// Other outputs in c.Outputs will be recorded without cmdhash.

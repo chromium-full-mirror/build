@@ -99,7 +99,7 @@ var ForkSema = semaphore.New("fork", concurrencyLimit(runtime.GOMAXPROCS(0)))
 // fails with ETXTBSY, i.e. a write-mode fd to the executable is transiently
 // open somewhere (https://github.com/golang/go/issues/22315).
 func run(ctx context.Context, cmd *execute.Cmd) (*rpb.ActionResult, error) {
-	tcmd, tpostProc, err := tapCmd(cmd)
+	tcmd, tpostProc, err := tapCmd(ctx, cmd)
 	if err != nil {
 		return nil, err
 	}

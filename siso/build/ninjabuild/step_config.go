@@ -159,12 +159,12 @@ type StepRule struct {
 	OutputLocal bool `json:"output_local,omitzero"`
 
 	// IgnoreExtraInputPattern specifies regexp to ignore extra inputs.
-	// ignore extra input detected by strace if it matches with this pattern
+	// ignore extra input detected by file-access-trace if it matches with this pattern
 	// e.g. cache file
 	IgnoreExtraInputPattern string `json:"ignore_extra_input_pattern,omitempty"`
 
 	// IgnoreExtraOutputPattern specifies regexp to ignore extra outputs.
-	// ignore extra output detected by strace if it matches with this pattern
+	// ignore extra output detected by file-access-trace if it matches with this pattern
 	// e.g. cache file
 	IgnoreExtraOutputPattern string `json:"ignore_extra_output_pattern,omitempty"`
 

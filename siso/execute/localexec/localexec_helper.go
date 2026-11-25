@@ -26,10 +26,14 @@ type SpawnHelper interface {
 // sets it. runViaHelper uses it when set; when unset - under `go test`, or a
 // subcommand that doesn't drive a build - actions run in-process. atomic so build
 // workers read it without locking.
-var helper atomic.Pointer[SpawnHelper]
+var (
+	helper        atomic.Pointer[SpawnHelper]
+	builtinHelper atomic.Bool
+)
 
 // SetSpawnHelper sets h as the spawn helper and returns the previous helper.
 func SetSpawnHelper(h SpawnHelper) SpawnHelper {
+	builtinHelper.Store(false)
 	if h == nil {
 		old := helper.Swap(nil)
 		if old == nil {
@@ -86,6 +90,7 @@ func runViaHelper(ctx context.Context, cmd *execute.Cmd) (*rpb.ActionResult, err
 		WorkspaceRoot: cmd.WorkspaceRoot,
 		WorkDir:       string(cmd.WorkDir),
 		OomScoreAdj:   oomScoreAdj,
+		Tap:           cmd.Tap,
 	}
 	res, err := c.Run(ctx, req)
 	if err != nil {

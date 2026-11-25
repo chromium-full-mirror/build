@@ -37,6 +37,12 @@ type mockTapHelper struct {
 }
 
 func (h mockTapHelper) Run(ctx context.Context, req *epb.SpawnRequest) (*epb.SpawnResult, error) {
+	if !req.Tap {
+		return h.Spawn(ctx, req)
+	}
+	// tap is requested, so attach tap result, but without running with
+	// tap command.
+	req.Tap = false
 	res, err := h.Spawn(ctx, req)
 	if err != nil {
 		return nil, err

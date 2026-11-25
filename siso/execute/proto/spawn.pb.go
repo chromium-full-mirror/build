@@ -163,6 +163,7 @@ type SpawnRequest struct {
 	WorkspaceRoot string                 `protobuf:"bytes,4,opt,name=workspace_root,json=workspaceRoot,proto3" json:"workspace_root,omitempty"`
 	WorkDir       string                 `protobuf:"bytes,5,opt,name=work_dir,json=workDir,proto3" json:"work_dir,omitempty"`
 	OomScoreAdj   *int32                 `protobuf:"varint,6,opt,name=oom_score_adj,json=oomScoreAdj,proto3,oneof" json:"oom_score_adj,omitempty"`
+	Tap           bool                   `protobuf:"varint,7,opt,name=tap,proto3" json:"tap,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -237,6 +238,13 @@ func (x *SpawnRequest) GetOomScoreAdj() int32 {
 		return *x.OomScoreAdj
 	}
 	return 0
+}
+
+func (x *SpawnRequest) GetTap() bool {
+	if x != nil {
+		return x.Tap
+	}
+	return false
 }
 
 // SpawnCancel cancels the in-flight action; its id is carried by the enclosing
@@ -380,14 +388,15 @@ const file_spawn_proto_rawDesc = "" +
 	"\x06cancel\x18\x03 \x01(\v2\x19.siso.execute.SpawnCancelH\x00R\x06cancel\x123\n" +
 	"\x06result\x18\x04 \x01(\v2\x19.siso.execute.SpawnResultH\x00R\x06result\x120\n" +
 	"\x05error\x18\x05 \x01(\v2\x18.siso.execute.SpawnErrorH\x00R\x05errorB\t\n" +
-	"\apayload\"\xc1\x01\n" +
+	"\apayload\"\xd3\x01\n" +
 	"\fSpawnRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04args\x18\x02 \x03(\tR\x04args\x12\x10\n" +
 	"\x03env\x18\x03 \x03(\tR\x03env\x12%\n" +
 	"\x0eworkspace_root\x18\x04 \x01(\tR\rworkspaceRoot\x12\x19\n" +
 	"\bwork_dir\x18\x05 \x01(\tR\aworkDir\x12'\n" +
-	"\room_score_adj\x18\x06 \x01(\x05H\x00R\voomScoreAdj\x88\x01\x01B\x10\n" +
+	"\room_score_adj\x18\x06 \x01(\x05H\x00R\voomScoreAdj\x88\x01\x01\x12\x10\n" +
+	"\x03tap\x18\a \x01(\bR\x03tapB\x10\n" +
 	"\x0e_oom_score_adj\"\r\n" +
 	"\vSpawnCancel\"H\n" +
 	"\vSpawnResult\x129\n" +

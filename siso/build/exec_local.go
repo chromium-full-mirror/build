@@ -21,6 +21,7 @@ import (
 
 	"go.chromium.org/build/siso/blob"
 	"go.chromium.org/build/siso/execute"
+	"go.chromium.org/build/siso/execute/localexec"
 	"go.chromium.org/build/siso/o11y/clog"
 	"go.chromium.org/build/siso/o11y/trace"
 	"go.chromium.org/build/siso/path"
@@ -34,6 +35,9 @@ func (b *Builder) execLocal(ctx context.Context, step *Step) (retErr error) {
 		ok, err := b.twoPhaseCachingLookup(ctx, step)
 		if ok {
 			return err
+		}
+		if b.cacheWriteEnabled() && localexec.TapAvailable(ctx) {
+			step.cmd.Tap = true
 		}
 	}
 	ensureExpanded(ctx, b, step)
@@ -260,7 +264,7 @@ func (b *Builder) selectSandbox(ctx context.Context, step *Step) (string, map[st
 	// step.cmd.Pure may be false when config is not set
 	// for the step too, but we want to disable
 	// file-access-trace only for the step with impure=true.
-	// http://b/261655377 errorprone_plugin_tests: too slow under strace?
+	// http://b/261655377 errorprone_plugin_tests: too slow under file-access-trace?
 	impure := step.def.Binding("impure") == "true"
 	if impure {
 		clog.Warningf(ctx, "disable file-access-trace by impure")
