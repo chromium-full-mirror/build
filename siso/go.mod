@@ -19,7 +19,7 @@ require (
 	github.com/google/go-cmp v0.7.0
 	github.com/google/subcommands v1.2.0
 	github.com/kelindar/bitmap v1.5.5
-	github.com/klauspost/compress v1.20.4
+	github.com/klauspost/compress v1.20.5
 	github.com/klauspost/cpuid/v2 v2.4.0
 	github.com/landlock-lsm/go-landlock v0.9.0
 	github.com/open-telemetry/opentelemetry-collector-contrib/exporter/googlecloudexporter v0.158.0
