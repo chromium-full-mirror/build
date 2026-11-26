@@ -12,6 +12,9 @@ type StatusReporter interface {
 	PlanHasTotalSteps(total int)
 
 	// BuildActionStarted is called when build action started.
+	// Step.Desc, IsConsole, ExitCode, Stdout, Stderr and OutputResult
+	// may be called only until BuildActionFinished returns for the step,
+	// as runStep drops the step's Cmd after that.
 	BuildActionStarted(*Step, time.Time)
 
 	// BuildActionFinished is called when build action finished.

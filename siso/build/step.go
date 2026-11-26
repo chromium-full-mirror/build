@@ -163,6 +163,8 @@ type Step struct {
 	outputPaths                []string // target name in ninja, i.e. output path relative to wd.
 	enforceDepfileOnlyPromotes bool
 
+	// cmd is set by init. runStep drops it when the step ends, so that
+	// the GC can reclaim it while b.plan still holds the Step.
 	cmd *execute.Cmd
 
 	readyTime time.Time
@@ -603,6 +605,11 @@ func (s *Step) init(ctx context.Context, b *Builder, stepManifest *stepManifest)
 	}
 }
 
+// maxInternArgLen is the length of the longest command line argument
+// that newCmd interns in Builder.argTab. Longer arguments are mostly
+// unique to one step, and argTab would keep them until the build ends.
+const maxInternArgLen = 256
+
 func newCmd(ctx context.Context, b *Builder, stepDef StepDef, stepManifest *stepManifest) *execute.Cmd {
 	// we need to use stepDef.Outputs instead of stepManifest.outputs
 	// to reflect outputs specified by siso rule.
@@ -638,7 +645,7 @@ func newCmd(ctx context.Context, b *Builder, stepDef StepDef, stepManifest *step
 		ID:                      stepDef.String(),
 		Desc:                    stepDescription(stepDef),
 		ActionName:              stepDef.ActionName(),
-		Args:                    b.argTab.InternSlice(stepDef.Args(ctx)),
+		Args:                    b.argTab.InternSlice(stepDef.Args(ctx), maxInternArgLen),
 		RSPFile:                 stepDef.Rspfile(ctx),
 		RSPFileContent:          []byte(stepDef.Binding("rspfile_content")),
 		CmdHash:                 stepManifest.cmdHash,

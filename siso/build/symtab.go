@@ -31,9 +31,15 @@ func (s *symtab) Intern(v string) string {
 	return vv.(string)
 }
 
-func (s *symtab) InternSlice(list []string) []string {
+// InternSlice returns a copy of list with its strings interned, except
+// strings longer than maxLen, which it returns as they are.
+func (s *symtab) InternSlice(list []string, maxLen int) []string {
 	ret := make([]string, 0, len(list))
 	for _, v := range list {
+		if len(v) > maxLen {
+			ret = append(ret, v)
+			continue
+		}
 		vv, ok := s.m.Load(v)
 		if ok {
 			ret = append(ret, vv.(string))
