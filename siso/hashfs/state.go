@@ -1422,7 +1422,7 @@ func (hfs *HashFS) State(ctx context.Context) *pb.State {
 					state.MissingDigests = append(state.MissingDigests, name)
 				} else if len(e.cmdhash) > 0 {
 					clog.Warningf(ctx, "need to calculate digest for %s: cmdhash=%v", name, e.cmdhash)
-					err := e.compute(ctx, hfs.opt.DigestFunction, name)
+					err := hfs.digester.computeEntry(ctx, name, e)
 					if err != nil {
 						clog.Warningf(ctx, "failed to calculate digest for %s: %v", name, err)
 						state.MissingDigests = append(state.MissingDigests, name)

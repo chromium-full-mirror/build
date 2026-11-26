@@ -6,6 +6,7 @@ package hashfs
 
 import (
 	"context"
+	"errors"
 	"runtime"
 	"slices"
 	"sync"
@@ -87,6 +88,26 @@ type digester struct {
 	done chan struct{}
 }
 
+// localOnlySource wraps a blob.LocalFileSource without exposing
+// FileDigestFromFS so blob.FromLocalFile hashes local bytes directly instead of
+// calling ABFS.
+type localOnlySource struct {
+	blob.LocalFileSource
+}
+
+func (s localOnlySource) Size() (int64, error) {
+	if sz, ok := s.LocalFileSource.(interface{ Size() (int64, error) }); ok {
+		return sz.Size()
+	}
+	return -1, errors.ErrUnsupported
+}
+
+func (d *digester) useABFS(fname string, local bool) bool {
+	// Locally generated outputs are dirty in CASFS, so ABFS has no cached digest
+	// for them and would reopen them through FUSE behind abfsDigestSemaphore.
+	return d.abfs != nil && !local && d.abfs.InDir(fname)
+}
+
 func (d *digester) computeReq(ctx context.Context, req digestReq) {
 	if req.id != "" {
 		ctx = trace.NewContext(ctx, trace.New(ctx, req.id))
@@ -101,11 +122,12 @@ func (d *digester) batchDigestForABFS(ctx context.Context, reqs []digestReq) {
 		eErr := req.e.err
 		src := req.e.src
 		ed := req.e.d
+		local := req.e.local
 		req.e.mu.Unlock()
 		if eErr != nil || src == nil || !ed.IsZero() {
 			continue
 		}
-		if !d.abfs.InDir(req.fname) {
+		if !d.useABFS(req.fname, local) {
 			d.computeReq(ctx, req)
 			continue
 		}
@@ -357,22 +379,40 @@ func (d *digester) compute(ctx context.Context, fname string, e *entry) {
 	eErr := e.err
 	src := e.src
 	ed := e.d
+	local := e.local
 	e.mu.Unlock()
 	if eErr != nil || src == nil || !ed.IsZero() {
 		return
 	}
-	err := d.sema.Do(ctx, func(ctx context.Context) error {
+	sema := d.sema
+	skipFSDigest := false
+	// Only skip FileDigestFromFS on ABFS; when d.abfs == nil, !useABFS is true
+	// and skipping would disable Cog xattr and CartFS digests.
+	if d.abfs != nil && !d.useABFS(fname, local) {
+		sema = localDigestSemaphore
+		skipFSDigest = true
+	}
+	err := sema.Do(ctx, func(ctx context.Context) error {
 		select {
 		case <-ctx.Done():
 			clog.Warningf(ctx, "ignore compute %s: %v", fname, context.Cause(ctx))
 			return context.Cause(ctx)
 		default:
 		}
-		return e.compute(ctx, d.fn, fname)
+		return e.computeWith(ctx, d.fn, fname, skipFSDigest)
 	})
 	if err != nil {
 		clog.Warningf(ctx, "failed to compute digest %s: %v", fname, err)
 	}
+}
+
+// computeEntry computes e's digest directly without taking a semaphore slot.
+// Used by State() during shutdown after digester workers have stopped.
+func (d *digester) computeEntry(ctx context.Context, fname string, e *entry) error {
+	// Only skip FileDigestFromFS on ABFS; when d.abfs == nil, !useABFS is true
+	// and skipping would disable Cog xattr and CartFS digests.
+	skipFSDigest := d.abfs != nil && !d.useABFS(fname, e.isLocal())
+	return e.computeWith(ctx, d.fn, fname, skipFSDigest)
 }
 
 type batchDigester struct {
@@ -393,12 +433,13 @@ func (b *batchDigester) start(ctx context.Context, fname string, e *entry) {
 	eErr := e.err
 	src := e.src
 	ed := e.d
+	local := e.local
 	e.mu.Unlock()
 	if eErr != nil || src == nil || !ed.IsZero() {
 		return
 	}
 	b.nwait++
-	if b.hfs.opt.ABFS != nil {
+	if b.hfs.digester.useABFS(fname, local) {
 		b.reqs = append(b.reqs, digestReq{
 			id:    trace.ID(ctx),
 			fname: fname,
@@ -416,7 +457,6 @@ func (b *batchDigester) wait(ctx context.Context) int {
 		for chunk := range slices.Chunk(b.reqs, maxDigestBatchSize) {
 			b.hfs.digester.batchDigestForABFS(ctx, chunk)
 		}
-		return b.nwait
 	}
 	b.wg.Wait()
 	return b.nwait

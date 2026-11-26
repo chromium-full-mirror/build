@@ -170,6 +170,10 @@ func (e *entry) init(ctx context.Context, fname string, executables map[path.Pat
 }
 
 func (e *entry) compute(ctx context.Context, fn digest.Function, fname string) error {
+	return e.computeWith(ctx, fn, fname, false)
+}
+
+func (e *entry) computeWith(ctx context.Context, fn digest.Function, fname string, skipFSDigest bool) error {
 	// Fast path: already done, errored, or nothing to compute.
 	e.mu.Lock()
 	if e.err != nil {
@@ -188,6 +192,11 @@ func (e *entry) compute(ctx context.Context, fn digest.Function, fname string) e
 		dch = make(chan struct{})
 		e.dch = dch
 		src := e.src
+		if skipFSDigest {
+			if lsrc, ok := src.(blob.LocalFileSource); ok {
+				src = localOnlySource{lsrc}
+			}
+		}
 		e.mu.Unlock()
 
 		// Run in a goroutine so callers can bail on context cancellation
@@ -247,6 +256,12 @@ func (e *entry) needCompute() bool {
 
 func (e *entry) isUnreferenced() bool {
 	return e.unreferenced.Load()
+}
+
+func (e *entry) isLocal() bool {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	return e.local
 }
 
 func (e *entry) getMtime() time.Time {

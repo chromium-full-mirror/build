@@ -5,13 +5,16 @@
 package hashfs
 
 import (
+	"context"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -254,5 +257,225 @@ func TestDigester_ABFSStopDrainsQueueNoLeak(t *testing.T) {
 		if got := e.digest(); got != wants[i] {
 			t.Errorf("entries[%d] digest after Close = %v; want %v", i, got, wants[i])
 		}
+	}
+}
+
+// TestDigester_ABFSLocalOutputBypassesABFSAndSemaphore verifies that locally
+// generated outputs (e.local == true) hash directly under localDigestSemaphore
+// without calling ABFS or blocking on a saturated abfsDigestSemaphore.
+func TestDigester_ABFSLocalOutputBypassesABFSAndSemaphore(t *testing.T) {
+	ctx := t.Context()
+	abfsDir, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	sock := testSockPath(t)
+	fake := &abfsutil.Fake{Dir: abfsDir}
+	abfs := fake.Start(ctx, t, sock)
+
+	stateDir := t.TempDir()
+	hfs, err := New(ctx, Option{
+		ABFS:      abfs,
+		StateFile: filepath.Join(stateDir, ".siso_fs_state"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer hfs.Close(ctx)
+
+	stampPath := filepath.Join(abfsDir, "out", "input_stamp")
+	writePastFile(t, stampPath, "")
+	depPath := filepath.Join(abfsDir, "out", "input_stamp.d")
+	wantDep := writePastFile(t, depPath, "out/input_stamp: foo.jar\n")
+
+	// Saturate every abfsDigestSemaphore slot to prove local outputs do not
+	// contend with cold ABFS fetches.
+	capN := abfsDigestSemaphore.Capacity()
+	releases := make([]func(error), 0, capN)
+	defer func() {
+		for _, release := range releases {
+			release(nil)
+		}
+	}()
+	for range capN {
+		_, release, err := abfsDigestSemaphore.WaitAcquire(ctx)
+		if err != nil {
+			t.Fatalf("WaitAcquire abfsDigestSemaphore: %v", err)
+		}
+		releases = append(releases, release)
+	}
+
+	opCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	// Exercise the local-execution Update -> commitEntry -> journalEntry path.
+	updateEnts := hfs.RetrieveUpdateEntriesFromLocal(opCtx, abfsDir, []path.Path{
+		"out/input_stamp",
+		"out/input_stamp.d",
+	})
+	if len(updateEnts) != 2 {
+		t.Fatalf("len(RetrieveUpdateEntriesFromLocal) = %d; want 2", len(updateEnts))
+	}
+	now := time.Now()
+	for i := range updateEnts {
+		updateEnts[i].CmdHash = []byte("cmdhash")
+		updateEnts[i].UpdatedTime = now
+		updateEnts[i].IsChanged = true
+	}
+	if err := hfs.Update(opCtx, abfsDir, updateEnts); err != nil {
+		t.Fatalf("Update while abfsDigestSemaphore saturated: %v", err)
+	}
+
+	// Exercise the foreground Entries (batchDigester) path on a second local
+	// output whose digest is not yet computed (e.g. when journalEntry is skipped).
+	dep2Path := filepath.Join(abfsDir, "out", "input_stamp2.d")
+	wantDep2 := writePastFile(t, dep2Path, "out/input_stamp2: bar.jar\n")
+	e2 := newLocalEntry()
+	e2.init(opCtx, dep2Path, hfs.executables, hfs.OS)
+	e2.local = true
+	if _, _, err := hfs.directory.store(opCtx, path.Path(filepath.ToSlash(dep2Path)), e2); err != nil {
+		t.Fatalf("store out/input_stamp2.d: %v", err)
+	}
+
+	ents, err := hfs.Entries(opCtx, abfsDir, []path.Path{
+		"out/input_stamp",
+		"out/input_stamp.d",
+		"out/input_stamp2.d",
+	})
+	if err != nil {
+		t.Fatalf("Entries while abfsDigestSemaphore saturated: %v", err)
+	}
+	if len(ents) != 3 {
+		t.Fatalf("len(ents) = %d; want 3", len(ents))
+	}
+	if got, want := ents[0].Data.Digest(), digest.SHA256.Empty(); got != want {
+		t.Errorf("input_stamp digest = %v; want %v", got, want)
+	}
+	if got := ents[1].Data.Digest(); got != wantDep {
+		t.Errorf("input_stamp.d digest = %v; want %v", got, wantDep)
+	}
+	if got := ents[2].Data.Digest(); got != wantDep2 {
+		t.Errorf("input_stamp2.d digest = %v; want %v", got, wantDep2)
+	}
+
+	// Exercise batchDigestForABFS (lazyCompute/popQueue path) on a local output
+	// while abfsDigestSemaphore is still saturated.
+	dep3Path := filepath.Join(abfsDir, "out", "input_stamp3.d")
+	wantDep3 := writePastFile(t, dep3Path, "out/input_stamp3: baz.jar\n")
+	e3 := newLocalEntry()
+	e3.init(opCtx, dep3Path, hfs.executables, hfs.OS)
+	e3.local = true
+	hfs.digester.batchDigestForABFS(opCtx, []digestReq{{fname: dep3Path, e: e3}})
+	if got := e3.digest(); got != wantDep3 {
+		t.Errorf("input_stamp3.d digest = %v; want %v", got, wantDep3)
+	}
+
+	for _, rel := range []string{"out/input_stamp", "out/input_stamp.d", "out/input_stamp2.d", "out/input_stamp3.d"} {
+		if got := fake.GetRBEDigests()[rel]; got != 0 {
+			t.Errorf("fake.GetRBEDigests()[%q] = %d; want 0", rel, got)
+		}
+	}
+}
+
+type fakeFSLocalSource struct {
+	name     string
+	content  string
+	fsDigest digest.Digest
+	fsCalls  atomic.Int32
+}
+
+func (*fakeFSLocalSource) IsLocal() {}
+
+func (s *fakeFSLocalSource) Open(context.Context) (io.ReadCloser, error) {
+	return io.NopCloser(strings.NewReader(s.content)), nil
+}
+
+func (s *fakeFSLocalSource) String() string {
+	return s.name
+}
+
+func (s *fakeFSLocalSource) FileDigestFromFS(context.Context) (digest.Digest, error) {
+	s.fsCalls.Add(1)
+	return s.fsDigest, nil
+}
+
+// TestDigester_NoABFSKeepsFileDigestFromFS verifies that non-ABFS backends
+// (such as Cog xattr or CartFS) still use FileDigestFromFS when ABFS is nil,
+// while ABFS bypasses FileDigestFromFS for locally generated outputs.
+func TestDigester_NoABFSKeepsFileDigestFromFS(t *testing.T) {
+	ctx := t.Context()
+	dir, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	fsDigest := digest.SHA256.FromBytes([]byte("from-fs-digest"))
+	localContent := "local-bytes"
+	localDigest := digest.SHA256.FromBytes([]byte(localContent))
+
+	hfs, err := New(ctx, Option{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer hfs.Close(ctx)
+
+	fname := filepath.Join(dir, "out", "local.txt")
+	src := &fakeFSLocalSource{name: fname, content: localContent, fsDigest: fsDigest}
+	e := newLocalEntry()
+	e.src = src
+	e.local = true
+	e.size = int64(len(localContent))
+	e.mtime = time.Now().Add(-time.Second)
+	e.cmdhash = []byte("cmdhash")
+
+	hfs.digester.compute(ctx, fname, e)
+	if got := e.digest(); got != fsDigest {
+		t.Errorf("compute without ABFS got digest %v; want %v", got, fsDigest)
+	}
+	if got := src.fsCalls.Load(); got != 1 {
+		t.Errorf("compute without ABFS fsCalls = %d; want 1", got)
+	}
+
+	// Verify State() fallback also keeps FileDigestFromFS when ABFS is nil.
+	fnameState := filepath.Join(dir, "out", "state.txt")
+	srcState := &fakeFSLocalSource{name: fnameState, content: localContent, fsDigest: fsDigest}
+	eState := newLocalEntry()
+	eState.src = srcState
+	eState.local = true
+	eState.size = int64(len(localContent))
+	eState.mtime = time.Now().Add(-time.Second)
+	eState.cmdhash = []byte("cmdhash")
+	if _, _, err := hfs.directory.store(ctx, path.Path(filepath.ToSlash(fnameState)), eState); err != nil {
+		t.Fatalf("store %s: %v", fnameState, err)
+	}
+	_ = hfs.State(ctx)
+	if got := eState.digest(); got != fsDigest {
+		t.Errorf("State without ABFS got digest %v; want %v", got, fsDigest)
+	}
+	if got := srcState.fsCalls.Load(); got != 1 {
+		t.Errorf("State without ABFS fsCalls = %d; want 1", got)
+	}
+
+	// With ABFS configured, local outputs must skip FileDigestFromFS and hash
+	// local bytes directly.
+	sock := testSockPath(t)
+	fake := &abfsutil.Fake{Dir: dir}
+	abfs := fake.Start(ctx, t, sock)
+	hfsABFS, err := New(ctx, Option{ABFS: abfs})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer hfsABFS.Close(ctx)
+
+	srcABFS := &fakeFSLocalSource{name: fname, content: localContent, fsDigest: fsDigest}
+	eABFS := newLocalEntry()
+	eABFS.src = srcABFS
+	eABFS.local = true
+	eABFS.size = int64(len(localContent))
+	hfsABFS.digester.compute(ctx, fname, eABFS)
+	if got := eABFS.digest(); got != localDigest {
+		t.Errorf("compute with ABFS got digest %v; want %v", got, localDigest)
+	}
+	if got := srcABFS.fsCalls.Load(); got != 0 {
+		t.Errorf("compute with ABFS fsCalls = %d; want 0", got)
 	}
 }
