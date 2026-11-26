@@ -4,8 +4,8 @@ go 1.27.4
 
 require (
 	cloud.google.com/go/longrunning v1.1.0
-	google.golang.org/genproto/googleapis/api v0.0.0-20260817212433-ac3dfec99bb1
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20260817212433-ac3dfec99bb1
+	google.golang.org/genproto/googleapis/api v0.0.0-20261123191846-1e707ab9fbc2
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20261123191846-1e707ab9fbc2
 	google.golang.org/grpc v1.85.0
 	google.golang.org/protobuf v1.36.12
 )
