@@ -24,6 +24,7 @@ import (
 	"go.chromium.org/build/siso/o11y/trace"
 	"go.chromium.org/build/siso/path"
 	"go.chromium.org/build/siso/reapi"
+	"go.chromium.org/build/siso/toolsupport/cmdutil"
 	"go.chromium.org/build/siso/toolsupport/msvcutil"
 	"go.chromium.org/build/siso/ui"
 )
@@ -200,6 +201,17 @@ func (b *Builder) runStep(ctx context.Context, step *Step) (retErr error) {
 		}
 		clog.Warningf(ctx, "handle step failure: %v", err)
 	}
+	if err := cmdutil.CheckCommandLine(step.cmd.Args); err != nil {
+		res := cmdOutput(ctx, cmdOutputResultFAILED, step.cmd,
+			b.reapiclient.Instance(), step.def.Binding("command"),
+			step.def.RuleName(), err)
+		step.cmd.SetOutputResult(b.logOutput(res, step.cmd.Console))
+		return StepError{
+			Target: step.outputPaths[0],
+			Cause:  err,
+		}
+	}
+
 	err = b.setupRSP(ctx, step)
 	if err != nil {
 		res := cmdOutput(ctx, cmdOutputResultFAILED, step.cmd, b.reapiclient.Instance(), step.def.Binding("command"), step.def.RuleName(), err)
