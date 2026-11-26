@@ -23,7 +23,7 @@ import (
 	"cloud.google.com/go/compute/metadata"
 	"cloud.google.com/go/logging"
 	"cloud.google.com/go/profiler"
-	cloudmetric "github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/metric"
+	cloudmetric "github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/metric" //nolint:staticcheck // SA1019: deprecated in v0.62.0; migrate to OTLP exporter
 	log "github.com/golang/glog"
 	"github.com/klauspost/cpuid/v2"
 	"go.opentelemetry.io/otel"
@@ -187,6 +187,7 @@ func (c *Command) initCloudMonitoring(ctx context.Context, credential cred.Cred,
 		}
 	}
 	if exporter == nil {
+		//nolint:staticcheck // SA1019: cloudmetric deprecated in v0.62.0; migrate to OTLP exporter.
 		exporter, err = cloudmetric.New(
 			cloudmetric.WithProjectID(metricsProject),
 			cloudmetric.WithMonitoringClientOptions(credential.ClientOptions()...),
