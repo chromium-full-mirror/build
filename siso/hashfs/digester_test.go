@@ -441,6 +441,44 @@ func TestDigester_ABFSTapOutputBypassesABFSAndSemaphore(t *testing.T) {
 	if got := fake.GetRBEDigests()["out/discovered.o"]; got != 0 {
 		t.Errorf(`fake.GetRBEDigests()["out/discovered.o"] = %d; want 0`, got)
 	}
+
+	// Also verify replacing a prior non-local entry that carried a cmdhash
+	// does not clear e.local via cmdhash inheritance in shouldKeep.
+	prevPath := filepath.Join(abfsDir, "out", "prev_remote.o")
+	wantPrev := writePastFile(t, prevPath, "local-bytes")
+	prev := newLocalEntry()
+	prev.init(opCtx, prevPath, hfs.executables, hfs.OS)
+	prev.cmdhash = []byte("remote-cmd")
+	prev.local = false
+	if _, _, err := hfs.directory.store(opCtx, path.Path(filepath.ToSlash(prevPath)), prev); err != nil {
+		t.Fatalf("store prev_remote.o: %v", err)
+	}
+	if err := hfs.Update(opCtx, abfsDir, []UpdateEntry{{
+		Name:        "out/prev_remote.o",
+		Mode:        0644,
+		ModTime:     now,
+		UpdatedTime: now,
+		IsChanged:   true,
+		IsLocal:     true,
+	}}); err != nil {
+		t.Fatalf("Update prev_remote.o while abfsDigestSemaphore saturated: %v", err)
+	}
+	ePrev, _, _, ok := hfs.dirLookup(ctx, abfsDir, "out/prev_remote.o")
+	if !ok {
+		t.Fatal("out/prev_remote.o not found")
+	}
+	if !ePrev.isLocal() {
+		t.Error("out/prev_remote.o is not local")
+	}
+	if len(ePrev.cmdhash) != 0 {
+		t.Errorf("out/prev_remote.o cmdhash = %q; want empty", ePrev.cmdhash)
+	}
+	if got := ePrev.digest(); got != wantPrev {
+		t.Errorf("out/prev_remote.o digest = %v; want %v", got, wantPrev)
+	}
+	if got := fake.GetRBEDigests()["out/prev_remote.o"]; got != 0 {
+		t.Errorf(`fake.GetRBEDigests()["out/prev_remote.o"] = %d; want 0`, got)
+	}
 }
 
 type fakeFSLocalSource struct {

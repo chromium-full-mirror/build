@@ -180,6 +180,11 @@ func shouldKeep(ctx context.Context, origFname path.Path, ee, e *entry, isProbe 
 		return ee, true
 	}
 	eed := ee.digest()
+	// local file replaces non-local entry (e.g. disk probe),
+	// so its digest is calculated locally, not by ABFS.
+	if e.mode.IsRegular() && e.local && !ee.isLocal() {
+		return e, false
+	}
 	// old entry has cmdhash, but new entry has no cmdhash&action (not by Update*).
 	if len(ee.cmdhash) > 0 && len(e.cmdhash) == 0 && e.action.IsZero() {
 		// keep cmdhash and action
@@ -187,11 +192,6 @@ func shouldKeep(ctx context.Context, origFname path.Path, ee, e *entry, isProbe 
 		e.edgehash = ee.edgehash
 		e.action = ee.action
 		e.local = ee.local
-	}
-	// local file replaces non-local entry (e.g. disk probe),
-	// so its digest is calculated locally, not by ABFS.
-	if e.mode.IsRegular() && e.local && !ee.isLocal() {
-		return e, false
 	}
 	cmdchanged := !bytes.Equal(ee.cmdhash, e.cmdhash)
 	edgechanged := !bytes.Equal(ee.edgehash, e.edgehash)
