@@ -7,11 +7,13 @@ package scandeps
 import (
 	"context"
 	"errors"
+	"fmt"
 	"hash/maphash"
 	"os"
 	"path/filepath"
 	"runtime"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -131,5 +133,122 @@ func TestSetFileNegativeDoesNotWinOverRegular(t *testing.T) {
 	got := fsys.setFile(root, fname, &scanResult{})
 	if got == nil {
 		t.Fatal("setFile returned nil after a negative entry was cached; scanFile would nil-deref on sr.mu.Lock()")
+	}
+}
+
+func setupReadDirBench(b *testing.B) (*filesystem, string, []path.Path) {
+	b.Helper()
+	ctx := b.Context()
+	dir := tempDir(b)
+
+	const numDirs = 64
+	dirs := make([]path.Path, numDirs)
+	for i := range numDirs {
+		d := fmt.Sprintf("inc%02d", i)
+		full := filepath.Join(dir, d)
+		if err := os.MkdirAll(full, 0755); err != nil {
+			b.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(full, "h.h"), nil, 0644); err != nil {
+			b.Fatal(err)
+		}
+		dirs[i] = path.FromClean(d)
+	}
+
+	hfs, err := hashfs.New(ctx, hashfs.Option{})
+	if err != nil {
+		b.Fatal(err)
+	}
+	b.Cleanup(func() {
+		if err := hfs.Close(context.WithoutCancel(ctx)); err != nil {
+			b.Errorf("hfs.Close: %v", err)
+		}
+	})
+	fsys := &filesystem{
+		hashfs: hfs,
+		seed:   maphash.MakeSeed(),
+	}
+
+	// Warm up dircache so every measured call hits the cached ready path.
+	if _, _, err := fsys.ReadDir(ctx, dir, ""); err != nil {
+		b.Fatal(err)
+	}
+	for _, d := range dirs {
+		if _, _, err := fsys.ReadDir(ctx, dir, d); err != nil {
+			b.Fatal(err)
+		}
+	}
+	return fsys, dir, dirs
+}
+
+func BenchmarkReadDirSerial(b *testing.B) {
+	fsys, dir, dirs := setupReadDirBench(b)
+	ctx := b.Context()
+	b.ReportAllocs()
+	for b.Loop() {
+		if _, _, err := fsys.ReadDir(ctx, dir, dirs[0]); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+// BenchmarkReadDirParallel measures concurrent cached filesystem.ReadDir calls
+// across directory access patterns (workspace root "" bypasses path.JoinRoot's
+// sharded RWMutex, same_dir hits one subdir, multi_dir cycles across 64 dirs)
+// and context sharing modes (shared_ctx models concurrent scandeps workers
+// sharing the build context; per_worker_ctx isolates contention to dircache).
+func BenchmarkReadDirParallel(b *testing.B) {
+	fsys, dir, dirs := setupReadDirBench(b)
+	dirCases := []struct {
+		name string
+		dirs []path.Path
+	}{
+		{name: "root", dirs: []path.Path{""}},
+		{name: "same_dir", dirs: dirs[:1]},
+		{name: "multi_dir", dirs: dirs},
+	}
+	ctxCases := []struct {
+		name      string
+		perWorker bool
+	}{
+		{name: "shared_ctx", perWorker: false},
+		{name: "per_worker_ctx", perWorker: true},
+	}
+	for _, dc := range dirCases {
+		b.Run(dc.name, func(b *testing.B) {
+			for _, cc := range ctxCases {
+				b.Run(cc.name, func(b *testing.B) {
+					var workerID atomic.Int64
+					b.ReportAllocs()
+					b.ResetTimer()
+					b.RunParallel(func(pb *testing.PB) {
+						ctx := b.Context()
+						if cc.perWorker {
+							var cancel context.CancelFunc
+							ctx, cancel = context.WithCancel(ctx)
+							defer cancel()
+						}
+						if len(dc.dirs) == 1 {
+							d := dc.dirs[0]
+							for pb.Next() {
+								if _, _, err := fsys.ReadDir(ctx, dir, d); err != nil {
+									b.Error(err)
+									return
+								}
+							}
+							return
+						}
+						i := int(workerID.Add(1))
+						for pb.Next() {
+							if _, _, err := fsys.ReadDir(ctx, dir, dc.dirs[i%len(dc.dirs)]); err != nil {
+								b.Error(err)
+								return
+							}
+							i++
+						}
+					})
+				})
+			}
+		})
 	}
 }

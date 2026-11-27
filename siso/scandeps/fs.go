@@ -10,6 +10,7 @@ import (
 	"hash/maphash"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	log "github.com/golang/glog"
 
@@ -49,7 +50,12 @@ type filesystem struct {
 }
 
 type dircache struct {
-	ready          chan struct{}
+	// when ready is true, wait is already closed and other fields are
+	// ready to use.
+	ready atomic.Bool
+	// wait waits for setting up other fields.
+	wait chan struct{}
+
 	m              sync.Map
 	symlinkTargets []string
 	err            error
@@ -80,7 +86,7 @@ func (fsys *filesystem) update(ctx context.Context, fi *hashfs.FileInfo) {
 		}
 		dc := v.(*dircache)
 		select {
-		case <-dc.ready:
+		case <-dc.wait:
 		default:
 			clog.Infof(ctx, "update race ReadDir&update %s", fi.Path())
 			fsys.dircache.Delete(dname)
@@ -142,7 +148,7 @@ func (fsys *filesystem) ReadDir(ctx context.Context, workspaceRoot string, dname
 	dv, loaded := fsys.dircache.Load(fullpath)
 	if !loaded {
 		dv, loaded = fsys.dircache.LoadOrStore(fullpath, &dircache{
-			ready: make(chan struct{}),
+			wait: make(chan struct{}),
 		})
 	}
 
@@ -184,13 +190,17 @@ func (fsys *filesystem) ReadDir(ctx context.Context, workspaceRoot string, dname
 				}
 				walkName = walkName.Dir()
 			}
-			close(dc.ready)
+			close(dc.wait)
+			dc.ready.Store(true)
 		}()
 	}
-	select {
-	case <-ctx.Done():
-		return nil, nil, fmt.Errorf("readdirnames[wait]: %w", context.Cause(ctx))
-	case <-dc.ready:
+	// skip to select to reduce lock contention in channels.
+	if !dc.ready.Load() {
+		select {
+		case <-ctx.Done():
+			return nil, nil, fmt.Errorf("readdirnames[wait]: %w", context.Cause(ctx))
+		case <-dc.wait:
+		}
 	}
 	if dc.err != nil {
 		return nil, dc.symlinkTargets, dc.err

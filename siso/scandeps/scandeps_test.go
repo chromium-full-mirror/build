@@ -5,6 +5,7 @@
 package scandeps
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -24,12 +25,12 @@ import (
 // mac uses /tmp -> private/tmp symlink, so TempDir may contains
 // symlink in the path, which confuses hashfs, so use EvalSymlinks
 // to make it real path.
-func tempDir(t *testing.T) string {
-	t.Helper()
-	dir := t.TempDir()
+func tempDir(tb testing.TB) string {
+	tb.Helper()
+	dir := tb.TempDir()
 	dir, err := filepath.EvalSymlinks(dir)
 	if err != nil {
-		t.Fatal(err)
+		tb.Fatal(err)
 	}
 	return dir
 }
@@ -1078,4 +1079,91 @@ func TestScanDeps_PrematurePopDir(t *testing.T) {
 	if diff := cmp.Diff(want, got, cmpopts.SortSlices(func(a, b path.Path) bool { return a < b })); diff != "" {
 		t.Errorf("scandeps diff -want +got:\n%s", diff)
 	}
+}
+
+func setupScanDepsBench(b *testing.B) (*ScanDeps, string, Request) {
+	b.Helper()
+	ctx := b.Context()
+	dir := tempDir(b)
+
+	const numDirs = 64
+	dirs := make([]path.Path, 0, numDirs+1)
+	dirs = append(dirs, "")
+	for i := range numDirs {
+		d := fmt.Sprintf("inc%02d", i)
+		full := filepath.Join(dir, d)
+		if err := os.MkdirAll(full, 0755); err != nil {
+			b.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(full, fmt.Sprintf("h%02d.h", i)), nil, 0644); err != nil {
+			b.Fatal(err)
+		}
+		dirs = append(dirs, path.FromClean(d))
+	}
+
+	for fname, content := range map[string]string{
+		"apps/apps.cc": `#include "apps/apps.h"
+#include "h00.h"
+#include "h01.h"
+#include "h02.h"
+`,
+		"apps/apps.h": `#include "h03.h"
+`,
+	} {
+		full := filepath.Join(dir, fname)
+		if err := os.MkdirAll(filepath.Dir(full), 0755); err != nil {
+			b.Fatal(err)
+		}
+		if err := os.WriteFile(full, []byte(content), 0644); err != nil {
+			b.Fatal(err)
+		}
+	}
+
+	hashFS, err := hashfs.New(ctx, hashfs.Option{})
+	if err != nil {
+		b.Fatal(err)
+	}
+	b.Cleanup(func() {
+		if err := hashFS.Close(context.WithoutCancel(ctx)); err != nil {
+			b.Errorf("hashFS.Close: %v", err)
+		}
+	})
+	scanDeps := New(ctx, hashFS, Options{})
+
+	req := Request{
+		Sources: []path.Path{"apps/apps.cc"},
+		Dirs:    dirs,
+	}
+
+	// Warm up dircache and scanResult cache.
+	if _, err := scanDeps.Scan(ctx, dir, req); err != nil {
+		b.Fatal(err)
+	}
+	return scanDeps, dir, req
+}
+
+func BenchmarkScanDepsSerial(b *testing.B) {
+	scanDeps, dir, req := setupScanDepsBench(b)
+	ctx := b.Context()
+	b.ReportAllocs()
+	for b.Loop() {
+		if _, err := scanDeps.Scan(ctx, dir, req); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkScanDepsParallel(b *testing.B) {
+	scanDeps, dir, req := setupScanDepsBench(b)
+	ctx := b.Context()
+	b.ReportAllocs()
+	b.ResetTimer()
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			if _, err := scanDeps.Scan(ctx, dir, req); err != nil {
+				b.Error(err)
+				return
+			}
+		}
+	})
 }
