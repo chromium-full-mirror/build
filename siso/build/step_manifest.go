@@ -27,6 +27,8 @@ type stepManifest struct {
 	inputs []path.Path
 	// outputs of the step.
 	outputs []path.Path
+	// output that holds the edge hash, without a directory's trailing slash.
+	edgeHashOutput path.Path
 	// hash of inputs/outputs/extra
 	// extra: sandbox
 	edgeHash []byte
@@ -51,11 +53,21 @@ func (b *Builder) newStepManifest(ctx context.Context, stepDef StepDef) *stepMan
 		}
 	}
 	return &stepManifest{
-		cmdHash:  cmdHash,
-		inputs:   inputs,
-		outputs:  outputs,
-		edgeHash: calculateEdgeHash(inputs, outputs, extra),
+		cmdHash:        cmdHash,
+		inputs:         inputs,
+		outputs:        outputs,
+		edgeHashOutput: edgeHashOutput(outputs),
+		edgeHash:       calculateEdgeHash(inputs, outputs, extra),
 	}
+}
+
+// edgeHashOutput returns the output that holds the edge hash of a step:
+// its first output, which a Siso rule's outputs never displace.
+func edgeHashOutput(outputs []path.Path) path.Path {
+	if len(outputs) == 0 {
+		return ""
+	}
+	return path.New(DirTargetPath(string(outputs[0])))
 }
 
 const unitSeparator = "\x1f"

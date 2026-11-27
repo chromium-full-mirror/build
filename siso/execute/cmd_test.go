@@ -722,30 +722,68 @@ func TestRecordOutputsFromLocal_JailDepfileAlsoOutput(t *testing.T) {
 	}
 }
 
-// TestComputeOutputEntries_DirOnlyEdgeHash is a regression test: for a dir-only
-// output (no file Outputs), the edge hash must land on the declared directory
-// entry, not on entries[0] (a flattened child file). outputMtime reads the edge
-// hash from the declared output, and needToRun silently skips edge-change
-// detection when it is empty, so a misplaced edge hash misses rebuilds.
-func TestComputeOutputEntries_DirOnlyEdgeHash(t *testing.T) {
-	c := &Cmd{
-		WorkDir:    "out/Default",
-		OutputDirs: []path.Path{"out/Default/gen"},
-		EdgeHash:   []byte("edge-hash"),
-		CmdHash:    []byte("cmd-hash"),
-	}
-	// entriesFromResult emits flattened child files before the directory node.
-	entries := []hashfs.UpdateEntry{
-		{Name: "out/Default/gen/inner.txt", Entry: &merkletree.Entry{Name: "out/Default/gen/inner.txt"}, Mode: 0644, IsChanged: true},
-		{Name: "out/Default/gen", Entry: &merkletree.Entry{Name: "out/Default/gen"}, Mode: fs.ModeDir | 0755, IsChanged: true},
-	}
-	got := c.computeOutputEntries(entries, time.Unix(2000, 0), c.CmdHash)
-	byName := make(map[string]hashfs.UpdateEntry, len(got))
-	for _, e := range got {
-		byName[string(e.Name)] = e
-	}
-	if string(byName["out/Default/gen"].EdgeHash) != string(c.EdgeHash) {
-		t.Errorf("dir output entry EdgeHash=%q; want %q (edge hash must be on the declared dir output; otherwise outputMtime reads empty and edge changes are missed)", byName["out/Default/gen"].EdgeHash, c.EdgeHash)
+// TestComputeOutputEntries_EdgeHashOutput checks that only EdgeHashOutput
+// gets the edge hash, whatever the order of the entries and of Outputs is.
+func TestComputeOutputEntries_EdgeHashOutput(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		cmd  *Cmd
+	}{
+		{
+			name: "dir-only",
+			cmd: &Cmd{
+				OutputDirs:     []path.Path{"out/Default/gen"},
+				EdgeHashOutput: "out/Default/gen",
+			},
+		},
+		{
+			// A two-phase cache hit puts the outputs that tap discovered,
+			// and the directories, into Outputs.
+			name: "dir-only-after-cache-replay",
+			cmd: &Cmd{
+				Outputs:        []path.Path{"out/Default/a.txt", "out/Default/gen"},
+				OutputDirs:     []path.Path{"out/Default/gen"},
+				EdgeHashOutput: "out/Default/gen",
+			},
+		},
+		{
+			name: "dir-before-file",
+			cmd: &Cmd{
+				Outputs:        []path.Path{"out/Default/a.txt"},
+				OutputDirs:     []path.Path{"out/Default/gen"},
+				EdgeHashOutput: "out/Default/gen",
+			},
+		},
+		{
+			name: "file-before-dir",
+			cmd: &Cmd{
+				Outputs:        []path.Path{"out/Default/a.txt"},
+				OutputDirs:     []path.Path{"out/Default/gen"},
+				EdgeHashOutput: "out/Default/a.txt",
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := tc.cmd
+			c.WorkDir = "out/Default"
+			c.EdgeHash = []byte("edge-hash")
+			c.CmdHash = []byte("cmd-hash")
+			// entriesFromResult emits files before the directory node.
+			entries := []hashfs.UpdateEntry{
+				{Name: "out/Default/a.txt", Entry: &merkletree.Entry{Name: "out/Default/a.txt"}, Mode: 0644, IsChanged: true},
+				{Name: "out/Default/gen/inner.txt", Entry: &merkletree.Entry{Name: "out/Default/gen/inner.txt"}, Mode: 0644, IsChanged: true},
+				{Name: "out/Default/gen", Entry: &merkletree.Entry{Name: "out/Default/gen"}, Mode: fs.ModeDir | 0755, IsChanged: true},
+			}
+			for _, e := range c.computeOutputEntries(entries, time.Unix(2000, 0), c.CmdHash) {
+				want := ""
+				if e.Name == c.EdgeHashOutput {
+					want = "edge-hash"
+				}
+				if string(e.EdgeHash) != want {
+					t.Errorf("EdgeHash of %s=%q; want %q", e.Name, e.EdgeHash, want)
+				}
+			}
+		})
 	}
 }
 

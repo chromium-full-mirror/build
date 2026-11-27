@@ -691,13 +691,14 @@ func TestTapCanonicalizeCmd_UnlinkBeforeWriteAndDiscoveredOutputs(t *testing.T) 
 	cmdHash := []byte("declared-cmd-hash")
 	edgeHash := []byte("declared-edge-hash")
 	cmd := &execute.Cmd{
-		WorkspaceRoot: wsDir,
-		WorkDir:       "out/siso",
-		Inputs:        []path.Path{path.New("input.txt")},
-		Outputs:       []path.Path{declaredRel},
-		CmdHash:       cmdHash,
-		EdgeHash:      edgeHash,
-		HashFS:        hfs,
+		WorkspaceRoot:  wsDir,
+		WorkDir:        "out/siso",
+		Inputs:         []path.Path{path.New("input.txt")},
+		Outputs:        []path.Path{declaredRel},
+		CmdHash:        cmdHash,
+		EdgeHash:       edgeHash,
+		EdgeHashOutput: declaredRel,
+		HashFS:         hfs,
 	}
 	cmd.InitOutputs()
 

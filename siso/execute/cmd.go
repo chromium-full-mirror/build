@@ -88,6 +88,9 @@ type Cmd struct {
 	// EdgeHash is a hash of the inputs/outputs paths, which is used to check for changes in the inputs/outputs since it was last executed.
 	EdgeHash []byte
 
+	// EdgeHashOutput is the output that EdgeHash is stored on.
+	EdgeHashOutput path.Path
+
 	// WorkspaceRoot is the path to the workspace of this cmd.
 	WorkspaceRoot string
 
@@ -1517,22 +1520,12 @@ func (c *Cmd) computeOutputEntries(entries []hashfs.UpdateEntry, updatedTime tim
 		}
 	}
 
-	var output path.Path
-	if len(c.Outputs) > 0 {
-		output = c.Outputs[0]
-	} else if len(c.OutputDirs) > 0 {
-		// Dir-only output: attach the edge hash to the declared directory, not
-		// to entries[0] (a flattened child); outputMtime reads the edge hash
-		// from the declared output, and an empty one silently disables
-		// edge-change detection.
-		output = c.OutputDirs[0]
-	}
 	ret := make([]hashfs.UpdateEntry, 0, len(entries))
 	// Set cmdhash, updatedTime.
 	// also isChanged=true if entry has been changed.
-	for i, ent := range entries {
+	for _, ent := range entries {
 		ent.CmdHash = cmdhash
-		if i == 0 || ent.Name == output {
+		if ent.Name == c.EdgeHashOutput {
 			ent.EdgeHash = c.EdgeHash
 		}
 		ent.UpdatedTime = updatedTime

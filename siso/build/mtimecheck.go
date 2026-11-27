@@ -83,7 +83,7 @@ func (b *Builder) checkUpToDate(ctx context.Context, stepDef StepDef, stepManife
 
 	generator := stepDef.Binding("generator") != ""
 
-	out0, outmtime, cmdhash, edgehash := outputMtime(ctx, b, stepManifest.outputs, stepDef.Binding("restat") != "")
+	out0, outmtime, cmdhash, edgehash := outputMtime(ctx, b, stepManifest.outputs, stepManifest.edgeHashOutput, stepDef.Binding("restat") != "")
 	lastIn, inmtime, err := inputMtime(ctx, b, stepDef)
 
 	// TODO(b/288419130): make sure it covers all cases as ninja does.
@@ -128,8 +128,12 @@ func (b *Builder) checkUpToDate(ctx context.Context, stepDef StepDef, stepManife
 		return false
 	}
 	if len(edgehash) == 0 {
-		// old version of siso didn't record edgehash...
-		// TODO: remove this condition?
+		if len(cmdhash) > 0 {
+			clog.Infof(ctx, "need: no edgehash on %s", stepManifest.edgeHashOutput)
+			fmt.Fprintf(b.explainWriter, "edge changed for %s\n", outname)
+			return false
+		}
+		// Output written outside Siso (e.g. a generator) has neither hash.
 		clog.Warningf(ctx, "missing edgehash in output")
 	} else if !bytes.Equal(edgehash, stepManifest.edgeHash) {
 		reasonLog := fmt.Sprintf("edgehash differ %q -> %q", base64.StdEncoding.EncodeToString(edgehash), base64.StdEncoding.EncodeToString(stepManifest.edgeHash))
@@ -207,7 +211,8 @@ func (b *Builder) checkUpToDate(ctx context.Context, stepDef StepDef, stepManife
 
 // outputMtime returns the oldest modified output, its timestamp and
 // command hash / edge hash that produced the outputs of the step.
-func outputMtime(ctx context.Context, b *Builder, outputs []path.Path, restat bool) (path.Path, time.Time, []byte, []byte) {
+// It reads the edge hash from edgeHashOutput.
+func outputMtime(ctx context.Context, b *Builder, outputs []path.Path, edgeHashOutput path.Path, restat bool) (path.Path, time.Time, []byte, []byte) {
 	var oerr error
 	var outmtime time.Time
 	var outcmdhash []byte
@@ -228,13 +233,15 @@ func outputMtime(ctx context.Context, b *Builder, outputs []path.Path, restat bo
 		}
 		if i == 0 {
 			outcmdhash = fi.CmdHash()
-			edgehash = fi.EdgeHash()
 		}
 		if !bytes.Equal(outcmdhash, fi.CmdHash()) {
 			if log.V(1) {
 				clog.Infof(ctx, "out-cmdhash differ %s %s->%s", outPath, base64.StdEncoding.EncodeToString(outcmdhash), base64.StdEncoding.EncodeToString(fi.CmdHash()))
 			}
 			outcmdhash = nil
+		}
+		if path.New(statPath) == edgeHashOutput {
+			edgehash = fi.EdgeHash()
 		}
 		var t time.Time
 		if restat {

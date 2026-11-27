@@ -656,6 +656,7 @@ func newCmd(ctx context.Context, b *Builder, stepDef StepDef, stepManifest *step
 		Outputs:                 stepFileOutputs(outputs),
 		OutputDirs:              stepDirOutputs(outputs),
 		EdgeHash:                stepManifest.edgeHash,
+		EdgeHashOutput:          stepManifest.edgeHashOutput,
 		UseSystemInput:          stepDef.Binding("use_system_input") != "",
 		Deps:                    stepDef.Binding("deps"),
 		Depfile:                 stepDef.Depfile(ctx),
