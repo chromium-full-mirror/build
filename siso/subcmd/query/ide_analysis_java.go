@@ -106,7 +106,7 @@ func (a *ideAnalyzer) appendIndirectJavaBuildableUnits(ctx context.Context, edge
 	if isFinalCommand {
 		// command line for the final step.
 		cmdArgs := edgeCmdArgs(edge)
-		if len(cmdArgs) > 2 && strings.Contains(cmdArgs[0], "python") && cmdArgs[1] == "../../build/android/gyp/compile_java.py" {
+		if isCompileJavaCmd(cmdArgs) {
 			// chromium specific handling
 			// drop --java-srcjars
 			// TODO(b/337982520): need to use srcjars?
@@ -224,6 +224,19 @@ func (a *ideAnalyzer) appendIndirectJavaBuildableUnits(ctx context.Context, edge
 	buildableUnits[buildableUnit.Id] = buildableUnit
 
 	return []string{buildableUnit.Id}, nil
+}
+
+func isCompileJavaCmd(cmdArgs []string) bool {
+	if len(cmdArgs) < 2 || !strings.Contains(cmdArgs[0], "python") {
+		return false
+	}
+	for _, arg := range cmdArgs[1:] {
+		if strings.HasPrefix(arg, "-") {
+			continue
+		}
+		return arg == "../../build/android/gyp/compile_java.py" || arg == "obj/build/android/compile_java.pyz"
+	}
+	return false
 }
 
 func needJavaBuildableUnit(edge *ninjautil.Edge) bool {

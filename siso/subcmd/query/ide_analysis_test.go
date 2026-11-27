@@ -521,6 +521,51 @@ func testIDEAnalysis(t *testing.T, fn digest.Function) {
 	})
 }
 
+func TestIsCompileJavaCmd(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		cmdArgs []string
+		want    bool
+	}{
+		{
+			name:    "compile_java.py",
+			cmdArgs: []string{"python3", "../../build/android/gyp/compile_java.py", "--jar-path=a.jar"},
+			want:    true,
+		},
+		{
+			name:    "compile_java.py_with_flags",
+			cmdArgs: []string{"../../third_party/cpython3/host/bin/python3", "-ES", "../../build/android/gyp/compile_java.py", "--jar-path=a.jar"},
+			want:    true,
+		},
+		{
+			name:    "compile_java.pyz",
+			cmdArgs: []string{"python3", "obj/build/android/compile_java.pyz", "--jar-path=a.jar"},
+			want:    true,
+		},
+		{
+			name:    "compile_java.pyz_with_flags",
+			cmdArgs: []string{"../../third_party/cpython3/host/bin/python3", "-ES", "obj/build/android/compile_java.pyz", "--jar-path=a.jar"},
+			want:    true,
+		},
+		{
+			name:    "other_script_with_compile_java_arg",
+			cmdArgs: []string{"python3", "-ES", "../../build/create_pyz.py", "--script", "../../build/android/gyp/compile_java.py"},
+			want:    false,
+		},
+		{
+			name:    "non_python",
+			cmdArgs: []string{"javac", "Foo.java", "-d", "out"},
+			want:    false,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := isCompileJavaCmd(tc.cmdArgs); got != tc.want {
+				t.Errorf("isCompileJavaCmd(%q) = %v; want %v", tc.cmdArgs, got, tc.want)
+			}
+		})
+	}
+}
+
 func setupBuildNinja(t *testing.T, fname string) {
 	t.Helper()
 	err := os.WriteFile(fname, []byte(`
