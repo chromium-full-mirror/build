@@ -6,21 +6,32 @@ package reapi
 
 import (
 	"bytes"
+	"compress/flate"
+	"context"
 	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
 	"math/rand/v2"
+	"net"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 
 	"github.com/klauspost/compress/zstd"
+	statuspb "google.golang.org/genproto/googleapis/rpc/status"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/status"
+	"google.golang.org/grpc/test/bufconn"
 	"google.golang.org/protobuf/proto"
 
 	"go.chromium.org/build/hashigo/digest"
 	rpb "go.chromium.org/build/remote-apis/build/bazel/remote/execution/v2"
 
+	"go.chromium.org/build/siso/auth/cred"
 	"go.chromium.org/build/siso/blob"
 )
 
@@ -614,5 +625,479 @@ func TestCreateBatchUpdateBlobsRequestsWithCompression(t *testing.T) {
 	}
 	if m := missingBlobs.Size(); m != 0 {
 		t.Errorf("missingBlobs=%d; want=0", m)
+	}
+}
+
+type fakeBatchReadCAS struct {
+	rpb.UnimplementedContentAddressableStorageServer
+
+	mu   sync.Mutex
+	reqs []*rpb.BatchReadBlobsRequest
+	fn   func(ctx context.Context, req *rpb.BatchReadBlobsRequest, call int) (*rpb.BatchReadBlobsResponse, error)
+}
+
+func (f *fakeBatchReadCAS) BatchReadBlobs(ctx context.Context, req *rpb.BatchReadBlobsRequest) (*rpb.BatchReadBlobsResponse, error) {
+	f.mu.Lock()
+	call := len(f.reqs)
+	f.reqs = append(f.reqs, req)
+	fn := f.fn
+	f.mu.Unlock()
+	return fn(ctx, req, call)
+}
+
+func (f *fakeBatchReadCAS) requests() []*rpb.BatchReadBlobsRequest {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return slices.Clone(f.reqs)
+}
+
+func newBatchReadTestClient(t *testing.T, casSrv rpb.ContentAddressableStorageServer, opt Option) *Client {
+	t.Helper()
+	ctx := t.Context()
+	lis := bufconn.Listen(1 << 20)
+	srv := grpc.NewServer()
+	rpb.RegisterContentAddressableStorageServer(srv, casSrv)
+	go srv.Serve(lis)
+	t.Cleanup(srv.Stop)
+
+	conn, err := grpc.NewClient("passthrough:///bufnet",
+		grpc.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) {
+			return lis.DialContext(ctx)
+		}),
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	)
+	if err != nil {
+		t.Fatalf("grpc.NewClient: %v", err)
+	}
+	if opt.Instance == "" {
+		opt.Instance = "projects/test/instances/default"
+	}
+	c, err := NewFromConn(ctx, opt, cred.Cred{}, conn, conn, conn)
+	if err != nil {
+		conn.Close()
+		t.Fatalf("NewFromConn: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := c.Close(); err != nil {
+			t.Errorf("Client.Close: %v", err)
+		}
+	})
+	return c
+}
+
+func flateEncode(t *testing.T, data []byte) []byte {
+	t.Helper()
+	var out bytes.Buffer
+	w, err := flate.NewWriter(&out, flate.DefaultCompression)
+	if err != nil {
+		t.Fatalf("flate.NewWriter: %v", err)
+	}
+	if _, err := w.Write(data); err != nil {
+		t.Fatalf("flate write: %v", err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatalf("flate close: %v", err)
+	}
+	return out.Bytes()
+}
+
+func TestGetWithBatchReadBlobs(t *testing.T) {
+	payload := []byte("hello batch read blobs test payload")
+	d := digest.SHA256.FromBytes(payload)
+	zstdData := zstdEncode(t, payload)
+	deflateData := flateEncode(t, payload)
+
+	for _, tc := range []struct {
+		name            string
+		opt             Option
+		fn              func(ctx context.Context, req *rpb.BatchReadBlobsRequest, call int) (*rpb.BatchReadBlobsResponse, error)
+		wantCalls       int
+		wantCompressors []rpb.Compressor_Value
+	}{
+		{
+			name: "identity_nil_status",
+			fn: func(_ context.Context, req *rpb.BatchReadBlobsRequest, _ int) (*rpb.BatchReadBlobsResponse, error) {
+				return &rpb.BatchReadBlobsResponse{
+					Responses: []*rpb.BatchReadBlobsResponse_Response{
+						{
+							Digest:     req.Digests[0],
+							Data:       payload,
+							Compressor: rpb.Compressor_IDENTITY,
+						},
+					},
+				}, nil
+			},
+			wantCalls: 1,
+		},
+		{
+			name: "zstd",
+			opt: Option{
+				BatchCompressedBlob: 1,
+			},
+			fn: func(_ context.Context, req *rpb.BatchReadBlobsRequest, _ int) (*rpb.BatchReadBlobsResponse, error) {
+				return &rpb.BatchReadBlobsResponse{
+					Responses: []*rpb.BatchReadBlobsResponse_Response{
+						{
+							Digest:     req.Digests[0],
+							Data:       zstdData,
+							Compressor: rpb.Compressor_ZSTD,
+							Status:     &statuspb.Status{Code: int32(codes.OK)},
+						},
+					},
+				}, nil
+			},
+			wantCalls:       1,
+			wantCompressors: []rpb.Compressor_Value{rpb.Compressor_ZSTD, rpb.Compressor_DEFLATE},
+		},
+		{
+			name: "deflate",
+			opt: Option{
+				BatchCompressedBlob: 1,
+			},
+			fn: func(_ context.Context, req *rpb.BatchReadBlobsRequest, _ int) (*rpb.BatchReadBlobsResponse, error) {
+				return &rpb.BatchReadBlobsResponse{
+					Responses: []*rpb.BatchReadBlobsResponse_Response{
+						{
+							Digest:     req.Digests[0],
+							Data:       deflateData,
+							Compressor: rpb.Compressor_DEFLATE,
+							Status:     &statuspb.Status{Code: int32(codes.OK)},
+						},
+					},
+				}, nil
+			},
+			wantCalls:       1,
+			wantCompressors: []rpb.Compressor_Value{rpb.Compressor_ZSTD, rpb.Compressor_DEFLATE},
+		},
+		{
+			name: "rpc_error_retriable_then_ok",
+			fn: func(_ context.Context, req *rpb.BatchReadBlobsRequest, call int) (*rpb.BatchReadBlobsResponse, error) {
+				if call == 0 {
+					return nil, status.Error(codes.Unavailable, "transient error")
+				}
+				return &rpb.BatchReadBlobsResponse{
+					Responses: []*rpb.BatchReadBlobsResponse_Response{
+						{
+							Digest: req.Digests[0],
+							Data:   payload,
+							Status: &statuspb.Status{Code: int32(codes.OK)},
+						},
+					},
+				}, nil
+			},
+			wantCalls: 2,
+		},
+		{
+			name: "response_status_retriable_then_ok",
+			fn: func(_ context.Context, req *rpb.BatchReadBlobsRequest, call int) (*rpb.BatchReadBlobsResponse, error) {
+				if call == 0 {
+					return &rpb.BatchReadBlobsResponse{
+						Responses: []*rpb.BatchReadBlobsResponse_Response{
+							{
+								Digest: req.Digests[0],
+								Status: &statuspb.Status{
+									Code:    int32(codes.Unavailable),
+									Message: "temporarily unavailable",
+								},
+							},
+						},
+					}, nil
+				}
+				return &rpb.BatchReadBlobsResponse{
+					Responses: []*rpb.BatchReadBlobsResponse_Response{
+						{
+							Digest: req.Digests[0],
+							Data:   payload,
+							Status: &statuspb.Status{Code: int32(codes.OK)},
+						},
+					},
+				}, nil
+			},
+			wantCalls: 2,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			ctx := t.Context()
+			fake := &fakeBatchReadCAS{fn: tc.fn}
+			c := newBatchReadTestClient(t, fake, tc.opt)
+
+			got, err := c.getWithBatchReadBlobs(ctx, d, "test-blob")
+			if err != nil {
+				t.Fatalf("getWithBatchReadBlobs() error = %v; want nil", err)
+			}
+			if !bytes.Equal(got, payload) {
+				t.Errorf("getWithBatchReadBlobs() = %q; want %q", got, payload)
+			}
+
+			reqs := fake.requests()
+			if len(reqs) != tc.wantCalls {
+				t.Fatalf("BatchReadBlobs calls = %d; want %d", len(reqs), tc.wantCalls)
+			}
+			req := reqs[0]
+			if req.GetInstanceName() != c.opt.Instance {
+				t.Errorf("InstanceName = %q; want %q", req.GetInstanceName(), c.opt.Instance)
+			}
+			if len(req.GetDigests()) != 1 || digest.FromProto(req.Digests[0]) != d {
+				t.Errorf("Digests = %v; want [%v]", req.GetDigests(), d)
+			}
+			if req.GetDigestFunction() != c.digestFn.Value() {
+				t.Errorf("DigestFunction = %v; want %v", req.GetDigestFunction(), c.digestFn.Value())
+			}
+			if !slices.Equal(req.GetAcceptableCompressors(), tc.wantCompressors) {
+				t.Errorf("AcceptableCompressors = %v; want %v", req.GetAcceptableCompressors(), tc.wantCompressors)
+			}
+
+			stats := c.m.Stats()
+			if stats.ROps != 1 || stats.RErrs != 0 || stats.RBytes != int64(len(payload)) {
+				t.Errorf("iometrics = (ROps=%d, RErrs=%d, RBytes=%d); want (1, 0, %d)", stats.ROps, stats.RErrs, stats.RBytes, len(payload))
+			}
+		})
+	}
+}
+
+func TestGetWithBatchReadBlobs_Error(t *testing.T) {
+	payload := []byte("hello batch read blobs test payload")
+	d := digest.SHA256.FromBytes(payload)
+
+	for _, tc := range []struct {
+		name            string
+		fn              func(ctx context.Context, req *rpb.BatchReadBlobsRequest, call int) (*rpb.BatchReadBlobsResponse, error)
+		wantCode        codes.Code
+		wantErrIs       error
+		wantErrContains string
+	}{
+		{
+			name: "rpc_error_non_retriable",
+			fn: func(_ context.Context, _ *rpb.BatchReadBlobsRequest, _ int) (*rpb.BatchReadBlobsResponse, error) {
+				return nil, status.Error(codes.InvalidArgument, "bad request")
+			},
+			wantCode: codes.InvalidArgument,
+		},
+		{
+			name: "empty_responses",
+			fn: func(_ context.Context, _ *rpb.BatchReadBlobsRequest, _ int) (*rpb.BatchReadBlobsResponse, error) {
+				return &rpb.BatchReadBlobsResponse{}, nil
+			},
+			wantCode:        codes.Unknown,
+			wantErrContains: "responses=0",
+		},
+		{
+			name: "too_many_responses",
+			fn: func(_ context.Context, req *rpb.BatchReadBlobsRequest, _ int) (*rpb.BatchReadBlobsResponse, error) {
+				entry := &rpb.BatchReadBlobsResponse_Response{
+					Digest: req.Digests[0],
+					Data:   payload,
+				}
+				return &rpb.BatchReadBlobsResponse{
+					Responses: []*rpb.BatchReadBlobsResponse_Response{entry, entry},
+				}, nil
+			},
+			wantCode:        codes.Unknown,
+			wantErrContains: "responses=2",
+		},
+		{
+			name: "response_status_not_found",
+			fn: func(_ context.Context, req *rpb.BatchReadBlobsRequest, _ int) (*rpb.BatchReadBlobsResponse, error) {
+				return &rpb.BatchReadBlobsResponse{
+					Responses: []*rpb.BatchReadBlobsResponse_Response{
+						{
+							Digest: req.Digests[0],
+							Status: &statuspb.Status{
+								Code:    int32(codes.NotFound),
+								Message: "blob not found",
+							},
+						},
+					},
+				}, nil
+			},
+			wantCode: codes.NotFound,
+		},
+		{
+			name: "response_status_error_with_data",
+			fn: func(_ context.Context, req *rpb.BatchReadBlobsRequest, _ int) (*rpb.BatchReadBlobsResponse, error) {
+				return &rpb.BatchReadBlobsResponse{
+					Responses: []*rpb.BatchReadBlobsResponse_Response{
+						{
+							Digest: req.Digests[0],
+							Data:   payload,
+							Status: &statuspb.Status{
+								Code:    int32(codes.FailedPrecondition),
+								Message: "precondition failed",
+							},
+						},
+					},
+				}, nil
+			},
+			wantCode: codes.FailedPrecondition,
+		},
+		{
+			name: "decode_truncated_data",
+			fn: func(_ context.Context, req *rpb.BatchReadBlobsRequest, _ int) (*rpb.BatchReadBlobsResponse, error) {
+				return &rpb.BatchReadBlobsResponse{
+					Responses: []*rpb.BatchReadBlobsResponse_Response{
+						{
+							Digest: req.Digests[0],
+							Data:   payload[:len(payload)-1],
+							Status: &statuspb.Status{Code: int32(codes.OK)},
+						},
+					},
+				}, nil
+			},
+			wantCode:  codes.Unknown,
+			wantErrIs: io.ErrUnexpectedEOF,
+		},
+		{
+			name: "decode_trailing_data",
+			fn: func(_ context.Context, req *rpb.BatchReadBlobsRequest, _ int) (*rpb.BatchReadBlobsResponse, error) {
+				return &rpb.BatchReadBlobsResponse{
+					Responses: []*rpb.BatchReadBlobsResponse_Response{
+						{
+							Digest: req.Digests[0],
+							Data:   append(slices.Clone(payload), '!'),
+							Status: &statuspb.Status{Code: int32(codes.OK)},
+						},
+					},
+				}, nil
+			},
+			wantCode:        codes.Unknown,
+			wantErrContains: "exceeds expected size",
+		},
+		{
+			name: "decode_corrupt_zstd",
+			fn: func(_ context.Context, req *rpb.BatchReadBlobsRequest, _ int) (*rpb.BatchReadBlobsResponse, error) {
+				return &rpb.BatchReadBlobsResponse{
+					Responses: []*rpb.BatchReadBlobsResponse_Response{
+						{
+							Digest:     req.Digests[0],
+							Data:       []byte("not valid zstd data"),
+							Compressor: rpb.Compressor_ZSTD,
+							Status:     &statuspb.Status{Code: int32(codes.OK)},
+						},
+					},
+				}, nil
+			},
+			wantCode:        codes.Unknown,
+			wantErrContains: "failed to decompress blobs",
+		},
+		{
+			name: "decode_unsupported_compressor",
+			fn: func(_ context.Context, req *rpb.BatchReadBlobsRequest, _ int) (*rpb.BatchReadBlobsResponse, error) {
+				return &rpb.BatchReadBlobsResponse{
+					Responses: []*rpb.BatchReadBlobsResponse_Response{
+						{
+							Digest:     req.Digests[0],
+							Data:       payload,
+							Compressor: rpb.Compressor_Value(99),
+							Status:     &statuspb.Status{Code: int32(codes.OK)},
+						},
+					},
+				}, nil
+			},
+			wantCode:        codes.Unknown,
+			wantErrContains: "unsupported compressor",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			ctx := t.Context()
+			fake := &fakeBatchReadCAS{fn: tc.fn}
+			c := newBatchReadTestClient(t, fake, Option{})
+
+			got, err := c.getWithBatchReadBlobs(ctx, d, "test-blob")
+			if err == nil {
+				t.Fatalf("getWithBatchReadBlobs() = %q, nil; want error", got)
+			}
+			if reqs := fake.requests(); len(reqs) != 1 {
+				t.Errorf("BatchReadBlobs calls = %d; want 1", len(reqs))
+			}
+			if status.Code(err) != tc.wantCode {
+				t.Errorf("status.Code(err) = %v (err=%v); want %v", status.Code(err), err, tc.wantCode)
+			}
+			if tc.wantErrIs != nil && !errors.Is(err, tc.wantErrIs) {
+				t.Errorf("err = %v; want errors.Is(_, %v)", err, tc.wantErrIs)
+			}
+			if tc.wantErrContains != "" && !strings.Contains(err.Error(), tc.wantErrContains) {
+				t.Errorf("err = %q; want substring %q", err.Error(), tc.wantErrContains)
+			}
+			if stats := c.m.Stats(); stats.ROps != 1 || stats.RErrs != 1 || stats.RBytes != 0 {
+				t.Errorf("iometrics = (ROps=%d, RErrs=%d, RBytes=%d); want (1, 1, 0)", stats.ROps, stats.RErrs, stats.RBytes)
+			}
+		})
+	}
+}
+
+func TestGetWithBatchReadBlobs_LocalCache(t *testing.T) {
+	ctx := t.Context()
+	payload := []byte("cached batch read payload")
+	d := digest.SHA256.FromBytes(payload)
+	missing := digest.SHA256.FromBytes([]byte("missing blob"))
+
+	fake := &fakeBatchReadCAS{
+		fn: func(_ context.Context, req *rpb.BatchReadBlobsRequest, _ int) (*rpb.BatchReadBlobsResponse, error) {
+			if digest.FromProto(req.Digests[0]) == d {
+				return &rpb.BatchReadBlobsResponse{
+					Responses: []*rpb.BatchReadBlobsResponse_Response{
+						{
+							Digest: req.Digests[0],
+							Data:   payload,
+							Status: &statuspb.Status{Code: int32(codes.OK)},
+						},
+					},
+				}, nil
+			}
+			return &rpb.BatchReadBlobsResponse{
+				Responses: []*rpb.BatchReadBlobsResponse_Response{
+					{
+						Digest: req.Digests[0],
+						Status: &statuspb.Status{
+							Code:    int32(codes.NotFound),
+							Message: "not found",
+						},
+					},
+				},
+			}, nil
+		},
+	}
+
+	lc, err := NewLocalCache(t.TempDir())
+	if err != nil {
+		t.Fatalf("NewLocalCache: %v", err)
+	}
+	c := newBatchReadTestClient(t, fake, Option{LocalCache: lc})
+
+	// Cache miss: fetches from CAS and populates local cache.
+	got, err := c.getWithBatchReadBlobs(ctx, d, "cached-blob")
+	if err != nil {
+		t.Fatalf("first getWithBatchReadBlobs: %v", err)
+	}
+	if !bytes.Equal(got, payload) {
+		t.Errorf("first getWithBatchReadBlobs = %q; want %q", got, payload)
+	}
+	if calls := len(fake.requests()); calls != 1 {
+		t.Fatalf("BatchReadBlobs calls after miss = %d; want 1", calls)
+	}
+	if !lc.HasContent(ctx, d) {
+		t.Errorf("LocalCache.HasContent(%s) = false; want true", d)
+	}
+
+	// Cache hit: served from local cache without another RPC.
+	got, err = c.getWithBatchReadBlobs(ctx, d, "cached-blob")
+	if err != nil {
+		t.Fatalf("second getWithBatchReadBlobs: %v", err)
+	}
+	if !bytes.Equal(got, payload) {
+		t.Errorf("second getWithBatchReadBlobs = %q; want %q", got, payload)
+	}
+	if calls := len(fake.requests()); calls != 1 {
+		t.Errorf("BatchReadBlobs calls after hit = %d; want 1", calls)
+	}
+
+	// Error response: not written to local cache.
+	if _, err := c.getWithBatchReadBlobs(ctx, missing, "missing-blob"); status.Code(err) != codes.NotFound {
+		t.Errorf("getWithBatchReadBlobs(missing) = %v; want NotFound", err)
+	}
+	if lc.HasContent(ctx, missing) {
+		t.Errorf("LocalCache.HasContent(%s) = true after error; want false", missing)
 	}
 }

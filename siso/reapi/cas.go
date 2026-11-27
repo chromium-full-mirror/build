@@ -408,15 +408,20 @@ func (c *Client) getWithBatchReadBlobs(ctx context.Context, d digest.Digest, nam
 			AcceptableCompressors: c.acceptableCompressors(d),
 			DigestFunction:        c.digestFn.Value(),
 		})
+		if err != nil {
+			return err
+		}
+		if len(resp.GetResponses()) != 1 {
+			return fmt.Errorf("responses=%d", len(resp.GetResponses()))
+		}
+		if st := status.FromProto(resp.Responses[0].GetStatus()); st.Code() != codes.OK {
+			return st.Err()
+		}
 		return err
 	})
 	if err != nil {
 		c.m.ReadDone(0, err)
 		return nil, fmt.Errorf("failed to read blobs %s for %s in %s: %w", d, name, time.Since(started), err)
-	}
-	if len(resp.Responses) != 1 {
-		c.m.ReadDone(0, err)
-		return nil, fmt.Errorf("failed to read blobs %s for %s in %s: responses=%d", d, name, time.Since(started), len(resp.Responses))
 	}
 	data, err := c.decodeForBatchRead(d, resp.Responses[0].Data, resp.Responses[0].Compressor)
 	if err != nil {
