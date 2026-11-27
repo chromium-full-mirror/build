@@ -10,41 +10,32 @@ import (
 	"testing"
 )
 
+// TestNextDirErrNotExistRace checks that storing a file creates its
+// missing parent directory while another goroutine keeps recording that
+// directory as missing.
 func TestNextDirErrNotExistRace(t *testing.T) {
 	ctx := t.Context()
-
-	// Run enough iterations to reliably trigger the race condition
 	for i := range 10000 {
-		hfs, err := New(ctx, Option{})
-		if err != nil {
-			t.Fatal(err)
-		}
-
+		root := &directory{isRoot: true}
+		stop := make(chan struct{})
 		var wg sync.WaitGroup
-		wg.Add(2)
-
-		// Goroutine A: Simulates filegroup A storing ErrNotExist for "sysroot".
-		go func() {
-			defer wg.Done()
-			errEntry := newLocalEntry()
-			errEntry.err = fs.ErrNotExist
-			hfs.directory.store(ctx, "sysroot", errEntry)
-		}()
-
-		// Goroutine B: Simulates filegroup B lazily creating "sysroot" as a directory
-		// to store a nested file.
-		var storeErr error
-		go func() {
-			defer wg.Done()
-			nestedEntry := newLocalEntry()
-			nestedEntry.err = fs.ErrNotExist
-			_, _, storeErr = hfs.directory.store(ctx, "sysroot/usr/lib", nestedEntry)
-		}()
-
+		wg.Go(func() {
+			for {
+				select {
+				case <-stop:
+					return
+				default:
+				}
+				missing := newLocalEntry()
+				missing.err = fs.ErrNotExist
+				root.store(ctx, "sysroot", missing)
+			}
+		})
+		_, _, err := root.store(ctx, "sysroot/usr/lib", newLocalEntry())
+		close(stop)
 		wg.Wait()
-
-		if storeErr != nil {
-			t.Fatalf("Race triggered on iteration %d: %v", i, storeErr)
+		if err != nil {
+			t.Fatalf("iteration %d: %v", i, err)
 		}
 	}
 }
