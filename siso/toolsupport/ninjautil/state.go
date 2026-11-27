@@ -117,7 +117,7 @@ func (s *State) Close() error {
 func NewState() *State {
 	s := &State{
 		nodeMap: newNodeMap(),
-		scope:   newFileScope(nil),
+		scope:   newFileScope(),
 	}
 	s.pools.Store("", defaultPool)
 	s.pools.Store("console", consolePool)

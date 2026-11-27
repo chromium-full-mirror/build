@@ -91,7 +91,7 @@ func (p *ManifestParser) loadFiles(ctx context.Context, fname string) error {
 				return err
 			}
 			for _, sub := range subninjas {
-				if err := spawn(sub, newFileScope(scope)); err != nil {
+				if err := spawn(sub.fname, scope.newSubninjaScope(sub.pos)); err != nil {
 					return err
 				}
 			}
@@ -110,7 +110,7 @@ func (p *ManifestParser) loadFiles(ctx context.Context, fname string) error {
 	return context.Cause(ctx)
 }
 
-func (p *ManifestParser) loadFile(ctx context.Context, fname string, scope *fileScope) ([]string, error) {
+func (p *ManifestParser) loadFile(ctx context.Context, fname string, scope *fileScope) ([]subninja, error) {
 	fp := &fileParser{
 		scope: scope,
 		state: p.state,

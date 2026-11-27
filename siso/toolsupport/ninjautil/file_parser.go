@@ -27,7 +27,13 @@ type fileState struct {
 	edges     []*Edge
 	defaults  []posNodes
 	filenames []string
-	subninjas []string
+	subninjas []subninja
+}
+
+// subninja is the file that the subninja statement at pos loads.
+type subninja struct {
+	fname string
+	pos   int
 }
 
 // posNodes are the nodes of the statement at pos.
@@ -49,11 +55,11 @@ func (fs *fileState) sortDefaults() {
 	slices.SortStableFunc(fs.defaults, func(a, b posNodes) int { return cmp.Compare(a.pos, b.pos) })
 }
 
-// addSubninja adds filenames for subninja.
-func (fs *fileState) addSubninja(fname string) {
+// addSubninja adds the file that the subninja statement at pos loads.
+func (fs *fileState) addSubninja(fname string, pos int) {
 	fs.mu.Lock()
 	defer fs.mu.Unlock()
-	fs.subninjas = append(fs.subninjas, fname)
+	fs.subninjas = append(fs.subninjas, subninja{fname: fname, pos: pos})
 }
 
 // fileParser is a parser of a ninja manifest file.
@@ -198,7 +204,7 @@ func (p *fileParser) alloc(ctx context.Context) {
 	defer trace.StartRegion(ctx, "ninja.alloc").End()
 	p.full.start = 0
 	p.full.end = len(p.buf)
-	pos := 0
+	pos := p.scope.base
 	for i := range p.chunks {
 		ch := &p.chunks[i]
 		p.full.nvar += ch.nvar

@@ -433,7 +433,7 @@ func (ch *chunk) buildGraphInChunk(ctx context.Context, fileState *fileState) er
 			if err != nil {
 				return err
 			}
-			fileState.addSubninja(subninja)
+			fileState.addSubninja(subninja, st.pos)
 			i++
 			continue
 		default:

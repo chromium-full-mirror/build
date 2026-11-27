@@ -1130,6 +1130,58 @@ default $alias.o
 	}
 }
 
+// TestParser_SubninjaVariables checks that the paths of a subninja file
+// see the variables of its parents with their values at the subninja
+// statement, as in Ninja, while commands see their last values.
+func TestParser_SubninjaVariables(t *testing.T) {
+	dir := t.TempDir()
+	for name, content := range map[string]string{
+		"build.ninja": `
+rule cc
+  command = echo $v
+dir = out
+b = parent
+a = $b
+v = early
+subninja sub.ninja
+dir = out2
+v = late
+`,
+		"sub.ninja": `
+b = child
+build $dir/$a.o: cc
+subninja sub2.ninja
+dir = late
+`,
+		"sub2.ninja": "build $dir/${a}2.o: cc\n",
+	} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	state := NewState()
+	p := NewManifestParser(state)
+	p.SetWd(dir)
+	if err := p.Load(t.Context(), "build.ninja"); err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	for _, out := range []string{"out/parent.o", "out/parent2.o"} {
+		node, ok := state.LookupNodeByPath(out)
+		if !ok {
+			t.Errorf("%s not found", out)
+			continue
+		}
+		edge, ok := node.InEdge()
+		if !ok {
+			t.Errorf("no inEdge of %s", out)
+			continue
+		}
+		if got, want := edge.Binding("command"), "echo late"; got != want {
+			t.Errorf("command of %s = %q; want %q", out, got, want)
+		}
+	}
+}
+
 // TestParser_EmptyPath checks that a path without a value is an error, as
 // in Ninja.
 func TestParser_EmptyPath(t *testing.T) {
@@ -1189,7 +1241,7 @@ func TestParser_DefaultOrder(t *testing.T) {
 	ctx := t.Context()
 	fp := &fileParser{
 		state: NewState(),
-		scope: newFileScope(nil),
+		scope: newFileScope(),
 		sema:  make(chan struct{}, 1),
 		buf:   []byte(sb.String()),
 	}

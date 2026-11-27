@@ -67,7 +67,7 @@ build out: cc in
 `)
 	fp := &fileParser{
 		state: NewState(),
-		scope: newFileScope(nil),
+		scope: newFileScope(),
 		sema:  make(chan struct{}, 1),
 		buf:   manifest,
 	}

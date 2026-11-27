@@ -17,12 +17,23 @@ type fileScope struct {
 	rules    *ruleMap
 	bindings *shardBindings
 	parent   *fileScope
+	// base is the position of the file's first statement. A subninja file
+	// starts after its subninja statement, so the position of a value that
+	// its paths see tells which file of the chain set it.
+	base int
 }
 
 // newFileScope creates new fileScope.
-func newFileScope(parent *fileScope) *fileScope {
+func newFileScope() *fileScope {
+	return &fileScope{}
+}
+
+// newSubninjaScope creates the scope of the file that the subninja
+// statement at pos loads.
+func (s *fileScope) newSubninjaScope(pos int) *fileScope {
 	return &fileScope{
-		parent: parent,
+		parent: s,
+		base:   pos + 1,
 	}
 }
 
@@ -54,6 +65,22 @@ func (s *fileScope) lookupVar(pos int, name []byte) (evalString, bool) {
 	}
 	if s.parent != nil {
 		return s.parent.lookupVar(-1, name)
+	}
+	return evalString{}, false
+}
+
+// lookupPathVar looks up a variable before pos as a path sees it: in the
+// file that pos belongs to, and then in its parents before their subninja
+// statements.
+func (s *fileScope) lookupPathVar(pos int, name []byte) (evalString, bool) {
+	for ; s != nil; s = s.parent {
+		if pos < s.base {
+			continue
+		}
+		if v, ok := s.bindings.get(pos, name); ok {
+			return v, true
+		}
+		pos = s.base
 	}
 	return evalString{}, false
 }
@@ -97,7 +124,7 @@ type pathEnv struct {
 // Ninja evaluates a value where the file sets it.
 func (e *pathEnv) lookupVar(pos int, name []byte) (evalString, bool) {
 	if pos >= 0 {
-		return e.scope.lookupVar(pos, name)
+		return e.scope.lookupPathVar(pos, name)
 	}
 	if e.edge != nil {
 		if v, ok := e.edge.env.lookupVar(-1, name); ok {
@@ -105,7 +132,7 @@ func (e *pathEnv) lookupVar(pos int, name []byte) (evalString, bool) {
 			return v, true
 		}
 	}
-	return e.scope.lookupVar(e.pos, name)
+	return e.scope.lookupPathVar(e.pos, name)
 }
 
 // buildScope is a binding scope for a build.
