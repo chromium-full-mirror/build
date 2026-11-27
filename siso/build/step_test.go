@@ -23,6 +23,7 @@ type fakeStepDef struct {
 	command        string
 	triggerInputs  []path.Path
 	outputs        []path.Path
+	localOutputs   []path.Path
 	pure           bool
 	platform       map[string]string
 	bindings       map[string]string
@@ -93,11 +94,11 @@ func (f fakeStepDef) Outputs(context.Context) []path.Path {
 func (fakeStepDef) AuxiliaryLogOutputFiles(context.Context) []path.Path { return nil }
 func (fakeStepDef) AuxiliaryLogOutputDirs(context.Context) []path.Path  { return nil }
 
-func (fakeStepDef) LocalOutputs(context.Context) []path.Path { return nil }
-func (f fakeStepDef) Pure() bool                             { return f.pure }
-func (f fakeStepDef) Platform() map[string]string            { return f.platform }
-func (fakeStepDef) IsRemoteRule() bool                       { return false }
-func (fakeStepDef) Sandbox() map[string]string               { return nil }
+func (f fakeStepDef) LocalOutputs(context.Context) []path.Path { return f.localOutputs }
+func (f fakeStepDef) Pure() bool                               { return f.pure }
+func (f fakeStepDef) Platform() map[string]string              { return f.platform }
+func (fakeStepDef) IsRemoteRule() bool                         { return false }
+func (fakeStepDef) Sandbox() map[string]string                 { return nil }
 func (fakeStepDef) RecordDeps(context.Context, string, time.Time, digest.Digest, []string) (bool, error) {
 	return false, nil
 }

@@ -54,6 +54,50 @@ func TestDirEffectiveMtime_WalkErrorSurfaces(t *testing.T) {
 	}
 }
 
+// TestTargetMap_StoreIfMissing verifies that StoreIfMissing populates missing
+// keys without overwriting a producer's newer Store entry, including across
+// trailing-slash directory key normalization (b/590907111).
+func TestTargetMap_StoreIfMissing(t *testing.T) {
+	var tm targetMap
+	oldTime := time.Now().Add(-1 * time.Hour).Truncate(time.Second)
+	newTime := oldTime.Add(10 * time.Minute)
+
+	stale := targetState{mtime: oldTime, changed: false}
+	fresh := targetState{mtime: newTime, changed: true}
+
+	// Empty key: StoreIfMissing inserts the initial entry.
+	tm.StoreIfMissing("out/siso/gen/a.h", stale)
+	got, ok := tm.Load("out/siso/gen/a.h")
+	if !ok || got != stale {
+		t.Fatalf("Load(a.h) after StoreIfMissing = %+v, %t; want %+v, true", got, ok, stale)
+	}
+
+	// Producer Store overwrites an earlier StoreIfMissing entry.
+	tm.Store("out/siso/gen/a.h", fresh)
+	got, ok = tm.Load("out/siso/gen/a.h")
+	if !ok || got != fresh {
+		t.Fatalf("Load(a.h) after Store = %+v, %t; want %+v, true", got, ok, fresh)
+	}
+
+	// Concurrent consumer's StoreIfMissing must not overwrite the producer's
+	// newer Store entry (neither with an older mtime nor with a dirtyErr).
+	tm.StoreIfMissing("out/siso/gen/a.h", stale)
+	tm.StoreIfMissing("out/siso/gen/a.h", targetState{dirtyErr: fs.ErrNotExist})
+	got, ok = tm.Load("out/siso/gen/a.h")
+	if !ok || got != fresh {
+		t.Errorf("Load(a.h) after StoreIfMissing on existing key = %+v, %t; want %+v, true", got, ok, fresh)
+	}
+
+	// Directory targets normalize trailing slashes so Store("dir/") and
+	// StoreIfMissing("dir") share the same key.
+	tm.Store("out/siso/gen/dir/", fresh)
+	tm.StoreIfMissing("out/siso/gen/dir", stale)
+	got, ok = tm.Load("out/siso/gen/dir/")
+	if !ok || got != fresh {
+		t.Errorf("Load(dir/) after StoreIfMissing(dir) = %+v, %t; want %+v, true", got, ok, fresh)
+	}
+}
+
 func TestDirEffectiveMtime(t *testing.T) {
 	root := t.TempDir()
 

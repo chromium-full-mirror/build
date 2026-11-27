@@ -1349,17 +1349,22 @@ func (b *Builder) outputs(ctx context.Context, step *Step) error {
 	}
 
 	defLocalOutputs := step.def.LocalOutputs(ctx)
-	span.SetAttr("outputs-local", len(defLocalOutputs))
-	seen := make(map[sisopath.Path]bool)
 	var localOutputs []sisopath.Path
-	for _, o := range defLocalOutputs {
-		if seen[o] {
-			continue
+	var localSeen map[sisopath.Path]bool
+	if len(defLocalOutputs) > 0 {
+		localOutputs = make([]sisopath.Path, 0, len(defLocalOutputs))
+		localSeen = make(map[sisopath.Path]bool, len(defLocalOutputs))
+		for _, o := range defLocalOutputs {
+			if o == "" || localSeen[o] {
+				continue
+			}
+			localSeen[o] = true
+			localOutputs = append(localOutputs, o)
 		}
-		seen[o] = true
-		localOutputs = append(localOutputs, o)
 	}
+	span.SetAttr("outputs-local", len(localOutputs))
 
+	seen := make(map[sisopath.Path]bool)
 	clog.Infof(ctx, "outputs %d->%d", len(outputs), len(localOutputs))
 	defOutputs := step.def.Outputs(ctx)
 	// need to check against step.cmd.Outputs, not step.def.Outputs, since
@@ -1369,23 +1374,26 @@ func (b *Builder) outputs(ctx context.Context, step *Step) error {
 			continue
 		}
 		seen[out] = true
-		var local bool
-		fullOut := string(out)
-		if !filepath.IsAbs(fullOut) {
-			fullOut = filepath.Join(step.cmd.WorkspaceRoot, fullOut)
-		}
-		if b.hashFS.NeedFlush(ctx, step.cmd.WorkspaceRoot, out) {
-			localOutputs = append(localOutputs, out)
-			local = true
-		} else {
-			// check if it already exists on local.
-			// if so, better to flush to the disk
-			// as other future step would access it locally.
-			_, err := b.hashFS.OS.Lstat(ctx, fullOut)
-			if err == nil {
-				clog.Infof(ctx, "output_local=false but local exists: %q", out)
+		local := localSeen[out]
+		var fullOut string
+		if !local {
+			fullOut = string(out)
+			if !filepath.IsAbs(fullOut) {
+				fullOut = filepath.Join(step.cmd.WorkspaceRoot, fullOut)
+			}
+			if b.hashFS.NeedFlush(ctx, step.cmd.WorkspaceRoot, out) {
 				localOutputs = append(localOutputs, out)
 				local = true
+			} else {
+				// check if it already exists on local.
+				// if so, better to flush to the disk
+				// as other future step would access it locally.
+				_, err := b.hashFS.OS.Lstat(ctx, fullOut)
+				if err == nil {
+					clog.Infof(ctx, "output_local=false but local exists: %q", out)
+					localOutputs = append(localOutputs, out)
+					local = true
+				}
 			}
 		}
 		fi, err := b.hashFS.Stat(ctx, step.cmd.WorkspaceRoot, out)
@@ -1439,7 +1447,8 @@ func (b *Builder) outputs(ctx context.Context, step *Step) error {
 		// it) is flushed too: the prune above only removes dropped members,
 		// so without a flush members whose contents changed would keep their
 		// old contents on disk.
-		local := b.hashFS.NeedFlush(ctx, step.cmd.WorkspaceRoot, dir)
+		alreadyLocal := localSeen[dir+"/"]
+		local := alreadyLocal || b.hashFS.NeedFlush(ctx, step.cmd.WorkspaceRoot, dir)
 		if !local {
 			fullDir := sisopath.JoinRoot(step.cmd.WorkspaceRoot, dir)
 			if _, err := b.hashFS.OS.Lstat(ctx, string(fullDir)); err == nil {
@@ -1478,7 +1487,7 @@ func (b *Builder) outputs(ctx context.Context, step *Step) error {
 				changed: fi.IsChanged(),
 			})
 		}
-		if local {
+		if local && !alreadyLocal {
 			// Trailing slash marks a declared directory artifact so Flush
 			// materializes its whole tree, not just the directory node.
 			localOutputs = append(localOutputs, dir+"/")

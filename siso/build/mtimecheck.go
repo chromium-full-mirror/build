@@ -38,6 +38,10 @@ func (t *targetMap) Store(target string, st targetState) {
 	t.m.Store(DirTargetPath(target), st)
 }
 
+func (t *targetMap) StoreIfMissing(target string, st targetState) {
+	t.m.LoadOrStore(DirTargetPath(target), st)
+}
+
 func (t *targetMap) Load(target string) (targetState, bool) {
 	v, ok := t.m.Load(DirTargetPath(target))
 	if !ok {
@@ -315,7 +319,7 @@ func inputMtime(ctx context.Context, b *Builder, stepDef StepDef) (string, time.
 				}
 			}
 			if err != nil {
-				b.targets.Store(lookupPath, targetState{
+				b.targets.StoreIfMissing(lookupPath, targetState{
 					dirtyErr: err,
 				})
 				retErr = fmt.Errorf("input %s: %w", in, err)
@@ -324,14 +328,14 @@ func inputMtime(ctx context.Context, b *Builder, stepDef StepDef) (string, time.
 			emtime, walkErr := effectiveMtime(fsys, lookupPath, mtime, isDir)
 			if walkErr != nil {
 				// Can't determine the input's state: treat as a rebuild reason.
-				b.targets.Store(lookupPath, targetState{
+				b.targets.StoreIfMissing(lookupPath, targetState{
 					dirtyErr: walkErr,
 				})
 				retErr = fmt.Errorf("input %s: %w", in, walkErr)
 				return false
 			}
 			mtime = emtime
-			b.targets.Store(lookupPath, targetState{
+			b.targets.StoreIfMissing(lookupPath, targetState{
 				mtime:   mtime,
 				changed: changed,
 			})
