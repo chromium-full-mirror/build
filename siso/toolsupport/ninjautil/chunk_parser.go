@@ -60,8 +60,8 @@ type chunk struct {
 	freezeBytesArena bumpArena[byte]
 	freezeStmtsArena bumpArena[statement]
 
-	// temp env in parseBuild
-	env edgeEnv
+	// env evaluates the paths of the statement that is being parsed.
+	env pathEnv
 
 	// scratchBuf is a scratch buffer used during parsing.
 	scratchBuf bytes.Buffer
@@ -532,8 +532,7 @@ func (ch *chunk) parseBuild(i int) (int, error) {
 		edge.pool = defaultPool
 	}
 	edge.nodes = ch.edgePathSlab.slice(len(outs) + len(ins) + len(validations))[:0]
-	// setup ch.env for this edge to evaluate paths
-	ch.env.edge = edge
+	ch.env = pathEnv{edge: edge, scope: ch.scope, pos: st.pos}
 	for _, out := range outs {
 		n, err := ch.targetNode(&ch.env, &ch.scratchBuf, out)
 		if err != nil {
@@ -567,7 +566,7 @@ func (ch *chunk) parseBuild(i int) (int, error) {
 		}
 		edge.nodes = append(edge.nodes, n)
 	}
-	ch.env.edge = nil
+	ch.env = pathEnv{}
 	return i, nil
 }
 
@@ -576,6 +575,9 @@ func (ch *chunk) targetPath(env evalEnv, buf *bytes.Buffer, target evalString) (
 	t, err := evaluate(env, buf, target)
 	if err != nil {
 		return nil, fmt.Errorf("evaluate %q: %w", target.v, err)
+	}
+	if len(t) == 0 {
+		return nil, fmt.Errorf("empty path %q", target.v)
 	}
 	t = bytes.TrimPrefix(t, []byte("./"))
 	return t, nil
@@ -754,8 +756,9 @@ func (ch *chunk) parseDefault(i int) ([]*Node, error) {
 	pp := newPathParser(ch.buf[st.v:st.e])
 	paths, _ := pp.pathList(nil)
 	var nodes []*Node
+	ch.env = pathEnv{scope: ch.scope, pos: st.pos}
 	for i := range paths {
-		n, err := ch.targetNode(ch.scope, &ch.scratchBuf, paths[i])
+		n, err := ch.targetNode(&ch.env, &ch.scratchBuf, paths[i])
 		if err != nil {
 			return nil, fmt.Errorf("line:%d bad default evaluate %q: %w", lineno(ch.buf, st.s), paths[i].v, err)
 		}
@@ -772,7 +775,8 @@ func (ch *chunk) parseSubninja(i int) (string, error) {
 	if len(paths) != 1 {
 		return "", fmt.Errorf("line:%d bad subninja paths=%d", lineno(ch.buf, st.s), len(paths))
 	}
-	subninja, err := ch.targetPath(ch.scope, &ch.scratchBuf, paths[0])
+	ch.env = pathEnv{scope: ch.scope, pos: st.pos}
+	subninja, err := ch.targetPath(&ch.env, &ch.scratchBuf, paths[0])
 	if err != nil {
 		return "", fmt.Errorf("line:%d bad subninja %q: %w", lineno(ch.buf, st.s), paths[0].v, err)
 	}

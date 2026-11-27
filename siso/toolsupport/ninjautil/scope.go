@@ -83,6 +83,31 @@ func (s *fileScope) Print(w io.Writer) {
 	fmt.Fprintln(w)
 }
 
+// pathEnv is the environment for the paths of a statement. As in Ninja,
+// a path sees the variables that the file defines before the statement,
+// and the paths of a build statement also see its bindings.
+type pathEnv struct {
+	edge  *Edge // set for a build statement
+	scope *fileScope
+	pos   int // position of the statement
+}
+
+// lookupVar looks up a variable of the path when pos < 0. Otherwise it
+// looks up a variable inside a value that the statement at pos set, as
+// Ninja evaluates a value where the file sets it.
+func (e *pathEnv) lookupVar(pos int, name []byte) (evalString, bool) {
+	if pos >= 0 {
+		return e.scope.lookupVar(pos, name)
+	}
+	if e.edge != nil {
+		if v, ok := e.edge.env.lookupVar(-1, name); ok {
+			v.pos = e.pos
+			return v, true
+		}
+	}
+	return e.scope.lookupVar(e.pos, name)
+}
+
 // buildScope is a binding scope for a build.
 type buildScope struct {
 	buf        []byte

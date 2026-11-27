@@ -995,6 +995,182 @@ build obj/a.o: cc a.c
 	}
 }
 
+// TestParser_PathVariables checks that the paths of a statement see the
+// variables as Ninja does: with the values that the file sets before the
+// statement.
+func TestParser_PathVariables(t *testing.T) {
+	dir := t.TempDir()
+	for name, content := range map[string]string{
+		"build.ninja": `
+rule cc
+  command = cc -c $in -o $out
+dir = out
+build $dir/a.o: cc $dir/a.cc
+default $dir/a.o
+subninja $dir.ninja
+dir = out2
+build $dir/b.o: cc $dir/b.cc | $own
+  own = $dir/own.h
+default $dir/b.o
+subninja $dir.ninja
+dir = out3
+`,
+		"out.ninja":  "build first: phony\n",
+		"out2.ninja": "build second: phony\n",
+	} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	state := NewState()
+	p := NewManifestParser(state)
+	p.SetWd(dir)
+	if err := p.Load(t.Context(), "build.ninja"); err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	for out, want := range map[string][]string{
+		"out/a.o":  {"out/a.cc"},
+		"out2/b.o": {"out2/b.cc", "out2/own.h"},
+		"first":    nil,
+		"second":   nil,
+	} {
+		node, ok := state.LookupNodeByPath(out)
+		if !ok {
+			t.Errorf("%s not found", out)
+			continue
+		}
+		edge, ok := node.InEdge()
+		if !ok {
+			t.Errorf("no inEdge of %s", out)
+			continue
+		}
+		var got []string
+		for _, in := range edge.Inputs() {
+			got = append(got, in.Path())
+		}
+		if diff := cmp.Diff(want, got); diff != "" {
+			t.Errorf("inputs of %s: diff -want +got:\n%s", out, diff)
+		}
+	}
+	nodes, err := state.DefaultNodes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, n := range nodes {
+		got = append(got, n.Path())
+	}
+	if diff := cmp.Diff([]string{"out/a.o", "out2/b.o"}, got); diff != "" {
+		t.Errorf("default targets: diff -want +got:\n%s", diff)
+	}
+}
+
+// TestParser_PathNestedVariables checks that a variable inside the value
+// of another variable takes its value from before that variable's
+// statement, as in Ninja.
+func TestParser_PathNestedVariables(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(dir, "out"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	for name, content := range map[string]string{
+		"build.ninja": `
+rule cc
+  command = cc -c $in -o $out
+dir = out
+dir = $dir/gen
+subninja $dir.ninja
+v = first
+alias = $v
+v = second
+build $alias.o: cc $alias.cc | $own
+  own = $v.h
+default $alias.o
+`,
+		"out/gen.ninja": "build sub: phony\n",
+	} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	state := NewState()
+	p := NewManifestParser(state)
+	p.SetWd(dir)
+	if err := p.Load(t.Context(), "build.ninja"); err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if _, ok := state.LookupNodeByPath("sub"); !ok {
+		t.Errorf("sub not found")
+	}
+	node, ok := state.LookupNodeByPath("first.o")
+	if !ok {
+		t.Fatalf("first.o not found")
+	}
+	edge, ok := node.InEdge()
+	if !ok {
+		t.Fatalf("no inEdge of first.o")
+	}
+	var got []string
+	for _, in := range edge.Inputs() {
+		got = append(got, in.Path())
+	}
+	if diff := cmp.Diff([]string{"first.cc", "second.h"}, got); diff != "" {
+		t.Errorf("inputs of first.o: diff -want +got:\n%s", diff)
+	}
+	nodes, err := state.DefaultNodes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	got = nil
+	for _, n := range nodes {
+		got = append(got, n.Path())
+	}
+	if diff := cmp.Diff([]string{"first.o"}, got); diff != "" {
+		t.Errorf("default targets: diff -want +got:\n%s", diff)
+	}
+}
+
+// TestParser_EmptyPath checks that a path without a value is an error, as
+// in Ninja.
+func TestParser_EmptyPath(t *testing.T) {
+	for name, content := range map[string]string{
+		"undefined": `rule cc
+  command = cc
+build $undefined: cc
+`,
+		"rule_variable": `rule cc
+  command = cc
+  depfile = dep.d
+build $depfile: cc
+`,
+		"defined_later": `rule cc
+  command = cc
+build $dir: cc
+dir = out
+`,
+		"input": `rule cc
+  command = cc
+build out: cc $undefined
+`,
+		"default": `build out: phony
+default $undefined
+`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			if err := os.WriteFile(filepath.Join(dir, "build.ninja"), []byte(content), 0644); err != nil {
+				t.Fatal(err)
+			}
+			p := NewManifestParser(NewState())
+			p.SetWd(dir)
+			err := p.Load(t.Context(), "build.ninja")
+			if err == nil || !strings.Contains(err.Error(), "empty path") {
+				t.Errorf("Load: %v; want an empty path error", err)
+			}
+		})
+	}
+}
+
 // TestParser_DefaultOrder checks that the default targets of a file keep
 // the order of their statements when its chunks are built in reverse order.
 func TestParser_DefaultOrder(t *testing.T) {
