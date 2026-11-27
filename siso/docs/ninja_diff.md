@@ -129,6 +129,20 @@ Siso rejects an output produced under another step's directory output.
       generator to emit normalized paths. See
       [crbug.com/578639457](https://crbug.com/578639457).
 
+## zstd-compressed Ninja files
+
+  * **Ninja:** Reads Ninja files as plain text.
+  * **Siso:** Also reads Ninja files compressed with
+      [zstd](https://github.com/facebook/zstd), under any name, including
+      ones loaded by `subninja`. It decodes the frames of a
+      file in parallel, so a file in one frame, as the `zstd` command
+      writes it, decodes on one core. Writers of large files should split
+      them into frames of a few MiB that record their content size, for
+      example with `split -C 16M`, `zstd` on each part and `cat`. Frames
+      without a content size, as `pzstd` or `zstd` reading a pipe write
+      them, made loading AOSP's files twice as slow and doubled the
+      memory use.
+
 ## Unsupported features
 
    Siso only intends to support `gn` (Chromium) and `soong` (Android).

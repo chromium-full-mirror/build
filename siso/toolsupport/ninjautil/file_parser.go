@@ -7,7 +7,10 @@ package ninjautil
 import (
 	"cmp"
 	"context"
+	"errors"
 	"fmt"
+	"io"
+	"os"
 	"path/filepath"
 	"runtime/trace"
 	"slices"
@@ -118,17 +121,48 @@ func (p *fileParser) parseFile(ctx context.Context, fname string) error {
 	return nil
 }
 
-// readFile maps fname into memory. The returned slice is page-cache backed
-// (not on the Go heap) and is registered on State; sub-slices into it must
-// not outlive Load, which releases all mappings before returning.
+// readFile maps fname into memory, or reads and decompresses it onto the Go
+// heap if it is zstd compressed. It registers a mapped slice on State, which
+// Load unmaps when it returns, so sub-slices of it must not outlive Load.
 func (p *fileParser) readFile(ctx context.Context, fname string) ([]byte, error) {
 	defer trace.StartRegion(ctx, "ninja.read").End()
-	buf, err := mmapfile.Read(fname)
+	f, err := os.Open(fname)
 	if err != nil {
 		return nil, err
 	}
-	p.state.addMmap(buf)
-	return buf, nil
+	defer f.Close()
+	var magic [4]byte
+	n, err := f.ReadAt(magic[:], 0)
+	if err != nil && !errors.Is(err, io.EOF) {
+		return nil, err
+	}
+	if !isZstd(magic[:n]) {
+		buf, err := mmapfile.Map(f)
+		if err != nil {
+			return nil, err
+		}
+		p.state.addMmap(buf)
+		return buf, nil
+	}
+	// Compressed files are read, not mapped: unmapping each one right after
+	// decoding serializes the loaders.
+	fi, err := f.Stat()
+	if err != nil {
+		return nil, err
+	}
+	src := make([]byte, fi.Size())
+	if _, err := io.ReadFull(f, src); err != nil {
+		return nil, fmt.Errorf("read %s: %w", fname, err)
+	}
+	t := time.Now()
+	data, err := decompressZstd(ctx, src)
+	if err != nil {
+		return nil, fmt.Errorf("decompress %s: %w", fname, err)
+	}
+	if log.V(1) {
+		clog.Infof(ctx, "decompress %s %d -> %d: %s", fname, len(src), len(data), time.Since(t))
+	}
+	return data, nil
 }
 
 // parseContent parses ninja file.

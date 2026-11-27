@@ -32,6 +32,7 @@ func getEvalStrings() *[]evalString {
 
 func putEvalStrings(ptr *[]evalString) {
 	// Make it available for reuse.
+	clear((*ptr)[:cap(*ptr)])
 	*ptr = (*ptr)[:0]
 	evalStringsPool.Put(ptr)
 }

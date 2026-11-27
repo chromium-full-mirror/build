@@ -22,6 +22,12 @@ func Read(path string) ([]byte, error) {
 		return nil, err
 	}
 	defer f.Close()
+	return Map(f)
+}
+
+// Map maps the open file f read-only into memory, like Read. f may be
+// closed once Map returns.
+func Map(f *os.File) ([]byte, error) {
 	fi, err := f.Stat()
 	if err != nil {
 		return nil, err
@@ -32,7 +38,7 @@ func Read(path string) ([]byte, error) {
 	}
 	data, err := unix.Mmap(int(f.Fd()), 0, int(size), unix.PROT_READ, unix.MAP_PRIVATE)
 	if err != nil {
-		return nil, fmt.Errorf("mmap %s: %w", path, err)
+		return nil, fmt.Errorf("mmap %s: %w", f.Name(), err)
 	}
 	return data, nil
 }
