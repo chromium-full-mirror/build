@@ -5,7 +5,9 @@
 package hashfs_test
 
 import (
+	"fmt"
 	"runtime"
+	"slices"
 	"testing"
 
 	"go.chromium.org/build/siso/hashfs"
@@ -16,20 +18,22 @@ import (
 // digest semaphore is sized. go test -cpu changes GOMAXPROCS later.
 var initGOMAXPROCS = runtime.GOMAXPROCS(0)
 
-func TestDigestSemaphore(t *testing.T) {
+func TestDigestSemaphores(t *testing.T) {
 	ctx := t.Context()
 	dir := t.TempDir()
 	abfs, err := abfsutil.New(ctx, "unix://abfs.sock", dir)
 	if err != nil {
 		t.Fatalf("abfsutil.New: %v", err)
 	}
+	localName := fmt.Sprintf("file-digest/%d", initGOMAXPROCS)
+	abfsName := fmt.Sprintf("abfs-digest/%d", min(16, initGOMAXPROCS))
 	for _, tc := range []struct {
 		name string
 		opt  hashfs.Option
-		want int
+		want []string
 	}{
-		{name: "local", want: initGOMAXPROCS},
-		{name: "abfs", opt: hashfs.Option{ABFS: abfs}, want: min(16, initGOMAXPROCS)},
+		{name: "local", want: []string{localName}},
+		{name: "abfs", opt: hashfs.Option{ABFS: abfs}, want: []string{abfsName, localName}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			hfs, err := hashfs.New(ctx, tc.opt)
@@ -41,8 +45,12 @@ func TestDigestSemaphore(t *testing.T) {
 					t.Errorf("hfs.Close: %v", err)
 				}
 			}()
-			if got := hfs.DigestSemaphore().Capacity(); got != tc.want {
-				t.Errorf("DigestSemaphore().Capacity() = %d; want %d", got, tc.want)
+			var got []string
+			for _, sema := range hfs.DigestSemaphores() {
+				got = append(got, sema.Name())
+			}
+			if !slices.Equal(got, tc.want) {
+				t.Errorf("DigestSemaphores() = %q; want %q", got, tc.want)
 			}
 		})
 	}

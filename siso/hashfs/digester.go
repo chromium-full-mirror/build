@@ -24,7 +24,6 @@ import (
 )
 
 // localDigestSemaphore limits concurrent digest calculation on a local file
-// digestSemaphore limits concurrent digest calculation on a local file
 // system, where a digest reads and hashes the file: CPU- and disk-bound.
 var localDigestSemaphore = semaphore.New("file-digest", runtime.GOMAXPROCS(0))
 
@@ -35,7 +34,7 @@ var localDigestSemaphore = semaphore.New("file-digest", runtime.GOMAXPROCS(0))
 // thousands of shared inputs (headers) at once.
 // On ABFS, we can use batch get-rbe-digests, so fewer workers works
 // better with batching.
-var abfsDigestSemaphore = semaphore.New("file-digest", min(16, runtime.GOMAXPROCS(0)))
+var abfsDigestSemaphore = semaphore.New("abfs-digest", min(16, runtime.GOMAXPROCS(0)))
 
 var noLazyForTests map[string]bool
 

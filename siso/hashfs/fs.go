@@ -67,10 +67,14 @@ type FlushGater interface {
 	Stat() semaphore.Stat
 }
 
-// DigestSemaphore returns the semaphore that limits this HashFS's concurrent
-// file digests.
-func (hfs *HashFS) DigestSemaphore() *semaphore.Semaphore {
-	return hfs.digester.sema
+// DigestSemaphores returns the semaphores that limit this HashFS's concurrent
+// file digests. On ABFS, there is one for ABFS digest calls and one for files
+// hashed locally.
+func (hfs *HashFS) DigestSemaphores() []*semaphore.Semaphore {
+	if hfs.digester.abfs == nil {
+		return []*semaphore.Semaphore{hfs.digester.sema}
+	}
+	return []*semaphore.Semaphore{hfs.digester.sema, localDigestSemaphore}
 }
 
 // ActiveFlushGate reports the flush admission mechanism in use: the

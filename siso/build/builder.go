@@ -616,12 +616,16 @@ func (b *Builder) SemaStats() []semaphore.Stat {
 		b.twoPhaseCachingSema.Stat(),
 		scandeps.CPPScanSema.Stat(),
 		b.fastLocalSema.Stat(),
-		b.hashFS.DigestSemaphore().Stat(),
+	}
+	for _, sema := range b.hashFS.DigestSemaphores() {
+		stats = append(stats, sema.Stat())
+	}
+	stats = append(stats,
 		localexec.ForkSema.Stat(),
 		b.hashFS.ActiveFlushGate().Stat(),
 		b.localSema.Stat(),
 		osfs.LstatSemaphore.Stat(),
-	}
+	)
 	for _, name := range slices.Sorted(maps.Keys(b.poolSemas)) {
 		stats = append(stats, b.poolSemas[name].Stat())
 	}
