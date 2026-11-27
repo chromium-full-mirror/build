@@ -104,6 +104,7 @@ func (e *edgeEnv) Lookup(key string) string {
 func (e *edgeEnv) lookup(buf *bytes.Buffer, key string) ([]byte, error) {
 	val, ok := e.edge.env.lookupVar(e.edge.pos, []byte(key))
 	if ok {
+		val.pos = e.edge.pos
 		s, err := evaluate(e, buf, val)
 		if err != nil {
 			return nil, err
@@ -113,7 +114,7 @@ func (e *edgeEnv) lookup(buf *bytes.Buffer, key string) ([]byte, error) {
 	// rule may be in parent scope
 	val, ok = e.edge.rule.lookupVar(-1, []byte(key))
 	if ok {
-		val.pos = e.edge.pos
+		val.pos = -1
 		s, err := evaluate(e, buf, val)
 		if err != nil {
 			return nil, err
@@ -134,7 +135,16 @@ func (e *edgeEnv) lookup(buf *bytes.Buffer, key string) ([]byte, error) {
 	return nil, nil
 }
 
+// lookupVar looks up a variable in a rule's value when pos < 0, which Ninja
+// expands late. Otherwise it looks up a variable in a value that a file or
+// build statement set at pos, which Ninja expands there.
 func (e *edgeEnv) lookupVar(pos int, key []byte) (evalString, bool) {
+	if pos >= 0 {
+		if e.edge.scope == nil {
+			return evalString{}, false
+		}
+		return e.edge.scope.lookupVarBefore(pos, key)
+	}
 	sep := " "
 	// Handle special in/out keys.
 	// https://ninja-build.org/manual.html#ref_rule
@@ -151,13 +161,14 @@ func (e *edgeEnv) lookupVar(pos int, key []byte) (evalString, bool) {
 			v: []byte(e.pathList(e.edge.ExplicitOutputs(), sep)),
 		}, true
 	}
-	ev, ok := e.edge.env.lookupVar(pos, key)
+	ev, ok := e.edge.env.lookupVar(-1, key)
 	if ok {
+		ev.pos = e.edge.pos
 		return ev, true
 	}
 	ev, ok = e.edge.rule.lookupVar(-1, key)
 	if ok {
-		ev.pos = e.edge.pos
+		ev.pos = -1
 		return ev, true
 	}
 	if e.edge.scope == nil {

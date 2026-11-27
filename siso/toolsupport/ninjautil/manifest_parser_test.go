@@ -1182,6 +1182,126 @@ dir = late
 	}
 }
 
+// TestParser_CommandVariables checks that a command expands the variables
+// of its rule late, but the variables inside a file's or build statement's
+// value where the value is set, as in Ninja.
+func TestParser_CommandVariables(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		files map[string]string
+		out   string
+		want  string
+	}{
+		{
+			name: "self_reference",
+			files: map[string]string{"build.ninja": `rule cc
+  command = cc $cflags -o $out
+cflags = -O2
+cflags = $cflags -g
+build x: cc
+`},
+			out:  "x",
+			want: "cc -O2 -g -o x",
+		},
+		{
+			name: "parent_value",
+			files: map[string]string{
+				"build.ninja": `rule cc
+  command = echo $msg > $out
+subninja sub.ninja
+x = parent
+msg = $x
+`,
+				"sub.ninja": `x = child
+build out: cc
+`,
+			},
+			out:  "out",
+			want: "echo parent > out",
+		},
+		{
+			name: "subninja_binding",
+			files: map[string]string{
+				"build.ninja": `rule cc
+  command = echo $msg > $out
+v = early
+subninja sub.ninja
+v = late
+`,
+				"sub.ninja": `build out: cc
+  msg = $v
+`,
+			},
+			out:  "out",
+			want: "echo early > out",
+		},
+		{
+			name: "build_binding",
+			files: map[string]string{"build.ninja": `rule cc
+  command = echo $msg > $out
+  description = rule
+x = file
+build out: cc
+  msg = $x [$description] [$out] [$own]
+  own = own
+x = later
+`},
+			out:  "out",
+			want: "echo file [] [] [] > out",
+		},
+		{
+			name: "build_command",
+			files: map[string]string{"build.ninja": `rule cc
+  command = echo rule > $out
+x = file
+build out: cc
+  command = echo $x > out
+x = later
+`},
+			out:  "out",
+			want: "echo file > out",
+		},
+		{
+			name: "rule_late",
+			files: map[string]string{"build.ninja": `rule cc
+  command = echo $v $description > $out
+  description = ${v}-rule
+v = early
+build out: cc
+v = late
+`},
+			out:  "out",
+			want: "echo late late-rule > out",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			for name, content := range tc.files {
+				if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			state := NewState()
+			p := NewManifestParser(state)
+			p.SetWd(dir)
+			if err := p.Load(t.Context(), "build.ninja"); err != nil {
+				t.Fatalf("Load: %v", err)
+			}
+			node, ok := state.LookupNodeByPath(tc.out)
+			if !ok {
+				t.Fatalf("%s not found", tc.out)
+			}
+			edge, ok := node.InEdge()
+			if !ok {
+				t.Fatalf("no inEdge of %s", tc.out)
+			}
+			if got := edge.Binding("command"); got != tc.want {
+				t.Errorf("command = %q; want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 // TestParser_EmptyPath checks that a path without a value is an error, as
 // in Ninja.
 func TestParser_EmptyPath(t *testing.T) {

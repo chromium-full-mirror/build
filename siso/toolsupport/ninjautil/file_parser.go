@@ -222,6 +222,7 @@ func (p *fileParser) alloc(ctx context.Context) {
 			pos++
 		}
 	}
+	p.scope.end = pos
 
 	p.ruleArena.reserve(p.full.nrule)
 	p.edgeArena.reserve(p.full.nbuild)
