@@ -406,7 +406,7 @@ func (d *digester) compute(ctx context.Context, fname string, e *entry) {
 }
 
 // computeEntry computes e's digest directly without taking a semaphore slot.
-// Used by State() during shutdown after digester workers have stopped.
+// Used by State().
 func (d *digester) computeEntry(ctx context.Context, fname string, e *entry) error {
 	// Only skip FileDigestFromFS on ABFS; when d.abfs == nil, !useABFS is true
 	// and skipping would disable Cog xattr and CartFS digests.

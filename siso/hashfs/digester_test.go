@@ -377,6 +377,72 @@ func TestDigester_ABFSLocalOutputBypassesABFSAndSemaphore(t *testing.T) {
 	}
 }
 
+// TestDigester_ABFSTapOutputBypassesABFSAndSemaphore verifies that an output
+// discovered by tap, which Update records as local but without cmdhash or
+// action digest, also hashes without ABFS and abfsDigestSemaphore.
+func TestDigester_ABFSTapOutputBypassesABFSAndSemaphore(t *testing.T) {
+	ctx := t.Context()
+	abfsDir, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	fake := &abfsutil.Fake{Dir: abfsDir}
+	abfs := fake.Start(ctx, t, testSockPath(t))
+	hfs, err := New(ctx, Option{ABFS: abfs})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer hfs.Close(ctx)
+
+	want := writePastFile(t, filepath.Join(abfsDir, "out", "discovered.o"), "x")
+
+	capN := abfsDigestSemaphore.Capacity()
+	releases := make([]func(error), 0, capN)
+	defer func() {
+		for _, release := range releases {
+			release(nil)
+		}
+	}()
+	for range capN {
+		_, release, err := abfsDigestSemaphore.WaitAcquire(ctx)
+		if err != nil {
+			t.Fatalf("WaitAcquire abfsDigestSemaphore: %v", err)
+		}
+		releases = append(releases, release)
+	}
+
+	opCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	// Same as tapCanonicalizeCmd after a two-phase caching miss.
+	updateEnts := hfs.RetrieveUpdateEntriesFromLocal(opCtx, abfsDir, []path.Path{"out/discovered.o"})
+	if len(updateEnts) != 1 {
+		t.Fatalf("len(RetrieveUpdateEntriesFromLocal) = %d; want 1", len(updateEnts))
+	}
+	now := time.Now()
+	updateEnts[0].ModTime = now
+	updateEnts[0].UpdatedTime = now
+	updateEnts[0].IsChanged = true
+	updateEnts[0].IsLocal = true
+	if err := hfs.Update(opCtx, abfsDir, updateEnts); err != nil {
+		t.Fatalf("Update while abfsDigestSemaphore saturated: %v", err)
+	}
+
+	e, _, _, ok := hfs.dirLookup(ctx, abfsDir, "out/discovered.o")
+	if !ok {
+		t.Fatal("out/discovered.o not found")
+	}
+	if !e.isLocal() {
+		t.Error("out/discovered.o is not local")
+	}
+	if got := e.digest(); got != want {
+		t.Errorf("out/discovered.o digest = %v; want %v", got, want)
+	}
+	if got := fake.GetRBEDigests()["out/discovered.o"]; got != 0 {
+		t.Errorf(`fake.GetRBEDigests()["out/discovered.o"] = %d; want 0`, got)
+	}
+}
+
 type fakeFSLocalSource struct {
 	name     string
 	content  string

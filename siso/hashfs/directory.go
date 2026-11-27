@@ -188,6 +188,11 @@ func shouldKeep(ctx context.Context, origFname path.Path, ee, e *entry, isProbe 
 		e.action = ee.action
 		e.local = ee.local
 	}
+	// local file replaces non-local entry (e.g. disk probe),
+	// so its digest is calculated locally, not by ABFS.
+	if e.mode.IsRegular() && e.local && !ee.isLocal() {
+		return e, false
+	}
 	cmdchanged := !bytes.Equal(ee.cmdhash, e.cmdhash)
 	edgechanged := !bytes.Equal(ee.edgehash, e.edgehash)
 	actionchanged := ee.action != e.action
