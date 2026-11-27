@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -991,6 +992,60 @@ build obj/a.o: cc a.c
 	}
 	if diff := cmp.Diff(want, filenames); diff != "" {
 		t.Errorf("Filenames() mismatch (-want +got):\n%s", diff)
+	}
+}
+
+// TestParser_DefaultOrder checks that the default targets of a file keep
+// the order of their statements when its chunks are built in reverse order.
+func TestParser_DefaultOrder(t *testing.T) {
+	old := runtime.GOMAXPROCS(2)
+	defer runtime.GOMAXPROCS(old)
+	var sb strings.Builder
+	sb.WriteString("rule cc\n  command = cc -c $in -o $out\n")
+	var want []string
+	for i := range 60000 {
+		fmt.Fprintf(&sb, "build out/some/long/directory/name/f%d.o: cc src/some/long/directory/name/f%d.cc\n", i, i)
+		if i%1000 == 0 {
+			fmt.Fprintf(&sb, "default out/some/long/directory/name/f%d.o\n", i)
+			want = append(want, fmt.Sprintf("out/some/long/directory/name/f%d.o", i))
+		}
+	}
+	ctx := t.Context()
+	fp := &fileParser{
+		state: NewState(),
+		scope: newFileScope(nil),
+		sema:  make(chan struct{}, 1),
+		buf:   []byte(sb.String()),
+	}
+	fp.chunks = splitIntoChunks(ctx, fp.buf)
+	if len(fp.chunks) != 2 {
+		t.Fatalf("manifest of %d bytes has %d chunks; want 2", len(fp.buf), len(fp.chunks))
+	}
+	if err := fp.parseChunks(ctx); err != nil {
+		t.Fatalf("parseChunks: %v", err)
+	}
+	fp.alloc(ctx)
+	if err := fp.setup(ctx); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	for i := range slices.Backward(fp.chunks) {
+		if err := fp.chunks[i].buildGraphInChunk(ctx, &fp.fileState); err != nil {
+			t.Fatalf("buildGraphInChunk(chunks[%d]): %v", i, err)
+		}
+	}
+	if err := fp.finalize(ctx); err != nil {
+		t.Fatalf("finalize: %v", err)
+	}
+	nodes, err := fp.state.DefaultNodes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, n := range nodes {
+		got = append(got, n.Path())
+	}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("default targets: diff -want +got:\n%s", diff)
 	}
 }
 

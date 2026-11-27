@@ -5,10 +5,12 @@
 package ninjautil
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"path/filepath"
 	"runtime/trace"
+	"slices"
 	"sync"
 	"time"
 
@@ -23,16 +25,28 @@ import (
 type fileState struct {
 	mu        sync.Mutex
 	edges     []*Edge
-	defaults  []*Node
+	defaults  []posNodes
 	filenames []string
 	subninjas []string
 }
 
-// addDefaults adds nodes for default target.
-func (fs *fileState) addDefaults(nodes []*Node) {
+// posNodes are the nodes of the statement at pos.
+type posNodes struct {
+	pos   int
+	nodes []*Node
+}
+
+// addDefaults adds nodes for default target of the statement at pos.
+func (fs *fileState) addDefaults(pos int, nodes []*Node) {
 	fs.mu.Lock()
 	defer fs.mu.Unlock()
-	fs.defaults = append(fs.defaults, nodes...)
+	fs.defaults = append(fs.defaults, posNodes{pos: pos, nodes: nodes})
+}
+
+// sortDefaults puts the default targets in the order of their statements.
+// Chunks add them concurrently.
+func (fs *fileState) sortDefaults() {
+	slices.SortStableFunc(fs.defaults, func(a, b posNodes) int { return cmp.Compare(a.pos, b.pos) })
 }
 
 // addSubninja adds filenames for subninja.
@@ -275,6 +289,7 @@ func (p *fileParser) finalize(ctx context.Context) error {
 			p.fileState.edges = append(p.fileState.edges, edge)
 		}
 	}
+	p.fileState.sortDefaults()
 	p.state.mergeFileState(&p.fileState)
 	p.chunks = nil
 	return nil

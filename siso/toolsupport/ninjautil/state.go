@@ -459,7 +459,9 @@ func (s *State) mergeFileState(fstate *fileState) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.edges = append(s.edges, fstate.edges...)
-	s.defaults = append(s.defaults, fstate.defaults...)
+	for _, d := range fstate.defaults {
+		s.defaults = append(s.defaults, d.nodes...)
+	}
 	s.filenames = append(s.filenames, fstate.filenames...)
 }
 

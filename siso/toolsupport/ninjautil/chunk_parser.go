@@ -425,7 +425,7 @@ func (ch *chunk) buildGraphInChunk(ctx context.Context, fileState *fileState) er
 			if err != nil {
 				return err
 			}
-			fileState.addDefaults(nodes)
+			fileState.addDefaults(st.pos, nodes)
 			i++
 			continue
 		case statementSubninja:
